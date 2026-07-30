@@ -58,12 +58,19 @@ Then:
 5. `delvec analyze <campaign-dir>` — reachability/deadlock/dark-mitigation. Fix in
    the DSL (never by weakening the campaign; a dead quest is a design bug).
 6. `delvec build <campaign-dir> -o <workspace>/out` — must exit 0.
-7. Machine validation ladder (from repo root, docker required):
+7. Machine validation ladder — **delegate to a `sonnet` subagent** (owner policy
+   2026-07-30: execution is mechanical, no creativity needed; also keeps long
+   server logs out of the authoring context). Spawn an Agent
+   (`subagent_type: general-purpose`, `model: sonnet`) instructed to, from repo
+   root (docker required):
    - copy/point `validation/delve-output` at the build output
    - `EULA=TRUE docker compose -f validation/compose.yaml --profile packtest up --exit-code-from packtest`
    - `EULA=TRUE docker compose -f validation/compose.yaml --profile validate up --build --abort-on-container-exit --exit-code-from bot`
-   Both must exit 0. A red bot run = fix the campaign (or report a compiler bug —
-   do not hand-edit compiler output, ever).
+   - tear down containers, and report ONLY: per-command exit codes, failed
+     PackTest names, the bot's failed step (if any), and ≤20 relevant log lines.
+   Both must exit 0. Re-runs after fixes go through the same subagent. A red bot
+   run = **you** fix the campaign in the DSL (repair judgment stays with the
+   authoring agent; or report a compiler bug — never hand-edit compiler output).
 8. Report to the user: campaign summary, playtime estimate, validation results,
    and the two commands they care about:
    - play: `EULA=TRUE docker compose -f validation/compose.yaml --profile play up`
