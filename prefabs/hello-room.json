@@ -16,6 +16,11 @@
     },
     "anchor/exit": { "pos": [5, 1, 8] }
   },
+  "lighting": {
+    "profile": "lit",
+    "measured_min_light": 8,
+    "measured": "2026-07-30"
+  },
   "license": {
     "source": "original",
     "spdx": "GPL-3.0-or-later",
