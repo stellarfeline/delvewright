@@ -16,6 +16,7 @@ pub mod emit;
 pub mod load;
 pub mod plan;
 pub mod registry;
+pub mod solver;
 
 /// This compiler's version (reported by `--version`, stamped in `manifest.json`).
 pub const DELVEC_VERSION: &str = "0.1.0";

@@ -29,11 +29,14 @@ whole library:
   preserved under rotation.
 - **`final_state = air`** turns the jigsaw block into the 1-block threshold gap
   after generation, leaving a clean 3×3 passage where two doorways meet.
-- **`pool = keep:pool`** is a *placeholder*. The compiler (spec-0002 / task #9)
-  owns the real pool documents — element weights, per-area pools, fallback and
-  `max_depth` — and rewrites this field, or points structure-set placement at its
-  own pools. The prefab only promises the socket geometry; the compiler owns
-  layout policy.
+- **`pool = keep:pool`** is a *placeholder*. The compiler owns the real pool
+  documents — member weights + roles — in **`prefabs/pools.json`**
+  (`pool/stone-keep`), and **is the jigsaw**: it solves the layout from the
+  campaign seed and emits `/place template` per piece, reading these socket names
+  only as a connectivity vocabulary (ADR-0004 amendment; `crate::solver`,
+  spec-0002). The prefab only promises the socket geometry; the compiler owns
+  layout policy. (Because assembly is `/place template`, not `/place jigsaw`, the
+  worldgen `template_pool` registry is not needed at all.)
 - The socket **local position** and facing of every piece are recorded in each
   metadata JSON under `connectors[]` (`local_pos`, `facing`, `opening`, `joint`).
 

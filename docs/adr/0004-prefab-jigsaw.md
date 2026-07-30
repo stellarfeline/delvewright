@@ -39,6 +39,18 @@ confirmed `/place jigsaw` layout is a **pure (world seed, position) function** o
 pinned 1.21.11 — 6/6 fresh worlds identical per seed, order-independent. The GDPC
 fallback below remains documented but is not needed.
 
+## Amendment (2026-07-30): the compiler is the jigsaw
+
+M2 task #9 makes the **compiler** solve the layout and emit per-piece `/place
+template <piece> <pos> <rotation>` calls, rather than `/place jigsaw` at runtime.
+Runtime jigsaw is verified reproducible (above), but predicting its layout means
+replicating Mojang's algorithm; solving it in-compiler is simpler and keeps the
+shipped delve plain vanilla (ADR-0003), determinism trivial (campaign-seeded
+PRNG, ADR-0006), and gives full layout knowledge for anchors, the critical path,
+and global constraints. This promotes the "Fallback status" mechanism the
+seed-stability experiment documented to the **primary** path; `keep:pool` socket
+names become a connectivity vocabulary the solver reads (`crate::solver`).
+
 ## Revisit triggers
 
 Adopt the offline-assembly fallback if any of these occur:

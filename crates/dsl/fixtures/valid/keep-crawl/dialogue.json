@@ -1,0 +1,35 @@
+{
+  "dsl_version": "0.2.0",
+  "campaign_id": "keep-crawl",
+  "stage": "dialogue",
+  "content": {
+    "dialogues": [
+      {
+        "npc": "npc/keeper",
+        "root": "dlg/greeting",
+        "nodes": [
+          {
+            "id": "dlg/greeting",
+            "text": "Halt. The keep is barred, and I am its Keeper. State your purpose, traveler.",
+            "options": [
+              { "label": "What lies within?", "next": "dlg/lore" },
+              {
+                "label": "I ask leave to enter the keep.",
+                "effects": [
+                  { "type": "complete-objective", "objective": "obj/talk" }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "dlg/lore",
+            "text": "A long hall, and a shrine at its end that has gone dark. Reach it, if you are able.",
+            "options": [
+              { "label": "Back.", "next": "dlg/greeting" }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

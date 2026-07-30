@@ -31,6 +31,27 @@ pub fn hello_world_dir() -> PathBuf {
     repo_root().join("crates/dsl/fixtures/valid/hello-world")
 }
 
+/// The multi-area / multi-piece keep-crawl campaign directory (M2 task #9).
+pub fn keep_crawl_dir() -> PathBuf {
+    repo_root().join("crates/dsl/fixtures/valid/keep-crawl")
+}
+
+/// Materialize a full campaign directory at `dst` = the campaign in `base` with
+/// each stage in `patch["documents"]` overwritten by its replacement envelope.
+pub fn materialize_from(base: &Path, patch: &serde_json::Value, dst: &Path) {
+    std::fs::create_dir_all(dst).unwrap();
+    for f in STAGE_FILES {
+        std::fs::copy(base.join(f), dst.join(f)).unwrap();
+    }
+    if let Some(docs) = patch.get("documents").and_then(|d| d.as_object()) {
+        for (stage, doc) in docs {
+            let file = dst.join(format!("{stage}.json"));
+            let text = serde_json::to_string_pretty(doc).unwrap();
+            std::fs::write(file, text).unwrap();
+        }
+    }
+}
+
 /// The repo `prefabs/` directory.
 pub fn prefabs_dir() -> PathBuf {
     repo_root().join("prefabs")

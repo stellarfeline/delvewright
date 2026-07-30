@@ -23,6 +23,7 @@ use delvewright_dsl::{
 };
 
 use crate::registry::{AnchorMeta, PrefabRegistry};
+use crate::solver::{self, Rotation, SealFill, Splitmix64};
 
 /// World-space distance between successive area origins.
 pub const AREA_SPACING: i32 = 256;
@@ -47,23 +48,64 @@ pub struct Plan<'a> {
     pub npcs: Vec<NpcPlan>,
     /// The bot critical path.
     pub critical_path: Vec<Step>,
+    /// Inter-area transport: objective id → absolute teleport target. When
+    /// completing an objective moves the player into a different area on the
+    /// critical path, the compiler teleports them to that area's entry spawn
+    /// (areas sit `AREA_SPACING` apart across void; the pathfinder-free bot cannot
+    /// walk between them). Emitted in that objective's completion function.
+    pub transport: BTreeMap<String, [i32; 3]>,
 }
 
-/// A placed area.
+/// A placed area: one or more pieces plus their socket seals.
 pub struct AreaPlacement {
     /// Area id (`area/…`).
     pub area_id: String,
+    /// The placed pieces (single-prefab areas have exactly one; pool areas have
+    /// the solver's assembly, entry first).
+    pub pieces: Vec<PiecePlacement>,
+    /// Socket seal/clear fills for this area (empty for single-prefab areas).
+    pub seals: Vec<SealFill>,
+}
+
+impl AreaPlacement {
+    /// The union world AABB `(min, max)` covering every placed piece. For a
+    /// single-prefab area this is exactly `origin .. origin+size-1`.
+    pub fn bounds(&self) -> ([i32; 3], [i32; 3]) {
+        let mut min = [i32::MAX; 3];
+        let mut max = [i32::MIN; 3];
+        for piece in &self.pieces {
+            let (pmin, pmax) = piece.bbox();
+            for a in 0..3 {
+                min[a] = min[a].min(pmin[a]);
+                max[a] = max[a].max(pmax[a]);
+            }
+        }
+        (min, max)
+    }
+}
+
+/// One placed structure piece.
+pub struct PiecePlacement {
     /// Bound prefab id (`prefab/…`).
     pub prefab_id: String,
     /// Datapack structure id path segment (e.g. `hello-room`).
     pub structure_id: String,
     /// Structure `.nbt` filename (relative to `prefabs/`).
     pub structure_file: String,
-    /// World-space placement origin `[x, y, z]`.
-    pub origin: [i32; 3],
-    /// Prefab bounding size `[sx, sy, sz]` (from prefab metadata). Used to
-    /// `forceload` the covering chunks before `place template` runs at load time.
+    /// World-space `/place template` position `[x, y, z]` (where local `(0,0,0)`
+    /// lands).
+    pub pos: [i32; 3],
+    /// Unrotated prefab size `[sx, sy, sz]` (from prefab metadata).
     pub size: [i32; 3],
+    /// Placement rotation (identity for single-prefab areas).
+    pub rotation: Rotation,
+}
+
+impl PiecePlacement {
+    /// The world AABB `(min, max)` of this placed piece, for chunk `forceload`.
+    pub fn bbox(&self) -> ([i32; 3], [i32; 3]) {
+        self.rotation.bbox(self.pos, self.size)
+    }
 }
 
 /// A resolved anchor (absolute world coords).
@@ -185,9 +227,33 @@ pub fn dlg_trigger(npc_id: &str) -> String {
     format!("dw.dlg_{}", safe_local(npc_id))
 }
 
-/// Errors that stop planning (map to build failure, exit 3).
+/// Errors that stop planning (map to build failure, exit 3). Carries a stable
+/// `DW03xx` build/solver diagnostic code (see `crates/compiler/README.md`).
 #[derive(Debug)]
-pub struct PlanError(pub String);
+pub struct PlanError {
+    /// The stable `DW03xx` code.
+    pub code: &'static str,
+    /// Human-readable explanation.
+    pub message: String,
+}
+
+impl PlanError {
+    /// Build a plan error with an explicit code.
+    pub fn new(code: &'static str, message: impl Into<String>) -> Self {
+        PlanError {
+            code,
+            message: message.into(),
+        }
+    }
+}
+
+/// `DW0300`: generic build/resolution failure (missing prefab metadata, unknown
+/// anchor, dependency cycle in the critical path).
+pub const DW_BUILD: &str = "DW0300";
+
+/// Inter-area transport map: objective id → absolute teleport target (see
+/// [`Plan::transport`]).
+pub type TransportMap = BTreeMap<String, [i32; 3]>;
 
 impl<'a> Plan<'a> {
     /// Build the plan. Requires a validated campaign and loaded prefab metadata.
@@ -199,37 +265,95 @@ impl<'a> Plan<'a> {
         let mut areas = Vec::new();
         let mut anchors: BTreeMap<(String, String), ResolvedAnchor> = BTreeMap::new();
         for (i, area) in campaign.world.content.areas.iter().enumerate() {
-            // Jigsaw pool assembly lands in M2 task #9; emission handles only
-            // single-prefab areas today (validation already forbids binding both).
-            let Some(prefab) = &area.prefab else {
-                return Err(PlanError(format!(
-                    "area `{}` binds a `prefab_pool`; jigsaw pool assembly is not implemented \
-                     yet (M2 task #9). Bind a single `prefab` to build this campaign.",
-                    area.id
-                )));
-            };
-            let prefab_id = prefab.as_str().to_string();
-            let meta = prefabs.get(&prefab_id).ok_or_else(|| {
-                PlanError(format!(
-                    "area `{}` binds prefab `{}` but no matching prefab metadata was found in the prefabs dir",
-                    area.id, prefab_id
-                ))
-            })?;
+            let area_id = area.id.as_str().to_string();
             let origin = [i as i32 * AREA_SPACING, BASE_Y, 0];
-            for (name, am) in &meta.anchors {
-                anchors.insert(
-                    (area.id.as_str().to_string(), name.clone()),
-                    resolve_anchor(origin, am),
-                );
-            }
-            areas.push(AreaPlacement {
-                area_id: area.id.as_str().to_string(),
-                prefab_id,
-                structure_id: meta.structure.id.clone(),
-                structure_file: meta.structure.file.clone(),
-                origin,
-                size: meta.structure.size,
-            });
+
+            let placement = if let Some(prefab) = &area.prefab {
+                // Single-prefab area (the M1 degenerate assembly): one piece at
+                // the origin, rotation none, no sockets to seal.
+                let prefab_id = prefab.as_str().to_string();
+                let meta = prefabs.get(&prefab_id).ok_or_else(|| {
+                    PlanError::new(
+                        DW_BUILD,
+                        format!(
+                            "area `{area_id}` binds prefab `{prefab_id}` but no matching prefab \
+                             metadata was found in the prefabs dir"
+                        ),
+                    )
+                })?;
+                for (name, am) in &meta.anchors {
+                    anchors.insert((area_id.clone(), name.clone()), resolve_anchor(origin, am));
+                }
+                AreaPlacement {
+                    area_id: area_id.clone(),
+                    pieces: vec![PiecePlacement {
+                        prefab_id,
+                        structure_id: meta.structure.id.clone(),
+                        structure_file: meta.structure.file.clone(),
+                        pos: origin,
+                        size: meta.structure.size,
+                        rotation: Rotation::None,
+                    }],
+                    seals: Vec::new(),
+                }
+            } else if let Some(pool) = &area.prefab_pool {
+                // Pool area (ADR-0004 jigsaw assembly): the solver grows a layout
+                // from the campaign seed and we transform each piece's anchors to
+                // world space. `pieces` bounds are guaranteed present by validation
+                // (a pool binds `pieces`); default defensively.
+                let pool_id = pool.as_str().to_string();
+                let (pmin, pmax) = area.pieces.map(|p| (p.min, p.max)).unwrap_or((1, 1));
+                let required = required_anchors_for_area(campaign, &area_id);
+                let mut stream = Splitmix64::new(solver::stream_seed(seed, &area_id));
+                let layout = solver::solve_area(
+                    prefabs,
+                    &pool_id,
+                    &required,
+                    pmin,
+                    pmax,
+                    origin,
+                    &mut stream,
+                )
+                .map_err(|e| PlanError::new(e.code, e.message))?;
+
+                let mut pieces = Vec::new();
+                for placed in &layout.pieces {
+                    let meta = prefabs.get(&placed.prefab_id).ok_or_else(|| {
+                        PlanError::new(
+                            DW_BUILD,
+                            format!("solver placed unknown prefab `{}`", placed.prefab_id),
+                        )
+                    })?;
+                    // Transform this piece's anchors to world space. Each required
+                    // anchor is carried by exactly one placed piece (fillers are
+                    // anchorless connectors), so names do not collide.
+                    for (name, am) in &meta.anchors {
+                        anchors
+                            .entry((area_id.clone(), name.clone()))
+                            .or_insert_with(|| resolve_piece_anchor(placed, am));
+                    }
+                    pieces.push(PiecePlacement {
+                        prefab_id: placed.prefab_id.clone(),
+                        structure_id: meta.structure.id.clone(),
+                        structure_file: meta.structure.file.clone(),
+                        pos: placed.pos,
+                        size: meta.structure.size,
+                        rotation: placed.rotation,
+                    });
+                }
+                AreaPlacement {
+                    area_id: area_id.clone(),
+                    pieces,
+                    seals: layout.seals,
+                }
+            } else {
+                // Validation (DW0160) guarantees exactly one binding.
+                return Err(PlanError::new(
+                    DW_BUILD,
+                    format!("area `{area_id}` binds neither `prefab` nor `prefab_pool`"),
+                ));
+            };
+            areas.push(placement);
         }
 
         // ---- classes ----
@@ -264,8 +388,8 @@ impl<'a> Plan<'a> {
             })
             .collect::<Vec<_>>();
 
-        // ---- critical path ----
-        let critical_path = build_critical_path(campaign, &anchors, &npcs)?;
+        // ---- critical path + inter-area transport ----
+        let (critical_path, transport) = build_critical_path(campaign, &anchors, &npcs)?;
 
         Ok(Self {
             campaign,
@@ -276,6 +400,7 @@ impl<'a> Plan<'a> {
             classes,
             npcs,
             critical_path,
+            transport,
         })
     }
 
@@ -306,6 +431,70 @@ impl<'a> Plan<'a> {
         match self.anchors.get(&(area_id.to_string(), anchor.to_string())) {
             Some(ResolvedAnchor::Point { pos, .. }) => Some(*pos),
             _ => None,
+        }
+    }
+}
+
+/// The set of anchor names the campaign references inside `area_id`: NPC stands
+/// (NPCs in this area), `reach-anchor` targets and `open-gate` anchors (quests
+/// planned in this area). Sorted + deduped for deterministic solver input. These
+/// are the anchors the solver must guarantee exist in the assembled layout.
+fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> Vec<String> {
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    for npc in &campaign.npcs.content.npcs {
+        if npc.area.as_str() == area_id {
+            set.insert(npc.anchor.as_str().to_string());
+        }
+    }
+    // Which planned quests belong to this area.
+    let quest_area: BTreeMap<&str, &str> = campaign
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .map(|q| (q.id.as_str(), q.area.as_str()))
+        .collect();
+    for q in &campaign.quests.content.quests {
+        if quest_area.get(q.id.as_str()).copied() != Some(area_id) {
+            continue;
+        }
+        for o in &q.objectives {
+            if let Objective::ReachAnchor { anchor, .. } = o {
+                set.insert(anchor.as_str().to_string());
+            }
+        }
+        for effs in q.on_objective_complete.values() {
+            for e in effs {
+                if let Some(a) = e.open_gate_anchor() {
+                    set.insert(a.as_str().to_string());
+                }
+            }
+        }
+        for e in &q.on_complete {
+            if let Some(a) = e.open_gate_anchor() {
+                set.insert(a.as_str().to_string());
+            }
+        }
+    }
+    set.into_iter().collect()
+}
+
+/// Resolve a placed-piece anchor to absolute world coords (transforming through
+/// the piece's pos + rotation).
+fn resolve_piece_anchor(placed: &solver::PlacedPiece, am: &AnchorMeta) -> ResolvedAnchor {
+    if let Some(region) = &am.region {
+        ResolvedAnchor::Gate {
+            from: solver::transform_point(placed, region.from),
+            to: solver::transform_point(placed, region.to),
+            block: am
+                .block
+                .clone()
+                .unwrap_or_else(|| "minecraft:air".to_string()),
+        }
+    } else {
+        ResolvedAnchor::Point {
+            pos: solver::transform_point(placed, am.pos.unwrap_or([0, 0, 0])),
+            facing: solver::transform_facing(placed, am.facing.as_deref()),
         }
     }
 }
@@ -368,13 +557,17 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
 
 /// Build the critical path: select first class, then each critical objective in
 /// topological order (quests by `depends_on`, objectives by `after`), then assert
-/// campaign completion.
+/// campaign completion. Also returns the inter-area transport map: when
+/// consecutive objectives sit in different areas, completing the earlier one
+/// teleports the player to the later area's entry spawn.
 fn build_critical_path(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     npcs: &[NpcPlan],
-) -> Result<Vec<Step>, PlanError> {
+) -> Result<(Vec<Step>, TransportMap), PlanError> {
     let mut steps = Vec::new();
+    // (objective id, physical area) in critical-path order, for transport.
+    let mut obj_areas: Vec<(String, String)> = Vec::new();
 
     // select-class: first declared class.
     if let Some(first) = campaign.classes.content.classes.first() {
@@ -413,14 +606,17 @@ fn build_critical_path(
                         npcs.iter()
                             .find(|n| n.npc_id == npc.as_str())
                             .ok_or_else(|| {
-                                PlanError(format!("talk-to references unknown npc `{npc}`"))
+                                PlanError::new(
+                                    DW_BUILD,
+                                    format!("talk-to references unknown npc `{npc}`"),
+                                )
                             })?;
                     let opt = npc_plan
                         .options
                         .iter()
                         .find(|o| o.completes.iter().any(|c| c == id.as_str()))
                         .ok_or_else(|| {
-                            PlanError(format!(
+                            PlanError::new(DW_BUILD, format!(
                                 "objective `{id}` has no dialogue option completing it (analyze should have caught this)"
                             ))
                         })?;
@@ -447,12 +643,10 @@ fn build_critical_path(
                         pos,
                         command: format!("/trigger {} set {}", npc_plan.trigger_objective, opt.n),
                     });
+                    obj_areas.push((id.as_str().to_string(), npc_area.to_string()));
                 }
                 Objective::ReachAnchor {
-                    id: _,
-                    anchor,
-                    radius,
-                    ..
+                    id, anchor, radius, ..
                 } => {
                     let pos = point_of(anchors, area, anchor.as_str())?;
                     steps.push(Step::Reach {
@@ -460,6 +654,7 @@ fn build_critical_path(
                         pos,
                         radius: *radius,
                     });
+                    obj_areas.push((id.as_str().to_string(), area.to_string()));
                 }
                 _ => {}
             }
@@ -470,7 +665,22 @@ fn build_critical_path(
         objective: "dw.campaign".to_string(),
         value: 1,
     });
-    Ok(steps)
+
+    // Transport: when consecutive critical objectives change area, completing the
+    // earlier objective teleports the player to the later area's entry spawn.
+    let mut transport: BTreeMap<String, [i32; 3]> = BTreeMap::new();
+    for pair in obj_areas.windows(2) {
+        let (prev_id, prev_area) = &pair[0];
+        let (_, next_area) = &pair[1];
+        if prev_area != next_area
+            && let Some(ResolvedAnchor::Point { pos, .. }) =
+                anchors.get(&(next_area.clone(), "spawn".to_string()))
+        {
+            transport.insert(prev_id.clone(), *pos);
+        }
+    }
+
+    Ok((steps, transport))
 }
 
 fn point_of(
@@ -481,9 +691,10 @@ fn point_of(
     match anchors.get(&(area.to_string(), anchor.to_string())) {
         Some(ResolvedAnchor::Point { pos, .. }) => Ok(*pos),
         Some(ResolvedAnchor::Gate { from, .. }) => Ok(*from),
-        None => Err(PlanError(format!(
-            "anchor `{anchor}` in area `{area}` did not resolve"
-        ))),
+        None => Err(PlanError::new(
+            DW_BUILD,
+            format!("anchor `{anchor}` in area `{area}` did not resolve"),
+        )),
     }
 }
 
@@ -542,8 +753,9 @@ fn finale_quest_order(campaign: &Campaign) -> Result<Vec<String>, PlanError> {
         }
     }
     if order.len() != needed.len() {
-        return Err(PlanError(
-            "quest dependency cycle in critical path".to_string(),
+        return Err(PlanError::new(
+            DW_BUILD,
+            "quest dependency cycle in critical path",
         ));
     }
     Ok(order)
