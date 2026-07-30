@@ -22,10 +22,13 @@ short summary — not the raw JSON — and confirm/adjust). If the user says "e2
 
 ## Campaign workspace (artifact of record — NEVER skip)
 
-Campaigns do not live in the repo (CLAUDE.md forbidden zone). Create
-`../delvewright-campaigns/<campaign-id>/` (override: `$DELVEWRIGHT_CAMPAIGNS_DIR`)
-containing the six stage JSONs, the build output, and a `GENERATION.md` (prompt
-verbatim, date, dsl_version, decisions made). The DSL documents are the artifact
+Campaigns do not live in this repo (CLAUDE.md forbidden zone) — they live in the
+**`delvewright-campaigns` git repo** (symlinked at `campaigns/`, real path
+`../delvewright-campaigns/`; override: `$DELVEWRIGHT_CAMPAIGNS_DIR`). Create
+`campaigns/campaigns/<campaign-id>/` with the six stage JSONs and a
+`GENERATION.md` (prompt verbatim, date, dsl_version, decisions made); build
+output goes beside them (gitignored there). After validation passes, **commit the
+campaign in that repo** (conventional message; do not push unless asked). The DSL documents are the artifact
 of record: the delve must be rebuildable byte-identically from them without any
 LLM (ADR-0006/0012).
 

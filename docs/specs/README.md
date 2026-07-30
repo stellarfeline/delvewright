@@ -15,3 +15,4 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0004](spec-0004-ci-workflow.md) | CI workflow | Draft |
 | [spec-0005](spec-0005-infra-images.md) | Infrastructure images & version manifest | Draft |
 | [spec-0006](spec-0006-playtest-loop.md) | Creator playtest loop | Draft |
+| [spec-0007](spec-0007-asset-pipeline.md) | External asset pipeline (two-track) | Approved |
