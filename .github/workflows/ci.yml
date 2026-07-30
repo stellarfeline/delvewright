@@ -22,6 +22,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The compiler tests read the git-lfs prefab (prefabs/hello-room.nbt);
+          # the ADR-0006 double-build byte-identity gate runs inside
+          # `cargo test --workspace` (tests/cli.rs::build_is_byte_identical...).
+          lfs: true
       # rust-toolchain.toml pins the channel + clippy/rustfmt components,
       # which rustup on the runner installs automatically.
       - uses: Swatinem/rust-cache@v2
@@ -29,7 +34,7 @@ jobs:
         run: cargo fmt --all -- --check
       - name: cargo clippy -D warnings
         run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: cargo test
+      - name: cargo test (incl. determinism double-build gate)
         run: cargo test --workspace
 
   harness:
@@ -48,6 +53,31 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run test
+
+  mecha-crosscheck:
+    name: mecha cross-check (PR only)
+    # ADR-0011: mecha independently re-validates every emitted .mcfunction
+    # against the 1.21.11 command tree. Disagreement with our vendored-tree
+    # validator fails CI and is a bug in one of them. PR-only (metered minutes).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true # the build copies the prefab .nbt into the datapack
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: install mecha + beet (pinned)
+        run: pip install "mecha==0.104.1" beet
+      - name: build the hello-world delve
+        run: |
+          cargo run -p delvewright-compiler --bin delvec -- \
+            build crates/dsl/fixtures/valid/hello-world \
+            -o out --prefabs prefabs
+      - name: mecha validates every emitted mcfunction
+        run: python3 .github/scripts/mecha_crosscheck.py out/datapack
 
   docs:
     name: docs (local link check)
