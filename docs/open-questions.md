@@ -4,18 +4,20 @@ Status as of 2026-07-29 (late session). Resolved items kept for the record.
 
 ## Still open
 
-### A. spec-0001 details (needed before M2 drafting, not M0/M1)
+### A. spec-0001 detail (needed before M2 drafting, not M0/M1)
 
-- How free-form may stage-5 dialogue be (free text vs structured beats)?
-- Optional quests in scope before M3?
-
-### B. Handoff citation "arXiv 2604.25482"
-
-The staged-DSL pattern citation didn't verify (Word2Minecraft is arXiv 2503.16536).
-ADR-0002 cites the handoff's ID pending owner confirmation of the intended paper.
+- Optional quests in v0, or mandatory-only until M3?
 
 ## Resolved
 
+- **Stage-5 dialogue** (2026-07-29): no runtime LLM anywhere in shipped delves
+  (current-stage policy) — all content is authored at generation time; dialogue is a
+  **pre-written branching-options tree** (maps onto the 1.21.11 dialog system).
+  Recorded in spec-0001 shared conventions and CLAUDE.md forbidden zones.
+- **Staged-DSL citation** (2026-07-29): owner confirmed arXiv 2604.25482 exists —
+  Borawski et al., "From World-Gen to Quest-Line: A Dependency-Driven Prompt Pipeline
+  for Coherent RPG Generation". Local reference copy in untracked `references/`;
+  ADR-0002 citation completed.
 - **Pinned MC version** (2026-07-29): owner confirmed **1.21.11** → ADR-0009 Accepted.
 - **DP1 — compiler foundation** (2026-07-29): owner's rule was "don't reinvent
   wheels, unless overlap with beet is low or second-development heavy"; overlap

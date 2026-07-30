@@ -16,6 +16,12 @@ stages' IDs only.
 - The campaign **seed** lives in stage 1 and is the only randomness source downstream
   (ADR-0006).
 - Text fields carry player-visible strings verbatim (no templating in v0).
+- **No runtime LLM** (owner decision 2026-07-29, current-stage policy): every
+  player-visible string and every branch is authored during generation; nothing is
+  generated at play time. Dialogue is a **pre-written branching-options tree** —
+  nodes with NPC text + a closed set of player choices, mapping directly onto the
+  1.21.11 dialog system's button UI. Branch effects (scoreboard flags, quest
+  triggers) are declared per option and validated like any other cross-stage ref.
 - Versioning/migration policy for `dsl_version` bumps: TBD (owner input).
 
 ## Stage 1 — World/setting
@@ -26,7 +32,8 @@ pools — ADR-0004), campaign seed, target session length.
 ## Stage 2 — NPCs
 
 Cast list: ID, name, role (quest-giver / vendor / flavor / boss), home area (stage-1
-ref), dialogue voice notes, dialogue lines keyed for stage-5 reference.
+ref), dialogue voice notes, and **dialogue trees** (pre-written branching options per
+the shared convention above), keyed for stage-5 reference.
 
 ## Stage 3 — Classes & gear
 
@@ -60,5 +67,4 @@ compiler must know how to emit and how to *bot-walk* every type (ADR-0005).
 
 ## Open (owner input wanted)
 
-- How much narrative freedom in stage 5 dialogue (free text vs structured beats)?
 - Optional quests in v0, or mandatory-only until M3?

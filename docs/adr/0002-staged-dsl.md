@@ -2,8 +2,10 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-29
-- **Source**: kickoff handoff (2026-07-29); pattern from "From World-Gen to Quest-Line"
-  (arXiv 2604.25482)
+- **Source**: kickoff handoff (2026-07-29); pattern from Borawski et al., "From
+  World-Gen to Quest-Line: A Dependency-Driven Prompt Pipeline for Coherent RPG
+  Generation" (arXiv 2604.25482, verified 2026-07-29; local copy in untracked
+  `references/`)
 
 ## Context
 

@@ -41,6 +41,9 @@ Founding decisions live in `docs/adr/` and originate from the kickoff handoff
   CC BY only. Record provenance in prefab metadata.
 - **No grind mechanics in delve design**: no mining/leveling loops, resource farming,
   or base building.
+- **No runtime LLM in shipped delves** (current policy): all content — including
+  dialogue — is authored at generation time; dialogue is pre-written branching
+  options (spec-0001).
 - **The owner's Raspberry Pi is prod-only** — never target it for dev or tests.
 - **Generated campaigns/worlds do not live in this repo** — they ship via GitHub
   Releases / OCI registry (content licensed separately from GPL code; ADR-0007).
