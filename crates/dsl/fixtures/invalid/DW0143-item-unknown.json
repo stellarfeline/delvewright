@@ -1,0 +1,35 @@
+{
+  "description": "kit item is not in the 1.21.11 registry",
+  "expect": "DW0143",
+  "documents": {
+    "classes": {
+      "dsl_version": "0.1.0",
+      "campaign_id": "hello-world",
+      "stage": "classes",
+      "content": {
+        "classes": [
+          {
+            "id": "class/wanderer",
+            "name": "Wanderer",
+            "blurb": "Sturdy boots, no questions.",
+            "kit": [
+              {
+                "item": "minecraft:diamond_hoe",
+                "count": 1,
+                "name": "Keeper's Gift"
+              },
+              {
+                "item": "minecraft:leather_boots",
+                "count": 1
+              },
+              {
+                "item": "minecraft:bread",
+                "count": 3
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

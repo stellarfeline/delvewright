@@ -1,0 +1,167 @@
+# `delvewright-dsl`
+
+serde types, validation, canonical serialization and JSON Schema export for the
+staged campaign DSL (spec-0001). This crate is the **source of truth** for the
+DSL: JSON Schemas are exported from the Rust types, never hand-maintained.
+
+## What it provides
+
+- **Types** (`stages`, `envelope`, `ids`): serde types for the envelope
+  `{ dsl_version, campaign_id, stage, content }` and the five stage payloads,
+  every struct `#[serde(deny_unknown_fields)]`. IDs are type-prefixed kebab-case
+  newtypes (`area/…`, `npc/…`, `class/…`, `quest/…`, `dlg/…`, `obj/…`,
+  `anchor/…`, `prefab/…`) that parse permissively and expose `is_valid_syntax()`.
+- **Validation** (`validate::validate_campaign`): all six spec-0001 rule groups,
+  returning `Diagnostic { code, severity, stage, path, message }` in the
+  spec-0002 `--json` shape.
+- **Canonical serialization** (`canonical::to_canonical_string`): the single
+  canonical writer — 2-space pretty, struct-declaration field order, sorted map
+  keys (`BTreeMap`), trailing newline. Round-tripping any valid fixture is
+  byte-identical (enforced by `tests/roundtrip.rs`).
+- **JSON Schema export** (`schema::stage_schema`): one full-envelope JSON Schema
+  (draft 2020-12) per stage, via `schemars`.
+- **Registries** (`registry`): `ItemRegistry` and `AnchorRegistry` traits, with
+  small vendored v0 implementations (see [Registries](#registries)).
+
+Determinism (ADR-0006): all iteration is over `BTreeMap`/`BTreeSet` or slices;
+nothing depends on hash order, wall-clock, or absolute paths.
+
+## Entry points
+
+```rust
+use delvewright_dsl::{RawCampaign, check_campaign, parse_campaign, validate_campaign};
+
+// From five raw JSON strings (compiler input):
+let diags = check_campaign(&raw); // parse (DW0100 on failure) then validate
+
+// Or in two steps:
+let campaign = parse_campaign(&raw)?;          // Result<Campaign, Vec<Diagnostic>>
+let diags = validate_campaign(&campaign);      // Vec<Diagnostic>
+```
+
+`validate_campaign` uses the vendored v0 registries. The compiler injects full
+registries via `validate_campaign_with(&campaign, &items, &anchors)`.
+
+## Diagnostic codes (`DW01xx`)
+
+Codes are a **stable API**; the CI fixture matrix asserts exact codes. Each code
+has ≥1 invalid fixture under `fixtures/invalid/` that violates only that rule.
+
+| Code | Rule group | Meaning |
+|------|-----------|---------|
+| `DW0100` | 1 Envelope | Document does not conform to its stage schema (unknown field / wrong type / malformed value). Reported at parse time. |
+| `DW0101` | 1 Envelope | `stage` field does not match the document's slot (e.g. `world.json` says `stage: "npcs"`). |
+| `DW0102` | 1 Envelope | Unsupported `dsl_version` (only `0.1.0` in v0). |
+| `DW0103` | 1 Envelope | `campaign_id` differs across stages. |
+| `DW0110` | 2 IDs | Malformed id syntax (not kebab-case, or wrong/missing type prefix). |
+| `DW0111` | 2 IDs | Duplicate id within its namespace. |
+| `DW0112` | 2 IDs | Dangling reference: an id ref does not resolve to a declared entity. |
+| `DW0120` | 3 Dialogue | Dialogue node unreachable from `root`. |
+| `DW0121` | 3 Dialogue | Dialogue `root`/option `next` references an unknown node. |
+| `DW0122` | 3 Dialogue | Dialogue effect references an unknown objective (stage-5 boundary). |
+| `DW0130` | 4 Quest plan | Quest `depends_on` graph contains a cycle. |
+| `DW0131` | 4 Quest plan | `finale` is not a declared quest. |
+| `DW0132` | 4 Quest plan | `finale` is not the convergent sink of the plan (see [note](#dw0132)). |
+| `DW0133` | 4 Quest plan | Non-mandatory quest (`mandatory: false`), reserved until M3. |
+| `DW0140` | 5 Quests | Objective `after` ordering contains a cycle. |
+| `DW0141` | 1–5 Reserved | Reserved enum value or reserved field used (see [Reserved](#reserved-values)). |
+| `DW0142` | 5 Quests | Anchor not provided by the area's bound prefab. |
+| `DW0143` | 5 Quests | Item id not in the pinned 1.21.11 registry. |
+| `DW0150` | 6 Cross-stage | Planned quest (stage 4) has no expansion in stage 5. |
+| `DW0151` | 6 Cross-stage | Stage-5 quest is not planned in stage 4. |
+
+`severity` is `error` for every v0 code; `warning` exists in the shape for
+future advisory rules. `path` is a JSON-pointer-ish location within the stage
+document (map-key segments are not `~1`-escaped — it is a locator, not a strict
+pointer). `DW0100`'s path is the document root, since serde parse errors are not
+path-addressable.
+
+### Reserved values
+
+`DW0141` covers everything spec-0001 lists as "reserved, not yet implemented":
+
+- `world`: the `prefab_pool` field on an area.
+- `npcs`: `role: vendor` / `role: boss`.
+- `quests`: objective `type: kill | collect | interact`; effect
+  `type: give-item | set-flag | spawn-wave`.
+
+These **parse** (so authors get a clean diagnostic instead of an opaque error)
+and are rejected by validation. The reserved kit-item fields (`lore`,
+`enchantments`, `attributes`) are the exception: they are intentionally *not*
+defined as fields, so a document using them is rejected as an unknown field
+(`DW0100`).
+
+## Fixtures
+
+### Valid — `fixtures/valid/hello-world/`
+
+The complete canonical M1 hello-world campaign (`world`, `npcs`, `classes`,
+`quest-plan`, `quests`), fleshed out from spec-0001's examples. It validates
+with zero diagnostics and is byte-identical under the canonical writer.
+
+### Invalid — `fixtures/invalid/`
+
+Self-describing patch files named `<code>-<slug>.json`:
+
+```json
+{
+  "description": "npc references an unknown area",
+  "expect": "DW0112",
+  "documents": { "npcs": { "...": "full replacement envelope for this stage" } }
+}
+```
+
+- `expect`: the single diagnostic code the fixture must produce.
+- `documents`: a map of stage name → the **full** stage envelope that replaces
+  the valid one. Most fixtures replace exactly one stage; a few (e.g.
+  `DW0132`) must replace two to violate their rule *in isolation* without
+  tripping the cross-stage 1:1 rule.
+- `schema_reject` (optional, default `false`): the overridden document must also
+  be rejected by the exported JSON Schema (schema-level violations only, e.g.
+  `DW0100`).
+
+`tests/matrix.rs` walks the matrix: every invalid fixture yields exactly its
+`expect` code, and the valid campaign yields zero. `tests/schema.rs` validates
+every valid fixture against its exported schema and checks that every
+`schema_reject` fixture is rejected.
+
+## Registries
+
+Item-id and anchor checks go through the `ItemRegistry` / `AnchorRegistry`
+traits. This crate ships small **vendored v0** implementations covering only what
+the M1 fixtures use:
+
+- `VendoredItemRegistry::v1_21_11()` — the item ids in `data/items-1.21.11.json`.
+  **The full 1.21.11 item registry is vendored in the compiler task (spec-0002);**
+  the compiler injects it via `validate_campaign_with`.
+- `VendoredAnchorRegistry::hello_world()` — the anchors the hello-world prefab
+  declares, from `data/anchors.json`. Real prefab anchor metadata lives in
+  `prefabs/` (ADR-0004) and is resolved by the compiler; the trait lets the
+  compiler inject it.
+
+## Spec notes / resolved ambiguities
+
+<a id="dw0132"></a>
+- **`DW0132` (finale reachability).** In a valid DAG with all references
+  present, a finale is *always* reachable by dependency traversal, so the rule
+  cannot be violated in isolation under a literal reading. v0 implements the
+  concrete, independently-testable reading: **every planned quest must be a
+  transitive dependency of `finale`** — the plan converges on the finale. This
+  is a *structural* stage-4 check and is distinct from the compiler's deeper
+  semantic reachability (`analyze`, exit 2, `DW0201` in spec-0002); the compiler
+  may run both.
+- **Objective/dialogue id uniqueness.** spec-0001 calls dialogue/objective ids
+  "stage-local". v0 enforces: dialogue node ids unique within each NPC's graph;
+  objective ids unique across all of stage 5 (so cross-stage `complete-objective`
+  refs resolve unambiguously).
+- **`quest-complete` trigger.** The reference field is named `quest`
+  (`{ "type": "quest-complete", "quest": "quest/…" }`).
+- **Anchor resolution** is performed here via `AnchorRegistry`, but prefab
+  metadata itself (including the `spawn` requirement) is owned by the compiler
+  and `prefabs/`; the vendored registry only knows the hello-world prefab.
+
+## Dependencies
+
+`serde`, `serde_json`, `schemars`, `thiserror` (all MIT/Apache-2.0). Dev-only:
+`jsonschema` (MIT) with default features **disabled** (its HTTP/TLS resolver
+tree is not needed for offline validation and is excluded).
