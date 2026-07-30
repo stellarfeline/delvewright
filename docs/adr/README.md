@@ -16,6 +16,7 @@ edit. Template at the bottom.
 | [0009](0009-pinned-mc-version.md) | Pinned Minecraft version: 1.21.11 | Accepted |
 | [0010](0010-oci-packaging.md) | Delves ship as versioned OCI images | Accepted |
 | [0011](0011-compiler-foundation.md) | Compiler foundation: Rust-native + mecha CI cross-check | Accepted |
+| [0012](0012-product-form-claude-code-skill.md) | Product form: Claude Code skill front-end | Accepted |
 
 ## Template
 

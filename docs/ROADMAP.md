@@ -45,7 +45,9 @@ project's heartbeat; everything later just makes the delve bigger.
   campaigns that must pass/fail correctly.
 - Prefab library seeded (~10–20 pieces) with metadata + license provenance; jigsaw
   assembly from DSL with seed-controlled reproducible layout.
-- First LLM-generated (not hand-written) campaign compiles and passes validation.
+- First LLM-generated (not hand-written) campaign compiles and passes validation —
+  produced through the embryonic `/new-delve` skill (ADR-0012), so the product form
+  is exercised by real use from M2 onward.
 
 **Exit**: an LLM-authored campaign passes static + PackTest + bot validation with no
 hand edits to compiler output.
@@ -61,8 +63,9 @@ hand edits to compiler output.
 
 ## M4 — Production line
 
-- Skills/slash commands: `/new-campaign`, `/validate`, `/release` (design when the
-  manual workflow has run twice — see below).
+- Skills mature into **the product itself** (ADR-0012): `/new-delve` takes a prompt —
+  a bare theme or a detailed level-and-plot brief — and delivers a validated,
+  playable delve end-to-end; `/validate` and `/release` complete the set.
 - Release automation: RC → full bot playthrough → multi-arch OCI publish → GitHub
   Release with content license.
 - On-demand generation: producing a fresh delve is a routine, low-effort act, not a
@@ -71,15 +74,25 @@ hand edits to compiler output.
 **Exit**: two delves produced on demand back-to-back, each with < 1 owner-day of
 non-QA effort.
 
+## Runtime portability (post-v1)
+
+Once the first genuinely usable version exists, we may evaluate other agent runtimes
+(e.g. Codex) as alternative front-ends. The skill layer is deliberately thin
+(ADR-0012): the DSL + compiler + validation contract is runtime-agnostic, so a port
+must never require touching `crates/`. **Writing an agent runtime from scratch is
+out of scope for this project** — the front-end is always a hosted runtime we adopt,
+never one we build.
+
 ## v2 horizon *(recorded, not designed — do not preclude)*
 
 Vanilla survival hub world connected to delve instances via `/transfer` (why the
 pinned version must be ≥1.20.5); instances on a remote host. Nothing in M0–M4 may
 assume single-server topology in a way that blocks this.
 
-## Skills backlog (design later, noted now)
+## Skills backlog (the product surface, per ADR-0012)
 
-- `/new-campaign` — run the staged generation pipeline, stage-by-stage with owner
-  checkpoints
+- `/new-delve <prompt>` — staged generation with the validation ladder as its inner
+  loop; interactive mode (owner checkpoint between stages) and e2e mode; always
+  persists the generated DSL as the artifact of record
 - `/validate` — full local validation ladder (static → PackTest → bot) via compose
 - `/release` — RC branch, release validation tier, OCI publish, GitHub Release
