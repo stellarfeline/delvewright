@@ -1,0 +1,8 @@
+{
+  "prefab/hello-room": [
+    "spawn",
+    "anchor/keeper-stand",
+    "anchor/exit",
+    "anchor/door"
+  ]
+}

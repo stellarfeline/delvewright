@@ -3,3 +3,14 @@ name = "delvewright-dsl"
 version = "0.0.0"
 edition = "2024"
 publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
+
+# Offline JSON Schema validation only; default features pull in a TLS/HTTP
+# resolver tree we do not need (and whose transitive licenses we would rather
+# avoid vendoring), so they are disabled.
+[dev-dependencies]
+jsonschema = { version = "0.49", default-features = false }
