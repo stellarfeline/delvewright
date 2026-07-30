@@ -1,0 +1,4 @@
+# Pinned toolchain: reproducible builds for CI and dev (ADR-0006, ADR-0008).
+[toolchain]
+channel = "1.97.1"
+components = ["clippy", "rustfmt"]
