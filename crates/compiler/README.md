@@ -86,6 +86,59 @@ id exists — that is mecha's job in the CI cross-check (ADR-0011), plus the DSL
 item registry for kit items. This catches misspelled commands, wrong arity, and
 bogus subcommand paths.
 
+## Jigsaw layout solver (`src/solver.rs`, ADR-0004 amendment)
+
+**The compiler is the jigsaw.** A `prefab_pool` area is assembled by the compiler,
+not by runtime `/place jigsaw`: the solver grows a socket-graph layout from the
+campaign seed and emits per-piece `/place template <piece> <pos> <rotation>`. This
+keeps the shipped delve plain vanilla (ADR-0003), makes determinism trivial (one
+campaign seed → a hand-rolled splitmix64 PRNG in named per-area streams, ADR-0006),
+and gives the compiler full layout knowledge for anchors and the critical path.
+
+- **Pool metadata** (`prefabs/pools.json`, compiler-owned): pool id → member
+  pieces with `weight` + `role` (`entry` seeds the layout; `connector` fills the
+  spine; `room`/`terminal` carry anchors). The prefab `.json` gains a
+  `connectors[]` block (keep-socket-v1: `local_pos`, `facing`, `opening`).
+- **Geometry**: `/place template <pos> <rotation>` places local `(0,0,0)` at
+  `pos` then rotates about it. Two sockets mate when the child socket sits one
+  block beyond the parent, facing opposite (`final_state=air` → clean 3×3
+  passage); the mating rule fixes the child's rotation and position. All four
+  cardinal rotations + AABB overlap rejection are implemented and unit-tested.
+- **Growth**: a straight-line spine — entry → `connector` fillers (straight
+  through only, so the pathfinder-free harness bot can walk it) → the referenced
+  through-rooms inline → one dead-end terminal at the far end (`boss-hall` last
+  when referenced). Branching layouts are a documented future extension.
+- **Guarantees**: connected; exactly one entry; every campaign-referenced anchor
+  in the area (NPC stands, `reach-anchor` targets, `open-gate` anchors) provided
+  by exactly one placed piece; piece count within the DSL `pieces {min,max}`.
+- **Sealing**: every mated socket's jigsaw block is cleared to `air`; every
+  unmated socket is filled with `stone_bricks` (wall). Emitted as `/fill` in the
+  bootstrap after placement.
+- **Multi-area transport**: areas sit `AREA_SPACING` apart across void and the
+  bot has no pathfinder, so when the critical path crosses areas the compiler
+  teleports the player to the next area's entry spawn as the earlier objective
+  completes (`plan.transport`, emitted in that objective's completion function).
+
+### `DW03xx` build/solver codes
+
+Build failures (exit 3) carry a stable `DW03xx` code, printed like validation
+diagnostics (and as one JSON object per line under `--json`, `stage: "build"`).
+
+| Code | Meaning |
+|------|---------|
+| `DW0300` | Generic build/resolution failure (missing prefab metadata or `.nbt`, unresolved anchor, critical-path dependency cycle). |
+| `DW0301` | The bound pool declares no `entry`-role piece (or no `connector` filler when fillers are needed). |
+| `DW0302` | A campaign-referenced anchor is provided by **no** member of the pool (unsatisfiable required anchor). |
+| `DW0303` | The `pieces {min,max}` range is too small to fit the entry plus the required anchor-bearing pieces. |
+| `DW0304` | The solver could not place a required piece without overlap, or more than one dead-end terminal was required (linear solver limit). |
+
+`tests/fixtures/keep-unsatisfiable-anchor.json` (→ `DW0302`) and
+`keep-range-too-small.json` (→ `DW0303`) both pass validate + analyze (the DSL
+cannot see pool-area anchors) and fail only at build, proving the solver
+diagnostics are reachable. `keep-crawl` is the valid multi-area / multi-piece
+fixture (gatehouse single prefab + `pool/stone-keep`, critical path crossing
+piece **and** area boundaries).
+
 ## Build output (`<out>/`)
 
 `manifest.json` (SHA-256 of the six input stage files + every other output,

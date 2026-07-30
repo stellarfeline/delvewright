@@ -171,8 +171,13 @@ As refined 2026-07-30 — darkness must be a declared decision, never a default:
 - [x] `delvec schema --stage 6` exported and CI-verified against fixtures.
 - [x] A dark-prefab fixture without mitigation fails analysis; the same fixture
       with night-vision in the kit passes (`DW0210`).
-- [ ] A multi-piece `prefab_pool` fixture compiles with seed-stable layout
-      (task #9's experiment gates this criterion).
+- [x] A multi-piece `prefab_pool` fixture compiles with seed-stable layout
+      (M2 task #9): the `keep-crawl` fixture (gatehouse single prefab +
+      `pool/stone-keep`) double-builds byte-identically, loads zero-error on a
+      live 1.21.11 server, and the bot walks its critical path — which crosses
+      piece and area boundaries — green. The compiler solves the layout and emits
+      `/place template` per piece (ADR-0004 amendment; see spec-0002 and
+      `crates/compiler/README.md`).
 
 ## Open
 
