@@ -139,9 +139,10 @@ legacy camelCase and `minecraft:`-prefixed forms are both rejected). Emitted:
 
 ## v0.3 addendum — gameplay-verb emission & critical path
 
-**Status: Proposed; DSL layer landed, emission + harness pending** (M2 task
-`m2-gameplay-verbs`). Covers the spec-0001 v0.3 verbs (combat, interaction,
-items, puzzles). The critical-path `version` field is now **campaign-derived**
+**Status: Implemented** (M2 task `m2-gameplay-verbs`) — emission, the branching
+solver, the pathfinding harness and the `keep-trial` full ladder all landed;
+CI arbitrates. Covers the spec-0001 v0.3 verbs (combat, interaction, items,
+puzzles). The critical-path `version` field is now **campaign-derived**
 (`manifest.dsl_version` too): a `0.2.0` campaign still emits a `0.2.0` critical
 path (byte-identity preserved); a `0.3.0` campaign emits `0.3.0`.
 
@@ -197,10 +198,13 @@ exactly one entry; every campaign-referenced anchor placed exactly once; open
 sockets sealed) and same-seed determinism holds; the "single straight spine, one
 dead-end terminal" limitation (and `DW0304`'s second clause) is removed.
 
-### Acceptance criteria (v0.3, pending)
+### Acceptance criteria (v0.3)
 
-- [ ] `keep-trial` (≥7-piece branching keep with a corner/tee; talk-to, collect
-      key, interact locked door, kill a wave, set-flag chain, reach shrine)
-      double-builds byte-identically, loads zero-error, and the pathfinding bot
-      walks it end-to-end with combat visible.
-- [ ] `hello-world` + `keep-crawl` remain byte-identical (regression).
+- [x] `keep-trial` (9-piece branching keep — tee branch + corner room, two
+      terminals; talk-to, kill a wave, collect key, interact locked door,
+      set-flag chain, reach shrine) double-builds byte-identically, loads
+      zero-error, PackTest passes per-verb (7/7), and the pathfinding bot walks
+      it end-to-end with combat visible (two "Keep Guard" zombies slain by the
+      bot).
+- [x] `hello-world` + `keep-crawl` remain byte-identical (regression, verified
+      against captured pre-v0.3 baselines).

@@ -3,8 +3,9 @@
 - **Status**: v0.1 Approved & implemented (M1); **v0.2 Approved & implemented**
   (M2 task #8 — six-document schema, structured persona, stage-6 dialogue,
   prefab-pool binding + lighting metadata; pool *layout* assembly still M2 task #9);
-  **v0.3 Proposed & DSL layer implemented** (M2 task `m2-gameplay-verbs` — the
-  gameplay verbs; DSL types + validation landed, emission/harness follow — see the
+  **v0.3 Implemented** (M2 task `m2-gameplay-verbs` — the gameplay verbs: DSL
+  types + validation, compiler emission, branching solver, pathfinding harness,
+  and the `keep-trial` full ladder all landed — see the
   [v0.3 addendum](#v03-addendum--gameplay-verbs) and spec-0002)
 - **ADRs**: 0001 (DSL→compiler), 0002 (staged), 0004 (prefab refs), 0006
   (determinism), 0012 (skill authors these documents)
@@ -263,8 +264,8 @@ resolved by the compiler** (full prefab metadata + the solver), not the DSL laye
       canonically (`crates/dsl/tests/v03.rs`).
 - [x] Each of `DW0170`–`DW0173` has an isolating fixture yielding exactly its
       code; the `crates/dsl/README.md` code table + matrix are updated.
-- [ ] Emission + the `keep-trial` full-ladder fixture (bot walks it, combat
-      included) — spec-0002 addendum; **pending** (see that spec's status).
+- [x] Emission + the `keep-trial` full-ladder fixture (bot walks it end-to-end,
+      combat included; PackTest per-verb 7/7) — spec-0002 addendum.
 
 ## Open
 
