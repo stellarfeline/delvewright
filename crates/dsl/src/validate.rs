@@ -34,6 +34,7 @@ pub fn validate_campaign_with(
     plan(c, &mut d);
     after_ordering(c, &mut d);
     reserved(c, &mut d);
+    prefab_binding(c, anchors, &mut d);
     anchors_and_items(c, items, anchors, &mut d);
     cross_stage(c, &mut d);
 
@@ -59,6 +60,11 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
             c.quest_plan.dsl_version.as_str(),
         ),
         (Stage::Quests, c.quests.stage, c.quests.dsl_version.as_str()),
+        (
+            Stage::Dialogue,
+            c.dialogue.stage,
+            c.dialogue.dsl_version.as_str(),
+        ),
     ];
     for (expected, actual, version) in stages {
         if actual != expected {
@@ -89,6 +95,7 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
         (Stage::Classes, &c.classes.campaign_id),
         (Stage::QuestPlan, &c.quest_plan.campaign_id),
         (Stage::Quests, &c.quests.campaign_id),
+        (Stage::Dialogue, &c.dialogue.campaign_id),
     ];
     let canonical = c.world.campaign_id.as_str();
     for (stage, id) in ids {
@@ -131,17 +138,15 @@ fn syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
 
     for (i, a) in c.world.content.areas.iter().enumerate() {
         chk!(a.id, "world", format!("/content/areas/{i}/id"));
-        chk!(a.prefab, "world", format!("/content/areas/{i}/prefab"));
+        if let Some(prefab) = &a.prefab {
+            chk!(prefab, "world", format!("/content/areas/{i}/prefab"));
+        }
+        if let Some(pool) = &a.prefab_pool {
+            chk!(pool, "world", format!("/content/areas/{i}/prefab_pool"));
+        }
     }
     for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
         chk!(npc.id, "npcs", format!("/content/npcs/{i}/id"));
-        for (j, node) in npc.dialogue.nodes.iter().enumerate() {
-            chk!(
-                node.id,
-                "npcs",
-                format!("/content/npcs/{i}/dialogue/nodes/{j}/id")
-            );
-        }
     }
     for (i, cl) in c.classes.content.classes.iter().enumerate() {
         chk!(cl.id, "classes", format!("/content/classes/{i}/id"));
@@ -156,6 +161,15 @@ fn syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 obj.id(),
                 "quests",
                 format!("/content/quests/{i}/objectives/{j}/id")
+            );
+        }
+    }
+    for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
+        for (j, node) in tree.nodes.iter().enumerate() {
+            chk!(
+                node.id,
+                "dialogue",
+                format!("/content/dialogues/{i}/nodes/{j}/id")
             );
         }
     }
@@ -260,16 +274,29 @@ fn uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
         "objective",
         d,
     );
-    // Dialogue node ids: unique within each NPC's graph.
-    for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
+    // Dialogue trees: at most one per NPC (a duplicate tree is a duplicate npc
+    // binding within the stage-6 dialogue namespace).
+    dup_check(
+        c.dialogue
+            .content
+            .dialogues
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (t.npc.as_str(), format!("/content/dialogues/{i}/npc"))),
+        "dialogue",
+        "dialogue tree for npc",
+        d,
+    );
+    // Dialogue node ids: unique within each tree.
+    for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
         dup_check(
-            npc.dialogue.nodes.iter().enumerate().map(|(j, node)| {
+            tree.nodes.iter().enumerate().map(|(j, node)| {
                 (
                     node.id.as_str(),
-                    format!("/content/npcs/{i}/dialogue/nodes/{j}/id"),
+                    format!("/content/dialogues/{i}/nodes/{j}/id"),
                 )
             }),
-            "npcs",
+            "dialogue",
             "dialogue node",
             d,
         );
@@ -318,6 +345,16 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
             format!("/content/npcs/{i}/area"),
             format!("npc references unknown area `{}`", npc.area),
         );
+        // Persona relationships are same-stage NPC refs (validated within stage 2).
+        for (k, rel) in npc.persona.relationships.iter().enumerate() {
+            dangling(
+                d,
+                npc_ids.contains(rel.npc.as_str()),
+                "npcs",
+                format!("/content/npcs/{i}/persona/relationships/{k}/npc"),
+                format!("persona relationship references unknown npc `{}`", rel.npc),
+            );
+        }
     }
 
     for (i, q) in c.quest_plan.content.quests.iter().enumerate() {
@@ -392,46 +429,76 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
 }
 
 // ---------------------------------------------------------------------------
-// Rule group 3 — dialogue graph
+// Rule group 3 — stage-6 dialogue graph
 // ---------------------------------------------------------------------------
 
 fn dialogue(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    let all_objectives: BTreeSet<&str> = c
-        .quests
-        .content
-        .quests
-        .iter()
-        .flat_map(|q| q.objectives.iter())
-        .map(|o| o.id().as_str())
-        .collect();
+    use crate::stages::{DialogueEffect, Objective};
 
-    for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
-        let dlg = &npc.dialogue;
-        let node_ids: BTreeSet<&str> = dlg.nodes.iter().map(|n| n.id.as_str()).collect();
+    // Stage-5 objective facts: which are `talk-to`, and (for those) their npc.
+    let mut all_objectives: BTreeSet<&str> = BTreeSet::new();
+    let mut talk_npc: BTreeMap<&str, &str> = BTreeMap::new();
+    for q in &c.quests.content.quests {
+        for o in &q.objectives {
+            all_objectives.insert(o.id().as_str());
+            if let Objective::TalkTo { id, npc, .. } = o {
+                talk_npc.insert(id.as_str(), npc.as_str());
+            }
+        }
+    }
+
+    // npc id -> objective ids completed by an option reachable from that tree's
+    // root (feeds the DW0123 coverage check).
+    let mut reachable_completes: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+
+    for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
+        let node_ids: BTreeSet<&str> = tree.nodes.iter().map(|n| n.id.as_str()).collect();
 
         // `next` / effect references.
-        for (j, node) in dlg.nodes.iter().enumerate() {
+        for (j, node) in tree.nodes.iter().enumerate() {
             for (k, opt) in node.options.iter().enumerate() {
                 if let Some(next) = &opt.next
                     && !node_ids.contains(next.as_str())
                 {
                     d.push(Diagnostic::error(
                         codes::DIALOGUE_BAD_REF,
-                        "npcs",
-                        format!("/content/npcs/{i}/dialogue/nodes/{j}/options/{k}/next"),
+                        "dialogue",
+                        format!("/content/dialogues/{i}/nodes/{j}/options/{k}/next"),
                         format!("option `next` references unknown node `{next}`"),
                     ));
                 }
                 for (m, eff) in opt.effects.iter().enumerate() {
-                    let crate::stages::DialogueEffect::CompleteObjective { objective } = eff;
-                    if !all_objectives.contains(objective.as_str()) {
+                    let DialogueEffect::CompleteObjective { objective } = eff;
+                    let oid = objective.as_str();
+                    let path = format!(
+                        "/content/dialogues/{i}/nodes/{j}/options/{k}/effects/{m}/objective"
+                    );
+                    let msg = if !all_objectives.contains(oid) {
+                        Some(format!(
+                            "dialogue effect references unknown objective `{objective}`"
+                        ))
+                    } else if let Some(owner) = talk_npc.get(oid) {
+                        if *owner == tree.npc.as_str() {
+                            None
+                        } else {
+                            Some(format!(
+                                "dialogue effect completes `talk-to` objective `{objective}`, \
+                                 which belongs to npc `{owner}`, not this tree's npc `{}`",
+                                tree.npc
+                            ))
+                        }
+                    } else {
+                        Some(format!(
+                            "dialogue effect targets objective `{objective}`, which is not a \
+                             `talk-to` objective"
+                        ))
+                    };
+                    if let Some(msg) = msg {
                         d.push(Diagnostic::error(
                             codes::DIALOGUE_BAD_OBJECTIVE,
-                            "npcs",
-                            format!(
-                                "/content/npcs/{i}/dialogue/nodes/{j}/options/{k}/effects/{m}/objective"
-                            ),
-                            format!("dialogue effect references unknown objective `{objective}`"),
+                            "dialogue",
+                            path,
+                            msg,
                         ));
                     }
                 }
@@ -439,18 +506,18 @@ fn dialogue(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
 
         // Root existence.
-        if !node_ids.contains(dlg.root.as_str()) {
+        if !node_ids.contains(tree.root.as_str()) {
             d.push(Diagnostic::error(
                 codes::DIALOGUE_BAD_REF,
-                "npcs",
-                format!("/content/npcs/{i}/dialogue/root"),
-                format!("dialogue root references unknown node `{}`", dlg.root),
+                "dialogue",
+                format!("/content/dialogues/{i}/root"),
+                format!("dialogue root references unknown node `{}`", tree.root),
             ));
             continue; // reachability is undefined without a root
         }
 
         // Reachability from root.
-        let adj: BTreeMap<&str, Vec<&str>> = dlg
+        let adj: BTreeMap<&str, Vec<&str>> = tree
             .nodes
             .iter()
             .map(|n| {
@@ -463,7 +530,7 @@ fn dialogue(c: &Campaign, d: &mut Vec<Diagnostic>) {
             })
             .collect();
         let mut seen: BTreeSet<&str> = BTreeSet::new();
-        let mut stack = vec![dlg.root.as_str()];
+        let mut stack = vec![tree.root.as_str()];
         while let Some(cur) = stack.pop() {
             if seen.insert(cur)
                 && let Some(neis) = adj.get(cur)
@@ -471,14 +538,51 @@ fn dialogue(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 stack.extend(neis.iter().copied());
             }
         }
-        for (j, node) in dlg.nodes.iter().enumerate() {
+        for (j, node) in tree.nodes.iter().enumerate() {
             if !seen.contains(node.id.as_str()) {
                 d.push(Diagnostic::error(
                     codes::DIALOGUE_UNREACHABLE,
-                    "npcs",
-                    format!("/content/npcs/{i}/dialogue/nodes/{j}"),
+                    "dialogue",
+                    format!("/content/dialogues/{i}/nodes/{j}"),
                     format!("dialogue node `{}` is unreachable from root", node.id),
                 ));
+            }
+        }
+
+        // Objectives completed by reachable options (for the coverage check).
+        let completes = reachable_completes.entry(tree.npc.as_str()).or_default();
+        for node in &tree.nodes {
+            if !seen.contains(node.id.as_str()) {
+                continue;
+            }
+            for opt in &node.options {
+                for eff in &opt.effects {
+                    let DialogueEffect::CompleteObjective { objective } = eff;
+                    completes.insert(objective.as_str());
+                }
+            }
+        }
+    }
+
+    // Every `talk-to` objective must have ≥ 1 reachable completing option in its
+    // own npc's tree (the static half of the compiler's DW0203 guarantee).
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oi, o) in q.objectives.iter().enumerate() {
+            if let Objective::TalkTo { id, npc, .. } = o {
+                let covered = reachable_completes
+                    .get(npc.as_str())
+                    .is_some_and(|s| s.contains(id.as_str()));
+                if !covered {
+                    d.push(Diagnostic::error(
+                        codes::DIALOGUE_UNCOVERED,
+                        "dialogue",
+                        format!("/content/quests/{qi}/objectives/{oi}"),
+                        format!(
+                            "`talk-to` objective `{id}` has no reachable dialogue option in npc \
+                             `{npc}`'s tree that completes it"
+                        ),
+                    ));
+                }
             }
         }
     }
@@ -608,16 +712,6 @@ fn after_ordering(c: &Campaign, d: &mut Vec<Diagnostic>) {
 // ---------------------------------------------------------------------------
 
 fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    for (i, a) in c.world.content.areas.iter().enumerate() {
-        if a.prefab_pool.is_some() {
-            d.push(Diagnostic::error(
-                codes::RESERVED,
-                "world",
-                format!("/content/areas/{i}/prefab_pool"),
-                "prefab_pool is reserved (jigsaw pools land in M2)",
-            ));
-        }
-    }
     for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
         if let Some(name) = npc.role.reserved() {
             d.push(Diagnostic::error(
@@ -674,10 +768,13 @@ fn anchors_and_items(
     anchors: &dyn AnchorRegistry,
     d: &mut Vec<Diagnostic>,
 ) {
-    // area id -> anchor set of its bound prefab (only if the prefab is known).
+    // area id -> anchor set of its bound prefab (only for single-prefab areas
+    // whose prefab is known; pool areas resolve anchors in M2 task #9).
     let mut area_anchors: BTreeMap<&str, &BTreeSet<String>> = BTreeMap::new();
     for a in &c.world.content.areas {
-        if let Some(set) = anchors.anchors_for(&a.prefab) {
+        if let Some(prefab) = &a.prefab
+            && let Some(set) = anchors.anchors_for(prefab)
+        {
             area_anchors.insert(a.id.as_str(), set);
         }
     }
@@ -756,7 +853,50 @@ fn anchors_and_items(
 }
 
 // ---------------------------------------------------------------------------
-// Rule group 6 — cross-stage 1:1 expansion
+// Rule group 6 — prefab / prefab_pool binding (stage 1)
+// ---------------------------------------------------------------------------
+
+fn prefab_binding(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
+    for (i, a) in c.world.content.areas.iter().enumerate() {
+        // Exactly one of `prefab` / `prefab_pool`.
+        match (&a.prefab, &a.prefab_pool) {
+            (Some(_), Some(_)) => d.push(Diagnostic::error(
+                codes::PREFAB_BINDING,
+                "world",
+                format!("/content/areas/{i}"),
+                format!(
+                    "area `{}` binds both `prefab` and `prefab_pool`; bind exactly one",
+                    a.id
+                ),
+            )),
+            (None, None) => d.push(Diagnostic::error(
+                codes::PREFAB_BINDING,
+                "world",
+                format!("/content/areas/{i}"),
+                format!(
+                    "area `{}` binds neither `prefab` nor `prefab_pool`; bind exactly one",
+                    a.id
+                ),
+            )),
+            _ => {}
+        }
+        // A bound pool must resolve against the prefab-metadata surface.
+        if let Some(pool) = &a.prefab_pool
+            && pool.is_valid_syntax()
+            && !anchors.has_pool(pool)
+        {
+            d.push(Diagnostic::error(
+                codes::POOL_UNKNOWN,
+                "world",
+                format!("/content/areas/{i}/prefab_pool"),
+                format!("prefab pool `{pool}` is not declared in the prefab metadata"),
+            ));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Rule group 6 — cross-stage 1:1 (quest plan↔expansion, npc↔dialogue tree)
 // ---------------------------------------------------------------------------
 
 fn cross_stage(c: &Campaign, d: &mut Vec<Diagnostic>) {
@@ -792,6 +932,39 @@ fn cross_stage(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 "quests",
                 format!("/content/quests/{i}"),
                 format!("quest `{}` is expanded but not planned in stage 4", q.id),
+            ));
+        }
+    }
+
+    // Stage-2 NPC ↔ stage-6 dialogue tree, 1:1 both directions.
+    let npc_ids: BTreeSet<&str> = c.npcs.content.npcs.iter().map(|n| n.id.as_str()).collect();
+    let tree_npcs: BTreeSet<&str> = c
+        .dialogue
+        .content
+        .dialogues
+        .iter()
+        .map(|t| t.npc.as_str())
+        .collect();
+    for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
+        if !tree_npcs.contains(npc.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::NPC_WITHOUT_TREE,
+                "dialogue",
+                format!("/content/npcs/{i}"),
+                format!("npc `{}` has no stage-6 dialogue tree", npc.id),
+            ));
+        }
+    }
+    for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
+        if !npc_ids.contains(tree.npc.as_str()) {
+            d.push(Diagnostic::error(
+                codes::TREE_WITHOUT_NPC,
+                "dialogue",
+                format!("/content/dialogues/{i}/npc"),
+                format!(
+                    "dialogue tree references npc `{}`, which is not declared in stage 2",
+                    tree.npc
+                ),
             ));
         }
     }

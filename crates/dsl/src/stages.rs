@@ -1,7 +1,7 @@
-//! serde types for the five stage `content` payloads (spec-0001).
+//! serde types for the six stage `content` payloads (spec-0001 v0.2).
 //!
-//! Every struct is `deny_unknown_fields`. Reserved enum values and the reserved
-//! `prefab_pool` field parse successfully but are rejected by validation
+//! Every struct is `deny_unknown_fields`. Reserved enum values (npc `role`,
+//! objective/effect types) parse successfully but are rejected by validation
 //! ([`crate::validate`]) with code `DW0141`.
 
 use std::collections::BTreeMap;
@@ -9,7 +9,9 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{AnchorId, AreaId, ClassId, DialogueId, NpcId, ObjectiveId, PrefabId, QuestId};
+use crate::ids::{
+    AnchorId, AreaId, ClassId, DialogueId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId,
+};
 
 // ---------------------------------------------------------------------------
 // Stage 1 — world
@@ -29,11 +31,16 @@ pub struct WorldContent {
     pub seed: u64,
     /// Informational pacing target in minutes (v0: not enforced).
     pub target_minutes: u32,
-    /// 1..N areas; each binds exactly one prefab in v0.
+    /// 1..N areas; each binds exactly one of `prefab` / `prefab_pool`.
     pub areas: Vec<Area>,
 }
 
-/// One area of the world, bound to a prefab.
+/// One area of the world, bound to a single prefab or a jigsaw prefab pool.
+///
+/// An area binds **exactly one of** `prefab` (single piece) or `prefab_pool`
+/// (+ `pieces`, jigsaw multi-piece assembly, ADR-0004). The exclusivity and
+/// pool-existence rules are enforced by validation (`DW0160` / `DW0161`); the
+/// full jigsaw layout semantics land in M2 task #9 (spec-0002).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Area {
@@ -41,26 +48,34 @@ pub struct Area {
     pub id: AreaId,
     /// Player-facing area name.
     pub name: String,
-    /// The single prefab bound to this area (v0).
-    pub prefab: PrefabId,
-    /// Reserved (M2): jigsaw prefab pool. Rejected in v0 (`DW0141`).
+    /// The single prefab bound to this area (mutually exclusive with
+    /// `prefab_pool`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prefab_pool: Option<PrefabPool>,
+    pub prefab: Option<PrefabId>,
+    /// The jigsaw prefab pool bound to this area (mutually exclusive with
+    /// `prefab`); requires `pieces`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefab_pool: Option<PoolId>,
+    /// Jigsaw piece-count bounds (only with `prefab_pool`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pieces: Option<Pieces>,
 }
 
-/// Reserved M2 jigsaw prefab pool (rejected in v0).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+/// Inclusive piece-count bounds for a jigsaw `prefab_pool` area.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct PrefabPool {
-    /// Candidate prefabs for jigsaw assembly.
-    pub pools: Vec<PrefabId>,
+pub struct Pieces {
+    /// Minimum number of pieces to assemble.
+    pub min: u32,
+    /// Maximum number of pieces to assemble.
+    pub max: u32,
 }
 
 // ---------------------------------------------------------------------------
 // Stage 2 — npcs
 // ---------------------------------------------------------------------------
 
-/// Stage 2 payload: the campaign's NPCs and their dialogue graphs.
+/// Stage 2 payload: the campaign's NPCs (casting sheets).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NpcsContent {
@@ -68,7 +83,10 @@ pub struct NpcsContent {
     pub npcs: Vec<Npc>,
 }
 
-/// A stationary NPC bound to an area anchor.
+/// A stationary NPC bound to an area anchor (a casting sheet, spec-0001 v0.2).
+///
+/// Stage 2 carries **no dialogue** — the structured [`Persona`] is the character
+/// contract the stage-6 `dialogue` tree must honor.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Npc {
@@ -84,8 +102,44 @@ pub struct Npc {
     pub anchor: AnchorId,
     /// The vanilla entity to re-dress, e.g. `minecraft:villager`.
     pub base_entity: String,
-    /// The NPC's dialogue graph.
-    pub dialogue: Dialogue,
+    /// The structured persona (character contract for stage 6).
+    pub persona: Persona,
+}
+
+/// A structured casting sheet (owner decision 2026-07-30). Structure lives in the
+/// keys; every value is free text. `archetype`, `speech_style` and `motivation`
+/// are required; the rest are optional.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Persona {
+    /// One-line character archetype (required).
+    pub archetype: String,
+    /// How the NPC speaks — register, tics, formality (required).
+    pub speech_style: String,
+    /// Emotional bearing toward the player (optional).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub demeanor: Option<String>,
+    /// What the NPC wants (required).
+    pub motivation: String,
+    /// Something the NPC hides (optional).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret: Option<String>,
+    /// Backstory colour (optional).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backstory: Option<String>,
+    /// Attitudes toward other same-stage NPCs (optional; refs validated).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub relationships: Vec<Relationship>,
+}
+
+/// One persona relationship: an attitude toward another same-stage NPC.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Relationship {
+    /// The other NPC (stage-2 ref, validated within stage 2).
+    pub npc: NpcId,
+    /// Free-text attitude toward that NPC.
+    pub attitude: String,
 }
 
 /// NPC role. `vendor` and `boss` are reserved (rejected in v0, `DW0141`).
@@ -113,10 +167,31 @@ impl Role {
     }
 }
 
-/// A dialogue graph: a root node plus a set of nodes.
+// ---------------------------------------------------------------------------
+// Stage 6 — dialogue
+// ---------------------------------------------------------------------------
+
+/// Stage 6 payload: one dialogue tree per stage-2 NPC (spec-0001 v0.2).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct Dialogue {
+pub struct DialogueContent {
+    /// One tree per NPC (1:1 with stage 2, both directions).
+    pub dialogues: Vec<NpcDialogue>,
+}
+
+impl DialogueContent {
+    /// The dialogue tree for an NPC id, if present.
+    pub fn tree_for(&self, npc: &str) -> Option<&NpcDialogue> {
+        self.dialogues.iter().find(|t| t.npc.as_str() == npc)
+    }
+}
+
+/// One NPC's dialogue tree: a root node plus a set of nodes.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NpcDialogue {
+    /// The NPC this tree belongs to (stage-2 ref).
+    pub npc: NpcId,
     /// The entry node id; every node must be reachable from it.
     pub root: DialogueId,
     /// The dialogue nodes.

@@ -1,6 +1,6 @@
 {
-  "description": "dialogue effect references an unknown objective",
-  "expect": "DW0122",
+  "description": "two dialogue trees are declared for the same npc",
+  "expect": "DW0111",
   "documents": {
     "dialogue": {
       "dsl_version": "0.2.0",
@@ -24,13 +24,25 @@
                         "objective": "obj/talk"
                       }
                     ]
-                  },
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "npc": "npc/keeper",
+            "root": "dlg/greeting",
+            "nodes": [
+              {
+                "id": "dlg/greeting",
+                "text": "Halt, traveler.",
+                "options": [
                   {
-                    "label": "Something else.",
+                    "label": "Open the door, please.",
                     "effects": [
                       {
                         "type": "complete-objective",
-                        "objective": "obj/nonexistent"
+                        "objective": "obj/talk"
                       }
                     ]
                   }

@@ -9,7 +9,7 @@ use std::fs;
 
 use delvewright_dsl::envelope::Envelope;
 use delvewright_dsl::stages::{
-    ClassesContent, NpcsContent, QuestPlanContent, QuestsContent, WorldContent,
+    ClassesContent, DialogueContent, NpcsContent, QuestPlanContent, QuestsContent, WorldContent,
 };
 use delvewright_dsl::to_canonical_string;
 use serde::{Serialize, de::DeserializeOwned};
@@ -38,4 +38,5 @@ fn roundtrip_all_valid_fixtures() {
     roundtrip::<ClassesContent>("classes.json");
     roundtrip::<QuestPlanContent>("quest-plan.json");
     roundtrip::<QuestsContent>("quests.json");
+    roundtrip::<DialogueContent>("dialogue.json");
 }

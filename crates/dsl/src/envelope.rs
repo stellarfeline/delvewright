@@ -5,10 +5,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::diagnostic::{Diagnostic, codes};
 use crate::ids::CampaignId;
-use crate::stages::{ClassesContent, NpcsContent, QuestPlanContent, QuestsContent, WorldContent};
+use crate::stages::{
+    ClassesContent, DialogueContent, NpcsContent, QuestPlanContent, QuestsContent, WorldContent,
+};
 
 /// The `dsl_version` this crate implements.
-pub const SUPPORTED_DSL_VERSION: &str = "0.1.0";
+pub const SUPPORTED_DSL_VERSION: &str = "0.2.0";
 
 /// Which stage a document belongs to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -24,10 +26,13 @@ pub enum Stage {
     QuestPlan,
     /// Stage 5.
     Quests,
+    /// Stage 6.
+    Dialogue,
 }
 
 impl Stage {
-    /// The wire/filename name (`world`, `npcs`, `classes`, `quest-plan`, `quests`).
+    /// The wire/filename name (`world`, `npcs`, `classes`, `quest-plan`,
+    /// `quests`, `dialogue`).
     pub fn name(self) -> &'static str {
         match self {
             Stage::World => "world",
@@ -35,6 +40,7 @@ impl Stage {
             Stage::Classes => "classes",
             Stage::QuestPlan => "quest-plan",
             Stage::Quests => "quests",
+            Stage::Dialogue => "dialogue",
         }
     }
 }
@@ -53,7 +59,7 @@ pub struct Envelope<T> {
     pub content: T,
 }
 
-/// The five parsed stage documents that make up one campaign.
+/// The six parsed stage documents that make up one campaign.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Campaign {
     /// Stage 1.
@@ -66,9 +72,11 @@ pub struct Campaign {
     pub quest_plan: Envelope<QuestPlanContent>,
     /// Stage 5.
     pub quests: Envelope<QuestsContent>,
+    /// Stage 6.
+    pub dialogue: Envelope<DialogueContent>,
 }
 
-/// The five stage documents as raw JSON strings (compiler input).
+/// The six stage documents as raw JSON strings (compiler input).
 #[derive(Clone, Debug, PartialEq)]
 pub struct RawCampaign {
     /// `world.json`.
@@ -81,6 +89,8 @@ pub struct RawCampaign {
     pub quest_plan: String,
     /// `quests.json`.
     pub quests: String,
+    /// `dialogue.json`.
+    pub dialogue: String,
 }
 
 fn parse_stage<T: for<'de> Deserialize<'de>>(
@@ -103,7 +113,7 @@ fn parse_stage<T: for<'de> Deserialize<'de>>(
     }
 }
 
-/// Parse all five stage documents.
+/// Parse all six stage documents.
 ///
 /// On any schema/parse failure returns every `DW0100` diagnostic collected
 /// (validation cannot run on unparseable input).
@@ -114,6 +124,7 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
     let mut classes = Err(());
     let mut quest_plan = Err(());
     let mut quests = Err(());
+    let mut dialogue = Err(());
 
     parse_stage(&raw.world, Stage::World, &mut world, &mut diags);
     parse_stage(&raw.npcs, Stage::Npcs, &mut npcs, &mut diags);
@@ -125,15 +136,19 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
         &mut diags,
     );
     parse_stage(&raw.quests, Stage::Quests, &mut quests, &mut diags);
+    parse_stage(&raw.dialogue, Stage::Dialogue, &mut dialogue, &mut diags);
 
-    match (world, npcs, classes, quest_plan, quests) {
-        (Ok(world), Ok(npcs), Ok(classes), Ok(quest_plan), Ok(quests)) => Ok(Campaign {
-            world,
-            npcs,
-            classes,
-            quest_plan,
-            quests,
-        }),
+    match (world, npcs, classes, quest_plan, quests, dialogue) {
+        (Ok(world), Ok(npcs), Ok(classes), Ok(quest_plan), Ok(quests), Ok(dialogue)) => {
+            Ok(Campaign {
+                world,
+                npcs,
+                classes,
+                quest_plan,
+                quests,
+                dialogue,
+            })
+        }
         _ => Err(diags),
     }
 }

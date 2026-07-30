@@ -22,6 +22,7 @@ fn schemas_accept_valid_fixtures() {
     assert_valid_against_stage("classes.json", Stage::Classes);
     assert_valid_against_stage("quest-plan.json", Stage::QuestPlan);
     assert_valid_against_stage("quests.json", Stage::Quests);
+    assert_valid_against_stage("dialogue.json", Stage::Dialogue);
 }
 
 #[test]

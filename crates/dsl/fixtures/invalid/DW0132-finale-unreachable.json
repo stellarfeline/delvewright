@@ -3,7 +3,7 @@
   "expect": "DW0132",
   "documents": {
     "quest-plan": {
-      "dsl_version": "0.1.0",
+      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
       "stage": "quest-plan",
       "content": {
@@ -33,7 +33,7 @@
       }
     },
     "quests": {
-      "dsl_version": "0.1.0",
+      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
       "stage": "quests",
       "content": {
