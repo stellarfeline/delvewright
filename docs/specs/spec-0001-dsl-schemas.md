@@ -133,6 +133,14 @@ Prefab metadata (in `prefabs/`, format owned by this spec) declares named anchor
 structure. The compiler resolves `anchor/…` refs against the prefabs actually bound in
 stage 1 and fails validation on any miss. Every area's prefab must declare `spawn`.
 
+**Lighting requirement (owner QA finding, 2026-07-30):** every prefab's playable
+interior must be lit for human play (embedded light sources; interior floor light
+level ≥ 8 as the authoring bar). The validation bot navigates by protocol data, not
+vision, so darkness is invisible to machine validation — lighting is an authoring
+rule enforced at prefab curation and checked in the owner's QA hour. Prefab metadata
+carries a `lit` attestation; the M1 `hello-room` (shipped unlit) must be re-lit
+under this rule in M2.
+
 ## Validation rules (each rule gets a violating fixture in CI)
 
 1. Envelope: wrong `stage`, unknown fields, bad `dsl_version` → reject.

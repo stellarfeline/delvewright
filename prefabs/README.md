@@ -9,3 +9,8 @@ the source/license of every asset is recorded in its prefab metadata. See
 `LICENSE-ASSETS.md` for the full statement. **git-lfs note:** binary `.nbt`
 files are tracked via git-lfs (see `.gitattributes`); clone with git-lfs
 installed, and CI checks out this directory only in the tiers that need it.
+
+**Authoring rule (owner QA, 2026-07-30): light your interiors.** Playable interior
+areas must reach floor light level ≥ 8 with embedded light sources — the validation
+bot navigates by protocol data and cannot see darkness; humans can. See spec-0001
+"Lighting requirement".

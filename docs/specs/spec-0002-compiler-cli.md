@@ -91,6 +91,22 @@ and spawns/initializes NPCs, gates, and markers.
   `sidebar` display slot by the compiler so the bot can observe its score.
 - One step per critical-path objective, in a valid topological order.
 
+## Environment sealing (owner QA finding 2026-07-30; emission requirement, lands M2)
+
+A delve is a box garden: **every dynamic in it is authored; nothing is left to
+vanilla chance.** The M1 playtest found natural hostile spawning uncontrolled (no
+mobs appeared only by luck — a void world with light-0 interiors is a spawnable
+surface). The bootstrap must emit a sealing baseline:
+
+- `doMobSpawning false` — mobs exist only where the campaign summons them
+  (1.21.11 gamerule registry names: `minecraft:`-prefixed snake_case)
+- `doDaylightCycle false` + a fixed authored time of day (default noon; a stage-1
+  field may override later) — lighting is deterministic, day or night is a
+  narrative choice
+- `doWeatherCycle false`, `doFireTick false`, `mobGriefing false` — no weather
+  surprises, no spreading fire, no NPC/creeper terrain damage
+- Each rule gets a regression assertion; PackTest asserts the sealed state on boot.
+
 ## Determinism rules (ADR-0006, enforced here)
 
 - All iteration over maps/sets is order-defined (BTreeMap or explicit sort).
