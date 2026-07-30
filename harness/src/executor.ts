@@ -246,9 +246,15 @@ export class MineflayerExecutor implements StepExecutor {
     await delay(2_000);
   }
 
-  /** Walk to within `radius` of the anchor using the pathfinder. */
+  /**
+   * Walk to the anchor using the pathfinder. The datapack completes the objective
+   * with a `distance=..radius` check on the exact anchor point, so the bot targets
+   * a goal one block *tighter* than `radius` — landing well inside the check rather
+   * than on its boundary (where the pathfinder's block-granular goal and the
+   * server's precise-position check can disagree).
+   */
   async reach(step: ReachStep): Promise<void> {
-    await this.walkTo(step.pos, step.radius, `anchor ${step.anchor}`);
+    await this.walkTo(step.pos, Math.max(1, step.radius - 1), `anchor ${step.anchor}`);
   }
 
   /**
@@ -298,19 +304,21 @@ export class MineflayerExecutor implements StepExecutor {
     const bot = this.requireBot();
     await this.equipLoadout();
     await this.walkTo(step.pos, 3, `wave ${step.wave}`);
+    // Give AI-enabled mobs a moment to path toward the bot after we arrive.
+    await delay(1_000);
+    // Diagnostic: what does the bot see near the wave anchor?
+    const near = Object.values(bot.entities)
+      .filter((e) => e && e !== bot.entity && bot.entity.position.distanceTo(e.position) < 48)
+      .map((e) => `${e.name ?? "?"}(t=${e.type},k=${(e as { kind?: string }).kind ?? "?"},h=${e.height ?? "?"})`);
+    process.stderr.write(`[kill ${step.wave}] nearby(${near.length}): ${near.join(", ") || "none"}\n`);
 
     const deadline = Date.now() + KILL_TIMEOUT_MS;
     let emptyStreak = 0;
     while (Date.now() < deadline) {
-      const mob = bot.nearestEntity((e) => {
-        if (!e || e.type === "player") return false;
-        if ((e as { kind?: string }).kind === "Hostile mobs") return true;
-        // Fallback: a mob that is not the stationary NPC / interaction hitbox.
-        return e.type === "mob" && e.name !== "villager" && e.name !== "interaction";
-      });
+      const mob = bot.nearestEntity((e) => isWaveMob(e, bot.entity));
       if (!mob) {
-        // Several empty polls in a row → the wave is cleared.
-        if (++emptyStreak >= 4) return;
+        // A sustained absence of wave mobs (world is sealed) → wave cleared.
+        if (++emptyStreak >= 8) return;
         await delay(REACH_POLL_MS);
         continue;
       }
@@ -404,4 +412,44 @@ export class MineflayerExecutor implements StepExecutor {
 
 function fmt(p: { x: number; y: number; z: number }): string {
   return `[${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}]`;
+}
+
+/**
+ * Entity names that are never a combat target. The delve world is sealed
+ * (`spawn_mobs false`), so the only living mobs are compiler-summoned wave mobs;
+ * everything else near the bot is an NPC, a display, or a dropped object.
+ */
+const NON_WAVE_ENTITIES = new Set<string>([
+  "player",
+  "villager",
+  "interaction",
+  "item",
+  "experience_orb",
+  "arrow",
+  "spectral_arrow",
+  "armor_stand",
+  "marker",
+  "text_display",
+  "block_display",
+  "item_display",
+  "area_effect_cloud",
+  "item_frame",
+  "glow_item_frame",
+  "painting",
+  "leash_knot",
+  "fishing_bobber",
+]);
+
+/**
+ * True if `e` is a slayable wave mob: not the bot, not a player/NPC/display/
+ * dropped object, and tall enough to be a living mob (excludes small dropped
+ * entities). Classified by name (reliable across mineflayer versions) rather than
+ * `type`/`kind`, which vary.
+ */
+function isWaveMob(e: unknown, self: unknown): boolean {
+  if (!e || e === self) return false;
+  const ent = e as { name?: string; height?: number };
+  const name = ent.name ?? "";
+  if (name === "" || NON_WAVE_ENTITIES.has(name)) return false;
+  return (ent.height ?? 0) >= 0.5;
 }
