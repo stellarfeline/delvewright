@@ -107,10 +107,10 @@ pub fn build(
     // ---- critical path ----
     put_json(&mut out, "critical-path.json", &emit_critical_path(plan));
 
-    // ---- validate every emitted mcfunction ----
+    // ---- validate every emitted vanilla mcfunction ----
     let mut errors = Vec::new();
     for (path, bytes) in &out {
-        if path.ends_with(".mcfunction")
+        if is_vanilla_function(path)
             && let Ok(body) = std::str::from_utf8(bytes)
         {
             errors.extend(tree.validate_function(body));
@@ -127,17 +127,26 @@ pub fn build(
     Ok(out)
 }
 
-/// Re-validate every emitted `.mcfunction` in a built tree (used by tests).
+/// Re-validate every emitted vanilla `.mcfunction` in a built tree (used by
+/// tests). PackTest functions are excluded — see [`is_vanilla_function`].
 pub fn validate_emitted(out: &BuildOutput, tree: &CommandTree) -> Vec<CommandError> {
     let mut errors = Vec::new();
     for (path, bytes) in out {
-        if path.ends_with(".mcfunction")
+        if is_vanilla_function(path)
             && let Ok(body) = std::str::from_utf8(bytes)
         {
             errors.extend(tree.validate_function(body));
         }
     }
     errors
+}
+
+/// A `.mcfunction` that must pass the vanilla 1.21.11 command-tree validator.
+/// The `packtest-datapack/` suite uses PackTest-only commands (`assert`, …) and
+/// runs on the modded validation server, so it is exempt (spec-0003/ADR-0003:
+/// mods are tooling-only, never the player-facing datapack).
+fn is_vanilla_function(path: &str) -> bool {
+    path.ends_with(".mcfunction") && !path.starts_with("packtest-datapack/")
 }
 
 // ---------------------------------------------------------------------------
@@ -687,8 +696,16 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
 // packtest / server / critical-path / manifest
 // ---------------------------------------------------------------------------
 
+/// Emit the compiler-generated PackTest suite (spec-0003). PackTest (misode,
+/// 2.4.0 for MC 1.21.11) auto-discovers `*.mcfunction` files under
+/// `data/<ns>/test/`; each is one game test driven by `# @…` directive comments,
+/// with `assert`/`await`/`succeed`/`fail` commands the mod adds. Run headlessly
+/// with `-Dpacktest.auto` (exit code = failed tests). These functions use
+/// PackTest-only commands and run on the modded validation server, so they are
+/// exempt from the vanilla command-tree validator (see `is_vanilla_function`).
 fn emit_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
+    let c = plan.campaign;
     put_json(
         out,
         "packtest-datapack/pack.mcmeta",
@@ -700,22 +717,52 @@ fn emit_packtest(plan: &Plan, out: &mut BuildOutput) {
             }
         }),
     );
-    // Provisional mechanism assertions (vanilla commands only, so they pass the
-    // command validator). The exact PackTest test-registration wiring is
-    // finalized in the spec-0003 task; these are byte-stable placeholders.
+
+    // The completion objective + value the critical path asserts on.
+    let (comp_obj, comp_val) = plan
+        .critical_path
+        .iter()
+        .find_map(|s| match s {
+            Step::AssertComplete { objective, value } => Some((objective.clone(), *value)),
+            _ => None,
+        })
+        .unwrap_or_else(|| ("dw.campaign".to_string(), 1));
+
+    // Mechanism test: on a dummy player, run the real generated init, activate the
+    // campaign-start quests (as class selection does), drive each objective's
+    // generated completion function (as the dialog `/trigger` and the reach
+    // proximity check do), then assert the completion objective is set. This
+    // proves the compiler's objective -> quest -> campaign chain end to end
+    // without needing dialog-UI clicks or bot movement (verified live: passes on
+    // Fabric + PackTest 2.4.0).
     let mut body: Vec<String> = Vec::new();
-    body.push("# Provisional PackTest assertions (spec-0003 finalizes registration).".to_string());
     body.push(format!(
-        "execute unless score #init dw.sys matches 1 run function {ns}:setup"
+        "#> {}: objective completions set {comp_obj} (Delvewright mechanism test)",
+        c.world.content.title
     ));
-    for npc in &plan.npcs {
+    body.push("# @dummy".to_string());
+    body.push("# @timeout 100".to_string());
+    body.push(String::new());
+    body.push(format!("function {ns}:setup"));
+    for qid in campaign_start_quests(c) {
         body.push(format!(
-            "execute unless entity @e[type=minecraft:villager,tag={},limit=1] run say PACKTEST_FAIL {} missing",
-            npc.tag, npc.npc_id
+            "scoreboard players set @a {} 1",
+            quest_active_score(qid)
         ));
     }
+    for q in &c.quests.content.quests {
+        for o in &q.objectives {
+            body.push(format!(
+                "execute as @a run function {ns}:complete_{}",
+                safe_obj_fn(o.id().as_str())
+            ));
+        }
+    }
+    // `assert score` requires a single-entity selector (@p = the dummy player).
+    body.push(format!("assert score @p {comp_obj} matches {comp_val}"));
+
     out.insert(
-        format!("packtest-datapack/data/{ns}/function/test/mechanisms.mcfunction"),
+        format!("packtest-datapack/data/{ns}/test/campaign.mcfunction"),
         lines(&body).into_bytes(),
     );
 }

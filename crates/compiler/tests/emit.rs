@@ -108,7 +108,10 @@ fn live_load_shakeout_fixes() {
     )
     .unwrap();
     let entity = &adv["criteria"]["interact"]["conditions"]["entity"];
-    assert!(entity.is_object(), "entity condition must be an object, not a list");
+    assert!(
+        entity.is_object(),
+        "entity condition must be an object, not a list"
+    );
     assert_eq!(entity["type"], "minecraft:interaction");
 
     // 3. setup must forceload the prefab chunks before placement (else place/
@@ -117,7 +120,10 @@ fn live_load_shakeout_fixes() {
     let setup = text(&out, "datapack/data/hello-world/function/setup.mcfunction");
     let force_idx = setup.find("forceload add").expect("forceload emitted");
     let place_idx = setup.find("place template").expect("place emitted");
-    assert!(force_idx < place_idx, "forceload must precede place template");
+    assert!(
+        force_idx < place_idx,
+        "forceload must precede place template"
+    );
     assert!(setup.contains("setworldspawn "), "setworldspawn emitted");
 
     // 4. campaign_complete broadcasts the machine-readable completion marker the
@@ -129,6 +135,43 @@ fn live_load_shakeout_fixes() {
     assert!(
         complete.contains("[Delvewright] complete dw.campaign 1"),
         "completion marker must be broadcast for the bot"
+    );
+}
+
+/// The generated PackTest suite registers at the path PackTest auto-discovers
+/// (`data/<ns>/test/`, NOT under `function/`) and is a real test (directives +
+/// `assert`) that drives the completion chain — verified live on Fabric +
+/// PackTest 2.4.0.
+#[test]
+fn packtest_suite_is_a_real_test() {
+    let out = build_hello_world();
+    let test = text(
+        &out,
+        "packtest-datapack/data/hello-world/test/campaign.mcfunction",
+    );
+    assert!(test.contains("# @dummy"), "declares a dummy player");
+    assert!(
+        test.contains("function hello-world:setup"),
+        "runs the real generated init"
+    );
+    assert!(
+        test.contains("run function hello-world:complete_o_talk"),
+        "drives the talk objective completion"
+    );
+    assert!(
+        test.contains("run function hello-world:complete_o_exit"),
+        "drives the reach objective completion"
+    );
+    assert!(
+        test.contains("assert score @p dw.campaign matches 1"),
+        "asserts the campaign objective is set"
+    );
+    // The old provisional path under function/ must be gone — PackTest would not
+    // discover a test there.
+    assert!(
+        out.keys()
+            .all(|p| !p.contains("packtest-datapack") || !p.contains("/function/")),
+        "no packtest function under /function/ (PackTest scans /test/)"
     );
 }
 
