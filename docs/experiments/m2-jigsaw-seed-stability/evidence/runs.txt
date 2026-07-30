@@ -1,0 +1,12 @@
+=== A: same seed (20260729), same pos, fresh worlds x6 ===
+dwrunA1 seed=20260729 pos='0 -59 0' depth=6 | forceload='64 force loaded chunks' | place='Generated jigsaw at 0, -59, 0' | markers=28 | sha256=af51546b8d9febcde2b5a95809f05d494f92c35d8449b99189170b983244fd90
+dwrunA2 seed=20260729 pos='0 -59 0' depth=6 | forceload='64 force loaded chunks' | place='Generated jigsaw at 0, -59, 0' | markers=28 | sha256=af51546b8d9febcde2b5a95809f05d494f92c35d8449b99189170b983244fd90
+dwrunA3 seed=20260729 pos='0 -59 0' depth=6 | forceload='64 force loaded chunks' | place='Generated jigsaw at 0, -59, 0' | markers=28 | sha256=af51546b8d9febcde2b5a95809f05d494f92c35d8449b99189170b983244fd90
+dwrunA4 seed=20260729 pos='0 -59 0' depth=6 | forceload='64 force loaded chunks' | place='Generated jigsaw at 0, -59, 0' | markers=28 | sha256=af51546b8d9febcde2b5a95809f05d494f92c35d8449b99189170b983244fd90
+dwrunA5 seed=20260729 pos='0 -59 0' depth=6 | forceload='64 force loaded chunks' | place='Generated jigsaw at 0, -59, 0' | markers=28 | sha256=af51546b8d9febcde2b5a95809f05d494f92c35d8449b99189170b983244fd90
+dwrunA6 seed=20260729 pos='0 -59 0' depth=6 | forceload='64 force loaded chunks' | place='Generated jigsaw at 0, -59, 0' | markers=28 | sha256=af51546b8d9febcde2b5a95809f05d494f92c35d8449b99189170b983244fd90
+=== B: DIFFERENT seed (99999999), same pos, fresh worlds x3 ===
+dwrunB1 seed=99999999 pos='0 -59 0' depth=6 | forceload='64 force loaded chunks' | place='Generated jigsaw at 0, -59, 0' | markers=46 | sha256=b41133ee7b789d24729f00c3dc19a035e70b9119bc8695d08304b039ff564b40
+dwrunB2 seed=99999999 pos='0 -59 0' depth=6 | forceload='64 force loaded chunks' | place='Generated jigsaw at 0, -59, 0' | markers=46 | sha256=b41133ee7b789d24729f00c3dc19a035e70b9119bc8695d08304b039ff564b40
+dwrunB3 seed=99999999 pos='0 -59 0' depth=6 | forceload='64 force loaded chunks' | place='Generated jigsaw at 0, -59, 0' | markers=46 | sha256=b41133ee7b789d24729f00c3dc19a035e70b9119bc8695d08304b039ff564b40
+DONE

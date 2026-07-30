@@ -1,0 +1,9 @@
+{
+  "fallback": "minecraft:empty",
+  "elements": [
+    { "weight": 2, "element": { "element_type": "minecraft:single_pool_element", "location": "dwexp:room_iron", "projection": "rigid", "processors": "minecraft:empty" } },
+    { "weight": 2, "element": { "element_type": "minecraft:single_pool_element", "location": "dwexp:room_diamond", "projection": "rigid", "processors": "minecraft:empty" } },
+    { "weight": 3, "element": { "element_type": "minecraft:single_pool_element", "location": "dwexp:corridor", "projection": "rigid", "processors": "minecraft:empty" } },
+    { "weight": 1, "element": { "element_type": "minecraft:single_pool_element", "location": "dwexp:deadend", "projection": "rigid", "processors": "minecraft:empty" } }
+  ]
+}
