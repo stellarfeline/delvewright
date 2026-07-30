@@ -2,7 +2,10 @@
 
 - **Status**: v0.1 Approved & implemented (M1); **v0.2 Approved & implemented**
   (M2 task #8 — six-document schema, structured persona, stage-6 dialogue,
-  prefab-pool binding + lighting metadata; pool *layout* assembly still M2 task #9)
+  prefab-pool binding + lighting metadata; pool *layout* assembly still M2 task #9);
+  **v0.3 Proposed & DSL layer implemented** (M2 task `m2-gameplay-verbs` — the
+  gameplay verbs; DSL types + validation landed, emission/harness follow — see the
+  [v0.3 addendum](#v03-addendum--gameplay-verbs) and spec-0002)
 - **ADRs**: 0001 (DSL→compiler), 0002 (staged), 0004 (prefab refs), 0006
   (determinism), 0012 (skill authors these documents)
 
@@ -179,7 +182,93 @@ As refined 2026-07-30 — darkness must be a declared decision, never a default:
       `/place template` per piece (ADR-0004 amendment; see spec-0002 and
       `crates/compiler/README.md`).
 
+## v0.3 addendum — gameplay verbs
+
+**Owner requirement (M2):** combat, interaction, items and puzzles. `dsl_version`
+`0.3.0` is an **additive superset** of `0.2.0` — both are accepted, and every
+`0.2.0` campaign compiles byte-identically (`hello-world`, `keep-crawl`
+unchanged). All v0.3 surface lives in **stage 5**; the version gate is the
+quests-stage `dsl_version`. Under `0.2.0` the verbs below remain reserved
+(`DW0141`); under `0.3.0` they are implemented.
+
+### Reserved verbs, now implemented (owner-approved mapping)
+
+- **`kill` objective** — `{ "type":"kill", "id":"obj/…", "wave":"wave/<id>",
+  "after"?:[…], "requires_flags"?:[…] }`. Completes when the referenced wave is
+  fully slain.
+- **`collect` objective** — `{ "type":"collect", "id":"obj/…", "item":"minecraft:…",
+  "count":n, "anchor":"anchor/…", "after"?, "requires_flags"? }`. `count` of `item`
+  are provided at `anchor` (a chest holding them — emission choice, spec-0002);
+  detection via the `inventory_changed` advancement.
+- **`interact` objective** — `{ "type":"interact", "id":"obj/…", "anchor":"anchor/…",
+  "requires_item"?:"minecraft:…", "after"?, "requires_flags"? }`. An interaction
+  entity stands at `anchor`; if `requires_item` is set, completion additionally
+  requires that item in inventory (`execute if items`, available in 1.21.11).
+
+### Waves (new stage-5 section)
+
+`content.waves[]`: `{ "id":"wave/<id>", "anchor":"anchor/…",
+"mobs":[{ "entity":"minecraft:…", "count":n, "name"? }] }`. Entity ids are
+validated against the pinned registry. **Emission** (spec-0002): the `spawn-wave`
+effect summons the wave's mobs tagged `dw_wave_<id>` with **AI enabled** (NoAI is
+*not* set — they fight); a `player_killed_entity` advancement per wave tag
+decrements a scoreboard countdown; the `kill` objective completes when the count
+reaches zero. **Static guarantee:** a wave killed by some objective must be
+spawned by some `spawn-wave` effect (`DW0171`) — a wave is only reachable once an
+effect has spawned it.
+
+### Effects (reserved → implemented)
+
+- **`spawn-wave`** — `{ "type":"spawn-wave", "wave":"wave/<id>" }`.
+- **`give-item`** — `{ "type":"give-item", "item":"minecraft:…", "count":n }`.
+- **`set-flag`** — `{ "type":"set-flag", "flag":"flag/<id>" }`.
+
+### Flags & gating
+
+Flags have **no declaration list** — the flag namespace is exactly the set of
+flags produced by some `set-flag` effect. Any objective may carry
+`"requires_flags":["flag/<id>",…]`: the objective activates only once *all* listed
+flags are set (an AND gate layered on top of `after`). This is the puzzle
+primitive.
+
+### Puzzle idioms (documented; no new machinery)
+
+- **Key-and-door:** a `collect` objective for the key, then an `interact` on the
+  door with `requires_item` = the key.
+- **Lever sequence:** ordered `interact` objectives, each firing `set-flag`, with
+  later objectives gated by `requires_flags` + `after`.
+- **Causal chain:** a `set-flag` in one quest/objective enables a
+  `requires_flags`-gated objective elsewhere — flag-gated cross-quest ordering.
+
+### Validation (new codes; each has a violating fixture)
+
+| Code | Rule |
+|------|------|
+| `DW0170` | `kill`/`spawn-wave` references an undeclared `wave/<id>` (dangling). |
+| `DW0171` | a killed wave is never spawned by any `spawn-wave` effect. |
+| `DW0172` | `requires_flags` references a flag no `set-flag` ever produces. |
+| `DW0173` | a wave mob `entity` is not a known vanilla entity id. |
+
+Item ids on `collect`/`interact.requires_item`/`give-item` reuse `DW0143`; their
+anchors reuse `DW0142`. **Wave anchors and pool-area objective anchors are
+resolved by the compiler** (full prefab metadata + the solver), not the DSL layer
+— consistent with the existing pool-area deferral for `reach-anchor`.
+
+### Acceptance criteria (v0.3)
+
+- [x] `0.2.0` campaigns validate and compile unchanged; `hello-world` +
+      `keep-crawl` output byte-identical (regression).
+- [x] A `0.3.0` campaign exercising all three verbs, both new effects, a wave and
+      a `requires_flags` chain validates with **zero** diagnostics and round-trips
+      canonically (`crates/dsl/tests/v03.rs`).
+- [x] Each of `DW0170`–`DW0173` has an isolating fixture yielding exactly its
+      code; the `crates/dsl/README.md` code table + matrix are updated.
+- [ ] Emission + the `keep-trial` full-ladder fixture (bot walks it, combat
+      included) — spec-0002 addendum; **pending** (see that spec's status).
+
 ## Open
 
 None — both v0.2 questions resolved by the owner 2026-07-30 (mandatory-only
-confirmed; structured persona adopted).
+confirmed; structured persona adopted). v0.3 verb mapping is owner-approved; the
+emission details (chest-based `collect`, interaction-entity `interact`) are
+compiler choices within spec-0002's latitude.

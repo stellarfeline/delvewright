@@ -136,3 +136,71 @@ legacy camelCase and `minecraft:`-prefixed forms are both rejected). Emitted:
       successfully executed by the harness in M1.
 - [ ] A fixture with a deliberately unreachable finale exits 2 with code DW0201
       (reachability), proving analyze is not vacuous.
+
+## v0.3 addendum — gameplay-verb emission & critical path
+
+**Status: Proposed; DSL layer landed, emission + harness pending** (M2 task
+`m2-gameplay-verbs`). Covers the spec-0001 v0.3 verbs (combat, interaction,
+items, puzzles). The critical-path `version` field is now **campaign-derived**
+(`manifest.dsl_version` too): a `0.2.0` campaign still emits a `0.2.0` critical
+path (byte-identity preserved); a `0.3.0` campaign emits `0.3.0`.
+
+### New critical-path step shapes (version `0.3.0`)
+
+The harness gains a pathfinder (`mineflayer-pathfinder`), so movement steps and
+these new steps may cross turns/branches. Each step carries everything the bot
+needs; the compiler resolves absolute positions after layout.
+
+```json
+{ "action": "kill", "wave": "wave/<id>", "pos": [x,y,z], "tag": "dw_wave_<id>", "count": n }
+{ "action": "collect", "item": "minecraft:<id>", "count": n, "pos": [x,y,z] }
+{ "action": "interact", "anchor": "anchor/<id>", "pos": [x,y,z],
+  "command": "/trigger dw.i_<obj> set 1", "requires_item": "minecraft:<id>|null" }
+```
+
+- **`kill`**: goto `pos` (the wave anchor), then attack the nearest entity tagged
+  `tag` in a loop (with a timeout); completion is observed on the existing
+  broadcast **marker channel** (`[Delvewright] complete …`, extended per
+  objective), not the scoreboard (mineflayer can't read 1.21.11 scores).
+- **`interact`**: goto `pos`, then send `command` — the same `run_command`
+  `/trigger` the interaction advancement fires, reusing the dialog/`talk-to`
+  run_command duality. If `requires_item` is set, the emitted completion function
+  guards on `execute if items entity @s … <item>`.
+- **`collect`**: goto `pos`, open the chest at the anchor (mineflayer chest API)
+  or walk item pickups; detection via the `inventory_changed` advancement.
+
+`reach`/`talk-to` movement switches from the naive "face + hold forward" walk to
+the pathfinder (unchanged on straight maps, per the regression fixtures).
+
+### Emission design (within spec-0002 latitude)
+
+- **`spawn-wave`**: a summon function places each `WaveMob` at the wave anchor,
+  tagged `dw_wave_<id>` (AI enabled). Kill detection: a `player_killed_entity`
+  advancement keyed on the tag decrements `dw.w_<id>`; at zero the linked `kill`
+  objective's completion function runs.
+- **`interact`**: one `minecraft:interaction` entity per interact anchor (tag
+  `dw_i_<obj>`), a `player_interacted_with_entity` advancement, and the
+  `requires_item` guard above.
+- **`collect`**: a chest placed at the anchor pre-loaded with `count` × `item`;
+  an `inventory_changed` advancement (item + count) completes the objective.
+- **`set-flag` / `requires_flags`**: a flag is a scoreboard `dw.f_<flag>` set to
+  1; every objective's activation predicate ANDs `if score @s dw.f_<flag> matches
+  1` for each required flag (layered on the existing `after` guards).
+- **PackTest**: the generated suite gains a per-verb mechanism test (spawn→kill
+  countdown, chest→collect, interaction→complete, flag gate).
+
+### Solver (branching growth — lifts `DW0304`)
+
+Multiple terminals (e.g. shrine **and** boss-hall) and corner/tee/cross pieces
+become usable now that the bot pathfinds. Guarantees are unchanged (connected;
+exactly one entry; every campaign-referenced anchor placed exactly once; open
+sockets sealed) and same-seed determinism holds; the "single straight spine, one
+dead-end terminal" limitation (and `DW0304`'s second clause) is removed.
+
+### Acceptance criteria (v0.3, pending)
+
+- [ ] `keep-trial` (≥7-piece branching keep with a corner/tee; talk-to, collect
+      key, interact locked door, kill a wave, set-flag chain, reach shrine)
+      double-builds byte-identically, loads zero-error, and the pathfinding bot
+      walks it end-to-end with combat visible.
+- [ ] `hello-world` + `keep-crawl` remain byte-identical (regression).
