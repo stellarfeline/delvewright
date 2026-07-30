@@ -17,8 +17,9 @@ Owner decisions of 2026-07-30, now normative:
    proper; layout semantics in spec-0002/task #9).
 3. **Lighting profiles** codified in prefab metadata (contract below).
 4. `dsl_version = "0.2.0"`; six stages; the hello-world fixture migrates.
-5. **v0.2 scope choice (owner to confirm): quests stay mandatory-only**; optional
-   quests remain reserved until M3.
+5. **Quests stay mandatory-only** (owner confirmed 2026-07-30); optional quests
+   remain reserved until M3.
+6. **Structured persona** in stage 2 (owner decision 2026-07-30) — see stage 2.
 
 ## Shared conventions
 
@@ -64,12 +65,22 @@ Owner decisions of 2026-07-30, now normative:
 { "npcs": [ { "id": "npc/keeper", "name": "The Keeper", "role": "quest-giver",
   "area": "area/keep", "anchor": "anchor/keeper-stand",
   "base_entity": "minecraft:villager",
-  "voice": "Terse, formal, archaic; never uses contractions; warms only if the player is patient.",
-  "backstory": "Has guarded the keep since the moor swallowed the old road; blames himself." } ] }
+  "persona": {
+    "archetype": "stoic gatekeeper",
+    "speech_style": "Terse, formal, archaic; never uses contractions.",
+    "demeanor": "Cold at first; warms only if the player is patient.",
+    "motivation": "Keep the door sealed until a worthy traveler arrives.",
+    "secret": "Blames himself for the moor swallowing the old road.",
+    "backstory": "Has guarded the keep alone since the road vanished.",
+    "relationships": [ { "npc": "npc/warden", "attitude": "distrusts her judgment" } ]
+  } } ] }
 ```
 
-- **No dialogue here.** `voice` and `backstory` are the character contract that
-  stage 6 must honor; they are generation conditioning, not player-visible text.
+- **No dialogue here.** The **structured persona** (owner decision 2026-07-30) is
+  the character contract stage 6 must honor — structure lives in the keys, values
+  stay free text. Required: `archetype`, `speech_style`, `motivation`; optional:
+  `demeanor`, `secret`, `backstory`, `relationships` (same-stage NPC refs,
+  validated within stage 2; `attitude` free text).
 - `role`: enum `quest-giver | flavor` (v0.2); reserved: `vendor`, `boss`.
 - NPCs are stationary (vanilla capability ceiling).
 
@@ -161,8 +172,7 @@ As refined 2026-07-30 — darkness must be a declared decision, never a default:
 - [ ] A multi-piece `prefab_pool` fixture compiles with seed-stable layout
       (task #9's experiment gates this criterion).
 
-## Open (owner input wanted)
+## Open
 
-- Confirm: mandatory-only quests through v0.2 (optional → M3)?
-- `voice`/`backstory` field shape sufficient, or do you want structured persona
-  fields (age/goals/secrets) for better generation conditioning?
+None — both v0.2 questions resolved by the owner 2026-07-30 (mandatory-only
+confirmed; structured persona adopted).
