@@ -7,11 +7,11 @@ against the vendored 1.21.11 command tree; mecha re-validates in CI only.
 ## CLI
 
 ```
-delvec validate <campaign-dir>            # stages 1–5 schema + referential checks
+delvec validate <campaign-dir>            # stages 1–6 schema + referential checks
 delvec analyze  <campaign-dir>            # quest-graph reachability (ADR-0005 static)
 delvec build    <campaign-dir> -o <out>   # full deterministic build
-delvec schema   --stage <1..5|all>        # export JSON Schema (LLM authoring aid)
-delvec --version                          # delvec x.y.z, dsl 0.1.0, mc 1.21.11
+delvec schema   --stage <1..6|all>        # export JSON Schema (LLM authoring aid)
+delvec --version                          # delvec x.y.z, dsl 0.2.0, mc 1.21.11
 ```
 
 Global: `--json` (one JSON diagnostic per line, the spec-0002 shape), `--prefabs
@@ -24,32 +24,46 @@ Global: `--json` (one JSON diagnostic per line, the spec-0002 shape), `--prefabs
 
 ## Validation vs analysis
 
-`validate` runs the DSL's six rule groups (`DW01xx`, see `crates/dsl/README.md`)
+`validate` runs the DSL's v0.2 rule groups (`DW01xx`, see `crates/dsl/README.md`)
 with the **full** injected registries: the complete 1.21.11 item registry
-(`data/items-1.21.11.json`, 1505 ids) and the real prefab anchor metadata from
-`prefabs/`. (Note: item ids the DSL's 5-item vendored subset rejects but that are
-real 1.21.11 items — e.g. `minecraft:diamond_hoe` — validate here.)
+(`data/items-1.21.11.json`, 1505 ids) and the real prefab metadata from
+`prefabs/` (anchors, pool existence, lighting). (Note: item ids the DSL's 5-item
+vendored subset rejects but that are real 1.21.11 items — e.g.
+`minecraft:diamond_hoe` — validate here.)
 
 `analyze` adds **deep semantic reachability** over the merged quest + objective +
-dialogue graph — distinct from the DSL's structural `DW0132` (convergent-sink)
-check. Codes are a stable API; the CI matrix asserts them exactly.
+stage-6 dialogue graph (distinct from the DSL's structural `DW0132`
+convergent-sink check) plus the **dark-prefab lighting-mitigation** check. Codes
+are a stable API; the CI matrix asserts them exactly.
 
-### `DW02xx` reachability codes
+### `DW02xx` analysis codes
 
 | Code | Meaning |
 |------|---------|
 | `DW0201` | Finale quest can never complete (unreachable finale). |
 | `DW0202` | Quest can never be triggered (unreachable / dead quest — its trigger's source never completes). |
-| `DW0203` | Objective can never be completed (deadlock): a `talk-to` with no dialogue option reachable from its NPC's `root` that fires `complete-objective` for it, or an `after` chain that can never be satisfied. |
+| `DW0203` | Objective can never be completed (deadlock): an `after` chain that can never be satisfied, or a `talk-to` whose completing option is unreachable *through the trigger/`after` graph*. (The per-NPC static case — a `talk-to` with no reachable completing option in its own tree — is caught earlier by the DSL's `DW0123`.) |
+| `DW0210` | A reachable `dark`-profile prefab has no proven light mitigation (spec-0001 "Lighting contract"). |
 
 Model (fixpoint): a quest is *active* if `campaign-start` or `quest-complete(X)`
 with X completable; an objective is *completable* if its quest is active, its
 `after` prerequisites are completable, and its type is satisfiable (`talk-to` ⇒ a
-reachable completing dialogue option; `reach-anchor` ⇒ always); a quest
-*completes* when active with all objectives completable; the finale is reachable
-iff its quest completes. `tests/fixtures/unreachable-finale.json` violates only
-this (removes the objective-completing dialogue option) and exits 2 / `DW0201`,
-proving analysis is not vacuous.
+reachable completing option in its NPC's stage-6 tree; `reach-anchor` ⇒ always);
+a quest *completes* when active with all objectives completable; the finale is
+reachable iff its quest completes. `tests/fixtures/unreachable-finale.json`
+violates only this — the finale is triggered solely by its own completion, so it
+never activates — and exits 2 / `DW0201`, proving analysis is not vacuous.
+
+**Dark-prefab mitigation (`DW0210`).** A `dark` prefab (floor light < 3) is valid
+only where analysis proves a mitigation. The **v0.2 sufficient mitigation is a
+night-vision item in some class kit** (owner rule); `give-item` is still reserved,
+so a quest-granted mitigation is not yet expressible and is out of scope for this
+check. Because stage-3 kit items cannot yet carry potion-effect components, a
+night-vision source is recognized by its item id or display name containing
+`night_vision`/`night vision` — a static *policy gate* ("you declared darkness,
+so declare a light source"), not a runtime guarantee. Every declared area is
+treated as reachable in v0.2; pool-bound areas are skipped until jigsaw assembly
+(M2 task #9). `tests/analyze.rs` is the dark/mitigated fixture pair.
 
 ## Command-tree validator depth (honest)
 
@@ -74,7 +88,7 @@ bogus subcommand paths.
 
 ## Build output (`<out>/`)
 
-`manifest.json` (SHA-256 of the five input stage files + every other output,
+`manifest.json` (SHA-256 of the six input stage files + every other output,
 sorted), `datapack/` (pack.mcmeta min/max_format `[94, 1]`; see note below), `packtest-datapack/`,
 `server/` (void/superflat fixed-seed config), `critical-path.json` (amended
 bot-interaction contract). Determinism (ADR-0006): all maps are `BTreeMap`/sorted;

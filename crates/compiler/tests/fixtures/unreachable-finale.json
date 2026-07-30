@@ -1,45 +1,48 @@
 {
-  "description": "Keeper dialogue never offers the option that completes obj/talk, so obj/talk can never complete, the finale quest can never complete, and deep reachability rejects it (DW0201). Validation still passes (no DSL rule is violated), proving analyze is not vacuous.",
+  "description": "The finale quest is triggered only by its own completion (quest-complete of itself), so it can never become active and never completes. No static rule is violated — depends_on is acyclic and empty (DW0130), the plan converges (DW0132), the trigger reference resolves (DW0112), and the keeper's talk-to objective still has a reachable completing option (DW0123). Only the compiler's deep fixpoint sees the deadlock: exit 2 / DW0201 (plus DW0202). Proves analyze is not vacuous now that the dialogue-completion case is caught statically.",
   "expect": "DW0201",
   "documents": {
-    "npcs": {
-      "dsl_version": "0.1.0",
+    "quests": {
+      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
-      "stage": "npcs",
+      "stage": "quests",
       "content": {
-        "npcs": [
+        "quests": [
           {
-            "id": "npc/keeper",
-            "name": "The Keeper",
-            "role": "quest-giver",
-            "area": "area/keep",
-            "anchor": "anchor/keeper-stand",
-            "base_entity": "minecraft:villager",
-            "dialogue": {
-              "root": "dlg/greeting",
-              "nodes": [
+            "id": "quest/open-the-door",
+            "trigger": {
+              "type": "quest-complete",
+              "quest": "quest/open-the-door"
+            },
+            "objectives": [
+              {
+                "type": "talk-to",
+                "id": "obj/talk",
+                "npc": "npc/keeper"
+              },
+              {
+                "type": "reach-anchor",
+                "id": "obj/exit",
+                "anchor": "anchor/exit",
+                "radius": 2,
+                "after": [
+                  "obj/talk"
+                ]
+              }
+            ],
+            "on_objective_complete": {
+              "obj/talk": [
                 {
-                  "id": "dlg/greeting",
-                  "text": "Halt, traveler. This keep is mine to guard, and the door stays shut.",
-                  "options": [
-                    {
-                      "label": "Who are you?",
-                      "next": "dlg/lore"
-                    }
-                  ]
-                },
-                {
-                  "id": "dlg/lore",
-                  "text": "I am the Keeper. I have watched this gate since the moor swallowed the old road.",
-                  "options": [
-                    {
-                      "label": "Back.",
-                      "next": "dlg/greeting"
-                    }
-                  ]
+                  "type": "open-gate",
+                  "anchor": "anchor/door"
                 }
               ]
-            }
+            },
+            "on_complete": [
+              {
+                "type": "campaign-complete"
+              }
+            ]
           }
         ]
       }

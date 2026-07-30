@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use delvewright_dsl::{AnchorRegistry, ItemRegistry, PrefabId};
+use delvewright_dsl::{AnchorRegistry, ItemRegistry, Lighting, PoolId, PrefabId};
 use serde::Deserialize;
 
 /// The complete 1.21.11 item registry (1505 ids), vendored under `data/`.
@@ -52,12 +52,11 @@ pub struct PrefabMeta {
     pub structure: StructureMeta,
     /// Named anchors, keyed by DSL anchor name (`spawn`, `anchor/…`).
     pub anchors: BTreeMap<String, AnchorMeta>,
-    /// Declared lighting profile (spec-0001 lighting contract): `profile`
-    /// (`lit`/`dim`/`dark`), `measured_min_light`, and the `measured` date. Opaque
-    /// here — the formal schema + the `dark`-needs-mitigation analysis land with
-    /// dsl v0.2; for now the compiler only needs to accept the field.
+    /// Declared lighting profile (spec-0001 "Lighting contract"). Typed as the
+    /// DSL [`Lighting`] block; consumed by the `dark`-needs-mitigation analysis
+    /// (`DW0210`, `analyze`). Optional so legacy metadata without it still loads.
     #[serde(default)]
-    pub lighting: serde_json::Value,
+    pub lighting: Option<Lighting>,
     /// License/provenance (opaque here; validated by review + `LICENSE-ASSETS.md`).
     #[serde(default)]
     pub license: serde_json::Value,
@@ -110,20 +109,26 @@ pub struct Region {
 }
 
 /// Loads and caches prefab metadata from a `prefabs/` directory, and answers
-/// anchor queries for DSL validation.
+/// anchor / pool / lighting queries for DSL validation and analysis.
 #[derive(Debug, Clone)]
 pub struct PrefabRegistry {
     by_id: BTreeMap<String, PrefabMeta>,
     anchor_names: BTreeMap<String, BTreeSet<String>>,
+    /// Declared prefab-pool ids. Populated from `pools.json` if present; jigsaw
+    /// pool assembly lands fully in M2 task #9, so today this is typically empty
+    /// (and any `prefab_pool` ref is reported unknown, `DW0161`).
+    pools: BTreeSet<String>,
 }
 
 impl PrefabRegistry {
     /// Load every `*.json` prefab metadata file in `dir`. Files that do not parse
-    /// as [`PrefabMeta`] are skipped (e.g. unrelated docs). Returns the loaded
-    /// registry; errors only on an unreadable directory.
+    /// as [`PrefabMeta`] are skipped (e.g. unrelated docs). An optional
+    /// `pools.json` (a JSON array of `pool/<name>` ids) declares prefab pools.
+    /// Returns the loaded registry; errors only on an unreadable directory.
     pub fn load_dir(dir: &Path) -> std::io::Result<Self> {
         let mut by_id: BTreeMap<String, PrefabMeta> = BTreeMap::new();
         let mut anchor_names: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut pools: BTreeSet<String> = BTreeSet::new();
         // Sort entries for deterministic load order.
         let mut paths: Vec<PathBuf> = Vec::new();
         for entry in std::fs::read_dir(dir)? {
@@ -137,6 +142,12 @@ impl PrefabRegistry {
             let Ok(raw) = std::fs::read_to_string(&path) else {
                 continue;
             };
+            if path.file_name().and_then(|n| n.to_str()) == Some("pools.json") {
+                if let Ok(ids) = serde_json::from_str::<Vec<String>>(&raw) {
+                    pools.extend(ids);
+                }
+                continue;
+            }
             if let Ok(meta) = serde_json::from_str::<PrefabMeta>(&raw) {
                 let names: BTreeSet<String> = meta.anchors.keys().cloned().collect();
                 anchor_names.insert(meta.prefab_id.clone(), names);
@@ -146,6 +157,7 @@ impl PrefabRegistry {
         Ok(Self {
             by_id,
             anchor_names,
+            pools,
         })
     }
 
@@ -158,5 +170,15 @@ impl PrefabRegistry {
 impl AnchorRegistry for PrefabRegistry {
     fn anchors_for(&self, prefab: &PrefabId) -> Option<&BTreeSet<String>> {
         self.anchor_names.get(prefab.as_str())
+    }
+
+    fn has_pool(&self, pool: &PoolId) -> bool {
+        self.pools.contains(pool.as_str())
+    }
+
+    fn lighting_for(&self, prefab: &PrefabId) -> Option<Lighting> {
+        self.by_id
+            .get(prefab.as_str())
+            .and_then(|m| m.lighting.clone())
     }
 }

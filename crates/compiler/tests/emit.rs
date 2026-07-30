@@ -50,7 +50,7 @@ fn critical_path_shape_and_commands() {
     let cp: serde_json::Value =
         serde_json::from_slice(out.get("critical-path.json").unwrap()).unwrap();
 
-    assert_eq!(cp["version"], "0.1.0");
+    assert_eq!(cp["version"], "0.2.0");
     assert_eq!(cp["campaign_id"], "hello-world");
     let steps = cp["steps"].as_array().unwrap();
     assert_eq!(steps.len(), 4);

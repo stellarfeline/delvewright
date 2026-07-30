@@ -641,7 +641,7 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
         }),
     ));
 
-    // per-npc dialogue nodes → one dialog each
+    // per-npc dialogue nodes (stage 6) → one dialog each
     for npc in &plan.npcs {
         let dsl_npc = c
             .npcs
@@ -650,7 +650,10 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
             .iter()
             .find(|n| n.id.as_str() == npc.npc_id);
         let Some(dsl_npc) = dsl_npc else { continue };
-        for node in &dsl_npc.dialogue.nodes {
+        let Some(tree) = c.dialogue.content.tree_for(&npc.npc_id) else {
+            continue;
+        };
+        for node in &tree.nodes {
             let node_opts: Vec<&plan::OptionPlan> = npc
                 .options
                 .iter()
