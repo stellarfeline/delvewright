@@ -104,10 +104,15 @@ and gives the compiler full layout knowledge for anchors and the critical path.
   block beyond the parent, facing opposite (`final_state=air` → clean 3×3
   passage); the mating rule fixes the child's rotation and position. All four
   cardinal rotations + AABB overlap rejection are implemented and unit-tested.
-- **Growth**: a straight-line spine — entry → `connector` fillers (straight
-  through only, so the pathfinder-free harness bot can walk it) → the referenced
-  through-rooms inline → one dead-end terminal at the far end (`boss-hall` last
-  when referenced). Branching layouts are a documented future extension.
+- **Growth**: two modes by required-terminal count. **Single terminal**
+  (`grow_spine`) — a straight-line spine: entry → straight-preferring `connector`
+  fillers → through-rooms inline → one dead-end terminal (`boss-hall` last). Kept
+  byte-identical (`keep-crawl`). **Two+ terminals** (`grow_branching`, v0.3) — a
+  branching tree: extend the trunk, fork with `tee`/`cross` branch pieces, and cap
+  each terminal on its own branch socket (shrine **and** boss-hall). This lifts
+  the old one-terminal limit — the harness pathfinds now, so branches/turns walk.
+  The trunk is extended before forking so large terminals still fit (greedy, no
+  backtracking); robust across a 200-seed sweep.
 - **Guarantees**: connected; exactly one entry; every campaign-referenced anchor
   in the area (NPC stands, `reach-anchor` targets, `open-gate` anchors) provided
   by exactly one placed piece; piece count within the DSL `pieces {min,max}`.
@@ -130,7 +135,7 @@ diagnostics (and as one JSON object per line under `--json`, `stage: "build"`).
 | `DW0301` | The bound pool declares no `entry`-role piece (or no `connector` filler when fillers are needed). |
 | `DW0302` | A campaign-referenced anchor is provided by **no** member of the pool (unsatisfiable required anchor). |
 | `DW0303` | The `pieces {min,max}` range is too small to fit the entry plus the required anchor-bearing pieces. |
-| `DW0304` | The solver could not place a required piece without overlap, or more than one dead-end terminal was required (linear solver limit). |
+| `DW0304` | The solver could not place a required piece without overlap, or a branching layout's pool declares no branch piece (tee/cross) to fork its terminals. (The old "more than one terminal" limit is lifted — `grow_branching`.) |
 
 `tests/fixtures/keep-unsatisfiable-anchor.json` (→ `DW0302`) and
 `keep-range-too-small.json` (→ `DW0303`) both pass validate + analyze (the DSL

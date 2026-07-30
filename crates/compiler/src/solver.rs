@@ -35,14 +35,24 @@
 //!
 //! ## Growth strategy
 //!
-//! Straight-line spine: grow from the `entry` piece along its exit, using
-//! `connector` fillers, threading the campaign-referenced *through*-rooms inline
-//! and ending the spine at the (single) dead-end terminal — `boss-hall` last when
-//! referenced, so it is the farthest piece from the entry. This keeps the
-//! critical path a straight, walkable corridor (the harness bot has no
-//! pathfinder) while the mating/AABB machinery below is fully general (all four
-//! cardinal rotations, overlap rejection — unit-tested). Every unmated socket is
-//! sealed with wall material; every mated socket's jigsaw block is cleared to air.
+//! Two modes, chosen by how many dead-end terminals the campaign requires:
+//!
+//! - **Single terminal (`grow_spine`)** — a straight-line spine: grow from the
+//!   `entry` along its exit with straight-preferring `connector` fillers, thread
+//!   the through-rooms inline, and end at the one dead-end terminal (`boss-hall`
+//!   last, farthest from the entry). This is the pre-pathfinder behaviour, kept
+//!   **byte-identical** so single-terminal pools (`keep-crawl`) are unchanged.
+//! - **Two or more terminals (`grow_branching`)** — a branching tree: extend the
+//!   trunk, then fork with `tee`/`cross` branch pieces (`m2-gameplay-verbs`,
+//!   lifting the old `DW0304` "one terminal max" limit — the harness now
+//!   pathfinds, so branches/turns are walkable), and cap each terminal on a
+//!   distinct branch socket (e.g. shrine **and** boss-hall).
+//!
+//! The mating/AABB machinery below is fully general (all four cardinal rotations,
+//! overlap rejection — unit-tested); both modes preserve the guarantees
+//! (connected; exactly one entry; each required anchor-bearing piece placed once;
+//! piece count in `[min,max]`). Every unmated socket is sealed with wall material;
+//! every mated socket's jigsaw block is cleared to air.
 
 use crate::registry::{Connector, PoolMember, PrefabRegistry};
 
@@ -318,7 +328,8 @@ pub const DW_UNSATISFIABLE_ANCHOR: &str = "DW0302";
 /// `DW0303`: the `pieces {min,max}` range is too small to fit the entry plus the
 /// required anchor-bearing pieces.
 pub const DW_RANGE_TOO_SMALL: &str = "DW0303";
-/// `DW0304`: the solver could not place a required piece without an overlap
+/// `DW0304`: the solver could not place a required piece without an overlap, or a
+/// branching layout has no branch piece (tee/cross) to fork its terminals
 /// (layout infeasible for this pool / seed).
 pub const DW_INFEASIBLE: &str = "DW0304";
 
@@ -394,40 +405,51 @@ pub fn solve_area(
     // absolutely last (farthest terminal). Through-rooms (≥2 sockets) go first so
     // the spine can continue past them.
     required_prefabs.sort_by_key(|p| {
-        let sockets = registry.get(p).map(|m| m.connectors.len()).unwrap_or(0);
+        let sockets = socket_count(registry, p);
         let dead_end = sockets <= 1;
         let boss = p.contains("boss");
         (dead_end, boss)
     });
 
-    // A linear spine can host at most one dead-end terminal (its far end).
-    let dead_ends = required_prefabs
+    // Split required pieces into through-rooms (≥2 sockets, keep the spine going)
+    // and dead-end terminals (≤1 socket, cap a branch). A single terminal grows a
+    // straight walkable spine (the pre-pathfinder behaviour, kept byte-identical);
+    // two or more terminals grow a **branching tree** (M2 `m2-gameplay-verbs`,
+    // lifts the old `DW0304` "one terminal max" limit — the harness now
+    // pathfinds, so branches/turns are walkable).
+    let through: Vec<&String> = required_prefabs
         .iter()
-        .filter(|p| registry.get(p).map(|m| m.connectors.len()).unwrap_or(0) <= 1)
-        .count();
-    if dead_ends > 1 {
-        return Err(SolveError::new(
-            DW_INFEASIBLE,
-            format!(
-                "pool `{pool_id}` requires {dead_ends} dead-end terminal pieces, but the linear \
-                 solver hosts at most one (branching layouts are a documented future extension)"
-            ),
-        ));
-    }
+        .filter(|p| socket_count(registry, p) >= 2)
+        .collect();
+    let terminals: Vec<&String> = required_prefabs
+        .iter()
+        .filter(|p| socket_count(registry, p) <= 1)
+        .collect();
+    let n_terminals = terminals.len();
+    // Two or more terminals need (n_terminals − 1) branch pieces (tees/crosses) to
+    // create the extra branch sockets (a 1-socket entry + 2-socket through-rooms
+    // otherwise expose only one open socket at a time).
+    let branch_needed = (n_terminals as u32).saturating_sub(1);
 
     // Total piece count: entry + required + fillers. Choose N in [min,max].
     let min_needed = 1 + required_prefabs.len() as u32;
-    if pieces_max < min_needed {
+    let min_with_branch = min_needed + branch_needed;
+    if pieces_max < min_with_branch {
         return Err(SolveError::new(
             DW_RANGE_TOO_SMALL,
             format!(
-                "pool `{pool_id}` needs at least {min_needed} pieces (entry + {} required \
-                 anchor-bearing) but `pieces.max` is {pieces_max}",
-                required_prefabs.len()
+                "pool `{pool_id}` needs at least {min_with_branch} pieces (entry + {} required \
+                 anchor-bearing{}) but `pieces.max` is {pieces_max}",
+                required_prefabs.len(),
+                if branch_needed > 0 {
+                    format!(" + {branch_needed} branch")
+                } else {
+                    String::new()
+                }
             ),
         ));
     }
-    let lo = pieces_min.max(min_needed);
+    let lo = pieces_min.max(min_with_branch);
     let n = if pieces_max > lo {
         lo + (stream.next_u64() % (pieces_max - lo + 1) as u64) as u32
     } else {
@@ -435,30 +457,9 @@ pub fn solve_area(
     };
     let filler_count = n - min_needed;
 
-    // Split fillers into gaps: before each through waypoint, and one trailing gap
-    // before the terminal / at the end. Deterministic even split.
-    let through: Vec<&String> = required_prefabs
-        .iter()
-        .filter(|p| registry.get(p).map(|m| m.connectors.len()).unwrap_or(0) >= 2)
-        .collect();
-    let terminal: Option<&String> = required_prefabs
-        .iter()
-        .find(|p| registry.get(p).map(|m| m.connectors.len()).unwrap_or(0) <= 1);
-    let gaps = through.len() + 1; // one gap before each through room, plus a trailing gap
-    let mut gap_fillers = vec![0u32; gaps];
-    for i in 0..filler_count {
-        let g = (i as usize) % gaps;
-        gap_fillers[g] += 1;
-    }
-
-    // Build the placement recipe: entry, then for each gap: fillers, waypoint.
-    // Waypoints are the through rooms in order; the trailing gap precedes the
-    // terminal (if any).
-    // Fillers are drawn from `connector`-role pieces, preferring **straight
-    // through** connectors (two opposite sockets) so the spine stays a straight,
-    // walkable corridor — the harness bot walks in straight lines (no
-    // pathfinder), so the critical path must not turn. Turning connectors
-    // (corner/tee/cross) stay in the library for future branching layouts.
+    // Connector pools. `connector_members` (straight-preferring) drives the
+    // single-terminal spine, unchanged; branching uses `all_connectors` for
+    // extensions and `branchers` (≥3 sockets: tee/cross) for branch points.
     let all_connectors: Vec<&PoolMember> =
         members.iter().filter(|m| m.role == "connector").collect();
     let straight: Vec<&PoolMember> = all_connectors
@@ -467,7 +468,7 @@ pub fn solve_area(
         .filter(|m| is_straight_through(registry, &m.prefab))
         .collect();
     let connector_members: Vec<&PoolMember> = if straight.is_empty() {
-        all_connectors
+        all_connectors.clone()
     } else {
         straight
     };
@@ -492,7 +493,69 @@ pub fn solve_area(
         &mut frontier,
     )?;
 
-    // Helper closure state: place `count` connector fillers extending the spine.
+    if n_terminals >= 2 {
+        grow_branching(
+            registry,
+            pool_id,
+            &through,
+            &terminals,
+            &all_connectors,
+            filler_count,
+            branch_needed,
+            &mut pieces,
+            &mut frontier,
+            stream,
+        )?;
+    } else {
+        grow_spine(
+            registry,
+            &through,
+            terminals.first().copied(),
+            &connector_members,
+            filler_count,
+            &mut pieces,
+            &mut frontier,
+            stream,
+        )?;
+    }
+
+    // --- seal ---
+    let seals = seal_layout(registry, &pieces);
+
+    Ok(AreaLayout { pieces, seals })
+}
+
+/// The number of connector sockets a prefab declares (0 if unknown).
+fn socket_count(registry: &PrefabRegistry, prefab_id: &str) -> usize {
+    registry
+        .get(prefab_id)
+        .map(|m| m.connectors.len())
+        .unwrap_or(0)
+}
+
+/// Grow a straight walkable spine (entry already placed): straight-preferring
+/// fillers threaded around the through-rooms, ending at the single dead-end
+/// terminal (if any). This is the pre-pathfinder behaviour, preserved
+/// bit-for-bit so single-terminal pools (`keep-crawl`) stay byte-identical.
+#[allow(clippy::too_many_arguments)]
+fn grow_spine(
+    registry: &PrefabRegistry,
+    through: &[&String],
+    terminal: Option<&String>,
+    connector_members: &[&PoolMember],
+    filler_count: u32,
+    pieces: &mut Vec<PlacedPiece>,
+    frontier: &mut Vec<OpenSocket>,
+    stream: &mut Splitmix64,
+) -> Result<(), SolveError> {
+    // Split fillers into gaps: before each through waypoint, plus one trailing gap
+    // before the terminal / at the end. Deterministic even split.
+    let gaps = through.len() + 1;
+    let mut gap_fillers = vec![0u32; gaps];
+    for i in 0..filler_count {
+        gap_fillers[(i as usize) % gaps] += 1;
+    }
+
     let place_fillers = |count: u32,
                          pieces: &mut Vec<PlacedPiece>,
                          frontier: &mut Vec<OpenSocket>,
@@ -501,28 +564,115 @@ pub fn solve_area(
         for _ in 0..count {
             let weights: Vec<u32> = connector_members.iter().map(|m| m.weight).collect();
             let choice = stream.weighted(&weights).unwrap_or(0);
-            let prefab = &connector_members[choice].prefab;
-            attach_piece(registry, prefab, pieces, frontier)?;
+            attach_piece(
+                registry,
+                &connector_members[choice].prefab,
+                pieces,
+                frontier,
+            )?;
         }
         Ok(())
     };
 
-    // Gaps 0..through.len() precede each through waypoint; the last gap precedes
-    // the terminal.
     for (gi, waypoint) in through.iter().enumerate() {
-        place_fillers(gap_fillers[gi], &mut pieces, &mut frontier, stream)?;
-        attach_piece(registry, waypoint, &mut pieces, &mut frontier)?;
+        place_fillers(gap_fillers[gi], pieces, frontier, stream)?;
+        attach_piece(registry, waypoint, pieces, frontier)?;
     }
-    // Trailing gap + terminal.
-    place_fillers(gap_fillers[gaps - 1], &mut pieces, &mut frontier, stream)?;
+    place_fillers(gap_fillers[gaps - 1], pieces, frontier, stream)?;
     if let Some(term) = terminal {
-        attach_piece(registry, term, &mut pieces, &mut frontier)?;
+        attach_piece(registry, term, pieces, frontier)?;
+    }
+    Ok(())
+}
+
+/// Grow a branching tree (entry already placed): the through-rooms extend the
+/// trunk, `brancher` fillers (tee/cross) open the extra branch sockets needed for
+/// two or more terminals, remaining fillers extend branches, and each terminal
+/// caps a distinct open socket. Guarantees: connected (every piece mates to an
+/// open socket), each required piece placed exactly once, open sockets sealed.
+#[allow(clippy::too_many_arguments)]
+fn grow_branching(
+    registry: &PrefabRegistry,
+    pool_id: &str,
+    through: &[&String],
+    terminals: &[&String],
+    all_connectors: &[&PoolMember],
+    filler_count: u32,
+    branch_needed: u32,
+    pieces: &mut Vec<PlacedPiece>,
+    frontier: &mut Vec<OpenSocket>,
+    stream: &mut Splitmix64,
+) -> Result<(), SolveError> {
+    // Branch-capable fillers: ≥3 sockets (tee = +1 open, cross = +2).
+    let branchers: Vec<&PoolMember> = all_connectors
+        .iter()
+        .copied()
+        .filter(|m| socket_count(registry, &m.prefab) >= 3)
+        .collect();
+    if branchers.is_empty() && branch_needed > 0 {
+        return Err(SolveError::new(
+            DW_INFEASIBLE,
+            format!(
+                "pool `{pool_id}` needs a branch piece (tee/cross, ≥3 sockets) to host \
+                 {} terminals, but declares none",
+                terminals.len()
+            ),
+        ));
     }
 
-    // --- seal ---
-    let seals = seal_layout(registry, &pieces);
+    // Straight-preferring extension set (keeps the trunk from wrapping back on
+    // itself, so large terminals still fit); falls back to the full set.
+    let straight: Vec<&PoolMember> = all_connectors
+        .iter()
+        .copied()
+        .filter(|m| is_straight_through(registry, &m.prefab))
+        .collect();
+    let extensions: &[&PoolMember] = if straight.is_empty() {
+        all_connectors
+    } else {
+        &straight
+    };
 
-    Ok(AreaLayout { pieces, seals })
+    // Through-rooms extend the trunk.
+    for wp in through {
+        attach_piece(registry, wp, pieces, frontier)?;
+    }
+
+    // Extend the trunk with the non-branch fillers FIRST, before forking — so the
+    // terminals cap fresh branch sockets at the far end of the trunk, where space
+    // is uncrowded (greedy tree growth has no backtracking).
+    let extension_count = filler_count.saturating_sub(branch_needed);
+    for _ in 0..extension_count {
+        let weights: Vec<u32> = extensions.iter().map(|m| m.weight).collect();
+        let choice = stream.weighted(&weights).unwrap_or(0);
+        attach_piece(registry, &extensions[choice].prefab, pieces, frontier)?;
+    }
+
+    // Open enough branch sockets for every terminal.
+    let mut branch_budget = filler_count - extension_count;
+    while frontier.len() < terminals.len() {
+        if branch_budget == 0 {
+            return Err(SolveError::new(
+                DW_INFEASIBLE,
+                format!(
+                    "pool `{pool_id}` ran out of filler budget opening branches for \
+                     {} terminals",
+                    terminals.len()
+                ),
+            ));
+        }
+        let weights: Vec<u32> = branchers.iter().map(|m| m.weight).collect();
+        let choice = stream.weighted(&weights).unwrap_or(0);
+        attach_piece(registry, &branchers[choice].prefab, pieces, frontier)?;
+        branch_budget -= 1;
+    }
+
+    // Cap each terminal on a distinct open socket (most-recent first, so the two
+    // freshest branch sockets take the two terminals).
+    for term in terminals {
+        attach_piece(registry, term, pieces, frontier)?;
+    }
+    Ok(())
 }
 
 /// Whether a prefab is a "straight through" connector: exactly two sockets with

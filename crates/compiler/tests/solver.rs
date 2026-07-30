@@ -188,6 +188,123 @@ fn open_socket_is_sealed_with_wall() {
     );
 }
 
+/// Branching growth (lifts the old `DW0304` one-terminal limit): requiring two
+/// dead-end terminals (shrine's `anchor/objective` + boss-hall's `anchor/boss`)
+/// places **both** on separate branches off a tee/cross, stays connected, and
+/// every required piece appears exactly once.
+#[test]
+fn branching_two_terminals_both_placed() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let mut stream = Splitmix64::new(solver::stream_seed(20260730, "area/keep"));
+    let layout = solver::solve_area(
+        &prefabs,
+        "pool/stone-keep",
+        // objective → shrine (first carrier), boss → boss-hall: two dead-ends.
+        &["anchor/objective".to_string(), "anchor/boss".to_string()],
+        7,
+        10,
+        [0, 64, 0],
+        &mut stream,
+    )
+    .expect("branching layout solves");
+
+    let ids: Vec<&str> = layout.pieces.iter().map(|p| p.prefab_id.as_str()).collect();
+    assert_eq!(
+        ids.iter().filter(|p| **p == "prefab/keep-shrine").count(),
+        1,
+        "exactly one shrine terminal"
+    );
+    assert_eq!(
+        ids.iter()
+            .filter(|p| **p == "prefab/keep-boss-hall")
+            .count(),
+        1,
+        "exactly one boss-hall terminal"
+    );
+    // A branch piece (tee or cross, ≥3 sockets) is present to fork the two.
+    assert!(
+        ids.iter().any(|p| p.contains("tee") || p.contains("cross")),
+        "a branch piece forks the terminals: {ids:?}"
+    );
+    // Connected: every piece except the entry mates ≥1 socket (all sockets start
+    // unmated; a mated flag means it attached to the tree).
+    for (i, piece) in layout.pieces.iter().enumerate() {
+        if i == 0 {
+            continue;
+        }
+        assert!(
+            piece.mated.iter().any(|&m| m),
+            "piece {} ({}) is disconnected",
+            i,
+            piece.prefab_id
+        );
+    }
+    assert!((7..=10).contains(&layout.pieces.len()));
+}
+
+/// Branching is robust across seeds: a two-terminal layout solves for every seed
+/// in a wide sweep (greedy tree growth extends the trunk before forking, so large
+/// terminals fit). Guards against seed-dependent overlap flakiness.
+#[test]
+fn branching_solves_across_many_seeds() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let mut failures = 0;
+    for seed in 0u64..200 {
+        let mut s = Splitmix64::new(solver::stream_seed(seed, "area/keep"));
+        let r = solver::solve_area(
+            &prefabs,
+            "pool/stone-keep",
+            &["anchor/objective".to_string(), "anchor/boss".to_string()],
+            7,
+            9,
+            [0, 64, 0],
+            &mut s,
+        );
+        if let Ok(layout) = r {
+            let ids: Vec<&str> = layout.pieces.iter().map(|p| p.prefab_id.as_str()).collect();
+            assert!(
+                ids.contains(&"prefab/keep-shrine"),
+                "seed {seed}: no shrine"
+            );
+            assert!(
+                ids.contains(&"prefab/keep-boss-hall"),
+                "seed {seed}: no boss-hall"
+            );
+        } else {
+            failures += 1;
+        }
+    }
+    assert_eq!(failures, 0, "{failures}/200 seeds failed to solve");
+}
+
+/// Branching determinism: same seed → identical branching layout.
+#[test]
+fn branching_same_seed_same_layout() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let solve = || {
+        let mut s = Splitmix64::new(solver::stream_seed(99, "area/keep"));
+        solver::solve_area(
+            &prefabs,
+            "pool/stone-keep",
+            &["anchor/objective".to_string(), "anchor/boss".to_string()],
+            7,
+            10,
+            [0, 64, 0],
+            &mut s,
+        )
+        .unwrap()
+    };
+    let a = solve();
+    let b = solve();
+    assert_eq!(a.pieces.len(), b.pieces.len());
+    for (pa, pb) in a.pieces.iter().zip(&b.pieces) {
+        assert_eq!(pa.prefab_id, pb.prefab_id);
+        assert_eq!(pa.pos, pb.pos);
+        assert_eq!(pa.rotation, pb.rotation);
+    }
+    assert_eq!(a.seals, b.seals);
+}
+
 /// Same seed + same DSL → identical solved layout (the solver-level determinism
 /// invariant beneath the byte-identity gate).
 #[test]
