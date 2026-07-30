@@ -68,7 +68,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: install mecha + beet (pinned)
         run: pip install "mecha==0.104.1" beet
       - name: build the hello-world delve
