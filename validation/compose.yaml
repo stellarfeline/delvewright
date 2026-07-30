@@ -52,6 +52,45 @@ services:
       # server over the internal compose network, not this mapping.
       - "127.0.0.1:25565:25565"
 
+  # Creator playtest (spec-0006): the SAME shipped delve image as `play`, plus the
+  # creator overlay mounted as an EXTRA datapack and the creator opped. The overlay
+  # is NEVER baked into the delve image (ADR-0003 / spec-0006 exclusion, CI-checked)
+  # — it is supplied only here, at runtime, as a read-only volume added to DATAPACKS.
+  # One command, localhost only, offline by default; mirrors `play` otherwise.
+  #
+  #   delvec build crates/dsl/fixtures/valid/hello-world -o validation/delve-output
+  #   EULA=TRUE CREATOR_NAME=<your-mc-name> \
+  #     docker compose -f validation/compose.yaml --profile playtest up --build
+  #
+  # Then join at localhost:25565, `/trigger dw.note` to mark a spot, and type your
+  # note in chat. After the session, run `delve-harvest` over the captured server
+  # log + `delve-output/creator-datapack/layout.json` (see validation/README.md).
+  playtest:
+    profiles: ["playtest"]
+    build:
+      context: ./delve-output
+      dockerfile: ../Dockerfile.delve
+    image: delvewright/delve:local
+    container_name: delvewright-playtest
+    environment:
+      EULA: ${EULA:?set EULA=TRUE in your environment to accept Mojang's EULA (https://aka.ms/MinecraftEULA)}
+      ONLINE_MODE: ${ONLINE_MODE:-FALSE}
+      # The overlay rides alongside the baked datapack. itzg copies each DATAPACKS
+      # entry into the world's datapacks folder on boot (same mechanism the packtest
+      # profile uses). `/delve/datapack` is baked; `/delve/creator-overlay` is the
+      # runtime-only mount below.
+      DATAPACKS: "/delve/datapack,/delve/creator-overlay"
+      # Op the creator so she can /tp and inspect. Empty (no op) if CREATOR_NAME is
+      # unset — `/trigger dw.note` itself needs no op (the overlay enables it each
+      # tick), so the note flow works opped or not.
+      OPS: ${CREATOR_NAME:-}
+    volumes:
+      # The creator overlay, supplied ONLY at playtest time (never in the image).
+      - ./delve-output/creator-datapack:/delve/creator-overlay:ro
+    ports:
+      # localhost only, like `play`.
+      - "127.0.0.1:25565:25565"
+
   # The mineflayer harness (spec-0003). Reads the same build's critical-path.json,
   # drives the run, exits 0/1 — propagated as the compose/CI exit code.
   bot:

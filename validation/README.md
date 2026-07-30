@@ -10,6 +10,9 @@ Docker-compose entrypoint for running Delvewright the same way CI and prod do
   validation stack (server + PackTest runner + mineflayer bot, exit codes
   propagated to CI). Arrives with the rest of spec-0003 once the compiler emits a
   delve.
+- **`playtest`** (spec-0006) — the same shipped delve image as `play`, plus the
+  **creator overlay** mounted as an extra datapack (`/trigger dw.note` marks a spot
+  in the server log). See "Creator playtest loop" below.
 
 ## One command (owner)
 
@@ -27,6 +30,65 @@ offline mode, add `ONLINE_MODE=TRUE` (auth mode is still an open spec-0003 decis
 
 If `EULA` is unset, compose fails fast with a message telling you to set it — by
 design.
+
+## Creator playtest loop (spec-0006)
+
+Build the delve, then run the `playtest` profile — the **same shipped delve image**
+as `play`, plus the creator overlay mounted as an extra datapack and (optionally)
+the creator opped:
+
+```sh
+delvec build crates/dsl/fixtures/valid/hello-world -o validation/delve-output
+
+EULA=TRUE CREATOR_NAME=<your-mc-name> \
+  docker compose -f validation/compose.yaml --profile playtest up --build
+```
+
+Join at `localhost:25565`. While playing, aim at something wrong and run
+`/trigger dw.note` — the overlay stamps one machine-readable line into the server
+log (`[DelveNote] pos=[x,y,z] area=… quests=… nearest_npc=…`) — then type your note
+as a normal chat message. `CREATOR_NAME` ops you so you can `/tp` and inspect; leave
+it unset to skip opping (the note trigger works either way). It must be a
+**resolvable** Minecraft name — itzg looks the op up online, so a fake offline name
+fails to boot.
+
+The overlay is **playtest-only**: it is never baked into the shipped delve image
+(`Dockerfile.delve` copies only `datapack/` + config), mounted here at runtime, and
+CI asserts its absence from the image (same exclusion guarantee as PackTest).
+
+After the session, turn the log into a report with the harvester:
+
+```sh
+docker compose -f validation/compose.yaml --profile playtest logs --no-color \
+  > playtest.log
+cargo run -p delvewright-orchestrator --bin delve-harvest -- \
+  playtest.log validation/delve-output/creator-datapack/layout.json \
+  -o playtest-report.json
+```
+
+`delve-harvest` pairs each `[DelveNote]` stamp with the nearest creator chat line
+(±60s, preferring the line *after* the stamp) and resolves area→prefab and the live
+objective states into per-quest `quest_state` via the overlay's `layout.json`. The
+report is the contract input of the future `/revise-delve` skill (spec-0006 §4).
+
+### Machine-tested end to end
+
+`validation/playtest-note-flow.sh` runs the whole loop non-interactively — boots the
+`playtest` server, drives one note capture with the mineflayer note-bot
+(`harness/src/note-bot.ts`: join → `/trigger dw.note` → chat a multilingual fixture
+→ disconnect), harvests the captured log, and asserts the report contains the note
+with the correct area + quest state:
+
+```sh
+EULA=TRUE validation/playtest-note-flow.sh
+```
+
+**CI placement (spec-0006 acceptance).** This is a **tier-3 / local** test (wired in
+`release.yml`), not tier 2: it boots a full server *and* a bot (~2–3 min), beyond
+tier 2's ~2-min budget. Every-push coverage of the mechanism already lives in tier 1
+— the harvester's parsing/pairing/report logic (`crates/orchestrator` unit tests,
+incl. Chinese note text) and the overlay emission + byte-determinism
+(`crates/compiler` tests). Only the live wiring is deferred to tier 3.
 
 ## What works today vs with M1 integration
 
