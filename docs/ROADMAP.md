@@ -27,9 +27,14 @@ stage end-to-end:
    end — in CI, using the `validation/` compose image.
 6. The result is packaged as an OCI image; `docker run` locally yields a joinable
    world.
+7. **Owner playtest path**: one command (the `validation/` compose `play` profile,
+   see spec-0003) starts the current delve server on the workstation; the owner joins
+   from her vanilla Minecraft client at `localhost` to see the result first-hand.
+   This stays the standing verify-progress entrypoint for every later milestone.
 
-**Exit**: a single CI workflow run shows all six steps green. This is the project's
-heartbeat; everything later just makes the delve bigger.
+**Exit**: a single CI workflow run shows steps 1–6 green, and the owner has joined
+the hello-world delve from Minecraft via the one-command playtest path. This is the
+project's heartbeat; everything later just makes the delve bigger.
 
 ## M2 — Real DSL + prefab library seed
 
