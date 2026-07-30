@@ -1,0 +1,20 @@
+{
+  "pools": {
+    "pool/stone-keep": {
+      "members": [
+        { "prefab": "prefab/keep-spawn-hall", "weight": 1, "role": "entry" },
+        { "prefab": "prefab/keep-corridor-straight", "weight": 4, "role": "connector" },
+        { "prefab": "prefab/keep-corridor-corner", "weight": 1, "role": "connector" },
+        { "prefab": "prefab/keep-corridor-tee", "weight": 1, "role": "connector" },
+        { "prefab": "prefab/keep-cross", "weight": 1, "role": "connector" },
+        { "prefab": "prefab/keep-room-small-a", "weight": 1, "role": "room" },
+        { "prefab": "prefab/keep-room-small-b", "weight": 1, "role": "room" },
+        { "prefab": "prefab/keep-room-small-c", "weight": 1, "role": "room" },
+        { "prefab": "prefab/keep-gate-room", "weight": 1, "role": "terminal" },
+        { "prefab": "prefab/keep-shrine", "weight": 1, "role": "terminal" },
+        { "prefab": "prefab/keep-boss-hall", "weight": 1, "role": "terminal" },
+        { "prefab": "prefab/keep-alcove", "weight": 1, "role": "terminal" }
+      ]
+    }
+  }
+}

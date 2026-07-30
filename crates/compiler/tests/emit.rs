@@ -21,8 +21,10 @@ fn build_hello_world() -> BuildOutput {
 
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
-        let bytes = std::fs::read(common::prefabs_dir().join(&area.structure_file)).unwrap();
-        structures.insert(area.structure_file.clone(), bytes);
+        for piece in &area.pieces {
+            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
+            structures.insert(piece.structure_file.clone(), bytes);
+        }
     }
     let tree = CommandTree::v1_21_11();
     emit::build(&plan, &loaded.inputs, &structures, &tree).expect("emission succeeds")

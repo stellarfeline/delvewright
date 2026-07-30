@@ -153,6 +153,88 @@ fn invalid_fixtures_exit_1_with_expected_code() {
 }
 
 #[test]
+fn keep_crawl_builds_and_double_build_is_byte_identical() {
+    let kc = common::keep_crawl_dir();
+    let pf = common::prefabs_dir();
+    let out_a = tmp("kc-det-a");
+    let out_b = tmp("kc-det-b");
+    for out in [&out_a, &out_b] {
+        let r = delvec(&[
+            "build",
+            kc.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--prefabs",
+            pf.to_str().unwrap(),
+        ]);
+        assert_eq!(
+            code(&r),
+            0,
+            "keep-crawl build: {}",
+            String::from_utf8_lossy(&r.stderr)
+        );
+    }
+    let a = read_tree(&out_a);
+    let b = read_tree(&out_b);
+    assert_eq!(a.keys().collect::<Vec<_>>(), b.keys().collect::<Vec<_>>());
+    for (path, bytes) in &a {
+        assert_eq!(bytes, &b[path], "keep-crawl byte mismatch in {path}");
+    }
+    // The pool area shipped several distinct structures.
+    let structures = a.keys().filter(|p| p.contains("/structure/keep-")).count();
+    assert!(
+        structures >= 3,
+        "multiple keep pieces shipped, saw {structures}"
+    );
+}
+
+/// The two `DW03xx` build/solver diagnostics: an unsatisfiable required anchor
+/// (`DW0302`) and a `pieces` range too small for the required roles (`DW0303`).
+/// Both pass validate + analyze (the DSL cannot see pool-area anchors) and fail
+/// at build with exit 3 and their exact code in `--json`.
+#[test]
+fn pool_build_diagnostics_exit_3_with_dw03xx() {
+    let pf = common::prefabs_dir();
+    for (fixture, expect) in [
+        ("keep-unsatisfiable-anchor.json", "DW0302"),
+        ("keep-range-too-small.json", "DW0303"),
+    ] {
+        let patch: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(common::compiler_fixtures_dir().join(fixture)).unwrap(),
+        )
+        .unwrap();
+        let camp = tmp(&format!("pool-{expect}"));
+        common::materialize_from(&common::keep_crawl_dir(), &patch, &camp);
+
+        // validate + analyze pass (pool anchors are invisible to the DSL layer).
+        let v = delvec(&[
+            "analyze",
+            camp.to_str().unwrap(),
+            "--prefabs",
+            pf.to_str().unwrap(),
+        ]);
+        assert_eq!(code(&v), 0, "{fixture}: analyze should pass");
+
+        let out = tmp(&format!("pool-{expect}-out"));
+        let b = delvec(&[
+            "build",
+            camp.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--prefabs",
+            pf.to_str().unwrap(),
+            "--json",
+        ]);
+        assert_eq!(code(&b), 3, "{fixture}: build should exit 3");
+        let stdout = String::from_utf8_lossy(&b.stdout);
+        assert!(
+            stdout.contains(expect),
+            "{fixture}: expected {expect} in build diagnostics:\n{stdout}"
+        );
+    }
+}
+
+#[test]
 fn unreachable_finale_exits_2_with_dw0201() {
     let patch: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(common::compiler_fixtures_dir().join("unreachable-finale.json"))

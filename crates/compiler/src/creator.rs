@@ -147,13 +147,13 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
         "data modify storage {storage} area set value \"none\""
     ));
     for area in &plan.areas {
-        let [ox, oy, oz] = area.origin;
-        let [sx, sy, sz] = area.size;
+        let (min, max) = area.bounds();
+        let [ox, oy, oz] = min;
         stamp.push(format!(
             "execute if entity @s[x={ox},dx={},y={oy},dy={},z={oz},dz={}] run data modify storage {storage} area set value \"{}\"",
-            sx - 1,
-            sy - 1,
-            sz - 1,
+            max[0] - min[0],
+            max[1] - min[1],
+            max[2] - min[2],
             area.area_id,
         ));
     }
@@ -235,11 +235,15 @@ fn emit_layout(plan: &Plan) -> serde_json::Value {
         .areas
         .iter()
         .map(|a| {
+            let (min, max) = a.bounds();
+            // `prefab` names the area's entry piece (the whole prefab for a
+            // single-prefab area). `size` is the union AABB extent.
+            let prefab = a.pieces.first().map(|p| p.prefab_id.as_str()).unwrap_or("");
             json!({
                 "id": a.area_id,
-                "prefab": a.prefab_id,
-                "origin": a.origin,
-                "size": a.size,
+                "prefab": prefab,
+                "origin": min,
+                "size": [max[0] - min[0] + 1, max[1] - min[1] + 1, max[2] - min[2] + 1],
             })
         })
         .collect();

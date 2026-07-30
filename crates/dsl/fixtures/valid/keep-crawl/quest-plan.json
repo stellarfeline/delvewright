@@ -1,0 +1,28 @@
+{
+  "dsl_version": "0.2.0",
+  "campaign_id": "keep-crawl",
+  "stage": "quest-plan",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/greet-keeper",
+        "goal": "Convince the Keeper to unbar the keep's gate.",
+        "area": "area/keep",
+        "npcs": ["npc/keeper"],
+        "depends_on": [],
+        "mandatory": true,
+        "act": 1
+      },
+      {
+        "id": "quest/reach-shrine",
+        "goal": "Cross the keep's hall and reach the shrine.",
+        "area": "area/keep",
+        "npcs": [],
+        "depends_on": ["quest/greet-keeper"],
+        "mandatory": true,
+        "act": 2
+      }
+    ],
+    "finale": "quest/reach-shrine"
+  }
+}

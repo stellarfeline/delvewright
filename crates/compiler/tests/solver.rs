@@ -1,0 +1,218 @@
+//! Layout-solver + keep-crawl tests (M2 task #9): deterministic multi-piece
+//! assembly, the socket seal/clear strategy, inter-area transport, and the
+//! `DW03xx` build/solver diagnostics.
+
+mod common;
+
+use std::collections::BTreeMap;
+
+use delvewright_compiler::commands::CommandTree;
+use delvewright_compiler::emit::{self, BuildOutput};
+use delvewright_compiler::load::load_campaign_dir;
+use delvewright_compiler::plan::Plan;
+use delvewright_compiler::registry::PrefabRegistry;
+use delvewright_compiler::solver::{self, Splitmix64};
+use delvewright_dsl::parse_campaign;
+
+use std::path::Path;
+
+fn build_campaign(dir: &Path) -> BuildOutput {
+    let loaded = load_campaign_dir(dir).unwrap();
+    let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
+            structures.insert(piece.structure_file.clone(), bytes);
+        }
+    }
+    let tree = CommandTree::v1_21_11();
+    emit::build(&plan, &loaded.inputs, &structures, &tree).expect("emission succeeds")
+}
+
+fn text<'a>(out: &'a BuildOutput, path: &str) -> &'a str {
+    std::str::from_utf8(out.get(path).unwrap_or_else(|| panic!("missing {path}"))).unwrap()
+}
+
+/// keep-crawl assembles a multi-piece pool area, and the build is byte-identical
+/// across runs (ADR-0006 determinism gate for the solver).
+#[test]
+fn keep_crawl_build_is_deterministic() {
+    let a = build_campaign(&common::keep_crawl_dir());
+    let b = build_campaign(&common::keep_crawl_dir());
+    assert_eq!(a.keys().collect::<Vec<_>>(), b.keys().collect::<Vec<_>>());
+    for (path, bytes) in &a {
+        assert_eq!(bytes, &b[path], "byte mismatch in {path}");
+    }
+}
+
+/// The plan places the entry + required pieces + fillers within the DSL bounds,
+/// and every emitted command validates against the vendored 1.21.11 tree.
+#[test]
+fn keep_crawl_layout_stats_and_commands() {
+    let loaded = load_campaign_dir(&common::keep_crawl_dir()).unwrap();
+    let campaign = parse_campaign(&loaded.raw).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).unwrap();
+
+    // area 0 = single-prefab gatehouse; area 1 = the pool.
+    assert_eq!(plan.areas.len(), 2);
+    assert_eq!(plan.areas[0].pieces.len(), 1, "gatehouse is single-prefab");
+    let keep = &plan.areas[1];
+    let n = keep.pieces.len();
+    assert!((5..=8).contains(&n), "pool has {n} pieces, expected 5..=8");
+
+    // The required anchor-bearing pieces are present exactly once.
+    let prefabs_placed: Vec<&str> = keep.pieces.iter().map(|p| p.prefab_id.as_str()).collect();
+    assert_eq!(
+        prefabs_placed
+            .iter()
+            .filter(|p| **p == "prefab/keep-spawn-hall")
+            .count(),
+        1,
+        "exactly one entry piece"
+    );
+    assert_eq!(
+        prefabs_placed
+            .iter()
+            .filter(|p| **p == "prefab/keep-gate-room")
+            .count(),
+        1,
+        "exactly one gate-room (required by open-gate anchor/gate)"
+    );
+    assert_eq!(
+        prefabs_placed
+            .iter()
+            .filter(|p| **p == "prefab/keep-shrine")
+            .count(),
+        1,
+        "exactly one shrine (required by reach anchor/objective)"
+    );
+
+    // The shrine's objective anchor resolved to absolute coords in area/keep.
+    assert!(
+        plan.anchors
+            .contains_key(&("area/keep".to_string(), "anchor/objective".to_string())),
+        "shrine objective anchor resolved in the pool area"
+    );
+
+    let tree = CommandTree::v1_21_11();
+    let out = build_campaign(&common::keep_crawl_dir());
+    assert!(
+        emit::validate_emitted(&out, &tree).is_empty(),
+        "all emitted keep-crawl commands validate"
+    );
+}
+
+/// The critical path crosses piece boundaries within the pool area (the money
+/// shot) and areas: talk-to lands in the gatehouse, the reach anchor in the keep,
+/// and completing the talk objective teleports the player into the keep + opens
+/// the gate. All the pieces along the way are placed with `place template`.
+#[test]
+fn keep_crawl_critical_path_crosses_pieces_and_areas() {
+    let out = build_campaign(&common::keep_crawl_dir());
+    let cp: serde_json::Value =
+        serde_json::from_slice(out.get("critical-path.json").unwrap()).unwrap();
+    let steps = cp["steps"].as_array().unwrap();
+    // select-class, talk-to, reach, assert-complete.
+    assert_eq!(steps[1]["action"], "talk-to");
+    assert_eq!(steps[2]["action"], "reach");
+    let talk_x = steps[1]["pos"][0].as_i64().unwrap();
+    let reach_x = steps[2]["pos"][0].as_i64().unwrap();
+    // gatehouse is at x≈0, the keep at x≈256 — different areas.
+    assert!(
+        talk_x < 128 && reach_x >= 128,
+        "talk in gatehouse, reach in keep"
+    );
+
+    // The talk objective's completion opens the gate and teleports into the keep.
+    let complete_talk = text(
+        &out,
+        "datapack/data/keep-crawl/function/complete_o_talk.mcfunction",
+    );
+    assert!(
+        complete_talk.contains("replace minecraft:iron_bars"),
+        "talk opens the gate"
+    );
+    assert!(
+        complete_talk.contains("teleport @s 260 65 4"),
+        "talk teleports the player to the keep entry spawn:\n{complete_talk}"
+    );
+
+    // setup places every pool piece and clears every mated socket to air.
+    let setup = text(&out, "datapack/data/keep-crawl/function/setup.mcfunction");
+    let places = setup
+        .lines()
+        .filter(|l| l.starts_with("place template keep-crawl:keep-"))
+        .count();
+    assert!(places >= 4, "multiple pool pieces placed, saw {places}");
+    assert!(
+        setup.contains("minecraft:air"),
+        "mated jigsaw sockets cleared to air"
+    );
+}
+
+/// The socket seal strategy: a spine that ends at a through-room leaves an open
+/// socket, which is sealed with wall material (`stone_bricks`). Solved directly
+/// against the real pool so the wall-seal branch is exercised (keep-crawl's
+/// fully-consumed linear chain has no open sockets).
+#[test]
+fn open_socket_is_sealed_with_wall() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let mut stream = Splitmix64::new(solver::stream_seed(1, "area/test"));
+    // Require only the gate (gate-room, a 2-socket through room). With no dead-end
+    // terminal, the spine ends at the gate-room, leaving its far socket open.
+    let layout = solver::solve_area(
+        &prefabs,
+        "pool/stone-keep",
+        &["anchor/gate".to_string()],
+        3,
+        3,
+        [0, 64, 0],
+        &mut stream,
+    )
+    .expect("solves");
+    assert!(
+        layout
+            .seals
+            .iter()
+            .any(|s| s.block == "minecraft:stone_bricks"),
+        "an open socket is sealed with stone_bricks"
+    );
+    assert!(
+        layout.seals.iter().any(|s| s.block == "minecraft:air"),
+        "mated sockets are cleared to air"
+    );
+}
+
+/// Same seed + same DSL → identical solved layout (the solver-level determinism
+/// invariant beneath the byte-identity gate).
+#[test]
+fn solver_same_seed_same_layout() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let solve = || {
+        let mut s = Splitmix64::new(solver::stream_seed(20260730, "area/keep"));
+        solver::solve_area(
+            &prefabs,
+            "pool/stone-keep",
+            &["anchor/gate".to_string(), "anchor/objective".to_string()],
+            5,
+            8,
+            [256, 64, 0],
+            &mut s,
+        )
+        .unwrap()
+    };
+    let a = solve();
+    let b = solve();
+    assert_eq!(a.pieces.len(), b.pieces.len());
+    for (pa, pb) in a.pieces.iter().zip(&b.pieces) {
+        assert_eq!(pa.prefab_id, pb.prefab_id);
+        assert_eq!(pa.pos, pb.pos);
+        assert_eq!(pa.rotation, pb.rotation);
+    }
+    assert_eq!(a.seals, b.seals);
+}

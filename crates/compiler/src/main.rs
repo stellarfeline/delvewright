@@ -176,7 +176,7 @@ fn run_build(campaign_dir: &Path, out: &Path, prefabs_dir: &Path, json: bool) ->
     let plan = match Plan::build(&campaign, &prefabs) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("build failure: {}", e.0);
+            print_build_error(e.code, &e.message, json);
             return ExitCode::from(3);
         }
     };
@@ -184,14 +184,23 @@ fn run_build(campaign_dir: &Path, out: &Path, prefabs_dir: &Path, json: bool) ->
     // read the structure .nbt bytes referenced by placements
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
-        let path = prefabs_dir.join(&area.structure_file);
-        match std::fs::read(&path) {
-            Ok(bytes) => {
-                structures.insert(area.structure_file.clone(), bytes);
+        for piece in &area.pieces {
+            if structures.contains_key(&piece.structure_file) {
+                continue;
             }
-            Err(e) => {
-                eprintln!("build failure: cannot read prefab {}: {e}", path.display());
-                return ExitCode::from(3);
+            let path = prefabs_dir.join(&piece.structure_file);
+            match std::fs::read(&path) {
+                Ok(bytes) => {
+                    structures.insert(piece.structure_file.clone(), bytes);
+                }
+                Err(e) => {
+                    print_build_error(
+                        "DW0300",
+                        &format!("cannot read prefab {}: {e}", path.display()),
+                        json,
+                    );
+                    return ExitCode::from(3);
+                }
             }
         }
     }
@@ -264,6 +273,23 @@ fn run_schema(stage: &str) -> ExitCode {
         );
     }
     ExitCode::SUCCESS
+}
+
+/// Print a `DW03xx` build/solver diagnostic (exit 3), honoring `--json`. Mirrors
+/// the spec-0002 one-object-per-line JSON shape used for validation diagnostics.
+fn print_build_error(code: &str, message: &str, json: bool) {
+    if json {
+        let d = serde_json::json!({
+            "code": code,
+            "severity": "error",
+            "stage": "build",
+            "path": "",
+            "message": message,
+        });
+        println!("{d}");
+    } else {
+        eprintln!("{code} [error] build: {message}");
+    }
 }
 
 fn print_diags(diags: &[Diagnostic], json: bool) {

@@ -52,6 +52,12 @@ pub struct PrefabMeta {
     pub structure: StructureMeta,
     /// Named anchors, keyed by DSL anchor name (`spawn`, `anchor/…`).
     pub anchors: BTreeMap<String, AnchorMeta>,
+    /// keep-socket-v1 connectors (jigsaw sockets). Empty for single-piece prefabs
+    /// (e.g. `hello-room`); the layout solver (`crate::solver`) mates these when
+    /// assembling a `prefab_pool` area (M2 task #9). Optional so single-piece
+    /// metadata without them still loads.
+    #[serde(default)]
+    pub connectors: Vec<Connector>,
     /// Declared lighting profile (spec-0001 "Lighting contract"). Typed as the
     /// DSL [`Lighting`] block; consumed by the `dark`-needs-mitigation analysis
     /// (`DW0210`, `analyze`). Optional so legacy metadata without it still loads.
@@ -60,6 +66,63 @@ pub struct PrefabMeta {
     /// License/provenance (opaque here; validated by review + `LICENSE-ASSETS.md`).
     #[serde(default)]
     pub license: serde_json::Value,
+}
+
+/// One keep-socket-v1 connector (a jigsaw doorway) declared by a prefab. See
+/// `prefabs/keep-tileset.md` "Connection convention". `local_pos` is the socket's
+/// wall cell (bottom-centre of the 3×3 opening) in the prefab's local coordinates;
+/// `facing` is the cardinal direction the opening faces outward. The solver mates
+/// two sockets by placing the child so its socket sits one block beyond the
+/// parent socket, facing the opposite way (see `crate::solver`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Connector {
+    /// Jigsaw `name` (uniform `keep:socket` in keep-socket-v1).
+    pub name: String,
+    /// Jigsaw `target` (uniform `keep:socket`).
+    pub target: String,
+    /// The socket's wall cell, local coords `[x, y, z]`.
+    pub local_pos: [i32; 3],
+    /// Cardinal direction the opening faces (`north`/`south`/`east`/`west`).
+    pub facing: String,
+    /// Opening extent `[width, height]` (3×3 in keep-socket-v1).
+    pub opening: [i32; 2],
+    /// Jigsaw joint (`aligned` in keep-socket-v1).
+    pub joint: String,
+}
+
+/// One member of a prefab pool: a prefab id, a weight, and a layout role. Roles
+/// (`entry`, `connector`, `room`, `terminal`) steer the solver — `entry` seeds
+/// the layout, `connector` fills the spine, `room`/`terminal` carry anchors and
+/// are placed only when a campaign-referenced anchor requires them.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PoolMember {
+    /// The member prefab id (`prefab/<name>`).
+    pub prefab: String,
+    /// Selection weight (higher = more likely). Defaults to 1.
+    #[serde(default = "one")]
+    pub weight: u32,
+    /// Layout role: `entry` | `connector` | `room` | `terminal`.
+    pub role: String,
+}
+
+fn one() -> u32 {
+    1
+}
+
+/// The on-disk `prefabs/pools.json` shape: pool id → members.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PoolsFile {
+    pools: BTreeMap<String, PoolDef>,
+}
+
+/// One pool definition (its member list).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PoolDef {
+    members: Vec<PoolMember>,
 }
 
 /// The structure-template reference of a prefab.
@@ -114,21 +177,24 @@ pub struct Region {
 pub struct PrefabRegistry {
     by_id: BTreeMap<String, PrefabMeta>,
     anchor_names: BTreeMap<String, BTreeSet<String>>,
-    /// Declared prefab-pool ids. Populated from `pools.json` if present; jigsaw
-    /// pool assembly lands fully in M2 task #9, so today this is typically empty
-    /// (and any `prefab_pool` ref is reported unknown, `DW0161`).
+    /// Declared prefab-pool ids (the keys of `pools.json`). A `prefab_pool` ref
+    /// to a pool absent here is reported unknown (`DW0161`).
     pools: BTreeSet<String>,
+    /// Pool id → its member pieces (weights + roles), consumed by the solver.
+    pool_members: BTreeMap<String, Vec<PoolMember>>,
 }
 
 impl PrefabRegistry {
     /// Load every `*.json` prefab metadata file in `dir`. Files that do not parse
     /// as [`PrefabMeta`] are skipped (e.g. unrelated docs). An optional
-    /// `pools.json` (a JSON array of `pool/<name>` ids) declares prefab pools.
-    /// Returns the loaded registry; errors only on an unreadable directory.
+    /// `pools.json` (`{ "pools": { "pool/<name>": { "members": [...] } } }`)
+    /// declares prefab pools and their member pieces. Returns the loaded
+    /// registry; errors only on an unreadable directory.
     pub fn load_dir(dir: &Path) -> std::io::Result<Self> {
         let mut by_id: BTreeMap<String, PrefabMeta> = BTreeMap::new();
         let mut anchor_names: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         let mut pools: BTreeSet<String> = BTreeSet::new();
+        let mut pool_members: BTreeMap<String, Vec<PoolMember>> = BTreeMap::new();
         // Sort entries for deterministic load order.
         let mut paths: Vec<PathBuf> = Vec::new();
         for entry in std::fs::read_dir(dir)? {
@@ -143,8 +209,11 @@ impl PrefabRegistry {
                 continue;
             };
             if path.file_name().and_then(|n| n.to_str()) == Some("pools.json") {
-                if let Ok(ids) = serde_json::from_str::<Vec<String>>(&raw) {
-                    pools.extend(ids);
+                if let Ok(file) = serde_json::from_str::<PoolsFile>(&raw) {
+                    for (id, def) in file.pools {
+                        pools.insert(id.clone());
+                        pool_members.insert(id, def.members);
+                    }
                 }
                 continue;
             }
@@ -158,12 +227,34 @@ impl PrefabRegistry {
             by_id,
             anchor_names,
             pools,
+            pool_members,
         })
     }
 
     /// The metadata for a prefab id (`prefab/<name>`), if loaded.
     pub fn get(&self, prefab_id: &str) -> Option<&PrefabMeta> {
         self.by_id.get(prefab_id)
+    }
+
+    /// The member pieces of a prefab pool (`pool/<name>`), if declared.
+    pub fn pool(&self, pool_id: &str) -> Option<&[PoolMember]> {
+        self.pool_members.get(pool_id).map(|v| v.as_slice())
+    }
+
+    /// The prefab ids in `pool_id` that declare `anchor_name` in their metadata.
+    pub fn pool_prefabs_with_anchor(&self, pool_id: &str, anchor_name: &str) -> Vec<String> {
+        let Some(members) = self.pool_members.get(pool_id) else {
+            return Vec::new();
+        };
+        members
+            .iter()
+            .filter(|m| {
+                self.by_id
+                    .get(&m.prefab)
+                    .is_some_and(|meta| meta.anchors.contains_key(anchor_name))
+            })
+            .map(|m| m.prefab.clone())
+            .collect()
     }
 }
 

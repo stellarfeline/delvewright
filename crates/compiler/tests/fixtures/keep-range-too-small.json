@@ -1,0 +1,27 @@
+{
+  "description": "A pool area whose pieces range (max 1) cannot fit the entry plus the two required anchor-bearing pieces (gate-room + shrine). The solver fails with DW0303 (range too small for required roles).",
+  "expect": "DW0303",
+  "documents": {
+    "world": {
+      "dsl_version": "0.2.0",
+      "campaign_id": "keep-crawl",
+      "stage": "world",
+      "content": {
+        "title": "The Keep Crawl",
+        "theme": "A gatehouse on the moor, and the stone keep it guards.",
+        "premise": "The Keeper will only open the keep to a traveler who asks. Beyond the gate, a shrine waits at the end of the hall.",
+        "seed": 20260730,
+        "target_minutes": 6,
+        "areas": [
+          { "id": "area/gatehouse", "name": "The Gatehouse", "prefab": "prefab/hello-room" },
+          {
+            "id": "area/keep",
+            "name": "The Stone Keep",
+            "prefab_pool": "pool/stone-keep",
+            "pieces": { "min": 1, "max": 1 }
+          }
+        ]
+      }
+    }
+  }
+}

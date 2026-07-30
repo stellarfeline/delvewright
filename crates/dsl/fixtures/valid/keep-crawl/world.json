@@ -1,0 +1,25 @@
+{
+  "dsl_version": "0.2.0",
+  "campaign_id": "keep-crawl",
+  "stage": "world",
+  "content": {
+    "title": "The Keep Crawl",
+    "theme": "A gatehouse on the moor, and the stone keep it guards.",
+    "premise": "The Keeper will only open the keep to a traveler who asks. Beyond the gate, a shrine waits at the end of the hall.",
+    "seed": 20260730,
+    "target_minutes": 6,
+    "areas": [
+      {
+        "id": "area/gatehouse",
+        "name": "The Gatehouse",
+        "prefab": "prefab/hello-room"
+      },
+      {
+        "id": "area/keep",
+        "name": "The Stone Keep",
+        "prefab_pool": "pool/stone-keep",
+        "pieces": { "min": 5, "max": 8 }
+      }
+    ]
+  }
+}

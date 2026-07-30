@@ -61,13 +61,16 @@ pub fn build(
         &json!({ "values": [format!("{ns}:tick")] }),
     );
 
-    // structures
+    // structures (one `.nbt` per distinct structure id, even if reused across
+    // several placed pieces — the insert is idempotent, same bytes)
     for area in &plan.areas {
-        if let Some(bytes) = structures.get(&area.structure_file) {
-            out.insert(
-                format!("datapack/data/{ns}/structure/{}.nbt", area.structure_id),
-                bytes.clone(),
-            );
+        for piece in &area.pieces {
+            if let Some(bytes) = structures.get(&piece.structure_file) {
+                out.insert(
+                    format!("datapack/data/{ns}/structure/{}.nbt", piece.structure_id),
+                    bytes.clone(),
+                );
+            }
         }
     }
 
@@ -265,22 +268,46 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
     // so the following commands in this same function succeed. The forceload is
     // kept (not removed) so the placed structure + NPCs stay simulated.
     for area in &plan.areas {
-        let ox = area.origin[0];
-        let oz = area.origin[2];
-        setup.push(format!(
-            "forceload add {} {} {} {}",
-            ox,
-            oz,
-            ox + area.size[0] - 1,
-            oz + area.size[2] - 1
-        ));
+        for piece in &area.pieces {
+            let (min, max) = piece.bbox();
+            setup.push(format!(
+                "forceload add {} {} {} {}",
+                min[0], min[2], max[0], max[2]
+            ));
+        }
     }
-    // place each area's prefab
+    // place each piece (single-prefab areas: one piece, rotation none → no
+    // rotation token, keeping the M1 output byte-identical; pool areas: the
+    // solver's per-piece pos + rotation)
     for area in &plan.areas {
-        setup.push(format!(
-            "place template {ns}:{} {} {} {}",
-            area.structure_id, area.origin[0], area.origin[1], area.origin[2]
-        ));
+        for piece in &area.pieces {
+            let rot = match piece.rotation.token() {
+                Some(t) => format!(" {t}"),
+                None => String::new(),
+            };
+            setup.push(format!(
+                "place template {ns}:{} {} {} {}{rot}",
+                piece.structure_id, piece.pos[0], piece.pos[1], piece.pos[2]
+            ));
+        }
+    }
+    // seal/clear sockets: open sockets get a wall fill; mated sockets get their
+    // jigsaw block cleared to air, leaving a clean 3×3 passage (keep-socket-v1).
+    // Runs after placement so it overwrites the raw structure blocks. Empty for
+    // single-prefab areas.
+    for area in &plan.areas {
+        for seal in &area.seals {
+            setup.push(format!(
+                "fill {} {} {} {} {} {} {}",
+                seal.from[0],
+                seal.from[1],
+                seal.from[2],
+                seal.to[0],
+                seal.to[1],
+                seal.to[2],
+                seal.block
+            ));
+        }
     }
     // summon NPCs (villager body + interaction hitbox)
     for npc in &plan.npcs {
@@ -482,6 +509,13 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
             body.push(format!("scoreboard players set @s {} 1", obj_score(oid)));
             for eff in objective_effects(c, oid) {
                 emit_quest_effect(plan, eff, &mut body);
+            }
+            // Inter-area transport: if completing this objective moves the player
+            // into a different area on the critical path, teleport them to that
+            // area's entry spawn (areas are AREA_SPACING apart across void). Runs
+            // after gate effects so the destination area is already unlocked.
+            if let Some(pos) = plan.transport.get(oid) {
+                body.push(format!("teleport @s {} {} {}", pos[0], pos[1], pos[2]));
             }
             body.push(format!(
                 "function {ns}:check_q_{}",
