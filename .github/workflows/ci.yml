@@ -1,0 +1,59 @@
+name: CI (tier 1)
+
+# spec-0004 tier 1 only: unit tests + static analysis on every push and PR.
+# Tier 2/3 (validation image, PackTest, playthrough) are deliberately not here.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: rust (fmt, clippy, test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # rust-toolchain.toml pins the channel + clippy/rustfmt components,
+      # which rustup on the runner installs automatically.
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+      - name: cargo clippy -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: cargo test
+        run: cargo test --workspace
+
+  harness:
+    name: harness (typecheck, test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: harness
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: harness/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test
+
+  docs:
+    name: docs (local link check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # --offline: check only local/internal links. The repo is private, so
+      # external-link checks would fail or flake.
+      - uses: lycheeverse/lychee-action@v2
+        with:
+          args: "--offline --no-progress './**/*.md'"
+          fail: true
