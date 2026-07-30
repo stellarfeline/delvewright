@@ -19,6 +19,14 @@
         3
       ],
       "facing": "east"
+    },
+    "anchor/door": {
+      "pos": [
+        2,
+        1,
+        3
+      ],
+      "facing": "east"
     }
   },
   "connectors": [

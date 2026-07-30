@@ -1,0 +1,25 @@
+{
+  "dsl_version": "0.3.0",
+  "campaign_id": "keep-trial",
+  "stage": "npcs",
+  "content": {
+    "npcs": [
+      {
+        "id": "npc/keeper",
+        "name": "The Keeper",
+        "role": "quest-giver",
+        "area": "area/keep",
+        "anchor": "anchor/keeper-stand",
+        "base_entity": "minecraft:villager",
+        "persona": {
+          "archetype": "grim warden of a dead keep",
+          "speech_style": "Clipped, soldierly; speaks in short imperatives.",
+          "demeanor": "Weary but not unkind; expects you to earn your passage.",
+          "motivation": "See the shrine reached before the moor takes the keep whole.",
+          "secret": "He was the captain who lost the keep, and cannot leave it.",
+          "backstory": "Has held the gate alone since the garrison fell."
+        }
+      }
+    ]
+  }
+}

@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use delvewright_dsl::{AnchorRegistry, ItemRegistry, Lighting, PoolId, PrefabId};
+use delvewright_dsl::{AnchorRegistry, EntityRegistry, ItemRegistry, Lighting, PoolId, PrefabId};
 use serde::Deserialize;
 
 /// The complete 1.21.11 item registry (1505 ids), vendored under `data/`.
@@ -33,6 +33,38 @@ impl ItemRegistry for FullItemRegistry {
         // Accept an un-namespaced id by assuming the default `minecraft:` namespace.
         if !item_id.contains(':') {
             return self.ids.contains(&format!("minecraft:{item_id}"));
+        }
+        false
+    }
+}
+
+/// The complete 1.21.11 entity-type registry (157 ids), vendored under `data/`
+/// from the same `misode/mcmeta` summary as the item registry (see
+/// `data/PROVENANCE.md`). Validates v0.3 wave mobs (`DW0173`).
+#[derive(Debug, Clone)]
+pub struct FullEntityRegistry {
+    ids: BTreeSet<String>,
+}
+
+impl FullEntityRegistry {
+    /// Load the vendored 1.21.11 entity registry (embedded at compile time).
+    pub fn v1_21_11() -> Self {
+        let raw = include_str!("../data/entities-1.21.11.json");
+        let ids: Vec<String> =
+            serde_json::from_str(raw).expect("vendored entity registry is valid JSON");
+        Self {
+            ids: ids.into_iter().collect(),
+        }
+    }
+}
+
+impl EntityRegistry for FullEntityRegistry {
+    fn contains(&self, entity_id: &str) -> bool {
+        if self.ids.contains(entity_id) {
+            return true;
+        }
+        if !entity_id.contains(':') {
+            return self.ids.contains(&format!("minecraft:{entity_id}"));
         }
         false
     }

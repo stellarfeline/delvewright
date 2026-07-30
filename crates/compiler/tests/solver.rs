@@ -155,6 +155,94 @@ fn keep_crawl_critical_path_crosses_pieces_and_areas() {
     );
 }
 
+/// keep-trial (v0.3): a branching keep exercising every gameplay verb builds
+/// clean (all commands validate), assembles ≥7 pieces with a branch, resolves
+/// each verb's critical-path step, wires the wave/flag/interact mechanics, and
+/// double-builds byte-identically.
+#[test]
+fn keep_trial_builds_all_verbs_and_is_deterministic() {
+    let a = build_campaign(&common::keep_trial_dir());
+    let b = build_campaign(&common::keep_trial_dir());
+    for (path, bytes) in &a {
+        assert_eq!(bytes, &b[path], "keep-trial byte mismatch in {path}");
+    }
+
+    let tree = CommandTree::v1_21_11();
+    assert!(
+        emit::validate_emitted(&a, &tree).is_empty(),
+        "all emitted keep-trial commands validate"
+    );
+
+    // Layout: ≥7 pieces including a branch (tee/cross) and a corner room.
+    let loaded = load_campaign_dir(&common::keep_trial_dir()).unwrap();
+    let campaign = parse_campaign(&loaded.raw).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).unwrap();
+    let keep = &plan.areas[0];
+    assert!(
+        keep.pieces.len() >= 7,
+        "keep-trial has {} pieces",
+        keep.pieces.len()
+    );
+    let ids: Vec<&str> = keep.pieces.iter().map(|p| p.prefab_id.as_str()).collect();
+    assert!(
+        ids.iter().any(|p| p.contains("tee") || p.contains("cross")),
+        "a branch piece is present: {ids:?}"
+    );
+    assert!(
+        ids.contains(&"prefab/keep-room-small-a") && ids.contains(&"prefab/keep-shrine"),
+        "both terminals (chest room + shrine) placed: {ids:?}"
+    );
+
+    // Critical path carries one step per verb.
+    let cp: serde_json::Value =
+        serde_json::from_slice(a.get("critical-path.json").unwrap()).unwrap();
+    let actions: Vec<&str> = cp["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["action"].as_str().unwrap())
+        .collect();
+    for verb in ["talk-to", "kill", "collect", "interact", "reach"] {
+        assert!(
+            actions.contains(&verb),
+            "critical path has a {verb} step: {actions:?}"
+        );
+    }
+
+    // Mechanics wired: wave spawn function + countdown, interaction entity, chest.
+    let setup = text(&a, "datapack/data/keep-trial/function/setup.mcfunction");
+    assert!(setup.contains("summon minecraft:interaction") && setup.contains("dw_i_door"));
+    assert!(setup.contains("setblock") && setup.contains("minecraft:chest"));
+    let spawn = text(
+        &a,
+        "datapack/data/keep-trial/function/spawn_guards.mcfunction",
+    );
+    assert!(spawn.contains("summon minecraft:zombie") && spawn.contains("dw.wave"));
+
+    // Per-verb PackTests emitted.
+    for t in [
+        "verb_kill",
+        "verb_collect",
+        "verb_interact",
+        "verb_flag_gate",
+    ] {
+        assert!(
+            a.contains_key(&format!(
+                "packtest-datapack/data/keep-trial/test/{t}.mcfunction"
+            )),
+            "PackTest {t} emitted"
+        );
+    }
+
+    // Combat difficulty (peaceful would remove summoned wave mobs).
+    let props = text(&a, "server/server.properties");
+    assert!(
+        props.contains("difficulty=easy"),
+        "wave campaign runs non-peaceful"
+    );
+}
+
 /// The socket seal strategy: a spine that ends at a through-room leaves an open
 /// socket, which is sealed with wall material (`stone_bricks`). Solved directly
 /// against the real pool so the wall-seal branch is exercised (keep-crawl's

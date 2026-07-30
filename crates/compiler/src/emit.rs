@@ -260,6 +260,27 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
     }
     setup.push("scoreboard objectives add dw.campaign dummy".to_string());
     setup.push("scoreboard objectives setdisplay sidebar dw.campaign".to_string());
+    // v0.3: the shared wave countdown, per-flag scores, and interact triggers.
+    // Each loop is empty for a v0.2 campaign, so hello-world / keep-crawl setup is
+    // byte-identical.
+    if !c.quests.content.waves.is_empty() {
+        setup.push(format!(
+            "scoreboard objectives add {} dummy",
+            plan::WAVE_OBJECTIVE
+        ));
+    }
+    for flag in declared_flags(c) {
+        setup.push(format!(
+            "scoreboard objectives add {} dummy",
+            plan::flag_score(&flag)
+        ));
+    }
+    for (oid, _) in interact_objectives(c) {
+        setup.push(format!(
+            "scoreboard objectives add {} trigger",
+            plan::interact_trigger(&oid)
+        ));
+    }
     // Force-load the chunks covering each prefab BEFORE placing. `#minecraft:load`
     // runs during server boot when the target chunks are not guaranteed to be
     // loaded; without this, `place template` / `summon` / `fill` silently no-op
@@ -345,6 +366,42 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
             pos[0], pos[1], pos[2], npc.tag
         ));
     }
+    // v0.3: place a loaded chest at each `collect` anchor and an interaction
+    // entity at each `interact` anchor. After the seal fills so they overwrite the
+    // structure floor cell. Empty for v0.2 campaigns (byte-identity preserved).
+    for q in &c.quests.content.quests {
+        let area = plan.quest_area(q.id.as_str()).unwrap_or("");
+        for o in &q.objectives {
+            match o {
+                Objective::Collect {
+                    item,
+                    count,
+                    anchor,
+                    ..
+                } => {
+                    if let Some(pos) = plan.point(area, anchor.as_str()) {
+                        setup.push(format!(
+                            "setblock {} {} {} minecraft:chest",
+                            pos[0], pos[1], pos[2]
+                        ));
+                        setup.push(format!(
+                            "item replace block {} {} {} container.0 with {} {}",
+                            pos[0], pos[1], pos[2], item, count
+                        ));
+                    }
+                }
+                Objective::Interact { id, anchor, .. } => {
+                    if let Some(pos) = plan.point(area, anchor.as_str()) {
+                        setup.push(format!(
+                            "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{}\"]}}",
+                            pos[0], pos[1], pos[2], interact_entity_tag(id.as_str())
+                        ));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
     // Set world spawn to the first area's `spawn` anchor so joining players land
     // on the prefab floor instead of falling through the void world before class
     // selection teleports them.
@@ -361,6 +418,14 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
         tick.push(format!(
             "scoreboard players enable @a {}",
             npc.trigger_objective
+        ));
+    }
+    // v0.3: interact triggers are enabled so the bot's `/trigger` (and re-tries)
+    // work, matching the dialog trigger pattern. Empty for v0.2 campaigns.
+    for (oid, _) in interact_objectives(c) {
+        tick.push(format!(
+            "scoreboard players enable @a {}",
+            plan::interact_trigger(&oid)
         ));
     }
     tick.push(format!(
@@ -380,46 +445,64 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
             ));
         }
     }
-    // reach-anchor proximity checks
+    // Per-tick objective completion checks. `reach-anchor` (proximity) is
+    // unchanged for v0.2; `kill` (wave countdown reached zero) and `interact`
+    // (trigger fired + optional item) are v0.3 additions. `collect` is
+    // advancement-driven, not polled here.
     for q in &c.quests.content.quests {
         let area = plan.quest_area(q.id.as_str()).unwrap_or("");
+        let qa = quest_active_score(q.id.as_str());
         for o in &q.objectives {
-            if let Objective::ReachAnchor {
-                id,
-                anchor,
-                radius,
-                after,
-                ..
-            } = o
-            {
-                let pos = match plan
-                    .anchors
-                    .get(&(area.to_string(), anchor.as_str().to_string()))
-                {
-                    Some(ResolvedAnchor::Point { pos, .. }) => *pos,
-                    Some(ResolvedAnchor::Gate { from, .. }) => *from,
-                    None => continue,
-                };
-                let mut guard = format!(
-                    "execute as @a if score @s {} matches 1",
-                    quest_active_score(q.id.as_str())
-                );
-                for a in after {
-                    guard.push_str(&format!(" if score @s {} matches 1", obj_score(a.as_str())));
+            match o {
+                Objective::ReachAnchor {
+                    id, anchor, radius, ..
+                } => {
+                    let pos = match plan
+                        .anchors
+                        .get(&(area.to_string(), anchor.as_str().to_string()))
+                    {
+                        Some(ResolvedAnchor::Point { pos, .. }) => *pos,
+                        Some(ResolvedAnchor::Gate { from, .. }) => *from,
+                        None => continue,
+                    };
+                    tick.push(format!(
+                        "execute as @a{} if entity @s[x={},y={},z={},distance=..{}] run function {ns}:complete_{}",
+                        pending_guard(o, &qa),
+                        pos[0], pos[1], pos[2], radius,
+                        safe_obj_fn(id.as_str())
+                    ));
                 }
-                guard.push_str(&format!(
-                    " unless score @s {} matches 1",
-                    obj_score(id.as_str())
-                ));
-                guard.push_str(&format!(
-                    " if entity @s[x={},y={},z={},distance=..{}] run function {ns}:complete_{}",
-                    pos[0],
-                    pos[1],
-                    pos[2],
-                    radius,
-                    obj_score(id.as_str()).replace("dw.o_", "o_")
-                ));
-                tick.push(guard);
+                Objective::Kill { id, wave, .. } => {
+                    tick.push(format!(
+                        "execute as @a{} if score {} {} matches ..0 run function {ns}:complete_{}",
+                        pending_guard(o, &qa),
+                        plan::wave_counter(wave.as_str()),
+                        plan::WAVE_OBJECTIVE,
+                        safe_obj_fn(id.as_str())
+                    ));
+                }
+                Objective::Interact {
+                    id, requires_item, ..
+                } => {
+                    let trigger = plan::interact_trigger(id.as_str());
+                    let item_guard = match requires_item {
+                        Some(it) => format!(" if items entity @s container.* {it}"),
+                        None => String::new(),
+                    };
+                    // The trigger is set by the bot's chat command or the
+                    // interaction advancement's reward; the guard applies uniformly.
+                    tick.push(format!(
+                        "execute as @a[scores={{{trigger}=1..}}]{}{item_guard} run function {ns}:complete_{}",
+                        pending_guard(o, &qa),
+                        safe_obj_fn(id.as_str())
+                    ));
+                    // Reset the trigger every tick so a gated attempt can be retried
+                    // (e.g. clicked the door before holding the key).
+                    tick.push(format!(
+                        "execute as @a[scores={{{trigger}=1..}}] run scoreboard players reset @s {trigger}"
+                    ));
+                }
+                Objective::TalkTo { .. } | Objective::Collect { .. } => {}
             }
         }
     }
@@ -601,8 +684,127 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
         ]),
     ));
 
+    // --- v0.3: wave spawn functions + verb reward functions ---
+    for w in &c.quests.content.waves {
+        let Some(pos) = wave_spawn_pos(plan, w.id.as_str()) else {
+            continue;
+        };
+        let mut body: Vec<String> = Vec::new();
+        body.push(format!(
+            "scoreboard players set {} {} {}",
+            plan::wave_counter(w.id.as_str()),
+            plan::WAVE_OBJECTIVE,
+            plan::wave_total(w)
+        ));
+        let mut idx = 0i32;
+        for mob in &w.mobs {
+            let name = match &mob.name {
+                Some(n) => {
+                    let cn = json!({ "text": n }).to_string().replace('\'', "\\'");
+                    format!(",CustomName:'{cn}',CustomNameVisible:1b")
+                }
+                None => String::new(),
+            };
+            for _ in 0..mob.count {
+                // Spread stacks by a small deterministic offset; AI is left enabled
+                // (no NoAI) so the mobs fight.
+                body.push(format!(
+                    "summon {} {} {} {} {{Tags:[\"{}\"],PersistenceRequired:1b{name}}}",
+                    mob.entity,
+                    pos[0] + idx,
+                    pos[1],
+                    pos[2],
+                    plan::wave_tag(w.id.as_str())
+                ));
+                idx += 1;
+            }
+        }
+        fns.push((
+            format!("spawn_{}", plan::safe_local(w.id.as_str())),
+            lines(&body),
+        ));
+        // kill reward: each slain wave mob decrements the countdown, then re-arms.
+        fns.push((
+            format!("k_reward_{}", plan::safe_local(w.id.as_str())),
+            lines(&[
+                format!(
+                    "scoreboard players remove {} {} 1",
+                    plan::wave_counter(w.id.as_str()),
+                    plan::WAVE_OBJECTIVE
+                ),
+                format!(
+                    "advancement revoke @s only {ns}:k_{}",
+                    plan::safe_local(w.id.as_str())
+                ),
+            ]),
+        ));
+    }
+    for q in &c.quests.content.quests {
+        let qa = quest_active_score(q.id.as_str());
+        for o in &q.objectives {
+            match o {
+                Objective::Interact { id, .. } => {
+                    // Human click path: the interaction advancement sets the same
+                    // trigger the bot chats; the per-tick handler applies guards.
+                    fns.push((
+                        format!("i_reward_{}", plan::safe_local(id.as_str())),
+                        lines(&[
+                            format!(
+                                "advancement revoke @s only {ns}:i_{}",
+                                plan::safe_local(id.as_str())
+                            ),
+                            format!(
+                                "scoreboard players set @s {} 1",
+                                plan::interact_trigger(id.as_str())
+                            ),
+                        ]),
+                    ));
+                }
+                Objective::Collect { id, .. } => {
+                    // inventory_changed reward: complete (if the quest/after/flags
+                    // guards hold), then re-arm.
+                    fns.push((
+                        format!("c_reward_{}", plan::safe_local(id.as_str())),
+                        lines(&[
+                            format!(
+                                "execute{} run function {ns}:complete_{}",
+                                pending_guard(o, &qa),
+                                safe_obj_fn(id.as_str())
+                            ),
+                            format!(
+                                "advancement revoke @s only {ns}:c_{}",
+                                plan::safe_local(id.as_str())
+                            ),
+                        ]),
+                    ));
+                }
+                _ => {}
+            }
+        }
+    }
+
     fns.sort_by(|a, b| a.0.cmp(&b.0));
     fns
+}
+
+/// The absolute spawn position of a wave: the world coords of its anchor, resolved
+/// in the area of the (first) quest whose `kill` objective references it.
+fn wave_spawn_pos(plan: &Plan, wave_id: &str) -> Option<[i32; 3]> {
+    let c = plan.campaign;
+    let w = plan::wave_of(c, wave_id)?;
+    for q in &c.quests.content.quests {
+        let Some(area) = plan.quest_area(q.id.as_str()) else {
+            continue;
+        };
+        for o in &q.objectives {
+            if let Objective::Kill { wave, .. } = o
+                && wave.as_str() == wave_id
+            {
+                return plan.point(area, w.anchor.as_str());
+            }
+        }
+    }
+    None
 }
 
 /// Emit a quest effect's commands into `body`.
@@ -626,8 +828,21 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
         QuestEffect::CampaignComplete => {
             body.push(format!("function {ns}:campaign_complete"));
         }
-        // Reserved effects are rejected by validation before emission.
-        _ => {}
+        QuestEffect::GiveItem { item, count } => {
+            body.push(format!("give @s {item} {count}"));
+        }
+        QuestEffect::SetFlag { flag } => {
+            body.push(format!(
+                "scoreboard players set @s {} 1",
+                plan::flag_score(flag.as_str())
+            ));
+        }
+        QuestEffect::SpawnWave { wave } => {
+            body.push(format!(
+                "function {ns}:spawn_{}",
+                plan::safe_local(wave.as_str())
+            ));
+        }
     }
 }
 
@@ -647,6 +862,66 @@ fn campaign_spawn(plan: &Plan) -> Option<[i32; 3]> {
 /// Objective id → function-name-safe token (`obj/talk` → `o_talk`).
 fn safe_obj_fn(obj_id: &str) -> String {
     format!("o_{}", plan::safe_local(obj_id))
+}
+
+/// The entity tag on an `interact` objective's interaction hitbox.
+fn interact_entity_tag(obj_id: &str) -> String {
+    format!("dw_i_{}", plan::safe_local(obj_id))
+}
+
+/// The flags any `set-flag` effect produces (sorted, deduped).
+fn declared_flags(c: &delvewright_dsl::Campaign) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    for q in &c.quests.content.quests {
+        let effs = q
+            .on_objective_complete
+            .values()
+            .flatten()
+            .chain(q.on_complete.iter());
+        for eff in effs {
+            if let Some(f) = eff.set_flag() {
+                out.insert(f.as_str().to_string());
+            }
+        }
+    }
+    out
+}
+
+/// `(objective id, quest id)` for every `interact` objective, in declared order.
+fn interact_objectives(c: &delvewright_dsl::Campaign) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for q in &c.quests.content.quests {
+        for o in &q.objectives {
+            if matches!(o, Objective::Interact { .. }) {
+                out.push((o.id().as_str().to_string(), q.id.as_str().to_string()));
+            }
+        }
+    }
+    out
+}
+
+/// The intra-quest activation + pending guard for an objective (v0.3): the quest
+/// must be active, every `after` prerequisite and `requires_flags` flag set, and
+/// the objective itself not yet complete. Returns the ` if …`/` unless …` fragment
+/// (leading space); callers prepend `execute as @a` and append the type-specific
+/// condition + `run`. For a v0.2 objective (no `after`/flags) this is exactly the
+/// pre-v0.3 reach guard, keeping keep-crawl byte-identical.
+fn pending_guard(o: &Objective, quest_active: &str) -> String {
+    let mut g = format!(" if score @s {quest_active} matches 1");
+    for a in o.after() {
+        g.push_str(&format!(" if score @s {} matches 1", obj_score(a.as_str())));
+    }
+    for f in o.requires_flags() {
+        g.push_str(&format!(
+            " if score @s {} matches 1",
+            plan::flag_score(f.as_str())
+        ));
+    }
+    g.push_str(&format!(
+        " unless score @s {} matches 1",
+        obj_score(o.id().as_str())
+    ));
+    g
 }
 
 // ---------------------------------------------------------------------------
@@ -756,6 +1031,70 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
                     }
                 },
                 "rewards": { "function": format!("{ns}:talk_{}", npc.safe) }
+            }),
+        ));
+    }
+
+    // v0.3: one advancement per interact objective, collect objective and wave.
+    for q in &c.quests.content.quests {
+        for o in &q.objectives {
+            match o {
+                Objective::Interact { id, .. } => {
+                    let tag = interact_entity_tag(id.as_str());
+                    advs.push((
+                        format!("i_{}", plan::safe_local(id.as_str())),
+                        json!({
+                            "criteria": {
+                                "interact": {
+                                    "trigger": "minecraft:player_interacted_with_entity",
+                                    "conditions": {
+                                        "entity": {
+                                            "type": "minecraft:interaction",
+                                            "nbt": format!("{{Tags:[\"{tag}\"]}}")
+                                        }
+                                    }
+                                }
+                            },
+                            "rewards": { "function": format!("{ns}:i_reward_{}", plan::safe_local(id.as_str())) }
+                        }),
+                    ));
+                }
+                Objective::Collect {
+                    id, item, count, ..
+                } => {
+                    advs.push((
+                        format!("c_{}", plan::safe_local(id.as_str())),
+                        json!({
+                            "criteria": {
+                                "got": {
+                                    "trigger": "minecraft:inventory_changed",
+                                    "conditions": {
+                                        "items": [ { "items": item, "count": { "min": count } } ]
+                                    }
+                                }
+                            },
+                            "rewards": { "function": format!("{ns}:c_reward_{}", plan::safe_local(id.as_str())) }
+                        }),
+                    ));
+                }
+                _ => {}
+            }
+        }
+    }
+    for w in &c.quests.content.waves {
+        let tag = plan::wave_tag(w.id.as_str());
+        advs.push((
+            format!("k_{}", plan::safe_local(w.id.as_str())),
+            json!({
+                "criteria": {
+                    "slain": {
+                        "trigger": "minecraft:player_killed_entity",
+                        "conditions": {
+                            "entity": { "nbt": format!("{{Tags:[\"{tag}\"]}}") }
+                        }
+                    }
+                },
+                "rewards": { "function": format!("{ns}:k_reward_{}", plan::safe_local(w.id.as_str())) }
             }),
         ));
     }
@@ -882,13 +1221,230 @@ fn emit_packtest(plan: &Plan, out: &mut BuildOutput) {
         format!("packtest-datapack/data/{ns}/test/sealed_state.mcfunction"),
         lines(&sealed).into_bytes(),
     );
+
+    // v0.3: one focused mechanism test per gameplay verb present in the campaign,
+    // plus a flag-gate test. Each drives the compiler-generated mechanic functions
+    // on a dummy player (no real combat / advancement events needed) and asserts
+    // the objective scoreboard. Emits nothing for a v0.2 campaign.
+    emit_verb_packtests(plan, out);
+}
+
+/// The header lines shared by every generated PackTest (`# @dummy` + timeout).
+fn packtest_header(title: &str) -> Vec<String> {
+    vec![
+        format!("#> {title}"),
+        "# @dummy".to_string(),
+        "# @timeout 100".to_string(),
+        String::new(),
+    ]
+}
+
+/// Lines that satisfy an objective's activation guard on `@a` (quest active, all
+/// `after` prerequisites set, all `requires_flags` set, and any required item
+/// given). Optionally omit the flags to test the gate.
+fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool) -> Vec<String> {
+    let mut p = vec![format!(
+        "scoreboard players set @a {} 1",
+        quest_active_score(quest_id)
+    )];
+    for a in o.after() {
+        p.push(format!(
+            "scoreboard players set @a {} 1",
+            obj_score(a.as_str())
+        ));
+    }
+    if with_flags {
+        for f in o.requires_flags() {
+            p.push(format!(
+                "scoreboard players set @a {} 1",
+                plan::flag_score(f.as_str())
+            ));
+        }
+    }
+    match o {
+        Objective::Collect { item, count, .. } => {
+            p.push(format!("give @a {item} {count}"));
+        }
+        Objective::Interact {
+            requires_item: Some(it),
+            ..
+        } => {
+            p.push(format!("give @a {it} 1"));
+        }
+        _ => {}
+    }
+    p
+}
+
+/// Emit a per-verb mechanism PackTest for the first `kill` / `collect` /
+/// `interact` objective, plus a flag-gate test for the first flag-gated
+/// collect/interact objective.
+fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+
+    let mut write = |name: &str, body: Vec<String>| {
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
+            lines(&body).into_bytes(),
+        );
+    };
+
+    // Collect (quest, objective) pairs by verb, in declared order.
+    let mut first_kill = None;
+    let mut first_collect = None;
+    let mut first_interact = None;
+    let mut first_flag_gated = None;
+    for q in &c.quests.content.quests {
+        for o in &q.objectives {
+            let qid = q.id.as_str();
+            match o {
+                Objective::Kill { .. } if first_kill.is_none() => first_kill = Some((qid, o)),
+                Objective::Collect { .. } if first_collect.is_none() => {
+                    first_collect = Some((qid, o))
+                }
+                Objective::Interact { .. } if first_interact.is_none() => {
+                    first_interact = Some((qid, o))
+                }
+                _ => {}
+            }
+            if first_flag_gated.is_none()
+                && !o.requires_flags().is_empty()
+                && matches!(o, Objective::Collect { .. } | Objective::Interact { .. })
+            {
+                first_flag_gated = Some((qid, o));
+            }
+        }
+    }
+
+    // kill: spawn the wave, drain the countdown via the kill reward, tick,
+    // assert the objective completed.
+    if let Some((qid, o)) = first_kill
+        && let Objective::Kill { id, wave, .. } = o
+        && let Some(w) = plan::wave_of(c, wave.as_str())
+    {
+        let total = plan::wave_total(w);
+        let ws = plan::safe_local(wave.as_str());
+        let mut b = packtest_header(&format!(
+            "{}: kill wave `{wave}` -> countdown -> complete",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.extend(packtest_preamble(qid, o, true));
+        b.push(format!("function {ns}:spawn_{ws}"));
+        b.push(format!(
+            "assert score {} {} matches {total}",
+            plan::wave_counter(wave.as_str()),
+            plan::WAVE_OBJECTIVE
+        ));
+        b.push(format!("kill @e[tag={}]", plan::wave_tag(wave.as_str())));
+        for _ in 0..total {
+            b.push(format!("execute as @a run function {ns}:k_reward_{ws}"));
+        }
+        b.push(format!("function {ns}:tick"));
+        b.push(format!(
+            "assert score @p {} matches 1",
+            obj_score(id.as_str())
+        ));
+        write("verb_kill", b);
+    }
+
+    // collect: satisfy guards + hold the item, run the collect reward, assert.
+    if let Some((qid, o)) = first_collect
+        && let Objective::Collect { id, .. } = o
+    {
+        let mut b = packtest_header(&format!(
+            "{}: collect -> reward completes objective",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.extend(packtest_preamble(qid, o, true));
+        b.push(format!(
+            "execute as @a run function {ns}:c_reward_{}",
+            plan::safe_local(id.as_str())
+        ));
+        b.push(format!(
+            "assert score @p {} matches 1",
+            obj_score(id.as_str())
+        ));
+        write("verb_collect", b);
+    }
+
+    // interact: hold the required item, fire the trigger, tick, assert.
+    if let Some((qid, o)) = first_interact
+        && let Objective::Interact { id, .. } = o
+    {
+        let mut b = packtest_header(&format!(
+            "{}: interact trigger + item -> complete",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.extend(packtest_preamble(qid, o, true));
+        b.push(format!(
+            "scoreboard players set @a {} 1",
+            plan::interact_trigger(id.as_str())
+        ));
+        b.push(format!("function {ns}:tick"));
+        b.push(format!(
+            "assert score @p {} matches 1",
+            obj_score(id.as_str())
+        ));
+        write("verb_interact", b);
+    }
+
+    // flag gate: without the flag the objective must NOT complete; with it, it does.
+    if let Some((qid, o)) = first_flag_gated {
+        let id = o.id().as_str();
+        let driver = |b: &mut Vec<String>| match o {
+            Objective::Collect { .. } => b.push(format!(
+                "execute as @a run function {ns}:c_reward_{}",
+                plan::safe_local(id)
+            )),
+            Objective::Interact { .. } => {
+                b.push(format!(
+                    "scoreboard players set @a {} 1",
+                    plan::interact_trigger(id)
+                ));
+                b.push(format!("function {ns}:tick"));
+            }
+            _ => {}
+        };
+        let mut b = packtest_header(&format!(
+            "{}: requires_flags gates objective `{id}`",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("scoreboard players set @a {} 0", obj_score(id)));
+        b.extend(packtest_preamble(qid, o, false)); // flags withheld
+        driver(&mut b);
+        b.push(format!("assert score @p {} matches 0", obj_score(id)));
+        for f in o.requires_flags() {
+            b.push(format!(
+                "scoreboard players set @a {} 1",
+                plan::flag_score(f.as_str())
+            ));
+        }
+        driver(&mut b);
+        b.push(format!("assert score @p {} matches 1", obj_score(id)));
+        write("verb_flag_gate", b);
+    }
 }
 
 fn emit_server(plan: &Plan, out: &mut BuildOutput) {
+    // Combat waves (v0.3) require a non-peaceful difficulty: peaceful *removes*
+    // hostile mobs even when summoned. Wave-free campaigns stay `peaceful`
+    // (hello-world / keep-crawl byte-identical). Natural spawning is still off
+    // (`spawn-monsters=false` + gamerule `spawn_mobs false`); only the compiler's
+    // summoned wave mobs exist.
+    let difficulty = if plan.campaign.quests.content.waves.is_empty() {
+        "peaceful"
+    } else {
+        "easy"
+    };
     // server.properties (keys sorted for determinism).
     let props: BTreeMap<&str, String> = BTreeMap::from([
         ("allow-nether", "false".to_string()),
-        ("difficulty", "peaceful".to_string()),
+        ("difficulty", difficulty.to_string()),
         ("force-gamemode", "true".to_string()),
         ("gamemode", "adventure".to_string()),
         ("generate-structures", "false".to_string()),
@@ -955,6 +1511,16 @@ fn emit_critical_path(plan: &Plan) -> Value {
             }),
             Step::Reach { anchor_id, pos, radius } => json!({
                 "action": "reach", "anchor": anchor_id, "pos": pos, "radius": radius
+            }),
+            Step::Kill { wave_id, pos, tag, count } => json!({
+                "action": "kill", "wave": wave_id, "pos": pos, "tag": tag, "count": count
+            }),
+            Step::Collect { item, count, pos } => json!({
+                "action": "collect", "item": item, "count": count, "pos": pos
+            }),
+            Step::Interact { anchor_id, pos, command, requires_item } => json!({
+                "action": "interact", "anchor": anchor_id, "pos": pos,
+                "command": command, "requires_item": requires_item
             }),
             Step::AssertComplete { objective, value } => json!({
                 "action": "assert-complete", "scoreboard": { "objective": objective, "value": value }

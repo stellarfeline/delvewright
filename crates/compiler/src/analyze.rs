@@ -61,6 +61,31 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
     let mut active: BTreeSet<&str> = BTreeSet::new();
     let mut completable: BTreeSet<&str> = BTreeSet::new(); // objective ids
     let mut completed: BTreeSet<&str> = BTreeSet::new(); // quest ids
+    let mut set_flags: BTreeSet<&str> = BTreeSet::new(); // flags producible so far
+
+    // set-flag effects by the objective / quest that fires them (v0.3): a flag is
+    // producible once the objective/quest that sets it is itself completable.
+    let mut obj_setflags: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    let mut quest_setflags: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for q in quests {
+        for (oid, effs) in &q.on_objective_complete {
+            let flags: Vec<&str> = effs
+                .iter()
+                .filter_map(|e| e.set_flag().map(|f| f.as_str()))
+                .collect();
+            if !flags.is_empty() {
+                obj_setflags.insert(oid.as_str(), flags);
+            }
+        }
+        let cflags: Vec<&str> = q
+            .on_complete
+            .iter()
+            .filter_map(|e| e.set_flag().map(|f| f.as_str()))
+            .collect();
+        if !cflags.is_empty() {
+            quest_setflags.insert(q.id.as_str(), cflags);
+        }
+    }
 
     // Fixpoint.
     loop {
@@ -93,14 +118,29 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
                 if !prereqs_ok {
                     continue;
                 }
+                // requires_flags (v0.3): every gating flag must be producible by a
+                // set-flag effect on an already-completable objective/quest.
+                let flags_ok = obj
+                    .requires_flags()
+                    .iter()
+                    .all(|f| set_flags.contains(f.as_str()));
+                if !flags_ok {
+                    continue;
+                }
                 let type_ok = match obj {
                     Objective::TalkTo { .. } => dialogue_completable.contains(oid),
-                    Objective::ReachAnchor { .. } => true,
-                    // Reserved types are rejected by DSL validation before analyze.
-                    _ => false,
+                    // reach/kill/collect/interact resolve at build time; the wave,
+                    // chest and interaction entity are compiler-placed.
+                    Objective::ReachAnchor { .. }
+                    | Objective::Kill { .. }
+                    | Objective::Collect { .. }
+                    | Objective::Interact { .. } => true,
                 };
                 if type_ok {
                     completable.insert(oid);
+                    if let Some(fs) = obj_setflags.get(oid) {
+                        set_flags.extend(fs.iter().copied());
+                    }
                     changed = true;
                 }
             }
@@ -115,6 +155,9 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
                     .all(|o| completable.contains(o.id().as_str()))
             {
                 completed.insert(qid);
+                if let Some(fs) = quest_setflags.get(qid) {
+                    set_flags.extend(fs.iter().copied());
+                }
                 changed = true;
             }
         }

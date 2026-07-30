@@ -36,6 +36,11 @@ pub fn keep_crawl_dir() -> PathBuf {
     repo_root().join("crates/dsl/fixtures/valid/keep-crawl")
 }
 
+/// The v0.3 branching keep-trial campaign directory (all gameplay verbs).
+pub fn keep_trial_dir() -> PathBuf {
+    repo_root().join("crates/dsl/fixtures/valid/keep-trial")
+}
+
 /// Materialize a full campaign directory at `dst` = the campaign in `base` with
 /// each stage in `patch["documents"]` overwritten by its replacement envelope.
 pub fn materialize_from(base: &Path, patch: &serde_json::Value, dst: &Path) {

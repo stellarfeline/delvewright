@@ -24,12 +24,13 @@ Global: `--json` (one JSON diagnostic per line, the spec-0002 shape), `--prefabs
 
 ## Validation vs analysis
 
-`validate` runs the DSL's v0.2 rule groups (`DW01xx`, see `crates/dsl/README.md`)
-with the **full** injected registries: the complete 1.21.11 item registry
-(`data/items-1.21.11.json`, 1505 ids) and the real prefab metadata from
-`prefabs/` (anchors, pool existence, lighting). (Note: item ids the DSL's 5-item
-vendored subset rejects but that are real 1.21.11 items — e.g.
-`minecraft:diamond_hoe` — validate here.)
+`validate` runs the DSL's v0.2/v0.3 rule groups (`DW01xx`, see
+`crates/dsl/README.md`) with the **full** injected registries: the complete
+1.21.11 item registry (`data/items-1.21.11.json`, 1505 ids), the complete entity
+registry (`data/entities-1.21.11.json`, 157 ids — v0.3 wave mobs, `DW0173`) and
+the real prefab metadata from `prefabs/` (anchors, pool existence, lighting).
+(Note: item ids the DSL's 5-item vendored subset rejects but that are real
+1.21.11 items — e.g. `minecraft:diamond_hoe` — validate here.)
 
 `analyze` adds **deep semantic reachability** over the merged quest + objective +
 stage-6 dialogue graph (distinct from the DSL's structural `DW0132`
@@ -156,6 +157,18 @@ test (`tests/cli.rs`) is the ADR-0006 gate.
 
 ## Emission design decisions (within spec-0002's allowed choices)
 
+- **v0.3 gameplay verbs** (spec-0002 v0.3 addendum): `spawn-wave` summons a wave's
+  mobs (AI enabled) tagged `dw_wave_<id>` and sets a countdown `#<id> dw.wave`; a
+  `player_killed_entity` advancement decrements it, and the `kill` objective's
+  per-tick check completes at zero. `collect` places a loaded chest at its anchor;
+  an `inventory_changed` advancement runs a guarded completion. `interact` summons
+  an interaction entity (tag `dw_i_<obj>`); the click advancement and the bot's
+  `/trigger dw.i_<obj>` both feed one per-tick handler that applies the
+  `requires_item` (`execute if items`) + flag guards. `set-flag` sets `dw.f_<flag>`
+  (per-player); `requires_flags` ANDs those scores into every objective guard. Wave
+  campaigns emit `difficulty=easy` (peaceful removes summoned mobs); wave-free
+  campaigns stay `peaceful`, so hello-world / keep-crawl are byte-identical. Each
+  verb gets a generated per-verb PackTest driving the mechanic on a dummy player.
 - **NPC interaction**: a `minecraft:villager` (NoAI/Invulnerable/Silent, no
   profession) is the visual body; a co-located `minecraft:interaction` entity
   (tag `dw_npc_<npc>`) is the click target. An advancement

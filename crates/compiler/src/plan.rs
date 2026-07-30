@@ -195,6 +195,39 @@ pub enum Step {
         /// Completion radius.
         radius: u32,
     },
+    /// Slay a wave: goto `pos` (the wave anchor), attack entities tagged `tag`
+    /// until the marker channel reports completion (v0.3).
+    Kill {
+        /// Wave id (`wave/…`).
+        wave_id: String,
+        /// Absolute wave-anchor position.
+        pos: [i32; 3],
+        /// Entity tag on the wave's mobs (`dw_wave_<wave>`).
+        tag: String,
+        /// Total mob count.
+        count: i32,
+    },
+    /// Collect `count` of `item` from a chest at `pos` (v0.3).
+    Collect {
+        /// Vanilla item id.
+        item: String,
+        /// Required count.
+        count: i32,
+        /// Absolute chest-anchor position.
+        pos: [i32; 3],
+    },
+    /// Interact at `pos`: goto, then chat `command` (the same `/trigger` the
+    /// interaction advancement fires). `requires_item` gates completion (v0.3).
+    Interact {
+        /// Interact anchor id.
+        anchor_id: String,
+        /// Absolute interact-anchor position.
+        pos: [i32; 3],
+        /// The chat command the bot sends.
+        command: String,
+        /// Item required in inventory, if any.
+        requires_item: Option<String>,
+    },
     /// Assert a scoreboard objective value.
     AssertComplete {
         /// The objective (`dw.campaign`).
@@ -225,6 +258,40 @@ pub fn quest_active_score(quest_id: &str) -> String {
 /// Trigger objective for an NPC's dialogue.
 pub fn dlg_trigger(npc_id: &str) -> String {
     format!("dw.dlg_{}", safe_local(npc_id))
+}
+/// Per-player scoreboard for a campaign flag (`set-flag` / `requires_flags`, v0.3).
+pub fn flag_score(flag_id: &str) -> String {
+    format!("dw.f_{}", safe_local(flag_id))
+}
+/// Trigger objective the bot chats / an interaction advancement sets to drive an
+/// `interact` objective (v0.3).
+pub fn interact_trigger(obj_id: &str) -> String {
+    format!("dw.i_{}", safe_local(obj_id))
+}
+/// The shared scoreboard objective holding every wave's remaining-mob countdown
+/// (fake players `#<wave>`, v0.3).
+pub const WAVE_OBJECTIVE: &str = "dw.wave";
+/// The fake-player key holding a wave's remaining-mob count.
+pub fn wave_counter(wave_id: &str) -> String {
+    format!("#{}", safe_local(wave_id))
+}
+/// The entity tag stamped on a wave's spawned mobs (v0.3).
+pub fn wave_tag(wave_id: &str) -> String {
+    format!("dw_wave_{}", safe_local(wave_id))
+}
+
+/// A stage-5 wave by id (v0.3).
+pub fn wave_of<'a>(campaign: &'a Campaign, wave_id: &str) -> Option<&'a delvewright_dsl::Wave> {
+    campaign
+        .quests
+        .content
+        .waves
+        .iter()
+        .find(|w| w.id.as_str() == wave_id)
+}
+/// A wave's total mob count.
+pub fn wave_total(wave: &delvewright_dsl::Wave) -> i32 {
+    wave.mobs.iter().map(|m| m.count as i32).sum()
 }
 
 /// Errors that stop planning (map to build failure, exit 3). Carries a stable
@@ -459,8 +526,20 @@ fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> Vec<String> 
             continue;
         }
         for o in &q.objectives {
-            if let Objective::ReachAnchor { anchor, .. } = o {
-                set.insert(anchor.as_str().to_string());
+            match o {
+                Objective::ReachAnchor { anchor, .. } | Objective::Collect { anchor, .. } => {
+                    set.insert(anchor.as_str().to_string());
+                }
+                Objective::Interact { anchor, .. } => {
+                    set.insert(anchor.as_str().to_string());
+                }
+                Objective::Kill { wave, .. } => {
+                    // The wave's spawn anchor must exist in the assembled area.
+                    if let Some(w) = wave_of(campaign, wave.as_str()) {
+                        set.insert(w.anchor.as_str().to_string());
+                    }
+                }
+                Objective::TalkTo { .. } => {}
             }
         }
         for effs in q.on_objective_complete.values() {
@@ -656,7 +735,52 @@ fn build_critical_path(
                     });
                     obj_areas.push((id.as_str().to_string(), area.to_string()));
                 }
-                _ => {}
+                Objective::Kill { id, wave, .. } => {
+                    let w = wave_of(campaign, wave.as_str()).ok_or_else(|| {
+                        PlanError::new(
+                            DW_BUILD,
+                            format!("kill objective references unknown wave `{wave}`"),
+                        )
+                    })?;
+                    let pos = point_of(anchors, area, w.anchor.as_str())?;
+                    steps.push(Step::Kill {
+                        wave_id: wave.as_str().to_string(),
+                        pos,
+                        tag: wave_tag(wave.as_str()),
+                        count: wave_total(w),
+                    });
+                    obj_areas.push((id.as_str().to_string(), area.to_string()));
+                }
+                Objective::Collect {
+                    id,
+                    item,
+                    count,
+                    anchor,
+                    ..
+                } => {
+                    let pos = point_of(anchors, area, anchor.as_str())?;
+                    steps.push(Step::Collect {
+                        item: item.clone(),
+                        count: *count as i32,
+                        pos,
+                    });
+                    obj_areas.push((id.as_str().to_string(), area.to_string()));
+                }
+                Objective::Interact {
+                    id,
+                    anchor,
+                    requires_item,
+                    ..
+                } => {
+                    let pos = point_of(anchors, area, anchor.as_str())?;
+                    steps.push(Step::Interact {
+                        anchor_id: anchor.as_str().to_string(),
+                        pos,
+                        command: format!("/trigger {} set 1", interact_trigger(id.as_str())),
+                        requires_item: requires_item.clone(),
+                    });
+                    obj_areas.push((id.as_str().to_string(), area.to_string()));
+                }
             }
         }
     }
