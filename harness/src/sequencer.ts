@@ -5,7 +5,10 @@
 
 import type {
   AssertCompleteStep,
+  CollectStep,
   CriticalPath,
+  InteractStep,
+  KillStep,
   ReachStep,
   SelectClassStep,
   Step,
@@ -21,6 +24,9 @@ export interface StepExecutor {
   selectClass(step: SelectClassStep): Promise<void>;
   talkTo(step: TalkToStep): Promise<void>;
   reach(step: ReachStep): Promise<void>;
+  kill(step: KillStep): Promise<void>;
+  collect(step: CollectStep): Promise<void>;
+  interact(step: InteractStep): Promise<void>;
   assertComplete(step: AssertCompleteStep): Promise<void>;
 }
 
@@ -95,6 +101,12 @@ async function dispatch(executor: StepExecutor, step: Step): Promise<void> {
       return executor.talkTo(step);
     case "reach":
       return executor.reach(step);
+    case "kill":
+      return executor.kill(step);
+    case "collect":
+      return executor.collect(step);
+    case "interact":
+      return executor.interact(step);
     case "assert-complete":
       return executor.assertComplete(step);
   }

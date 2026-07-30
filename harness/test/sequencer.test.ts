@@ -2,7 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type {
   AssertCompleteStep,
+  CollectStep,
   CriticalPath,
+  InteractStep,
+  KillStep,
   ReachStep,
   SelectClassStep,
   Step,
@@ -42,6 +45,15 @@ class RecordingExecutor implements StepExecutor {
   reach(_step: ReachStep): Promise<void> {
     return this.record("reach");
   }
+  kill(_step: KillStep): Promise<void> {
+    return this.record("kill");
+  }
+  collect(_step: CollectStep): Promise<void> {
+    return this.record("collect");
+  }
+  interact(_step: InteractStep): Promise<void> {
+    return this.record("interact");
+  }
   assertComplete(_step: AssertCompleteStep): Promise<void> {
     return this.record("assert-complete");
   }
@@ -63,6 +75,26 @@ const reach: ReachStep = {
   anchor: "anchor/exit",
   pos: [8, 65, 24],
   radius: 2,
+};
+const kill: KillStep = {
+  action: "kill",
+  wave: "wave/guards",
+  pos: [22, 65, 12],
+  tag: "dw_wave_guards",
+  count: 2,
+};
+const collect: CollectStep = {
+  action: "collect",
+  item: "minecraft:tripwire_hook",
+  count: 1,
+  pos: [44, 65, 20],
+};
+const interact: InteractStep = {
+  action: "interact",
+  anchor: "anchor/door",
+  pos: [2, 65, 12],
+  command: "/trigger dw.i_door set 1",
+  requiresItem: "minecraft:tripwire_hook",
 };
 const assertComplete: AssertCompleteStep = {
   action: "assert-complete",
@@ -132,6 +164,23 @@ test("runSequence dispatches each step in order", async () => {
   assert.deepEqual(executor.calls, [
     "select-class",
     "talk-to",
+    "reach",
+    "assert-complete",
+  ]);
+});
+
+test("runSequence dispatches the v0.3 kill/collect/interact steps", async () => {
+  const executor = new RecordingExecutor();
+  await runSequence(
+    path([selectClass, talkTo, kill, collect, interact, reach, assertComplete]),
+    executor,
+  );
+  assert.deepEqual(executor.calls, [
+    "select-class",
+    "talk-to",
+    "kill",
+    "collect",
+    "interact",
     "reach",
     "assert-complete",
   ]);

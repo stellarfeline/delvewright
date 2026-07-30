@@ -10,14 +10,21 @@
 // outcomes by chatting the same `/trigger` command each button runs.
 // `assert-complete` carries a `scoreboard: { objective, value }` object.
 
-/** The critical-path format is versioned with the DSL (spec-0002). */
-export const SUPPORTED_DSL_VERSION = "0.2.0";
+/**
+ * The critical-path format is versioned with the DSL (spec-0002). v0.3 is an
+ * additive superset (kill/collect/interact steps); both are accepted, and the
+ * `version` field is campaign-derived (a v0.2 delve still emits a v0.2 path).
+ */
+export const SUPPORTED_DSL_VERSIONS = ["0.2.0", "0.3.0"] as const;
 
 /** The closed set of critical-path step actions (spec-0002 / spec-0001 enum). */
 export const STEP_ACTIONS = [
   "select-class",
   "talk-to",
   "reach",
+  "kill",
+  "collect",
+  "interact",
   "assert-complete",
 ] as const;
 
@@ -51,6 +58,36 @@ export interface ReachStep {
   readonly radius: number;
 }
 
+/** Slay a wave: go to `pos`, attack the wave's mobs until the wave is cleared (v0.3). */
+export interface KillStep {
+  readonly action: "kill";
+  readonly wave: string;
+  readonly pos: Vec3Tuple;
+  /** Entity tag on the wave's mobs (informational; mineflayer cannot read tags). */
+  readonly tag: string;
+  /** Total mob count in the wave. */
+  readonly count: number;
+}
+
+/** Collect `count` of `item` from a chest at `pos` (v0.3). */
+export interface CollectStep {
+  readonly action: "collect";
+  readonly item: string;
+  readonly count: number;
+  readonly pos: Vec3Tuple;
+}
+
+/** Interact at `pos`, then chat `command`; `requires_item` may gate it (v0.3). */
+export interface InteractStep {
+  readonly action: "interact";
+  readonly anchor: string;
+  readonly pos: Vec3Tuple;
+  /** The exact chat command the bot sends (`bot.chat(command)`). */
+  readonly command: string;
+  /** Item that must be held for the interaction to complete, or `null`. */
+  readonly requiresItem: string | null;
+}
+
 /** Assert the campaign-completion scoreboard objective holds `value` (terminal step). */
 export interface AssertCompleteStep {
   readonly action: "assert-complete";
@@ -63,6 +100,9 @@ export type Step =
   | SelectClassStep
   | TalkToStep
   | ReachStep
+  | KillStep
+  | CollectStep
+  | InteractStep
   | AssertCompleteStep;
 
 export interface CriticalPath {
@@ -218,6 +258,43 @@ function parseStep(value: unknown, pointer: string): Step {
         radius,
       };
     }
+    case "kill": {
+      rejectUnknownKeys(obj, ["action", "wave", "pos", "tag", "count"], pointer);
+      return {
+        action: "kill",
+        wave: requireString(obj, "wave", pointer),
+        pos: requirePos(obj, pointer),
+        tag: requireString(obj, "tag", pointer),
+        count: requireInteger(obj, "count", pointer),
+      };
+    }
+    case "collect": {
+      rejectUnknownKeys(obj, ["action", "item", "count", "pos"], pointer);
+      return {
+        action: "collect",
+        item: requireString(obj, "item", pointer),
+        count: requireInteger(obj, "count", pointer),
+        pos: requirePos(obj, pointer),
+      };
+    }
+    case "interact": {
+      rejectUnknownKeys(
+        obj,
+        ["action", "anchor", "pos", "command", "requires_item"],
+        pointer,
+      );
+      const ri = obj["requires_item"];
+      if (ri !== null && typeof ri !== "string") {
+        fail(`${pointer}/requires_item`, `must be a string or null, got ${describe(ri)}`);
+      }
+      return {
+        action: "interact",
+        anchor: requireString(obj, "anchor", pointer),
+        pos: requirePos(obj, pointer),
+        command: requireString(obj, "command", pointer),
+        requiresItem: ri,
+      };
+    }
     case "assert-complete": {
       rejectUnknownKeys(obj, ["action", "scoreboard"], pointer);
       const board = requireScoreboard(obj, pointer);
@@ -245,10 +322,10 @@ export function parseCriticalPath(raw: unknown): CriticalPath {
   rejectUnknownKeys(root, ["version", "campaign_id", "steps"], "");
 
   const version = requireString(root, "version", "");
-  if (version !== SUPPORTED_DSL_VERSION) {
+  if (!(SUPPORTED_DSL_VERSIONS as readonly string[]).includes(version)) {
     fail(
       "/version",
-      `unsupported version ${JSON.stringify(version)}; harness supports ${SUPPORTED_DSL_VERSION}`,
+      `unsupported version ${JSON.stringify(version)}; harness supports ${SUPPORTED_DSL_VERSIONS.join(", ")}`,
     );
   }
 
