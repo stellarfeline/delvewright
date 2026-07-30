@@ -1,5 +1,24 @@
 [package]
 name = "delvewright-compiler"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
 publish = false
+
+[dependencies]
+delvewright-dsl = { path = "../dsl" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+sha2 = "0.10"
+
+# fastnbt + flate2 are only used by the `gen_hello_room` example and the prefab
+# determinism test — the `delvec` binary copies the committed .nbt verbatim and
+# never touches NBT itself, so these stay out of the shipped binary's dep tree.
+#
+# DEP FLAG (beyond the spec-0002 budget of clap/sha2/NBT): `flate2` is required
+# because Minecraft structure `.nbt` files are gzip-framed NBT and neither
+# fastnbt nor valence_nbt provides the gzip container. flate2's GzEncoder writes
+# a zero mtime, so the output is deterministic (ADR-0006). MIT/Apache-2.0.
+[dev-dependencies]
+fastnbt = "2"
+flate2 = "1"
