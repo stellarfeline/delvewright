@@ -98,14 +98,18 @@ vanilla chance.** The M1 playtest found natural hostile spawning uncontrolled (n
 mobs appeared only by luck — a void world with light-0 interiors is a spawnable
 surface). The bootstrap must emit a sealing baseline:
 
-- `doMobSpawning false` — mobs exist only where the campaign summons them
-  (1.21.11 gamerule registry names: `minecraft:`-prefixed snake_case)
-- `doDaylightCycle false` + a fixed authored time of day (default noon; a stage-1
-  field may override later) — lighting is deterministic, day or night is a
-  narrative choice
-- `doWeatherCycle false`, `doFireTick false`, `mobGriefing false` — no weather
-  surprises, no spreading fire, no NPC/creeper terrain damage
-- Each rule gets a regression assertion; PackTest asserts the sealed state on boot.
+Implemented M2; **1.21.11 renamed every gamerule** (verified live 2026-07-30 —
+legacy camelCase and `minecraft:`-prefixed forms are both rejected). Emitted:
+
+- `gamerule spawn_mobs false` — mobs exist only where the campaign summons them
+- `gamerule advance_time false` + `time set noon` (fixed light; stage-1 override
+  is a future field)
+- `gamerule advance_weather false`, `gamerule mob_griefing false`
+- `gamerule fire_spread_radius_around_player 0` — 1.21.11 has no boolean fire
+  rule; the radius form disables spread near players (closest available seal)
+- Regression asserts exact forms and that legacy names never appear. PackTest
+  asserts the one queryable seal (time = 6000); gamerule values have no vanilla
+  read-back — their check is compile-time.
 
 ## Determinism rules (ADR-0006, enforced here)
 
