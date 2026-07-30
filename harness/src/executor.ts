@@ -11,8 +11,16 @@
 // NPC first (realism + reach mechanics that some dialogs gate on).
 
 import { createBot, type Bot } from "mineflayer";
+// mineflayer-pathfinder is CommonJS; import the default and destructure (the only
+// harness dependency added for v0.3 — replaces the naive "face + hold forward"
+// walk so turns/branches in jigsaw layouts are walkable).
+import pathfinderPkg from "mineflayer-pathfinder";
+const { pathfinder, Movements, goals } = pathfinderPkg;
 import type {
   AssertCompleteStep,
+  CollectStep,
+  InteractStep,
+  KillStep,
   ReachStep,
   SelectClassStep,
   TalkToStep,
@@ -71,6 +79,10 @@ export function botConfigFromEnv(
 const REACH_TIMEOUT_MS = 60_000;
 /** Polling interval (ms) while walking toward a target. */
 const REACH_POLL_MS = 250;
+/** How long (ms) a `kill` step may run before it is declared failed. */
+const KILL_TIMEOUT_MS = 90_000;
+/** Attack cadence (ms) — roughly the vanilla sword cooldown. */
+const ATTACK_INTERVAL_MS = 400;
 /**
  * How long (ms) to wait for a scoreboard value to reach its target after a chat
  * command. The datapack acts on the trigger on the next server tick(s); give it a
@@ -83,6 +95,15 @@ const CLASS_SETTLE_MS = 3_000;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Reject with a labelled error if `promise` does not settle within `ms`. */
+function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const guard = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what}: timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, guard]).finally(() => clearTimeout(timer));
 }
 
 /**
@@ -120,6 +141,7 @@ export class MineflayerExecutor implements StepExecutor {
       auth: this.config.auth,
     });
     this.bot = bot;
+    bot.loadPlugin(pathfinder);
 
     // Capture completion markers from the moment we connect: the marker is
     // broadcast when the campaign completes, which happens DURING the final reach
@@ -184,6 +206,34 @@ export class MineflayerExecutor implements StepExecutor {
     bot.chat(step.command);
     // Give the datapack a tick to reset the trigger, give the kit and teleport.
     await delay(CLASS_SETTLE_MS);
+    // Equip the kit (sword + armor) so the bot can fight v0.3 combat waves. A
+    // no-op for kits without those items.
+    await this.equipLoadout();
+  }
+
+  /**
+   * Equip the best weapon and each armour piece from the current inventory. Item
+   * names are matched by substring (`sword`, `helmet`, …). Best-effort per slot.
+   */
+  private async equipLoadout(): Promise<void> {
+    const bot = this.requireBot();
+    const slots: ReadonlyArray<[string, "hand" | "head" | "torso" | "legs" | "feet"]> = [
+      ["sword", "hand"],
+      ["helmet", "head"],
+      ["chestplate", "torso"],
+      ["leggings", "legs"],
+      ["boots", "feet"],
+    ];
+    for (const [key, dest] of slots) {
+      const item = bot.inventory.items().find((i) => i.name.includes(key));
+      if (item) {
+        try {
+          await bot.equip(item, dest);
+        } catch {
+          // best effort — a missing slot is not a failure
+        }
+      }
+    }
   }
 
   async talkTo(step: TalkToStep): Promise<void> {
@@ -197,47 +247,135 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * Walk to within `radius` blocks (horizontal distance) of the absolute target.
-   * Simple movement: face the target and hold forward, polling until arrival or
-   * timeout. Deliberately not a full pathfinder (mineflayer only, no plugin) —
-   * adequate for M1's flat single-prefab layouts; jigsaw/complex terrain in M2 may
-   * warrant mineflayer-pathfinder (flagged as a future dependency).
+   * Walk to the anchor using the pathfinder. The datapack completes the objective
+   * with a `distance=..radius` check on the exact anchor point, so the bot targets
+   * a goal one block *tighter* than `radius` — landing well inside the check rather
+   * than on its boundary (where the pathfinder's block-granular goal and the
+   * server's precise-position check can disagree).
    */
   async reach(step: ReachStep): Promise<void> {
-    await this.walkTo(step.pos, step.radius, `anchor ${step.anchor}`);
+    await this.walkTo(step.pos, Math.max(1, step.radius - 1), `anchor ${step.anchor}`);
   }
 
+  /**
+   * Pathfind to within `range` blocks of the absolute target (mineflayer-pathfinder
+   * `GoalNear`). Replaces the pre-v0.3 "face + hold forward" walk, so turns and
+   * branches in jigsaw layouts are walkable. Digging is disabled (adventure mode).
+   */
   private async walkTo(
     pos: readonly [number, number, number],
-    radius: number,
+    range: number,
     label: string,
   ): Promise<void> {
     const bot = this.requireBot();
     const [x, y, z] = pos;
-    const here = bot.entity.position;
-    const target = here.offset(x + 0.5 - here.x, y - here.y, z + 0.5 - here.z);
-
-    const deadline = Date.now() + REACH_TIMEOUT_MS;
+    const r = Math.max(1, Math.floor(range));
+    const movements = new Movements(bot);
+    movements.canDig = false; // adventure mode: never break blocks
+    movements.allow1by1towers = false;
+    bot.pathfinder.setMovements(movements);
     try {
-      while (bot.entity.position.xzDistanceTo(target) > radius) {
-        if (Date.now() > deadline) {
-          const dist = bot.entity.position.xzDistanceTo(target).toFixed(2);
-          throw new Error(
-            `timed out after ${REACH_TIMEOUT_MS}ms reaching ${label} ` +
-              `at [${x}, ${y}, ${z}] (radius ${radius}); still ${dist} blocks away ` +
-              `(bot at ${fmt(bot.entity.position)})`,
-          );
-        }
-        await bot.lookAt(target, true);
-        bot.setControlState("forward", true);
-        // A short jump helps clear the 1-block sill some prefab doorways have.
-        bot.setControlState("jump", bot.entity.onGround);
+      await withTimeout(
+        bot.pathfinder.goto(new goals.GoalNear(x, y, z, r)),
+        REACH_TIMEOUT_MS,
+        `reaching ${label}`,
+      );
+    } catch (err) {
+      try {
+        bot.pathfinder.stop();
+      } catch {
+        // ignore
+      }
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `failed ${label} at [${x}, ${y}, ${z}] (range ${r}); bot at ` +
+          `${fmt(bot.entity.position)}: ${detail}`,
+      );
+    }
+  }
+
+  /**
+   * Slay a wave: go to the wave anchor, then attack the nearest hostile mob in a
+   * loop until none remain (the world is sealed, so the only mobs are the wave)
+   * or the budget runs out. The datapack's kill advancement + countdown complete
+   * the objective when the last mob dies.
+   */
+  async kill(step: KillStep): Promise<void> {
+    const bot = this.requireBot();
+    await this.equipLoadout();
+    await this.walkTo(step.pos, 3, `wave ${step.wave}`);
+    // Give AI-enabled mobs a moment to path toward the bot after we arrive.
+    await delay(1_000);
+    // Diagnostic: what does the bot see near the wave anchor?
+    const near = Object.values(bot.entities)
+      .filter((e) => e && e !== bot.entity && bot.entity.position.distanceTo(e.position) < 48)
+      .map((e) => `${e.name ?? "?"}(t=${e.type},k=${(e as { kind?: string }).kind ?? "?"},h=${e.height ?? "?"})`);
+    process.stderr.write(`[kill ${step.wave}] nearby(${near.length}): ${near.join(", ") || "none"}\n`);
+
+    const deadline = Date.now() + KILL_TIMEOUT_MS;
+    let emptyStreak = 0;
+    while (Date.now() < deadline) {
+      const mob = bot.nearestEntity((e) => isWaveMob(e, bot.entity));
+      if (!mob) {
+        // A sustained absence of wave mobs (world is sealed) → wave cleared.
+        if (++emptyStreak >= 8) return;
         await delay(REACH_POLL_MS);
+        continue;
+      }
+      emptyStreak = 0;
+      const dist = bot.entity.position.distanceTo(mob.position);
+      if (dist > 3) {
+        await this.walkTo(
+          [Math.floor(mob.position.x), Math.floor(mob.position.y), Math.floor(mob.position.z)],
+          2,
+          `mob ${mob.name ?? "?"}`,
+        );
+      } else {
+        await bot.lookAt(mob.position.offset(0, (mob.height ?? 1) * 0.5, 0), true);
+        bot.attack(mob);
+        await delay(ATTACK_INTERVAL_MS);
+      }
+    }
+    throw new Error(
+      `kill timed out after ${KILL_TIMEOUT_MS}ms: wave ${step.wave} ` +
+        `(${step.count} mobs) not cleared`,
+    );
+  }
+
+  /** Collect items from the chest at the anchor: go there, open it, withdraw all. */
+  async collect(step: CollectStep): Promise<void> {
+    const bot = this.requireBot();
+    await this.walkTo(step.pos, 2, `chest ${step.item}`);
+    const here = bot.entity.position;
+    const target = here.offset(
+      step.pos[0] + 0.5 - here.x,
+      step.pos[1] + 0.5 - here.y,
+      step.pos[2] + 0.5 - here.z,
+    );
+    const block = bot.blockAt(target);
+    if (!block) {
+      throw new Error(`no block at collect anchor [${step.pos.join(", ")}]`);
+    }
+    const chest = await bot.openContainer(block);
+    try {
+      for (const item of chest.containerItems()) {
+        await chest.withdraw(item.type, null, item.count);
       }
     } finally {
-      bot.setControlState("forward", false);
-      bot.setControlState("jump", false);
+      chest.close();
     }
+    // Let the inventory_changed advancement fire the completion.
+    await delay(SCORE_POLL_MS * 4);
+  }
+
+  /** Interact at the anchor: go there, then chat the emitted `/trigger` command. */
+  async interact(step: InteractStep): Promise<void> {
+    const bot = this.requireBot();
+    await this.walkTo(step.pos, 3, `interact ${step.anchor}`);
+    // The interaction advancement and this chat command both feed the same
+    // per-tick handler; the datapack applies the requires_item + flag guards.
+    bot.chat(step.command);
+    await delay(2_000);
   }
 
   async assertComplete(step: AssertCompleteStep): Promise<void> {
@@ -274,4 +412,44 @@ export class MineflayerExecutor implements StepExecutor {
 
 function fmt(p: { x: number; y: number; z: number }): string {
   return `[${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}]`;
+}
+
+/**
+ * Entity names that are never a combat target. The delve world is sealed
+ * (`spawn_mobs false`), so the only living mobs are compiler-summoned wave mobs;
+ * everything else near the bot is an NPC, a display, or a dropped object.
+ */
+const NON_WAVE_ENTITIES = new Set<string>([
+  "player",
+  "villager",
+  "interaction",
+  "item",
+  "experience_orb",
+  "arrow",
+  "spectral_arrow",
+  "armor_stand",
+  "marker",
+  "text_display",
+  "block_display",
+  "item_display",
+  "area_effect_cloud",
+  "item_frame",
+  "glow_item_frame",
+  "painting",
+  "leash_knot",
+  "fishing_bobber",
+]);
+
+/**
+ * True if `e` is a slayable wave mob: not the bot, not a player/NPC/display/
+ * dropped object, and tall enough to be a living mob (excludes small dropped
+ * entities). Classified by name (reliable across mineflayer versions) rather than
+ * `type`/`kind`, which vary.
+ */
+function isWaveMob(e: unknown, self: unknown): boolean {
+  if (!e || e === self) return false;
+  const ent = e as { name?: string; height?: number };
+  const name = ent.name ?? "";
+  if (name === "" || NON_WAVE_ENTITIES.has(name)) return false;
+  return (ent.height ?? 0) >= 0.5;
 }

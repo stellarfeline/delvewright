@@ -19,6 +19,14 @@
         4
       ],
       "facing": "north"
+    },
+    "anchor/wave": {
+      "pos": [
+        3,
+        1,
+        4
+      ],
+      "facing": "north"
     }
   },
   "connectors": [

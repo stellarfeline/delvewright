@@ -42,11 +42,16 @@ not third-party reconstructions.
 - **`commands-1.21.11.json`** — the Brigadier command tree from `commands/data.min.json`,
   re-serialized deterministically (`json.dumps(sort_keys=True, indent=2)`) so it is
   diffable and byte-stable. Semantically identical to the source (key order only).
+- **`entities-1.21.11.json`** — the `entity_type` registry array from
+  `registries/data.min.json`, each id namespaced (`minecraft:<id>`), de-duplicated
+  and sorted (same transform as the item registry). 157 entity types. Validates
+  v0.3 wave mobs (`DW0173`).
 
 | Vendored file | SHA-256 |
 |---|---|
 | `items-1.21.11.json`    | `3965d9d5aabc0a2e6270b9e15c4faed76b67b93663d3136fa6ca6ca6f9371e8c` |
 | `commands-1.21.11.json` | `8e48958913bbd604bc6a084fa04f139c6012fbe6706391c79b265158221ff6ac` |
+| `entities-1.21.11.json` | `a10cc5f3dc042dfb632e87131823846011586d19bd97814bf62b1fa6e66160d2` |
 
 ## Not committed
 

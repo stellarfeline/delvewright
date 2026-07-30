@@ -13,7 +13,7 @@ use delvewright_compiler::commands::CommandTree;
 use delvewright_compiler::emit;
 use delvewright_compiler::load::load_campaign_dir;
 use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullItemRegistry, PrefabRegistry};
+use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
 use delvewright_dsl::{Diagnostic, Stage, parse_campaign, stage_schema, validate_campaign_with};
 
@@ -112,10 +112,13 @@ fn validate_stage(
         EXIT_INTERNAL
     })?;
     let items = FullItemRegistry::v1_21_11();
+    // v0.3 wave-mob entity validation against the full 1.21.11 entity registry
+    // (157 ids, same misode/mcmeta provenance as the item registry).
+    let entities = FullEntityRegistry::v1_21_11();
 
     match parse_campaign(&loaded.raw) {
         Ok(campaign) => {
-            let diags = validate_campaign_with(&campaign, &items, &prefabs);
+            let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
             print_diags(&diags, json);
             Ok((campaign, prefabs, diags))
         }

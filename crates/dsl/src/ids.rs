@@ -85,6 +85,14 @@ prefixed_id!(
 prefixed_id!(
     /// Anchor id: `anchor/<kebab>` (resolved against prefab metadata).
     AnchorId, "anchor");
+prefixed_id!(
+    /// Wave id: `wave/<kebab>` (stage-5 `waves` section, DSL v0.3).
+    WaveId, "wave");
+prefixed_id!(
+    /// Flag id: `flag/<kebab>` (declared by `set-flag` effects, read by
+    /// `requires_flags`, DSL v0.3). No separate declaration list — the set of
+    /// flags is exactly those produced by some `set-flag` effect.
+    FlagId, "flag");
 
 /// Campaign id: a bare kebab-case token (no type prefix).
 #[derive(

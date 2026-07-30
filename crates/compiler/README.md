@@ -24,12 +24,13 @@ Global: `--json` (one JSON diagnostic per line, the spec-0002 shape), `--prefabs
 
 ## Validation vs analysis
 
-`validate` runs the DSL's v0.2 rule groups (`DW01xx`, see `crates/dsl/README.md`)
-with the **full** injected registries: the complete 1.21.11 item registry
-(`data/items-1.21.11.json`, 1505 ids) and the real prefab metadata from
-`prefabs/` (anchors, pool existence, lighting). (Note: item ids the DSL's 5-item
-vendored subset rejects but that are real 1.21.11 items — e.g.
-`minecraft:diamond_hoe` — validate here.)
+`validate` runs the DSL's v0.2/v0.3 rule groups (`DW01xx`, see
+`crates/dsl/README.md`) with the **full** injected registries: the complete
+1.21.11 item registry (`data/items-1.21.11.json`, 1505 ids), the complete entity
+registry (`data/entities-1.21.11.json`, 157 ids — v0.3 wave mobs, `DW0173`) and
+the real prefab metadata from `prefabs/` (anchors, pool existence, lighting).
+(Note: item ids the DSL's 5-item vendored subset rejects but that are real
+1.21.11 items — e.g. `minecraft:diamond_hoe` — validate here.)
 
 `analyze` adds **deep semantic reachability** over the merged quest + objective +
 stage-6 dialogue graph (distinct from the DSL's structural `DW0132`
@@ -104,10 +105,15 @@ and gives the compiler full layout knowledge for anchors and the critical path.
   block beyond the parent, facing opposite (`final_state=air` → clean 3×3
   passage); the mating rule fixes the child's rotation and position. All four
   cardinal rotations + AABB overlap rejection are implemented and unit-tested.
-- **Growth**: a straight-line spine — entry → `connector` fillers (straight
-  through only, so the pathfinder-free harness bot can walk it) → the referenced
-  through-rooms inline → one dead-end terminal at the far end (`boss-hall` last
-  when referenced). Branching layouts are a documented future extension.
+- **Growth**: two modes by required-terminal count. **Single terminal**
+  (`grow_spine`) — a straight-line spine: entry → straight-preferring `connector`
+  fillers → through-rooms inline → one dead-end terminal (`boss-hall` last). Kept
+  byte-identical (`keep-crawl`). **Two+ terminals** (`grow_branching`, v0.3) — a
+  branching tree: extend the trunk, fork with `tee`/`cross` branch pieces, and cap
+  each terminal on its own branch socket (shrine **and** boss-hall). This lifts
+  the old one-terminal limit — the harness pathfinds now, so branches/turns walk.
+  The trunk is extended before forking so large terminals still fit (greedy, no
+  backtracking); robust across a 200-seed sweep.
 - **Guarantees**: connected; exactly one entry; every campaign-referenced anchor
   in the area (NPC stands, `reach-anchor` targets, `open-gate` anchors) provided
   by exactly one placed piece; piece count within the DSL `pieces {min,max}`.
@@ -130,7 +136,7 @@ diagnostics (and as one JSON object per line under `--json`, `stage: "build"`).
 | `DW0301` | The bound pool declares no `entry`-role piece (or no `connector` filler when fillers are needed). |
 | `DW0302` | A campaign-referenced anchor is provided by **no** member of the pool (unsatisfiable required anchor). |
 | `DW0303` | The `pieces {min,max}` range is too small to fit the entry plus the required anchor-bearing pieces. |
-| `DW0304` | The solver could not place a required piece without overlap, or more than one dead-end terminal was required (linear solver limit). |
+| `DW0304` | The solver could not place a required piece without overlap, or a branching layout's pool declares no branch piece (tee/cross) to fork its terminals. (The old "more than one terminal" limit is lifted — `grow_branching`.) |
 
 `tests/fixtures/keep-unsatisfiable-anchor.json` (→ `DW0302`) and
 `keep-range-too-small.json` (→ `DW0303`) both pass validate + analyze (the DSL
@@ -151,6 +157,18 @@ test (`tests/cli.rs`) is the ADR-0006 gate.
 
 ## Emission design decisions (within spec-0002's allowed choices)
 
+- **v0.3 gameplay verbs** (spec-0002 v0.3 addendum): `spawn-wave` summons a wave's
+  mobs (AI enabled) tagged `dw_wave_<id>` and sets a countdown `#<id> dw.wave`; a
+  `player_killed_entity` advancement decrements it, and the `kill` objective's
+  per-tick check completes at zero. `collect` places a loaded chest at its anchor;
+  an `inventory_changed` advancement runs a guarded completion. `interact` summons
+  an interaction entity (tag `dw_i_<obj>`); the click advancement and the bot's
+  `/trigger dw.i_<obj>` both feed one per-tick handler that applies the
+  `requires_item` (`execute if items`) + flag guards. `set-flag` sets `dw.f_<flag>`
+  (per-player); `requires_flags` ANDs those scores into every objective guard. Wave
+  campaigns emit `difficulty=easy` (peaceful removes summoned mobs); wave-free
+  campaigns stay `peaceful`, so hello-world / keep-crawl are byte-identical. Each
+  verb gets a generated per-verb PackTest driving the mechanic on a dummy player.
 - **NPC interaction**: a `minecraft:villager` (NoAI/Invulnerable/Silent, no
   profession) is the visual body; a co-located `minecraft:interaction` entity
   (tag `dw_npc_<npc>`) is the click target. An advancement

@@ -4,7 +4,7 @@ import {
   CriticalPathParseError,
   parseCriticalPath,
   parseCriticalPathJson,
-  SUPPORTED_DSL_VERSION,
+  SUPPORTED_DSL_VERSIONS,
 } from "../src/critical-path.ts";
 
 // The canonical spec-0002 example (amended 2026-07-30), as a fresh object per call
@@ -36,7 +36,7 @@ function validRaw(): Record<string, unknown> {
 
 test("parses the canonical spec-0002 critical path", () => {
   const path = parseCriticalPath(validRaw());
-  assert.equal(path.version, SUPPORTED_DSL_VERSION);
+  assert.ok((SUPPORTED_DSL_VERSIONS as readonly string[]).includes(path.version));
   assert.equal(path.campaignId, "hello-world");
   assert.equal(path.steps.length, 4);
 
@@ -130,8 +130,56 @@ test("rejects an unknown action with the closed enum in the message", () => {
     (err: unknown) =>
       err instanceof CriticalPathParseError &&
       err.pointer === "/steps/1/action" &&
-      /select-class, talk-to, reach, assert-complete/.test(err.message),
+      /select-class, talk-to, reach, kill, collect, interact, assert-complete/.test(err.message),
   );
+});
+
+test("accepts a v0.3 path with kill / collect / interact steps", () => {
+  const raw = validRaw();
+  raw["version"] = "0.3.0";
+  (raw["steps"] as unknown[]).splice(2, 0,
+    { action: "kill", wave: "wave/guards", pos: [22, 65, 12], tag: "dw_wave_guards", count: 2 },
+    { action: "collect", item: "minecraft:tripwire_hook", count: 1, pos: [44, 65, 20] },
+    {
+      action: "interact",
+      anchor: "anchor/door",
+      pos: [2, 65, 12],
+      command: "/trigger dw.i_door set 1",
+      requires_item: "minecraft:tripwire_hook",
+    },
+  );
+  const path = parseCriticalPath(raw);
+  assert.equal(path.version, "0.3.0");
+  const kill = path.steps[2];
+  assert.deepEqual(kill, {
+    action: "kill",
+    wave: "wave/guards",
+    pos: [22, 65, 12],
+    tag: "dw_wave_guards",
+    count: 2,
+  });
+  const interact = path.steps[4];
+  assert.deepEqual(interact, {
+    action: "interact",
+    anchor: "anchor/door",
+    pos: [2, 65, 12],
+    command: "/trigger dw.i_door set 1",
+    requiresItem: "minecraft:tripwire_hook",
+  });
+});
+
+test("accepts a null interact requires_item", () => {
+  const raw = validRaw();
+  raw["version"] = "0.3.0";
+  (raw["steps"] as unknown[]).splice(2, 0, {
+    action: "interact",
+    anchor: "anchor/lever",
+    pos: [1, 65, 1],
+    command: "/trigger dw.i_lever set 1",
+    requires_item: null,
+  });
+  const path = parseCriticalPath(raw);
+  assert.deepEqual((path.steps[2] as { requiresItem: unknown }).requiresItem, null);
 });
 
 test("rejects a pos that is not a 3-tuple, pointing at /steps/i/pos", () => {

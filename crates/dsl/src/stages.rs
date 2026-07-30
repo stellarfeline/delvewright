@@ -10,7 +10,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{
-    AnchorId, AreaId, ClassId, DialogueId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId,
+    AnchorId, AreaId, ClassId, DialogueId, FlagId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId,
+    WaveId,
 };
 
 // ---------------------------------------------------------------------------
@@ -323,6 +324,39 @@ pub struct PlannedQuest {
 pub struct QuestsContent {
     /// The expanded quests (1:1 with stage 4).
     pub quests: Vec<Quest>,
+    /// Combat waves (DSL v0.3). Each wave is spawned by a `spawn-wave` effect and
+    /// slain to complete a `kill` objective. Empty/absent in v0.2 campaigns.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub waves: Vec<Wave>,
+}
+
+/// A combat wave (DSL v0.3): a bundle of mobs spawned at an anchor and slain to
+/// complete a `kill` objective. Emission (spec-0002): a `spawn-wave` effect
+/// summons the mobs tagged `dw_wave_<id>` (AI enabled — they fight); a
+/// `player_killed_entity` advancement per tag decrements a scoreboard countdown,
+/// and the `kill` objective completes when the count reaches zero.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Wave {
+    /// Unique wave id.
+    pub id: WaveId,
+    /// The anchor the wave's mobs spawn at.
+    pub anchor: AnchorId,
+    /// The mobs that make up the wave (1..N).
+    pub mobs: Vec<WaveMob>,
+}
+
+/// One mob stack in a [`Wave`].
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WaveMob {
+    /// Vanilla entity id, validated against the pinned 1.21.11 registry.
+    pub entity: String,
+    /// How many to spawn.
+    pub count: u32,
+    /// Optional custom name (shown above the mob).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 /// One expanded quest.
@@ -357,8 +391,11 @@ pub enum Trigger {
 
 /// A quest objective.
 ///
-/// `kill`, `collect` and `interact` are reserved (rejected in v0, `DW0141`);
-/// they carry only the common fields so they still parse.
+/// `kill`, `collect` and `interact` are **implemented in DSL v0.3**; in a v0.2
+/// campaign they are still reserved and rejected with `DW0141` (see
+/// [`Objective::v03_verb`]). Every variant may carry `requires_flags` (v0.3):
+/// flag-gated activation, satisfied only once each referenced flag has been set
+/// by a `set-flag` effect.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Objective {
@@ -371,6 +408,9 @@ pub enum Objective {
         /// Prerequisite objectives (intra-quest ordering).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         after: Vec<ObjectiveId>,
+        /// Flags that must be set before this objective activates (v0.3).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Completed by reaching an anchor once prerequisites are met.
     ReachAnchor {
@@ -383,30 +423,56 @@ pub enum Objective {
         /// Prerequisite objectives (intra-quest ordering).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         after: Vec<ObjectiveId>,
+        /// Flags that must be set before this objective activates (v0.3).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
-    /// Reserved (M2).
+    /// Completed when the referenced wave is fully slain (v0.3).
     Kill {
         /// Objective id.
         id: ObjectiveId,
+        /// The wave (stage-5 `waves` ref) whose mobs must be slain.
+        wave: WaveId,
         /// Prerequisite objectives.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         after: Vec<ObjectiveId>,
+        /// Flags that must be set before this objective activates (v0.3).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
-    /// Reserved (M2).
+    /// Completed when `count` of `item` have been collected from `anchor` (v0.3).
     Collect {
         /// Objective id.
         id: ObjectiveId,
+        /// Vanilla item id to collect (validated against the registry).
+        item: String,
+        /// How many are required.
+        count: u32,
+        /// The anchor items are provided at (chest / pickup).
+        anchor: AnchorId,
         /// Prerequisite objectives.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         after: Vec<ObjectiveId>,
+        /// Flags that must be set before this objective activates (v0.3).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
-    /// Reserved (M2).
+    /// Completed by interacting with an entity at `anchor`; if `requires_item` is
+    /// set, the item must be in the player's inventory (v0.3).
     Interact {
         /// Objective id.
         id: ObjectiveId,
+        /// The anchor the interaction entity stands at.
+        anchor: AnchorId,
+        /// Item required in inventory to complete the interaction (optional).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        requires_item: Option<String>,
         /// Prerequisite objectives.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         after: Vec<ObjectiveId>,
+        /// Flags that must be set before this objective activates (v0.3).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
 }
 
@@ -433,6 +499,17 @@ impl Objective {
         }
     }
 
+    /// The flags that must be set before this objective activates (v0.3).
+    pub fn requires_flags(&self) -> &[FlagId] {
+        match self {
+            Objective::TalkTo { requires_flags, .. }
+            | Objective::ReachAnchor { requires_flags, .. }
+            | Objective::Kill { requires_flags, .. }
+            | Objective::Collect { requires_flags, .. }
+            | Objective::Interact { requires_flags, .. } => requires_flags,
+        }
+    }
+
     /// The kebab type tag.
     pub fn kind(&self) -> &'static str {
         match self {
@@ -444,8 +521,10 @@ impl Objective {
         }
     }
 
-    /// The reserved type name if this objective type is not implemented in v0.
-    pub fn reserved(&self) -> Option<&'static str> {
+    /// The v0.3 verb name if this objective is one of the verbs introduced in
+    /// DSL v0.3 (`kill`/`collect`/`interact`). These validate in v0.3 campaigns
+    /// and are reserved (`DW0141`) in v0.2 campaigns.
+    pub fn v03_verb(&self) -> Option<&'static str> {
         match self {
             Objective::Kill { .. } => Some("kill"),
             Objective::Collect { .. } => Some("collect"),
@@ -457,8 +536,9 @@ impl Objective {
 
 /// An effect fired by quest progress.
 ///
-/// `give-item`, `set-flag` and `spawn-wave` are reserved (rejected in v0,
-/// `DW0141`).
+/// `give-item`, `set-flag` and `spawn-wave` are **implemented in DSL v0.3**; in a
+/// v0.2 campaign they are still reserved and rejected with `DW0141` (see
+/// [`QuestEffect::v03_effect`]).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum QuestEffect {
@@ -469,12 +549,23 @@ pub enum QuestEffect {
     },
     /// Marks the campaign complete (final advancement + credits).
     CampaignComplete,
-    /// Reserved (M2).
-    GiveItem,
-    /// Reserved (M2).
-    SetFlag,
-    /// Reserved (M2).
-    SpawnWave,
+    /// Gives the player an item (v0.3).
+    GiveItem {
+        /// Vanilla item id to give (validated against the registry).
+        item: String,
+        /// How many to give.
+        count: u32,
+    },
+    /// Sets a campaign flag, enabling flag-gated objectives (v0.3).
+    SetFlag {
+        /// The flag to set.
+        flag: FlagId,
+    },
+    /// Spawns a stage-5 wave's mobs at its anchor (v0.3).
+    SpawnWave {
+        /// The wave (stage-5 `waves` ref) to spawn.
+        wave: WaveId,
+    },
 }
 
 impl QuestEffect {
@@ -486,12 +577,38 @@ impl QuestEffect {
         }
     }
 
-    /// The reserved effect name if this effect is not implemented in v0.
-    pub fn reserved(&self) -> Option<&'static str> {
+    /// The wave id if this is `spawn-wave` (v0.3).
+    pub fn spawn_wave(&self) -> Option<&WaveId> {
         match self {
-            QuestEffect::GiveItem => Some("give-item"),
-            QuestEffect::SetFlag => Some("set-flag"),
-            QuestEffect::SpawnWave => Some("spawn-wave"),
+            QuestEffect::SpawnWave { wave } => Some(wave),
+            _ => None,
+        }
+    }
+
+    /// The flag id if this is `set-flag` (v0.3).
+    pub fn set_flag(&self) -> Option<&FlagId> {
+        match self {
+            QuestEffect::SetFlag { flag } => Some(flag),
+            _ => None,
+        }
+    }
+
+    /// The item id if this is `give-item` (v0.3).
+    pub fn give_item(&self) -> Option<&str> {
+        match self {
+            QuestEffect::GiveItem { item, .. } => Some(item),
+            _ => None,
+        }
+    }
+
+    /// The v0.3 effect name if this effect is one introduced in DSL v0.3
+    /// (`give-item`/`set-flag`/`spawn-wave`). These validate in v0.3 campaigns
+    /// and are reserved (`DW0141`) in v0.2 campaigns.
+    pub fn v03_effect(&self) -> Option<&'static str> {
+        match self {
+            QuestEffect::GiveItem { .. } => Some("give-item"),
+            QuestEffect::SetFlag { .. } => Some("set-flag"),
+            QuestEffect::SpawnWave { .. } => Some("spawn-wave"),
             QuestEffect::OpenGate { .. } | QuestEffect::CampaignComplete => None,
         }
     }

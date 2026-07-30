@@ -155,6 +155,94 @@ fn keep_crawl_critical_path_crosses_pieces_and_areas() {
     );
 }
 
+/// keep-trial (v0.3): a branching keep exercising every gameplay verb builds
+/// clean (all commands validate), assembles ≥7 pieces with a branch, resolves
+/// each verb's critical-path step, wires the wave/flag/interact mechanics, and
+/// double-builds byte-identically.
+#[test]
+fn keep_trial_builds_all_verbs_and_is_deterministic() {
+    let a = build_campaign(&common::keep_trial_dir());
+    let b = build_campaign(&common::keep_trial_dir());
+    for (path, bytes) in &a {
+        assert_eq!(bytes, &b[path], "keep-trial byte mismatch in {path}");
+    }
+
+    let tree = CommandTree::v1_21_11();
+    assert!(
+        emit::validate_emitted(&a, &tree).is_empty(),
+        "all emitted keep-trial commands validate"
+    );
+
+    // Layout: ≥7 pieces including a branch (tee/cross) and a corner room.
+    let loaded = load_campaign_dir(&common::keep_trial_dir()).unwrap();
+    let campaign = parse_campaign(&loaded.raw).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).unwrap();
+    let keep = &plan.areas[0];
+    assert!(
+        keep.pieces.len() >= 7,
+        "keep-trial has {} pieces",
+        keep.pieces.len()
+    );
+    let ids: Vec<&str> = keep.pieces.iter().map(|p| p.prefab_id.as_str()).collect();
+    assert!(
+        ids.iter().any(|p| p.contains("tee") || p.contains("cross")),
+        "a branch piece is present: {ids:?}"
+    );
+    assert!(
+        ids.contains(&"prefab/keep-room-small-a") && ids.contains(&"prefab/keep-shrine"),
+        "both terminals (chest room + shrine) placed: {ids:?}"
+    );
+
+    // Critical path carries one step per verb.
+    let cp: serde_json::Value =
+        serde_json::from_slice(a.get("critical-path.json").unwrap()).unwrap();
+    let actions: Vec<&str> = cp["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["action"].as_str().unwrap())
+        .collect();
+    for verb in ["talk-to", "kill", "collect", "interact", "reach"] {
+        assert!(
+            actions.contains(&verb),
+            "critical path has a {verb} step: {actions:?}"
+        );
+    }
+
+    // Mechanics wired: wave spawn function + countdown, interaction entity, chest.
+    let setup = text(&a, "datapack/data/keep-trial/function/setup.mcfunction");
+    assert!(setup.contains("summon minecraft:interaction") && setup.contains("dw_i_door"));
+    assert!(setup.contains("setblock") && setup.contains("minecraft:chest"));
+    let spawn = text(
+        &a,
+        "datapack/data/keep-trial/function/spawn_guards.mcfunction",
+    );
+    assert!(spawn.contains("summon minecraft:zombie") && spawn.contains("dw.wave"));
+
+    // Per-verb PackTests emitted.
+    for t in [
+        "verb_kill",
+        "verb_collect",
+        "verb_interact",
+        "verb_flag_gate",
+    ] {
+        assert!(
+            a.contains_key(&format!(
+                "packtest-datapack/data/keep-trial/test/{t}.mcfunction"
+            )),
+            "PackTest {t} emitted"
+        );
+    }
+
+    // Combat difficulty (peaceful would remove summoned wave mobs).
+    let props = text(&a, "server/server.properties");
+    assert!(
+        props.contains("difficulty=easy"),
+        "wave campaign runs non-peaceful"
+    );
+}
+
 /// The socket seal strategy: a spine that ends at a through-room leaves an open
 /// socket, which is sealed with wall material (`stone_bricks`). Solved directly
 /// against the real pool so the wall-seal branch is exercised (keep-crawl's
@@ -186,6 +274,123 @@ fn open_socket_is_sealed_with_wall() {
         layout.seals.iter().any(|s| s.block == "minecraft:air"),
         "mated sockets are cleared to air"
     );
+}
+
+/// Branching growth (lifts the old `DW0304` one-terminal limit): requiring two
+/// dead-end terminals (shrine's `anchor/objective` + boss-hall's `anchor/boss`)
+/// places **both** on separate branches off a tee/cross, stays connected, and
+/// every required piece appears exactly once.
+#[test]
+fn branching_two_terminals_both_placed() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let mut stream = Splitmix64::new(solver::stream_seed(20260730, "area/keep"));
+    let layout = solver::solve_area(
+        &prefabs,
+        "pool/stone-keep",
+        // objective → shrine (first carrier), boss → boss-hall: two dead-ends.
+        &["anchor/objective".to_string(), "anchor/boss".to_string()],
+        7,
+        10,
+        [0, 64, 0],
+        &mut stream,
+    )
+    .expect("branching layout solves");
+
+    let ids: Vec<&str> = layout.pieces.iter().map(|p| p.prefab_id.as_str()).collect();
+    assert_eq!(
+        ids.iter().filter(|p| **p == "prefab/keep-shrine").count(),
+        1,
+        "exactly one shrine terminal"
+    );
+    assert_eq!(
+        ids.iter()
+            .filter(|p| **p == "prefab/keep-boss-hall")
+            .count(),
+        1,
+        "exactly one boss-hall terminal"
+    );
+    // A branch piece (tee or cross, ≥3 sockets) is present to fork the two.
+    assert!(
+        ids.iter().any(|p| p.contains("tee") || p.contains("cross")),
+        "a branch piece forks the terminals: {ids:?}"
+    );
+    // Connected: every piece except the entry mates ≥1 socket (all sockets start
+    // unmated; a mated flag means it attached to the tree).
+    for (i, piece) in layout.pieces.iter().enumerate() {
+        if i == 0 {
+            continue;
+        }
+        assert!(
+            piece.mated.iter().any(|&m| m),
+            "piece {} ({}) is disconnected",
+            i,
+            piece.prefab_id
+        );
+    }
+    assert!((7..=10).contains(&layout.pieces.len()));
+}
+
+/// Branching is robust across seeds: a two-terminal layout solves for every seed
+/// in a wide sweep (greedy tree growth extends the trunk before forking, so large
+/// terminals fit). Guards against seed-dependent overlap flakiness.
+#[test]
+fn branching_solves_across_many_seeds() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let mut failures = 0;
+    for seed in 0u64..200 {
+        let mut s = Splitmix64::new(solver::stream_seed(seed, "area/keep"));
+        let r = solver::solve_area(
+            &prefabs,
+            "pool/stone-keep",
+            &["anchor/objective".to_string(), "anchor/boss".to_string()],
+            7,
+            9,
+            [0, 64, 0],
+            &mut s,
+        );
+        if let Ok(layout) = r {
+            let ids: Vec<&str> = layout.pieces.iter().map(|p| p.prefab_id.as_str()).collect();
+            assert!(
+                ids.contains(&"prefab/keep-shrine"),
+                "seed {seed}: no shrine"
+            );
+            assert!(
+                ids.contains(&"prefab/keep-boss-hall"),
+                "seed {seed}: no boss-hall"
+            );
+        } else {
+            failures += 1;
+        }
+    }
+    assert_eq!(failures, 0, "{failures}/200 seeds failed to solve");
+}
+
+/// Branching determinism: same seed → identical branching layout.
+#[test]
+fn branching_same_seed_same_layout() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let solve = || {
+        let mut s = Splitmix64::new(solver::stream_seed(99, "area/keep"));
+        solver::solve_area(
+            &prefabs,
+            "pool/stone-keep",
+            &["anchor/objective".to_string(), "anchor/boss".to_string()],
+            7,
+            10,
+            [0, 64, 0],
+            &mut s,
+        )
+        .unwrap()
+    };
+    let a = solve();
+    let b = solve();
+    assert_eq!(a.pieces.len(), b.pieces.len());
+    for (pa, pb) in a.pieces.iter().zip(&b.pieces) {
+        assert_eq!(pa.prefab_id, pb.prefab_id);
+        assert_eq!(pa.pos, pb.pos);
+        assert_eq!(pa.rotation, pb.rotation);
+    }
+    assert_eq!(a.seals, b.seals);
 }
 
 /// Same seed + same DSL → identical solved layout (the solver-level determinism

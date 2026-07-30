@@ -42,7 +42,9 @@
                 "type": "campaign-complete"
               },
               {
-                "type": "give-item"
+                "type": "give-item",
+                "item": "minecraft:torch",
+                "count": 1
               }
             ]
           }

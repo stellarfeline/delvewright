@@ -40,8 +40,11 @@ ENV TYPE=VANILLA \
     VERSION=1.21.11 \
     DATAPACKS=/delve/datapack \
     # World config mirrored from the compiler's server/server.properties (spec-0002
-    # void/superflat + fixed seed). The release/packaging spec will template these
-    # straight from <out>/server/server.properties so they cannot drift.
+    # void/superflat + fixed seed). The campaign-varying values (`difficulty`,
+    # `level-seed`) are sourced from that file by the entrypoint wrapper below, so
+    # they cannot drift; these ENV values are only the fallback if the file is
+    # absent. (v0.3: combat-wave campaigns need `difficulty=easy` — peaceful removes
+    # summoned mobs — while wave-free delves stay `peaceful`.)
     MODE=adventure \
     DIFFICULTY=peaceful \
     FORCE_GAMEMODE=true \
@@ -59,6 +62,22 @@ ENV TYPE=VANILLA \
     # Offline by default for local play/validation; the owner sets ONLINE_MODE=TRUE
     # to join with a real account (spec-0003 auth-mode note).
     ONLINE_MODE=FALSE
+
+# Source the campaign-varying world settings (difficulty, seed) from the compiler's
+# server.properties at container start, then hand off to itzg's entrypoint — so the
+# shipped image honours the compiler output (no drift) without a per-campaign
+# Dockerfile. itzg reads DIFFICULTY/SEED env when it generates server.properties.
+RUN cat > /delve/entrypoint.sh <<'EOS' && chmod +x /delve/entrypoint.sh
+#!/usr/bin/env bash
+set -e
+props=/delve/server/server.properties
+if [ -f "$props" ]; then
+  d=$(sed -n 's/^difficulty=//p' "$props" | head -1); [ -n "$d" ] && export DIFFICULTY="$d"
+  s=$(sed -n 's/^level-seed=//p' "$props" | head -1); [ -n "$s" ] && export SEED="$s"
+fi
+exec /image/scripts/start "$@"
+EOS
+ENTRYPOINT ["/delve/entrypoint.sh"]
 
 # EULA is intentionally NOT set (ADR-0010): the operator accepts it at run time.
 EXPOSE 25565

@@ -1,0 +1,30 @@
+{
+  "dsl_version": "0.3.0",
+  "campaign_id": "keep-trial",
+  "stage": "dialogue",
+  "content": {
+    "dialogues": [
+      {
+        "npc": "npc/keeper",
+        "root": "dlg/greet",
+        "nodes": [
+          {
+            "id": "dlg/greet",
+            "text": "You came. Good. The moor raised a guard in the hall — put it down, take the key it kept, and unbar the inner door. The shrine lies past it.",
+            "options": [
+              { "label": "Who are you?", "next": "dlg/lore" },
+              { "label": "I'll clear the keep.", "effects": [ { "type": "complete-objective", "objective": "obj/talk" } ] }
+            ]
+          },
+          {
+            "id": "dlg/lore",
+            "text": "The captain who lost this place. I hold the gate still, because I cannot leave it. Do better than I did.",
+            "options": [
+              { "label": "Back.", "next": "dlg/greet" }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

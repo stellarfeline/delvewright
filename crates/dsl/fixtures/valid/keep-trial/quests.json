@@ -1,0 +1,54 @@
+{
+  "dsl_version": "0.3.0",
+  "campaign_id": "keep-trial",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/greet",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [
+            { "type": "spawn-wave", "wave": "wave/guards" },
+            { "type": "set-flag", "flag": "flag/summoned" }
+          ]
+        },
+        "on_complete": []
+      },
+      {
+        "id": "quest/trial",
+        "trigger": { "type": "quest-complete", "quest": "quest/greet" },
+        "objectives": [
+          { "type": "kill", "id": "obj/slay", "wave": "wave/guards", "requires_flags": ["flag/summoned"] },
+          { "type": "collect", "id": "obj/key", "item": "minecraft:tripwire_hook", "count": 1, "anchor": "anchor/chest", "after": ["obj/slay"], "requires_flags": ["flag/cleared"] },
+          { "type": "interact", "id": "obj/door", "anchor": "anchor/door", "requires_item": "minecraft:tripwire_hook", "after": ["obj/key"] },
+          { "type": "reach-anchor", "id": "obj/shrine", "anchor": "anchor/objective", "radius": 2, "after": ["obj/door"], "requires_flags": ["flag/opened"] }
+        ],
+        "on_objective_complete": {
+          "obj/slay": [
+            { "type": "set-flag", "flag": "flag/cleared" }
+          ],
+          "obj/door": [
+            { "type": "open-gate", "anchor": "anchor/gate" },
+            { "type": "set-flag", "flag": "flag/opened" }
+          ]
+        },
+        "on_complete": [
+          { "type": "campaign-complete" }
+        ]
+      }
+    ],
+    "waves": [
+      {
+        "id": "wave/guards",
+        "anchor": "anchor/wave",
+        "mobs": [
+          { "entity": "minecraft:zombie", "count": 2, "name": "Keep Guard" }
+        ]
+      }
+    ]
+  }
+}
