@@ -1,6 +1,6 @@
 # spec-0001: Campaign DSL schemas (staged)
 
-- **Status**: Draft (v0 — owner approval pending)
+- **Status**: Approved (v0, owner-approved 2026-07-29)
 - **ADRs**: 0001 (DSL→compiler), 0002 (staged), 0004 (prefab refs), 0006 (determinism)
 - **v0 scope**: everything the hello-world delve (M1) needs, with envelopes and enums
   designed so M2+ extends values rather than reshaping structures. Reserved enum

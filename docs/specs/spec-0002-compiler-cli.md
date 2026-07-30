@@ -1,6 +1,6 @@
 # spec-0002: Compiler CLI contract
 
-- **Status**: Draft (v0 — owner approval pending)
+- **Status**: Approved (v0, owner-approved 2026-07-29)
 - **ADRs**: 0001, 0004, 0006, 0009 (MC 1.21.11), 0010, 0011 (Rust-native)
 
 The deterministic compiler (`crates/compiler`, binary `delvec`): staged DSL in,
