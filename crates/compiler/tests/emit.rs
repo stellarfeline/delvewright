@@ -263,6 +263,106 @@ fn packtest_sealed_state_test_emitted() {
     );
 }
 
+/// The creator overlay (spec-0006 M2) is a self-contained `creator-datapack/`
+/// subtree: a `dw.note` trigger + a per-tick stamp handler that macro-emits one
+/// machine-readable `[DelveNote]` line, plus a `layout.json` for the harvester. Its
+/// `.mcfunction`s are plain vanilla (validated by `every_emitted_command_validates`)
+/// and its bytes ride the determinism gate (`build_is_byte_identical_across_runs`).
+#[test]
+fn creator_overlay_emitted() {
+    let out = build_hello_world();
+
+    // pack.mcmeta uses the same [94,1] format contract.
+    let mcmeta: serde_json::Value =
+        serde_json::from_slice(out.get("creator-datapack/pack.mcmeta").unwrap()).unwrap();
+    assert_eq!(mcmeta["pack"]["min_format"], serde_json::json!([94, 1]));
+
+    // load/tick tags add the overlay functions (they MERGE with the main datapack's
+    // same-named tags at load time).
+    let load: serde_json::Value = serde_json::from_slice(
+        out.get("creator-datapack/data/minecraft/tags/function/load.json")
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(load["values"][0], "hello-world:creator/init");
+    let tick: serde_json::Value = serde_json::from_slice(
+        out.get("creator-datapack/data/minecraft/tags/function/tick.json")
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(tick["values"][0], "hello-world:creator/tick");
+
+    // The trigger is registered and armed every tick, then dispatched on fire.
+    let init = text(
+        &out,
+        "creator-datapack/data/hello-world/function/creator/init.mcfunction",
+    );
+    assert!(init.contains("scoreboard objectives add dw.note trigger"));
+    let tickf = text(
+        &out,
+        "creator-datapack/data/hello-world/function/creator/tick.mcfunction",
+    );
+    assert!(tickf.contains("scoreboard players enable @a dw.note"));
+    assert!(tickf.contains("scores={dw.note=1..}"));
+    assert!(tickf.contains("run function hello-world:creator/stamp"));
+
+    // The stamp reads the player position off entity NBT (macro source) and
+    // invokes the emit macro `with storage`.
+    let stamp = text(
+        &out,
+        "creator-datapack/data/hello-world/function/creator/stamp.mcfunction",
+    );
+    assert!(stamp.contains("run data get entity @s Pos[0]"));
+    assert!(stamp.contains("data modify storage hello-world:note area set value \"area/keep\""));
+    assert!(stamp.contains("if entity @s[tag=dw_npc_keeper]"));
+    assert!(stamp.contains("run scoreboard players get @s dw.o_talk"));
+    assert!(stamp.contains("function hello-world:creator/emit with storage hello-world:note"));
+
+    // The emit line is a single `say` macro (server-log-reachable, unlike a
+    // tellraw system message) carrying the spec's `[DelveNote]` fields, with real
+    // DSL objective ids baked in and live values macro-substituted.
+    let emit = text(
+        &out,
+        "creator-datapack/data/hello-world/function/creator/emit.mcfunction",
+    );
+    let emit = emit.trim();
+    assert!(emit.starts_with("$say [DelveNote] "), "emit line: {emit}");
+    assert!(emit.contains("pos=[$(x),$(y),$(z)]"));
+    assert!(emit.contains("area=$(area)"));
+    assert!(emit.contains("obj/talk:$(o_talk)"));
+    assert!(emit.contains("obj/exit:$(o_exit)"));
+    assert!(emit.contains("nearest_npc=$(npc)"));
+
+    // layout.json is the harvester's only campaign input: area→prefab and
+    // objective→quest.
+    let layout: serde_json::Value =
+        serde_json::from_slice(out.get("creator-datapack/layout.json").unwrap()).unwrap();
+    assert_eq!(layout["campaign_id"], "hello-world");
+    assert_eq!(layout["areas"][0]["id"], "area/keep");
+    assert_eq!(layout["areas"][0]["prefab"], "prefab/hello-room");
+    assert_eq!(layout["objectives"][0]["id"], "obj/talk");
+    assert_eq!(layout["objectives"][0]["quest"], "quest/open-the-door");
+}
+
+/// The overlay is playtest-only and must never enter the shipped delve datapack:
+/// the two subtrees are strictly separate, and no `dw.note`/creator machinery
+/// leaks into `datapack/` (the CI image-exclusion check is the runtime backstop).
+#[test]
+fn creator_overlay_absent_from_shipped_datapack() {
+    let out = build_hello_world();
+    for (path, bytes) in &out {
+        if path.starts_with("datapack/") {
+            let body = std::str::from_utf8(bytes).unwrap_or("");
+            assert!(
+                !path.contains("creator")
+                    && !body.contains("dw.note")
+                    && !body.contains("DelveNote"),
+                "creator overlay leaked into shipped datapack at {path}"
+            );
+        }
+    }
+}
+
 #[test]
 fn dialog_buttons_run_the_trigger_commands() {
     let out = build_hello_world();

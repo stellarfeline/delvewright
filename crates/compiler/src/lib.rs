@@ -7,9 +7,11 @@
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
 //! - [`plan`]: resolve the campaign into a placement/naming model.
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
+//! - [`creator`]: the playtest-only creator overlay (`creator-datapack/`, spec-0006).
 
 pub mod analyze;
 pub mod commands;
+pub mod creator;
 pub mod emit;
 pub mod load;
 pub mod plan;
