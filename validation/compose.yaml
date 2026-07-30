@@ -1,0 +1,101 @@
+# Delvewright validation compose (spec-0003, ADR-0005 / ADR-0008 / ADR-0010).
+#
+# Today this file provides the `play` profile only: a single, bare, pinned vanilla
+# 1.21.11 server the owner can join from her own client to check a delve by hand.
+# The full `validate` profile (server + PackTest runner + mineflayer bot, exit
+# codes propagated to CI) is stubbed in comments at the bottom and lands with the
+# rest of spec-0003 once the compiler emits a delve.
+#
+# EULA: acceptance is the owner's action, never ours — it is read from the
+# environment and is NOT hardcoded to TRUE anywhere (ADR-0010). Run with:
+#
+#     EULA=TRUE docker compose -f validation/compose.yaml --profile play up
+#
+# The itzg image downloads the pinned server jar at runtime by version (it is never
+# baked into a published layer), which is exactly the ADR-0010 EULA-safe pattern.
+
+services:
+  server:
+    # Pinned image tag. MC 1.21.11 requires Java 21, so the java21 line is pinned
+    # here. For byte-level reproducibility (ADR-0006) the release/packaging spec
+    # will pin this by immutable @sha256 digest; the floating tag is acceptable for
+    # the dev-convenience play profile only.
+    image: itzg/minecraft-server:java21
+    # `play` = owner-facing hand check. The server also belongs to the future
+    # `validate` profile (see the stub below); add "validate" to this list when
+    # that profile is built.
+    profiles: ["play"]
+    container_name: delvewright-play
+    environment:
+      # Never TRUE in this file — the owner must set EULA=TRUE in her environment.
+      # `:?` makes compose fail fast with this message if it is unset.
+      EULA: ${EULA:?set EULA=TRUE in your environment to accept Mojang's EULA (https://aka.ms/MinecraftEULA)}
+      TYPE: "VANILLA"
+      VERSION: "1.21.11" # ADR-0009 pin; keep in lockstep with the repo version manifest.
+      # Auth mode is an open spec-0003 question (real accounts vs offline for local
+      # testing). Default to offline for frictionless local play; override with
+      # ONLINE_MODE=TRUE to join with a real Microsoft account. Provisional — the
+      # decision is recorded in spec-0003 Draft, not here.
+      ONLINE_MODE: ${ONLINE_MODE:-FALSE}
+      # Bare pinned server today: no delve loaded until the compiler exists. The
+      # world is created on first boot; the compiler's server/ output (fixed void
+      # preset + seed, spec-0002) will drive level generation once wired in.
+      MEMORY: "2G"
+    ports:
+      # Play profile only: expose to localhost so the owner joins at localhost:25565
+      # from her vanilla client. Bound to 127.0.0.1 so it is never world-reachable.
+      # The validate profile does NOT need this — the bot reaches the server over
+      # the internal compose network.
+      - "127.0.0.1:25565:25565"
+    volumes:
+      # Persist the world/config the itzg image manages between runs.
+      - delvewright-play-data:/data
+      # PLACEHOLDER — the compiler does not exist yet (spec-0002). When it does,
+      # its build output tree `<out>/` (manifest.json, datapack/, server/, …) is
+      # mounted here so the server loads the compiled delve. Concretely the
+      # datapack is expected at:
+      #     ./delve-output/datapack  ->  /data/world/datapacks/<campaign-id>  (ro)
+      # and server/ (server.properties, level config) overlays /data. Left commented
+      # so `docker compose config` and the bare play server work with no build.
+      # - ./delve-output/datapack:/data/world/datapacks/hello-world:ro
+
+volumes:
+  delvewright-play-data:
+
+# ---------------------------------------------------------------------------
+# STUB: `validate` profile (spec-0003, ADR-0005 two-layer dynamic validation).
+# Not implemented — depends on the compiler (spec-0002) emitting a delve and its
+# packtest-datapack/ + critical-path.json. When built, it will look like:
+#
+#   services:
+#     server:
+#       # add "validate" to the profiles list above; in validate the tooling-mod
+#       # overlay (PackTest + Fabric loader) is layered on at compose time only —
+#       # it must NEVER leak into the shipped delve image (spec-0003 criterion).
+#       profiles: ["play", "validate"]
+#
+#     packtest-runner:
+#       # Headless pinned server + PackTest with -Dpacktest.auto; exit code = number
+#       # of failed tests (the CI contract). Consumes packtest-datapack/.
+#       profiles: ["validate"]
+#       depends_on:
+#         server:
+#           condition: service_healthy   # itzg image ships a healthcheck
+#
+#     bot:
+#       # The mineflayer harness (../harness). Reads critical-path.json and drives
+#       # the run; exits 0/1, propagated as the compose/CI exit code.
+#       profiles: ["validate"]
+#       build: ../harness
+#       depends_on:
+#         server:
+#           condition: service_healthy
+#       environment:
+#         DELVEWRIGHT_MC_HOST: server        # internal compose DNS, not localhost
+#         DELVEWRIGHT_MC_PORT: "25565"
+#         DELVEWRIGHT_MC_VERSION: "1.21.11"
+#         DELVEWRIGHT_MC_AUTH: offline
+#       command: ["node", "src/run.ts", "/delve/critical-path.json"]
+#
+# One command reproduces CI locally:  docker compose --profile validate up
+# ---------------------------------------------------------------------------
