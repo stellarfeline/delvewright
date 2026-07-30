@@ -1,0 +1,78 @@
+# Delvewright tooling server image (spec-0005, ADR-0003).
+#
+# `ghcr.io/stellarfeline/delvewright-toolserver` — the validation PackTest runner:
+# the delvewright-base mirror + PRE-BAKED Fabric loader, Fabric API, and PackTest.
+# All three overlays are MIT/Apache and legally redistributable. Baking them here
+# kills the per-run Modrinth downloads the compose `packtest` profile used to do at
+# runtime (spec-0005 acceptance: a tier-2 run performs NO Modrinth fetch).
+#
+# ADR-0003: this image is validation-tooling ONLY. Its Fabric/PackTest mods must
+# NEVER reach the shipped delve image (Dockerfile.delve). It is never player-facing.
+#
+# ADR-0010 (EULA): the Mojang server jar is NOT baked. Only the ~180 KB Fabric
+# launcher jar + the MIT/Apache mod jars ship in layers; the itzg entrypoint still
+# fetches the pinned Mojang jar (version + checksum) at first boot.
+#
+# All version/URL/checksum ARG defaults below are the single-source values from the
+# repo-root `versions.toml`; `validation/check-versions.sh` fails CI if they drift.
+# Build (local verification against the byte-identical itzg source of the mirror):
+#
+#   docker build -f validation/Dockerfile.toolserver \
+#     --build-arg BASE_IMAGE=itzg/minecraft-server@sha256:3e7db2562b492dbf442568a327d361547628c98c04a7cb68218c8dde6abdd1de \
+#     -t ghcr.io/stellarfeline/delvewright-toolserver:1.21.11-packtest2.4.0 validation/
+
+# The delvewright-base mirror, pinned by digest. Defaults to the GHCR mirror (the
+# end state); infra-images.yml passes this explicitly, and local pre-publish
+# verification overrides it with the byte-identical itzg source (same digest).
+ARG BASE_IMAGE=ghcr.io/stellarfeline/delvewright-base@sha256:3e7db2562b492dbf442568a327d361547628c98c04a7cb68218c8dde6abdd1de
+FROM ${BASE_IMAGE}
+
+# --- pinned versions (mirror of versions.toml; checked by check-versions.sh) ---
+ARG MC_VERSION=1.21.11
+ARG FABRIC_LOADER_VERSION=0.19.3
+# Fabric API 0.141.6+1.21.11 and PackTest 2.4.0 (file packtest-2.4-mc1.21.11.jar),
+# pinned by their Modrinth CDN URL + sha1.
+ARG FABRIC_API_URL=https://cdn.modrinth.com/data/P7dR8mSH/versions/6qAuTtLR/fabric-api-0.141.6%2B1.21.11.jar
+ARG FABRIC_API_SHA1=c98467cbbaf4d197377266795ae015f4130d65b6
+ARG PACKTEST_URL=https://cdn.modrinth.com/data/XsKUhp45/versions/g8Sp1z0q/packtest-2.4-mc1.21.11.jar
+ARG PACKTEST_SHA1=7c9f83f1673209abb1d5262dd69583e61c85cbd2
+
+# The itzg base runs its entrypoint as root and drops privileges internally; leave
+# USER unset (as the base does) so /data ownership handling keeps working.
+
+# 1) Pre-bake the tooling mods OUTSIDE /data (a runtime volume). itzg's MODS env
+#    copies every *.jar from this dir into /data/mods on boot — no Modrinth fetch.
+RUN set -eux; \
+    mkdir -p /opt/delvewright/mods; \
+    curl -fSL -o /opt/delvewright/mods/fabric-api.jar "${FABRIC_API_URL}"; \
+    echo "${FABRIC_API_SHA1}  /opt/delvewright/mods/fabric-api.jar" | sha1sum -c -; \
+    curl -fSL -o /opt/delvewright/mods/packtest.jar "${PACKTEST_URL}"; \
+    echo "${PACKTEST_SHA1}  /opt/delvewright/mods/packtest.jar" | sha1sum -c -; \
+    # Guard the EULA boundary at build time: only the two mod jars, nothing MC-sized.
+    ls -la /opt/delvewright/mods
+
+# 2) Pre-install the Fabric loader launcher into /data at build time. mc-image-helper
+#    install-fabric-loader is idempotent ("already available" -> no re-download), so
+#    the itzg FABRIC entrypoint does NO fabric-maven fetch at runtime either. This
+#    downloads only the ~180 KB fabric launcher — never the Mojang server jar.
+RUN set -eux; \
+    mc-image-helper install-fabric-loader \
+      --minecraft-version="${MC_VERSION}" \
+      --loader-version="${FABRIC_LOADER_VERSION}" \
+      --output-directory=/data \
+      --results-file=/data/.install-fabric.env; \
+    cat /data/.install-fabric.env; \
+    # itzg re-runs install-fabric-loader as uid 1000 each boot (idempotent download,
+    # but it always rewrites the results file), so /data must be writable by 1000.
+    chown -R 1000:1000 /data; \
+    # Fail the build if the Mojang server jar ever slipped in (EULA, ADR-0010).
+    ! find / -name 'server.jar' 2>/dev/null | grep -q . || (echo 'server.jar baked - EULA violation' && exit 1)
+
+# Defaults that make this image self-describing: TYPE=FABRIC + the pinned loader,
+# MODS pointing at the pre-baked jars, and PackTest's auto-run flag. The compose
+# service supplies EULA, world settings, and the datapack mounts.
+ENV TYPE=FABRIC \
+    VERSION=${MC_VERSION} \
+    FABRIC_LOADER_VERSION=${FABRIC_LOADER_VERSION} \
+    MODS=/opt/delvewright/mods \
+    JVM_OPTS=-Dpacktest.auto

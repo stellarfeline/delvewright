@@ -1,0 +1,110 @@
+name: infra images (publish base + toolserver → GHCR)
+
+# spec-0005: publish the two version-pinned infrastructure images to GHCR as PUBLIC
+# packages, then pull them by digest everywhere else. workflow_dispatch ONLY — this
+# is rare and deliberate (re-run when the ADR-0009 pin moves or a tooling-mod bumps).
+#
+# After a run: copy the two digests it prints into versions.toml
+# ([images.base].digest is already final; [images.toolserver].digest replaces its
+# TBD-first-publish) and repin the compose packtest service, in a normal PR.
+#
+# Values below mirror versions.toml (guarded by validation/check-versions.sh).
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: infra-images
+  cancel-in-progress: false
+
+env:
+  BASE: ghcr.io/stellarfeline/delvewright-base
+  TOOLSERVER: ghcr.io/stellarfeline/delvewright-toolserver
+  # The itzg source of the base mirror, pinned by its multi-arch index digest
+  # (ADR-0006/0009). imagetools create copies this index verbatim, so the mirror's
+  # digest equals this one.
+  ITZG_SRC: itzg/minecraft-server@sha256:3e7db2562b492dbf442568a327d361547628c98c04a7cb68218c8dde6abdd1de
+  BASE_DIGEST: sha256:3e7db2562b492dbf442568a327d361547628c98c04a7cb68218c8dde6abdd1de
+  TOOLSERVER_TAG: 1.21.11-packtest2.4.0
+
+jobs:
+  publish:
+    name: mirror base + build toolserver (multi-arch)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3 # arm64 emulation for the Pi (ADR-0010)
+      - uses: docker/setup-buildx-action@v3
+      - name: log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 1) delvewright-base = a TRUE mirror of the itzg multi-arch index (spec-0005
+      #    open question: true mirror via imagetools create, NOT a FROM+relabel — so
+      #    the digest is preserved and the amd64+arm64 index is copied byte-for-byte).
+      - name: mirror delvewright-base (imagetools create — digest preserved)
+        run: |
+          docker buildx imagetools create \
+            --tag "${BASE}:1.21.11-java21" \
+            --tag "${BASE}:latest" \
+            "${ITZG_SRC}"
+          echo "=== delvewright-base published ==="
+          docker buildx imagetools inspect "${BASE}:1.21.11-java21" \
+            --format '{{println .Manifest.Digest}}'
+
+      # 2) delvewright-toolserver = base + pre-baked Fabric loader / Fabric API /
+      #    PackTest (ADR-0003 tooling only). Built multi-arch FROM the base we just
+      #    published (by digest), pushed to GHCR.
+      - name: build + push delvewright-toolserver (amd64 + arm64)
+        id: toolserver
+        uses: docker/build-push-action@v6
+        with:
+          context: validation
+          file: validation/Dockerfile.toolserver
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            BASE_IMAGE=${{ env.BASE }}@${{ env.BASE_DIGEST }}
+          tags: |
+            ${{ env.TOOLSERVER }}:${{ env.TOOLSERVER_TAG }}
+            ${{ env.TOOLSERVER }}:latest
+
+      # 3) Try to make both packages public. GITHUB_TOKEN usually LACKS the scope to
+      #    change package visibility, so this is best-effort; the manual steps are
+      #    printed either way.
+      - name: attempt to set packages public (best-effort)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for pkg in delvewright-base delvewright-toolserver; do
+            echo "PATCH visibility=public for $pkg"
+            gh api --method PATCH "/user/packages/container/${pkg}" -f visibility=public \
+              && echo "  -> $pkg is now public" \
+              || echo "  -> could not set $pkg public with GITHUB_TOKEN (expected)"
+          done
+
+      - name: record digests + follow-up instructions
+        run: |
+          TOOL_DIGEST='${{ steps.toolserver.outputs.digest }}'
+          {
+            echo "## infra-images published"
+            echo ""
+            echo "| image | ref |"
+            echo "|---|---|"
+            echo "| base | \`${BASE}@${BASE_DIGEST}\` |"
+            echo "| toolserver | \`${TOOLSERVER}@${TOOL_DIGEST}\` |"
+            echo ""
+            echo "### Follow-up (owner)"
+            echo "1. Record \`[images.toolserver].digest = \"${TOOL_DIGEST}\"\` in versions.toml."
+            echo "2. Repin the compose \`packtest\` service to \`${TOOLSERVER}@${TOOL_DIGEST}\`."
+            echo "3. If the visibility PATCH above failed: GitHub → your profile →"
+            echo "   Packages → delvewright-base → Package settings → Danger Zone →"
+            echo "   Change visibility → Public. Repeat for delvewright-toolserver."
+          } | tee -a "$GITHUB_STEP_SUMMARY"
