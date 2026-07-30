@@ -55,6 +55,8 @@ sealing (spec-0002) added as an M2 emission requirement.
 - First LLM-generated (not hand-written) campaign compiles and passes validation —
   produced through the embryonic `/new-delve` skill (ADR-0012), so the product form
   is exercised by real use from M2 onward.
+- Creator playtest loop core (spec-0006): `playtest` compose profile, in-game
+  `/trigger dw.note` marks, harvester → DSL-addressable `playtest-report.json`.
 
 **Exit**: an LLM-authored campaign passes static + PackTest + bot validation with no
 hand edits to compiler output.
