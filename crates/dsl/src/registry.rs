@@ -47,6 +47,9 @@ pub struct Lighting {
     /// Why `dim`/`dark` was chosen (required for `dim`/`dark` by review).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rationale: Option<String>,
+    /// How the minimum was measured (provenance breadcrumb; optional).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
 }
 
 /// The prefab-metadata surface DSL validation resolves refs against: declared
