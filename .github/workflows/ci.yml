@@ -2,8 +2,11 @@ name: CI (tier 1)
 
 # spec-0004 tier 1 only: unit tests + static analysis on every push and PR.
 # Tier 2/3 (validation image, PackTest, playthrough) are deliberately not here.
+# push is limited to main so PR branches don't run every job twice
+# (push + pull_request); Actions minutes are metered while the repo is private.
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
