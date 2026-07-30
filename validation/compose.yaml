@@ -70,22 +70,26 @@ services:
       - ./delve-output/critical-path.json:/delve/critical-path.json:ro
     command: ["/delve/critical-path.json"]
 
-  # PackTest runner (spec-0003 PackTest tier): Fabric + PackTest + Fabric API
-  # (tooling-only overlay, ADR-0003), both datapacks, `-Dpacktest.auto`. Runs the
-  # generated suite headlessly and exits with code = number of failed tests.
+  # PackTest runner (spec-0003 PackTest tier): the delvewright-toolserver image
+  # (ADR-0003 tooling-only), which PRE-BAKES Fabric loader + Fabric API + PackTest
+  # and `-Dpacktest.auto` — so there is NO per-run Modrinth fetch and NO Docker Hub
+  # pull (spec-0005). Runs both datapacks headlessly, exit code = failed tests.
+  #
+  # Pinned by immutable digest (spec-0005); republish via
+  # infra-images.yml (owner runs workflow_dispatch — local push lacks write:packages),
+  # then a follow-up PR repins this to
+  #   ghcr.io/stellarfeline/delvewright-toolserver@sha256:<digest>
+  # and records the digest in versions.toml ([images.toolserver].digest, now TBD).
   packtest:
     profiles: ["packtest"]
-    image: itzg/minecraft-server:java21
+    image: ghcr.io/stellarfeline/delvewright-toolserver@sha256:31ed5d5a5c50158470bfee8c7197a75e6f586a25c950bf25b69b533f88e0ba0b
     container_name: delvewright-packtest
     environment:
       EULA: ${EULA:?set EULA=TRUE in your environment to accept Mojang's EULA (https://aka.ms/MinecraftEULA)}
-      TYPE: "FABRIC"
-      VERSION: "1.21.11"
       ONLINE_MODE: "FALSE"
-      # PackTest 2.4.0 for MC 1.21.11 + its required Fabric API. Tooling only —
-      # these mods must never appear in the shipped delve image.
-      MODRINTH_PROJECTS: "packtest:2.4.0,fabric-api"
-      JVM_OPTS: "-Dpacktest.auto"
+      # TYPE=FABRIC, the Fabric loader, MODS (pre-baked jars) and JVM_OPTS
+      # (-Dpacktest.auto) are baked into the toolserver image; only the world
+      # settings + datapack mounts (which mirror the shipped delve) live here.
       # itzg copies these directories into the world's datapacks folder on boot.
       DATAPACKS: "/packs/datapack,/packs/packtest-datapack"
       # Match the delve's void/superflat world so /place template etc. behave the

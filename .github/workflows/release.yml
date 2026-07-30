@@ -36,9 +36,13 @@ jobs:
           cargo run -p delvewright-compiler --bin delvec -- \
             build crates/dsl/fixtures/valid/hello-world \
             -o validation/delve-output --prefabs prefabs
+      # Jar cache removed 2026-07-30 (see the note in ci.yml tier-2): single-file
+      # bind mounts break itzg's installer rename, and runners fetch piston-data in
+      # under a second. The itzg entrypoint downloads the pinned jar (ADR-0010).
       - name: bot completes the critical path against the shipped delve image
         run: |
-          docker compose -f validation/compose.yaml --profile validate up \
+          docker compose -f validation/compose.yaml \
+            --profile validate up \
             --build --abort-on-container-exit --exit-code-from bot
       - name: tear down
         if: always()

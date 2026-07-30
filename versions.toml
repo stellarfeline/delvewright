@@ -1,0 +1,80 @@
+# Delvewright version manifest — the single source of truth (spec-0005).
+#
+# Every pinned version, digest, and checksum the infrastructure depends on lives
+# here. Dockerfiles, the compose profiles, and CI workflows must agree with these
+# values; `validation/check-versions.sh` (wired into CI tier 1) fails the build if
+# any of them hardcode a value that disagrees with this file.
+#
+# Editing a pin here is a deliberate, reviewed act (ADR-0006 / ADR-0009). After an
+# infra-images.yml publish, record the fresh image digests here in a normal PR.
+
+[minecraft]
+# The pinned Minecraft Java version — a long-term constant (ADR-0009).
+# Consumed by: validation/Dockerfile.delve (ENV VERSION), validation/Dockerfile.toolserver
+# (ARG MC_VERSION), validation/compose.yaml (VERSION), harness (DELVEWRIGHT_MC_VERSION),
+# .github/workflows/*.yml.
+version = "1.21.11"
+# Mojang server jar, from piston-meta 1.21.11 (downloads.server). The jar is NEVER
+# baked into any image (ADR-0010 EULA); the itzg entrypoint fetches it at first boot
+# by version+checksum, and CI caches it (actions/cache keyed on version + sha256).
+# Provenance record only (no CI cache since 2026-07-30, see ci.yml note).
+# sha1 is the checksum piston-meta publishes; sha256 is computed from the jar bytes
+# and used as the CI cache key + our own integrity check.
+server_jar_url = "https://piston-data.mojang.com/v1/objects/64bb6d763bed0a9f1d632ec347938594144943ed/server.jar"
+server_jar_sha1 = "64bb6d763bed0a9f1d632ec347938594144943ed"
+server_jar_sha256 = "f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726"
+server_jar_size = 56327581
+
+[datapack]
+# Datapack pack_format for 1.21.11 (min_format = max_format = [94, 1]).
+# Consumed by: the compiler's emitted pack.mcmeta (crates/compiler/src/emit.rs).
+pack_format = [94, 1]
+
+[images.base]
+# ghcr.io/stellarfeline/delvewright-base — a TRUE mirror (buildx imagetools create,
+# see spec-0005 open question resolution below) of itzg/minecraft-server at the pin.
+# Consumed by: validation/Dockerfile.delve (FROM, via ARG DELVE_BASE_IMAGE),
+# validation/Dockerfile.toolserver (FROM, via ARG BASE_IMAGE).
+#
+# Because imagetools create copies the multi-arch OCI image index byte-for-byte, the
+# mirror's digest EQUALS the source index digest — so this digest is already final,
+# even though the package has not been pushed yet (local push lacks write:packages;
+# see infra-images.yml). The source index is multi-arch (linux/amd64 + linux/arm64).
+repo = "ghcr.io/stellarfeline/delvewright-base"
+digest = "sha256:3e7db2562b492dbf442568a327d361547628c98c04a7cb68218c8dde6abdd1de"
+mirror_of = "itzg/minecraft-server@sha256:3e7db2562b492dbf442568a327d361547628c98c04a7cb68218c8dde6abdd1de"
+
+[images.toolserver]
+# ghcr.io/stellarfeline/delvewright-toolserver — delvewright-base + pre-baked Fabric
+# loader, Fabric API, and PackTest (validation tooling only, ADR-0003). Built by
+# validation/Dockerfile.toolserver.
+# Consumed by: validation/compose.yaml (packtest service `image:`).
+#
+# Published 2026-07-30 from the owner's workstation (buildx docker-container
+# builder, linux/amd64+linux/arm64) after the gh token gained write:packages.
+# Future republishes go through infra-images.yml (workflow_dispatch).
+repo = "ghcr.io/stellarfeline/delvewright-toolserver"
+tag = "1.21.11-packtest2.4.0"
+digest = "sha256:31ed5d5a5c50158470bfee8c7197a75e6f586a25c950bf25b69b533f88e0ba0b"
+
+[fabric]
+# Fabric loader (pre-baked into the toolserver at build time; ADR-0003 tooling only).
+# Consumed by: validation/Dockerfile.toolserver (ARG FABRIC_LOADER_VERSION).
+loader_version = "0.19.3"
+# Fabric API mod jar (Modrinth project P7dR8mSH), required by PackTest.
+# Consumed by: validation/Dockerfile.toolserver (ARG FABRIC_API_URL / _SHA1).
+api_version = "0.141.6+1.21.11"
+api_url = "https://cdn.modrinth.com/data/P7dR8mSH/versions/6qAuTtLR/fabric-api-0.141.6%2B1.21.11.jar"
+api_sha1 = "c98467cbbaf4d197377266795ae015f4130d65b6"
+
+[packtest]
+# PackTest (Modrinth project XsKUhp45) — the runtime datapack test harness (ADR-0005).
+# Consumed by: validation/Dockerfile.toolserver (ARG PACKTEST_URL / _SHA1),
+# validation/compose.yaml (image tag suffix).
+version = "2.4.0"
+url = "https://cdn.modrinth.com/data/XsKUhp45/versions/g8Sp1z0q/packtest-2.4-mc1.21.11.jar"
+sha1 = "7c9f83f1673209abb1d5262dd69583e61c85cbd2"
+
+[harness]
+# mineflayer bot pin (spec-0003). Consumed by: harness/package.json.
+mineflayer = "4.37.1"

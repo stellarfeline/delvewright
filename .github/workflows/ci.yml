@@ -18,6 +18,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # spec-0005 tier 1: versions.toml is the single source of truth. Fails if any
+  # Dockerfile/compose/workflow hardcodes a version/digest that disagrees with it.
+  manifest:
+    name: manifest consistency (versions.toml)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # ubuntu-latest ships python3 (>=3.11, has stdlib tomllib) and bash.
+      - name: consumers agree with versions.toml
+        run: bash validation/check-versions.sh
+
   rust:
     name: rust (fmt, clippy, test)
     runs-on: ubuntu-latest
@@ -116,11 +127,19 @@ jobs:
             build crates/dsl/fixtures/valid/hello-world \
             -o validation/delve-output --prefabs prefabs
 
+      # spec-0005: the delve image now builds FROM ghcr.io/stellarfeline/delvewright-base
+      # by digest (Dockerfile.delve), so this pulls the base from GHCR — no Docker Hub.
       - name: build the delve image (ADR-0010; no jar, no mods)
         run: |
           docker build -f validation/Dockerfile.delve \
             -t delvewright/delve:ci validation/delve-output
 
+      # NOTE (2026-07-30, first live run): a jar actions/cache with a single-file ro
+      # bind mount was removed here — itzg's installer replaces the jar via rename,
+      # which cannot target a bind-mounted file ("Device or resource busy"), and the
+      # runner fetches piston-data at >100 MB/s (<1s for the jar), so the cache
+      # optimized nothing and added a failure mode. The itzg entrypoint downloads the
+      # pinned jar itself (ADR-0010; version+sha pinned in versions.toml provenance).
       - name: datapack loads on the pinned vanilla server with ZERO errors
         run: |
           docker run -d --name delve-ci -e EULA=TRUE \

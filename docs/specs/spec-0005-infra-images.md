@@ -59,7 +59,12 @@ versions bump.
 - [ ] Both images published multi-arch to GHCR as public packages; digests recorded
       in `versions.toml`.
 - [ ] A full tier-2 CI run performs **no** Modrinth fetch and **no** Docker Hub pull
-      (only GHCR by digest + Mojang jar, cache-hit on the jar in the steady state).
+      (only GHCR by digest + the Mojang jar). *Amended 2026-07-30 after the first
+      live run: the planned jar actions/cache was removed — a single-file ro bind
+      mount cannot be replaced by itzg's installer rename ("Device or resource
+      busy"), and runners fetch piston-data at >100 MB/s (<1 s), so the cache
+      optimized nothing and added a failure mode. Jar checksums stay in
+      `versions.toml` as provenance.*
 - [ ] `docker compose --profile packtest up` cold-start time drops measurably vs the
       Modrinth-fetching baseline (record before/after in the PR).
 - [ ] The manifest-consistency check fails CI when a Dockerfile/compose/workflow
