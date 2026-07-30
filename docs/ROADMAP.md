@@ -98,11 +98,22 @@ must never require touching `crates/`. **Writing an agent runtime from scratch i
 out of scope for this project** — the front-end is always a hosted runtime we adopt,
 never one we build.
 
+## M3 content tracks (queued 2026-07-30)
+
+- External asset pipeline (spec-0007): schem→nbt converter, curation gallery,
+  release gate for user-local assets, ATTRIBUTION aggregation, first scouted batch.
+- Aesthetic upgrade: hero pieces hand-built/curated, generator vocabulary growth.
+
 ## v2 horizon *(recorded, not designed — do not preclude)*
 
 Vanilla survival hub world connected to delve instances via `/transfer` (why the
 pinned version must be ≥1.20.5); instances on a remote host. Nothing in M0–M4 may
 assume single-server topology in a way that blocks this.
+
+**Community phase** (post-v1, contract recorded in spec-0007): the separate
+`delvewright-campaigns` repo accepts campaign-source PRs (DSL only, deterministic
+rebuild by trusted CI, never images/binaries); community prefabs enter via the
+audited admission pipeline.
 
 ## Skills backlog (the product surface, per ADR-0012)
 
