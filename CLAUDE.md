@@ -71,6 +71,12 @@ validation/          # docker compose: headless server + bot, same image as CI &
 - **CI is the sole arbiter** (ADR-0008). Nothing merges red. The owner reviews PR
   descriptions and architecture-level diffs, not lines. Write PR descriptions
   accordingly: what changed at the design level, what CI now proves.
+- **PR merge policy** (owner, 2026-07-30): two classes of PR. *Owner-review PRs* —
+  anything touching docs, specs, ADRs, README, or product/design definitions — are
+  opened by the planning agent but **merged only after the owner reviews** (green CI
+  is necessary, not sufficient). *Mechanical PRs* — implementation whose correctness
+  CI fully arbitrates — may be merged by the planning agent on green. When in doubt,
+  treat it as owner-review.
 - **Tiered testing**: unit + static analysis on every push; PackTest integration on PR;
   full bot playthrough on release candidates only.
 - **PR-based flow even solo.** GitHub Actions; repo is private for now, public when
