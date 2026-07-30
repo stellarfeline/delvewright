@@ -28,6 +28,16 @@ players become contributors. Two tracks with a hard mechanical boundary:
   anti-bot or login-gated sites get the launcher pattern — the pipeline prints
   the URL + target path, the user downloads manually, the pipeline resumes.
 
+## Step 0 — prefab repo split (owner-approved 2026-07-30)
+
+`prefabs/` moves to a new **`delvewright-prefabs`** repo (assets + metadata +
+pools; per-item licensing = repo boundary; the community-prefab PR surface).
+Generators stay in the main repo (GPL code; outputs commit to the asset repo).
+**Determinism made explicit**: `versions.toml` pins the asset-library git SHA;
+CI checks out that SHA; the build manifest records it — same DSL + same seed +
+same library SHA → byte-identical. Local dev symlinks like `campaigns/`.
+Executed as the first M3 task (deferred past M2 to avoid churning in-flight work).
+
 ## Shared machinery (M3 engineering)
 
 1. `.schem` (Sponge v2/v3) → vanilla structure `.nbt` converter (Rust, fastnbt),
