@@ -134,6 +134,30 @@ jobs:
           docker build -f validation/Dockerfile.delve \
             -t delvewright/delve:ci validation/delve-output
 
+      # spec-0006 exclusion criterion (same pattern as the PackTest/mods exclusion):
+      # the playtest-only creator overlay must NEVER be baked into the shipped delve
+      # image. Dockerfile.delve copies only datapack/, server/, manifest.json and
+      # critical-path.json — assert no creator artifact rode along (the overlay is a
+      # separate build-output dir + a runtime-only compose mount).
+      - name: creator overlay is EXCLUDED from the shipped delve image
+        run: |
+          # No overlay datapack directory baked in.
+          if docker run --rm --entrypoint sh delvewright/delve:ci \
+               -c 'ls -d /delve/creator* 2>/dev/null'; then
+            echo "::error::creator overlay directory present in the shipped delve image"; exit 1
+          fi
+          # No overlay COMMAND content anywhere in the image. `DelveNote`/`dw.note`
+          # appear only in the overlay's .mcfunctions, never in the shipped datapack
+          # (asserted at compile time too). NOTE: manifest.json legitimately lists
+          # every build-output PATH — incl. creator-datapack/ and packtest-datapack/
+          # — as provenance, so a path-level `creator/` grep would false-positive on
+          # it; the content signatures below do not.
+          if docker run --rm --entrypoint sh delvewright/delve:ci \
+               -c 'grep -rlqE "DelveNote|dw\.note" /delve 2>/dev/null'; then
+            echo "::error::creator overlay commands leaked into the shipped delve image"; exit 1
+          fi
+          echo "creator overlay correctly excluded from the delve image."
+
       # NOTE (2026-07-30, first live run): a jar actions/cache with a single-file ro
       # bind mount was removed here — itzg's installer replaces the jar via rename,
       # which cannot target a bind-mounted file ("Device or resource busy"), and the
