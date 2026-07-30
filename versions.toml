@@ -49,14 +49,12 @@ mirror_of = "itzg/minecraft-server@sha256:3e7db2562b492dbf442568a327d361547628c9
 # validation/Dockerfile.toolserver.
 # Consumed by: validation/compose.yaml (packtest service `image:`).
 #
-# !!! DIGEST TBD-first-publish !!!  A fresh build's manifest digest is not knowable
-# until it is pushed, and local push is blocked (token lacks write:packages). The
-# owner must run infra-images.yml (workflow_dispatch) to publish, then a follow-up PR
-# records the real digest here AND repins the compose packtest service to it. Until
-# then the compose service references the tag below.
+# Published 2026-07-30 from the owner's workstation (buildx docker-container
+# builder, linux/amd64+linux/arm64) after the gh token gained write:packages.
+# Future republishes go through infra-images.yml (workflow_dispatch).
 repo = "ghcr.io/stellarfeline/delvewright-toolserver"
 tag = "1.21.11-packtest2.4.0"
-digest = "TBD-first-publish"
+digest = "sha256:31ed5d5a5c50158470bfee8c7197a75e6f586a25c950bf25b69b533f88e0ba0b"
 
 [fabric]
 # Fabric loader (pre-baked into the toolserver at build time; ADR-0003 tooling only).

@@ -67,9 +67,11 @@ want_in "MC version -> compose"               "$MC_VERSION" "$COMPOSE"
 no_conflict "MC version (no drift)" '1\.21\.[0-9]+' "$MC_VERSION" "$DELVE_DF" "$TOOL_DF" "$COMPOSE"
 
 echo "== Image digests =="
-# The only sha256:<64hex> literal allowed in the image consumers is the base digest
-# (the toolserver digest is TBD until first publish, referenced by tag meanwhile).
-no_conflict "base digest (no stray digest)" 'sha256:[0-9a-f]{64}' "$BASE_DIGEST" "$DELVE_DF" "$TOOL_DF" "$COMPOSE"
+# Every sha256:<64hex> literal in the image consumers must be a manifest digest
+# (base or toolserver) — anything else is drift.
+stray="$(grep -hoE 'sha256:[0-9a-f]{64}' "$DELVE_DF" "$TOOL_DF" "$COMPOSE" 2>/dev/null | grep -vxF "$BASE_DIGEST" | grep -vxF "$TOOL_DIGEST" | sort -u || true)"
+if [ -n "$stray" ]; then fail "image digests (no stray digest): unknown digest(s): $(echo "$stray" | tr '\n' ' ')"
+else pass "image digests (no stray digest)"; fi
 want_in "base digest -> Dockerfile.delve"      "$BASE_DIGEST" "$DELVE_DF"
 want_in "base digest -> Dockerfile.toolserver" "$BASE_DIGEST" "$TOOL_DF"
 
@@ -77,8 +79,8 @@ echo "== Fabric / PackTest (toolserver pre-bake) =="
 want_in "fabric loader -> Dockerfile.toolserver" "$FABRIC_LOADER"   "$TOOL_DF"
 want_in "fabric API sha1 -> Dockerfile.toolserver" "$FABRIC_API_SHA1" "$TOOL_DF"
 want_in "packtest sha1 -> Dockerfile.toolserver"   "$PACKTEST_SHA1"   "$TOOL_DF"
-# compose references the toolserver by its manifest tag (which encodes packtest ver).
-want_in "toolserver tag -> compose" "$TOOL_TAG" "$COMPOSE"
+# compose pins the toolserver by its manifest digest (spec-0005).
+want_in "toolserver digest -> compose" "$TOOL_DIGEST" "$COMPOSE"
 
 echo "== Harness =="
 want_in "mineflayer -> harness/package.json" "$MINEFLAYER" "$HARNESS_PKG"

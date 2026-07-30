@@ -75,14 +75,14 @@ services:
   # and `-Dpacktest.auto` — so there is NO per-run Modrinth fetch and NO Docker Hub
   # pull (spec-0005). Runs both datapacks headlessly, exit code = failed tests.
   #
-  # Pinned by tag for now; the toolserver package must be published once via
+  # Pinned by immutable digest (spec-0005); republish via
   # infra-images.yml (owner runs workflow_dispatch — local push lacks write:packages),
   # then a follow-up PR repins this to
   #   ghcr.io/stellarfeline/delvewright-toolserver@sha256:<digest>
   # and records the digest in versions.toml ([images.toolserver].digest, now TBD).
   packtest:
     profiles: ["packtest"]
-    image: ghcr.io/stellarfeline/delvewright-toolserver:1.21.11-packtest2.4.0
+    image: ghcr.io/stellarfeline/delvewright-toolserver@sha256:31ed5d5a5c50158470bfee8c7197a75e6f586a25c950bf25b69b533f88e0ba0b
     container_name: delvewright-packtest
     environment:
       EULA: ${EULA:?set EULA=TRUE in your environment to accept Mojang's EULA (https://aka.ms/MinecraftEULA)}
