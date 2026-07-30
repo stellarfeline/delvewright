@@ -22,6 +22,23 @@ docker run <the-delve>
 …and there's a dungeon on `localhost`, waiting for your vanilla client. No mods. No
 setup. No "everyone install these 14 things first."
 
+## Not an app. Not a service. A workshop.
+
+To be clear about what you're looking at: there is **no Delvewright server, no web
+UI, no binary to install and click**. This repo is a workshop, and you work in it
+through [Claude Code](https://claude.com/claude-code) — that's the product form, by
+design (see [ADR-0012](docs/adr/0012-product-form-claude-code-skill.md)).
+
+You describe the delve you want — a one-line theme, or a full brief with specific
+levels and plot — and an agent skill (working name `/new-delve`) does the rest:
+writes the campaign as strict JSON, compiles it with `delvec`, runs the validation
+gauntlet below, and hands you a container image. Claude Code is the engine room;
+this repo is the machinery it operates.
+
+The only thing that ever *runs* anywhere is the delve itself — a vanilla Minecraft
+server in a box. Everything else is a build step. (Exact usage is still settling,
+so no quick start yet — it'll appear here when the skill does.)
+
 ## How it works (the assembly line)
 
 ```
