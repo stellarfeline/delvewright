@@ -50,13 +50,13 @@ class RecordingExecutor implements StepExecutor {
 const selectClass: SelectClassStep = {
   action: "select-class",
   class: "class/wanderer",
-  optionPath: [0],
+  command: "/trigger dw.class set 1",
 };
 const talkTo: TalkToStep = {
   action: "talk-to",
   npc: "npc/keeper",
   pos: [8, 65, 12],
-  optionPath: [1],
+  command: "/trigger dw.dlg_keeper set 2",
 };
 const reach: ReachStep = {
   action: "reach",
@@ -66,7 +66,7 @@ const reach: ReachStep = {
 };
 const assertComplete: AssertCompleteStep = {
   action: "assert-complete",
-  objectiveScoreboard: "dw.campaign",
+  objective: "dw.campaign",
   value: 1,
 };
 

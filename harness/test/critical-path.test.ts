@@ -7,24 +7,28 @@ import {
   SUPPORTED_DSL_VERSION,
 } from "../src/critical-path.ts";
 
-// The canonical spec-0002 example, as a fresh object per call so tests can mutate.
+// The canonical spec-0002 example (amended 2026-07-30), as a fresh object per call
+// so tests can mutate.
 function validRaw(): Record<string, unknown> {
   return {
     version: "0.1.0",
     campaign_id: "hello-world",
     steps: [
-      { action: "select-class", class: "class/wanderer", option_path: [0] },
+      {
+        action: "select-class",
+        class: "class/wanderer",
+        command: "/trigger dw.class set 1",
+      },
       {
         action: "talk-to",
         npc: "npc/keeper",
         pos: [8, 65, 12],
-        option_path: [1],
+        command: "/trigger dw.dlg_keeper set 2",
       },
       { action: "reach", anchor: "anchor/exit", pos: [8, 65, 24], radius: 2 },
       {
         action: "assert-complete",
-        objective_scoreboard: "dw.campaign",
-        value: 1,
+        scoreboard: { objective: "dw.campaign", value: 1 },
       },
     ],
   };
@@ -40,13 +44,13 @@ test("parses the canonical spec-0002 critical path", () => {
   assert.deepEqual(select, {
     action: "select-class",
     class: "class/wanderer",
-    optionPath: [0],
+    command: "/trigger dw.class set 1",
   });
   assert.deepEqual(talk, {
     action: "talk-to",
     npc: "npc/keeper",
     pos: [8, 65, 12],
-    optionPath: [1],
+    command: "/trigger dw.dlg_keeper set 2",
   });
   assert.deepEqual(reach, {
     action: "reach",
@@ -56,7 +60,7 @@ test("parses the canonical spec-0002 critical path", () => {
   });
   assert.deepEqual(done, {
     action: "assert-complete",
-    objectiveScoreboard: "dw.campaign",
+    objective: "dw.campaign",
     value: 1,
   });
 });
@@ -152,15 +156,15 @@ test("rejects a non-finite coordinate at the exact element pointer", () => {
   );
 });
 
-test("rejects a negative dialog option index", () => {
+test("rejects a select-class step missing its command", () => {
   const raw = validRaw();
-  (raw["steps"] as Array<Record<string, unknown>>)[0]!["option_path"] = [-1];
+  delete (raw["steps"] as Array<Record<string, unknown>>)[0]!["command"];
   assert.throws(
     () => parseCriticalPath(raw),
     (err: unknown) =>
       err instanceof CriticalPathParseError &&
-      err.pointer === "/steps/0/option_path/0" &&
-      /non-negative/.test(err.message),
+      err.pointer === "/steps/0/command" &&
+      /must be a string/.test(err.message),
   );
 });
 
@@ -188,14 +192,17 @@ test("rejects an unrecognized field on a step", () => {
   );
 });
 
-test("rejects a non-integer assert-complete value", () => {
+test("rejects a non-integer assert-complete scoreboard value", () => {
   const raw = validRaw();
-  (raw["steps"] as Array<Record<string, unknown>>)[3]!["value"] = 1.5;
+  (raw["steps"] as Array<Record<string, unknown>>)[3]!["scoreboard"] = {
+    objective: "dw.campaign",
+    value: 1.5,
+  };
   assert.throws(
     () => parseCriticalPath(raw),
     (err: unknown) =>
       err instanceof CriticalPathParseError &&
-      err.pointer === "/steps/3/value" &&
+      err.pointer === "/steps/3/scoreboard/value" &&
       /must be an integer/.test(err.message),
   );
 });
