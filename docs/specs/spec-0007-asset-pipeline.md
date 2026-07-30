@@ -28,15 +28,18 @@ players become contributors. Two tracks with a hard mechanical boundary:
   anti-bot or login-gated sites get the launcher pattern — the pipeline prints
   the URL + target path, the user downloads manually, the pipeline resumes.
 
-## Step 0 — prefab repo split (owner-approved 2026-07-30)
+## Step 0 — prefabs move into the content repo (owner-revised 2026-07-30)
 
-`prefabs/` moves to a new **`delvewright-prefabs`** repo (assets + metadata +
-pools; per-item licensing = repo boundary; the community-prefab PR surface).
-Generators stay in the main repo (GPL code; outputs commit to the asset repo).
-**Determinism made explicit**: `versions.toml` pins the asset-library git SHA;
-CI checks out that SHA; the build manifest records it — same DSL + same seed +
-same library SHA → byte-identical. Local dev symlinks like `campaigns/`.
-Executed as the first M3 task (deferred past M2 to avoid churning in-flight work).
+`prefabs/` moves into **`delvewright-campaigns`** beside `campaigns/` — one
+content repo is the complete authoring environment: clone it, work in it, reuse
+every existing prefab, and **a new prefab ships in the same PR as the campaign
+that needs it** (the atomic contribution unit; the NBT palette audit gates the
+prefab half in CI). Licensing is directory-scoped: campaigns CC BY-SA 4.0,
+prefabs per-item CC0/CC BY/original. Generators stay in the main repo (GPL
+code; outputs commit to the content repo). **Determinism**: `versions.toml`
+pins the content-repo git SHA; CI checks out that SHA; the build manifest
+records it — same DSL + same seed + same content SHA → byte-identical. Local
+dev via the existing `campaigns/` symlink. First M3 task (deferred past M2).
 
 ## Shared machinery (M3 engineering)
 
