@@ -1,7 +1,8 @@
 # Delvewright — Agent Constitution
 
-Delvewright is an automated production line that outputs **one self-contained Minecraft
-adventure "delve" per month** for a fixed group of 1–4 players. A delve is a 2–3 hour
+Delvewright is an automated production line that outputs **self-contained Minecraft
+adventure "delves" on demand** for a fixed group of 1–4 players (owner decision
+2026-07-30, superseding the kickoff handoff's monthly cadence). A delve is a 2–3 hour
 (10h ceiling), story-driven, box-garden (箱庭) adventure map: adventure mode, class
 selection with pre-provided gear, zero grind. It ships as a versioned OCI image — one
 `docker run` = a joinable dungeon — and must be **provably completable by machine**
@@ -70,6 +71,12 @@ validation/          # docker compose: headless server + bot, same image as CI &
 - **CI is the sole arbiter** (ADR-0008). Nothing merges red. The owner reviews PR
   descriptions and architecture-level diffs, not lines. Write PR descriptions
   accordingly: what changed at the design level, what CI now proves.
+- **PR merge policy** (owner, 2026-07-30): two classes of PR. *Owner-review PRs* —
+  anything touching docs, specs, ADRs, README, or product/design definitions — are
+  opened by the planning agent but **merged only after the owner reviews** (green CI
+  is necessary, not sufficient). *Mechanical PRs* — implementation whose correctness
+  CI fully arbitrates — may be merged by the planning agent on green. When in doubt,
+  treat it as owner-review.
 - **Tiered testing**: unit + static analysis on every push; PackTest integration on PR;
   full bot playthrough on release candidates only.
 - **PR-based flow even solo.** GitHub Actions; repo is private for now, public when

@@ -10,6 +10,10 @@ Status as of 2026-07-29 (late session). Resolved items kept for the record.
 
 ## Resolved
 
+- **Cadence** (2026-07-30): owner superseded the handoff's one-delve-per-month goal —
+  delves are generated **on demand**, whenever the group wants one. CLAUDE.md,
+  README, and ROADMAP (M4) updated; the handoff stays verbatim as history.
+
 - **Stage-5 dialogue** (2026-07-29): no runtime LLM anywhere in shipped delves
   (current-stage policy) — all content is authored at generation time; dialogue is a
   **pre-written branching-options tree** (maps onto the 1.21.11 dialog system).

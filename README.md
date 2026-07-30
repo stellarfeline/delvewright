@@ -1,12 +1,13 @@
 # Delvewright
 
-*A factory that ships one hand-crafted-feeling Minecraft dungeon a month — built by
+*A factory that ships hand-crafted-feeling Minecraft dungeons on demand — built by
 robots, proven by robots, enjoyed by humans.*
 
 ## What is this?
 
 Delvewright is an automated production line for **delves**: self-contained,
-story-driven Minecraft adventure maps for 1–4 friends. One evening, 2–3 hours,
+story-driven Minecraft adventure maps for 1–4 friends, generated whenever the group
+wants a fresh one. One evening, 2–3 hours,
 adventure mode, pick a class at the door, zero grind. No mining for six hours to make
 a pickaxe. No building a base. You walk in, the story happens *to you*, you walk out
 with a tale.
