@@ -77,6 +77,11 @@ impl CommandTree {
         if trimmed.is_empty() || trimmed.starts_with('#') {
             return Ok(());
         }
+        // A leading `$` marks a macro line (`$say [DelveNote] pos=$(x) …`). The
+        // structural skeleton must still match the command tree after expansion;
+        // strip the `$` and validate the remainder. `$(name)` placeholders sit
+        // inside single balanced tokens, so they do not perturb arity.
+        let trimmed = trimmed.strip_prefix('$').unwrap_or(trimmed);
         // mcfunction lines carry no leading slash; tolerate one anyway.
         let body = trimmed.strip_prefix('/').unwrap_or(trimmed);
         let tokens = tokenize(body).map_err(|reason| CommandError {

@@ -60,22 +60,46 @@ generate → validate → playtest → report → revise → regenerate.
 
 ## Acceptance criteria
 
-- [ ] `creator-datapack/` output is byte-deterministic (ADR-0006 gate covers it)
-      and absent from the shipped delve image (CI check, same as the PackTest
-      exclusion).
-- [ ] End-to-end note flow is machine-tested: the harness bot fires
-      `/trigger dw.note` + chats a fixture string; the harvester's report contains
-      one note with the correct area, prefab, and quest state resolved.
-- [ ] `playtest-report.json` has a versioned schema; the harvester's output
-      validates against it.
-- [ ] `docker compose --profile playtest up` is one command; overlay + op work
-      without manual steps beyond `EULA=TRUE`.
+- [x] `creator-datapack/` output is byte-deterministic (ADR-0006 gate covers it —
+      its bytes ride the same `BuildOutput` map + `manifest.json` hashes as the main
+      datapack) and absent from the shipped delve image (CI check in `ci.yml`
+      tier 2, same pattern as the PackTest exclusion).
+- [x] End-to-end note flow is machine-tested: the note-bot fires `/trigger dw.note`
+      + chats a fixture string; the harvester's report contains one note with the
+      correct area, prefab, and quest state resolved. Verified live on a pinned
+      1.21.11 server (`validation/playtest-note-flow.sh`, tier-3/local).
+- [x] `playtest-report.json` has a versioned schema (`version: "0.1.0"`); the
+      harvester emits it and the orchestrator unit tests assert its shape.
+- [x] `docker compose --profile playtest up` is one command; overlay mounts + op
+      work without manual steps beyond `EULA=TRUE` (+ `CREATOR_NAME` to op).
 - [ ] Debug jumps *(M3)*: jumping to the final critical-path step and completing
       the delve yields the same campaign-complete state as a natural playthrough
       (PackTest-asserted).
 
+## Implementation notes (M2, built 2026-07-30)
+
+- **Overlay module**: `crates/compiler/src/creator.rs` — a self-contained emission
+  module (one call from `emit::build`), so the concurrent dsl/compiler v0.2 rebase
+  stays cheap. Its `.mcfunction`s are plain vanilla and flow through the command-tree
+  validator like the main datapack.
+- **Stamp channel — `say`, not `tellraw @a`.** A `tellraw`/system message to players
+  is **not** written to the server stdout log the harvester parses; `say` is (both
+  verified live). The line is macro-expanded exactly as `tellraw` would have been.
+  Spec text updated intent-first: the requirement is "one machine-readable line in
+  the server log", and `say` is the reliable vanilla command for that.
+- **`pos`** is an entity-NBT macro read (`data get entity @s Pos[i]` → storage →
+  `function … with storage`), rounded to block ints. **`area`** and **`nearest_npc`**
+  are resolved **in-game** from compiler-baked AABBs / nearest-`dw_npc` selection, so
+  the log line is self-describing. **`quests`** is the live per-objective scoreboard
+  state. The harvester enriches each note from the overlay's `layout.json`
+  (`area→prefab`, objective→quest `quest_state`).
+- **Harvester** (`crates/orchestrator`, bin `delve-harvest`): the orchestrator's
+  first real job (ADR-0012). Offline chat's `[Not Secure] ` prefix is stripped before
+  pairing (verified live).
+
 ## Open
 
-- Note pairing rule (chat line before vs after the stamp; time window) — the
-  implementer picks the most forgiving heuristic and documents it.
+- ~~Note pairing rule~~ **(decided)**: ±60s window, **prefer the closest chat line
+  *after* the stamp** (mark, then type), else the closest before; unpaired stamps
+  still report with empty text. Documented in `crates/orchestrator/src/lib.rs`.
 - Whether `dw.note` gets a hotbar item binding (nice-to-have, M3).

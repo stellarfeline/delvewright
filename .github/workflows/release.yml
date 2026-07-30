@@ -48,6 +48,29 @@ jobs:
         if: always()
         run: docker compose -f validation/compose.yaml --profile validate down -v --remove-orphans || true
 
+  # ---- creator playtest note flow (spec-0006 M2) -----------------------------
+  # A live-server + mineflayer-bot integration test (same class as the playthrough
+  # above), so it lives in tier 3, not tier 2: it boots a full playtest server and a
+  # bot (~2-3 min), beyond tier-2's ~2-min budget. Every-push coverage of the
+  # mechanism already exists in tier 1 — the harvester's parsing/pairing/report
+  # logic (orchestrator unit tests) and the overlay emission + determinism
+  # (compiler tests). This job proves the live wiring end to end.
+  note-flow:
+    name: playtest note flow (spec-0006)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true # delvec copies the prefab .nbt into the datapack + overlay
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: harness/package-lock.json
+      - name: bot fires /trigger dw.note + a note; harvester report is asserted
+        run: bash validation/playtest-note-flow.sh
+
   # ---- multi-arch delve image → GHCR (only after the playthrough is green) ----
   publish-image:
     name: multi-arch delve image → GHCR

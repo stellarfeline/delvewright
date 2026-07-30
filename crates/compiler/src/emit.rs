@@ -101,6 +101,13 @@ pub fn build(
     // ---- packtest datapack ----
     emit_packtest(plan, &mut out);
 
+    // ---- creator overlay (playtest-only; spec-0006) ----
+    // A self-contained module (crate::creator). Its `.mcfunction`s are plain
+    // vanilla, so they flow through the command-tree validator below and the
+    // determinism gate like the main datapack; the shipped delve image excludes
+    // this directory (CI-checked, same as packtest-datapack/).
+    crate::creator::emit_creator(plan, &mut out);
+
     // ---- server ----
     emit_server(plan, &mut out);
 
