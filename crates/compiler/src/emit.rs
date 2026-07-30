@@ -45,7 +45,8 @@ pub fn build(
         &json!({
             "pack": {
                 "description": format!("Delvewright delve: {ns}"),
-                "pack_format": PACK_FORMAT,
+                "min_format": PACK_FORMAT,
+                "max_format": PACK_FORMAT,
             }
         }),
     );
@@ -106,10 +107,10 @@ pub fn build(
     // ---- critical path ----
     put_json(&mut out, "critical-path.json", &emit_critical_path(plan));
 
-    // ---- validate every emitted mcfunction ----
+    // ---- validate every emitted vanilla mcfunction ----
     let mut errors = Vec::new();
     for (path, bytes) in &out {
-        if path.ends_with(".mcfunction")
+        if is_vanilla_function(path)
             && let Ok(body) = std::str::from_utf8(bytes)
         {
             errors.extend(tree.validate_function(body));
@@ -126,17 +127,26 @@ pub fn build(
     Ok(out)
 }
 
-/// Re-validate every emitted `.mcfunction` in a built tree (used by tests).
+/// Re-validate every emitted vanilla `.mcfunction` in a built tree (used by
+/// tests). PackTest functions are excluded — see [`is_vanilla_function`].
 pub fn validate_emitted(out: &BuildOutput, tree: &CommandTree) -> Vec<CommandError> {
     let mut errors = Vec::new();
     for (path, bytes) in out {
-        if path.ends_with(".mcfunction")
+        if is_vanilla_function(path)
             && let Ok(body) = std::str::from_utf8(bytes)
         {
             errors.extend(tree.validate_function(body));
         }
     }
     errors
+}
+
+/// A `.mcfunction` that must pass the vanilla 1.21.11 command-tree validator.
+/// The `packtest-datapack/` suite uses PackTest-only commands (`assert`, …) and
+/// runs on the modded validation server, so it is exempt (spec-0003/ADR-0003:
+/// mods are tooling-only, never the player-facing datapack).
+fn is_vanilla_function(path: &str) -> bool {
+    path.ends_with(".mcfunction") && !path.starts_with("packtest-datapack/")
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +208,24 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
     }
     setup.push("scoreboard objectives add dw.campaign dummy".to_string());
     setup.push("scoreboard objectives setdisplay sidebar dw.campaign".to_string());
+    // Force-load the chunks covering each prefab BEFORE placing. `#minecraft:load`
+    // runs during server boot when the target chunks are not guaranteed to be
+    // loaded; without this, `place template` / `summon` / `fill` silently no-op
+    // ("That position is not loaded") yet `#init` is still set, permanently
+    // skipping setup. Verified live: `forceload add` loads the chunk synchronously
+    // so the following commands in this same function succeed. The forceload is
+    // kept (not removed) so the placed structure + NPCs stay simulated.
+    for area in &plan.areas {
+        let ox = area.origin[0];
+        let oz = area.origin[2];
+        setup.push(format!(
+            "forceload add {} {} {} {}",
+            ox,
+            oz,
+            ox + area.size[0] - 1,
+            oz + area.size[2] - 1
+        ));
+    }
     // place each area's prefab
     for area in &plan.areas {
         setup.push(format!(
@@ -240,6 +268,12 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
             "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{}\"]}}",
             pos[0], pos[1], pos[2], npc.tag
         ));
+    }
+    // Set world spawn to the first area's `spawn` anchor so joining players land
+    // on the prefab floor instead of falling through the void world before class
+    // selection teleports them.
+    if let Some(pos) = campaign_spawn(plan) {
+        setup.push(format!("setworldspawn {} {} {}", pos[0], pos[1], pos[2]));
     }
     setup.push("scoreboard players set #init dw.sys 1".to_string());
     fns.push(("setup".to_string(), lines(&setup)));
@@ -468,6 +502,18 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
                     { "text": "A Delvewright delve.", "color": "gray" }
                 ])
             ),
+            // Machine-readable completion marker for the validation bot. The bot
+            // reads `dw.campaign` from the sidebar per the amended contract, BUT
+            // mineflayer 4.37.x cannot parse 1.21.11 scoreboard score packets
+            // (verified live: no score updates ever surface). Broadcasting a stable
+            // token in chat — which mineflayer DOES parse reliably — lets the bot
+            // observe completion. `<objective> <value>` mirror the assert-complete
+            // step so the harness stays campaign-agnostic. `@a` so a bot filling a
+            // seat in a future multiplayer delve still sees it.
+            format!(
+                "tellraw @a {}",
+                json!({ "text": format!("[Delvewright] complete dw.campaign 1"), "color": "dark_gray" })
+            ),
         ]),
     ));
 
@@ -607,16 +653,18 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
                 "criteria": {
                     "interact": {
                         "trigger": "minecraft:player_interacted_with_entity",
+                        // 1.21.11's `player_interacted_with_entity` `entity` field is
+                        // an Either<single entity sub-predicate, list of loot
+                        // conditions>. The list form requires each entity_properties
+                        // condition to carry its own `entity: "this"` key; the single
+                        // sub-predicate object form is simpler and is what loads
+                        // cleanly on a live server (verified in the load shakeout —
+                        // the list form failed with "No key entity in MapLike").
                         "conditions": {
-                            "entity": [
-                                {
-                                    "condition": "minecraft:entity_properties",
-                                    "predicate": {
-                                        "type": "minecraft:interaction",
-                                        "nbt": format!("{{Tags:[\"{}\"]}}", npc.tag)
-                                    }
-                                }
-                            ]
+                            "entity": {
+                                "type": "minecraft:interaction",
+                                "nbt": format!("{{Tags:[\"{}\"]}}", npc.tag)
+                            }
                         }
                     }
                 },
@@ -648,34 +696,73 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
 // packtest / server / critical-path / manifest
 // ---------------------------------------------------------------------------
 
+/// Emit the compiler-generated PackTest suite (spec-0003). PackTest (misode,
+/// 2.4.0 for MC 1.21.11) auto-discovers `*.mcfunction` files under
+/// `data/<ns>/test/`; each is one game test driven by `# @…` directive comments,
+/// with `assert`/`await`/`succeed`/`fail` commands the mod adds. Run headlessly
+/// with `-Dpacktest.auto` (exit code = failed tests). These functions use
+/// PackTest-only commands and run on the modded validation server, so they are
+/// exempt from the vanilla command-tree validator (see `is_vanilla_function`).
 fn emit_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
+    let c = plan.campaign;
     put_json(
         out,
         "packtest-datapack/pack.mcmeta",
         &json!({
             "pack": {
                 "description": format!("Delvewright PackTest suite: {ns}"),
-                "pack_format": PACK_FORMAT,
+                "min_format": PACK_FORMAT,
+                "max_format": PACK_FORMAT,
             }
         }),
     );
-    // Provisional mechanism assertions (vanilla commands only, so they pass the
-    // command validator). The exact PackTest test-registration wiring is
-    // finalized in the spec-0003 task; these are byte-stable placeholders.
+
+    // The completion objective + value the critical path asserts on.
+    let (comp_obj, comp_val) = plan
+        .critical_path
+        .iter()
+        .find_map(|s| match s {
+            Step::AssertComplete { objective, value } => Some((objective.clone(), *value)),
+            _ => None,
+        })
+        .unwrap_or_else(|| ("dw.campaign".to_string(), 1));
+
+    // Mechanism test: on a dummy player, run the real generated init, activate the
+    // campaign-start quests (as class selection does), drive each objective's
+    // generated completion function (as the dialog `/trigger` and the reach
+    // proximity check do), then assert the completion objective is set. This
+    // proves the compiler's objective -> quest -> campaign chain end to end
+    // without needing dialog-UI clicks or bot movement (verified live: passes on
+    // Fabric + PackTest 2.4.0).
     let mut body: Vec<String> = Vec::new();
-    body.push("# Provisional PackTest assertions (spec-0003 finalizes registration).".to_string());
     body.push(format!(
-        "execute unless score #init dw.sys matches 1 run function {ns}:setup"
+        "#> {}: objective completions set {comp_obj} (Delvewright mechanism test)",
+        c.world.content.title
     ));
-    for npc in &plan.npcs {
+    body.push("# @dummy".to_string());
+    body.push("# @timeout 100".to_string());
+    body.push(String::new());
+    body.push(format!("function {ns}:setup"));
+    for qid in campaign_start_quests(c) {
         body.push(format!(
-            "execute unless entity @e[type=minecraft:villager,tag={},limit=1] run say PACKTEST_FAIL {} missing",
-            npc.tag, npc.npc_id
+            "scoreboard players set @a {} 1",
+            quest_active_score(qid)
         ));
     }
+    for q in &c.quests.content.quests {
+        for o in &q.objectives {
+            body.push(format!(
+                "execute as @a run function {ns}:complete_{}",
+                safe_obj_fn(o.id().as_str())
+            ));
+        }
+    }
+    // `assert score` requires a single-entity selector (@p = the dummy player).
+    body.push(format!("assert score @p {comp_obj} matches {comp_val}"));
+
     out.insert(
-        format!("packtest-datapack/data/{ns}/function/test/mechanisms.mcfunction"),
+        format!("packtest-datapack/data/{ns}/test/campaign.mcfunction"),
         lines(&body).into_bytes(),
     );
 }

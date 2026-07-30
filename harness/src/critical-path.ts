@@ -1,8 +1,14 @@
 // Parser and strict runtime validation for `critical-path.json`, the compiler's
-// bot-walkthrough contract output (spec-0002). The harness contains zero
-// campaign-specific logic: it only interprets the closed set of step actions
-// defined by the spec. Validation is hand-rolled (no external schema library) so
-// error messages can point precisely at the offending JSON location.
+// bot-walkthrough contract output (spec-0002, amended 2026-07-30). The harness
+// contains zero campaign-specific logic: it only interprets the closed set of
+// step actions defined by the spec. Validation is hand-rolled (no external schema
+// library) so error messages can point precisely at the offending JSON location.
+//
+// Amended contract (spec-0002, 2026-07-30): interactive steps carry the exact
+// chat command the bot sends (`command`), replacing `option_path` — mineflayer
+// cannot click 1.21.11 server-driven dialog buttons, so the bot drives dialog
+// outcomes by chatting the same `/trigger` command each button runs.
+// `assert-complete` carries a `scoreboard: { objective, value }` object.
 
 /** The critical-path format is versioned with the DSL (spec-0002). */
 export const SUPPORTED_DSL_VERSION = "0.1.0";
@@ -20,19 +26,21 @@ export type StepAction = (typeof STEP_ACTIONS)[number];
 /** Absolute block position `[x, y, z]`, resolved by the compiler after placement. */
 export type Vec3Tuple = readonly [number, number, number];
 
-/** Select a class via the class-selection dialog; `optionPath` = dialog button indices. */
+/** Select a class by chatting the compiler-assigned `/trigger dw.class set <n>`. */
 export interface SelectClassStep {
   readonly action: "select-class";
   readonly class: string;
-  readonly optionPath: readonly number[];
+  /** The exact chat command the bot sends (`bot.chat(command)`). */
+  readonly command: string;
 }
 
-/** Talk to an NPC at `pos`, following `optionPath` through its dialogue tree. */
+/** Talk to an NPC at `pos`, then chat the compiler-assigned dialog `/trigger`. */
 export interface TalkToStep {
   readonly action: "talk-to";
   readonly npc: string;
   readonly pos: Vec3Tuple;
-  readonly optionPath: readonly number[];
+  /** The exact chat command the bot sends (`bot.chat(command)`). */
+  readonly command: string;
 }
 
 /** Reach an anchor: get within `radius` blocks of the absolute position `pos`. */
@@ -46,7 +54,8 @@ export interface ReachStep {
 /** Assert the campaign-completion scoreboard objective holds `value` (terminal step). */
 export interface AssertCompleteStep {
   readonly action: "assert-complete";
-  readonly objectiveScoreboard: string;
+  /** The sidebar-displayed objective the bot reads. */
+  readonly objective: string;
   readonly value: number;
 }
 
@@ -122,27 +131,6 @@ function requireInteger(
   return value;
 }
 
-/** A non-negative integer array (dialog button indices). */
-function requireOptionPath(
-  obj: Record<string, unknown>,
-  pointer: string,
-): readonly number[] {
-  const value = obj["option_path"];
-  if (!Array.isArray(value)) {
-    fail(`${pointer}/option_path`, `must be an array, got ${describe(value)}`);
-  }
-  return value.map((entry, i) => {
-    const at = `${pointer}/option_path/${i}`;
-    if (typeof entry !== "number" || !Number.isInteger(entry)) {
-      fail(at, `must be an integer index, got ${describe(entry)}`);
-    }
-    if (entry < 0) {
-      fail(at, `must be a non-negative index, got ${entry}`);
-    }
-    return entry;
-  });
-}
-
 /** An absolute `[x, y, z]` block position. */
 function requirePos(
   obj: Record<string, unknown>,
@@ -165,6 +153,19 @@ function requirePos(
   return [coords[0]!, coords[1]!, coords[2]!];
 }
 
+/** The `scoreboard: { objective, value }` object on assert-complete. */
+function requireScoreboard(
+  obj: Record<string, unknown>,
+  pointer: string,
+): { objective: string; value: number } {
+  const board = requireObject(obj["scoreboard"], `${pointer}/scoreboard`);
+  rejectUnknownKeys(board, ["objective", "value"], `${pointer}/scoreboard`);
+  return {
+    objective: requireString(board, "objective", `${pointer}/scoreboard`),
+    value: requireInteger(board, "value", `${pointer}/scoreboard`),
+  };
+}
+
 function rejectUnknownKeys(
   obj: Record<string, unknown>,
   allowed: readonly string[],
@@ -185,20 +186,20 @@ function parseStep(value: unknown, pointer: string): Step {
   }
   switch (action) {
     case "select-class": {
-      rejectUnknownKeys(obj, ["action", "class", "option_path"], pointer);
+      rejectUnknownKeys(obj, ["action", "class", "command"], pointer);
       return {
         action: "select-class",
         class: requireString(obj, "class", pointer),
-        optionPath: requireOptionPath(obj, pointer),
+        command: requireString(obj, "command", pointer),
       };
     }
     case "talk-to": {
-      rejectUnknownKeys(obj, ["action", "npc", "pos", "option_path"], pointer);
+      rejectUnknownKeys(obj, ["action", "npc", "pos", "command"], pointer);
       return {
         action: "talk-to",
         npc: requireString(obj, "npc", pointer),
         pos: requirePos(obj, pointer),
-        optionPath: requireOptionPath(obj, pointer),
+        command: requireString(obj, "command", pointer),
       };
     }
     case "reach": {
@@ -218,11 +219,12 @@ function parseStep(value: unknown, pointer: string): Step {
       };
     }
     case "assert-complete": {
-      rejectUnknownKeys(obj, ["action", "objective_scoreboard", "value"], pointer);
+      rejectUnknownKeys(obj, ["action", "scoreboard"], pointer);
+      const board = requireScoreboard(obj, pointer);
       return {
         action: "assert-complete",
-        objectiveScoreboard: requireString(obj, "objective_scoreboard", pointer),
-        value: requireInteger(obj, "value", pointer),
+        objective: board.objective,
+        value: board.value,
       };
     }
     default:

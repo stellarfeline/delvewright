@@ -11,5 +11,5 @@ machine-checkable assertions — each criterion maps to a CI check.
 |------|-------|--------|
 | [spec-0001](spec-0001-dsl-schemas.md) | Campaign DSL schemas (staged) | Approved |
 | [spec-0002](spec-0002-compiler-cli.md) | Compiler CLI contract | Approved |
-| [spec-0003](spec-0003-validation-harness.md) | Validation harness contract | Skeleton |
-| [spec-0004](spec-0004-ci-workflow.md) | CI workflow | Skeleton |
+| [spec-0003](spec-0003-validation-harness.md) | Validation harness contract | Draft |
+| [spec-0004](spec-0004-ci-workflow.md) | CI workflow | Draft |

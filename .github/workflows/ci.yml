@@ -1,7 +1,8 @@
-name: CI (tier 1)
+name: CI (tiers 1 + 2)
 
-# spec-0004 tier 1 only: unit tests + static analysis on every push and PR.
-# Tier 2/3 (validation image, PackTest, playthrough) are deliberately not here.
+# spec-0004: tier 1 (unit + static analysis) on every push/PR; tier 2 (delve
+# datapack-load check + PackTest suite) on PRs. Tier 3 (bot playthrough +
+# multi-arch image push) lives in release.yml, on rc-* tags.
 # push is limited to main so PR branches don't run every job twice
 # (push + pull_request); Actions minutes are metered while the repo is private.
 on:
@@ -90,3 +91,62 @@ jobs:
         with:
           args: "--offline --no-progress './**/*.md'"
           fail: true
+
+  # ------------------------------------------------------------------ tier 2 --
+  # spec-0004 tier 2 (every PR): build the delve, prove it loads with zero errors
+  # on the pinned vanilla server, and run the generated PackTest suite headless.
+  # PR-only (metered minutes); target < 10 min.
+  tier2-validation:
+    name: tier 2 (datapack load + PackTest)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      # Accepting Mojang's EULA is the repo owner's standing action for her own
+      # CI pipeline (ADR-0010); the itzg base fetches the jar at run time and it
+      # is never baked into or published from CI.
+      EULA: "TRUE"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true # delvec copies the prefab .nbt into the datapack
+      - uses: Swatinem/rust-cache@v2
+      - name: build the hello-world delve output
+        run: |
+          cargo run -p delvewright-compiler --bin delvec -- \
+            build crates/dsl/fixtures/valid/hello-world \
+            -o validation/delve-output --prefabs prefabs
+
+      - name: build the delve image (ADR-0010; no jar, no mods)
+        run: |
+          docker build -f validation/Dockerfile.delve \
+            -t delvewright/delve:ci validation/delve-output
+
+      - name: datapack loads on the pinned vanilla server with ZERO errors
+        run: |
+          docker run -d --name delve-ci -e EULA=TRUE \
+            -e PAUSE_WHEN_EMPTY_SECONDS=-1 delvewright/delve:ci
+          # Wait up to ~5 min for world gen + datapack load to finish.
+          for i in $(seq 1 60); do
+            if docker logs delve-ci 2>&1 | grep -qE 'Done \([0-9]'; then break; fi
+            if [ "$(docker inspect -f '{{.State.Status}}' delve-ci)" = "exited" ]; then break; fi
+            sleep 5
+          done
+          docker logs delve-ci > boot.log 2>&1
+          docker rm -f delve-ci >/dev/null
+          echo "----- server boot log (tail) -----"; tail -n 20 boot.log
+          if ! grep -qE 'Done \([0-9]' boot.log; then
+            echo "::error::server never finished starting"; exit 1
+          fi
+          # The datapack-load criterion (spec-0002): no server-side ERROR lines.
+          if grep -E '\[[^]]*/ERROR\]' boot.log; then
+            echo "::error::datapack produced load errors on the live server"; exit 1
+          fi
+          echo "datapack loaded with zero errors."
+
+      - name: PackTest suite (headless, exit code = failed tests)
+        run: |
+          docker compose -f validation/compose.yaml --profile packtest up \
+            --abort-on-container-exit --exit-code-from packtest
+      - name: tear down
+        if: always()
+        run: docker compose -f validation/compose.yaml --profile packtest down -v --remove-orphans || true

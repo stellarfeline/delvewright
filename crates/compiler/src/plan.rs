@@ -59,6 +59,9 @@ pub struct AreaPlacement {
     pub structure_file: String,
     /// World-space placement origin `[x, y, z]`.
     pub origin: [i32; 3],
+    /// Prefab bounding size `[sx, sy, sz]` (from prefab metadata). Used to
+    /// `forceload` the covering chunks before `place template` runs at load time.
+    pub size: [i32; 3],
 }
 
 /// A resolved anchor (absolute world coords).
@@ -214,6 +217,7 @@ impl<'a> Plan<'a> {
                 structure_id: meta.structure.id.clone(),
                 structure_file: meta.structure.file.clone(),
                 origin,
+                size: meta.structure.size,
             });
         }
 

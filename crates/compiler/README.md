@@ -75,7 +75,7 @@ bogus subcommand paths.
 ## Build output (`<out>/`)
 
 `manifest.json` (SHA-256 of the five input stage files + every other output,
-sorted), `datapack/` (pack_format 94; see note below), `packtest-datapack/`,
+sorted), `datapack/` (pack.mcmeta min/max_format `[94, 1]`; see note below), `packtest-datapack/`,
 `server/` (void/superflat fixed-seed config), `critical-path.json` (amended
 bot-interaction contract). Determinism (ADR-0006): all maps are `BTreeMap`/sorted;
 JSON is `serde_json` pretty (sorted keys) + trailing newline; no wall-clock,
@@ -122,14 +122,23 @@ and `flate2` are **dev-only** (the `gen_hello_room` example + prefab test).
 `flate2` is beyond the spec budget and flagged: MC structure files are gzip-framed
 NBT and neither NBT crate ships the gzip container.
 
-## Provisional / follow-ups for later tasks
+## Live 1.21.11 verification (M1 load shakeout — resolved)
 
-- `datapack/pack.mcmeta` emits `"pack_format": 94`. The 1.21.11 data pack version
-  is 94.1; the `.1` minor is not required for loading and the exact mcmeta
-  major.minor schema is confirmed against a live server in the load task.
-- `packtest-datapack/` emits a byte-stable pack + a provisional vanilla-command
-  assertion function; the exact PackTest test-registration wiring is finalized in
-  the spec-0003 task.
-- The dialog JSON schema (`minecraft:multi_action`, `run_command` action) follows
-  the public 1.21.6 dialog docs and is verified on a live 1.21.11 server in the
-  load task.
+The following were confirmed/fixed against a live pinned 1.21.11 server (see the
+`live_load_shakeout_fixes` + `packtest_suite_is_a_real_test` regression tests):
+
+- `datapack/pack.mcmeta` emits `min_format`/`max_format` as `[94, 1]` (from
+  `version.json`: `data_major 94, data_minor 1`). A bare `pack_format` is **rejected**
+  for formats newer than 81 ("missing mandatory fields min_format and max_format").
+- Dialog JSON (`minecraft:multi_action`, `run_command` action with a leading-slash
+  `/trigger`) loads clean. The interaction advancement's `entity` condition must be
+  the **single sub-predicate object** form, not a loot-condition list.
+- `setup` **`forceload add`s** the prefab chunks before `place template` (else
+  `place`/`summon`/`fill` silently no-op at `#minecraft:load` time while `#init` is
+  still set) and `setworldspawn`s onto the prefab floor.
+- `campaign_complete` broadcasts `[Delvewright] complete dw.campaign 1` — the bot's
+  observation channel, because mineflayer 4.37.x cannot read 1.21.11 scoreboard
+  scores (the sidebar objective is still displayed for the human/future).
+- `packtest-datapack/` emits a real PackTest test at `data/<ns>/test/campaign.mcfunction`
+  (misode/packtest 2.4.0) — `# @dummy` + `assert score` driving the completion chain.
+  PackTest commands are exempt from the vanilla command-tree validator.
