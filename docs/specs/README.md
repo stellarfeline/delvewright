@@ -13,3 +13,4 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0002](spec-0002-compiler-cli.md) | Compiler CLI contract | Approved |
 | [spec-0003](spec-0003-validation-harness.md) | Validation harness contract | Draft |
 | [spec-0004](spec-0004-ci-workflow.md) | CI workflow | Draft |
+| [spec-0005](spec-0005-infra-images.md) | Infrastructure images & version manifest | Draft |
