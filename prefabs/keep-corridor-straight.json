@@ -1,0 +1,59 @@
+{
+  "prefab_id": "prefab/keep-corridor-straight",
+  "structure": {
+    "file": "keep-corridor-straight.nbt",
+    "id": "keep-corridor-straight",
+    "size": [
+      5,
+      5,
+      7
+    ],
+    "data_version": 4671,
+    "generator": "prefabs/generator (keep-prefab-gen)"
+  },
+  "anchors": {},
+  "connectors": [
+    {
+      "name": "keep:socket",
+      "target": "keep:socket",
+      "local_pos": [
+        2,
+        1,
+        0
+      ],
+      "facing": "north",
+      "opening": [
+        3,
+        3
+      ],
+      "joint": "aligned"
+    },
+    {
+      "name": "keep:socket",
+      "target": "keep:socket",
+      "local_pos": [
+        2,
+        1,
+        6
+      ],
+      "facing": "south",
+      "opening": [
+        3,
+        3
+      ],
+      "joint": "aligned"
+    }
+  ],
+  "lighting": {
+    "profile": "lit",
+    "measured_min_light": 9,
+    "measured": "2026-07-30",
+    "method": "live 1.21.11 probe: min over walkable floor cells of location_check light predicate; sealed time, roofed piece so sky-light=0"
+  },
+  "license": {
+    "source": "original",
+    "spdx": "GPL-3.0-or-later",
+    "note": "Original Delvewright project asset (pipeline-code license per prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
+    "provenance": "Generated deterministically by prefabs/generator (keep-prefab-gen), ADR-0006; regenerating yields byte-identical NBT."
+  }
+}
