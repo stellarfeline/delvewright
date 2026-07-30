@@ -27,7 +27,7 @@ Founding decisions live in `docs/adr/` and originate from the kickoff handoff
 - **Determinism** (ADR-0006): same DSL + same seed → byte-identical datapack and world.
   Hard invariant, tested from day one.
 - **OCI packaging** (ADR-0010): delve = pinned server + world + config + datapack image.
-- **Pinned MC version** (ADR-0009): one 1.20.5+ version as a long-term constant.
+- **Pinned MC version** (ADR-0009): **Minecraft Java 1.21.11**, a long-term constant.
 - **Compiler foundation** (ADR-0011): Rust-native compiler; beet/mecha only as an
   independent CI cross-check, never as the emission path.
 

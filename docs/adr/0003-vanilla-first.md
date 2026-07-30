@@ -27,5 +27,9 @@ tooling) and are never required to *play* a delve.
 
 ## Revisit triggers
 
-A delve design need that datapacks demonstrably cannot express AND that the owner
-judges worth breaking zero-setup joins for. Expected: never.
+A delve concept that fails specifically on the vanilla presentation ceiling
+(documented in `docs/notes/vanilla-capability-ceiling.md`: cutscene camera, custom
+entity models, scripted NPC movement). Agreed fallback path (owner, 2026-07-29): not
+a general mod loadout, but pinning a **small, fixed set of specific low-level
+engine-extension mods**, adopted via a superseding ADR — weighing that it breaks
+zero-setup vanilla joins. Until that ADR exists, mod-free stands.

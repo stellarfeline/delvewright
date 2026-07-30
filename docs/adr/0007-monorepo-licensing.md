@@ -20,12 +20,12 @@ Single monorepo `delvewright` (name verified free on GitHub, crates.io, and npm 
 CLAUDE.md   docs/adr/   docs/specs/   crates/   prefabs/   harness/   packtest/   validation/
 ```
 
-- **Code** (crates, harness, packtest templates, validation infra): **GPL** (version
-  to be confirmed by owner — proposed GPL-3.0-or-later, see open questions).
+- **Code** (crates, harness, packtest templates, validation infra):
+  **GPL-3.0-or-later** (owner confirmed 2026-07-29).
 - **Prefab/content assets in-repo**: original, CC0, or CC BY only; provenance recorded
   in prefab metadata. **CC BY-NC or unknown-license material is never ingested.**
 - **Generated campaigns/worlds live outside this repo**: shipped via GitHub Releases /
-  OCI registry, under their own content license (likely CC BY-SA — owner to confirm).
+  OCI registry, under **CC BY-SA 4.0** (owner confirmed 2026-07-29).
 - Binary assets (`prefabs/*.nbt`) tracked via git-lfs.
 
 ## Consequences

@@ -13,7 +13,7 @@ edit. Template at the bottom.
 | [0006](0006-determinism.md) | Determinism as a hard invariant | Accepted |
 | [0007](0007-monorepo-licensing.md) | Monorepo; GPL code, separately-licensed content | Accepted |
 | [0008](0008-ci-as-arbiter.md) | Spec-driven development; CI as sole arbiter | Accepted |
-| [0009](0009-pinned-mc-version.md) | Pinned Minecraft version | Proposed |
+| [0009](0009-pinned-mc-version.md) | Pinned Minecraft version: 1.21.11 | Accepted |
 | [0010](0010-oci-packaging.md) | Delves ship as versioned OCI images | Accepted |
 | [0011](0011-compiler-foundation.md) | Compiler foundation: Rust-native + mecha CI cross-check | Accepted |
 
