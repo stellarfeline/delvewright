@@ -35,6 +35,12 @@ the same image CI and prod use.
 - Services: `server` (the delve OCI image + tooling-mod overlay), `packtest-runner`,
   `bot`. One `docker compose --profile validate up` reproduces CI locally, exit codes
   propagated.
+- **Play profile** (owner request 2026-07-29; M1 deliverable, then permanent): one
+  command — `docker compose --profile play up` — starts *only* the delve server (no
+  tooling mods, exactly the shipped image) with the port mapped so the owner can join
+  from her vanilla client at `localhost` to verify progress by hand at any time.
+  Authentication mode (online-mode with real accounts vs offline for local testing):
+  decide in Draft.
 
 ## Acceptance criteria (to be made precise in Draft)
 
