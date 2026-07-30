@@ -1,9 +1,9 @@
 {
-  "description": "unsupported dsl_version",
-  "expect": "DW0102",
+  "description": "an area's prefab_pool references a pool absent from the prefab metadata",
+  "expect": "DW0161",
   "documents": {
     "world": {
-      "dsl_version": "9.9.9",
+      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
       "stage": "world",
       "content": {
@@ -16,7 +16,11 @@
           {
             "id": "area/keep",
             "name": "The Keep",
-            "prefab": "prefab/hello-room"
+            "prefab_pool": "pool/nonexistent",
+            "pieces": {
+              "min": 4,
+              "max": 7
+            }
           }
         ]
       }

@@ -7,13 +7,14 @@
 
 use std::path::{Path, PathBuf};
 
-/// The five stage filenames (matching `delvewright_compiler::load::STAGE_FILES`).
-pub const STAGE_FILES: [&str; 5] = [
+/// The six stage filenames (matching `delvewright_compiler::load::STAGE_FILES`).
+pub const STAGE_FILES: [&str; 6] = [
     "world.json",
     "npcs.json",
     "classes.json",
     "quest-plan.json",
     "quests.json",
+    "dialogue.json",
 ];
 
 /// Repo root (two levels up from `crates/compiler`).

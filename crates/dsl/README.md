@@ -7,11 +7,12 @@ DSL: JSON Schemas are exported from the Rust types, never hand-maintained.
 ## What it provides
 
 - **Types** (`stages`, `envelope`, `ids`): serde types for the envelope
-  `{ dsl_version, campaign_id, stage, content }` and the five stage payloads,
-  every struct `#[serde(deny_unknown_fields)]`. IDs are type-prefixed kebab-case
-  newtypes (`area/…`, `npc/…`, `class/…`, `quest/…`, `dlg/…`, `obj/…`,
-  `anchor/…`, `prefab/…`) that parse permissively and expose `is_valid_syntax()`.
-- **Validation** (`validate::validate_campaign`): all six spec-0001 rule groups,
+  `{ dsl_version, campaign_id, stage, content }` and the **six** stage payloads
+  (v0.2: stage 2 is a structured `persona`, stage 6 is `dialogue`), every struct
+  `#[serde(deny_unknown_fields)]`. IDs are type-prefixed kebab-case newtypes
+  (`area/…`, `npc/…`, `class/…`, `quest/…`, `dlg/…`, `obj/…`, `anchor/…`,
+  `prefab/…`, `pool/…`) that parse permissively and expose `is_valid_syntax()`.
+- **Validation** (`validate::validate_campaign`): all spec-0001 v0.2 rule groups,
   returning `Diagnostic { code, severity, stage, path, message }` in the
   spec-0002 `--json` shape.
 - **Canonical serialization** (`canonical::to_canonical_string`): the single
@@ -31,7 +32,7 @@ nothing depends on hash order, wall-clock, or absolute paths.
 ```rust
 use delvewright_dsl::{RawCampaign, check_campaign, parse_campaign, validate_campaign};
 
-// From five raw JSON strings (compiler input):
+// From six raw JSON strings (compiler input):
 let diags = check_campaign(&raw); // parse (DW0100 on failure) then validate
 
 // Or in two steps:
@@ -49,26 +50,31 @@ has ≥1 invalid fixture under `fixtures/invalid/` that violates only that rule.
 
 | Code | Rule group | Meaning |
 |------|-----------|---------|
-| `DW0100` | 1 Envelope | Document does not conform to its stage schema (unknown field / wrong type / malformed value). Reported at parse time. |
+| `DW0100` | 1 Envelope | Document does not conform to its stage schema (unknown field / wrong type / malformed value, incl. a **missing required persona field**). Reported at parse time. |
 | `DW0101` | 1 Envelope | `stage` field does not match the document's slot (e.g. `world.json` says `stage: "npcs"`). |
-| `DW0102` | 1 Envelope | Unsupported `dsl_version` (only `0.1.0` in v0). |
+| `DW0102` | 1 Envelope | Unsupported `dsl_version` (only `0.2.0` in v0.2). |
 | `DW0103` | 1 Envelope | `campaign_id` differs across stages. |
 | `DW0110` | 2 IDs | Malformed id syntax (not kebab-case, or wrong/missing type prefix). |
-| `DW0111` | 2 IDs | Duplicate id within its namespace. |
-| `DW0112` | 2 IDs | Dangling reference: an id ref does not resolve to a declared entity. |
-| `DW0120` | 3 Dialogue | Dialogue node unreachable from `root`. |
-| `DW0121` | 3 Dialogue | Dialogue `root`/option `next` references an unknown node. |
-| `DW0122` | 3 Dialogue | Dialogue effect references an unknown objective (stage-5 boundary). |
+| `DW0111` | 2 IDs | Duplicate id within its namespace (incl. **two dialogue trees for one NPC**). |
+| `DW0112` | 2 IDs | Dangling reference (incl. a **persona relationship** to an unknown NPC, or any **forward/undeclared** reference — references must be strictly backward). |
+| `DW0120` | 3 Dialogue (stage 6) | Dialogue node unreachable from `root`. |
+| `DW0121` | 3 Dialogue (stage 6) | Dialogue `root`/option `next` references an unknown node. |
+| `DW0122` | 3 Dialogue (stage 6) | Dialogue effect targets an objective that is unknown, not a `talk-to`, or a `talk-to` **on a different NPC** (foreign effect). |
+| `DW0123` | 3 Dialogue (stage 6) | A stage-5 `talk-to` objective has **no reachable completing option** in its NPC's tree (static half of the compiler's `DW0203`). |
 | `DW0130` | 4 Quest plan | Quest `depends_on` graph contains a cycle. |
 | `DW0131` | 4 Quest plan | `finale` is not a declared quest. |
 | `DW0132` | 4 Quest plan | `finale` is not the convergent sink of the plan (see [note](#dw0132)). |
 | `DW0133` | 4 Quest plan | Non-mandatory quest (`mandatory: false`), reserved until M3. |
 | `DW0140` | 5 Quests | Objective `after` ordering contains a cycle. |
-| `DW0141` | 1–5 Reserved | Reserved enum value or reserved field used (see [Reserved](#reserved-values)). |
+| `DW0141` | 2–5 Reserved | Reserved enum value used (see [Reserved](#reserved-values)). |
 | `DW0142` | 5 Quests | Anchor not provided by the area's bound prefab. |
 | `DW0143` | 5 Quests | Item id not in the pinned 1.21.11 registry. |
 | `DW0150` | 6 Cross-stage | Planned quest (stage 4) has no expansion in stage 5. |
 | `DW0151` | 6 Cross-stage | Stage-5 quest is not planned in stage 4. |
+| `DW0152` | 6 Cross-stage | Stage-2 NPC has no stage-6 dialogue tree. |
+| `DW0153` | 6 Cross-stage | Stage-6 dialogue tree references an NPC not declared in stage 2. |
+| `DW0160` | 6 Prefab binding | Area binds neither or both of `prefab` / `prefab_pool` (exactly one required). |
+| `DW0161` | 6 Prefab binding | Area `prefab_pool` references a pool absent from `prefabs/` metadata. |
 
 `severity` is `error` for every v0 code; `warning` exists in the shape for
 future advisory rules. `path` is a JSON-pointer-ish location within the stage
@@ -78,12 +84,15 @@ path-addressable.
 
 ### Reserved values
 
-`DW0141` covers everything spec-0001 lists as "reserved, not yet implemented":
+`DW0141` covers the reserved enum values spec-0001 lists as "not yet
+implemented":
 
-- `world`: the `prefab_pool` field on an area.
 - `npcs`: `role: vendor` / `role: boss`.
 - `quests`: objective `type: kill | collect | interact`; effect
   `type: give-item | set-flag | spawn-wave`.
+
+(`prefab_pool` is no longer reserved in v0.2 — it is a real stage-1 binding,
+validated by `DW0160`/`DW0161`.)
 
 These **parse** (so authors get a clean diagnostic instead of an opaque error)
 and are rejected by validation. The reserved kit-item fields (`lore`,
@@ -95,9 +104,10 @@ defined as fields, so a document using them is rejected as an unknown field
 
 ### Valid — `fixtures/valid/hello-world/`
 
-The complete canonical M1 hello-world campaign (`world`, `npcs`, `classes`,
-`quest-plan`, `quests`), fleshed out from spec-0001's examples. It validates
-with zero diagnostics and is byte-identical under the canonical writer.
+The complete canonical hello-world campaign, six documents (`world`, `npcs`,
+`classes`, `quest-plan`, `quests`, `dialogue`) — v0.2: `npcs` carries the
+keeper's structured `persona`, `dialogue` carries his tree. It validates with
+zero diagnostics and is byte-identical under the canonical writer.
 
 ### Invalid — `fixtures/invalid/`
 
@@ -135,9 +145,16 @@ the M1 fixtures use:
   **The full 1.21.11 item registry is vendored in the compiler task (spec-0002);**
   the compiler injects it via `validate_campaign_with`.
 - `VendoredAnchorRegistry::hello_world()` — the anchors the hello-world prefab
-  declares, from `data/anchors.json`. Real prefab anchor metadata lives in
-  `prefabs/` (ADR-0004) and is resolved by the compiler; the trait lets the
+  declares (`data/anchors.json`) plus a fixture pool (`data/pools.json`) so
+  prefab-pool existence checks are non-vacuous. Real prefab anchor metadata lives
+  in `prefabs/` (ADR-0004) and is resolved by the compiler; the trait lets the
   compiler inject it.
+
+`AnchorRegistry` is the **prefab-metadata surface** DSL validation resolves refs
+against. Beyond `anchors_for`, it exposes `has_pool` (prefab-pool existence,
+`DW0161`) and `lighting_for` (the typed `Lighting` / `LightingProfile` block,
+consumed by the compiler's `dark`-mitigation analysis, `DW0210`). The compiler's
+`PrefabRegistry` implements all three from `prefabs/` metadata.
 
 ## Spec notes / resolved ambiguities
 

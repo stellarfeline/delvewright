@@ -64,7 +64,7 @@ enum Command {
     },
     /// Export a stage's JSON Schema (LLM authoring aid).
     Schema {
-        /// Stage `1..5` or `all`.
+        /// Stage `1..6` or `all`.
         #[arg(long)]
         stage: String,
     },
@@ -93,13 +93,13 @@ fn main() -> ExitCode {
     }
 }
 
-/// Validate and return the parsed campaign + diagnostics; prints diagnostics.
-/// Returns `Err(exit)` on internal error.
+/// Validate and return the parsed campaign + prefab registry + diagnostics;
+/// prints diagnostics. Returns `Err(exit)` on internal error.
 fn validate_stage(
     campaign_dir: &Path,
     prefabs_dir: &Path,
     json: bool,
-) -> Result<(delvewright_dsl::Campaign, Vec<Diagnostic>), u8> {
+) -> Result<(delvewright_dsl::Campaign, PrefabRegistry, Vec<Diagnostic>), u8> {
     let loaded = load_campaign_dir(campaign_dir).map_err(|e| {
         eprintln!("internal error: cannot read campaign dir: {e}");
         EXIT_INTERNAL
@@ -117,7 +117,7 @@ fn validate_stage(
         Ok(campaign) => {
             let diags = validate_campaign_with(&campaign, &items, &prefabs);
             print_diags(&diags, json);
-            Ok((campaign, diags))
+            Ok((campaign, prefabs, diags))
         }
         Err(diags) => {
             print_diags(&diags, json);
@@ -128,21 +128,21 @@ fn validate_stage(
 
 fn run_validate(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode {
     match validate_stage(campaign_dir, prefabs_dir, json) {
-        Ok((_, diags)) if diags.is_empty() => ExitCode::SUCCESS,
+        Ok((_, _, diags)) if diags.is_empty() => ExitCode::SUCCESS,
         Ok(_) => ExitCode::from(1),
         Err(code) => ExitCode::from(code),
     }
 }
 
 fn run_analyze(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode {
-    let (campaign, diags) = match validate_stage(campaign_dir, prefabs_dir, json) {
+    let (campaign, prefabs, diags) = match validate_stage(campaign_dir, prefabs_dir, json) {
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),
     };
     if !diags.is_empty() {
         return ExitCode::from(1);
     }
-    let adiags = analyze_campaign(&campaign);
+    let adiags = analyze_campaign(&campaign, &prefabs);
     print_diags(&adiags, json);
     if adiags.is_empty() {
         ExitCode::SUCCESS
@@ -152,29 +152,22 @@ fn run_analyze(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode 
 }
 
 fn run_build(campaign_dir: &Path, out: &Path, prefabs_dir: &Path, json: bool) -> ExitCode {
-    let (campaign, diags) = match validate_stage(campaign_dir, prefabs_dir, json) {
+    let (campaign, prefabs, diags) = match validate_stage(campaign_dir, prefabs_dir, json) {
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),
     };
     if !diags.is_empty() {
         return ExitCode::from(1);
     }
-    let adiags = analyze_campaign(&campaign);
+    let adiags = analyze_campaign(&campaign, &prefabs);
     if !adiags.is_empty() {
         print_diags(&adiags, json);
         return ExitCode::from(2);
     }
 
-    // reload input bytes (for manifest) + prefab metadata + structures
+    // reload input bytes (for manifest) + structures
     let loaded = match load_campaign_dir(campaign_dir) {
         Ok(l) => l,
-        Err(e) => {
-            eprintln!("internal error: {e}");
-            return ExitCode::from(EXIT_INTERNAL);
-        }
-    };
-    let prefabs = match PrefabRegistry::load_dir(prefabs_dir) {
-        Ok(p) => p,
         Err(e) => {
             eprintln!("internal error: {e}");
             return ExitCode::from(EXIT_INTERNAL);
@@ -243,15 +236,17 @@ fn run_schema(stage: &str) -> ExitCode {
         "3" => vec![Stage::Classes],
         "4" => vec![Stage::QuestPlan],
         "5" => vec![Stage::Quests],
+        "6" => vec![Stage::Dialogue],
         "all" => vec![
             Stage::World,
             Stage::Npcs,
             Stage::Classes,
             Stage::QuestPlan,
             Stage::Quests,
+            Stage::Dialogue,
         ],
         other => {
-            eprintln!("unknown stage `{other}` (want 1..5 or all)");
+            eprintln!("unknown stage `{other}` (want 1..6 or all)");
             return ExitCode::from(EXIT_INTERNAL);
         }
     };

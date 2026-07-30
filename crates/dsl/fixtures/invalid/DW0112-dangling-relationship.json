@@ -1,10 +1,10 @@
 {
-  "description": "npcs campaign_id differs from world",
-  "expect": "DW0103",
+  "description": "a persona relationship references an npc that does not exist",
+  "expect": "DW0112",
   "documents": {
     "npcs": {
       "dsl_version": "0.2.0",
-      "campaign_id": "other-world",
+      "campaign_id": "hello-world",
       "stage": "npcs",
       "content": {
         "npcs": [
@@ -18,7 +18,13 @@
             "persona": {
               "archetype": "stoic gatekeeper",
               "speech_style": "Terse, formal, archaic.",
-              "motivation": "Keep the gate shut until a worthy traveler arrives."
+              "motivation": "Keep the gate shut until a worthy traveler arrives.",
+              "relationships": [
+                {
+                  "npc": "npc/warden",
+                  "attitude": "distrusts her judgment"
+                }
+              ]
             }
           }
         ]

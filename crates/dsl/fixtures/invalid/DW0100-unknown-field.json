@@ -4,13 +4,13 @@
   "schema_reject": true,
   "documents": {
     "world": {
-      "dsl_version": "0.1.0",
+      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
       "stage": "world",
       "content": {
         "title": "The Keeper's Door",
         "theme": "A lonely keep at the edge of the moor.",
-        "premise": "One locked door stands between you and the road home. The Keeper holds the key, and only conversation will move him.",
+        "premise": "One locked door stands between you and the road home.",
         "seed": 20260729,
         "target_minutes": 5,
         "areas": [

@@ -63,12 +63,16 @@ pub mod codes {
     pub const ID_DUPLICATE: &str = "DW0111";
     /// Dangling reference: an id ref does not resolve.
     pub const DANGLING_REF: &str = "DW0112";
-    /// Dialogue node unreachable from `root`.
+    /// Stage-6 dialogue node unreachable from `root`.
     pub const DIALOGUE_UNREACHABLE: &str = "DW0120";
-    /// Dialogue `root`/`next` references an unknown node.
+    /// Stage-6 dialogue `root`/`next` references an unknown node.
     pub const DIALOGUE_BAD_REF: &str = "DW0121";
-    /// Dialogue effect references an unknown objective.
+    /// Stage-6 dialogue effect references an objective that is unknown, not a
+    /// `talk-to`, or a `talk-to` on a different NPC (foreign effect).
     pub const DIALOGUE_BAD_OBJECTIVE: &str = "DW0122";
+    /// A stage-5 `talk-to` objective has no reachable completing dialogue option
+    /// (the static half of the compiler's `DW0203` deadlock guarantee).
+    pub const DIALOGUE_UNCOVERED: &str = "DW0123";
     /// Quest dependency cycle.
     pub const PLAN_CYCLE: &str = "DW0130";
     /// `finale` is not a declared quest.
@@ -89,4 +93,13 @@ pub mod codes {
     pub const QUEST_NOT_EXPANDED: &str = "DW0150";
     /// Stage-5 quest is not planned in stage 4.
     pub const QUEST_NOT_PLANNED: &str = "DW0151";
+    /// Stage-2 NPC has no stage-6 dialogue tree.
+    pub const NPC_WITHOUT_TREE: &str = "DW0152";
+    /// Stage-6 dialogue tree references an NPC not declared in stage 2.
+    pub const TREE_WITHOUT_NPC: &str = "DW0153";
+    /// Area binds neither or both of `prefab` / `prefab_pool` (exactly one
+    /// required).
+    pub const PREFAB_BINDING: &str = "DW0160";
+    /// Area `prefab_pool` references a pool absent from `prefabs/` metadata.
+    pub const POOL_UNKNOWN: &str = "DW0161";
 }

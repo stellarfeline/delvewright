@@ -73,6 +73,10 @@ prefixed_id!(
     /// Prefab id: `prefab/<kebab>` (resolved against `prefabs/` at compile time).
     PrefabId, "prefab");
 prefixed_id!(
+    /// Prefab-pool id: `pool/<kebab>` (jigsaw multi-piece assembly, stage 1;
+    /// resolved against `prefabs/` metadata at compile time).
+    PoolId, "pool");
+prefixed_id!(
     /// Dialogue node id: `dlg/<kebab>` (stage-local to an NPC's dialogue graph).
     DialogueId, "dlg");
 prefixed_id!(

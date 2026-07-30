@@ -1,6 +1,6 @@
 {
-  "description": "a planned quest has no stage-5 expansion",
-  "expect": "DW0150",
+  "description": "a quest depends_on a quest that is never declared — references must be strictly backward, so a forward/undeclared reference is rejected as dangling",
+  "expect": "DW0112",
   "documents": {
     "quest-plan": {
       "dsl_version": "0.2.0",
@@ -16,17 +16,8 @@
               "npc/keeper"
             ],
             "depends_on": [
-              "quest/side-trip"
+              "quest/not-yet-declared"
             ],
-            "mandatory": true,
-            "act": 1
-          },
-          {
-            "id": "quest/side-trip",
-            "goal": "A prerequisite that was never expanded.",
-            "area": "area/keep",
-            "npcs": [],
-            "depends_on": [],
             "mandatory": true,
             "act": 1
           }

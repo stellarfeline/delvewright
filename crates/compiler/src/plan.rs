@@ -18,7 +18,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use delvewright_dsl::{Campaign, DialogueEffect, DialogueId, Npc, Objective, QuestEffect, Trigger};
+use delvewright_dsl::{
+    Campaign, DialogueEffect, DialogueId, Npc, NpcDialogue, Objective, QuestEffect, Trigger,
+};
 
 use crate::registry::{AnchorMeta, PrefabRegistry};
 
@@ -197,7 +199,16 @@ impl<'a> Plan<'a> {
         let mut areas = Vec::new();
         let mut anchors: BTreeMap<(String, String), ResolvedAnchor> = BTreeMap::new();
         for (i, area) in campaign.world.content.areas.iter().enumerate() {
-            let prefab_id = area.prefab.as_str().to_string();
+            // Jigsaw pool assembly lands in M2 task #9; emission handles only
+            // single-prefab areas today (validation already forbids binding both).
+            let Some(prefab) = &area.prefab else {
+                return Err(PlanError(format!(
+                    "area `{}` binds a `prefab_pool`; jigsaw pool assembly is not implemented \
+                     yet (M2 task #9). Bind a single `prefab` to build this campaign.",
+                    area.id
+                )));
+            };
+            let prefab_id = prefab.as_str().to_string();
             let meta = prefabs.get(&prefab_id).ok_or_else(|| {
                 PlanError(format!(
                     "area `{}` binds prefab `{}` but no matching prefab metadata was found in the prefabs dir",
@@ -236,12 +247,21 @@ impl<'a> Plan<'a> {
             .collect();
 
         // ---- npc dialogue numbering ----
+        // Dialogue lives in stage 6 (1:1 with stage-2 NPCs, guaranteed by
+        // validation, which `build` implies). An NPC without a tree is skipped
+        // defensively.
         let npcs = campaign
             .npcs
             .content
             .npcs
             .iter()
-            .map(plan_npc)
+            .filter_map(|npc| {
+                campaign
+                    .dialogue
+                    .content
+                    .tree_for(npc.id.as_str())
+                    .map(|tree| plan_npc(npc, tree))
+            })
             .collect::<Vec<_>>();
 
         // ---- critical path ----
@@ -309,11 +329,11 @@ fn resolve_anchor(origin: [i32; 3], am: &AnchorMeta) -> ResolvedAnchor {
     }
 }
 
-fn plan_npc(npc: &Npc) -> NpcPlan {
+fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
     let safe = safe_local(npc.id.as_str());
     let mut options = Vec::new();
     let mut n = 0;
-    for node in &npc.dialogue.nodes {
+    for node in &tree.nodes {
         for opt in &node.options {
             n += 1;
             let completes = opt
@@ -340,7 +360,7 @@ fn plan_npc(npc: &Npc) -> NpcPlan {
         npc_id: npc.id.as_str().to_string(),
         trigger_objective: dlg_trigger(npc.id.as_str()),
         tag: format!("dw_npc_{safe}"),
-        root: npc.dialogue.root.as_str().to_string(),
+        root: tree.root.as_str().to_string(),
         safe,
         options,
     }

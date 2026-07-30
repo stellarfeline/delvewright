@@ -1,10 +1,10 @@
 {
-  "description": "npcs campaign_id differs from world",
-  "expect": "DW0103",
+  "description": "a stage-2 npc (warden) has no stage-6 dialogue tree",
+  "expect": "DW0152",
   "documents": {
     "npcs": {
       "dsl_version": "0.2.0",
-      "campaign_id": "other-world",
+      "campaign_id": "hello-world",
       "stage": "npcs",
       "content": {
         "npcs": [
@@ -19,6 +19,19 @@
               "archetype": "stoic gatekeeper",
               "speech_style": "Terse, formal, archaic.",
               "motivation": "Keep the gate shut until a worthy traveler arrives."
+            }
+          },
+          {
+            "id": "npc/warden",
+            "name": "The Warden",
+            "role": "flavor",
+            "area": "area/keep",
+            "anchor": "anchor/keeper-stand",
+            "base_entity": "minecraft:villager",
+            "persona": {
+              "archetype": "restless watcher",
+              "speech_style": "Clipped, impatient.",
+              "motivation": "Have the keep sealed her way."
             }
           }
         ]

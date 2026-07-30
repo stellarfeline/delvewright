@@ -1,6 +1,6 @@
 {
-  "description": "dialogue effect references an unknown objective",
-  "expect": "DW0122",
+  "description": "a stage-6 dialogue tree references an npc not declared in stage 2",
+  "expect": "DW0153",
   "documents": {
     "dialogue": {
       "dsl_version": "0.2.0",
@@ -24,17 +24,19 @@
                         "objective": "obj/talk"
                       }
                     ]
-                  },
-                  {
-                    "label": "Something else.",
-                    "effects": [
-                      {
-                        "type": "complete-objective",
-                        "objective": "obj/nonexistent"
-                      }
-                    ]
                   }
                 ]
+              }
+            ]
+          },
+          {
+            "npc": "npc/ghost",
+            "root": "dlg/haunt",
+            "nodes": [
+              {
+                "id": "dlg/haunt",
+                "text": "Wooo.",
+                "options": []
               }
             ]
           }

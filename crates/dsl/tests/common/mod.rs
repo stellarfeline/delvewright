@@ -27,6 +27,7 @@ pub fn valid_raw() -> RawCampaign {
         classes: read_valid("classes.json"),
         quest_plan: read_valid("quest-plan.json"),
         quests: read_valid("quests.json"),
+        dialogue: read_valid("dialogue.json"),
     }
 }
 
@@ -48,6 +49,7 @@ pub fn stage_of(name: &str) -> Stage {
         "classes" => Stage::Classes,
         "quest-plan" => Stage::QuestPlan,
         "quests" => Stage::Quests,
+        "dialogue" => Stage::Dialogue,
         other => panic!("unknown stage `{other}`"),
     }
 }
@@ -63,6 +65,7 @@ pub fn apply(fixture: &InvalidFixture) -> RawCampaign {
             "classes" => raw.classes = s,
             "quest-plan" => raw.quest_plan = s,
             "quests" => raw.quests = s,
+            "dialogue" => raw.dialogue = s,
             other => panic!("unknown stage `{other}`"),
         }
     }

@@ -3,7 +3,7 @@
   "expect": "DW0111",
   "documents": {
     "classes": {
-      "dsl_version": "0.1.0",
+      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
       "stage": "classes",
       "content": {
@@ -13,15 +13,6 @@
             "name": "Wanderer",
             "blurb": "Sturdy boots, no questions.",
             "kit": [
-              {
-                "item": "minecraft:iron_sword",
-                "count": 1,
-                "name": "Keeper's Gift"
-              },
-              {
-                "item": "minecraft:leather_boots",
-                "count": 1
-              },
               {
                 "item": "minecraft:bread",
                 "count": 3
@@ -33,15 +24,6 @@
             "name": "Wanderer",
             "blurb": "Sturdy boots, no questions.",
             "kit": [
-              {
-                "item": "minecraft:iron_sword",
-                "count": 1,
-                "name": "Keeper's Gift"
-              },
-              {
-                "item": "minecraft:leather_boots",
-                "count": 1
-              },
               {
                 "item": "minecraft:bread",
                 "count": 3

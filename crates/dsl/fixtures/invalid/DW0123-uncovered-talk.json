@@ -1,6 +1,6 @@
 {
-  "description": "a dialogue node is unreachable from root",
-  "expect": "DW0120",
+  "description": "the keeper's dialogue tree never offers an option that completes obj/talk, so the talk-to objective is uncovered",
+  "expect": "DW0123",
   "documents": {
     "dialogue": {
       "dsl_version": "0.2.0",
@@ -14,22 +14,17 @@
             "nodes": [
               {
                 "id": "dlg/greeting",
-                "text": "Halt, traveler.",
+                "text": "Halt, traveler. This keep is mine to guard, and the door stays shut.",
                 "options": [
                   {
-                    "label": "Open the door, please.",
-                    "effects": [
-                      {
-                        "type": "complete-objective",
-                        "objective": "obj/talk"
-                      }
-                    ]
+                    "label": "Who are you?",
+                    "next": "dlg/lore"
                   }
                 ]
               },
               {
-                "id": "dlg/orphan",
-                "text": "No one can hear me.",
+                "id": "dlg/lore",
+                "text": "I am the Keeper.",
                 "options": [
                   {
                     "label": "Back.",

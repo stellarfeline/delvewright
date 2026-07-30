@@ -2,7 +2,7 @@
 //!
 //! This is the compiler's *semantic* reachability, distinct from the DSL's
 //! *structural* stage-4 check (`DW0132`, convergent-sink). It merges the stage-5
-//! trigger graph, intra-quest objective `after` ordering, and the stage-2
+//! trigger graph, intra-quest objective `after` ordering, and the stage-6
 //! dialogue graph into one model and asks: can the finale actually complete?
 //!
 //! ## Model (fixpoint)
@@ -12,10 +12,15 @@
 //! - An objective is **completable** if its quest is active, all its `after`
 //!   prerequisites are completable, and its type is satisfiable:
 //!   - `talk-to`: some dialogue option that fires `complete-objective` for it is
-//!     reachable from its NPC's dialogue `root`.
+//!     reachable from its NPC's stage-6 tree `root`. (The DSL's `DW0123` already
+//!     guarantees this statically per NPC; the fixpoint additionally propagates
+//!     it across the trigger/`after` graph.)
 //!   - `reach-anchor`: always satisfiable (the anchor resolves at build time).
 //! - A quest **completes** if it is active and every objective is completable.
 //! - The finale is reachable iff the finale quest completes.
+//!
+//! Beyond reachability it also runs the **dark-prefab mitigation** check
+//! ([`dark_mitigation`], `DW0210`).
 //!
 //! ## Codes (`DW02xx`)
 //!
@@ -23,11 +28,12 @@
 //! |------|---------|
 //! | `DW0201` | Finale quest can never complete (unreachable finale). |
 //! | `DW0202` | Quest can never be triggered (unreachable / dead quest). |
-//! | `DW0203` | Objective can never be completed (deadlock — e.g. a `talk-to` with no reachable completing dialogue option, or an `after` chain that can't be satisfied). |
+//! | `DW0203` | Objective can never be completed (deadlock — e.g. an `after` chain that can't be satisfied). |
+//! | `DW0210` | A reachable `dark`-profile prefab has no proven light mitigation. |
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use delvewright_dsl::{Campaign, Diagnostic, Objective, Trigger};
+use delvewright_dsl::{AnchorRegistry, Campaign, Diagnostic, LightingProfile, Objective, Trigger};
 
 /// Stable analysis codes.
 pub mod codes {
@@ -37,11 +43,15 @@ pub mod codes {
     pub const QUEST_UNREACHABLE: &str = "DW0202";
     /// Objective can never be completed (deadlock).
     pub const OBJECTIVE_DEADLOCK: &str = "DW0203";
+    /// A reachable `dark` prefab has no proven light mitigation.
+    pub const DARK_UNMITIGATED: &str = "DW0210";
 }
 
-/// Run reachability analysis. Returns `DW02xx` diagnostics (sorted); empty means
-/// the finale and every quest/objective are reachable.
-pub fn analyze_campaign(c: &Campaign) -> Vec<Diagnostic> {
+/// Run reachability + lighting-mitigation analysis. Returns `DW02xx`
+/// diagnostics (sorted); empty means the finale and every quest/objective are
+/// reachable and every `dark` prefab is mitigated. `prefabs` supplies the
+/// lighting profile per prefab (see [`dark_mitigation`]).
+pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagnostic> {
     let quests = &c.quests.content.quests;
 
     // objective id -> completing dialogue option reachable? (talk-to satisfiability)
@@ -167,25 +177,73 @@ pub fn analyze_campaign(c: &Campaign) -> Vec<Diagnostic> {
         ));
     }
 
+    // DW0210: dark-prefab lighting mitigation.
+    dark_mitigation(c, prefabs, &mut diags);
+
     diags.sort_by(|a, b| (&a.code, &a.path).cmp(&(&b.code, &b.path)));
     diags
+}
+
+/// Dark-prefab mitigation check (spec-0001 "Lighting contract", `DW0210`).
+///
+/// A `dark` prefab (floor light < 3) is only valid where analysis proves a
+/// mitigation. In v0.2 the sufficient, implemented mitigation is a **night-vision
+/// item in some class kit** (owner rule); *give-item is still reserved*, so a
+/// quest-granted mitigation is not yet expressible and is intentionally out of
+/// scope for this check (documented). Every declared area is treated as
+/// reachable in v0.2 (single-prefab areas are all placed + spawned; multi-area
+/// reachability arrives with jigsaw pools, M2 task #9). Pool-bound areas are
+/// skipped here — pool piece lighting is resolved with task #9.
+///
+/// **Night-vision recognition (v0.2 heuristic).** Kit items cannot yet carry
+/// potion-effect components (no components in the stage-3 kit schema), so the
+/// check recognizes a mitigation item by its id or display name containing
+/// `night_vision` / `night vision` (case-insensitive). This is a *static policy
+/// gate* — "you declared darkness, so declare a light source" — not a runtime
+/// guarantee; the runtime grant lands when give-item / kit components ship.
+fn dark_mitigation(c: &Campaign, prefabs: &dyn AnchorRegistry, diags: &mut Vec<Diagnostic>) {
+    // Is there a night-vision source in any class kit?
+    let has_night_vision = c.classes.content.classes.iter().any(|class| {
+        class.kit.iter().any(|item| {
+            let id = item.item.to_ascii_lowercase();
+            let name = item.name.as_deref().unwrap_or("").to_ascii_lowercase();
+            let is_nv = |s: &str| s.contains("night_vision") || s.contains("night vision");
+            is_nv(&id) || is_nv(&name)
+        })
+    });
+
+    for (i, area) in c.world.content.areas.iter().enumerate() {
+        // Pool areas: lighting resolved with jigsaw assembly (task #9).
+        let Some(prefab) = &area.prefab else { continue };
+        let Some(lighting) = prefabs.lighting_for(prefab) else {
+            continue;
+        };
+        if lighting.profile == LightingProfile::Dark && !has_night_vision {
+            diags.push(Diagnostic::error(
+                codes::DARK_UNMITIGATED,
+                "world",
+                format!("/content/areas/{i}"),
+                format!(
+                    "area `{}` binds `dark` prefab `{prefab}` (floor light < 3) but no class kit \
+                     grants a night-vision mitigation",
+                    area.id
+                ),
+            ));
+        }
+    }
 }
 
 /// Objective ids for which a `complete-objective` effect sits on a dialogue
 /// option reachable from the objective's NPC's dialogue `root`.
 fn reachable_completions(c: &Campaign) -> BTreeSet<String> {
-    // For each NPC: the set of objective ids its reachable options complete.
+    // For each stage-6 tree: the set of objective ids its reachable options
+    // complete, keyed by the tree's NPC.
     let mut npc_completes: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
-    for npc in &c.npcs.content.npcs {
-        let nodes: BTreeMap<&str, &_> = npc
-            .dialogue
-            .nodes
-            .iter()
-            .map(|n| (n.id.as_str(), n))
-            .collect();
+    for tree in &c.dialogue.content.dialogues {
+        let nodes: BTreeMap<&str, &_> = tree.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
         let mut seen: BTreeSet<&str> = BTreeSet::new();
         let mut queue: VecDeque<&str> = VecDeque::new();
-        let root = npc.dialogue.root.as_str();
+        let root = tree.root.as_str();
         if nodes.contains_key(root) {
             queue.push_back(root);
             seen.insert(root);
@@ -207,7 +265,7 @@ fn reachable_completions(c: &Campaign) -> BTreeSet<String> {
                 }
             }
         }
-        npc_completes.insert(npc.id.as_str(), completes);
+        npc_completes.insert(tree.npc.as_str(), completes);
     }
 
     // An objective is dialogue-completable if a reachable option in ITS npc
