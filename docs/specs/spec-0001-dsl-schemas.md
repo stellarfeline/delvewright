@@ -63,6 +63,11 @@
   close dialog) and optional `effects`. v0 effect enum: `complete-objective` only
   (forward ref into stage 5, validated at the stage-5 boundary). Cycles between nodes
   are allowed (menus); every node must be reachable from `root`.
+  - **Amended 2026-07-30 (v0.1 bot-interaction contract):** the schema here is
+    unchanged; note only the emission mechanism — the compiler renders each option as
+    a dialog button with a `run_command` click action firing a compiler-assigned
+    `/trigger` command, so one command surface serves both the human dialog GUI and
+    the validation bot's chat path (see spec-0002 critical-path.json).
 - NPCs are stationary (vanilla AI off, no scripted movement — see
   `docs/notes/vanilla-capability-ceiling.md`).
 

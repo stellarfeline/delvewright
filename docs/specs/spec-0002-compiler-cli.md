@@ -63,19 +63,32 @@ and spawns/initializes NPCs, gates, and markers.
 
 ## critical-path.json (contract output, versioned with dsl)
 
+> **Amended 2026-07-30 (v0.1 bot-interaction contract):** interactive steps carry
+> the exact chat command the bot sends, replacing `option_path`. Investigation
+> showed mineflayer cannot click 1.21.11 server-driven dialog buttons, so the bot
+> drives dialog outcomes by chatting the same `/trigger` command the button runs.
+
 ```json
 { "version": "0.1.0", "campaign_id": "hello-world",
   "steps": [
-    { "action": "select-class", "class": "class/wanderer", "option_path": [0] },
-    { "action": "talk-to", "npc": "npc/keeper", "pos": [8, 65, 12], "option_path": [1] },
+    { "action": "select-class", "class": "class/wanderer", "command": "/trigger dw.class set 1" },
+    { "action": "talk-to", "npc": "npc/keeper", "pos": [8, 65, 12], "command": "/trigger dw.dlg_keeper set 2" },
     { "action": "reach", "anchor": "anchor/exit", "pos": [8, 65, 24], "radius": 2 },
-    { "action": "assert-complete", "objective_scoreboard": "dw.campaign", "value": 1 } ] }
+    { "action": "assert-complete", "scoreboard": { "objective": "dw.campaign", "value": 1 } } ] }
 ```
 
 - Absolute positions are resolved by the compiler after placement planning — the
   harness (spec-0003) contains zero campaign knowledge.
-- `option_path`: dialog button indices to click, recorded from the dialogue tree
-  (the path to the option carrying the objective-completing effect).
+- `command` (on `select-class` / `talk-to`): the exact chat command the bot sends
+  (`bot.chat(...)`). Every dialog button is emitted with a `run_command` click
+  action firing the **same** compiler-assigned `/trigger` command — one command
+  surface serves both the human GUI path (spec-0001 dialog UI, unchanged) and the
+  bot chat path. `select-class` fires `/trigger dw.class set <n>` (the class index);
+  `talk-to` fires `/trigger dw.dlg_keeper set <n>` (the dialog-option index whose
+  effect completes the objective). The compiler assigns these `<n>` values and
+  guarantees the recorded command reaches the objective-completing effect.
+- `assert-complete`: the completion objective (`dw.campaign`) is placed in the
+  `sidebar` display slot by the compiler so the bot can observe its score.
 - One step per critical-path objective, in a valid topological order.
 
 ## Determinism rules (ADR-0006, enforced here)
