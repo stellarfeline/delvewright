@@ -85,13 +85,9 @@ want_in "toolserver digest -> compose" "$TOOL_DIGEST" "$COMPOSE"
 echo "== Harness =="
 want_in "mineflayer -> harness/package.json" "$MINEFLAYER" "$HARNESS_PKG"
 
-# The server-jar sha256 must key the CI actions/cache (guards the EULA jar cache).
-echo "== CI server-jar cache key =="
-if grep -rqF -- "$SERVER_SHA256" "$ROOT/.github/workflows/"; then
-  pass "server jar sha256 keys a CI cache ($SERVER_SHA256)"
-else
-  fail "server jar sha256 '$SERVER_SHA256' not referenced by any workflow (cache key drift)"
-fi
+# Server-jar checksums live in versions.toml as provenance only (the CI jar cache
+# was removed 2026-07-30 — see ci.yml tier-2 note; the itzg entrypoint downloads and
+# the digest-pinned base image guarantees which installer runs).
 
 echo
 if [ "$fails" -ne 0 ]; then

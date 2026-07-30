@@ -17,6 +17,7 @@ version = "1.21.11"
 # Mojang server jar, from piston-meta 1.21.11 (downloads.server). The jar is NEVER
 # baked into any image (ADR-0010 EULA); the itzg entrypoint fetches it at first boot
 # by version+checksum, and CI caches it (actions/cache keyed on version + sha256).
+# Provenance record only (no CI cache since 2026-07-30, see ci.yml note).
 # sha1 is the checksum piston-meta publishes; sha256 is computed from the jar bytes
 # and used as the CI cache key + our own integrity check.
 server_jar_url = "https://piston-data.mojang.com/v1/objects/64bb6d763bed0a9f1d632ec347938594144943ed/server.jar"
