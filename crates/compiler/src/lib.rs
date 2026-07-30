@@ -21,8 +21,14 @@ pub const DELVEC_VERSION: &str = "0.1.0";
 /// The pinned Minecraft version (ADR-0009).
 pub const MC_VERSION: &str = "1.21.11";
 
-/// The MC 1.21.11 data pack format (`pack.mcmeta`), major.minor = 94.1.
-pub const PACK_FORMAT: u32 = 94;
+/// The MC 1.21.11 data pack format (`pack.mcmeta`) as `[major, minor]` = 94.1.
+///
+/// 1.21.11's `version.json` reports `data_major: 94, data_minor: 1`. Packs whose
+/// format is newer than 81 MUST declare `min_format`/`max_format` (verified live
+/// on a 1.21.11 server: a bare `pack_format` is rejected with "Pack declares
+/// support for version newer than 81, but is missing mandatory fields min_format
+/// and max_format"). Both are emitted as `[major, minor]` arrays.
+pub const PACK_FORMAT: [u32; 2] = [94, 1];
 
 /// The MC 1.21.11 structure `DataVersion` (see `data/PROVENANCE.md`).
 pub const DATA_VERSION: i32 = 4671;

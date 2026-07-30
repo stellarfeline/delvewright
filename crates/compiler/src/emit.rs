@@ -45,7 +45,8 @@ pub fn build(
         &json!({
             "pack": {
                 "description": format!("Delvewright delve: {ns}"),
-                "pack_format": PACK_FORMAT,
+                "min_format": PACK_FORMAT,
+                "max_format": PACK_FORMAT,
             }
         }),
     );
@@ -198,6 +199,24 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
     }
     setup.push("scoreboard objectives add dw.campaign dummy".to_string());
     setup.push("scoreboard objectives setdisplay sidebar dw.campaign".to_string());
+    // Force-load the chunks covering each prefab BEFORE placing. `#minecraft:load`
+    // runs during server boot when the target chunks are not guaranteed to be
+    // loaded; without this, `place template` / `summon` / `fill` silently no-op
+    // ("That position is not loaded") yet `#init` is still set, permanently
+    // skipping setup. Verified live: `forceload add` loads the chunk synchronously
+    // so the following commands in this same function succeed. The forceload is
+    // kept (not removed) so the placed structure + NPCs stay simulated.
+    for area in &plan.areas {
+        let ox = area.origin[0];
+        let oz = area.origin[2];
+        setup.push(format!(
+            "forceload add {} {} {} {}",
+            ox,
+            oz,
+            ox + area.size[0] - 1,
+            oz + area.size[2] - 1
+        ));
+    }
     // place each area's prefab
     for area in &plan.areas {
         setup.push(format!(
@@ -240,6 +259,12 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
             "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{}\"]}}",
             pos[0], pos[1], pos[2], npc.tag
         ));
+    }
+    // Set world spawn to the first area's `spawn` anchor so joining players land
+    // on the prefab floor instead of falling through the void world before class
+    // selection teleports them.
+    if let Some(pos) = campaign_spawn(plan) {
+        setup.push(format!("setworldspawn {} {} {}", pos[0], pos[1], pos[2]));
     }
     setup.push("scoreboard players set #init dw.sys 1".to_string());
     fns.push(("setup".to_string(), lines(&setup)));
@@ -468,6 +493,18 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
                     { "text": "A Delvewright delve.", "color": "gray" }
                 ])
             ),
+            // Machine-readable completion marker for the validation bot. The bot
+            // reads `dw.campaign` from the sidebar per the amended contract, BUT
+            // mineflayer 4.37.x cannot parse 1.21.11 scoreboard score packets
+            // (verified live: no score updates ever surface). Broadcasting a stable
+            // token in chat — which mineflayer DOES parse reliably — lets the bot
+            // observe completion. `<objective> <value>` mirror the assert-complete
+            // step so the harness stays campaign-agnostic. `@a` so a bot filling a
+            // seat in a future multiplayer delve still sees it.
+            format!(
+                "tellraw @a {}",
+                json!({ "text": format!("[Delvewright] complete dw.campaign 1"), "color": "dark_gray" })
+            ),
         ]),
     ));
 
@@ -607,16 +644,18 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
                 "criteria": {
                     "interact": {
                         "trigger": "minecraft:player_interacted_with_entity",
+                        // 1.21.11's `player_interacted_with_entity` `entity` field is
+                        // an Either<single entity sub-predicate, list of loot
+                        // conditions>. The list form requires each entity_properties
+                        // condition to carry its own `entity: "this"` key; the single
+                        // sub-predicate object form is simpler and is what loads
+                        // cleanly on a live server (verified in the load shakeout —
+                        // the list form failed with "No key entity in MapLike").
                         "conditions": {
-                            "entity": [
-                                {
-                                    "condition": "minecraft:entity_properties",
-                                    "predicate": {
-                                        "type": "minecraft:interaction",
-                                        "nbt": format!("{{Tags:[\"{}\"]}}", npc.tag)
-                                    }
-                                }
-                            ]
+                            "entity": {
+                                "type": "minecraft:interaction",
+                                "nbt": format!("{{Tags:[\"{}\"]}}", npc.tag)
+                            }
                         }
                     }
                 },
@@ -656,7 +695,8 @@ fn emit_packtest(plan: &Plan, out: &mut BuildOutput) {
         &json!({
             "pack": {
                 "description": format!("Delvewright PackTest suite: {ns}"),
-                "pack_format": PACK_FORMAT,
+                "min_format": PACK_FORMAT,
+                "max_format": PACK_FORMAT,
             }
         }),
     );

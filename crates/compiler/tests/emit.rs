@@ -83,6 +83,55 @@ fn critical_path_shape_and_commands() {
     assert!(setup.contains("scoreboard objectives setdisplay sidebar dw.campaign"));
 }
 
+/// Regressions for bugs found during the live 1.21.11 load shakeout (M1).
+#[test]
+fn live_load_shakeout_fixes() {
+    let out = build_hello_world();
+
+    // 1. pack.mcmeta: 1.21.11 rejects a bare `pack_format` for formats >81 —
+    //    it requires min_format/max_format. We emit both as [94, 1].
+    let mcmeta: serde_json::Value =
+        serde_json::from_slice(out.get("datapack/pack.mcmeta").unwrap()).unwrap();
+    assert_eq!(mcmeta["pack"]["min_format"], serde_json::json!([94, 1]));
+    assert_eq!(mcmeta["pack"]["max_format"], serde_json::json!([94, 1]));
+    assert!(
+        mcmeta["pack"].get("pack_format").is_none(),
+        "bare pack_format must not be emitted (rejected on 1.21.11)"
+    );
+
+    // 2. The interaction advancement's `entity` condition must be the single
+    //    sub-predicate object form; the loot-condition list form failed to load
+    //    ("No key entity in MapLike").
+    let adv: serde_json::Value = serde_json::from_slice(
+        out.get("datapack/data/hello-world/advancement/keeper_interact.json")
+            .unwrap(),
+    )
+    .unwrap();
+    let entity = &adv["criteria"]["interact"]["conditions"]["entity"];
+    assert!(entity.is_object(), "entity condition must be an object, not a list");
+    assert_eq!(entity["type"], "minecraft:interaction");
+
+    // 3. setup must forceload the prefab chunks before placement (else place/
+    //    summon/fill silently no-op at load time) and set world spawn onto the
+    //    prefab floor (else players fall through the void before class select).
+    let setup = text(&out, "datapack/data/hello-world/function/setup.mcfunction");
+    let force_idx = setup.find("forceload add").expect("forceload emitted");
+    let place_idx = setup.find("place template").expect("place emitted");
+    assert!(force_idx < place_idx, "forceload must precede place template");
+    assert!(setup.contains("setworldspawn "), "setworldspawn emitted");
+
+    // 4. campaign_complete broadcasts the machine-readable completion marker the
+    //    validation bot reads (mineflayer cannot read 1.21.11 scoreboard scores).
+    let complete = text(
+        &out,
+        "datapack/data/hello-world/function/campaign_complete.mcfunction",
+    );
+    assert!(
+        complete.contains("[Delvewright] complete dw.campaign 1"),
+        "completion marker must be broadcast for the bot"
+    );
+}
+
 #[test]
 fn dialog_buttons_run_the_trigger_commands() {
     let out = build_hello_world();
