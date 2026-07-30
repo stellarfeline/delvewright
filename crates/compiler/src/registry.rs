@@ -52,6 +52,12 @@ pub struct PrefabMeta {
     pub structure: StructureMeta,
     /// Named anchors, keyed by DSL anchor name (`spawn`, `anchor/…`).
     pub anchors: BTreeMap<String, AnchorMeta>,
+    /// Declared lighting profile (spec-0001 lighting contract): `profile`
+    /// (`lit`/`dim`/`dark`), `measured_min_light`, and the `measured` date. Opaque
+    /// here — the formal schema + the `dark`-needs-mitigation analysis land with
+    /// dsl v0.2; for now the compiler only needs to accept the field.
+    #[serde(default)]
+    pub lighting: serde_json::Value,
     /// License/provenance (opaque here; validated by review + `LICENSE-ASSETS.md`).
     #[serde(default)]
     pub license: serde_json::Value,
