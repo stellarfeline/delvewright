@@ -18,6 +18,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # spec-0005 tier 1: versions.toml is the single source of truth. Fails if any
+  # Dockerfile/compose/workflow hardcodes a version/digest that disagrees with it.
+  manifest:
+    name: manifest consistency (versions.toml)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # ubuntu-latest ships python3 (>=3.11, has stdlib tomllib) and bash.
+      - name: consumers agree with versions.toml
+        run: bash validation/check-versions.sh
+
   rust:
     name: rust (fmt, clippy, test)
     runs-on: ubuntu-latest
@@ -116,14 +127,40 @@ jobs:
             build crates/dsl/fixtures/valid/hello-world \
             -o validation/delve-output --prefabs prefabs
 
+      # spec-0005: the delve image now builds FROM ghcr.io/stellarfeline/delvewright-base
+      # by digest (Dockerfile.delve), so this pulls the base from GHCR — no Docker Hub.
       - name: build the delve image (ADR-0010; no jar, no mods)
         run: |
           docker build -f validation/Dockerfile.delve \
             -t delvewright/delve:ci validation/delve-output
 
+      # spec-0005: cache the pinned Mojang server jar keyed on version + sha256 so the
+      # steady-state tier-2 run does NOT re-download the 56 MB jar. Caching the jar for
+      # our own CI runs is not redistribution (ADR-0010); it is never baked/published.
+      - name: cache the pinned Mojang server jar
+        uses: actions/cache@v4
+        with:
+          path: validation/.jar-cache
+          key: mc-server-jar-1.21.11-f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726
+      - name: prime the server-jar cache (download + sha256 verify only on miss)
+        run: |
+          jar=validation/.jar-cache/minecraft_server.1.21.11.jar
+          mkdir -p validation/.jar-cache
+          if [ ! -f "$jar" ]; then
+            echo "cache miss: fetching pinned server jar from Mojang"
+            curl -fSL -o "$jar" \
+              https://piston-data.mojang.com/v1/objects/64bb6d763bed0a9f1d632ec347938594144943ed/server.jar
+          else
+            echo "cache hit: reusing $jar"
+          fi
+          echo "f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726  $jar" | sha256sum -c -
+
       - name: datapack loads on the pinned vanilla server with ZERO errors
         run: |
+          # Mount the cached jar where itzg's install-vanilla looks (/data/minecraft_
+          # server.<ver>.jar); it detects it and skips the download.
           docker run -d --name delve-ci -e EULA=TRUE \
+            -v "$PWD/validation/.jar-cache/minecraft_server.1.21.11.jar:/data/minecraft_server.1.21.11.jar:ro" \
             -e PAUSE_WHEN_EMPTY_SECONDS=-1 delvewright/delve:ci
           # Wait up to ~5 min for world gen + datapack load to finish.
           for i in $(seq 1 60); do

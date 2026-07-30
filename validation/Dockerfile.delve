@@ -16,8 +16,15 @@
 # ADR-0003: NO mods here. PackTest/Fabric live only in the validate-profile tooling
 # services, never in the shipped delve image.
 
-# Pinned by immutable digest (ADR-0006/0009). tag at pin time: java21, MC 1.21.11.
-FROM itzg/minecraft-server@sha256:3e7db2562b492dbf442568a327d361547628c98c04a7cb68218c8dde6abdd1de
+# The delve runtime base: our own GHCR mirror of itzg/minecraft-server, pinned by
+# immutable digest (spec-0005, ADR-0006/0009 — MC 1.21.11, java21). Mirroring under
+# our namespace shields us from Docker Hub anon-pull limits and upstream deletion.
+# The digest is the single-source value in versions.toml ([images.base].digest) and
+# equals the itzg source index digest (buildx imagetools create copies it verbatim);
+# check-versions.sh fails CI if it drifts. Overridable via --build-arg for local
+# pre-publish verification against the byte-identical itzg source (same digest).
+ARG DELVE_BASE_IMAGE=ghcr.io/stellarfeline/delvewright-base@sha256:3e7db2562b492dbf442568a327d361547628c98c04a7cb68218c8dde6abdd1de
+FROM ${DELVE_BASE_IMAGE}
 
 # Bake the compiled datapack outside /data (which is a runtime volume). itzg's
 # DATAPACKS env accepts a directory in the container and copies it into the world's

@@ -36,9 +36,30 @@ jobs:
           cargo run -p delvewright-compiler --bin delvec -- \
             build crates/dsl/fixtures/valid/hello-world \
             -o validation/delve-output --prefabs prefabs
+      # spec-0005: cache the pinned Mojang server jar (version + sha256 key) so the
+      # steady-state playthrough skips the 56 MB download. Not redistribution; the jar
+      # is never baked/published (ADR-0010).
+      - name: cache the pinned Mojang server jar
+        uses: actions/cache@v4
+        with:
+          path: validation/.jar-cache
+          key: mc-server-jar-1.21.11-f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726
+      - name: prime the server-jar cache (download + sha256 verify only on miss)
+        run: |
+          jar=validation/.jar-cache/minecraft_server.1.21.11.jar
+          mkdir -p validation/.jar-cache
+          if [ ! -f "$jar" ]; then
+            curl -fSL -o "$jar" \
+              https://piston-data.mojang.com/v1/objects/64bb6d763bed0a9f1d632ec347938594144943ed/server.jar
+          fi
+          echo "f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726  $jar" | sha256sum -c -
+
+      # The delve server now builds FROM ghcr.io/stellarfeline/delvewright-base by
+      # digest; the ci-cache overlay mounts the cached jar into its /data.
       - name: bot completes the critical path against the shipped delve image
         run: |
-          docker compose -f validation/compose.yaml --profile validate up \
+          docker compose -f validation/compose.yaml -f validation/compose.ci-cache.yaml \
+            --profile validate up \
             --build --abort-on-container-exit --exit-code-from bot
       - name: tear down
         if: always()
