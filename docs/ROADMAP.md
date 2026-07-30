@@ -58,11 +58,14 @@ sealing (spec-0002) added as an M2 emission requirement.
 - Creator playtest loop core (spec-0006): `playtest` compose profile, in-game
   `/trigger dw.note` marks, harvester → DSL-addressable `playtest-report.json`.
 
-**Exit** (owner-defined 2026-07-30): with everything built and machine-tested, the
-owner opens a **fresh session** and produces a complete, playable delve end-to-end
-via `/new-delve` — an LLM-authored campaign passing static + PackTest + bot
-validation with no hand edits to compiler output, joinable through the play
-profile.
+**Exit** (owner-defined 2026-07-30, two gates in order):
+
+1. **Dress rehearsal**: the planning agent itself generates a *relatively complex*
+   delve via `/new-delve` (multiple areas/quests/NPCs), takes it through the full
+   validation ladder green, and the owner **plays it** to judge the result.
+2. **Acceptance**: after the rehearsal passes her play-check, the owner opens a
+   **fresh session** and produces a complete, playable delve end-to-end via
+   `/new-delve` — no hand edits to compiler output, joinable via the play profile.
 
 ## M3 — First real delve
 
