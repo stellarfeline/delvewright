@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[[bin]]
+name = "delvec"
+path = "src/main.rs"
+
 [dependencies]
 delvewright-dsl = { path = "../dsl" }
 serde = { version = "1", features = ["derive"] }

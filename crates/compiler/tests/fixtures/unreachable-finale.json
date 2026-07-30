@@ -1,0 +1,48 @@
+{
+  "description": "Keeper dialogue never offers the option that completes obj/talk, so obj/talk can never complete, the finale quest can never complete, and deep reachability rejects it (DW0201). Validation still passes (no DSL rule is violated), proving analyze is not vacuous.",
+  "expect": "DW0201",
+  "documents": {
+    "npcs": {
+      "dsl_version": "0.1.0",
+      "campaign_id": "hello-world",
+      "stage": "npcs",
+      "content": {
+        "npcs": [
+          {
+            "id": "npc/keeper",
+            "name": "The Keeper",
+            "role": "quest-giver",
+            "area": "area/keep",
+            "anchor": "anchor/keeper-stand",
+            "base_entity": "minecraft:villager",
+            "dialogue": {
+              "root": "dlg/greeting",
+              "nodes": [
+                {
+                  "id": "dlg/greeting",
+                  "text": "Halt, traveler. This keep is mine to guard, and the door stays shut.",
+                  "options": [
+                    {
+                      "label": "Who are you?",
+                      "next": "dlg/lore"
+                    }
+                  ]
+                },
+                {
+                  "id": "dlg/lore",
+                  "text": "I am the Keeper. I have watched this gate since the moor swallowed the old road.",
+                  "options": [
+                    {
+                      "label": "Back.",
+                      "next": "dlg/greeting"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}
