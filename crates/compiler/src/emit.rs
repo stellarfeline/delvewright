@@ -153,6 +153,40 @@ fn is_vanilla_function(path: &str) -> bool {
 // mcfunction emission
 // ---------------------------------------------------------------------------
 
+/// The environment-sealing baseline (spec-0002 "Environment sealing").
+///
+/// **1.21.11 gamerule syntax — verified live against a pinned 1.21.11 server
+/// (delvewright-base / itzg VANILLA), 2026-07-30.** 1.21.11 replaced the legacy
+/// camelCase gamerule identifiers with a registry of snake_case names, several of
+/// them renamed outright; the old spellings are rejected with "Incorrect argument
+/// for command". The confirmed successors used here:
+///
+/// | Legacy (spec text)   | 1.21.11 accepted                       |
+/// |----------------------|----------------------------------------|
+/// | `doMobSpawning`      | `spawn_mobs` (umbrella natural-spawn)   |
+/// | `doDaylightCycle`    | `advance_time`                          |
+/// | `doWeatherCycle`     | `advance_weather`                       |
+/// | `doFireTick`         | `fire_spread_radius_around_player` (int)|
+/// | `mobGriefing`        | `mob_griefing`                          |
+///
+/// `doFireTick` has **no boolean successor**; 1.21.11 models fire spread as an
+/// integer radius around players, so `0` disables it (the sealing intent: no
+/// spreading fire). Time is pinned to noon (`time set noon` = daytime 6000, a
+/// tree literal) — the v0 default; a stage-1 field may override it later. Names
+/// may optionally be `minecraft:`-prefixed on the server, but the bare form is
+/// accepted and matches the vendored command tree (`data/commands-1.21.11.json`),
+/// so it is what we emit and validate.
+fn sealing_commands() -> Vec<String> {
+    vec![
+        "gamerule spawn_mobs false".to_string(),
+        "gamerule advance_time false".to_string(),
+        "gamerule advance_weather false".to_string(),
+        "gamerule fire_spread_radius_around_player 0".to_string(),
+        "gamerule mob_griefing false".to_string(),
+        "time set noon".to_string(),
+    ]
+}
+
 /// Yaw for a facing keyword (MC: yaw 0 = +z/south).
 fn facing_yaw(facing: Option<&str>) -> i32 {
     match facing {
@@ -179,6 +213,14 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
 
     // --- setup ---
     let mut setup: Vec<String> = Vec::new();
+    // Environment sealing (spec-0002): a delve is a box garden — every dynamic is
+    // authored, nothing is left to vanilla chance. Emitted first, once, guarded by
+    // the same `#init` flag as the rest of setup.
+    setup.push(
+        "# Environment sealing (spec-0002): box garden — nothing left to vanilla chance."
+            .to_string(),
+    );
+    setup.extend(sealing_commands());
     setup.push("scoreboard objectives add dw.class trigger".to_string());
     setup.push("scoreboard objectives add dw.classed dummy".to_string());
     setup.push("scoreboard objectives add dw.dlg_shown dummy".to_string());
@@ -764,6 +806,36 @@ fn emit_packtest(plan: &Plan, out: &mut BuildOutput) {
     out.insert(
         format!("packtest-datapack/data/{ns}/test/campaign.mcfunction"),
         lines(&body).into_bytes(),
+    );
+
+    // Sealed-state test: prove the environment-sealing baseline (spec-0002) is
+    // applied on boot. What PackTest / vanilla 1.21.11 lets us assert in-test:
+    //   * `time set noon` — the world time has a read-back path
+    //     (`time query daytime` -> 6000), so it is asserted directly here.
+    //   * the five gamerules — 1.21.11 gamerule *values* have NO `execute
+    //     if`/predicate read-back in vanilla, so they cannot be asserted in-game.
+    //     Their presence and exact 1.21.11 form is a compile-time regression
+    //     instead (crates/compiler/tests/emit.rs::environment_sealing_emitted),
+    //     which is the authoritative sealing assertion.
+    // Verified live: `function <ns>:setup` sets daytime to 6000 and this assert
+    // passes on Fabric + PackTest 2.4.0.
+    let mut sealed: Vec<String> = Vec::new();
+    sealed.push(format!(
+        "#> {}: environment sealed on boot (spec-0002)",
+        c.world.content.title
+    ));
+    sealed.push("# @dummy".to_string());
+    sealed.push("# @timeout 100".to_string());
+    sealed.push(String::new());
+    sealed.push(format!("function {ns}:setup"));
+    sealed.push("# time set noon -> daytime 6000 (the sole sealing command with a".to_string());
+    sealed.push("# vanilla read-back path; gamerules are asserted at compile time).".to_string());
+    sealed.push("execute store result score #sealtime dw.sys run time query daytime".to_string());
+    sealed.push("assert score #sealtime dw.sys matches 6000".to_string());
+
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/sealed_state.mcfunction"),
+        lines(&sealed).into_bytes(),
     );
 }
 

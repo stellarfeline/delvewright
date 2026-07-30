@@ -175,6 +175,94 @@ fn packtest_suite_is_a_real_test() {
     );
 }
 
+/// Environment sealing (spec-0002 "Environment sealing"): the bootstrap seals the
+/// box garden with the exact 1.21.11 gamerule commands (verified live — 1.21.11
+/// renamed the legacy camelCase rules to a snake_case registry) plus a fixed time
+/// of day. This is the authoritative sealing assertion (gamerule values have no
+/// vanilla read-back path, so PackTest cannot assert them in-game).
+#[test]
+fn environment_sealing_emitted() {
+    let out = build_hello_world();
+    let setup = text(&out, "datapack/data/hello-world/function/setup.mcfunction");
+
+    // Exact 1.21.11 forms — the old camelCase spellings are rejected live.
+    let expected = [
+        "gamerule spawn_mobs false",                   // was doMobSpawning
+        "gamerule advance_time false",                 // was doDaylightCycle
+        "gamerule advance_weather false",              // was doWeatherCycle
+        "gamerule fire_spread_radius_around_player 0", // was doFireTick (now an int radius)
+        "gamerule mob_griefing false",                 // was mobGriefing
+        "time set noon",                               // fixed authored time (v0 default)
+    ];
+    for cmd in expected {
+        assert!(
+            setup.lines().any(|l| l.trim() == cmd),
+            "sealing command missing / wrong form: `{cmd}`\nsetup:\n{setup}"
+        );
+    }
+
+    // The legacy camelCase identifiers must never be emitted (they don't parse on
+    // 1.21.11) — guards against a regression to the pre-1.21.11 spelling.
+    for legacy in [
+        "doMobSpawning",
+        "doDaylightCycle",
+        "doWeatherCycle",
+        "doFireTick",
+        "mobGriefing",
+    ] {
+        assert!(
+            !setup.contains(legacy),
+            "legacy gamerule name `{legacy}` must not be emitted (rejected on 1.21.11)"
+        );
+    }
+
+    // Sealing is part of the idempotent, `#init`-guarded bootstrap — it must run
+    // before the `#init` flag is set (so it fires exactly once per world).
+    let seal_idx = setup.find("gamerule ").expect("gamerule emitted");
+    let init_idx = setup
+        .find("scoreboard players set #init dw.sys 1")
+        .expect("init flag set");
+    assert!(
+        seal_idx < init_idx,
+        "sealing must precede the #init guard set"
+    );
+
+    // Every emitted sealing command still validates against the vendored 1.21.11
+    // command tree (covered broadly by `every_emitted_command_validates`, asserted
+    // here per-line for a precise failure).
+    let tree = CommandTree::v1_21_11();
+    for cmd in expected {
+        assert!(
+            tree.validate_line(cmd).is_ok(),
+            "sealing command fails the 1.21.11 command-tree validator: `{cmd}`"
+        );
+    }
+}
+
+/// The compiler-generated PackTest suite includes a sealed-state test that asserts
+/// the one sealing value with a vanilla read-back path: the pinned time of day.
+#[test]
+fn packtest_sealed_state_test_emitted() {
+    let out = build_hello_world();
+    let test = text(
+        &out,
+        "packtest-datapack/data/hello-world/test/sealed_state.mcfunction",
+    );
+    assert!(test.contains("# @dummy"), "declares a dummy player");
+    assert!(
+        test.contains("function hello-world:setup"),
+        "runs the real generated bootstrap (which applies sealing)"
+    );
+    assert!(
+        test.contains("run time query daytime"),
+        "queries the world time"
+    );
+    assert!(
+        test.contains("assert score #sealtime dw.sys matches 6000"),
+        "asserts time is noon (daytime 6000)"
+    );
+}
+
 #[test]
 fn dialog_buttons_run_the_trigger_commands() {
     let out = build_hello_world();
