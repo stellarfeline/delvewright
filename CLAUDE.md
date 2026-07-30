@@ -1,7 +1,8 @@
 # Delvewright — Agent Constitution
 
-Delvewright is an automated production line that outputs **one self-contained Minecraft
-adventure "delve" per month** for a fixed group of 1–4 players. A delve is a 2–3 hour
+Delvewright is an automated production line that outputs **self-contained Minecraft
+adventure "delves" on demand** for a fixed group of 1–4 players (owner decision
+2026-07-30, superseding the kickoff handoff's monthly cadence). A delve is a 2–3 hour
 (10h ceiling), story-driven, box-garden (箱庭) adventure map: adventure mode, class
 selection with pre-provided gear, zero grind. It ships as a versioned OCI image — one
 `docker run` = a joinable dungeon — and must be **provably completable by machine**

@@ -2,7 +2,9 @@
 
 Everything before content quality is about **proving the loop**. Milestones are
 sequential; each has a machine-verifiable exit criterion. Dates are omitted on
-purpose — the cadence goal (one delve/month) starts at M4, not before.
+purpose — the goal is on-demand generation (a new delve whenever the group wants
+one; owner decision 2026-07-30, superseding the handoff's monthly cadence), and it
+matures at M4, not before.
 
 ## M0 — Repo scaffolding *(first PR)*
 
@@ -63,10 +65,11 @@ hand edits to compiler output.
   manual workflow has run twice — see below).
 - Release automation: RC → full bot playthrough → multi-arch OCI publish → GitHub
   Release with content license.
-- Monthly cadence begins.
+- On-demand generation: producing a fresh delve is a routine, low-effort act, not a
+  project.
 
-**Exit**: one delve shipped per month for two consecutive months with < 1 owner-day
-of non-QA effort each.
+**Exit**: two delves produced on demand back-to-back, each with < 1 owner-day of
+non-QA effort.
 
 ## v2 horizon *(recorded, not designed — do not preclude)*
 
