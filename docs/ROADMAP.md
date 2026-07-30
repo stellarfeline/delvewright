@@ -58,8 +58,11 @@ sealing (spec-0002) added as an M2 emission requirement.
 - Creator playtest loop core (spec-0006): `playtest` compose profile, in-game
   `/trigger dw.note` marks, harvester → DSL-addressable `playtest-report.json`.
 
-**Exit**: an LLM-authored campaign passes static + PackTest + bot validation with no
-hand edits to compiler output.
+**Exit** (owner-defined 2026-07-30): with everything built and machine-tested, the
+owner opens a **fresh session** and produces a complete, playable delve end-to-end
+via `/new-delve` — an LLM-authored campaign passing static + PackTest + bot
+validation with no hand edits to compiler output, joinable through the play
+profile.
 
 ## M3 — First real delve
 
