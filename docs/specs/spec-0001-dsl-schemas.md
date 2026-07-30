@@ -133,6 +133,43 @@ Prefab metadata (in `prefabs/`, format owned by this spec) declares named anchor
 structure. The compiler resolves `anchor/…` refs against the prefabs actually bound in
 stage 1 and fails validation on any miss. Every area's prefab must declare `spawn`.
 
+**Lighting contract (owner QA finding 2026-07-30, refined same day):** the M1
+failure was *accidental* darkness — nobody decided the room should be dark. The
+rule is therefore: **darkness must be a declared design decision, never a default.**
+(The validation bot navigates by protocol data, not vision, so machine validation
+cannot "see" darkness — this contract is how it becomes checkable anyway.)
+
+- **Measured once at library admission**: when a prefab enters `prefabs/`, a
+  tooling pass places it in a test world and measures walkable-floor light levels
+  (deterministic thanks to environment sealing's fixed time, spec-0002); the
+  minimum is recorded in prefab metadata. No per-build lighting computation.
+- **Three declared profiles** in metadata: `lit` (floor light ≥ 7 — the default
+  requirement), `dim` (3–6, allowed with a stated atmosphere rationale), `dark`
+  (< 3, requires a checkable mitigation).
+- **Compile-time check (M2, new DW02xx)**: a player-reachable area bound to a
+  `dark` prefab passes analysis only if the quest DAG guarantees the player holds a
+  mitigation (e.g. night-vision in the class kit or granted by a quest that
+  provably precedes entry). Atmosphere stays a creative option; unlit-by-accident
+  becomes a compile error.
+- The M1 `hello-room` (shipped unlit, no declaration) is re-lit to `lit` in M2.
+
+## v0.2 planned restructure (owner decision 2026-07-30; schema work lands M2)
+
+**Dialogue moves out of stage 2 into its own final stage.** Rationale (owner):
+dialogue options are a species of trigger — they belong with flow generation — and
+character voice must be written in one pass per NPC to avoid tonal seams between
+"flavor" lines and "task" lines written at different times.
+
+- Stage 2 slims to **casting sheets**: identity, role, area/anchor, speech style,
+  backstory hooks — no dialogue trees.
+- New final **stage 6 `dialogue`**: per-NPC complete dialogue trees (flavor + task
+  options together), generated conditioned on that NPC's casting sheet plus every
+  quest involving them. `complete-objective` effects become **backward** references
+  to stage-5 objective IDs — the forward-reference wrinkle in v0.1 disappears and
+  stage dependencies are strictly one-way again.
+- The "talk-to objective has ≥1 reachable completing option" check (DW0203 family)
+  moves to the stage-6 boundary. The hello-world fixture migrates with the schema.
+
 ## Validation rules (each rule gets a violating fixture in CI)
 
 1. Envelope: wrong `stage`, unknown fields, bad `dsl_version` → reject.

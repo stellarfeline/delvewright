@@ -38,6 +38,13 @@ stage end-to-end:
 the hello-world delve from Minecraft via the one-command playtest path. This is the
 project's heartbeat; everything later just makes the delve bigger.
 
+**Status: COMPLETE (2026-07-30).** All machine steps green in CI; owner played the
+hello-world delve end-to-end. Owner QA findings feeding M2: (1) the hello-room
+shipped **unlit** — the bot navigates by protocol data, not vision, so darkness is
+invisible to machine validation; lighting is now a prefab authoring requirement
+(spec-0001). (2) Natural hostile spawns are currently uncontrolled — environment
+sealing (spec-0002) added as an M2 emission requirement.
+
 ## M2 — Real DSL + prefab library seed
 
 - Full staged schemas (spec-0001) implemented with cross-stage referential validation.
