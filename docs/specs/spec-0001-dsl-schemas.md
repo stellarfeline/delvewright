@@ -1,7 +1,8 @@
 # spec-0001: Campaign DSL schemas (staged)
 
-- **Status**: v0.1 Approved & implemented (M1); **v0.2 Draft — owner approval
-  pending** (implementation is M2 task #8)
+- **Status**: v0.1 Approved & implemented (M1); **v0.2 Approved & implemented**
+  (M2 task #8 — six-document schema, structured persona, stage-6 dialogue,
+  prefab-pool binding + lighting metadata; pool *layout* assembly still M2 task #9)
 - **ADRs**: 0001 (DSL→compiler), 0002 (staged), 0004 (prefab refs), 0006
   (determinism), 0012 (skill authors these documents)
 
@@ -161,14 +162,15 @@ As refined 2026-07-30 — darkness must be a declared decision, never a default:
 
 ## Acceptance criteria (v0.2)
 
-- [ ] Migrated six-document hello-world fixture parses, validates clean, and
+- [x] Migrated six-document hello-world fixture parses, validates clean, and
       round-trips byte-identically; compiled output passes the full M1 validation
-      ladder unchanged in behavior (bot playthrough still green).
-- [ ] Every rule above has a violating fixture yielding exactly its code; codes
+      ladder unchanged in behavior (bot playthrough still green; emitted `datapack/`
+      byte-identical to pre-migration).
+- [x] Every rule above has a violating fixture yielding exactly its code; codes
       table updated in `crates/dsl/README.md`.
-- [ ] `delvec schema --stage 6` exported and CI-verified against fixtures.
-- [ ] A dark-prefab fixture without mitigation fails analysis; the same fixture
-      with night-vision in the kit passes (new DW02xx).
+- [x] `delvec schema --stage 6` exported and CI-verified against fixtures.
+- [x] A dark-prefab fixture without mitigation fails analysis; the same fixture
+      with night-vision in the kit passes (`DW0210`).
 - [ ] A multi-piece `prefab_pool` fixture compiles with seed-stable layout
       (task #9's experiment gates this criterion).
 

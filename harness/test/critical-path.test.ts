@@ -11,7 +11,7 @@ import {
 // so tests can mutate.
 function validRaw(): Record<string, unknown> {
   return {
-    version: "0.1.0",
+    version: "0.2.0",
     campaign_id: "hello-world",
     steps: [
       {

@@ -11,7 +11,7 @@
 // `assert-complete` carries a `scoreboard: { objective, value }` object.
 
 /** The critical-path format is versioned with the DSL (spec-0002). */
-export const SUPPORTED_DSL_VERSION = "0.1.0";
+export const SUPPORTED_DSL_VERSION = "0.2.0";
 
 /** The closed set of critical-path step actions (spec-0002 / spec-0001 enum). */
 export const STEP_ACTIONS = [

@@ -71,7 +71,7 @@ const assertComplete: AssertCompleteStep = {
 };
 
 function path(steps: Step[]): CriticalPath {
-  return { version: "0.1.0", campaignId: "hello-world", steps };
+  return { version: "0.2.0", campaignId: "hello-world", steps };
 }
 
 test("validateStepOrder accepts the canonical order", () => {
