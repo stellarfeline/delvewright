@@ -6,23 +6,30 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostic::{Diagnostic, codes};
-use crate::envelope::{Campaign, SUPPORTED_DSL_VERSION, Stage};
-use crate::registry::{AnchorRegistry, ItemRegistry, VendoredAnchorRegistry, VendoredItemRegistry};
-use crate::stages::QuestEffect;
+use crate::envelope::{Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, is_v03};
+use crate::registry::{
+    AnchorRegistry, EntityRegistry, ItemRegistry, VendoredAnchorRegistry, VendoredEntityRegistry,
+    VendoredItemRegistry,
+};
+use crate::stages::{Objective, QuestEffect};
 
 /// Validate a campaign against all spec-0001 rules using the vendored v0
-/// registries (subset item registry + hello-world anchor metadata).
+/// registries (subset item + entity registries + hello-world anchor metadata).
 pub fn validate_campaign(c: &Campaign) -> Vec<Diagnostic> {
     let items = VendoredItemRegistry::v1_21_11();
+    let entities = VendoredEntityRegistry::v1_21_11();
     let anchors = VendoredAnchorRegistry::hello_world();
-    validate_campaign_with(c, &items, &anchors)
+    validate_campaign_with(c, &items, &anchors, &entities)
 }
 
-/// Validate a campaign with caller-supplied registries.
+/// Validate a campaign with caller-supplied registries. The `entities` registry
+/// (DSL v0.3) validates stage-5 wave mobs; the compiler injects the full
+/// 1.21.11 item/entity registries and real prefab metadata.
 pub fn validate_campaign_with(
     c: &Campaign,
     items: &dyn ItemRegistry,
     anchors: &dyn AnchorRegistry,
+    entities: &dyn EntityRegistry,
 ) -> Vec<Diagnostic> {
     let mut d: Vec<Diagnostic> = Vec::new();
 
@@ -37,6 +44,12 @@ pub fn validate_campaign_with(
     prefab_binding(c, anchors, &mut d);
     anchors_and_items(c, items, anchors, &mut d);
     cross_stage(c, &mut d);
+    // DSL v0.3: the new stage-5 verbs, waves and flags. Gated on the quests
+    // stage's version so a v0.2 campaign is unaffected (its uses of these verbs
+    // are still rejected as reserved by `reserved`, above).
+    if is_v03(c.quests.dsl_version.as_str()) {
+        v03_checks(c, items, anchors, entities, &mut d);
+    }
 
     d
 }
@@ -79,12 +92,14 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 ),
             ));
         }
-        if version != SUPPORTED_DSL_VERSION {
+        if !is_supported_version(version) {
             d.push(Diagnostic::error(
                 codes::DSL_VERSION,
                 expected.name(),
                 "/dsl_version",
-                format!("unsupported dsl_version `{version}`, expected `{SUPPORTED_DSL_VERSION}`"),
+                format!(
+                    "unsupported dsl_version `{version}`, expected one of {SUPPORTED_DSL_VERSIONS:?}"
+                ),
             ));
         }
     }
@@ -712,6 +727,11 @@ fn after_ordering(c: &Campaign, d: &mut Vec<Diagnostic>) {
 // ---------------------------------------------------------------------------
 
 fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    // The v0.3 verbs (`kill`/`collect`/`interact`, `give-item`/`set-flag`/
+    // `spawn-wave`) are implemented under dsl_version 0.3.0 and reserved under
+    // 0.2.0. NPC roles `vendor`/`boss` remain reserved in both.
+    let v03 = is_v03(c.quests.dsl_version.as_str());
+
     for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
         if let Some(name) = npc.role.reserved() {
             d.push(Diagnostic::error(
@@ -724,22 +744,26 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
     for (i, q) in c.quests.content.quests.iter().enumerate() {
         for (j, obj) in q.objectives.iter().enumerate() {
-            if let Some(name) = obj.reserved() {
+            if let Some(name) = obj.v03_verb()
+                && !v03
+            {
                 d.push(Diagnostic::error(
                     codes::RESERVED,
                     "quests",
                     format!("/content/quests/{i}/objectives/{j}/type"),
-                    format!("objective type `{name}` is reserved (not implemented in v0)"),
+                    format!("objective type `{name}` is reserved (requires dsl_version 0.3.0)"),
                 ));
             }
         }
         for_each_effect(q, |path, eff| {
-            if let Some(name) = eff.reserved() {
+            if let Some(name) = eff.v03_effect()
+                && !v03
+            {
                 d.push(Diagnostic::error(
                     codes::RESERVED,
                     "quests",
                     format!("/content/quests/{i}/{path}/type"),
-                    format!("effect `{name}` is reserved (not implemented in v0)"),
+                    format!("effect `{name}` is reserved (requires dsl_version 0.3.0)"),
                 ));
             }
         });
@@ -967,6 +991,224 @@ fn cross_stage(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 ),
             ));
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DSL v0.3 — waves, flags, and the new stage-5 verbs
+// ---------------------------------------------------------------------------
+
+/// The v0.3 semantic checks (run only for `dsl_version` 0.3.0):
+///
+/// - wave declarations: id syntax (`DW0110`), uniqueness (`DW0111`), mob entity
+///   ids (`DW0173`);
+/// - `kill.wave` / `spawn-wave.wave` reference a declared wave (`DW0170`);
+/// - a killed wave is spawned by some `spawn-wave` effect (`DW0171`);
+/// - `requires_flags` reference a flag some `set-flag` effect produces
+///   (`DW0172`);
+/// - item ids on `collect` / `interact.requires_item` / `give-item` are in the
+///   registry (`DW0143`, reused);
+/// - `collect` / `interact` anchors resolve against the quest's single-prefab
+///   area (`DW0142`, reused; pool-area anchors are resolved by the compiler,
+///   as for `reach-anchor`).
+fn v03_checks(
+    c: &Campaign,
+    items: &dyn ItemRegistry,
+    anchors: &dyn AnchorRegistry,
+    entities: &dyn EntityRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let quests = &c.quests.content;
+
+    // Wave declarations.
+    let mut declared_waves: BTreeSet<&str> = BTreeSet::new();
+    let mut seen_waves: BTreeSet<&str> = BTreeSet::new();
+    for (i, w) in quests.waves.iter().enumerate() {
+        if !w.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::ID_SYNTAX,
+                "quests",
+                format!("/content/waves/{i}/id"),
+                format!("malformed wave id `{}`", w.id),
+            ));
+        }
+        if !seen_waves.insert(w.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ID_DUPLICATE,
+                "quests",
+                format!("/content/waves/{i}/id"),
+                format!("duplicate wave id `{}`", w.id),
+            ));
+        }
+        declared_waves.insert(w.id.as_str());
+        for (k, m) in w.mobs.iter().enumerate() {
+            if !entities.contains(&m.entity) {
+                d.push(Diagnostic::error(
+                    codes::ENTITY_UNKNOWN,
+                    "quests",
+                    format!("/content/waves/{i}/mobs/{k}/entity"),
+                    format!("`{}` is not a known 1.21.11 entity id", m.entity),
+                ));
+            }
+        }
+    }
+
+    // Flags declared by `set-flag`; waves spawned by `spawn-wave` (first pass —
+    // needed before the reference checks below).
+    let mut declared_flags: BTreeSet<&str> = BTreeSet::new();
+    let mut spawned_waves: BTreeSet<&str> = BTreeSet::new();
+    for q in &quests.quests {
+        let effs = q
+            .on_objective_complete
+            .values()
+            .flatten()
+            .chain(q.on_complete.iter());
+        for eff in effs {
+            if let Some(f) = eff.set_flag() {
+                declared_flags.insert(f.as_str());
+            }
+            if let Some(w) = eff.spawn_wave() {
+                spawned_waves.insert(w.as_str());
+            }
+        }
+    }
+
+    // area id -> its single-prefab anchor set (pool areas deferred to compiler).
+    let mut area_anchors: BTreeMap<&str, &BTreeSet<String>> = BTreeMap::new();
+    for a in &c.world.content.areas {
+        if let Some(prefab) = &a.prefab
+            && let Some(set) = anchors.anchors_for(prefab)
+        {
+            area_anchors.insert(a.id.as_str(), set);
+        }
+    }
+    let quest_area: BTreeMap<&str, &str> = c
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .map(|q| (q.id.as_str(), q.area.as_str()))
+        .collect();
+
+    // Reference checks.
+    for (i, q) in quests.quests.iter().enumerate() {
+        let set = quest_area
+            .get(q.id.as_str())
+            .and_then(|area| area_anchors.get(*area).copied());
+
+        for (j, obj) in q.objectives.iter().enumerate() {
+            match obj {
+                Objective::Kill { wave, .. } => {
+                    if !declared_waves.contains(wave.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::WAVE_UNKNOWN,
+                            "quests",
+                            format!("/content/quests/{i}/objectives/{j}/wave"),
+                            format!("kill objective references unknown wave `{wave}`"),
+                        ));
+                    } else if !spawned_waves.contains(wave.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::WAVE_NEVER_SPAWNED,
+                            "quests",
+                            format!("/content/quests/{i}/objectives/{j}/wave"),
+                            format!(
+                                "wave `{wave}` is killed but never spawned by any `spawn-wave` \
+                                 effect; a wave must be spawned before its kill objective is \
+                                 reachable"
+                            ),
+                        ));
+                    }
+                }
+                Objective::Collect { item, anchor, .. } => {
+                    if !items.contains(item) {
+                        d.push(Diagnostic::error(
+                            codes::ITEM_UNKNOWN,
+                            "quests",
+                            format!("/content/quests/{i}/objectives/{j}/item"),
+                            format!("item `{item}` is not in the 1.21.11 registry"),
+                        ));
+                    }
+                    anchor_resolves(set, anchor, i, j, "anchor", d);
+                }
+                Objective::Interact {
+                    anchor,
+                    requires_item,
+                    ..
+                } => {
+                    if let Some(it) = requires_item
+                        && !items.contains(it)
+                    {
+                        d.push(Diagnostic::error(
+                            codes::ITEM_UNKNOWN,
+                            "quests",
+                            format!("/content/quests/{i}/objectives/{j}/requires_item"),
+                            format!("requires_item `{it}` is not in the 1.21.11 registry"),
+                        ));
+                    }
+                    anchor_resolves(set, anchor, i, j, "anchor", d);
+                }
+                Objective::TalkTo { .. } | Objective::ReachAnchor { .. } => {}
+            }
+
+            for (m, f) in obj.requires_flags().iter().enumerate() {
+                if !declared_flags.contains(f.as_str()) {
+                    d.push(Diagnostic::error(
+                        codes::FLAG_UNKNOWN,
+                        "quests",
+                        format!("/content/quests/{i}/objectives/{j}/requires_flags/{m}"),
+                        format!(
+                            "requires_flags references flag `{f}`, which no `set-flag` effect \
+                             ever produces"
+                        ),
+                    ));
+                }
+            }
+        }
+
+        for_each_effect(q, |path, eff| {
+            if let Some(w) = eff.spawn_wave()
+                && !declared_waves.contains(w.as_str())
+            {
+                d.push(Diagnostic::error(
+                    codes::WAVE_UNKNOWN,
+                    "quests",
+                    format!("/content/quests/{i}/{path}/wave"),
+                    format!("spawn-wave effect references unknown wave `{w}`"),
+                ));
+            }
+            if let Some(it) = eff.give_item()
+                && !items.contains(it)
+            {
+                d.push(Diagnostic::error(
+                    codes::ITEM_UNKNOWN,
+                    "quests",
+                    format!("/content/quests/{i}/{path}/item"),
+                    format!("give-item effect item `{it}` is not in the 1.21.11 registry"),
+                ));
+            }
+        });
+    }
+}
+
+/// Push `DW0142` if `anchor` is not provided by the quest's (known single-prefab)
+/// area. `None` set = pool area or unknown prefab → deferred to the compiler.
+fn anchor_resolves(
+    set: Option<&BTreeSet<String>>,
+    anchor: &crate::ids::AnchorId,
+    qi: usize,
+    oi: usize,
+    field: &str,
+    d: &mut Vec<Diagnostic>,
+) {
+    if let Some(set) = set
+        && !set.contains(anchor.as_str())
+    {
+        d.push(Diagnostic::error(
+            codes::ANCHOR_UNRESOLVED,
+            "quests",
+            format!("/content/quests/{qi}/objectives/{oi}/{field}"),
+            format!("anchor `{anchor}` is not provided by the quest's prefab"),
+        ));
     }
 }
 

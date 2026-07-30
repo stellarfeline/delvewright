@@ -30,7 +30,8 @@
               },
               {
                 "type": "kill",
-                "id": "obj/guard"
+                "id": "obj/guard",
+                "wave": "wave/guards"
               }
             ],
             "on_objective_complete": {

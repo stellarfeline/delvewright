@@ -23,20 +23,22 @@ pub mod validate;
 pub use canonical::to_canonical_string;
 pub use diagnostic::{Diagnostic, Severity, codes};
 pub use envelope::{
-    Campaign, Envelope, RawCampaign, SUPPORTED_DSL_VERSION, Stage, check_campaign, parse_campaign,
+    Campaign, Envelope, RawCampaign, SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage,
+    check_campaign, is_supported_version, is_v03, parse_campaign,
 };
 pub use ids::{
-    AnchorId, AreaId, CampaignId, ClassId, DialogueId, NpcId, ObjectiveId, PoolId, PrefabId,
-    QuestId,
+    AnchorId, AreaId, CampaignId, ClassId, DialogueId, FlagId, NpcId, ObjectiveId, PoolId,
+    PrefabId, QuestId, WaveId,
 };
 pub use registry::{
-    AnchorRegistry, ItemRegistry, Lighting, LightingProfile, VendoredAnchorRegistry,
-    VendoredItemRegistry,
+    AnchorRegistry, EntityRegistry, ItemRegistry, Lighting, LightingProfile,
+    VendoredAnchorRegistry, VendoredEntityRegistry, VendoredItemRegistry,
 };
 pub use schema::stage_schema;
 pub use stages::{
     Area, Class, ClassesContent, DialogueContent, DialogueEffect, DialogueNode, DialogueOption,
     KitItem, Npc, NpcDialogue, NpcsContent, Objective, Persona, Pieces, PlannedQuest, Quest,
-    QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, Trigger, WorldContent,
+    QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, Trigger, Wave, WaveMob,
+    WorldContent,
 };
 pub use validate::{validate_campaign, validate_campaign_with};

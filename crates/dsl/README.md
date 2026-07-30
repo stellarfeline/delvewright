@@ -12,7 +12,8 @@ DSL: JSON Schemas are exported from the Rust types, never hand-maintained.
   `#[serde(deny_unknown_fields)]`. IDs are type-prefixed kebab-case newtypes
   (`area/…`, `npc/…`, `class/…`, `quest/…`, `dlg/…`, `obj/…`, `anchor/…`,
   `prefab/…`, `pool/…`) that parse permissively and expose `is_valid_syntax()`.
-- **Validation** (`validate::validate_campaign`): all spec-0001 v0.2 rule groups,
+- **Validation** (`validate::validate_campaign`): all spec-0001 v0.2 rule groups
+  plus the v0.3 verb/wave/flag group (`DW0170`–`DW0173`, gated on `dsl_version`),
   returning `Diagnostic { code, severity, stage, path, message }` in the
   spec-0002 `--json` shape.
 - **Canonical serialization** (`canonical::to_canonical_string`): the single
@@ -21,8 +22,9 @@ DSL: JSON Schemas are exported from the Rust types, never hand-maintained.
   byte-identical (enforced by `tests/roundtrip.rs`).
 - **JSON Schema export** (`schema::stage_schema`): one full-envelope JSON Schema
   (draft 2020-12) per stage, via `schemars`.
-- **Registries** (`registry`): `ItemRegistry` and `AnchorRegistry` traits, with
-  small vendored v0 implementations (see [Registries](#registries)).
+- **Registries** (`registry`): `ItemRegistry`, `EntityRegistry` (v0.3 wave mobs)
+  and `AnchorRegistry` traits, with small vendored v0 implementations (see
+  [Registries](#registries)).
 
 Determinism (ADR-0006): all iteration is over `BTreeMap`/`BTreeSet` or slices;
 nothing depends on hash order, wall-clock, or absolute paths.
@@ -75,6 +77,10 @@ has ≥1 invalid fixture under `fixtures/invalid/` that violates only that rule.
 | `DW0153` | 6 Cross-stage | Stage-6 dialogue tree references an NPC not declared in stage 2. |
 | `DW0160` | 6 Prefab binding | Area binds neither or both of `prefab` / `prefab_pool` (exactly one required). |
 | `DW0161` | 6 Prefab binding | Area `prefab_pool` references a pool absent from `prefabs/` metadata. |
+| `DW0170` | 5 Waves (v0.3) | A `kill` objective or `spawn-wave` effect references a `wave/<id>` not declared in the stage-5 `waves` section (dangling wave ref). |
+| `DW0171` | 5 Waves (v0.3) | A declared wave is referenced by a `kill` objective but is never spawned by any `spawn-wave` effect (a wave must be spawned before its kill objective is reachable). |
+| `DW0172` | 5 Flags (v0.3) | A `requires_flags` entry references a `flag/<id>` that no `set-flag` effect ever produces (dangling flag ref). |
+| `DW0173` | 5 Waves (v0.3) | A wave mob `entity` is not a known vanilla entity id. Item-id checks for `collect.item`, `interact.requires_item` and `give-item.item` reuse `DW0143`; their anchors reuse `DW0142`. |
 
 `severity` is `error` for every v0 code; `warning` exists in the shape for
 future advisory rules. `path` is a JSON-pointer-ish location within the stage
@@ -82,14 +88,27 @@ document (map-key segments are not `~1`-escaped — it is a locator, not a stric
 pointer). `DW0100`'s path is the document root, since serde parse errors are not
 path-addressable.
 
+### DSL versions (0.2.0 and 0.3.0)
+
+v0.3 is an **additive superset** of v0.2 (`SUPPORTED_DSL_VERSIONS`): a v0.2
+campaign remains valid and compiles byte-identically. The new stage-5 verbs
+(`kill`/`collect`/`interact`), effects (`give-item`/`set-flag`/`spawn-wave`),
+the `waves` section and `requires_flags` are gated on `dsl_version` 0.3.0 — the
+gate is the **quests-stage** version (all the v0.3 surface lives in stage 5).
+The `v03_checks` group (`DW0170`–`DW0173`, plus reuse of `DW0142`/`DW0143`) runs
+only under 0.3.0; under 0.2.0 those verbs/effects are still rejected as reserved
+(`DW0141`). A campaign is expected to use a uniform version across its six
+documents; the mixed-version invalid fixtures are a testing convenience.
+
 ### Reserved values
 
-`DW0141` covers the reserved enum values spec-0001 lists as "not yet
-implemented":
+`DW0141` covers enum values that are not yet implemented **for the campaign's
+`dsl_version`**:
 
-- `npcs`: `role: vendor` / `role: boss`.
-- `quests`: objective `type: kill | collect | interact`; effect
-  `type: give-item | set-flag | spawn-wave`.
+- `npcs`: `role: vendor` / `role: boss` (reserved in both 0.2.0 and 0.3.0).
+- `quests` **under 0.2.0 only**: objective `type: kill | collect | interact`;
+  effect `type: give-item | set-flag | spawn-wave`. Under 0.3.0 these are
+  implemented (see [DSL versions](#dsl-versions-020-and-030)).
 
 (`prefab_pool` is no longer reserved in v0.2 — it is a real stage-1 binding,
 validated by `DW0160`/`DW0161`.)
@@ -144,6 +163,10 @@ the M1 fixtures use:
 - `VendoredItemRegistry::v1_21_11()` — the item ids in `data/items-1.21.11.json`.
   **The full 1.21.11 item registry is vendored in the compiler task (spec-0002);**
   the compiler injects it via `validate_campaign_with`.
+- `VendoredEntityRegistry::v1_21_11()` — the hostile-mob ids in
+  `data/entities-1.21.11.json`, used to validate v0.3 wave mobs (`DW0173`). A
+  full 1.21.11 entity registry is injected by the compiler (currently the same
+  vendored subset, pending the wave-emission task).
 - `VendoredAnchorRegistry::hello_world()` — the anchors the hello-world prefab
   declares (`data/anchors.json`) plus a fixture pool (`data/pools.json`) so
   prefab-pool existence checks are non-vacuous. Real prefab anchor metadata lives

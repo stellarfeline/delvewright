@@ -102,4 +102,18 @@ pub mod codes {
     pub const PREFAB_BINDING: &str = "DW0160";
     /// Area `prefab_pool` references a pool absent from `prefabs/` metadata.
     pub const POOL_UNKNOWN: &str = "DW0161";
+    /// (v0.3) A `kill` objective or `spawn-wave` effect references a `wave/<id>`
+    /// not declared in the stage-5 `waves` section (dangling wave reference).
+    pub const WAVE_UNKNOWN: &str = "DW0170";
+    /// (v0.3) A declared wave is referenced by a `kill` objective but is never
+    /// spawned by any `spawn-wave` effect (referenced-but-never-spawned). A wave
+    /// must be spawned by some effect before its kill objective is reachable.
+    pub const WAVE_NEVER_SPAWNED: &str = "DW0171";
+    /// (v0.3) A `requires_flags` entry references a `flag/<id>` that no `set-flag`
+    /// effect ever produces (dangling flag reference).
+    pub const FLAG_UNKNOWN: &str = "DW0172";
+    /// (v0.3) A wave mob `entity` is not a known vanilla entity id. (Item-id
+    /// checks for `collect.item`, `interact.requires_item` and `give-item.item`
+    /// reuse [`ITEM_UNKNOWN`] / `DW0143`.)
+    pub const ENTITY_UNKNOWN: &str = "DW0173";
 }

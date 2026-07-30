@@ -19,7 +19,7 @@ use crate::plan::{
     self, Plan, ResolvedAnchor, Step, campaign_start_quests, obj_score, objective_effects,
     objective_quest, quest_active_score, quest_score,
 };
-use crate::{DELVEC_VERSION, DSL_VERSION, MC_VERSION, PACK_FORMAT};
+use crate::{DELVEC_VERSION, MC_VERSION, PACK_FORMAT};
 
 use delvewright_dsl::{Objective, QuestEffect, Trigger};
 
@@ -389,6 +389,7 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
                 anchor,
                 radius,
                 after,
+                ..
             } = o
             {
                 let pos = match plan
@@ -961,7 +962,9 @@ fn emit_critical_path(plan: &Plan) -> Value {
         })
         .collect();
     json!({
-        "version": DSL_VERSION,
+        // Campaign-derived (not the compiler's max supported version): a v0.2
+        // campaign emits a v0.2 critical path, a v0.3 campaign a v0.3 one.
+        "version": plan.campaign.world.dsl_version,
         "campaign_id": plan.namespace,
         "steps": steps
     })
@@ -979,7 +982,7 @@ fn emit_manifest(plan: &Plan, input_bytes: &BTreeMap<String, Vec<u8>>, out: &Bui
     json!({
         "campaign_id": plan.namespace,
         "delvec_version": DELVEC_VERSION,
-        "dsl_version": DSL_VERSION,
+        "dsl_version": plan.campaign.world.dsl_version,
         "mc_version": MC_VERSION,
         "inputs": inputs,
         "outputs": outputs

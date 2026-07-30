@@ -9,8 +9,26 @@ use crate::stages::{
     ClassesContent, DialogueContent, NpcsContent, QuestPlanContent, QuestsContent, WorldContent,
 };
 
-/// The `dsl_version` this crate implements.
-pub const SUPPORTED_DSL_VERSION: &str = "0.2.0";
+/// The latest `dsl_version` this crate implements (identity / tooling default).
+pub const SUPPORTED_DSL_VERSION: &str = "0.3.0";
+
+/// Every `dsl_version` this crate accepts. v0.3 is an **additive superset** of
+/// v0.2 (new stage-5 verbs, waves, flags); v0.2 campaigns remain valid and
+/// compile byte-identically. The reserved verbs (`kill`/`collect`/`interact`,
+/// `give-item`/`set-flag`/`spawn-wave`) are implemented only under `0.3.0`; a
+/// `0.2.0` document using them is still rejected with `DW0141`.
+pub const SUPPORTED_DSL_VERSIONS: &[&str] = &["0.2.0", "0.3.0"];
+
+/// True if `version` is a `dsl_version` this crate accepts.
+pub fn is_supported_version(version: &str) -> bool {
+    SUPPORTED_DSL_VERSIONS.contains(&version)
+}
+
+/// True if `version` enables the DSL v0.3 verbs (`kill`/`collect`/`interact`,
+/// `give-item`/`set-flag`/`spawn-wave`, waves, flags).
+pub fn is_v03(version: &str) -> bool {
+    version == "0.3.0"
+}
 
 /// Which stage a document belongs to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

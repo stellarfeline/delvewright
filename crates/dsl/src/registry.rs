@@ -19,6 +19,15 @@ pub trait ItemRegistry {
     fn contains(&self, item_id: &str) -> bool;
 }
 
+/// Membership test for vanilla entity ids (`minecraft:zombie`, …), used to
+/// validate stage-5 wave mobs (DSL v0.3). Like [`ItemRegistry`], the crate ships
+/// a small vendored subset; the compiler injects the full 1.21.11 entity registry
+/// via [`crate::validate::validate_campaign_with`].
+pub trait EntityRegistry {
+    /// True if `entity_id` is a known entity in the pinned MC version.
+    fn contains(&self, entity_id: &str) -> bool;
+}
+
 /// A prefab lighting profile (spec-0001 "Lighting contract"). `lit` = floor
 /// light ≥ 7; `dim` = 3–6 (needs a rationale); `dark` = < 3 (valid only where
 /// analysis proves a night-vision mitigation — the compiler's `DW0210` check).
@@ -92,6 +101,31 @@ impl VendoredItemRegistry {
 impl ItemRegistry for VendoredItemRegistry {
     fn contains(&self, item_id: &str) -> bool {
         self.ids.contains(item_id)
+    }
+}
+
+/// Vendored entity registry loaded from an embedded JSON array of entity ids
+/// (the common hostile mobs used by v0.3 wave fixtures).
+#[derive(Debug, Clone)]
+pub struct VendoredEntityRegistry {
+    ids: BTreeSet<String>,
+}
+
+impl VendoredEntityRegistry {
+    /// The v0 subset of the 1.21.11 entity registry used by wave fixtures.
+    pub fn v1_21_11() -> Self {
+        let raw = include_str!("../data/entities-1.21.11.json");
+        let ids: Vec<String> =
+            serde_json::from_str(raw).expect("embedded entity registry is valid JSON");
+        Self {
+            ids: ids.into_iter().collect(),
+        }
+    }
+}
+
+impl EntityRegistry for VendoredEntityRegistry {
+    fn contains(&self, entity_id: &str) -> bool {
+        self.ids.contains(entity_id)
     }
 }
 

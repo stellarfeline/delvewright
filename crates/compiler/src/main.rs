@@ -15,7 +15,9 @@ use delvewright_compiler::load::load_campaign_dir;
 use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{FullItemRegistry, PrefabRegistry};
 use delvewright_compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
-use delvewright_dsl::{Diagnostic, Stage, parse_campaign, stage_schema, validate_campaign_with};
+use delvewright_dsl::{
+    Diagnostic, Stage, VendoredEntityRegistry, parse_campaign, stage_schema, validate_campaign_with,
+};
 
 /// Internal-error exit code (spec-0002: ≥10).
 const EXIT_INTERNAL: u8 = 10;
@@ -112,10 +114,14 @@ fn validate_stage(
         EXIT_INTERNAL
     })?;
     let items = FullItemRegistry::v1_21_11();
+    // v0.3 wave-mob entity validation. The vendored subset covers the common
+    // hostile mobs; a full 1.21.11 entity registry is a follow-up when wave
+    // emission lands (kept a subset here to avoid unvetted vendored data).
+    let entities = VendoredEntityRegistry::v1_21_11();
 
     match parse_campaign(&loaded.raw) {
         Ok(campaign) => {
-            let diags = validate_campaign_with(&campaign, &items, &prefabs);
+            let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
             print_diags(&diags, json);
             Ok((campaign, prefabs, diags))
         }
