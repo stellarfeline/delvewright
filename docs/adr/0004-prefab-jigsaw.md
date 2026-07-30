@@ -32,6 +32,13 @@ insufficient.
   the compiler's output surface.
 - Prefabs are binary assets → git-lfs (`prefabs/`).
 
+## Verification (2026-07-30)
+
+The M2 seed-stability experiment (`docs/experiments/m2-jigsaw-seed-stability/`)
+confirmed `/place jigsaw` layout is a **pure (world seed, position) function** on
+pinned 1.21.11 — 6/6 fresh worlds identical per seed, order-independent. The GDPC
+fallback below remains documented but is not needed.
+
 ## Revisit triggers
 
 Adopt the offline-assembly fallback if any of these occur:
