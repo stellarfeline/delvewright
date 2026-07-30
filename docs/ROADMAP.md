@@ -1,0 +1,77 @@
+# Roadmap
+
+Everything before content quality is about **proving the loop**. Milestones are
+sequential; each has a machine-verifiable exit criterion. Dates are omitted on
+purpose — the cadence goal (one delve/month) starts at M4, not before.
+
+## M0 — Repo scaffolding *(first PR)*
+
+CLAUDE.md + ADRs + spec skeletons + CI skeleton (cargo fmt/clippy/test + markdown
+lint). No feature code. See `docs/scaffolding-plan.md`.
+
+**Exit**: repo public on GitHub, CI green on an empty Rust workspace, branch
+protection requires green CI.
+
+## M1 — Hello-world delve *(the loop, proven)*
+
+A trivially small **hand-written** DSL instance (one room, one NPC, one quest:
+"talk to the keeper, open the door, touch the exit") that exercises every pipeline
+stage end-to-end:
+
+1. DSL validates against v0 schemas.
+2. Compiler emits a datapack + world **deterministically** (double-compile,
+   hash-compare — in CI from this milestone on).
+3. Datapack loads on a headless pinned-version server with zero errors.
+4. One PackTest assertion passes via `-Dpacktest.auto` (exit code checked).
+5. A mineflayer bot joins, selects a class, walks the critical path, and reaches the
+   end — in CI, using the `validation/` compose image.
+6. The result is packaged as an OCI image; `docker run` locally yields a joinable
+   world.
+
+**Exit**: a single CI workflow run shows all six steps green. This is the project's
+heartbeat; everything later just makes the delve bigger.
+
+## M2 — Real DSL + prefab library seed
+
+- Full staged schemas (spec-0001) implemented with cross-stage referential validation.
+- Static quest-graph reachability analysis (spec-0003's static half) with fixture
+  campaigns that must pass/fail correctly.
+- Prefab library seeded (~10–20 pieces) with metadata + license provenance; jigsaw
+  assembly from DSL with seed-controlled reproducible layout.
+- First LLM-generated (not hand-written) campaign compiles and passes validation.
+
+**Exit**: an LLM-authored campaign passes static + PackTest + bot validation with no
+hand edits to compiler output.
+
+## M3 — First real delve
+
+- Compiler features for actual play: classes/gear provisioning, NPC dialogue,
+  multi-quest campaigns, boss/finale mechanics, completion → credits.
+- Multi-player validation via Carpet fake players.
+- Owner QA hour on a release candidate; her findings become specs/issues.
+
+**Exit**: the owner and friends play a generated delve for 2–3 hours and finish it.
+
+## M4 — Production line
+
+- Skills/slash commands: `/new-campaign`, `/validate`, `/release` (design when the
+  manual workflow has run twice — see below).
+- Release automation: RC → full bot playthrough → multi-arch OCI publish → GitHub
+  Release with content license.
+- Monthly cadence begins.
+
+**Exit**: one delve shipped per month for two consecutive months with < 1 owner-day
+of non-QA effort each.
+
+## v2 horizon *(recorded, not designed — do not preclude)*
+
+Vanilla survival hub world connected to delve instances via `/transfer` (why the
+pinned version must be ≥1.20.5); instances on a remote host. Nothing in M0–M4 may
+assume single-server topology in a way that blocks this.
+
+## Skills backlog (design later, noted now)
+
+- `/new-campaign` — run the staged generation pipeline, stage-by-stage with owner
+  checkpoints
+- `/validate` — full local validation ladder (static → PackTest → bot) via compose
+- `/release` — RC branch, release validation tier, OCI publish, GitHub Release
