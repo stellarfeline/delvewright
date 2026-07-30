@@ -1,0 +1,94 @@
+name: CI (tier 3 — release candidate)
+
+# spec-0004 tier 3: release candidates only. Full mineflayer bot playthrough via
+# the compose profile, then a multi-arch (amd64 + arm64) delve image pushed to
+# GHCR. Triggered by an `rc-*` tag or manually.
+on:
+  push:
+    tags: ["rc-*"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Accepting Mojang's EULA is the repo owner's standing action for her own
+  # release pipeline (ADR-0010). The server jar is fetched at run time by the
+  # itzg base and is NEVER baked into or published from this image (only the
+  # datapack + config — bytes we authored — ship in layers).
+  EULA: "TRUE"
+  # GHCR image for the M1 hello-world delve.
+  IMAGE: ghcr.io/stellarfeline/delvewright/hello-world
+
+jobs:
+  # ---- full bot playthrough (the M1 proof) via the compose validate profile ---
+  playthrough:
+    name: bot playthrough (compose validate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true # delvec copies the prefab .nbt into the datapack
+      - uses: Swatinem/rust-cache@v2
+      - name: build the hello-world delve output
+        run: |
+          cargo run -p delvewright-compiler --bin delvec -- \
+            build crates/dsl/fixtures/valid/hello-world \
+            -o validation/delve-output --prefabs prefabs
+      - name: bot completes the critical path against the shipped delve image
+        run: |
+          docker compose -f validation/compose.yaml --profile validate up \
+            --build --abort-on-container-exit --exit-code-from bot
+      - name: tear down
+        if: always()
+        run: docker compose -f validation/compose.yaml --profile validate down -v --remove-orphans || true
+
+  # ---- multi-arch delve image → GHCR (only after the playthrough is green) ----
+  publish-image:
+    name: multi-arch delve image → GHCR
+    needs: playthrough
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: Swatinem/rust-cache@v2
+      - name: build the hello-world delve output
+        run: |
+          cargo run -p delvewright-compiler --bin delvec -- \
+            build crates/dsl/fixtures/valid/hello-world \
+            -o validation/delve-output --prefabs prefabs
+
+      - name: derive image tags
+        id: meta
+        run: |
+          # rc-* tag → that tag; manual dispatch → a dev tag from the short SHA.
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-qemu-action@v3 # arm64 emulation for the Pi (ADR-0010)
+      - uses: docker/setup-buildx-action@v3
+      - name: log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: build + push amd64 + arm64
+        uses: docker/build-push-action@v6
+        with:
+          context: validation/delve-output
+          file: validation/Dockerfile.delve
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE }}:latest
