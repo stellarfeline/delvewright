@@ -31,6 +31,10 @@ Founding decisions live in `docs/adr/` and originate from the kickoff handoff
 - **Pinned MC version** (ADR-0009): **Minecraft Java 1.21.11**, a long-term constant.
 - **Compiler foundation** (ADR-0011): Rust-native compiler; beet/mecha only as an
   independent CI cross-check, never as the emission path.
+- **Product form** (ADR-0012): a Claude Code skill (`/new-delve`) is the generation
+  front-end — Claude Code is the agent runtime; the generated DSL documents are the
+  artifact of record; building an agent runtime from scratch is permanently out of
+  scope.
 
 ## Forbidden zones
 
