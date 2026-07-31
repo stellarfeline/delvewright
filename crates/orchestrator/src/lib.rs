@@ -12,14 +12,20 @@
 //! It **pairs** each stamp with the creator's note, resolves DSL context via the
 //! layout manifest, and emits the report.
 //!
-//! ## Pairing heuristic (spec-0006 "Open": implementer's forgiving choice)
+//! ## Pairing heuristic (spec-0006 "Open"; revised M2)
 //!
-//! For each stamp, consider every creator chat line within **±60s** of the stamp's
-//! timestamp. **Prefer the closest line *after* the stamp** (the creator marks the
-//! spot with `/trigger dw.note`, then types the note); if none is within the window
-//! after, fall back to the closest line *before*. A stamp with no chat in the
-//! window yields an empty note `text` (still reported — the context is the point).
-//! Chat lines may pair with more than one stamp; this is deliberately forgiving.
+//! Pair each stamp with the creator chat **nearest in time** within **±60s**;
+//! ties prefer the line *before* the stamp; and **each chat line pairs to at most
+//! one stamp** (greedy by proximity, assigned globally). A stamp with no chat left
+//! in its window yields an empty note `text` (still reported — the context is the
+//! point).
+//!
+//! The earlier rule ("prefer the closest line *after*, chats may pair to many
+//! stamps") mis-paired the M2 dress rehearsal: with stamps at `t` and `t+53s` and
+//! chats at `t-2s` and `t+51s`, it paired both stamps to the `t+51s` line and
+//! **silently dropped** the `t-2s` note (the owner's most important one). The
+//! nearest-in-time + one-chat-per-stamp rule pairs `t`→`t-2s` and `t+53s`→`t+51s`,
+//! keeping both.
 
 use std::collections::BTreeMap;
 
@@ -286,31 +292,41 @@ fn timestamp_string(line: &str) -> String {
     }
 }
 
-/// Pick the creator chat paired with a stamp under the ±60s / prefer-after rule.
-fn pair_text(stamp: &Stamp, chats: &[Chat]) -> String {
-    let Some(ss) = stamp.secs else {
-        return String::new();
-    };
-    let mut best_after: Option<(i64, &str)> = None;
-    let mut best_before: Option<(i64, &str)> = None;
-    for chat in chats {
-        let Some(cs) = chat.secs else { continue };
-        let delta = cs - ss;
-        if delta.abs() > PAIR_WINDOW_SECS {
-            continue;
-        }
-        if delta >= 0 {
-            if best_after.is_none_or(|(d, _)| delta < d) {
-                best_after = Some((delta, &chat.text));
+/// Pair every stamp with a creator chat: nearest in time within ±60s, ties prefer
+/// the line *before*, each chat used by at most one stamp (greedy by proximity).
+/// Returns one text per stamp (index-aligned), empty when nothing pairs.
+fn pair_all(stamps: &[Stamp], chats: &[Chat]) -> Vec<String> {
+    // Candidate (stamp, chat) pairs within the window, keyed for greedy ordering:
+    // (|delta|, before-first, stamp idx, chat idx) — `after` is `1` so a strictly
+    // earlier line wins an equal-distance tie; the index fields make ordering
+    // total and deterministic (ADR-0006). Lexicographic tuple sort does the rest.
+    let mut cands: Vec<(i64, u8, usize, usize)> = Vec::new();
+    for (si, s) in stamps.iter().enumerate() {
+        let Some(ss) = s.secs else { continue };
+        for (ci, ch) in chats.iter().enumerate() {
+            let Some(cs) = ch.secs else { continue };
+            let delta = cs - ss;
+            if delta.abs() > PAIR_WINDOW_SECS {
+                continue;
             }
-        } else if best_before.is_none_or(|(d, _)| delta > d) {
-            best_before = Some((delta, &chat.text));
+            let after = u8::from(delta >= 0);
+            cands.push((delta.abs(), after, si, ci));
         }
     }
-    best_after
-        .or(best_before)
-        .map(|(_, t)| t.to_string())
-        .unwrap_or_default()
+    cands.sort_unstable();
+
+    let mut texts = vec![String::new(); stamps.len()];
+    let mut stamp_used = vec![false; stamps.len()];
+    let mut chat_used = vec![false; chats.len()];
+    for (_, _, si, ci) in cands {
+        if stamp_used[si] || chat_used[ci] {
+            continue;
+        }
+        texts[si].clone_from(&chats[ci].text);
+        stamp_used[si] = true;
+        chat_used[ci] = true;
+    }
+    texts
 }
 
 /// Build one report note from a stamp + its paired text, resolved via the layout.
@@ -350,12 +366,11 @@ fn id_or_none(raw: &str) -> Option<String> {
 /// Harvest a server log + layout manifest into a [`Report`].
 pub fn harvest(log: &str, layout: &Layout) -> Report {
     let (stamps, chats) = scan(log);
+    let texts = pair_all(&stamps, &chats);
     let notes = stamps
         .iter()
-        .map(|s| {
-            let text = pair_text(s, &chats);
-            resolve(s, text, layout)
-        })
+        .zip(texts)
+        .map(|(s, text)| resolve(s, text, layout))
         .collect();
     Report {
         version: REPORT_VERSION.to_string(),
@@ -439,18 +454,67 @@ mod tests {
     }
 
     #[test]
-    fn prefers_line_after_over_closer_line_before() {
-        // A chat 5s BEFORE and a chat 8s AFTER the stamp: prefer the one after.
+    fn pairs_nearest_in_time_not_a_later_line() {
+        // A chat 5s BEFORE and a chat 8s AFTER the stamp: the nearer (before) wins.
+        // (The old rule preferred the later line — the M2 mispairing defect.)
         let log = "\
-[09:00:00] [Server thread/INFO]: <c> before the stamp
+[09:00:00] [Server thread/INFO]: <c> five seconds before
 [09:00:05] [Server thread/INFO]: [c] [DelveNote] pos=[1,2,3] area=area/keep quests= nearest_npc=none
-[09:00:13] [Server thread/INFO]: <c> after the stamp
+[09:00:13] [Server thread/INFO]: <c> eight seconds after
 ";
         let report = harvest(log, &layout());
         assert_eq!(report.notes.len(), 1);
-        assert_eq!(report.notes[0].text, "after the stamp");
+        assert_eq!(report.notes[0].text, "five seconds before");
         // empty quests field → no quest_state entries.
         assert!(report.notes[0].quest_state.is_empty());
+    }
+
+    #[test]
+    fn equal_distance_tie_prefers_the_line_before() {
+        // A chat exactly 4s before and 4s after: the before line wins the tie.
+        let log = "\
+[08:00:00] [Server thread/INFO]: <c> the before line
+[08:00:04] [Server thread/INFO]: [c] [DelveNote] pos=[1,2,3] area=area/keep quests= nearest_npc=none
+[08:00:08] [Server thread/INFO]: <c> the after line
+";
+        let report = harvest(log, &layout());
+        assert_eq!(report.notes[0].text, "the before line");
+    }
+
+    #[test]
+    fn nearest_in_time_one_chat_per_stamp_reproduces_m2_mispairing() {
+        // The real dress-rehearsal transcript: stamps at t and t+53s, chats at
+        // t-2s and t+51s. The old rule paired BOTH stamps to the +51s line and
+        // dropped the -2s note. The new rule pairs each stamp to its nearer line,
+        // and no chat is reused.
+        let log = "\
+[10:00:58] [Server thread/INFO]: <c> early important note
+[10:01:00] [Server thread/INFO]: [c] [DelveNote] pos=[1,2,3] area=area/keep quests=obj/talk:1 nearest_npc=npc/keeper
+[10:01:51] [Server thread/INFO]: <c> later note
+[10:01:53] [Server thread/INFO]: [c] [DelveNote] pos=[4,5,6] area=none quests=obj/exit:1 nearest_npc=none
+";
+        let report = harvest(log, &layout());
+        assert_eq!(report.notes.len(), 2);
+        assert_eq!(report.notes[0].text, "early important note"); // t   -> t-2s
+        assert_eq!(report.notes[1].text, "later note"); // t+53 -> t+51s (chat not reused)
+    }
+
+    #[test]
+    fn known_objectives_resolve_to_their_quest_never_unknown() {
+        // Every stamped-done objective declared in the layout resolves to its
+        // quest; `quest/unknown` is only ever a fallback for an objective the
+        // layout does not declare (regression lock for the reported bug).
+        let log = "[07:00:00] [Server thread/INFO]: [c] [DelveNote] pos=[1,2,3] area=area/keep quests=obj/talk:1,obj/exit:1 nearest_npc=none\n";
+        let report = harvest(log, &layout());
+        let qs = &report.notes[0].quest_state;
+        assert_eq!(
+            qs.get("quest/open-the-door"),
+            Some(&vec!["obj/talk".to_string(), "obj/exit".to_string()])
+        );
+        assert!(
+            !qs.contains_key("quest/unknown"),
+            "known objectives never fall back to quest/unknown"
+        );
     }
 
     #[test]
