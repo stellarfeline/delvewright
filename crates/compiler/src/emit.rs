@@ -161,10 +161,14 @@ pub fn build(
     // checks (DW0308). Only built when the campaign uses those verbs, so v0.2/v0.3
     // output stays byte-identical (no world, no moves → the driver emitters are
     // empty exactly as before).
+    // DW0311 also rides on this model: every walked critical-path leg must be
+    // routable over the assembled seams (the compile-time counterpart to the
+    // runtime critical-path bot).
     let moves: Vec<crate::nav::MovePlan> = if crate::nav::needs_world(plan) {
         let world = crate::nav::World::from_plan(plan, structures);
         let moves = crate::nav::plan_moves(plan, &world)?;
         crate::nav::check_cutscenes(plan, &world)?;
+        crate::nav::check_critical_path(plan, &world)?;
         moves
     } else {
         Vec::new()

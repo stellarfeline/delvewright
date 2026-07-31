@@ -101,13 +101,16 @@ mineflayer = "4.37.1"
 # RE-PIN CONVENTION: after a content-repo PR merges, update `sha` to the new
 # content `main` tip in a normal follow-up PR.
 repo = "stellarfeline/delvewright-campaigns"
-# Content `main` tip after the cave/shore tileset **round-2 regeneration** (#5),
-# which sits on top of the initial cave/shore tileset (#3) and the anchor/npc-stand
-# fix (#2). The round-2 regen is a byte-compatible drop-in: piece ids, sizes, socket
-# placements, and anchors are unchanged (only `.nbt` block content + a few
-# measured_min_light values differ), so `pool/cave-shore` still mates identically and
-# keep pieces stay untouched. Bump on future content merges per the RE-PIN CONVENTION.
-sha = "962836a8b66142ca198bdeeb781302009876f04e"
+# Content `main` tip after the cave/shore tileset **seam-walkability fix** (#8) —
+# a byte-compatible regen on top of the round-2 pass (#5) and the Modrinth hero
+# set-pieces (#6) + palette-audit CI (#7). Only three `.nbt` bodies change
+# (cave-mouth, cave-cavern, cave-shore): decoration is kept out of doorway-throat
+# walk envelopes and the open-air cove is fully enclosed, so a wandering entity can
+# no longer wedge a seam shut or fall into the void. Piece ids, sizes, socket
+# placements, anchors, and all metadata JSON are byte-identical, so `pool/cave-shore`
+# mates identically and keep pieces stay untouched. Bump on future content merges
+# per the RE-PIN CONVENTION.
+sha = "c5581ce0a0c5343b059f03ccdc1f2497c784bf67"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders

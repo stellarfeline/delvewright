@@ -1088,8 +1088,15 @@ fn detail_pass(spec: &Spec, g: &mut Grid, seed: u64) {
         }
     }
     // glow-lichen + vines on interior wall faces (atmosphere; lichen emits 7).
+    // Start at y=3 so no greeble ever lands in the WALK ENVELOPE (feet y=1, head
+    // y=2 for a 2-tall entity standing on the y=0 floor): glow_lichen has no
+    // collision box in-game, but a plant curtain drawn across a narrow doorway
+    // throat still reads to a block-occupancy pathfinder (and to a mineflayer bot)
+    // as a wall, which is exactly what wedged the round-2 seams shut. Decoration
+    // hugs the upper wall / ceiling line instead, where it can never obstruct a
+    // walker — the walk tube through every socket stays clear rock-and-air.
     for x in t..sx - t {
-        for y in 2..sy - 1 {
+        for y in 3..sy - 1 {
             for z in t..sz - t {
                 if !matches!(g.get(x, y, z), Cell::Air) {
                     continue;
@@ -1294,14 +1301,23 @@ fn build_shore(spec: &Spec, g: &mut Grid, seed: u64) {
             g.blk(x, 0, z, "minecraft:stone", None);
         }
     }
-    // back + side cliffs (north z=0, west x=0, east x=sx-1), open front (z=sz-1)
+    // Enclosing cliffs on ALL FOUR sides, each rising the full piece height, so the
+    // cove is a bounded sky-lit lagoon (箱庭 box-garden): open upward to the sky,
+    // walled against the void on every horizontal edge. Round-1/round-2 tapered the
+    // side cliffs down toward the sea (`sy-1 - z/2`) and left the front (z=sz-1)
+    // fully open. Packed against the enclosed cave pieces in the assembly, both
+    // leaks let a wandering entity escape to the void: the tapered sides were a
+    // climbable stair (≤1 block/step) up onto the piece roofscape and off an eroded
+    // roof edge, and the open front let it walk/swim straight off the world's edge —
+    // the sheep the bot watched fall to y=-163. Full-height walls seal every edge.
+    // The graded shoreline, seabed depth profile, water, and scatter INSIDE the
+    // basin are unchanged, so the round-2 soft-shore art is preserved; only the
+    // escape routes are closed.
     for y in 1..sy {
         for x in 0..sx {
             for z in 0..sz {
-                let cliff = z == 0 || x == 0 || x == sx - 1;
-                // taper the cliffs so they read as rock, not a wall: full at back,
-                // lower toward the sea
-                let height = if z == 0 { sy - 1 } else { sy - 1 - z / 2 };
+                let cliff = z == 0 || z == sz - 1 || x == 0 || x == sx - 1;
+                let height = sy - 1;
                 if cliff && y <= height {
                     let n = value_noise(seed, x, y, z, 0.17, 31);
                     let (b, p) = pick(&wall_palette(), n);

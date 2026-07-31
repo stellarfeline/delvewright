@@ -29,13 +29,20 @@ use std::io::Read;
 
 use delvewright_dsl::{CameraWaypoint, QuestEffect};
 
-use crate::plan::{Plan, ResolvedAnchor};
+use crate::plan::{Plan, ResolvedAnchor, Step};
 
 /// `DW0307`: a `move-npc` destination unreachable by any walkable path from the
 /// NPC's position over the assembled geometry.
 pub const DW_MOVE_UNROUTABLE: &str = "DW0307";
 /// `DW0308`: a `cutscene` camera dolly path that passes through a solid block.
 pub const DW_CUTSCENE_CLIP: &str = "DW0308";
+/// `DW0311`: a consecutive pair of player-visited critical-path anchors that no
+/// walkable path connects over the assembled geometry (with no inter-area
+/// transport between them) — the player would be stranded. Turns the whole
+/// "assembled seams aren't walkable" bug class (task #34: a prefab regen wedged a
+/// doorway shut / opened a void gap and only a runtime bot caught it) into a
+/// compile error.
+pub const DW_CRITICAL_UNROUTABLE: &str = "DW0311";
 
 /// Default NPC walking speed in blocks/tick (spec-0008 §5; owner spike). Used when
 /// a `move-npc` effect omits `speed`.
@@ -598,6 +605,102 @@ pub fn needs_world(plan: &Plan) -> bool {
             QuestEffect::MoveNpc { .. } | QuestEffect::Cutscene { .. }
         )
     })
+    // The critical-path walkability check (DW0311) also needs the occupancy model.
+        || has_walkable_critical_leg(plan)
+}
+
+/// The player-visited critical-path positions in order, each tagged with whether
+/// the player was teleported here by an inter-area transport on the preceding
+/// step (a ride, not a walk). `select-class` / `assert-complete` steps carry no
+/// position and are skipped.
+fn critical_positions(plan: &Plan) -> Vec<([i32; 3], bool)> {
+    let mut out = Vec::new();
+    let mut transport_pending = false;
+    for (i, step) in plan.critical_path.iter().enumerate() {
+        let pos = match step {
+            Step::TalkTo { pos, .. }
+            | Step::Reach { pos, .. }
+            | Step::Kill { pos, .. }
+            | Step::Collect { pos, .. }
+            | Step::Interact { pos, .. } => Some(*pos),
+            Step::SelectClass { .. } | Step::AssertComplete { .. } => None,
+        };
+        if let Some(pos) = pos {
+            out.push((pos, transport_pending));
+            transport_pending = false;
+        }
+        // A transport marker on step `i` teleports the player when that step's
+        // objective completes — i.e. before the *next* visited position is reached,
+        // so the move INTO that next position is a ride, not a walk to validate.
+        if plan
+            .critical_path_transport
+            .get(i)
+            .and_then(|t| *t)
+            .is_some()
+        {
+            transport_pending = true;
+        }
+    }
+    out
+}
+
+/// Whether the campaign has at least one consecutive pair of player-visited
+/// critical-path positions with no inter-area transport between them — a leg the
+/// player must walk, hence one DW0311 must validate.
+fn has_walkable_critical_leg(plan: &Plan) -> bool {
+    critical_positions(plan).windows(2).any(|w| !w[1].1)
+}
+
+/// Validate that every consecutive pair of player-visited critical-path anchors is
+/// connected by a walkable A* path over the assembled geometry (unless the player
+/// rides an inter-area transport between them). This is the compile-time counterpart
+/// to the runtime critical-path bot: it makes an unwalkable assembled seam — a
+/// prefab whose regenerated geometry wedged a doorway shut or opened a void gap — a
+/// build failure ([`DW_CRITICAL_UNROUTABLE`], `DW0311`) instead of a bot surprise.
+///
+/// Endpoints are snapped to the nearest standable floor cell (an anchor often marks
+/// a solid affordance — an altar, a wave marker, an NPC stand — the player walks up
+/// to, not into), exactly as `move-npc` planning does.
+pub fn check_critical_path(plan: &Plan, world: &World) -> Result<(), NavError> {
+    route_visited(world, &critical_positions(plan))
+}
+
+/// Route every walked leg between consecutive visited positions (the pure core of
+/// [`check_critical_path`], split out so it is unit-testable without a full
+/// [`Plan`]). `positions[i].1` is the transport-before flag: `true` legs are
+/// teleport rides and skipped.
+fn route_visited(world: &World, positions: &[([i32; 3], bool)]) -> Result<(), NavError> {
+    for pair in positions.windows(2) {
+        let (from, _) = pair[0];
+        let (to, transport_before) = pair[1];
+        if transport_before {
+            continue; // an inter-area teleport hop: the player is moved, not walking
+        }
+        let start = world.snap_standable(from, SNAP_RADIUS).ok_or_else(|| NavError {
+            code: DW_CRITICAL_UNROUTABLE,
+            message: format!(
+                "critical path: no standable floor within {SNAP_RADIUS} blocks of visited anchor {from:?}"
+            ),
+        })?;
+        let goal = world.snap_standable(to, SNAP_RADIUS).ok_or_else(|| NavError {
+            code: DW_CRITICAL_UNROUTABLE,
+            message: format!(
+                "critical path: no standable floor within {SNAP_RADIUS} blocks of visited anchor {to:?}"
+            ),
+        })?;
+        if world.find_path(start, goal).is_none() {
+            return Err(NavError {
+                code: DW_CRITICAL_UNROUTABLE,
+                message: format!(
+                    "critical path: the player cannot walk from {from:?} (floor {start:?}) to {to:?} \
+                     (floor {goal:?}) over the assembled geometry — no collision-free path. A same-area \
+                     leg must be walkable end to end; this is a wedged doorway seam or a void gap in the \
+                     assembled layout (or, if the jump is intended, a missing inter-area transport)."
+                ),
+            });
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -689,6 +792,36 @@ mod tests {
         assert_eq!(first_clip(&world, &through), Some((0, [2, 66, 1])));
         let clear = [[0.5, 66.5, 3.5], [4.5, 66.5, 3.5]];
         assert_eq!(first_clip(&world, &clear), None);
+    }
+
+    #[test]
+    fn critical_path_unroutable_leg_is_dw0311() {
+        // Two standable floor patches separated by a void gap (no floor at x=2):
+        // a walked leg across them is DW0311; the same leg guarded by a transport
+        // hop (transport_before = true) is skipped.
+        let mut solid = BTreeSet::new();
+        for x in [0, 1, 3, 4] {
+            for z in 0..3 {
+                solid.insert([x, 64, z]);
+                solid.insert([x, 67, z]);
+            }
+        }
+        let world = World { solid };
+        let a = [0, 65, 1];
+        let b = [4, 65, 1];
+        assert!(world.standable(a) && world.standable(b));
+        // Walked leg → unroutable → DW0311.
+        let err = route_visited(&world, &[(a, false), (b, false)]).unwrap_err();
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
+        // Same leg ridden by an inter-area transport → skipped, ok.
+        assert!(route_visited(&world, &[(a, false), (b, true)]).is_ok());
+    }
+
+    #[test]
+    fn critical_path_routable_leg_passes() {
+        // A flat connected floor: consecutive visited cells are walkable → ok.
+        let world = floored(6, 3, 65, &[]);
+        assert!(route_visited(&world, &[([0, 65, 1], false), ([5, 65, 1], false)]).is_ok());
     }
 
     #[test]
