@@ -28,6 +28,14 @@ export interface StepExecutor {
   collect(step: CollectStep): Promise<void>;
   interact(step: InteractStep): Promise<void>;
   assertComplete(step: AssertCompleteStep): Promise<void>;
+  /**
+   * Optional (gap 8): after a step whose completion teleports the player to
+   * another area (its `transport` marker), wait for the position discontinuity to
+   * settle before the next step's pathfinding begins. Navigation plumbing only —
+   * no game logic. Executors without cross-area transport (and test fakes) may
+   * omit it; the sequencer skips the wait when it is absent.
+   */
+  awaitTransport?(dest: readonly [number, number, number]): Promise<void>;
 }
 
 /** Raised when the step sequence violates a structural ordering invariant. */
@@ -128,6 +136,13 @@ export async function runSequence(
     const step = path.steps[i]!;
     try {
       await dispatch(executor, step);
+      // gap 8: if completing this step teleports the player across areas, wait for
+      // the jump to land before the next step starts pathfinding. Attributed to
+      // this step so a failed settle surfaces here, not as a next-step path error.
+      const transport = "transport" in step ? step.transport : undefined;
+      if (transport && executor.awaitTransport) {
+        await executor.awaitTransport(transport);
+      }
     } catch (cause) {
       throw new StepExecutionError(i, step.action, cause);
     }

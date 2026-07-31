@@ -226,26 +226,51 @@ fn keep_trial_builds_all_verbs_and_is_deterministic() {
         );
     }
 
-    // Mechanics wired: wave spawn function + countdown, interaction entity, chest
-    // (all in setup_finish — they need verified real blocks under them).
+    // Mechanics wired: wave spawn function + countdown. The interaction entity and
+    // collect chest are placed at objective ACTIVATION now (gap 13), not at setup —
+    // so late props are not visible/lootable early — and setup_finish no longer
+    // carries them.
     let setup = text(
         &a,
         "datapack/data/keep-trial/function/setup_finish.mcfunction",
     );
-    assert!(setup.contains("summon minecraft:interaction") && setup.contains("dw_i_door"));
-    assert!(setup.contains("setblock") && setup.contains("minecraft:chest"));
+    // (NPC bodies + their own interaction hitboxes still summon at setup; only the
+    // objective props moved — assert on the objective-specific tags/blocks.)
+    assert!(
+        !setup.contains("dw_i_door") && !setup.contains("minecraft:chest"),
+        "collect/interact objective props must not be placed at setup (gap 13)"
+    );
+    let act_door = text(
+        &a,
+        "datapack/data/keep-trial/function/activate_o_door.mcfunction",
+    );
+    assert!(
+        act_door.contains("summon minecraft:interaction") && act_door.contains("dw_i_door"),
+        "interact hitbox summoned at activation"
+    );
+    let act_key = text(
+        &a,
+        "datapack/data/keep-trial/function/activate_o_key.mcfunction",
+    );
+    assert!(
+        act_key.contains("setblock") && act_key.contains("minecraft:chest"),
+        "collect chest placed at activation"
+    );
     let spawn = text(
         &a,
         "datapack/data/keep-trial/function/spawn_guards.mcfunction",
     );
     assert!(spawn.contains("summon minecraft:zombie") && spawn.contains("dw.wave"));
 
-    // Per-verb PackTests emitted.
+    // Per-verb PackTests emitted (incl. the gap 9 NPC-summon and gap 13
+    // pre-held-collect assertions).
     for t in [
         "verb_kill",
         "verb_collect",
         "verb_interact",
         "verb_flag_gate",
+        "npc_summons",
+        "collect_preheld",
     ] {
         assert!(
             a.contains_key(&format!(
@@ -347,21 +372,31 @@ fn keep_trial_m2_presentation_fixes() {
         "wave mob CustomName is a plain SNBT string"
     );
 
-    // Fix 3: a visible, glowing, non-colliding marker at the interact anchor, named
-    // from the objective title.
+    // Fix 3 (+ gap 13): a visible, glowing, non-colliding marker at the interact
+    // anchor, named from the objective title — now summoned at ACTIVATION (in
+    // activate_o_door), not at setup, so it does not glow next to the player before
+    // the objective is active.
+    let act_door = text(
+        &a,
+        "datapack/data/keep-trial/function/activate_o_door.mcfunction",
+    );
     assert!(
-        setup.contains("summon minecraft:item_display")
-            && setup.contains("Glowing:1b")
-            && setup.contains("CustomName:\"Unbar the Inner Door\""),
-        "interact anchor has a glowing named item_display marker"
+        act_door.contains("summon minecraft:item_display")
+            && act_door.contains("Glowing:1b")
+            && act_door.contains("CustomName:\"Unbar the Inner Door\""),
+        "interact anchor gets a glowing named item_display marker at activation"
     );
     // Fix 3 (round 2): the reach anchor gets the same glowing marker treatment —
     // a distinct end_rod (vs. the interact lantern), named from the reach title —
-    // so the finale altar can't be triggered "by wandering".
+    // so the finale altar can't be triggered "by wandering". Also activation-gated.
+    let act_shrine = text(
+        &a,
+        "datapack/data/keep-trial/function/activate_o_shrine.mcfunction",
+    );
     assert!(
-        setup.contains("item:{id:\"minecraft:end_rod\",count:1}")
-            && setup.contains("CustomName:\"Reach the Shrine\""),
-        "reach anchor has a glowing named end_rod marker"
+        act_shrine.contains("item:{id:\"minecraft:end_rod\",count:1}")
+            && act_shrine.contains("CustomName:\"Reach the Shrine\""),
+        "reach anchor gets a glowing named end_rod marker at activation"
     );
 
     // Fix 4: activation announce (title + hint + sound), completion feedback, and a

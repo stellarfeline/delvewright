@@ -20,6 +20,38 @@ Mode: default **interactive** (pause after each stage for the user to review a
 short summary — not the raw JSON — and confirm/adjust). If the user says "e2e" /
 "一口气" / "don't stop", run straight through.
 
+### Showcase mode (thin prompts)
+
+When the prompt pins down little — a one-line theme, no detailed brief — treat it
+as a **SHOWCASE** brief: a thin prompt is creative license, and the goal is to
+deliberately exercise the breadth of the currently-supported feature set so a
+stranger playing the result discovers what the engine can do (this is our primary
+marketing artifact). Do NOT hardcode a feature list here — v0.4 is landing soon and
+any list would rot; instead **query the live schema** (`delvec schema --stage <n>`
+across stages) for the available verbs/effects, then aim to include, wherever the
+story can carry them coherently: multi-area transport as a narrative beat,
+flag-gated dialogue consequences, real props / set-dressing, at least one tuned
+combat or stealth encounter, narration beats, and varied NPC presentation. **Rule
+of thumb: coherence and pacing always win over feature count** — never bolt on a
+mechanic the story can't motivate. A **detailed brief is the opposite**: honor
+exactly what it pins down and showcase nothing extra.
+
+## Execution architecture (delegation + models)
+
+The **main (authoring) agent** does HIGH-LEVEL creative work ONLY: theme, beats,
+personas, quest-plan intent, the stage summaries, ALL user interaction, and
+visual-review judgment. The **mechanical writing of each stage's JSON and the
+`delvec validate` repair loop** are delegated to a **dev subagent** — hand it the
+creative brief for the stage plus the schema command (`delvec schema --stage <n>`);
+it returns valid stage JSON and a short summary of the choices it made, which you
+fold into your stage summary. The **validation ladder** stays on a **test
+subagent** (step 7).
+
+Model policy for subagents: **dev subagents run `opus`; test / validation subagents
+run `sonnet`.** A subagent must **NEVER run a higher tier than the main agent
+itself** — if you are running on a lower tier, clamp every subagent down to your own
+model (e.g. main agent on `sonnet` → all subagents `sonnet`).
+
 ## Campaign workspace (artifact of record — NEVER skip)
 
 Campaigns do not live in this repo (CLAUDE.md forbidden zone) — they live in the
@@ -38,7 +70,10 @@ For each stage in order — world → npcs → classes → quest-plan → quests
 
 1. `cargo run -q -p delvewright-compiler --bin delvec -- schema --stage <n>` —
    generate AGAINST the live schema, never from memory.
-2. Write the stage JSON. Craft constraints:
+2. **Delegate the mechanical write + validate repair loop (steps 2–3) to a dev
+   subagent** (see *Execution architecture*): hand it this stage's creative brief +
+   the schema command; it returns valid JSON and a summary of choices. The brief you
+   hand it carries these craft constraints:
    - Areas: prefer `prefab_pool` (stone-keep tileset) for real layouts; check
      `campaigns/prefabs/pools.json` + prefab metadata for available pools/anchors/lighting
      profiles. Respect the lighting contract — darkness only as declared design
@@ -52,8 +87,13 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      entrance hall, take the left passage to the barred door") for **every
      non-`talk-to` objective**. The compiler surfaces them in-game when the
      objective activates (chat + sound); without them the player gets no guidance
-     and cannot find interact/collect/reach targets. `talk-to` objectives may omit
-     them (the NPC dialog is self-explanatory).
+     and cannot find interact/collect/reach targets. For `talk-to`, `title`+`hint`
+     are **REQUIRED whenever the target NPC is not already visible from where the
+     previous objective completed** (a different room, down a corridor, across an
+     area) — the player otherwise gets a silent objective and wanders. Only omit
+     them when the NPC is in plain sight of where the player just was; read the "may
+     omit" allowance narrowly (playtest lesson: an off-screen NPC 60 blocks away
+     through an unfamiliar cave left the player with no guidance at all).
    - Hint wording: give landmark-relative directions from places the player already
      knows (the entrance hall, the gate, a named NPC) — never room-shape jargon
      ("corner room", "L-shaped hall") or solver-internal terms (anchor/piece/socket
@@ -63,6 +103,25 @@ For each stage in order — world → npcs → classes → quest-plan → quests
    Three failed repairs on the same code → stop and think about the design instead
    of patching syntax.
 4. Interactive mode: present a 3–6 line summary of the stage; wait.
+
+### Supported techniques
+
+Load-bearing patterns proven on real runs — reuse rather than rediscover:
+
+- **`base_entity` accepts any entity id, and NPCs are inert by construction.** Every
+  NPC is summoned `NoAI,Invulnerable,Silent,NoGravity,PersistenceRequired` plus a
+  separate interaction hitbox, and there is no registry validation on the field — so
+  any mob id becomes a talking statue that cannot move or hurt anyone. This is how a
+  villager-sized cast can include a giant: e.g. `minecraft:warden` as a Cyclops you
+  must slip past. *Caveat:* `Silent:1b` also suppresses that entity's ambient sounds
+  (the Warden's heartbeat), and the emitted `VillagerData` tag is inert on a
+  non-villager.
+- **Multi-area + automatic inter-area transport is a physically enforced point of no
+  return.** Placing beats in separate areas (256 blocks apart across void, no
+  walkable link) makes the compiler emit a one-way teleport on the objective that
+  crosses areas — the player *cannot* walk back, so "the boulder seals the cave" is
+  enforced by geometry, not merely asserted. The return trip is the same mechanism
+  in reverse.
 
 ### Localization stage (only when the prompt asks for other languages)
 

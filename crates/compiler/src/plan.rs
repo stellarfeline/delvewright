@@ -54,6 +54,13 @@ pub struct Plan<'a> {
     /// (areas sit `AREA_SPACING` apart across void; the pathfinder-free bot cannot
     /// walk between them). Emitted in that objective's completion function.
     pub transport: BTreeMap<String, [i32; 3]>,
+    /// Per-step transport marker, aligned 1:1 with `critical_path`: `Some(dest)` if
+    /// completing that step's objective teleports the player to `dest` (a different
+    /// area), else `None`. Emitted into `critical-path.json` as the step's
+    /// `transport` field so the harness can wait for the position discontinuity
+    /// before starting the next step (gap 8). `None` for `select-class` /
+    /// `assert-complete` and any step that does not change area.
+    pub critical_path_transport: Vec<Option<[i32; 3]>>,
 }
 
 /// A placed area: one or more pieces plus their socket seals.
@@ -472,7 +479,8 @@ impl<'a> Plan<'a> {
             .collect::<Vec<_>>();
 
         // ---- critical path + inter-area transport ----
-        let (critical_path, transport) = build_critical_path(campaign, &anchors, &npcs)?;
+        let (critical_path, transport, critical_path_transport) =
+            build_critical_path(campaign, &anchors, &npcs)?;
 
         Ok(Self {
             campaign,
@@ -484,6 +492,7 @@ impl<'a> Plan<'a> {
             npcs,
             critical_path,
             transport,
+            critical_path_transport,
         })
     }
 
@@ -655,14 +664,16 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
 /// campaign completion. Also returns the inter-area transport map: when
 /// consecutive objectives sit in different areas, completing the earlier one
 /// teleports the player to the later area's entry spawn.
+#[allow(clippy::type_complexity)]
 fn build_critical_path(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     npcs: &[NpcPlan],
-) -> Result<(Vec<Step>, TransportMap), PlanError> {
+) -> Result<(Vec<Step>, TransportMap, Vec<Option<[i32; 3]>>), PlanError> {
     let mut steps = Vec::new();
-    // (objective id, physical area) in critical-path order, for transport.
-    let mut obj_areas: Vec<(String, String)> = Vec::new();
+    // (objective id, physical area, step index) in critical-path order, for the
+    // transport map and the per-step transport marker.
+    let mut obj_areas: Vec<(String, String, usize)> = Vec::new();
 
     // select-class: first declared class.
     if let Some(first) = campaign.classes.content.classes.first() {
@@ -738,7 +749,11 @@ fn build_critical_path(
                         pos,
                         command: format!("/trigger {} set {}", npc_plan.trigger_objective, opt.n),
                     });
-                    obj_areas.push((id.as_str().to_string(), npc_area.to_string()));
+                    obj_areas.push((
+                        id.as_str().to_string(),
+                        npc_area.to_string(),
+                        steps.len() - 1,
+                    ));
                 }
                 Objective::ReachAnchor {
                     id, anchor, radius, ..
@@ -749,7 +764,7 @@ fn build_critical_path(
                         pos,
                         radius: *radius,
                     });
-                    obj_areas.push((id.as_str().to_string(), area.to_string()));
+                    obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }
                 Objective::Kill { id, wave, .. } => {
                     let w = wave_of(campaign, wave.as_str()).ok_or_else(|| {
@@ -765,7 +780,7 @@ fn build_critical_path(
                         tag: wave_tag(wave.as_str()),
                         count: wave_total(w),
                     });
-                    obj_areas.push((id.as_str().to_string(), area.to_string()));
+                    obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }
                 Objective::Collect {
                     id,
@@ -780,7 +795,7 @@ fn build_critical_path(
                         count: *count as i32,
                         pos,
                     });
-                    obj_areas.push((id.as_str().to_string(), area.to_string()));
+                    obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }
                 Objective::Interact {
                     id,
@@ -795,7 +810,7 @@ fn build_critical_path(
                         command: format!("/trigger {} set 1", interact_trigger(id.as_str())),
                         requires_item: requires_item.clone(),
                     });
-                    obj_areas.push((id.as_str().to_string(), area.to_string()));
+                    obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }
             }
         }
@@ -809,18 +824,22 @@ fn build_critical_path(
     // Transport: when consecutive critical objectives change area, completing the
     // earlier objective teleports the player to the later area's entry spawn.
     let mut transport: BTreeMap<String, [i32; 3]> = BTreeMap::new();
+    // Per-step transport marker, aligned with `steps`. Filled from `transport` via
+    // each objective's recorded step index (gap 8).
+    let mut transport_by_step: Vec<Option<[i32; 3]>> = vec![None; steps.len()];
     for pair in obj_areas.windows(2) {
-        let (prev_id, prev_area) = &pair[0];
-        let (_, next_area) = &pair[1];
+        let (prev_id, prev_area, prev_idx) = &pair[0];
+        let (_, next_area, _) = &pair[1];
         if prev_area != next_area
             && let Some(ResolvedAnchor::Point { pos, .. }) =
                 anchors.get(&(next_area.clone(), "spawn".to_string()))
         {
             transport.insert(prev_id.clone(), *pos);
+            transport_by_step[*prev_idx] = Some(*pos);
         }
     }
 
-    Ok((steps, transport))
+    Ok((steps, transport, transport_by_step))
 }
 
 fn point_of(

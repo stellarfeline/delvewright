@@ -101,10 +101,11 @@ mineflayer = "4.37.1"
 # RE-PIN CONVENTION: after a content-repo PR merges, update `sha` to the new
 # content `main` tip in a normal follow-up PR.
 repo = "stellarfeline/delvewright-campaigns"
-# Pins the `stair-fix` branch tip (M2 round-2 fix 2: keep-stair north-facing
-# stairs), which fast-forwards onto content `main` — so this SHA stays valid after
-# merge. Bump it on future content merges per the RE-PIN CONVENTION above.
-sha = "ea059e7e0dd045a5d15d9f8a052a994237d6d126"
+# Content `main` tip after the anchor/npc-stand fix (gap 12): the three
+# keep-room-small pieces get a distinct clear-floor npc-stand cell. Metadata-only,
+# so every prefab `.nbt` is byte-identical and determinism (ADR-0006) holds.
+# Bump it on future content merges per the RE-PIN CONVENTION above.
+sha = "0746d1999e0ed6b424de970b0bcb5d3036d7904f"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders
