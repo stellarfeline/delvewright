@@ -341,22 +341,37 @@ fn snbt_string(s: &str) -> String {
     format!("\"{esc}\"")
 }
 
-/// Default hand equipment for a summoned mob whose natural spawns are armed
-/// (M2 fix 5). `/summon` gives no equipment, so a wither-skeleton boss spawned
-/// unarmed was trivial. Returns an NBT fragment (no leading comma) setting
-/// `HandItems` with drop chance 0, or `None` for mobs that spawn unarmed. Small
-/// static table (documented in the compiler README); mobs not listed (zombie,
-/// drowned — a wild trident is not a default) get nothing.
-fn default_equipment(entity: &str) -> Option<&'static str> {
+/// The default main-hand weapon for a summoned mob whose natural spawns are
+/// armed, or `None` for mobs that spawn unarmed. Small static table (documented
+/// in the compiler README); mobs not listed (zombie, drowned — a wild trident is
+/// not a default) get nothing.
+fn default_mainhand(entity: &str) -> Option<&'static str> {
     match entity.strip_prefix("minecraft:").unwrap_or(entity) {
-        "wither_skeleton" => {
-            Some("HandItems:[{id:\"minecraft:stone_sword\",count:1},{}],HandDropChances:[0f,0f]")
-        }
-        "skeleton" | "stray" => {
-            Some("HandItems:[{id:\"minecraft:bow\",count:1},{}],HandDropChances:[0f,0f]")
-        }
+        "wither_skeleton" => Some("minecraft:stone_sword"),
+        "skeleton" | "stray" => Some("minecraft:bow"),
         _ => None,
     }
+}
+
+/// Default hand equipment for a summoned mob whose natural spawns are armed
+/// (M2 fix 5). `/summon` gives no equipment, so a wither-skeleton boss spawned
+/// unarmed was trivial. Returns an SNBT fragment (no leading comma) setting the
+/// `equipment` component with a zero `drop_chances`, or `None` for unarmed mobs.
+///
+/// **Component-era form, not legacy `HandItems` (M2 round-2 fix 1).** Minecraft
+/// 1.21.11 silently ignores `HandItems`/`HandDropChances` on `/summon` NBT — a
+/// `data get entity … HandItems` after summon returns nothing and the mob is
+/// bare-handed. The accepted form is the entity `equipment`/`drop_chances`
+/// components: proven live via rcon (`equipment:{mainhand:{id:"minecraft:
+/// stone_sword",count:1}},drop_chances:{mainhand:0.0f}` → `data get entity …
+/// equipment.mainhand` returns the item; the legacy form yields "Found no
+/// elements matching equipment"). The legacy form failed *silently* for a whole
+/// milestone because nothing looked — the generated `verb_kill` PackTest now
+/// asserts the armed mob actually holds its weapon so a regression can't hide.
+fn default_equipment(entity: &str) -> Option<String> {
+    default_mainhand(entity).map(|item| {
+        format!("equipment:{{mainhand:{{id:\"{item}\",count:1}}}},drop_chances:{{mainhand:0.0f}}")
+    })
 }
 
 fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
@@ -1664,6 +1679,27 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             plan::wave_counter(wave.as_str()),
             plan::WAVE_OBJECTIVE
         ));
+        // The armed mob really holds its weapon (M2 round-2 fix 1). `HandItems`
+        // failed silently for a whole milestone because no test looked; this
+        // exercises the vanilla `execute if items entity … weapon.mainhand …`
+        // condition (1.21.11 `minecraft:item_slots` + `minecraft:item_predicate`)
+        // and bridges the result to `assert score` — using only PackTest commands
+        // known-good on the validation server, not a newer `assert items`.
+        if let Some(mob) = w
+            .mobs
+            .iter()
+            .find(|m| default_mainhand(&m.entity).is_some())
+        {
+            let item = default_mainhand(&mob.entity).expect("filtered to armed mobs");
+            b.push("scoreboard players set #armed dw.sys 0".to_string());
+            b.push(format!(
+                "execute if items entity @e[tag={},type={},limit=1] weapon.mainhand {item} \
+                 run scoreboard players set #armed dw.sys 1",
+                plan::wave_tag(wave.as_str()),
+                mob.entity,
+            ));
+            b.push("assert score #armed dw.sys matches 1".to_string());
+        }
         b.push(format!("kill @e[tag={}]", plan::wave_tag(wave.as_str())));
         for _ in 0..total {
             b.push(format!("execute as @a run function {ns}:k_reward_{ws}"));
@@ -1969,10 +2005,14 @@ mod tests {
 
     #[test]
     fn default_equipment_arms_only_naturally_armed_mobs() {
-        // wither_skeleton → stone sword, drop chance 0.
+        // wither_skeleton → stone sword via the component-era `equipment` NBT
+        // with a zero `drop_chances` (1.21.11 ignores legacy `HandItems`).
         let ws = default_equipment("minecraft:wither_skeleton").unwrap();
-        assert!(ws.contains("minecraft:stone_sword"));
-        assert!(ws.contains("HandDropChances:[0f,0f]"));
+        assert!(ws.contains("equipment:{mainhand:{id:\"minecraft:stone_sword\",count:1}}"));
+        assert!(ws.contains("drop_chances:{mainhand:0.0f}"));
+        // No trace of the legacy, silently-ignored form.
+        assert!(!ws.contains("HandItems"));
+        assert!(!ws.contains("HandDropChances"));
         // skeleton/stray → bow.
         assert!(
             default_equipment("skeleton")
