@@ -46,6 +46,13 @@ services:
       # Offline for frictionless local play/CI; override ONLINE_MODE=TRUE to join
       # with a real Microsoft account (spec-0003 auth-mode note).
       ONLINE_MODE: ${ONLINE_MODE:-FALSE}
+    volumes:
+      # Name the itzg `/data` world volume so `docker compose down -v` actually
+      # clears it. The itzg base declares an anonymous `VOLUME /data`; anonymous
+      # volumes survive `down -v`, so a stale world (old datapack/seed/lang)
+      # silently persists across runs. A NAMED volume is removed by `down -v`,
+      # giving every fresh run a clean world.
+      - server-data:/data
     ports:
       # Play profile: expose to localhost so the owner joins at localhost:25565.
       # Bound to 127.0.0.1 so it is never world-reachable. The bot reaches the
@@ -85,6 +92,8 @@ services:
       # tick), so the note flow works opped or not.
       OPS: ${CREATOR_NAME:-}
     volumes:
+      # Named world volume so `down -v` clears it (see `server` note above).
+      - playtest-data:/data
       # The creator overlay, supplied ONLY at playtest time (never in the image).
       - ./delve-output/creator-datapack:/delve/creator-overlay:ro
     ports:
@@ -139,5 +148,18 @@ services:
       GENERATOR_SETTINGS: '{"biome":"minecraft:the_void","layers":[]}'
       SEED: "20260729"
     volumes:
+      # Named world volume so `down -v` clears it (see `server` note above) — the
+      # PackTest runner regenerates the world from the mounted datapacks each run.
+      - packtest-data:/data
       - ./delve-output/datapack:/packs/datapack:ro
       - ./delve-output/packtest-datapack:/packs/packtest-datapack:ro
+
+# Named world volumes for the itzg `/data` mounts above. Declared so
+# `docker compose -f validation/compose.yaml down -v` removes them — otherwise the
+# itzg base's anonymous `/data` volume persists a stale world between runs (wrong
+# datapack/seed/language). Fresh runs should still prefer
+# `up --renew-anon-volumes --force-recreate` for belt-and-braces isolation.
+volumes:
+  server-data:
+  playtest-data:
+  packtest-data:
