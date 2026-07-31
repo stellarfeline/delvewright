@@ -178,6 +178,30 @@ fn pick(palette: &[Recipe], n: f64) -> (&'static str, Props) {
     (last.name, last.props.clone())
 }
 
+/// Edge-distance / height weathering bias (algorithm A1, reimplemented from the
+/// GDMC extraction dossier's description — see ACKNOWLEDGEMENTS; no upstream code
+/// used). Our surface palettes are authored clean→weathered (mossy/cracked/coarse
+/// last), so ADDING a positive bias to the noise sample before `pick` concentrates
+/// the weathered variants where wear and water collect: low (near the floor) and
+/// near the piece walls. Deterministic — a pure function of position + bounds.
+fn weathering_bias(x: i32, y: i32, z: i32, size: [i32; 3], t: i32) -> f64 {
+    let [sx, sy, sz] = size;
+    // Height ramp: strongest at the floor, fading out by mid-height.
+    let h = ((sy - 1) as f64).max(1.0);
+    let floor_ramp = (1.0 - (y as f64 / h)).clamp(0.0, 1.0);
+    // Edge ramp: strongest against the walls (min horizontal distance to the
+    // interior edge), fading one cell in.
+    let dx = (x - t).min(sx - 1 - t - x);
+    let dz = (z - t).min(sz - 1 - t - z);
+    let edge = (dx.min(dz)).max(0);
+    let edge_ramp = match edge {
+        0 => 1.0,
+        1 => 0.45,
+        _ => 0.0,
+    };
+    0.30 * floor_ramp + 0.22 * edge_ramp
+}
+
 // ---------------------------------------------------------------------------
 // Cell grid
 // ---------------------------------------------------------------------------
@@ -565,10 +589,19 @@ fn estimate_min_floor_light(grid: &Grid) -> i32 {
             }
         }
     }
-    // Minimum over walkable floor cells.
+    // Minimum over walkable *interior* floor cells. Cells on the piece boundary
+    // (x/z at 0 or max) are doorway-mouth thresholds — the shell is solid wall
+    // there except where a socket is carved — so a walkable boundary cell is
+    // always an open doorway, which mates against the (lit) neighbouring piece at
+    // assembly and is dark only in isolation. Measuring the interior is the honest
+    // "does the room read as lit?" question; it can only raise the min, never mask
+    // a genuinely dark interior.
     let mut min = i32::MAX;
     for x in 0..sx {
         for z in 0..sz {
+            if x == 0 || x == sx - 1 || z == 0 || z == sz - 1 {
+                continue;
+            }
             let floor_solid = matches!(grid.get(x, 0, z), Cell::Block(_, _));
             let stand = matches!(grid.get(x, 1, z), Cell::Air);
             let head = sy > 2 && matches!(grid.get(x, 2, z), Cell::Air);
@@ -665,7 +698,8 @@ fn build(spec: &Spec) -> Grid {
                 let floor = y == 0;
                 let ceil = y == sy - 1;
                 if floor {
-                    let n = value_noise(seed, x, y, z, 0.16, 11);
+                    let n = value_noise(seed, x, y, z, 0.16, 11)
+                        + 0.5 * weathering_bias(x, y, z, spec.size, t);
                     let (b, p) = pick(&floor_palette(), n);
                     g.blk(x, y, z, b, p);
                 } else if ceil {
@@ -673,55 +707,23 @@ fn build(spec: &Spec) -> Grid {
                     let (b, p) = pick(&ceiling_palette(), n);
                     g.blk(x, y, z, b, p);
                 } else if on_x || on_z {
-                    let n = value_noise(seed, x, y, z, 0.17, 31);
+                    let n = value_noise(seed, x, y, z, 0.17, 31)
+                        + weathering_bias(x, y, z, spec.size, t);
                     let (b, p) = pick(&wall_palette(), n);
                     g.blk(x, y, z, b, p);
                 }
             }
         }
     }
-    // 1b. Irregular inner lining (rooms, t>=2): carve niches into the inner wall
-    // ring and bump some inner cells into rock — an uneven natural rock face.
-    if t >= 2 {
-        for x in 1..sx - 1 {
-            for y in 1..sy - 1 {
-                for z in 1..sz - 1 {
-                    let inner_ring = (x == t - 1 || x == sx - t) || (z == t - 1 || z == sz - t);
-                    if !inner_ring {
-                        continue;
-                    }
-                    let n = value_noise(seed, x, y, z, 0.30, 41);
-                    if n > 0.62 {
-                        // bump rock inward (uneven face)
-                        let nn = value_noise(seed, x, y, z, 0.17, 31);
-                        let (b, p) = pick(&wall_palette(), nn);
-                        g.blk(x, y, z, b, p);
-                    } else if n < 0.16 && y >= 2 && y <= sy - 2 {
-                        // niche: carve the outer inner-ring cell to air (recess)
-                        let (ox, oz) = (
-                            if x == t - 1 {
-                                t - 2
-                            } else if x == sx - t {
-                                sx - t + 1
-                            } else {
-                                x
-                            },
-                            if z == t - 1 {
-                                t - 2
-                            } else if z == sz - t {
-                                sz - t + 1
-                            } else {
-                                z
-                            },
-                        );
-                        // keep the very boundary solid; only recess the inner cell
-                        let _ = (ox, oz);
-                        g.set(x, y, z, Cell::Air);
-                    }
-                }
-            }
-        }
-    }
+    // 1b. Organic shaping (order matters — each pass reads the previous state):
+    //   ca_inner_shape  carves alcoves / bumps the inner wall face (A8 CA),
+    //   vault_ceiling   domes the roof inward one cell along the wall,
+    //   roughen_silhouette erodes the outer crown + vertical faces (A5).
+    // All three skip doorway columns so the sockets stay byte-identical, and none
+    // touch y=0 (floor) or y=1 (walk height), so pathability + enclosure hold.
+    ca_inner_shape(spec, &mut g, seed);
+    vault_ceiling(spec, &mut g, seed);
+    roughen_silhouette(spec, &mut g, seed);
 
     // 2. Carve doorways + jigsaw sockets through the full wall thickness.
     for &(side, fy) in &spec.doors {
@@ -775,6 +777,234 @@ fn inset(c: [i32; 3], side: Side, depth: i32) -> [i32; 3] {
         Side::South => [c[0], c[1], c[2] - depth],
         Side::West => [c[0] + depth, c[1], c[2]],
         Side::East => [c[0] - depth, c[1], c[2]],
+    }
+}
+
+/// True if column (x,z) lies within a doorway's 3-wide opening (plus a one-cell
+/// margin around the socket frame) for any door. The organic passes skip these
+/// columns so each doorway's opening, jigsaw seat, and surrounding frame stay
+/// byte-identical for the solver — sockets are keep-socket-v1, unchanged.
+fn near_doorway(size: [i32; 3], doors: &[(Side, i32)], x: i32, z: i32) -> bool {
+    for &(side, fy) in doors {
+        let jc = door_center(size, side, fy);
+        let hit = match side {
+            Side::North | Side::South => (x - jc[0]).abs() <= 2 && (z - jc[2]).abs() <= 1,
+            Side::West | Side::East => (z - jc[2]).abs() <= 2 && (x - jc[0]).abs() <= 1,
+        };
+        if hit {
+            return true;
+        }
+    }
+    false
+}
+
+/// Cellular-automata (4-5 rule) organic shaping of the inner wall face
+/// (algorithm A8 — the classic public "cave-like levels" CA technique, our own
+/// implementation from the description; no code ingested). A per-column field is
+/// seeded ~45% rock inside the interior, the boundary pinned rock, then the 4-5
+/// smoothing rule is iterated to blobby caverns. It is read back only on the ring
+/// against the inner wall: "open" columns carve an alcove into the wall (widening
+/// it, enclosure preserved because the outer boundary stays solid); "rock" columns
+/// bump rock inward above walk height. Deterministic — one seeded value field,
+/// double-buffered fixed scan order (ADR-0006). Skips doorway columns and never
+/// touches y=0/y=1, so sockets, floor, and the walkable path are untouched.
+fn ca_inner_shape(spec: &Spec, g: &mut Grid, seed: u64) {
+    let [sx, sy, sz] = spec.size;
+    let t = spec.wall_thickness;
+    if t < 2 {
+        return;
+    }
+    let interior = (sx - 2 * t).min(sz - 2 * t);
+    let d = sz as usize;
+    let at = |x: i32, z: i32| (x as usize) * d + (z as usize);
+    let inside = |x: i32, z: i32| x >= t && x < sx - t && z >= t && z < sz - t;
+    // Seed.
+    let mut cur = vec![false; (sx * sz) as usize];
+    for x in 0..sx {
+        for z in 0..sz {
+            cur[at(x, z)] = if inside(x, z) {
+                value_noise(seed, x, 0, z, 0.55, 221) < 0.45
+            } else {
+                true
+            };
+        }
+    }
+    // Iterate the 4-5 rule (double-buffered, fixed order).
+    for _ in 0..4 {
+        let mut next = cur.clone();
+        for x in 0..sx {
+            for z in 0..sz {
+                if !inside(x, z) {
+                    next[at(x, z)] = true;
+                    continue;
+                }
+                let mut walls = 0;
+                for dx in -1..=1 {
+                    for dz in -1..=1 {
+                        if dx == 0 && dz == 0 {
+                            continue;
+                        }
+                        let (nx, nz) = (x + dx, z + dz);
+                        if nx < 0 || nz < 0 || nx >= sx || nz >= sz || cur[at(nx, nz)] {
+                            walls += 1;
+                        }
+                    }
+                }
+                next[at(x, z)] = walls >= 5;
+            }
+        }
+        cur = next;
+    }
+    // Read back on the inner ring only.
+    for x in t..sx - t {
+        for z in t..sz - t {
+            let ring = x == t || x == sx - 1 - t || z == t || z == sz - 1 - t;
+            if !ring || near_doorway(spec.size, &spec.doors, x, z) {
+                continue;
+            }
+            if cur[at(x, z)] {
+                // Bump rock inward above walk height (only when the room can spare
+                // the width, so small rooms are not choked).
+                if interior >= 5 {
+                    for y in 2..sy - 1 {
+                        if value_noise(seed, x, y, z, 0.30, 231) > 0.55 {
+                            let n = value_noise(seed, x, y, z, 0.17, 31)
+                                + weathering_bias(x, y, z, spec.size, t);
+                            let (b, p) = pick(&wall_palette(), n);
+                            g.blk(x, y, z, b, p);
+                        }
+                    }
+                }
+            } else {
+                // Alcove: carve the inner wall layer behind this cell to air.
+                let (wx, wz) = if x == t {
+                    (t - 1, z)
+                } else if x == sx - 1 - t {
+                    (sx - t, z)
+                } else if z == t {
+                    (x, t - 1)
+                } else {
+                    (x, sz - t)
+                };
+                for y in 2..sy - 1 {
+                    if value_noise(seed, x, y, z, 0.30, 241) > 0.55 {
+                        g.set(wx, y, wz, Cell::Air);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Dome the interior ceiling: hang rock down one cell along the wall-adjacent ring
+/// so the roof reads as an arched cavern instead of a flat lid. Skips doorway
+/// columns; never touches the two lowest air layers, so head clearance holds.
+fn vault_ceiling(spec: &Spec, g: &mut Grid, seed: u64) {
+    let [sx, sy, sz] = spec.size;
+    let t = spec.wall_thickness;
+    if sy < 5 {
+        return;
+    }
+    for x in t..sx - t {
+        for z in t..sz - t {
+            let ex = (x - t).min(sx - 1 - t - x);
+            let ez = (z - t).min(sz - 1 - t - z);
+            if ex.min(ez) > 0 || near_doorway(spec.size, &spec.doors, x, z) {
+                continue;
+            }
+            if value_noise(seed, x, sy - 2, z, 0.40, 251) > 0.5
+                && matches!(g.get(x, sy - 2, z), Cell::Air)
+            {
+                let n = value_noise(seed, x, sy - 2, z, 0.18, 23);
+                let (b, p) = pick(&ceiling_palette(), n);
+                g.blk(x, sy - 2, z, b, p);
+            }
+        }
+    }
+}
+
+/// Silhouette / edge roughening (algorithm A5 — reimplemented from the dossier's
+/// "stochastic thickening/erosion of an edge" description; no code ingested).
+/// Breaks the rectangular outline that made round-1 pieces read as boxes, WITHOUT
+/// moving the AABB or the sockets: it only removes shell rock, never adds beyond
+/// the bounds. Two effects, both deterministic and enclosure-safe. First, a
+/// ragged eroded crown along the roofline: nibble perimeter top cells only where
+/// the cell below is solid (the interior ceiling, whose support is air, is never
+/// opened), eroding deeper at the vertical corners to chamfer them. Second, divots
+/// in the outer vertical faces of thick pieces: remove an outer-layer cell only
+/// when the cell one step inward is still solid, so an inner wall layer always
+/// remains and nothing breaches to the void. Doorway columns are skipped so socket
+/// frames stay byte-identical.
+fn roughen_silhouette(spec: &Spec, g: &mut Grid, seed: u64) {
+    let [sx, sy, sz] = spec.size;
+    let t = spec.wall_thickness;
+    let perim = |x: i32, z: i32| x == 0 || x == sx - 1 || z == 0 || z == sz - 1;
+    let solid = |g: &Grid, x: i32, y: i32, z: i32| matches!(g.get(x, y, z), Cell::Block(_, _));
+
+    // 1. Ragged eroded crown.
+    for x in 0..sx {
+        for z in 0..sz {
+            if !perim(x, z) || near_doorway(spec.size, &spec.doors, x, z) {
+                continue;
+            }
+            let at_corner = x.min(sx - 1 - x) == 0 && z.min(sz - 1 - z) == 0;
+            let max_depth = if t >= 2 {
+                if at_corner {
+                    3
+                } else {
+                    2
+                }
+            } else if at_corner {
+                2
+            } else {
+                1
+            };
+            let n = value_noise(seed, x, 0, z, 0.5, 201);
+            let mut depth = (n * (max_depth as f64 + 0.4)).floor() as i32;
+            if at_corner {
+                depth += 1;
+            }
+            depth = depth.min(max_depth);
+            let mut removed = 0;
+            let mut y = sy - 1;
+            while removed < depth && y >= 2 {
+                if solid(g, x, y, z) && solid(g, x, y - 1, z) {
+                    g.set(x, y, z, Cell::Air);
+                    removed += 1;
+                    y -= 1;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    // 2. Outer-face divots (thick pieces only — an inner wall layer always remains).
+    if t >= 2 {
+        for x in 0..sx {
+            for y in 2..sy - 1 {
+                for z in 0..sz {
+                    if !perim(x, z) || near_doorway(spec.size, &spec.doors, x, z) {
+                        continue;
+                    }
+                    if !solid(g, x, y, z) {
+                        continue;
+                    }
+                    let (ix, iz) = if x == 0 {
+                        (1, 0)
+                    } else if x == sx - 1 {
+                        (-1, 0)
+                    } else if z == 0 {
+                        (0, 1)
+                    } else {
+                        (0, -1)
+                    };
+                    if solid(g, x + ix, y, z + iz) && value_noise(seed, x, y, z, 0.45, 211) > 0.80 {
+                        g.set(x, y, z, Cell::Air);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1026,6 +1256,10 @@ fn build_stair(spec: &Spec, g: &mut Grid, seed: u64) {
             }
         }
     }
+    // Roughen the exterior crown (A5) so the stair shaft is not a clean box either
+    // — t=1 here, so only the ragged roofline + corner chamfer apply. Runs before
+    // doorway carving so the sockets stay byte-identical.
+    roughen_silhouette(spec, g, seed);
     // doorways: low south (floor 0), high north (floor 4)
     for &(side, fy) in &spec.doors {
         let (cells, jc) = doorway_cells(spec.size, side, fy);
@@ -1076,38 +1310,65 @@ fn build_shore(spec: &Spec, g: &mut Grid, seed: u64) {
             }
         }
     }
-    // Surface: a sand→water shoreline whose tide line is IRREGULAR (per-column
-    // jitter, not a straight pool edge). Dry beach at the back, a wet-sand tide
-    // band, then shallow water gradating to deeper sea toward the open front.
-    let base_wl = sz * 3 / 5;
-    let wl = |x: i32| -> i32 {
-        // jitter the waterline ±2 columns with smooth noise so the coast is ragged
-        let j = (value_noise(seed, x, 0, 0, 0.35, 131) * 5.0).floor() as i32 - 2;
-        (base_wl + j).clamp(2, sz - 1)
+    // Surface: a GRADED shoreline that laps in from the open front (south), not a
+    // rectangular pool with a hard vertical water wall (the round-1 defect). The
+    // tide line sits near the front and is ragged (per-column jitter → cove inlets)
+    // so the coast is uneven; the spawn strip (x 4..8) is pinned dry so the player
+    // lands on the beach at the water's edge, not waist-deep. The softening is in
+    // the SEABED, not the water column: near shore the bed stays at sand (1-deep
+    // shallow), then the bed STEPS DOWN to stone as it deepens (2-deep sea) while
+    // the water surface stays flat at y=2. Sand → wet-gravel tide row → sand-bottom
+    // shallow → stone-bottom sea, with pebbles and seagrass across the transition.
+    let surf = 2; // flat calm-sea surface height (top water block at y=surf)
+    let base_wl = sz - 2;
+    let coast_at = |x: i32| -> i32 {
+        let j = (value_noise(seed, x, 0, 0, 0.35, 131) * 4.0).floor() as i32 - 2; // −2..+1
+        let mut c = (base_wl + j).clamp(sz - 4, sz - 1);
+        if (4..=8).contains(&x) {
+            c = c.max(sz - 2); // keep the spawn beach dry
+        }
+        c
     };
     for x in 1..sx - 1 {
-        let coast = wl(x);
+        let coast = coast_at(x);
         for z in 1..sz {
-            if z < coast {
-                // dry beach: sand with gravel patches (noise), drier toward back;
-                // the single row at the tide line reads as darker wet gravel.
+            if z < coast - 1 {
+                // dry beach: sand with clustered gravel patches, drier toward back.
                 let n = value_noise(seed, x, 1, z, 0.24, 101);
                 let dryness = z as f64 / coast as f64;
-                let b = if z == coast - 1 || n + dryness > 1.05 {
+                let b = if n + dryness > 1.15 {
                     "minecraft:gravel"
                 } else {
                     "minecraft:sand"
                 };
                 g.blk(x, 1, z, b, None);
+            } else if z == coast - 1 {
+                // wet tide row: darker damp gravel where the water just reaches.
+                g.blk(x, 1, z, "minecraft:gravel", None);
             } else {
-                // sea: sand bed, water deepening toward the front
-                g.blk(x, 1, z, "minecraft:sand", None);
-                let depth = 1 + (z - coast) / 2;
-                for wy in 2..=(1 + depth).min(sy - 1) {
-                    g.blk(x, wy, z, "minecraft:water", Some(vec![("level", "0")]));
+                // sea. Bed drops the further out we go so depth grows from the FLOOR
+                // (natural beach slope), not from stacking water over a flat bed.
+                let out = z - coast; // 0 at the shore
+                if out <= 1 {
+                    // shallow: sand bottom visible through 1 block of water; scatter
+                    // wet pebbles so the bottom is not a clean plane.
+                    let bed = if value_noise(seed, x, 1, z, 0.5, 107) > 0.78 {
+                        "minecraft:gravel"
+                    } else {
+                        "minecraft:sand"
+                    };
+                    g.blk(x, 1, z, bed, None);
+                    g.blk(x, surf, z, "minecraft:water", Some(vec![("level", "0")]));
+                } else {
+                    // deeper sea: bed steps down to stone, water fills 2 deep to the
+                    // flat surface.
+                    g.blk(x, 0, z, "minecraft:stone", None);
+                    for wy in 1..=surf {
+                        g.blk(x, wy, z, "minecraft:water", Some(vec![("level", "0")]));
+                    }
                 }
-                // seagrass tufts in the shallows
-                if z < coast + 3 && value_noise(seed, x, 2, z, 0.5, 105) > 0.85 {
+                // seagrass tufts across the shallow band.
+                if out <= 2 && value_noise(seed, x, 2, z, 0.5, 105) > 0.82 {
                     g.blk(x, 2, z, "minecraft:seagrass", None);
                 }
             }
@@ -1116,7 +1377,7 @@ fn build_shore(spec: &Spec, g: &mut Grid, seed: u64) {
     // Rock scatter (boulders) on the dry beach, noise-clustered.
     for x in 2..sx - 2 {
         for z in 2..base_wl {
-            if z >= wl(x) - 1 {
+            if z >= coast_at(x) - 1 {
                 continue;
             }
             let n = value_noise(seed, x, 2, z, 0.5, 111);
@@ -1139,7 +1400,7 @@ fn build_shore(spec: &Spec, g: &mut Grid, seed: u64) {
         (4 * sx / 5, -1, "x"),
     ];
     for (lx, dz, ax) in logs {
-        let z = (wl(lx) + dz).clamp(2, sz - 2);
+        let z = (coast_at(lx) + dz).clamp(2, sz - 2);
         if matches!(g.get(lx, 1, z), Cell::Block(_, _)) && matches!(g.get(lx, 2, z), Cell::Air) {
             g.blk(
                 lx,

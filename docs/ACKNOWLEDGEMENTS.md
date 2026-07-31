@@ -26,20 +26,37 @@ attributions (prefabs, campaign media) live in the content repo
 Plus ordinary Rust/TypeScript dependencies as declared in `Cargo.lock` /
 `package-lock.json` under their respective licenses.
 
-## Ported algorithms (prefab generation — adoption in progress, M3)
+## Ported algorithms (prefab generation — M3)
 
-Ported by re-implementation in Rust with attribution; no source files copied.
-Extraction dossier: internal research, 2026-07-31.
+Ideas only: the algorithmic *techniques* are re-implemented in our own Rust from
+their published description. No third-party source files are read or copied —
+algorithms are not copyrightable, only their concrete expression. Extraction
+dossier: internal research, 2026-07-31.
 
-| Source | License | What we adopted |
+### Implemented — cave/shore tileset round 2 (`prefabs/cave-generator`)
+
+| Source | License (verified) | Technique we re-implemented |
 |---|---|---|
-| [frightful_hobgoblin](https://github.com/frightful-hobgoblin) (GDMC 2024 winner)¹ | Gay Agenda License 1.0 (MIT-derived, permissive) | Value-driven weighted block palettes with edge-distance biasing; deterministic value noise; parametric vault/roof rasterizer; silhouette roughening |
-| [Niels-NTG GDMC 2024](https://github.com/Niels-NTG/gdmc2024) | MIT | Wave-function-collapse tiling over prefab modules with rotation/adjacency constraints (single-threaded deterministic path only) |
-| [mxgmn/WaveFunctionCollapse](https://github.com/mxgmn/WaveFunctionCollapse) | MIT | The WFC algorithm itself |
-| Cellular-automata cave shaping (4-5 rule) | classic published technique, implemented from description | Organic cave-wall profiles replacing rectangular shells |
+| [SpecificProtagonist/frightful_hobgoblin](https://github.com/SpecificProtagonist/frightful_hobgoblin) (GDMC 2024 winner) | Gay Agenda License 1.0 — MIT-derived permissive¹ | (A1) value-noise-weighted block palettes with edge-distance / height **weathering bias**; (A5) silhouette / edge **roughening** (eroded roofline crown, corner chamfer, outer-face divots); ceiling **vaulting** (A4, dome-lite) |
+| Cellular-automata cave shaping (4-5 rule) — RogueBasin / Kun / gridbugs | classic published technique | (A8) 4-5-rule CA perturbing the inner wall face into organic alcoves/bumps, replacing straight-walled interiors |
 
-¹ Repo link recorded in the extraction dossier; entry updated with the exact URL
-in the adopting PR.
+¹ **License verdict (verified 2026-07-31 against the upstream `LICENSE`).** The "Gay
+Agenda License 1.0" grants the full MIT set (use/copy/modify/merge/publish/
+distribute/sublicense/sell); it has no copyleft, no non-commercial, and no
+no-derivatives clause. It *adds* two conditions on the licensee's **conduct**
+(actively support LGBTQ+ rights; vocalise a set phrase at least once during use)
+plus a termination clause. Because those behavioural obligations are plausibly
+"further restrictions" under **GPL-3.0 §7**, combining the upstream *code* verbatim
+into this GPL-3.0-or-later repository is legally ambiguous. We therefore treat the
+work as **ideas-only** and re-implement the algorithms from their description at a
+distance — which sidesteps §7 entirely, since techniques are uncopyrightable. No
+upstream code was ingested. Attribution recorded here and in each prefab's metadata.
+
+### Planned — not yet implemented (dossier Phase 3)
+
+| Source | License | Technique |
+|---|---|---|
+| [Niels-NTG GDMC 2024](https://github.com/Niels-NTG/gdmc2024) · [mxgmn/WaveFunctionCollapse](https://github.com/mxgmn/WaveFunctionCollapse) | MIT | Wave-function-collapse tiling over prefab modules (rotation/adjacency, single-threaded deterministic path only) for seamless interior/facade tiling |
 
 ## Evaluated, not adopted (NPC skin pipeline, spec-0009)
 

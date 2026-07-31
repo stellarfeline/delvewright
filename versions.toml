@@ -101,12 +101,13 @@ mineflayer = "4.37.1"
 # RE-PIN CONVENTION: after a content-repo PR merges, update `sha` to the new
 # content `main` tip in a normal follow-up PR.
 repo = "stellarfeline/delvewright-campaigns"
-# Content `main` tip after the cave/shore tileset merge (#3), which sits directly
-# on top of the anchor/npc-stand fix (#2) — so this pin includes both the
-# distinct clear-floor npc-stand cells and the new cave-* prefabs + `pool/cave-shore`
-# (a drop-in for `pool/stone-keep`; keep pieces unchanged, determinism holds).
-# Bump it on future content merges per the RE-PIN CONVENTION above.
-sha = "974485e045adc7d6abefb7a48a778fecfa45ed20"
+# Content `main` tip after the cave/shore tileset **round-2 regeneration** (#5),
+# which sits on top of the initial cave/shore tileset (#3) and the anchor/npc-stand
+# fix (#2). The round-2 regen is a byte-compatible drop-in: piece ids, sizes, socket
+# placements, and anchors are unchanged (only `.nbt` block content + a few
+# measured_min_light values differ), so `pool/cave-shore` still mates identically and
+# keep pieces stay untouched. Bump on future content merges per the RE-PIN CONVENTION.
+sha = "962836a8b66142ca198bdeeb781302009876f04e"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders
