@@ -1,0 +1,33 @@
+# SPIKE crate (spike-render-fidelity) — NOT a workspace member.
+# The empty [workspace] table makes this its own workspace so `cargo
+# test --workspace` from the repo root never pulls Nucleation/wgpu in.
+# Purpose: de-risk the spec-0007/0003 render layer by proving whether
+# Nucleation can headlessly render our vanilla-structure .nbt prefabs to
+# PNG with real 1.21.11 textures. Evidence, not shippable code.
+[workspace]
+
+[package]
+name = "render-spike"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "nuke-render"
+path = "src/main.rs"
+
+[dependencies]
+# Nucleation with the GPU headless renderer (wgpu -> Metal on macOS,
+# off-screen, no display) plus meshing. MIT.
+# crates.io tops out at 0.8.0; the `rendering` feature + the API this spike
+# uses (GpuRenderer, to_mesh, ResourcePackSource) is only on git master
+# (0.9.1), pinned by rev for reproducibility.
+nucleation = { git = "https://github.com/Schem-at/Nucleation", rev = "dbc8fe02ce4ddac90a58423dd5d441d067e87baf", features = ["rendering"] }
+# Read our gzip-framed vanilla structure .nbt (same stack the compiler uses).
+fastnbt = "2"
+flate2 = "1"
+# Save the rendered frame.
+image = "0.24"
+pollster = "0.4"
+# make_test_nbt: serialize the vanilla structure schema (same as the generator).
+serde = { version = "1", features = ["derive"] }

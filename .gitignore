@@ -17,3 +17,4 @@ validation/.jar-cache/
 # captured server log + harvested report). `*.log` already covers playtest.log.
 validation/playtest-report.json
 campaigns
+crates/render-spike/target/
