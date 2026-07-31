@@ -155,6 +155,33 @@ build instead of a bot run: with the pre-fix `.nbt`, `delvec build nobodys-cave`
 fails `DW0311` on the entry→cavern leg; with the fixed `.nbt` it routes clean and no
 walkable cell borders the void.
 
+### Pen placement / flock-crowding fix (task #37)
+
+Follow-up from the nobodys-cave bot ladder: the sheep pens sat on the proven
+corridor, and the wave-spawned flock crowded against a pen fence at its spawn cell.
+Two placement fixes (only `cave-den` + `cave-cavern` `.nbt` change; sizes, sockets,
+connectors, and anchors byte-identical — the sole metadata delta is `cave-den`'s
+re-derived `measured_min_light` 7→9, since removing the fence maze lets the light
+estimate reach more floor; still `lit`):
+
+- **`cave-den` pen removed.** The den is a 9×5×9 room whose 5×5 interior is *entirely*
+  consumed by the door-to-door critical corridor (both the N and S sockets open on
+  the same `x=3..5` columns, so nav's A* fills them). Any fenced pen there sits on or
+  immediately flanks the proven path — inflating the mineflayer A* search space — and
+  the round-2 pen's west fence ran one cell off the wave-spawn cell, boxing the six
+  spawning sheep against the corridor. The flock is a `spawn-wave`, not penned stock,
+  so the pen was pure dressing; it is dropped here (the representative pen lives in
+  `cave-cavern`). Removing it de-crowds the spawn and clears the corridor.
+- **`cave-cavern` pen relocated** from the path-hugging `x9..11, z3..5` (a fence line
+  on the wall, ~3 cells off the centreline the path runs) to the front-west alcove
+  `x2..3, z2..6`, hard against the wall and ≥3 cells clear of both the `x=6` path and
+  the `x5..7` door span — off the corridor, still good greeble.
+
+The den piece is provably mob-tight (its shell is solid except the two mated doors;
+floor and ceiling intact over the whole walkable area), and nav's flock-containment
+model finds **zero** walkable cells bordering the void across the assembled cave
+after the fix — the flock is contained.
+
 ## Honest self-assessment vs the brief
 
 The pieces **read as natural rock and cohere as one place** (the main risk cleared

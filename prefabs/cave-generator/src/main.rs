@@ -1684,7 +1684,16 @@ fn specs() -> Vec<Spec> {
             wall_thickness: 2,
             open_air: false,
             lantern_grid: true,
-            modules: vec![Module::Pen(4, 4, 7, 7)],
+            // No sheep pen: cave-den is a 9×5×9 room whose 5×5 interior is fully
+            // consumed by the door-to-door critical corridor (both N and S sockets
+            // open on the same x=3..5 columns), so any fenced pen necessarily sits
+            // ON or immediately flanking the proven path — it blew up the mineflayer
+            // A* search space and boxed the wave-spawned flock against the corridor
+            // by the spawn cell (task #37). The flock is a `spawn-wave`, not penned
+            // stock; the representative sheep pen lives in cave-cavern, which has the
+            // room to hold one clear of its path. Removing the fence maze also frees
+            // the wave-spawn cell so the six sheep are not shoved toward the exits.
+            modules: vec![],
             stair: false,
             anchors: vec![
                 ("anchor/npc-stand", a_pos([3, 1, 4], Some("north"))),
@@ -1748,7 +1757,14 @@ fn specs() -> Vec<Spec> {
             wall_thickness: 2,
             open_air: false,
             lantern_grid: true,
-            modules: vec![Module::Hearth(6, 11), Module::Pen(9, 3, 11, 5)],
+            // Sheep pen relocated to the front-west alcove (local x2..4, z2..4),
+            // clear of the proven path — which runs straight down the x=6 centreline
+            // from the north door (z0) to the boss/objective at z10..12 — and clear
+            // of the door span (x5..7). The round-2 placement (x9..11, z3..5) hugged
+            // that centreline and put a fence line on the wall (x11), flanking the
+            // path and inflating the bot's A* search (task #37). Pen is dressing, not
+            // stock; keeping it here preserves the good greeble off the corridor.
+            modules: vec![Module::Hearth(6, 11), Module::Pen(2, 2, 3, 6)],
             stair: false,
             anchors: vec![
                 ("anchor/boss", a_pos([6, 1, 10], Some("north"))),

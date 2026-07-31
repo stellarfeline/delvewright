@@ -101,16 +101,17 @@ mineflayer = "4.37.1"
 # RE-PIN CONVENTION: after a content-repo PR merges, update `sha` to the new
 # content `main` tip in a normal follow-up PR.
 repo = "stellarfeline/delvewright-campaigns"
-# Content `main` tip after the cave/shore tileset **seam-walkability fix** (#8) —
-# a byte-compatible regen on top of the round-2 pass (#5) and the Modrinth hero
-# set-pieces (#6) + palette-audit CI (#7). Only three `.nbt` bodies change
-# (cave-mouth, cave-cavern, cave-shore): decoration is kept out of doorway-throat
-# walk envelopes and the open-air cove is fully enclosed, so a wandering entity can
-# no longer wedge a seam shut or fall into the void. Piece ids, sizes, socket
-# placements, anchors, and all metadata JSON are byte-identical, so `pool/cave-shore`
-# mates identically and keep pieces stay untouched. Bump on future content merges
-# per the RE-PIN CONVENTION.
-sha = "c5581ce0a0c5343b059f03ccdc1f2497c784bf67"
+# Content `main` tip after the cave **pen-placement fix** (#9) — a byte-compatible
+# regen on top of the seam-walkability fix (#8). Only two `.nbt` bodies change
+# (cave-den, cave-cavern): the den sheep pen (which sat on the door-to-door
+# critical corridor and boxed the wave-spawned flock against its spawn cell) is
+# removed, and the cavern pen is relocated to a front-west alcove clear of the
+# path. Piece ids, sizes, socket placements, and anchors are byte-identical (the
+# only metadata delta is cave-den's re-derived measured_min_light 7->9), so the
+# pool mates identically and every critical leg still routes (DW0311 passes) with
+# zero walkable cells bordering the void. Bump on future content merges per the
+# RE-PIN CONVENTION.
+sha = "7fcd04c5012da7c6372d6513b4956c10fe308828"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders
