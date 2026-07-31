@@ -1,4 +1,4 @@
-# spec-0010 — Assembled-world lighting, deterministic relight, declared weather
+# spec-0010 — Assembled-world lighting, deterministic relight, declared time & weather
 
 Status: Approved (owner-approved in conversation, 2026-07-31)
 Amends: spec-0001 "Lighting contract" (DW0210 evidence base), spec-0007 (admission
@@ -34,9 +34,10 @@ assembled world is available at compile time.
 1. Build a light-voxel field over the assembled world model: per-cell opacity +
    emitter table (same algorithm family as the cave-generator's static
    estimator; block-light values per 1.21.11).
-2. Sky exposure is computed geometrically; sky-open cells count sky light at the
-   sealed noon time lock (spec-0002 invariant). If a future spec unpins time,
-   this clause must be revisited before merge.
+2. Sky exposure is computed geometrically; sky-open cells count sky light under
+   the darkest reachable (time, weather) combination (see "Time & weather").
+   Cycles never free-run (sealing invariant), so every state is declared and
+   the bound is exact.
 3. Flood block light + sky light deterministically; collect **reachable walkable
    cells** (nav reachability from the area's entry anchors) below the target.
 4. **Relight placement** (only for areas with a `lighting` declaration):
@@ -64,28 +65,31 @@ Fixtures are emitted as `setblock` commands in the existing world-init path
 world is assembled in-game by jigsaw, so post-assembly block writes are the
 intended vanilla mechanism (consistent with v0.4 `SetBlock`).
 
-### Weather (owner-directed 2026-07-31)
+### Time & weather (owner-directed 2026-07-31)
 
-Sealing freezes the weather cycle (`advance_weather false`, spec-0002) but never
-sets a state — every delve is silently locked to clear. Weather is a
-vanilla-intended primitive (`/weather clear|rain|thunder`) and becomes
-first-class:
+Sealing freezes both cycles (`advance_time false`, `advance_weather false`,
+spec-0002) but the states are hard-coded: time pinned to noon, weather silently
+left clear. Both are vanilla-intended primitives (`/time set`,
+`/weather clear|rain|thunder`) and become first-class, dimension-global (one
+state for the whole delve, not per area):
 
-- **Stage 1 (world), optional:** `"weather": "clear" | "rain" | "thunder"`
-  (default `clear`) — the initial state, emitted in the init path after sealing.
-  Weather is dimension-global in vanilla: one state for the whole delve, not
-  per area.
-- **Stage 5 effect verb, new:** `set-weather` with the same three states,
-  usable wherever effects fire (quest completion, triggers, dialogue effects) —
-  e.g. a thunderstorm breaking after a story beat. With the cycle frozen, a set
-  state persists until the next `set-weather`.
-- **Lighting interaction:** rain/thunder attenuate effective sky brightness.
-  The static model applies a per-state sky attenuation constant (exact values
-  verified live against the pinned 1.21.11 server at implementation time, per
-  the gamerule-verification precedent) and judges each area under the **darkest
-  weather state reachable in the campaign** (initial state ∪ every reachable
-  `set-weather`). Conservative and deterministic: a shore lit only by sky must
-  either survive its worst storm or declare fixtures / night-vision.
+- **Stage 1 (world), optional:** `"time": "day" | "noon" | "night" | "midnight"`
+  (vanilla keywords, default `noon`) and `"weather": "clear" | "rain" |
+  "thunder"` (default `clear`) — initial states, emitted in the init path after
+  sealing.
+- **Stage 5 effect verbs, new:** `set-time` and `set-weather` with the same
+  states, usable wherever effects fire (quest completion, triggers, dialogue
+  effects) — e.g. a thunderstorm breaking or night falling after a story beat.
+  With the cycles frozen a set state persists until the next set; switches are
+  instantaneous cuts (vanilla has no gradual transition — intended, cinematic).
+- **Lighting interaction:** night and rain/thunder attenuate effective sky
+  brightness. The static model applies per-state sky attenuation constants
+  (exact values verified live against the pinned 1.21.11 server at
+  implementation time, per the gamerule-verification precedent) and judges each
+  area under the **darkest (time, weather) combination reachable in the
+  campaign** (initial states ∪ every reachable `set-time`/`set-weather`).
+  Conservative and deterministic: a shore lit only by sky must survive its
+  darkest reachable night/storm or declare fixtures / night-vision.
 
 ### Mitigation hierarchy (DW0210 redefined)
 
@@ -133,15 +137,18 @@ and accepted at that advisory tier.
 7. Declared but unsatisfiable placement → DW0211, exit 2.
 8. Relight placements never break walkability: nav verification passes on every
    green fixture above.
-9. Sky-open shore piece at noon lock, clear weather: no fixtures demanded for
-   sky-lit cells.
-10. Weather determinism: declared initial weather and every `set-weather` emit
-    byte-identically; a campaign whose reachable weather includes `thunder` is
-    judged under thunder attenuation (a sky-only-lit area then demands
-    mitigation; the same campaign with weather locked `clear` builds clean).
+9. Sky-open shore piece, declared (noon, clear), no reachable switches: no
+   fixtures demanded for sky-lit cells.
+10. Time/weather determinism: declared initial states and every
+    `set-time`/`set-weather` emit byte-identically; a campaign whose reachable
+    states include `thunder` or `midnight` is judged under that attenuation (a
+    sky-only-lit area then demands mitigation; the same campaign locked
+    (noon, clear) builds clean).
 
 ## Non-goals
 
-- Runtime/dynamic lighting, variable time-of-day (time lock is a sealing
-  invariant), aesthetic light-art direction beyond fixture choice, and fixing
-  the admission probe's sealed-cavity counting (advisory tier, documented).
+- Runtime/dynamic lighting, free-running time or weather cycles (states are
+  declared and switched, never natural — sealing invariant), gradual
+  time/weather transitions, aesthetic light-art direction beyond fixture
+  choice, and fixing the admission probe's sealed-cavity counting (advisory
+  tier, documented).

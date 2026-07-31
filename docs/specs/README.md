@@ -18,4 +18,4 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0007](spec-0007-asset-pipeline.md) | External asset pipeline (two-track) | Approved |
 | [spec-0008](spec-0008-dsl-v0.4.md) | DSL v0.4 — expressiveness (dialogue state, props, narration, live threats, presentation) | Approved |
 | [spec-0009](spec-0009-npc-skins.md) | NPC skin pipeline — creation-first, resource-pack delivery | Approved |
-| [spec-0010](spec-0010-assembled-relight.md) | Assembled-world lighting, deterministic relight, declared weather | Approved |
+| [spec-0010](spec-0010-assembled-relight.md) | Assembled-world lighting, deterministic relight, declared time & weather | Approved |
