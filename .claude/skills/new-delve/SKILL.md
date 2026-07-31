@@ -60,6 +60,25 @@ For each stage in order — world → npcs → classes → quest-plan → quests
    of patching syntax.
 4. Interactive mode: present a 3–6 line summary of the stage; wait.
 
+### Localization stage (only when the prompt asks for other languages)
+
+If the prompt requests one or more languages — or the user prompts in a
+non-English language **and asks for localized in-game text** (中文文本 etc.) — add a
+**final generation stage after `dialogue`**, once the English campaign is complete:
+
+1. Declare the codes in `world.json`: `"languages": ["zh-cn", …]` (BCP-47-style;
+   `en` is implicit/canonical and is **never** listed). Stage docs stay English.
+2. `delvec schema` has no l10n stage; get the exact key inventory by writing the
+   sidecar and letting `delvec validate` tell you what is missing/orphan
+   (`DW0180`/`DW0181`). Author `l10n/<code>.json`:
+   `{ dsl_version, campaign_id, kind: "l10n", lang: "<code>", content: { <key>: … } }`.
+3. **Translate FROM the finished English** (never author a language natively) —
+   honor each NPC's `persona.speech_style` in the target language, and keep a
+   Minecraft-appropriate register. Cover the inventory **exactly**.
+4. Re-`validate` until zero `DW0180`/`DW0181`. The default build stays English;
+   `delvec build --lang <code>` emits the localized delve (same layout, strings
+   swapped; `critical-path.json` is language-neutral so the ladder is unchanged).
+
 Then:
 
 5. `delvec analyze <campaign-dir>` — reachability/deadlock/dark-mitigation. Fix in
@@ -87,8 +106,11 @@ Then:
 
 - Persist the DSL workspace before validation, not after — a crash must never
   lose the campaign.
-- Every player-visible string in English unless the prompt requests otherwise
-  (owner prompts in Chinese still yield English defaults unless she says 中文文本).
+- Every player-visible string in the **stage docs stays English** — always. Other
+  languages are delivered as `l10n/<code>.json` sidecars (the Localization stage
+  above), never by writing non-English into the stage docs. Owner prompts in
+  Chinese still yield English stage docs; add a `zh-cn` sidecar only when she asks
+  for localized in-game text (中文文本).
 - Homages: original text only, cultural reference never asset ingestion
   (ADR-0007).
 - If a mechanic the prompt wants has no DSL verb, do NOT fake it with adjacent
