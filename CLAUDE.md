@@ -66,7 +66,6 @@ crates/              # Rust workspace: dsl / compiler / orchestrator
 prefabs/             # .nbt library + metadata (git-lfs)
 harness/             # mineflayer bot tests (TypeScript)
 tools/               # auxiliary Python tooling (skin composer/previewer) — never shipped in delves
-
 packtest/            # PackTest templates
 validation/          # docker compose: headless server + bot, same image as CI & prod
 ```
