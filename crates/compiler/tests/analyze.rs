@@ -1,7 +1,12 @@
-//! Dark-prefab lighting-mitigation analysis (spec-0001 "Lighting contract",
-//! DW0210). Fixture pair: a reachable `dark` prefab with no night-vision item in
-//! any class kit fails analysis; the same campaign with a night-vision potion in
-//! the kit passes.
+//! Lighting-mitigation gate relocation (spec-0010).
+//!
+//! The dark-prefab lighting gate (`DW0210`) used to live in `analyze_campaign`,
+//! judging per-piece admission profiles. spec-0010 moved it to the compiler's
+//! assembled-world light model (`crate::light`), which measures real light over
+//! the placed geometry. This file pins the relocation: `analyze_campaign` no
+//! longer emits `DW0210`, even for a campaign whose bound prefab is profiled
+//! `dark`. The new measured gate is exercised in `light.rs` (assembled-light unit
+//! tests) and `relight.rs` (spec-0010 acceptance criteria).
 
 mod common;
 
@@ -13,9 +18,8 @@ use delvewright_dsl::{
 };
 use std::collections::BTreeSet;
 
-/// Wraps the real prefab registry but forces every prefab's lighting to `dark`,
-/// so the mitigation check has a dark prefab to react to without shipping a dark
-/// `.nbt` fixture (analysis reads metadata only).
+/// Wraps the real prefab registry but forces every prefab's lighting profile to
+/// `dark` — the input that used to trip the old `analyze_campaign` gate.
 struct ForceDark<'a>(&'a PrefabRegistry);
 
 impl AnchorRegistry for ForceDark<'_> {
@@ -40,58 +44,27 @@ fn hello_world_raw() -> RawCampaign {
     load_campaign_dir(&common::hello_world_dir()).unwrap().raw
 }
 
-/// A classes.json whose kit carries a night-vision potion (the v0.2 mitigation).
-const NIGHT_VISION_CLASSES: &str = r#"{
-  "dsl_version": "0.2.0",
-  "campaign_id": "hello-world",
-  "stage": "classes",
-  "content": {
-    "classes": [
-      {
-        "id": "class/wanderer",
-        "name": "Wanderer",
-        "blurb": "Carries a light.",
-        "kit": [
-          { "item": "minecraft:potion", "count": 1, "name": "Potion of Night Vision" }
-        ]
-      }
-    ]
-  }
-}"#;
-
+/// spec-0010: `analyze_campaign` no longer emits `DW0210`, even when every bound
+/// prefab is profiled `dark` (the admission profile is no longer a gating input).
 #[test]
-fn dark_prefab_without_mitigation_fails_analysis() {
+fn analyze_no_longer_emits_dw0210_for_dark_profile() {
     let campaign = parse_campaign(&hello_world_raw()).expect("valid campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let diags = analyze_campaign(&campaign, &ForceDark(&prefabs));
     assert!(
-        diags.iter().any(|d| d.code == "DW0210"),
-        "expected DW0210 (dark prefab, no night-vision kit): {diags:#?}"
-    );
-}
-
-#[test]
-fn dark_prefab_with_night_vision_kit_passes() {
-    let mut raw = hello_world_raw();
-    raw.classes = NIGHT_VISION_CLASSES.to_string();
-    let campaign = parse_campaign(&raw).expect("valid campaign parses");
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let diags = analyze_campaign(&campaign, &ForceDark(&prefabs));
-    assert!(
         !diags.iter().any(|d| d.code == "DW0210"),
-        "night-vision kit should mitigate the dark prefab: {diags:#?}"
+        "DW0210 moved to the assembled-light model; analyze must not emit it: {diags:#?}"
     );
 }
 
-/// Control: the shipped hello-room is `lit`, so the real registry yields no
-/// DW0210 for the unmodified campaign.
+/// Control: the shipped hello-world campaign analyzes clean (reachability only).
 #[test]
-fn lit_prefab_needs_no_mitigation() {
+fn hello_world_analyzes_clean() {
     let campaign = parse_campaign(&hello_world_raw()).expect("valid campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let diags = analyze_campaign(&campaign, &prefabs);
     assert!(
-        !diags.iter().any(|d| d.code == "DW0210"),
-        "the lit hello-room must not trip the dark-mitigation check: {diags:#?}"
+        diags.is_empty(),
+        "hello-world must analyze clean: {diags:#?}"
     );
 }

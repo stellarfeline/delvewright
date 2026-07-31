@@ -7,13 +7,14 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 `tools/check-dw-codes.py`).
 
 - Binary: `delvec` (`crates/compiler`, Rust-native, ADR-0011).
-- Versions (as of this doc): `delvec 0.1.0`, `dsl 0.4.0`, `mc 1.21.11`.
-  Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`** (additive
-  supersets; `0.2.0` output stays byte-identical across the later versions).
-- **Approved, landing** markers: surface approved (spec-0010) but not yet in
-  code — documented here for continuity, not yet behavior. Today: stage-1
-  `lighting`/`time`/`weather`, effect verbs `set-time`/`set-weather`, and
-  diagnostic `DW0211`.
+- Versions (as of this doc): `delvec 0.1.0`, `dsl 0.5.0`, `mc 1.21.11`.
+  Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`**
+  (additive supersets; `0.2.0` output stays byte-identical across the later
+  versions).
+- spec-0010 (#35) has **landed** at `dsl_version 0.5.0`: stage-1
+  `lighting`/`time`/`weather`, effect verbs `set-time`/`set-weather`, the
+  assembled-world light model + deterministic relight pass (`crate::light`), the
+  measured redefinition of `DW0210`, and diagnostics `DW0211`/`DW0196`.
 
 ---
 
@@ -27,14 +28,19 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 2 | Parse (serde, `deny_unknown_fields`) | `dsl::parse_campaign` | `DW0100` (exit 1) |
 | 3 | Validate stages 1–6 (schema + referential, full injected registries) | `dsl::validate_campaign_with` | `DW01xx` (exit 1) |
 | 4 | l10n sidecar coverage | `dsl::validate_l10n` | `DW0180`/`DW0181` (exit 1) |
-| 5 | Analyze (deep quest/dialogue reachability + dark-light mitigation) | `compiler::analyze` | `DW02xx` (exit 2) |
+| 5 | Analyze (deep quest/dialogue reachability) | `compiler::analyze` | `DW02xx` (exit 2) |
 | 6 | Solve jigsaw layout (per `prefab_pool` area, from seed) | `compiler::solver` | `DW030x` (exit 3) |
 | 7 | Assemble world model (placed pieces → voxel grid) | `compiler::plan` | `DW030x` (exit 3) |
-| 8 | Nav checks (A* `move-npc`, cutscene clip, critical-path walkability) | `compiler::nav` | `DW0307`/`DW0308`/`DW0311` (exit 3) |
-| 9 | Emit (datapack, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
+| 8 | Assembled-light + relight (measure, place fixtures) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
+| 9 | Nav checks (A* `move-npc`, cutscene clip, critical-path walkability — incl. relight fixtures) | `compiler::nav` | `DW0307`/`DW0308`/`DW0311` (exit 3) |
+| 10 | Emit (datapack, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
 
 - `build` ⟹ `validate` + `analyze`; `analyze` ⟹ `validate`. A validation failure
   short-circuits (exit 1) before analysis; analysis failure (exit 2) before build.
+- The assembled-light gate (`DW0210`/`DW0211`) runs inside the build (it needs the
+  placed geometry) but is analysis-tier: `main` maps a `DW02xx` build diagnostic to
+  **exit 2**. Its relight fixtures feed both `setup_finish` emission and the nav
+  re-verification in pass 9.
 - Every emitted `.mcfunction` line is checked against the vendored 1.21.11
   Brigadier tree (`compiler::commands`; structure-only — arity/paths, not arg
   values). mecha re-validates in CI (ADR-0011); disagreement fails CI.
@@ -48,7 +54,7 @@ delvec validate <dir>                      # stages 1–6 schema + referential
 delvec analyze  <dir>                      # + quest-graph reachability
 delvec build    <dir> -o <out>             # full deterministic build
 delvec schema   --stage <1..6|all>         # export JSON Schema
-delvec --version                           # "delvec 0.1.0, dsl 0.4.0, mc 1.21.11"
+delvec --version                           # "delvec 0.1.0, dsl 0.5.0, mc 1.21.11"
 ```
 
 Global flags: `--json` (one JSON diagnostic object per line), `--prefabs <dir>`
@@ -83,8 +89,9 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 | `target_minutes` | Informational (pacing). | 0.1 |
 | `languages[]` (opt) | BCP-47 codes; `en` implicit/never listed; drives l10n coverage + `--lang`. | 0.3 i18n |
 | `areas[]` | 1..N. Each binds **exactly one** of `prefab` or `prefab_pool`+`pieces{min,max}` (else `DW0160`). Area origin = `[i·256, 64, 0]`. | 0.1 / pool 0.2 |
-| `areas[].lighting {fixture,min_light}` | *Approved, landing* (spec-0010): relight pass guarantees `min_light` over reachable cells. | landing |
-| `time`, `weather` | *Approved, landing* (spec-0010): dimension-global initial state, emitted after sealing. | landing |
+| `areas[].lighting {fixture,min_light}` (opt) | spec-0010: relight pass guarantees `min_light` (1..=14, default 7; `DW0196` out of range) over reachable walkable cells by placing `fixture` (`torch`/`lantern`/`campfire`/`shroomlight`), else `DW0211`. | 0.5 |
+| `time` (opt) | `day`/`noon`/`night`/`midnight` (default `noon`). Dimension-global initial state, emitted in the sealing baseline (`time set <kw>`). | 0.5 |
+| `weather` (opt) | `clear`/`rain`/`thunder` (default `clear`; `clear` emits nothing — byte-identical to pre-0.5). Dimension-global, emitted after sealing (`weather <kw>`). Rain/thunder attenuate the assembled-light sky term. | 0.5 |
 
 ### Stage 2 — `npcs` (casting sheets, stationary)
 
@@ -100,7 +107,8 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 1..4 classes. `kit[]` = vanilla item id + count + optional display `name`
 (→ l10n `class.<c>.kit.<i>.name`). `name`/`blurb` player-visible. Reserved kit
 fields `lore`/`enchantments`/`attributes` are **not defined** → unknown-field
-`DW0100`. A kit night-vision item is the sufficient `DW0210` dark-mitigation.
+`DW0100`. A kit night-vision item (id/name contains `night_vision`) is the
+retained sufficient `DW0210` dark-mitigation (spec-0010 mitigation hierarchy).
 
 ### Stage 4 — `quest-plan`
 
@@ -132,10 +140,13 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Effect `despawn-npc{npc}` | Removes NPC + hitbox. | 0.4 |
 | Effect `move-npc{npc,to_anchor,speed?}` | A*-planned per-tick tp through walkable space; unroutable → `DW0307`. | 0.4 |
 | Effect `cutscene{path[],seconds}` | Two-camera spectator dolly; clip → `DW0308`. | 0.4 |
-| Effect `set-time`/`set-weather` | *Approved, landing* (spec-0010): instantaneous state cut. | landing |
+| Effect `set-time{time}` | Instantaneous dimension-global cut (`time set <kw>`); persists (cycle frozen). | 0.5 |
+| Effect `set-weather{weather}` | Instantaneous dimension-global cut (`weather <kw>`); persists (cycle frozen). | 0.5 |
 
-Dialogue effect `set-flag` and option `requires_flags` mirror the quest forms
-(v0.4). Under `0.2.0`, all v0.3 verbs/effects are reserved → `DW0141`.
+Dialogue effects `set-flag` (v0.4) and `set-time`/`set-weather` (v0.5) and option
+`requires_flags` mirror the quest forms. Under `0.2.0`, all v0.3 verbs/effects are
+reserved → `DW0141`; likewise v0.4 surface under pre-0.4 and v0.5 surface
+(`time`/`weather`/`lighting`, `set-time`/`set-weather`) under pre-0.5.
 
 ### Stage 6 — `dialogue`
 
@@ -179,7 +190,8 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | `cutscene` | Per player: save gamemode+pos → spectator → alternate `spectate` between two co-located dolly cameras each tick → restore. |
 | `campaign-complete` | `dw.campaign` = 1 (`setdisplay sidebar`); broadcast `[Delvewright] complete dw.campaign 1` (bot channel); title fanfare. |
 | objective lifecycle | Activation shows `title`+`hint`+`note_block.pling` once (flag `dw.ann_<obj>`); completion sound `experience_orb.pickup`. |
-| `set-time`/`set-weather` | *Approved, landing* (spec-0010): `/time set …` / `/weather …` in effect functions. |
+| `set-time` / `set-weather` | `time set <kw>` / `weather <kw>` (dimension-global, no selector) inline in the effect/dialogue-option function; instantaneous cut, persists (cycle frozen). |
+| relight fixtures (`lighting`) | `setblock` per placed fixture in `setup_finish`, after structure placement + socket seals (spec-0010). Blocks: `torch`/`wall_torch`, `lantern[hanging=…]`, `campfire[lit=true]`, `shroomlight`. |
 
 Naming: `dw.o_<obj>`, `dw.q_<quest>`, `dw.qa_<quest>` (active), `dw.dlg_<npc>`,
 `dw.f_<flag>`, tags `dw_npc_<npc>`/`dw_wave_<id>`/`dw_i_<obj>`/`dw_r_<obj>`.
@@ -213,15 +225,18 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 | `doFireTick` | `gamerule fire_spread_radius_around_player 0` (no boolean successor; radius 0 = no spread) |
 | `mobGriefing` | `gamerule mob_griefing false` |
 | — | `gamerule keep_inventory true` (box-garden death policy; **not in spec-0002** — see §6) |
-| — | `time set noon` (= daytime 6000; the sole seal with a vanilla read-back) |
+| — | `time set <kw>` (declared `world.time`, default `noon` = daytime 6000; the sole seal with a vanilla read-back) |
+| — | `weather <kw>` (declared `world.weather`; emitted **only when declared** — `clear` is the vanilla default, so an undeclared campaign emits nothing and stays byte-identical to pre-0.5) |
 
 - Gamerule *values* have no vanilla read-back → asserted at compile time only;
-  PackTest asserts the one queryable seal (`time = 6000`). Regression asserts
-  exact forms and that legacy names never appear.
+  PackTest asserts the one queryable seal (`time = daytime_ticks(world.time)`,
+  e.g. 6000 for `noon`, 18000 for `midnight`). Regression asserts exact forms and
+  that legacy names never appear.
 - Time/weather freeze: cycles are frozen (`advance_time`/`advance_weather false`);
-  a set state persists until the next explicit set. v0 hard-codes time=noon,
-  weather=clear (implicitly). Stage-1 `time`/`weather` + `set-time`/`set-weather`
-  make these first-class — *approved, landing* (spec-0010).
+  a set state persists until the next explicit set. Stage-1 `time`/`weather` +
+  `set-time`/`set-weather` (spec-0010) make these first-class. The assembled-light
+  model judges sky-open cells under the **darkest reachable (time, weather)**
+  combination (initial ∪ every `set-time`/`set-weather` target).
 
 ### World / build output
 
@@ -272,7 +287,7 @@ verifies this catalog is bidirectionally exact against source (CI docs job).
 | `DW0132` | `finale` is not the convergent sink (some quest is not a transitive dependency of finale). |
 | `DW0133` | Non-mandatory quest (`mandatory:false`), reserved until M3. |
 | `DW0140` | Objective `after` cycle. |
-| `DW0141` | Reserved enum value for the campaign's `dsl_version` (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects). |
+| `DW0141` | Reserved enum value/field for the campaign's `dsl_version` (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`). |
 | `DW0142` | Anchor not provided by the area's bound prefab. |
 | `DW0143` | Item id not in the pinned 1.21.11 registry (kit / `collect` / `interact.requires_item` / `give-item`). |
 | `DW0150` | Planned quest (stage 4) has no stage-5 expansion. |
@@ -293,16 +308,21 @@ verifies this catalog is bidirectionally exact against source (CI docs job).
 | `DW0193` | `set-block`/`interact.prop` block id not a known 1.21.11 block id. |
 | `DW0194` | Environment-trigger id malformed/duplicated, or `approach` `range` 0. |
 | `DW0195` | A `talk-to` targets an NPC despawned by a prerequisite quest. |
+| `DW0196` | Area `lighting.min_light` out of range (must be 1..=14). v0.5, spec-0010. |
 
-### DW02xx — analysis (`compiler::analyze`; error; exit 2)
+### DW02xx — analysis (`compiler::analyze` reachability + `compiler::light` lighting; error; exit 2)
+
+`DW0210`/`DW0211` are emitted by the assembled-world light model
+(`crate::light`), surfaced through the build path but mapped to exit 2 (analysis
+tier) in `main`; `DW0201`–`DW0203` come from `compiler::analyze` reachability.
 
 | Code | Meaning |
 |------|---------|
 | `DW0201` | Finale quest can never complete (unreachable finale). |
 | `DW0202` | Quest can never be triggered (dead quest — its trigger source never completes). |
 | `DW0203` | Objective can never be completed (deadlock: unsatisfiable `after` chain, or a `talk-to` completing option unreachable through the trigger/`after` graph). |
-| `DW0210` | A reachable `dark`-profile prefab has no proven light mitigation. **Today: profile-based** (reads admission `LightingProfile`; sufficient mitigation = a night-vision kit item). *spec-0010 redefinition (landing, #35): measured over assembled reachable walkable cells; adds fixture-relight; introduces `DW0211`.* |
-| `DW0211` | *Approved, landing (spec-0010):* declared relight pass cannot reach `min_light` (no valid placement site). Error, exit 2. **Not yet in code** — declared PENDING in `tools/check-dw-codes.py`. |
+| `DW0210` | **Measured** (spec-0010): a reachable walkable cell of an area is below light 3, under the darkest reachable (time, weather) sky, with no `lighting` declaration and no night-vision kit mitigation. Judged over the assembled world (per-seam, sealed-cavity aware — unreachable cavities are never counted). Admission `LightingProfile` is no longer a gating input. |
+| `DW0211` | An area's declared relight `fixture` cannot raise every reachable walkable cell to `min_light` — no valid placement site remains (spec-0010). |
 
 ### DW03xx — build / solver / nav (`compiler`; error; exit 3, `stage:"build"`)
 
@@ -362,17 +382,22 @@ this doc is current behavior).
 | Validation ↔ runtime split; `DW02xx` analysis role | ADR-0005 / spec-0005 |
 | v0.4 surface (dialogue state, props, narrate, wave tuning, NPC lifecycle, skins, triggers, cutscene, `DW0190`–`DW0195`, `DW0307`–`DW0311`) | spec-0008 |
 | Skins toolchain, resourcepack bake (`DW0309`) | spec-0009 |
-| Assembled-relight, measured `DW0210`, `DW0211`, stage-1 `lighting`/`time`/`weather`, `set-time`/`set-weather` | spec-0010 (approved, landing) |
+| Assembled-relight, measured `DW0210`, `DW0211`/`DW0196`, stage-1 `lighting`/`time`/`weather`, `set-time`/`set-weather` (all v0.5) | spec-0010 (landed, #35) |
 | Asset-pipeline tooling `DW07xx` (schem/render/admit) | spec-0007 |
 | Determinism invariants | ADR-0006 |
 
 ### Known spec ↔ code drift (current, for maintainers)
 
 - **spec-0002 CLI** lists stages `1..5`, `dsl 0.1.0`, and omits `--json`/
-  `--prefabs`/`--lang`; code is stages `1..6`, `dsl 0.4.0`, all three flags.
+  `--prefabs`/`--lang`; code is stages `1..6`, `dsl 0.5.0`, all three flags.
   (Spec is the original record; addenda + code are current — this doc governs.)
 - **`gamerule keep_inventory true`** is emitted by the sealing baseline but is
   **not** in spec-0002's environment-sealing list (added as box-garden death
   policy; recorded here).
-- **`DW0210`** is profile-based in code today; spec-0010's measured redefinition
-  and `DW0211` are approved but not yet landed (#35).
+- **Sky attenuation constants** (`crate::light::effective_sky`, spec-0010): the
+  stored sky-light baseline (15 at a sky-open cell) and the `time`/`weather` set
+  commands are live-verified (1.21.11 itzg VANILLA); the per-state *effective*
+  attenuation follows the documented vanilla `getSkyDarken` surface model
+  (noon/day 15, night/midnight 4, rain −3, thunder −8 by day) applied
+  conservatively — the effective (time-attenuated) value is not directly
+  command-readable, so it is not a live measurement. Noted for maintainers.

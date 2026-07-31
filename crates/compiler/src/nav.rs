@@ -216,6 +216,108 @@ impl World {
         World { solid }
     }
 
+    /// Build the occupancy model exactly like [`World::from_plan`], then add
+    /// `extra_solid` cells (the relight pass's colliding fixtures — campfire /
+    /// floor lantern — so post-relight nav verification sees them; spec-0010). A
+    /// fixture that adds no collision (torch, wall/hanging fixtures, embedded
+    /// shroomlight) contributes nothing here.
+    pub fn from_plan_with_extra(
+        plan: &Plan,
+        structures: &BTreeMap<String, Vec<u8>>,
+        extra_solid: &BTreeSet<[i32; 3]>,
+    ) -> Self {
+        let mut world = Self::from_plan(plan, structures);
+        world.solid.extend(extra_solid.iter().copied());
+        world
+    }
+
+    /// Whether a cell is occupied by a solid block in the assembled world.
+    pub fn solid_at(&self, c: [i32; 3]) -> bool {
+        self.is_solid(c)
+    }
+
+    /// Build a [`World`] directly from a set of solid cells (test / synthetic
+    /// entry point; the relight unit tests build a world without a full [`Plan`]).
+    pub fn from_solid_cells(solid: BTreeSet<[i32; 3]>) -> Self {
+        World { solid }
+    }
+
+    /// Whether a cell is a valid standing position (feet + head passable, solid
+    /// ground below). Public wrapper over the internal walkability rule so the
+    /// relight pass (spec-0010) can collect reachable walkable cells.
+    pub fn is_standable(&self, c: [i32; 3]) -> bool {
+        self.standable(c)
+    }
+
+    /// The nearest standable cell to `c` within `radius` (itself if already
+    /// standable), broken deterministically by `(distance², cell)`; `None` if
+    /// none. Public wrapper over `snap_standable` for the relight pass.
+    pub fn snap(&self, c: [i32; 3], radius: i32) -> Option<[i32; 3]> {
+        self.snap_standable(c, radius)
+    }
+
+    /// Every standable cell reachable by a walk (one-block step up/down, cardinal)
+    /// from any of `starts`, over the assembled geometry. Deterministic BFS over a
+    /// `BTreeSet` frontier with fixed neighbour order (ADR-0006). Starts that are
+    /// not themselves standable are snapped within [`SNAP_RADIUS`] first; an
+    /// unsnappable start contributes nothing.
+    pub fn reachable_walkable(&self, starts: &[[i32; 3]]) -> BTreeSet<[i32; 3]> {
+        let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
+        let mut queue: std::collections::VecDeque<[i32; 3]> = std::collections::VecDeque::new();
+        for &s in starts {
+            if let Some(cell) = self.snap(s, SNAP_RADIUS)
+                && seen.insert(cell)
+            {
+                queue.push_back(cell);
+            }
+        }
+        while let Some(cur) = queue.pop_front() {
+            for n in self.neighbors(cur) {
+                if seen.insert(n) {
+                    queue.push_back(n);
+                }
+            }
+        }
+        seen
+    }
+
+    /// The union of every cell on a critical-path walked leg (the A* paths
+    /// [`check_critical_path`] validates) plus every `move-npc` waypoint cell — the
+    /// "required nav path cells" the relight pass must never occupy or obstruct
+    /// (spec-0010). Computed over the base assembled geometry (fixtures avoid these
+    /// cells, so they never appear here).
+    pub fn required_path_cells(&self, plan: &Plan, moves: &[MovePlan]) -> BTreeSet<[i32; 3]> {
+        let mut cells: BTreeSet<[i32; 3]> = BTreeSet::new();
+        // Critical-path legs.
+        let positions = critical_positions(plan);
+        for pair in positions.windows(2) {
+            let (from, _) = pair[0];
+            let (to, transport_before) = pair[1];
+            if transport_before {
+                continue;
+            }
+            let (Some(start), Some(goal)) =
+                (self.snap(from, SNAP_RADIUS), self.snap(to, SNAP_RADIUS))
+            else {
+                continue;
+            };
+            if let Some(path) = self.find_path(start, goal) {
+                cells.extend(path);
+            }
+        }
+        // move-npc waypoint cells (floored).
+        for m in moves {
+            for w in &m.waypoints {
+                cells.insert([
+                    w[0].floor() as i32,
+                    w[1].floor() as i32,
+                    w[2].floor() as i32,
+                ]);
+            }
+        }
+        cells
+    }
+
     fn is_solid(&self, c: [i32; 3]) -> bool {
         self.solid.contains(&c)
     }

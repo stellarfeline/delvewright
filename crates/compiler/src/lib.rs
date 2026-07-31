@@ -8,6 +8,8 @@
 //! - [`plan`]: resolve the campaign into a placement/naming model.
 //! - [`nav`]: compile-time pathfinding over the solved voxel grid — collision-safe
 //!   `move-npc` walked paths (`DW0307`) + cutscene air-corridor checks (`DW0308`).
+//! - [`light`]: assembled-world lighting model + deterministic relight pass
+//!   (`DW0210`/`DW0211`, exit 2) + declared time/weather sky attenuation (spec-0010).
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
 //! - [`creator`]: the playtest-only creator overlay (`creator-datapack/`, spec-0006).
 
@@ -15,6 +17,7 @@ pub mod analyze;
 pub mod commands;
 pub mod creator;
 pub mod emit;
+pub mod light;
 pub mod load;
 pub mod nav;
 pub mod plan;

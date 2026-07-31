@@ -184,6 +184,10 @@ pub struct OptionPlan {
     pub sets_flags: Vec<String>,
     /// Flags that must be set for this option to be shown (DSL v0.4).
     pub requires_flags: Vec<String>,
+    /// World-time cuts this option fires (DSL v0.5 dialogue `set-time`), in order.
+    pub sets_time: Vec<delvewright_dsl::WorldTime>,
+    /// Weather cuts this option fires (DSL v0.5 dialogue `set-weather`), in order.
+    pub sets_weather: Vec<delvewright_dsl::WorldWeather>,
 }
 
 /// A critical-path step (mirrors the amended `critical-path.json` shape).
@@ -743,6 +747,8 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
             n += 1;
             let mut completes = Vec::new();
             let mut sets_flags = Vec::new();
+            let mut sets_time = Vec::new();
+            let mut sets_weather = Vec::new();
             for e in &opt.effects {
                 match e {
                     DialogueEffect::CompleteObjective { objective } => {
@@ -751,6 +757,8 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
                     DialogueEffect::SetFlag { flag } => {
                         sets_flags.push(flag.as_str().to_string());
                     }
+                    DialogueEffect::SetTime { time } => sets_time.push(*time),
+                    DialogueEffect::SetWeather { weather } => sets_weather.push(*weather),
                 }
             }
             options.push(OptionPlan {
@@ -768,6 +776,8 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
                     .iter()
                     .map(|f| f.as_str().to_string())
                     .collect(),
+                sets_time,
+                sets_weather,
             });
         }
     }

@@ -19,8 +19,10 @@
 //! - A quest **completes** if it is active and every objective is completable.
 //! - The finale is reachable iff the finale quest completes.
 //!
-//! Beyond reachability it also runs the **dark-prefab mitigation** check
-//! ([`dark_mitigation`], `DW0210`).
+//! The lighting gate (`DW0210`/`DW0211`) is **no longer** here: spec-0010 moved it
+//! to the compiler's assembled-world light model ([`crate::light`]), which measures
+//! real light over the placed geometry (per-seam, sealed-cavity aware) instead of
+//! reading per-piece admission profiles.
 //!
 //! ## Codes (`DW02xx`)
 //!
@@ -29,11 +31,11 @@
 //! | `DW0201` | Finale quest can never complete (unreachable finale). |
 //! | `DW0202` | Quest can never be triggered (unreachable / dead quest). |
 //! | `DW0203` | Objective can never be completed (deadlock — e.g. an `after` chain that can't be satisfied). |
-//! | `DW0210` | A reachable `dark`-profile prefab has no proven light mitigation. |
+//! | `DW0210`/`DW0211` | Assembled-light gate — see [`crate::light`]. |
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use delvewright_dsl::{AnchorRegistry, Campaign, Diagnostic, LightingProfile, Objective, Trigger};
+use delvewright_dsl::{AnchorRegistry, Campaign, Diagnostic, Objective, Trigger};
 
 /// Stable analysis codes.
 pub mod codes {
@@ -43,8 +45,8 @@ pub mod codes {
     pub const QUEST_UNREACHABLE: &str = "DW0202";
     /// Objective can never be completed (deadlock).
     pub const OBJECTIVE_DEADLOCK: &str = "DW0203";
-    /// A reachable `dark` prefab has no proven light mitigation.
-    pub const DARK_UNMITIGATED: &str = "DW0210";
+    // DW0210 (dark-area mitigation) moved to `crate::light` (spec-0010): it is now
+    // measured over the assembled world, not a per-piece admission profile.
 }
 
 /// Run reachability + lighting-mitigation analysis. Returns `DW02xx`
@@ -220,60 +222,15 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
         ));
     }
 
-    // DW0210: dark-prefab lighting mitigation.
-    dark_mitigation(c, prefabs, &mut diags);
+    // DW0210 is no longer computed here (spec-0010): the lighting gate moved to the
+    // compiler's assembled-world light model (`crate::light`), which measures real
+    // light over the placed geometry rather than reading per-piece admission
+    // profiles. `prefabs` is retained in the signature for the reachability model's
+    // other uses and API stability.
+    let _ = prefabs;
 
     diags.sort_by(|a, b| (&a.code, &a.path).cmp(&(&b.code, &b.path)));
     diags
-}
-
-/// Dark-prefab mitigation check (spec-0001 "Lighting contract", `DW0210`).
-///
-/// A `dark` prefab (floor light < 3) is only valid where analysis proves a
-/// mitigation. In v0.2 the sufficient, implemented mitigation is a **night-vision
-/// item in some class kit** (owner rule); *give-item is still reserved*, so a
-/// quest-granted mitigation is not yet expressible and is intentionally out of
-/// scope for this check (documented). Every declared area is treated as
-/// reachable in v0.2 (single-prefab areas are all placed + spawned; multi-area
-/// reachability arrives with jigsaw pools, M2 task #9). Pool-bound areas are
-/// skipped here — pool piece lighting is resolved with task #9.
-///
-/// **Night-vision recognition (v0.2 heuristic).** Kit items cannot yet carry
-/// potion-effect components (no components in the stage-3 kit schema), so the
-/// check recognizes a mitigation item by its id or display name containing
-/// `night_vision` / `night vision` (case-insensitive). This is a *static policy
-/// gate* — "you declared darkness, so declare a light source" — not a runtime
-/// guarantee; the runtime grant lands when give-item / kit components ship.
-fn dark_mitigation(c: &Campaign, prefabs: &dyn AnchorRegistry, diags: &mut Vec<Diagnostic>) {
-    // Is there a night-vision source in any class kit?
-    let has_night_vision = c.classes.content.classes.iter().any(|class| {
-        class.kit.iter().any(|item| {
-            let id = item.item.to_ascii_lowercase();
-            let name = item.name.as_deref().unwrap_or("").to_ascii_lowercase();
-            let is_nv = |s: &str| s.contains("night_vision") || s.contains("night vision");
-            is_nv(&id) || is_nv(&name)
-        })
-    });
-
-    for (i, area) in c.world.content.areas.iter().enumerate() {
-        // Pool areas: lighting resolved with jigsaw assembly (task #9).
-        let Some(prefab) = &area.prefab else { continue };
-        let Some(lighting) = prefabs.lighting_for(prefab) else {
-            continue;
-        };
-        if lighting.profile == LightingProfile::Dark && !has_night_vision {
-            diags.push(Diagnostic::error(
-                codes::DARK_UNMITIGATED,
-                "world",
-                format!("/content/areas/{i}"),
-                format!(
-                    "area `{}` binds `dark` prefab `{prefab}` (floor light < 3) but no class kit \
-                     grants a night-vision mitigation",
-                    area.id
-                ),
-            ));
-        }
-    }
 }
 
 /// Objective ids for which a `complete-objective` effect sits on a dialogue
