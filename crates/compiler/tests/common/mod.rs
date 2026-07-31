@@ -96,9 +96,12 @@ pub fn copy_l10n_dir(base: &Path, dst: &Path) {
     }
 }
 
-/// The repo `prefabs/` directory.
+/// The prefab library directory. The library lives in the content repo
+/// (`delvewright-campaigns`), reached at `campaigns/prefabs` — the `campaigns/`
+/// symlink locally, and a content-repo checkout at that path in CI (spec-0007
+/// Step 0). Mirrors the compiler's default `--prefabs campaigns/prefabs`.
 pub fn prefabs_dir() -> PathBuf {
-    repo_root().join("prefabs")
+    repo_root().join("campaigns/prefabs")
 }
 
 /// The DSL invalid-fixture directory (patch files).

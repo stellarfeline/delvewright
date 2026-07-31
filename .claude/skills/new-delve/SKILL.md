@@ -40,7 +40,7 @@ For each stage in order — world → npcs → classes → quest-plan → quests
    generate AGAINST the live schema, never from memory.
 2. Write the stage JSON. Craft constraints:
    - Areas: prefer `prefab_pool` (stone-keep tileset) for real layouts; check
-     `prefabs/pools.json` + prefab metadata for available pools/anchors/lighting
+     `campaigns/prefabs/pools.json` + prefab metadata for available pools/anchors/lighting
      profiles. Respect the lighting contract — darkness only as declared design
      with a mitigation the quest DAG provides.
    - NPCs: personas per schema (archetype/speech_style/motivation required);

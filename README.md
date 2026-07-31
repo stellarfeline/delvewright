@@ -101,7 +101,7 @@ depends on how far [the roadmap](docs/ROADMAP.md) has gotten — Milestone 1 is 
 | [`docs/specs/`](docs/specs/README.md) | Owner-approved specs; no spec, no feature |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Where this is going, milestone by milestone |
 | `crates/` | Rust workspace: `dsl` (schemas + validation), `compiler` (`delvec`), `orchestrator` |
-| `prefabs/` | The room library — `.nbt` structures with anchors and provenance |
+| `prefabs/` | Tileset generators (GPL) + docs; the `.nbt` room library itself lives in the content repo (`campaigns/prefabs/`, spec-0007) |
 | `harness/` | The robot player (TypeScript + mineflayer) |
 | `packtest/` | PackTest templates for mechanism assertions |
 | `validation/` | Docker compose: the same rig for local checks, CI, and prod |
@@ -113,9 +113,11 @@ releases/images with their own license.
 
 - **Code**: [GPL-3.0-or-later](LICENSE).
 - **Shipped delve content** (the campaigns/worlds you play): CC BY-SA 4.0.
-- **Prefab assets in-repo**: original, CC0, or CC BY only — provenance recorded,
-  no exceptions, and never anything NC. Details in
-  [`prefabs/LICENSE-ASSETS.md`](prefabs/LICENSE-ASSETS.md).
+- **Prefab assets**: original, CC0, or CC BY only — provenance recorded, no
+  exceptions, and never anything NC. The library and its
+  `LICENSE-ASSETS.md` live in the content repo
+  ([`delvewright-campaigns`](https://github.com/stellarfeline/delvewright-campaigns))
+  under `prefabs/` (spec-0007 Step 0).
 
 ---
 

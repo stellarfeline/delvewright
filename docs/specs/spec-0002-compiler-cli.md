@@ -34,8 +34,8 @@ delvec --version                          # delvec x.y.z, dsl 0.1.0, mc 1.21.11
 
 ```
 <out>/
-  manifest.json          # dsl_version, delvec version, mc version, input +
-                         # per-file output SHA-256 hashes
+  manifest.json          # dsl_version, delvec version, mc version, content_sha,
+                         # input + per-file output SHA-256 hashes
   datapack/              # the campaign datapack: pack.mcmeta (94.1), advancements,
                          # scoreboard init, functions, dialogs, structures refs
   packtest-datapack/     # compiler-GENERATED PackTest suite for this campaign

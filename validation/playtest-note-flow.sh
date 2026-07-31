@@ -32,7 +32,7 @@ trap cleanup EXIT
 
 echo "==> building the delve output (datapack + creator overlay)"
 cargo run -q -p delvewright-compiler --bin delvec -- \
-  build "$CAMPAIGN" -o "$OUT" --prefabs prefabs
+  build "$CAMPAIGN" -o "$OUT" --prefabs campaigns/prefabs
 
 echo "==> starting the playtest server (delve image + mounted creator overlay)"
 $COMPOSE up -d --build
