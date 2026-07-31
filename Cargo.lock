@@ -506,6 +506,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4ae5f15dda3c708c0ade84bfee31ccab44a3da4f88015ed22f63732abe300c8"
 
 [[package]]
+name = "delvewright-admit"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "delvewright-orchestrator",
+ "delvewright-schem",
+ "fastnbt",
+ "flate2",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "delvewright-compiler"
 version = "0.1.0"
 dependencies = [

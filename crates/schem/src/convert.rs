@@ -20,8 +20,11 @@ use crate::schematic::{BlockState, ParsedSchematic};
 /// `crates/compiler/data/PROVENANCE.md` and the committed `hello-room.nbt`).
 pub const DATA_VERSION: i32 = 4671;
 
-/// Block names (namespace-stripped) removed unconditionally: the three command
-/// blocks, structure/jigsaw blocks, and the spawner family.
+/// Block names (namespace-stripped) removed unconditionally by the conversion
+/// strip: the three command blocks, structure/jigsaw blocks, and the spawner
+/// family. (This is the *raw-schematic* strip set; the admission audit,
+/// `delve-admit`, applies a narrower hard-forbid — jigsaw sockets are legitimate
+/// on a library prefab — but reuses the shared [`forbidden_nbt`] scan.)
 const FORBIDDEN_BLOCKS: &[&str] = &[
     "command_block",
     "chain_command_block",
@@ -33,7 +36,7 @@ const FORBIDDEN_BLOCKS: &[&str] = &[
     "vault",
 ];
 
-/// Block-entity ids removed unconditionally.
+/// Block-entity ids removed unconditionally by the conversion strip.
 const FORBIDDEN_BE: &[&str] = &[
     "command_block",
     "chain_command_block",
@@ -45,13 +48,15 @@ const FORBIDDEN_BE: &[&str] = &[
     "vault",
 ];
 
-fn strip_ns(id: &str) -> &str {
+/// Strip a `namespace:` prefix from an id (`minecraft:jigsaw` -> `jigsaw`).
+pub fn strip_ns(id: &str) -> &str {
     id.split_once(':').map(|(_, p)| p).unwrap_or(id)
 }
 
 /// If a block-entity payload carries a command or a spawner definition anywhere
-/// in its NBT, return a human reason (the code-injection audit surface).
-fn forbidden_nbt(data: &BTreeMap<String, Nbt>) -> Option<&'static str> {
+/// in its NBT, return a human reason (the code-injection audit surface). Public
+/// so the admission audit reuses the exact recursive scan the strip uses.
+pub fn forbidden_nbt(data: &BTreeMap<String, Nbt>) -> Option<&'static str> {
     for (k, v) in data {
         match k.as_str() {
             "Command" => return Some("embedded command"),

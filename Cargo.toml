@@ -6,4 +6,5 @@ members = [
     "crates/orchestrator",
     "crates/schem",
     "crates/render",
+    "crates/admit",
 ]
