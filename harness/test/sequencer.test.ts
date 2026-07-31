@@ -18,6 +18,7 @@ import {
   type StepExecutor,
   validateStepOrder,
 } from "../src/sequencer.ts";
+import { BotDeathError } from "../src/death.ts";
 
 // A fake executor that records the actions it was asked to perform, and can be
 // primed to fail on a specific action. No server involved.
@@ -242,4 +243,105 @@ test("runSequence does not await transport for a plain step", async () => {
   })();
   await runSequence(path([selectClass, reach, assertComplete]), executor);
   assert.equal(awaited, 0);
+});
+
+test("runSequence awaits a cutscene after a cutscene-marked step (gap 7)", async () => {
+  const reachWithCutscene: ReachStep = {
+    action: "reach",
+    anchor: "anchor/altar",
+    pos: [8, 65, 24],
+    radius: 2,
+    cutsceneSeconds: 6,
+  };
+  const durations: number[] = [];
+  const executor = new (class extends RecordingExecutor {
+    awaitCutscene(seconds: number): Promise<void> {
+      durations.push(seconds);
+      return Promise.resolve();
+    }
+  })();
+  await runSequence(path([selectClass, reachWithCutscene, assertComplete]), executor);
+  assert.deepEqual(durations, [6]);
+});
+
+test("runSequence does not await a cutscene for a plain step", async () => {
+  let awaited = 0;
+  const executor = new (class extends RecordingExecutor {
+    awaitCutscene(): Promise<void> {
+      awaited += 1;
+      return Promise.resolve();
+    }
+  })();
+  await runSequence(path([selectClass, reach, assertComplete]), executor);
+  assert.equal(awaited, 0);
+});
+
+// A fake executor that dies (BotDeathError) on the first N attempts of `reach`, then
+// succeeds. `recoverFromDeath` and the base `selectClass`/`reach` all append to the
+// single shared `calls` timeline so the retry sequence is asserted end-to-end.
+class DyingExecutor extends RecordingExecutor {
+  private deathsLeft: number;
+
+  constructor(deaths = 1) {
+    super();
+    this.deathsLeft = deaths;
+  }
+
+  override reach(step: ReachStep): Promise<void> {
+    if (this.deathsLeft > 0) {
+      this.deathsLeft -= 1;
+      this.calls.push("reach");
+      return Promise.reject(new BotDeathError([1, 2, 3], "delve-bot was slain by Zombie"));
+    }
+    return super.reach(step);
+  }
+
+  recoverFromDeath(): Promise<void> {
+    this.calls.push("recover");
+    return Promise.resolve();
+  }
+}
+
+test("retryOnDeath recovers, re-selects class, and retries the dead step once", async () => {
+  const executor = new DyingExecutor(1);
+  await runSequence(
+    path([selectClass, reach, assertComplete]),
+    executor,
+    { retryOnDeath: true },
+  );
+  // reach dies → recover → re-select-class → reach passes → assert-complete.
+  assert.deepEqual(executor.calls, [
+    "select-class",
+    "reach", // died here
+    "recover",
+    "select-class", // respawn dropped class state → re-selected
+    "reach", // retried and passed
+    "assert-complete",
+  ]);
+});
+
+test("default (fail-fast) surfaces a death as a StepExecutionError without retrying", async () => {
+  const executor = new DyingExecutor(1);
+  await assert.rejects(
+    () => runSequence(path([selectClass, reach, assertComplete]), executor),
+    (err: unknown) =>
+      err instanceof StepExecutionError &&
+      err.index === 1 &&
+      err.cause instanceof BotDeathError,
+  );
+  // No recovery attempted; the run aborted at the death.
+  assert.deepEqual(executor.calls, ["select-class", "reach"]);
+});
+
+test("retryOnDeath retries at most once — a second death fails the run", async () => {
+  const executor = new DyingExecutor(2); // dies on both attempts
+  await assert.rejects(
+    () => runSequence(path([selectClass, reach, assertComplete]), executor, {
+      retryOnDeath: true,
+    }),
+    (err: unknown) =>
+      err instanceof StepExecutionError && err.cause instanceof BotDeathError,
+  );
+  // Recovery ran exactly once (the single allowed retry), then the second death failed.
+  assert.equal(executor.calls.filter((c) => c === "recover").length, 1);
 });

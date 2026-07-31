@@ -26,6 +26,8 @@ import type {
   TalkToStep,
 } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
+import { BotDeathError, likelyDeathCause } from "./death.ts";
+import { configureLeg } from "./movement.ts";
 
 /** Connection + identity for the bot. Sourced from the environment (see below). */
 export interface BotConfig {
@@ -100,6 +102,20 @@ const CLASS_SETTLE_MS = 3_000;
 const TRANSPORT_TIMEOUT_MS = 15_000;
 const TRANSPORT_NEAR = 4;
 const TRANSPORT_SETTLE_MS = 1_500;
+/**
+ * gap 7 (cutscene): how long (ms) the bot's position must hold steady, once it is
+ * back in adventure mode, before control counts as restored; how far (blocks) a
+ * position may drift and still count as "steady"; and the grace added on top of the
+ * declared cutscene length before the wait gives up and continues (bounded so a
+ * cutscene glitch cannot hang the run). Grace is env-tunable for tests.
+ */
+const CUTSCENE_SETTLE_MS = 500;
+const CUTSCENE_STEADY_EPS = 0.05;
+const CUTSCENE_POLL_MS = 250;
+/** gap 7 (retry): how long (ms) to wait for the bot to respawn before resuming. */
+const RESPAWN_TIMEOUT_MS = 15_000;
+/** Recent chat lines retained for death-cause diagnosis. */
+const CHAT_BUFFER = 16;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -134,9 +150,23 @@ export class MineflayerExecutor implements StepExecutor {
   private bot: Bot | undefined;
   /** Latest value seen per objective from broadcast completion markers. */
   private readonly markerScores = new Map<string, number>();
+  /**
+   * gap 7 (death): set once when the bot dies; long waits race against it so a death
+   * fails FAST with a diagnostic instead of respawning and pathfinding across the void.
+   */
+  private death: BotDeathError | undefined;
+  /** One-shot callbacks armed by {@link raceDeath}, fired on death. */
+  private readonly deathWaiters = new Set<(err: BotDeathError) => void>();
+  /** Ring buffer of recent chat lines, mined for the death-cause message. */
+  private readonly recentChat: string[] = [];
+  /** Grace (ms) added onto a cutscene's declared length before giving up. */
+  private readonly cutsceneGraceMs: number;
 
-  constructor(config: BotConfig) {
+  constructor(config: BotConfig, env: Record<string, string | undefined> = process.env) {
     this.config = config;
+    const raw = env["DELVEWRIGHT_CUTSCENE_GRACE_MS"];
+    const parsed = raw === undefined ? NaN : Number.parseInt(raw, 10);
+    this.cutsceneGraceMs = Number.isInteger(parsed) && parsed >= 0 ? parsed : 10_000;
   }
 
   /** Connect and resolve once the bot has spawned into the world. */
@@ -150,16 +180,7 @@ export class MineflayerExecutor implements StepExecutor {
     });
     this.bot = bot;
     bot.loadPlugin(pathfinder);
-
-    // Capture completion markers from the moment we connect: the marker is
-    // broadcast when the campaign completes, which happens DURING the final reach
-    // step (before assertComplete runs), so it must be buffered as it arrives.
-    bot.on("messagestr", (message: string) => {
-      const match = COMPLETION_MARKER.exec(message);
-      if (match) {
-        this.markerScores.set(match[1]!, Number.parseInt(match[2]!, 10));
-      }
-    });
+    this.installHandlers(bot);
 
     await new Promise<void>((resolve, reject) => {
       const onSpawn = (): void => {
@@ -196,6 +217,134 @@ export class MineflayerExecutor implements StepExecutor {
       throw new Error("executor is not connected; call connect() first");
     }
     return this.bot;
+  }
+
+  /**
+   * Wire the always-on listeners: completion-marker + chat-ring capture, and the
+   * death handler. Called from {@link connect} and from {@link attachBot} (tests).
+   */
+  private installHandlers(bot: Bot): void {
+    // Capture completion markers from the moment we connect: the marker is
+    // broadcast when the campaign completes, which happens DURING the final reach
+    // step (before assertComplete runs), so it must be buffered as it arrives. The
+    // same stream feeds the recent-chat ring the death diagnostic mines for a cause.
+    bot.on("messagestr", (message: string) => {
+      const match = COMPLETION_MARKER.exec(message);
+      if (match) {
+        this.markerScores.set(match[1]!, Number.parseInt(match[2]!, 10));
+      }
+      this.recentChat.push(message);
+      if (this.recentChat.length > CHAT_BUFFER) {
+        this.recentChat.shift();
+      }
+    });
+    bot.on("death", () => this.onDeath());
+  }
+
+  /**
+   * Test/advanced seam: adopt an already-created (or fake) bot and install the same
+   * handlers `connect()` wires, without the network path. Unit tests use this to
+   * drive death/cutscene behaviour against a mocked bot.
+   */
+  attachBot(bot: Bot): void {
+    this.bot = bot;
+    this.installHandlers(bot);
+  }
+
+  /**
+   * Death handler: record where and (best-effort) why the bot died, stop any
+   * in-flight pathfinding, and fire the death waiters so the current long-running
+   * step rejects promptly with a {@link BotDeathError} instead of hanging.
+   */
+  private onDeath(): void {
+    if (this.death) return; // already recorded this death
+    const bot = this.bot;
+    let position: readonly [number, number, number] | undefined;
+    const p = bot?.entity?.position;
+    if (p) {
+      position = [Math.round(p.x), Math.round(p.y), Math.round(p.z)];
+    }
+    const cause = likelyDeathCause(this.recentChat, bot?.username ?? "");
+    const err = new BotDeathError(position, cause);
+    this.death = err;
+    try {
+      bot?.pathfinder.stop();
+    } catch {
+      // best effort — stopping the pathfinder must never mask the death
+    }
+    for (const waiter of this.deathWaiters) {
+      waiter(err);
+    }
+    this.deathWaiters.clear();
+  }
+
+  /**
+   * Race `op` against the bot dying: resolves/rejects with `op`, but rejects with the
+   * {@link BotDeathError} the instant a death is observed (the underlying op keeps
+   * running but the pathfinder is already stopped in {@link onDeath}). Used to abort
+   * the ~60s `pathfinder.goto` wait the moment the bot dies.
+   */
+  private raceDeath<T>(op: Promise<T>): Promise<T> {
+    if (this.death) return Promise.reject(this.death);
+    return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const onDeath = (err: BotDeathError): void => {
+        if (settled) return;
+        settled = true;
+        reject(err);
+      };
+      this.deathWaiters.add(onDeath);
+      op.then(
+        (value) => {
+          if (settled) return;
+          settled = true;
+          this.deathWaiters.delete(onDeath);
+          resolve(value);
+        },
+        (err: unknown) => {
+          if (settled) return;
+          settled = true;
+          this.deathWaiters.delete(onDeath);
+          reject(err);
+        },
+      );
+    });
+  }
+
+  /**
+   * The death recorded so far, if any. Diagnostic accessor (also lets tests assert the
+   * captured position/cause after a simulated death).
+   */
+  deathDiagnostic(): BotDeathError | undefined {
+    return this.death;
+  }
+
+  /**
+   * gap 7 (retry path): ready the bot to resume after a death — wait for it to respawn,
+   * then clear the death latch so subsequent steps run against the live bot again. The
+   * sequencer re-runs `select-class` afterwards (respawn drops class state).
+   */
+  async recoverFromDeath(): Promise<void> {
+    const bot = this.requireBot();
+    try {
+      await withTimeout(
+        new Promise<void>((resolve) => {
+          const onSpawn = (): void => {
+            bot.removeListener("spawn", onSpawn);
+            resolve();
+          };
+          bot.once("spawn", onSpawn);
+        }),
+        RESPAWN_TIMEOUT_MS,
+        "waiting for respawn",
+      );
+    } catch (err) {
+      // Best effort: if we miss the respawn spawn event, proceed anyway — the
+      // re-select-class teleport re-establishes a known position regardless.
+      const detail = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[death] ${detail}; resuming anyway\n`);
+    }
+    this.death = undefined;
   }
 
   /** Disconnect the bot, if connected. Safe to call more than once. */
@@ -248,7 +397,7 @@ export class MineflayerExecutor implements StepExecutor {
     const bot = this.requireBot();
     // Walk to the NPC first (realism; some dialog effects are reach-gated), then
     // chat the dialog-option `/trigger` command the button would have run.
-    await this.walkTo(step.pos, 3, `npc ${step.npc}`);
+    await this.walkTo(step.pos, 3, `npc ${step.npc}`, step.sneak);
     bot.chat(step.command);
     // Give the datapack time to apply the dialog effect (e.g. open the gate).
     await delay(2_000);
@@ -262,58 +411,69 @@ export class MineflayerExecutor implements StepExecutor {
    * server's precise-position check can disagree).
    */
   async reach(step: ReachStep): Promise<void> {
-    await this.walkTo(step.pos, Math.max(1, step.radius - 1), `anchor ${step.anchor}`);
+    await this.walkTo(step.pos, Math.max(1, step.radius - 1), `anchor ${step.anchor}`, step.sneak);
   }
 
   /**
    * Pathfind to within `range` blocks of the absolute target (mineflayer-pathfinder
    * `GoalNear`). Replaces the pre-v0.3 "face + hold forward" walk, so turns and
    * branches in jigsaw layouts are walkable. Digging is disabled (adventure mode).
+   * A `sneak` leg (gap 7) walks crouched with sprinting disabled; the crouch is
+   * restored to off afterwards so a later plain leg is not left sneaking. The long
+   * `goto` wait races the death latch so a death aborts it fast, not after ~60s.
    */
   private async walkTo(
     pos: readonly [number, number, number],
     range: number,
     label: string,
+    sneak = false,
   ): Promise<void> {
     const bot = this.requireBot();
     const [x, y, z] = pos;
     const r = Math.max(1, Math.floor(range));
     const movements = new Movements(bot);
-    movements.canDig = false; // adventure mode: never break blocks
-    movements.allow1by1towers = false;
+    const restoreControls = configureLeg(bot, movements, sneak);
     bot.pathfinder.setMovements(movements);
     // Long multi-level layouts (e.g. a 5-storey keep, ~90 blocks + 4 staircases)
     // sit at the edge of the default A* budget and fail nondeterministically
     // with "No path to the goal!" — give the search real headroom.
     bot.pathfinder.thinkTimeout = 30_000;
-    let lastErr: unknown;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      if (attempt > 0) {
-        // One retry: block updates (an `open-gate` fill) can land after the
-        // first path computation started; settle and recompute from scratch.
-        await delay(1_500);
-      }
-      try {
-        await withTimeout(
-          bot.pathfinder.goto(new goals.GoalNear(x, y, z, r)),
-          REACH_TIMEOUT_MS,
-          `reaching ${label}`,
-        );
-        return;
-      } catch (err) {
-        lastErr = err;
+    try {
+      let lastErr: unknown;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (attempt > 0) {
+          // One retry: block updates (an `open-gate` fill) can land after the
+          // first path computation started; settle and recompute from scratch.
+          await delay(1_500);
+        }
         try {
-          bot.pathfinder.stop();
-        } catch {
-          // ignore
+          await this.raceDeath(
+            withTimeout(
+              bot.pathfinder.goto(new goals.GoalNear(x, y, z, r)),
+              REACH_TIMEOUT_MS,
+              `reaching ${label}`,
+            ),
+          );
+          return;
+        } catch (err) {
+          // A death is terminal for this run — never retry a path across the void.
+          if (err instanceof BotDeathError) throw err;
+          lastErr = err;
+          try {
+            bot.pathfinder.stop();
+          } catch {
+            // ignore
+          }
         }
       }
+      const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
+      throw new Error(
+        `failed ${label} at [${x}, ${y}, ${z}] (range ${r}); bot at ` +
+          `${fmt(bot.entity.position)}: ${detail}`,
+      );
+    } finally {
+      restoreControls();
     }
-    const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
-    throw new Error(
-      `failed ${label} at [${x}, ${y}, ${z}] (range ${r}); bot at ` +
-        `${fmt(bot.entity.position)}: ${detail}`,
-    );
   }
 
   /**
@@ -325,7 +485,7 @@ export class MineflayerExecutor implements StepExecutor {
   async kill(step: KillStep): Promise<void> {
     const bot = this.requireBot();
     await this.equipLoadout();
-    await this.walkTo(step.pos, 3, `wave ${step.wave}`);
+    await this.walkTo(step.pos, 3, `wave ${step.wave}`, step.sneak);
     // Give AI-enabled mobs a moment to path toward the bot after we arrive.
     await delay(1_000);
     // Diagnostic: what does the bot see near the wave anchor?
@@ -337,6 +497,8 @@ export class MineflayerExecutor implements StepExecutor {
     const deadline = Date.now() + KILL_TIMEOUT_MS;
     let emptyStreak = 0;
     while (Date.now() < deadline) {
+      // Fail fast if a mob killed the bot mid-fight (gap 7) rather than looping.
+      if (this.death) throw this.death;
       const mob = bot.nearestEntity((e) => isWaveMob(e, bot.entity));
       if (!mob) {
         // A sustained absence of wave mobs (world is sealed) → wave cleared.
@@ -351,6 +513,7 @@ export class MineflayerExecutor implements StepExecutor {
           [Math.floor(mob.position.x), Math.floor(mob.position.y), Math.floor(mob.position.z)],
           2,
           `mob ${mob.name ?? "?"}`,
+          step.sneak,
         );
       } else {
         await bot.lookAt(mob.position.offset(0, (mob.height ?? 1) * 0.5, 0), true);
@@ -367,7 +530,7 @@ export class MineflayerExecutor implements StepExecutor {
   /** Collect items from the chest at the anchor: go there, open it, withdraw all. */
   async collect(step: CollectStep): Promise<void> {
     const bot = this.requireBot();
-    await this.walkTo(step.pos, 2, `chest ${step.item}`);
+    await this.walkTo(step.pos, 2, `chest ${step.item}`, step.sneak);
     const here = bot.entity.position;
     const target = here.offset(
       step.pos[0] + 0.5 - here.x,
@@ -393,7 +556,7 @@ export class MineflayerExecutor implements StepExecutor {
   /** Interact at the anchor: go there, then chat the emitted `/trigger` command. */
   async interact(step: InteractStep): Promise<void> {
     const bot = this.requireBot();
-    await this.walkTo(step.pos, 3, `interact ${step.anchor}`);
+    await this.walkTo(step.pos, 3, `interact ${step.anchor}`, step.sneak);
     // The interaction advancement and this chat command both feed the same
     // per-tick handler; the datapack applies the requires_item + flag guards.
     bot.chat(step.command);
@@ -415,6 +578,7 @@ export class MineflayerExecutor implements StepExecutor {
     const [x, y, z] = dest;
     const deadline = Date.now() + TRANSPORT_TIMEOUT_MS;
     while (Date.now() < deadline) {
+      if (this.death) throw this.death;
       const p = bot.entity.position;
       if (
         Math.abs(p.x - (x + 0.5)) < TRANSPORT_NEAR &&
@@ -433,6 +597,54 @@ export class MineflayerExecutor implements StepExecutor {
     await delay(TRANSPORT_SETTLE_MS);
   }
 
+  /**
+   * gap 7 (cutscene): after a step marked `cutscene_seconds`, the compiler may force
+   * the bot into spectator and dolly a camera for ~n seconds, then restore gamemode
+   * and position. The harness makes no assertions about the cutscene — it only waits
+   * for control to return so the next step does not start pathfinding mid-spectator.
+   *
+   * Two phases, both death-aware and bounded (deadline = n + grace, so a cutscene
+   * glitch cannot hang the run):
+   *   1. Sleep through the declared duration — the bot is out of our control anyway
+   *      (this also covers a cutscene brief enough that we would otherwise miss the
+   *      spectator window entirely).
+   *   2. Extend the awaitTransport discontinuity pattern: wait for the gamemode to be
+   *      back to adventure AND the position to hold steady for a short settle window.
+   */
+  async awaitCutscene(seconds: number): Promise<void> {
+    const bot = this.requireBot();
+    const start = Date.now();
+    const minEnd = start + seconds * 1000;
+    const deadline = minEnd + this.cutsceneGraceMs;
+
+    // Phase 1: wait out the declared cutscene length (control is not ours meanwhile).
+    while (Date.now() < minEnd) {
+      if (this.death) throw this.death;
+      await delay(CUTSCENE_POLL_MS);
+    }
+
+    // Phase 2: confirm control returned — adventure mode AND a settled position.
+    let steadySince: number | undefined;
+    let last = bot.entity.position.clone();
+    while (Date.now() < deadline) {
+      if (this.death) throw this.death;
+      const here = bot.entity.position;
+      const moved = here.distanceTo(last) > CUTSCENE_STEADY_EPS;
+      last = here.clone();
+      if (bot.game.gameMode === "adventure" && !moved) {
+        steadySince ??= Date.now();
+        if (Date.now() - steadySince >= CUTSCENE_SETTLE_MS) return;
+      } else {
+        steadySince = undefined;
+      }
+      await delay(CUTSCENE_POLL_MS);
+    }
+    process.stderr.write(
+      `[cutscene] control not confirmed restored within ${seconds}s + grace; ` +
+        `gamemode ${bot.game.gameMode}, bot at ${fmt(bot.entity.position)} — continuing\n`,
+    );
+  }
+
   async assertComplete(step: AssertCompleteStep): Promise<void> {
     const bot = this.requireBot();
     // Completion is observed two ways, whichever surfaces first:
@@ -444,6 +656,7 @@ export class MineflayerExecutor implements StepExecutor {
     // settles or the budget runs out.
     const deadline = Date.now() + SCORE_SETTLE_MS;
     while (Date.now() < deadline) {
+      if (this.death) throw this.death;
       if (this.markerScores.get(step.objective) === step.value) {
         return;
       }
