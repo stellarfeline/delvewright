@@ -15,7 +15,7 @@
  * additive superset (kill/collect/interact steps); both are accepted, and the
  * `version` field is campaign-derived (a v0.2 delve still emits a v0.2 path).
  */
-export const SUPPORTED_DSL_VERSIONS = ["0.2.0", "0.3.0"] as const;
+export const SUPPORTED_DSL_VERSIONS = ["0.2.0", "0.3.0", "0.4.0"] as const;
 
 /** The closed set of critical-path step actions (spec-0002 / spec-0001 enum). */
 export const STEP_ACTIONS = [
@@ -50,8 +50,21 @@ export interface SelectClassStep {
  */
 export type Transport = Vec3Tuple | undefined;
 
+/**
+ * v0.4 (spec-0008 gap-7) presentation/stealth markers a walking step may carry.
+ * Both are additive and default off, so a v0.2/v0.3 path is byte-identical:
+ *   - `sneak` — walk this leg crouched, sprint disabled (stealth envelope).
+ *   - `cutsceneSeconds` — after this step completes, the bot may be forced into
+ *     spectator and flown ~n seconds; the harness waits for control to return.
+ * `false`/absent `sneak` is normalized to the key being absent.
+ */
+export interface PresentationMarkers {
+  readonly sneak?: boolean;
+  readonly cutsceneSeconds?: number;
+}
+
 /** Talk to an NPC at `pos`, then chat the compiler-assigned dialog `/trigger`. */
-export interface TalkToStep {
+export interface TalkToStep extends PresentationMarkers {
   readonly action: "talk-to";
   readonly npc: string;
   readonly pos: Vec3Tuple;
@@ -62,7 +75,7 @@ export interface TalkToStep {
 }
 
 /** Reach an anchor: get within `radius` blocks of the absolute position `pos`. */
-export interface ReachStep {
+export interface ReachStep extends PresentationMarkers {
   readonly action: "reach";
   readonly anchor: string;
   readonly pos: Vec3Tuple;
@@ -72,7 +85,7 @@ export interface ReachStep {
 }
 
 /** Slay a wave: go to `pos`, attack the wave's mobs until the wave is cleared (v0.3). */
-export interface KillStep {
+export interface KillStep extends PresentationMarkers {
   readonly action: "kill";
   readonly wave: string;
   readonly pos: Vec3Tuple;
@@ -85,7 +98,7 @@ export interface KillStep {
 }
 
 /** Collect `count` of `item` from a chest at `pos` (v0.3). */
-export interface CollectStep {
+export interface CollectStep extends PresentationMarkers {
   readonly action: "collect";
   readonly item: string;
   readonly count: number;
@@ -95,7 +108,7 @@ export interface CollectStep {
 }
 
 /** Interact at `pos`, then chat `command`; `requires_item` may gate it (v0.3). */
-export interface InteractStep {
+export interface InteractStep extends PresentationMarkers {
   readonly action: "interact";
   readonly anchor: string;
   readonly pos: Vec3Tuple;
@@ -243,6 +256,37 @@ function transportFields(
   return { transport: [coords[0]!, coords[1]!, coords[2]!] };
 }
 
+/**
+ * The v0.4 presentation/stealth markers (spec-0008 gap-7): optional `sneak: true`
+ * and `cutscene_seconds: <positive int>`. Returns a spreadable object so an absent
+ * marker leaves no key at all (`false` sneak is normalized to absent — treated as
+ * the default). Same additive philosophy as `transportFields`.
+ */
+function presentationFields(
+  obj: Record<string, unknown>,
+  pointer: string,
+): { sneak?: boolean; cutsceneSeconds?: number } {
+  const out: { sneak?: boolean; cutsceneSeconds?: number } = {};
+  const sneak = obj["sneak"];
+  if (sneak !== undefined) {
+    if (typeof sneak !== "boolean") {
+      fail(`${pointer}/sneak`, `must be a boolean, got ${describe(sneak)}`);
+    }
+    if (sneak) out.sneak = true; // false ≡ absent (default)
+  }
+  const cutscene = obj["cutscene_seconds"];
+  if (cutscene !== undefined) {
+    if (typeof cutscene !== "number" || !Number.isInteger(cutscene) || cutscene <= 0) {
+      fail(
+        `${pointer}/cutscene_seconds`,
+        `must be a positive integer, got ${describe(cutscene)}`,
+      );
+    }
+    out.cutsceneSeconds = cutscene;
+  }
+  return out;
+}
+
 /** The `scoreboard: { objective, value }` object on assert-complete. */
 function requireScoreboard(
   obj: Record<string, unknown>,
@@ -284,17 +328,26 @@ function parseStep(value: unknown, pointer: string): Step {
       };
     }
     case "talk-to": {
-      rejectUnknownKeys(obj, ["action", "npc", "pos", "command", "transport"], pointer);
+      rejectUnknownKeys(
+        obj,
+        ["action", "npc", "pos", "command", "transport", "sneak", "cutscene_seconds"],
+        pointer,
+      );
       return {
         action: "talk-to",
         npc: requireString(obj, "npc", pointer),
         pos: requirePos(obj, pointer),
         command: requireString(obj, "command", pointer),
         ...transportFields(obj, pointer),
+        ...presentationFields(obj, pointer),
       };
     }
     case "reach": {
-      rejectUnknownKeys(obj, ["action", "anchor", "pos", "radius", "transport"], pointer);
+      rejectUnknownKeys(
+        obj,
+        ["action", "anchor", "pos", "radius", "transport", "sneak", "cutscene_seconds"],
+        pointer,
+      );
       const radius = obj["radius"];
       if (typeof radius !== "number" || !Number.isFinite(radius)) {
         fail(`${pointer}/radius`, `must be a finite number, got ${describe(radius)}`);
@@ -308,10 +361,15 @@ function parseStep(value: unknown, pointer: string): Step {
         pos: requirePos(obj, pointer),
         radius,
         ...transportFields(obj, pointer),
+        ...presentationFields(obj, pointer),
       };
     }
     case "kill": {
-      rejectUnknownKeys(obj, ["action", "wave", "pos", "tag", "count", "transport"], pointer);
+      rejectUnknownKeys(
+        obj,
+        ["action", "wave", "pos", "tag", "count", "transport", "sneak", "cutscene_seconds"],
+        pointer,
+      );
       return {
         action: "kill",
         wave: requireString(obj, "wave", pointer),
@@ -319,22 +377,37 @@ function parseStep(value: unknown, pointer: string): Step {
         tag: requireString(obj, "tag", pointer),
         count: requireInteger(obj, "count", pointer),
         ...transportFields(obj, pointer),
+        ...presentationFields(obj, pointer),
       };
     }
     case "collect": {
-      rejectUnknownKeys(obj, ["action", "item", "count", "pos", "transport"], pointer);
+      rejectUnknownKeys(
+        obj,
+        ["action", "item", "count", "pos", "transport", "sneak", "cutscene_seconds"],
+        pointer,
+      );
       return {
         action: "collect",
         item: requireString(obj, "item", pointer),
         count: requireInteger(obj, "count", pointer),
         pos: requirePos(obj, pointer),
         ...transportFields(obj, pointer),
+        ...presentationFields(obj, pointer),
       };
     }
     case "interact": {
       rejectUnknownKeys(
         obj,
-        ["action", "anchor", "pos", "command", "requires_item", "transport"],
+        [
+          "action",
+          "anchor",
+          "pos",
+          "command",
+          "requires_item",
+          "transport",
+          "sneak",
+          "cutscene_seconds",
+        ],
         pointer,
       );
       const ri = obj["requires_item"];
@@ -348,6 +421,7 @@ function parseStep(value: unknown, pointer: string): Step {
         command: requireString(obj, "command", pointer),
         requiresItem: ri,
         ...transportFields(obj, pointer),
+        ...presentationFields(obj, pointer),
       };
     }
     case "assert-complete": {

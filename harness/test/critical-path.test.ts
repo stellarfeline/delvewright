@@ -276,6 +276,98 @@ test("rejects an unrecognized field on a step", () => {
   );
 });
 
+test("parses a sneak-marked walking step (gap 7)", () => {
+  const raw = validRaw();
+  raw["version"] = "0.4.0";
+  (raw["steps"] as Record<string, unknown>[])[2] = {
+    action: "reach",
+    anchor: "anchor/vault",
+    pos: [8, 65, 24],
+    radius: 2,
+    sneak: true,
+  };
+  const path = parseCriticalPath(raw);
+  assert.equal((path.steps[2] as { sneak?: boolean }).sneak, true);
+});
+
+test("normalizes sneak:false to an absent key (default off)", () => {
+  const raw = validRaw();
+  raw["version"] = "0.4.0";
+  (raw["steps"] as Record<string, unknown>[])[2] = {
+    action: "reach",
+    anchor: "anchor/exit",
+    pos: [8, 65, 24],
+    radius: 2,
+    sneak: false,
+  };
+  const path = parseCriticalPath(raw);
+  assert.ok(!("sneak" in path.steps[2]!));
+});
+
+test("rejects a non-boolean sneak with a precise pointer", () => {
+  const raw = validRaw();
+  raw["version"] = "0.4.0";
+  (raw["steps"] as Record<string, unknown>[])[2] = {
+    action: "reach",
+    anchor: "anchor/exit",
+    pos: [8, 65, 24],
+    radius: 2,
+    sneak: "yes",
+  };
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) =>
+      err instanceof CriticalPathParseError &&
+      err.pointer === "/steps/2/sneak" &&
+      /must be a boolean/.test(err.message),
+  );
+});
+
+test("parses a cutscene_seconds marker on a step (gap 7)", () => {
+  const raw = validRaw();
+  raw["version"] = "0.4.0";
+  (raw["steps"] as Record<string, unknown>[])[1] = {
+    action: "talk-to",
+    npc: "npc/keeper",
+    pos: [8, 65, 12],
+    command: "/trigger dw.dlg_keeper set 2",
+    cutscene_seconds: 6,
+  };
+  const path = parseCriticalPath(raw);
+  assert.equal((path.steps[1] as { cutsceneSeconds?: number }).cutsceneSeconds, 6);
+});
+
+test("rejects a non-positive cutscene_seconds with a precise pointer", () => {
+  const raw = validRaw();
+  raw["version"] = "0.4.0";
+  (raw["steps"] as Record<string, unknown>[])[2] = {
+    action: "reach",
+    anchor: "anchor/exit",
+    pos: [8, 65, 24],
+    radius: 2,
+    cutscene_seconds: 0,
+  };
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) =>
+      err instanceof CriticalPathParseError &&
+      err.pointer === "/steps/2/cutscene_seconds" &&
+      /must be a positive integer/.test(err.message),
+  );
+});
+
+test("a plain step carries neither sneak nor cutsceneSeconds (byte-identical shape)", () => {
+  const path = parseCriticalPath(validRaw());
+  assert.ok(!("sneak" in path.steps[2]!));
+  assert.ok(!("cutsceneSeconds" in path.steps[2]!));
+});
+
+test("accepts the 0.4.0 dsl version", () => {
+  const raw = validRaw();
+  raw["version"] = "0.4.0";
+  assert.equal(parseCriticalPath(raw).version, "0.4.0");
+});
+
 test("rejects a non-integer assert-complete scoreboard value", () => {
   const raw = validRaw();
   (raw["steps"] as Array<Record<string, unknown>>)[3]!["scoreboard"] = {
