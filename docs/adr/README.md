@@ -18,6 +18,7 @@ edit. Template at the bottom.
 | [0011](0011-compiler-foundation.md) | Compiler foundation: Rust-native + mecha CI cross-check | Accepted |
 | [0012](0012-product-form-claude-code-skill.md) | Product form: Claude Code skill front-end | Accepted |
 | [0013](0013-prefab-license-allowlist.md) | Expanded prefab license allowlist (+MIT/Apache/GPL) | Accepted |
+| [0014](0014-creator-distribution.md) | Creator distribution: plugin install, content repo as workdir | Accepted (M4) |
 
 ## Template
 
