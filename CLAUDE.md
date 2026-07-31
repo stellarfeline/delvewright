@@ -73,6 +73,12 @@ validation/          # docker compose: headless server + bot, same image as CI &
 
 - **Spec-driven**: specs carry machine-verifiable acceptance criteria. Implementation
   sessions work against a spec; if none exists, write/propose the spec first.
+- **No hacks at any layer** (owner, 2026-07-31): if vanilla/NBT provides an
+  intended primitive that content needs, the DSL exposes it first-class — never
+  leave it to downstream folklore or workarounds. If the only possible
+  implementation of a feature is a lower-layer hack (e.g. raycast polling where
+  vanilla has no primitive), the feature is excluded until vanilla provides one.
+  Applies at every layer boundary: NBT→compiler, compiler→DSL, DSL→skill.
 - **CI is the sole arbiter** (ADR-0008). Nothing merges red. The owner reviews PR
   descriptions and architecture-level diffs, not lines. Write PR descriptions
   accordingly: what changed at the design level, what CI now proves.
