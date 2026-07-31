@@ -157,9 +157,16 @@ Then:
    - `EULA=TRUE docker compose -f validation/compose.yaml --profile validate up --build --abort-on-container-exit --exit-code-from bot`
    - tear down containers, and report ONLY: per-command exit codes, failed
      PackTest names, the bot's failed step (if any), and ≤20 relevant log lines.
-   Both must exit 0. Re-runs after fixes go through the same subagent. A red bot
-   run = **you** fix the campaign in the DSL (repair judgment stays with the
-   authoring agent; or report a compiler bug — never hand-edit compiler output).
+   Both must exit 0. Re-runs after fixes go through the same subagent. On any
+   red, **triage before touching anything** (debug doctrine, CLAUDE.md):
+   - *Content bug* (your DSL declares something wrong/unreachable/unlit): fix
+     the campaign in the DSL. Repair judgment stays with the authoring agent.
+   - *Toolchain bug* (compiler/harness/tileset misbehaves on a campaign the
+     diagnostics accept): **stop content work and report it** with evidence —
+     never hand-edit compiler output, never restructure the campaign to dodge
+     the bug, never weaken a check or reroll a seed to get green. A workaround
+     that turns a toolchain bug green is itself a quality defect: it ships the
+     bug to every future campaign. Escalating is success.
 8. Visual review (spec-0003 visual tier) — **you** (the authoring agent, not a
    subagent; visual judgment is the point). The build output already contains
    `render-plan.json` (deterministic shots + per-shot `expect` checklists derived
