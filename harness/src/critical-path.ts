@@ -41,6 +41,15 @@ export interface SelectClassStep {
   readonly command: string;
 }
 
+/**
+ * The absolute destination a step's completion teleports the player to, when the
+ * next critical objective lives in a different area (gap 8). The compiler emits it
+ * as the step's optional `transport` field; the harness waits for the position
+ * discontinuity before starting the next step so a cross-area teleport does not
+ * race the next step's pathfinding. Absent (undefined) on steps that stay in area.
+ */
+export type Transport = Vec3Tuple | undefined;
+
 /** Talk to an NPC at `pos`, then chat the compiler-assigned dialog `/trigger`. */
 export interface TalkToStep {
   readonly action: "talk-to";
@@ -48,6 +57,8 @@ export interface TalkToStep {
   readonly pos: Vec3Tuple;
   /** The exact chat command the bot sends (`bot.chat(command)`). */
   readonly command: string;
+  /** Cross-area teleport destination on completion, if any (gap 8). */
+  readonly transport?: Transport;
 }
 
 /** Reach an anchor: get within `radius` blocks of the absolute position `pos`. */
@@ -56,6 +67,8 @@ export interface ReachStep {
   readonly anchor: string;
   readonly pos: Vec3Tuple;
   readonly radius: number;
+  /** Cross-area teleport destination on completion, if any (gap 8). */
+  readonly transport?: Transport;
 }
 
 /** Slay a wave: go to `pos`, attack the wave's mobs until the wave is cleared (v0.3). */
@@ -67,6 +80,8 @@ export interface KillStep {
   readonly tag: string;
   /** Total mob count in the wave. */
   readonly count: number;
+  /** Cross-area teleport destination on completion, if any (gap 8). */
+  readonly transport?: Transport;
 }
 
 /** Collect `count` of `item` from a chest at `pos` (v0.3). */
@@ -75,6 +90,8 @@ export interface CollectStep {
   readonly item: string;
   readonly count: number;
   readonly pos: Vec3Tuple;
+  /** Cross-area teleport destination on completion, if any (gap 8). */
+  readonly transport?: Transport;
 }
 
 /** Interact at `pos`, then chat `command`; `requires_item` may gate it (v0.3). */
@@ -86,6 +103,8 @@ export interface InteractStep {
   readonly command: string;
   /** Item that must be held for the interaction to complete, or `null`. */
   readonly requiresItem: string | null;
+  /** Cross-area teleport destination on completion, if any (gap 8). */
+  readonly transport?: Transport;
 }
 
 /** Assert the campaign-completion scoreboard objective holds `value` (terminal step). */
@@ -193,6 +212,37 @@ function requirePos(
   return [coords[0]!, coords[1]!, coords[2]!];
 }
 
+/**
+ * The optional `transport: [x, y, z]` marker (gap 8): the absolute destination a
+ * step's completion teleports the player to. Returns a spreadable object — `{}`
+ * when the field is absent (so a step with no transport is byte-identical to the
+ * pre-gap-8 shape, with no `transport` key at all), or `{ transport: [x,y,z] }`
+ * when present. Same coordinate shape as `pos`.
+ */
+function transportFields(
+  obj: Record<string, unknown>,
+  pointer: string,
+): { transport?: Vec3Tuple } {
+  const value = obj["transport"];
+  if (value === undefined) {
+    return {};
+  }
+  if (!Array.isArray(value)) {
+    fail(`${pointer}/transport`, `must be an array, got ${describe(value)}`);
+  }
+  if (value.length !== 3) {
+    fail(`${pointer}/transport`, `must have exactly 3 elements, got ${value.length}`);
+  }
+  const coords = value.map((entry, i) => {
+    const at = `${pointer}/transport/${i}`;
+    if (typeof entry !== "number" || !Number.isFinite(entry)) {
+      fail(at, `must be a finite number, got ${describe(entry)}`);
+    }
+    return entry;
+  });
+  return { transport: [coords[0]!, coords[1]!, coords[2]!] };
+}
+
 /** The `scoreboard: { objective, value }` object on assert-complete. */
 function requireScoreboard(
   obj: Record<string, unknown>,
@@ -234,16 +284,17 @@ function parseStep(value: unknown, pointer: string): Step {
       };
     }
     case "talk-to": {
-      rejectUnknownKeys(obj, ["action", "npc", "pos", "command"], pointer);
+      rejectUnknownKeys(obj, ["action", "npc", "pos", "command", "transport"], pointer);
       return {
         action: "talk-to",
         npc: requireString(obj, "npc", pointer),
         pos: requirePos(obj, pointer),
         command: requireString(obj, "command", pointer),
+        ...transportFields(obj, pointer),
       };
     }
     case "reach": {
-      rejectUnknownKeys(obj, ["action", "anchor", "pos", "radius"], pointer);
+      rejectUnknownKeys(obj, ["action", "anchor", "pos", "radius", "transport"], pointer);
       const radius = obj["radius"];
       if (typeof radius !== "number" || !Number.isFinite(radius)) {
         fail(`${pointer}/radius`, `must be a finite number, got ${describe(radius)}`);
@@ -256,31 +307,34 @@ function parseStep(value: unknown, pointer: string): Step {
         anchor: requireString(obj, "anchor", pointer),
         pos: requirePos(obj, pointer),
         radius,
+        ...transportFields(obj, pointer),
       };
     }
     case "kill": {
-      rejectUnknownKeys(obj, ["action", "wave", "pos", "tag", "count"], pointer);
+      rejectUnknownKeys(obj, ["action", "wave", "pos", "tag", "count", "transport"], pointer);
       return {
         action: "kill",
         wave: requireString(obj, "wave", pointer),
         pos: requirePos(obj, pointer),
         tag: requireString(obj, "tag", pointer),
         count: requireInteger(obj, "count", pointer),
+        ...transportFields(obj, pointer),
       };
     }
     case "collect": {
-      rejectUnknownKeys(obj, ["action", "item", "count", "pos"], pointer);
+      rejectUnknownKeys(obj, ["action", "item", "count", "pos", "transport"], pointer);
       return {
         action: "collect",
         item: requireString(obj, "item", pointer),
         count: requireInteger(obj, "count", pointer),
         pos: requirePos(obj, pointer),
+        ...transportFields(obj, pointer),
       };
     }
     case "interact": {
       rejectUnknownKeys(
         obj,
-        ["action", "anchor", "pos", "command", "requires_item"],
+        ["action", "anchor", "pos", "command", "requires_item", "transport"],
         pointer,
       );
       const ri = obj["requires_item"];
@@ -293,6 +347,7 @@ function parseStep(value: unknown, pointer: string): Step {
         pos: requirePos(obj, pointer),
         command: requireString(obj, "command", pointer),
         requiresItem: ri,
+        ...transportFields(obj, pointer),
       };
     }
     case "assert-complete": {

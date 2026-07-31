@@ -207,3 +207,39 @@ test("runSequence surfaces an ordering error before executing anything", async (
   );
   assert.deepEqual(executor.calls, []);
 });
+
+test("runSequence awaits transport after a transport-marked step (gap 8)", async () => {
+  // A reach step carrying a transport marker; the sequencer must call
+  // awaitTransport with its destination after dispatching the step.
+  const reachWithTransport: ReachStep = {
+    action: "reach",
+    anchor: "anchor/exit",
+    pos: [8, 65, 24],
+    radius: 2,
+    transport: [261, 65, 4],
+  };
+  const transports: Array<readonly [number, number, number]> = [];
+  const executor = new (class extends RecordingExecutor {
+    awaitTransport(dest: readonly [number, number, number]): Promise<void> {
+      transports.push(dest);
+      return Promise.resolve();
+    }
+  })();
+  await runSequence(
+    path([selectClass, reachWithTransport, assertComplete]),
+    executor,
+  );
+  assert.deepEqual(transports, [[261, 65, 4]]);
+});
+
+test("runSequence does not await transport for a plain step", async () => {
+  let awaited = 0;
+  const executor = new (class extends RecordingExecutor {
+    awaitTransport(): Promise<void> {
+      awaited += 1;
+      return Promise.resolve();
+    }
+  })();
+  await runSequence(path([selectClass, reach, assertComplete]), executor);
+  assert.equal(awaited, 0);
+});

@@ -70,6 +70,42 @@ test("parseCriticalPathJson round-trips from text", () => {
   assert.equal(path.campaignId, "hello-world");
 });
 
+test("parses an optional transport marker on a step (gap 8)", () => {
+  const raw = validRaw();
+  (raw["steps"] as Record<string, unknown>[])[2] = {
+    action: "reach",
+    anchor: "anchor/exit",
+    pos: [8, 65, 24],
+    radius: 2,
+    transport: [261, 65, 4],
+  };
+  const path = parseCriticalPath(raw);
+  assert.deepEqual((path.steps[2] as { transport?: unknown }).transport, [261, 65, 4]);
+});
+
+test("a step without transport carries no transport key (byte-identical shape)", () => {
+  const path = parseCriticalPath(validRaw());
+  assert.ok(!("transport" in path.steps[2]!));
+});
+
+test("rejects a malformed transport marker with a precise pointer", () => {
+  const raw = validRaw();
+  (raw["steps"] as Record<string, unknown>[])[2] = {
+    action: "reach",
+    anchor: "anchor/exit",
+    pos: [8, 65, 24],
+    radius: 2,
+    transport: [1, 2],
+  };
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) =>
+      err instanceof CriticalPathParseError &&
+      err.pointer === "/steps/2/transport" &&
+      /exactly 3 elements/.test(err.message),
+  );
+});
+
 test("rejects invalid JSON text with a pointer at the root", () => {
   assert.throws(
     () => parseCriticalPathJson("{ not json"),

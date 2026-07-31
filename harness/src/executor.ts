@@ -92,6 +92,14 @@ const SCORE_SETTLE_MS = 15_000;
 const SCORE_POLL_MS = 250;
 /** Settle time (ms) after class selection (teleport + kit give) before moving on. */
 const CLASS_SETTLE_MS = 3_000;
+/**
+ * gap 8: how long (ms) to wait for a cross-area teleport to land after a step whose
+ * completion relocates the player, how close (blocks, horizontal) counts as
+ * "arrived at the destination", and how long to settle once it has.
+ */
+const TRANSPORT_TIMEOUT_MS = 15_000;
+const TRANSPORT_NEAR = 4;
+const TRANSPORT_SETTLE_MS = 1_500;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -390,6 +398,39 @@ export class MineflayerExecutor implements StepExecutor {
     // per-tick handler; the datapack applies the requires_item + flag guards.
     bot.chat(step.command);
     await delay(2_000);
+  }
+
+  /**
+   * gap 8: after a step whose completion teleports the player to another area,
+   * wait for the position to jump to near `dest` before returning, so the next
+   * step's pathfinding does not start from the old area while the teleport is still
+   * in flight (which invalidated the path mid-computation and produced a spurious
+   * red). Areas sit ~256 blocks apart across void, so the destination is far from
+   * the pre-teleport position and the arrival is unambiguous. Bounded: if the jump
+   * is not observed within the budget, settle briefly and let the next step surface
+   * its own diagnostic. Navigation plumbing only — no game logic.
+   */
+  async awaitTransport(dest: readonly [number, number, number]): Promise<void> {
+    const bot = this.requireBot();
+    const [x, y, z] = dest;
+    const deadline = Date.now() + TRANSPORT_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      const p = bot.entity.position;
+      if (
+        Math.abs(p.x - (x + 0.5)) < TRANSPORT_NEAR &&
+        Math.abs(p.z - (z + 0.5)) < TRANSPORT_NEAR &&
+        Math.abs(p.y - y) < 4
+      ) {
+        await delay(TRANSPORT_SETTLE_MS);
+        return;
+      }
+      await delay(REACH_POLL_MS);
+    }
+    process.stderr.write(
+      `[transport] did not observe the jump to [${x}, ${y}, ${z}] within ` +
+        `${TRANSPORT_TIMEOUT_MS}ms; bot at ${fmt(bot.entity.position)} — continuing\n`,
+    );
+    await delay(TRANSPORT_SETTLE_MS);
   }
 
   async assertComplete(step: AssertCompleteStep): Promise<void> {
