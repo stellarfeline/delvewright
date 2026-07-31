@@ -21,7 +21,7 @@ use crate::plan::{
 };
 use crate::{DELVEC_VERSION, MC_VERSION, PACK_FORMAT};
 
-use delvewright_dsl::{Objective, QuestEffect, Trigger};
+use delvewright_dsl::{Objective, QuestEffect, Trigger, is_v03};
 
 /// The emitted build tree: relative path → file bytes.
 pub type BuildOutput = BTreeMap<String, Vec<u8>>;
@@ -207,9 +207,46 @@ fn facing_yaw(facing: Option<&str>) -> i32 {
     }
 }
 
+/// Whether this campaign compiles under DSL v0.3 (gate for every M2
+/// presentation fix). The gate is the quests-stage version (all v0.3 surface
+/// lives in stage 5) — matching [`crate::registry`]/validation. v0.2 campaigns
+/// (hello-world / keep-crawl) take the untouched pre-v0.3 emission path, keeping
+/// their output byte-identical.
+fn campaign_is_v03(plan: &Plan) -> bool {
+    is_v03(plan.campaign.quests.dsl_version.as_str())
+}
+
+/// Escape a player-facing string as a double-quoted SNBT string. On 1.21.11
+/// `CustomName` is a **text component**, so a bare quoted SNBT string is read as
+/// literal text (the JSON-string form `'{"text":"…"}'` renders verbatim, incl. in
+/// death messages — the M2 defect). Only `\` and `"` need escaping inside SNBT.
+fn snbt_string(s: &str) -> String {
+    let esc = s.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{esc}\"")
+}
+
+/// Default hand equipment for a summoned mob whose natural spawns are armed
+/// (M2 fix 5). `/summon` gives no equipment, so a wither-skeleton boss spawned
+/// unarmed was trivial. Returns an NBT fragment (no leading comma) setting
+/// `HandItems` with drop chance 0, or `None` for mobs that spawn unarmed. Small
+/// static table (documented in the compiler README); mobs not listed (zombie,
+/// drowned — a wild trident is not a default) get nothing.
+fn default_equipment(entity: &str) -> Option<&'static str> {
+    match entity.strip_prefix("minecraft:").unwrap_or(entity) {
+        "wither_skeleton" => {
+            Some("HandItems:[{id:\"minecraft:stone_sword\",count:1},{}],HandDropChances:[0f,0f]")
+        }
+        "skeleton" | "stray" => {
+            Some("HandItems:[{id:\"minecraft:bow\",count:1},{}],HandDropChances:[0f,0f]")
+        }
+        _ => None,
+    }
+}
+
 fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
+    let v03 = campaign_is_v03(plan);
     let mut fns: Vec<(String, String)> = Vec::new();
 
     // --- load ---
@@ -280,6 +317,21 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
             "scoreboard objectives add {} trigger",
             plan::interact_trigger(&oid)
         ));
+    }
+    // v0.3 objective-activation feedback (M2 fix 4): one "announced" flag per
+    // titled objective. Empty for a v0.2 campaign, so hello-world / keep-crawl
+    // setup stays byte-identical.
+    if v03 {
+        for q in &c.quests.content.quests {
+            for o in &q.objectives {
+                if o.title().is_some() {
+                    setup.push(format!(
+                        "scoreboard objectives add {} dummy",
+                        announce_score(o.id().as_str())
+                    ));
+                }
+            }
+        }
     }
     // Force-load the chunks covering each prefab BEFORE placing. `#minecraft:load`
     // runs during server boot when the target chunks are not guaranteed to be
@@ -356,10 +408,18 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
             .map(|n| n.base_entity.as_str())
             .unwrap_or("minecraft:villager");
         let yaw = facing_yaw(facing);
-        let cname = json!({ "text": name }).to_string().replace('\'', "\\'");
+        // CustomName is a 1.21.11 text component. v0.3 emits a plain SNBT string
+        // (renders correctly, incl. death messages — M2 fix 1); v0.2 keeps the
+        // legacy `'{"text":…}'` form so hello-world / keep-crawl stay byte-identical.
+        let cname_field = if v03 {
+            snbt_string(name)
+        } else {
+            let cname = json!({ "text": name }).to_string().replace('\'', "\\'");
+            format!("'{cname}'")
+        };
         setup.push(format!(
-            "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"],CustomName:'{}',CustomNameVisible:1b,VillagerData:{{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}}}}",
-            pos[0], pos[1], pos[2], npc.tag, cname
+            "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"],CustomName:{},CustomNameVisible:1b,VillagerData:{{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}}}}",
+            pos[0], pos[1], pos[2], npc.tag, cname_field
         ));
         setup.push(format!(
             "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{}\"]}}",
@@ -395,6 +455,16 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
                         setup.push(format!(
                             "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{}\"]}}",
                             pos[0], pos[1], pos[2], interact_entity_tag(id.as_str())
+                        ));
+                        // Visible, glowing, adventure-safe marker so a human can
+                        // find the interact target (M2 fix 3): an `item_display`
+                        // has no collision, so it obstructs neither movement nor
+                        // the interaction hitbox. Its name derives from the
+                        // objective `title` (fallback: the objective id).
+                        let marker_name = snbt_string(o.title().unwrap_or(id.as_str()));
+                        setup.push(format!(
+                            "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],CustomName:{},CustomNameVisible:1b,billboard:\"center\",item:{{id:\"minecraft:lantern\",count:1}}}}",
+                            pos[0], pos[1], pos[2], interact_entity_tag(id.as_str()), marker_name
                         ));
                     }
                 }
@@ -445,6 +515,25 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
             ));
         }
     }
+    // v0.3 objective-activation feedback (M2 fix 4): announce a titled objective
+    // the tick it becomes active (quest active, `after`/flags satisfied, not yet
+    // complete) and has not been announced. Runs before the completion checks so
+    // "new objective" precedes any same-tick "complete". Empty for v0.2.
+    if v03 {
+        for q in &c.quests.content.quests {
+            let qa = quest_active_score(q.id.as_str());
+            for o in &q.objectives {
+                if o.title().is_some() {
+                    tick.push(format!(
+                        "execute as @a{} unless score @s {} matches 1 run function {ns}:announce_{}",
+                        pending_guard(o, &qa),
+                        announce_score(o.id().as_str()),
+                        safe_obj_fn(o.id().as_str())
+                    ));
+                }
+            }
+        }
+    }
     // Per-tick objective completion checks. `reach-anchor` (proximity) is
     // unchanged for v0.2; `kill` (wave countdown reached zero) and `interact`
     // (trigger fired + optional item) are v0.3 additions. `collect` is
@@ -465,12 +554,26 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
                         Some(ResolvedAnchor::Gate { from, .. }) => *from,
                         None => continue,
                     };
-                    tick.push(format!(
-                        "execute as @a{} if entity @s[x={},y={},z={},distance=..{}] run function {ns}:complete_{}",
-                        pending_guard(o, &qa),
-                        pos[0], pos[1], pos[2], radius,
-                        safe_obj_fn(id.as_str())
-                    ));
+                    // v0.3 (M2 fix 8): a point-radius `distance=..R` sphere was too
+                    // tight for a human standing on the altar cell. Test a block
+                    // region instead — the anchor cell with ±1 generosity on every
+                    // axis (a 3×3×3 box centred on the anchor). v0.2 keeps the
+                    // sphere so hello-world / keep-crawl stay byte-identical.
+                    if v03 {
+                        tick.push(format!(
+                            "execute as @a{} if entity @s[x={},dx=2,y={},dy=2,z={},dz=2] run function {ns}:complete_{}",
+                            pending_guard(o, &qa),
+                            pos[0] - 1, pos[1] - 1, pos[2] - 1,
+                            safe_obj_fn(id.as_str())
+                        ));
+                    } else {
+                        tick.push(format!(
+                            "execute as @a{} if entity @s[x={},y={},z={},distance=..{}] run function {ns}:complete_{}",
+                            pending_guard(o, &qa),
+                            pos[0], pos[1], pos[2], radius,
+                            safe_obj_fn(id.as_str())
+                        ));
+                    }
                 }
                 Objective::Kill { id, wave, .. } => {
                     tick.push(format!(
@@ -589,8 +692,46 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
     for q in &c.quests.content.quests {
         for o in &q.objectives {
             let oid = o.id().as_str();
+            // v0.3 objective-activation feedback (M2 fix 4): the announce function
+            // shows the title + hint once and plays a subtle sound. Emitted only
+            // for titled objectives (v0.3); nothing for v0.2.
+            if v03 && let Some(title) = o.title() {
+                let mut ann: Vec<String> = Vec::new();
+                ann.push(format!(
+                    "tellraw @s {}",
+                    json!([
+                        { "text": "New objective: ", "color": "yellow", "bold": true },
+                        { "text": title, "color": "gold" }
+                    ])
+                ));
+                if let Some(hint) = o.hint() {
+                    ann.push(format!(
+                        "tellraw @s {}",
+                        json!({ "text": hint, "color": "gray", "italic": true })
+                    ));
+                }
+                ann.push("playsound minecraft:block.note_block.pling player @s".to_string());
+                ann.push(format!(
+                    "scoreboard players set @s {} 1",
+                    announce_score(oid)
+                ));
+                fns.push((format!("announce_{}", safe_obj_fn(oid)), lines(&ann)));
+            }
+
             let mut body: Vec<String> = Vec::new();
             body.push(format!("scoreboard players set @s {} 1", obj_score(oid)));
+            // v0.3 objective-completion feedback (M2 fix 4): a confirmation line +
+            // sound so progress is legible. Titled objectives only; v0.2 unchanged.
+            if v03 && let Some(title) = o.title() {
+                body.push(format!(
+                    "tellraw @s {}",
+                    json!([
+                        { "text": "Objective complete: ", "color": "green" },
+                        { "text": title, "color": "white" }
+                    ])
+                ));
+                body.push("playsound minecraft:entity.experience_orb.pickup player @s".to_string());
+            }
             for eff in objective_effects(c, oid) {
                 emit_quest_effect(plan, eff, &mut body);
             }
@@ -656,33 +797,44 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
 
     // --- campaign_complete (shared by campaign-complete effect) ---
     let title = &c.world.content.title;
-    fns.push((
-        "campaign_complete".to_string(),
-        lines(&[
-            "scoreboard players set @s dw.campaign 1".to_string(),
-            format!("advancement grant @s only {ns}:campaign_complete"),
-            format!(
-                "tellraw @s {}",
-                json!([
-                    { "text": format!("{title} — complete."), "color": "gold" },
-                    { "text": "\n" },
-                    { "text": "A Delvewright delve.", "color": "gray" }
-                ])
-            ),
-            // Machine-readable completion marker for the validation bot. The bot
-            // reads `dw.campaign` from the sidebar per the amended contract, BUT
-            // mineflayer 4.37.x cannot parse 1.21.11 scoreboard score packets
-            // (verified live: no score updates ever surface). Broadcasting a stable
-            // token in chat — which mineflayer DOES parse reliably — lets the bot
-            // observe completion. `<objective> <value>` mirror the assert-complete
-            // step so the harness stays campaign-agnostic. `@a` so a bot filling a
-            // seat in a future multiplayer delve still sees it.
-            format!(
-                "tellraw @a {}",
-                json!({ "text": format!("[Delvewright] complete dw.campaign 1"), "color": "dark_gray" })
-            ),
-        ]),
+    let mut cc: Vec<String> = Vec::new();
+    cc.push("scoreboard players set @s dw.campaign 1".to_string());
+    cc.push(format!("advancement grant @s only {ns}:campaign_complete"));
+    cc.push(format!(
+        "tellraw @s {}",
+        json!([
+            { "text": format!("{title} — complete."), "color": "gold" },
+            { "text": "\n" },
+            { "text": "A Delvewright delve.", "color": "gray" }
+        ])
     ));
+    // v0.3 finale fanfare (M2 fix 4): the owner finished the finale and got no
+    // feedback. Show a proper title banner + play a fanfare. Gated on v0.3 so the
+    // shared `campaign_complete` stays byte-identical for hello-world / keep-crawl.
+    if v03 {
+        cc.push(format!(
+            "title @s title {}",
+            json!({ "text": "Delve Complete", "color": "gold", "bold": true })
+        ));
+        cc.push(format!(
+            "title @s subtitle {}",
+            json!({ "text": title, "color": "yellow" })
+        ));
+        cc.push("playsound minecraft:ui.toast.challenge_complete player @s".to_string());
+    }
+    // Machine-readable completion marker for the validation bot. The bot reads
+    // `dw.campaign` from the sidebar per the amended contract, BUT mineflayer
+    // 4.37.x cannot parse 1.21.11 scoreboard score packets (verified live: no
+    // score updates ever surface). Broadcasting a stable token in chat — which
+    // mineflayer DOES parse reliably — lets the bot observe completion.
+    // `<objective> <value>` mirror the assert-complete step so the harness stays
+    // campaign-agnostic. `@a` so a bot filling a seat in a future multiplayer
+    // delve still sees it.
+    cc.push(format!(
+        "tellraw @a {}",
+        json!({ "text": format!("[Delvewright] complete dw.campaign 1"), "color": "dark_gray" })
+    ));
+    fns.push(("campaign_complete".to_string(), lines(&cc)));
 
     // --- v0.3: wave spawn functions + verb reward functions ---
     for w in &c.quests.content.waves {
@@ -698,18 +850,23 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
         ));
         let mut idx = 0i32;
         for mob in &w.mobs {
+            // CustomName as a plain SNBT text component (M2 fix 1). Waves are
+            // v0.3-only, so no v0.2 byte-identity concern.
             let name = match &mob.name {
-                Some(n) => {
-                    let cn = json!({ "text": n }).to_string().replace('\'', "\\'");
-                    format!(",CustomName:'{cn}',CustomNameVisible:1b")
-                }
+                Some(n) => format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)),
                 None => String::new(),
             };
+            // Default hand equipment for mobs whose natural spawns are armed (M2
+            // fix 5): a summoned wither_skeleton/skeleton otherwise had no weapon
+            // and was trivial. Drop chance 0.
+            let equip = default_equipment(&mob.entity)
+                .map(|e| format!(",{e}"))
+                .unwrap_or_default();
             for _ in 0..mob.count {
                 // Spread stacks by a small deterministic offset; AI is left enabled
                 // (no NoAI) so the mobs fight.
                 body.push(format!(
-                    "summon {} {} {} {} {{Tags:[\"{}\"],PersistenceRequired:1b{name}}}",
+                    "summon {} {} {} {} {{Tags:[\"{}\"],PersistenceRequired:1b{name}{equip}}}",
                     mob.entity,
                     pos[0] + idx,
                     pos[1],
@@ -862,6 +1019,13 @@ fn campaign_spawn(plan: &Plan) -> Option<[i32; 3]> {
 /// Objective id → function-name-safe token (`obj/talk` → `o_talk`).
 fn safe_obj_fn(obj_id: &str) -> String {
     format!("o_{}", plan::safe_local(obj_id))
+}
+
+/// Per-objective "already announced" scoreboard (v0.3 objective-activation
+/// feedback, M2 fix 4). Set once the objective's title/hint has been shown so the
+/// announce fires exactly once per player.
+fn announce_score(obj_id: &str) -> String {
+    format!("dw.ann_{}", plan::safe_local(obj_id))
 }
 
 /// The entity tag on an `interact` objective's interaction hitbox.
@@ -1583,4 +1747,57 @@ fn sha256_hex(bytes: &[u8]) -> String {
         s.push_str(&format!("{b:02x}"));
     }
     s
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests (helpers)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn facing_yaw_matches_mc_convention() {
+        // MC yaw: south=0, west=90, north=180, east=270.
+        assert_eq!(facing_yaw(Some("south")), 0);
+        assert_eq!(facing_yaw(Some("west")), 90);
+        assert_eq!(facing_yaw(Some("north")), 180);
+        assert_eq!(facing_yaw(Some("east")), 270);
+        assert_eq!(facing_yaw(None), 0);
+    }
+
+    #[test]
+    fn snbt_string_is_a_plain_quoted_component() {
+        // A bare quoted SNBT string is a valid text component (renders literally),
+        // unlike the old `'{"text":…}'` JSON-string form.
+        assert_eq!(
+            snbt_string("Hedric of the Watch"),
+            "\"Hedric of the Watch\""
+        );
+        // Backslash and double-quote are escaped.
+        assert_eq!(snbt_string("a\"b\\c"), "\"a\\\"b\\\\c\"");
+    }
+
+    #[test]
+    fn default_equipment_arms_only_naturally_armed_mobs() {
+        // wither_skeleton → stone sword, drop chance 0.
+        let ws = default_equipment("minecraft:wither_skeleton").unwrap();
+        assert!(ws.contains("minecraft:stone_sword"));
+        assert!(ws.contains("HandDropChances:[0f,0f]"));
+        // skeleton/stray → bow.
+        assert!(
+            default_equipment("skeleton")
+                .unwrap()
+                .contains("minecraft:bow")
+        );
+        assert!(
+            default_equipment("minecraft:stray")
+                .unwrap()
+                .contains("minecraft:bow")
+        );
+        // zombie stays unarmed; drowned's trident is not a default.
+        assert!(default_equipment("minecraft:zombie").is_none());
+        assert!(default_equipment("minecraft:drowned").is_none());
+    }
 }
