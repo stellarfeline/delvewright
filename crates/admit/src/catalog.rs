@@ -6,6 +6,12 @@
 //! `deny_unknown_fields`, enum-typed verdicts, a `1..=5` quality bound, and a
 //! **license allowlist** (ADR-0013 — CC0 / CC BY / original / MIT / Apache-2.0 /
 //! GPL-compatible; NC / ND / unknown reject).
+//!
+//! The license allowlist is enforced only for cards that could still be admitted
+//! (`approve` / `borderline`). A `reject` card exists to record *why* an asset was
+//! declined — and a forbidden or unverifiable license is a legitimate reason to
+//! reject (spec-0007 catalogues rejects to prevent re-scouting) — so its license
+//! is recorded verbatim, not allowlist-gated.
 
 use serde::{Deserialize, Serialize};
 
@@ -171,21 +177,30 @@ impl CatalogCard {
                 "style_fit.rationale is empty (a verdict needs a reason)",
             ));
         }
-        // License allowlist (ADR-0013).
-        if let Err(reason) = license_allowed(&self.license.spdx) {
-            diags.push(Diagnostic::error(
-                DW_LICENSE,
-                format!("license `{}` rejected: {reason}", self.license.spdx),
-            ));
-        }
-        // "Free download ≠ licensed": a non-original license needs a source URL.
-        let original = self.license.spdx.eq_ignore_ascii_case("original")
-            || self.license.source.eq_ignore_ascii_case("original");
-        if !original && self.license.url.as_deref().unwrap_or("").trim().is_empty() {
-            diags.push(Diagnostic::error(
-                DW_LICENSE,
-                "non-original license has no `url` (license must be verifiable, not just 'free to download')",
-            ));
+        // License checks apply only to cards that could still lead to admission
+        // (approve / borderline). A `reject` card is a record of why an asset was
+        // turned away — and a forbidden or unverified license is itself a valid
+        // rejection reason (spec-0007: rejects are catalogued to prevent
+        // re-scouting). Enforcing the ADR-0013 allowlist against a reject card
+        // would make it impossible to honestly record, e.g., an
+        // All-Rights-Reserved datapack we declined.
+        if self.style_fit.verdict != Verdict::Reject {
+            // License allowlist (ADR-0013).
+            if let Err(reason) = license_allowed(&self.license.spdx) {
+                diags.push(Diagnostic::error(
+                    DW_LICENSE,
+                    format!("license `{}` rejected: {reason}", self.license.spdx),
+                ));
+            }
+            // "Free download ≠ licensed": a non-original license needs a source URL.
+            let original = self.license.spdx.eq_ignore_ascii_case("original")
+                || self.license.source.eq_ignore_ascii_case("original");
+            if !original && self.license.url.as_deref().unwrap_or("").trim().is_empty() {
+                diags.push(Diagnostic::error(
+                    DW_LICENSE,
+                    "non-original license has no `url` (license must be verifiable, not just 'free to download')",
+                ));
+            }
         }
         diags
     }
