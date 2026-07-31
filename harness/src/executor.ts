@@ -24,11 +24,12 @@ import type {
   ReachStep,
   SelectClassStep,
   TalkToStep,
+  Vec3Tuple,
 } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError, likelyDeathCause } from "./death.ts";
 import { configureLeg, tuneCaveMovements } from "./movement.ts";
-import { walkGoals, type GoalSpec, type Waypoints } from "./waypoints.ts";
+import { nextLegWaypoints, walkGoals, type GoalSpec, type Waypoints } from "./waypoints.ts";
 
 /** Connection + identity for the bot. Sourced from the environment (see below). */
 export interface BotConfig {
@@ -198,6 +199,12 @@ export class MineflayerExecutor implements StepExecutor {
    * navigation data, not a route the harness computes.
    */
   private waypoints: Waypoints | undefined;
+  /**
+   * task #38: how many walked legs have been consumed. Legs are matched in lockstep
+   * path order (not by destination coordinate), so an anchor visited more than once
+   * — e.g. the cave entry the player returns to — never grabs the wrong leg's route.
+   */
+  private legCursor = 0;
 
   constructor(config: BotConfig, env: Record<string, string | undefined> = process.env) {
     this.config = config;
@@ -518,12 +525,23 @@ export class MineflayerExecutor implements StepExecutor {
     // waypoints each solve is tiny, so this budget is only a safety margin.
     bot.pathfinder.thinkTimeout = 30_000;
     try {
-      // task #38: when the compiler proved a waypoint polyline to this destination,
-      // replay it as short hops so each A* solve is trivial (avoids the single giant
-      // solve that strands the bot on a large open winding cave); the final goal is
-      // always the true destination. `walkGoals` returns just the destination goal
-      // when no leg is known — the original single-goal behavior (fallback).
-      const goalsList = walkGoals(this.waypoints, [pos[0], pos[1], pos[2]], r);
+      // task #38: when the compiler proved a waypoint polyline for this leg, replay
+      // it as short hops so each A* solve is trivial (avoids the single giant solve
+      // that strands the bot on a large open winding cave); the final goal is always
+      // the true destination. Legs are matched in lockstep path order and consumed
+      // as walked; a non-matching walk (a sub-walk, or a post-transport step) does
+      // not consume and falls back to the single destination goal.
+      let legWaypoints: readonly Vec3Tuple[] | undefined;
+      if (this.waypoints) {
+        const match = nextLegWaypoints(this.waypoints.legs, this.legCursor, [
+          pos[0],
+          pos[1],
+          pos[2],
+        ]);
+        legWaypoints = match.waypoints;
+        this.legCursor = match.cursor;
+      }
+      const goalsList = walkGoals(legWaypoints, [pos[0], pos[1], pos[2]], r);
       for (let g = 0; g < goalsList.length; g++) {
         const spec = goalsList[g]!;
         const last = g === goalsList.length - 1;

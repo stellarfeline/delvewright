@@ -32,14 +32,15 @@ export interface WaypointLeg {
   readonly waypoints: readonly Vec3Tuple[];
 }
 
-/** The parsed waypoints artifact with a by-destination lookup. */
+/** The parsed waypoints artifact. Legs are in critical-path order — the compiler
+ * emits exactly one leg per WALKED critical position, and the harness walks those
+ * positions in the same order, so legs are consumed in lockstep (see
+ * {@link nextLegWaypoints}). Keying by destination alone is ambiguous when an anchor
+ * is visited more than once, so order — not coordinate — is authoritative. */
 export interface Waypoints {
   readonly version: string;
   readonly campaignId: string;
   readonly legs: readonly WaypointLeg[];
-  /** The proven waypoint polyline for the leg ENDING at `pos`, or `undefined` when
-   * no leg targets `pos` (the caller then uses single-goal navigation). */
-  legTo(pos: Vec3Tuple): readonly Vec3Tuple[] | undefined;
 }
 
 /** A single pathfinder goal: get within `range` blocks of `(x, y, z)`. */
@@ -96,9 +97,9 @@ function requireVec3(value: unknown, pointer: string): Vec3Tuple {
   return [coords[0]!, coords[1]!, coords[2]!];
 }
 
-/** The lookup key for a position (integer block coords). */
-function keyOf(pos: Vec3Tuple): string {
-  return `${pos[0]},${pos[1]},${pos[2]}`;
+/** Whether two integer block positions are identical. */
+function samePos(a: Vec3Tuple, b: Vec3Tuple): boolean {
+  return a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
 }
 
 /** Validate and normalize a parsed JSON value into a {@link Waypoints}. */
@@ -137,17 +138,7 @@ export function parseWaypoints(raw: unknown): Waypoints {
     return { from, to, waypoints };
   });
 
-  const byDest = new Map<string, readonly Vec3Tuple[]>();
-  for (const leg of legs) {
-    byDest.set(keyOf(leg.to), leg.waypoints);
-  }
-
-  return {
-    version,
-    campaignId,
-    legs,
-    legTo: (pos) => byDest.get(keyOf(pos)),
-  };
+  return { version, campaignId, legs };
 }
 
 /** Parse waypoints JSON text: JSON.parse then structural validation. */
@@ -184,22 +175,53 @@ export async function loadWaypointsForCriticalPath(
   return parseWaypointsJson(text);
 }
 
+/** The result of an ordered leg match: the proven waypoint polyline to replay (or
+ * `undefined` for single-goal fallback) and the advanced cursor. */
+export interface LegMatch {
+  readonly waypoints: readonly Vec3Tuple[] | undefined;
+  readonly cursor: number;
+}
+
 /**
- * The ordered pathfinder goals for a walk to `pos` at `finalRange`: the compiler's
- * proven waypoint hops (each at {@link WAYPOINT_RANGE}) followed by the final
- * destination goal. When no leg is known for `pos` (or `waypoints` is undefined),
- * just the single destination goal — the original single-goal behavior (fallback).
- * Pure (no bot) so the leg-by-leg plan is unit-testable.
+ * Lockstep leg matcher (pure). If the leg at `cursor` targets `pos`, return its
+ * waypoints and `cursor + 1` (consume it); otherwise return `undefined` waypoints
+ * and the UNCHANGED cursor (the caller falls back to single-goal navigation, and a
+ * later walked step can still match this leg).
+ *
+ * Order — not destination coordinate — is authoritative: the compiler emits exactly
+ * one leg per walked critical position in path order, and the harness walks those
+ * positions in the same order. A sub-walk (e.g. chasing a wave mob) or a
+ * post-transport step whose target is not the next leg's destination simply does
+ * not consume, so an anchor visited more than once never grabs the wrong leg's
+ * route.
+ */
+export function nextLegWaypoints(
+  legs: readonly WaypointLeg[],
+  cursor: number,
+  pos: Vec3Tuple,
+): LegMatch {
+  const leg = legs[cursor];
+  if (leg && samePos(leg.to, pos)) {
+    return { waypoints: leg.waypoints, cursor: cursor + 1 };
+  }
+  return { waypoints: undefined, cursor };
+}
+
+/**
+ * The ordered pathfinder goals for a walk to `pos` at `finalRange`: the given proven
+ * waypoint hops (each at {@link WAYPOINT_RANGE}) followed by the final destination
+ * goal. When `legWaypoints` is `undefined` (no leg matched), just the single
+ * destination goal — the original single-goal behavior (fallback). Pure (no bot) so
+ * the leg-by-leg plan is unit-testable.
  */
 export function walkGoals(
-  waypoints: Waypoints | undefined,
+  legWaypoints: readonly Vec3Tuple[] | undefined,
   pos: Vec3Tuple,
   finalRange: number,
 ): readonly GoalSpec[] {
   const out: GoalSpec[] = [];
-  const leg = waypoints?.legTo(pos);
-  if (leg) {
-    for (const [x, y, z] of leg) {
+  if (legWaypoints) {
+    for (const [x, y, z] of legWaypoints) {
       out.push({ x, y, z, range: WAYPOINT_RANGE });
     }
   }
