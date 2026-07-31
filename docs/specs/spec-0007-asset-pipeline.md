@@ -63,35 +63,53 @@ job is to fill them. The vision model is the generation-time agent
    Worlds (API), Minecraft-Schematics, Abfielder, klpbbs / Minebbs (CN).
    (OpenGameArt ruled out 2026-07-31: no MC schematics.) Finds stream into
    verification with their license classification.
-2. **Verify (two branches, before any download)** — both branches write the
-   asset's **catalog card**; selection continues until the demand sheet's
-   minimums are met:
+2. **Verify (two branches — agent-ruled in both; owner-refined 2026-07-31:
+   humans only ever click download links, never judge)** — both branches end
+   with the agent writing the asset's **catalog card**; selection continues
+   until the demand sheet's minimums are met:
    - **Gallery-fetchable sites**: the agent fetches the listing renders and
-     rules style-fit itself.
-   - **Anti-bot sites**: the agent presents the owner a shortlist — URL plus
-     the expected-style description — and the **owner rules** by looking at
-     the page herself; her verdict is recorded on the card (marked
-     human-prescreened).
+     rules style-fit pre-download.
+   - **Anti-bot sites**: the launcher pattern runs FIRST — the agent hands the
+     owner URL + target path, she clicks download, nothing more. The pipeline
+     then converts the file and **renders it locally** (see Rendering infra
+     below); the agent rules from its own renders. Judgment never falls to the
+     human; her only cost is the click.
    Catalog card fields: `description` (2–3 sentences of prose), `tags`
    (structured: theme, era/style, palette, condition intact/ruined, scale
    class, offered piece types, interior/exterior, biome fit), `style_fit`
-   (approve / borderline / reject + rationale), `quality` 1–5, plus which
-   demand-sheet categories it fills. Cards live in the content repo at
-   `catalog/<asset-id>.json` — rejects included (prevents re-scouting). The
+   (approve / borderline / reject + rationale), `quality` 1–5, render paths,
+   plus which demand-sheet categories it fills. Cards live in the content repo
+   at `catalog/<asset-id>.json` — rejects included (prevents re-scouting). The
    catalog is what `/new-delve` queries when choosing prefab sets.
-3. **Download + ingest** the selected set: API/direct fetch where allowed, the
-   launcher pattern elsewhere (URL + target path, owner fetches manually);
-   then `delve-schem` conversion (safety strip + palette report + oversize
-   splitting) and the palette audit.
-4. **In-game gallery walk (final authority)**: the whole ingested batch is
-   placed in a browse world with name tags; the owner walks it and rules with
-   `dw.note` (spec-0006 reuse — approve / reject / needs-work). **Aesthetic
-   authority is human**; earlier steps only filter what reaches her. Verdicts
-   round-trip into the catalog cards; a rejection that drops a category below
-   its minimum sends the run back to step 1 for that category.
+3. **Download + ingest** the remaining approved set: API/direct fetch where
+   allowed (anti-bot items were already fetched in step 2); then `delve-schem`
+   conversion (safety strip + palette report + oversize splitting) and the
+   palette audit.
+4. **In-game gallery walk (owner spot-check, optional)**: the ingested batch
+   can be placed in a browse world for the owner to walk with `dw.note`
+   (spec-0006 reuse). Owner-refined 2026-07-31: this is no longer a mandatory
+   human gate — the rendered-image verdicts are the primary record; the walk
+   exists for spot-checks and taste calibration, and its verdicts still
+   override and round-trip into the cards. A rejection that drops a category
+   below its minimum sends the run back to step 1 for that category.
 5. Adaptation of approved pieces: socket carving, anchor annotation, lighting
    probe → admission. Admitted prefab metadata links its catalog card; card
    tags become the searchable vocabulary for generation-time prefab selection.
+
+## Rendering infra (verified 2026-07-31; shared with spec-0003's visual tier)
+
+- **Per-prefab renders**: **Nucleation** (Rust, MIT — vendors into the
+  workspace) ingests `.nbt`/`.schem` directly and renders headlessly; wrapped
+  as a `delve-render` tool emitting a deterministic multi-angle set per piece.
+- **Whole-scene renders**: **Chunky** (GPLv3, out-of-process, headless under
+  xvfb in the toolserver image) path-traces the compiler's generated world
+  from JSON-scripted cameras. Caveat: 1.21.x needs Chunky snapshot builds.
+- **Fidelity gate (mandatory before either is trusted)**: a fixture rendering
+  the newest 1.21.11 blocks (pale oak, crafter, trial-chamber set) compared
+  against a reference; unknown-block placeholders fail the gate. uNmINeD CLI
+  (proprietary freeware, tooling-only, renders from the pinned client jar) is
+  the guaranteed-coverage oracle for cross-checks; its output never ships.
+- Rejected after verification: prismarine-viewer (rendering capped at 1.21.4).
 
 ## Community contract (recorded here, built post-v1)
 
