@@ -26,6 +26,31 @@ use delvewright_dsl::{Objective, QuestEffect, Trigger, is_v03};
 /// The emitted build tree: relative path → file bytes.
 pub type BuildOutput = BTreeMap<String, Vec<u8>>;
 
+/// Why a build failed. Either emitted vanilla commands failed the command-tree
+/// validator, or a geometry/navigation check raised a `DW03xx` diagnostic
+/// (`DW0307` unroutable `move-npc`, `DW0308` cutscene camera clipping a solid).
+#[derive(Debug)]
+pub enum BuildFailure {
+    /// One or more emitted `.mcfunction` commands failed validation.
+    Validation(Vec<CommandError>),
+    /// A coded build diagnostic (exit 3), printed like a solver `DW03xx` error.
+    Diagnostic {
+        /// The stable diagnostic code.
+        code: &'static str,
+        /// Human-readable explanation.
+        message: String,
+    },
+}
+
+impl From<crate::nav::NavError> for BuildFailure {
+    fn from(e: crate::nav::NavError) -> Self {
+        BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        }
+    }
+}
+
 /// A placement sentinel: one known solid block of a structure, used at runtime
 /// to verify a `place template` actually landed (structure_file → (local pos,
 /// bare block id)). Chosen as the non-air block with the lowest `(y, z, x)` —
@@ -127,9 +152,23 @@ pub fn build(
     language: Option<&str>,
     content_sha: &str,
     skins: &BTreeMap<String, Vec<u8>>,
-) -> Result<BuildOutput, Vec<CommandError>> {
+) -> Result<BuildOutput, BuildFailure> {
     let ns = &plan.namespace;
     let mut out: BuildOutput = BTreeMap::new();
+
+    // v0.4 navigation planning over the solved voxel grid (spec-0008 addendum):
+    // collision-safe `move-npc` walked paths (DW0307) + cutscene air-corridor
+    // checks (DW0308). Only built when the campaign uses those verbs, so v0.2/v0.3
+    // output stays byte-identical (no world, no moves → the driver emitters are
+    // empty exactly as before).
+    let moves: Vec<crate::nav::MovePlan> = if crate::nav::needs_world(plan) {
+        let world = crate::nav::World::from_plan(plan, structures);
+        let moves = crate::nav::plan_moves(plan, &world)?;
+        crate::nav::check_cutscenes(plan, &world)?;
+        moves
+    } else {
+        Vec::new()
+    };
 
     // ---- datapack ----
     put_json(
@@ -180,7 +219,7 @@ pub fn build(
             }
         }
     }
-    let functions = emit_functions(plan, &sentinels);
+    let functions = emit_functions(plan, &sentinels, &moves);
     for (name, body) in &functions {
         out.insert(
             format!("datapack/data/{ns}/function/{name}.mcfunction"),
@@ -207,7 +246,7 @@ pub fn build(
     }
 
     // ---- packtest datapack ----
-    emit_packtest(plan, &mut out);
+    emit_packtest(plan, &mut out, &moves);
 
     // ---- creator overlay (playtest-only; spec-0006) ----
     // A self-contained module (crate::creator). Its `.mcfunction`s are plain
@@ -242,7 +281,7 @@ pub fn build(
         }
     }
     if !errors.is_empty() {
-        return Err(errors);
+        return Err(BuildFailure::Validation(errors));
     }
 
     // ---- NPC-skin resource pack (spec-0009) ----
@@ -469,7 +508,11 @@ fn fmt_f64(x: f64) -> String {
     }
 }
 
-fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
+fn emit_functions(
+    plan: &Plan,
+    sentinels: &Sentinels,
+    moves: &[crate::nav::MovePlan],
+) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
     let v03 = campaign_is_v03(plan);
@@ -1301,7 +1344,7 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
 
     // v0.4 generated functions: NPC moves, cutscene drivers, trigger effects.
     // Each is empty for a campaign that uses none (byte-identical v0.2/v0.3).
-    fns.extend(movenpc_fns(plan));
+    fns.extend(movenpc_fns(plan, moves));
     fns.extend(cutscene_fns(plan));
     fns.extend(env_trigger_fns(plan));
 
@@ -1490,44 +1533,60 @@ fn all_campaign_effects(c: &delvewright_dsl::Campaign) -> Vec<&QuestEffect> {
     out
 }
 
-/// Resolve a `move-npc` destination: the anchor in the NPC's own area, else any
-/// area (first match).
-fn movenpc_target(plan: &Plan, npc: &str, to_anchor: &str) -> Option<[i32; 3]> {
-    if let Some(area) = plan.npc_area(npc)
-        && let Some(pos) = plan.point(area, to_anchor)
-    {
-        return Some(pos);
-    }
-    anchor_point_any(plan, to_anchor)
+/// The scoreboard-safe suffix shared by a move's driver functions/sentinels.
+fn movenpc_bare(npc: &str, to_anchor: &str) -> String {
+    movenpc_fn(npc, to_anchor)
+        .strip_prefix("mv_")
+        .unwrap_or("move")
+        .to_string()
 }
 
-/// `move-npc` functions: collision-safe teleport of the NPC body + interaction
-/// hitbox (both carry the id tag) to the destination anchor (spec-0008 §5). The
-/// destination is a valid, resolved anchor cell, so the move never lands in a
-/// wall. Deduped by content key.
-fn movenpc_fns(plan: &Plan) -> Vec<(String, String)> {
+/// `move-npc` functions (spec-0008 addendum): a **collision-safe walked path**,
+/// not a single teleport. The path is planned by A* over the solved voxel grid
+/// (`crate::nav`) at compile time; here we emit a self-scheduling per-tick driver
+/// that teleports the NPC body + interaction hitbox (both carry the id tag) along
+/// the waypoint polyline at the planned speed. Client interpolation smooths the
+/// per-tick jumps into a walk (spike-verified). Deduped by content key; empty for
+/// a campaign with no moves (v0.2/v0.3 stay byte-identical).
+fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
     let mut out = Vec::new();
-    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for eff in all_campaign_effects(plan.campaign) {
-        if let QuestEffect::MoveNpc { npc, to_anchor, .. } = eff {
-            let name = movenpc_fn(npc.as_str(), to_anchor.as_str());
-            if !seen.insert(name.clone()) {
-                continue;
-            }
-            let body = match movenpc_target(plan, npc.as_str(), to_anchor.as_str()) {
-                Some(p) => vec![format!(
-                    "tp @e[tag=dw_npc_{}] {} {} {}",
-                    plan::safe_local(npc.as_str()),
-                    p[0],
-                    p[1],
-                    p[2]
-                )],
-                None => vec![format!(
-                    "# move-npc: anchor `{to_anchor}` did not resolve for npc `{npc}`"
-                )],
-            };
-            out.push((name, lines(&body)));
+    for m in moves {
+        let start_name = movenpc_fn(&m.npc, &m.to_anchor);
+        let bare = movenpc_bare(&m.npc, &m.to_anchor);
+        let safe = plan::safe_local(&m.npc);
+        let total = m.ticks();
+
+        // start: guard re-entry, reset the tick counter, schedule the driver.
+        let start = vec![
+            format!("execute if score #mrun_{bare} dw.sys matches 1 run return fail"),
+            format!("scoreboard players set #mrun_{bare} dw.sys 1"),
+            format!("scoreboard players set #mt_{bare} dw.sys 0"),
+            format!("schedule function {ns}:mv_tick_{bare} 1t"),
+        ];
+        out.push((start_name, lines(&start)));
+
+        // per-tick driver: tp both body + hitbox to waypoint[t], advance, and
+        // reschedule until the path is walked; the final waypoint is the target.
+        let mut tick: Vec<String> = Vec::new();
+        for (t, w) in m.waypoints.iter().enumerate() {
+            tick.push(format!(
+                "execute if score #mt_{bare} dw.sys matches {t} run tp @e[tag=dw_npc_{safe}] {} {} {}",
+                fmt_f64(w[0]),
+                fmt_f64(w[1]),
+                fmt_f64(w[2])
+            ));
         }
+        tick.push(format!("scoreboard players add #mt_{bare} dw.sys 1"));
+        tick.push(format!(
+            "execute if score #mt_{bare} dw.sys matches {}.. run scoreboard players set #mrun_{bare} dw.sys 0",
+            total + 1
+        ));
+        tick.push(format!(
+            "execute unless score #mt_{bare} dw.sys matches {}.. run schedule function {ns}:mv_tick_{bare} 1t",
+            total + 1
+        ));
+        out.push((format!("mv_tick_{bare}"), lines(&tick)));
     }
     out
 }
@@ -1559,19 +1618,9 @@ fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
             .strip_prefix("cs_")
             .unwrap_or(&start_name)
             .to_string();
-        // Resolve waypoint world positions (anchor + offset, block centres).
-        let pts: Vec<[f64; 3]> = path
-            .iter()
-            .map(|w| {
-                let base =
-                    anchor_point_any(plan, w.anchor.as_str()).unwrap_or([0, plan::BASE_Y, 0]);
-                [
-                    (base[0] + w.offset[0]) as f64 + 0.5,
-                    (base[1] + w.offset[1]) as f64 + 0.5,
-                    (base[2] + w.offset[2]) as f64 + 0.5,
-                ]
-            })
-            .collect();
+        // Resolve waypoint world positions (anchor + offset, block centres). The
+        // air-corridor check (crate::nav, DW0308) validates this exact polyline.
+        let pts: Vec<[f64; 3]> = crate::nav::camera_points(plan, path);
         let first = pts
             .first()
             .copied()
@@ -2316,7 +2365,7 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
 /// with `-Dpacktest.auto` (exit code = failed tests). These functions use
 /// PackTest-only commands and run on the modded validation server, so they are
 /// exempt from the vanilla command-tree validator (see `is_vanilla_function`).
-fn emit_packtest(plan: &Plan, out: &mut BuildOutput) {
+fn emit_packtest(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::MovePlan]) {
     let ns = &plan.namespace;
     let c = plan.campaign;
     put_json(
@@ -2417,13 +2466,13 @@ fn emit_packtest(plan: &Plan, out: &mut BuildOutput) {
 
     // v0.4: prop-on-activation, despawn removes body+hitbox, move arrives at
     // target. Emits nothing when the campaign uses none of them.
-    emit_v04_packtests(plan, out);
+    emit_v04_packtests(plan, out, moves);
 }
 
 /// v0.4 PackTests (spec-0008): a prop appears only once its objective activates;
-/// `despawn-npc` removes the body + interaction hitbox; `move-npc` ends with the
-/// NPC at the target anchor. Deterministic (no combat/advancement events).
-fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput) {
+/// `despawn-npc` removes the body + interaction hitbox; `move-npc` walks to the
+/// target anchor. Deterministic (no combat/advancement events).
+fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::MovePlan]) {
     let ns = &plan.namespace;
     let c = plan.campaign;
     if !campaign_is_v03(plan) {
@@ -2512,34 +2561,27 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput) {
         write("v04_despawn", b);
     }
 
-    // move-npc ends with the NPC at the target anchor.
-    if let Some((npc, to_anchor)) = c
-        .quests
-        .content
-        .quests
-        .iter()
-        .flat_map(|q| {
-            q.on_objective_complete
-                .values()
-                .flatten()
-                .chain(&q.on_complete)
-        })
-        .chain(c.quests.content.triggers.iter().flat_map(|t| &t.effects))
-        .find_map(|e| e.move_npc())
-        && let Some(p) = movenpc_target(plan, npc.as_str(), to_anchor.as_str())
-    {
-        let safe = plan::safe_local(npc.as_str());
+    // move-npc walks a collision-safe path that ends with the NPC at the target
+    // anchor. The walk is a per-tick self-scheduling driver; to assert the
+    // endpoint in a single tick, fast-forward the tick counter to the final
+    // waypoint and run the driver once (the reschedule it queues is harmless in a
+    // PackTest). Uses the same MovePlan the emitter drove, so the asserted target
+    // is the path's real final waypoint.
+    if let Some(m) = moves.first() {
+        let safe = plan::safe_local(&m.npc);
+        let bare = movenpc_bare(&m.npc, &m.to_anchor);
+        let total = m.ticks();
+        let p = m.target;
         let mut b = packtest_header(&format!(
-            "{}: move-npc arrives at target anchor",
+            "{}: move-npc walks to its target anchor",
             c.world.content.title
         ));
         b.push(format!("function {ns}:setup"));
         b.push("scoreboard players set #placed dw.sys 1".to_string());
         b.push(format!("function {ns}:setup_finish"));
-        b.push(format!(
-            "function {ns}:{}",
-            movenpc_fn(npc.as_str(), to_anchor.as_str())
-        ));
+        // Jump the driver to its last tick, then execute the final waypoint tp.
+        b.push(format!("scoreboard players set #mt_{bare} dw.sys {total}"));
+        b.push(format!("function {ns}:mv_tick_{bare}"));
         b.push(format!(
             "execute store result score #at dw.sys if entity @e[tag=dw_npc_{safe},x={},dx=0,y={},dy=0,z={},dz=0]",
             p[0], p[1], p[2]

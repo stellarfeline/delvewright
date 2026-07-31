@@ -334,7 +334,7 @@ fn run_build(
         &skins,
     ) {
         Ok(o) => o,
-        Err(errors) => {
+        Err(emit::BuildFailure::Validation(errors)) => {
             eprintln!(
                 "build failure: {} emitted command(s) failed validation:",
                 errors.len()
@@ -342,6 +342,12 @@ fn run_build(
             for e in errors.iter().take(20) {
                 eprintln!("  {}: {}", e.reason, e.line);
             }
+            return ExitCode::from(3);
+        }
+        Err(emit::BuildFailure::Diagnostic { code, message }) => {
+            // Geometry/navigation diagnostics (DW0307/DW0308) print like a solver
+            // DW03xx error and exit 3.
+            print_build_error(code, &message, json);
             return ExitCode::from(3);
         }
     };

@@ -35,7 +35,7 @@
             { "type": "set-flag", "flag": "flag/cleared" },
             { "type": "set-block", "anchor": "anchor/gate", "block": "minecraft:torch" },
             { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/objective" },
-            { "type": "cutscene", "seconds": 2, "path": [ { "anchor": "anchor/objective", "offset": [0, 3, 0] }, { "anchor": "anchor/objective" } ] }
+            { "type": "cutscene", "seconds": 2, "path": [ { "anchor": "anchor/objective", "offset": [0, 2, 2] }, { "anchor": "anchor/objective", "offset": [0, 2, 0] } ] }
           ],
           "obj/door": [
             { "type": "set-flag", "flag": "flag/opened" }
