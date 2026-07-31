@@ -8,8 +8,32 @@
 
 import { readFile } from "node:fs/promises";
 import { parseCriticalPathJson } from "./critical-path.ts";
-import { runSequence } from "./sequencer.ts";
+import { runSequence, StepExecutionError } from "./sequencer.ts";
 import { botConfigFromEnv, MineflayerExecutor } from "./executor.ts";
+import { BotDeathError } from "./death.ts";
+
+/**
+ * Exit code for a run that failed specifically because the bot died (spec-0008),
+ * distinct from the generic failure code (1) used for parse/ordering/navigation
+ * faults, so the ladder can tell a lethal-content death from a navigation bug.
+ */
+const EXIT_BOT_DEATH = 3;
+
+/** True if `err` (or the step failure wrapping it) is a bot death. */
+function isBotDeath(err: unknown): boolean {
+  if (err instanceof BotDeathError) return true;
+  return err instanceof StepExecutionError && err.cause instanceof BotDeathError;
+}
+
+/**
+ * Whether to retry once after a bot death (spec-0008). Opt-in via
+ * DELVEWRIGHT_RETRY_ON_DEATH (`1`/`true`); default fail-fast. For future
+ * lethal-delve validation — the safe-route ladder leaves it off.
+ */
+function retryOnDeathFromEnv(env = process.env): boolean {
+  const raw = env["DELVEWRIGHT_RETRY_ON_DEATH"];
+  return raw === "1" || raw === "true";
+}
 
 /**
  * Hard wall-clock budget for the whole run (spec-0003: 20 min for M1).
@@ -62,7 +86,9 @@ async function main(): Promise<number> {
     await withTimeout(
       (async () => {
         await executor.connect();
-        await runSequence(criticalPath, executor);
+        await runSequence(criticalPath, executor, {
+          retryOnDeath: retryOnDeathFromEnv(),
+        });
       })(),
       budgetMs,
     );
@@ -82,5 +108,5 @@ main()
   .catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`FAILED: ${message}\n`);
-    process.exit(1);
+    process.exit(isBotDeath(err) ? EXIT_BOT_DEATH : 1);
   });

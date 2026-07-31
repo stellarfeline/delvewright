@@ -14,6 +14,7 @@ import type {
   Step,
   TalkToStep,
 } from "./critical-path.ts";
+import { BotDeathError } from "./death.ts";
 
 /**
  * One method per critical-path action. Implementations perform the actual
@@ -36,6 +37,31 @@ export interface StepExecutor {
    * omit it; the sequencer skips the wait when it is absent.
    */
   awaitTransport?(dest: readonly [number, number, number]): Promise<void>;
+  /**
+   * Optional (spec-0008 gap-7): after a step marked `cutscene_seconds`, the bot may
+   * be forced into spectator and flown for ~n seconds. Pause until control returns
+   * (gamemode back to adventure AND position stabilised), bounded. Navigation
+   * plumbing only — no assertions about the cutscene itself.
+   */
+  awaitCutscene?(seconds: number): Promise<void>;
+  /**
+   * Optional (spec-0008 gap-7, retry path): after a {@link BotDeathError}, ready the
+   * bot to resume — wait for respawn and clear the death latch. Called by the
+   * sequencer only when `retryOnDeath` is enabled. Respawn drops class state, so the
+   * sequencer re-runs `select-class` afterwards.
+   */
+  recoverFromDeath?(): Promise<void>;
+}
+
+/** Options controlling how {@link runSequence} handles failures. */
+export interface RunOptions {
+  /**
+   * Opt-in single retry after a bot death (spec-0008): recover the bot, re-run
+   * `select-class` (respawn loses class state), and retry the failed step once.
+   * Default (fail-fast) surfaces the death diagnostic immediately. Intended for
+   * future lethal-delve validation; the safe-route ladder stays fail-fast.
+   */
+  readonly retryOnDeath?: boolean;
 }
 
 /** Raised when the step sequence violates a structural ordering invariant. */
@@ -129,22 +155,58 @@ async function dispatch(executor: StepExecutor, step: Step): Promise<void> {
 export async function runSequence(
   path: CriticalPath,
   executor: StepExecutor,
+  options: RunOptions = {},
 ): Promise<void> {
   validateStepOrder(path.steps);
+  // Guaranteed present and first by validateStepOrder; captured for the retry path,
+  // which re-selects the class after a respawn drops it (spec-0008).
+  const selectClassStep = path.steps.find(
+    (s): s is SelectClassStep => s.action === "select-class",
+  )!;
+  let deathRetryUsed = false;
 
   for (let i = 0; i < path.steps.length; i++) {
     const step = path.steps[i]!;
-    try {
-      await dispatch(executor, step);
-      // gap 8: if completing this step teleports the player across areas, wait for
-      // the jump to land before the next step starts pathfinding. Attributed to
-      // this step so a failed settle surfaces here, not as a next-step path error.
-      const transport = "transport" in step ? step.transport : undefined;
-      if (transport && executor.awaitTransport) {
-        await executor.awaitTransport(transport);
+    // Retry loop: at most one re-attempt, and only after a bot death when opted in.
+    for (;;) {
+      try {
+        await dispatch(executor, step);
+        // gap 8: if completing this step teleports the player across areas, wait for
+        // the jump to land before the next step starts pathfinding. Attributed to
+        // this step so a failed settle surfaces here, not as a next-step path error.
+        const transport = "transport" in step ? step.transport : undefined;
+        if (transport && executor.awaitTransport) {
+          await executor.awaitTransport(transport);
+        }
+        // gap 7: if this step triggers a cutscene, wait for control to return before
+        // the next step runs (else the next path starts while the bot is in spectator).
+        const cutscene = "cutsceneSeconds" in step ? step.cutsceneSeconds : undefined;
+        if (cutscene !== undefined && executor.awaitCutscene) {
+          await executor.awaitCutscene(cutscene);
+        }
+        break;
+      } catch (cause) {
+        if (
+          options.retryOnDeath &&
+          !deathRetryUsed &&
+          cause instanceof BotDeathError &&
+          executor.recoverFromDeath
+        ) {
+          deathRetryUsed = true;
+          try {
+            await executor.recoverFromDeath();
+            // Respawn loses class state; re-select before retrying (unless the step
+            // that died IS select-class, which the retry re-runs anyway).
+            if (step.action !== "select-class") {
+              await executor.selectClass(selectClassStep);
+            }
+          } catch (recoverCause) {
+            throw new StepExecutionError(i, step.action, recoverCause);
+          }
+          continue; // retry the same step once
+        }
+        throw new StepExecutionError(i, step.action, cause);
       }
-    } catch (cause) {
-      throw new StepExecutionError(i, step.action, cause);
     }
   }
 }
