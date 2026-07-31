@@ -565,10 +565,13 @@ fn main() {
         doors: vec![Side::North],
         lights: ceiling_grid([7, 5, 7]),
         extras: vec![([5, 1, 5], Cell::Block(ACCENT, None))],
-        // `anchor/chest` (v0.3 collect target) shares the stand cell; faces the
-        // single north entry door so arrivals see it head-on.
+        // `anchor/chest` (v0.3 collect target) sits centred, facing the single north
+        // entry door so arrivals see it head-on. `anchor/npc-stand` gets its OWN
+        // clear-floor cell (west wall, mid-room), off the x=3 door→chest walking
+        // line and clear of the accent — it used to collide with the chest cell,
+        // which made an NPC + chest share one block and the anchor unusable (gap 12).
         anchors: vec![
-            ("anchor/npc-stand", a_pos([3, 1, 4], Some("north"))),
+            ("anchor/npc-stand", a_pos([1, 1, 3], Some("east"))),
             ("anchor/chest", a_pos([3, 1, 4], Some("north"))),
         ],
     });
@@ -583,10 +586,13 @@ fn main() {
             ([1, 1, 4], Cell::Block(ACCENT, None)),
             ([5, 1, 4], Cell::Block(ACCENT, None)),
         ],
-        // `anchor/wave` (v0.3 wave spawn) shares the stand cell; faces the north
-        // entry door.
+        // `anchor/wave` (v0.3 wave spawn) is centred, facing the north entry door.
+        // `anchor/npc-stand` gets its own clear-floor cell (west wall, near the north
+        // door), off the x=3 north↔south through-passage and clear of the accents —
+        // it used to collide with the wave-spawn cell, making the anchor unusable
+        // (gap 12).
         anchors: vec![
-            ("anchor/npc-stand", a_pos([3, 1, 4], Some("north"))),
+            ("anchor/npc-stand", a_pos([1, 1, 2], Some("east"))),
             ("anchor/wave", a_pos([3, 1, 4], Some("north"))),
         ],
     });
@@ -598,10 +604,13 @@ fn main() {
         doors: vec![Side::North, Side::East],
         lights: ceiling_grid([9, 5, 7]),
         extras: vec![([4, 1, 5], Cell::Block(ACCENT, None))],
-        // `anchor/door` (v0.3 interact target) shares the stand cell; faces the
-        // east entry door.
+        // `anchor/door` (v0.3 interact target) faces the east entry door.
+        // `anchor/npc-stand` gets its own clear-floor cell (north wall, east side),
+        // off the x=4 north-door passage and the z=3 east-door passage and clear of
+        // the accent — it used to collide with the door/interact cell, making the
+        // anchor unusable (gap 12).
         anchors: vec![
-            ("anchor/npc-stand", a_pos([2, 1, 3], Some("east"))),
+            ("anchor/npc-stand", a_pos([6, 1, 1], Some("south"))),
             ("anchor/door", a_pos([2, 1, 3], Some("east"))),
         ],
     });
