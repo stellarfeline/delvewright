@@ -438,6 +438,11 @@ fn lang_build_localizes_only_strings_and_is_deterministic() {
                 || p.contains("/function/")
                 || p.contains("/advancement/")
                 || p.contains("packtest-datapack/")
+                // render-plan.json embeds each NPC's display name in its
+                // `expect` checklist ("NPC named X faces the camera"); the vision
+                // tier verifies the localized in-game name tag, so it localizes
+                // with the build (unlike the bot-facing critical-path.json).
+                || p.as_str() == "render-plan.json"
                 || p.as_str() == "manifest.json",
             "unexpected non-string file differs between en and zh-cn: {p}"
         );

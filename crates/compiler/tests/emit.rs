@@ -69,8 +69,16 @@ fn build_hello_world() -> BuildOutput {
         }
     }
     let tree = CommandTree::v1_21_11();
-    emit::build(&plan, &loaded.inputs, &structures, &tree, None, "unpinned")
-        .expect("emission succeeds")
+    emit::build(
+        &plan,
+        &loaded.inputs,
+        &structures,
+        &tree,
+        &prefabs,
+        None,
+        "unpinned",
+    )
+    .expect("emission succeeds")
 }
 
 fn text<'a>(out: &'a BuildOutput, path: &str) -> &'a str {
@@ -87,6 +95,51 @@ fn every_emitted_command_validates() {
         "emitted commands failed validation: {:#?}",
         errors
     );
+}
+
+#[test]
+fn render_plan_shape_and_expect_vocabulary() {
+    let out = build_hello_world();
+    let rp: serde_json::Value =
+        serde_json::from_slice(out.get("render-plan.json").unwrap()).unwrap();
+
+    assert_eq!(rp["campaign_id"], "hello-world");
+    assert!(rp["layout_aabb"]["min"].is_array());
+    assert!(rp["layout_aabb"]["max"].is_array());
+    let shots = rp["shots"].as_array().unwrap();
+    assert!(!shots.is_empty(), "at least one shot");
+
+    // Every shot carries a camera (pos/yaw/pitch) and a non-empty expect list.
+    for s in shots {
+        let cam = &s["camera"];
+        assert_eq!(cam["pos"].as_array().unwrap().len(), 3);
+        assert!(cam["yaw"].is_number());
+        assert!(cam["pitch"].is_number());
+        assert!(!s["expect"].as_array().unwrap().is_empty());
+    }
+
+    let kinds: Vec<&str> = shots.iter().map(|s| s["kind"].as_str().unwrap()).collect();
+    // hello-world: a spawn, the keeper NPC, an interior, and the door gate.
+    assert!(kinds.contains(&"spawn"), "spawn shot present: {kinds:?}");
+    assert!(kinds.contains(&"npc"), "npc shot present: {kinds:?}");
+    assert!(
+        kinds.contains(&"interior"),
+        "interior shot present: {kinds:?}"
+    );
+    assert!(kinds.contains(&"gate"), "gate shot present: {kinds:?}");
+
+    // The NPC shot names the keeper in its expect checklist (localizable string).
+    let npc = shots.iter().find(|s| s["kind"] == "npc").unwrap();
+    let expect = npc["expect"].as_array().unwrap();
+    assert!(
+        expect
+            .iter()
+            .any(|e| e.as_str().unwrap().contains("faces the camera")),
+        "npc expect names the NPC + facing: {expect:?}"
+    );
+
+    // The spawn shot is first (deterministic ordering).
+    assert_eq!(shots[0]["kind"], "spawn");
 }
 
 #[test]

@@ -1,0 +1,39 @@
+[package]
+name = "delvewright-render"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# `delve-render` (spec-0007 rendering infra / spec-0003 visual tier, M3): the
+# deterministic render layer. Per-prefab multi-angle sets + the newest-block
+# fidelity gate via Nucleation (headless wgpu), and Chunky scene emission from the
+# compiler's render-plan.json. Productionizes the spike-render-fidelity spike.
+[[bin]]
+name = "delve-render"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Structure `.nbt` is gzip-framed Java NBT (same stack the compiler/schem use).
+# `fastnbt` reads the NBT; `flate2` supplies the gzip container (mtime pinned to 0
+# for byte-determinism, ADR-0006). Both MIT/Apache-2.0.
+fastnbt = "2"
+flate2 = "1"
+
+# Save/compare rendered frames (fidelity color-key scan, double-render stability).
+# MIT/Apache-2.0.
+image = "0.24"
+
+# Nucleation (MIT) — headless mesher + wgpu GPU renderer. Pinned by git REV
+# because crates.io tops out at 0.8.0 which lacks the `rendering` feature; the
+# `GpuRenderer` / `ResourcePackSource` API this crate uses lives on master (0.9.1).
+# The rev is recorded in versions.toml `[render]` (checked by check-versions.sh).
+# `pollster` blocks on the renderer's async init. Both MIT/Apache-2.0.
+nucleation = { git = "https://github.com/Schem-at/Nucleation", rev = "dbc8fe02ce4ddac90a58423dd5d441d067e87baf", features = ["rendering"] }
+pollster = "0.4"

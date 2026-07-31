@@ -88,7 +88,23 @@ All three profiles are driven by one compiler build output at
 - **Auth mode (decided):** default `ONLINE_MODE=FALSE` (offline) for frictionless
   local play and CI; set `ONLINE_MODE=TRUE` to join with a real Microsoft account.
 
-### Visual tier *(owner-directed 2026-07-31; open, blocked on the fidelity gate)*
+### Visual tier *(owner-directed 2026-07-31; shot list + fidelity gate BUILT M3, `crates/render`; automated vision-verdict recording still open)*
+
+> **Status (M3, `crates/render` + compiler `render_plan`):**
+> - *(built)* Deterministic **shot list** derived from the layout: the compiler
+>   emits `render-plan.json` in every build (spawn, per-NPC, interact, gate
+>   both-sides, piece seam, one interior per room), each shot carrying a camera
+>   (pos + yaw/pitch) and a machine-generated `expect` checklist — rides the
+>   ADR-0006 double-build gate.
+> - *(built)* **Nucleation renderer** (`delve-render piece`/`batch`) + the 1.21.11
+>   **fidelity gate** (`delve-render fidelity-gate`, newest-block fixture, magenta
+>   placeholder → exit 4). Chunky scene emission (`delve-render scene`) from the
+>   render-plan.
+> - *(built)* Wired into `/new-delve`: the authoring agent renders the piece sets
+>   and reviews them against each shot's `expect` before handing off.
+> - *(open)* Actually **running Chunky** (out-of-process, xvfb) in CI; recording the
+>   vision agent's per-shot verdicts as a structured artifact (same shape as
+>   spec-0006 playtest notes).
 
 Between the bot playthrough and owner QA: prove the delve **looks right** before
 a human ever joins — catching exactly the dress-rehearsal class of defects

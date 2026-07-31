@@ -96,7 +96,18 @@ job is to fill them. The vision model is the generation-time agent
    probe → admission. Admitted prefab metadata links its catalog card; card
    tags become the searchable vocabulary for generation-time prefab selection.
 
-## Rendering infra (verified 2026-07-31; shared with spec-0003's visual tier)
+## Rendering infra (verified 2026-07-31; BUILT M3 as `crates/render` / `delve-render`)
+
+> **Status (M3):** the render layer is built and green — see `crates/render`
+> (README). Nucleation per-prefab renders, the 1.21.11 newest-block **fidelity
+> gate** (magenta-placeholder scan; `heavy_core` is a known expected-fail kept out
+> of the gate fixture), the `.nbt`→Nucleation adapter, and **Chunky scene
+> emission** from the compiler's `render-plan.json` all ship. Nucleation is pinned
+> by git rev + Chunky's snapshot core is recorded in `versions.toml [render]`
+> (checked by `check-versions.sh`). Renders are validation artifacts — measured
+> byte-identical on a fixed machine (macOS/Metal) but **excluded from ADR-0006**
+> byte-identity across drivers (documented in the crate README). *Open:* running
+> Chunky in CI (out-of-process, xvfb) and the uNmINeD cross-check oracle.
 
 - **Per-prefab renders**: **Nucleation** (Rust, MIT — vendors into the
   workspace) ingests `.nbt`/`.schem` directly and renders headlessly; wrapped

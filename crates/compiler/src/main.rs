@@ -300,6 +300,7 @@ fn run_build(
         &loaded.inputs,
         &structures,
         &tree,
+        &prefabs,
         build_lang,
         &content_sha,
     ) {
