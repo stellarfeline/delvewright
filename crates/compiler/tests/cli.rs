@@ -234,6 +234,71 @@ fn pool_build_diagnostics_exit_3_with_dw03xx() {
     }
 }
 
+/// Gate-aware reachability (M2 fix 7, DW0306): a layout where an objective's
+/// anchor is sealed behind a gate that only a later objective opens passes
+/// validate + analyze (neither models sealed gates) but fails at build with exit 3
+/// and DW0306. The clean keep-trial fixture (gate opened when the keeper is
+/// greeted) builds fine — the same solver/seed, only the open-gate timing differs.
+#[test]
+fn gate_deadlock_exits_3_with_dw0305() {
+    let pf = common::prefabs_dir();
+    let patch: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            common::compiler_fixtures_dir().join("keep-trial-gate-deadlock.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let camp = tmp("gate-deadlock");
+    common::materialize_from(&common::keep_trial_dir(), &patch, &camp);
+
+    // validate + analyze pass — sealed-gate reachability is invisible to them.
+    let a = delvec(&[
+        "analyze",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&a),
+        0,
+        "analyze should pass: {}",
+        String::from_utf8_lossy(&a.stdout)
+    );
+
+    // build fails at DW0306.
+    let out = tmp("gate-deadlock-out");
+    let b = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(code(&b), 3, "gate deadlock should exit 3");
+    let stdout = String::from_utf8_lossy(&b.stdout);
+    assert!(stdout.contains("DW0306"), "expected DW0306:\n{stdout}");
+
+    // The clean keep-trial (gate opened at the greeting) builds fine.
+    let clean = tmp("gate-clean-out");
+    let r = delvec(&[
+        "build",
+        common::keep_trial_dir().to_str().unwrap(),
+        "-o",
+        clean.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&r),
+        0,
+        "clean keep-trial builds: {}",
+        String::from_utf8_lossy(&r.stderr)
+    );
+}
+
 #[test]
 fn unreachable_finale_exits_2_with_dw0201() {
     let patch: serde_json::Value = serde_json::from_str(

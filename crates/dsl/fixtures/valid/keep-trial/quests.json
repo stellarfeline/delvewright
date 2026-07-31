@@ -12,6 +12,7 @@
         ],
         "on_objective_complete": {
           "obj/talk": [
+            { "type": "open-gate", "anchor": "anchor/gate" },
             { "type": "spawn-wave", "wave": "wave/guards" },
             { "type": "set-flag", "flag": "flag/summoned" }
           ]
@@ -22,7 +23,7 @@
         "id": "quest/trial",
         "trigger": { "type": "quest-complete", "quest": "quest/greet" },
         "objectives": [
-          { "type": "kill", "id": "obj/slay", "title": "Clear the Guard", "hint": "The moor's guard rose in the hall — cut every one of them down.", "wave": "wave/guards", "requires_flags": ["flag/summoned"] },
+          { "type": "kill", "id": "obj/slay", "title": "Clear the Guard", "hint": "The guard rises around you as the Keeper speaks — cut every one of them down.", "wave": "wave/guards", "requires_flags": ["flag/summoned"] },
           { "type": "collect", "id": "obj/key", "title": "Take the Old Key", "hint": "The key sits in a chest in the small room off the hall.", "item": "minecraft:tripwire_hook", "count": 1, "anchor": "anchor/chest", "after": ["obj/slay"], "requires_flags": ["flag/cleared"] },
           { "type": "interact", "id": "obj/door", "title": "Unbar the Inner Door", "hint": "The barred door stands in the corner room; use the old key on it.", "anchor": "anchor/door", "requires_item": "minecraft:tripwire_hook", "after": ["obj/key"] },
           { "type": "reach-anchor", "id": "obj/shrine", "title": "Reach the Shrine", "hint": "Pass the opened gate and step onto the shrine at the hall's end.", "anchor": "anchor/objective", "radius": 2, "after": ["obj/door"], "requires_flags": ["flag/opened"] }
@@ -32,7 +33,6 @@
             { "type": "set-flag", "flag": "flag/cleared" }
           ],
           "obj/door": [
-            { "type": "open-gate", "anchor": "anchor/gate" },
             { "type": "set-flag", "flag": "flag/opened" }
           ]
         },
@@ -44,7 +44,7 @@
     "waves": [
       {
         "id": "wave/guards",
-        "anchor": "anchor/wave",
+        "anchor": "anchor/keeper-stand",
         "mobs": [
           { "entity": "minecraft:zombie", "count": 2, "name": "Keep Guard" }
         ]
