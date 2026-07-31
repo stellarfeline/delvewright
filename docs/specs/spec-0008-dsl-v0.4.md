@@ -110,3 +110,21 @@ All additive; `dsl_version` bumps to `0.4.0`; v0.3 documents stay valid.
 - [ ] `nobodys-cave` (separate task): reworked with v0.4 verbs — real stealth
       finale, flag-gated name consequences, props, mannequin crew — and passes
       the full ladder.
+
+## Addendum (owner-verified demos, 2026-07-31)
+
+- **Cutscene is IN for v0.4.** Owner tested the spectator demo live: the
+  two-camera-bounce re-attach defeats sneak-escape (the naive same-entity
+  re-`spectate` is a server-side no-op — never implement that form). Verb:
+  `QuestEffect::Cutscene { path: [camera waypoints (anchor + offset)], seconds }`
+  — per player: save gamemode+position → spectator → alternate `spectate`
+  between two co-located dollied cameras each tick → restore. Cost ~40
+  pkts/s/player, fine at 1–4 players. PackTest asserts state restoration.
+- **MoveNpc must be collision-safe by construction** (owner finding: per-tick
+  tp ignores block collision — an NPC can walk through walls). The compiler
+  owns the solved geometry, so `MoveNpc` paths are **planned through walkable
+  space** (pathfinding over the assembled voxel grid at compile time); emitted
+  waypoints never intersect solid blocks, and an unroutable move is a
+  compile-time DW diagnostic, not a runtime glitch. Cutscene camera paths are
+  exempt from walkability (cameras fly) but must not clip through solid blocks
+  either — same voxel check, air-only corridor.
