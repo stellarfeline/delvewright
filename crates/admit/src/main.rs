@@ -74,6 +74,9 @@ enum Command {
         #[arg(long, default_value = "keep:pool")]
         pool: String,
     },
+    /// Resolve foreign worldgen jigsaw markers to their `final_state` (import-time
+    /// neutralization; run BEFORE `socket`).
+    ResolveJigsaw { nbt: PathBuf },
     /// Annotate a named anchor into a piece's metadata.
     Anchor {
         nbt: PathBuf,
@@ -181,6 +184,7 @@ fn main() -> ExitCode {
             },
             json,
         ),
+        Command::ResolveJigsaw { nbt } => run_resolve_jigsaw(&nbt, json),
         Command::Anchor {
             nbt,
             name,
@@ -291,6 +295,32 @@ fn run_socket(nbt: &Path, args: SocketArgs, json: bool) -> ExitCode {
         "carved socket {} at {},{},{} facing {facing}",
         decl.name, pos[0], pos[1], pos[2]
     );
+    ExitCode::SUCCESS
+}
+
+fn run_resolve_jigsaw(nbt: &Path, json: bool) -> ExitCode {
+    let bytes = match std::fs::read(nbt) {
+        Ok(b) => b,
+        Err(e) => return input_err(&format!("cannot read {}: {e}", nbt.display()), json),
+    };
+    let mut structure = match Structure::read(&bytes) {
+        Ok(s) => s,
+        Err(e) => return input_err(&format!("cannot parse {}: {e}", nbt.display()), json),
+    };
+    let resolved = delvewright_admit::jigsaw::resolve(&mut structure);
+    for r in &resolved {
+        Diagnostic::warning(DW_TOOLING, format!("resolved jigsaw -> `{}`", r.became))
+            .at(r.pos)
+            .print(json);
+    }
+    if resolved.is_empty() {
+        eprintln!("no jigsaw markers to resolve");
+        return ExitCode::SUCCESS;
+    }
+    if let Err(e) = write_file(nbt, &structure.write()) {
+        return output_err(&format!("cannot write {}: {e}", nbt.display()), json);
+    }
+    eprintln!("resolved {} jigsaw marker(s)", resolved.len());
     ExitCode::SUCCESS
 }
 
