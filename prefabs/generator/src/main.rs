@@ -205,34 +205,74 @@ fn measured_min(id: &str) -> i32 {
         "keep-boss-hall" => 8,
         "keep-alcove" => 10,
         "keep-cross" => 8,
+        "keep-stair" => 8,
         _ => 0,
     }
 }
 
-fn door_center(size: [i32; 3], side: Side) -> [i32; 3] {
+/// The jigsaw (wall) cell of a doorway on `side` whose floor sits at `floor_y`
+/// (bottom-centre of the 3×3 opening = `[.., floor_y + 1, ..]`). Floor-level doors
+/// pass `floor_y = 0`; a stair's raised door passes its higher floor.
+fn door_center_at(size: [i32; 3], side: Side, floor_y: i32) -> [i32; 3] {
     let (x, z) = (size[0], size[2]);
+    let y = floor_y + 1;
     match side {
-        Side::North => [x / 2, 1, 0],
-        Side::South => [x / 2, 1, z - 1],
-        Side::West => [0, 1, z / 2],
-        Side::East => [x - 1, 1, z / 2],
+        Side::North => [x / 2, y, 0],
+        Side::South => [x / 2, y, z - 1],
+        Side::West => [0, y, z / 2],
+        Side::East => [x - 1, y, z / 2],
     }
 }
 
-/// Cells (3 wide x 3 tall) that make up a doorway on `side`, plus the jigsaw cell.
-fn doorway_cells(size: [i32; 3], side: Side) -> (Vec<[i32; 3]>, [i32; 3]) {
-    let jc = door_center(size, side);
+/// Cells (3 wide x 3 tall) that make up a doorway on `side` at `floor_y`, plus the
+/// jigsaw cell.
+fn doorway_cells_at(size: [i32; 3], side: Side, floor_y: i32) -> (Vec<[i32; 3]>, [i32; 3]) {
+    let jc = door_center_at(size, side, floor_y);
+    let base = floor_y + 1;
     let mut cells = vec![];
     for dy in 0..3 {
         for d in -1..=1 {
             let p = match side {
-                Side::North | Side::South => [jc[0] + d, 1 + dy, jc[2]],
-                Side::West | Side::East => [jc[0], 1 + dy, jc[2] + d],
+                Side::North | Side::South => [jc[0] + d, base + dy, jc[2]],
+                Side::West | Side::East => [jc[0], base + dy, jc[2] + d],
             };
             cells.push(p);
         }
     }
     (cells, jc)
+}
+
+fn door_center(size: [i32; 3], side: Side) -> [i32; 3] {
+    door_center_at(size, side, 0)
+}
+
+/// Cells (3 wide x 3 tall) that make up a floor-level doorway on `side`, plus the
+/// jigsaw cell.
+fn doorway_cells(size: [i32; 3], side: Side) -> (Vec<[i32; 3]>, [i32; 3]) {
+    doorway_cells_at(size, side, 0)
+}
+
+/// Raised (non-floor-level) doorways of a piece, keyed by id: `(side, floor_y)`.
+/// Only the vertical stair has one (its far socket sits +4 y). Every other piece
+/// returns empty, so their output is unchanged.
+fn raised_doors(id: &str) -> Vec<(Side, i32)> {
+    match id {
+        "keep-stair" => vec![(Side::North, 4)],
+        _ => vec![],
+    }
+}
+
+/// Top solid-block height of the stair's climbing floor at interior `z` (the low
+/// door is on the south, z = max; the run climbs +1 per z northward to the +4 high
+/// landing). Stand level = surface + 1, so it rises from y=1 (low) to y=5 (high).
+fn stair_surface(z: i32) -> i32 {
+    match z {
+        9 => 0,
+        8 => 1,
+        7 => 2,
+        6 => 3,
+        _ => 4, // z <= 5: the high landing
+    }
 }
 
 fn build(spec: &Spec) -> Structure {
@@ -248,6 +288,15 @@ fn build(spec: &Spec) -> Structure {
     let mut connectors: Vec<([i32; 3], Side)> = vec![];
     for &side in &spec.doors {
         let (cells, jc) = doorway_cells(spec.size, side);
+        for c in cells {
+            overlay.entry(c).or_insert(Cell::Air);
+        }
+        overlay.insert(jc, Cell::Jigsaw(side.orientation()));
+        connectors.push((jc, side));
+    }
+    // Raised doorways (stair far socket): carve the opening at its higher floor.
+    for (side, floor_y) in raised_doors(spec.id) {
+        let (cells, jc) = doorway_cells_at(spec.size, side, floor_y);
         for c in cells {
             overlay.entry(c).or_insert(Cell::Air);
         }
@@ -320,7 +369,7 @@ fn write_piece(out: &Path, spec: &Spec) {
     std::fs::write(out.join(format!("{}.nbt", spec.id)), &framed).expect("write nbt");
 
     // Metadata.
-    let connectors: Vec<ConnectorJson> = spec
+    let mut connectors: Vec<ConnectorJson> = spec
         .doors
         .iter()
         .map(|&side| {
@@ -335,6 +384,17 @@ fn write_piece(out: &Path, spec: &Spec) {
             }
         })
         .collect();
+    for (side, floor_y) in raised_doors(spec.id) {
+        let (_, jc) = doorway_cells_at(spec.size, side, floor_y);
+        connectors.push(ConnectorJson {
+            name: "keep:socket",
+            target: "keep:socket",
+            local_pos: jc,
+            facing: side.facing().into(),
+            opening: [3, 3],
+            joint: "aligned",
+        });
+    }
     let anchors: BTreeMap<String, AnchorJson> = spec
         .anchors
         .iter()
@@ -572,6 +632,59 @@ fn main() {
         doors: vec![Side::North, Side::South, Side::East, Side::West],
         lights: vec![[3, 4, 3]],
         extras: vec![],
+        anchors: vec![],
+    });
+
+    // 13. vertical stair connector 5x9x11: low door South (floor 0), high door
+    //     North (floor 4) — a +4 elevation rise between its two sockets, so mating
+    //     it lifts the layout one level. Usable up OR down by orientation (the
+    //     mating rule picks which socket meets the parent). The climbing floor is
+    //     solid stone-brick steps (+1 y per z, 3 wide → native-walkable/1-block
+    //     jumps for the pathfinder); glowstone is embedded in the side walls at
+    //     head height along the run so every floor cell clears the `lit` bar.
+    // Climbing surface = `stone_brick_stairs` (facing south → ascends northward),
+    // which mineflayer-pathfinder walks up NATIVELY (no jump), with solid
+    // stone-brick fill beneath each step for support. z=5..8 are the four ascending
+    // stair steps (top y 4→1); z<=4 is the flat high landing (solid to y4, stand
+    // y5); z=9 is the flat low threshold (stand y1). Glowstone is embedded in the
+    // side walls at head height so every floor cell clears the `lit` bar.
+    let stair_props = || {
+        Some(vec![
+            ("facing", "south"),
+            ("half", "bottom"),
+            ("shape", "straight"),
+            ("waterlogged", "false"),
+        ])
+    };
+    let mut stair_extras: Vec<([i32; 3], Cell)> = vec![];
+    for z in 1..=9 {
+        let top = stair_surface(z);
+        for x in 1..=3 {
+            for y in 1..top {
+                stair_extras.push(([x, y, z], Cell::Block(FLOOR, None)));
+            }
+            if top >= 1 {
+                let cell = if (5..=8).contains(&z) {
+                    Cell::Block("minecraft:stone_brick_stairs", stair_props())
+                } else {
+                    Cell::Block(FLOOR, None)
+                };
+                stair_extras.push(([x, top, z], cell));
+            }
+        }
+    }
+    for &z in &[2, 4, 6, 8] {
+        let s = stair_surface(z);
+        for &x in &[0, 4] {
+            stair_extras.push(([x, s + 2, z], Cell::Block(LIGHT, None)));
+        }
+    }
+    specs.push(Spec {
+        id: "keep-stair",
+        size: [5, 9, 11],
+        doors: vec![Side::South],
+        lights: vec![],
+        extras: stair_extras,
         anchors: vec![],
     });
 

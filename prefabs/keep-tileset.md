@@ -75,11 +75,32 @@ the `lit` bar with margin.
 | keep-boss-hall           | 11×5×13      | N           | `anchor/boss`, `anchor/objective`| 8         |
 | keep-alcove              | 5×5×5        | N           | — (dead-end)                     | 10        |
 | keep-cross               | 7×5×7        | N, S, E, W  | —                                | 8         |
+| keep-stair               | 5×9×11       | S (y1), N (y5) | — (vertical connector, +4 rise) | 8       |
 
 Palette: `stone_bricks` shell/floor/ceiling, `chiseled_stone_bricks` accents,
-`glowstone` lighting, `iron_bars` gate. Anchors (`spawn` mandatory where
-relevant, npc stands, gate, objective/boss markers) are metadata only and
-resolved by the compiler against bound prefabs (spec-0001 anchors contract).
+`glowstone` lighting, `iron_bars` gate, `stone_brick_stairs` on the stair.
+Anchors (`spawn` mandatory where relevant, npc stands, gate, objective/boss
+markers) are metadata only and resolved by the compiler against bound prefabs
+(spec-0001 anchors contract).
+
+## Vertical connections (`keep-stair`, M2)
+
+`keep-stair` is the first **vertical** keep piece: a straight stair corridor whose
+two keep-socket-v1 sockets sit at **different local y** — the low door (south,
+socket cell `[2,1,10]`) at floor level and the high door (north, socket cell
+`[2,5,0]`) **+4 blocks up**. Its `connectors[]` record those y offsets explicitly;
+the solver treats any connector piece whose two sockets differ in `y` as a stair,
+and mating it lifts the layout one elevation level (both up and down are the same
+piece — the mating rule picks which socket meets the parent). The climbing floor is
+four `stone_brick_stairs` (facing south → ascends northward) on a solid stone-brick
+base, so mineflayer-pathfinder walks it **natively** (no jump). Glowstone is
+embedded in the side walls at head height along the run.
+
+`keep-stair` is **not** in `pool/stone-keep` (so the flat `keep-crawl` / `keep-trial`
+layouts are unchanged); it is a member of **`pool/vertical-keep`**, which is
+`pool/stone-keep` plus the stair. When a bound pool contains a stair and the piece
+budget allows, the solver forces at least one so the layout spans ≥2 elevation
+levels (`keep-vertical`).
 
 ## Provenance / license
 
