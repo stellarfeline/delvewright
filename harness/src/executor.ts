@@ -103,6 +103,26 @@ const TRANSPORT_TIMEOUT_MS = 15_000;
 const TRANSPORT_NEAR = 4;
 const TRANSPORT_SETTLE_MS = 1_500;
 /**
+ * gap 8 (task #32): a server-forced position jump of at least this many blocks
+ * (horizontal) is treated as a cross-area teleport rather than knockback or a
+ * within-area nudge. Areas sit ~256 blocks apart across void (an unambiguous jump);
+ * in-area relocations (spawn, class teleport) stay well under this, so the threshold
+ * cleanly separates a transport from ordinary forced moves. When one is observed the
+ * pathfinder is reset, so a path computed in the OLD area cannot survive the jump and
+ * strand the next step with a spurious "No path to the goal!".
+ */
+const TRANSPORT_JUMP_BLOCKS = 64;
+/**
+ * gap 8 (task #32): after the jump lands, how long (ms) to wait for the destination
+ * chunk to load and the bot to come to rest on solid ground before the next step
+ * starts pathfinding, and the poll cadence. The pathfinder's A* fails immediately
+ * ("No path to the goal!") if it starts while the block under the bot is still
+ * unloaded (`blockAt` → null) — the race this closes. Bounded: on timeout the wait
+ * settles and lets the next step surface its own diagnostic.
+ */
+const FOOTING_TIMEOUT_MS = 10_000;
+const FOOTING_POLL_MS = 100;
+/**
  * gap 7 (cutscene): how long (ms) the bot's position must hold steady, once it is
  * back in adventure mode, before control counts as restored; how far (blocks) a
  * position may drift and still count as "steady"; and the grace added on top of the
@@ -159,6 +179,13 @@ export class MineflayerExecutor implements StepExecutor {
   private readonly deathWaiters = new Set<(err: BotDeathError) => void>();
   /** Ring buffer of recent chat lines, mined for the death-cause message. */
   private readonly recentChat: string[] = [];
+  /**
+   * gap 8 (task #32): the bot position captured at the previous server-forced move
+   * (`forcedMove`). A forced move whose horizontal delta from this reaches
+   * {@link TRANSPORT_JUMP_BLOCKS} is a cross-area teleport; used to reset the
+   * pathfinder so a path computed in the old area cannot survive the jump.
+   */
+  private lastForcedPos: { x: number; y: number; z: number } | undefined;
   /** Grace (ms) added onto a cutscene's declared length before giving up. */
   private readonly cutsceneGraceMs: number;
 
@@ -239,6 +266,34 @@ export class MineflayerExecutor implements StepExecutor {
       }
     });
     bot.on("death", () => this.onDeath());
+    // gap 8 (task #32): mineflayer applies a server position packet to
+    // `bot.entity.position` and THEN emits `forcedMove` (lib/plugins/physics.js).
+    // A large horizontal jump is the compiler's cross-area `teleport` landing; stop
+    // the pathfinder so any path/goal computed in the old area is dropped rather than
+    // fought or resumed across the void (the "No path to the goal!" / "Path was
+    // stopped" race documented in the nobodys-cave gap-8 field notes).
+    bot.on("forcedMove", () => this.onForcedMove());
+  }
+
+  /**
+   * Handle a server-forced position update. Records the new position and, when the
+   * jump is large enough to be a cross-area teleport, resets the pathfinder. Reading
+   * the position after the event is correct: mineflayer sets it before emitting.
+   */
+  private onForcedMove(): void {
+    const bot = this.bot;
+    const p = bot?.entity?.position;
+    if (!p) return;
+    const now = { x: p.x, y: p.y, z: p.z };
+    const prev = this.lastForcedPos;
+    this.lastForcedPos = now;
+    if (prev && Math.hypot(now.x - prev.x, now.z - prev.z) >= TRANSPORT_JUMP_BLOCKS) {
+      try {
+        bot.pathfinder.stop();
+      } catch {
+        // best effort — resetting the path must never mask the relocation
+      }
+    }
   }
 
   /**
@@ -564,37 +619,89 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * gap 8: after a step whose completion teleports the player to another area,
-   * wait for the position to jump to near `dest` before returning, so the next
-   * step's pathfinding does not start from the old area while the teleport is still
-   * in flight (which invalidated the path mid-computation and produced a spurious
-   * red). Areas sit ~256 blocks apart across void, so the destination is far from
-   * the pre-teleport position and the arrival is unambiguous. Bounded: if the jump
-   * is not observed within the budget, settle briefly and let the next step surface
-   * its own diagnostic. Navigation plumbing only — no game logic.
+   * gap 8: after a step whose completion teleports the player to another area, hold
+   * the next step's pathfinding until the relocation has fully landed. Areas sit
+   * ~256 blocks apart across void, so the destination is far from the pre-teleport
+   * position and the arrival is unambiguous. Navigation plumbing only — no game logic.
+   *
+   * Three deterministic phases (task #32), each bounded and death-aware so nothing
+   * can hang the run and a mid-transport death still fails fast:
+   *   1. Wait for the position to jump to near `dest` — the teleport landing. The
+   *      `forcedMove` handler resets the pathfinder as the jump arrives, so a path
+   *      computed in the old area cannot survive it.
+   *   2. Reset the pathfinder again here (belt-and-braces): the next `walkTo` must
+   *      start from a clean state at the new position.
+   *   3. Wait for the destination chunk to load and the bot to rest on solid footing.
+   *      A `walkTo` that starts while the block under the bot is still unloaded
+   *      (`blockAt` → null) makes the pathfinder's A* fail instantly with "No path to
+   *      the goal!"; this closes that race at the boundary rather than racing ahead.
+   * If the jump is not observed within the budget, settle briefly and let the next
+   * step surface its own diagnostic.
    */
   async awaitTransport(dest: readonly [number, number, number]): Promise<void> {
     const bot = this.requireBot();
     const [x, y, z] = dest;
-    const deadline = Date.now() + TRANSPORT_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      if (this.death) throw this.death;
-      const p = bot.entity.position;
-      if (
-        Math.abs(p.x - (x + 0.5)) < TRANSPORT_NEAR &&
-        Math.abs(p.z - (z + 0.5)) < TRANSPORT_NEAR &&
-        Math.abs(p.y - y) < 4
-      ) {
-        await delay(TRANSPORT_SETTLE_MS);
-        return;
-      }
-      await delay(REACH_POLL_MS);
-    }
-    process.stderr.write(
-      `[transport] did not observe the jump to [${x}, ${y}, ${z}] within ` +
-        `${TRANSPORT_TIMEOUT_MS}ms; bot at ${fmt(bot.entity.position)} — continuing\n`,
+    const arrived = await this.waitFor(
+      () => {
+        const p = bot.entity.position;
+        return (
+          Math.abs(p.x - (x + 0.5)) < TRANSPORT_NEAR &&
+          Math.abs(p.z - (z + 0.5)) < TRANSPORT_NEAR &&
+          Math.abs(p.y - y) < 4
+        );
+      },
+      TRANSPORT_TIMEOUT_MS,
+      REACH_POLL_MS,
     );
+    // Drop any path/goal still referencing the old area (the forcedMove handler has
+    // usually done this already; idempotent).
+    try {
+      bot.pathfinder.stop();
+    } catch {
+      // best effort
+    }
+    if (!arrived) {
+      process.stderr.write(
+        `[transport] did not observe the jump to [${x}, ${y}, ${z}] within ` +
+          `${TRANSPORT_TIMEOUT_MS}ms; bot at ${fmt(bot.entity.position)} — continuing\n`,
+      );
+      await delay(TRANSPORT_SETTLE_MS);
+      return;
+    }
+    // The jump landed: wait for the destination chunk to load and the bot to settle
+    // onto solid ground before the next step pathfinds from here.
+    const footed = await this.waitFor(
+      () => bot.entity.onGround === true && bot.blockAt(bot.entity.position) != null,
+      FOOTING_TIMEOUT_MS,
+      FOOTING_POLL_MS,
+    );
+    if (!footed) {
+      process.stderr.write(
+        `[transport] landed near [${x}, ${y}, ${z}] but footing/chunk not confirmed ` +
+          `within ${FOOTING_TIMEOUT_MS}ms; bot at ${fmt(bot.entity.position)} — continuing\n`,
+      );
+    }
     await delay(TRANSPORT_SETTLE_MS);
+  }
+
+  /**
+   * Poll `predicate` every `pollMs` until it holds (→ true) or `timeoutMs` elapses
+   * (→ false). Death-aware: throws the recorded {@link BotDeathError} the moment the
+   * bot dies, so a transport/footing wait never outlives a death. A pure timing helper
+   * — no game logic.
+   */
+  private async waitFor(
+    predicate: () => boolean,
+    timeoutMs: number,
+    pollMs: number,
+  ): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      if (this.death) throw this.death;
+      if (predicate()) return true;
+      if (Date.now() >= deadline) return false;
+      await delay(pollMs);
+    }
   }
 
   /**

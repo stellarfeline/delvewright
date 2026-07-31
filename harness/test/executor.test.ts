@@ -29,11 +29,17 @@ class FakeVec3 {
 // attach seam — tests may use structural fakes the full type can't express.
 class FakeBot extends EventEmitter {
   username = "delve-bot";
-  entity = { position: new FakeVec3(0, 64, 0) };
+  entity = { position: new FakeVec3(0, 64, 0), onGround: true };
   game = { gameMode: "adventure" as "adventure" | "spectator" };
   pathfinderStops = 0;
   pathfinder = { stop: (): void => void (this.pathfinderStops += 1) };
+  /** Whether `blockAt` returns a (loaded) block; false models an unloaded chunk. */
+  chunkLoaded = true;
   loadPlugin(): void {}
+  /** Mirrors mineflayer's `blockAt`: a stub block when loaded, `null` when not. */
+  blockAt(): { name: string } | null {
+    return this.chunkLoaded ? { name: "stone" } : null;
+  }
 }
 
 const CONFIG: BotConfig = {
@@ -119,4 +125,83 @@ test("awaitCutscene aborts fast if the bot dies during the cutscene", async () =
     () => executor.awaitCutscene(5), // would otherwise sleep ~5s
     (err: unknown) => err instanceof BotDeathError && /Warden/.test(err.message),
   );
+});
+
+// --- gap 8 (task #32): cross-area transport hardening ------------------------
+
+test("awaitTransport waits for the position jump before returning", async () => {
+  const bot = new FakeBot();
+  bot.entity.position = new FakeVec3(6.5, 66, 4.3); // still in the old area
+  const executor = attach(bot);
+  let resolved = false;
+  const done = executor.awaitTransport([260, 65, 4]).then(() => {
+    resolved = true;
+  });
+  // Before the teleport lands, awaitTransport must NOT have returned.
+  await new Promise((r) => setTimeout(r, 120));
+  assert.equal(resolved, false);
+  // The server teleport lands: mineflayer sets the position, then emits forcedMove.
+  bot.entity.position = new FakeVec3(260.5, 65, 4.5);
+  bot.emit("forcedMove");
+  await done;
+  assert.equal(resolved, true);
+});
+
+test("awaitTransport holds until the destination chunk is loaded (footing)", async () => {
+  const bot = new FakeBot();
+  // The jump has already landed near the destination, but its chunk is not yet
+  // loaded — pathfinding now would fail instantly with "No path to the goal!".
+  bot.entity.position = new FakeVec3(260.5, 65, 4.5);
+  bot.entity.onGround = true;
+  bot.chunkLoaded = false;
+  const executor = attach(bot);
+  let resolved = false;
+  const done = executor.awaitTransport([260, 65, 4]).then(() => {
+    resolved = true;
+  });
+  await new Promise((r) => setTimeout(r, 150));
+  assert.equal(resolved, false); // still waiting for the chunk to load
+  bot.chunkLoaded = true; // chunk finishes loading
+  await done;
+  assert.equal(resolved, true);
+});
+
+test("awaitTransport resets the pathfinder as the jump lands", async () => {
+  const bot = new FakeBot();
+  bot.entity.position = new FakeVec3(260.5, 65, 4.5); // already arrived
+  const executor = attach(bot);
+  await executor.awaitTransport([260, 65, 4]);
+  assert.ok(bot.pathfinderStops >= 1); // stale cross-area path dropped
+});
+
+test("awaitTransport aborts fast if the bot dies mid-transport", async () => {
+  const bot = new FakeBot();
+  bot.entity.position = new FakeVec3(6.5, 66, 4.3); // never reaches the destination
+  const executor = attach(bot);
+  setTimeout(() => {
+    bot.emit("messagestr", "delve-bot fell out of the world");
+    bot.emit("death");
+  }, 50);
+  await assert.rejects(
+    () => executor.awaitTransport([260, 65, 4]), // would otherwise wait ~15s
+    (err: unknown) => err instanceof BotDeathError && /out of the world/.test(err.message),
+  );
+});
+
+test("forcedMove resets the pathfinder only on a large cross-area jump", () => {
+  const bot = new FakeBot();
+  const executor = attach(bot);
+  void executor;
+  // First forced move (spawn): no previous reference, so no reset.
+  bot.entity.position = new FakeVec3(5, 65, 2);
+  bot.emit("forcedMove");
+  assert.equal(bot.pathfinderStops, 0);
+  // A small in-area nudge must not reset the path.
+  bot.entity.position = new FakeVec3(7, 65, 3);
+  bot.emit("forcedMove");
+  assert.equal(bot.pathfinderStops, 0);
+  // A ~256-block cross-area teleport resets the path exactly once.
+  bot.entity.position = new FakeVec3(260, 65, 4);
+  bot.emit("forcedMove");
+  assert.equal(bot.pathfinderStops, 1);
 });
