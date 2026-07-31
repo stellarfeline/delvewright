@@ -274,24 +274,38 @@ export class MineflayerExecutor implements StepExecutor {
     movements.canDig = false; // adventure mode: never break blocks
     movements.allow1by1towers = false;
     bot.pathfinder.setMovements(movements);
-    try {
-      await withTimeout(
-        bot.pathfinder.goto(new goals.GoalNear(x, y, z, r)),
-        REACH_TIMEOUT_MS,
-        `reaching ${label}`,
-      );
-    } catch (err) {
-      try {
-        bot.pathfinder.stop();
-      } catch {
-        // ignore
+    // Long multi-level layouts (e.g. a 5-storey keep, ~90 blocks + 4 staircases)
+    // sit at the edge of the default A* budget and fail nondeterministically
+    // with "No path to the goal!" — give the search real headroom.
+    bot.pathfinder.thinkTimeout = 30_000;
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) {
+        // One retry: block updates (an `open-gate` fill) can land after the
+        // first path computation started; settle and recompute from scratch.
+        await delay(1_500);
       }
-      const detail = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `failed ${label} at [${x}, ${y}, ${z}] (range ${r}); bot at ` +
-          `${fmt(bot.entity.position)}: ${detail}`,
-      );
+      try {
+        await withTimeout(
+          bot.pathfinder.goto(new goals.GoalNear(x, y, z, r)),
+          REACH_TIMEOUT_MS,
+          `reaching ${label}`,
+        );
+        return;
+      } catch (err) {
+        lastErr = err;
+        try {
+          bot.pathfinder.stop();
+        } catch {
+          // ignore
+        }
+      }
     }
+    const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
+    throw new Error(
+      `failed ${label} at [${x}, ${y}, ${z}] (range ${r}); bot at ` +
+        `${fmt(bot.entity.position)}: ${detail}`,
+    );
   }
 
   /**
