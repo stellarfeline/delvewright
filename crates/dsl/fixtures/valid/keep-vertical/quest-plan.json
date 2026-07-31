@@ -1,0 +1,34 @@
+{
+  "dsl_version": "0.3.0",
+  "campaign_id": "keep-vertical",
+  "stage": "quest-plan",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/greet",
+        "goal": "Take the Keeper's charge and raise the guard.",
+        "area": "area/keep",
+        "npcs": [
+          "npc/keeper"
+        ],
+        "depends_on": [],
+        "mandatory": true,
+        "act": 1
+      },
+      {
+        "id": "quest/trial",
+        "goal": "Clear the guard, take the key, open the door, reach the shrine.",
+        "area": "area/keep",
+        "npcs": [
+          "npc/keeper"
+        ],
+        "depends_on": [
+          "quest/greet"
+        ],
+        "mandatory": true,
+        "act": 2
+      }
+    ],
+    "finale": "quest/trial"
+  }
+}

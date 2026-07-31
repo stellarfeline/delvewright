@@ -208,3 +208,50 @@ dead-end terminal" limitation (and `DW0304`'s second clause) is removed.
       bot).
 - [x] `hello-world` + `keep-crawl` remain byte-identical (regression, verified
       against captured pre-v0.3 baselines).
+
+## M2 amendment — 3D solver, stairs, ambiguous anchors, role-aware capping
+
+Adds **vertical layouts** and hardens pool assembly (planning-agent-approved).
+Determinism (ADR-0006) and existing byte-identity are preserved: pools with no
+stair piece and campaigns that already solved are unchanged (`hello-world`,
+`keep-crawl`, `keep-trial` byte-identical).
+
+- **3D solver semantics**: socket mating and AABB overlap are fully 3D. A **stair**
+  connector is a keep-socket-v1 piece whose two sockets have different local `y`
+  (`keep-stair`: low socket `y=1`, high socket `y=5` → a +4 rise). Mating carries
+  the `y` offset through, so attaching a stair lifts the layout one elevation
+  level; overlap rejection is 3D so pieces on different levels never collide. When
+  the bound pool contains a stair and there is filler budget, growth forces at
+  least one, so the layout spans ≥2 levels (`pool/vertical-keep`, `keep-vertical`).
+  Emission already places pieces and seals sockets in 3D (`pos`/`from`/`to` carry
+  `y`); no wall-clock/absolute-path enters.
+- **Large-terminal robustness**: `grow_branching` wraps its greedy pass in a
+  bounded, deterministic retry (≤32 attempts). Attempt 0 reproduces the pre-M2
+  growth byte-for-byte; each later attempt caps the largest-footprint terminal
+  first and draws fresh choices (the shared PRNG having advanced). Same seed →
+  same attempt sequence → same layout. This lifted the hollow-vigil campaign shape
+  from 3/40 to 40/40 solvable seeds at `pieces {min 10, max 15}`.
+- **Role-aware carrier selection**: each required anchor maps to a carrier,
+  **never the `entry` piece** (an NPC on `anchor/exit`, already provided by the
+  entry spawn-hall, no longer forces a duplicate spawn-hall), with **coverage-reuse**
+  (an anchor already covered by an already-selected piece adds no second piece — so
+  `anchor/objective` resolves to the boss-hall that `anchor/boss` forces, not a
+  redundant shrine).
+- **`DW0305` (new build/solver code)**: after layout, any campaign-referenced
+  anchor defined by **more than one placed piece** is a hard error naming the
+  pieces (ambiguous, would resolve arbitrarily). Also the role-aware failure when a
+  required anchor's only carrier is the entry piece and the entry does not already
+  provide it.
+
+### Acceptance criteria (M2 vertical)
+
+- [x] `keep-vertical` (v0.3, `pool/vertical-keep`) assembles a keep spanning ≥2
+      elevation levels via `keep-stair`, with a kill wave + interact + a finale
+      reach on a level above spawn; double-builds byte-identically and every
+      emitted command validates.
+- [x] hollow-vigil campaign shape solvable for ≥80% of seeds 1..40 at `pieces
+      {min 10, max 15}` (measured 3/40 → 40/40).
+- [x] Ambiguous-anchor layouts fail with `DW0305` naming the pieces; the clean
+      hollow-vigil shape (coverage-reuse) does not.
+- [x] `hello-world`, `keep-crawl`, `keep-trial` remain byte-identical (no stair in
+      their pools).
