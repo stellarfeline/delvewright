@@ -38,7 +38,8 @@
             { "type": "cutscene", "seconds": 2, "path": [ { "anchor": "anchor/objective", "offset": [0, 2, 2] }, { "anchor": "anchor/objective", "offset": [0, 2, 0] } ] }
           ],
           "obj/door": [
-            { "type": "set-flag", "flag": "flag/opened" }
+            { "type": "set-flag", "flag": "flag/opened" },
+            { "type": "spawn-wave", "wave": "wave/ambush" }
           ]
         },
         "on_complete": [
@@ -60,6 +61,13 @@
             "attributes": { "max_health": 12.0, "movement_speed": 0.2, "attack_damage": 3.0 },
             "effects": [ { "effect": "minecraft:slowness", "amplifier": 1 } ]
           }
+        ]
+      },
+      {
+        "id": "wave/ambush",
+        "anchor": "anchor/wave",
+        "mobs": [
+          { "entity": "minecraft:sheep", "count": 2, "name": "Startled Ewe" }
         ]
       }
     ],
