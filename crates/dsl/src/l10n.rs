@@ -44,6 +44,18 @@ use serde::{Deserialize, Serialize};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{Campaign, is_supported_version};
 use crate::ids::CampaignId;
+use crate::stages::QuestEffect;
+
+/// Walk the player-visible strings of a single quest effect (DSL v0.4): a
+/// `narrate` line and a named `give-item`'s display name. `keybase` is the
+/// effect's stable position-derived key prefix.
+fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, &mut String)) {
+    match eff {
+        QuestEffect::Narrate { text, .. } => f(&format!("{keybase}.narrate"), text),
+        QuestEffect::GiveItem { name: Some(n), .. } => f(&format!("{keybase}.give"), n),
+        _ => {}
+    }
+}
 
 /// The implicit, always-canonical language. Never appears in `world.languages`
 /// and never has a sidecar; `delvec build --lang en` emits the pure-English delve.
@@ -125,6 +137,25 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             if let Some(hint) = o.hint_mut().as_mut() {
                 f(&format!("obj.{ql}.{ol}.hint"), hint);
             }
+        }
+        // Stage 5 — v0.4 effect strings: `narrate` text + named `give-item`
+        // (deterministic: `on_objective_complete` is a BTreeMap). Empty for
+        // v0.2/v0.3 campaigns → inventory unchanged.
+        for (oid, effs) in &mut q.on_objective_complete {
+            let ol = local(oid.as_str()).to_string();
+            for (i, eff) in effs.iter_mut().enumerate() {
+                effect_strings(eff, &format!("fx.{ql}.oc.{ol}.{i}"), f);
+            }
+        }
+        for (i, eff) in q.on_complete.iter_mut().enumerate() {
+            effect_strings(eff, &format!("fx.{ql}.done.{i}"), f);
+        }
+    }
+    // Stage 5 — v0.4 environment-trigger effect strings.
+    for t in &mut c.quests.content.triggers {
+        let tl = local(t.id.as_str()).to_string();
+        for (i, eff) in t.effects.iter_mut().enumerate() {
+            effect_strings(eff, &format!("fx.trig.{tl}.{i}"), f);
         }
     }
     // Stage 6 — dialogue node text + option labels.

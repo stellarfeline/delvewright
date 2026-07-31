@@ -93,6 +93,10 @@ prefixed_id!(
     /// `requires_flags`, DSL v0.3). No separate declaration list — the set of
     /// flags is exactly those produced by some `set-flag` effect.
     FlagId, "flag");
+prefixed_id!(
+    /// Environment-trigger id: `trigger/<kebab>` (stage-5 `triggers` section,
+    /// DSL v0.4). Unique within the stage-5 triggers namespace.
+    TriggerId, "trigger");
 
 /// Campaign id: a bare kebab-case token (no type prefix).
 #[derive(

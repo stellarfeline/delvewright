@@ -129,6 +129,145 @@ impl EntityRegistry for VendoredEntityRegistry {
     }
 }
 
+// ---------------------------------------------------------------------------
+// DSL v0.4 registries: blocks (props / set-block) and status effects
+// ---------------------------------------------------------------------------
+
+/// Membership test for vanilla block ids (`minecraft:lever`, …), used to
+/// validate DSL v0.4 `set-block` / `interact.prop` block ids (`DW0193`).
+pub trait BlockRegistry {
+    /// True if `block_id` is a known placeable block in the pinned MC version.
+    fn contains(&self, block_id: &str) -> bool;
+}
+
+/// Membership test for vanilla status-effect ids (`minecraft:slowness`, …),
+/// used to validate DSL v0.4 wave-mob `effects` (`DW0192`).
+pub trait EffectRegistry {
+    /// True if `effect_id` is a known status effect in the pinned MC version.
+    fn contains(&self, effect_id: &str) -> bool;
+}
+
+/// The complete 1.21.11 mob status-effect id list (the canonical source both the
+/// vendored and full [`EffectRegistry`]s build from). Small, stable registry, so
+/// it is inlined rather than a data file.
+pub const EFFECT_IDS_1_21_11: &[&str] = &[
+    "minecraft:speed",
+    "minecraft:slowness",
+    "minecraft:haste",
+    "minecraft:mining_fatigue",
+    "minecraft:strength",
+    "minecraft:instant_health",
+    "minecraft:instant_damage",
+    "minecraft:jump_boost",
+    "minecraft:nausea",
+    "minecraft:regeneration",
+    "minecraft:resistance",
+    "minecraft:fire_resistance",
+    "minecraft:water_breathing",
+    "minecraft:invisibility",
+    "minecraft:blindness",
+    "minecraft:night_vision",
+    "minecraft:hunger",
+    "minecraft:weakness",
+    "minecraft:poison",
+    "minecraft:wither",
+    "minecraft:health_boost",
+    "minecraft:absorption",
+    "minecraft:saturation",
+    "minecraft:glowing",
+    "minecraft:levitation",
+    "minecraft:luck",
+    "minecraft:unluck",
+    "minecraft:slow_falling",
+    "minecraft:conduit_power",
+    "minecraft:dolphins_grace",
+    "minecraft:bad_omen",
+    "minecraft:hero_of_the_village",
+    "minecraft:darkness",
+    "minecraft:trial_omen",
+    "minecraft:raid_omen",
+    "minecraft:wind_charged",
+    "minecraft:weaving",
+    "minecraft:oozing",
+    "minecraft:infested",
+];
+
+/// Technical / fluid blocks that are NOT items but are valid `set-block` targets
+/// (`air` clears a cell; fluids fill one). Block validation otherwise reuses the
+/// item registry — every placeable *affordance* block a prop/set-block would use
+/// (lever, button, chest, door, pressure plate, …) is an item in 1.21.11, so an
+/// item-registry membership test is a sound, false-reject-free block check; this
+/// allowlist covers the handful of placeable blocks that have no item form.
+pub const TECHNICAL_BLOCK_IDS: &[&str] = &[
+    "minecraft:air",
+    "minecraft:cave_air",
+    "minecraft:void_air",
+    "minecraft:water",
+    "minecraft:lava",
+];
+
+/// True if `id` (optionally un-namespaced) is a technical/fluid block.
+pub fn is_technical_block(id: &str) -> bool {
+    let norm = if id.contains(':') {
+        id.to_string()
+    } else {
+        format!("minecraft:{id}")
+    };
+    TECHNICAL_BLOCK_IDS.contains(&norm.as_str())
+}
+
+/// A [`BlockRegistry`] backed by an [`ItemRegistry`] plus the technical-block
+/// allowlist. Blocks that have an item form (the placeable affordances) resolve
+/// through the item registry; `air`/fluids resolve through the allowlist.
+pub struct ItemBackedBlockRegistry<'a> {
+    items: &'a dyn ItemRegistry,
+}
+
+impl<'a> ItemBackedBlockRegistry<'a> {
+    /// Wrap an item registry as a block registry.
+    pub fn new(items: &'a dyn ItemRegistry) -> Self {
+        Self { items }
+    }
+}
+
+impl BlockRegistry for ItemBackedBlockRegistry<'_> {
+    fn contains(&self, block_id: &str) -> bool {
+        is_technical_block(block_id) || self.items.contains(block_id)
+    }
+}
+
+/// Vendored status-effect registry built from [`EFFECT_IDS_1_21_11`].
+#[derive(Debug, Clone)]
+pub struct VendoredEffectRegistry {
+    ids: BTreeSet<&'static str>,
+}
+
+impl VendoredEffectRegistry {
+    /// The full 1.21.11 status-effect registry.
+    pub fn v1_21_11() -> Self {
+        Self {
+            ids: EFFECT_IDS_1_21_11.iter().copied().collect(),
+        }
+    }
+}
+
+impl Default for VendoredEffectRegistry {
+    fn default() -> Self {
+        Self::v1_21_11()
+    }
+}
+
+impl EffectRegistry for VendoredEffectRegistry {
+    fn contains(&self, effect_id: &str) -> bool {
+        let norm = if effect_id.contains(':') {
+            effect_id.to_string()
+        } else {
+            format!("minecraft:{effect_id}")
+        };
+        self.ids.contains(norm.as_str())
+    }
+}
+
 /// Vendored anchor registry loaded from embedded prefab metadata.
 #[derive(Debug, Clone)]
 pub struct VendoredAnchorRegistry {

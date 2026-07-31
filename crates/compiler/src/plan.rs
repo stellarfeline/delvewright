@@ -61,6 +61,13 @@ pub struct Plan<'a> {
     /// before starting the next step (gap 8). `None` for `select-class` /
     /// `assert-complete` and any step that does not change area.
     pub critical_path_transport: Vec<Option<[i32; 3]>>,
+    /// Per-step stealth hint (DSL v0.4), aligned 1:1 with `critical_path`: `true`
+    /// when the step's objective is `stealth`-marked → emitted as `sneak: true`.
+    pub critical_path_sneak: Vec<bool>,
+    /// Per-step cutscene duration (DSL v0.4), aligned 1:1 with `critical_path`:
+    /// `Some(seconds)` when completing that step's objective triggers a
+    /// `QuestEffect::Cutscene` → emitted as `cutscene_seconds`.
+    pub critical_path_cutscene: Vec<Option<u32>>,
 }
 
 /// A placed area: one or more pieces plus their socket seals.
@@ -173,6 +180,10 @@ pub struct OptionPlan {
     pub next: Option<String>,
     /// Objectives this option completes.
     pub completes: Vec<String>,
+    /// Flags this option sets when chosen (DSL v0.4 dialogue `set-flag`).
+    pub sets_flags: Vec<String>,
+    /// Flags that must be set for this option to be shown (DSL v0.4).
+    pub requires_flags: Vec<String>,
 }
 
 /// A critical-path step (mirrors the amended `critical-path.json` shape).
@@ -479,8 +490,7 @@ impl<'a> Plan<'a> {
             .collect::<Vec<_>>();
 
         // ---- critical path + inter-area transport ----
-        let (critical_path, transport, critical_path_transport) =
-            build_critical_path(campaign, &anchors, &npcs)?;
+        let cp = build_critical_path(campaign, &anchors, &npcs)?;
 
         Ok(Self {
             campaign,
@@ -490,9 +500,11 @@ impl<'a> Plan<'a> {
             anchors,
             classes,
             npcs,
-            critical_path,
-            transport,
-            critical_path_transport,
+            critical_path: cp.steps,
+            transport: cp.transport,
+            critical_path_transport: cp.transport_by_step,
+            critical_path_sneak: cp.sneak_by_step,
+            critical_path_cutscene: cp.cutscene_by_step,
         })
     }
 
@@ -567,20 +579,49 @@ fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> Vec<String> 
                 Objective::TalkTo { .. } => {}
             }
         }
-        for effs in q.on_objective_complete.values() {
-            for e in effs {
-                if let Some(a) = e.open_gate_anchor() {
-                    set.insert(a.as_str().to_string());
-                }
-            }
+        for e in q
+            .on_objective_complete
+            .values()
+            .flatten()
+            .chain(&q.on_complete)
+        {
+            collect_effect_anchors(e, &mut set);
         }
-        for e in &q.on_complete {
-            if let Some(a) = e.open_gate_anchor() {
-                set.insert(a.as_str().to_string());
+    }
+    // Environment triggers (v0.4) are global. When the campaign has a single area,
+    // their `at` and effect anchors must be provided by that area's assembly. For
+    // a multi-area campaign, a trigger anchor is expected to coincide with an
+    // objective anchor (already required above); over-provisioning every area is
+    // avoided so the solver is not asked for an anchor an area's pool cannot fit.
+    if campaign.world.content.areas.len() == 1 {
+        for t in &campaign.quests.content.triggers {
+            set.insert(t.at.as_str().to_string());
+            for e in &t.effects {
+                collect_effect_anchors(e, &mut set);
             }
         }
     }
     set.into_iter().collect()
+}
+
+/// Collect the anchors a v0.4 quest effect references (`open-gate`, `set-block`,
+/// `move-npc` target, `cutscene` waypoints) into `set`, so the layout solver
+/// guarantees they exist in the assembled area.
+fn collect_effect_anchors(e: &QuestEffect, set: &mut BTreeSet<String>) {
+    if let Some(a) = e.open_gate_anchor() {
+        set.insert(a.as_str().to_string());
+    }
+    if let Some((a, _)) = e.set_block() {
+        set.insert(a.as_str().to_string());
+    }
+    if let Some((_, a)) = e.move_npc() {
+        set.insert(a.as_str().to_string());
+    }
+    if let QuestEffect::Cutscene { path, .. } = e {
+        for w in path {
+            set.insert(w.anchor.as_str().to_string());
+        }
+    }
 }
 
 /// Resolve a placed-piece anchor to absolute world coords (transforming through
@@ -629,14 +670,18 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
     for node in &tree.nodes {
         for opt in &node.options {
             n += 1;
-            let completes = opt
-                .effects
-                .iter()
-                .map(|e| {
-                    let DialogueEffect::CompleteObjective { objective } = e;
-                    objective.as_str().to_string()
-                })
-                .collect();
+            let mut completes = Vec::new();
+            let mut sets_flags = Vec::new();
+            for e in &opt.effects {
+                match e {
+                    DialogueEffect::CompleteObjective { objective } => {
+                        completes.push(objective.as_str().to_string());
+                    }
+                    DialogueEffect::SetFlag { flag } => {
+                        sets_flags.push(flag.as_str().to_string());
+                    }
+                }
+            }
             options.push(OptionPlan {
                 n,
                 node_id: node.id.as_str().to_string(),
@@ -646,6 +691,12 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
                     .as_ref()
                     .map(|d: &DialogueId| d.as_str().to_string()),
                 completes,
+                sets_flags,
+                requires_flags: opt
+                    .requires_flags
+                    .iter()
+                    .map(|f| f.as_str().to_string())
+                    .collect(),
             });
         }
     }
@@ -659,17 +710,26 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
     }
 }
 
+/// The computed critical path and its per-step metadata.
+struct CriticalPath {
+    steps: Vec<Step>,
+    transport: TransportMap,
+    transport_by_step: Vec<Option<[i32; 3]>>,
+    sneak_by_step: Vec<bool>,
+    cutscene_by_step: Vec<Option<u32>>,
+}
+
 /// Build the critical path: select first class, then each critical objective in
 /// topological order (quests by `depends_on`, objectives by `after`), then assert
-/// campaign completion. Also returns the inter-area transport map: when
-/// consecutive objectives sit in different areas, completing the earlier one
-/// teleports the player to the later area's entry spawn.
-#[allow(clippy::type_complexity)]
+/// campaign completion. Also returns the inter-area transport map (when
+/// consecutive objectives sit in different areas) and, per step, the DSL v0.4
+/// harness hints: `sneak` (a `stealth` objective) and `cutscene_seconds` (a step
+/// whose completion triggers a `QuestEffect::Cutscene`).
 fn build_critical_path(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     npcs: &[NpcPlan],
-) -> Result<(Vec<Step>, TransportMap, Vec<Option<[i32; 3]>>), PlanError> {
+) -> Result<CriticalPath, PlanError> {
     let mut steps = Vec::new();
     // (objective id, physical area, step index) in critical-path order, for the
     // transport map and the per-step transport marker.
@@ -839,7 +899,59 @@ fn build_critical_path(
         }
     }
 
-    Ok((steps, transport, transport_by_step))
+    // DSL v0.4 per-step harness hints: `sneak` (a stealth objective) and
+    // `cutscene_seconds` (a step whose completion fires a `Cutscene` effect).
+    let mut sneak_by_step = vec![false; steps.len()];
+    let mut cutscene_by_step: Vec<Option<u32>> = vec![None; steps.len()];
+    for (obj_id, _, step_idx) in &obj_areas {
+        if let Some((qid, obj)) = objective_quest(campaign, obj_id) {
+            sneak_by_step[*step_idx] = obj.stealth();
+            let mut secs = cutscene_seconds_in(objective_effects(campaign, obj_id).into_iter());
+            if secs.is_none()
+                && is_last_objective_of_quest(campaign, qid, obj_id)
+                && let Some(q) = campaign
+                    .quests
+                    .content
+                    .quests
+                    .iter()
+                    .find(|q| q.id.as_str() == qid)
+            {
+                secs = cutscene_seconds_in(q.on_complete.iter());
+            }
+            cutscene_by_step[*step_idx] = secs;
+        }
+    }
+
+    Ok(CriticalPath {
+        steps,
+        transport,
+        transport_by_step,
+        sneak_by_step,
+        cutscene_by_step,
+    })
+}
+
+/// The `seconds` of the first `Cutscene` effect in `effects`, if any.
+fn cutscene_seconds_in<'a>(effects: impl Iterator<Item = &'a QuestEffect>) -> Option<u32> {
+    for e in effects {
+        if let QuestEffect::Cutscene { seconds, .. } = e {
+            return Some(*seconds);
+        }
+    }
+    None
+}
+
+/// Whether `obj_id` is the last objective (in `after`-DAG order) of `quest_id`,
+/// i.e. its completion is what fires the quest's `on_complete` effects.
+fn is_last_objective_of_quest(campaign: &Campaign, quest_id: &str, obj_id: &str) -> bool {
+    campaign
+        .quests
+        .content
+        .quests
+        .iter()
+        .find(|q| q.id.as_str() == quest_id)
+        .and_then(|q| objectives_in_order(&q.objectives).last().copied())
+        .is_some_and(|last| last.id().as_str() == obj_id)
 }
 
 fn point_of(

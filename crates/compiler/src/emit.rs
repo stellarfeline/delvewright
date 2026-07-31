@@ -117,6 +117,7 @@ fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
 /// build stays byte-identical to a pre-i18n one); `Some("<code>")` records the
 /// language in the manifest. The `plan`'s campaign must already be localized to
 /// that language by the caller ([`delvewright_dsl::localize`]).
+#[allow(clippy::too_many_arguments)]
 pub fn build(
     plan: &Plan,
     input_bytes: &BTreeMap<String, Vec<u8>>,
@@ -125,6 +126,7 @@ pub fn build(
     prefabs: &crate::registry::PrefabRegistry,
     language: Option<&str>,
     content_sha: &str,
+    skins: &BTreeMap<String, Vec<u8>>,
 ) -> Result<BuildOutput, Vec<CommandError>> {
     let ns = &plan.namespace;
     let mut out: BuildOutput = BTreeMap::new();
@@ -243,11 +245,58 @@ pub fn build(
         return Err(errors);
     }
 
+    // ---- NPC-skin resource pack (spec-0009) ----
+    // A campaign with skinned (mannequin) NPCs ships a deterministic resource-pack
+    // zip; its SHA-1 is what a client verifies against the itzg RESOURCE_PACK_SHA1
+    // env. The serving/env plumbing is the packaging task's; here we emit the zip,
+    // its sha1 (in the manifest), and a SKINS.md note listing the env to set.
+    let resource_pack_sha1 = if skins.is_empty() {
+        None
+    } else {
+        let zip = crate::resourcepack::build_pack(skins);
+        let sha1 = crate::resourcepack::sha1_hex(&zip);
+        out.insert("resourcepack.zip".to_string(), zip);
+        out.insert(
+            "SKINS.md".to_string(),
+            skins_note(&sha1, skins).into_bytes(),
+        );
+        Some(sha1)
+    };
+
     // ---- manifest (hashes of inputs + all other outputs) ----
-    let manifest = emit_manifest(plan, input_bytes, &out, language, content_sha);
+    let manifest = emit_manifest(
+        plan,
+        input_bytes,
+        &out,
+        language,
+        content_sha,
+        resource_pack_sha1.as_deref(),
+    );
     put_json(&mut out, "manifest.json", &manifest);
 
     Ok(out)
+}
+
+/// The `SKINS.md` build-output note: how the packaging task wires the emitted
+/// resource pack into the delve image (itzg env), plus the pack SHA-1.
+fn skins_note(sha1: &str, skins: &BTreeMap<String, Vec<u8>>) -> String {
+    let mut s = String::new();
+    s.push_str("# NPC skin resource pack\n\n");
+    s.push_str(
+        "This delve ships a server resource pack (`resourcepack.zip`) carrying the\n\
+         mannequin NPC skins (spec-0009). The packaging task serves it and sets the\n\
+         itzg env so vanilla clients receive it:\n\n",
+    );
+    s.push_str(&format!(
+        "- `RESOURCE_PACK` = the URL the delve serves `resourcepack.zip` at\n\
+         - `RESOURCE_PACK_SHA1` = `{sha1}`\n\
+         - `RESOURCE_PACK_PROMPT` = a JSON text component (not a bare string)\n\n",
+    ));
+    s.push_str("Baked skins (`skins/<id>.png` → `assets/delvewright/textures/npc/<id>.png`):\n\n");
+    for id in skins.keys() {
+        s.push_str(&format!("- `{id}`\n"));
+    }
+    s
 }
 
 /// Re-validate every emitted vanilla `.mcfunction` in a built tree (used by
@@ -341,6 +390,15 @@ fn snbt_string(s: &str) -> String {
     format!("\"{esc}\"")
 }
 
+/// A text-component SNBT **compound** for a player-visible string:
+/// `{text:"<escaped>"}`. Used for mannequin `description` (DSL v0.4) and any
+/// component-form NBT field. This is deliberately NOT the stringified-JSON form
+/// `'{"text":…}'`, which 1.21.11 renders as literal raw JSON above an entity's
+/// head (owner-verified). The generated summons carry no `'{"text"` substring.
+fn snbt_text_component(s: &str) -> String {
+    format!("{{text:{}}}", snbt_string(s))
+}
+
 /// The default main-hand weapon for a summoned mob whose natural spawns are
 /// armed, or `None` for mobs that spawn unarmed. Small static table (documented
 /// in the compiler README); mobs not listed (zombie, drowned — a wild trident is
@@ -372,6 +430,43 @@ fn default_equipment(entity: &str) -> Option<String> {
     default_mainhand(entity).map(|item| {
         format!("equipment:{{mainhand:{{id:\"{item}\",count:1}}}},drop_chances:{{mainhand:0.0f}}")
     })
+}
+
+/// The `,attributes:[…]` SNBT fragment (leading comma) for a wave mob's v0.4
+/// attribute overrides, or `""` when none are set. Each present field becomes a
+/// `{id:"minecraft:<attr>",base:<double>}` entry; doubles are formatted with a
+/// decimal point so SNBT reads them as doubles (ADR-0006 determinism).
+fn attributes_snbt(attrs: Option<&delvewright_dsl::MobAttributes>) -> String {
+    let Some(a) = attrs else {
+        return String::new();
+    };
+    let mut entries: Vec<String> = Vec::new();
+    let mut add = |id: &str, v: Option<f64>| {
+        if let Some(x) = v {
+            entries.push(format!("{{id:\"minecraft:{id}\",base:{}}}", fmt_f64(x)));
+        }
+    };
+    add("max_health", a.max_health);
+    add("attack_damage", a.attack_damage);
+    add("movement_speed", a.movement_speed);
+    add("follow_range", a.follow_range);
+    if entries.is_empty() {
+        String::new()
+    } else {
+        format!(",attributes:[{}]", entries.join(","))
+    }
+}
+
+/// Format an `f64` deterministically for SNBT with a guaranteed decimal point
+/// (so `20` renders as `20.0`, read as a double). Uses `{:?}` (shortest
+/// round-trip) which is stable across platforms.
+fn fmt_f64(x: f64) -> String {
+    let s = format!("{x:?}");
+    if s.contains('.') || s.contains('e') || s.contains("inf") || s.contains("NaN") {
+        s
+    } else {
+        format!("{s}.0")
+    }
 }
 
 fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
@@ -442,6 +537,11 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
             "scoreboard objectives add {} dummy",
             plan::flag_score(&flag)
         ));
+    }
+    // v0.4: the per-player scratch bitmask used by flag-gated dialogue choosers.
+    // Declared only when a gated option exists, so v0.2/v0.3 setup is unchanged.
+    if has_gated_dialogue(c) {
+        setup.push("scoreboard objectives add dw.dmask dummy".to_string());
     }
     for (oid, _) in interact_objectives(c) {
         setup.push(format!(
@@ -584,19 +684,35 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
             .map(|n| n.base_entity.as_str())
             .unwrap_or("minecraft:villager");
         let yaw = facing_yaw(facing);
-        // CustomName is a 1.21.11 text component. v0.3 emits a plain SNBT string
-        // (renders correctly, incl. death messages — M2 fix 1); v0.2 keeps the
-        // legacy `'{"text":…}'` form so hello-world / keep-crawl stay byte-identical.
-        let cname_field = if v03 {
-            snbt_string(name)
+        if let Some(skin) = dsl_npc.and_then(|n| n.skin.as_ref()) {
+            // DSL v0.4 mannequin NPC (spec-0008 §6 / spec-0009). The label is
+            // emitted as `description`, a **text-component SNBT compound**
+            // (`{text:"…"}`) — NOT a stringified-JSON text component
+            // (`'{"text":…}'`), which renders as literal raw JSON above the head on
+            // 1.21.11 (owner-verified). NoAI/PersistenceRequired/VillagerData are
+            // dropped (silently ignored on a mannequin); the interaction hitbox is
+            // unchanged.
+            setup.push(format!(
+                "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},Tags:[\"dw_npc\",\"{}\"]}}",
+                pos[0], pos[1], pos[2], skin.texture_id, skin.model.token(),
+                snbt_text_component(name), npc.tag
+            ));
         } else {
-            let cname = json!({ "text": name }).to_string().replace('\'', "\\'");
-            format!("'{cname}'")
-        };
-        setup.push(format!(
-            "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"],CustomName:{},CustomNameVisible:1b,VillagerData:{{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}}}}",
-            pos[0], pos[1], pos[2], npc.tag, cname_field
-        ));
+            // CustomName is a 1.21.11 text component. v0.3+ emits a plain SNBT
+            // string (renders correctly, incl. death messages — M2 fix 1); v0.2
+            // keeps the legacy `'{"text":…}'` form so hello-world / keep-crawl stay
+            // byte-identical.
+            let cname_field = if v03 {
+                snbt_string(name)
+            } else {
+                let cname = json!({ "text": name }).to_string().replace('\'', "\\'");
+                format!("'{cname}'")
+            };
+            setup.push(format!(
+                "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"],CustomName:{},CustomNameVisible:1b,VillagerData:{{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}}}}",
+                pos[0], pos[1], pos[2], npc.tag, cname_field
+            ));
+        }
         setup.push(format!(
             "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{}\"]}}",
             pos[0], pos[1], pos[2], npc.tag
@@ -615,6 +731,9 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
     if let Some(pos) = campaign_spawn(plan) {
         setup.push(format!("setworldspawn {} {} {}", pos[0], pos[1], pos[2]));
     }
+    // v0.4: summon the interaction entities strike/use environment triggers watch
+    // (empty for a campaign with no triggers → byte-identical).
+    setup.extend(env_trigger_setup(plan));
     setup.push("scoreboard players set #placed dw.sys 1".to_string());
     fns.push(("setup_finish".to_string(), lines(&setup)));
 
@@ -802,6 +921,9 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
             }
         }
     }
+    // v0.4: environment-trigger per-tick checks (empty for a campaign with no
+    // triggers → byte-identical).
+    tick.extend(env_trigger_tick(plan));
     fns.push(("tick".to_string(), lines(&tick)));
 
     // --- show_class ---
@@ -848,6 +970,22 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
                 "scoreboard players reset @s {}",
                 npc.trigger_objective
             ));
+            // v0.4: a flag-gated option is inert until its flags are set — so a
+            // direct `/trigger` (the bot's path, which bypasses the UI variant
+            // hiding) cannot fire it early. `return fail` short-circuits the rest.
+            for f in &opt.requires_flags {
+                body.push(format!(
+                    "execute unless score @s {} matches 1 run return fail",
+                    plan::flag_score(f)
+                ));
+            }
+            // v0.4: set any flags this option declares (dialogue `set-flag`).
+            for f in &opt.sets_flags {
+                body.push(format!(
+                    "scoreboard players set @s {} 1",
+                    plan::flag_score(f)
+                ));
+            }
             for obj in &opt.completes {
                 if let Some((qid, _)) = objective_quest(c, obj) {
                     body.push(format!(
@@ -859,11 +997,7 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
                 }
             }
             if let Some(next) = &opt.next {
-                body.push(format!(
-                    "dialog show @s {ns}:{}_{}",
-                    npc.safe,
-                    plan::safe_local(next)
-                ));
+                body.push(show_node_cmd(plan, npc, next));
             }
             fns.push((format!("dlg_{}_{}", npc.safe, opt.n), lines(&body)));
         }
@@ -872,13 +1006,13 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
             format!("talk_{}", npc.safe),
             lines(&[
                 format!("advancement revoke @s only {ns}:{}_interact", npc.safe),
-                format!(
-                    "dialog show @s {ns}:{}_{}",
-                    npc.safe,
-                    plan::safe_local(&npc.root)
-                ),
+                show_node_cmd(plan, npc, &npc.root),
             ]),
         ));
+        // v0.4: flag-gate chooser functions for gated nodes.
+        for func in gated_node_choosers(plan, npc) {
+            fns.push(func);
+        }
     }
 
     // --- objective completion + quest checks ---
@@ -1070,11 +1204,19 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
             let equip = default_equipment(&mob.entity)
                 .map(|e| format!(",{e}"))
                 .unwrap_or_default();
+            // v0.4 attribute overrides (spec-0008 §4), emitted as 1.21.11
+            // attribute components in the summon NBT. Empty for a plain mob.
+            let attrs = attributes_snbt(mob.attributes.as_ref());
+            // v0.4 permanent ambient effects: applied to this stack via a temp tag
+            // after summon, so they land on exactly this mob type (not the whole
+            // wave). Empty for a plain mob.
+            let has_effects = !mob.effects.is_empty();
+            let tmp = if has_effects { ",\"dw_tmp\"" } else { "" };
             for _ in 0..mob.count {
                 // Spread stacks by a small deterministic offset; AI is left enabled
                 // (no NoAI) so the mobs fight.
                 body.push(format!(
-                    "summon {} {} {} {} {{Tags:[\"{}\"],PersistenceRequired:1b{name}{equip}}}",
+                    "summon {} {} {} {} {{Tags:[\"{}\"{tmp}],PersistenceRequired:1b{name}{equip}{attrs}}}",
                     mob.entity,
                     pos[0] + idx,
                     pos[1],
@@ -1082,6 +1224,15 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
                     plan::wave_tag(w.id.as_str())
                 ));
                 idx += 1;
+            }
+            if has_effects {
+                for eff in &mob.effects {
+                    body.push(format!(
+                        "effect give @e[tag=dw_tmp] {} infinite {} true",
+                        eff.effect, eff.amplifier
+                    ));
+                }
+                body.push("tag @e[tag=dw_tmp] remove dw_tmp".to_string());
             }
         }
         fns.push((
@@ -1148,6 +1299,12 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
         }
     }
 
+    // v0.4 generated functions: NPC moves, cutscene drivers, trigger effects.
+    // Each is empty for a campaign that uses none (byte-identical v0.2/v0.3).
+    fns.extend(movenpc_fns(plan));
+    fns.extend(cutscene_fns(plan));
+    fns.extend(env_trigger_fns(plan));
+
     fns.sort_by(|a, b| a.0.cmp(&b.0));
     fns
 }
@@ -1193,8 +1350,12 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
         QuestEffect::CampaignComplete => {
             body.push(format!("function {ns}:campaign_complete"));
         }
-        QuestEffect::GiveItem { item, count } => {
-            body.push(format!("give @s {item} {count}"));
+        QuestEffect::GiveItem { item, count, name } => {
+            let comp = match name {
+                Some(n) => format!("[custom_name={}]", json!({ "text": n, "italic": false })),
+                None => String::new(),
+            };
+            body.push(format!("give @s {item}{comp} {count}"));
         }
         QuestEffect::SetFlag { flag } => {
             body.push(format!(
@@ -1208,7 +1369,405 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
                 plan::safe_local(wave.as_str())
             ));
         }
+        // --- DSL v0.4 effects ---
+        QuestEffect::Narrate { text, style, sound } => {
+            emit_narrate(text, *style, sound.as_deref(), body);
+        }
+        QuestEffect::SetBlock { anchor, block } => {
+            if let Some(pos) = anchor_point_any(plan, anchor.as_str()) {
+                body.push(format!("setblock {} {} {} {block}", pos[0], pos[1], pos[2]));
+            }
+        }
+        QuestEffect::DespawnNpc { npc } => {
+            // Removes both the body and the interaction hitbox — both carry the
+            // per-npc id tag (spec-0008 §5).
+            body.push(format!(
+                "kill @e[tag=dw_npc_{}]",
+                plan::safe_local(npc.as_str())
+            ));
+        }
+        QuestEffect::MoveNpc { npc, to_anchor, .. } => {
+            body.push(format!(
+                "function {ns}:{}",
+                movenpc_fn(npc.as_str(), to_anchor.as_str())
+            ));
+        }
+        QuestEffect::Cutscene { path, seconds } => {
+            body.push(format!("function {ns}:{}", cutscene_fn(path, *seconds)));
+        }
     }
+}
+
+/// Emit a `narrate` line in its channel (DSL v0.4). `chat` = `tellraw`; `title`
+/// / `subtitle` = the vanilla `title` command (a subtitle is paired with a blank
+/// title so it renders on its own). An optional sound plays alongside.
+fn emit_narrate(
+    text: &str,
+    style: Option<delvewright_dsl::NarrateStyle>,
+    sound: Option<&str>,
+    body: &mut Vec<String>,
+) {
+    use delvewright_dsl::NarrateStyle;
+    let comp = json!({ "text": text });
+    match style.unwrap_or(NarrateStyle::Chat) {
+        NarrateStyle::Chat => body.push(format!("tellraw @s {comp}")),
+        NarrateStyle::Title => body.push(format!("title @s title {comp}")),
+        NarrateStyle::Subtitle => {
+            body.push(format!("title @s title {}", json!({ "text": " " })));
+            body.push(format!("title @s subtitle {comp}"));
+        }
+    }
+    if let Some(s) = sound {
+        body.push(format!("playsound {s} player @s"));
+    }
+}
+
+/// Resolve an anchor name to a world point by scanning every area (first match),
+/// mirroring how `open-gate` resolves its anchor. `None` if unresolved.
+fn anchor_point_any(plan: &Plan, anchor: &str) -> Option<[i32; 3]> {
+    for ((_, name), resolved) in &plan.anchors {
+        if name == anchor {
+            return match resolved {
+                ResolvedAnchor::Point { pos, .. } => Some(*pos),
+                ResolvedAnchor::Gate { from, .. } => Some(*from),
+            };
+        }
+    }
+    None
+}
+
+/// The generated function name for a `move-npc` effect (content-derived key, so
+/// the start-caller and the generator agree without threading an index).
+fn movenpc_fn(npc: &str, to_anchor: &str) -> String {
+    format!(
+        "mv_{}_{}",
+        plan::safe_local(npc),
+        plan::safe_local(to_anchor)
+    )
+}
+
+/// The generated function name for a `cutscene` effect (content-derived key).
+fn cutscene_fn(path: &[delvewright_dsl::CameraWaypoint], seconds: u32) -> String {
+    let first = path
+        .first()
+        .map(|w| plan::safe_local(w.anchor.as_str()))
+        .unwrap_or_else(|| "none".to_string());
+    format!("cs_{first}_{seconds}_{}", path.len())
+}
+
+/// A `[scores={dw.f_a=1..,…}]` selector fragment for a flag list, or `""`.
+fn flag_scores_selector(flags: &[delvewright_dsl::FlagId]) -> String {
+    if flags.is_empty() {
+        return String::new();
+    }
+    let inner = flags
+        .iter()
+        .map(|f| format!("{}=1..", plan::flag_score(f.as_str())))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("[scores={{{inner}}}]")
+}
+
+/// Every quest effect in the campaign (objective-complete, quest-complete, and
+/// trigger effects), for collecting v0.4 lifecycle/cutscene targets.
+fn all_campaign_effects(c: &delvewright_dsl::Campaign) -> Vec<&QuestEffect> {
+    let mut out = Vec::new();
+    for q in &c.quests.content.quests {
+        for e in q
+            .on_objective_complete
+            .values()
+            .flatten()
+            .chain(&q.on_complete)
+        {
+            out.push(e);
+        }
+    }
+    for t in &c.quests.content.triggers {
+        for e in &t.effects {
+            out.push(e);
+        }
+    }
+    out
+}
+
+/// Resolve a `move-npc` destination: the anchor in the NPC's own area, else any
+/// area (first match).
+fn movenpc_target(plan: &Plan, npc: &str, to_anchor: &str) -> Option<[i32; 3]> {
+    if let Some(area) = plan.npc_area(npc)
+        && let Some(pos) = plan.point(area, to_anchor)
+    {
+        return Some(pos);
+    }
+    anchor_point_any(plan, to_anchor)
+}
+
+/// `move-npc` functions: collision-safe teleport of the NPC body + interaction
+/// hitbox (both carry the id tag) to the destination anchor (spec-0008 §5). The
+/// destination is a valid, resolved anchor cell, so the move never lands in a
+/// wall. Deduped by content key.
+fn movenpc_fns(plan: &Plan) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for eff in all_campaign_effects(plan.campaign) {
+        if let QuestEffect::MoveNpc { npc, to_anchor, .. } = eff {
+            let name = movenpc_fn(npc.as_str(), to_anchor.as_str());
+            if !seen.insert(name.clone()) {
+                continue;
+            }
+            let body = match movenpc_target(plan, npc.as_str(), to_anchor.as_str()) {
+                Some(p) => vec![format!(
+                    "tp @e[tag=dw_npc_{}] {} {} {}",
+                    plan::safe_local(npc.as_str()),
+                    p[0],
+                    p[1],
+                    p[2]
+                )],
+                None => vec![format!(
+                    "# move-npc: anchor `{to_anchor}` did not resolve for npc `{npc}`"
+                )],
+            };
+            out.push((name, lines(&body)));
+        }
+    }
+    out
+}
+
+/// Cutscene functions (spec-0008 addendum): the two-camera bounce. Per cutscene
+/// (deduped by content key) emits a start function, a self-scheduling per-tick
+/// dolly/`spectate` driver, and an end/restore function.
+///
+/// Mechanic: save each player's return point (a marker at a representative
+/// player), spectator, then each tick dolly two co-located invisible cameras
+/// along the lerped waypoint polyline and alternate `spectate` between them
+/// (the naive same-entity re-`spectate` is a server no-op — never emitted). On
+/// completion, restore adventure mode + teleport players back to the marker.
+fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for eff in all_campaign_effects(plan.campaign) {
+        let QuestEffect::Cutscene { path, seconds } = eff else {
+            continue;
+        };
+        // `start` = the function emit_quest_effect calls (`cs_<bare>`); `bare` is
+        // the shared suffix for the tick/end functions and per-cutscene sentinels.
+        let start_name = cutscene_fn(path, *seconds);
+        if !seen.insert(start_name.clone()) {
+            continue;
+        }
+        let bare = start_name
+            .strip_prefix("cs_")
+            .unwrap_or(&start_name)
+            .to_string();
+        // Resolve waypoint world positions (anchor + offset, block centres).
+        let pts: Vec<[f64; 3]> = path
+            .iter()
+            .map(|w| {
+                let base =
+                    anchor_point_any(plan, w.anchor.as_str()).unwrap_or([0, plan::BASE_Y, 0]);
+                [
+                    (base[0] + w.offset[0]) as f64 + 0.5,
+                    (base[1] + w.offset[1]) as f64 + 0.5,
+                    (base[2] + w.offset[2]) as f64 + 0.5,
+                ]
+            })
+            .collect();
+        let first = pts
+            .first()
+            .copied()
+            .unwrap_or([0.0, plan::BASE_Y as f64, 0.0]);
+        let total: i32 = ((*seconds as i32) * 20).clamp(1, 400);
+
+        // start
+        let mut start: Vec<String> = Vec::new();
+        start.push(format!(
+            "execute if score #run_{bare} dw.sys matches 1 run return fail"
+        ));
+        start.push(format!("scoreboard players set #run_{bare} dw.sys 1"));
+        start.push(format!("scoreboard players set #t_{bare} dw.sys 0"));
+        start.push(format!("scoreboard players set #p_{bare} dw.sys 1"));
+        start.push(format!(
+            "execute at @p run summon minecraft:marker ~ ~ ~ {{Tags:[\"dw_csmark_{bare}\"]}}"
+        ));
+        start.push("gamemode spectator @a".to_string());
+        for cam in ["a", "b"] {
+            start.push(format!(
+                "summon minecraft:item_display {} {} {} {{Tags:[\"dw_cam_{bare}\",\"dw_cam{cam}_{bare}\"]}}",
+                fmt_f64(first[0]), fmt_f64(first[1]), fmt_f64(first[2])
+            ));
+        }
+        start.push(format!("schedule function {ns}:cs_tick_{bare} 1t"));
+        out.push((start_name.clone(), lines(&start)));
+
+        // per-tick driver
+        let mut tick: Vec<String> = Vec::new();
+        for t in 0..=total {
+            let p = lerp_polyline(&pts, t as f64 / total as f64);
+            tick.push(format!(
+                "execute if score #t_{bare} dw.sys matches {t} run tp @e[tag=dw_cam_{bare}] {} {} {}",
+                fmt_f64(p[0]), fmt_f64(p[1]), fmt_f64(p[2])
+            ));
+        }
+        // alternate `spectate` between the two co-located cameras (the bounce):
+        // parity 1 → camera a, parity 2 → camera b, flipped each tick.
+        tick.push(format!(
+            "execute if score #p_{bare} dw.sys matches 1 as @a run spectate @n[type=minecraft:item_display,tag=dw_cama_{bare}] @s"
+        ));
+        tick.push(format!(
+            "execute if score #p_{bare} dw.sys matches 2 as @a run spectate @n[type=minecraft:item_display,tag=dw_camb_{bare}] @s"
+        ));
+        tick.push(format!(
+            "execute if score #p_{bare} dw.sys matches 2 run scoreboard players set #p_{bare} dw.sys 1"
+        ));
+        tick.push(format!(
+            "execute if score #p_{bare} dw.sys matches 1 run scoreboard players set #p_{bare} dw.sys 2"
+        ));
+        tick.push(format!("scoreboard players add #t_{bare} dw.sys 1"));
+        tick.push(format!(
+            "execute if score #t_{bare} dw.sys matches {}.. run function {ns}:cs_end_{bare}",
+            total + 1
+        ));
+        tick.push(format!(
+            "execute unless score #t_{bare} dw.sys matches {}.. run schedule function {ns}:cs_tick_{bare} 1t",
+            total + 1
+        ));
+        out.push((format!("cs_tick_{bare}"), lines(&tick)));
+
+        // end / restore: leaving spectator returns each player to their
+        // pre-spectator position; the explicit tp to the saved marker makes the
+        // restore robust (spec addendum: restore gamemode + position).
+        let end: Vec<String> = vec![
+            "gamemode adventure @a".to_string(),
+            format!("tp @a @e[tag=dw_csmark_{bare},limit=1]"),
+            format!("kill @e[tag=dw_cam_{bare}]"),
+            format!("kill @e[tag=dw_csmark_{bare}]"),
+            format!("scoreboard players set #run_{bare} dw.sys 0"),
+        ];
+        out.push((format!("cs_end_{bare}"), lines(&end)));
+    }
+    out
+}
+
+/// Linear interpolation along a polyline of points at parameter `s` in `[0,1]`.
+fn lerp_polyline(pts: &[[f64; 3]], s: f64) -> [f64; 3] {
+    if pts.is_empty() {
+        return [0.0, plan::BASE_Y as f64, 0.0];
+    }
+    if pts.len() == 1 {
+        return pts[0];
+    }
+    let segs = (pts.len() - 1) as f64;
+    let u = (s.clamp(0.0, 1.0) * segs).min(segs);
+    let i = (u.floor() as usize).min(pts.len() - 2);
+    let f = u - i as f64;
+    let a = pts[i];
+    let b = pts[i + 1];
+    [
+        a[0] + (b[0] - a[0]) * f,
+        a[1] + (b[1] - a[1]) * f,
+        a[2] + (b[2] - a[2]) * f,
+    ]
+}
+
+/// Environment-trigger interaction-entity summons (strike/use) for
+/// `setup_finish`. Approach triggers need no entity. Empty for a campaign with no
+/// triggers (byte-identical v0.2/v0.3).
+fn env_trigger_setup(plan: &Plan) -> Vec<String> {
+    use delvewright_dsl::TriggerOn;
+    let mut out = Vec::new();
+    for t in &plan.campaign.quests.content.triggers {
+        if matches!(t.on, TriggerOn::Approach { .. }) {
+            continue;
+        }
+        if let Some(p) = anchor_point_any(plan, t.at.as_str()) {
+            out.push(format!(
+                "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_trig_{}\"]}}",
+                p[0], p[1], p[2], plan::safe_local(t.id.as_str())
+            ));
+        }
+    }
+    out
+}
+
+/// Environment-trigger per-tick checks for the `tick` function. Empty for a
+/// campaign with no triggers.
+fn env_trigger_tick(plan: &Plan) -> Vec<String> {
+    use delvewright_dsl::TriggerOn;
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for t in &plan.campaign.quests.content.triggers {
+        let id = plan::safe_local(t.id.as_str());
+        let once_guard = if t.once {
+            format!("unless score #trig_{id} dw.sys matches 1 ")
+        } else {
+            String::new()
+        };
+        let fsel = flag_scores_selector(&t.requires_flags);
+        match &t.on {
+            TriggerOn::Strike | TriggerOn::Use => {
+                let (rec, tag) = match t.on {
+                    TriggerOn::Strike => ("attack", "dw_trig"),
+                    _ => ("interaction", "dw_trig"),
+                };
+                let _ = tag;
+                // Fire when the interaction entity has recorded the event and (if
+                // gated) some player holds the flags; then clear the record.
+                let flag_cond = if fsel.is_empty() {
+                    String::new()
+                } else {
+                    format!("if entity @a{fsel} ")
+                };
+                out.push(format!(
+                    "execute {once_guard}if entity @e[tag=dw_trig_{id},nbt={{{rec}:{{}}}}] {flag_cond}run function {ns}:trig_{id}"
+                ));
+                out.push(format!(
+                    "execute as @e[tag=dw_trig_{id}] run data remove entity @s {rec}"
+                ));
+            }
+            TriggerOn::Approach { range } => {
+                if let Some(p) = anchor_point_any(plan, t.at.as_str()) {
+                    out.push(format!(
+                        "execute {once_guard}positioned {} {} {} if entity @a[distance=..{range}{}] run function {ns}:trig_{id}",
+                        p[0], p[1], p[2],
+                        if fsel.is_empty() {
+                            String::new()
+                        } else {
+                            // merge the flag scores into the distance selector.
+                            t.requires_flags
+                                .iter()
+                                .map(|f| format!(",{}=1..", plan::flag_score(f.as_str())))
+                                .collect::<String>()
+                        }
+                    ));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Environment-trigger effect functions (`trig_<id>`). Effects run `as @a` (only
+/// players holding the trigger's flags) so `@s`-scoped effects resolve; `once`
+/// sets a global sentinel so the trigger fires at most once.
+fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for t in &plan.campaign.quests.content.triggers {
+        let id = plan::safe_local(t.id.as_str());
+        let mut body: Vec<String> = Vec::new();
+        if t.once {
+            body.push(format!("scoreboard players set #trig_{id} dw.sys 1"));
+        }
+        let mut effs: Vec<String> = Vec::new();
+        for e in &t.effects {
+            emit_quest_effect(plan, e, &mut effs);
+        }
+        let sel = flag_scores_selector(&t.requires_flags);
+        for line in effs {
+            body.push(format!("execute as @a{sel} run {line}"));
+        }
+        out.push((format!("trig_{id}"), lines(&body)));
+    }
+    out
 }
 
 /// The first area's `spawn` anchor absolute position.
@@ -1298,15 +1857,24 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
                     "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{}\"]}}",
                     pos[0], pos[1], pos[2], interact_entity_tag(id.as_str())
                 ));
-                // Visible, glowing, adventure-safe marker so a human can find the
-                // interact target (M2 fix 3): an `item_display` has no collision, so
-                // it obstructs neither movement nor the interaction hitbox. Its name
-                // derives from the objective `title` (fallback: the objective id).
-                let marker_name = snbt_string(o.title().unwrap_or(id.as_str()));
-                cmds.push(format!(
-                    "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],CustomName:{},CustomNameVisible:1b,billboard:\"center\",item:{{id:\"minecraft:lantern\",count:1}}}}",
-                    pos[0], pos[1], pos[2], interact_entity_tag(id.as_str()), marker_name
-                ));
+                if let Some(prop) = o.prop() {
+                    // v0.4: the prop block IS the affordance (spec-0008 §2) — place
+                    // it at the anchor. No hologram marker: the block is visible.
+                    cmds.push(format!(
+                        "setblock {} {} {} {}",
+                        pos[0], pos[1], pos[2], prop.block
+                    ));
+                } else {
+                    // Visible, glowing, adventure-safe marker so a human can find the
+                    // interact target (M2 fix 3): an `item_display` has no collision,
+                    // so it obstructs neither movement nor the interaction hitbox.
+                    // Its name derives from the objective `title` (fallback: id).
+                    let marker_name = snbt_string(o.title().unwrap_or(id.as_str()));
+                    cmds.push(format!(
+                        "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],CustomName:{},CustomNameVisible:1b,billboard:\"center\",item:{{id:\"minecraft:lantern\",count:1}}}}",
+                        pos[0], pos[1], pos[2], interact_entity_tag(id.as_str()), marker_name
+                    ));
+                }
             }
         }
         Objective::ReachAnchor { id, anchor, .. } => {
@@ -1331,7 +1899,9 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
     cmds
 }
 
-/// The flags any `set-flag` effect produces (sorted, deduped).
+/// The flags any `set-flag` effect produces (sorted, deduped) — quest effects,
+/// plus (DSL v0.4) dialogue `set-flag` effects and environment-trigger effects.
+/// Empty extra sources for v0.2/v0.3, keeping their scoreboard setup identical.
 fn declared_flags(c: &delvewright_dsl::Campaign) -> std::collections::BTreeSet<String> {
     let mut out = std::collections::BTreeSet::new();
     for q in &c.quests.content.quests {
@@ -1343,6 +1913,24 @@ fn declared_flags(c: &delvewright_dsl::Campaign) -> std::collections::BTreeSet<S
         for eff in effs {
             if let Some(f) = eff.set_flag() {
                 out.insert(f.as_str().to_string());
+            }
+        }
+    }
+    for t in &c.quests.content.triggers {
+        for eff in &t.effects {
+            if let Some(f) = eff.set_flag() {
+                out.insert(f.as_str().to_string());
+            }
+        }
+    }
+    for tree in &c.dialogue.content.dialogues {
+        for node in &tree.nodes {
+            for opt in &node.options {
+                for eff in &opt.effects {
+                    if let Some(f) = eff.set_flag() {
+                        out.insert(f.as_str().to_string());
+                    }
+                }
             }
         }
     }
@@ -1389,6 +1977,80 @@ fn pending_guard(o: &Objective, quest_active: &str) -> String {
 // ---------------------------------------------------------------------------
 // dialogs / advancements
 // ---------------------------------------------------------------------------
+
+/// The sorted, distinct flags gating any option of `node_id` (DSL v0.4). Empty
+/// for a node with no flag-gated options (v0.2/v0.3 nodes → byte-identical).
+fn node_gated_flags(npc: &plan::NpcPlan, node_id: &str) -> Vec<String> {
+    let mut set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for opt in &npc.options {
+        if opt.node_id == node_id {
+            for f in &opt.requires_flags {
+                set.insert(f.clone());
+            }
+        }
+    }
+    set.into_iter().collect()
+}
+
+/// The command that displays `node_id`: a direct `dialog show` for an ungated
+/// node, or the flag-gate chooser function for a gated one (which shows the
+/// variant matching the player's flags).
+fn show_node_cmd(plan: &Plan, npc: &plan::NpcPlan, node_id: &str) -> String {
+    let ns = &plan.namespace;
+    let node_safe = plan::safe_local(node_id);
+    if node_gated_flags(npc, node_id).is_empty() {
+        format!("dialog show @s {ns}:{}_{}", npc.safe, node_safe)
+    } else {
+        format!("function {ns}:show_{}_{}", npc.safe, node_safe)
+    }
+}
+
+/// Flag-gate chooser functions (`show_<npc>_<node>`) for this NPC's gated nodes:
+/// compute a per-player bitmask of satisfied gating flags into `dw.dmask`, then
+/// `dialog show` the variant (`<npc>_<node>__m<mask>`) whose options are all
+/// available. One chooser per gated node.
+fn gated_node_choosers(plan: &Plan, npc: &plan::NpcPlan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for opt in &npc.options {
+        if !seen.insert(opt.node_id.as_str()) {
+            continue;
+        }
+        let flags = node_gated_flags(npc, &opt.node_id);
+        if flags.is_empty() {
+            continue;
+        }
+        let node_safe = plan::safe_local(&opt.node_id);
+        let mut body = vec!["scoreboard players set @s dw.dmask 0".to_string()];
+        for (i, f) in flags.iter().enumerate() {
+            body.push(format!(
+                "execute if score @s {} matches 1 run scoreboard players add @s dw.dmask {}",
+                plan::flag_score(f),
+                1u32 << i
+            ));
+        }
+        for mask in 0..(1u32 << flags.len()) {
+            body.push(format!(
+                "execute if score @s dw.dmask matches {mask} run dialog show @s {ns}:{}_{}__m{mask}",
+                npc.safe, node_safe
+            ));
+        }
+        out.push((format!("show_{}_{}", npc.safe, node_safe), lines(&body)));
+    }
+    out
+}
+
+/// Whether any dialogue option is flag-gated (gates the `dw.dmask` declaration).
+fn has_gated_dialogue(c: &delvewright_dsl::Campaign) -> bool {
+    c.dialogue
+        .content
+        .dialogues
+        .iter()
+        .flat_map(|t| &t.nodes)
+        .flat_map(|n| &n.options)
+        .any(|o| !o.requires_flags.is_empty())
+}
 
 fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
     let c = plan.campaign;
@@ -1438,47 +2100,93 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
                 .iter()
                 .filter(|o| o.node_id == node.id.as_str())
                 .collect();
-            // A terminal node (schema: "empty options closes the dialog") must NOT
-            // emit `minecraft:multi_action` with an empty `actions` list — the
-            // 1.21.11 dialog codec rejects an empty action list ("List must have
-            // contents") and aborts registry load at server boot (gap 10). Emit
-            // `minecraft:notice` instead: it carries an implicit single close
-            // button, so an option-less node closes the dialog exactly as the
-            // schema promises.
-            let dialog = if node_opts.is_empty() {
-                json!({
-                    "type": "minecraft:notice",
-                    "title": dsl_npc.name,
-                    "body": [{ "type": "minecraft:plain_message", "contents": node.text }],
-                    "can_close_with_escape": true
-                })
+            let node_safe = plan::safe_local(node.id.as_str());
+            let flags = node_gated_flags(npc, node.id.as_str());
+            if flags.is_empty() {
+                // Ungated node → a single dialog (byte-identical to v0.2/v0.3).
+                dialogs.push((
+                    format!("{}_{node_safe}", npc.safe),
+                    build_node_dialog(
+                        &dsl_npc.name,
+                        &node.text,
+                        &node_opts,
+                        &npc.trigger_objective,
+                    ),
+                ));
             } else {
-                let actions: Vec<Value> = node_opts
-                    .iter()
-                    .map(|o| {
-                        json!({
-                            "label": o.label,
-                            "action": { "type": "minecraft:run_command", "command": format!("/trigger {} set {}", npc.trigger_objective, o.n) }
+                // v0.4 flag-gated node → one variant per satisfied-flag bitmask.
+                // The chooser function (`show_<npc>_<node>`) shows the variant
+                // matching the player's flags, so a gated option is genuinely
+                // absent until every flag it needs is set (spec-0008 §1).
+                for mask in 0..(1u32 << flags.len()) {
+                    let satisfied: std::collections::BTreeSet<&str> = flags
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| mask & (1u32 << i) != 0)
+                        .map(|(_, f)| f.as_str())
+                        .collect();
+                    let visible: Vec<&plan::OptionPlan> = node_opts
+                        .iter()
+                        .copied()
+                        .filter(|o| {
+                            o.requires_flags
+                                .iter()
+                                .all(|f| satisfied.contains(f.as_str()))
                         })
-                    })
-                    .collect();
-                json!({
-                    "type": "minecraft:multi_action",
-                    "title": dsl_npc.name,
-                    "body": [{ "type": "minecraft:plain_message", "contents": node.text }],
-                    "columns": 1,
-                    "can_close_with_escape": true,
-                    "after_action": "close",
-                    "actions": actions
-                })
-            };
-            dialogs.push((
-                format!("{}_{}", npc.safe, plan::safe_local(node.id.as_str())),
-                dialog,
-            ));
+                        .collect();
+                    dialogs.push((
+                        format!("{}_{node_safe}__m{mask}", npc.safe),
+                        build_node_dialog(
+                            &dsl_npc.name,
+                            &node.text,
+                            &visible,
+                            &npc.trigger_objective,
+                        ),
+                    ));
+                }
+            }
         }
     }
     dialogs
+}
+
+/// Build one node dialog from its (already flag-filtered) options. A node with no
+/// visible options is a terminal `minecraft:notice` (an empty `multi_action`
+/// action list crashes the 1.21.11 dialog codec at load — gap 10); otherwise a
+/// `minecraft:multi_action` whose buttons fire each option's `/trigger`.
+fn build_node_dialog(
+    npc_name: &str,
+    text: &str,
+    opts: &[&plan::OptionPlan],
+    trigger_objective: &str,
+) -> Value {
+    if opts.is_empty() {
+        json!({
+            "type": "minecraft:notice",
+            "title": npc_name,
+            "body": [{ "type": "minecraft:plain_message", "contents": text }],
+            "can_close_with_escape": true
+        })
+    } else {
+        let actions: Vec<Value> = opts
+            .iter()
+            .map(|o| {
+                json!({
+                    "label": o.label,
+                    "action": { "type": "minecraft:run_command", "command": format!("/trigger {trigger_objective} set {}", o.n) }
+                })
+            })
+            .collect();
+        json!({
+            "type": "minecraft:multi_action",
+            "title": npc_name,
+            "body": [{ "type": "minecraft:plain_message", "contents": text }],
+            "columns": 1,
+            "can_close_with_escape": true,
+            "after_action": "close",
+            "actions": actions
+        })
+    }
 }
 
 fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
@@ -1706,6 +2414,139 @@ fn emit_packtest(plan: &Plan, out: &mut BuildOutput) {
     // on a dummy player (no real combat / advancement events needed) and asserts
     // the objective scoreboard. Emits nothing for a v0.2 campaign.
     emit_verb_packtests(plan, out);
+
+    // v0.4: prop-on-activation, despawn removes body+hitbox, move arrives at
+    // target. Emits nothing when the campaign uses none of them.
+    emit_v04_packtests(plan, out);
+}
+
+/// v0.4 PackTests (spec-0008): a prop appears only once its objective activates;
+/// `despawn-npc` removes the body + interaction hitbox; `move-npc` ends with the
+/// NPC at the target anchor. Deterministic (no combat/advancement events).
+fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    if !campaign_is_v03(plan) {
+        return;
+    }
+    let mut write = |name: &str, body: Vec<String>| {
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
+            lines(&body).into_bytes(),
+        );
+    };
+
+    // prop appears on activation: the first interact objective carrying a prop.
+    'prop: for q in &c.quests.content.quests {
+        let area = plan.quest_area(q.id.as_str()).unwrap_or("");
+        for o in &q.objectives {
+            if let Objective::Interact {
+                id,
+                anchor,
+                prop: Some(prop),
+                ..
+            } = o
+                && let Some(pos) = plan.point(area, anchor.as_str())
+            {
+                let mut b = packtest_header(&format!(
+                    "{}: prop `{}` appears only when its objective activates",
+                    c.world.content.title, prop.block
+                ));
+                b.push(format!("function {ns}:setup"));
+                b.push(format!(
+                    "setblock {} {} {} minecraft:air",
+                    pos[0], pos[1], pos[2]
+                ));
+                b.push(format!(
+                    "assert block {} {} {} minecraft:air",
+                    pos[0], pos[1], pos[2]
+                ));
+                b.push(format!(
+                    "function {ns}:activate_{}",
+                    safe_obj_fn(id.as_str())
+                ));
+                b.push(format!(
+                    "assert block {} {} {} {}",
+                    pos[0], pos[1], pos[2], prop.block
+                ));
+                write("v04_prop", b);
+                break 'prop;
+            }
+        }
+    }
+
+    // despawn-npc removes body + interaction hitbox (both carry the id tag).
+    if let Some(npc) = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| {
+            q.on_objective_complete
+                .values()
+                .flatten()
+                .chain(&q.on_complete)
+        })
+        .chain(c.quests.content.triggers.iter().flat_map(|t| &t.effects))
+        .find_map(|e| e.despawn_npc())
+    {
+        let safe = plan::safe_local(npc.as_str());
+        let mut b = packtest_header(&format!(
+            "{}: despawn-npc removes body + hitbox",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push("scoreboard players set #placed dw.sys 1".to_string());
+        b.push(format!("kill @e[tag=dw_npc_{safe}]"));
+        b.push(format!("function {ns}:setup_finish"));
+        // body + interaction hitbox both carry `dw_npc_<npc>` → two entities.
+        b.push(format!(
+            "execute store result score #before dw.sys if entity @e[tag=dw_npc_{safe}]"
+        ));
+        b.push("assert score #before dw.sys matches 2".to_string());
+        b.push(format!("kill @e[tag=dw_npc_{safe}]"));
+        b.push(format!(
+            "execute store result score #after dw.sys if entity @e[tag=dw_npc_{safe}]"
+        ));
+        b.push("assert score #after dw.sys matches 0".to_string());
+        write("v04_despawn", b);
+    }
+
+    // move-npc ends with the NPC at the target anchor.
+    if let Some((npc, to_anchor)) = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| {
+            q.on_objective_complete
+                .values()
+                .flatten()
+                .chain(&q.on_complete)
+        })
+        .chain(c.quests.content.triggers.iter().flat_map(|t| &t.effects))
+        .find_map(|e| e.move_npc())
+        && let Some(p) = movenpc_target(plan, npc.as_str(), to_anchor.as_str())
+    {
+        let safe = plan::safe_local(npc.as_str());
+        let mut b = packtest_header(&format!(
+            "{}: move-npc arrives at target anchor",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push("scoreboard players set #placed dw.sys 1".to_string());
+        b.push(format!("function {ns}:setup_finish"));
+        b.push(format!(
+            "function {ns}:{}",
+            movenpc_fn(npc.as_str(), to_anchor.as_str())
+        ));
+        b.push(format!(
+            "execute store result score #at dw.sys if entity @e[tag=dw_npc_{safe},x={},dx=0,y={},dy=0,z={},dz=0]",
+            p[0], p[1], p[2]
+        ));
+        b.push("assert score #at dw.sys matches 1..".to_string());
+        write("v04_move", b);
+    }
 }
 
 /// The header lines shared by every generated PackTest (`# @dummy` + timeout).
@@ -2100,8 +2941,9 @@ fn emit_critical_path(plan: &Plan) -> Value {
     let steps: Vec<Value> = plan
         .critical_path
         .iter()
-        .zip(&plan.critical_path_transport)
-        .map(|(s, transport)| {
+        .enumerate()
+        .map(|(i, s)| {
+            let transport = &plan.critical_path_transport[i];
             let mut step = match s {
                 Step::SelectClass { class_id, command } => json!({
                     "action": "select-class", "class": class_id, "command": command
@@ -2132,6 +2974,20 @@ fn emit_critical_path(plan: &Plan) -> Value {
             if let (Some(pos), Some(obj)) = (transport, step.as_object_mut()) {
                 obj.insert("transport".to_string(), json!(pos));
             }
+            // DSL v0.4 harness hints. `sneak` is emitted ONLY when true (absent =
+            // false, per the harness contract). `cutscene_seconds` is a positive
+            // integer on the step whose completion triggers the cutscene.
+            if plan.critical_path_sneak[i]
+                && let Some(obj) = step.as_object_mut()
+            {
+                obj.insert("sneak".to_string(), json!(true));
+            }
+            if let Some(secs) = plan.critical_path_cutscene[i]
+                && secs > 0
+                && let Some(obj) = step.as_object_mut()
+            {
+                obj.insert("cutscene_seconds".to_string(), json!(secs));
+            }
             step
         })
         .collect();
@@ -2150,6 +3006,7 @@ fn emit_manifest(
     out: &BuildOutput,
     language: Option<&str>,
     content_sha: &str,
+    resource_pack_sha1: Option<&str>,
 ) -> Value {
     let inputs: BTreeMap<String, String> = input_bytes
         .iter()
@@ -2184,6 +3041,18 @@ fn emit_manifest(
             .as_object_mut()
             .expect("manifest is a JSON object")
             .insert("language".to_string(), Value::String(lang.to_string()));
+    }
+    // Record the NPC-skin resource-pack SHA-1 (spec-0009: the pack bytes — and so
+    // this hash — are part of the byte-identity contract). Absent for a campaign
+    // with no skinned NPCs, keeping such builds byte-identical.
+    if let Some(sha1) = resource_pack_sha1 {
+        manifest
+            .as_object_mut()
+            .expect("manifest is a JSON object")
+            .insert(
+                "resource_pack_sha1".to_string(),
+                Value::String(sha1.to_string()),
+            );
     }
     manifest
 }

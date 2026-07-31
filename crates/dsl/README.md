@@ -83,6 +83,12 @@ has ≥1 invalid fixture under `fixtures/invalid/` that violates only that rule.
 | `DW0173` | 5 Waves (v0.3) | A wave mob `entity` is not a known vanilla entity id. Item-id checks for `collect.item`, `interact.requires_item` and `give-item.item` reuse `DW0143`; their anchors reuse `DW0142`. |
 | `DW0180` | i18n | An l10n sidecar does not correctly cover a declared language: the `l10n/<code>.json` file is **absent**, its envelope (`campaign_id`/`lang`/`dsl_version`) is inconsistent, or it is **missing** an inventory key (under-coverage). Also fired if `en` is declared (it is implicit and never listed). |
 | `DW0181` | i18n | An l10n sidecar carries an **orphan** key not in the string inventory derived from the stage docs (over-coverage). |
+| `DW0190` | 6 v0.4 skins | A mannequin NPC `skin.texture_id` is malformed (not a bare kebab token) or duplicated across NPCs. A missing `model` is a schema error (`DW0100`); a missing PNG is a build error (`DW0309`). |
+| `DW0191` | 6 v0.4 dialogue | A `talk-to` objective has no **ungated** completing dialogue option — every completing option is `requires_flags`-gated, so it can deadlock the moment it activates. Keep one ungated completing path. |
+| `DW0192` | 6 v0.4 waves | A wave-mob `effects[].effect` is not a known 1.21.11 status-effect id. |
+| `DW0193` | 6 v0.4 props | A `set-block` / `interact.prop` block id is not a known 1.21.11 block id (validated against the item registry + technical/fluid allowlist). |
+| `DW0194` | 6 v0.4 triggers | An environment-trigger id is malformed or duplicated, or an `approach` trigger has `range` 0. |
+| `DW0195` | 6 v0.4 lifecycle | A `talk-to` targets an NPC despawned by a prerequisite quest (gone before the objective activates). |
 
 Coverage codes (`DW0180`/`DW0181`) are **compiler-level** (they need the campaign
 dir's `l10n/` sidecars, so they run in `delvec validate`/`analyze`/`build`, not the

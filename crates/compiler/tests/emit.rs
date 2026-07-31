@@ -77,6 +77,7 @@ fn build_hello_world() -> BuildOutput {
         &prefabs,
         None,
         "unpinned",
+        &BTreeMap::new(),
     )
     .expect("emission succeeds")
 }
@@ -107,6 +108,7 @@ fn build_campaign_dir(dir: &std::path::Path) -> BuildOutput {
         &prefabs,
         None,
         "unpinned",
+        &BTreeMap::new(),
     )
     .expect("emission succeeds")
 }

@@ -158,6 +158,7 @@ diagnostics (and as one JSON object per line under `--json`, `stage: "build"`).
 | `DW0304` | The solver could not place a required piece without overlap (after the bounded, deterministic retry), or a branching layout's pool declares no branch piece (tee/cross) to fork its terminals. (The old "more than one terminal" limit is lifted — `grow_branching`.) |
 | `DW0305` | A campaign-referenced anchor is defined by **more than one placed piece** (ambiguous resolution) — reference a piece-unique anchor. Also the role-aware failure when a required anchor's only carrier is the `entry` piece and the entry does not already provide it. |
 | `DW0306` | Gate-aware reachability deadlock (M2 fix 7): after the solver produces a layout, sealed gates are modelled as cut edges in the piece-connectivity graph (a gate splits its piece into the two halves its barred row divides). An objective whose anchor is only reachable through a gate that **no earlier objective in the quest/objective DAG order has opened** is a deadlock — the delve is unwinnable even though every anchor resolves (canonical case: a key chest sealed behind the very gate the key opens). `tests/fixtures/keep-trial-gate-deadlock.json` (gate opened by the late `interact` door, with the wave/key sealed behind it) proves the check fires; the shipped `keep-trial` (gate opened when the keeper is greeted) proves a clean layout passes. |
+| `DW0309` | (v0.4 skins) A mannequin NPC declares a `skin.texture_id` but the campaign dir has no `skins/<texture_id>.png` to bake into the resource pack (spec-0009). |
 
 `tests/fixtures/keep-unsatisfiable-anchor.json` (→ `DW0302`) and
 `keep-range-too-small.json` (→ `DW0303`) both pass validate + analyze (the DSL
@@ -171,7 +172,12 @@ piece **and** area boundaries).
 `manifest.json` (SHA-256 of the six input stage files + every other output,
 sorted), `datapack/` (pack.mcmeta min/max_format `[94, 1]`; see note below), `packtest-datapack/`,
 `server/` (void/superflat fixed-seed config), `critical-path.json` (amended
-bot-interaction contract). Determinism (ADR-0006): all maps are `BTreeMap`/sorted;
+bot-interaction contract; DSL v0.4 adds `sneak: true` on a `stealth` step — the
+bot walks that leg sneaking, sprint disabled — and `cutscene_seconds: <n>` on the
+step whose completion triggers a `Cutscene`, which the harness sleeps through and
+then verifies control returned), plus, for a skinned campaign, `resourcepack.zip`
++ `SKINS.md` (the pack SHA-1 is recorded in `manifest.json` as
+`resource_pack_sha1`). Determinism (ADR-0006): all maps are `BTreeMap`/sorted;
 JSON is `serde_json` pretty (sorted keys) + trailing newline; no wall-clock,
 hostname, locale or absolute path enters any byte. The double-build byte-identity
 test (`tests/cli.rs`) is the ADR-0006 gate.

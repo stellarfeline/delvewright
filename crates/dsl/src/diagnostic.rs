@@ -125,4 +125,24 @@ pub mod codes {
     /// (i18n) An l10n sidecar carries an **orphan** key that is not in the
     /// authoritative string inventory derived from the stage docs (over-coverage).
     pub const L10N_ORPHAN: &str = "DW0181";
+    /// (v0.4) A mannequin NPC `skin.texture_id` is malformed (not a bare kebab
+    /// token) or duplicated across NPCs (spec-0009). A missing `model` is a
+    /// schema error (`DW0100`); a missing PNG is a build error (`DW0309`).
+    pub const SKIN_INVALID: &str = "DW0190";
+    /// (v0.4) A `talk-to` objective has no **ungated** reachable completing
+    /// dialogue option — every completing option is `requires_flags`-gated, so
+    /// the objective can deadlock the moment it activates (spec-0008 §1). Keep at
+    /// least one ungated completing path.
+    pub const DIALOGUE_FLAG_DEADLOCK: &str = "DW0191";
+    /// (v0.4) A wave mob `effects[].effect` is not a known 1.21.11 effect id.
+    pub const EFFECT_UNKNOWN: &str = "DW0192";
+    /// (v0.4) A `set-block` / `interact.prop` block id is not a known 1.21.11
+    /// block id.
+    pub const BLOCK_UNKNOWN: &str = "DW0193";
+    /// (v0.4) An environment trigger id is malformed (`DW0110`-style) or
+    /// duplicated within the stage-5 `triggers` namespace.
+    pub const TRIGGER_INVALID: &str = "DW0194";
+    /// (v0.4) A dialogue `talk-to` or `interact` objective targets an NPC after a
+    /// `despawn-npc` removes it on a reachable path (spec-0008 §5).
+    pub const NPC_DESPAWNED_REF: &str = "DW0195";
 }

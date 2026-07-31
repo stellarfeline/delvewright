@@ -298,8 +298,9 @@ fn reachable_completions(c: &Campaign) -> BTreeSet<String> {
             };
             for opt in &node.options {
                 for eff in &opt.effects {
-                    let delvewright_dsl::DialogueEffect::CompleteObjective { objective } = eff;
-                    completes.insert(objective.as_str().to_string());
+                    if let delvewright_dsl::DialogueEffect::CompleteObjective { objective } = eff {
+                        completes.insert(objective.as_str().to_string());
+                    }
                 }
                 if let Some(next) = &opt.next
                     && seen.insert(next.as_str())
