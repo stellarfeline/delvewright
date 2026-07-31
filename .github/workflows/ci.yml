@@ -66,6 +66,25 @@ jobs:
       - run: npm run typecheck
       - run: npm run test
 
+  skin-tool:
+    name: skin toolchain (pytest)
+    # spec-0009: deterministic original 64x64 skin composition + headless preview
+    # renderer. Proves same cast entry -> byte-identical PNG (ADR-0006) and that a
+    # cast entry without `model` is rejected.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/skin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install (pinned skinpy-extended) + pytest
+        run: pip install -r requirements.txt pytest
+      - name: pytest (composition determinism + model-required contract)
+        run: PYTHONPATH=. python -m pytest -q
+
   mecha-crosscheck:
     name: mecha cross-check (PR only)
     # ADR-0011: mecha independently re-validates every emitted .mcfunction

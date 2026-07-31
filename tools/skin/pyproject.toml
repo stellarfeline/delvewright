@@ -1,0 +1,21 @@
+[project]
+name = "delve-skin"
+version = "0.1.0"
+description = "Delvewright NPC skin toolchain (spec-0009): deterministic original 64x64 skin composition + headless multi-angle previews."
+requires-python = ">=3.10"
+dependencies = [
+    # Part/face-addressable 64x64 skin composition + deterministic isometric
+    # player-model preview renderer. MIT (ADR-0013 allowlist). Pinned exactly for
+    # reproducibility (ADR-0006). Pulls numpy + Pillow transitively.
+    "skinpy-extended==1.0.1",
+]
+
+[project.scripts]
+delve-skin = "delve_skin.cli:main"
+
+[tool.setuptools]
+packages = ["delve_skin"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
