@@ -120,6 +120,41 @@ same seed → byte-identical `.nbt`). Techniques re-implemented from description
 
 Before/after renders: `delve-demos/cave-tileset-renders/round2-algorithms/`.
 
+### Round-2 walkability regression fix (task #34)
+
+The round-2 organic pass shipped two latent **seam-walkability** defects that a
+full assembly (`nobodys-cave`, seed 1184) surfaced — the critical-path bot dead-ended
+with "No path to the goal!" and wave sheep wandered off the map to y=-163. Both are
+now fixed in the generator; the pieces stay a **byte-compatible drop-in** (ids, sizes,
+socket placements, anchors, and all metadata JSON are byte-identical — only three
+`.nbt` bodies change: `cave-mouth`, `cave-cavern`, `cave-shore`), and the round-2 art
+(organic silhouettes, graded shoreline) is preserved.
+
+- **Decoration in the walk envelope → wedged doorway seams.** The detailing pass
+  scattered `glow_lichen` across interior wall faces starting at `y=2` — head height
+  for a 2-tall entity standing on the `y=0` floor. In a *narrow* piece (e.g. the
+  3-wide `cave-mouth` throat) a lichen patch spanned the full width of the doorway
+  throat, and a block-occupancy pathfinder (the compiler's `nav` A* **and** the
+  mineflayer bot) reads a plant curtain across a corridor as a wall. Fix: wall
+  greebles now start at `y=3`, so nothing ever lands in the walk envelope (feet `y=1`,
+  head `y=2`); the lichen hugs the upper wall / ceiling line, the walk tube through
+  every socket stays clear rock-and-air.
+- **Open-air cove leaked entities to the void.** `cave-shore` is open-air; its side
+  cliffs tapered *down* toward the sea (`sy-1 - z/2`) and its front was fully open.
+  Packed against enclosed cave pieces, the tapered sides were a climbable stair
+  (≤1 block/step) up onto the piece **roofscape** — whose eroded crowns leave
+  standable pockets open to the void at the outer edges — and the open front let an
+  entity walk/swim straight off the world's edge. Fix: all four enclosing cliffs now
+  rise the full piece height, so the cove is a bounded, sky-lit lagoon (箱庭): open
+  upward only, walled against the void on every horizontal edge. The graded shoreline,
+  seabed depth profile, water, and scatter inside the basin are unchanged.
+
+Both are now caught at **compile time** by `DW0311` (critical-path walkability over
+the assembled geometry, `crates/compiler/src/nav.rs`), so this bug class fails the
+build instead of a bot run: with the pre-fix `.nbt`, `delvec build nobodys-cave`
+fails `DW0311` on the entry→cavern leg; with the fixed `.nbt` it routes clean and no
+walkable cell borders the void.
+
 ## Honest self-assessment vs the brief
 
 The pieces **read as natural rock and cohere as one place** (the main risk cleared
