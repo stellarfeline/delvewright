@@ -96,3 +96,46 @@ pub fn disallowed_palette_piece() -> Structure {
     s.set_cell([2, 1, 2], PaletteEntry::simple("minecraft:tnt"), None);
     s
 }
+
+/// The clean room plus two **foreign worldgen jigsaw markers** — one whose
+/// `final_state` is a plain block, one carrying block-state properties, and one
+/// with no `final_state` at all (vanilla fallback = air). Mirrors what a Modrinth
+/// worldgen structure ships with.
+pub fn foreign_jigsaw_piece() -> Structure {
+    let mut s = clean_room();
+    let jig = |final_state: Option<&str>| {
+        let mut be: BTreeMap<String, Nbt> = BTreeMap::new();
+        be.insert(
+            "id".to_string(),
+            Nbt::String("minecraft:jigsaw".to_string()),
+        );
+        be.insert(
+            "name".to_string(),
+            Nbt::String("ships:connector".to_string()),
+        );
+        be.insert(
+            "pool".to_string(),
+            Nbt::String("ships:secondary".to_string()),
+        );
+        if let Some(fs) = final_state {
+            be.insert("final_state".to_string(), Nbt::String(fs.to_string()));
+        }
+        Nbt::Compound(be)
+    };
+    s.set_cell(
+        [2, 1, 2],
+        PaletteEntry::simple("minecraft:jigsaw"),
+        Some(jig(Some("minecraft:stone_bricks"))),
+    );
+    s.set_cell(
+        [4, 1, 4],
+        PaletteEntry::with_props("minecraft:jigsaw", &[("orientation", "east_up")]),
+        Some(jig(Some("minecraft:oak_stairs[facing=east,half=bottom]"))),
+    );
+    s.set_cell(
+        [2, 1, 4],
+        PaletteEntry::simple("minecraft:jigsaw"),
+        Some(jig(None)),
+    );
+    s
+}

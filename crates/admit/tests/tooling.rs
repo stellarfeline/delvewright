@@ -2,6 +2,7 @@
 //! static light probe.
 
 use delvewright_admit::fixtures;
+use delvewright_admit::jigsaw;
 use delvewright_admit::light;
 use delvewright_admit::meta::{License, PrefabMeta};
 use delvewright_admit::socket::{self, SocketDecl};
@@ -66,6 +67,51 @@ fn socket_carving_places_jigsaw_and_carves_opening() {
         reparsed.entry_at([3, 1, 0]).unwrap().name,
         "minecraft:jigsaw"
     );
+}
+
+#[test]
+fn resolve_jigsaw_replaces_with_final_state_and_prunes() {
+    let mut s = fixtures::foreign_jigsaw_piece();
+    assert!(s.block_names().contains("minecraft:jigsaw"));
+
+    let resolved = jigsaw::resolve(&mut s);
+    assert_eq!(resolved.len(), 3, "three jigsaw markers resolved");
+
+    // plain final_state -> that block.
+    assert_eq!(
+        s.entry_at([2, 1, 2]).unwrap().name,
+        "minecraft:stone_bricks"
+    );
+    // final_state with block-state properties is parsed.
+    let stairs = s.entry_at([4, 1, 4]).unwrap();
+    assert_eq!(stairs.name, "minecraft:oak_stairs");
+    assert_eq!(
+        stairs.properties.get("facing").map(String::as_str),
+        Some("east")
+    );
+    assert_eq!(
+        stairs.properties.get("half").map(String::as_str),
+        Some("bottom")
+    );
+    // no final_state -> air fallback.
+    assert_eq!(s.entry_at([2, 1, 4]).unwrap().name, "minecraft:air");
+
+    // the jigsaw block entities are gone, and the palette no longer lists jigsaw.
+    assert!(s.block_at([2, 1, 2]).unwrap().nbt.is_none());
+    assert!(
+        !s.block_names().contains("minecraft:jigsaw"),
+        "pruned the orphaned jigsaw palette entry"
+    );
+
+    // the resolved piece round-trips and is byte-stable.
+    let bytes = s.write();
+    let back = Structure::read(&bytes).unwrap();
+    assert_eq!(back.block_names(), s.block_names());
+    assert_eq!(bytes, back.write());
+
+    // idempotent: a second resolve is a no-op.
+    let again = jigsaw::resolve(&mut s);
+    assert!(again.is_empty());
 }
 
 #[test]

@@ -14,6 +14,7 @@ Deterministic (ADR-0006): no wall-clock, no unseeded RNG, no hash-order iteratio
 delve-admit [--json] <command>
 
 audit    <piece.nbt> [--allowlist <file>] [-o <report.json>]     # CI gate
+resolve-jigsaw <piece.nbt>                                       # neutralize foreign worldgen jigsaws
 socket   <piece.nbt> --pos x,y,z --facing <dir> [--opening w,h]  # carve a jigsaw socket
 anchor   <piece.nbt> --name <id> (--pos x,y,z | --region a:b) [--facing d] [--block b]
 lighting <piece.nbt> [--write] [--dark-threshold N]              # static light probe
@@ -45,10 +46,25 @@ but the admission audit runs on **library prefabs**, whose jigsaw blocks are the
 legitimate sockets the compiler's solver mates — and a jigsaw block entity cannot
 carry a `Command`. Verified: every shipped `campaigns/prefabs/*.nbt` passes.
 
-The allowlist is a broad default vanilla building set (see `src/allowlist.rs`),
-overridable with `--allowlist <file>` (`{ "allow": [...], "allow_suffixes": [...] }`).
+The allowlist is a broad default vanilla **building + decoration** set (see
+`src/allowlist.rs`) — stone/wood/glass/copper families, plus inert flora (grasses,
+flowers, mushrooms, vines, coral, saplings), non-functional furniture/job-site
+blocks, decorative mineral blocks + ores, and archaeology. It deliberately still
+flags *surprising* blocks (redstone contraptions, tnt, note blocks) for review, and
+is overridable with `--allowlist <file>` (`{ "allow": [...], "allow_suffixes": [...] }`).
+The default was broadened for the first real Modrinth ingestion run (FLAGGED for
+owner ratification in `src/allowlist.rs`).
 
-## 2. Admission tooling — `socket` / `anchor` / `lighting`
+## 2. Admission tooling — `resolve-jigsaw` / `socket` / `anchor` / `lighting`
+
+**`resolve-jigsaw`** neutralizes the worldgen jigsaw markers a *community* structure
+ships with (Modrinth building content is overwhelmingly worldgen datapacks). It
+replaces each `minecraft:jigsaw` block with its block-entity `final_state` — exactly
+the block the vanilla generator would bake in — then prunes the orphaned palette
+entry. This is the **intended NBT primitive**, not a heuristic, and must run at
+import **before** `socket` (our own sockets are jigsaw blocks with `final_state`=air;
+resolving after carving would dissolve them).
+
 
 - **`socket`** carves a `w×h` opening to air, drops a `minecraft:jigsaw` marker with
   the structure-form block entity, and appends the `connectors[]` entry — byte-for-

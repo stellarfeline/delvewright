@@ -7,6 +7,7 @@
 //! - [`allowlist`] — the configurable block allowlist.
 //! - [`structure`] — an editable structure `.nbt` (read / inspect / mutate / write).
 //! - [`socket`] — jigsaw socket carving.
+//! - [`jigsaw`] — foreign worldgen jigsaw resolution (import-time neutralization).
 //! - [`light`] — the static block-light probe.
 //! - [`meta`] — prefab metadata (`<id>.json`), the generator-compatible shape.
 //! - [`catalog`] — `catalog/<id>.json` cards + license allowlist.
@@ -21,6 +22,7 @@ pub mod catalog;
 pub mod diag;
 pub mod fixtures;
 pub mod gallery;
+pub mod jigsaw;
 pub mod light;
 pub mod meta;
 pub mod socket;

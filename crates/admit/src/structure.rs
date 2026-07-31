@@ -160,6 +160,27 @@ impl Structure {
         }
     }
 
+    /// Drop palette entries no block references, remapping every block's `state`.
+    /// Entries are kept in **first-use order** (deterministic; the block list is
+    /// itself deterministic). Used after an edit that can orphan an entry (e.g.
+    /// resolving away every `minecraft:jigsaw` cell) so the audit palette reflects
+    /// only blocks that are actually placed.
+    pub fn prune_palette(&mut self) {
+        let mut remap: Vec<Option<i32>> = vec![None; self.palette.len()];
+        let mut kept: Vec<PaletteEntry> = Vec::new();
+        for b in &self.blocks {
+            let old = b.state as usize;
+            if remap[old].is_none() {
+                remap[old] = Some(kept.len() as i32);
+                kept.push(self.palette[old].clone());
+            }
+        }
+        for b in &mut self.blocks {
+            b.state = remap[b.state as usize].expect("every referenced state is kept");
+        }
+        self.palette = kept;
+    }
+
     /// Serialize back to a gzip-framed structure `.nbt`, deterministically
     /// (mtime 0, fixed compression) — matching the generator/schem emitters.
     pub fn write(&self) -> Vec<u8> {
