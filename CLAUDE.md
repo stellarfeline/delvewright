@@ -80,6 +80,12 @@ validation/          # docker compose: headless server + bot, same image as CI &
   implementation of a feature is a lower-layer hack (e.g. raycast polling where
   vanilla has no primitive), the feature is excluded until vanilla provides one.
   Applies at every layer boundary: NBT→compiler, compiler→DSL, DSL→skill.
+- **Debug doctrine** (owner, 2026-07-31): a red check is information, never an
+  obstacle. Never weaken a check, test, or threshold — and never reroll a seed —
+  to get green; fix the root cause or escalate. Escalating a toolchain bug is
+  success, not failure. Preserve every debugging lesson in the strongest
+  available form, strongest first: compiler diagnostic > tooling default
+  (automate the pitfall out of existence) > generator invariant > docs.
 - **CI is the sole arbiter** (ADR-0008). Nothing merges red. The owner reviews PR
   descriptions and architecture-level diffs, not lines. Write PR descriptions
   accordingly: what changed at the design level, what CI now proves.
@@ -91,6 +97,9 @@ validation/          # docker compose: headless server + bot, same image as CI &
   full diffs — never block on that; if a decision wasn't surfaced in the summary,
   it isn't approved. *Mechanical PRs* — implementation whose correctness CI fully
   arbitrates — merge on green. When in doubt, surface it in chat first.
+  Exception (owner, 2026-07-31): a PR that weakens, disables, or skips any
+  check, test, or threshold is **never mechanical** — always owner-review,
+  regardless of CI state.
 - **Write short documents.** Specs/ADRs are owner-consumed via chat summaries;
   their long form exists for agents. Keep them as terse as correctness allows.
 - **Tiered testing**: unit + static analysis on every push; PackTest integration on PR;
