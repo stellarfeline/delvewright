@@ -111,7 +111,9 @@ jobs:
         run: python3 .github/scripts/mecha_crosscheck.py out/datapack
 
   docs:
-    name: docs (local link check + DW-code reference)
+    # Name must stay exactly "docs (local link check)" — it is a required
+    # status context in branch protection; renaming it deadlocks every PR.
+    name: docs (local link check)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
