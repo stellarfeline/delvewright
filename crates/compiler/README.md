@@ -185,11 +185,12 @@ test (`tests/cli.rs`) is the ADR-0006 gate.
     string (`CustomName:"Hedric of the Watch"`) is emitted — the old
     `'{"text":…}'` JSON-string form rendered literally (name tags + death
     messages). Applies to NPCs (v0.3) and all wave mobs.
-  - *Interact markers*: an `interact` anchor also gets a visible, glowing,
+  - *Interact & reach markers*: an `interact` anchor gets a visible, glowing,
     non-colliding `minecraft:item_display` (a lantern, `Glowing:1b`,
     `billboard:"center"`) named from the objective `title` (fallback: objective id)
     so a human can find it — it obstructs neither movement nor the interaction
-    hitbox.
+    hitbox. A `reach-anchor` gets the same marker with a distinct `end_rod` (so the
+    finale altar can't be triggered "by wandering"), tagged `dw_r_<obj>`.
   - *Objective feedback*: a titled objective announces its `title` + `hint` (chat +
     `block.note_block.pling`) once when it activates (guarded by a per-objective
     `dw.ann_<obj>` flag), confirms on completion (`entity.experience_orb.pickup`),
@@ -199,10 +200,16 @@ test (`tests/cli.rs`) is the ADR-0006 gate.
     with ±1 generosity on every axis (`x=ax-1,dx=2,…`, a 3×3×3 box) — instead of a
     tight `distance=..R` sphere, so a human standing on the altar completes it. See
     spec-0002 emission amendment.
-  - *Wave equipment*: mobs whose natural spawns are armed get default `HandItems`
-    (drop chance 0) so summoned combat isn't trivial. Static table:
-    `wither_skeleton` → `stone_sword`; `skeleton`/`stray` → `bow`; everything else
-    (zombie, drowned — a wild trident is not a default) unarmed.
+  - *Wave equipment*: mobs whose natural spawns are armed get a default weapon via
+    the component-era `equipment` NBT with a zero `drop_chances` (drop chance 0) so
+    summoned combat isn't trivial. **Not legacy `HandItems`** — 1.21.11 silently
+    ignores `HandItems`/`HandDropChances` on `/summon`, so it must be
+    `equipment:{mainhand:{id:…,count:1}},drop_chances:{mainhand:0.0f}` (proven live
+    via rcon). Static table: `wither_skeleton` → `stone_sword`; `skeleton`/`stray` →
+    `bow`; everything else (zombie, drowned — a wild trident is not a default)
+    unarmed. The generated `verb_kill` PackTest asserts the armed mob actually
+    holds its weapon (`execute if items entity … weapon.mainhand …`) so a silent
+    regression to the ignored form can't hide.
 - **v0.3 gameplay verbs** (spec-0002 v0.3 addendum): `spawn-wave` summons a wave's
   mobs (AI enabled) tagged `dw_wave_<id>` and sets a countdown `#<id> dw.wave`; a
   `player_killed_entity` advancement decrements it, and the `kill` objective's

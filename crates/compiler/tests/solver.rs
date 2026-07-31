@@ -355,6 +355,14 @@ fn keep_trial_m2_presentation_fixes() {
             && setup.contains("CustomName:\"Unbar the Inner Door\""),
         "interact anchor has a glowing named item_display marker"
     );
+    // Fix 3 (round 2): the reach anchor gets the same glowing marker treatment —
+    // a distinct end_rod (vs. the interact lantern), named from the reach title —
+    // so the finale altar can't be triggered "by wandering".
+    assert!(
+        setup.contains("item:{id:\"minecraft:end_rod\",count:1}")
+            && setup.contains("CustomName:\"Reach the Shrine\""),
+        "reach anchor has a glowing named end_rod marker"
+    );
 
     // Fix 4: activation announce (title + hint + sound), completion feedback, and a
     // finale fanfare.

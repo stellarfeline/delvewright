@@ -341,22 +341,37 @@ fn snbt_string(s: &str) -> String {
     format!("\"{esc}\"")
 }
 
-/// Default hand equipment for a summoned mob whose natural spawns are armed
-/// (M2 fix 5). `/summon` gives no equipment, so a wither-skeleton boss spawned
-/// unarmed was trivial. Returns an NBT fragment (no leading comma) setting
-/// `HandItems` with drop chance 0, or `None` for mobs that spawn unarmed. Small
-/// static table (documented in the compiler README); mobs not listed (zombie,
-/// drowned — a wild trident is not a default) get nothing.
-fn default_equipment(entity: &str) -> Option<&'static str> {
+/// The default main-hand weapon for a summoned mob whose natural spawns are
+/// armed, or `None` for mobs that spawn unarmed. Small static table (documented
+/// in the compiler README); mobs not listed (zombie, drowned — a wild trident is
+/// not a default) get nothing.
+fn default_mainhand(entity: &str) -> Option<&'static str> {
     match entity.strip_prefix("minecraft:").unwrap_or(entity) {
-        "wither_skeleton" => {
-            Some("HandItems:[{id:\"minecraft:stone_sword\",count:1},{}],HandDropChances:[0f,0f]")
-        }
-        "skeleton" | "stray" => {
-            Some("HandItems:[{id:\"minecraft:bow\",count:1},{}],HandDropChances:[0f,0f]")
-        }
+        "wither_skeleton" => Some("minecraft:stone_sword"),
+        "skeleton" | "stray" => Some("minecraft:bow"),
         _ => None,
     }
+}
+
+/// Default hand equipment for a summoned mob whose natural spawns are armed
+/// (M2 fix 5). `/summon` gives no equipment, so a wither-skeleton boss spawned
+/// unarmed was trivial. Returns an SNBT fragment (no leading comma) setting the
+/// `equipment` component with a zero `drop_chances`, or `None` for unarmed mobs.
+///
+/// **Component-era form, not legacy `HandItems` (M2 round-2 fix 1).** Minecraft
+/// 1.21.11 silently ignores `HandItems`/`HandDropChances` on `/summon` NBT — a
+/// `data get entity … HandItems` after summon returns nothing and the mob is
+/// bare-handed. The accepted form is the entity `equipment`/`drop_chances`
+/// components: proven live via rcon (`equipment:{mainhand:{id:"minecraft:
+/// stone_sword",count:1}},drop_chances:{mainhand:0.0f}` → `data get entity …
+/// equipment.mainhand` returns the item; the legacy form yields "Found no
+/// elements matching equipment"). The legacy form failed *silently* for a whole
+/// milestone because nothing looked — the generated `verb_kill` PackTest now
+/// asserts the armed mob actually holds its weapon so a regression can't hide.
+fn default_equipment(entity: &str) -> Option<String> {
+    default_mainhand(entity).map(|item| {
+        format!("equipment:{{mainhand:{{id:\"{item}\",count:1}}}},drop_chances:{{mainhand:0.0f}}")
+    })
 }
 
 fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
@@ -621,6 +636,28 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
                             pos[0], pos[1], pos[2], interact_entity_tag(id.as_str()), marker_name
                         ));
                     }
+                }
+                // Reach anchors had no visual presence, so the owner triggered the
+                // finale altar "by wandering" (M2 round-2 fix 3). Give them the same
+                // glowing, non-colliding `item_display` marker the interact target
+                // got — a distinct, thematically neutral `end_rod` (vs. the interact
+                // lantern) so a beacon-like light marks the destination. v0.3-gated
+                // like the interact marker: reach anchors exist in v0.2 (keep-crawl),
+                // so this must not touch pre-v0.3 byte-identity.
+                Objective::ReachAnchor { id, anchor, .. } if v03 => {
+                    let pos = match plan
+                        .anchors
+                        .get(&(area.to_string(), anchor.as_str().to_string()))
+                    {
+                        Some(ResolvedAnchor::Point { pos, .. }) => *pos,
+                        Some(ResolvedAnchor::Gate { from, .. }) => *from,
+                        None => continue,
+                    };
+                    let marker_name = snbt_string(o.title().unwrap_or(id.as_str()));
+                    setup.push(format!(
+                        "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],CustomName:{},CustomNameVisible:1b,billboard:\"center\",item:{{id:\"minecraft:end_rod\",count:1}}}}",
+                        pos[0], pos[1], pos[2], reach_marker_tag(id.as_str()), marker_name
+                    ));
                 }
                 _ => {}
             }
@@ -1196,6 +1233,11 @@ fn interact_entity_tag(obj_id: &str) -> String {
     format!("dw_i_{}", plan::safe_local(obj_id))
 }
 
+/// The entity tag on a `reach-anchor` objective's visual marker display.
+fn reach_marker_tag(obj_id: &str) -> String {
+    format!("dw_r_{}", plan::safe_local(obj_id))
+}
+
 /// The flags any `set-flag` effect produces (sorted, deduped).
 fn declared_flags(c: &delvewright_dsl::Campaign) -> std::collections::BTreeSet<String> {
     let mut out = std::collections::BTreeSet::new();
@@ -1619,6 +1661,10 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
 
     // Collect (quest, objective) pairs by verb, in declared order.
     let mut first_kill = None;
+    // Prefer a kill whose wave contains an armed mob so the armed-equipment assert
+    // (M2 round-2 fix 1) is actually exercised — the equipment bug hid for a whole
+    // milestone precisely because nothing looked. Falls back to the first kill.
+    let mut first_armed_kill = None;
     let mut first_collect = None;
     let mut first_interact = None;
     let mut first_flag_gated = None;
@@ -1626,7 +1672,18 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         for o in &q.objectives {
             let qid = q.id.as_str();
             match o {
-                Objective::Kill { .. } if first_kill.is_none() => first_kill = Some((qid, o)),
+                Objective::Kill { wave, .. } => {
+                    if first_kill.is_none() {
+                        first_kill = Some((qid, o));
+                    }
+                    if first_armed_kill.is_none()
+                        && plan::wave_of(c, wave.as_str()).is_some_and(|w| {
+                            w.mobs.iter().any(|m| default_mainhand(&m.entity).is_some())
+                        })
+                    {
+                        first_armed_kill = Some((qid, o));
+                    }
+                }
                 Objective::Collect { .. } if first_collect.is_none() => {
                     first_collect = Some((qid, o))
                 }
@@ -1643,6 +1700,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             }
         }
     }
+    let first_kill = first_armed_kill.or(first_kill);
 
     // kill: spawn the wave, drain the countdown via the kill reward, tick,
     // assert the objective completed.
@@ -1664,6 +1722,27 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             plan::wave_counter(wave.as_str()),
             plan::WAVE_OBJECTIVE
         ));
+        // The armed mob really holds its weapon (M2 round-2 fix 1). `HandItems`
+        // failed silently for a whole milestone because no test looked; this
+        // exercises the vanilla `execute if items entity … weapon.mainhand …`
+        // condition (1.21.11 `minecraft:item_slots` + `minecraft:item_predicate`)
+        // and bridges the result to `assert score` — using only PackTest commands
+        // known-good on the validation server, not a newer `assert items`.
+        if let Some(mob) = w
+            .mobs
+            .iter()
+            .find(|m| default_mainhand(&m.entity).is_some())
+        {
+            let item = default_mainhand(&mob.entity).expect("filtered to armed mobs");
+            b.push("scoreboard players set #armed dw.sys 0".to_string());
+            b.push(format!(
+                "execute if items entity @e[tag={},type={},limit=1] weapon.mainhand {item} \
+                 run scoreboard players set #armed dw.sys 1",
+                plan::wave_tag(wave.as_str()),
+                mob.entity,
+            ));
+            b.push("assert score #armed dw.sys matches 1".to_string());
+        }
         b.push(format!("kill @e[tag={}]", plan::wave_tag(wave.as_str())));
         for _ in 0..total {
             b.push(format!("execute as @a run function {ns}:k_reward_{ws}"));
@@ -1969,10 +2048,14 @@ mod tests {
 
     #[test]
     fn default_equipment_arms_only_naturally_armed_mobs() {
-        // wither_skeleton → stone sword, drop chance 0.
+        // wither_skeleton → stone sword via the component-era `equipment` NBT
+        // with a zero `drop_chances` (1.21.11 ignores legacy `HandItems`).
         let ws = default_equipment("minecraft:wither_skeleton").unwrap();
-        assert!(ws.contains("minecraft:stone_sword"));
-        assert!(ws.contains("HandDropChances:[0f,0f]"));
+        assert!(ws.contains("equipment:{mainhand:{id:\"minecraft:stone_sword\",count:1}}"));
+        assert!(ws.contains("drop_chances:{mainhand:0.0f}"));
+        // No trace of the legacy, silently-ignored form.
+        assert!(!ws.contains("HandItems"));
+        assert!(!ws.contains("HandDropChances"));
         // skeleton/stray → bow.
         assert!(
             default_equipment("skeleton")
