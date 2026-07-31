@@ -36,6 +36,8 @@ emit("FABRIC_API_SHA1",   d["fabric"]["api_sha1"])
 emit("PACKTEST_VERSION",  d["packtest"]["version"])
 emit("PACKTEST_SHA1",     d["packtest"]["sha1"])
 emit("MINEFLAYER",        d["harness"]["mineflayer"])
+emit("CONTENT_REPO",      d["content"]["repo"])   # spec-0007 pinned content repo
+emit("CONTENT_SHA",       d["content"]["sha"])
 PY
 )"
 
@@ -84,6 +86,24 @@ want_in "toolserver digest -> compose" "$TOOL_DIGEST" "$COMPOSE"
 
 echo "== Harness =="
 want_in "mineflayer -> harness/package.json" "$MINEFLAYER" "$HARNESS_PKG"
+
+echo "== Content repo pin (spec-0007 [content]) =="
+# The prefab library + campaign sources live in the pinned content repo; CI
+# (.github/actions/checkout-content) checks it out at this SHA and the compiler
+# stamps it into manifest.json. Guard the shape so a malformed pin fails tier 1
+# rather than at checkout/build time.
+if printf '%s' "$CONTENT_REPO" | grep -qE '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'; then
+  pass "content.repo is a valid owner/name ($CONTENT_REPO)"
+else
+  fail "content.repo '$CONTENT_REPO' is not a valid GitHub owner/name slug"
+fi
+# A pinned commit must be a full 40-hex SHA (determinism: ADR-0006). "unpinned" or
+# a short/branch ref is a mistake — CI would build against a moving target.
+if printf '%s' "$CONTENT_SHA" | grep -qE '^[0-9a-f]{40}$'; then
+  pass "content.sha is a full 40-hex commit ($CONTENT_SHA)"
+else
+  fail "content.sha '$CONTENT_SHA' is not a full 40-hex commit SHA"
+fi
 
 # Server-jar checksums live in versions.toml as provenance only (the CI jar cache
 # was removed 2026-07-30 — see ci.yml tier-2 note; the itzg entrypoint downloads and

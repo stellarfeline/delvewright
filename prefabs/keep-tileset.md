@@ -30,7 +30,7 @@ whole library:
 - **`final_state = air`** turns the jigsaw block into the 1-block threshold gap
   after generation, leaving a clean 3×3 passage where two doorways meet.
 - **`pool = keep:pool`** is a *placeholder*. The compiler owns the real pool
-  documents — member weights + roles — in **`prefabs/pools.json`**
+  documents — member weights + roles — in **`campaigns/prefabs/pools.json`**
   (`pool/stone-keep`), and **is the jigsaw**: it solves the layout from the
   campaign seed and emits `/place template` per piece, reading these socket names
   only as a connectivity vocabulary (ADR-0004 amendment; `crate::solver`,
@@ -104,14 +104,15 @@ levels (`keep-vertical`).
 
 ## Provenance / license
 
-Original Delvewright assets, **GPL-3.0-or-later** (pipeline-code license per
-`prefabs/LICENSE-ASSETS.md`). No third-party material ingested. Recorded in each
-metadata JSON.
+Original Delvewright assets, per-item license recorded in each metadata JSON
+(CC0 / CC BY / original; ADR-0007). Full statement in the content repo's
+`campaigns/prefabs/LICENSE-ASSETS.md`. No third-party material ingested.
 
 ## Regenerating (deterministic, ADR-0006)
 
 ```sh
-cargo run --manifest-path prefabs/generator/Cargo.toml --release -- prefabs/
+# writes into the content repo (campaigns/ is the symlink); commit the outputs there.
+cargo run --manifest-path prefabs/generator/Cargo.toml --release -- campaigns/prefabs/
 ```
 
 Byte-identical on every run (double-run hash-checked). The generator is a

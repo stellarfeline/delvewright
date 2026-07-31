@@ -34,11 +34,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          # The compiler tests read the git-lfs prefab (prefabs/hello-room.nbt);
-          # the ADR-0006 double-build byte-identity gate runs inside
-          # `cargo test --workspace` (tests/cli.rs::build_is_byte_identical...).
-          lfs: true
+      # The compiler tests read the prefab library (`campaigns/prefabs/*.nbt`,
+      # git-lfs); it lives in the content repo now (spec-0007 Step 0), checked out
+      # at the pinned SHA into ./campaigns. The ADR-0006 double-build byte-identity
+      # gate runs inside `cargo test --workspace` (tests/cli.rs).
+      - uses: ./.github/actions/checkout-content
       # rust-toolchain.toml pins the channel + clippy/rustfmt components,
       # which rustup on the runner installs automatically.
       - uses: Swatinem/rust-cache@v2
@@ -75,8 +75,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          lfs: true # the build copies the prefab .nbt into the datapack
+      # the build copies the prefab .nbt into the datapack — from the content repo
+      - uses: ./.github/actions/checkout-content
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v5
         with:
@@ -87,7 +87,7 @@ jobs:
         run: |
           cargo run -p delvewright-compiler --bin delvec -- \
             build crates/dsl/fixtures/valid/hello-world \
-            -o out --prefabs prefabs
+            -o out --prefabs campaigns/prefabs
       - name: mecha validates every emitted mcfunction
         run: python3 .github/scripts/mecha_crosscheck.py out/datapack
 
@@ -118,14 +118,14 @@ jobs:
       EULA: "TRUE"
     steps:
       - uses: actions/checkout@v4
-        with:
-          lfs: true # delvec copies the prefab .nbt into the datapack
+      # delvec copies the prefab .nbt into the datapack — from the content repo
+      - uses: ./.github/actions/checkout-content
       - uses: Swatinem/rust-cache@v2
       - name: build the hello-world delve output
         run: |
           cargo run -p delvewright-compiler --bin delvec -- \
             build crates/dsl/fixtures/valid/hello-world \
-            -o validation/delve-output --prefabs prefabs
+            -o validation/delve-output --prefabs campaigns/prefabs
 
       # spec-0005: the delve image now builds FROM ghcr.io/stellarfeline/delvewright-base
       # by digest (Dockerfile.delve), so this pulls the base from GHCR — no Docker Hub.

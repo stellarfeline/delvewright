@@ -1,0 +1,36 @@
+name: Checkout content repo
+description: >
+  Check out the pinned delvewright-campaigns content repo (the prefab library +
+  campaign sources) at versions.toml `[content].sha` into `./campaigns`, so the
+  compiler's default `--prefabs campaigns/prefabs` resolves and the CI layout
+  mirrors the local `campaigns/` symlink (spec-0007 Step 0). The main repo must
+  already be checked out (this reads its `versions.toml`).
+
+  The content repo is PUBLIC (owner, 2026-07-30), so the checkout is tokenless.
+
+runs:
+  using: composite
+  steps:
+    # The single source of truth for WHICH content commit to build against.
+    - name: read pinned content repo + SHA from versions.toml
+      id: pin
+      shell: bash
+      run: |
+        python3 - <<'PY' >> "$GITHUB_OUTPUT"
+        import tomllib
+        c = tomllib.load(open("versions.toml", "rb"))["content"]
+        print(f"repo={c['repo']}")
+        print(f"sha={c['sha']}")
+        PY
+        echo "content pin: $(grep -E '^(repo|sha)=' "$GITHUB_OUTPUT" | tr '\n' ' ')"
+
+    # Into ./campaigns so `campaigns/prefabs` (library) and `campaigns/campaigns`
+    # (sources) both resolve — same shape as the local dev symlink. Public repo →
+    # no token needed.
+    - name: checkout content repo at the pinned SHA
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ steps.pin.outputs.repo }}
+        ref: ${{ steps.pin.outputs.sha }}
+        path: campaigns
+        lfs: true

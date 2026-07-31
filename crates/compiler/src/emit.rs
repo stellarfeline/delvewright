@@ -41,6 +41,7 @@ pub fn build(
     structures: &BTreeMap<String, Vec<u8>>,
     tree: &CommandTree,
     language: Option<&str>,
+    content_sha: &str,
 ) -> Result<BuildOutput, Vec<CommandError>> {
     let ns = &plan.namespace;
     let mut out: BuildOutput = BTreeMap::new();
@@ -138,7 +139,7 @@ pub fn build(
     }
 
     // ---- manifest (hashes of inputs + all other outputs) ----
-    let manifest = emit_manifest(plan, input_bytes, &out, language);
+    let manifest = emit_manifest(plan, input_bytes, &out, language, content_sha);
     put_json(&mut out, "manifest.json", &manifest);
 
     Ok(out)
@@ -1712,6 +1713,7 @@ fn emit_manifest(
     input_bytes: &BTreeMap<String, Vec<u8>>,
     out: &BuildOutput,
     language: Option<&str>,
+    content_sha: &str,
 ) -> Value {
     let inputs: BTreeMap<String, String> = input_bytes
         .iter()
@@ -1726,6 +1728,12 @@ fn emit_manifest(
         "delvec_version": DELVEC_VERSION,
         "dsl_version": plan.campaign.world.dsl_version,
         "mc_version": MC_VERSION,
+        // The pinned content-repo SHA (spec-0007 Step 0), read from versions.toml
+        // `[content].sha` at build time (NOT git state) so the build stays
+        // deterministic + offline; "unpinned" when versions.toml is absent. This
+        // closes the ADR-0006 reproducibility loop: same DSL + same seed + same
+        // content_sha -> byte-identical output.
+        "content_sha": content_sha,
         "inputs": inputs,
         "outputs": outputs
     });

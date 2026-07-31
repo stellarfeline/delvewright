@@ -28,14 +28,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          lfs: true # delvec copies the prefab .nbt into the datapack
+      # delvec copies the prefab .nbt into the datapack — from the content repo
+      - uses: ./.github/actions/checkout-content
       - uses: Swatinem/rust-cache@v2
       - name: build the hello-world delve output
         run: |
           cargo run -p delvewright-compiler --bin delvec -- \
             build crates/dsl/fixtures/valid/hello-world \
-            -o validation/delve-output --prefabs prefabs
+            -o validation/delve-output --prefabs campaigns/prefabs
       # Jar cache removed 2026-07-30 (see the note in ci.yml tier-2): single-file
       # bind mounts break itzg's installer rename, and runners fetch piston-data in
       # under a second. The itzg entrypoint downloads the pinned jar (ADR-0010).
@@ -60,8 +60,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          lfs: true # delvec copies the prefab .nbt into the datapack + overlay
+      # delvec copies the prefab .nbt into the datapack + overlay — content repo
+      - uses: ./.github/actions/checkout-content
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with:
@@ -81,14 +81,13 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          lfs: true
+      - uses: ./.github/actions/checkout-content
       - uses: Swatinem/rust-cache@v2
       - name: build the hello-world delve output
         run: |
           cargo run -p delvewright-compiler --bin delvec -- \
             build crates/dsl/fixtures/valid/hello-world \
-            -o validation/delve-output --prefabs prefabs
+            -o validation/delve-output --prefabs campaigns/prefabs
 
       - name: derive image tags
         id: meta

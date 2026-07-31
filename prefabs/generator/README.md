@@ -5,9 +5,14 @@ a gzip-framed vanilla structure `.nbt` and its metadata `.json` into an output
 directory. Byte-identical on every run (ADR-0006): fixed iteration order, gzip
 mtime pinned to 0, fixed compression level.
 
+The library itself now lives in the **content repo** (`delvewright-campaigns`),
+symlinked at `campaigns/` for local dev (spec-0007 Step 0). The generator stays
+here (GPL code) and writes its outputs into the content repo's `prefabs/`:
+
 ```sh
-# from repo root — writes prefabs/keep-*.nbt and prefabs/keep-*.json
-cargo run --manifest-path prefabs/generator/Cargo.toml --release -- prefabs/
+# from repo root — writes campaigns/prefabs/keep-*.nbt and campaigns/prefabs/keep-*.json
+# (campaigns/ is the symlink to the content repo; commit the outputs there).
+cargo run --manifest-path prefabs/generator/Cargo.toml --release -- campaigns/prefabs/
 ```
 
 This is a **standalone crate** (its own `[workspace]`), deliberately outside

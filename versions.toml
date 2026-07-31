@@ -78,3 +78,30 @@ sha1 = "7c9f83f1673209abb1d5262dd69583e61c85cbd2"
 [harness]
 # mineflayer bot pin (spec-0003). Consumed by: harness/package.json.
 mineflayer = "4.37.1"
+
+[content]
+# The pinned content repo (spec-0007 Step 0): the prefab library + campaign
+# sources live here, not in this GPL repo (ADR-0007). Determinism (ADR-0006):
+# same DSL + same seed + same content SHA -> byte-identical datapack.
+#
+# Consumed by:
+#   - the compiler at BUILD time: `delvec build` reads this `sha` and records it
+#     in manifest.json as `content_sha` (read from THIS file, never from git
+#     state, so the compiler stays deterministic + offline; absent file ->
+#     "unpinned"). See crates/compiler/src/main.rs.
+#   - CI (.github/workflows/*.yml): every job that builds a fixture or runs the
+#     ladder checks the content repo out at this exact `sha` and passes
+#     `--prefabs <checkout>/prefabs`.
+#   - validation/check-versions.sh: asserts `repo`/`sha` shape here.
+#
+# Local dev resolves the library through the `campaigns/` symlink instead
+# (compiler default `--prefabs campaigns/prefabs`), so day-to-day work does not
+# depend on this pin — only reproducible/CI builds do.
+#
+# RE-PIN CONVENTION: after a content-repo PR merges, update `sha` to the new
+# content `main` tip in a normal follow-up PR.
+repo = "stellarfeline/delvewright-campaigns"
+# FINAL pin: the migration branch was fast-forward merged into content `main`, so
+# this is the content-repo `main` tip (no re-pin owed). Bump it on future content
+# merges per the RE-PIN CONVENTION above.
+sha = "b7aae682181a4117688f9039afdf156518fcdbae"
