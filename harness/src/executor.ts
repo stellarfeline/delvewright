@@ -545,7 +545,7 @@ export class MineflayerExecutor implements StepExecutor {
       for (let g = 0; g < goalsList.length; g++) {
         const spec = goalsList[g]!;
         const last = g === goalsList.length - 1;
-        await this.runGoto(spec, last ? label : `${label} waypoint`);
+        await this.runGoto(spec, last ? label : `${label} waypoint ${g + 1}/${goalsList.length}`);
       }
     } finally {
       restoreControls();
@@ -560,6 +560,12 @@ export class MineflayerExecutor implements StepExecutor {
    * fill may land after the first path computation started); a persistent failure
    * throws a diagnostic naming the goal and the bot's position. The caller sets the
    * Movements and think budget once for the whole leg.
+   *
+   * Arrival is VERIFIED, not trusted: mineflayer's `goto` can resolve on a
+   * best-effort partial path without the bot actually reaching the goal (observed on
+   * an unwalkable waypoint hop — it "succeeds" while the bot sits blocks away). A
+   * resolve that leaves the bot outside the goal range is treated as a failure, so a
+   * stuck hop fails the step loudly instead of silently marching the walk forward.
    */
   private async runGoto(spec: GoalSpec, label: string): Promise<void> {
     const bot = this.requireBot();
@@ -577,7 +583,13 @@ export class MineflayerExecutor implements StepExecutor {
             `reaching ${label}`,
           ),
         );
-        return;
+        if (this.withinGoal(spec)) {
+          return;
+        }
+        throw new Error(
+          `pathfinder resolved but the bot is at ${fmt(bot.entity.position)}, ` +
+            `not within ${range} of the goal`,
+        );
       } catch (err) {
         // A death is terminal for this run — never retry a path across the void.
         if (err instanceof BotDeathError) throw err;
@@ -594,6 +606,21 @@ export class MineflayerExecutor implements StepExecutor {
       `failed ${label} at [${x}, ${y}, ${z}] (range ${range}); bot at ` +
         `${fmt(bot.entity.position)}: ${detail}`,
     );
+  }
+
+  /**
+   * Whether the bot's block position is within `spec.range` blocks of the goal cell
+   * — the same block-distance metric mineflayer-pathfinder's `GoalNear` uses to
+   * decide it arrived. The `y` axis is given one extra block of slack so standing on
+   * a stair/slab (a fractional-height floor) still counts as arrived.
+   */
+  private withinGoal(spec: GoalSpec): boolean {
+    const p = this.requireBot().entity.position;
+    const dx = Math.floor(p.x) - spec.x;
+    const dz = Math.floor(p.z) - spec.z;
+    const dy = Math.floor(p.y) - spec.y;
+    const yTol = spec.range + 1;
+    return dx * dx + dz * dz <= spec.range * spec.range && Math.abs(dy) <= yTol;
   }
 
   /**

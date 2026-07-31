@@ -21,12 +21,6 @@ use serde_json::{Value, json};
 use crate::nav::LegRoute;
 use crate::plan::Plan;
 
-/// Target spacing (blocks of accumulated path length) between exported waypoints on
-/// a straight, flat run. A waypoint is ALSO forced at every floor-height (`y`)
-/// change and at each leg's two endpoints, so stairs/steps stay densely sampled
-/// (each hop trivially short for the runtime pathfinder) regardless of this value.
-const WAYPOINT_SPACING: f64 = 10.0;
-
 /// Build the waypoints validation artifact for the campaign's proven walked legs.
 /// Keys/coordinates mirror `critical-path.json` so the harness can match a leg by
 /// its destination anchor.
@@ -51,35 +45,32 @@ pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
     })
 }
 
-/// Thin an A* cell polyline to sparse waypoints: always keep the first and last
-/// cell; keep a cell whenever the accumulated path length since the last kept
-/// waypoint reaches [`WAYPOINT_SPACING`]; and keep a cell at every floor-height
-/// (`y`) change (so a staircase is sampled step-by-step, each hop trivially short).
+/// Thin an A* cell polyline to its **corners**: keep the two endpoints and every
+/// cell where the direction of travel changes (a turn, or a floor-height step). The
+/// cells are adjacent cardinal steps, so between two kept corners the path is a
+/// single straight constant-delta run — a straight corridor or a straight staircase
+/// the runtime pathfinder can always walk directly. Dropping only the interior of a
+/// straight run keeps the polyline sparse WITHOUT ever leaving the proven route:
+/// the straight line the bot walks between consecutive waypoints IS the proven path
+/// there (distance-based thinning could cut a corner and send the bot into a wall).
 /// Deterministic and order-preserving.
 fn thin(cells: &[[i32; 3]]) -> Vec<[i32; 3]> {
     if cells.len() <= 2 {
         return cells.to_vec();
     }
     let mut out = vec![cells[0]];
-    let mut acc = 0.0f64;
     for i in 1..cells.len() - 1 {
-        acc += dist(cells[i - 1], cells[i]);
-        let y_change = cells[i][1] != out.last().unwrap()[1];
-        if y_change || acc >= WAYPOINT_SPACING {
-            out.push(cells[i]);
-            acc = 0.0;
+        if delta(cells[i - 1], cells[i]) != delta(cells[i], cells[i + 1]) {
+            out.push(cells[i]); // a turn or floor-height step — keep the corner
         }
     }
     out.push(cells[cells.len() - 1]);
     out
 }
 
-/// Euclidean distance between two integer cells.
-fn dist(a: [i32; 3], b: [i32; 3]) -> f64 {
-    let dx = (a[0] - b[0]) as f64;
-    let dy = (a[1] - b[1]) as f64;
-    let dz = (a[2] - b[2]) as f64;
-    (dx * dx + dy * dy + dz * dz).sqrt()
+/// The step vector from `a` to `b`.
+fn delta(a: [i32; 3], b: [i32; 3]) -> [i32; 3] {
+    [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
 }
 
 #[cfg(test)]
@@ -96,41 +87,36 @@ mod tests {
     }
 
     #[test]
-    fn straight_flat_run_thins_to_roughly_every_spacing_blocks() {
-        // A 24-block straight flat run: endpoints plus ~every 10 blocks.
+    fn a_straight_run_collapses_to_its_endpoints() {
+        // A 24-block straight flat run has no turns → just the two endpoints (the
+        // bot walks the straight corridor between them directly).
         let cells: Vec<[i32; 3]> = (0..=24).map(|x| [x, 65, 0]).collect();
-        let wps = thin(&cells);
-        assert_eq!(wps.first(), Some(&[0, 65, 0]));
-        assert_eq!(wps.last(), Some(&[24, 65, 0]));
-        // Endpoints + interior at x≈10 and x≈20 → 4 waypoints, far fewer than 25.
-        assert!(
-            wps.len() >= 3 && wps.len() <= 6,
-            "expected a sparse polyline, got {} waypoints: {wps:?}",
-            wps.len()
-        );
-        // No gap between consecutive kept waypoints exceeds the spacing + one step.
-        for w in wps.windows(2) {
-            assert!(
-                dist(w[0], w[1]) <= WAYPOINT_SPACING + 1.0,
-                "gap too large between {:?} and {:?}",
-                w[0],
-                w[1]
-            );
-        }
+        assert_eq!(thin(&cells), vec![[0, 65, 0], [24, 65, 0]]);
+        // A constant-delta staircase is also one straight run → endpoints only.
+        let stair: Vec<[i32; 3]> = (0..6).map(|i| [i, 65 + i, 0]).collect();
+        assert_eq!(thin(&stair), vec![[0, 65, 0], [5, 70, 0]]);
     }
 
     #[test]
-    fn every_floor_height_change_is_a_waypoint() {
-        // A staircase: each cell steps up in y. Every step must be kept so the
-        // runtime pathfinder solves one short stair hop at a time.
-        let cells: Vec<[i32; 3]> = (0..6).map(|i| [i, 65 + i, 0]).collect();
+    fn corners_are_kept_so_hops_never_cut_across_the_bend() {
+        // An L: east along z=0, then a turn to north at [5,65,0]. The corner must be
+        // kept — otherwise the straight line from start to end cuts across the bend.
+        let mut cells: Vec<[i32; 3]> = (0..=5).map(|x| [x, 65, 0]).collect();
+        cells.extend((1..=4).map(|z| [5, 65, z]));
         let wps = thin(&cells);
-        assert_eq!(wps, cells, "every stair step is a waypoint");
+        assert_eq!(wps, vec![[0, 65, 0], [5, 65, 0], [5, 65, 4]]);
+        // A floor-height step is a direction change too, so it is kept.
+        let ramp = [[0, 65, 0], [1, 65, 0], [2, 66, 0], [3, 66, 0]];
+        assert_eq!(
+            thin(&ramp),
+            vec![[0, 65, 0], [1, 65, 0], [2, 66, 0], [3, 66, 0]]
+        );
     }
 
     #[test]
     fn thinning_is_deterministic() {
-        let cells: Vec<[i32; 3]> = (0..30).map(|x| [x, 65, 0]).collect();
+        let mut cells: Vec<[i32; 3]> = (0..30).map(|x| [x, 65, 0]).collect();
+        cells.extend((1..10).map(|z| [29, 65, z]));
         assert_eq!(thin(&cells), thin(&cells));
     }
 }
