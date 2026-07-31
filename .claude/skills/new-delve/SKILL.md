@@ -122,7 +122,9 @@ Then:
    commands. NO puzzle solutions, quest structure, or endings. Images (relative
    links into `media/`, small JPEGs): exterior / starting-scene renders only,
    picked from the visual-review set — never interiors or late-game locations.
-   Localized `README.<code>.md` per declared language.
+   Localized `README.<code>.md` per declared language. The render-set images are
+   the default — the author may later replace them with hand-crafted shots
+   (shaders, staged compositions); media ships with the campaign PR.
 10. Report to the user: campaign summary, playtime estimate, validation results,
     and the two commands they care about:
     - play: `EULA=TRUE docker compose -f validation/compose.yaml --profile play up`
