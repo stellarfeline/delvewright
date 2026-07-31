@@ -22,5 +22,11 @@ byte-identical datapack, with the content SHA recorded in the build manifest.
   **outputs** (the `.nbt` + metadata) are committed to the content repo, not
   here; the generator itself is GPL code and stays in the main repo. See
   `generator/README.md`.
+- **`cave-generator/`** — the deterministic "Mediterranean cave/shore" tileset
+  generator (prefab-ceiling probe), a sibling of `generator/` with its own
+  `[workspace]`; keep output is untouched. Emits `pool/cave-shore`, a structural
+  drop-in for `pool/stone-keep`. See `cave-generator/README.md`.
 - **`keep-tileset.md`** — the stone-keep connection convention, piece list, and
   live-probed lighting minimums that the generator implements and documents.
+- **`cave-tileset.md`** — the cave/shore piece list, `cave:socket` convention,
+  derived lighting, and the render-critique round notes (the probe's evidence).
