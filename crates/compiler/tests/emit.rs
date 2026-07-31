@@ -159,17 +159,44 @@ fn live_load_shakeout_fixes() {
     );
     assert_eq!(entity["type"], "minecraft:interaction");
 
-    // 3. setup must forceload the prefab chunks before placement (else place/
-    //    summon/fill silently no-op at load time) and set world spawn onto the
-    //    prefab floor (else players fall through the void before class select).
+    // 3. Placement is verification-driven (2026-07-31): setup forceloads and
+    //    defers placement to the tick-retried `place_all`/`place_verify` pair
+    //    (freshly-forceloaded far chunks are not reliably loaded in-tick, so a
+    //    same-function `place template` can silently no-op). `setup_finish` runs
+    //    once all sentinels verify and owns everything that needs real blocks,
+    //    including setworldspawn.
     let setup = text(&out, "datapack/data/hello-world/function/setup.mcfunction");
-    let force_idx = setup.find("forceload add").expect("forceload emitted");
-    let place_idx = setup.find("place template").expect("place emitted");
     assert!(
-        force_idx < place_idx,
-        "forceload must precede place template"
+        setup.contains("forceload add"),
+        "forceload emitted in setup"
     );
-    assert!(setup.contains("setworldspawn "), "setworldspawn emitted");
+    assert!(
+        !setup.contains("place template"),
+        "placement must not run in setup (unverifiable in-tick)"
+    );
+    let place_all = text(
+        &out,
+        "datapack/data/hello-world/function/place_all.mcfunction",
+    );
+    assert!(place_all.contains("place template"), "place_all places");
+    let verify = text(
+        &out,
+        "datapack/data/hello-world/function/place_verify.mcfunction",
+    );
+    assert!(
+        verify.contains("execute if block") && verify.contains("setup_finish"),
+        "place_verify checks sentinels and gates setup_finish"
+    );
+    let finish = text(
+        &out,
+        "datapack/data/hello-world/function/setup_finish.mcfunction",
+    );
+    assert!(finish.contains("setworldspawn "), "setworldspawn in finish");
+    let tick = text(&out, "datapack/data/hello-world/function/tick.mcfunction");
+    assert!(
+        tick.contains("place_all") && tick.contains("place_verify"),
+        "tick retries placement until verified"
+    );
 
     // 4. campaign_complete broadcasts the machine-readable completion marker the
     //    validation bot reads (mineflayer cannot read 1.21.11 scoreboard scores).

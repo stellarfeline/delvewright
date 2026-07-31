@@ -26,6 +26,88 @@ use delvewright_dsl::{Objective, QuestEffect, Trigger, is_v03};
 /// The emitted build tree: relative path → file bytes.
 pub type BuildOutput = BTreeMap<String, Vec<u8>>;
 
+/// A placement sentinel: one known solid block of a structure, used at runtime
+/// to verify a `place template` actually landed (structure_file → (local pos,
+/// bare block id)). Chosen as the non-air block with the lowest `(y, z, x)` —
+/// deterministic per structure bytes.
+type Sentinels = BTreeMap<String, ([i32; 3], String)>;
+
+/// Parse a gzipped vanilla structure `.nbt` and pick its sentinel block.
+/// Returns `None` for unparseable or all-air structures (no runtime verify).
+fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
+    use flate2::read::GzDecoder;
+    use std::io::Read;
+    let mut raw = Vec::new();
+    GzDecoder::new(bytes).read_to_end(&mut raw).ok()?;
+    let root: fastnbt::Value = fastnbt::from_bytes(&raw).ok()?;
+    let fastnbt::Value::Compound(root) = root else {
+        return None;
+    };
+    let palette: Vec<Option<String>> = match root.get("palette") {
+        Some(fastnbt::Value::List(entries)) => entries
+            .iter()
+            .map(|e| match e {
+                fastnbt::Value::Compound(c) => match c.get("Name") {
+                    Some(fastnbt::Value::String(s)) => Some(s.clone()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect(),
+        _ => return None,
+    };
+    let is_air = |name: &str| {
+        matches!(
+            name,
+            "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
+        )
+    };
+    let mut best: Option<([i32; 3], String)> = None;
+    if let Some(fastnbt::Value::List(blocks)) = root.get("blocks") {
+        for b in blocks {
+            let fastnbt::Value::Compound(b) = b else {
+                continue;
+            };
+            let pos: [i32; 3] = match b.get("pos") {
+                Some(fastnbt::Value::List(p)) if p.len() == 3 => {
+                    let mut out = [0i32; 3];
+                    let mut ok = true;
+                    for (i, v) in p.iter().enumerate() {
+                        match v {
+                            fastnbt::Value::Int(n) => out[i] = *n,
+                            _ => ok = false,
+                        }
+                    }
+                    if !ok {
+                        continue;
+                    }
+                    out
+                }
+                _ => continue,
+            };
+            let state = match b.get("state") {
+                Some(fastnbt::Value::Int(n)) => *n as usize,
+                _ => continue,
+            };
+            let Some(Some(name)) = palette.get(state) else {
+                continue;
+            };
+            if is_air(name) {
+                continue;
+            }
+            let key = (pos[1], pos[2], pos[0]);
+            let better = match &best {
+                None => true,
+                Some((bp, _)) => key < (bp[1], bp[2], bp[0]),
+            };
+            if better {
+                best = Some((pos, name.clone()));
+            }
+        }
+    }
+    best
+}
+
 /// Build the full `<out>/` tree from a plan and the prefab structure bytes
 /// (`structure_file` → raw `.nbt`). Runs the command-tree validator over every
 /// emitted `.mcfunction`; a validation failure is a build error.
@@ -83,7 +165,19 @@ pub fn build(
     }
 
     // functions
-    let functions = emit_functions(plan);
+    // Placement sentinels: one known block per distinct structure, so the
+    // runtime can verify each `place template` landed (see `setup` emission).
+    let mut sentinels: Sentinels = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            if let Some(bytes) = structures.get(&piece.structure_file)
+                && let Some(s) = structure_sentinel(bytes)
+            {
+                sentinels.insert(piece.structure_file.clone(), s);
+            }
+        }
+    }
+    let functions = emit_functions(plan, &sentinels);
     for (name, body) in &functions {
         out.insert(
             format!("datapack/data/{ns}/function/{name}.mcfunction"),
@@ -254,7 +348,7 @@ fn default_equipment(entity: &str) -> Option<&'static str> {
     }
 }
 
-fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
+fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
     let v03 = campaign_is_v03(plan);
@@ -344,13 +438,13 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
             }
         }
     }
-    // Force-load the chunks covering each prefab BEFORE placing. `#minecraft:load`
-    // runs during server boot when the target chunks are not guaranteed to be
-    // loaded; without this, `place template` / `summon` / `fill` silently no-op
-    // ("That position is not loaded") yet `#init` is still set, permanently
-    // skipping setup. Verified live: `forceload add` loads the chunk synchronously
-    // so the following commands in this same function succeed. The forceload is
-    // kept (not removed) so the placed structure + NPCs stay simulated.
+    // Force-load the chunks covering each prefab. `forceload add` only MARKS
+    // chunks; freshly-generated far chunks (found live: a fifth-level piece
+    // straddling chunk z=-1) are not reliably loaded within the same tick, so
+    // `place template` can silently no-op with zero log output. Placement is
+    // therefore NOT done here: setup only seals + forceloads, and the tick
+    // function retries `place_all` + `place_verify` (sentinel-block checks)
+    // until every piece is confirmed, then runs `setup_finish` exactly once.
     for area in &plan.areas {
         for piece in &area.pieces {
             let (min, max) = piece.bbox();
@@ -360,21 +454,59 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
             ));
         }
     }
-    // place each piece (single-prefab areas: one piece, rotation none → no
-    // rotation token, keeping the M1 output byte-identical; pool areas: the
-    // solver's per-piece pos + rotation)
+    setup.push("scoreboard players set #placed dw.sys 0".to_string());
+
+    // --- place_all: idempotent template placement, retried from tick ---
+    let mut place_all: Vec<String> = Vec::new();
     for area in &plan.areas {
         for piece in &area.pieces {
             let rot = match piece.rotation.token() {
                 Some(t) => format!(" {t}"),
                 None => String::new(),
             };
-            setup.push(format!(
+            place_all.push(format!(
                 "place template {ns}:{} {} {} {}{rot}",
                 piece.structure_id, piece.pos[0], piece.pos[1], piece.pos[2]
             ));
         }
     }
+    fns.push(("place_all".to_string(), lines(&place_all)));
+
+    // --- place_verify: sentinel check per piece; all present → setup_finish ---
+    let mut place_verify: Vec<String> = Vec::new();
+    place_verify.push("scoreboard players set #placeok dw.sys 0".to_string());
+    let mut sentinel_count = 0u32;
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            if let Some((local, block)) = sentinels.get(&piece.structure_file) {
+                let w = piece.rotation.transform(*local);
+                let (sx, sy, sz) = (
+                    piece.pos[0] + w[0],
+                    piece.pos[1] + w[1],
+                    piece.pos[2] + w[2],
+                );
+                place_verify.push(format!(
+                    "execute if block {sx} {sy} {sz} {block} run scoreboard players add #placeok dw.sys 1"
+                ));
+                sentinel_count += 1;
+            }
+        }
+    }
+    place_verify.push(format!(
+        "execute if score #placeok dw.sys matches {sentinel_count} run function {ns}:setup_finish"
+    ));
+    fns.push(("place_verify".to_string(), lines(&place_verify)));
+
+    // --- setup_finish: everything that must run on real placed structures ---
+    let mut setup = {
+        let finished_setup = setup;
+        fns.push(("setup".to_string(), {
+            let mut s = finished_setup;
+            s.push("scoreboard players set #init dw.sys 1".to_string());
+            lines(&s)
+        }));
+        Vec::<String>::new()
+    };
     // seal/clear sockets: open sockets get a wall fill; mated sockets get their
     // jigsaw block cleared to air, leaving a clean 3×3 passage (keep-socket-v1).
     // Runs after placement so it overwrites the raw structure blocks. Empty for
@@ -489,11 +621,20 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
     if let Some(pos) = campaign_spawn(plan) {
         setup.push(format!("setworldspawn {} {} {}", pos[0], pos[1], pos[2]));
     }
-    setup.push("scoreboard players set #init dw.sys 1".to_string());
-    fns.push(("setup".to_string(), lines(&setup)));
+    setup.push("scoreboard players set #placed dw.sys 1".to_string());
+    fns.push(("setup_finish".to_string(), lines(&setup)));
 
     // --- tick ---
     let mut tick: Vec<String> = Vec::new();
+    // Placement retry loop: until every sentinel verifies, re-place and re-check
+    // each tick (idempotent; `setup_finish` fires exactly once, gated by
+    // `#placed`). Converges as soon as the forceloaded chunks finish loading.
+    tick.push(format!(
+        "execute if score #init dw.sys matches 1 unless score #placed dw.sys matches 1 run function {ns}:place_all"
+    ));
+    tick.push(format!(
+        "execute if score #init dw.sys matches 1 unless score #placed dw.sys matches 1 run function {ns}:place_verify"
+    ));
     tick.push("scoreboard players enable @a dw.class".to_string());
     for npc in &plan.npcs {
         tick.push(format!(

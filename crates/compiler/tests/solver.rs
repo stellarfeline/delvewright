@@ -143,15 +143,22 @@ fn keep_crawl_critical_path_crosses_pieces_and_areas() {
         "talk teleports the player to the keep entry spawn:\n{complete_talk}"
     );
 
-    // setup places every pool piece and clears every mated socket to air.
-    let setup = text(&out, "datapack/data/keep-crawl/function/setup.mcfunction");
-    let places = setup
+    // place_all places every pool piece; setup_finish clears mated sockets.
+    let place_all = text(
+        &out,
+        "datapack/data/keep-crawl/function/place_all.mcfunction",
+    );
+    let places = place_all
         .lines()
         .filter(|l| l.starts_with("place template keep-crawl:keep-"))
         .count();
     assert!(places >= 4, "multiple pool pieces placed, saw {places}");
+    let finish = text(
+        &out,
+        "datapack/data/keep-crawl/function/setup_finish.mcfunction",
+    );
     assert!(
-        setup.contains("minecraft:air"),
+        finish.contains("minecraft:air"),
         "mated jigsaw sockets cleared to air"
     );
 }
@@ -211,8 +218,12 @@ fn keep_trial_builds_all_verbs_and_is_deterministic() {
         );
     }
 
-    // Mechanics wired: wave spawn function + countdown, interaction entity, chest.
-    let setup = text(&a, "datapack/data/keep-trial/function/setup.mcfunction");
+    // Mechanics wired: wave spawn function + countdown, interaction entity, chest
+    // (all in setup_finish — they need verified real blocks under them).
+    let setup = text(
+        &a,
+        "datapack/data/keep-trial/function/setup_finish.mcfunction",
+    );
     assert!(setup.contains("summon minecraft:interaction") && setup.contains("dw_i_door"));
     assert!(setup.contains("setblock") && setup.contains("minecraft:chest"));
     let spawn = text(
@@ -303,7 +314,10 @@ fn keep_vertical_builds_vertical_and_is_deterministic() {
 #[test]
 fn keep_trial_m2_presentation_fixes() {
     let a = build_campaign(&common::keep_trial_dir());
-    let setup = text(&a, "datapack/data/keep-trial/function/setup.mcfunction");
+    let setup = text(
+        &a,
+        "datapack/data/keep-trial/function/setup_finish.mcfunction",
+    );
     let tick = text(&a, "datapack/data/keep-trial/function/tick.mcfunction");
 
     // Fix 1: CustomName is a plain SNBT string component, not the JSON-string
@@ -385,7 +399,10 @@ fn keep_trial_m2_presentation_fixes() {
 #[test]
 fn v02_emission_paths_are_untouched() {
     let out = build_campaign(&common::hello_world_dir());
-    let setup = text(&out, "datapack/data/hello-world/function/setup.mcfunction");
+    let setup = text(
+        &out,
+        "datapack/data/hello-world/function/setup_finish.mcfunction",
+    );
     let tick = text(&out, "datapack/data/hello-world/function/tick.mcfunction");
     assert!(
         setup.contains("CustomName:'{\"text\":\"The Keeper\"}'"),
