@@ -20,6 +20,27 @@ export interface LegMovements {
   allowSprinting: boolean;
 }
 
+/** The subset of `Movements` {@link tuneCaveMovements} touches for the cave block mix. */
+export interface CaveMovements {
+  allowEntityDetection: boolean;
+}
+
+/**
+ * Belt-and-braces tuning for the cave block mix (task #38). The bot follows a
+ * compiler-proven, ground-hugging waypoint polyline (the DW0311 route treats water
+ * and fences as impassable, so the proven path already hugs dry standable ground
+ * and never routes through a pen), so the remaining risk is the pathfinder reacting
+ * to entities near the corridor — penned mobs beside the route. Disabling entity
+ * detection keeps each leg's A* deterministic and undistracted; the delve world is
+ * sealed, so nothing living blocks the proven path. Liquids, stairs, fences and
+ * gravity blocks are already classified from mcdata by the pathfinder, so their
+ * default handling needs no override. The adventure-mode block locks (`canDig`,
+ * `allow1by1towers`) are applied separately by {@link configureLeg}.
+ */
+export function tuneCaveMovements(movements: CaveMovements): void {
+  movements.allowEntityDetection = false;
+}
+
 /**
  * Apply the standard adventure-mode movement locks, and — for a sneak leg — disable
  * sprinting in the Movements and turn the bot's sneak control state ON. Returns a

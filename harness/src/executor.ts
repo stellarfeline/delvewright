@@ -27,7 +27,8 @@ import type {
 } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError, likelyDeathCause } from "./death.ts";
-import { configureLeg } from "./movement.ts";
+import { configureLeg, tuneCaveMovements } from "./movement.ts";
+import { walkGoals, type GoalSpec, type Waypoints } from "./waypoints.ts";
 
 /** Connection + identity for the bot. Sourced from the environment (see below). */
 export interface BotConfig {
@@ -188,12 +189,31 @@ export class MineflayerExecutor implements StepExecutor {
   private lastForcedPos: { x: number; y: number; z: number } | undefined;
   /** Grace (ms) added onto a cutscene's declared length before giving up. */
   private readonly cutsceneGraceMs: number;
+  /**
+   * task #38: the compiler's proven per-leg critical-path waypoints (keyed by
+   * destination anchor). When a walked step's target has a leg here, `walkTo`
+   * replays it as successive nearby goals so each mineflayer A* solve is trivial —
+   * instead of one distant goal that strands the bot on a large open winding cave.
+   * Absent → the original single distant-goal behavior (fallback). Compiler-proven
+   * navigation data, not a route the harness computes.
+   */
+  private waypoints: Waypoints | undefined;
 
   constructor(config: BotConfig, env: Record<string, string | undefined> = process.env) {
     this.config = config;
     const raw = env["DELVEWRIGHT_CUTSCENE_GRACE_MS"];
     const parsed = raw === undefined ? NaN : Number.parseInt(raw, 10);
     this.cutsceneGraceMs = Number.isInteger(parsed) && parsed >= 0 ? parsed : 10_000;
+  }
+
+  /**
+   * task #38: supply the compiler's proven critical-path waypoints. Optional —
+   * without it, `walkTo` uses the original single distant-goal behavior. Called by
+   * the entrypoint when the `validation/critical-path-waypoints.json` artifact
+   * accompanies the critical path.
+   */
+  useWaypoints(waypoints: Waypoints): void {
+    this.waypoints = waypoints;
   }
 
   /** Connect and resolve once the bot has spawned into the world. */
@@ -484,51 +504,78 @@ export class MineflayerExecutor implements StepExecutor {
     sneak = false,
   ): Promise<void> {
     const bot = this.requireBot();
-    const [x, y, z] = pos;
     const r = Math.max(1, Math.floor(range));
     const movements = new Movements(bot);
     const restoreControls = configureLeg(bot, movements, sneak);
+    // task #38: tune the Movements for the cave block mix (penned mobs beside the
+    // corridor must not perturb the proven route). Applied after configureLeg so the
+    // adventure-mode block locks stand.
+    tuneCaveMovements(movements);
     bot.pathfinder.setMovements(movements);
     // Long multi-level layouts (e.g. a 5-storey keep, ~90 blocks + 4 staircases)
     // sit at the edge of the default A* budget and fail nondeterministically
-    // with "No path to the goal!" — give the search real headroom.
+    // with "No path to the goal!" — give the search real headroom. With leg-by-leg
+    // waypoints each solve is tiny, so this budget is only a safety margin.
     bot.pathfinder.thinkTimeout = 30_000;
     try {
-      let lastErr: unknown;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        if (attempt > 0) {
-          // One retry: block updates (an `open-gate` fill) can land after the
-          // first path computation started; settle and recompute from scratch.
-          await delay(1_500);
-        }
-        try {
-          await this.raceDeath(
-            withTimeout(
-              bot.pathfinder.goto(new goals.GoalNear(x, y, z, r)),
-              REACH_TIMEOUT_MS,
-              `reaching ${label}`,
-            ),
-          );
-          return;
-        } catch (err) {
-          // A death is terminal for this run — never retry a path across the void.
-          if (err instanceof BotDeathError) throw err;
-          lastErr = err;
-          try {
-            bot.pathfinder.stop();
-          } catch {
-            // ignore
-          }
-        }
+      // task #38: when the compiler proved a waypoint polyline to this destination,
+      // replay it as short hops so each A* solve is trivial (avoids the single giant
+      // solve that strands the bot on a large open winding cave); the final goal is
+      // always the true destination. `walkGoals` returns just the destination goal
+      // when no leg is known — the original single-goal behavior (fallback).
+      const goalsList = walkGoals(this.waypoints, [pos[0], pos[1], pos[2]], r);
+      for (let g = 0; g < goalsList.length; g++) {
+        const spec = goalsList[g]!;
+        const last = g === goalsList.length - 1;
+        await this.runGoto(spec, last ? label : `${label} waypoint`);
       }
-      const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
-      throw new Error(
-        `failed ${label} at [${x}, ${y}, ${z}] (range ${r}); bot at ` +
-          `${fmt(bot.entity.position)}: ${detail}`,
-      );
     } finally {
       restoreControls();
     }
+  }
+
+  /**
+   * Pathfind to a single {@link GoalSpec} (get within `spec.range` blocks of it),
+   * with the death-aware, timed, one-retry behavior the critical path depends on: a
+   * bot death rethrows the {@link BotDeathError} immediately (never retried across
+   * the void); a transient failure is retried once after a settle (an `open-gate`
+   * fill may land after the first path computation started); a persistent failure
+   * throws a diagnostic naming the goal and the bot's position. The caller sets the
+   * Movements and think budget once for the whole leg.
+   */
+  private async runGoto(spec: GoalSpec, label: string): Promise<void> {
+    const bot = this.requireBot();
+    const { x, y, z, range } = spec;
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) {
+        await delay(1_500);
+      }
+      try {
+        await this.raceDeath(
+          withTimeout(
+            bot.pathfinder.goto(new goals.GoalNear(x, y, z, range)),
+            REACH_TIMEOUT_MS,
+            `reaching ${label}`,
+          ),
+        );
+        return;
+      } catch (err) {
+        // A death is terminal for this run — never retry a path across the void.
+        if (err instanceof BotDeathError) throw err;
+        lastErr = err;
+        try {
+          bot.pathfinder.stop();
+        } catch {
+          // ignore
+        }
+      }
+    }
+    const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
+    throw new Error(
+      `failed ${label} at [${x}, ${y}, ${z}] (range ${range}); bot at ` +
+        `${fmt(bot.entity.position)}: ${detail}`,
+    );
   }
 
   /**
