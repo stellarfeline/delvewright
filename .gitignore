@@ -17,3 +17,6 @@ validation/.jar-cache/
 # captured server log + harvested report). `*.log` already covers playtest.log.
 validation/playtest-report.json
 campaigns
+# Read-only content-repo clone used by the skin toolchain workflow (spec-0009);
+# never part of the GPL code repo.
+content-repo/

@@ -1,0 +1,23 @@
+{
+  "campaign": "_fixture",
+  "skins": [
+    {
+      "texture_id": "sample-guard",
+      "model": "wide",
+      "seed": 7,
+      "role": "guard",
+      "style_brief": "A plain fixture skin used to prove deterministic composition and preview rendering.",
+      "features": { "style": "generic", "greying": false, "quality": 3 },
+      "hidden_layers": [],
+      "palette": {
+        "skin": "#b3763f",
+        "hair": "#3a2f2a",
+        "beard": "#3a2f2a",
+        "tunic": "#556b8a",
+        "belt": "#3a2c1e",
+        "sandal": "#4a3a2a",
+        "eye": "#2a2620"
+      }
+    }
+  ]
+}
