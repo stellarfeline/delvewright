@@ -145,4 +145,6 @@ pub mod codes {
     /// (v0.4) A dialogue `talk-to` or `interact` objective targets an NPC after a
     /// `despawn-npc` removes it on a reachable path (spec-0008 §5).
     pub const NPC_DESPAWNED_REF: &str = "DW0195";
+    /// (v0.5) An area `lighting.min_light` is out of the 1..=14 range (spec-0010).
+    pub const LIGHTING_RANGE: &str = "DW0196";
 }

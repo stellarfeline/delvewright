@@ -164,8 +164,25 @@ pub fn build(
     // DW0311 also rides on this model: every walked critical-path leg must be
     // routable over the assembled seams (the compile-time counterpart to the
     // runtime critical-path bot).
+    // Assembled-world lighting + deterministic relight pass (spec-0010): measure
+    // real light over the assembled world, place declared fixtures, and gate on
+    // measured darkness. Runs before nav verification so the colliding fixtures it
+    // adds are re-verified for walkability below. A `DW0210`/`DW0211` diagnostic
+    // fails the build (exit 2, mapped in main). Empty for a campaign with no dark
+    // reachable cells and no `lighting` declaration → output byte-identical.
+    let relight = crate::light::relight(plan, structures);
+    if let Some(diag) = relight.diagnostics.first() {
+        return Err(BuildFailure::Diagnostic {
+            code: diag.code,
+            message: diag.message.clone(),
+        });
+    }
+
     let moves: Vec<crate::nav::MovePlan> = if crate::nav::needs_world(plan) {
-        let world = crate::nav::World::from_plan(plan, structures);
+        // Verify walkability over the assembled geometry *including* any colliding
+        // relight fixtures (campfire / floor lantern), so a fixture can never wedge
+        // a required path shut (spec-0010: nav verification re-runs after placement).
+        let world = crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid);
         let moves = crate::nav::plan_moves(plan, &world)?;
         crate::nav::check_cutscenes(plan, &world)?;
         crate::nav::check_critical_path(plan, &world)?;
@@ -229,7 +246,7 @@ pub fn build(
             }
         }
     }
-    let functions = emit_functions(plan, &sentinels, &moves);
+    let functions = emit_functions(plan, &sentinels, &moves, &relight.placements);
     for (name, body) in &functions {
         out.insert(
             format!("datapack/data/{ns}/function/{name}.mcfunction"),
@@ -392,13 +409,20 @@ fn is_vanilla_function(path: &str) -> bool {
 ///
 /// `doFireTick` has **no boolean successor**; 1.21.11 models fire spread as an
 /// integer radius around players, so `0` disables it (the sealing intent: no
-/// spreading fire). Time is pinned to noon (`time set noon` = daytime 6000, a
-/// tree literal) — the v0 default; a stage-1 field may override it later. Names
-/// may optionally be `minecraft:`-prefixed on the server, but the bare form is
-/// accepted and matches the vendored command tree (`data/commands-1.21.11.json`),
-/// so it is what we emit and validate.
-fn sealing_commands() -> Vec<String> {
-    vec![
+/// spreading fire). Time is pinned to the declared world `time` (DSL v0.5,
+/// spec-0010; default noon = daytime 6000, the v0 default — so a campaign that
+/// declares nothing is byte-identical). With `advance_time`/`advance_weather`
+/// frozen, the set states persist for the whole delve. A `weather` command is
+/// emitted only when the campaign declares one (clear is the vanilla default, so
+/// omitting it keeps pre-v0.5 output byte-identical). Names may optionally be
+/// `minecraft:`-prefixed on the server, but the bare form is accepted and matches
+/// the vendored command tree (`data/commands-1.21.11.json`), so it is what we
+/// emit and validate.
+fn sealing_commands(
+    time: delvewright_dsl::WorldTime,
+    weather: Option<delvewright_dsl::WorldWeather>,
+) -> Vec<String> {
+    let mut cmds = vec![
         "gamerule spawn_mobs false".to_string(),
         "gamerule advance_time false".to_string(),
         "gamerule advance_weather false".to_string(),
@@ -407,8 +431,15 @@ fn sealing_commands() -> Vec<String> {
         // Box-garden death policy: dying must never cost quest items (a dropped
         // trial key despawns in 5 minutes = softlock for a human player).
         "gamerule keep_inventory true".to_string(),
-        "time set noon".to_string(),
-    ]
+        format!("time set {}", time.token()),
+    ];
+    // Weather is emitted only when explicitly declared (spec-0010): clear is the
+    // vanilla default, so a campaign that declares no weather emits no `weather`
+    // command and stays byte-identical to pre-v0.5 output.
+    if let Some(w) = weather {
+        cmds.push(format!("weather {}", w.token()));
+    }
+    cmds
 }
 
 /// Yaw for a facing keyword (MC: yaw 0 = +z/south).
@@ -522,6 +553,7 @@ fn emit_functions(
     plan: &Plan,
     sentinels: &Sentinels,
     moves: &[crate::nav::MovePlan],
+    relight: &[crate::light::Placement],
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -546,7 +578,10 @@ fn emit_functions(
         "# Environment sealing (spec-0002): box garden — nothing left to vanilla chance."
             .to_string(),
     );
-    setup.extend(sealing_commands());
+    setup.extend(sealing_commands(
+        c.world.content.time.unwrap_or_default(),
+        c.world.content.weather,
+    ));
     setup.push("scoreboard objectives add dw.class trigger".to_string());
     setup.push("scoreboard objectives add dw.classed dummy".to_string());
     setup.push("scoreboard objectives add dw.dlg_shown dummy".to_string());
@@ -710,6 +745,17 @@ fn emit_functions(
                 seal.block
             ));
         }
+    }
+    // Relight fixtures (spec-0010): supplemental lighting placed after the world is
+    // fully assembled (structures placed + sockets sealed), so the block writes
+    // land on real geometry — the intended vanilla mechanism (consistent with v0.4
+    // `set-block`). Emitted in deterministic pass order. Empty for a campaign with
+    // no `lighting` declaration → setup_finish byte-identical.
+    for p in relight {
+        setup.push(format!(
+            "setblock {} {} {} {}",
+            p.pos[0], p.pos[1], p.pos[2], p.block
+        ));
     }
     // summon NPCs (villager body + interaction hitbox)
     for npc in &plan.npcs {
@@ -1042,6 +1088,14 @@ fn emit_functions(
                     "scoreboard players set @s {} 1",
                     plan::flag_score(f)
                 ));
+            }
+            // v0.5: world time / weather cuts this option declares (dialogue
+            // `set-time`/`set-weather`, spec-0010). Dimension-global instant cuts.
+            for t in &opt.sets_time {
+                body.push(format!("time set {}", t.token()));
+            }
+            for w in &opt.sets_weather {
+                body.push(format!("weather {}", w.token()));
             }
             for obj in &opt.completes {
                 if let Some((qid, _)) = objective_quest(c, obj) {
@@ -1485,6 +1539,17 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
         }
         QuestEffect::Cutscene { path, seconds } => {
             body.push(format!("function {ns}:{}", cutscene_fn(path, *seconds)));
+        }
+        // --- DSL v0.5 effects (spec-0010) ---
+        // Dimension-global instant cuts. The daylight/weather cycles are frozen by
+        // environment sealing (`advance_time`/`advance_weather false`), so the set
+        // state persists until the next cut. No selector: `/time set` and
+        // `/weather` act on the whole dimension.
+        QuestEffect::SetTime { time } => {
+            body.push(format!("time set {}", time.token()));
+        }
+        QuestEffect::SetWeather { weather } => {
+            body.push(format!("weather {}", weather.token()));
         }
     }
 }
@@ -2496,10 +2561,17 @@ fn emit_packtest(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::MovePl
     sealed.push("# @timeout 100".to_string());
     sealed.push(String::new());
     sealed.push(format!("function {ns}:setup"));
-    sealed.push("# time set noon -> daytime 6000 (the sole sealing command with a".to_string());
+    let sealed_time = c.world.content.time.unwrap_or_default();
+    let sealed_ticks = sealed_time.daytime_ticks();
+    sealed.push(format!(
+        "# time set {} -> daytime {sealed_ticks} (the sole sealing command with a",
+        sealed_time.token()
+    ));
     sealed.push("# vanilla read-back path; gamerules are asserted at compile time).".to_string());
     sealed.push("execute store result score #sealtime dw.sys run time query daytime".to_string());
-    sealed.push("assert score #sealtime dw.sys matches 6000".to_string());
+    sealed.push(format!(
+        "assert score #sealtime dw.sys matches {sealed_ticks}"
+    ));
 
     out.insert(
         format!("packtest-datapack/data/{ns}/test/sealed_state.mcfunction"),

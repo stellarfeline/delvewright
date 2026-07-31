@@ -52,6 +52,133 @@ pub struct WorldContent {
     /// (`DW0180`/`DW0181`). Stage docs themselves stay pure English.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub languages: Vec<String>,
+    /// Declared initial world time (DSL v0.5, spec-0010). Dimension-global; frozen
+    /// by environment sealing (`advance_time false`) so the set state persists.
+    /// Absent = `noon` (the v0 default). Affects sky attenuation in the compiler's
+    /// assembled-light model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time: Option<WorldTime>,
+    /// Declared initial weather (DSL v0.5, spec-0010). Dimension-global; frozen by
+    /// environment sealing (`advance_weather false`). Absent = `clear`. Rain and
+    /// thunder attenuate effective sky brightness in the assembled-light model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weather: Option<WorldWeather>,
+}
+
+/// A declared world time state (DSL v0.5, spec-0010). Values are the vanilla
+/// `/time set` keywords; the sole difference from vanilla is that the daylight
+/// cycle is frozen (`advance_time false`), so a set state persists for the whole
+/// delve until a `set-time` effect cuts to another.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum WorldTime {
+    /// Morning daylight (`/time set day`, 1000 ticks).
+    Day,
+    /// Midday, brightest (`/time set noon`, 6000 ticks) — the default.
+    #[default]
+    Noon,
+    /// Dusk/night (`/time set night`, 13000 ticks).
+    Night,
+    /// Deep night, darkest (`/time set midnight`, 18000 ticks).
+    Midnight,
+}
+
+impl WorldTime {
+    /// The vanilla `/time set` keyword.
+    pub fn token(self) -> &'static str {
+        match self {
+            WorldTime::Day => "day",
+            WorldTime::Noon => "noon",
+            WorldTime::Night => "night",
+            WorldTime::Midnight => "midnight",
+        }
+    }
+
+    /// The `daytime` tick value the keyword sets (the `time query daytime`
+    /// read-back). Vanilla constants: day=1000, noon=6000, night=13000,
+    /// midnight=18000.
+    pub fn daytime_ticks(self) -> i64 {
+        match self {
+            WorldTime::Day => 1000,
+            WorldTime::Noon => 6000,
+            WorldTime::Night => 13000,
+            WorldTime::Midnight => 18000,
+        }
+    }
+}
+
+/// A declared weather state (DSL v0.5, spec-0010). Values are the vanilla
+/// `/weather` keywords; frozen (`advance_weather false`), so a set state persists.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum WorldWeather {
+    /// Clear sky (`/weather clear`) — the default.
+    #[default]
+    Clear,
+    /// Rain (`/weather rain`).
+    Rain,
+    /// Thunderstorm (`/weather thunder`).
+    Thunder,
+}
+
+impl WorldWeather {
+    /// The vanilla `/weather` keyword.
+    pub fn token(self) -> &'static str {
+        match self {
+            WorldWeather::Clear => "clear",
+            WorldWeather::Rain => "rain",
+            WorldWeather::Thunder => "thunder",
+        }
+    }
+}
+
+/// A supplemental-lighting fixture the relight pass may place (DSL v0.5,
+/// spec-0010 fixture registry v1). The theme choice stays in the DSL layer; the
+/// compiler owns the placement rule and block-light emission.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Fixture {
+    /// Floor torch (block light 14); `wall_torch` on a wall face as fallback.
+    Torch,
+    /// Ceiling-hung lantern (block light 15); floor-sitting as fallback.
+    Lantern,
+    /// Floor campfire (block light 15); never on or adjacent to a required path
+    /// cell (it is a damage source).
+    Campfire,
+    /// Embedded shroomlight (block light 15); replaces a solid wall/ceiling block.
+    Shroomlight,
+}
+
+impl Fixture {
+    /// The kebab id (`torch` / `lantern` / `campfire` / `shroomlight`).
+    pub fn token(self) -> &'static str {
+        match self {
+            Fixture::Torch => "torch",
+            Fixture::Lantern => "lantern",
+            Fixture::Campfire => "campfire",
+            Fixture::Shroomlight => "shroomlight",
+        }
+    }
+}
+
+/// A per-area supplemental-lighting declaration (DSL v0.5, spec-0010). Its
+/// presence puts the area on the relight path: the compiler guarantees every
+/// reachable walkable cell reaches `min_light` by placing `fixture`s, or fails
+/// with `DW0211` if it cannot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AreaLighting {
+    /// The fixture the relight pass places.
+    pub fixture: Fixture,
+    /// The minimum block+sky light guaranteed on reachable walkable cells
+    /// (1..=14, default 7). Validated by `DW0141`-adjacent bounds checking.
+    #[serde(default = "default_min_light")]
+    pub min_light: u8,
+}
+
+/// Default `min_light` for an [`AreaLighting`] declaration (spec-0010).
+fn default_min_light() -> u8 {
+    7
 }
 
 /// One area of the world, bound to a single prefab or a jigsaw prefab pool.
@@ -78,6 +205,13 @@ pub struct Area {
     /// Jigsaw piece-count bounds (only with `prefab_pool`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pieces: Option<Pieces>,
+    /// Optional supplemental-lighting declaration (DSL v0.5, spec-0010). When
+    /// present, the compiler's relight pass guarantees `min_light` on every
+    /// reachable walkable cell of this area by placing the declared fixture, or
+    /// fails with `DW0211`. Absent = no relight (the area is judged as-assembled,
+    /// with `DW0210` if a reachable walkable cell is dark and unmitigated).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lighting: Option<AreaLighting>,
 }
 
 /// Inclusive piece-count bounds for a jigsaw `prefab_pool` area.
@@ -309,6 +443,28 @@ pub enum DialogueEffect {
         /// The flag to set.
         flag: FlagId,
     },
+    /// Cuts the world time (DSL v0.5), mirroring [`QuestEffect::SetTime`].
+    SetTime {
+        /// The time state to cut to.
+        time: WorldTime,
+    },
+    /// Cuts the weather (DSL v0.5), mirroring [`QuestEffect::SetWeather`].
+    SetWeather {
+        /// The weather state to cut to.
+        weather: WorldWeather,
+    },
+}
+
+impl DialogueEffect {
+    /// The v0.5 effect name if this dialogue effect is one introduced in DSL v0.5
+    /// (`set-time`/`set-weather`, spec-0010).
+    pub fn v05_effect(&self) -> Option<&'static str> {
+        match self {
+            DialogueEffect::SetTime { .. } => Some("set-time"),
+            DialogueEffect::SetWeather { .. } => Some("set-weather"),
+            _ => None,
+        }
+    }
 }
 
 impl DialogueEffect {
@@ -316,7 +472,7 @@ impl DialogueEffect {
     pub fn set_flag(&self) -> Option<&FlagId> {
         match self {
             DialogueEffect::SetFlag { flag } => Some(flag),
-            DialogueEffect::CompleteObjective { .. } => None,
+            _ => None,
         }
     }
 
@@ -325,7 +481,23 @@ impl DialogueEffect {
     pub fn v04_effect(&self) -> Option<&'static str> {
         match self {
             DialogueEffect::SetFlag { .. } => Some("set-flag"),
-            DialogueEffect::CompleteObjective { .. } => None,
+            _ => None,
+        }
+    }
+
+    /// The target time if this is a v0.5 `set-time` dialogue effect.
+    pub fn set_time(&self) -> Option<WorldTime> {
+        match self {
+            DialogueEffect::SetTime { time } => Some(*time),
+            _ => None,
+        }
+    }
+
+    /// The target weather if this is a v0.5 `set-weather` dialogue effect.
+    pub fn set_weather(&self) -> Option<WorldWeather> {
+        match self {
+            DialogueEffect::SetWeather { weather } => Some(*weather),
+            _ => None,
         }
     }
 }
@@ -948,6 +1120,19 @@ pub enum QuestEffect {
         /// Cutscene duration in seconds.
         seconds: u32,
     },
+    /// Cuts the dimension-global world time to a new state (DSL v0.5, spec-0010).
+    /// Instantaneous (vanilla has no gradual transition); the state persists
+    /// because the daylight cycle is frozen by sealing.
+    SetTime {
+        /// The time state to cut to.
+        time: WorldTime,
+    },
+    /// Cuts the dimension-global weather to a new state (DSL v0.5, spec-0010).
+    /// Instantaneous; persists because the weather cycle is frozen by sealing.
+    SetWeather {
+        /// The weather state to cut to.
+        weather: WorldWeather,
+    },
 }
 
 /// The presentation channel for a [`QuestEffect::Narrate`] (DSL v0.4).
@@ -1061,12 +1246,15 @@ impl QuestEffect {
             QuestEffect::SetFlag { .. } => Some("set-flag"),
             QuestEffect::SpawnWave { .. } => Some("spawn-wave"),
             QuestEffect::OpenGate { .. } | QuestEffect::CampaignComplete => None,
-            // v0.4 effects report via `v04_effect`; they are not v0.3 verbs.
+            // v0.4 effects report via `v04_effect`; v0.5 via `v05_effect`; they
+            // are not v0.3 verbs.
             QuestEffect::Narrate { .. }
             | QuestEffect::SetBlock { .. }
             | QuestEffect::DespawnNpc { .. }
             | QuestEffect::MoveNpc { .. }
-            | QuestEffect::Cutscene { .. } => None,
+            | QuestEffect::Cutscene { .. }
+            | QuestEffect::SetTime { .. }
+            | QuestEffect::SetWeather { .. } => None,
         }
     }
 
@@ -1080,6 +1268,33 @@ impl QuestEffect {
             QuestEffect::DespawnNpc { .. } => Some("despawn-npc"),
             QuestEffect::MoveNpc { .. } => Some("move-npc"),
             QuestEffect::Cutscene { .. } => Some("cutscene"),
+            _ => None,
+        }
+    }
+
+    /// The v0.5 effect name if this effect is one introduced in DSL v0.5
+    /// (`set-time`/`set-weather`, spec-0010). These validate in v0.5 campaigns and
+    /// are reserved (`DW0141`) earlier.
+    pub fn v05_effect(&self) -> Option<&'static str> {
+        match self {
+            QuestEffect::SetTime { .. } => Some("set-time"),
+            QuestEffect::SetWeather { .. } => Some("set-weather"),
+            _ => None,
+        }
+    }
+
+    /// The target time if this is a v0.5 `set-time` effect.
+    pub fn set_time(&self) -> Option<WorldTime> {
+        match self {
+            QuestEffect::SetTime { time } => Some(*time),
+            _ => None,
+        }
+    }
+
+    /// The target weather if this is a v0.5 `set-weather` effect.
+    pub fn set_weather(&self) -> Option<WorldWeather> {
+        match self {
+            QuestEffect::SetWeather { weather } => Some(*weather),
             _ => None,
         }
     }

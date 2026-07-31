@@ -345,10 +345,12 @@ fn run_build(
             return ExitCode::from(3);
         }
         Err(emit::BuildFailure::Diagnostic { code, message }) => {
-            // Geometry/navigation diagnostics (DW0307/DW0308) print like a solver
-            // DW03xx error and exit 3.
+            // Lighting diagnostics (DW0210/DW0211, spec-0010) are analysis-tier
+            // (exit 2, like DW02xx reachability); geometry/navigation diagnostics
+            // (DW0307/DW0308/DW0311) print like a solver DW03xx error and exit 3.
             print_build_error(code, &message, json);
-            return ExitCode::from(3);
+            let exit = if code.starts_with("DW02") { 2 } else { 3 };
+            return ExitCode::from(exit);
         }
     };
 

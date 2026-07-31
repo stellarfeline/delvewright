@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
-    Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, is_v03, is_v04,
+    Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, is_v03, is_v04, is_v05,
 };
 use crate::ids::is_kebab;
 use crate::registry::{
@@ -786,6 +786,108 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
 
     reserved_v04(c, d);
+    reserved_v05(c, d);
+}
+
+/// DSL v0.5 reserved-feature gating (spec-0010): declared world `time`/`weather`
+/// and per-area `lighting` (stage 1), plus the `set-time`/`set-weather` effect
+/// verbs (stage 5 quests, stage 6 dialogue), are rejected with `DW0141` in a
+/// pre-0.5.0 campaign, gated on the stage that carries them. Additive fields
+/// default to empty, so a v0.4 campaign that uses none is byte-identical. When
+/// `lighting` is present under a v0.5 campaign, `min_light` is range-checked
+/// (1..=14, `DW0196`).
+fn reserved_v05(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let v05_world = is_v05(c.world.dsl_version.as_str());
+    let v05_quests = is_v05(c.quests.dsl_version.as_str());
+    let v05_dialogue = is_v05(c.dialogue.dsl_version.as_str());
+    let res = |d: &mut Vec<Diagnostic>, stage, path: String, what: &str| {
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            stage,
+            path,
+            format!("{what} is reserved (requires dsl_version 0.5.0)"),
+        ));
+    };
+
+    // Stage 1 — declared time / weather / per-area lighting.
+    if !v05_world {
+        if c.world.content.time.is_some() {
+            res(d, "world", "/content/time".to_string(), "world `time`");
+        }
+        if c.world.content.weather.is_some() {
+            res(
+                d,
+                "world",
+                "/content/weather".to_string(),
+                "world `weather`",
+            );
+        }
+        for (i, area) in c.world.content.areas.iter().enumerate() {
+            if area.lighting.is_some() {
+                res(
+                    d,
+                    "world",
+                    format!("/content/areas/{i}/lighting"),
+                    "area `lighting`",
+                );
+            }
+        }
+    } else {
+        // Range-check min_light (1..=14) where a lighting block is declared.
+        for (i, area) in c.world.content.areas.iter().enumerate() {
+            if let Some(lighting) = &area.lighting
+                && !(1..=14).contains(&lighting.min_light)
+            {
+                d.push(Diagnostic::error(
+                    codes::LIGHTING_RANGE,
+                    "world",
+                    format!("/content/areas/{i}/lighting/min_light"),
+                    format!(
+                        "area `{}` lighting.min_light = {} is out of range (must be 1..=14)",
+                        area.id, lighting.min_light
+                    ),
+                ));
+            }
+        }
+    }
+
+    // Stage 5 — set-time / set-weather quest effects.
+    if !v05_quests {
+        for (i, q) in c.quests.content.quests.iter().enumerate() {
+            for_each_effect(q, |path, eff| {
+                if let Some(name) = eff.v05_effect() {
+                    res(
+                        d,
+                        "quests",
+                        format!("/content/quests/{i}/{path}/type"),
+                        &format!("effect `{name}`"),
+                    );
+                }
+            });
+        }
+    }
+
+    // Stage 6 — set-time / set-weather dialogue effects.
+    if !v05_dialogue {
+        for (i, t) in c.dialogue.content.dialogues.iter().enumerate() {
+            for (j, node) in t.nodes.iter().enumerate() {
+                for (k, opt) in node.options.iter().enumerate() {
+                    for (m, eff) in opt.effects.iter().enumerate() {
+                        if let Some(name) = eff.v05_effect() {
+                            res(
+                                d,
+                                "dialogue",
+                                format!(
+                                    "/content/dialogues/{i}/nodes/{j}/options/{k}/effects/{m}/type"
+                                ),
+                                &format!("dialogue effect `{name}`"),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// DSL v0.4 reserved-feature gating: every v0.4 construct is rejected with
