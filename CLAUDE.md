@@ -42,8 +42,9 @@ Founding decisions live in `docs/adr/` and originate from the kickoff handoff
 - **No mods on the player-facing server** — validation-layer only.
 - **No nondeterminism in the compiler**: no wall-clock time, no unseeded RNG, no
   hash-order iteration, no absolute paths in output.
-- **No CC BY-NC (or unknown-license) assets, ever.** Prefabs/content: original, CC0, or
-  CC BY only. Record provenance in prefab metadata.
+- **No CC BY-NC / ND / unknown-license assets, ever.** Prefabs/content: original, CC0,
+  CC BY, MIT, Apache-2.0, or GPL-3.0-compatible only (ADR-0013). Record provenance in
+  prefab metadata.
 - **No grind mechanics in delve design**: no mining/leveling loops, resource farming,
   or base building.
 - **No runtime LLM in shipped delves** (current policy): all content — including
