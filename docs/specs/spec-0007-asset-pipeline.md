@@ -44,41 +44,54 @@ pins the content-repo git SHA; CI checks out that SHA; the build manifest
 records it — same DSL + same seed + same content SHA → byte-identical. Local
 dev via the existing `campaigns/` symlink. First M3 task (deferred past M2).
 
-## Ingestion workflow (owner-expanded 2026-07-31): scout → verify → download → admit
+## Ingestion workflow (owner-refined 2026-07-31): demand → scout → verify → download → walk
 
-**Quality verification is the centerpiece** (owner directive). Steps 2–3 are the
-verification layer; the vision model is the generation-time agent (multimodal),
-never a runtime component.
+**Quality verification is the centerpiece** (owner directive). The whole run is
+**demand-driven**: quotas are fixed before any acquisition, and verification's
+job is to fill them. The vision model is the generation-time agent
+(multimodal), never a runtime component.
 
-1. **Scout**: agent search across sources, license-classified shopping lists.
-   Known sources: Modrinth (open API, per-project license metadata AND gallery
-   image URLs — best automated source on both axes), Planet Minecraft,
-   CurseForge Worlds (API), Minecraft-Schematics, Abfielder, klpbbs / Minebbs
-   (CN). (OpenGameArt ruled out 2026-07-31: no MC schematics.)
-2. **Visual pre-screen (before any download)**: fetch the listing's preview
-   renders (Modrinth gallery API; anti-bot sites degrade to owner-opens-page or
-   skip to step 5) and have the vision model rule on **style fit** against the
-   library's aesthetic brief AND write the asset's **catalog card**:
-   - `description` — 2–3 sentences of prose for later human/agent use;
-   - `tags` — structured: theme, era/style, palette (dominant blocks),
-     condition (intact/ruined), scale class, offered piece types
-     (rooms/corridors/set-pieces), interior/exterior, biome fit;
-   - `style_fit` — approve / borderline / reject + rationale, `quality` 1–5.
-   Cards live in the content repo at `catalog/<asset-id>.json` (candidates and
-   rejects both — a reject card prevents re-scouting the same asset). The
+0. **Demand sheet (before any acquisition)**: the run starts from a written
+   requirements sheet — the aesthetic brief plus **minimum counts per asset
+   category** (e.g. rooms ≥ N, corridors ≥ M, set-pieces ≥ K, per theme). The
+   run's stop condition is every category meeting its minimum with approved
+   assets; shortfalls are reported per category, never papered over.
+1. **Scout**: the site list and each site's handling method are fixed in the
+   prompt — per site: how to search, how license is determined, and whether
+   galleries are fetchable. Known sources: Modrinth (open API, license metadata
+   AND gallery image URLs — best on both axes), Planet Minecraft, CurseForge
+   Worlds (API), Minecraft-Schematics, Abfielder, klpbbs / Minebbs (CN).
+   (OpenGameArt ruled out 2026-07-31: no MC schematics.) Finds stream into
+   verification with their license classification.
+2. **Verify (two branches, before any download)** — both branches write the
+   asset's **catalog card**; selection continues until the demand sheet's
+   minimums are met:
+   - **Gallery-fetchable sites**: the agent fetches the listing renders and
+     rules style-fit itself.
+   - **Anti-bot sites**: the agent presents the owner a shortlist — URL plus
+     the expected-style description — and the **owner rules** by looking at
+     the page herself; her verdict is recorded on the card (marked
+     human-prescreened).
+   Catalog card fields: `description` (2–3 sentences of prose), `tags`
+   (structured: theme, era/style, palette, condition intact/ruined, scale
+   class, offered piece types, interior/exterior, biome fit), `style_fit`
+   (approve / borderline / reject + rationale), `quality` 1–5, plus which
+   demand-sheet categories it fills. Cards live in the content repo at
+   `catalog/<asset-id>.json` — rejects included (prevents re-scouting). The
    catalog is what `/new-delve` queries when choosing prefab sets.
-3. **Download** only what pre-screen approves (API/direct fetch, or the
-   launcher pattern for anti-bot sites — URL + target path, user fetches).
-4. `.schem` (Sponge v2/v3) → vanilla structure `.nbt` converter (built:
-   `delve-schem` — safety strip + palette report + oversize splitting).
-5. **Curation gallery (final authority)**: converted candidates batch-placed in
-   a browse world with name tags; the owner walks it and rules with `dw.note`
-   (reuse of spec-0006 — approve / reject / needs-work). **Aesthetic authority
-   is human**; the vision pre-screen only filters what reaches her. Verdicts
-   flow back into the catalog cards.
-6. Adaptation: socket carving, anchor annotation, lighting probe → admission.
-   Admitted prefab metadata links its catalog card; card tags become the
-   searchable vocabulary for generation-time prefab selection.
+3. **Download + ingest** the selected set: API/direct fetch where allowed, the
+   launcher pattern elsewhere (URL + target path, owner fetches manually);
+   then `delve-schem` conversion (safety strip + palette report + oversize
+   splitting) and the palette audit.
+4. **In-game gallery walk (final authority)**: the whole ingested batch is
+   placed in a browse world with name tags; the owner walks it and rules with
+   `dw.note` (spec-0006 reuse — approve / reject / needs-work). **Aesthetic
+   authority is human**; earlier steps only filter what reaches her. Verdicts
+   round-trip into the catalog cards; a rejection that drops a category below
+   its minimum sends the run back to step 1 for that category.
+5. Adaptation of approved pieces: socket carving, anchor annotation, lighting
+   probe → admission. Admitted prefab metadata links its catalog card; card
+   tags become the searchable vocabulary for generation-time prefab selection.
 
 ## Community contract (recorded here, built post-v1)
 
@@ -95,10 +108,13 @@ vector).
 
 - [x] Converter round-trips reference .schem fixtures; oversize split works
       (`crates/schem`, PR #32).
-- [ ] Visual pre-screen: every scouted candidate has a catalog card
-      (description + structured tags + style-fit verdict) built from listing
-      renders before download; cards committed to the content repo `catalog/`.
-- [ ] Owner gallery verdicts (dw.note) round-trip into the catalog cards.
+- [ ] Ingestion runs start from a demand sheet; the run report shows per-category
+      minimums met (or explicit shortfalls) before download begins.
+- [ ] Verification: every candidate has a catalog card (description + structured
+      tags + style-fit verdict + categories filled) before download — agent-ruled
+      where galleries are fetchable, owner-ruled (URL + expected-style shortlist)
+      for anti-bot sites; cards committed to the content repo `catalog/`.
+- [ ] Owner gallery-walk verdicts (dw.note) round-trip into the catalog cards.
 - [ ] Gallery world: one command, candidates placed + labeled; dw.note verdicts
       harvest into a curation report.
 - [ ] A build using a user-local prefab is refused by the release path
