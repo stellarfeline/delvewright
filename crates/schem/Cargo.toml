@@ -1,0 +1,29 @@
+[package]
+name = "delvewright-schem"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# `delve-schem` (spec-0007, M3 asset pipeline): convert Sponge schematics
+# (`.schem`, v2/v3) into vanilla structure `.nbt` templates for the prefab
+# admission pipeline. Unconditionally strips command/structure/jigsaw blocks and
+# NBT-bearing spawners (the community-contract code-injection audit hook) and
+# splits oversize schematics past the 48-cube vanilla structure cap.
+[[bin]]
+name = "delve-schem"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+
+# Sponge schematics and vanilla structure templates are both gzip-framed Java
+# NBT. `fastnbt` (already used by the compiler's prefab tooling) reads/writes the
+# NBT; `flate2` supplies the gzip container fastnbt does not. flate2's GzBuilder
+# pins mtime to 0 so output is byte-deterministic (ADR-0006). Both MIT/Apache-2.0.
+fastnbt = "2"
+flate2 = "1"
