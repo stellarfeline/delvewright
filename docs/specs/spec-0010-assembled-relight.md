@@ -1,4 +1,4 @@
-# spec-0010 — Assembled-world lighting: measurement + deterministic relight pass
+# spec-0010 — Assembled-world lighting, deterministic relight, declared weather
 
 Status: Approved (owner-approved in conversation, 2026-07-31)
 Amends: spec-0001 "Lighting contract" (DW0210 evidence base), spec-0007 (admission
@@ -64,6 +64,29 @@ Fixtures are emitted as `setblock` commands in the existing world-init path
 world is assembled in-game by jigsaw, so post-assembly block writes are the
 intended vanilla mechanism (consistent with v0.4 `SetBlock`).
 
+### Weather (owner-directed 2026-07-31)
+
+Sealing freezes the weather cycle (`advance_weather false`, spec-0002) but never
+sets a state — every delve is silently locked to clear. Weather is a
+vanilla-intended primitive (`/weather clear|rain|thunder`) and becomes
+first-class:
+
+- **Stage 1 (world), optional:** `"weather": "clear" | "rain" | "thunder"`
+  (default `clear`) — the initial state, emitted in the init path after sealing.
+  Weather is dimension-global in vanilla: one state for the whole delve, not
+  per area.
+- **Stage 5 effect verb, new:** `set-weather` with the same three states,
+  usable wherever effects fire (quest completion, triggers, dialogue effects) —
+  e.g. a thunderstorm breaking after a story beat. With the cycle frozen, a set
+  state persists until the next `set-weather`.
+- **Lighting interaction:** rain/thunder attenuate effective sky brightness.
+  The static model applies a per-state sky attenuation constant (exact values
+  verified live against the pinned 1.21.11 server at implementation time, per
+  the gamerule-verification precedent) and judges each area under the **darkest
+  weather state reachable in the campaign** (initial state ∪ every reachable
+  `set-weather`). Conservative and deterministic: a shore lit only by sky must
+  either survive its worst storm or declare fixtures / night-vision.
+
 ### Mitigation hierarchy (DW0210 redefined)
 
 For each area, judged on **measured assembled light over reachable walkable
@@ -110,7 +133,12 @@ and accepted at that advisory tier.
 7. Declared but unsatisfiable placement → DW0211, exit 2.
 8. Relight placements never break walkability: nav verification passes on every
    green fixture above.
-9. Sky-open shore piece at noon lock: no fixtures demanded for sky-lit cells.
+9. Sky-open shore piece at noon lock, clear weather: no fixtures demanded for
+   sky-lit cells.
+10. Weather determinism: declared initial weather and every `set-weather` emit
+    byte-identically; a campaign whose reachable weather includes `thunder` is
+    judged under thunder attenuation (a sky-only-lit area then demands
+    mitigation; the same campaign with weather locked `clear` builds clean).
 
 ## Non-goals
 
