@@ -29,18 +29,18 @@ metadata JSON records `local_pos`, `facing`, `opening`, `joint`. The stair
 | id | role | size (X×Y×Z) | sockets | anchors | light |
 | -- | ---- | ------------ | ------- | ------- | ----- |
 | cave-shore | entry | 13×6×11 | N | `spawn`, `anchor/exit` | lit 15 (open-air) |
-| cave-passage-straight | connector | 5×5×7 | N,S | — | lit 9 |
+| cave-passage-straight | connector | 5×5×7 | N,S | — | lit 10 |
 | cave-passage-corner | connector | 7×5×7 | N,E | — | lit 9 |
 | cave-passage-tee | connector | 7×5×7 | N,E,W | — | lit 9 |
 | cave-passage-cross | connector | 7×5×7 | N,S,E,W | — | lit 9 |
 | cave-descent | connector (stair) | 5×9×11 | S(y1),N(y5) | — | lit 10 |
-| cave-room-small | room | 7×5×7 | N | `anchor/npc-stand`,`anchor/chest` + hearth | lit 9 |
-| cave-den | room | 9×5×9 | N,S | `anchor/npc-stand`,`anchor/wave` + sheep pen | lit 10 |
-| cave-hollow | room | 9×5×7 | N,E | `anchor/npc-stand`,`anchor/door` | lit 8 |
-| cave-mouth | terminal | 7×5×9 | N,S | `anchor/gate` (boulder),`anchor/keeper-stand` | lit 8 |
-| cave-hearth | terminal | 9×5×9 | N | `anchor/objective` + hearth | lit 7 |
+| cave-room-small | room | 7×5×7 | N | `anchor/npc-stand`,`anchor/chest` + hearth | lit 10 |
+| cave-den | room | 9×5×9 | N,S | `anchor/npc-stand`,`anchor/wave` + sheep pen | lit 7 |
+| cave-hollow | room | 9×5×7 | N,E | `anchor/npc-stand`,`anchor/door` | lit 9 |
+| cave-mouth | terminal | 7×5×9 | N,S | `anchor/gate` (boulder),`anchor/keeper-stand` | lit 9 |
+| cave-hearth | terminal | 9×5×9 | N | `anchor/objective` + hearth | lit 8 |
 | cave-cavern | terminal (boss) | 13×6×15 | N | `anchor/boss`,`anchor/objective` + hearth + pen | lit 8 |
-| cave-niche | terminal | 5×5×5 | N | — (dead-end) | lit 10 |
+| cave-niche | terminal | 5×5×5 | N | — (dead-end) | lit 11 |
 
 Palette family (one place): cobblestone / andesite / tuff / stone / mossy
 cobblestone / cracked stone bricks (walls), gravel / sand / stone / coarse dirt
@@ -51,12 +51,16 @@ pointed_dripstone (stalactites), oak fences / hay (pens), stripped/oak logs
 ## Lighting
 
 Declared **honestly and derived**, not asserted: a static flood-fill block-light
-estimate over walkable floor cells sets `measured_min_light`, and the profile is
-classified from it (`lit` ≥7 / `dim` 3–6 / `dark` <3). This is an **authoring
-estimate, not a live 1.21.11 probe** (recorded in each JSON's `method`). All 13
-pieces clear `lit`; `dim`-classified pieces (none in the shipped set, but the
-`rationale` is emitted if the estimate lands in 3–6) would declare firelight
-pockets as the feature. Open-air `cave-shore` is sky-lit.
+estimate over walkable **interior** floor cells sets `measured_min_light`, and the
+profile is classified from it (`lit` ≥7 / `dim` 3–6 / `dark` <3). Doorway-mouth
+threshold cells (walkable cells on the piece boundary) are excluded — the shell is
+solid wall there except where a socket is carved, so an open doorway is dark only
+in isolation and mates against the lit neighbouring piece at assembly; measuring
+the interior is the honest "does the room read as lit?" question and can only raise
+the min. This is an **authoring estimate, not a live 1.21.11 probe** (recorded in
+each JSON's `method`). All 13 pieces clear `lit`; `dim`-classified pieces (none in
+the shipped set, but the `rationale` is emitted if the estimate lands in 3–6) would
+declare firelight pockets as the feature. Open-air `cave-shore` is sky-lit.
 
 ## Provenance / license
 
@@ -89,15 +93,44 @@ back multimodally against the brief. Three substantive rounds:
   **muddy**; narrowed it to a single darker-gravel tide row over clean sand. The
   beach now reads clean sand → gravel tideline → ragged shallows → sea.
 
+### Algorithm-adoption pass (round-2 tileset task)
+
+A second, larger pass adopts the researched GDMC/PCG algorithms (extraction
+dossier, 2026-07-31; attribution in `docs/ACKNOWLEDGEMENTS.md`) to fix the two
+owner-visible round-1 defects — **rectangular skeletons** and **hard water edges** —
+without moving any socket (all pieces stay a byte-compatible drop-in for the solver;
+same seed → byte-identical `.nbt`). Techniques re-implemented from description
+(ideas-only; no code ingested):
+
+- **(A1) weathering palette bias.** Block choice is biased by an edge-distance /
+  height term on top of the value-noise field, so mossy + cracked variants
+  concentrate near floors and walls — a wear gradient, not uniform speckle.
+- **(A5) silhouette / edge roughening.** A ragged eroded crown along the roofline,
+  chamfered vertical corners, and outer-face divots on thick pieces break the box
+  outline into a rock massif with a cave inside. The roughening only *removes* shell
+  rock (never crosses the AABB) and skips doorway columns, so sockets are untouched.
+- **(A8) CA cave shaping.** A 4-5-rule cellular automaton perturbs the inner wall
+  face into alcoves and bumps (above walk height, so the floor path stays clear),
+  giving organic interiors instead of straight walls.
+- **Soft shoreline.** `cave-shore`'s rectangular pool is replaced by a graded
+  sand → wet-gravel → sand-bottom shallow → stone-bottom sea that laps in from the
+  open front, with a ragged inlet tide line; the depth grows from the **seabed
+  dropping**, not water stacking, so there is no vertical wall of water. The spawn
+  now lands dry on the beach at the water's edge.
+
+Before/after renders: `delve-demos/cave-tileset-renders/round2-algorithms/`.
+
 ## Honest self-assessment vs the brief
 
 The pieces **read as natural rock and cohere as one place** (the main risk cleared
 on round 1). The cavern and hearth are genuinely atmospheric; the shore is a
 solid, storybook-leaning exterior. This is a clear step above the uniform-brick
-keep shell — but it is **procedural, not hand-crafted**: shapes stay boxy (AABB
-mating + pathability constrain silhouette), stalactites/rubble are noise-scattered
-rather than composed, and the visible jigsaw socket block clutters beauty shots
-(cleared only at assembly). Verdict: self-created prefabs can reach a **good,
+keep shell — but it is **procedural, not hand-crafted**: the round-2 adoption pass
+breaks the box silhouette (eroded crown, chamfered corners, CA-perturbed walls) and
+softens the shoreline, but the envelope is still AABB-bounded and pathability-
+constrained, greebles are noise-scattered rather than composed, and the visible
+jigsaw socket block clutters beauty shots (cleared only at assembly). Verdict:
+self-created prefabs can reach a **good,
 coherent, thematically-legible** bar via the render loop; whether that is
 *showcase* is for the owner and a blind A/B against an ingested comparable to
 judge. Do not oversell.
