@@ -133,6 +133,29 @@ prefabs enter only through the admission pipeline with a mechanical NBT audit
 spawners forbidden — structure-embedded command blocks are a code-injection
 vector).
 
+## Campaign storybook (owner-directed 2026-07-31)
+
+Every campaign ships a reader-facing **storybook** at
+`campaigns/<id>/README.md` in the content repo (GitHub renders it on directory
+browse; `GENERATION.md` stays the behind-the-scenes record).
+
+- **Hard no-spoiler rule**: background and setting ONLY — premise, lore,
+  public-facing NPC introductions (persona `secret` never appears), classes,
+  playtime, build/play commands. Puzzle solutions, quest structure, and endings
+  never appear. **Images: exterior and starting-scene renders only** — no
+  interiors, no late-game locations, nothing that reveals layout.
+- **Images live in-repo** at `campaigns/<id>/media/` (relative links; JPEG,
+  small budget per campaign). They are **derivable build products** of the
+  render layer, so the sources-only community contract holds: community PRs
+  submit DSL sources only and trusted CI regenerates the media
+  deterministically.
+- Localized editions per declared language (`README.<code>.md`), authored at
+  generation time from the English canonical.
+- Authored by `/new-delve` as a final step: story text distilled from the
+  world/npcs documents (the non-spoiler boundary is structural — secrets and
+  solutions live in fields the storybook never references), images picked from
+  the visual-review render set.
+
 ## Acceptance criteria (M3)
 
 - [x] Converter round-trips reference .schem fixtures; oversize split works
