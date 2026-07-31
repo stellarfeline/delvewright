@@ -264,9 +264,13 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 ### Nav (compile-time, over the assembled voxel grid)
 
 `move-npc` paths and the critical path are routed by A* over the placed-world
-block data (every non-air block is an obstacle; gate cells are passable). Cutscene
-dollies must pass only non-solid cells. Unroutable/clipping/stranded → `DW0307`/
-`DW0308`/`DW0311` at build (never a runtime glitch).
+block data (every non-air block is an obstacle; gate cells are passable). Steps are
+cardinal, one block up or down; a step **up** additionally requires head clearance
+to jump (the cell two above the source feet must be air), so a routed/exported path
+is one an entity — including the mineflayer bot — can actually walk (a ramp up under
+a low ceiling is unroutable, not a silent strand). Cutscene dollies must pass only
+non-solid cells. Unroutable/clipping/stranded → `DW0307`/`DW0308`/`DW0311` at build
+(never a runtime glitch).
 
 ---
 
