@@ -12,7 +12,7 @@
     "generator": "prefabs/generator (keep-prefab-gen)"
   },
   "anchors": {
-    "anchor/npc-stand": {
+    "anchor/door": {
       "pos": [
         2,
         1,
@@ -20,7 +20,7 @@
       ],
       "facing": "east"
     },
-    "anchor/door": {
+    "anchor/npc-stand": {
       "pos": [
         2,
         1,

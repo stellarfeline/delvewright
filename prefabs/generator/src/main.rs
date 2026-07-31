@@ -182,8 +182,8 @@ struct Spec {
     id: &'static str,
     size: [i32; 3],
     doors: Vec<Side>,
-    lights: Vec<[i32; 3]>,          // glowstone cells (usually ceiling y = Y-1)
-    extras: Vec<([i32; 3], Cell)>,  // gate bars, accents, etc.
+    lights: Vec<[i32; 3]>,         // glowstone cells (usually ceiling y = Y-1)
+    extras: Vec<([i32; 3], Cell)>, // gate bars, accents, etc.
     anchors: Vec<(&'static str, AnchorJson)>,
 }
 
@@ -321,10 +321,13 @@ fn build(spec: &Spec) -> Structure {
                     match cell {
                         Cell::Air => pal.idx("minecraft:air", None),
                         Cell::Block(b, props) => pal.idx(b, props.clone()),
-                        Cell::Jigsaw(o) => pal.idx("minecraft:jigsaw", Some(vec![("orientation", o)])),
+                        Cell::Jigsaw(o) => {
+                            pal.idx("minecraft:jigsaw", Some(vec![("orientation", o)]))
+                        }
                     }
                 } else {
-                    let shell = y == 0 || y == sy - 1 || x == 0 || x == sx - 1 || z == 0 || z == sz - 1;
+                    let shell =
+                        y == 0 || y == sy - 1 || x == 0 || x == sx - 1 || z == 0 || z == sz - 1;
                     if y == 0 {
                         pal.idx(FLOOR, None)
                     } else if y == sy - 1 {
@@ -363,7 +366,9 @@ fn build(spec: &Spec) -> Structure {
 fn write_piece(out: &Path, spec: &Spec) {
     let s = build(spec);
     let nbt = fastnbt::to_bytes(&s).expect("nbt");
-    let mut gz = GzBuilder::new().mtime(0).write(Vec::new(), Compression::new(6));
+    let mut gz = GzBuilder::new()
+        .mtime(0)
+        .write(Vec::new(), Compression::new(6));
     gz.write_all(&nbt).expect("gz");
     let framed = gz.finish().expect("finish");
     std::fs::write(out.join(format!("{}.nbt", spec.id)), &framed).expect("write nbt");
@@ -404,7 +409,10 @@ fn write_piece(out: &Path, spec: &Spec) {
                 AnchorJson {
                     pos: v.pos,
                     facing: v.facing.clone(),
-                    region: v.region.as_ref().map(|r| RegionJson { from: r.from, to: r.to }),
+                    region: v.region.as_ref().map(|r| RegionJson {
+                        from: r.from,
+                        to: r.to,
+                    }),
                     block: v.block.clone(),
                 },
             )
@@ -441,10 +449,20 @@ fn write_piece(out: &Path, spec: &Spec) {
 
 // Convenience constructors for anchors.
 fn a_pos(pos: [i32; 3], facing: Option<&str>) -> AnchorJson {
-    AnchorJson { pos: Some(pos), facing: facing.map(|s| s.to_string()), region: None, block: None }
+    AnchorJson {
+        pos: Some(pos),
+        facing: facing.map(|s| s.to_string()),
+        region: None,
+        block: None,
+    }
 }
 fn a_region(from: [i32; 3], to: [i32; 3], block: &str) -> AnchorJson {
-    AnchorJson { pos: None, facing: None, region: Some(RegionJson { from, to }), block: Some(block.to_string()) }
+    AnchorJson {
+        pos: None,
+        facing: None,
+        region: Some(RegionJson { from, to }),
+        block: Some(block.to_string()),
+    }
 }
 
 /// Ceiling glowstone grid: place a source at ceiling (y=Y-1) at each (x,z) in the
@@ -482,7 +500,9 @@ fn axis_points(n: i32) -> Vec<i32> {
 }
 
 fn main() {
-    let out = std::env::args().nth(1).expect("usage: keep-prefab-gen <out_dir>");
+    let out = std::env::args()
+        .nth(1)
+        .expect("usage: keep-prefab-gen <out_dir>");
     let out = Path::new(&out);
     std::fs::create_dir_all(out).expect("mkdir");
 
@@ -499,8 +519,12 @@ fn main() {
             ([7, 1, 1], Cell::Block(ACCENT, None)),
         ],
         anchors: vec![
+            // `spawn` faces the exit door so the arriving player looks toward
+            // where they will go. `anchor/exit` faces NORTH (back toward the
+            // spawn) so that when an NPC stands here it greets players arriving
+            // from the spawn instead of turning its back on them (M2 facing fix).
             ("spawn", a_pos([4, 1, 4], Some("south"))),
-            ("anchor/exit", a_pos([4, 1, 8], Some("south"))),
+            ("anchor/exit", a_pos([4, 1, 8], Some("north"))),
         ],
     });
 
@@ -541,7 +565,12 @@ fn main() {
         doors: vec![Side::North],
         lights: ceiling_grid([7, 5, 7]),
         extras: vec![([5, 1, 5], Cell::Block(ACCENT, None))],
-        anchors: vec![("anchor/npc-stand", a_pos([3, 1, 4], Some("north")))],
+        // `anchor/chest` (v0.3 collect target) shares the stand cell; faces the
+        // single north entry door so arrivals see it head-on.
+        anchors: vec![
+            ("anchor/npc-stand", a_pos([3, 1, 4], Some("north"))),
+            ("anchor/chest", a_pos([3, 1, 4], Some("north"))),
+        ],
     });
 
     // 6. small room B 7x5x9, doors N/S. npc stand.
@@ -550,8 +579,16 @@ fn main() {
         size: [7, 5, 9],
         doors: vec![Side::North, Side::South],
         lights: ceiling_grid([7, 5, 9]),
-        extras: vec![([1, 1, 4], Cell::Block(ACCENT, None)), ([5, 1, 4], Cell::Block(ACCENT, None))],
-        anchors: vec![("anchor/npc-stand", a_pos([3, 1, 4], Some("north")))],
+        extras: vec![
+            ([1, 1, 4], Cell::Block(ACCENT, None)),
+            ([5, 1, 4], Cell::Block(ACCENT, None)),
+        ],
+        // `anchor/wave` (v0.3 wave spawn) shares the stand cell; faces the north
+        // entry door.
+        anchors: vec![
+            ("anchor/npc-stand", a_pos([3, 1, 4], Some("north"))),
+            ("anchor/wave", a_pos([3, 1, 4], Some("north"))),
+        ],
     });
 
     // 7. small room C 9x5x7, doors N + E. npc stand.
@@ -561,16 +598,27 @@ fn main() {
         doors: vec![Side::North, Side::East],
         lights: ceiling_grid([9, 5, 7]),
         extras: vec![([4, 1, 5], Cell::Block(ACCENT, None))],
-        anchors: vec![("anchor/npc-stand", a_pos([2, 1, 3], Some("east")))],
+        // `anchor/door` (v0.3 interact target) shares the stand cell; faces the
+        // east entry door.
+        anchors: vec![
+            ("anchor/npc-stand", a_pos([2, 1, 3], Some("east"))),
+            ("anchor/door", a_pos([2, 1, 3], Some("east"))),
+        ],
     });
 
-    // 8. gate room 7x5x9, doors N/S, iron-bars gate at z=4 (x=2..4, y=1..3).
-    let mut gate_extras: Vec<([i32; 3], Cell)> = vec![];
-    for x in 2..=4 {
-        for y in 1..=3 {
-            gate_extras.push(([x, y, 4], Cell::Block(GATE, None)));
-        }
-    }
+    // 8. gate room 7x5x9, doors N/S, iron-bars gate at z=4.
+    //
+    // The gate must seal the passage WALL-TO-WALL (M2 fix): the room interior
+    // spans x=1..=5, so bars only across the 3-wide doorway (x=2..4) left the
+    // floor at x=1 and x=5 open and the owner walked around the gate. The barred
+    // row now fills the whole interior width (x=1..=5). The OPENABLE region
+    // (`anchor/gate`) stays the 3-wide central passage (x=2..4) that a player
+    // actually walks through; the x=1 and x=5 columns are permanent bar flanks
+    // that keep the wall sealed after the gate opens. Iron bars are non-occluding
+    // (light passes through), so the sealed-doorway floor-light probe is unchanged.
+    let gate_extras: Vec<([i32; 3], Cell)> = (1..=5)
+        .flat_map(|x| (1..=3).map(move |y| ([x, y, 4], Cell::Block(GATE, None))))
+        .collect();
     specs.push(Spec {
         id: "keep-gate-room",
         size: [7, 5, 9],
@@ -579,7 +627,10 @@ fn main() {
         extras: gate_extras,
         anchors: vec![
             ("anchor/gate", a_region([2, 1, 4], [4, 3, 4], GATE)),
-            ("anchor/keeper-stand", a_pos([3, 1, 2], Some("south"))),
+            // Keeper faces NORTH — toward the north entry door players arrive
+            // through (he stands on the north side of the gate). Previously faced
+            // south (into the sealed gate), turning his back on arrivals.
+            ("anchor/keeper-stand", a_pos([3, 1, 2], Some("north"))),
         ],
     });
 
