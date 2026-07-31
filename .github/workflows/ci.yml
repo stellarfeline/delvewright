@@ -111,10 +111,18 @@ jobs:
         run: python3 .github/scripts/mecha_crosscheck.py out/datapack
 
   docs:
+    # Name must stay exactly "docs (local link check)" — it is a required
+    # status context in branch protection; renaming it deadlocks every PR.
     name: docs (local link check)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # docs/reference/compiler.md is the authoritative current-behavior record;
+      # its DW diagnostics catalog must match crates/**/*.rs exactly, both ways
+      # (CLAUDE.md Methodology). Deterministic, offline, stdlib-only python3
+      # (ubuntu-latest ships >=3.11).
+      - name: DW-code catalog matches the compiler reference (both directions)
+        run: python3 tools/check-dw-codes.py
       # --offline: check only local/internal links. The repo is private, so
       # external-link checks would fail or flake.
       - uses: lycheeverse/lychee-action@v2

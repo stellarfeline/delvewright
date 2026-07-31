@@ -100,6 +100,11 @@ validation/          # docker compose: headless server + bot, same image as CI &
 - **Docs are the only persistent memory.** End every session by writing lessons back:
   new constraints → this file; new decisions → an ADR; process learnings → the relevant
   spec. If you fought the codebase and won, record how.
+- **Compiler behavior has one live reference.** `docs/reference/compiler.md` is the
+  authoritative current-behavior record for `delvec` (DSL surface, emission,
+  invariants, the full DW diagnostics catalog); specs stay historical decision
+  records. Any PR that changes compiler behavior updates it in the same PR — CI
+  enforces the DW-code subset bidirectionally (`tools/check-dw-codes.py`, docs job).
 - Repeated workflows become skills/slash commands (`/new-campaign`, `/validate`,
   `/release`) — see ROADMAP; design them when the workflow has been done manually twice.
 
