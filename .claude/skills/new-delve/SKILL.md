@@ -48,12 +48,16 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      get real trees too.
    - Pace to `target_minutes`; no grind (forbidden zone); mandatory-only quests.
    - Objectives (v0.3): author `title` (short player-facing name, e.g. "Unbar the
-     Deep Gate") and `hint` (one-line location/direction guidance, e.g. "The
-     barred door stands in the corner room by the entrance hall") for **every
+     Deep Gate") and `hint` (one-line location/direction guidance, e.g. "Past the
+     entrance hall, take the left passage to the barred door") for **every
      non-`talk-to` objective**. The compiler surfaces them in-game when the
      objective activates (chat + sound); without them the player gets no guidance
      and cannot find interact/collect/reach targets. `talk-to` objectives may omit
      them (the NPC dialog is self-explanatory).
+   - Hint wording: give landmark-relative directions from places the player already
+     knows (the entrance hall, the gate, a named NPC) — never room-shape jargon
+     ("corner room", "L-shaped hall") or solver-internal terms (anchor/piece/socket
+     ids).
 3. `delvec validate <campaign-dir>` — fix by diagnostic code (DW####; see
    `crates/dsl/README.md` + `crates/compiler/README.md` tables). Loop until clean.
    Three failed repairs on the same code → stop and think about the design instead
