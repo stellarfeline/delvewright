@@ -1661,6 +1661,10 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
 
     // Collect (quest, objective) pairs by verb, in declared order.
     let mut first_kill = None;
+    // Prefer a kill whose wave contains an armed mob so the armed-equipment assert
+    // (M2 round-2 fix 1) is actually exercised — the equipment bug hid for a whole
+    // milestone precisely because nothing looked. Falls back to the first kill.
+    let mut first_armed_kill = None;
     let mut first_collect = None;
     let mut first_interact = None;
     let mut first_flag_gated = None;
@@ -1668,7 +1672,18 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         for o in &q.objectives {
             let qid = q.id.as_str();
             match o {
-                Objective::Kill { .. } if first_kill.is_none() => first_kill = Some((qid, o)),
+                Objective::Kill { wave, .. } => {
+                    if first_kill.is_none() {
+                        first_kill = Some((qid, o));
+                    }
+                    if first_armed_kill.is_none()
+                        && plan::wave_of(c, wave.as_str()).is_some_and(|w| {
+                            w.mobs.iter().any(|m| default_mainhand(&m.entity).is_some())
+                        })
+                    {
+                        first_armed_kill = Some((qid, o));
+                    }
+                }
                 Objective::Collect { .. } if first_collect.is_none() => {
                     first_collect = Some((qid, o))
                 }
@@ -1685,6 +1700,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             }
         }
     }
+    let first_kill = first_armed_kill.or(first_kill);
 
     // kill: spawn the wave, drain the countdown via the kill reward, tick,
     // assert the objective completed.
