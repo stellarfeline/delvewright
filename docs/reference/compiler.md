@@ -252,6 +252,14 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   build adds `language` + hashes the sidecar), `datapack/`, `packtest-datapack/`,
   `server/`, `critical-path.json`, plus `resourcepack.zip`+`SKINS.md`
   (`resource_pack_sha1` in manifest) for a skinned campaign.
+- `<out>/validation/critical-path-waypoints.json`: the DW0311-proven per-leg route
+  thinned to sparse waypoints (`from`/`to` = the `critical-path.json` step
+  positions; a waypoint every ~10 blocks and at every floor-height change). The
+  harness replays these as successive nearby pathfinder goals so no single distant
+  A* solve strands the bot on a large open cave. **Validation metadata, not shipped
+  gameplay** — excluded from the delve image (like `packtest-datapack/`); emitted
+  only when a walked critical leg exists, so a fully-transported campaign stays
+  byte-identical.
 
 ### Nav (compile-time, over the assembled voxel grid)
 
