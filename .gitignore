@@ -20,3 +20,7 @@ campaigns
 # Read-only content-repo clone used by the skin toolchain workflow (spec-0009);
 # never part of the GPL code repo.
 content-repo/
+
+# Python
+__pycache__/
+*.pyc
