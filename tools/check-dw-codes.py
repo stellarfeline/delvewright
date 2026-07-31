@@ -26,10 +26,11 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOC_PATH = REPO_ROOT / "docs" / "reference" / "compiler.md"
 CRATES_DIR = REPO_ROOT / "crates"
 
-# Codes approved (spec-0010, #35) and documented in the reference as
-# "approved, landing" but NOT yet present in the source. Remove a code from here
-# the moment it lands in crates/**/*.rs (the check below forces this).
-PENDING = {"DW0211"}
+# Codes approved and documented in the reference as "approved, landing" but NOT
+# yet present in the source. Remove a code from here the moment it lands in
+# crates/**/*.rs (the check below forces this). spec-0010 (#35) has landed:
+# DW0211 graduated to a normal catalog row.
+PENDING: set[str] = set()
 
 
 def codes_in(text: str) -> set[str]:

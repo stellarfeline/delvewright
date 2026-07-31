@@ -236,6 +236,12 @@ impl World {
         self.is_solid(c)
     }
 
+    /// Build a [`World`] directly from a set of solid cells (test / synthetic
+    /// entry point; the relight unit tests build a world without a full [`Plan`]).
+    pub fn from_solid_cells(solid: BTreeSet<[i32; 3]>) -> Self {
+        World { solid }
+    }
+
     /// Whether a cell is a valid standing position (feet + head passable, solid
     /// ground below). Public wrapper over the internal walkability rule so the
     /// relight pass (spec-0010) can collect reachable walkable cells.

@@ -86,11 +86,19 @@ pub struct Relight {
 // 1.21.11 block-light emitter table + opacity (ported from cave-generator)
 // ---------------------------------------------------------------------------
 
+/// The bare block id: strip a `minecraft:` namespace and any `[state]` /
+/// `{nbt}` suffix, so `minecraft:lantern[hanging=true]` matches `lantern`.
+fn base_id(name: &str) -> &str {
+    let n = name.strip_prefix("minecraft:").unwrap_or(name);
+    let end = n.find(['[', '{']).unwrap_or(n.len());
+    &n[..end]
+}
+
 /// Block-light emission of a block id (0 if not a source). 1.21.11 values,
 /// matching the cave-generator's live-derived table plus the fixture-registry
 /// blocks and the common vanilla sources a prefab might carry.
 pub fn emission(name: &str) -> u8 {
-    match name.strip_prefix("minecraft:").unwrap_or(name) {
+    match base_id(name) {
         "beacon"
         | "campfire"
         | "conduit"
@@ -130,8 +138,9 @@ pub fn emission(name: &str) -> u8 {
 /// blocks are treated as opaque (conservative — never overestimates light),
 /// matching the cave-generator's estimator.
 pub fn passes_light(name: &str) -> bool {
+    let id = base_id(name);
     matches!(
-        name.strip_prefix("minecraft:").unwrap_or(name),
+        id,
         "air"
             | "cave_air"
             | "void_air"
@@ -169,9 +178,9 @@ pub fn passes_light(name: &str) -> bool {
             | "cobweb"
             | "sugar_cane"
             | "lily_pad"
-    ) || name.ends_with("_stained_glass")
-        || name.ends_with("_stained_glass_pane")
-        || name == "minecraft:glass_pane"
+    ) || id.ends_with("_stained_glass")
+        || id.ends_with("_stained_glass_pane")
+        || id == "glass_pane"
 }
 
 // ---------------------------------------------------------------------------
@@ -585,29 +594,11 @@ pub fn relight(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Relight {
                 );
             }
             None => {
-                // Measured-darkness gate. Judge the darkest reachable walkable cell.
-                let light = model.flood(sky);
-                let mut darkest_cell: Option<([i32; 3], u8)> = None;
-                for &cell in &reachable {
-                    let l = light.get(&cell).copied().unwrap_or(0);
-                    match darkest_cell {
-                        Some((_, bl)) if bl <= l => {}
-                        _ => darkest_cell = Some((cell, l)),
-                    }
-                }
-                if let Some((cell, l)) = darkest_cell
-                    && l < DARK_THRESHOLD
-                    && !night_vision
+                // Measured-darkness gate over the assembled reachable walkable cells.
+                if let Some(diag) =
+                    measure_undeclared(&model, &reachable, sky, night_vision, &area.area_id)
                 {
-                    out.diagnostics.push(LightDiag {
-                        code: DW_DARK_UNMITIGATED,
-                        message: format!(
-                            "area `{}` has a reachable walkable cell at {cell:?} measured at light \
-                             {l} (< {DARK_THRESHOLD}) under the darkest reachable sky (effective {sky}) \
-                             with no `lighting` declaration and no night-vision class kit",
-                            area.area_id
-                        ),
-                    });
+                    out.diagnostics.push(diag);
                 }
             }
         }
@@ -690,6 +681,42 @@ fn relight_area(
                 return;
             }
         }
+    }
+}
+
+/// The measured-darkness gate for an **undeclared** area (spec-0010 mitigation
+/// hierarchy step 4). Returns a `DW0210` diagnostic when the darkest reachable
+/// walkable cell measures below [`DARK_THRESHOLD`] under the darkest reachable sky
+/// and no night-vision kit mitigates; `None` otherwise. Sealed cavities are not in
+/// `reachable`, so they are never counted.
+fn measure_undeclared(
+    model: &LightModel,
+    reachable: &BTreeSet<[i32; 3]>,
+    sky: u8,
+    night_vision: bool,
+    area_id: &str,
+) -> Option<LightDiag> {
+    let light = model.flood(sky);
+    let mut darkest: Option<([i32; 3], u8)> = None;
+    for &cell in reachable {
+        let l = light.get(&cell).copied().unwrap_or(0);
+        match darkest {
+            Some((_, bl)) if bl <= l => {}
+            _ => darkest = Some((cell, l)),
+        }
+    }
+    let (cell, l) = darkest?;
+    if l < DARK_THRESHOLD && !night_vision {
+        Some(LightDiag {
+            code: DW_DARK_UNMITIGATED,
+            message: format!(
+                "area `{area_id}` has a reachable walkable cell at {cell:?} measured at light {l} \
+                 (< {DARK_THRESHOLD}) under the darkest reachable sky (effective {sky}) with no \
+                 `lighting` declaration and no night-vision class kit"
+            ),
+        })
+    } else {
+        None
     }
 }
 
@@ -933,4 +960,427 @@ fn structure_named_cells(bytes: &[u8]) -> Vec<([i32; 3], String)> {
         }
     }
     out
+}
+
+// ---------------------------------------------------------------------------
+// Tests (spec-0010 acceptance criteria, synthetic in-code fixtures — ADR-0006)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use delvewright_dsl::{Fixture, WorldTime, WorldWeather};
+
+    /// A stone room shell of size `[w, h, d]` with an air interior. Floor at y=0,
+    /// ceiling at y=h-1 (omitted when `open_top`), walls on the x/z perimeter.
+    fn room(w: i32, h: i32, d: i32, open_top: bool) -> BTreeMap<[i32; 3], String> {
+        let mut m = BTreeMap::new();
+        for x in 0..w {
+            for y in 0..h {
+                for z in 0..d {
+                    let ceil = y == h - 1;
+                    let shell = y == 0
+                        || (ceil && !open_top)
+                        || x == 0
+                        || x == w - 1
+                        || z == 0
+                        || z == d - 1;
+                    if shell {
+                        m.insert([x, y, z], "minecraft:stone".to_string());
+                    }
+                }
+            }
+        }
+        m
+    }
+
+    /// A nav world whose solid set is every non-air cell of `map`.
+    fn nav_of(map: &BTreeMap<[i32; 3], String>) -> World {
+        World::from_solid_cells(map.keys().copied().collect())
+    }
+
+    /// Interior standable feet cells (the reachable set) of a room, seeded from the
+    /// geometric centre floor cell (an interior entry anchor, like the real
+    /// `spawn`) so the flood stays inside the shell rather than escaping onto the
+    /// roof (roof cells are also standable).
+    fn reachable_of(map: &BTreeMap<[i32; 3], String>) -> BTreeSet<[i32; 3]> {
+        let nav = nav_of(map);
+        let (min, max) = bounds(map);
+        let center = [(min[0] + max[0]) / 2, min[1] + 1, (min[2] + max[2]) / 2];
+        nav.reachable_walkable(&[center])
+    }
+
+    fn bounds(map: &BTreeMap<[i32; 3], String>) -> ([i32; 3], [i32; 3]) {
+        let mut min = [i32::MAX; 3];
+        let mut max = [i32::MIN; 3];
+        for c in map.keys() {
+            for a in 0..3 {
+                min[a] = min[a].min(c[a]);
+                max[a] = max[a].max(c[a]);
+            }
+        }
+        (min, max)
+    }
+
+    fn min_reachable_light(model: &LightModel, reachable: &BTreeSet<[i32; 3]>, sky: u8) -> u8 {
+        let light = model.flood(sky);
+        reachable
+            .iter()
+            .map(|c| light.get(c).copied().unwrap_or(0))
+            .min()
+            .unwrap_or(0)
+    }
+
+    // --- emitter + attenuation constants ---
+
+    #[test]
+    fn emitter_table_1_21_11() {
+        assert_eq!(emission("minecraft:torch"), 14);
+        assert_eq!(emission("minecraft:wall_torch"), 14);
+        assert_eq!(emission("minecraft:lantern"), 15);
+        assert_eq!(emission("minecraft:campfire"), 15);
+        assert_eq!(emission("minecraft:shroomlight"), 15);
+        assert_eq!(emission("minecraft:glowstone"), 15);
+        assert_eq!(emission("minecraft:sea_lantern"), 15);
+        assert_eq!(emission("minecraft:soul_lantern"), 10);
+        assert_eq!(emission("minecraft:glow_lichen"), 7);
+        assert_eq!(emission("minecraft:magma_block"), 3);
+        assert_eq!(emission("minecraft:stone"), 0);
+        assert_eq!(emission("minecraft:air"), 0);
+    }
+
+    #[test]
+    fn effective_sky_attenuation_table() {
+        // Full daylight.
+        assert_eq!(effective_sky(WorldTime::Noon, WorldWeather::Clear), 15);
+        assert_eq!(effective_sky(WorldTime::Day, WorldWeather::Clear), 15);
+        // Night floor (weather-independent).
+        assert_eq!(effective_sky(WorldTime::Night, WorldWeather::Clear), 4);
+        assert_eq!(effective_sky(WorldTime::Midnight, WorldWeather::Clear), 4);
+        assert_eq!(effective_sky(WorldTime::Midnight, WorldWeather::Thunder), 4);
+        // Weather darkens daytime.
+        assert_eq!(effective_sky(WorldTime::Noon, WorldWeather::Rain), 12);
+        assert_eq!(effective_sky(WorldTime::Noon, WorldWeather::Thunder), 7);
+        // Monotone: brighter ≥ darker.
+        assert!(
+            effective_sky(WorldTime::Noon, WorldWeather::Clear)
+                >= effective_sky(WorldTime::Midnight, WorldWeather::Thunder)
+        );
+    }
+
+    // --- flood + sky geometry ---
+
+    #[test]
+    fn flood_block_light_falls_off_by_one() {
+        let mut map = room(5, 5, 5, false);
+        map.insert([2, 1, 2], "minecraft:glowstone".to_string());
+        let model = LightModel::from_blocks(map);
+        let light = model.flood(0);
+        assert_eq!(light.get(&[2, 1, 2]).copied().unwrap_or(0), 15);
+        // One step away through air = 14.
+        assert_eq!(light.get(&[2, 2, 2]).copied().unwrap_or(0), 14);
+    }
+
+    #[test]
+    fn sky_open_only_under_open_column() {
+        let open = LightModel::from_blocks(room(5, 5, 5, true));
+        // Interior floor cell has open sky above (no ceiling).
+        assert!(open.sky_open([2, 1, 2]));
+        let closed = LightModel::from_blocks(room(5, 5, 5, false));
+        // A ceiling blocks the sky.
+        assert!(!closed.sky_open([2, 1, 2]));
+    }
+
+    // --- Criterion 2: declared lantern reaches min_light, fixtures only ---
+
+    #[test]
+    fn crit2_declared_lantern_reaches_min_light() {
+        let map = room(9, 5, 9, false); // enclosed, unlit
+        let model_map = map.clone();
+        let nav = nav_of(&map);
+        let reachable = reachable_of(&map);
+        let (amin, amax) = bounds(&map);
+        let mut model = LightModel::from_blocks(model_map);
+        let mut out = Relight::default();
+        let spec = AreaLighting {
+            fixture: Fixture::Lantern,
+            min_light: 7,
+        };
+        relight_area(
+            &mut model,
+            &nav,
+            &reachable,
+            &BTreeSet::new(),
+            "area/hall",
+            spec,
+            0,
+            amin,
+            amax,
+            &mut out,
+        );
+        assert!(
+            out.diagnostics.is_empty(),
+            "must satisfy: {:?}",
+            out.diagnostics
+        );
+        assert!(!out.placements.is_empty(), "expected fixtures placed");
+        for p in &out.placements {
+            assert!(
+                p.block.starts_with("minecraft:lantern"),
+                "only registry lantern fixtures, got {}",
+                p.block
+            );
+        }
+        assert!(
+            min_reachable_light(&model, &reachable, 0) >= 7,
+            "every reachable cell must reach min_light 7"
+        );
+    }
+
+    // --- Criterion 4: dark seam between two lit ends gets a fixture ---
+
+    #[test]
+    fn crit4_dark_seam_corridor_gets_a_fixture() {
+        let mut map = room(21, 5, 3, false);
+        map.insert([1, 3, 1], "minecraft:glowstone".to_string());
+        map.insert([19, 3, 1], "minecraft:glowstone".to_string());
+        let nav = nav_of(&map);
+        let reachable = reachable_of(&map);
+        let (amin, amax) = bounds(&map);
+        // Seam (mid-corridor) is dark before relight.
+        let pre = LightModel::from_blocks(map.clone());
+        assert!(pre.flood(0).get(&[10, 1, 1]).copied().unwrap_or(0) < 7);
+        let mut model = LightModel::from_blocks(map);
+        let mut out = Relight::default();
+        relight_area(
+            &mut model,
+            &nav,
+            &reachable,
+            &BTreeSet::new(),
+            "area/corridor",
+            AreaLighting {
+                fixture: Fixture::Torch,
+                min_light: 7,
+            },
+            0,
+            amin,
+            amax,
+            &mut out,
+        );
+        assert!(out.diagnostics.is_empty(), "{:?}", out.diagnostics);
+        assert!(
+            out.placements.iter().any(|p| (7..=13).contains(&p.pos[0])),
+            "expected a fixture in the dark seam region, got {:?}",
+            out.placements
+        );
+        assert!(min_reachable_light(&model, &reachable, 0) >= 7);
+    }
+
+    // --- Criterion 6: dark undeclared area → DW0210 ---
+
+    #[test]
+    fn crit6_dark_undeclared_is_dw0210() {
+        let map = room(7, 5, 7, false); // enclosed, unlit
+        let model = LightModel::from_blocks(map.clone());
+        let reachable = reachable_of(&map);
+        let diag = measure_undeclared(&model, &reachable, 0, false, "area/crypt");
+        assert!(diag.is_some());
+        assert_eq!(diag.unwrap().code, DW_DARK_UNMITIGATED);
+    }
+
+    // --- Criterion 5: night-vision kit suppresses DW0210 ---
+
+    #[test]
+    fn crit5_night_vision_suppresses_dw0210() {
+        let map = room(7, 5, 7, false);
+        let model = LightModel::from_blocks(map.clone());
+        let reachable = reachable_of(&map);
+        assert!(
+            measure_undeclared(&model, &reachable, 0, true, "area/crypt").is_none(),
+            "night vision must mitigate an undeclared dark area"
+        );
+    }
+
+    // --- Criterion 3: a sealed dark cavity is never counted ---
+
+    #[test]
+    fn crit3_sealed_cavity_not_counted() {
+        // A lit main room plus a fully sealed (unreachable) dark air pocket: a
+        // detached 3×3×3 stone cube with a hollow air centre (the hollow-statue
+        // false-dark class). The cavity is enclosed on all six sides by stone.
+        let mut map = room(9, 5, 9, false);
+        map.insert([4, 3, 4], "minecraft:glowstone".to_string()); // light the room
+        for dx in 0..3 {
+            for dy in 0..3 {
+                for dz in 0..3 {
+                    map.insert([20 + dx, dy, 20 + dz], "minecraft:stone".to_string());
+                }
+            }
+        }
+        map.remove(&[21, 1, 21]); // hollow the cube's centre → a sealed dark cell
+        let model = LightModel::from_blocks(map.clone());
+        let reachable = reachable_of(&map);
+        // The sealed cell is dark but not a reachable walkable cell.
+        assert!(model.flood(0).get(&[21, 1, 21]).copied().unwrap_or(0) < 3);
+        assert!(!reachable.contains(&[21, 1, 21]));
+        // The lit room measures clean despite the dark sealed pocket.
+        assert!(
+            measure_undeclared(&model, &reachable, 0, false, "area/room").is_none(),
+            "a sealed dark cavity must not trip DW0210"
+        );
+    }
+
+    // --- Criterion 7: declared fixture with no valid site → DW0211 ---
+
+    #[test]
+    fn crit7_unsatisfiable_is_dw0211() {
+        // A tiny dark floating platform: every air cell is a required path cell, so
+        // no off-path torch site exists and there is no wall to mount a wall torch.
+        let mut map = BTreeMap::new();
+        for x in 0..3 {
+            for z in 0..3 {
+                map.insert([x, 0, z], "minecraft:stone".to_string());
+            }
+        }
+        let nav = nav_of(&map);
+        let reachable = reachable_of(&map);
+        let (amin, amax) = bounds(&map);
+        // Mark every reachable + head cell required (and the air above), leaving no
+        // free site.
+        let mut required: BTreeSet<[i32; 3]> = BTreeSet::new();
+        for &c in &reachable {
+            required.insert(c);
+            required.insert([c[0], c[1] + 1, c[2]]);
+        }
+        let mut model = LightModel::from_blocks(map);
+        let mut out = Relight::default();
+        relight_area(
+            &mut model,
+            &nav,
+            &reachable,
+            &required,
+            "area/ledge",
+            AreaLighting {
+                fixture: Fixture::Torch,
+                min_light: 7,
+            },
+            0,
+            amin,
+            amax,
+            &mut out,
+        );
+        assert!(
+            out.diagnostics
+                .iter()
+                .any(|d| d.code == DW_RELIGHT_UNSATISFIABLE),
+            "expected DW0211, got {:?} / placements {:?}",
+            out.diagnostics,
+            out.placements
+        );
+    }
+
+    // --- Criterion 9: sky-open shore at (noon, clear) needs no fixtures ---
+
+    #[test]
+    fn crit9_sky_shore_noon_clear_no_fixtures() {
+        let map = room(9, 5, 9, true); // open top → sky-lit
+        let nav = nav_of(&map);
+        let reachable = reachable_of(&map);
+        let (amin, amax) = bounds(&map);
+        let sky = effective_sky(WorldTime::Noon, WorldWeather::Clear); // 15
+        let mut model = LightModel::from_blocks(map);
+        let mut out = Relight::default();
+        relight_area(
+            &mut model,
+            &nav,
+            &reachable,
+            &BTreeSet::new(),
+            "area/shore",
+            AreaLighting {
+                fixture: Fixture::Torch,
+                min_light: 7,
+            },
+            sky,
+            amin,
+            amax,
+            &mut out,
+        );
+        assert!(
+            out.placements.is_empty(),
+            "sky-lit noon shore needs no fixtures: {:?}",
+            out.placements
+        );
+        assert!(out.diagnostics.is_empty());
+    }
+
+    // --- Criterion 10: same shore under midnight demands mitigation ---
+
+    #[test]
+    fn crit10_sky_shore_midnight_demands_mitigation() {
+        let map = room(9, 5, 9, true);
+        let nav = nav_of(&map);
+        let reachable = reachable_of(&map);
+        let (amin, amax) = bounds(&map);
+        let sky_night = effective_sky(WorldTime::Midnight, WorldWeather::Clear); // 4
+        // Under a min_light-7 declaration, the sky-lit shore is deficient at night.
+        let pre = LightModel::from_blocks(map.clone());
+        assert!(min_reachable_light(&pre, &reachable, sky_night) < 7);
+        let mut model = LightModel::from_blocks(map);
+        let mut out = Relight::default();
+        relight_area(
+            &mut model,
+            &nav,
+            &reachable,
+            &BTreeSet::new(),
+            "area/shore",
+            AreaLighting {
+                fixture: Fixture::Torch,
+                min_light: 7,
+            },
+            sky_night,
+            amin,
+            amax,
+            &mut out,
+        );
+        assert!(
+            !out.placements.is_empty(),
+            "midnight sky shore must demand fixtures"
+        );
+        assert!(min_reachable_light(&model, &reachable, sky_night) >= 7);
+    }
+
+    // --- Criterion 1: relight is deterministic (byte-identical placements) ---
+
+    #[test]
+    fn crit1_relight_is_deterministic() {
+        let build = || {
+            let map = room(11, 5, 11, false);
+            let nav = nav_of(&map);
+            let reachable = reachable_of(&map);
+            let (amin, amax) = bounds(&map);
+            let mut model = LightModel::from_blocks(map);
+            let mut out = Relight::default();
+            relight_area(
+                &mut model,
+                &nav,
+                &reachable,
+                &BTreeSet::new(),
+                "area/hall",
+                AreaLighting {
+                    fixture: Fixture::Lantern,
+                    min_light: 9,
+                },
+                0,
+                amin,
+                amax,
+                &mut out,
+            );
+            out.placements
+        };
+        assert_eq!(
+            build(),
+            build(),
+            "relight placements must be byte-identical"
+        );
+    }
 }

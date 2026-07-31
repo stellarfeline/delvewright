@@ -45,8 +45,8 @@ pub mod codes {
     pub const QUEST_UNREACHABLE: &str = "DW0202";
     /// Objective can never be completed (deadlock).
     pub const OBJECTIVE_DEADLOCK: &str = "DW0203";
-    /// A reachable `dark` prefab has no proven light mitigation.
-    pub const DARK_UNMITIGATED: &str = "DW0210";
+    // DW0210 (dark-area mitigation) moved to `crate::light` (spec-0010): it is now
+    // measured over the assembled world, not a per-piece admission profile.
 }
 
 /// Run reachability + lighting-mitigation analysis. Returns `DW02xx`
