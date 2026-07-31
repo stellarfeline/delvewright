@@ -922,15 +922,16 @@ pub enum QuestEffect {
         npc: NpcId,
     },
     /// Moves an NPC (and its interaction hitbox in lockstep) to an anchor (DSL
-    /// v0.4, spec-0008 §5). The compiler emits a collision-safe teleport to the
-    /// resolved anchor cell — a valid standable location — so the move never
-    /// lands inside a wall. (`speed` is reserved for smooth per-tick pathfinding.)
+    /// v0.4, spec-0008 §5 + addendum). The compiler plans a **collision-safe walked
+    /// path** by A* over the solved voxel grid and emits per-tick teleport
+    /// waypoints along it, so the NPC never clips a wall and walks up to (not into)
+    /// a solid affordance. An unroutable move is a compile error (`DW0307`).
     MoveNpc {
         /// The NPC (stage-2 ref) to move.
         npc: NpcId,
         /// The destination anchor.
         to_anchor: AnchorId,
-        /// Optional travel speed in blocks/tick (reserved).
+        /// Optional travel speed in blocks/tick (defaults to ~0.15).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         speed: Option<f64>,
     },
@@ -938,7 +939,9 @@ pub enum QuestEffect {
     /// gamemode+position, spectator, then dolly two co-located cameras along a
     /// straight-line lerp between waypoints and alternate `spectate` between them
     /// each tick (the two-camera bounce; the same-entity re-`spectate` is a server
-    /// no-op and is never emitted), and restore on completion.
+    /// no-op and is never emitted), and restore on completion. The compiler
+    /// validates the dolly path passes only through non-solid blocks — cameras
+    /// fly but must not clip a solid (`DW0308`).
     Cutscene {
         /// Ordered camera waypoints (straight-line lerp between them).
         path: Vec<CameraWaypoint>,

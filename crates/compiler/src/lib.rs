@@ -6,6 +6,8 @@
 //! - [`commands`]: the vendored 1.21.11 Brigadier command-tree validator.
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
 //! - [`plan`]: resolve the campaign into a placement/naming model.
+//! - [`nav`]: compile-time pathfinding over the solved voxel grid — collision-safe
+//!   `move-npc` walked paths (`DW0307`) + cutscene air-corridor checks (`DW0308`).
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
 //! - [`creator`]: the playtest-only creator overlay (`creator-datapack/`, spec-0006).
 
@@ -14,6 +16,7 @@ pub mod commands;
 pub mod creator;
 pub mod emit;
 pub mod load;
+pub mod nav;
 pub mod plan;
 pub mod registry;
 pub mod render_plan;
