@@ -272,6 +272,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "delvewright-schem"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "fastnbt",
+ "flate2",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
