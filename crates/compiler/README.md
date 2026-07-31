@@ -110,13 +110,32 @@ and gives the compiler full layout knowledge for anchors and the critical path.
   fillers → through-rooms inline → one dead-end terminal (`boss-hall` last). Kept
   byte-identical (`keep-crawl`). **Two+ terminals** (`grow_branching`, v0.3) — a
   branching tree: extend the trunk, fork with `tee`/`cross` branch pieces, and cap
-  each terminal on its own branch socket (shrine **and** boss-hall). This lifts
-  the old one-terminal limit — the harness pathfinds now, so branches/turns walk.
-  The trunk is extended before forking so large terminals still fit (greedy, no
-  backtracking); robust across a 200-seed sweep.
+  each terminal on its own branch socket. This lifts the old one-terminal limit —
+  the harness pathfinds now, so branches/turns walk.
+- **3D / vertical growth (M2)**: the mating + AABB machinery is fully 3D. A
+  **stair** connector is a keep-socket-v1 piece whose two sockets sit at different
+  local `y` (a +4 rise); mating it lifts the layout one elevation level. When the
+  bound pool contains a stair and there is filler budget, growth **forces at least
+  one** so the layout spans ≥2 levels (`keep-vertical`, `pool/vertical-keep`). A
+  pool with no stair is byte-identical to before (`keep-crawl`, `keep-trial`).
+- **Large-terminal robustness (M2)**: a single greedy branching pass often cannot
+  fit a large terminal (`keep-boss-hall`, 11×13) once small branches crowd the
+  space. `grow_branching` wraps the greedy pass in a **bounded, deterministic
+  retry** (≤32 attempts): attempt 0 reproduces the pre-M2 growth byte-for-byte;
+  each later attempt caps the largest-footprint terminal first and — the shared
+  PRNG having advanced — draws fresh choices. Same seed → same attempt sequence →
+  same layout. This lifted the hollow-vigil campaign shape from 3/40 to 40/40
+  solvable seeds at `pieces {min 10, max 15}`.
+- **Role-aware carrier selection (M2)**: each required anchor maps to a carrier
+  piece, **never the `entry` piece** (an NPC on `anchor/exit`, which the entry
+  spawn-hall already provides, no longer forces a duplicate spawn-hall), with
+  **coverage-reuse** — an anchor already covered by an already-selected piece adds
+  no second piece (so `anchor/objective` resolves to the boss-hall that
+  `anchor/boss` forces, not a redundant shrine).
 - **Guarantees**: connected; exactly one entry; every campaign-referenced anchor
   in the area (NPC stands, `reach-anchor` targets, `open-gate` anchors) provided
-  by exactly one placed piece; piece count within the DSL `pieces {min,max}`.
+  by **exactly one** placed piece (else `DW0305`); piece count within the DSL
+  `pieces {min,max}`.
 - **Sealing**: every mated socket's jigsaw block is cleared to `air`; every
   unmated socket is filled with `stone_bricks` (wall). Emitted as `/fill` in the
   bootstrap after placement.
@@ -136,7 +155,8 @@ diagnostics (and as one JSON object per line under `--json`, `stage: "build"`).
 | `DW0301` | The bound pool declares no `entry`-role piece (or no `connector` filler when fillers are needed). |
 | `DW0302` | A campaign-referenced anchor is provided by **no** member of the pool (unsatisfiable required anchor). |
 | `DW0303` | The `pieces {min,max}` range is too small to fit the entry plus the required anchor-bearing pieces. |
-| `DW0304` | The solver could not place a required piece without overlap, or a branching layout's pool declares no branch piece (tee/cross) to fork its terminals. (The old "more than one terminal" limit is lifted — `grow_branching`.) |
+| `DW0304` | The solver could not place a required piece without overlap (after the bounded, deterministic retry), or a branching layout's pool declares no branch piece (tee/cross) to fork its terminals. (The old "more than one terminal" limit is lifted — `grow_branching`.) |
+| `DW0305` | A campaign-referenced anchor is defined by **more than one placed piece** (ambiguous resolution) — reference a piece-unique anchor. Also the role-aware failure when a required anchor's only carrier is the `entry` piece and the entry does not already provide it. |
 
 `tests/fixtures/keep-unsatisfiable-anchor.json` (→ `DW0302`) and
 `keep-range-too-small.json` (→ `DW0303`) both pass validate + analyze (the DSL
