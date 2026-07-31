@@ -293,6 +293,34 @@ fn run_build(
         }
     }
 
+    // read the NPC-skin PNGs referenced by mannequin NPCs (spec-0009 bake). The
+    // PNG lives in the campaign dir at `skins/<texture_id>.png`; a missing one is
+    // a build error (DW0309), not a silent skip.
+    let mut skins: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for npc in &campaign.npcs.content.npcs {
+        if let Some(skin) = &npc.skin {
+            if skins.contains_key(&skin.texture_id) {
+                continue;
+            }
+            let path = campaign_dir
+                .join("skins")
+                .join(format!("{}.png", skin.texture_id));
+            match std::fs::read(&path) {
+                Ok(bytes) => {
+                    skins.insert(skin.texture_id.clone(), bytes);
+                }
+                Err(e) => {
+                    print_build_error(
+                        "DW0309",
+                        &format!("cannot read skin png {}: {e}", path.display()),
+                        json,
+                    );
+                    return ExitCode::from(3);
+                }
+            }
+        }
+    }
+
     let tree = CommandTree::v1_21_11();
     let content_sha = resolve_content_sha();
     let output = match emit::build(
@@ -303,6 +331,7 @@ fn run_build(
         &prefabs,
         build_lang,
         &content_sha,
+        &skins,
     ) {
         Ok(o) => o,
         Err(errors) => {

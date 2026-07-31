@@ -10,14 +10,15 @@ use crate::stages::{
 };
 
 /// The latest `dsl_version` this crate implements (identity / tooling default).
-pub const SUPPORTED_DSL_VERSION: &str = "0.3.0";
+pub const SUPPORTED_DSL_VERSION: &str = "0.4.0";
 
-/// Every `dsl_version` this crate accepts. v0.3 is an **additive superset** of
-/// v0.2 (new stage-5 verbs, waves, flags); v0.2 campaigns remain valid and
-/// compile byte-identically. The reserved verbs (`kill`/`collect`/`interact`,
-/// `give-item`/`set-flag`/`spawn-wave`) are implemented only under `0.3.0`; a
-/// `0.2.0` document using them is still rejected with `DW0141`.
-pub const SUPPORTED_DSL_VERSIONS: &[&str] = &["0.2.0", "0.3.0"];
+/// Every `dsl_version` this crate accepts. Each version is an **additive
+/// superset** of the previous: v0.3 added the stage-5 verbs/waves/flags; v0.4
+/// (spec-0008) adds dialogue state, props, narration, live-threat tuning, NPC
+/// lifecycle + skins, environment triggers, cutscenes and named given items.
+/// Older campaigns remain valid and compile byte-identically. A construct
+/// introduced in a later version is rejected with `DW0141` in an earlier one.
+pub const SUPPORTED_DSL_VERSIONS: &[&str] = &["0.2.0", "0.3.0", "0.4.0"];
 
 /// True if `version` is a `dsl_version` this crate accepts.
 pub fn is_supported_version(version: &str) -> bool {
@@ -25,9 +26,18 @@ pub fn is_supported_version(version: &str) -> bool {
 }
 
 /// True if `version` enables the DSL v0.3 verbs (`kill`/`collect`/`interact`,
-/// `give-item`/`set-flag`/`spawn-wave`, waves, flags).
+/// `give-item`/`set-flag`/`spawn-wave`, waves, flags). v0.4 is an additive
+/// superset, so it enables the whole v0.3 surface too.
 pub fn is_v03(version: &str) -> bool {
-    version == "0.3.0"
+    version == "0.3.0" || version == "0.4.0"
+}
+
+/// True if `version` enables the DSL v0.4 surface (spec-0008): dialogue
+/// `set-flag` + `requires_flags`, props (`interact.prop`, `set-block`),
+/// `narrate`, wave `attributes`/`effects`, `despawn-npc`/`move-npc`, `cutscene`,
+/// NPC `skin`, stage-5 `triggers`, named `give-item`, objective `stealth`.
+pub fn is_v04(version: &str) -> bool {
+    version == "0.4.0"
 }
 
 /// Which stage a document belongs to.

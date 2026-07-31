@@ -17,6 +17,7 @@ pub mod load;
 pub mod plan;
 pub mod registry;
 pub mod render_plan;
+pub mod resourcepack;
 pub mod solver;
 
 /// This compiler's version (reported by `--version`, stamped in `manifest.json`).

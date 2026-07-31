@@ -26,3 +26,9 @@ sha2 = "0.10"
 # a zero mtime, so the output is deterministic (ADR-0006). MIT/Apache-2.0.
 fastnbt = "2"
 flate2 = "1"
+
+# DEP FLAG: `crc32fast` supplies the CRC-32 the per-delve NPC-skin resource pack
+# zip needs (spec-0009 bake). The zip is hand-written with the STORE method and
+# fixed zero timestamps so its bytes — and thus its sha1 — are deterministic
+# (ADR-0006). MIT/Apache-2.0.
+crc32fast = "1"

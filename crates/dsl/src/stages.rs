@@ -11,8 +11,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::ids::{
     AnchorId, AreaId, ClassId, DialogueId, FlagId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId,
-    WaveId,
+    TriggerId, WaveId,
 };
+
+/// serde default helper: `true` (used by DSL v0.4 `trigger.once`).
+fn default_true() -> bool {
+    true
+}
+
+/// serde `skip_serializing_if` helper: skip a `false` bool (DSL v0.4
+/// `objective.stealth`), keeping older campaigns byte-identical.
+fn is_false(b: &bool) -> bool {
+    !*b
+}
 
 // ---------------------------------------------------------------------------
 // Stage 1 — world
@@ -112,6 +123,48 @@ pub struct Npc {
     pub base_entity: String,
     /// The structured persona (character contract for stage 6).
     pub persona: Persona,
+    /// Optional player-model skin (DSL v0.4, spec-0008 §6 / spec-0009). When set,
+    /// the compiler emits a `minecraft:mannequin` body carrying this skin profile
+    /// instead of re-dressing `base_entity`; the interaction hitbox is unchanged.
+    /// Non-skinned NPCs are byte-identical to v0.3.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skin: Option<NpcSkin>,
+}
+
+/// A mannequin NPC's player-model skin (DSL v0.4). The skin PNG ships in the
+/// per-delve resource pack at `assets/delvewright/textures/npc/<texture_id>.png`
+/// (sourced from the campaign dir's `skins/<texture_id>.png`); the mannequin's
+/// `profile.texture` resolves to `delvewright:npc/<texture_id>`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NpcSkin {
+    /// Skin id: the PNG basename under `skins/` and the resource-pack texture
+    /// path segment (a bare kebab token; validated by `DW0190`).
+    pub texture_id: String,
+    /// Player model. **Required** (spec-0009): an omitted model renders slim, so
+    /// a wide skin on a slim model is distorted — the compiler always emits it.
+    pub model: SkinModel,
+}
+
+/// Player-model shape for a mannequin skin (`wide` = classic/Steve, `slim` =
+/// Alex). Emitted verbatim into the mannequin `profile.model`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum SkinModel {
+    /// Classic 4-pixel arms (Steve).
+    Wide,
+    /// Slim 3-pixel arms (Alex).
+    Slim,
+}
+
+impl SkinModel {
+    /// The vanilla `profile.model` token.
+    pub fn token(self) -> &'static str {
+        match self {
+            SkinModel::Wide => "wide",
+            SkinModel::Slim => "slim",
+        }
+    }
 }
 
 /// A structured casting sheet (owner decision 2026-07-30). Structure lives in the
@@ -228,12 +281,21 @@ pub struct DialogueOption {
     /// Next node; omitted closes the dialog.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next: Option<DialogueId>,
+    /// Flags that must be set for this option to be shown (DSL v0.4). Mirrors an
+    /// objective's `requires_flags`: an ungated option (empty) is unchanged; a
+    /// gated option is hidden until every referenced flag has been set by a
+    /// `set-flag` effect (quest or dialogue). Validation guarantees a flag-gated
+    /// option cannot make a critical-path node unreachable (`DW0191`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires_flags: Vec<FlagId>,
     /// Effects fired when this option is chosen.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<DialogueEffect>,
 }
 
-/// Effect fired by a dialogue option. v0: `complete-objective` only.
+/// Effect fired by a dialogue option. `complete-objective` (v0.2) and, from DSL
+/// v0.4, `set-flag` (mirrors the quest effect — sets a campaign flag from a
+/// dialogue choice, enabling flag-gated options/objectives/triggers).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum DialogueEffect {
@@ -242,6 +304,30 @@ pub enum DialogueEffect {
         /// The objective to complete (resolved at the stage-5 boundary).
         objective: ObjectiveId,
     },
+    /// Sets a campaign flag (DSL v0.4), mirroring [`QuestEffect::SetFlag`].
+    SetFlag {
+        /// The flag to set.
+        flag: FlagId,
+    },
+}
+
+impl DialogueEffect {
+    /// The `set-flag` flag id if this is a v0.4 `set-flag` dialogue effect.
+    pub fn set_flag(&self) -> Option<&FlagId> {
+        match self {
+            DialogueEffect::SetFlag { flag } => Some(flag),
+            DialogueEffect::CompleteObjective { .. } => None,
+        }
+    }
+
+    /// The v0.4 effect name if this dialogue effect is one introduced in DSL v0.4
+    /// (`set-flag`). Reserved (`DW0141`) in an earlier campaign.
+    pub fn v04_effect(&self) -> Option<&'static str> {
+        match self {
+            DialogueEffect::SetFlag { .. } => Some("set-flag"),
+            DialogueEffect::CompleteObjective { .. } => None,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -335,6 +421,62 @@ pub struct QuestsContent {
     /// slain to complete a `kill` objective. Empty/absent in v0.2 campaigns.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub waves: Vec<Wave>,
+    /// Environment triggers (DSL v0.4, spec-0008 §7): "the world answers". Each
+    /// watches an anchor for a strike / use / approach event and fires a bundle
+    /// of [`QuestEffect`]s. Empty/absent in v0.2/v0.3 campaigns.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub triggers: Vec<EnvTrigger>,
+}
+
+/// A stage-5 environment trigger (DSL v0.4). Emission uses vanilla-intended
+/// primitives only (spec-0008 §7): `strike`/`use` read a `minecraft:interaction`
+/// entity's attack/interaction records; `approach` is a `distance` selector on
+/// the tick. Look-at / break-attempt detection is excluded on principle (no
+/// vanilla primitive).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EnvTrigger {
+    /// Unique trigger id (`trigger/<kebab>`).
+    pub id: TriggerId,
+    /// The anchor this trigger watches.
+    pub at: AnchorId,
+    /// The event that fires it.
+    pub on: TriggerOn,
+    /// Flags that must be set before the trigger can fire (DSL v0.4).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires_flags: Vec<FlagId>,
+    /// Fire at most once (default `true`, mirroring objective completion). Set
+    /// `false` to allow re-firing every time the condition is met.
+    #[serde(default = "default_true")]
+    pub once: bool,
+    /// Effects fired when the trigger matches.
+    pub effects: Vec<QuestEffect>,
+}
+
+/// The event an [`EnvTrigger`] watches (DSL v0.4).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "on", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum TriggerOn {
+    /// The player attacks (left-clicks) the interaction entity at the anchor.
+    Strike,
+    /// The player uses (right-clicks) the interaction entity at the anchor.
+    Use,
+    /// The player comes within `range` blocks of the anchor.
+    Approach {
+        /// Approach radius (blocks).
+        range: u32,
+    },
+}
+
+impl TriggerOn {
+    /// The kebab tag (`strike` / `use` / `approach`).
+    pub fn kind(&self) -> &'static str {
+        match self {
+            TriggerOn::Strike => "strike",
+            TriggerOn::Use => "use",
+            TriggerOn::Approach { .. } => "approach",
+        }
+    }
 }
 
 /// A combat wave (DSL v0.3): a bundle of mobs spawned at an anchor and slain to
@@ -364,6 +506,45 @@ pub struct WaveMob {
     /// Optional custom name (shown above the mob).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Optional attribute overrides (DSL v0.4), emitted as 1.21.11 attribute
+    /// components. Enables e.g. a weakened live warden as a survivable stealth
+    /// threat. Omitted = vanilla defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attributes: Option<MobAttributes>,
+    /// Optional permanent, ambient status effects (DSL v0.4).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<MobEffect>,
+}
+
+/// Attribute overrides for a wave mob (DSL v0.4). Each field maps to a 1.21.11
+/// `minecraft:` attribute component; an unset field keeps the vanilla base value.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MobAttributes {
+    /// `minecraft:max_health` base value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_health: Option<f64>,
+    /// `minecraft:attack_damage` base value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attack_damage: Option<f64>,
+    /// `minecraft:movement_speed` base value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub movement_speed: Option<f64>,
+    /// `minecraft:follow_range` base value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follow_range: Option<f64>,
+}
+
+/// One permanent status effect on a wave mob (DSL v0.4), emitted as an ambient,
+/// non-expiring `effect give`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MobEffect {
+    /// Vanilla effect id (e.g. `minecraft:slowness`), validated against the
+    /// pinned registry (`DW0192`).
+    pub effect: String,
+    /// Amplifier (0 = level I).
+    pub amplifier: u32,
 }
 
 /// One expanded quest.
@@ -424,6 +605,12 @@ pub enum Objective {
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
+        /// bot should traverse sneaking (sprint disabled). Emitted into
+        /// `critical-path.json` as `sneak: true` on the step. Purely a harness
+        /// hint; no datapack effect.
+        #[serde(default, skip_serializing_if = "is_false")]
+        stealth: bool,
     },
     /// Completed by reaching an anchor once prerequisites are met.
     ReachAnchor {
@@ -445,6 +632,12 @@ pub enum Objective {
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
+        /// bot should traverse sneaking (sprint disabled). Emitted into
+        /// `critical-path.json` as `sneak: true` on the step. Purely a harness
+        /// hint; no datapack effect.
+        #[serde(default, skip_serializing_if = "is_false")]
+        stealth: bool,
     },
     /// Completed when the referenced wave is fully slain (v0.3).
     Kill {
@@ -464,6 +657,12 @@ pub enum Objective {
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
+        /// bot should traverse sneaking (sprint disabled). Emitted into
+        /// `critical-path.json` as `sneak: true` on the step. Purely a harness
+        /// hint; no datapack effect.
+        #[serde(default, skip_serializing_if = "is_false")]
+        stealth: bool,
     },
     /// Completed when `count` of `item` have been collected from `anchor` (v0.3).
     Collect {
@@ -487,6 +686,12 @@ pub enum Objective {
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
+        /// bot should traverse sneaking (sprint disabled). Emitted into
+        /// `critical-path.json` as `sneak: true` on the step. Purely a harness
+        /// hint; no datapack effect.
+        #[serde(default, skip_serializing_if = "is_false")]
+        stealth: bool,
     },
     /// Completed by interacting with an entity at `anchor`; if `requires_item` is
     /// set, the item must be in the player's inventory (v0.3).
@@ -504,13 +709,35 @@ pub enum Objective {
         /// Item required in inventory to complete the interaction (optional).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         requires_item: Option<String>,
+        /// Prop block that IS the interaction affordance (DSL v0.4, spec-0008
+        /// §2): the compiler `setblock`s it at the anchor on activation (exactly
+        /// as `collect` uses a real chest). Omitted = the glowing-lantern
+        /// hologram marker (the v0.3 fallback).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        prop: Option<Prop>,
         /// Prerequisite objectives.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         after: Vec<ObjectiveId>,
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
+        /// bot should traverse sneaking (sprint disabled). Emitted into
+        /// `critical-path.json` as `sneak: true` on the step. Purely a harness
+        /// hint; no datapack effect.
+        #[serde(default, skip_serializing_if = "is_false")]
+        stealth: bool,
     },
+}
+
+/// A prop block for an `interact` objective (DSL v0.4). The block is the
+/// affordance the player interacts with; its id is validated against the pinned
+/// 1.21.11 block registry (`DW0193`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Prop {
+    /// Vanilla block id (e.g. `minecraft:lever`).
+    pub block: String,
 }
 
 impl Objective {
@@ -591,6 +818,25 @@ impl Objective {
         }
     }
 
+    /// The bot stealth hint (DSL v0.4): traverse this leg sneaking.
+    pub fn stealth(&self) -> bool {
+        match self {
+            Objective::TalkTo { stealth, .. }
+            | Objective::ReachAnchor { stealth, .. }
+            | Objective::Kill { stealth, .. }
+            | Objective::Collect { stealth, .. }
+            | Objective::Interact { stealth, .. } => *stealth,
+        }
+    }
+
+    /// The `interact` prop block (DSL v0.4), if this is an `interact` with a prop.
+    pub fn prop(&self) -> Option<&Prop> {
+        match self {
+            Objective::Interact { prop, .. } => prop.as_ref(),
+            _ => None,
+        }
+    }
+
     /// The kebab type tag.
     pub fn kind(&self) -> &'static str {
         match self {
@@ -636,6 +882,9 @@ pub enum QuestEffect {
         item: String,
         /// How many to give.
         count: u32,
+        /// Optional display name (DSL v0.4), matching [`KitItem::name`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
     },
     /// Sets a campaign flag, enabling flag-gated objectives (v0.3).
     SetFlag {
@@ -647,6 +896,95 @@ pub enum QuestEffect {
         /// The wave (stage-5 `waves` ref) to spawn.
         wave: WaveId,
     },
+    /// Narrates a player-visible line (DSL v0.4, spec-0008 §3). `text` enters the
+    /// l10n key inventory like any player-visible string.
+    Narrate {
+        /// The line shown to the player.
+        text: String,
+        /// Presentation channel (default `chat`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        style: Option<NarrateStyle>,
+        /// Optional sound id played alongside the line.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sound: Option<String>,
+    },
+    /// Sets a block at an anchor (DSL v0.4, spec-0008 §2). General form of a prop
+    /// placement. Block id validated against the pinned 1.21.11 block registry.
+    SetBlock {
+        /// The anchor to place the block at.
+        anchor: AnchorId,
+        /// Vanilla block id to place.
+        block: String,
+    },
+    /// Despawns an NPC and its interaction hitbox (DSL v0.4, spec-0008 §5).
+    DespawnNpc {
+        /// The NPC (stage-2 ref) to remove.
+        npc: NpcId,
+    },
+    /// Moves an NPC (and its interaction hitbox in lockstep) to an anchor (DSL
+    /// v0.4, spec-0008 §5). The compiler emits a collision-safe teleport to the
+    /// resolved anchor cell — a valid standable location — so the move never
+    /// lands inside a wall. (`speed` is reserved for smooth per-tick pathfinding.)
+    MoveNpc {
+        /// The NPC (stage-2 ref) to move.
+        npc: NpcId,
+        /// The destination anchor.
+        to_anchor: AnchorId,
+        /// Optional travel speed in blocks/tick (reserved).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        speed: Option<f64>,
+    },
+    /// Plays a scripted camera cutscene (DSL v0.4 addendum). Per player: save
+    /// gamemode+position, spectator, then dolly two co-located cameras along a
+    /// straight-line lerp between waypoints and alternate `spectate` between them
+    /// each tick (the two-camera bounce; the same-entity re-`spectate` is a server
+    /// no-op and is never emitted), and restore on completion.
+    Cutscene {
+        /// Ordered camera waypoints (straight-line lerp between them).
+        path: Vec<CameraWaypoint>,
+        /// Cutscene duration in seconds.
+        seconds: u32,
+    },
+}
+
+/// The presentation channel for a [`QuestEffect::Narrate`] (DSL v0.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum NarrateStyle {
+    /// A chat line (default).
+    Chat,
+    /// A large on-screen title.
+    Title,
+    /// An on-screen subtitle.
+    Subtitle,
+}
+
+impl NarrateStyle {
+    /// The kebab tag (`chat` / `title` / `subtitle`).
+    pub fn token(self) -> &'static str {
+        match self {
+            NarrateStyle::Chat => "chat",
+            NarrateStyle::Title => "title",
+            NarrateStyle::Subtitle => "subtitle",
+        }
+    }
+}
+
+/// One camera waypoint of a [`QuestEffect::Cutscene`] (DSL v0.4): an anchor plus
+/// an integer block offset from it, giving the camera's world position.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CameraWaypoint {
+    /// The anchor the waypoint is relative to.
+    pub anchor: AnchorId,
+    /// Integer `[x, y, z]` block offset from the anchor (default `[0, 0, 0]`).
+    #[serde(default, skip_serializing_if = "is_zero3")]
+    pub offset: [i32; 3],
+}
+
+/// serde `skip_serializing_if` helper: skip a `[0, 0, 0]` offset.
+fn is_zero3(v: &[i32; 3]) -> bool {
+    *v == [0, 0, 0]
 }
 
 impl QuestEffect {
@@ -682,6 +1020,35 @@ impl QuestEffect {
         }
     }
 
+    /// `true` if this is a `give-item` carrying a v0.4 display `name`.
+    pub fn give_item_named(&self) -> bool {
+        matches!(self, QuestEffect::GiveItem { name: Some(_), .. })
+    }
+
+    /// The `set-block` block id if this is a v0.4 `set-block` effect.
+    pub fn set_block(&self) -> Option<(&AnchorId, &str)> {
+        match self {
+            QuestEffect::SetBlock { anchor, block } => Some((anchor, block.as_str())),
+            _ => None,
+        }
+    }
+
+    /// The NPC id if this is a v0.4 `despawn-npc` effect.
+    pub fn despawn_npc(&self) -> Option<&NpcId> {
+        match self {
+            QuestEffect::DespawnNpc { npc } => Some(npc),
+            _ => None,
+        }
+    }
+
+    /// `(npc, to_anchor)` if this is a v0.4 `move-npc` effect.
+    pub fn move_npc(&self) -> Option<(&NpcId, &AnchorId)> {
+        match self {
+            QuestEffect::MoveNpc { npc, to_anchor, .. } => Some((npc, to_anchor)),
+            _ => None,
+        }
+    }
+
     /// The v0.3 effect name if this effect is one introduced in DSL v0.3
     /// (`give-item`/`set-flag`/`spawn-wave`). These validate in v0.3 campaigns
     /// and are reserved (`DW0141`) in v0.2 campaigns.
@@ -691,6 +1058,26 @@ impl QuestEffect {
             QuestEffect::SetFlag { .. } => Some("set-flag"),
             QuestEffect::SpawnWave { .. } => Some("spawn-wave"),
             QuestEffect::OpenGate { .. } | QuestEffect::CampaignComplete => None,
+            // v0.4 effects report via `v04_effect`; they are not v0.3 verbs.
+            QuestEffect::Narrate { .. }
+            | QuestEffect::SetBlock { .. }
+            | QuestEffect::DespawnNpc { .. }
+            | QuestEffect::MoveNpc { .. }
+            | QuestEffect::Cutscene { .. } => None,
+        }
+    }
+
+    /// The v0.4 effect name if this effect is one introduced in DSL v0.4
+    /// (`narrate`/`set-block`/`despawn-npc`/`move-npc`/`cutscene`). These validate
+    /// in v0.4 campaigns and are reserved (`DW0141`) earlier.
+    pub fn v04_effect(&self) -> Option<&'static str> {
+        match self {
+            QuestEffect::Narrate { .. } => Some("narrate"),
+            QuestEffect::SetBlock { .. } => Some("set-block"),
+            QuestEffect::DespawnNpc { .. } => Some("despawn-npc"),
+            QuestEffect::MoveNpc { .. } => Some("move-npc"),
+            QuestEffect::Cutscene { .. } => Some("cutscene"),
+            _ => None,
         }
     }
 }
