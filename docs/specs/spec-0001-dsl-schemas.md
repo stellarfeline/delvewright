@@ -302,6 +302,25 @@ Build/manifest behaviour is spec-0002's `--lang` addendum.
 - [x] The `zh-cn` build passes the full Docker ladder (PackTest 7/7, bot
       end-to-end with combat) unchanged — the bot contract is language-neutral.
 
+### Runtime client-language route — researched, deliberately deferred (owner, 2026-07-31)
+
+A one-build alternative (strings emitted as `translate` components resolved by
+each CLIENT's language, lang files delivered via server resource pack) was
+researched against primary sources and is **feasible on vanilla 1.21.11**:
+the 1.21.6 dialog system's title/body/labels render `translate` per-client
+(only `score`/`nbt` components lack server resolution there — MC-297871,
+working-as-intended); fallback is airtight twice over (clients always overlay
+the selected language on `en_us`, and the inline `fallback` field — 1.19.4+ —
+covers even a declined pack); the pack auto-downloads after one join prompt,
+cached by SHA-1; `pack_format` 75; locales are `zh_cn`-style (map from the
+DSL's `zh-cn`). **Deferred because** the vanilla server does not serve the
+pack file: the image would need a static-HTTP sidecar on a second port and a
+player-reachable `resource-pack=` URL injected at container start — one
+runtime-bound line multiplying deployment configurations. Build-time `--lang`
+variants remain the shipping mechanism; the sidecar key scheme is shared, so
+switching later changes only compiler emission, never campaign documents.
+Revisit when one-image-many-languages becomes a real distribution need.
+
 ## Open
 
 None — both v0.2 questions resolved by the owner 2026-07-30 (mandatory-only
