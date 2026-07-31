@@ -536,6 +536,144 @@ fn l10n_coverage_gaps_fire_dw0180_and_dw0181() {
     assert!(s.contains("DW0181"), "expected DW0181:\n{s}");
 }
 
+/// Recursively copy a directory tree (campaign dir incl. `skins/`).
+fn copy_dir(src: &Path, dst: &Path) {
+    std::fs::create_dir_all(dst).unwrap();
+    for entry in std::fs::read_dir(src).unwrap() {
+        let path = entry.unwrap().path();
+        let to = dst.join(path.file_name().unwrap());
+        if path.is_dir() {
+            copy_dir(&path, &to);
+        } else {
+            std::fs::copy(&path, &to).unwrap();
+        }
+    }
+}
+
+/// Copy the v04-showcase campaign into a temp dir, replacing one substring in
+/// `quests.json` (a targeted patch), and return the campaign dir.
+fn showcase_with_quests_patch(name: &str, from: &str, to: &str) -> std::path::PathBuf {
+    let camp = tmp(name);
+    copy_dir(&common::compiler_fixtures_dir().join("v04-showcase"), &camp);
+    let qp = camp.join("quests.json");
+    let q = std::fs::read_to_string(&qp).unwrap();
+    assert!(
+        q.contains(from),
+        "patch anchor `{from}` not found in quests.json"
+    );
+    std::fs::write(&qp, q.replace(from, to)).unwrap();
+    camp
+}
+
+/// The v0.4 showcase — exercising the collision-safe walked `move-npc` path and a
+/// valid cutscene — builds and is byte-identical across a double build (ADR-0006
+/// determinism gate over the new A*-planned per-tick emission).
+#[test]
+fn v04_showcase_double_build_is_byte_identical() {
+    let dir = common::compiler_fixtures_dir().join("v04-showcase");
+    let pf = common::prefabs_dir();
+    let out_a = tmp("v04-det-a");
+    let out_b = tmp("v04-det-b");
+    for out in [&out_a, &out_b] {
+        let r = delvec(&[
+            "build",
+            dir.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--prefabs",
+            pf.to_str().unwrap(),
+        ]);
+        assert_eq!(
+            code(&r),
+            0,
+            "showcase build: {}",
+            String::from_utf8_lossy(&r.stderr)
+        );
+    }
+    let a = read_tree(&out_a);
+    let b = read_tree(&out_b);
+    assert_eq!(a.keys().collect::<Vec<_>>(), b.keys().collect::<Vec<_>>());
+    for (path, bytes) in &a {
+        assert_eq!(bytes, &b[path], "showcase byte mismatch in {path}");
+    }
+    // The A*-planned walked path shipped a multi-waypoint per-tick driver.
+    let tick = String::from_utf8(
+        a["datapack/data/v04-showcase/function/mv_tick_keeper_objective.mcfunction"].clone(),
+    )
+    .unwrap();
+    let tps = tick.matches("run tp @e[tag=dw_npc_keeper]").count();
+    assert!(
+        tps > 20,
+        "expected a many-tick walked path, saw {tps} waypoints"
+    );
+}
+
+/// A `move-npc` whose destination cannot be reached over the solved geometry fails
+/// the build with exit 3 and `DW0307` (spec-0008 addendum). keep-crawl places the
+/// keeper in the gatehouse and `anchor/objective` in the keep — two areas across
+/// the inter-area void, with no floor between — so the keeper cannot walk there.
+/// (Only the quests stage is bumped to 0.4.0; the v0.4-effect gate keys off it.)
+#[test]
+fn move_unroutable_exits_3_with_dw0307() {
+    let pf = common::prefabs_dir();
+    let camp = tmp("mv-cross-void");
+    copy_dir(&common::keep_crawl_dir(), &camp);
+    let qp = camp.join("quests.json");
+    let q = std::fs::read_to_string(&qp)
+        .unwrap()
+        .replace("\"dsl_version\": \"0.2.0\"", "\"dsl_version\": \"0.4.0\"")
+        .replace(
+            "{ \"type\": \"open-gate\", \"anchor\": \"anchor/gate\" }",
+            "{ \"type\": \"open-gate\", \"anchor\": \"anchor/gate\" },\n            \
+             { \"type\": \"move-npc\", \"npc\": \"npc/keeper\", \"to_anchor\": \"anchor/objective\" }",
+        );
+    std::fs::write(&qp, q).unwrap();
+    let out = tmp("mv-cross-void-out");
+    let b = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(
+        code(&b),
+        3,
+        "unroutable move should exit 3: {}",
+        String::from_utf8_lossy(&b.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&b.stdout);
+    assert!(stdout.contains("DW0307"), "expected DW0307:\n{stdout}");
+}
+
+/// A cutscene whose camera dolly clips a solid block fails the build with exit 3
+/// and `DW0308` (spec-0008 addendum). Here the first camera waypoint is lifted
+/// into the shrine ceiling.
+#[test]
+fn cutscene_clip_exits_3_with_dw0308() {
+    let pf = common::prefabs_dir();
+    let camp = showcase_with_quests_patch(
+        "cs-clip",
+        "{ \"anchor\": \"anchor/objective\", \"offset\": [0, 2, 2] }",
+        "{ \"anchor\": \"anchor/objective\", \"offset\": [0, 3, 2] }",
+    );
+    let out = tmp("cs-clip-out");
+    let b = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(code(&b), 3, "clipping cutscene should exit 3");
+    let stdout = String::from_utf8_lossy(&b.stdout);
+    assert!(stdout.contains("DW0308"), "expected DW0308:\n{stdout}");
+}
+
 fn read_tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
     let mut map = BTreeMap::new();
     fn walk(base: &Path, dir: &Path, map: &mut BTreeMap<String, Vec<u8>>) {
