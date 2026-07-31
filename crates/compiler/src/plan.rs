@@ -312,6 +312,70 @@ pub fn wave_total(wave: &delvewright_dsl::Wave) -> i32 {
     wave.mobs.iter().map(|m| m.count as i32).sum()
 }
 
+/// The area a stage-4 quest belongs to (free-function form of [`Plan::quest_area`],
+/// usable before a [`Plan`] exists — e.g. from anchor collection).
+fn quest_area_of<'a>(campaign: &'a Campaign, quest_id: &str) -> Option<&'a str> {
+    campaign
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .find(|q| q.id.as_str() == quest_id)
+        .map(|q| q.area.as_str())
+}
+
+/// The area a wave's mobs spawn in — resolved from the wave's **spawn site**, not
+/// from any `kill` objective. A `spawn-wave` effect (on a quest step, on a quest's
+/// completion, or on an environment trigger) is what makes a wave appear; its
+/// mobs materialize at `Wave.anchor` resolved in that spawning quest's area. This
+/// is deliberately independent of objective type so a kill-less "live threat" wave
+/// (spec-0008 §4 — e.g. a weakened warden the player sneaks past, an ambient mob
+/// flock) resolves a spawn position exactly like a wave that is later slain.
+///
+/// Resolution order: the quest that fires the `spawn-wave` (`on_objective_complete`
+/// or `on_complete`); else, in a single-area campaign, an environment trigger that
+/// fires it (triggers are global — their sole possible area is the one area); else
+/// a quest whose `kill` objective references the wave (defensive fallback for a
+/// wave declared with a kill but no explicit spawn). `None` if nothing spawns it.
+pub fn wave_area<'a>(campaign: &'a Campaign, wave_id: &str) -> Option<&'a str> {
+    let spawns_wave = |e: &QuestEffect| matches!(e.spawn_wave(), Some(w) if w.as_str() == wave_id);
+    // 1. A quest whose effects fire `spawn-wave` for this wave — the true spawn site.
+    for q in &campaign.quests.content.quests {
+        if q.on_objective_complete
+            .values()
+            .flatten()
+            .chain(&q.on_complete)
+            .any(&spawns_wave)
+        {
+            return quest_area_of(campaign, q.id.as_str());
+        }
+    }
+    // 2. An environment trigger that fires it. Triggers are global; in a
+    //    single-area campaign the sole area is unambiguous. (Multi-area
+    //    trigger-only waves are not resolvable here and surface as a build
+    //    diagnostic rather than a silent dangling spawn.)
+    if campaign.world.content.areas.len() == 1
+        && campaign
+            .quests
+            .content
+            .triggers
+            .iter()
+            .any(|t| t.effects.iter().any(&spawns_wave))
+    {
+        return campaign.world.content.areas.first().map(|a| a.id.as_str());
+    }
+    // 3. Defensive fallback: a `kill` objective's quest.
+    for q in &campaign.quests.content.quests {
+        if q.objectives
+            .iter()
+            .any(|o| matches!(o, Objective::Kill { wave, .. } if wave.as_str() == wave_id))
+        {
+            return quest_area_of(campaign, q.id.as_str());
+        }
+    }
+    None
+}
+
 /// Errors that stop planning (map to build failure, exit 3). Carries a stable
 /// `DW03xx` build/solver diagnostic code (see `crates/compiler/README.md`).
 #[derive(Debug)]
@@ -570,13 +634,10 @@ fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> Vec<String> 
                 Objective::Interact { anchor, .. } => {
                     set.insert(anchor.as_str().to_string());
                 }
-                Objective::Kill { wave, .. } => {
-                    // The wave's spawn anchor must exist in the assembled area.
-                    if let Some(w) = wave_of(campaign, wave.as_str()) {
-                        set.insert(w.anchor.as_str().to_string());
-                    }
-                }
-                Objective::TalkTo { .. } => {}
+                // Wave spawn anchors are registered below via `wave_area`, driven
+                // by the `spawn-wave` effect (the true spawn site) rather than the
+                // `kill` objective — so a kill-less live-threat wave is placed too.
+                Objective::Kill { .. } | Objective::TalkTo { .. } => {}
             }
         }
         for e in q
@@ -586,6 +647,16 @@ fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> Vec<String> 
             .chain(&q.on_complete)
         {
             collect_effect_anchors(e, &mut set);
+        }
+    }
+    // Wave spawn anchors: a `spawn-wave` effect materializes its mobs at the wave's
+    // `anchor` in the area of the quest (or single-area trigger) that fires it —
+    // independent of any `kill` objective. Register the anchor for that area so the
+    // solver guarantees a piece providing it; a kill-less live-threat wave would
+    // otherwise resolve no spawn position and its `spawn_<wave>` call would dangle.
+    for w in &campaign.quests.content.waves {
+        if wave_area(campaign, w.id.as_str()) == Some(area_id) {
+            set.insert(w.anchor.as_str().to_string());
         }
     }
     // Environment triggers (v0.4) are global. When the campaign has a single area,

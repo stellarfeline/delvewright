@@ -9,7 +9,7 @@
 //! plus a trailing newline; mcfunction bodies are built line-by-line. No
 //! wall-clock, hostname, locale or absolute path enters any byte.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -169,6 +169,12 @@ pub fn build(
     } else {
         Vec::new()
     };
+
+    // Every `spawn-wave` effect must resolve a spawn position, or its emitted
+    // `function <ns>:spawn_<wave>` call would dangle to a never-emitted function and
+    // the wave would silently never spawn (DW0310). Guards against the class of bug
+    // where the spawn position was resolvable only via a `kill` objective.
+    check_wave_spawns(plan)?;
 
     // ---- datapack ----
     put_json(
@@ -735,8 +741,12 @@ fn emit_functions(
             // 1.21.11 (owner-verified). NoAI/PersistenceRequired/VillagerData are
             // dropped (silently ignored on a mannequin); the interaction hitbox is
             // unchanged.
+            // `pose:"standing"` is emitted explicitly: a mannequin summoned without
+            // it serializes its pose as `DYING` (a gametest save-teardown warning),
+            // wrong data for a standing NPC. Valid 1.21.11 mannequin poses: standing,
+            // crouching, swimming, fall_flying, sleeping (spec-0009 template).
             setup.push(format!(
-                "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},Tags:[\"dw_npc\",\"{}\"]}}",
+                "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,pose:\"standing\",Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},Tags:[\"dw_npc\",\"{}\"]}}",
                 pos[0], pos[1], pos[2], skin.texture_id, skin.model.token(),
                 snbt_text_component(name), npc.tag
             ));
@@ -1352,24 +1362,58 @@ fn emit_functions(
     fns
 }
 
-/// The absolute spawn position of a wave: the world coords of its anchor, resolved
-/// in the area of the (first) quest whose `kill` objective references it.
+/// The absolute spawn position of a wave: the world coords of its `anchor`,
+/// resolved in the area of the quest (or single-area trigger) that *spawns* it —
+/// see [`plan::wave_area`]. Deliberately independent of objective type, so a
+/// kill-less "live threat" wave (spec-0008 §4) resolves a spawn position exactly
+/// like a wave that a `kill` objective later drains.
 fn wave_spawn_pos(plan: &Plan, wave_id: &str) -> Option<[i32; 3]> {
     let c = plan.campaign;
     let w = plan::wave_of(c, wave_id)?;
-    for q in &c.quests.content.quests {
-        let Some(area) = plan.quest_area(q.id.as_str()) else {
-            continue;
-        };
-        for o in &q.objectives {
-            if let Objective::Kill { wave, .. } = o
-                && wave.as_str() == wave_id
-            {
-                return plan.point(area, w.anchor.as_str());
+    let area = plan::wave_area(c, wave_id)?;
+    plan.point(area, w.anchor.as_str())
+}
+
+/// Fail the build if any `spawn-wave` effect references a wave whose spawn
+/// position cannot be resolved (`DW0310`). Such a wave emits no `spawn_<wave>`
+/// function, yet the effect still emits a `function <ns>:spawn_<wave>` call — a
+/// silently dangling reference that would never spawn the wave at runtime. A
+/// compile-time diagnostic turns that content mistake into a loud build failure
+/// instead of a missing enemy the QA hour has to notice.
+fn check_wave_spawns(plan: &Plan) -> Result<(), BuildFailure> {
+    let c = plan.campaign;
+    let effects = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| {
+            q.on_objective_complete
+                .values()
+                .flatten()
+                .chain(&q.on_complete)
+        })
+        .chain(c.quests.content.triggers.iter().flat_map(|t| &t.effects));
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for e in effects {
+        if let Some(wave) = e.spawn_wave() {
+            let id = wave.as_str();
+            if seen.insert(id) && wave_spawn_pos(plan, id).is_none() {
+                return Err(BuildFailure::Diagnostic {
+                    code: "DW0310",
+                    message: format!(
+                        "`spawn-wave` references wave `{id}`, but its spawn anchor is \
+                         not placed in any assembled area — the emitted \
+                         `spawn_{safe}` call would dangle and the wave never spawn. \
+                         Ensure a quest in the wave's area fires the `spawn-wave`, or \
+                         that the wave `anchor` exists in that area's prefab pool.",
+                        safe = plan::safe_local(id),
+                    ),
+                });
             }
         }
     }
-    None
+    Ok(())
 }
 
 /// Emit a quest effect's commands into `body`.
@@ -2588,6 +2632,62 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         ));
         b.push("assert score #at dw.sys matches 1..".to_string());
         write("v04_move", b);
+    }
+
+    // kill-less spawn-wave (spec-0008 §4 live threat): a `spawn-wave` fired from a
+    // reach/interact step — with NO `kill` objective draining that wave — still
+    // spawns its mobs. Regression for the emitter bug where `wave_spawn_pos`
+    // resolved a spawn position ONLY from a `kill` objective, so the `spawn_<wave>`
+    // function was never emitted and the effect's `function …:spawn_<wave>` call
+    // dangled (the wave silently never appeared). Picks the first such wave, spawns
+    // it, and asserts exactly its mob count exists under the wave tag.
+    let killed: BTreeSet<&str> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| &q.objectives)
+        .filter_map(|o| match o {
+            Objective::Kill { wave, .. } => Some(wave.as_str()),
+            _ => None,
+        })
+        .collect();
+    'killless: for q in &c.quests.content.quests {
+        for (obj_id, effs) in &q.on_objective_complete {
+            let from_reach_or_interact = q.objectives.iter().any(|o| {
+                o.id().as_str() == obj_id.as_str()
+                    && matches!(
+                        o,
+                        Objective::ReachAnchor { .. } | Objective::Interact { .. }
+                    )
+            });
+            if !from_reach_or_interact {
+                continue;
+            }
+            for e in effs {
+                if let Some(wave) = e.spawn_wave()
+                    && !killed.contains(wave.as_str())
+                    && let Some(w) = plan::wave_of(c, wave.as_str())
+                {
+                    let total = plan::wave_total(w);
+                    let ws = plan::safe_local(wave.as_str());
+                    let mut b = packtest_header(&format!(
+                        "{}: kill-less spawn-wave `{wave}` spawns its mobs",
+                        c.world.content.title
+                    ));
+                    b.push(format!("function {ns}:setup"));
+                    // No wave is live yet; the effect's driver spawns it.
+                    b.push(format!("function {ns}:spawn_{ws}"));
+                    b.push(format!(
+                        "execute store result score #kw dw.sys if entity @e[tag={}]",
+                        plan::wave_tag(wave.as_str())
+                    ));
+                    b.push(format!("assert score #kw dw.sys matches {total}"));
+                    write("v04_killless_wave", b);
+                    break 'killless;
+                }
+            }
+        }
     }
 }
 

@@ -161,6 +161,7 @@ diagnostics (and as one JSON object per line under `--json`, `stage: "build"`).
 | `DW0307` | (v0.4 addendum) A `move-npc` destination is unreachable: A* over the solved voxel grid (`crate::nav`) finds no collision-free walked path from the NPC's home cell to a standable cell at the target anchor (e.g. the two lie in different areas across the inter-area void, or the anchor has no adjacent floor). The move never ships a wall-clipping teleport. |
 | `DW0308` | (v0.4 addendum) A `cutscene` camera dolly path clips a solid block. Cameras fly (exempt from walkability) but the sampled polyline must pass only through non-solid cells; the diagnostic names the offending segment and block coordinate. |
 | `DW0309` | (v0.4 skins) A mannequin NPC declares a `skin.texture_id` but the campaign dir has no `skins/<texture_id>.png` to bake into the resource pack (spec-0009). |
+| `DW0310` | (v0.4 waves) A `spawn-wave` effect references a wave whose spawn anchor resolves in no assembled area, so the emitted `function <ns>:spawn_<wave>` call would dangle to a never-emitted function and the wave silently never spawns. The spawn position is taken from the wave's `anchor` resolved in the area of the quest (or single-area trigger) that fires the `spawn-wave` — independent of any `kill` objective — so this fires only when nothing resolvably spawns the wave (e.g. a multi-area trigger-only spawn). |
 
 `tests/fixtures/keep-unsatisfiable-anchor.json` (→ `DW0302`) and
 `keep-range-too-small.json` (→ `DW0303`) both pass validate + analyze (the DSL

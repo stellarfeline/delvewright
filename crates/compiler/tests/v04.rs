@@ -85,6 +85,12 @@ fn mannequin_description_is_component_form_no_stringified_json() {
             && setup.contains("description:{text:\"The Keeper\"}"),
         "mannequin summon with component-form description expected"
     );
+    // The mannequin declares its pose explicitly; omitting it serializes as `DYING`
+    // (a gametest save-teardown warning). An NPC stands.
+    assert!(
+        setup.contains("pose:\"standing\""),
+        "mannequin summon must set pose:\"standing\", not default to DYING"
+    );
     for (path, bytes) in &out {
         if path.ends_with(".mcfunction") {
             let body = std::str::from_utf8(bytes).unwrap();
@@ -206,4 +212,56 @@ fn flag_gated_dialogue_variants() {
         m1.contains("What lies past the door?"),
         "gated option present after flag"
     );
+}
+
+/// Kill-less `spawn-wave` (spec-0008 §4 live threat): `wave/ambush` is spawned by a
+/// `spawn-wave` on the `obj/door` interact step and is NEVER referenced by a `kill`
+/// objective. It must still emit a `spawn_ambush` function that summons its mobs
+/// (regression: `wave_spawn_pos` used to resolve a position only via a `kill`
+/// objective, so the function was un-emitted and the effect's call dangled), and a
+/// PackTest must assert the mobs exist.
+#[test]
+fn killless_spawn_wave_emits_function_and_packtest() {
+    let out = build_showcase();
+
+    // The spawn function exists and summons the wave's mobs at a resolved position.
+    let spawn = fn_body(&out, "spawn_ambush");
+    assert!(
+        spawn.matches("summon minecraft:sheep").count() == 2,
+        "kill-less wave spawns its two mobs: {spawn}"
+    );
+
+    // The `spawn-wave` effect's call is not dangling — the driver it lives in
+    // references the emitted function.
+    let door = fn_body(&out, "complete_o_door");
+    assert!(
+        door.contains("function v04-showcase:spawn_ambush"),
+        "obj/door completion calls the emitted spawn function"
+    );
+
+    // A regression PackTest asserts the mobs exist after the wave fires.
+    let pt = std::str::from_utf8(
+        &out["packtest-datapack/data/v04-showcase/test/v04_killless_wave.mcfunction"],
+    )
+    .unwrap();
+    assert!(
+        pt.contains("function v04-showcase:spawn_ambush")
+            && pt.contains("if entity @e[tag=dw_wave_ambush]")
+            && pt.contains("assert score #kw dw.sys matches 2"),
+        "kill-less wave PackTest spawns then asserts the mob count: {pt}"
+    );
+}
+
+/// `wave_area` resolves a wave's spawn area from its `spawn-wave` site regardless
+/// of objective type: `wave/ambush` (kill-less, spawned on the interact step) and
+/// `wave/guards` (spawned then killed) both resolve to `area/keep`; an unspawned
+/// wave id resolves to `None` (which the DW0309 build guard would reject).
+#[test]
+fn wave_area_resolves_from_spawn_site_not_kill() {
+    let loaded = load_campaign_dir(&fixture_dir()).unwrap();
+    let campaign = parse_campaign(&loaded.raw).expect("v04-showcase parses");
+    use delvewright_compiler::plan::wave_area;
+    assert_eq!(wave_area(&campaign, "wave/ambush"), Some("area/keep"));
+    assert_eq!(wave_area(&campaign, "wave/guards"), Some("area/keep"));
+    assert_eq!(wave_area(&campaign, "wave/nope"), None);
 }
