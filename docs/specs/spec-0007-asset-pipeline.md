@@ -127,11 +127,42 @@ job is to fill them. The vision model is the generation-time agent
 Campaign sharing = **sources only**: the separate `delvewright-campaigns` repo
 (created 2026-07-30, CC BY-SA 4.0) accepts DSL-document PRs — plain reviewable
 JSON, closed schema, deterministic rebuild; canonical images are built only by
-trusted CI. **No image or arbitrary-binary submissions, ever.** Community
-prefabs enter only through the admission pipeline with a mechanical NBT audit
-(block-palette allowlist; command blocks / structure blocks / NBT-bearing
-spawners forbidden — structure-embedded command blocks are a code-injection
-vector).
+trusted CI. **No OCI-image or arbitrary-binary submissions** — with exactly one
+narrow carve-out: storybook media (JPEG/PNG under `campaigns/<id>/media/`,
+mechanically sanitized in CI — see Campaign storybook below; owner decision
+2026-07-31). Community prefabs enter only through the admission pipeline with a
+mechanical NBT audit (block-palette allowlist; command blocks / structure
+blocks / NBT-bearing spawners forbidden — structure-embedded command blocks are
+a code-injection vector).
+
+## Campaign storybook (owner-directed 2026-07-31)
+
+Every campaign ships a reader-facing **storybook** at
+`campaigns/<id>/README.md` in the content repo (GitHub renders it on directory
+browse; `GENERATION.md` stays the behind-the-scenes record).
+
+- **Hard no-spoiler rule**: background and setting ONLY — premise, lore,
+  public-facing NPC introductions (persona `secret` never appears), classes,
+  playtime, build/play commands. Puzzle solutions, quest structure, and endings
+  never appear. **Images: exterior and starting-scene renders only** — no
+  interiors, no late-game locations, nothing that reveals layout.
+- **Images live in-repo** at `campaigns/<id>/media/` (relative links; small
+  budget per campaign) and are **author-provided, submitted with the campaign
+  PR** (owner-refined 2026-07-31): `/new-delve` default-fills `media/` from the
+  render set, and authors may replace those with hand-crafted shots (shaders,
+  staged compositions) for a more attractive storybook. This is the **one
+  permitted binary class** in campaign PRs — a deliberate, narrow carve-out
+  from the sources-only contract, gated mechanically in CI: JPEG/PNG only,
+  size/dimension caps, and **re-encode on admission** (strips metadata and
+  neutralizes parser-exploit payloads). The no-spoiler rule applies to
+  submitted images and is a review criterion. NBT/worlds/executables remain
+  forbidden forever.
+- Localized editions per declared language (`README.<code>.md`), authored at
+  generation time from the English canonical.
+- Authored by `/new-delve` as a final step: story text distilled from the
+  world/npcs documents (the non-spoiler boundary is structural — secrets and
+  solutions live in fields the storybook never references), images picked from
+  the visual-review render set.
 
 ## Acceptance criteria (M3)
 
