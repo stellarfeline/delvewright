@@ -85,6 +85,114 @@ fn text<'a>(out: &'a BuildOutput, path: &str) -> &'a str {
     std::str::from_utf8(out.get(path).unwrap_or_else(|| panic!("missing {path}"))).unwrap()
 }
 
+/// Build any campaign directory (generalizes `build_hello_world`).
+fn build_campaign_dir(dir: &std::path::Path) -> BuildOutput {
+    let loaded = load_campaign_dir(dir).unwrap();
+    let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
+            structures.insert(piece.structure_file.clone(), bytes);
+        }
+    }
+    let tree = CommandTree::v1_21_11();
+    emit::build(
+        &plan,
+        &loaded.inputs,
+        &structures,
+        &tree,
+        &prefabs,
+        None,
+        "unpinned",
+    )
+    .expect("emission succeeds")
+}
+
+/// gap 10 regression: NO emitted dialog carries an empty `actions` list. A
+/// `minecraft:multi_action` with `"actions": []` is rejected by the 1.21.11 dialog
+/// codec ("List must have contents") and aborts registry load at server boot — a
+/// terminal (option-less) node must instead ship as `minecraft:notice`.
+#[test]
+fn no_emitted_dialog_has_empty_actions() {
+    for dir in [
+        common::hello_world_dir(),
+        common::keep_crawl_dir(),
+        common::keep_trial_dir(),
+        common::keep_vertical_dir(),
+    ] {
+        let out = build_campaign_dir(&dir);
+        for (path, bytes) in &out {
+            let Some(rest) = path.strip_prefix("datapack/") else {
+                continue;
+            };
+            if !(rest.contains("/dialog/") && rest.ends_with(".json")) {
+                continue;
+            }
+            let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+            if let Some(actions) = v.get("actions") {
+                assert!(
+                    !actions.as_array().expect("actions is a list").is_empty(),
+                    "dialog {path} has an empty `actions` list (server will not boot)"
+                );
+            }
+        }
+    }
+}
+
+/// gap 10: a dialogue node with empty options (schema: "empty closes the dialog")
+/// is emitted as `minecraft:notice` — an implicit single close button — NOT a
+/// `multi_action` with an empty `actions` list. Materializes a keep-trial variant
+/// whose `dlg/lore` node is made terminal and asserts the emitted shape.
+#[test]
+fn terminal_dialogue_node_emits_notice() {
+    let tmp = std::env::temp_dir().join(format!("dw-notice-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    common::materialize_from(&common::keep_trial_dir(), &serde_json::json!({}), &tmp);
+    common::make_english_only(&tmp); // drop the zh-cn sidecar; build English-only
+
+    // Make `dlg/lore` terminal: empty its options.
+    let dpath = tmp.join("dialogue.json");
+    let mut dlg: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&dpath).unwrap()).unwrap();
+    let mut found = false;
+    for tree in dlg["content"]["dialogues"].as_array_mut().unwrap() {
+        for node in tree["nodes"].as_array_mut().unwrap() {
+            if node["id"] == "dlg/lore" {
+                node["options"] = serde_json::json!([]);
+                found = true;
+            }
+        }
+    }
+    assert!(found, "dlg/lore node present in keep-trial");
+    std::fs::write(&dpath, serde_json::to_string_pretty(&dlg).unwrap()).unwrap();
+
+    let out = build_campaign_dir(&tmp);
+    let key = "datapack/data/keep-trial/dialog/keeper_lore.json";
+    let v: serde_json::Value =
+        serde_json::from_slice(out.get(key).expect("keeper_lore dialog emitted")).unwrap();
+    assert_eq!(
+        v["type"], "minecraft:notice",
+        "an option-less node ships as a notice"
+    );
+    assert!(
+        v.get("actions").is_none(),
+        "a notice carries no `actions` list"
+    );
+    // A node that still has options remains a multi_action (control case).
+    let greet: serde_json::Value = serde_json::from_slice(
+        out.get("datapack/data/keep-trial/dialog/keeper_greet.json")
+            .expect("keeper_greet dialog emitted"),
+    )
+    .unwrap();
+    assert_eq!(greet["type"], "minecraft:multi_action");
+    assert!(!greet["actions"].as_array().unwrap().is_empty());
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
 #[test]
 fn every_emitted_command_validates() {
     let out = build_hello_world();

@@ -464,6 +464,13 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
             }
         }
     }
+    // v0.3 collect held-count scratch (gap 13): the per-tick "already holding the
+    // item" completion check stores each player's held count here before comparing
+    // it to the required count. Declared only when a `collect` objective exists, so
+    // a v0.2 campaign (and any v0.3 campaign without collect) stays byte-identical.
+    if v03 && has_collect_objective(c) {
+        setup.push(format!("scoreboard objectives add {COLLECT_HOLD} dummy"));
+    }
     // Force-load the chunks covering each prefab. `forceload add` only MARKS
     // chunks; freshly-generated far chunks (found live: a fifth-level piece
     // straddling chunk z=-1) are not reliably loaded within the same tick, so
@@ -595,74 +602,13 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
             pos[0], pos[1], pos[2], npc.tag
         ));
     }
-    // v0.3: place a loaded chest at each `collect` anchor and an interaction
-    // entity at each `interact` anchor. After the seal fills so they overwrite the
-    // structure floor cell. Empty for v0.2 campaigns (byte-identity preserved).
-    for q in &c.quests.content.quests {
-        let area = plan.quest_area(q.id.as_str()).unwrap_or("");
-        for o in &q.objectives {
-            match o {
-                Objective::Collect {
-                    item,
-                    count,
-                    anchor,
-                    ..
-                } => {
-                    if let Some(pos) = plan.point(area, anchor.as_str()) {
-                        setup.push(format!(
-                            "setblock {} {} {} minecraft:chest",
-                            pos[0], pos[1], pos[2]
-                        ));
-                        setup.push(format!(
-                            "item replace block {} {} {} container.0 with {} {}",
-                            pos[0], pos[1], pos[2], item, count
-                        ));
-                    }
-                }
-                Objective::Interact { id, anchor, .. } => {
-                    if let Some(pos) = plan.point(area, anchor.as_str()) {
-                        setup.push(format!(
-                            "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{}\"]}}",
-                            pos[0], pos[1], pos[2], interact_entity_tag(id.as_str())
-                        ));
-                        // Visible, glowing, adventure-safe marker so a human can
-                        // find the interact target (M2 fix 3): an `item_display`
-                        // has no collision, so it obstructs neither movement nor
-                        // the interaction hitbox. Its name derives from the
-                        // objective `title` (fallback: the objective id).
-                        let marker_name = snbt_string(o.title().unwrap_or(id.as_str()));
-                        setup.push(format!(
-                            "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],CustomName:{},CustomNameVisible:1b,billboard:\"center\",item:{{id:\"minecraft:lantern\",count:1}}}}",
-                            pos[0], pos[1], pos[2], interact_entity_tag(id.as_str()), marker_name
-                        ));
-                    }
-                }
-                // Reach anchors had no visual presence, so the owner triggered the
-                // finale altar "by wandering" (M2 round-2 fix 3). Give them the same
-                // glowing, non-colliding `item_display` marker the interact target
-                // got — a distinct, thematically neutral `end_rod` (vs. the interact
-                // lantern) so a beacon-like light marks the destination. v0.3-gated
-                // like the interact marker: reach anchors exist in v0.2 (keep-crawl),
-                // so this must not touch pre-v0.3 byte-identity.
-                Objective::ReachAnchor { id, anchor, .. } if v03 => {
-                    let pos = match plan
-                        .anchors
-                        .get(&(area.to_string(), anchor.as_str().to_string()))
-                    {
-                        Some(ResolvedAnchor::Point { pos, .. }) => *pos,
-                        Some(ResolvedAnchor::Gate { from, .. }) => *from,
-                        None => continue,
-                    };
-                    let marker_name = snbt_string(o.title().unwrap_or(id.as_str()));
-                    setup.push(format!(
-                        "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],CustomName:{},CustomNameVisible:1b,billboard:\"center\",item:{{id:\"minecraft:end_rod\",count:1}}}}",
-                        pos[0], pos[1], pos[2], reach_marker_tag(id.as_str()), marker_name
-                    ));
-                }
-                _ => {}
-            }
-        }
-    }
+    // v0.3 collect chests, interact hitboxes/markers and reach markers are NOT
+    // placed here. They are placed/summoned when their objective ACTIVATES (see the
+    // activation drivers in `tick` + the `activate_<obj>` functions below), so props
+    // and loot for late objectives are neither visible nor lootable from minute one,
+    // and a `collect` item picked up before activation can no longer stall the
+    // objective (gap 13). Empty for v0.2 campaigns (byte-identity preserved: they
+    // have no collect/interact objectives, and reach markers were always v0.3-only).
     // Set world spawn to the first area's `spawn` anchor so joining players land
     // on the prefab floor instead of falling through the void world before class
     // selection teleports them.
@@ -734,10 +680,34 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
             }
         }
     }
+    // v0.3 activation-time placement (gap 13): place a `collect` chest, summon an
+    // `interact` hitbox + marker, or summon a `reach` marker the tick the objective
+    // ACTIVATES (same edge the announce uses), not at world setup — so late props
+    // are neither visible nor lootable early. Global-once per objective, guarded by
+    // a `#act_<obj>` sentinel on dw.sys, so a second player activating does not
+    // re-place an already-looted chest. Empty for v0.2.
+    if v03 {
+        for q in &c.quests.content.quests {
+            let area = plan.quest_area(q.id.as_str()).unwrap_or("");
+            let qa = quest_active_score(q.id.as_str());
+            for o in &q.objectives {
+                if activation_commands(plan, area, o).is_empty() {
+                    continue;
+                }
+                tick.push(format!(
+                    "execute as @a{} unless score {} dw.sys matches 1 run function {ns}:activate_{}",
+                    pending_guard(o, &qa),
+                    activation_flag(o.id().as_str()),
+                    safe_obj_fn(o.id().as_str())
+                ));
+            }
+        }
+    }
     // Per-tick objective completion checks. `reach-anchor` (proximity) is
     // unchanged for v0.2; `kill` (wave countdown reached zero) and `interact`
-    // (trigger fired + optional item) are v0.3 additions. `collect` is
-    // advancement-driven, not polled here.
+    // (trigger fired + optional item) are v0.3 additions. `collect` completes via
+    // its `inventory_changed` advancement AND (v0.3) a per-tick held check that
+    // closes the pre-activation-pickup stall (gap 13).
     for q in &c.quests.content.quests {
         let area = plan.quest_area(q.id.as_str()).unwrap_or("");
         let qa = quest_active_score(q.id.as_str());
@@ -803,6 +773,29 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
                     // (e.g. clicked the door before holding the key).
                     tick.push(format!(
                         "execute as @a[scores={{{trigger}=1..}}] run scoreboard players reset @s {trigger}"
+                    ));
+                }
+                Objective::Collect {
+                    id, item, count, ..
+                } if v03 => {
+                    // Complete for a player already holding the item (gap 13): a
+                    // `collect` normally completes via an `inventory_changed`
+                    // advancement whose reward revokes-to-re-arm, and that will NOT
+                    // re-fire while the item is merely held — so an item pocketed
+                    // before the objective activated could leave it stuck open. This
+                    // per-tick held check closes it: store the held count, then
+                    // complete once the guards hold and the player carries >= the
+                    // required count — whether the item was taken before or after
+                    // activation. `store result … if items` captures the total
+                    // matching item count across the inventory.
+                    tick.push(format!(
+                        "execute as @a{} store result score @s {COLLECT_HOLD} if items entity @s container.* {item}",
+                        pending_guard(o, &qa)
+                    ));
+                    tick.push(format!(
+                        "execute as @a{} if score @s {COLLECT_HOLD} matches {count}.. run function {ns}:complete_{}",
+                        pending_guard(o, &qa),
+                        safe_obj_fn(id.as_str())
                     ));
                 }
                 Objective::TalkTo { .. } | Objective::Collect { .. } => {}
@@ -890,8 +883,23 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
 
     // --- objective completion + quest checks ---
     for q in &c.quests.content.quests {
+        let q_area = plan.quest_area(q.id.as_str()).unwrap_or("");
         for o in &q.objectives {
             let oid = o.id().as_str();
+            // v0.3 activation function (gap 13): run once when the objective
+            // activates (driven from `tick`) — set the global once-flag, then place
+            // the objective's prop(s). Emitted only for objectives with a prop.
+            if v03 {
+                let cmds = activation_commands(plan, q_area, o);
+                if !cmds.is_empty() {
+                    let mut act = vec![format!(
+                        "scoreboard players set {} dw.sys 1",
+                        activation_flag(oid)
+                    )];
+                    act.extend(cmds);
+                    fns.push((format!("activate_{}", safe_obj_fn(oid)), lines(&act)));
+                }
+            }
             // v0.3 objective-activation feedback (M2 fix 4): the announce function
             // shows the title + hint once and plays a subtle sound. Emitted only
             // for titled objectives (v0.3); nothing for v0.2.
@@ -1238,6 +1246,91 @@ fn reach_marker_tag(obj_id: &str) -> String {
     format!("dw_r_{}", plan::safe_local(obj_id))
 }
 
+/// Scoreboard (dummy, `dw.sys`) holder for the "already holding the item" per-tick
+/// collect completion check (gap 13).
+const COLLECT_HOLD: &str = "dw.hold";
+
+/// The fake-player sentinel on `dw.sys` that guards an objective's activation
+/// placement so it runs exactly once, world-wide (gap 13).
+fn activation_flag(obj_id: &str) -> String {
+    format!("#act_{}", plan::safe_local(obj_id))
+}
+
+/// Whether the campaign declares any `collect` objective (gates the `dw.hold`
+/// scratch declaration so campaigns without collect stay byte-identical).
+fn has_collect_objective(c: &delvewright_dsl::Campaign) -> bool {
+    c.quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| &q.objectives)
+        .any(|o| matches!(o, Objective::Collect { .. }))
+}
+
+/// The world-placement commands run when an objective ACTIVATES (gap 13): a
+/// `collect` chest + item fill, an `interact` hitbox + glowing lantern marker, or a
+/// `reach` glowing end-rod marker. Empty for objectives with no prop (talk-to,
+/// kill) or an unresolvable anchor — both the `tick` activation driver and the
+/// `activate_<obj>` function key off this being non-empty, so they never diverge.
+fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
+    let mut cmds = Vec::new();
+    match o {
+        Objective::Collect {
+            item,
+            count,
+            anchor,
+            ..
+        } => {
+            if let Some(pos) = plan.point(area, anchor.as_str()) {
+                cmds.push(format!(
+                    "setblock {} {} {} minecraft:chest",
+                    pos[0], pos[1], pos[2]
+                ));
+                cmds.push(format!(
+                    "item replace block {} {} {} container.0 with {} {}",
+                    pos[0], pos[1], pos[2], item, count
+                ));
+            }
+        }
+        Objective::Interact { id, anchor, .. } => {
+            if let Some(pos) = plan.point(area, anchor.as_str()) {
+                cmds.push(format!(
+                    "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{}\"]}}",
+                    pos[0], pos[1], pos[2], interact_entity_tag(id.as_str())
+                ));
+                // Visible, glowing, adventure-safe marker so a human can find the
+                // interact target (M2 fix 3): an `item_display` has no collision, so
+                // it obstructs neither movement nor the interaction hitbox. Its name
+                // derives from the objective `title` (fallback: the objective id).
+                let marker_name = snbt_string(o.title().unwrap_or(id.as_str()));
+                cmds.push(format!(
+                    "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],CustomName:{},CustomNameVisible:1b,billboard:\"center\",item:{{id:\"minecraft:lantern\",count:1}}}}",
+                    pos[0], pos[1], pos[2], interact_entity_tag(id.as_str()), marker_name
+                ));
+            }
+        }
+        Objective::ReachAnchor { id, anchor, .. } => {
+            let pos = match plan
+                .anchors
+                .get(&(area.to_string(), anchor.as_str().to_string()))
+            {
+                Some(ResolvedAnchor::Point { pos, .. }) => *pos,
+                Some(ResolvedAnchor::Gate { from, .. }) => *from,
+                None => return cmds,
+            };
+            // A distinct, thematically neutral `end_rod` (vs. the interact lantern)
+            // so a beacon-like light marks a reach destination.
+            let marker_name = snbt_string(o.title().unwrap_or(id.as_str()));
+            cmds.push(format!(
+                "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],CustomName:{},CustomNameVisible:1b,billboard:\"center\",item:{{id:\"minecraft:end_rod\",count:1}}}}",
+                pos[0], pos[1], pos[2], reach_marker_tag(id.as_str()), marker_name
+            ));
+        }
+        Objective::TalkTo { .. } | Objective::Kill { .. } => {}
+    }
+    cmds
+}
+
 /// The flags any `set-flag` effect produces (sorted, deduped).
 fn declared_flags(c: &delvewright_dsl::Campaign) -> std::collections::BTreeSet<String> {
     let mut out = std::collections::BTreeSet::new();
@@ -1345,17 +1438,30 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
                 .iter()
                 .filter(|o| o.node_id == node.id.as_str())
                 .collect();
-            let actions: Vec<Value> = node_opts
-                .iter()
-                .map(|o| {
-                    json!({
-                        "label": o.label,
-                        "action": { "type": "minecraft:run_command", "command": format!("/trigger {} set {}", npc.trigger_objective, o.n) }
-                    })
+            // A terminal node (schema: "empty options closes the dialog") must NOT
+            // emit `minecraft:multi_action` with an empty `actions` list — the
+            // 1.21.11 dialog codec rejects an empty action list ("List must have
+            // contents") and aborts registry load at server boot (gap 10). Emit
+            // `minecraft:notice` instead: it carries an implicit single close
+            // button, so an option-less node closes the dialog exactly as the
+            // schema promises.
+            let dialog = if node_opts.is_empty() {
+                json!({
+                    "type": "minecraft:notice",
+                    "title": dsl_npc.name,
+                    "body": [{ "type": "minecraft:plain_message", "contents": node.text }],
+                    "can_close_with_escape": true
                 })
-                .collect();
-            dialogs.push((
-                format!("{}_{}", npc.safe, plan::safe_local(node.id.as_str())),
+            } else {
+                let actions: Vec<Value> = node_opts
+                    .iter()
+                    .map(|o| {
+                        json!({
+                            "label": o.label,
+                            "action": { "type": "minecraft:run_command", "command": format!("/trigger {} set {}", npc.trigger_objective, o.n) }
+                        })
+                    })
+                    .collect();
                 json!({
                     "type": "minecraft:multi_action",
                     "title": dsl_npc.name,
@@ -1364,7 +1470,11 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
                     "can_close_with_escape": true,
                     "after_action": "close",
                     "actions": actions
-                }),
+                })
+            };
+            dialogs.push((
+                format!("{}_{}", npc.safe, plan::safe_local(node.id.as_str())),
+                dialog,
             ));
         }
     }
@@ -1834,6 +1944,88 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         b.push(format!("assert score @p {} matches 1", obj_score(id)));
         write("verb_flag_gate", b);
     }
+
+    // gap 9: every NPC body actually summoned. The bot drives talk-to via a
+    // `/trigger` chat command, so a failed summon (e.g. an invalid `base_entity`)
+    // would still pass the ladder with no NPC in the world — a false green. This
+    // asserts each NPC's body resolves to EXACTLY one entity. It summons
+    // deterministically, independent of the async placement/tick loop: disarm the
+    // tick placer (`#placed`) and clear any body/hitbox a prior boot or test left
+    // at the same absolute coords, then run `setup_finish` once (it summons at the
+    // chunks `setup` force-loads; no templates needed). v0.3-gated so v0.2
+    // campaigns (hello-world has an NPC) keep byte-identical packtest output.
+    if campaign_is_v03(plan) && !plan.npcs.is_empty() {
+        let mut b = packtest_header(&format!(
+            "{}: every NPC summon resolves to exactly one entity",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push("scoreboard players set #placed dw.sys 1".to_string());
+        for npc in &plan.npcs {
+            b.push(format!("kill @e[tag={}]", npc.tag));
+        }
+        b.push(format!("function {ns}:setup_finish"));
+        for npc in &plan.npcs {
+            // The NPC body carries BOTH `dw_npc` and its unique id tag; the separate
+            // interaction hitbox carries only the id tag — so `dw_npc` + id tag
+            // selects exactly the body. A failed body summon leaves zero.
+            b.push(format!(
+                "execute store result score #npc_{} dw.sys if entity @e[tag=dw_npc,tag={}]",
+                npc.safe, npc.tag
+            ));
+            b.push(format!("assert score #npc_{} dw.sys matches 1", npc.safe));
+        }
+        write("npc_summons", b);
+    }
+
+    // gap 13: a collect item taken BEFORE the objective activates must still
+    // complete it at activation, with no further inventory churn. Reproduces the
+    // stall: pick the item up while the quest is inactive (arming and stranding the
+    // re-arming `inventory_changed` advancement), THEN activate and tick once with
+    // no further pickup — the per-tick held check must complete the objective.
+    if let Some((qid, o)) = first_collect
+        && let Objective::Collect {
+            id, item, count, ..
+        } = o
+    {
+        let mut b = packtest_header(&format!(
+            "{}: collect completes for an item held before activation",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!(
+            "scoreboard players set @a {} 0",
+            obj_score(id.as_str())
+        ));
+        // Take the item while the objective is INACTIVE (the pre-activation pickup).
+        b.push(format!("give @a {item} {count}"));
+        // Activate WITHOUT re-giving (packtest_preamble would re-give the item, which
+        // would mask the bug by producing a fresh inventory_changed): set the quest
+        // active + every `after` prerequisite + every required flag by hand.
+        b.push(format!(
+            "scoreboard players set @a {} 1",
+            quest_active_score(qid)
+        ));
+        for a in o.after() {
+            b.push(format!(
+                "scoreboard players set @a {} 1",
+                obj_score(a.as_str())
+            ));
+        }
+        for f in o.requires_flags() {
+            b.push(format!(
+                "scoreboard players set @a {} 1",
+                plan::flag_score(f.as_str())
+            ));
+        }
+        // One tick's held check completes it — no inventory_changed event occurs.
+        b.push(format!("function {ns}:tick"));
+        b.push(format!(
+            "assert score @p {} matches 1",
+            obj_score(id.as_str())
+        ));
+        write("collect_preheld", b);
+    }
 }
 
 fn emit_server(plan: &Plan, out: &mut BuildOutput) {
@@ -1908,29 +2100,39 @@ fn emit_critical_path(plan: &Plan) -> Value {
     let steps: Vec<Value> = plan
         .critical_path
         .iter()
-        .map(|s| match s {
-            Step::SelectClass { class_id, command } => json!({
-                "action": "select-class", "class": class_id, "command": command
-            }),
-            Step::TalkTo { npc_id, pos, command } => json!({
-                "action": "talk-to", "npc": npc_id, "pos": pos, "command": command
-            }),
-            Step::Reach { anchor_id, pos, radius } => json!({
-                "action": "reach", "anchor": anchor_id, "pos": pos, "radius": radius
-            }),
-            Step::Kill { wave_id, pos, tag, count } => json!({
-                "action": "kill", "wave": wave_id, "pos": pos, "tag": tag, "count": count
-            }),
-            Step::Collect { item, count, pos } => json!({
-                "action": "collect", "item": item, "count": count, "pos": pos
-            }),
-            Step::Interact { anchor_id, pos, command, requires_item } => json!({
-                "action": "interact", "anchor": anchor_id, "pos": pos,
-                "command": command, "requires_item": requires_item
-            }),
-            Step::AssertComplete { objective, value } => json!({
-                "action": "assert-complete", "scoreboard": { "objective": objective, "value": value }
-            }),
+        .zip(&plan.critical_path_transport)
+        .map(|(s, transport)| {
+            let mut step = match s {
+                Step::SelectClass { class_id, command } => json!({
+                    "action": "select-class", "class": class_id, "command": command
+                }),
+                Step::TalkTo { npc_id, pos, command } => json!({
+                    "action": "talk-to", "npc": npc_id, "pos": pos, "command": command
+                }),
+                Step::Reach { anchor_id, pos, radius } => json!({
+                    "action": "reach", "anchor": anchor_id, "pos": pos, "radius": radius
+                }),
+                Step::Kill { wave_id, pos, tag, count } => json!({
+                    "action": "kill", "wave": wave_id, "pos": pos, "tag": tag, "count": count
+                }),
+                Step::Collect { item, count, pos } => json!({
+                    "action": "collect", "item": item, "count": count, "pos": pos
+                }),
+                Step::Interact { anchor_id, pos, command, requires_item } => json!({
+                    "action": "interact", "anchor": anchor_id, "pos": pos,
+                    "command": command, "requires_item": requires_item
+                }),
+                Step::AssertComplete { objective, value } => json!({
+                    "action": "assert-complete", "scoreboard": { "objective": objective, "value": value }
+                }),
+            };
+            // gap 8: mark a step whose completion teleports the player to another
+            // area with the absolute destination, so the harness waits for the
+            // position discontinuity before starting the next step.
+            if let (Some(pos), Some(obj)) = (transport, step.as_object_mut()) {
+                obj.insert("transport".to_string(), json!(pos));
+            }
+            step
         })
         .collect();
     json!({
