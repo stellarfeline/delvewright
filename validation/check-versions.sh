@@ -18,6 +18,7 @@ DELVE_DF="$ROOT/validation/Dockerfile.delve"
 TOOL_DF="$ROOT/validation/Dockerfile.toolserver"
 COMPOSE="$ROOT/validation/compose.yaml"
 HARNESS_PKG="$ROOT/harness/package.json"
+RENDER_CARGO="$ROOT/crates/render/Cargo.toml"
 
 [ -f "$MANIFEST" ] || { echo "FATAL: $MANIFEST not found"; exit 2; }
 
@@ -38,6 +39,9 @@ emit("PACKTEST_SHA1",     d["packtest"]["sha1"])
 emit("MINEFLAYER",        d["harness"]["mineflayer"])
 emit("CONTENT_REPO",      d["content"]["repo"])   # spec-0007 pinned content repo
 emit("CONTENT_SHA",       d["content"]["sha"])
+emit("NUCLEATION_REV",    d["render"]["nucleation_rev"])   # spec-0007 render layer
+emit("NUCLEATION_REPO",   d["render"]["nucleation_repo"])
+emit("CHUNKY_CORE",       d["render"]["chunky_core"])
 PY
 )"
 
@@ -103,6 +107,27 @@ if printf '%s' "$CONTENT_SHA" | grep -qE '^[0-9a-f]{40}$'; then
   pass "content.sha is a full 40-hex commit ($CONTENT_SHA)"
 else
   fail "content.sha '$CONTENT_SHA' is not a full 40-hex commit SHA"
+fi
+
+echo "== Render layer ([render], spec-0007) =="
+# Nucleation is pinned by git REV; the compiler-independent render crate must pin
+# exactly this rev, and a rev must be a full 40-hex commit (determinism/repro).
+if printf '%s' "$NUCLEATION_REV" | grep -qE '^[0-9a-f]{40}$'; then
+  pass "render.nucleation_rev is a full 40-hex commit ($NUCLEATION_REV)"
+else
+  fail "render.nucleation_rev '$NUCLEATION_REV' is not a full 40-hex commit SHA"
+fi
+if [ -f "$RENDER_CARGO" ]; then
+  want_in "nucleation rev -> crates/render/Cargo.toml"  "$NUCLEATION_REV"  "$RENDER_CARGO"
+  want_in "nucleation repo -> crates/render/Cargo.toml" "$NUCLEATION_REPO" "$RENDER_CARGO"
+else
+  fail "crates/render/Cargo.toml missing (cannot verify the render dep pin)"
+fi
+# Chunky is a snapshot core (1.21.x needs it); assert the pin looks like one.
+if printf '%s' "$CHUNKY_CORE" | grep -qE '^chunky-core-.*SNAPSHOT'; then
+  pass "render.chunky_core is a snapshot build ($CHUNKY_CORE)"
+else
+  fail "render.chunky_core '$CHUNKY_CORE' is not a chunky-core snapshot build"
 fi
 
 # Server-jar checksums live in versions.toml as provenance only (the CI jar cache

@@ -97,7 +97,22 @@ Then:
    Both must exit 0. Re-runs after fixes go through the same subagent. A red bot
    run = **you** fix the campaign in the DSL (repair judgment stays with the
    authoring agent; or report a compiler bug — never hand-edit compiler output).
-8. Report to the user: campaign summary, playtime estimate, validation results,
+8. Visual review (spec-0003 visual tier) — **you** (the authoring agent, not a
+   subagent; visual judgment is the point). The build output already contains
+   `render-plan.json` (deterministic shots + per-shot `expect` checklists derived
+   from the DSL). Render the per-prefab sets with Nucleation and read them against
+   each shot's `expect`:
+   - `cargo run -q -p delvewright-render --bin delve-render -- batch campaigns/prefabs -o <workspace>/renders`
+     (needs the 1.21.11 client jar via `--textures`/`$DELVEWRIGHT_CLIENT_JAR`;
+     skip with a note if unavailable locally).
+   - `delve-render fidelity-gate` must exit 0 before trusting any render.
+   - Open the exterior/top/interior/anchor PNGs and check each against its
+     `expect` line (marker visible? room not dark? NPC faces camera and its name
+     is text not JSON? seam clean?). Findings are **DSL-level** — fix the campaign
+     (lighting profile, anchor, NPC facing, name string) and rebuild; never
+     hand-edit output. (Whole-scene Chunky beauty shots via `delve-render scene`
+     stay manual/CI-future.)
+9. Report to the user: campaign summary, playtime estimate, validation results,
    and the two commands they care about:
    - play: `EULA=TRUE docker compose -f validation/compose.yaml --profile play up`
    - playtest with notes: same with `--profile playtest` (+ `CREATOR_NAME=<mc name>`)

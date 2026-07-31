@@ -1,0 +1,51 @@
+{
+  "sdfVersion": 9,
+  "name": "mini_spawn",
+  "width": 1024,
+  "height": 1024,
+  "yClipMin": 56,
+  "yClipMax": 85,
+  "exposure": 1.0,
+  "postprocess": "GAMMA",
+  "outputMode": "PNG",
+  "renderTime": 0,
+  "spp": 0,
+  "sppTarget": 500,
+  "rayDepth": 5,
+  "pathTrace": true,
+  "dumpFrequency": 500,
+  "saveSnapshots": false,
+  "emittersEnabled": true,
+  "emitterIntensity": 13.0,
+  "sunEnabled": true,
+  "stillWater": false,
+  "world": {
+    "path": "world",
+    "dimension": 0
+  },
+  "camera": {
+    "name": "camera 1",
+    "position": {
+      "x": 5.5,
+      "y": 68.0,
+      "z": -2.5
+    },
+    "orientation": {
+      "roll": 0.0,
+      "pitch": 0.27829274923049585,
+      "yaw": -1.5707963267948966
+    },
+    "projectionMode": "PINHOLE",
+    "fov": 70.0
+  },
+  "chunkList": [
+    [
+      0,
+      0
+    ],
+    [
+      1,
+      0
+    ]
+  ]
+}

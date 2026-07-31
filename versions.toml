@@ -105,3 +105,29 @@ repo = "stellarfeline/delvewright-campaigns"
 # this is the content-repo `main` tip (no re-pin owed). Bump it on future content
 # merges per the RE-PIN CONVENTION above.
 sha = "b7aae682181a4117688f9039afdf156518fcdbae"
+
+[render]
+# The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders
+# are VALIDATION ARTIFACTS, never shipped — but their toolchain is pinned here so
+# fidelity is reproducible per (input, version).
+#
+# Nucleation (per-prefab headless renderer, wgpu). Pinned by git REV because
+# crates.io tops out at 0.8.0 which lacks the `rendering` feature; the
+# GpuRenderer/ResourcePackSource API lives on master (0.9.1). MIT.
+# Consumed by: crates/render/Cargo.toml (git dep `rev`).
+nucleation_repo = "https://github.com/Schem-at/Nucleation"
+nucleation_rev = "dbc8fe02ce4ddac90a58423dd5d441d067e87baf"
+nucleation_license = "MIT"
+
+# Chunky (whole-scene path tracer, GPLv3, out-of-process — NOT bundled; run
+# headless under xvfb). 1.21.x needs a snapshot core (stable stops at 1.20.4);
+# this is the snapshot the spike verified. Fetch from chunkyupdate.lemaik.de.
+# Consumed by: crates/render (scene emission targets this scene format) + README.
+chunky_core = "chunky-core-2.5.0-SNAPSHOT.474.g156e2bb"
+chunky_update_url = "https://chunkyupdate.lemaik.de"
+chunky_license = "GPL-3.0"
+
+# Textures come from the pinned 1.21.11 client jar (the same MC version as
+# [minecraft]). Never committed (EULA); resolved at run time from --textures,
+# $DELVEWRIGHT_CLIENT_JAR, or ~/.chunky/resources/minecraft.jar.
+textures = "minecraft-client-1.21.11.jar"
