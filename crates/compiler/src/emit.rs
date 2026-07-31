@@ -201,6 +201,9 @@ fn sealing_commands() -> Vec<String> {
         "gamerule advance_weather false".to_string(),
         "gamerule fire_spread_radius_around_player 0".to_string(),
         "gamerule mob_griefing false".to_string(),
+        // Box-garden death policy: dying must never cost quest items (a dropped
+        // trial key despawns in 5 minutes = softlock for a human player).
+        "gamerule keep_inventory true".to_string(),
         "time set noon".to_string(),
     ]
 }
