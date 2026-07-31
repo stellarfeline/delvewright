@@ -81,6 +81,13 @@ has ≥1 invalid fixture under `fixtures/invalid/` that violates only that rule.
 | `DW0171` | 5 Waves (v0.3) | A declared wave is referenced by a `kill` objective but is never spawned by any `spawn-wave` effect (a wave must be spawned before its kill objective is reachable). |
 | `DW0172` | 5 Flags (v0.3) | A `requires_flags` entry references a `flag/<id>` that no `set-flag` effect ever produces (dangling flag ref). |
 | `DW0173` | 5 Waves (v0.3) | A wave mob `entity` is not a known vanilla entity id. Item-id checks for `collect.item`, `interact.requires_item` and `give-item.item` reuse `DW0143`; their anchors reuse `DW0142`. |
+| `DW0180` | i18n | An l10n sidecar does not correctly cover a declared language: the `l10n/<code>.json` file is **absent**, its envelope (`campaign_id`/`lang`/`dsl_version`) is inconsistent, or it is **missing** an inventory key (under-coverage). Also fired if `en` is declared (it is implicit and never listed). |
+| `DW0181` | i18n | An l10n sidecar carries an **orphan** key not in the string inventory derived from the stage docs (over-coverage). |
+
+Coverage codes (`DW0180`/`DW0181`) are **compiler-level** (they need the campaign
+dir's `l10n/` sidecars, so they run in `delvec validate`/`analyze`/`build`, not the
+single-document DSL fixture matrix). They are exercised by
+`crates/compiler/tests/cli.rs` (mutating `keep-trial`'s real sidecar).
 
 `severity` is `error` for every v0 code; `warning` exists in the shape for
 future advisory rules. `path` is a JSON-pointer-ish location within the stage
@@ -153,6 +160,45 @@ Self-describing patch files named `<code>-<slug>.json`:
 `expect` code, and the valid campaign yields zero. `tests/schema.rs` validates
 every valid fixture against its exported schema and checks that every
 `schema_reject` fixture is rejected.
+
+## i18n (native localization)
+
+Owner-approved 2026-07-31 (spec-0001 i18n addendum). **English is canonical**;
+stage docs stay pure English. A campaign opts into translations by listing
+BCP-47-style codes in `world.content.languages` (e.g. `["zh-cn"]`); `en` is
+implicit and **never** listed. Each declared language ships one **l10n sidecar**
+under the campaign dir at `l10n/<code>.json`, an envelope in the stage-doc style
+plus a flat `content` map of stable key → translated string:
+
+```json
+{ "dsl_version": "0.3.0", "campaign_id": "keep-trial", "kind": "l10n",
+  "lang": "zh-cn", "content": { "world.title": "…", "npc.keeper.name": "…", … } }
+```
+
+The compiler derives the **authoritative key inventory** from the stage docs
+(`l10n::inventory`) and the build-time swap (`l10n::localize`, driven by
+`delvec build --lang <code>`) walk the **same** traversal, so a key is never
+checked without being applied. Player-visible strings only; the key scheme:
+
+| Key | Source |
+|-----|--------|
+| `world.title` | stage-1 title |
+| `area.<area>.name` | area name |
+| `class.<class>.name` / `.blurb` / `.kit.<i>.name` | class name/blurb + kit item display name (if set) |
+| `npc.<npc>.name` | NPC name |
+| `quest.<quest>.goal` | stage-4 quest goal |
+| `obj.<quest>.<obj>.title` / `.hint` | objective title/hint (if set) |
+| `dlg.<npc>.<node>.text` / `.opt.<i>.label` | dialogue node text + option labels |
+| `wave.<wave>.mob.<i>.name` | wave mob custom name (if set) |
+
+`<…>` is the id's local part (after `<prefix>/`, kebab preserved); ids are unique
+within their namespace, so keys never collide. **Excluded** (authoring context the
+player never sees): world `theme`/`premise`, NPC `persona` fields and
+`relationships`. **Coverage is exact** — a declared language's sidecar must cover
+the inventory with no missing (`DW0180`) and no orphan (`DW0181`) keys; this runs
+on every `validate`/`analyze`/`build`, independent of `--lang`. A `--lang <code>`
+build differs from `en` only in string content (`critical-path.json` and the world
+layout are byte-identical); an `en` build is byte-identical to a pre-i18n one.
 
 ## Registries
 

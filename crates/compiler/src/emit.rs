@@ -29,11 +29,18 @@ pub type BuildOutput = BTreeMap<String, Vec<u8>>;
 /// Build the full `<out>/` tree from a plan and the prefab structure bytes
 /// (`structure_file` → raw `.nbt`). Runs the command-tree validator over every
 /// emitted `.mcfunction`; a validation failure is a build error.
+///
+/// `language` is the target build language (i18n): `None` or `Some("en")` is the
+/// canonical English build (the manifest records no `language`, so an English
+/// build stays byte-identical to a pre-i18n one); `Some("<code>")` records the
+/// language in the manifest. The `plan`'s campaign must already be localized to
+/// that language by the caller ([`delvewright_dsl::localize`]).
 pub fn build(
     plan: &Plan,
     input_bytes: &BTreeMap<String, Vec<u8>>,
     structures: &BTreeMap<String, Vec<u8>>,
     tree: &CommandTree,
+    language: Option<&str>,
 ) -> Result<BuildOutput, Vec<CommandError>> {
     let ns = &plan.namespace;
     let mut out: BuildOutput = BTreeMap::new();
@@ -131,7 +138,7 @@ pub fn build(
     }
 
     // ---- manifest (hashes of inputs + all other outputs) ----
-    let manifest = emit_manifest(plan, input_bytes, &out);
+    let manifest = emit_manifest(plan, input_bytes, &out, language);
     put_json(&mut out, "manifest.json", &manifest);
 
     Ok(out)
@@ -1700,7 +1707,12 @@ fn emit_critical_path(plan: &Plan) -> Value {
     })
 }
 
-fn emit_manifest(plan: &Plan, input_bytes: &BTreeMap<String, Vec<u8>>, out: &BuildOutput) -> Value {
+fn emit_manifest(
+    plan: &Plan,
+    input_bytes: &BTreeMap<String, Vec<u8>>,
+    out: &BuildOutput,
+    language: Option<&str>,
+) -> Value {
     let inputs: BTreeMap<String, String> = input_bytes
         .iter()
         .map(|(k, v)| (k.clone(), sha256_hex(v)))
@@ -1709,14 +1721,27 @@ fn emit_manifest(plan: &Plan, input_bytes: &BTreeMap<String, Vec<u8>>, out: &Bui
         .iter()
         .map(|(k, v)| (k.clone(), sha256_hex(v)))
         .collect();
-    json!({
+    let mut manifest = json!({
         "campaign_id": plan.namespace,
         "delvec_version": DELVEC_VERSION,
         "dsl_version": plan.campaign.world.dsl_version,
         "mc_version": MC_VERSION,
         "inputs": inputs,
         "outputs": outputs
-    })
+    });
+    // Record the build language ONLY for a non-canonical build. English is the
+    // implicit canonical language, so an `en` build's manifest is byte-identical to
+    // a pre-i18n one (preserving the determinism regression for all campaigns that
+    // do not localize).
+    if let Some(lang) = language
+        && lang != delvewright_dsl::CANONICAL_LANG
+    {
+        manifest
+            .as_object_mut()
+            .expect("manifest is a JSON object")
+            .insert("language".to_string(), Value::String(lang.to_string()));
+    }
+    manifest
 }
 
 // ---------------------------------------------------------------------------

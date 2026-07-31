@@ -47,17 +47,51 @@ pub fn keep_vertical_dir() -> PathBuf {
 }
 
 /// Materialize a full campaign directory at `dst` = the campaign in `base` with
-/// each stage in `patch["documents"]` overwritten by its replacement envelope.
+/// each stage in `patch["documents"]` overwritten by its replacement envelope. Any
+/// `l10n/` sidecar directory in `base` is copied verbatim (i18n coverage must hold
+/// for a materialized campaign that declares languages).
 pub fn materialize_from(base: &Path, patch: &serde_json::Value, dst: &Path) {
     std::fs::create_dir_all(dst).unwrap();
     for f in STAGE_FILES {
         std::fs::copy(base.join(f), dst.join(f)).unwrap();
     }
+    copy_l10n_dir(base, dst);
     if let Some(docs) = patch.get("documents").and_then(|d| d.as_object()) {
         for (stage, doc) in docs {
             let file = dst.join(format!("{stage}.json"));
             let text = serde_json::to_string_pretty(doc).unwrap();
             std::fs::write(file, text).unwrap();
+        }
+    }
+}
+
+/// Strip any i18n from a materialized campaign at `dir`: drop `world.languages`
+/// and remove the `l10n/` directory. Used by build/solver fixtures derived from a
+/// language-declaring campaign (e.g. keep-trial) that alter player-visible strings
+/// and so would otherwise fail l10n coverage — they test build behavior, not i18n.
+pub fn make_english_only(dir: &Path) {
+    let world_path = dir.join("world.json");
+    let mut world: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&world_path).unwrap()).unwrap();
+    if let Some(content) = world.get_mut("content").and_then(|c| c.as_object_mut()) {
+        content.remove("languages");
+    }
+    std::fs::write(&world_path, serde_json::to_string_pretty(&world).unwrap()).unwrap();
+    let _ = std::fs::remove_dir_all(dir.join("l10n"));
+}
+
+/// Copy `base/l10n/*.json` into `dst/l10n/` if the source directory exists.
+pub fn copy_l10n_dir(base: &Path, dst: &Path) {
+    let src = base.join("l10n");
+    if !src.is_dir() {
+        return;
+    }
+    let dst_l10n = dst.join("l10n");
+    std::fs::create_dir_all(&dst_l10n).unwrap();
+    for entry in std::fs::read_dir(&src).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|e| e.to_str()) == Some("json") {
+            std::fs::copy(&path, dst_l10n.join(path.file_name().unwrap())).unwrap();
         }
     }
 }

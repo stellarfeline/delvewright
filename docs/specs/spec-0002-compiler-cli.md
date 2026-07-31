@@ -12,7 +12,8 @@ against the vendored 1.21.11 command tree; mecha re-validates output in CI only.
 ```
 delvec validate <campaign-dir>            # stages 1–5 schema + referential checks
 delvec analyze  <campaign-dir>            # quest-graph reachability (ADR-0005 static)
-delvec build    <campaign-dir> -o <out>   # full deterministic build
+delvec build    <campaign-dir> -o <out> [--lang <code>]  # full deterministic build
+                                          # (--lang default en; i18n addendum below)
 delvec schema   --stage <1..5|all>        # export JSON Schema (LLM authoring aid)
 delvec --version                          # delvec x.y.z, dsl 0.1.0, mc 1.21.11
 ```
@@ -280,3 +281,43 @@ stair piece and campaigns that already solved are unchanged (`hello-world`,
       hollow-vigil shape (coverage-reuse) does not.
 - [x] `hello-world`, `keep-crawl`, `keep-trial` remain byte-identical (no stair in
       their pools).
+
+## i18n addendum — `--lang` build & the language manifest field (owner-approved 2026-07-31)
+
+Implements spec-0001's i18n addendum on the build side. The DSL layer owns the
+sidecar schema, key inventory and coverage codes (`DW0180`/`DW0181`); the compiler
+loads the `l10n/` sidecars, runs coverage on every `validate`/`analyze`/`build`,
+and localizes at build time.
+
+- **`delvec build --lang <code>`** (global flag, default `en`): emits the same
+  world/layout with every player-visible string swapped to `<code>`. The compiler
+  localizes a clone of the parsed campaign (`dsl::localize`) before planning/emit,
+  so all existing emission is reused verbatim. `en` (or omitting `--lang`) is the
+  canonical English build. `validate`/`analyze` ignore `--lang` (apart from the
+  always-on coverage checks).
+- **Undeclared `--lang`.** A code not in `world.languages` (and not `en`) is a
+  validation-class rejection of the requested build: **exit 1** with a stderr
+  message naming the declared languages. (`en` always succeeds, even for an
+  English-only campaign.) No new exit code — it reuses the validation-failure class
+  per the exit-code table above.
+- **Manifest.** `manifest.json` records `"language": "<code>"` **only for a
+  non-`en` build**; an `en` build omits it, so a campaign that does not localize is
+  byte-identical to a pre-i18n build. A non-`en` build additionally hashes the
+  consumed `l10n/<code>.json` under `inputs`.
+- **Determinism.** Same DSL + seed + `lang` → byte-identical `<out>/`. Different
+  `lang` differs **only** in string content: `critical-path.json` (IDs / commands /
+  positions — the language-neutral bot contract) and the world layout are
+  byte-identical across languages; only string-bearing datapack files, the
+  generated PackTest headers, and the manifest change.
+
+### Acceptance criteria (i18n)
+
+- [x] `delvec build --lang zh-cn` on `keep-trial` double-builds byte-identically
+      and differs from the `en` build only where strings appear;
+      `critical-path.json` is byte-identical across languages.
+- [x] Every fixture's `en` build stays byte-identical to pre-i18n output (the
+      i18n machinery adds zero bytes to an English build; `keep-trial`'s only delta
+      is its `world.json` input hash, from the added `languages` declaration).
+- [x] The `zh-cn` `keep-trial` build passes the full Docker ladder (PackTest 7/7 +
+      bot end-to-end, combat included) with no harness change.
+- [x] Undeclared `--lang` exits 1; `--lang en` always succeeds.

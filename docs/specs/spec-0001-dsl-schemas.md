@@ -267,9 +267,45 @@ resolved by the compiler** (full prefab metadata + the solver), not the DSL laye
 - [x] Emission + the `keep-trial` full-ladder fixture (bot walks it end-to-end,
       combat included; PackTest per-verb 7/7) — spec-0002 addendum.
 
+## i18n addendum — native localization (v0.3 addendum, owner-approved 2026-07-31)
+
+Native i18n with **author-declared languages**. English is the canonical source;
+translations derive FROM English; no runtime LLM. **Stage docs stay pure English.**
+
+- **Declaration.** `world.content.languages`: optional list of BCP-47-style codes
+  (e.g. `["zh-cn"]`). `en` is implicit/canonical and **never** listed. Absent/empty
+  = English-only (byte-identical to pre-i18n output).
+- **Sidecar.** One per declared language at `l10n/<code>.json` in the campaign dir:
+  `{ dsl_version, campaign_id, kind: "l10n", lang, content }`, where `content` is a
+  flat map of **stable key → translated string**.
+- **Key scheme** (path-derived from id local parts, collision-free): `world.title`,
+  `area.<a>.name`, `class.<c>.name`/`.blurb`/`.kit.<i>.name`, `npc.<n>.name`,
+  `quest.<q>.goal`, `obj.<q>.<o>.title`/`.hint`, `dlg.<n>.<node>.text`/
+  `.opt.<i>.label`, `wave.<w>.mob.<i>.name`. Player-visible strings only — world
+  `theme`/`premise`, NPC `persona`/`relationships` are authoring context and are
+  excluded. Full table in `crates/dsl/README.md`.
+- **Coverage rule.** The compiler derives the authoritative inventory from the stage
+  docs; each declared language's sidecar must cover it **exactly** — a missing key
+  or absent/inconsistent sidecar is `DW0180`, an orphan key is `DW0181`. Checked on
+  every `validate`/`analyze`/`build`, independent of `--lang`.
+
+Build/manifest behaviour is spec-0002's `--lang` addendum.
+
+### Acceptance criteria (i18n)
+
+- [x] Absent/empty `languages` → byte-identical validation + build (all four
+      existing fixtures unchanged; `en` build adds zero output bytes).
+- [x] `keep-trial` declares `zh-cn` + ships a covering `l10n/zh-cn.json`; validates
+      clean and `delvec build --lang zh-cn` double-builds byte-identically.
+- [x] `DW0180` (missing/absent) and `DW0181` (orphan) each have a violating
+      fixture; README code table updated.
+- [x] The `zh-cn` build passes the full Docker ladder (PackTest 7/7, bot
+      end-to-end with combat) unchanged — the bot contract is language-neutral.
+
 ## Open
 
 None — both v0.2 questions resolved by the owner 2026-07-30 (mandatory-only
 confirmed; structured persona adopted). v0.3 verb mapping is owner-approved; the
 emission details (chest-based `collect`, interaction-entity `interact`) are
-compiler choices within spec-0002's latitude.
+compiler choices within spec-0002's latitude. i18n (author-declared languages)
+owner-approved 2026-07-31.
