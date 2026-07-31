@@ -689,19 +689,24 @@ fn main() {
     // 13. vertical stair connector 5x9x11: low door South (floor 0), high door
     //     North (floor 4) — a +4 elevation rise between its two sockets, so mating
     //     it lifts the layout one level. Usable up OR down by orientation (the
-    //     mating rule picks which socket meets the parent). The climbing floor is
-    //     solid stone-brick steps (+1 y per z, 3 wide → native-walkable/1-block
-    //     jumps for the pathfinder); glowstone is embedded in the side walls at
-    //     head height along the run so every floor cell clears the `lit` bar.
-    // Climbing surface = `stone_brick_stairs` (facing south → ascends northward),
-    // which mineflayer-pathfinder walks up NATIVELY (no jump), with solid
-    // stone-brick fill beneath each step for support. z=5..8 are the four ascending
-    // stair steps (top y 4→1); z<=4 is the flat high landing (solid to y4, stand
-    // y5); z=9 is the flat low threshold (stand y1). Glowstone is embedded in the
-    // side walls at head height so every floor cell clears the `lit` bar.
+    //     mating rule picks which socket meets the parent). The climb is a
+    //     continuous run of real `stone_brick_stairs`, 3 wide, one step per z, with
+    //     solid stone-brick fill beneath each step for support; glowstone is
+    //     embedded in the side walls at head height along the run so every floor
+    //     cell clears the `lit` bar.
+    //
+    // Stair facing (M2 round-2 fix 2): the player ascends NORTH (from the south low
+    // door toward the north high door), so the stairs face **north** — a vanilla
+    // stair's raised half-step sits on its `facing` side, so `facing = the
+    // direction you ascend toward`. The prior `facing:"south"` put the raised step
+    // on the downhill side, presenting a full-block riser to a north-bound climber
+    // (the owner's "climbs on full blocks / wrong-facing stairs"). z=5..8 are the
+    // four ascending stair steps (top y 1→4); z<=4 is the flat high landing (solid
+    // to y4, stand y5); z=9 is the flat low threshold (stand y1). Verified live by
+    // rendering the regenerated piece.
     let stair_props = || {
         Some(vec![
-            ("facing", "south"),
+            ("facing", "north"),
             ("half", "bottom"),
             ("shape", "straight"),
             ("waterlogged", "false"),
