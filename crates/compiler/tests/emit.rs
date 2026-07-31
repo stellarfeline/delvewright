@@ -13,6 +13,48 @@ use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::PrefabRegistry;
 use delvewright_dsl::parse_campaign;
 
+/// The i18n key inventory is derived from the stage docs (player-visible strings
+/// only), and `localize` swaps exactly those strings — English-only campaigns have
+/// no inventory beyond their strings, and authoring-context fields are excluded.
+#[test]
+fn l10n_inventory_and_localize() {
+    let loaded = load_campaign_dir(&common::keep_trial_dir()).unwrap();
+    let mut campaign = parse_campaign(&loaded.raw).expect("valid keep-trial parses");
+
+    let inv = delvewright_dsl::l10n_inventory(&campaign);
+    // Player-visible keys are present with their canonical English values.
+    assert_eq!(
+        inv.get("world.title").map(String::as_str),
+        Some("Trial of the Keep")
+    );
+    assert_eq!(
+        inv.get("npc.keeper.name").map(String::as_str),
+        Some("The Keeper")
+    );
+    assert_eq!(
+        inv.get("obj.trial.slay.title").map(String::as_str),
+        Some("Clear the Guard")
+    );
+    assert!(inv.contains_key("wave.guards.mob.0.name"));
+    // Authoring-context fields are NOT player-visible → never inventoried.
+    assert!(!inv.keys().any(|k| k.contains("theme")
+        || k.contains("premise")
+        || k.contains("persona")
+        || k.contains("archetype")));
+
+    // Localize with the shipped zh-cn sidecar and confirm the swap.
+    let doc: delvewright_dsl::L10nDoc =
+        serde_json::from_slice(&loaded.l10n["zh-cn"]).expect("sidecar parses");
+    delvewright_dsl::localize(&mut campaign, &doc.content);
+    assert_eq!(campaign.world.content.title, "要塞的试炼");
+    // Non-inventoried fields are untouched by localization (stay English/source).
+    assert_eq!(campaign.world.content.theme, loaded_theme());
+}
+
+fn loaded_theme() -> &'static str {
+    "A ruined keep on the moor, guarded by the restless dead."
+}
+
 fn build_hello_world() -> BuildOutput {
     let loaded = load_campaign_dir(&common::hello_world_dir()).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
@@ -27,7 +69,7 @@ fn build_hello_world() -> BuildOutput {
         }
     }
     let tree = CommandTree::v1_21_11();
-    emit::build(&plan, &loaded.inputs, &structures, &tree).expect("emission succeeds")
+    emit::build(&plan, &loaded.inputs, &structures, &tree, None).expect("emission succeeds")
 }
 
 fn text<'a>(out: &'a BuildOutput, path: &str) -> &'a str {

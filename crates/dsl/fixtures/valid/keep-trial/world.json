@@ -15,6 +15,7 @@
         "prefab_pool": "pool/stone-keep",
         "pieces": { "min": 7, "max": 9 }
       }
-    ]
+    ],
+    "languages": ["zh-cn"]
   }
 }

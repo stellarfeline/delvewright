@@ -34,6 +34,13 @@ pub struct WorldContent {
     pub target_minutes: u32,
     /// 1..N areas; each binds exactly one of `prefab` / `prefab_pool`.
     pub areas: Vec<Area>,
+    /// Additional author-declared translation languages (BCP-47-style codes, e.g.
+    /// `["zh-cn"]`). English (`en`) is implicit, always canonical, and is **never**
+    /// listed here (spec-0001 i18n addendum). Absent or empty = English-only. Every
+    /// declared language must ship a fully-covering `l10n/<code>.json` sidecar
+    /// (`DW0180`/`DW0181`). Stage docs themselves stay pure English.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub languages: Vec<String>,
 }
 
 /// One area of the world, bound to a single prefab or a jigsaw prefab pool.
@@ -548,6 +555,28 @@ impl Objective {
             | Objective::Kill { hint, .. }
             | Objective::Collect { hint, .. }
             | Objective::Interact { hint, .. } => hint.as_deref(),
+        }
+    }
+
+    /// Mutable access to the optional player-facing title (i18n localization).
+    pub fn title_mut(&mut self) -> &mut Option<String> {
+        match self {
+            Objective::TalkTo { title, .. }
+            | Objective::ReachAnchor { title, .. }
+            | Objective::Kill { title, .. }
+            | Objective::Collect { title, .. }
+            | Objective::Interact { title, .. } => title,
+        }
+    }
+
+    /// Mutable access to the optional one-line hint (i18n localization).
+    pub fn hint_mut(&mut self) -> &mut Option<String> {
+        match self {
+            Objective::TalkTo { hint, .. }
+            | Objective::ReachAnchor { hint, .. }
+            | Objective::Kill { hint, .. }
+            | Objective::Collect { hint, .. }
+            | Objective::Interact { hint, .. } => hint,
         }
     }
 

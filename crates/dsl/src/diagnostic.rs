@@ -116,4 +116,13 @@ pub mod codes {
     /// checks for `collect.item`, `interact.requires_item` and `give-item.item`
     /// reuse [`ITEM_UNKNOWN`] / `DW0143`.)
     pub const ENTITY_UNKNOWN: &str = "DW0173";
+    /// (i18n) An l10n sidecar does not correctly cover a declared language: the
+    /// `l10n/<code>.json` file is absent, its envelope (`campaign_id` / `lang` /
+    /// `dsl_version`) is inconsistent, or it is **missing** a key from the
+    /// authoritative inventory (under-coverage). English (`en`) is implicit and
+    /// never declared, so it is never checked.
+    pub const L10N_MISSING: &str = "DW0180";
+    /// (i18n) An l10n sidecar carries an **orphan** key that is not in the
+    /// authoritative string inventory derived from the stage docs (over-coverage).
+    pub const L10N_ORPHAN: &str = "DW0181";
 }

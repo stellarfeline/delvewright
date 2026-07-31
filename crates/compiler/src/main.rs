@@ -38,6 +38,11 @@ struct Cli {
     /// Directory holding prefab metadata (`*.json`) and `.nbt` files.
     #[arg(long, global = true, default_value = "prefabs")]
     prefabs: PathBuf,
+    /// Build language (i18n): `en` (default, canonical English) or a code declared
+    /// in `world.json` `languages`. Only affects `build`; `validate`/`analyze` are
+    /// language-independent apart from sidecar coverage checks.
+    #[arg(long, global = true, default_value = "en")]
+    lang: String,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -87,19 +92,51 @@ fn main() -> ExitCode {
         Command::Validate { campaign_dir } => run_validate(campaign_dir, &cli.prefabs, cli.json),
         Command::Analyze { campaign_dir } => run_analyze(campaign_dir, &cli.prefabs, cli.json),
         Command::Build { campaign_dir, out } => {
-            run_build(campaign_dir, out, &cli.prefabs, cli.json)
+            run_build(campaign_dir, out, &cli.prefabs, &cli.lang, cli.json)
         }
         Command::Schema { stage } => run_schema(stage),
     }
 }
 
-/// Validate and return the parsed campaign + prefab registry + diagnostics;
-/// prints diagnostics. Returns `Err(exit)` on internal error.
-fn validate_stage(
-    campaign_dir: &Path,
-    prefabs_dir: &Path,
-    json: bool,
-) -> Result<(delvewright_dsl::Campaign, PrefabRegistry, Vec<Diagnostic>), u8> {
+/// The parsed campaign plus everything the CLI commands share: prefab metadata,
+/// the loaded campaign directory (stage bytes + l10n sidecars), the parsed l10n
+/// sidecars, and the accumulated diagnostics (schema + referential + l10n).
+struct Validated {
+    campaign: delvewright_dsl::Campaign,
+    prefabs: PrefabRegistry,
+    loaded: delvewright_compiler::load::LoadedCampaign,
+    sidecars: BTreeMap<String, delvewright_dsl::L10nDoc>,
+    diags: Vec<Diagnostic>,
+}
+
+/// Parse an `l10n/<code>.json` sidecar map (raw bytes) into typed [`L10nDoc`]s.
+/// A malformed sidecar yields a `DW0180` diagnostic and is dropped (so coverage
+/// then reports it as a missing sidecar for its declared language).
+fn parse_sidecars(
+    raw: &BTreeMap<String, Vec<u8>>,
+    diags: &mut Vec<Diagnostic>,
+) -> BTreeMap<String, delvewright_dsl::L10nDoc> {
+    let mut out = BTreeMap::new();
+    for (code, bytes) in raw {
+        match serde_json::from_slice::<delvewright_dsl::L10nDoc>(bytes) {
+            Ok(doc) => {
+                out.insert(code.clone(), doc);
+            }
+            Err(e) => diags.push(Diagnostic::error(
+                delvewright_dsl::codes::L10N_MISSING,
+                "l10n",
+                format!("l10n/{code}.json"),
+                format!("malformed l10n sidecar: {e}"),
+            )),
+        }
+    }
+    out
+}
+
+/// Validate and return the parsed campaign + shared context (prefabs, loaded dir,
+/// l10n sidecars) + diagnostics; prints diagnostics. Returns `Err(exit)` on
+/// internal error.
+fn validate_stage(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> Result<Validated, u8> {
     let loaded = load_campaign_dir(campaign_dir).map_err(|e| {
         eprintln!("internal error: cannot read campaign dir: {e}");
         EXIT_INTERNAL
@@ -118,9 +155,19 @@ fn validate_stage(
 
     match parse_campaign(&loaded.raw) {
         Ok(campaign) => {
-            let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+            let mut diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+            // i18n l10n sidecar coverage (DW0180/DW0181) — language-independent,
+            // runs on every validate/analyze/build. No-op for English-only campaigns.
+            let sidecars = parse_sidecars(&loaded.l10n, &mut diags);
+            diags.extend(delvewright_dsl::validate_l10n(&campaign, &sidecars));
             print_diags(&diags, json);
-            Ok((campaign, prefabs, diags))
+            Ok(Validated {
+                campaign,
+                prefabs,
+                loaded,
+                sidecars,
+                diags,
+            })
         }
         Err(diags) => {
             print_diags(&diags, json);
@@ -131,21 +178,21 @@ fn validate_stage(
 
 fn run_validate(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode {
     match validate_stage(campaign_dir, prefabs_dir, json) {
-        Ok((_, _, diags)) if diags.is_empty() => ExitCode::SUCCESS,
+        Ok(v) if v.diags.is_empty() => ExitCode::SUCCESS,
         Ok(_) => ExitCode::from(1),
         Err(code) => ExitCode::from(code),
     }
 }
 
 fn run_analyze(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode {
-    let (campaign, prefabs, diags) = match validate_stage(campaign_dir, prefabs_dir, json) {
+    let v = match validate_stage(campaign_dir, prefabs_dir, json) {
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),
     };
-    if !diags.is_empty() {
+    if !v.diags.is_empty() {
         return ExitCode::from(1);
     }
-    let adiags = analyze_campaign(&campaign, &prefabs);
+    let adiags = analyze_campaign(&v.campaign, &v.prefabs);
     print_diags(&adiags, json);
     if adiags.is_empty() {
         ExitCode::SUCCESS
@@ -154,28 +201,63 @@ fn run_analyze(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode 
     }
 }
 
-fn run_build(campaign_dir: &Path, out: &Path, prefabs_dir: &Path, json: bool) -> ExitCode {
-    let (campaign, prefabs, diags) = match validate_stage(campaign_dir, prefabs_dir, json) {
+fn run_build(
+    campaign_dir: &Path,
+    out: &Path,
+    prefabs_dir: &Path,
+    lang: &str,
+    json: bool,
+) -> ExitCode {
+    let v = match validate_stage(campaign_dir, prefabs_dir, json) {
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),
     };
-    if !diags.is_empty() {
+    if !v.diags.is_empty() {
         return ExitCode::from(1);
     }
+    let Validated {
+        campaign,
+        prefabs,
+        mut loaded,
+        sidecars,
+        ..
+    } = v;
     let adiags = analyze_campaign(&campaign, &prefabs);
     if !adiags.is_empty() {
         print_diags(&adiags, json);
         return ExitCode::from(2);
     }
 
-    // reload input bytes (for manifest) + structures
-    let loaded = match load_campaign_dir(campaign_dir) {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("internal error: {e}");
-            return ExitCode::from(EXIT_INTERNAL);
+    // i18n: resolve the requested build language. `en` is the implicit canonical
+    // build; any other code must be declared in world.json (coverage already
+    // validated above). An undeclared `--lang` is a validation-class rejection of
+    // the requested build (exit 1, spec-0002).
+    let is_english = lang == delvewright_dsl::CANONICAL_LANG;
+    let mut campaign = campaign;
+    if !is_english {
+        if !campaign.world.content.languages.iter().any(|l| l == lang) {
+            eprintln!(
+                "error: --lang `{lang}` is not a declared language (world.json declares: {:?}); \
+                 `en` is always available",
+                campaign.world.content.languages
+            );
+            return ExitCode::from(1);
         }
-    };
+        let Some(doc) = sidecars.get(lang) else {
+            eprintln!("error: no l10n/{lang}.json sidecar for declared language `{lang}`");
+            return ExitCode::from(1);
+        };
+        // Swap every player-visible string to the target language, then record the
+        // sidecar as a build input (manifest provenance) for the non-en build.
+        delvewright_dsl::localize(&mut campaign, &doc.content);
+        if let Some(bytes) = loaded.l10n.get(lang) {
+            loaded
+                .inputs
+                .insert(format!("l10n/{lang}.json"), bytes.clone());
+        }
+    }
+    let build_lang = if is_english { None } else { Some(lang) };
+
     let plan = match Plan::build(&campaign, &prefabs) {
         Ok(p) => p,
         Err(e) => {
@@ -209,7 +291,7 @@ fn run_build(campaign_dir: &Path, out: &Path, prefabs_dir: &Path, json: bool) ->
     }
 
     let tree = CommandTree::v1_21_11();
-    let output = match emit::build(&plan, &loaded.inputs, &structures, &tree) {
+    let output = match emit::build(&plan, &loaded.inputs, &structures, &tree, build_lang) {
         Ok(o) => o,
         Err(errors) => {
             eprintln!(

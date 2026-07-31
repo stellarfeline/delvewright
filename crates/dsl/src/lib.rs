@@ -15,6 +15,7 @@ pub mod canonical;
 pub mod diagnostic;
 pub mod envelope;
 pub mod ids;
+pub mod l10n;
 pub mod registry;
 pub mod schema;
 pub mod stages;
@@ -29,6 +30,10 @@ pub use envelope::{
 pub use ids::{
     AnchorId, AreaId, CampaignId, ClassId, DialogueId, FlagId, NpcId, ObjectiveId, PoolId,
     PrefabId, QuestId, WaveId,
+};
+pub use l10n::{
+    CANONICAL_LANG, L10nDoc, L10nKind, each_string, inventory as l10n_inventory, localize,
+    validate_l10n,
 };
 pub use registry::{
     AnchorRegistry, EntityRegistry, ItemRegistry, Lighting, LightingProfile,
