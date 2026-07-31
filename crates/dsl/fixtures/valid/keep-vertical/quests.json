@@ -19,6 +19,10 @@
         "on_objective_complete": {
           "obj/talk": [
             {
+              "type": "open-gate",
+              "anchor": "anchor/gate"
+            },
+            {
               "type": "spawn-wave",
               "wave": "wave/guards"
             },
@@ -88,10 +92,6 @@
             }
           ],
           "obj/door": [
-            {
-              "type": "open-gate",
-              "anchor": "anchor/gate"
-            },
             {
               "type": "set-flag",
               "flag": "flag/opened"

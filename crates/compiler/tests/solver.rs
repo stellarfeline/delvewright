@@ -297,6 +297,116 @@ fn keep_vertical_builds_vertical_and_is_deterministic() {
     );
 }
 
+/// The M2 dress-rehearsal presentation fixes, all gated on v0.3 so keep-trial
+/// exercises them while v0.2 stays byte-identical (asserted separately).
+#[test]
+fn keep_trial_m2_presentation_fixes() {
+    let a = build_campaign(&common::keep_trial_dir());
+    let setup = text(&a, "datapack/data/keep-trial/function/setup.mcfunction");
+    let tick = text(&a, "datapack/data/keep-trial/function/tick.mcfunction");
+
+    // Fix 1: CustomName is a plain SNBT string component, not the JSON-string
+    // form that renders literally on 1.21.11.
+    assert!(
+        setup.contains("CustomName:\"The Keeper\""),
+        "NPC CustomName is a plain SNBT string"
+    );
+    assert!(
+        !setup.contains("CustomName:'{"),
+        "no legacy JSON-string CustomName in a v0.3 build"
+    );
+    let spawn = text(
+        &a,
+        "datapack/data/keep-trial/function/spawn_guards.mcfunction",
+    );
+    assert!(
+        spawn.contains("CustomName:\"Keep Guard\""),
+        "wave mob CustomName is a plain SNBT string"
+    );
+
+    // Fix 3: a visible, glowing, non-colliding marker at the interact anchor, named
+    // from the objective title.
+    assert!(
+        setup.contains("summon minecraft:item_display")
+            && setup.contains("Glowing:1b")
+            && setup.contains("CustomName:\"Unbar the Inner Door\""),
+        "interact anchor has a glowing named item_display marker"
+    );
+
+    // Fix 4: activation announce (title + hint + sound), completion feedback, and a
+    // finale fanfare.
+    let ann = text(
+        &a,
+        "datapack/data/keep-trial/function/announce_o_key.mcfunction",
+    );
+    assert!(ann.contains("Take the Old Key") && ann.contains("The key sits in a chest"));
+    assert!(ann.contains("playsound minecraft:block.note_block.pling"));
+    assert!(
+        tick.contains("run function keep-trial:announce_o_key"),
+        "tick dispatches the announce"
+    );
+    let done = text(
+        &a,
+        "datapack/data/keep-trial/function/complete_o_slay.mcfunction",
+    );
+    assert!(
+        done.contains("Objective complete: ") && done.contains("Clear the Guard"),
+        "objective completion is announced"
+    );
+    assert!(done.contains("playsound minecraft:entity.experience_orb.pickup"));
+    let cc = text(
+        &a,
+        "datapack/data/keep-trial/function/campaign_complete.mcfunction",
+    );
+    assert!(
+        cc.contains("title @s title ") && cc.contains("Delve Complete"),
+        "finale shows a title banner"
+    );
+    assert!(cc.contains("playsound minecraft:ui.toast.challenge_complete"));
+
+    // Fix 8: reach-anchor completion is a ±1 block region (dx=2/dy=2/dz=2), not a
+    // point-radius sphere.
+    assert!(
+        tick.contains("dx=2,y=")
+            && tick.contains("dz=2] run function keep-trial:complete_o_shrine"),
+        "reach objective uses a block region"
+    );
+    assert!(
+        !tick.contains("distance=.."),
+        "v0.3 reach no longer uses the distance sphere"
+    );
+}
+
+/// The v0.3-gated fixes do NOT leak into v0.2 emission: hello-world keeps the
+/// legacy JSON-string CustomName and the point-radius reach sphere, and never
+/// gains announce/marker/fanfare machinery (its byte-identity is separately
+/// asserted in cli.rs).
+#[test]
+fn v02_emission_paths_are_untouched() {
+    let out = build_campaign(&common::hello_world_dir());
+    let setup = text(&out, "datapack/data/hello-world/function/setup.mcfunction");
+    let tick = text(&out, "datapack/data/hello-world/function/tick.mcfunction");
+    assert!(
+        setup.contains("CustomName:'{\"text\":\"The Keeper\"}'"),
+        "v0.2 keeps the legacy JSON-string CustomName"
+    );
+    assert!(
+        tick.contains("distance=..") && !tick.contains("dx=2"),
+        "v0.2 keeps the point-radius reach sphere"
+    );
+    for (path, bytes) in &out {
+        if path.starts_with("datapack/") && path.ends_with(".mcfunction") {
+            let body = std::str::from_utf8(bytes).unwrap();
+            assert!(
+                !body.contains("playsound")
+                    && !body.contains("item_display")
+                    && !body.contains("dw.ann_"),
+                "no v0.3 feedback machinery leaked into v0.2 at {path}"
+            );
+        }
+    }
+}
+
 /// The socket seal strategy: a spine that ends at a through-room leaves an open
 /// socket, which is sealed with wall material (`stone_bricks`). Solved directly
 /// against the real pool so the wall-seal branch is exercised (keep-crawl's

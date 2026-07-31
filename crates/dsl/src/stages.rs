@@ -403,6 +403,12 @@ pub enum Objective {
     TalkTo {
         /// Objective id.
         id: ObjectiveId,
+        /// Short player-facing objective name (v0.3, optional).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        /// One-line location/direction hint (v0.3, optional).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hint: Option<String>,
         /// The NPC to talk to.
         npc: NpcId,
         /// Prerequisite objectives (intra-quest ordering).
@@ -416,6 +422,12 @@ pub enum Objective {
     ReachAnchor {
         /// Objective id.
         id: ObjectiveId,
+        /// Short player-facing objective name (v0.3, optional).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        /// One-line location/direction hint (v0.3, optional).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hint: Option<String>,
         /// The anchor to reach.
         anchor: AnchorId,
         /// Completion radius (blocks).
@@ -431,6 +443,12 @@ pub enum Objective {
     Kill {
         /// Objective id.
         id: ObjectiveId,
+        /// Short player-facing objective name (v0.3, optional).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        /// One-line location/direction hint (v0.3, optional).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hint: Option<String>,
         /// The wave (stage-5 `waves` ref) whose mobs must be slain.
         wave: WaveId,
         /// Prerequisite objectives.
@@ -444,6 +462,12 @@ pub enum Objective {
     Collect {
         /// Objective id.
         id: ObjectiveId,
+        /// Short player-facing objective name (v0.3, optional).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        /// One-line location/direction hint (v0.3, optional).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hint: Option<String>,
         /// Vanilla item id to collect (validated against the registry).
         item: String,
         /// How many are required.
@@ -462,6 +486,12 @@ pub enum Objective {
     Interact {
         /// Objective id.
         id: ObjectiveId,
+        /// Short player-facing objective name (v0.3, optional).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        /// One-line location/direction hint (v0.3, optional).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hint: Option<String>,
         /// The anchor the interaction entity stands at.
         anchor: AnchorId,
         /// Item required in inventory to complete the interaction (optional).
@@ -496,6 +526,28 @@ impl Objective {
             | Objective::Kill { after, .. }
             | Objective::Collect { after, .. }
             | Objective::Interact { after, .. } => after,
+        }
+    }
+
+    /// The short player-facing objective title (v0.3, optional).
+    pub fn title(&self) -> Option<&str> {
+        match self {
+            Objective::TalkTo { title, .. }
+            | Objective::ReachAnchor { title, .. }
+            | Objective::Kill { title, .. }
+            | Objective::Collect { title, .. }
+            | Objective::Interact { title, .. } => title.as_deref(),
+        }
+    }
+
+    /// The one-line location/direction hint (v0.3, optional).
+    pub fn hint(&self) -> Option<&str> {
+        match self {
+            Objective::TalkTo { hint, .. }
+            | Objective::ReachAnchor { hint, .. }
+            | Objective::Kill { hint, .. }
+            | Objective::Collect { hint, .. }
+            | Objective::Interact { hint, .. } => hint.as_deref(),
         }
     }
 

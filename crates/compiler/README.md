@@ -157,6 +157,7 @@ diagnostics (and as one JSON object per line under `--json`, `stage: "build"`).
 | `DW0303` | The `pieces {min,max}` range is too small to fit the entry plus the required anchor-bearing pieces. |
 | `DW0304` | The solver could not place a required piece without overlap (after the bounded, deterministic retry), or a branching layout's pool declares no branch piece (tee/cross) to fork its terminals. (The old "more than one terminal" limit is lifted — `grow_branching`.) |
 | `DW0305` | A campaign-referenced anchor is defined by **more than one placed piece** (ambiguous resolution) — reference a piece-unique anchor. Also the role-aware failure when a required anchor's only carrier is the `entry` piece and the entry does not already provide it. |
+| `DW0306` | Gate-aware reachability deadlock (M2 fix 7): after the solver produces a layout, sealed gates are modelled as cut edges in the piece-connectivity graph (a gate splits its piece into the two halves its barred row divides). An objective whose anchor is only reachable through a gate that **no earlier objective in the quest/objective DAG order has opened** is a deadlock — the delve is unwinnable even though every anchor resolves (canonical case: a key chest sealed behind the very gate the key opens). `tests/fixtures/keep-trial-gate-deadlock.json` (gate opened by the late `interact` door, with the wave/key sealed behind it) proves the check fires; the shipped `keep-trial` (gate opened when the keeper is greeted) proves a clean layout passes. |
 
 `tests/fixtures/keep-unsatisfiable-anchor.json` (→ `DW0302`) and
 `keep-range-too-small.json` (→ `DW0303`) both pass validate + analyze (the DSL
@@ -177,6 +178,31 @@ test (`tests/cli.rs`) is the ADR-0006 gate.
 
 ## Emission design decisions (within spec-0002's allowed choices)
 
+- **M2 presentation fixes (v0.3-gated).** Defects the M2 dress rehearsal surfaced,
+  each gated on the campaign's dsl_version so v0.2 output (hello-world / keep-crawl)
+  stays byte-identical:
+  - *CustomName*: `CustomName` is a 1.21.11 **text component**, so a plain SNBT
+    string (`CustomName:"Hedric of the Watch"`) is emitted — the old
+    `'{"text":…}'` JSON-string form rendered literally (name tags + death
+    messages). Applies to NPCs (v0.3) and all wave mobs.
+  - *Interact markers*: an `interact` anchor also gets a visible, glowing,
+    non-colliding `minecraft:item_display` (a lantern, `Glowing:1b`,
+    `billboard:"center"`) named from the objective `title` (fallback: objective id)
+    so a human can find it — it obstructs neither movement nor the interaction
+    hitbox.
+  - *Objective feedback*: a titled objective announces its `title` + `hint` (chat +
+    `block.note_block.pling`) once when it activates (guarded by a per-objective
+    `dw.ann_<obj>` flag), confirms on completion (`entity.experience_orb.pickup`),
+    and the finale plays a proper fanfare (`title` banner +
+    `ui.toast.challenge_complete`).
+  - *Reach region*: `reach-anchor` completes on a **block region** — the anchor cell
+    with ±1 generosity on every axis (`x=ax-1,dx=2,…`, a 3×3×3 box) — instead of a
+    tight `distance=..R` sphere, so a human standing on the altar completes it. See
+    spec-0002 emission amendment.
+  - *Wave equipment*: mobs whose natural spawns are armed get default `HandItems`
+    (drop chance 0) so summoned combat isn't trivial. Static table:
+    `wither_skeleton` → `stone_sword`; `skeleton`/`stray` → `bow`; everything else
+    (zombie, drowned — a wild trident is not a default) unarmed.
 - **v0.3 gameplay verbs** (spec-0002 v0.3 addendum): `spawn-wave` summons a wave's
   mobs (AI enabled) tagged `dw_wave_<id>` and sets a countdown `#<id> dw.wave`; a
   `player_killed_entity` advancement decrements it, and the `kill` objective's

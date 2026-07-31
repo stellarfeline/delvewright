@@ -12,7 +12,7 @@
     "generator": "prefabs/generator (keep-prefab-gen)"
   },
   "anchors": {
-    "anchor/npc-stand": {
+    "anchor/chest": {
       "pos": [
         3,
         1,
@@ -20,7 +20,7 @@
       ],
       "facing": "north"
     },
-    "anchor/chest": {
+    "anchor/npc-stand": {
       "pos": [
         3,
         1,

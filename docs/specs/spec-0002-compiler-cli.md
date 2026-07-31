@@ -190,6 +190,31 @@ the pathfinder (unchanged on straight maps, per the regression fixtures).
 - **PackTest**: the generated suite gains a per-verb mechanism test (spawn→kill
   countdown, chest→collect, interaction→complete, flag gate).
 
+### M2 dress-rehearsal presentation amendment (planning-agent-approved, chat policy)
+
+The M2 human dress rehearsal (owner playing `hollow-vigil`) surfaced
+presentation/correctness defects. The following emission amendments land in
+`m2-presentation-fixes`, **all gated on dsl_version 0.3** so v0.2 output stays
+byte-identical (verified against captured baselines):
+
+- **`reach-anchor` completion is a block region, not a point sphere.** A
+  `distance=..R` sphere was too tight for a human standing on the altar cell. The
+  emitted check is now `if entity @s[x=ax-1,dx=2,y=ay-1,dy=2,z=az-1,dz=2]` where
+  `(ax,ay,az)` is the resolved anchor cell — i.e. the anchor cell **with ±1
+  generosity on every axis** (a 3×3×3 box centred on the anchor). Deterministic;
+  the DSL `radius` is retained in `critical-path.json` for the bot but no longer
+  drives the in-world completion volume. (v0.2 keeps the sphere.)
+- **`CustomName` is a plain SNBT string** (text component), not `'{"text":…}'`
+  (which rendered literally, incl. death messages).
+- **`interact` anchors also emit a visible glowing `item_display` marker** named
+  from the objective `title` (fallback: objective id) — non-colliding, so it
+  breaks neither movement nor the interaction hitbox.
+- **Objective lifecycle feedback**: activation shows `title`+`hint` + a subtle
+  sound (once, via a `dw.ann_<obj>` flag); completion confirms + sound; the finale
+  plays a title-banner fanfare + sound.
+- **Wave mobs get default hand equipment** (drop chance 0) for naturally-armed
+  species (`wither_skeleton`→stone_sword, `skeleton`/`stray`→bow).
+
 ### Solver (branching growth — lifts `DW0304`)
 
 Multiple terminals (e.g. shrine **and** boss-hall) and corner/tee/cross pieces
