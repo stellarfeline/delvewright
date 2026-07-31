@@ -122,6 +122,7 @@ pub fn build(
     input_bytes: &BTreeMap<String, Vec<u8>>,
     structures: &BTreeMap<String, Vec<u8>>,
     tree: &CommandTree,
+    prefabs: &crate::registry::PrefabRegistry,
     language: Option<&str>,
     content_sha: &str,
 ) -> Result<BuildOutput, Vec<CommandError>> {
@@ -218,6 +219,16 @@ pub fn build(
 
     // ---- critical path ----
     put_json(&mut out, "critical-path.json", &emit_critical_path(plan));
+
+    // ---- visual-tier render plan (spec-0003 / spec-0007) ----
+    // Deterministic camera + expect-checklist shot list for the visual tier;
+    // consumed by `delve-render`. Emitted before the manifest so its hash is
+    // recorded there like every other output.
+    put_json(
+        &mut out,
+        "render-plan.json",
+        &crate::render_plan::render_plan(plan, prefabs),
+    );
 
     // ---- validate every emitted vanilla mcfunction ----
     let mut errors = Vec::new();

@@ -30,8 +30,16 @@ fn build_campaign(dir: &Path) -> BuildOutput {
         }
     }
     let tree = CommandTree::v1_21_11();
-    emit::build(&plan, &loaded.inputs, &structures, &tree, None, "unpinned")
-        .expect("emission succeeds")
+    emit::build(
+        &plan,
+        &loaded.inputs,
+        &structures,
+        &tree,
+        &prefabs,
+        None,
+        "unpinned",
+    )
+    .expect("emission succeeds")
 }
 
 fn text<'a>(out: &'a BuildOutput, path: &str) -> &'a str {
