@@ -637,6 +637,28 @@ fn emit_functions(plan: &Plan, sentinels: &Sentinels) -> Vec<(String, String)> {
                         ));
                     }
                 }
+                // Reach anchors had no visual presence, so the owner triggered the
+                // finale altar "by wandering" (M2 round-2 fix 3). Give them the same
+                // glowing, non-colliding `item_display` marker the interact target
+                // got — a distinct, thematically neutral `end_rod` (vs. the interact
+                // lantern) so a beacon-like light marks the destination. v0.3-gated
+                // like the interact marker: reach anchors exist in v0.2 (keep-crawl),
+                // so this must not touch pre-v0.3 byte-identity.
+                Objective::ReachAnchor { id, anchor, .. } if v03 => {
+                    let pos = match plan
+                        .anchors
+                        .get(&(area.to_string(), anchor.as_str().to_string()))
+                    {
+                        Some(ResolvedAnchor::Point { pos, .. }) => *pos,
+                        Some(ResolvedAnchor::Gate { from, .. }) => *from,
+                        None => continue,
+                    };
+                    let marker_name = snbt_string(o.title().unwrap_or(id.as_str()));
+                    setup.push(format!(
+                        "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],CustomName:{},CustomNameVisible:1b,billboard:\"center\",item:{{id:\"minecraft:end_rod\",count:1}}}}",
+                        pos[0], pos[1], pos[2], reach_marker_tag(id.as_str()), marker_name
+                    ));
+                }
                 _ => {}
             }
         }
@@ -1209,6 +1231,11 @@ fn announce_score(obj_id: &str) -> String {
 /// The entity tag on an `interact` objective's interaction hitbox.
 fn interact_entity_tag(obj_id: &str) -> String {
     format!("dw_i_{}", plan::safe_local(obj_id))
+}
+
+/// The entity tag on a `reach-anchor` objective's visual marker display.
+fn reach_marker_tag(obj_id: &str) -> String {
+    format!("dw_r_{}", plan::safe_local(obj_id))
 }
 
 /// The flags any `set-flag` effect produces (sorted, deduped).

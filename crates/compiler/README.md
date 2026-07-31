@@ -185,11 +185,12 @@ test (`tests/cli.rs`) is the ADR-0006 gate.
     string (`CustomName:"Hedric of the Watch"`) is emitted — the old
     `'{"text":…}'` JSON-string form rendered literally (name tags + death
     messages). Applies to NPCs (v0.3) and all wave mobs.
-  - *Interact markers*: an `interact` anchor also gets a visible, glowing,
+  - *Interact & reach markers*: an `interact` anchor gets a visible, glowing,
     non-colliding `minecraft:item_display` (a lantern, `Glowing:1b`,
     `billboard:"center"`) named from the objective `title` (fallback: objective id)
     so a human can find it — it obstructs neither movement nor the interaction
-    hitbox.
+    hitbox. A `reach-anchor` gets the same marker with a distinct `end_rod` (so the
+    finale altar can't be triggered "by wandering"), tagged `dw_r_<obj>`.
   - *Objective feedback*: a titled objective announces its `title` + `hint` (chat +
     `block.note_block.pling`) once when it activates (guarded by a per-objective
     `dw.ann_<obj>` flag), confirms on completion (`entity.experience_orb.pickup`),
