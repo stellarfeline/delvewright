@@ -88,7 +88,29 @@ All three profiles are driven by one compiler build output at
 - **Auth mode (decided):** default `ONLINE_MODE=FALSE` (offline) for frictionless
   local play and CI; set `ONLINE_MODE=TRUE` to join with a real Microsoft account.
 
-## Acceptance criteria
+### Visual tier *(owner-directed 2026-07-31; open, blocked on the fidelity gate)*
+
+Between the bot playthrough and owner QA: prove the delve **looks right** before
+a human ever joins — catching exactly the dress-rehearsal class of defects
+(invisible interact markers, unlit rooms, backwards NPCs, literal-JSON name
+tags) without human eyes.
+
+- **Deterministic shot list, derived from the layout**: the compiler knows every
+  coordinate, so the camera plan is computed, not guessed — spawn view, every
+  NPC anchor (facing the NPC), every interact anchor, every gate (both sides),
+  every piece seam, one interior shot per room.
+- **Per-shot expected-content checklist, derived from the DSL**: each shot
+  carries machine-generated assertions ("glowing marker visible here", "NPC
+  named X faces camera", "room declared `lit` — no dark frame", "seam shows no
+  floating/clipped blocks"). The vision agent (generation-time, multimodal —
+  never a runtime component) verifies shot-by-shot; failures are findings with
+  DSL-addressable context, same shape as playtest notes (spec-0006).
+- **Renderers** (shared with spec-0007's rendering infra): Nucleation
+  (Rust/MIT, per-piece + fast interior shots) and Chunky (GPLv3, out-of-process,
+  scene beauty shots); both sit behind the same 1.21.11 **fidelity gate**
+  (newest-block fixture vs reference; unknown-block placeholders fail).
+- Runs after the bot tier in the ladder (local + CI release tier); the owner's
+  play remains the final gate for *fun*, not for *correctness or looks*.
 
 - [x] Compose profiles reproduce CI locally: `--profile validate` (bot) and
       `--profile packtest` both exit 0 on the hello-world delve (verified locally).
