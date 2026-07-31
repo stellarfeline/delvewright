@@ -243,6 +243,60 @@ fn keep_trial_builds_all_verbs_and_is_deterministic() {
     );
 }
 
+/// keep-vertical (v0.3): a keep spanning ≥2 elevation levels via stair pieces
+/// builds clean (every command validates), places ≥1 stair, resolves the finale
+/// reach onto a level above spawn, and double-builds byte-identically.
+#[test]
+fn keep_vertical_builds_vertical_and_is_deterministic() {
+    let a = build_campaign(&common::keep_vertical_dir());
+    let b = build_campaign(&common::keep_vertical_dir());
+    for (path, bytes) in &a {
+        assert_eq!(bytes, &b[path], "keep-vertical byte mismatch in {path}");
+    }
+    let tree = CommandTree::v1_21_11();
+    assert!(
+        emit::validate_emitted(&a, &tree).is_empty(),
+        "all emitted keep-vertical commands validate"
+    );
+
+    let loaded = load_campaign_dir(&common::keep_vertical_dir()).unwrap();
+    let campaign = parse_campaign(&loaded.raw).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).unwrap();
+    let keep = &plan.areas[0];
+
+    // A stair piece is placed, and pieces sit on ≥2 distinct floor levels.
+    assert!(
+        keep.pieces.iter().any(|p| p.prefab_id.contains("stair")),
+        "a stair piece is placed"
+    );
+    let levels: std::collections::BTreeSet<i32> =
+        keep.pieces.iter().map(|p| p.bbox().0[1]).collect();
+    assert!(
+        levels.len() >= 2,
+        "layout spans ≥2 elevation levels, saw {levels:?}"
+    );
+
+    // The finale reach (shrine) sits on a level above the spawn.
+    let cp: serde_json::Value =
+        serde_json::from_slice(a.get("critical-path.json").unwrap()).unwrap();
+    let steps = cp["steps"].as_array().unwrap();
+    let spawn_y = steps
+        .iter()
+        .find(|s| s["action"] == "talk-to")
+        .and_then(|s| s["pos"][1].as_i64())
+        .unwrap();
+    let reach_y = steps
+        .iter()
+        .find(|s| s["action"] == "reach")
+        .and_then(|s| s["pos"][1].as_i64())
+        .unwrap();
+    assert!(
+        reach_y > spawn_y,
+        "finale reach (y={reach_y}) is above the spawn level (y={spawn_y})"
+    );
+}
+
 /// The socket seal strategy: a spine that ends at a through-room leaves an open
 /// socket, which is sealed with wall material (`stone_bricks`). Solved directly
 /// against the real pool so the wall-seal branch is exercised (keep-crawl's
@@ -277,9 +331,11 @@ fn open_socket_is_sealed_with_wall() {
 }
 
 /// Branching growth (lifts the old `DW0304` one-terminal limit): requiring two
-/// dead-end terminals (shrine's `anchor/objective` + boss-hall's `anchor/boss`)
-/// places **both** on separate branches off a tee/cross, stays connected, and
-/// every required piece appears exactly once.
+/// dead-end terminals carried by *distinct* pieces (boss-hall's `anchor/boss` +
+/// small-a's `anchor/chest`) places **both** on separate branches off a tee/cross,
+/// stays connected, and every required piece appears exactly once. (Two anchors on
+/// the *same* piece — e.g. boss-hall's `anchor/boss` + `anchor/objective` — now
+/// collapse to one piece via coverage-reuse; see `objective_reuses_boss_hall`.)
 #[test]
 fn branching_two_terminals_both_placed() {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -287,8 +343,8 @@ fn branching_two_terminals_both_placed() {
     let layout = solver::solve_area(
         &prefabs,
         "pool/stone-keep",
-        // objective → shrine (first carrier), boss → boss-hall: two dead-ends.
-        &["anchor/objective".to_string(), "anchor/boss".to_string()],
+        // chest → small-a, boss → boss-hall: two dead-ends on distinct pieces.
+        &["anchor/chest".to_string(), "anchor/boss".to_string()],
         7,
         10,
         [0, 64, 0],
@@ -298,9 +354,11 @@ fn branching_two_terminals_both_placed() {
 
     let ids: Vec<&str> = layout.pieces.iter().map(|p| p.prefab_id.as_str()).collect();
     assert_eq!(
-        ids.iter().filter(|p| **p == "prefab/keep-shrine").count(),
+        ids.iter()
+            .filter(|p| **p == "prefab/keep-room-small-a")
+            .count(),
         1,
-        "exactly one shrine terminal"
+        "exactly one small-a (chest) terminal"
     );
     assert_eq!(
         ids.iter()
@@ -330,9 +388,10 @@ fn branching_two_terminals_both_placed() {
     assert!((7..=10).contains(&layout.pieces.len()));
 }
 
-/// Branching is robust across seeds: a two-terminal layout solves for every seed
-/// in a wide sweep (greedy tree growth extends the trunk before forking, so large
-/// terminals fit). Guards against seed-dependent overlap flakiness.
+/// Branching is robust across seeds: a two-terminal layout (small-a chest +
+/// boss-hall) solves for every seed in a wide sweep. The bounded retry (largest
+/// terminal capped first) fits the 11×13 boss-hall even when a naive greedy pass
+/// would fail. Guards against seed-dependent overlap flakiness.
 #[test]
 fn branching_solves_across_many_seeds() {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -342,7 +401,7 @@ fn branching_solves_across_many_seeds() {
         let r = solver::solve_area(
             &prefabs,
             "pool/stone-keep",
-            &["anchor/objective".to_string(), "anchor/boss".to_string()],
+            &["anchor/chest".to_string(), "anchor/boss".to_string()],
             7,
             9,
             [0, 64, 0],
@@ -351,8 +410,8 @@ fn branching_solves_across_many_seeds() {
         if let Ok(layout) = r {
             let ids: Vec<&str> = layout.pieces.iter().map(|p| p.prefab_id.as_str()).collect();
             assert!(
-                ids.contains(&"prefab/keep-shrine"),
-                "seed {seed}: no shrine"
+                ids.contains(&"prefab/keep-room-small-a"),
+                "seed {seed}: no small-a"
             );
             assert!(
                 ids.contains(&"prefab/keep-boss-hall"),
@@ -374,7 +433,7 @@ fn branching_same_seed_same_layout() {
         solver::solve_area(
             &prefabs,
             "pool/stone-keep",
-            &["anchor/objective".to_string(), "anchor/boss".to_string()],
+            &["anchor/chest".to_string(), "anchor/boss".to_string()],
             7,
             10,
             [0, 64, 0],
@@ -420,4 +479,168 @@ fn solver_same_seed_same_layout() {
         assert_eq!(pa.rotation, pb.rotation);
     }
     assert_eq!(a.seals, b.seals);
+}
+
+// ---------------------------------------------------------------------------
+// M2 vertical-solver: role-aware carrier selection, DW0305, seed-sweep, stairs
+// ---------------------------------------------------------------------------
+
+/// The exact required-anchor set the hollow-vigil campaign shape produces in
+/// `area/keep` (npc `anchor/exit` on the entry + npc `anchor/keeper-stand`; the
+/// kill/collect/interact/reach/open-gate/boss anchors). Used by the acceptance
+/// seed-sweep and the coverage/ambiguity tests.
+fn hollow_vigil_anchors() -> Vec<String> {
+    [
+        "anchor/boss",
+        "anchor/chest",
+        "anchor/door",
+        "anchor/exit",
+        "anchor/gate",
+        "anchor/keeper-stand",
+        "anchor/objective",
+        "anchor/wave",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+/// Role-aware capping: an NPC anchored to `anchor/exit` (which the entry
+/// spawn-hall already provides) must NOT force a second spawn-hall, and
+/// `anchor/objective` must resolve to the boss-hall that `anchor/boss` forces
+/// (coverage-reuse), NOT pull in a redundant shrine. So exactly one spawn-hall,
+/// one boss-hall, and no shrine are placed for the hollow-vigil shape.
+#[test]
+fn objective_reuses_boss_hall_and_no_duplicate_entry() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let mut s = Splitmix64::new(solver::stream_seed(7, "area/keep"));
+    let layout = solver::solve_area(
+        &prefabs,
+        "pool/stone-keep",
+        &hollow_vigil_anchors(),
+        10,
+        15,
+        [0, 64, 0],
+        &mut s,
+    )
+    .expect("hollow-vigil shape solves");
+    let ids: Vec<&str> = layout.pieces.iter().map(|p| p.prefab_id.as_str()).collect();
+    assert_eq!(
+        ids.iter()
+            .filter(|p| **p == "prefab/keep-spawn-hall")
+            .count(),
+        1,
+        "exactly one entry spawn-hall (anchor/exit reuses it), got {ids:?}"
+    );
+    assert_eq!(
+        ids.iter()
+            .filter(|p| **p == "prefab/keep-boss-hall")
+            .count(),
+        1,
+        "boss-hall placed once"
+    );
+    assert_eq!(
+        ids.iter().filter(|p| **p == "prefab/keep-shrine").count(),
+        0,
+        "no redundant shrine — boss-hall covers anchor/objective, got {ids:?}"
+    );
+}
+
+/// Item 2 acceptance: ≥80% of seeds 1..=40 solve the hollow-vigil shape at pieces
+/// {min 10, max 15}. (Measured before this work: 3/40. Prints the count so the
+/// sweep number is visible with `--nocapture`.)
+#[test]
+fn hollow_vigil_seed_sweep_meets_target() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let req = hollow_vigil_anchors();
+    let mut ok = 0u32;
+    for seed in 1u64..=40 {
+        let mut s = Splitmix64::new(solver::stream_seed(seed, "area/keep"));
+        if solver::solve_area(
+            &prefabs,
+            "pool/stone-keep",
+            &req,
+            10,
+            15,
+            [0, 64, 0],
+            &mut s,
+        )
+        .is_ok()
+        {
+            ok += 1;
+        }
+    }
+    println!("hollow-vigil shape {{10,15}}: {ok}/40 seeds solvable");
+    assert!(ok >= 32, "only {ok}/40 seeds solvable, need ≥32 (80%)");
+}
+
+/// DW0305: a campaign-referenced anchor defined by two *placed* pieces is a hard
+/// error. `anchor/npc-stand` is on small-a, small-b and small-c; requiring
+/// `anchor/chest` (small-a) + `anchor/wave` (small-b) forces both, and then
+/// referencing `anchor/npc-stand` resolves ambiguously across the two.
+#[test]
+fn ambiguous_anchor_is_dw0305() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let mut s = Splitmix64::new(solver::stream_seed(1, "area/keep"));
+    let err = solver::solve_area(
+        &prefabs,
+        "pool/stone-keep",
+        &[
+            "anchor/chest".to_string(),
+            "anchor/wave".to_string(),
+            "anchor/npc-stand".to_string(),
+        ],
+        5,
+        9,
+        [0, 64, 0],
+        &mut s,
+    )
+    .expect_err("ambiguous anchor must fail");
+    assert_eq!(err.code, solver::DW_AMBIGUOUS_ANCHOR);
+    assert!(
+        err.message.contains("anchor/npc-stand"),
+        "names the ambiguous anchor: {}",
+        err.message
+    );
+}
+
+/// Vertical growth: a pool containing a stair connector produces a layout spanning
+/// ≥2 elevation levels (distinct piece floor `y`s), and stays deterministic.
+#[test]
+fn vertical_pool_spans_multiple_levels() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let solve = || {
+        let mut s = Splitmix64::new(solver::stream_seed(20260731, "area/keep"));
+        solver::solve_area(
+            &prefabs,
+            "pool/vertical-keep",
+            &["anchor/objective".to_string(), "anchor/wave".to_string()],
+            6,
+            9,
+            [0, 64, 0],
+            &mut s,
+        )
+        .expect("vertical layout solves")
+    };
+    let layout = solve();
+    assert!(
+        layout.pieces.iter().any(|p| p.prefab_id.contains("stair")),
+        "a stair piece is placed: {:?}",
+        layout
+            .pieces
+            .iter()
+            .map(|p| p.prefab_id.as_str())
+            .collect::<Vec<_>>()
+    );
+    let levels: std::collections::BTreeSet<i32> =
+        layout.pieces.iter().map(|p| p.bbox_min[1]).collect();
+    assert!(
+        levels.len() >= 2,
+        "layout spans ≥2 elevation levels, saw {levels:?}"
+    );
+    let b = solve();
+    for (pa, pb) in layout.pieces.iter().zip(&b.pieces) {
+        assert_eq!(pa.pos, pb.pos);
+        assert_eq!(pa.rotation, pb.rotation);
+    }
 }

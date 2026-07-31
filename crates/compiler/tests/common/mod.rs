@@ -41,6 +41,11 @@ pub fn keep_trial_dir() -> PathBuf {
     repo_root().join("crates/dsl/fixtures/valid/keep-trial")
 }
 
+/// The v0.3 vertical keep-vertical campaign directory (3D stair layout).
+pub fn keep_vertical_dir() -> PathBuf {
+    repo_root().join("crates/dsl/fixtures/valid/keep-vertical")
+}
+
 /// Materialize a full campaign directory at `dst` = the campaign in `base` with
 /// each stage in `patch["documents"]` overwritten by its replacement envelope.
 pub fn materialize_from(base: &Path, patch: &serde_json::Value, dst: &Path) {

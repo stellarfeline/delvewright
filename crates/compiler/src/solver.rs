@@ -54,6 +54,8 @@
 //! piece count in `[min,max]`). Every unmated socket is sealed with wall material;
 //! every mated socket's jigsaw block is cleared to air.
 
+use std::collections::BTreeSet;
+
 use crate::registry::{Connector, PoolMember, PrefabRegistry};
 
 // ---------------------------------------------------------------------------
@@ -332,6 +334,18 @@ pub const DW_RANGE_TOO_SMALL: &str = "DW0303";
 /// branching layout has no branch piece (tee/cross) to fork its terminals
 /// (layout infeasible for this pool / seed).
 pub const DW_INFEASIBLE: &str = "DW0304";
+/// `DW0305`: a campaign-referenced anchor is defined by **more than one** placed
+/// piece, so resolving it would be silent + arbitrary (ambiguous anchor). Also the
+/// role-aware failure when the only carrier of a required anchor is the entry
+/// piece and the entry does not already provide it.
+pub const DW_AMBIGUOUS_ANCHOR: &str = "DW0305";
+
+/// The maximum number of deterministically-reordered branching attempts before a
+/// layout is declared infeasible (item 2: large-terminal placement robustness).
+/// Attempt 0 reproduces the pre-M2 greedy growth byte-for-byte; later attempts
+/// reorder terminal capping (largest footprint first) and draw fresh filler/branch
+/// choices so a big terminal (e.g. `keep-boss-hall`, 11×13) finds open space.
+const MAX_BRANCH_ATTEMPTS: u32 = 32;
 
 /// An open socket on the growth frontier: which placed piece, which of its
 /// connectors, and the socket's resolved world pose.
@@ -385,20 +399,51 @@ pub fn solve_area(
             )
         })?;
 
-    // Map each required anchor to the pool piece that carries it (dedup: one
-    // piece may carry several required anchors, e.g. gate-room's gate + stand).
+    // Anchors the (already-fixed) entry piece provides. Role-aware capping never
+    // re-adds the entry as a required/cap piece: it is placed exactly once, at the
+    // origin, and already resolves its own anchors (e.g. spawn-hall's `spawn` +
+    // `anchor/exit`). Without this, an NPC anchored to `anchor/exit` used to force
+    // a *second* spawn-hall (hollow-vigil's duplicate-spawn bug).
+    let entry_anchors: BTreeSet<String> = registry
+        .get(&entry_prefab)
+        .map(|m| m.anchors.keys().cloned().collect())
+        .unwrap_or_default();
+
+    // Map each required anchor to the pool piece that carries it. Iterate anchors
+    // in sorted order for determinism (plan.rs already passes a sorted set; sorting
+    // a local copy makes direct solver calls deterministic too, and matches the
+    // former byte output). Coverage-reuse: if an already-selected required piece
+    // already carries this anchor, do not add a second piece — this makes
+    // hollow-vigil's `anchor/objective` resolve to the boss-hall that `anchor/boss`
+    // already forces, instead of pulling in a redundant shrine that would also
+    // define `anchor/objective` (→ ambiguity). Entry-role carriers are excluded.
+    let mut sorted_anchors: Vec<String> = required_anchors.to_vec();
+    sorted_anchors.sort();
+    sorted_anchors.dedup();
     let mut required_prefabs: Vec<String> = Vec::new();
-    for anchor in required_anchors {
-        let carriers = registry.pool_prefabs_with_anchor(pool_id, anchor);
-        let Some(prefab) = carriers.into_iter().next() else {
+    for anchor in &sorted_anchors {
+        if entry_anchors.contains(anchor) {
+            continue;
+        }
+        if required_prefabs
+            .iter()
+            .any(|p| piece_defines(registry, p, anchor))
+        {
+            continue;
+        }
+        let prefab = registry
+            .pool_prefabs_with_anchor(pool_id, anchor)
+            .into_iter()
+            .find(|p| !is_entry_role(members, p));
+        let Some(prefab) = prefab else {
             return Err(SolveError::new(
                 DW_UNSATISFIABLE_ANCHOR,
-                format!("pool `{pool_id}` has no piece providing required anchor `{anchor}`"),
+                format!(
+                    "pool `{pool_id}` has no non-entry piece providing required anchor `{anchor}`"
+                ),
             ));
         };
-        if !required_prefabs.contains(&prefab) {
-            required_prefabs.push(prefab);
-        }
+        required_prefabs.push(prefab);
     }
 
     // Order required pieces so single-socket dead-ends come last, boss-hall
@@ -479,6 +524,16 @@ pub fn solve_area(
         ));
     }
 
+    // Stair connectors (keep-socket-v1 pieces whose two sockets sit at different
+    // local y — a vertical rise). A pool with no stair behaves exactly as before
+    // (existing fixtures stay byte-identical); when a pool has stairs and there is
+    // filler budget, growth forces at least one so the layout spans ≥2 elevations.
+    let stairs: Vec<&PoolMember> = all_connectors
+        .iter()
+        .copied()
+        .filter(|m| is_stair(registry, &m.prefab))
+        .collect();
+
     // --- grow ---
     let mut pieces: Vec<PlacedPiece> = Vec::new();
     let mut frontier: Vec<OpenSocket> = Vec::new();
@@ -500,6 +555,7 @@ pub fn solve_area(
             &through,
             &terminals,
             &all_connectors,
+            &stairs,
             filler_count,
             branch_needed,
             &mut pieces,
@@ -512,11 +568,35 @@ pub fn solve_area(
             &through,
             terminals.first().copied(),
             &connector_members,
+            &stairs,
             filler_count,
             &mut pieces,
             &mut frontier,
             stream,
         )?;
+    }
+
+    // --- ambiguous-anchor check (DW0305) ---
+    // Every campaign-referenced anchor must resolve to exactly one placed piece;
+    // two placed carriers would resolve silently + arbitrarily (hollow-vigil's
+    // `anchor/objective` landing on the shrine rather than the referenced boss-hall).
+    for anchor in &sorted_anchors {
+        let carriers: Vec<&str> = pieces
+            .iter()
+            .filter(|p| piece_defines(registry, &p.prefab_id, anchor))
+            .map(|p| p.prefab_id.as_str())
+            .collect();
+        if carriers.len() > 1 {
+            return Err(SolveError::new(
+                DW_AMBIGUOUS_ANCHOR,
+                format!(
+                    "campaign-referenced anchor `{anchor}` is defined by {} placed pieces \
+                     ({}); resolution would be arbitrary — reference a piece-unique anchor",
+                    carriers.len(),
+                    carriers.join(", ")
+                ),
+            ));
+        }
     }
 
     // --- seal ---
@@ -543,11 +623,25 @@ fn grow_spine(
     through: &[&String],
     terminal: Option<&String>,
     connector_members: &[&PoolMember],
+    stairs: &[&PoolMember],
     filler_count: u32,
     pieces: &mut Vec<PlacedPiece>,
     frontier: &mut Vec<OpenSocket>,
     stream: &mut Splitmix64,
 ) -> Result<(), SolveError> {
+    // Vertical: force one stair (deterministic weighted pick) at the head of the
+    // spine when the pool has stairs and there is filler budget — every piece past
+    // it sits one elevation higher, so the spine (and its terminal finale) spans ≥2
+    // levels. No stairs / no budget → this whole block is skipped and the spine is
+    // byte-identical to the pre-M2 behaviour.
+    let mut filler_count = filler_count;
+    if !stairs.is_empty() && filler_count > 0 {
+        let weights: Vec<u32> = stairs.iter().map(|m| m.weight).collect();
+        let choice = stream.weighted(&weights).unwrap_or(0);
+        attach_piece(registry, &stairs[choice].prefab, pieces, frontier)?;
+        filler_count -= 1;
+    }
+
     // Split fillers into gaps: before each through waypoint, plus one trailing gap
     // before the terminal / at the end. Deterministic even split.
     let gaps = through.len() + 1;
@@ -590,6 +684,15 @@ fn grow_spine(
 /// two or more terminals, remaining fillers extend branches, and each terminal
 /// caps a distinct open socket. Guarantees: connected (every piece mates to an
 /// open socket), each required piece placed exactly once, open sockets sealed.
+///
+/// **Robustness (item 2).** A single greedy pass often cannot fit a large terminal
+/// (`keep-boss-hall`, 11×13) once smaller branches crowd the space. This wraps the
+/// greedy pass in a bounded, deterministic retry: attempt 0 reproduces the pre-M2
+/// growth byte-for-byte (existing fixtures unchanged); each later attempt reorders
+/// terminal capping (largest footprint first, so the big terminal grabs open space
+/// before the small ones) and — because the shared PRNG has advanced through the
+/// failed attempts — draws fresh filler/branch choices, exploring different
+/// layouts. The first attempt that places everything without overlap wins.
 #[allow(clippy::too_many_arguments)]
 fn grow_branching(
     registry: &PrefabRegistry,
@@ -597,13 +700,15 @@ fn grow_branching(
     through: &[&String],
     terminals: &[&String],
     all_connectors: &[&PoolMember],
+    stairs: &[&PoolMember],
     filler_count: u32,
     branch_needed: u32,
     pieces: &mut Vec<PlacedPiece>,
     frontier: &mut Vec<OpenSocket>,
     stream: &mut Splitmix64,
 ) -> Result<(), SolveError> {
-    // Branch-capable fillers: ≥3 sockets (tee = +1 open, cross = +2).
+    // Branch-capable fillers: ≥3 sockets (tee = +1 open, cross = +2). A structural
+    // (seed-independent) failure, so it is checked once, before any retry.
     let branchers: Vec<&PoolMember> = all_connectors
         .iter()
         .copied()
@@ -633,15 +738,84 @@ fn grow_branching(
         &straight
     };
 
+    // Snapshot the entry-only state so each attempt starts fresh; the PRNG stream
+    // is NOT reset, so retries draw different choices (determinism is preserved:
+    // same seed → same attempt sequence → same result).
+    let base_pieces = pieces.clone();
+    let base_frontier = frontier.clone();
+    let mut last_err: Option<SolveError> = None;
+    for attempt in 0..MAX_BRANCH_ATTEMPTS {
+        let mut p = base_pieces.clone();
+        let mut f = base_frontier.clone();
+        match try_branching(
+            attempt,
+            registry,
+            pool_id,
+            through,
+            terminals,
+            extensions,
+            &branchers,
+            stairs,
+            filler_count,
+            branch_needed,
+            &mut p,
+            &mut f,
+            stream,
+        ) {
+            Ok(()) => {
+                *pieces = p;
+                *frontier = f;
+                return Ok(());
+            }
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(last_err.unwrap_or_else(|| {
+        SolveError::new(
+            DW_INFEASIBLE,
+            format!("pool `{pool_id}` could not place all terminals without overlap"),
+        )
+    }))
+}
+
+/// One branching-growth attempt on fresh piece/frontier copies. `attempt == 0`
+/// reproduces the pre-M2 greedy pass exactly (byte-identity); later attempts cap
+/// terminals largest-first.
+#[allow(clippy::too_many_arguments)]
+fn try_branching(
+    attempt: u32,
+    registry: &PrefabRegistry,
+    pool_id: &str,
+    through: &[&String],
+    terminals: &[&String],
+    extensions: &[&PoolMember],
+    branchers: &[&PoolMember],
+    stairs: &[&PoolMember],
+    filler_count: u32,
+    branch_needed: u32,
+    pieces: &mut Vec<PlacedPiece>,
+    frontier: &mut Vec<OpenSocket>,
+    stream: &mut Splitmix64,
+) -> Result<(), SolveError> {
     // Through-rooms extend the trunk.
     for wp in through {
         attach_piece(registry, wp, pieces, frontier)?;
     }
 
+    // Vertical: force one stair into the trunk (deterministic weighted pick) when
+    // the pool has stairs and there is extension budget, so a branching layout also
+    // spans ≥2 elevations. Skipped (byte-identical) for stair-free pools.
+    let mut extension_count = filler_count.saturating_sub(branch_needed);
+    if !stairs.is_empty() && extension_count > 0 {
+        let weights: Vec<u32> = stairs.iter().map(|m| m.weight).collect();
+        let choice = stream.weighted(&weights).unwrap_or(0);
+        attach_piece(registry, &stairs[choice].prefab, pieces, frontier)?;
+        extension_count -= 1;
+    }
+
     // Extend the trunk with the non-branch fillers FIRST, before forking — so the
     // terminals cap fresh branch sockets at the far end of the trunk, where space
-    // is uncrowded (greedy tree growth has no backtracking).
-    let extension_count = filler_count.saturating_sub(branch_needed);
+    // is uncrowded.
     for _ in 0..extension_count {
         let weights: Vec<u32> = extensions.iter().map(|m| m.weight).collect();
         let choice = stream.weighted(&weights).unwrap_or(0);
@@ -667,12 +841,58 @@ fn grow_branching(
         branch_budget -= 1;
     }
 
-    // Cap each terminal on a distinct open socket (most-recent first, so the two
-    // freshest branch sockets take the two terminals).
-    for term in terminals {
+    // Cap each terminal on a distinct open socket. Attempt 0 keeps the given order
+    // (byte-identity); later attempts cap the largest-footprint terminal first so
+    // it claims open space before the small ones crowd it. `attach_piece` already
+    // scans every open socket, so this is where the retry pays off.
+    let mut order: Vec<&String> = terminals.to_vec();
+    if attempt > 0 {
+        order.sort_by(|a, b| {
+            footprint_area(registry, b)
+                .cmp(&footprint_area(registry, a))
+                .then_with(|| a.cmp(b))
+        });
+    }
+    for term in order {
         attach_piece(registry, term, pieces, frontier)?;
     }
     Ok(())
+}
+
+/// Whether a prefab defines `anchor_name` in its metadata.
+fn piece_defines(registry: &PrefabRegistry, prefab_id: &str, anchor_name: &str) -> bool {
+    registry
+        .get(prefab_id)
+        .is_some_and(|m| m.anchors.contains_key(anchor_name))
+}
+
+/// Whether `prefab_id` is the pool's `entry`-role piece.
+fn is_entry_role(members: &[PoolMember], prefab_id: &str) -> bool {
+    members
+        .iter()
+        .any(|m| m.prefab == prefab_id && m.role == "entry")
+}
+
+/// Whether a prefab is a stair connector: ≥2 sockets whose local `y` differs (a
+/// vertical rise between the two doorways). Both up and down are the same piece,
+/// distinguished only by which socket mates to the parent.
+fn is_stair(registry: &PrefabRegistry, prefab_id: &str) -> bool {
+    let Some(meta) = registry.get(prefab_id) else {
+        return false;
+    };
+    if meta.connectors.len() < 2 {
+        return false;
+    }
+    let y0 = meta.connectors[0].local_pos[1];
+    meta.connectors.iter().any(|c| c.local_pos[1] != y0)
+}
+
+/// A prefab's horizontal footprint (x·z), used to cap the largest terminal first.
+fn footprint_area(registry: &PrefabRegistry, prefab_id: &str) -> i32 {
+    registry
+        .get(prefab_id)
+        .map(|m| m.structure.size[0] * m.structure.size[2])
+        .unwrap_or(0)
 }
 
 /// Whether a prefab is a "straight through" connector: exactly two sockets with
