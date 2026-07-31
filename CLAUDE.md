@@ -116,6 +116,10 @@ validation/          # docker compose: headless server + bot, same image as CI &
 - Specs: numbered `spec-NNNN-<slug>.md`, each with an explicit "Acceptance criteria"
   section phrased as machine-checkable assertions.
 - Commits/PRs: conventional, small, one concern each.
+- **Attribution ledger** (owner, 2026-07-31): any PR that adopts a third-party
+  library, ports an algorithm, or leans on a paper adds its entry (with verified
+  license) to `docs/ACKNOWLEDGEMENTS.md` in the same PR. Unlicensed sources are
+  ideas-only — never ported.
 
 ## Environments
 

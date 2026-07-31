@@ -153,6 +153,8 @@ releases/images with their own license.
 ## Licensing
 
 - **Code**: [GPL-3.0-or-later](LICENSE).
+- **Attributions**: every adopted library, ported algorithm, and design-shaping
+  paper is recorded in [docs/ACKNOWLEDGEMENTS.md](docs/ACKNOWLEDGEMENTS.md).
 - **Shipped delve content** (the campaigns/worlds you play): CC BY-SA 4.0.
 - **Prefab assets**: original, CC0, CC BY, MIT, Apache-2.0, or GPL-compatible
   (ADR-0013) — provenance recorded, no exceptions, and never anything NC/ND or
