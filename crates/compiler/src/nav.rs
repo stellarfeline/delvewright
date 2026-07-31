@@ -876,6 +876,51 @@ fn route_visited(world: &World, positions: &[([i32; 3], bool)]) -> Result<(), Na
     Ok(())
 }
 
+/// A walked critical-path leg with the full A* cell route the compiler proved
+/// connects it — the export counterpart of [`check_critical_path`] (task #38).
+/// `from`/`to` are the raw visited anchor cells (identical to the harness
+/// `critical-path.json` step positions, so the harness can key a leg by its
+/// destination); `cells` is the standable-cell polyline between their snapped floor
+/// endpoints, inclusive of both.
+#[derive(Debug, Clone)]
+pub struct LegRoute {
+    /// The raw visited anchor the leg walks FROM (the previous critical position).
+    pub from: [i32; 3],
+    /// The raw visited anchor the leg walks TO (this critical position).
+    pub to: [i32; 3],
+    /// The standable-cell A* path from the snapped `from` floor to the snapped `to`
+    /// floor, inclusive of both endpoints.
+    pub cells: Vec<[i32; 3]>,
+}
+
+/// Compute the proven A* cell route for every WALKED critical-path leg (transport
+/// hops skipped), for export as validation metadata (see the `waypoints` module).
+/// Mirrors [`check_critical_path`]'s leg selection and endpoint snapping exactly, so
+/// an exported leg is the same route the DW0311 guard proved routable. Intended to
+/// be called only after [`check_critical_path`] has succeeded; a leg that fails to
+/// snap or route is silently omitted (cannot occur once the check has passed).
+pub fn critical_path_routes(plan: &Plan, world: &World) -> Vec<LegRoute> {
+    let positions = critical_positions(plan);
+    let mut out = Vec::new();
+    for pair in positions.windows(2) {
+        let (from, _) = pair[0];
+        let (to, transport_before) = pair[1];
+        if transport_before {
+            continue; // an inter-area teleport hop: the player is moved, not walking
+        }
+        let (Some(start), Some(goal)) = (
+            world.snap_standable(from, SNAP_RADIUS),
+            world.snap_standable(to, SNAP_RADIUS),
+        ) else {
+            continue;
+        };
+        if let Some(cells) = world.find_path(start, goal) {
+            out.push(LegRoute { from, to, cells });
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1053,6 +1098,22 @@ mod tests {
         let a = world.confined_standable_cells([1, 65, 1], bounds);
         let b = world.confined_standable_cells([1, 65, 1], bounds);
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn critical_path_route_returns_the_proven_cell_polyline() {
+        // A flat connected floor: the walked leg's exported route is the A* cell
+        // path, inclusive of both snapped endpoints (task #38 export).
+        let world = floored(8, 3, 65, &[]);
+        let a = [0, 65, 1];
+        let b = [6, 65, 1];
+        let cells = world.find_path(a, b).expect("routable");
+        assert_eq!(cells.first(), Some(&a));
+        assert_eq!(cells.last(), Some(&b));
+        // Every cell on an exported route is standable (a real floor cell).
+        for c in &cells {
+            assert!(world.standable(*c), "route cell {c:?} not standable");
+        }
     }
 
     #[test]

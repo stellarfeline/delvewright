@@ -11,6 +11,8 @@
 //! - [`light`]: assembled-world lighting model + deterministic relight pass
 //!   (`DW0210`/`DW0211`, exit 2) + declared time/weather sky attenuation (spec-0010).
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
+//! - [`waypoints`]: export the DW0311-proven critical-path routes as validation
+//!   metadata (`validation/critical-path-waypoints.json`) for leg-by-leg bot nav.
 //! - [`creator`]: the playtest-only creator overlay (`creator-datapack/`, spec-0006).
 
 pub mod analyze;
@@ -25,6 +27,7 @@ pub mod registry;
 pub mod render_plan;
 pub mod resourcepack;
 pub mod solver;
+pub mod waypoints;
 
 /// This compiler's version (reported by `--version`, stamped in `manifest.json`).
 pub const DELVEC_VERSION: &str = "0.1.0";
