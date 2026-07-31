@@ -8,8 +8,11 @@ players become contributors. Two tracks with a hard mechanical boundary:
 
 ## Track 1 — distributable (repo library, official delves)
 
-- **CC0 / CC BY / original only**, license verified per item with recorded
-  evidence (URL + archived proof). "Free download" ≠ licensed. Ambiguous → reject.
+- **CC0 / CC BY / original, plus MIT / Apache-2.0 / GPL-3.0-compatible**
+  (ADR-0013, owner 2026-07-31), license verified per item with recorded evidence
+  (URL + archived proof). "Free download" ≠ licensed. NC/ND/unknown → reject
+  (Track 2 at best). Images containing GPL prefabs ship under GPL terms with the
+  public content repo as corresponding source.
 - Enters `prefabs/` through the standard admission pipeline (socket carving,
   anchors, lighting measurement, LFS).
 - **Attribution (new spec-0002 output)**: the compiler aggregates CC BY credits
