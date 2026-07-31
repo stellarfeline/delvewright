@@ -84,6 +84,49 @@ fn nc_nd_sa_and_unknown_licenses_are_rejected() {
     }
 }
 
+/// A reject card records *why* an asset was declined — a forbidden or
+/// unverifiable license is itself a valid rejection reason (spec-0007 catalogues
+/// rejects to prevent re-scouting), so the allowlist / url-provenance checks do
+/// not apply to it. Other field checks (quality range, non-empty reason) still do.
+#[test]
+fn reject_card_may_record_a_forbidden_license() {
+    // An All-Rights-Reserved datapack we declined: no allowlisted license, no
+    // verified url, yet the card must validate.
+    let json = r#"{
+  "asset_id": "modrinth/some-arr-pack/temple",
+  "description": "A monumental temple datapack found on Modrinth. Declined at the license gate.",
+  "tags": {
+    "theme": ["temple"],
+    "era_style": "ancient",
+    "condition": "intact",
+    "scale_class": "large",
+    "interior_exterior": "both"
+  },
+  "style_fit": { "verdict": "reject", "rationale": "license is All-Rights-Reserved (ADR-0013 forbids NC/ND/unknown)" },
+  "quality": 3,
+  "license": { "spdx": "ARR", "source": "modrinth" }
+}"#;
+    let card = CatalogCard::from_json(json).unwrap();
+    assert_eq!(
+        card.style_fit.verdict,
+        delvewright_admit::catalog::Verdict::Reject
+    );
+    assert!(
+        card.validate().is_empty(),
+        "a reject card may record a forbidden/unverified license: {:?}",
+        card.validate()
+    );
+
+    // The exemption is scoped to `reject`: an *approve* card with the same
+    // forbidden license still fails.
+    let approve = json.replace("\"reject\"", "\"approve\"");
+    let card = CatalogCard::from_json(&approve).unwrap();
+    assert!(
+        card.validate().iter().any(|d| d.code == "DW0741"),
+        "an approve card with a forbidden license must still fail"
+    );
+}
+
 #[test]
 fn allowed_licenses_pass() {
     for ok in [
