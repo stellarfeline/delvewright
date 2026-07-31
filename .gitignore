@@ -24,3 +24,7 @@ content-repo/
 # Python
 __pycache__/
 *.pyc
+
+# Owner-private working notes — never committed (stays local even when the
+# repo goes public).
+docs/notes/private/
