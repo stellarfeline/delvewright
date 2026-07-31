@@ -36,14 +36,55 @@ gauntlet below, and hands you a container image. Claude Code is the engine room;
 this repo is the machinery it operates.
 
 The only thing that ever *runs* anywhere is the delve itself — a vanilla Minecraft
-server in a box. Everything else is a build step. (Exact usage is still settling,
-so no quick start yet — it'll appear here when the skill does.)
+server in a box. Everything else is a build step.
+
+## The `/new-delve` flow (current)
+
+Open Claude Code **in this repo** (the skill and the whole toolchain live here;
+generated campaigns land in the content repo via the `campaigns/` symlink), type
+`/new-delve <your prompt>`, and this happens:
+
+```mermaid
+flowchart TD
+    P(["📜 your prompt<br/>(theme one-liner or full brief)"]) --> A
+
+    subgraph AUTHOR ["✍️ staged authoring — one stage at a time"]
+        A["world → npcs → classes →<br/>quest-plan → quests → dialogue"]
+        A -->|"delvec validate<br/>(DW-code repair loop)"| A
+        A -.->|"interactive mode:<br/>summary checkpoint per stage"| U([you])
+        U -.-> A
+    end
+
+    A --> L["🌐 l10n sidecars<br/>(only if you asked for languages;<br/>translated from finished English)"]
+    L --> AN["delvec analyze<br/>reachability · deadlocks · dark rooms"]
+    AN --> B["delvec build<br/>deterministic: datapack + world +<br/>critical-path + render-plan"]
+
+    subgraph MACHINE ["🤖 machine gauntlet (sonnet subagent)"]
+        PT["PackTest —<br/>mechanism asserts"] --> BOT["mineflayer bot<br/>plays it start → credits"]
+    end
+    B --> PT
+
+    BOT --> V["👁 visual review (authoring agent)<br/>renders vs. per-shot expect checklists<br/>fidelity gate first"]
+    V --> SB["📖 storybook<br/>non-spoiler README + media<br/>(exterior/starting shots only)"]
+    SB --> R(["report + play commands<br/>EULA=TRUE docker compose … --profile play up"])
+
+    AN -->|red| A
+    BOT -->|red = DSL bug| A
+    V -->|finding = DSL fix| A
+```
+
+Three rules keep the loop honest: every red goes back to the **DSL** (nobody ever
+hand-edits compiler output), the campaign is **committed before validation** (a
+crash can't lose it), and the finished delve must be **rebuildable byte-identically
+from the committed documents alone** — the JSON is the artifact of record, not the
+build.
 
 ## How it works (the assembly line)
 
 ```
-  ✍️  LLM writes a campaign        — as strict JSON, five stages deep:
-                                     world → NPCs → classes → quest plan → quests
+  ✍️  LLM writes a campaign        — as strict JSON, six stages deep:
+                                     world → NPCs → classes → quest plan
+                                     → quests → dialogue (+ translations)
         │
         ▼
   ⚙️  delvec, a deterministic      — same input + same seed = byte-identical
@@ -113,8 +154,9 @@ releases/images with their own license.
 
 - **Code**: [GPL-3.0-or-later](LICENSE).
 - **Shipped delve content** (the campaigns/worlds you play): CC BY-SA 4.0.
-- **Prefab assets**: original, CC0, or CC BY only — provenance recorded, no
-  exceptions, and never anything NC. The library and its
+- **Prefab assets**: original, CC0, CC BY, MIT, Apache-2.0, or GPL-compatible
+  (ADR-0013) — provenance recorded, no exceptions, and never anything NC/ND or
+  unlicensed. The library and its
   `LICENSE-ASSETS.md` live in the content repo
   ([`delvewright-campaigns`](https://github.com/stellarfeline/delvewright-campaigns))
   under `prefabs/` (spec-0007 Step 0).
