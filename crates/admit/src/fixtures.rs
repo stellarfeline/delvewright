@@ -1,0 +1,98 @@
+//! In-code structure fixtures for the audit/light/socket tests — built
+//! deterministically, no assets fetched from the network (mirrors the
+//! `delve-schem` / generator fixture style).
+
+use std::collections::BTreeMap;
+
+use delvewright_schem::nbt::Nbt;
+
+use crate::structure::{PaletteEntry, Structure, synth};
+
+/// A shell of `wall` with a hollow air interior and a solid `floor` at y=0. Sizes
+/// are inclusive extents. `lights` place a glowstone at those cells.
+pub fn room(size: [i32; 3], lights: &[[i32; 3]]) -> Structure {
+    let [sx, sy, sz] = size;
+    let mut cells: Vec<([i32; 3], PaletteEntry, Option<Nbt>)> = Vec::new();
+    for x in 0..sx {
+        for y in 0..sy {
+            for z in 0..sz {
+                let shell = y == 0 || y == sy - 1 || x == 0 || x == sx - 1 || z == 0 || z == sz - 1;
+                if shell {
+                    cells.push((
+                        [x, y, z],
+                        PaletteEntry::simple("minecraft:stone_bricks"),
+                        None,
+                    ));
+                }
+                // interior stays air (synth pre-fills air).
+            }
+        }
+    }
+    for &p in lights {
+        cells.push((p, PaletteEntry::simple("minecraft:glowstone"), None));
+    }
+    synth(size, &cells)
+}
+
+/// A well-lit 7×5×7 room (ceiling glowstone) — the "clean piece" fixture.
+pub fn clean_room() -> Structure {
+    room([7, 5, 7], &[[3, 4, 3]])
+}
+
+/// A 9×5×9 room with no light source — a `dark` interior.
+pub fn dark_room() -> Structure {
+    room([9, 5, 9], &[])
+}
+
+/// The clean room plus a hidden **command block** carrying a `Command` — the
+/// code-injection fixture the audit must reject.
+pub fn command_block_piece() -> Structure {
+    let mut s = clean_room();
+    let mut be: BTreeMap<String, Nbt> = BTreeMap::new();
+    be.insert(
+        "id".to_string(),
+        Nbt::String("minecraft:command_block".to_string()),
+    );
+    be.insert("Command".to_string(), Nbt::String("say pwned".to_string()));
+    s.set_cell(
+        [1, 1, 1],
+        PaletteEntry::simple("minecraft:command_block"),
+        Some(Nbt::Compound(be)),
+    );
+    s
+}
+
+/// The clean room plus an **NBT-bearing spawner** (a `mob_spawner` block entity
+/// carrying `SpawnData`) — the other classic injection vector.
+pub fn spawner_piece() -> Structure {
+    let mut s = clean_room();
+    let mut spawn_data: BTreeMap<String, Nbt> = BTreeMap::new();
+    spawn_data.insert("entity".to_string(), {
+        let mut e = BTreeMap::new();
+        e.insert(
+            "id".to_string(),
+            Nbt::String("minecraft:zombie".to_string()),
+        );
+        Nbt::Compound(e)
+    });
+    let mut be: BTreeMap<String, Nbt> = BTreeMap::new();
+    be.insert(
+        "id".to_string(),
+        Nbt::String("minecraft:mob_spawner".to_string()),
+    );
+    be.insert("SpawnData".to_string(), Nbt::Compound(spawn_data));
+    s.set_cell(
+        [5, 1, 5],
+        PaletteEntry::simple("minecraft:spawner"),
+        Some(Nbt::Compound(be)),
+    );
+    s
+}
+
+/// The clean room plus a block **not in the default allowlist** (`minecraft:tnt`)
+/// — clean of injection vectors, but a reviewer should see it.
+pub fn disallowed_palette_piece() -> Structure {
+    let mut s = clean_room();
+    s.set_cell([2, 1, 2], PaletteEntry::simple("minecraft:tnt"), None);
+    s
+}

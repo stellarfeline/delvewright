@@ -122,6 +122,30 @@ job is to fill them. The vision model is the generation-time agent
   the guaranteed-coverage oracle for cross-checks; its output never ships.
 - Rejected after verification: prismarine-viewer (rendering capped at 1.21.4).
 
+## Admission machinery (BUILT M3 as `crates/admit` / `delve-admit`)
+
+> **Status (M3, admission half):** the admission tooling is built and green — see
+> `crates/admit` (README). It ships: the **mechanical NBT palette audit** (the CI
+> gate — a configurable block-palette allowlist plus a hard-forbid of command
+> blocks, structure blocks, and NBT-bearing spawners, reusing `delve-schem`'s
+> code-injection scan so there is no drift; `DW073x` diagnostics + a machine-readable
+> report; every shipped `campaigns/prefabs/*.nbt` passes, jigsaw sockets included);
+> **adaptation tooling** (socket carving that writes generator-shape connectors +
+> the jigsaw block, anchor annotation, and a deterministic **static block-light
+> probe** that matches the generator's live-probe values within ±2 across the whole
+> tileset — honestly recorded as an estimate, not a live probe); **catalog cards**
+> (`catalog/<id>.json`, a `deny_unknown_fields` serde schema with a `1..=5` quality
+> bound and the ADR-0013 **license allowlist** — NC/ND/SA/unknown reject); and the
+> **gallery world** (`delve-admit gallery` emits a labelled browse world + datapack
+> with the spec-0006 `dw.note` capture wired to per-asset AABBs, and `curate` /
+> `curate-merge` harvest the notes into a per-asset curation report that folds back
+> into the cards, reusing the exact `delve-harvest` parser). *Open / flagged for
+> owner review:* the exact allowlist contents + jigsaw-allowed decision, the
+> lit/dark threshold, ShareAlike-reject for prefab licenses, and a dedicated
+> tier-3 live gallery boot (the note channel itself is already live-verified via
+> spec-0006). The scouting/download agent workflow (steps 0–1, 3–4 orchestration)
+> and demand-sheet authoring remain the runtime agent's job, not repo machinery.
+
 ## Community contract (recorded here, built post-v1)
 
 Campaign sharing = **sources only**: the separate `delvewright-campaigns` repo
@@ -175,8 +199,10 @@ browse; `GENERATION.md` stays the behind-the-scenes record).
       where galleries are fetchable, owner-ruled (URL + expected-style shortlist)
       for anti-bot sites; cards committed to the content repo `catalog/`.
 - [ ] Owner gallery-walk verdicts (dw.note) round-trip into the catalog cards.
-- [ ] Gallery world: one command, candidates placed + labeled; dw.note verdicts
-      harvest into a curation report.
+- [x] Gallery world: one command, candidates placed + labeled; dw.note verdicts
+      harvest into a curation report (`delve-admit gallery` + `curate` /
+      `curate-merge`, `crates/admit`; note channel byte-identical to the
+      spec-0006 live-verified overlay, round-trip covered in `tests/gallery.rs`).
 - [ ] A build using a user-local prefab is refused by the release path
       (manifest flag verified in CI); play/playtest paths accept it.
 - [ ] ATTRIBUTION aggregation emitted for CC BY prefabs (in-game + file).

@@ -1,0 +1,44 @@
+[package]
+name = "delvewright-admit"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# `delve-admit` (spec-0007, M3 asset pipeline — admission half): the machinery
+# that turns an approved, converted `.nbt` candidate into a library-grade prefab
+# and gates community contributions.
+#
+# - `audit`   — mechanical NBT block-palette allowlist + code-injection hard-forbid
+#               (the CI gate for community prefabs).
+# - `socket`  — declare/carve jigsaw sockets on a converted piece (+ metadata).
+# - `anchor`  — add named anchors to prefab metadata.
+# - `lighting`— static block-light probe -> declared lighting profile.
+# - `catalog` — schema + validation for `catalog/<asset-id>.json` (+ license
+#               allowlist, ADR-0013).
+# - `gallery` — one command: candidate pieces -> browse world + note overlay;
+#               `curate` harvests `dw.note` verdicts into a per-asset report.
+[[bin]]
+name = "delve-admit"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+
+# Vanilla structure templates are gzip-framed Java NBT; `fastnbt` reads/writes the
+# NBT and `flate2` supplies the gzip container (mtime pinned to 0 for byte-identity,
+# ADR-0006). Same deps + versions the schem/generator tooling already uses.
+fastnbt = "2"
+flate2 = "1"
+
+# Reuse, don't duplicate: the schem crate owns the forbidden-block/entity set and
+# the recursive command/spawner NBT scan (the audit checks the converted `.nbt`
+# against the exact set the conversion strip enforces). The orchestrator owns the
+# `dw.note` server-log harvester (the gallery emits a compatible layout so its
+# notes round-trip through the same parser).
+delvewright-schem = { path = "../schem" }
+delvewright-orchestrator = { path = "../orchestrator" }
