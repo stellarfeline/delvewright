@@ -435,11 +435,24 @@ impl World {
 
     /// Standable cardinal neighbours of `c`, allowing a one-block step up or down
     /// (stairs). Fixed order for determinism.
+    ///
+    /// A one-block step **up** is a jump: the entity's head sweeps through the cell
+    /// two above its feet at the source, so that cell must be clear or it head-bonks
+    /// and the move is physically impossible (a mineflayer bot refuses it with
+    /// "No path to the goal!"). Modelling that jump-clearance here — not just the
+    /// destination's standability — keeps a routed/exported path actually walkable:
+    /// an assembled seam that ramps up under a low ceiling becomes a `DW0311` build
+    /// error instead of a runtime strand on geometry the compiler wrongly "proved"
+    /// connected (task #38). Steps level or down need no such clearance.
     fn neighbors(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
         const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+        let head_clear_to_jump = !self.is_solid([c[0], c[1] + 2, c[2]]);
         let mut out = Vec::new();
         for (dx, dz) in HORIZ {
             for dy in [0i32, -1, 1] {
+                if dy == 1 && !head_clear_to_jump {
+                    continue; // no room to jump up from here
+                }
                 let n = [c[0] + dx, c[1] + dy, c[2] + dz];
                 if self.standable(n) {
                     out.push(n);
@@ -876,6 +889,51 @@ fn route_visited(world: &World, positions: &[([i32; 3], bool)]) -> Result<(), Na
     Ok(())
 }
 
+/// A walked critical-path leg with the full A* cell route the compiler proved
+/// connects it — the export counterpart of [`check_critical_path`] (task #38).
+/// `from`/`to` are the raw visited anchor cells (identical to the harness
+/// `critical-path.json` step positions, so the harness can key a leg by its
+/// destination); `cells` is the standable-cell polyline between their snapped floor
+/// endpoints, inclusive of both.
+#[derive(Debug, Clone)]
+pub struct LegRoute {
+    /// The raw visited anchor the leg walks FROM (the previous critical position).
+    pub from: [i32; 3],
+    /// The raw visited anchor the leg walks TO (this critical position).
+    pub to: [i32; 3],
+    /// The standable-cell A* path from the snapped `from` floor to the snapped `to`
+    /// floor, inclusive of both endpoints.
+    pub cells: Vec<[i32; 3]>,
+}
+
+/// Compute the proven A* cell route for every WALKED critical-path leg (transport
+/// hops skipped), for export as validation metadata (see the `waypoints` module).
+/// Mirrors [`check_critical_path`]'s leg selection and endpoint snapping exactly, so
+/// an exported leg is the same route the DW0311 guard proved routable. Intended to
+/// be called only after [`check_critical_path`] has succeeded; a leg that fails to
+/// snap or route is silently omitted (cannot occur once the check has passed).
+pub fn critical_path_routes(plan: &Plan, world: &World) -> Vec<LegRoute> {
+    let positions = critical_positions(plan);
+    let mut out = Vec::new();
+    for pair in positions.windows(2) {
+        let (from, _) = pair[0];
+        let (to, transport_before) = pair[1];
+        if transport_before {
+            continue; // an inter-area teleport hop: the player is moved, not walking
+        }
+        let (Some(start), Some(goal)) = (
+            world.snap_standable(from, SNAP_RADIUS),
+            world.snap_standable(to, SNAP_RADIUS),
+        ) else {
+            continue;
+        };
+        if let Some(cells) = world.find_path(start, goal) {
+            out.push(LegRoute { from, to, cells });
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1053,6 +1111,49 @@ mod tests {
         let a = world.confined_standable_cells([1, 65, 1], bounds);
         let b = world.confined_standable_cells([1, 65, 1], bounds);
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn step_up_needs_head_clearance_to_jump() {
+        // Lower stand at x=0 (floor y64 → stand y65); raised stand at x=1,2 (floor
+        // y65 → stand y66). Reaching the raised floor means jumping up one block at
+        // x=0, whose head sweeps the cell two above the feet ([0,67,0]).
+        let mk = |low_ceiling: bool| {
+            let mut solid = BTreeSet::new();
+            solid.insert([0, 64, 0]); // lower floor
+            solid.insert([1, 65, 0]); // raised floor
+            solid.insert([2, 65, 0]);
+            if low_ceiling {
+                solid.insert([0, 67, 0]); // ceiling two above the jumper's feet
+            }
+            World { solid }
+        };
+        // Open headroom: the jump-up is walkable.
+        let open = mk(false);
+        assert!(open.standable([0, 65, 0]) && open.standable([2, 66, 0]));
+        assert!(open.find_path([0, 65, 0], [2, 66, 0]).is_some());
+        // A ceiling two above the feet blocks the jump (the entity would head-bonk),
+        // so no walkable path exists — the DW0311 case a runtime bot rejects with
+        // "No path to the goal!".
+        let low = mk(true);
+        assert!(low.standable([0, 65, 0]) && low.standable([2, 66, 0]));
+        assert!(low.find_path([0, 65, 0], [2, 66, 0]).is_none());
+    }
+
+    #[test]
+    fn critical_path_route_returns_the_proven_cell_polyline() {
+        // A flat connected floor: the walked leg's exported route is the A* cell
+        // path, inclusive of both snapped endpoints (task #38 export).
+        let world = floored(8, 3, 65, &[]);
+        let a = [0, 65, 1];
+        let b = [6, 65, 1];
+        let cells = world.find_path(a, b).expect("routable");
+        assert_eq!(cells.first(), Some(&a));
+        assert_eq!(cells.last(), Some(&b));
+        // Every cell on an exported route is standable (a real floor cell).
+        for c in &cells {
+            assert!(world.standable(*c), "route cell {c:?} not standable");
+        }
     }
 
     #[test]

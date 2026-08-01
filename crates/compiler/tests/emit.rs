@@ -291,6 +291,76 @@ fn critical_path_shape_and_commands() {
     assert!(setup.contains("scoreboard objectives setdisplay sidebar dw.campaign"));
 }
 
+/// task #38: the compiler exports the DW0311-proven critical-path routes as a
+/// deterministic validation artifact (`validation/critical-path-waypoints.json`) so
+/// the harness can navigate the bot leg-by-leg. It is validation metadata, cleanly
+/// separated from the shipped datapack (lives under `validation/`, not `datapack/`),
+/// and each leg's `to` matches a `critical-path.json` step position so the harness
+/// can key a leg by its destination.
+#[test]
+fn critical_path_waypoints_artifact_shape() {
+    let out = build_hello_world();
+    let wp: serde_json::Value = serde_json::from_slice(
+        out.get("validation/critical-path-waypoints.json")
+            .expect("waypoints artifact emitted (hello-world walks talk→exit)"),
+    )
+    .unwrap();
+
+    assert_eq!(wp["version"], "0.2.0");
+    assert_eq!(wp["campaign_id"], "hello-world");
+    let legs = wp["legs"].as_array().expect("legs is an array");
+    assert!(!legs.is_empty(), "hello-world has at least one walked leg");
+
+    // The set of leg destinations is a subset of the critical-path step positions
+    // (so the harness matches a leg by its target anchor).
+    let cp: serde_json::Value =
+        serde_json::from_slice(out.get("critical-path.json").unwrap()).unwrap();
+    let step_positions: std::collections::BTreeSet<Vec<i64>> = cp["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|s| s.get("pos"))
+        .map(|p| {
+            p.as_array()
+                .unwrap()
+                .iter()
+                .map(|n| n.as_i64().unwrap())
+                .collect()
+        })
+        .collect();
+    for leg in legs {
+        let to: Vec<i64> = leg["to"]
+            .as_array()
+            .expect("leg.to is an array")
+            .iter()
+            .map(|n| n.as_i64().unwrap())
+            .collect();
+        assert!(
+            step_positions.contains(&to),
+            "leg destination {to:?} is not a critical-path step position"
+        );
+        let wps = leg["waypoints"].as_array().expect("waypoints is an array");
+        assert!(!wps.is_empty(), "a walked leg has at least its endpoints");
+        // The last waypoint is the leg's snapped goal near `to` (within snap radius).
+        let last: Vec<i64> = wps
+            .last()
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n.as_i64().unwrap())
+            .collect();
+        let d = (0..3).map(|i| (last[i] - to[i]).abs()).sum::<i64>();
+        assert!(d <= 9, "final waypoint {last:?} far from leg target {to:?}");
+    }
+
+    // The artifact is NOT part of the shipped datapack (it is validation metadata).
+    assert!(
+        !out.keys().any(|p| p.starts_with("datapack/validation")),
+        "waypoints artifact must not live inside the datapack"
+    );
+}
+
 /// Regressions for bugs found during the live 1.21.11 load shakeout (M1).
 #[test]
 fn live_load_shakeout_fixes() {

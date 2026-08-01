@@ -24,10 +24,12 @@ import type {
   ReachStep,
   SelectClassStep,
   TalkToStep,
+  Vec3Tuple,
 } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError, likelyDeathCause } from "./death.ts";
 import { configureLeg } from "./movement.ts";
+import { nextLegWaypoints, walkGoals, type GoalSpec, type Waypoints } from "./waypoints.ts";
 
 /** Connection + identity for the bot. Sourced from the environment (see below). */
 export interface BotConfig {
@@ -188,12 +190,37 @@ export class MineflayerExecutor implements StepExecutor {
   private lastForcedPos: { x: number; y: number; z: number } | undefined;
   /** Grace (ms) added onto a cutscene's declared length before giving up. */
   private readonly cutsceneGraceMs: number;
+  /**
+   * task #38: the compiler's proven per-leg critical-path waypoints (keyed by
+   * destination anchor). When a walked step's target has a leg here, `walkTo`
+   * replays it as successive nearby goals so each mineflayer A* solve is trivial —
+   * instead of one distant goal that strands the bot on a large open winding cave.
+   * Absent → the original single distant-goal behavior (fallback). Compiler-proven
+   * navigation data, not a route the harness computes.
+   */
+  private waypoints: Waypoints | undefined;
+  /**
+   * task #38: how many walked legs have been consumed. Legs are matched in lockstep
+   * path order (not by destination coordinate), so an anchor visited more than once
+   * — e.g. the cave entry the player returns to — never grabs the wrong leg's route.
+   */
+  private legCursor = 0;
 
   constructor(config: BotConfig, env: Record<string, string | undefined> = process.env) {
     this.config = config;
     const raw = env["DELVEWRIGHT_CUTSCENE_GRACE_MS"];
     const parsed = raw === undefined ? NaN : Number.parseInt(raw, 10);
     this.cutsceneGraceMs = Number.isInteger(parsed) && parsed >= 0 ? parsed : 10_000;
+  }
+
+  /**
+   * task #38: supply the compiler's proven critical-path waypoints. Optional —
+   * without it, `walkTo` uses the original single distant-goal behavior. Called by
+   * the entrypoint when the `validation/critical-path-waypoints.json` artifact
+   * accompanies the critical path.
+   */
+  useWaypoints(waypoints: Waypoints): void {
+    this.waypoints = waypoints;
   }
 
   /** Connect and resolve once the bot has spawned into the world. */
@@ -484,51 +511,122 @@ export class MineflayerExecutor implements StepExecutor {
     sneak = false,
   ): Promise<void> {
     const bot = this.requireBot();
-    const [x, y, z] = pos;
     const r = Math.max(1, Math.floor(range));
     const movements = new Movements(bot);
     const restoreControls = configureLeg(bot, movements, sneak);
+    // task #38: no cave-specific Movements override is needed — the compiler-proven
+    // waypoints keep the bot on clear standable ground (the DW0311 A* treats water
+    // and fences as impassable, so the route never crosses them, and gravity blocks
+    // and stairs are ordinary floor). Entity detection is left ON (the pathfinder
+    // default) so the bot routes AROUND a transient mob on a hop rather than ramming
+    // it — disabling it made the bot wedge against a leaked mob and time out.
     bot.pathfinder.setMovements(movements);
     // Long multi-level layouts (e.g. a 5-storey keep, ~90 blocks + 4 staircases)
     // sit at the edge of the default A* budget and fail nondeterministically
-    // with "No path to the goal!" — give the search real headroom.
+    // with "No path to the goal!" — give the search real headroom. With leg-by-leg
+    // waypoints each solve is tiny, so this budget is only a safety margin.
     bot.pathfinder.thinkTimeout = 30_000;
     try {
-      let lastErr: unknown;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        if (attempt > 0) {
-          // One retry: block updates (an `open-gate` fill) can land after the
-          // first path computation started; settle and recompute from scratch.
-          await delay(1_500);
-        }
-        try {
-          await this.raceDeath(
-            withTimeout(
-              bot.pathfinder.goto(new goals.GoalNear(x, y, z, r)),
-              REACH_TIMEOUT_MS,
-              `reaching ${label}`,
-            ),
-          );
-          return;
-        } catch (err) {
-          // A death is terminal for this run — never retry a path across the void.
-          if (err instanceof BotDeathError) throw err;
-          lastErr = err;
-          try {
-            bot.pathfinder.stop();
-          } catch {
-            // ignore
-          }
-        }
+      // task #38: when the compiler proved a waypoint polyline for this leg, replay
+      // it as short hops so each A* solve is trivial (avoids the single giant solve
+      // that strands the bot on a large open winding cave); the final goal is always
+      // the true destination. Legs are matched in lockstep path order and consumed
+      // as walked; a non-matching walk (a sub-walk, or a post-transport step) does
+      // not consume and falls back to the single destination goal.
+      let legWaypoints: readonly Vec3Tuple[] | undefined;
+      if (this.waypoints) {
+        const match = nextLegWaypoints(this.waypoints.legs, this.legCursor, [
+          pos[0],
+          pos[1],
+          pos[2],
+        ]);
+        legWaypoints = match.waypoints;
+        this.legCursor = match.cursor;
       }
-      const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
-      throw new Error(
-        `failed ${label} at [${x}, ${y}, ${z}] (range ${r}); bot at ` +
-          `${fmt(bot.entity.position)}: ${detail}`,
-      );
+      const goalsList = walkGoals(legWaypoints, [pos[0], pos[1], pos[2]], r);
+      for (let g = 0; g < goalsList.length; g++) {
+        const spec = goalsList[g]!;
+        const last = g === goalsList.length - 1;
+        await this.runGoto(spec, last ? label : `${label} waypoint ${g + 1}/${goalsList.length}`);
+      }
     } finally {
       restoreControls();
     }
+  }
+
+  /**
+   * Pathfind to a single {@link GoalSpec} (get within `spec.range` blocks of it),
+   * with the death-aware, timed, one-retry behavior the critical path depends on: a
+   * bot death rethrows the {@link BotDeathError} immediately (never retried across
+   * the void); a transient failure is retried once after a settle (an `open-gate`
+   * fill may land after the first path computation started); a persistent failure
+   * throws a diagnostic naming the goal and the bot's position. The caller sets the
+   * Movements and think budget once for the whole leg.
+   *
+   * Arrival is VERIFIED, not trusted: mineflayer's `goto` can resolve on a
+   * best-effort partial path without the bot actually reaching the goal (observed on
+   * an unwalkable waypoint hop — it "succeeds" while the bot sits blocks away). A
+   * resolve that leaves the bot outside the goal range is treated as a failure, so a
+   * stuck hop fails the step loudly instead of silently marching the walk forward.
+   */
+  private async runGoto(spec: GoalSpec, label: string): Promise<void> {
+    const bot = this.requireBot();
+    const { x, y, z, range } = spec;
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) {
+        await delay(1_500);
+      }
+      try {
+        await this.raceDeath(
+          withTimeout(
+            bot.pathfinder.goto(new goals.GoalNear(x, y, z, range)),
+            REACH_TIMEOUT_MS,
+            `reaching ${label}`,
+          ),
+        );
+        if (this.withinGoal(spec)) {
+          return;
+        }
+        throw new Error(
+          `pathfinder resolved but the bot is at ${fmt(bot.entity.position)}, ` +
+            `not within ${range} of the goal`,
+        );
+      } catch (err) {
+        // A death is terminal for this run — never retry a path across the void.
+        if (err instanceof BotDeathError) throw err;
+        lastErr = err;
+        try {
+          bot.pathfinder.stop();
+        } catch {
+          // ignore
+        }
+      }
+    }
+    const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
+    const near = Object.values(bot.entities)
+      .filter((e) => e && e !== bot.entity && bot.entity.position.distanceTo(e.position) < 12)
+      .map((e) => `${e.name ?? "?"}@${e.position.distanceTo(bot.entity.position).toFixed(1)}`);
+    process.stderr.write(`[stuck] near ${fmt(bot.entity.position)}: ${near.join(", ") || "none"}\n`);
+    throw new Error(
+      `failed ${label} at [${x}, ${y}, ${z}] (range ${range}); bot at ` +
+        `${fmt(bot.entity.position)}: ${detail}`,
+    );
+  }
+
+  /**
+   * Whether the bot's block position is within `spec.range` blocks of the goal cell
+   * — the same block-distance metric mineflayer-pathfinder's `GoalNear` uses to
+   * decide it arrived. The `y` axis is given one extra block of slack so standing on
+   * a stair/slab (a fractional-height floor) still counts as arrived.
+   */
+  private withinGoal(spec: GoalSpec): boolean {
+    const p = this.requireBot().entity.position;
+    const dx = Math.floor(p.x) - spec.x;
+    const dz = Math.floor(p.z) - spec.z;
+    const dy = Math.floor(p.y) - spec.y;
+    const yTol = spec.range + 1;
+    return dx * dx + dz * dz <= spec.range * spec.range && Math.abs(dy) <= yTol;
   }
 
   /**
