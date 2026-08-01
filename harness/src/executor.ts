@@ -30,7 +30,13 @@ import type {
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError, likelyDeathCause } from "./death.ts";
 import { allowNonCollidingEntities, configureLeg } from "./movement.ts";
-import { nextLegWaypoints, walkGoals, type GoalSpec, type Waypoints } from "./waypoints.ts";
+import {
+  nextLegWaypoints,
+  retainStandableWaypoints,
+  walkGoals,
+  type GoalSpec,
+  type Waypoints,
+} from "./waypoints.ts";
 
 /** Bounded number of physics-unstick bursts before a wedged hop fails loudly. */
 const UNSTICK_ATTEMPTS = 3;
@@ -701,6 +707,29 @@ export class MineflayerExecutor implements StepExecutor {
         legWaypoints = match.waypoints;
         this.legCursor = match.cursor;
       }
+      // Drop proven waypoints the bot cannot physically stand on. The compiler models
+      // every non-air block as a full 1×1×1 solid, so a leg may be proven by standing
+      // the player on a fence-top (a legal +1 step there); vanilla physics makes a
+      // fence 1.5 tall and the pathfinder marks any such block non-physical
+      // (`movements.fences`), never solving a subgoal atop it — so that hop wedges.
+      // Filtering it lets the pathfinder bridge the neighbouring proven cells with a
+      // real-shape route (through the adjacent gate, which canOpenDoors lets it open).
+      // The leg's true destination is still appended below, so connectivity — the
+      // compiler's actual proof — is unchanged.
+      if (legWaypoints) {
+        const kept = retainStandableWaypoints(legWaypoints, (cell) =>
+          this.waypointSupportStandable(cell, movements.fences),
+        );
+        if (kept.length !== legWaypoints.length) {
+          const dropped = legWaypoints.filter((w) => !kept.includes(w));
+          process.stderr.write(
+            `[waypoint] ${label}: skipping ${dropped.length} proven cell(s) atop a ` +
+              `non-physical block (fence/wall/closed gate) the bot cannot stand on: ` +
+              `${dropped.map((d) => `[${d.join(", ")}]`).join(" ")}\n`,
+          );
+        }
+        legWaypoints = kept;
+      }
       const goalsList = walkGoals(legWaypoints, [pos[0], pos[1], pos[2]], r);
       await replayLegWithRecovery(
         goalsList,
@@ -711,6 +740,27 @@ export class MineflayerExecutor implements StepExecutor {
     } finally {
       restoreControls();
     }
+  }
+
+  /**
+   * Whether the bot's own physical model can stand at feet cell `cell`: the block
+   * directly below it must NOT be one mineflayer-pathfinder classifies non-physical
+   * — a fence, wall, or closed fence-gate, whose collision shape is taller than 1
+   * and which lives in `movements.fences`. This is the pathfinder's own standability
+   * criterion, reused verbatim, so the waypoint replay never issues a subgoal the
+   * pathfinder itself cannot stand at (the compiler's full-solid model proved the
+   * cell standable; the bot's real-shape physics disagrees only for these blocks).
+   * A cell whose support chunk is not loaded reads as standable (we only ever DROP a
+   * waypoint we can positively prove un-standable; the pathfinder resolves the rest).
+   * Uses the `position.offset` idiom (as {@link collect}) to build the absolute
+   * support cell without importing Vec3.
+   */
+  private waypointSupportStandable(cell: Vec3Tuple, fences: Set<number>): boolean {
+    const bot = this.requireBot();
+    const p = bot.entity.position;
+    const support = bot.blockAt(p.offset(cell[0] - p.x, cell[1] - 1 - p.y, cell[2] - p.z));
+    if (!support) return true; // support unknown (chunk not loaded) → keep the waypoint
+    return !fences.has(support.type);
   }
 
   /**

@@ -17,8 +17,8 @@ class FakeControlBot implements ControlBot {
 }
 
 function freshMovements(): LegMovements {
-  // Defaults mirror mineflayer-pathfinder: digging/towers on, sprinting on.
-  return { canDig: true, allow1by1towers: true, allowSprinting: true };
+  // Defaults mirror mineflayer-pathfinder: digging/towers on, doors off, sprinting on.
+  return { canDig: true, allow1by1towers: true, canOpenDoors: false, allowSprinting: true };
 }
 
 test("configureLeg locks adventure-mode movement and leaves sprint alone for a plain leg", () => {
@@ -27,6 +27,9 @@ test("configureLeg locks adventure-mode movement and leaves sprint alone for a p
   const restore = configureLeg(bot, movements, false);
   assert.equal(movements.canDig, false);
   assert.equal(movements.allow1by1towers, false);
+  // Doors/fence-gates are opened (a use interaction adventure mode allows) so the bot
+  // can enter an area whose only opening is a closed gate (the ram pen).
+  assert.equal(movements.canOpenDoors, true);
   assert.equal(movements.allowSprinting, true); // not a sneak leg → sprint untouched
   assert.deepEqual(bot.toggles, []); // no sneak control toggled
   // Restore is a no-op and must not toggle sneak on a leg that never sneaked.
@@ -63,6 +66,7 @@ test("configureLeg disables sprint and turns sneak ON for a sneak leg", () => {
   const restore = configureLeg(bot, movements, true);
   assert.equal(movements.canDig, false);
   assert.equal(movements.allow1by1towers, false);
+  assert.equal(movements.canOpenDoors, true); // gate-opening applies to a sneak leg too
   assert.equal(movements.allowSprinting, false); // sprinting bot is not sneaking
   assert.deepEqual(bot.toggles, [["sneak", true]]);
   // Restore clears the crouch so a later plain leg is not left sneaking.
