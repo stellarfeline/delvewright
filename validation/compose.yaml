@@ -116,6 +116,13 @@ services:
       DELVEWRIGHT_MC_AUTH: offline
     volumes:
       - ./delve-output/critical-path.json:/delve/critical-path.json:ro
+      # task #38: the compiler-proven per-leg waypoint artifact
+      # (validation/critical-path-waypoints.json). The harness discovers it at
+      # `<dir-of-critical-path.json>/validation/…` and navigates leg-by-leg so no
+      # single distant A* solve strands the bot on a large open cave. Validation
+      # metadata only (never in the shipped delve image); absent → single-goal
+      # fallback, so the mount is harmless for a campaign that emits none.
+      - ./delve-output/validation:/delve/validation:ro
     command: ["/delve/critical-path.json"]
 
   # PackTest runner (spec-0003 PackTest tier): the delvewright-toolserver image

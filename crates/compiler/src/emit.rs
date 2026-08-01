@@ -201,6 +201,22 @@ pub fn build(
                 let m = crate::nav::plan_moves(plan, &world)?;
                 crate::nav::check_cutscenes(plan, &world)?;
                 crate::nav::check_critical_path(plan, &world)?;
+                // Export the DW0311-proven critical-path routes as validation
+                // metadata (task #38): thinned per-leg waypoint polylines the harness
+                // replays as successive nearby goals, so no single giant mineflayer A*
+                // solve strands the bot on a large open cave. NOT shipped gameplay —
+                // lives under `validation/` (excluded from the delve image, like
+                // packtest-datapack/). Emitted only when a walked leg exists, so a
+                // campaign with none stays byte-identical to before. Uses the same
+                // relight-aware `world` as the DW0311 check it exports.
+                let routes = crate::nav::critical_path_routes(plan, &world);
+                if !routes.is_empty() {
+                    put_json(
+                        &mut out,
+                        "validation/critical-path-waypoints.json",
+                        &crate::waypoints::waypoints_json(plan, &routes),
+                    );
+                }
                 m
             } else {
                 Vec::new()

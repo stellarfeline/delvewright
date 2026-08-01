@@ -11,6 +11,7 @@ import { parseCriticalPathJson } from "./critical-path.ts";
 import { runSequence, StepExecutionError } from "./sequencer.ts";
 import { botConfigFromEnv, MineflayerExecutor } from "./executor.ts";
 import { BotDeathError } from "./death.ts";
+import { loadWaypointsForCriticalPath } from "./waypoints.ts";
 
 /**
  * Exit code for a run that failed specifically because the bot died (spec-0008),
@@ -74,6 +75,12 @@ async function main(): Promise<number> {
   const text = await readFile(pathArg, "utf8");
   const criticalPath = parseCriticalPathJson(text);
 
+  // task #38: if the compiler's proven waypoint artifact accompanies the critical
+  // path, the executor navigates each walked leg through it (successive nearby
+  // goals) so no single distant A* solve strands the bot on a large open cave.
+  // Absent → single-goal navigation (fallback); malformed → hard failure.
+  const waypoints = await loadWaypointsForCriticalPath(pathArg);
+
   const config = botConfigFromEnv();
   const budgetMs = runTimeoutMs();
   process.stderr.write(
@@ -82,6 +89,12 @@ async function main(): Promise<number> {
   );
 
   const executor = new MineflayerExecutor(config);
+  if (waypoints) {
+    executor.useWaypoints(waypoints);
+    process.stderr.write(
+      `using compiler-proven waypoints: ${waypoints.legs.length} walked leg(s)\n`,
+    );
+  }
   try {
     await withTimeout(
       (async () => {
