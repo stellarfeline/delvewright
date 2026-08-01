@@ -674,6 +674,48 @@ fn cutscene_clip_exits_3_with_dw0308() {
     assert!(stdout.contains("DW0308"), "expected DW0308:\n{stdout}");
 }
 
+/// Wave-capacity guard (task #41): a `spawn-wave` whose mob count exceeds the
+/// standable footing of its own room fails the build with `DW0312` and exit 2
+/// (analysis-tier — a content-design capacity mistake, like reachability `DW02xx`,
+/// not a compiler/geometry defect). keep-vertical's single wave is blown up past
+/// any room's cell count; the diagnostic names the wave so a zero-context author
+/// knows to shrink it or use a bigger room, not to touch the socket seams.
+#[test]
+fn oversized_wave_exits_2_with_dw0312() {
+    let pf = common::prefabs_dir();
+    let camp = tmp("wave-overflow");
+    copy_dir(&common::keep_vertical_dir(), &camp);
+    let qp = camp.join("quests.json");
+    let mut quests: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&qp).unwrap()).unwrap();
+    // Far more mobs than any assembled room can seat on distinct standable cells.
+    quests["content"]["waves"][0]["mobs"][0]["count"] = serde_json::json!(100_000);
+    std::fs::write(&qp, serde_json::to_string_pretty(&quests).unwrap()).unwrap();
+
+    let out = tmp("wave-overflow-out");
+    let b = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(
+        code(&b),
+        2,
+        "oversized wave should exit 2 (analysis-tier capacity guard): {}",
+        String::from_utf8_lossy(&b.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&b.stdout);
+    assert!(stdout.contains("DW0312"), "expected DW0312:\n{stdout}");
+    assert!(
+        stdout.contains("wave/guards"),
+        "the diagnostic must name the offending wave:\n{stdout}"
+    );
+}
+
 fn read_tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
     let mut map = BTreeMap::new();
     fn walk(base: &Path, dir: &Path, map: &mut BTreeMap<String, Vec<u8>>) {

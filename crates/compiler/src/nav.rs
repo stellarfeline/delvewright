@@ -318,6 +318,77 @@ impl World {
         cells
     }
 
+    /// The standable cells confined to the AABB `bounds`, reachable by a walk from
+    /// `anchor` (snapped to the nearest standable cell inside `bounds`), returned in
+    /// ascending BFS step-distance order from that start with a fixed `(y, z, x)`
+    /// tie-break. Seats spawn-wave mobs on validated footing near their anchor
+    /// (task #41): `bounds` is the anchor's own assembled piece, so the flood-fill
+    /// never leaves that room even where a mated socket is open air — a wave can no
+    /// longer string its mobs across a socket seam into the neighbouring piece (the
+    /// field bug: six sheep spread +x across the den↔mouth seam toward void). Empty
+    /// when no standable cell exists inside `bounds` within reach of the anchor.
+    ///
+    /// Deterministic (ADR-0006): BFS over a `VecDeque` with the fixed neighbour
+    /// order, then a total sort on `(distance, y, z, x)`.
+    pub fn confined_standable_cells(
+        &self,
+        anchor: [i32; 3],
+        bounds: ([i32; 3], [i32; 3]),
+    ) -> Vec<[i32; 3]> {
+        let (lo, hi) = bounds;
+        let in_bounds = |c: [i32; 3]| (0..3).all(|i| lo[i] <= c[i] && c[i] <= hi[i]);
+        // A wave anchor often marks a solid affordance (a totem, a marker block) the
+        // mobs stand *around*, not inside: snap the start to the nearest standable
+        // floor cell within the room before flooding.
+        let Some(start) = self.snap_in_bounds(anchor, SNAP_RADIUS, &in_bounds) else {
+            return Vec::new();
+        };
+        let mut dist: BTreeMap<[i32; 3], u32> = BTreeMap::new();
+        let mut queue: std::collections::VecDeque<[i32; 3]> = std::collections::VecDeque::new();
+        dist.insert(start, 0);
+        queue.push_back(start);
+        while let Some(cur) = queue.pop_front() {
+            let d = dist[&cur] + 1;
+            for n in self.neighbors(cur) {
+                if in_bounds(n) && !dist.contains_key(&n) {
+                    dist.insert(n, d);
+                    queue.push_back(n);
+                }
+            }
+        }
+        let mut cells: Vec<[i32; 3]> = dist.keys().copied().collect();
+        cells.sort_by_key(|c| (dist[c], c[1], c[2], c[0]));
+        cells
+    }
+
+    /// Nearest standable cell to `c` within `radius` that also satisfies `accept`,
+    /// broken deterministically by `(distance², cell)`; `None` if none. The
+    /// `accept` predicate confines the search (e.g. to one piece's AABB).
+    fn snap_in_bounds(
+        &self,
+        c: [i32; 3],
+        radius: i32,
+        accept: &impl Fn([i32; 3]) -> bool,
+    ) -> Option<[i32; 3]> {
+        let mut best: Option<(i32, [i32; 3])> = None;
+        for dy in -radius..=radius {
+            for dz in -radius..=radius {
+                for dx in -radius..=radius {
+                    let n = [c[0] + dx, c[1] + dy, c[2] + dz];
+                    if !accept(n) || !self.standable(n) {
+                        continue;
+                    }
+                    let d2 = dx * dx + dy * dy + dz * dz;
+                    match best {
+                        Some((bd, bc)) if (bd, bc) <= (d2, n) => {}
+                        _ => best = Some((d2, n)),
+                    }
+                }
+            }
+        }
+        best.map(|(_, n)| n)
+    }
+
     fn is_solid(&self, c: [i32; 3]) -> bool {
         self.solid.contains(&c)
     }
@@ -924,6 +995,64 @@ mod tests {
         // A flat connected floor: consecutive visited cells are walkable → ok.
         let world = floored(6, 3, 65, &[]);
         assert!(route_visited(&world, &[([0, 65, 1], false), ([5, 65, 1], false)]).is_ok());
+    }
+
+    #[test]
+    fn confined_cells_are_standable_distinct_and_ordered_by_distance() {
+        // A 5×5 floored room. Placement floods standable cells from the anchor.
+        let world = floored(5, 5, 65, &[]);
+        let bounds = ([0, 64, 0], [4, 66, 4]);
+        let cells = world.confined_standable_cells([2, 65, 2], bounds);
+        // Every returned cell is standable, and all are distinct.
+        for c in &cells {
+            assert!(world.standable(*c), "non-standable cell {c:?}");
+        }
+        let uniq: BTreeSet<_> = cells.iter().copied().collect();
+        assert_eq!(uniq.len(), cells.len(), "duplicate spawn cell");
+        // The anchor's own snapped start comes first (distance 0), then its
+        // cardinal neighbours (distance 1) before any distance-2 cell.
+        assert_eq!(cells[0], [2, 65, 2]);
+        // Non-increasing BFS distance is enforced by construction; spot-check that a
+        // near cell precedes a far corner.
+        let idx = |t: [i32; 3]| cells.iter().position(|c| *c == t).unwrap();
+        assert!(idx([2, 65, 3]) < idx([0, 65, 0]));
+    }
+
+    #[test]
+    fn confined_cells_never_cross_a_socket_seam() {
+        // Two 3-wide rooms sharing an open (air) seam at x=3 — as a mated jigsaw
+        // socket would be. Confining to the left room's bounds must keep every
+        // placement cell at x<=2, never flooding through the open seam into the
+        // right room (the den↔mouth spill this fix prevents).
+        let mut solid = BTreeSet::new();
+        for x in 0..=6 {
+            for z in 0..3 {
+                solid.insert([x, 64, z]); // continuous floor across both rooms
+                solid.insert([x, 67, z]); // ceiling
+            }
+        }
+        let world = World { solid };
+        let left_bounds = ([0, 64, 0], [2, 66, 2]);
+        let cells = world.confined_standable_cells([1, 65, 1], left_bounds);
+        assert!(!cells.is_empty());
+        for c in &cells {
+            assert!(
+                c[0] <= 2,
+                "placement {c:?} crossed the seam into the right room"
+            );
+        }
+        // Sanity: the floor genuinely connects across the seam (an unconfined flood
+        // would reach the right room), so confinement — not a wall — is what holds.
+        assert!(world.find_path([1, 65, 1], [5, 65, 1]).is_some());
+    }
+
+    #[test]
+    fn confined_cells_deterministic_across_runs() {
+        let world = floored(6, 4, 65, &[[3, 65, 1]]);
+        let bounds = ([0, 64, 0], [5, 66, 3]);
+        let a = world.confined_standable_cells([1, 65, 1], bounds);
+        let b = world.confined_standable_cells([1, 65, 1], bounds);
+        assert_eq!(a, b);
     }
 
     #[test]
