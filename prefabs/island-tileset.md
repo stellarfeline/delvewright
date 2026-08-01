@@ -6,9 +6,9 @@ escape-promise seen from minute one). Built by `prefabs/island-generator`
 (deterministic, byte-identical per run — ADR-0006), a sibling of
 `prefabs/cave-generator` reusing its NBT / socket / gravity-substrate machinery.
 
-These are the **set-piece** half of the island (this task). The terrain worker
-owns `island-greenfield` (connector) and `island-mountain` (terminal + cavern);
-those pieces MUST adopt the island convention below so the areas assemble as one
+These are the **set-piece** half of the island. The terrain worker
+built `island-greenfield` (connector) and `island-mountain` (terminal + cavern);
+those pieces adopt the island convention below so the areas assemble as one
 contiguous walkable island (design brief §1, §5).
 
 ## Island convention (shared — greenfield/mountain align to this)
@@ -78,6 +78,47 @@ cross-seam flood interaction between two water bodies. It mirrors the proven
 lit independently), and lets the terrain worker position the galley offshore by a
 simple anchor offset. Merging would bloat the entry piece with a large water
 volume and couple the galley's determinism to the beach seed for no benefit.
+
+## Terrain pieces (greenfield + mountain)
+
+Built by the sibling `prefabs/island-terrain-generator` (its own `[workspace]`),
+these complete the contiguous island: the connectors between the beach camp and the
+mountain, and the mountain terminal with its cavern. All adopt the island convention
+above (`island:socket` at `floor_y=2`, walk plane y=3) — built at the ground datum,
+then lifted +2 onto a solid substrate so every socket/anchor lands on the shared
+datum and mates with the beach camp's north socket.
+
+| id | role | size (X×Y×Z) | sockets | anchors |
+| -- | ---- | ------------ | ------- | ------- |
+| `island-greenfield` | connector | 17×10×15 | S, N (`island:socket` floor_y=2) | `anchor/meadow`, `anchor/fold` |
+| `island-greenfield-bend` | connector | 17×10×15 | S, E | `anchor/meadow`, `anchor/fold` |
+| `island-mountain` | terminal | 36×28×42 | S (base, floor_y=2) | `anchor/mouth`, `anchor/boulder` (gate region), `anchor/cheese-store`, `anchor/fire-pit`, `anchor/ramp-top`, `anchor/pen`, `anchor/alcove-1..4`, `anchor/checkpoint-1..3`, `anchor/shaft-1..2` |
+
+**island-greenfield / -bend** — open-air, sky-lit grazing meadow in a shallow grassy
+dell: a flat walkable floor between the two sockets, a worn dirt path spine, scattered
+scrub oaks, poppy/daisy/cornflower flowers, and a low mossy-cobblestone **empty sheep
+fold** (foreshadowing — the sheep are the Cyclops'). The bend variant elbows S→E for
+layout flexibility. Both are `lit` 15.
+
+**island-mountain** — a solid rock massif built **fill-then-carve** (the exterior
+silhouette is the domed rocky cap left after carving; a crown/face erosion pass breaks
+the box outline, enclosure-safe). A terraced **switchback path** — grass-to-stone
+gradient plus a coarse-dirt trail, a stair tread on every riser so it is walked
+natively — climbs the south face to a **cave-mouth ledge**; the **boulder gate region**
+(`anchor/boulder`, basalt: what `open-gate`/`set-block` fills to seal or open the
+mouth) sits at the mouth, with a decorative Chekhov boulder beside it. The mouth opens
+into ONE tall-wide **cavern hall** (interior 30×14×24, NOT rooms-and-corridors): a
+cheese store by the entry, a central fire pit (baked lit campfire = the relight
+fixture), a **rock-shelf ramp** (no ladders) up to an empty upper sheep pen, four dark
+**shadow alcoves** for the stealth beats, dripstone + moss dressing, and **two ceiling
+light shafts** open to the sky.
+
+The cavern is declared **`dark`** honestly (firelit at the pit, dark at the vault edges
+and alcoves by design). Rock fixture sites near every reachable cell and the two
+sky-open shafts let the compiler relight the declared area minimally (spec-0010) while
+the hall still reads dark for stealth. A 3D nav flood from the base socket reaches
+every anchor (switchback → mouth → cavern → ramp → pen) with ≤1-block steps; the
+compiler's `DW0311` is the authoritative critical-path gate at assembly.
 
 ## Palette
 

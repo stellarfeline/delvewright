@@ -31,6 +31,11 @@ byte-identical datapack, with the content SHA recorded in the build manifest.
   galley. Another sibling with its own `[workspace]`; reuses the cave-generator
   NBT/socket/substrate machinery. Emits the `island:socket` convention. See
   `island-generator/README.md` and `island-tileset.md`.
+- **`island-terrain-generator/`** — the deterministic "nobodys-cave island"
+  TERRAIN generator: the greenfield connectors + the mountain terminal (shell +
+  30×14×24 cavern, switchback slope on the face). Another sibling with its own
+  `[workspace]`; reuses the cave-generator machinery and the `island:socket`
+  floor_y=2 datum. See `island-terrain-generator/README.md` and `island-tileset.md`.
 - **`keep-tileset.md`** — the stone-keep connection convention, piece list, and
   live-probed lighting minimums that the generator implements and documents.
 - **`cave-tileset.md`** — the cave/shore piece list, `cave:socket` convention,
