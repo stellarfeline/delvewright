@@ -33,7 +33,7 @@
 //! iterates `BTreeMap`-ordered columns and stacks with a fixed tie-break — same
 //! DSL + seed → identical map.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 
 use crate::plan::{Plan, ResolvedAnchor};
@@ -188,20 +188,35 @@ fn placed_blocks(
     blocks
 }
 
+/// The outcome of gravity settling for one falling block: the world cell it ended
+/// up at (or `None` if it despawned into the void), tagged with its original cell.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Settled {
+    /// The falling block's id (e.g. `minecraft:sand`).
+    pub block: String,
+    /// The block's authored (placed) world cell before settling.
+    pub from: [i32; 3],
+    /// Where it came to rest, or `None` if it fell out of the world (despawned).
+    pub to: Option<[i32; 3]>,
+}
+
 /// Settle every gravity-affected block in `blocks` as vanilla physics would in the
 /// void world: within each `(x, z)` column, non-falling blocks are immovable
 /// supports; each falling block drops onto the highest support at or below it
 /// (stacking in original order), and a falling block with no support anywhere
-/// below it despawns (falls out of the world → air). Mutates `blocks` in place.
+/// below it despawns (falls out of the world → air). Mutates `blocks` in place and
+/// returns one [`Settled`] per falling block (its authored cell and where it
+/// ended up), so callers can distinguish a benign land-on-support from a despawn.
 ///
 /// Deterministic (ADR-0006): columns iterate in `BTreeMap` order and blocks stack
 /// bottom-up.
-fn settle(blocks: &mut BTreeMap<[i32; 3], String>) {
+fn settle(blocks: &mut BTreeMap<[i32; 3], String>) -> Vec<Settled> {
     // Group cell y's by column.
     let mut columns: BTreeMap<(i32, i32), Vec<i32>> = BTreeMap::new();
     for c in blocks.keys() {
         columns.entry((c[0], c[2])).or_default().push(c[1]);
     }
+    let mut outcomes: Vec<Settled> = Vec::new();
     for ((x, z), mut ys) in columns {
         ys.sort_unstable();
         // Split the column into immovable supports and falling blocks (ascending).
@@ -224,26 +239,58 @@ fn settle(blocks: &mut BTreeMap<[i32; 3], String>) {
         }
         // Group falling blocks by the nearest immovable support strictly below
         // them; a group has no support → those blocks despawned into the void.
-        let mut by_base: BTreeMap<i32, Vec<String>> = BTreeMap::new();
+        let mut by_base: BTreeMap<i32, Vec<(i32, String)>> = BTreeMap::new();
         for (y, name) in falling {
             if let Some(base) = fixed.iter().copied().filter(|&f| f < y).max() {
-                by_base.entry(base).or_default().push(name);
+                by_base.entry(base).or_default().push((y, name));
+            } else {
+                // No support anywhere below → despawns into the void.
+                outcomes.push(Settled {
+                    block: name,
+                    from: [x, y, z],
+                    to: None,
+                });
             }
         }
-        for (base, names) in by_base {
+        for (base, group) in by_base {
             // Stack from base+1 upward; the group came from the open gap above
             // `base`, so it cannot overrun the next support — but skip any fixed
             // cell defensively.
             let mut yy = base + 1;
-            for name in names {
+            for (from_y, name) in group {
                 while fixed.binary_search(&yy).is_ok() {
                     yy += 1;
                 }
+                outcomes.push(Settled {
+                    block: name.clone(),
+                    from: [x, from_y, z],
+                    to: Some([x, yy, z]),
+                });
                 blocks.insert([x, yy, z], name);
                 yy += 1;
             }
         }
     }
+    outcomes
+}
+
+/// The authoritative assembled-world model: the settled cell→block map plus the
+/// per-falling-block settle outcomes (for the gravity-despawn diagnostic).
+pub struct Assembled {
+    /// The gravity-settled cell→block map (cells absent from it are air).
+    pub blocks: BTreeMap<[i32; 3], String>,
+    /// One outcome per falling block: where it came to rest, or `None` if it
+    /// despawned into the void.
+    pub settled: Vec<Settled>,
+}
+
+/// Assemble the world: placed structures + solver seals + gate clears, then
+/// gravity-settle, returning both the settled map and the per-falling-block
+/// outcomes. Shared root for [`assembled_blocks`] and the gravity-despawn check.
+pub fn assemble(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Assembled {
+    let mut blocks = placed_blocks(plan, structures);
+    let settled = settle(&mut blocks);
+    Assembled { blocks, settled }
 }
 
 /// The authoritative assembled-world cell→block map: placed structures + solver
@@ -254,9 +301,109 @@ pub fn assembled_blocks(
     plan: &Plan,
     structures: &BTreeMap<String, Vec<u8>>,
 ) -> BTreeMap<[i32; 3], String> {
-    let mut blocks = placed_blocks(plan, structures);
-    settle(&mut blocks);
-    blocks
+    assemble(plan, structures).blocks
+}
+
+/// `DW0313`: one or more placed gravity blocks despawn into the void at placement.
+/// A gravity floor (`sand`/`gravel`/…) laid unsupported over the delve's `the_void`
+/// world falls out of the world on the first block update, silently deforming the
+/// shipped map (holes, light leaks, visual damage) even where no critical path or
+/// wave seat happens to cross it — so DW0311/DW0312 alone would let it ship green.
+/// This is the authoritative, direct gate: no DSL verb can intend a despawn, so it
+/// is always a prefab/generator defect (task #42, owner addendum).
+pub const DW_GRAVITY_DESPAWN: &str = "DW0313";
+
+/// A placed piece's prefab id paired with its world AABB `(min, max)`, for
+/// attributing a despawned cell back to the piece that placed it.
+type PieceBox<'a> = (&'a str, ([i32; 3], [i32; 3]));
+
+/// Build the [`DW_GRAVITY_DESPAWN`] (`DW0313`) message if any placed gravity block
+/// despawns into the void, attributing the despawned cells to the prefab piece
+/// that placed them; `None` when the assembled world settles with zero losses.
+///
+/// A gravity block that merely *falls onto support* is NOT flagged here: the
+/// settled model represents it faithfully, so every consumer (nav, light,
+/// waypoints) already ships the true geometry — there is no correctness gap, and
+/// the generator's own zero-unsupported invariant catches an *unintended* fall at
+/// authoring time. Only a despawn — an irrecoverable hole — is a build error.
+pub fn gravity_despawn_error(
+    plan: &Plan,
+    structures: &BTreeMap<String, Vec<u8>>,
+) -> Option<String> {
+    let assembled = assemble(plan, structures);
+    // (prefab_id, world AABB) for every placed piece, for despawn attribution.
+    let pieces: Vec<PieceBox> = plan
+        .areas
+        .iter()
+        .flat_map(|a| a.pieces.iter())
+        .map(|p| (p.prefab_id.as_str(), p.bbox()))
+        .collect();
+    despawn_message(&assembled.settled, &pieces)
+}
+
+/// Pure core of [`gravity_despawn_error`]: the `DW0313` message for the despawned
+/// members of `settled`, attributing each despawned cell to the prefab piece whose
+/// AABB contains it; `None` when nothing despawns. Split out so the diagnostic's
+/// attribution and #73-rubric wording are unit-testable without a full [`Plan`].
+fn despawn_message(settled: &[Settled], pieces: &[PieceBox]) -> Option<String> {
+    let despawned: Vec<&Settled> = settled.iter().filter(|s| s.to.is_none()).collect();
+    if despawned.is_empty() {
+        return None;
+    }
+
+    // Pieces never overlap (the solver rejects overlaps), so the first containing
+    // AABB is the unique placer.
+    let piece_of = |cell: [i32; 3]| -> &str {
+        pieces
+            .iter()
+            .find(|(_, (lo, hi))| (0..3).all(|i| lo[i] <= cell[i] && cell[i] <= hi[i]))
+            .map(|(id, _)| *id)
+            .unwrap_or("<unknown piece>")
+    };
+
+    // Group despawned cells + block kinds per piece (deterministic BTreeMap).
+    type PerPiece<'a> = BTreeMap<&'a str, (Vec<[i32; 3]>, BTreeSet<String>)>;
+    let mut per_piece: PerPiece = BTreeMap::new();
+    for s in &despawned {
+        let entry = per_piece.entry(piece_of(s.from)).or_default();
+        entry.0.push(s.from);
+        entry.1.insert(s.block.replace("minecraft:", ""));
+    }
+
+    let total = despawned.len();
+    let mut summaries = Vec::new();
+    for (piece, (mut cells, kinds)) in per_piece {
+        cells.sort_unstable();
+        let sample: Vec<String> = cells.iter().take(4).map(|c| format!("{c:?}")).collect();
+        let more = cells.len().saturating_sub(sample.len());
+        let kinds: Vec<&str> = kinds.iter().map(String::as_str).collect();
+        summaries.push(format!(
+            "`{piece}` — {n} cell(s) of {kinds} at {sample}{extra}",
+            n = cells.len(),
+            kinds = kinds.join("/"),
+            sample = sample.join(", "),
+            extra = if more > 0 {
+                format!(" (+{more} more)")
+            } else {
+                String::new()
+            },
+        ));
+    }
+
+    Some(format!(
+        "gravity settling: {total} placed gravity block(s) fall out of the world at placement and \
+         despawn into the void, leaving holes in the assembled floor. The delve ships into a \
+         `the_void` world, so a gravity block ({kinds_hint}) with no solid block directly beneath it \
+         is unsupported and drops away on the first block update. Affected: {summary}. \
+         WHERE to fix: the prefab / tileset generator that produced these piece(s), not the compiler. \
+         HOW: give every gravity floor cell a non-falling SUPPORT block directly beneath it — a \
+         substrate layer under the visible surface, exactly as `cave-shore`'s beach seabed is built \
+         (every sand/gravel cell rests on solid rock). Do NOT swap the floor palette to non-falling \
+         blocks (sandstone/tuff/stone) just to silence this: sand/gravel floors are a supported, \
+         first-class content need — the fix is to add the substrate, never to remove the material.",
+        kinds_hint = "sand/red_sand/gravel/concrete_powder/anvil/dragon_egg",
+        summary = summaries.join("; "),
+    ))
 }
 
 #[cfg(test)]
@@ -363,5 +510,85 @@ mod tests {
         // pointed_dripstone hangs from the ceiling (attaches upward); the settle
         // rule must not treat it as an unsupported floor block and delete it.
         assert!(!is_falling_block("minecraft:pointed_dripstone"));
+    }
+
+    #[test]
+    fn settle_reports_despawns_and_landings_distinctly() {
+        // Column A (x=0): sand over void -> despawns (to == None).
+        // Column B (x=1): stone support, air gap, sand above -> lands on support.
+        let mut blocks = BTreeMap::new();
+        blocks.insert([0, 64, 0], "minecraft:sand".to_string());
+        blocks.insert([1, 64, 0], "minecraft:stone".to_string());
+        blocks.insert([1, 66, 0], "minecraft:sand".to_string());
+        let outcomes = settle(&mut blocks);
+        let despawned: Vec<_> = outcomes.iter().filter(|s| s.to.is_none()).collect();
+        let landed: Vec<_> = outcomes.iter().filter(|s| s.to.is_some()).collect();
+        assert_eq!(despawned.len(), 1, "one sand cell despawns: {outcomes:?}");
+        assert_eq!(despawned[0].from, [0, 64, 0]);
+        assert_eq!(landed.len(), 1, "one sand cell lands on support");
+        assert_eq!(landed[0].from, [1, 66, 0]);
+        assert_eq!(landed[0].to, Some([1, 65, 0]));
+    }
+
+    #[test]
+    fn despawn_message_fires_with_attribution_and_anti_dodge_wording() {
+        // An unsupported sand floor in a synthetic piece "prefab/test-den" whose
+        // AABB covers x0..4,y64,z0. Every sand cell despawns.
+        let mut blocks = BTreeMap::new();
+        for x in 0..5 {
+            blocks.insert([x, 64, 0], "minecraft:sand".to_string());
+        }
+        let settled = settle(&mut blocks);
+        let pieces = [("prefab/test-den", ([0, 64, 0], [4, 64, 0]))];
+        let msg = despawn_message(&settled, &pieces).expect("despawn must be flagged");
+        // WHAT: count + kind; WHERE: the piece; HOW + anti-dodge clause (#73 rubric).
+        assert!(msg.contains("despawn"), "names the failure: {msg}");
+        assert!(
+            msg.contains("prefab/test-den"),
+            "attributes the piece: {msg}"
+        );
+        assert!(msg.contains("sand"), "names the block kind: {msg}");
+        assert!(msg.contains("substrate"), "prescribes the fix: {msg}");
+        assert!(
+            msg.contains("Do NOT swap the floor palette"),
+            "carries the anti-dodge clause: {msg}"
+        );
+        // A supported floor produces no message.
+        let mut ok = BTreeMap::new();
+        for x in 0..5 {
+            ok.insert([x, 63, 0], "minecraft:stone".to_string());
+            ok.insert([x, 64, 0], "minecraft:sand".to_string());
+        }
+        let ok_settled = settle(&mut ok);
+        assert!(
+            despawn_message(&ok_settled, &pieces).is_none(),
+            "supported floor is clean"
+        );
+    }
+
+    #[test]
+    fn substrate_under_gravity_floor_settles_with_zero_despawns() {
+        // The generator's fix shape: a non-falling substrate (stone) beneath every
+        // gravity surface cell -> nothing despawns, and the surface is preserved.
+        let mut blocks = BTreeMap::new();
+        for x in 0..5 {
+            blocks.insert([x, 63, 0], "minecraft:stone".to_string()); // substrate
+            blocks.insert([x, 64, 0], "minecraft:sand".to_string()); // surface
+        }
+        let outcomes = settle(&mut blocks);
+        assert!(
+            outcomes.iter().all(|s| s.to == Some(s.from)),
+            "every supported gravity cell stays put: {outcomes:?}"
+        );
+        for x in 0..5 {
+            assert_eq!(
+                blocks.get(&[x, 64, 0]).map(String::as_str),
+                Some("minecraft:sand")
+            );
+            assert_eq!(
+                blocks.get(&[x, 63, 0]).map(String::as_str),
+                Some("minecraft:stone")
+            );
+        }
     }
 }

@@ -688,3 +688,85 @@ fn dialog_buttons_run_the_trigger_commands() {
         assert_eq!(a["action"]["type"], "minecraft:run_command");
     }
 }
+
+/// The gravity-despawn diagnostic (DW0313, task #42) fires at build time for a
+/// prefab whose gravity floor is unsupported over the void, and passes once a
+/// non-falling substrate is added — exercised against a real plan (real piece
+/// AABBs for attribution) with synthetic structure bytes.
+mod gravity_despawn {
+    use super::*;
+    use std::collections::HashMap;
+    use std::io::Write;
+
+    /// Gzip-framed structure NBT from `(local pos, block id)` cells.
+    fn structure_nbt(cells: &[([i32; 3], &str)]) -> Vec<u8> {
+        use fastnbt::Value;
+        let mut names: Vec<String> = Vec::new();
+        let mut blocks: Vec<Value> = Vec::new();
+        for (p, n) in cells {
+            let state = names.iter().position(|x| x == n).unwrap_or_else(|| {
+                names.push((*n).to_string());
+                names.len() - 1
+            });
+            let mut b = HashMap::new();
+            b.insert(
+                "pos".to_string(),
+                Value::List(p.iter().map(|v| Value::Int(*v)).collect()),
+            );
+            b.insert("state".to_string(), Value::Int(state as i32));
+            blocks.push(Value::Compound(b));
+        }
+        let palette = Value::List(
+            names
+                .iter()
+                .map(|n| {
+                    let mut c = HashMap::new();
+                    c.insert("Name".to_string(), Value::String(n.clone()));
+                    Value::Compound(c)
+                })
+                .collect(),
+        );
+        let mut root = HashMap::new();
+        root.insert("palette".to_string(), palette);
+        root.insert("blocks".to_string(), Value::List(blocks));
+        let raw = fastnbt::to_bytes(&Value::Compound(root)).unwrap();
+        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        enc.write_all(&raw).unwrap();
+        enc.finish().unwrap()
+    }
+
+    #[test]
+    fn unsupported_sand_floor_is_dw0313_and_substrate_passes() {
+        let loaded = load_campaign_dir(&common::hello_world_dir()).unwrap();
+        let campaign = parse_campaign(&loaded.raw).unwrap();
+        let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+        let plan = Plan::build(&campaign, &prefabs).unwrap();
+
+        // Unsupported: one sand cell at each piece's local origin → over void.
+        let mut bad: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        // Supported: a stone substrate under the sand surface → nothing despawns.
+        let mut good: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        for area in &plan.areas {
+            for piece in &area.pieces {
+                bad.entry(piece.structure_file.clone())
+                    .or_insert_with(|| structure_nbt(&[([0, 0, 0], "minecraft:sand")]));
+                good.entry(piece.structure_file.clone()).or_insert_with(|| {
+                    structure_nbt(&[
+                        ([0, 0, 0], "minecraft:stone"),
+                        ([0, 1, 0], "minecraft:sand"),
+                    ])
+                });
+            }
+        }
+
+        let msg = delvewright_compiler::assembled::gravity_despawn_error(&plan, &bad)
+            .expect("unsupported sand floor must raise DW0313");
+        assert!(msg.contains("despawn") && msg.contains("substrate"));
+        assert!(msg.contains("Do NOT swap the floor palette"));
+
+        assert!(
+            delvewright_compiler::assembled::gravity_despawn_error(&plan, &good).is_none(),
+            "a substrate-supported sand floor must pass"
+        );
+    }
+}
