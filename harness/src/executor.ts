@@ -123,15 +123,17 @@ async function recoverAndRetry(
     return;
   }
   // Level 2: the recovery pathfind stalled too — the bot is physically wedged. Break
-  // it free with a bounded raw-movement burst toward the GOAL (not the proven cell:
-  // the proven cell is BEHIND a bot that has partly advanced, so driving toward it
-  // shoves the bot backward and it oscillates — observed on waypoint 15). Driving
-  // toward the goal always makes forward progress and still escapes the initial
-  // pocket. Retry the actual hop at its own (forgiving) range after each burst.
+  // it free with a bounded raw-movement burst toward the proven cell (the open,
+  // away-from-wall direction that escapes a concave pocket), then retry the ACTUAL
+  // hop at its own (forgiving) range after each burst. (Trace note, task #45: this
+  // direction escapes the initial pocket and cleared the corridor's first wedge
+  // waypoint, but shoves an already-advanced bot backward at a later waypoint — a
+  // single fixed direction can't both escape the pocket AND progress; see the
+  // adaptive-direction proposal in the task report.)
   if (unstick) {
     for (let a = 0; a < UNSTICK_ATTEMPTS; a++) {
-      process.stderr.write(`[recover] physics-unstick burst ${a + 1}/${UNSTICK_ATTEMPTS} toward goal\n`);
-      await unstick(spec);
+      process.stderr.write(`[recover] physics-unstick burst ${a + 1}/${UNSTICK_ATTEMPTS}\n`);
+      await unstick(provenGoal);
       if (await reached(() => goto(spec, `${glabel} retry after unstick ${a + 1}`))) {
         return;
       }
