@@ -43,22 +43,33 @@ solver reads socket geometry only, so island pieces mate with the same machinery
 as cave/keep pieces. `island-beach-camp` carries one inland (north) socket to
 greenfield; **greenfield's beach-facing socket must also be `floor_y=2`.**
 
-The galley carries **no socket**: it is a standalone set-piece (like the admitted
-`hero-galleon-oak`), positioned offshore by anchor offset. This is deliberate —
-see "merged vs separate", below.
+The galley carries **no socket**. It exists two ways (see "merged vs separate",
+below): as the standalone `island-galley` set-piece (a reusable offshore ship,
+the `hero-galleon-oak` pattern), and — for the nobodys-cave campaign — **stamped
+into `island-beach-camp`** so it is moored just offshore and boardable, since the
+DSL has no scenery-offset primitive to place a standalone ship a few blocks off a
+neighbouring area.
 
 ## Pieces
 
 | id | role | size (X×Y×Z) | sockets | anchors |
 | -- | ---- | ------------ | ------- | ------- |
-| `island-beach-camp` | entry | 21×8×17 | N (`island:socket`, floor_y=2) | `entry`, `anchor/camp-fire`, `anchor/class-post`, `anchor/crew-a`, `anchor/crew-b`, `anchor/surf-wave`, `anchor/gangplank` |
-| `island-galley` | set-piece | 9×15×29 | — | `anchor/deck` |
+| `island-beach-camp` | entry (+ moored galley) | 21×15×44 | N (`island:socket`, floor_y=2) | `entry`, `anchor/camp-fire`, `anchor/class-post`, `anchor/crew-a`, `anchor/crew-b`, `anchor/surf-wave`, `anchor/gangplank`, `anchor/deck`, `anchor/prow` |
+| `island-galley` | set-piece (standalone) | 9×15×29 | — | `anchor/deck` |
 
 **island-beach-camp** — sand shore rising from a ragged south tide line; a
 campfire ring with stripped-log benches (the campfire doubles as the relight
 fixture), two wool/fence A-frame tents, a barrel supply stack, a lantern class
-post, a plank gangplank jetty reaching south over the water toward the galley,
-and driftwood/rock/seagrass greeble. All camp anchors sit on the dry y=3 plane.
+post, and driftwood/rock/seagrass greeble — all camp anchors on the dry y=3
+plane. The piece extends south into authored ocean where **the Greek galley is
+stamped in, moored just offshore**: a bounded jetty runs off the sand and a
+walkable **gangplank** (spruce treads on oak-fence piles) climbs from the jetty
+head at y=3 up onto the galley deck at y=5, every stand cell rising ≤1 with ≥2
+air overhead (DW0311-walkable, verified against the emitted NBT). Deck lanterns
+fore and aft light the ship for the dusk beat. `anchor/deck` (boarding target,
+faces the camp) and `anchor/prow` (scenic bow, ending beat) sit on the deck walk
+plane y=5. Every pre-galley beach anchor keeps its original local coordinate; the
+piece only grew +Z (open-sea side) and +Y (mast height).
 
 **island-galley** — an ancient-Greek galley on its own authored water: a flared
 plank hull with a dark waterline wale, a low ram (embolos) and rising stempost at
@@ -70,14 +81,24 @@ until it reads unmistakably as a galley (ram + oars + square sail + eye).
 
 ### Merged vs separate (the set-piece decision)
 
-The galley is a **separate** standalone piece, not merged into the beach. The
-solver handles this more robustly: a standalone set-piece has zero connectors, so
-there is no inter-piece socket to mis-mate across a stretch of open sea and no
-cross-seam flood interaction between two water bodies. It mirrors the proven
-`hero-galleon-oak` admission pattern, keeps each piece's AABB tight (rendered and
-lit independently), and lets the terrain worker position the galley offshore by a
-simple anchor offset. Merging would bloat the entry piece with a large water
-volume and couple the galley's determinism to the beach seed for no benefit.
+We keep **both**: `island-galley` stays a standalone, reusable set-piece, and the
+same hull is **merged into `island-beach-camp`** for the nobodys-cave campaign.
+
+The merge is forced by a real constraint, not preference. Placing the galley "just
+offshore" from the beach needs it a few blocks off the sand — but the DSL exposes
+no scenery-offset primitive, and the solver spaces areas ~256 blocks apart, so a
+*standalone* galley area could never sit offshore of the beach; the two would land
+a quarter-kilometre apart with no bridge. (This was the reserved fallback all
+along — design brief §5 and this generator's doc comment.) Merging puts the ship
+in the beach piece's own authored ocean, so the campaign's critical path can walk
+the gangplank onto the deck as one contiguous area.
+
+The old worry that motivated "separate" — cross-seam flood between two water
+bodies — is avoided by construction: `stamp_solids` copies only the hull's SOLID
+cells over the beach's existing sea, so the waterline (local y=2) and seabed stay
+a single water volume, never a second one. The standalone `island-galley` still
+exists for any campaign that wants a ship positioned by socket/assembly rather
+than moored to a specific beach.
 
 ## Terrain pieces (greenfield + mountain)
 
@@ -127,8 +148,11 @@ stripped-oak / oak logs · oak fence / planks (jetty, posts) · white / light-gr
 wool (tents) · barrel · lantern · cobblestone / dead bush (greeble). Galley:
 spruce / oak / dark-oak planks · spruce / stripped-spruce logs · spruce stairs /
 trapdoors / buttons · white / black wool (sail + eye) · lantern · barrel ·
-decorated pot · water. Every id is on the `delve-admit` building allowlist
-(DW0730); no command/structure blocks, no NBT-bearing block entities.
+decorated pot · water. The merged `island-beach-camp` therefore draws from both
+lists (the galley palette is stamped into it, plus spruce planks / oak fence for
+the gangplank). Every id is on the `delve-admit` building allowlist (DW0730); no
+command/structure blocks, no NBT-bearing block entities — re-audited after the
+merge on both regenerated pieces.
 
 ## Lighting
 
