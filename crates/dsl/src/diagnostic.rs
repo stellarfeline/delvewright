@@ -161,4 +161,15 @@ pub mod codes {
     /// reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse
     /// (spec-0014). Flatten the inner steps into the outer timeline.
     pub const NESTED_SEQUENCE: &str = "DW0329";
+
+    /// (v0.6) Trap declaration structurally invalid (spec-0011): a malformed or
+    /// duplicated `trap/<id>`, an `at`/`disarm.via` that no area's prefab provides,
+    /// or a trap whose `disarm.via` collides with its own trigger anchor.
+    /// Validation-tier (exit 1). Renumbered off the spec's stale reserved number
+    /// (0197 — since taken).
+    pub const TRAP_INVALID: &str = "DW0340";
+    /// (v0.6) A trap dispense-payload item id is not in the pinned 1.21.11 registry
+    /// (spec-0011; mirrors `DW0143`). Validation-tier (exit 1). Renumbered off the
+    /// spec's stale reserved number (0198 — since taken).
+    pub const TRAP_PAYLOAD_UNKNOWN: &str = "DW0341";
 }

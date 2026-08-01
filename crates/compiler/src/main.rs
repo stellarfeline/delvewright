@@ -374,7 +374,8 @@ fn run_build(
             print_build_error(code, &message, json);
             let analysis_tier = code.starts_with("DW02")
                 || code == emit::DW_WAVE_NO_ROOM
-                || code == delvewright_compiler::assembled::DW_GRAVITY_DESPAWN;
+                || code == delvewright_compiler::assembled::DW_GRAVITY_DESPAWN
+                || code == delvewright_compiler::nav::DW_TRAP_LETHAL_UNAVOIDABLE;
             let exit = if analysis_tier { 2 } else { 3 };
             return ExitCode::from(exit);
         }
