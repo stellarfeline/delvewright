@@ -89,7 +89,9 @@ behavior contract lives in the reference. Keep these in mind when touching emiss
   `place`/`summon`/`fill` silently no-op at `#minecraft:load`).
 - Bot observation is the broadcast marker channel
   (`[Delvewright] complete dw.campaign 1`) — mineflayer 4.37.x cannot read
-  1.21.11 scoreboard scores (the sidebar objective is still displayed for humans).
+  1.21.11 scoreboard scores. The completion objective is NOT put on the sidebar
+  (a raw internal id must never surface to players); the chat token is the sole
+  observation channel.
 - Wave mobs must use component-era `equipment` NBT with zero `drop_chances` —
   legacy `HandItems`/`HandDropChances` are silently ignored on `/summon`.
 - PackTest tests emit to `data/<ns>/test/…` (misode/packtest 2.4.0); PackTest

@@ -898,3 +898,144 @@ fn read_tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
     walk(root, root, &mut map);
     map
 }
+
+/// spec-0013: a v0.6 ocean + boundary campaign builds, is byte-identical across a
+/// double build (determinism gate over the new generator-settings + boundary
+/// emission), ships the ocean superflat generator-settings, wires the boundary
+/// clock (`dw:cp` init, `dw:region` mirror, scheduled tick + macro return), and
+/// emits the boundary PackTests. Only the stage-1 world doc is v0.6 (per-stage
+/// versions; the v0.6 gate keys off `world`).
+#[test]
+fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
+    let pf = common::prefabs_dir();
+    let camp = tmp("v06-ocean");
+    copy_dir(&common::hello_world_dir(), &camp);
+    let world = r#"{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "world",
+  "content": {
+    "title": "The Keeper's Door",
+    "theme": "A lonely keep at the edge of the moor.",
+    "premise": "One locked door stands between you and the road home.",
+    "seed": 20260729,
+    "target_minutes": 5,
+    "horizon": "ocean",
+    "boundary": { "margin": 20 },
+    "areas": [
+      { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
+    ]
+  }
+}"#;
+    std::fs::write(camp.join("world.json"), world).unwrap();
+
+    let out_a = tmp("v06-ocean-a");
+    let out_b = tmp("v06-ocean-b");
+    for out in [&out_a, &out_b] {
+        let r = delvec(&[
+            "build",
+            camp.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--prefabs",
+            pf.to_str().unwrap(),
+        ]);
+        assert_eq!(
+            code(&r),
+            0,
+            "ocean build: {}",
+            String::from_utf8_lossy(&r.stderr)
+        );
+    }
+    let a = read_tree(&out_a);
+    let b = read_tree(&out_b);
+    assert_eq!(a.keys().collect::<Vec<_>>(), b.keys().collect::<Vec<_>>());
+    for (path, bytes) in &a {
+        assert_eq!(bytes, &b[path], "ocean byte mismatch in {path}");
+    }
+
+    // Ocean superflat generator-settings shipped (bedrock/stone/water).
+    let props = String::from_utf8(a["server/server.properties"].clone()).unwrap();
+    assert!(
+        props.contains("generator-settings={\"biome\":\"minecraft:ocean\""),
+        "expected ocean generator-settings, got:\n{props}"
+    );
+    assert!(
+        props.contains("minecraft:water"),
+        "ocean must layer water: {props}"
+    );
+
+    // Boundary clock wired in setup: dw:cp init + dw:region mirror + scheduled tick.
+    let setup =
+        String::from_utf8(a["datapack/data/hello-world/function/setup_finish.mcfunction"].clone())
+            .unwrap();
+    assert!(
+        setup.contains("data modify storage dw:cp pos set value"),
+        "dw:cp init missing: {setup}"
+    );
+    assert!(
+        setup.contains("data modify storage dw:region bounds set value"),
+        "dw:region mirror missing: {setup}"
+    );
+    assert!(
+        setup.contains("schedule function hello-world:boundary_tick 20t"),
+        "boundary clock not started: {setup}"
+    );
+
+    // The macro return teleports to the last checkpoint and shows the message.
+    let ret = String::from_utf8(
+        a["datapack/data/hello-world/function/boundary_return.mcfunction"].clone(),
+    )
+    .unwrap();
+    assert!(
+        ret.contains("$tp @s $(x) $(y) $(z)"),
+        "macro tp missing: {ret}"
+    );
+    assert!(
+        ret.contains("title @s actionbar"),
+        "actionbar message missing: {ret}"
+    );
+
+    // Boundary PackTests emitted.
+    assert!(
+        a.contains_key("packtest-datapack/data/hello-world/test/v06_boundary_return.mcfunction"),
+        "boundary return packtest missing"
+    );
+    assert!(
+        a.contains_key("packtest-datapack/data/hello-world/test/v06_boundary_inside.mcfunction"),
+        "boundary inside packtest missing"
+    );
+}
+
+/// spec-0013: absent `horizon`/`boundary` keeps a v0.5 campaign byte-identical to
+/// its pre-v0.6 output — the void generator-settings is unchanged and no boundary
+/// wiring leaks in. Guards the additive-superset promise.
+#[test]
+fn v06_absent_fields_keep_void_output_unchanged() {
+    let pf = common::prefabs_dir();
+    let out = tmp("v06-void");
+    let r = delvec(&[
+        "build",
+        common::hello_world_dir().to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&r),
+        0,
+        "void build: {}",
+        String::from_utf8_lossy(&r.stderr)
+    );
+    let tree = read_tree(&out);
+    let props = String::from_utf8(tree["server/server.properties"].clone()).unwrap();
+    assert!(
+        props.contains("generator-settings={\"biome\":\"minecraft:the_void\",\"layers\":[]}"),
+        "void generator-settings must be unchanged: {props}"
+    );
+    assert!(
+        !tree.contains_key("datapack/data/hello-world/function/boundary_tick.mcfunction"),
+        "no boundary function without a declared boundary"
+    );
+}

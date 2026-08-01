@@ -25,7 +25,7 @@ pub use canonical::to_canonical_string;
 pub use diagnostic::{Diagnostic, Severity, codes};
 pub use envelope::{
     Campaign, Envelope, RawCampaign, SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage,
-    check_campaign, is_supported_version, is_v03, is_v04, is_v05, parse_campaign,
+    check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, parse_campaign,
 };
 pub use ids::{
     AnchorId, AreaId, CampaignId, ClassId, DialogueId, FlagId, NpcId, ObjectiveId, PoolId,
@@ -42,10 +42,11 @@ pub use registry::{
 };
 pub use schema::stage_schema;
 pub use stages::{
-    Area, AreaLighting, CameraWaypoint, Class, ClassesContent, DialogueContent, DialogueEffect,
-    DialogueNode, DialogueOption, EnvTrigger, Fixture, KitItem, MobAttributes, MobEffect,
-    NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces, PlannedQuest,
-    Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SkinModel,
-    SoundAt, Trigger, TriggerOn, Wave, WaveMob, WorldContent, WorldTime, WorldWeather,
+    Area, AreaLighting, Boundary, CameraWaypoint, Class, ClassesContent, DialogueContent,
+    DialogueEffect, DialogueNode, DialogueOption, EnvTrigger, Fixture, Horizon, KitItem,
+    MobAttributes, MobEffect, NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective,
+    Persona, Pieces, PlannedQuest, Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent,
+    Relationship, Role, SkinModel, SoundAt, Trigger, TriggerOn, Wave, WaveMob, WorldContent,
+    WorldTime, WorldWeather,
 };
 pub use validate::{validate_campaign, validate_campaign_with};

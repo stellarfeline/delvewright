@@ -7,14 +7,19 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 `tools/check-dw-codes.py`).
 
 - Binary: `delvec` (`crates/compiler`, Rust-native, ADR-0011).
-- Versions (as of this doc): `delvec 0.1.0`, `dsl 0.5.0`, `mc 1.21.11`.
-  Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`**
+- Versions (as of this doc): `delvec 0.1.0`, `dsl 0.6.0`, `mc 1.21.11`.
+  Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`, `0.6.0`**
   (additive supersets; `0.2.0` output stays byte-identical across the later
   versions).
 - spec-0010 (#35) has **landed** at `dsl_version 0.5.0`: stage-1
   `lighting`/`time`/`weather`, effect verbs `set-time`/`set-weather`, the
   assembled-world light model + deterministic relight pass (`crate::light`), the
   measured redefinition of `DW0210`, and diagnostics `DW0211`/`DW0196`.
+- spec-0013 has **landed** at `dsl_version 0.6.0`: stage-1 `horizon`
+  (`ocean` superflat sea backdrop) and `boundary` (derived playable region +
+  per-second return-to-checkpoint clock), diagnostics `DW0320`/`DW0321`, and the
+  `dw:region`/`dw:cp` storage mirrors. Absent `horizon`/`boundary` keeps v0.5
+  output byte-identical.
 
 ---
 
@@ -92,6 +97,8 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 | `areas[].lighting {fixture,min_light}` (opt) | spec-0010: relight pass guarantees `min_light` (1..=14, default 7; `DW0196` out of range) over reachable walkable cells by placing `fixture` (`torch`/`lantern`/`campfire`/`shroomlight`), else `DW0211`. | 0.5 |
 | `time` (opt) | `day`/`noon`/`night`/`midnight` (default `noon`). Dimension-global initial state, emitted in the sealing baseline (`time set <kw>`). | 0.5 |
 | `weather` (opt) | `clear`/`rain`/`thunder` (default `clear`; `clear` emits nothing — byte-identical to pre-0.5). Dimension-global, emitted after sealing (`weather <kw>`). Rain/thunder attenuate the assembled-light sky term. | 0.5 |
+| `horizon` (opt) | spec-0013: `void` (default/absent, byte-identical to v0.5) or `ocean` — a pinned bedrock/stone/water superflat (sea level y=62; areas at y=64+ read as islands), no structures/mobs. Drives `generator-settings`. | 0.6 |
+| `boundary {margin?,message?}` (opt) | spec-0013: declares a **derived** playable region (union of final placed-piece AABBs, inflated horizontally by `margin` (`0..=64`, default 16; else `DW0321`), unbounded up, floor = lowest placed block − 8). A 1s clock returns any player outside it to the last checkpoint (`dw:cp`) with an actionbar `message` (l10n `world.boundary.message`, English default when absent) + a soft sound; no damage, no item loss. `horizon:"ocean"` without a `boundary` = `DW0320`. | 0.6 |
 
 ### Stage 2 — `npcs` (casting sheets, stationary)
 
@@ -156,7 +163,12 @@ Exactly one tree per stage-2 NPC (`DW0152`/`DW0153`). Nodes reachable from `root
 (`DW0120`/`DW0121`); `complete-objective` effects target a `talk-to` on the same
 NPC (`DW0122`); every `talk-to` has ≥1 reachable (`DW0123`) and ≥1 **ungated**
 (`DW0191`) completing option. Node `text` → l10n `dlg.<n>.<node>.text`, option
-labels → `.opt.<i>.label`.
+labels → `.opt.<i>.label`. **Display gating (v0.4+, task #54):** an option is
+*shown* only when clicking it would fire — every `requires_flags` set (flag axis)
+and every completed objective active, i.e. `dw.qa_<quest>==1` and
+`dw.o_<obj>!=1` (objective-state axis) — so `DW0191`'s ungated completing option
+is visible exactly while its objective is active (the guarantee holds
+automatically).
 
 ### l10n sidecars (`l10n/<code>.json`)
 
@@ -177,11 +189,12 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | Verb / effect | Emitted mechanism |
 |---------------|-------------------|
 | `talk-to` / dialog option | `minecraft:villager` body (NoAI/Invulnerable/Silent) + co-located `minecraft:interaction` (tag `dw_npc_<n>`); click advancement + `/trigger dw.dlg_<n>` both feed one per-tick option handler. |
+| dialog display gating (v0.4+) | A node with any display-gated option (`requires_flags` and/or `completes`) emits one `__m<mask>` variant per per-node availability bitmask + a chooser: `dmask_<n>_<node>` sets `dw.dmask` (bit `i` = the node's i-th gated option is displayable — its flags set and every completed objective active: `if …qa_<q>==1 unless …o_<obj>==1`), then `show_<n>_<node>` `dialog show`s the matching variant. Ungated nodes/options `dialog show` directly (v0.2/v0.3 byte-identical). Click handler keeps its own guard (defense-in-depth for the `/trigger` path). |
 | class select | Dialog button → `/trigger dw.class set <n>`. |
-| `reach-anchor` | Per-tick `execute if entity @s[box ±1 on each axis]`; glowing `end_rod` `item_display` marker (tag `dw_r_<obj>`). Completion despawns the marker (`kill @e[tag=dw_r_<obj>]`). |
+| `reach-anchor` | Per-tick `execute if entity @s[box ±1 on each axis]`; glowing `end_rod` `item_display` marker (tag `dw_r_<obj>`), labeled with the objective `title` — an **untitled** objective gets a nameless glowing marker, never a raw-id label. Completion despawns the marker (`kill @e[tag=dw_r_<obj>]`). |
 | `kill` / `spawn-wave` | `spawn-wave` summons mobs (AI on) tag `dw_wave_<id>`, countdown `#<id> dw.wave`; `player_killed_entity` advancement decrements; `kill` completes at 0. Armed species get `equipment` NBT (drop 0): `wither_skeleton→stone_sword`, `skeleton`/`stray→bow`. **Mob placement (task #41):** each mob is seated on a distinct compiler-validated standable cell (2-tall clearance, solid floor) chosen by a deterministic BFS outward from the wave anchor over the assembled occupancy world (`compiler::nav`), ordered by ascending BFS distance with a fixed `(y,z,x)` tie-break. The flood-fill is confined to the anchor's own assembled piece, so a flock never crosses a socket seam into a neighbouring room. A wave needing more footing than its room offers is `DW0312` (never `+x`-strung mobs piling into blocks or spilling toward void). |
 | `collect` | Chest at anchor pre-loaded `count×item`; `inventory_changed` advancement runs guarded completion. |
-| `interact` | `minecraft:interaction` (tag `dw_i_<obj>`) + `player_interacted_with_entity` advancement + `/trigger dw.i_<obj>`; `requires_item` = `execute if items`; glowing lantern `item_display` marker (also tag `dw_i_<obj>`, only when no `prop`). `prop{block}` = `setblock` affordance. Completion despawns both entities (`kill @e[tag=dw_i_<obj>]`) so a finished objective is not clickable; the `prop` block persists as scenery. |
+| `interact` | `minecraft:interaction` (tag `dw_i_<obj>`) + `player_interacted_with_entity` advancement + `/trigger dw.i_<obj>`; `requires_item` = `execute if items`; glowing lantern `item_display` marker (also tag `dw_i_<obj>`, only when no `prop`), labeled with the objective `title` — untitled → nameless glow, never a raw-id label. `prop{block}` = `setblock` affordance. Completion despawns both entities (`kill @e[tag=dw_i_<obj>]`) so a finished objective is not clickable; the `prop` block persists as scenery. |
 | `set-flag` / `requires_flags` | `dw.f_<flag>` scoreboard (per-player); required flags AND-ed into objective guards (layered on `after`). |
 | `open-gate` | `/fill … air` over the gate region. |
 | `give-item` | Grants item to player (`name` → SNBT text component). |
@@ -191,7 +204,7 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | `despawn-npc` | Kills body + interaction hitbox. |
 | `move-npc` | Per-tick tp along A*-planned walkable waypoints (hitbox in lockstep). |
 | `cutscene` | Per player: save gamemode+pos → spectator → alternate `spectate` between two co-located dolly cameras each tick → restore. |
-| `campaign-complete` | `dw.campaign` = 1 (`setdisplay sidebar`); broadcast `[Delvewright] complete dw.campaign 1` (bot channel); title fanfare. |
+| `campaign-complete` | `dw.campaign` = 1 (dummy objective, **never on the sidebar** — a raw internal id must not surface to players); broadcast `[Delvewright] complete dw.campaign 1` (dark-gray bot channel, the harness's completion signal); title fanfare. |
 | objective lifecycle | Activation shows `title`+`hint`+`note_block.pling` once (flag `dw.ann_<obj>`); completion sound `experience_orb.pickup`. **Marker cleanup (task #45):** completion despawns every entity the objective's activation summoned via the objective-scoped tag — `interact` hitbox + wayfinding marker (`dw_i_<obj>`), `reach` marker (`dw_r_<obj>`). Prop/affordance *blocks* (`interact.prop`, `collect` chest) are scenery and persist; `talk-to`/`kill` summon no per-objective marker. Gated on v0.3+ with a resolved activation, so v0.2 stays byte-identical. |
 | `set-time` / `set-weather` | `time set <kw>` / `weather <kw>` (dimension-global, no selector) inline in the effect/dialogue-option function; instantaneous cut, persists (cycle frozen). |
 | relight fixtures (`lighting`) | `setblock` per placed fixture in `setup_finish`, after structure placement + socket seals (spec-0010). Blocks: `torch`/`wall_torch`, `lantern[hanging=…]`, `campfire[lit=true]`, `shroomlight`. |
@@ -249,6 +262,20 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   campaigns; **`easy`** when any wave exists (peaceful removes summoned mobs). No
   server jar, no region files (ADR-0010) — the bootstrap `/place template`s
   prefabs, so byte-identity covers the whole tree.
+- `horizon:"ocean"` (v0.6, spec-0013) swaps `generator-settings` for a pinned
+  superflat `{"biome":"minecraft:ocean","layers":[bedrock×1, stone×118,
+  water×8]}`: from the −64 build floor the top water block lands at **y=62** (sea
+  level), so areas at y=64+ read as islands. Still no structures/mobs
+  (`generate-structures=false` + gamerule `spawn_mobs false`). `void`/absent is
+  byte-identical to v0.5.
+- `boundary` (v0.6, spec-0013) emits, in `setup_finish`: a `dw:region bounds`
+  storage mirror (readable region contract), a `dw:cp pos` init to the spawn cell
+  (shared with spec-0012 checkpoints — the last-checkpoint mirror the return
+  reads; idempotent, gated once via `needs_cp_init`), and `schedule function
+  <ns>:boundary_tick 20t`. `boundary_tick` (self-rescheduling 1s clock) ejects
+  every `@a` outside the region via `boundary_return` (a macro `$tp @s $(x) $(y)
+  $(z)` off `dw:cp`, + actionbar message + soft sound). The region selector is
+  compile-time-derived literals; nothing is authored.
 - `datapack/pack.mcmeta`: `min_format`/`max_format` = `[94, 1]` (a bare
   `pack_format` is rejected for formats > 81).
 - `<out>/`: `manifest.json` (SHA-256 of the 6 inputs + every output; non-`en`
@@ -374,7 +401,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0}`). |
+| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0}`). |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
@@ -388,7 +415,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0132` | `finale` is not the convergent sink (some quest is not a transitive dependency of finale). |
 | `DW0133` | Non-mandatory quest (`mandatory:false`), reserved until M3. |
 | `DW0140` | Objective `after` cycle. |
-| `DW0141` | Reserved enum value/field for the campaign's `dsl_version` (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`). |
+| `DW0141` | Reserved enum value/field for the campaign's `dsl_version` (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: `horizon`/`boundary`). |
 | `DW0142` | Anchor not provided by the area's bound prefab. |
 | `DW0143` | Item id not in the pinned 1.21.11 registry (kit / `collect` / `interact.requires_item` / `give-item`). |
 | `DW0150` | Planned quest (stage 4) has no stage-5 expansion. |
@@ -410,6 +437,8 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0194` | Environment-trigger id malformed/duplicated, or `approach` `range` 0. |
 | `DW0195` | A `talk-to` targets an NPC despawned by a prerequisite quest. |
 | `DW0196` | Area `lighting.min_light` out of range (must be 1..=14). v0.5, spec-0010. |
+| `DW0320` | `horizon:"ocean"` declared without a `boundary` (an infinite swimmable sea with no return rule). v0.6, spec-0013. Numbered in the 032x world/region family but **validation-tier (exit 1)**, not a DW03x build code. |
+| `DW0321` | `boundary.margin` outside `0..=64`. v0.6, spec-0013. Validation-tier (exit 1). |
 
 ### DW032x/033x — sound & art-title validation (`compiler::atmos`; error; exit 1)
 
@@ -505,6 +534,7 @@ this doc is current behavior).
 | v0.4 surface (dialogue state, props, narrate, wave tuning, NPC lifecycle, skins, triggers, cutscene, `DW0190`–`DW0195`, `DW0307`–`DW0311`) | spec-0008 |
 | Skins toolchain, resourcepack bake (`DW0309`) | spec-0009 |
 | Assembled-relight, measured `DW0210`, `DW0211`/`DW0196`, stage-1 `lighting`/`time`/`weather`, `set-time`/`set-weather` (all v0.5) | spec-0010 (landed, #35) |
+| Stage-1 `horizon` (ocean superflat), `boundary` (derived playable region + 1s return clock), `dw:region`/`dw:cp` mirrors, `DW0320`/`DW0321` (all v0.6) | spec-0013 (landed) |
 | Sound + art-title surface (`play-sound`, `narrate` `art`, `delve:art` font, `DW0326`/`DW0328`/`DW0335`) | spec-0014 (v0.6) |
 | Asset-pipeline tooling `DW07xx` (schem/render/admit) | spec-0007 |
 | Determinism invariants | ADR-0006 |

@@ -871,54 +871,114 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v06(c, d);
 }
 
-/// DSL v0.6 reserved-feature gating (spec-0014): the `play-sound` effect and the
-/// `narrate` `art` style, both carried by stage-5 quest/trigger effects, are
-/// rejected with `DW0141` in a pre-0.6.0 campaign, gated on the quests stage's
-/// version. Additive: a v0.5 (or earlier) campaign that uses neither is
-/// byte-identical.
+/// DSL v0.6 reserved-feature gating + validation. Two independent surfaces landed
+/// under v0.6, each gated on the stage that carries it (both default to
+/// absent/unused, so a v0.5-or-earlier campaign is byte-identical):
+/// - stage-1 `horizon`/`boundary` world fields (spec-0013): reserved (`DW0141`)
+///   under a pre-0.6 world; under 0.6, `horizon: "ocean"` requires a `boundary`
+///   (`DW0320`) and `boundary.margin` must lie in `0..=64` (`DW0321`).
+/// - the `play-sound` effect and `narrate` `art` style (spec-0014), carried by
+///   stage-5 quest/trigger effects: reserved (`DW0141`) under a pre-0.6 quests
+///   stage. (Sound-id `DW0326` and art-glyph `DW0328` are compiler-side checks.)
 fn reserved_v06(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    if is_v06(c.quests.dsl_version.as_str()) {
-        return;
-    }
-    let res = |d: &mut Vec<Diagnostic>, path: String, what: &str| {
-        d.push(Diagnostic::error(
-            codes::RESERVED,
-            "quests",
-            path,
-            format!(
-                "{what} requires dsl_version 0.6.0 — raise the quests stage's `dsl_version` to \
+    use crate::stages::Horizon;
+
+    // --- stage 1: horizon / boundary (spec-0013), gated on the world stage ---
+    if !is_v06(c.world.dsl_version.as_str()) {
+        if c.world.content.horizon.is_some() {
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "world",
+                "/content/horizon".to_string(),
+                "world `horizon` requires dsl_version 0.6.0 — raise this stage's `dsl_version` to \
                  0.6.0, or remove the construct"
-            ),
-        ));
-    };
-    let check = |d: &mut Vec<Diagnostic>, path_base: &str, eff: &QuestEffect| {
-        if let Some(name) = eff.v06_effect() {
-            res(d, format!("{path_base}/type"), &format!("effect `{name}`"));
+                    .to_string(),
+            ));
         }
-        if eff.narrate_art() {
-            res(d, format!("{path_base}/style"), "narrate `style: art`");
+        if c.world.content.boundary.is_some() {
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "world",
+                "/content/boundary".to_string(),
+                "world `boundary` requires dsl_version 0.6.0 — raise this stage's `dsl_version` to \
+                 0.6.0, or remove the construct"
+                    .to_string(),
+            ));
         }
-    };
-    for (i, q) in c.quests.content.quests.iter().enumerate() {
-        for (oid, effs) in &q.on_objective_complete {
-            for (m, eff) in effs.iter().enumerate() {
-                check(
-                    d,
-                    &format!(
-                        "/content/quests/{i}/on_objective_complete/{}/{m}",
-                        oid.as_str()
-                    ),
-                    eff,
-                );
+    } else {
+        // `horizon: "ocean"` without a return rule strands wanderers in an infinite sea.
+        if matches!(c.world.content.horizon, Some(Horizon::Ocean))
+            && c.world.content.boundary.is_none()
+        {
+            d.push(Diagnostic::error(
+                codes::OCEAN_NO_BOUNDARY,
+                "world",
+                "/content/horizon".to_string(),
+                "`horizon: \"ocean\"` needs a `boundary` — an infinite swimmable sea with no \
+                 return rule lets players wander off the map. Add a `boundary` (a bare `{}` uses \
+                 the default margin), or set `horizon` to `void`"
+                    .to_string(),
+            ));
+        }
+        // `margin` range check (0..=64).
+        if let Some(b) = &c.world.content.boundary
+            && !(0..=64).contains(&b.margin)
+        {
+            d.push(Diagnostic::error(
+                codes::BOUNDARY_MARGIN,
+                "world",
+                "/content/boundary/margin".to_string(),
+                format!(
+                    "`boundary.margin` = {} is out of range — set it to a value in 0..=64 (16 is \
+                     the default)",
+                    b.margin
+                ),
+            ));
+        }
+    }
+
+    // --- stage 5: play-sound / narrate `art` (spec-0014), gated on the quests stage ---
+    if !is_v06(c.quests.dsl_version.as_str()) {
+        let res = |d: &mut Vec<Diagnostic>, path: String, what: &str| {
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "quests",
+                path,
+                format!(
+                    "{what} requires dsl_version 0.6.0 — raise the quests stage's `dsl_version` \
+                     to 0.6.0, or remove the construct"
+                ),
+            ));
+        };
+        let check = |d: &mut Vec<Diagnostic>, path_base: &str, eff: &QuestEffect| {
+            if let Some(name) = eff.v06_effect() {
+                res(d, format!("{path_base}/type"), &format!("effect `{name}`"));
+            }
+            if eff.narrate_art() {
+                res(d, format!("{path_base}/style"), "narrate `style: art`");
+            }
+        };
+        for (i, q) in c.quests.content.quests.iter().enumerate() {
+            for (oid, effs) in &q.on_objective_complete {
+                for (m, eff) in effs.iter().enumerate() {
+                    check(
+                        d,
+                        &format!(
+                            "/content/quests/{i}/on_objective_complete/{}/{m}",
+                            oid.as_str()
+                        ),
+                        eff,
+                    );
+                }
+            }
+            for (m, eff) in q.on_complete.iter().enumerate() {
+                check(d, &format!("/content/quests/{i}/on_complete/{m}"), eff);
             }
         }
-        for (m, eff) in q.on_complete.iter().enumerate() {
-            check(d, &format!("/content/quests/{i}/on_complete/{m}"), eff);
-        }
-    }
-    for (i, t) in c.quests.content.triggers.iter().enumerate() {
-        for (m, eff) in t.effects.iter().enumerate() {
-            check(d, &format!("/content/triggers/{i}/effects/{m}"), eff);
+        for (i, t) in c.quests.content.triggers.iter().enumerate() {
+            for (m, eff) in t.effects.iter().enumerate() {
+                check(d, &format!("/content/triggers/{i}/effects/{m}"), eff);
+            }
         }
     }
 }

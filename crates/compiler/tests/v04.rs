@@ -195,22 +195,92 @@ fn every_v04_verb_emitted() {
     );
 }
 
-/// Flag-gated dialogue: the gated option is absent in the pre-flag variant and
-/// present in the post-flag variant (spec-0008 §1).
+/// Display gating combines two axes into one per-node availability mask
+/// (`dw.dmask`), bit `i` = the node's i-th gated option is displayable (task #54).
+/// `dlg/greet` has three options: an ungated one ("Who are you?"), a completing
+/// option ("I'll clear the keep." → obj/talk, bit 0, objective-state axis), and a
+/// flag-gated one ("What lies past the door?" → flag/summoned, bit 1, flag axis).
+/// So variant `__m<mask>` shows the ungated option always, the completing option
+/// iff bit 0, the flag option iff bit 1.
 #[test]
-fn flag_gated_dialogue_variants() {
+fn dialogue_display_gating_variants() {
     let out = build_showcase();
-    let m0 = std::str::from_utf8(&out["datapack/data/v04-showcase/dialog/keeper_greet__m0.json"])
-        .unwrap();
-    let m1 = std::str::from_utf8(&out["datapack/data/v04-showcase/dialog/keeper_greet__m1.json"])
-        .unwrap();
+    let variant = |mask: u32| -> String {
+        std::str::from_utf8(
+            &out[&format!("datapack/data/v04-showcase/dialog/keeper_greet__m{mask}.json")],
+        )
+        .unwrap()
+        .to_string()
+    };
+    let ungated = "Who are you?";
+    let completing = "I'll clear the keep.";
+    let flag_gated = "What lies past the door?";
+
+    // The ungated option is present in every variant.
+    for mask in 0..4 {
+        assert!(
+            variant(mask).contains(ungated),
+            "ungated option always shown"
+        );
+    }
+    // m0: nothing displayable → only the ungated option.
+    assert!(!variant(0).contains(completing) && !variant(0).contains(flag_gated));
+    // m1 (bit 0): completing option visible, flag option still hidden.
+    assert!(variant(1).contains(completing) && !variant(1).contains(flag_gated));
+    // m2 (bit 1): flag option visible, completing option hidden.
+    assert!(variant(2).contains(flag_gated) && !variant(2).contains(completing));
+    // m3: both.
+    assert!(variant(3).contains(completing) && variant(3).contains(flag_gated));
+
+    // The mask function mirrors the click-handler guard: bit 0 (the completing
+    // option) is set iff obj/talk's quest is active AND the objective is not yet
+    // complete; bit 1 iff the flag is set.
+    let dmask = fn_body(&out, "dmask_keeper_greet");
     assert!(
-        !m0.contains("What lies past the door?"),
-        "gated option absent before flag"
+        dmask.contains(
+            "execute if score @s dw.qa_greet matches 1 unless score @s dw.o_talk matches 1 \
+             run scoreboard players add @s dw.dmask 1"
+        ),
+        "completing option's availability bit mirrors the click guard: {dmask}"
     );
     assert!(
-        m1.contains("What lies past the door?"),
-        "gated option present after flag"
+        dmask.contains(
+            "execute if score @s dw.f_summoned matches 1 run scoreboard players add @s dw.dmask 2"
+        ),
+        "flag option's availability bit is the flag score: {dmask}"
+    );
+    // The chooser computes the mask, then shows the matching variant.
+    let show = fn_body(&out, "show_keeper_greet");
+    assert!(show.contains("function v04-showcase:dmask_keeper_greet"));
+    assert!(show.contains("dialog show @s v04-showcase:keeper_greet__m3"));
+}
+
+/// The generated PackTest drives the availability mask through the objective-state
+/// axis transitions (hidden before the quest activates, shown while active, hidden
+/// again after completion) plus the flag axis in isolation (task #54).
+#[test]
+fn dialogue_visibility_packtest_covers_both_axes() {
+    let out = build_showcase();
+    let pt = std::str::from_utf8(
+        &out["packtest-datapack/data/v04-showcase/test/v04_dialogue_visibility.mcfunction"],
+    )
+    .unwrap();
+    // Quest inactive → mask 0 (option hidden).
+    assert!(pt.contains("scoreboard players set @a dw.qa_greet 0"));
+    // Quest active, objective incomplete → the completing option's bit (1).
+    assert!(pt.contains("scoreboard players set @a dw.qa_greet 1"));
+    assert!(pt.contains("assert score #dm dw.sys matches 1"));
+    // Objective complete → hidden again (mask 0).
+    assert!(pt.contains("scoreboard players set @a dw.o_talk 1"));
+    // Flag axis in isolation → the flag option's bit (2).
+    assert!(pt.contains("scoreboard players set @a dw.f_summoned 1"));
+    assert!(pt.contains("assert score #dm dw.sys matches 2"));
+    // Every phase runs the emitted mask function (no re-implementation).
+    assert!(pt.contains("execute as @a run function v04-showcase:dmask_keeper_greet"));
+    assert_eq!(
+        pt.matches("assert score #dm dw.sys matches 0").count(),
+        2,
+        "hidden asserted before activation and after completion"
     );
 }
 

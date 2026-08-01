@@ -105,6 +105,14 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
         let key = format!("area.{}.name", local(area.id.as_str()));
         f(&key, &mut area.name);
     }
+    // Stage 1 — boundary return message (v0.6, only when authored). The compiler's
+    // default English is baked at emit time, so it is not inventoried; an authored
+    // message is translated like every other player-facing string.
+    if let Some(b) = c.world.content.boundary.as_mut()
+        && let Some(msg) = b.message.as_mut()
+    {
+        f("world.boundary.message", msg);
+    }
     // Stage 3 — class names/blurbs + optional kit item display names.
     for class in &mut c.classes.content.classes {
         let cl = local(class.id.as_str()).to_string();

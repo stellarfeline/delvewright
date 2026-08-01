@@ -21,7 +21,7 @@ use crate::plan::{
 };
 use crate::{DELVEC_VERSION, MC_VERSION, PACK_FORMAT};
 
-use delvewright_dsl::{Objective, QuestEffect, Trigger, is_v03};
+use delvewright_dsl::{Objective, QuestEffect, Trigger, is_v03, is_v04};
 
 /// The emitted build tree: relative path → file bytes.
 pub type BuildOutput = BTreeMap<String, Vec<u8>>;
@@ -548,6 +548,13 @@ fn campaign_is_v03(plan: &Plan) -> bool {
     is_v03(plan.campaign.quests.dsl_version.as_str())
 }
 
+/// True for DSL v0.4+ campaigns. Gates the dialogue objective-state display axis
+/// (a `completes` option is hidden until its objective is active) so pre-v0.4
+/// campaigns stay byte-identical.
+fn campaign_is_v04(plan: &Plan) -> bool {
+    is_v04(plan.campaign.quests.dsl_version.as_str())
+}
+
 /// Escape a player-facing string as a double-quoted SNBT string. On 1.21.11
 /// `CustomName` is a **text component**, so a bare quoted SNBT string is read as
 /// literal text (the JSON-string form `'{"text":"…"}'` renders verbatim, incl. in
@@ -555,6 +562,19 @@ fn campaign_is_v03(plan: &Plan) -> bool {
 fn snbt_string(s: &str) -> String {
     let esc = s.replace('\\', "\\\\").replace('"', "\\\"");
     format!("\"{esc}\"")
+}
+
+/// The `CustomName:…,CustomNameVisible:1b,` NBT fragment (trailing comma) that
+/// labels a floating objective marker with its objective `title`. When the
+/// objective has no title, the marker carries NO name — an empty fragment — so it
+/// still glows and is findable but never surfaces the raw objective id (e.g.
+/// `obj/door`) as player-visible floating text (presentation hygiene, task #54
+/// addendum). Titled markers are unchanged (byte-identical).
+fn marker_name_fields(title: Option<&str>) -> String {
+    match title {
+        Some(t) => format!("CustomName:{},CustomNameVisible:1b,", snbt_string(t)),
+        None => String::new(),
+    }
 }
 
 /// A text-component SNBT **compound** for a player-visible string:
@@ -697,8 +717,12 @@ fn emit_functions(
             quest_score(q.id.as_str())
         ));
     }
+    // The completion objective. It is NOT put on the sidebar: a `setdisplay
+    // sidebar dw.campaign` slot would show players a permanent raw internal id
+    // (`dw.campaign`), and it serves no purpose — the validation bot observes
+    // completion via the `[Delvewright] complete …` chat token (executor.ts),
+    // never the sidebar (mineflayer 4.37.x cannot decode 1.21.11 score packets).
     setup.push("scoreboard objectives add dw.campaign dummy".to_string());
-    setup.push("scoreboard objectives setdisplay sidebar dw.campaign".to_string());
     // v0.3: the shared wave countdown, per-flag scores, and interact triggers.
     // Each loop is empty for a v0.2 campaign, so hello-world / keep-crawl setup is
     // byte-identical.
@@ -714,8 +738,9 @@ fn emit_functions(
             plan::flag_score(&flag)
         ));
     }
-    // v0.4: the per-player scratch bitmask used by flag-gated dialogue choosers.
-    // Declared only when a gated option exists, so v0.2/v0.3 setup is unchanged.
+    // v0.4: the per-player scratch bitmask used by display-gated dialogue choosers
+    // (flag axis and/or objective-state axis). Declared only when a gated option
+    // exists, so v0.2/v0.3 setup is unchanged.
     if has_gated_dialogue(c) {
         setup.push("scoreboard objectives add dw.dmask dummy".to_string());
     }
@@ -921,6 +946,28 @@ fn emit_functions(
     // selection teleports them.
     if let Some(pos) = campaign_spawn(plan) {
         setup.push(format!("setworldspawn {} {} {}", pos[0], pos[1], pos[2]));
+        // Initialize the `dw:cp` last-checkpoint storage mirror to the spawn cell.
+        // Shared contract with spec-0012 checkpoints (its `set-checkpoint` updates
+        // the same `dw:cp pos`); spec-0013's boundary return reads it. The write is
+        // idempotent (`set value`), and `needs_cp_init` is the single gate so the
+        // two features land in either merge order without double-emitting.
+        if needs_cp_init(plan) {
+            setup.push(format!(
+                "data modify storage dw:cp pos set value [{}, {}, {}]",
+                pos[0], pos[1], pos[2]
+            ));
+        }
+    }
+    // v0.6 boundary (spec-0013): write the readable region mirror (`dw:region`,
+    // analogous to `dw:cp`) and start the per-second return clock. Both lines are
+    // deterministic (bounds derived from the final layout); empty for a campaign
+    // with no `boundary`, so non-boundary output stays byte-identical.
+    if let Some(region) = playable_region(plan) {
+        setup.push(format!(
+            "data modify storage dw:region bounds set value {}",
+            region.bounds_snbt()
+        ));
+        setup.push(format!("schedule function {ns}:boundary_tick 20t"));
     }
     // v0.4: summon the interaction entities strike/use environment triggers watch
     // (empty for a campaign with no triggers → byte-identical).
@@ -1524,6 +1571,7 @@ fn emit_functions(
     fns.extend(movenpc_fns(plan, moves));
     fns.extend(cutscene_fns(plan));
     fns.extend(env_trigger_fns(plan));
+    fns.extend(boundary_fns(plan));
 
     fns.sort_by(|a, b| a.0.cmp(&b.0));
     fns
@@ -2186,6 +2234,145 @@ fn campaign_spawn(plan: &Plan) -> Option<[i32; 3]> {
     None
 }
 
+// ---------------------------------------------------------------------------
+// v0.6 playable-region boundary (spec-0013)
+// ---------------------------------------------------------------------------
+
+/// The effective "unbounded up" ceiling for a playable region. Well above the
+/// 1.21.11 build limit (y=319); no reachable adventure-mode position in a box
+/// garden exceeds it, so the vertical selector is unbounded in practice.
+const REGION_CEIL_Y: i32 = 1024;
+
+/// The compiler's default boundary return message (English-first, CLAUDE.md
+/// language policy). Overridable via `boundary.message`, which is then l10n
+/// inventoried under `world.boundary.message`.
+const BOUNDARY_DEFAULT_MESSAGE: &str = "The tide turns you back — the delve lies behind you.";
+
+/// A soft, non-alarming cue played on a boundary return.
+const BOUNDARY_SOUND: &str = "minecraft:block.amethyst_block.chime";
+
+/// The derived playable region (spec-0013): the union of every placed-piece AABB,
+/// inflated horizontally by `boundary.margin`, floored at the lowest placed block
+/// − 8, unbounded upward (capped at [`REGION_CEIL_Y`] for the selector). Every
+/// bound is derived from the final layout, so "every anchor is inside" is
+/// structural.
+struct PlayableRegion {
+    /// Inclusive min corner `[x, y_floor, z]`.
+    min: [i32; 3],
+    /// Max corner `[x, REGION_CEIL_Y, z]`.
+    max: [i32; 3],
+}
+
+impl PlayableRegion {
+    /// The `@s[…]` volume-selector fragment matching a player INSIDE the region.
+    /// Biased inclusive (dx/dz span the far block fully) so an edge-standing player
+    /// is never falsely ejected — the safe direction, further buffered by `margin`.
+    fn inside_selector(&self) -> String {
+        format!(
+            "[x={},dx={},y={},dy={},z={},dz={}]",
+            self.min[0],
+            self.max[0] - self.min[0] + 1,
+            self.min[1],
+            self.max[1] - self.min[1],
+            self.min[2],
+            self.max[2] - self.min[2] + 1,
+        )
+    }
+
+    /// The SNBT compound written to `dw:region bounds` — the readable region
+    /// contract (mirrors `dw:cp`'s readable last-checkpoint contract).
+    fn bounds_snbt(&self) -> String {
+        format!(
+            "{{min:[{},{},{}],max:[{},{},{}]}}",
+            self.min[0], self.min[1], self.min[2], self.max[0], self.max[1], self.max[2]
+        )
+    }
+}
+
+/// Derive the playable region, or `None` when no `boundary` is declared (the whole
+/// feature is then off and output stays byte-identical).
+fn playable_region(plan: &Plan) -> Option<PlayableRegion> {
+    let b = plan.campaign.world.content.boundary.as_ref()?;
+    let margin = i32::from(b.margin);
+    let mut min = [i32::MAX; 3];
+    let mut max = [i32::MIN; 3];
+    for area in &plan.areas {
+        let (amin, amax) = area.bounds();
+        for a in 0..3 {
+            min[a] = min[a].min(amin[a]);
+            max[a] = max[a].max(amax[a]);
+        }
+    }
+    // A validated campaign always has >=1 placed area; guard defensively.
+    if min[0] == i32::MAX {
+        return None;
+    }
+    Some(PlayableRegion {
+        min: [min[0] - margin, min[1] - 8, min[2] - margin],
+        max: [max[0] + margin, REGION_CEIL_Y, max[2] + margin],
+    })
+}
+
+/// The effective boundary return message (authored or the English default).
+fn boundary_message(plan: &Plan) -> String {
+    plan.campaign
+        .world
+        .content
+        .boundary
+        .as_ref()
+        .and_then(|b| b.message.as_deref())
+        .unwrap_or(BOUNDARY_DEFAULT_MESSAGE)
+        .to_string()
+}
+
+/// Whether the emitted setup must initialize the `dw:cp` last-checkpoint storage
+/// mirror to the spawn cell. Single shared gate with spec-0012 checkpoints so the
+/// (idempotent) init line is emitted exactly once regardless of merge order —
+/// when checkpoints land, OR their "campaign declares a checkpoint" predicate in
+/// here.
+fn needs_cp_init(plan: &Plan) -> bool {
+    plan.campaign.world.content.boundary.is_some()
+}
+
+/// The v0.6 boundary clock (spec-0013): a self-rescheduling 1s (20t) region check
+/// plus a per-player macro return. Empty for a campaign with no `boundary`. The
+/// return teleports via `dw:cp` (the last checkpoint), so wanderers always land on
+/// the current respawn anchor rather than a fixed point.
+fn boundary_fns(plan: &Plan) -> Vec<(String, String)> {
+    let Some(region) = playable_region(plan) else {
+        return Vec::new();
+    };
+    let ns = &plan.namespace;
+    let sel = region.inside_selector();
+    let msg = json!({ "text": boundary_message(plan) });
+
+    // boundary_tick: snapshot the live checkpoint into a scratch compound, eject
+    // every player outside the region to it, re-arm the clock. `schedule … 20t`
+    // uses vanilla replace-mode, so the clock can never double up.
+    let tick = vec![
+        "data modify storage dw:region cp.x set from storage dw:cp pos[0]".to_string(),
+        "data modify storage dw:region cp.y set from storage dw:cp pos[1]".to_string(),
+        "data modify storage dw:region cp.z set from storage dw:cp pos[2]".to_string(),
+        format!(
+            "execute as @a unless entity @s{sel} run function {ns}:boundary_return with storage dw:region cp"
+        ),
+        format!("schedule function {ns}:boundary_tick 20t"),
+    ];
+
+    // boundary_return: a macro run per offending player (`@s`). Teleport to the
+    // checkpoint, show the message on the actionbar, play a soft cue. No damage.
+    let ret = vec![
+        "$tp @s $(x) $(y) $(z)".to_string(),
+        format!("title @s actionbar {msg}"),
+        format!("playsound {BOUNDARY_SOUND} player @s ~ ~ ~ 0.6 1"),
+    ];
+
+    vec![
+        ("boundary_tick".to_string(), lines(&tick)),
+        ("boundary_return".to_string(), lines(&ret)),
+    ]
+}
+
 /// Objective id → function-name-safe token (`obj/talk` → `o_talk`).
 fn safe_obj_fn(obj_id: &str) -> String {
     format!("o_{}", plan::safe_local(obj_id))
@@ -2271,11 +2458,12 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
                     // Visible, glowing, adventure-safe marker so a human can find the
                     // interact target (M2 fix 3): an `item_display` has no collision,
                     // so it obstructs neither movement nor the interaction hitbox.
-                    // Its name derives from the objective `title` (fallback: id).
-                    let marker_name = snbt_string(o.title().unwrap_or(id.as_str()));
+                    // Named from the objective `title`; an untitled objective gets a
+                    // nameless (but still glowing) marker rather than a raw-id label.
+                    let name_fields = marker_name_fields(o.title());
                     cmds.push(format!(
-                        "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],CustomName:{},CustomNameVisible:1b,billboard:\"center\",item:{{id:\"minecraft:lantern\",count:1}}}}",
-                        pos[0], pos[1], pos[2], interact_entity_tag(id.as_str()), marker_name
+                        "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],{}billboard:\"center\",item:{{id:\"minecraft:lantern\",count:1}}}}",
+                        pos[0], pos[1], pos[2], interact_entity_tag(id.as_str()), name_fields
                     ));
                 }
             }
@@ -2290,11 +2478,12 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
                 None => return cmds,
             };
             // A distinct, thematically neutral `end_rod` (vs. the interact lantern)
-            // so a beacon-like light marks a reach destination.
-            let marker_name = snbt_string(o.title().unwrap_or(id.as_str()));
+            // so a beacon-like light marks a reach destination. Named from the
+            // objective `title`; untitled → nameless glow, never a raw-id label.
+            let name_fields = marker_name_fields(o.title());
             cmds.push(format!(
-                "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],CustomName:{},CustomNameVisible:1b,billboard:\"center\",item:{{id:\"minecraft:end_rod\",count:1}}}}",
-                pos[0], pos[1], pos[2], reach_marker_tag(id.as_str()), marker_name
+                "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],{}billboard:\"center\",item:{{id:\"minecraft:end_rod\",count:1}}}}",
+                pos[0], pos[1], pos[2], reach_marker_tag(id.as_str()), name_fields
             ));
         }
         Objective::TalkTo { .. } | Objective::Kill { .. } => {}
@@ -2405,82 +2594,136 @@ fn pending_guard(o: &Objective, quest_active: &str) -> String {
 // dialogs / advancements
 // ---------------------------------------------------------------------------
 
-/// The sorted, distinct flags gating any option of `node_id` (DSL v0.4). Empty
-/// for a node with no flag-gated options (v0.2/v0.3 nodes → byte-identical).
-fn node_gated_flags(npc: &plan::NpcPlan, node_id: &str) -> Vec<String> {
-    let mut set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for opt in &npc.options {
-        if opt.node_id == node_id {
-            for f in &opt.requires_flags {
-                set.insert(f.clone());
-            }
+/// Whether an option's display is gated (DSL v0.4+): it either requires flags
+/// (flag axis) or completes an objective (objective-state axis — visible only
+/// while that objective is active). Below v0.4 nothing is display-gated, so
+/// v0.2/v0.3 nodes stay byte-identical. `requires_flags` is itself a v0.4 verb,
+/// so the whole predicate collapses to `false` pre-v0.4.
+fn option_display_gated(opt: &plan::OptionPlan, v04: bool) -> bool {
+    v04 && (!opt.requires_flags.is_empty() || !opt.completes.is_empty())
+}
+
+/// The display-gated options of `node_id`, in declared order — the bit order of
+/// the node's per-player availability mask (`dw.dmask`). Empty for an ungated
+/// node (v0.2/v0.3, or a v0.4 node whose every option is unconditional).
+fn node_gated_options<'a>(
+    npc: &'a plan::NpcPlan,
+    node_id: &str,
+    v04: bool,
+) -> Vec<&'a plan::OptionPlan> {
+    npc.options
+        .iter()
+        .filter(|o| o.node_id == node_id && option_display_gated(o, v04))
+        .collect()
+}
+
+/// The ` if …`/` unless …` execute fragment (leading space) that is satisfied
+/// exactly when `opt` should be DISPLAYED: every `requires_flags` flag set (flag
+/// axis), and — v0.4+ — every completed objective's quest active and the
+/// objective itself not yet complete (objective-state axis). Mirrors the
+/// click-handler guard (emit.rs ~1166) so an option is shown iff clicking it
+/// would fire.
+fn option_display_conditions(c: &delvewright_dsl::Campaign, opt: &plan::OptionPlan) -> String {
+    let mut cond = String::new();
+    for f in &opt.requires_flags {
+        cond.push_str(&format!(" if score @s {} matches 1", plan::flag_score(f)));
+    }
+    for obj in &opt.completes {
+        if let Some((qid, _)) = objective_quest(c, obj) {
+            cond.push_str(&format!(
+                " if score @s {} matches 1 unless score @s {} matches 1",
+                quest_active_score(qid),
+                obj_score(obj)
+            ));
         }
     }
-    set.into_iter().collect()
+    cond
 }
 
 /// The command that displays `node_id`: a direct `dialog show` for an ungated
-/// node, or the flag-gate chooser function for a gated one (which shows the
-/// variant matching the player's flags).
+/// node, or the availability chooser function for a gated one (which shows the
+/// variant matching the player's satisfied flags + active objectives).
 fn show_node_cmd(plan: &Plan, npc: &plan::NpcPlan, node_id: &str) -> String {
     let ns = &plan.namespace;
+    let v04 = campaign_is_v04(plan);
     let node_safe = plan::safe_local(node_id);
-    if node_gated_flags(npc, node_id).is_empty() {
+    if node_gated_options(npc, node_id, v04).is_empty() {
         format!("dialog show @s {ns}:{}_{}", npc.safe, node_safe)
     } else {
         format!("function {ns}:show_{}_{}", npc.safe, node_safe)
     }
 }
 
-/// Flag-gate chooser functions (`show_<npc>_<node>`) for this NPC's gated nodes:
-/// compute a per-player bitmask of satisfied gating flags into `dw.dmask`, then
-/// `dialog show` the variant (`<npc>_<node>__m<mask>`) whose options are all
-/// available. One chooser per gated node.
+/// Availability chooser + mask functions for this NPC's display-gated nodes. Per
+/// gated node, two functions:
+///
+/// * `dmask_<npc>_<node>` computes the per-player availability bitmask into
+///   `dw.dmask` — bit `i` set iff the node's `i`-th gated option is currently
+///   displayable (flags satisfied and every completed objective active + not yet
+///   complete). Pure scoreboard math, so a PackTest can drive it and assert the
+///   mask without opening a dialog.
+/// * `show_<npc>_<node>` runs the mask function, then `dialog show`s the variant
+///   (`<npc>_<node>__m<mask>`) whose visible options match.
 fn gated_node_choosers(plan: &Plan, npc: &plan::NpcPlan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
+    let c = plan.campaign;
+    let v04 = campaign_is_v04(plan);
     let mut out = Vec::new();
     let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
     for opt in &npc.options {
         if !seen.insert(opt.node_id.as_str()) {
             continue;
         }
-        let flags = node_gated_flags(npc, &opt.node_id);
-        if flags.is_empty() {
+        let gated = node_gated_options(npc, &opt.node_id, v04);
+        if gated.is_empty() {
             continue;
         }
         let node_safe = plan::safe_local(&opt.node_id);
-        let mut body = vec!["scoreboard players set @s dw.dmask 0".to_string()];
-        for (i, f) in flags.iter().enumerate() {
-            body.push(format!(
-                "execute if score @s {} matches 1 run scoreboard players add @s dw.dmask {}",
-                plan::flag_score(f),
+
+        let mut dmask = vec!["scoreboard players set @s dw.dmask 0".to_string()];
+        for (i, g) in gated.iter().enumerate() {
+            dmask.push(format!(
+                "execute{} run scoreboard players add @s dw.dmask {}",
+                option_display_conditions(c, g),
                 1u32 << i
             ));
         }
-        for mask in 0..(1u32 << flags.len()) {
-            body.push(format!(
+        out.push((format!("dmask_{}_{}", npc.safe, node_safe), lines(&dmask)));
+
+        let mut show = vec![format!("function {ns}:dmask_{}_{}", npc.safe, node_safe)];
+        for mask in 0..(1u32 << gated.len()) {
+            show.push(format!(
                 "execute if score @s dw.dmask matches {mask} run dialog show @s {ns}:{}_{}__m{mask}",
                 npc.safe, node_safe
             ));
         }
-        out.push((format!("show_{}_{}", npc.safe, node_safe), lines(&body)));
+        out.push((format!("show_{}_{}", npc.safe, node_safe), lines(&show)));
     }
     out
 }
 
-/// Whether any dialogue option is flag-gated (gates the `dw.dmask` declaration).
+/// Whether any dialogue option is display-gated (gates the `dw.dmask`
+/// declaration): a v0.4+ option that requires flags or completes an objective.
 fn has_gated_dialogue(c: &delvewright_dsl::Campaign) -> bool {
-    c.dialogue
-        .content
-        .dialogues
-        .iter()
-        .flat_map(|t| &t.nodes)
-        .flat_map(|n| &n.options)
-        .any(|o| !o.requires_flags.is_empty())
+    use delvewright_dsl::DialogueEffect;
+    is_v04(c.quests.dsl_version.as_str())
+        && c.dialogue
+            .content
+            .dialogues
+            .iter()
+            .flat_map(|t| &t.nodes)
+            .flat_map(|n| &n.options)
+            .any(|o| {
+                !o.requires_flags.is_empty()
+                    || o.effects
+                        .iter()
+                        .any(|e| matches!(e, DialogueEffect::CompleteObjective { .. }))
+            })
 }
 
 fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
     let c = plan.campaign;
+    let v04 = campaign_is_v04(plan);
     let mut dialogs = Vec::new();
 
     // class selection
@@ -2528,9 +2771,10 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
                 .filter(|o| o.node_id == node.id.as_str())
                 .collect();
             let node_safe = plan::safe_local(node.id.as_str());
-            let flags = node_gated_flags(npc, node.id.as_str());
-            if flags.is_empty() {
-                // Ungated node → a single dialog (byte-identical to v0.2/v0.3).
+            let gated = node_gated_options(npc, node.id.as_str(), v04);
+            if gated.is_empty() {
+                // Ungated node → a single dialog (byte-identical to v0.2/v0.3, or a
+                // v0.4 node whose every option is unconditional).
                 dialogs.push((
                     format!("{}_{node_safe}", npc.safe),
                     build_node_dialog(
@@ -2541,24 +2785,26 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
                     ),
                 ));
             } else {
-                // v0.4 flag-gated node → one variant per satisfied-flag bitmask.
-                // The chooser function (`show_<npc>_<node>`) shows the variant
-                // matching the player's flags, so a gated option is genuinely
-                // absent until every flag it needs is set (spec-0008 §1).
-                for mask in 0..(1u32 << flags.len()) {
-                    let satisfied: std::collections::BTreeSet<&str> = flags
-                        .iter()
-                        .enumerate()
-                        .filter(|(i, _)| mask & (1u32 << i) != 0)
-                        .map(|(_, f)| f.as_str())
-                        .collect();
+                // v0.4 display-gated node → one variant per availability bitmask.
+                // Bit `i` (declared order among gated options) means "the i-th gated
+                // option is displayable now": every flag it needs is set (flag axis)
+                // and every objective it completes is active (objective-state axis).
+                // The chooser function (`show_<npc>_<node>`) computes the live mask
+                // and shows the matching variant, so a gated option is genuinely
+                // absent until it is displayable (spec-0008 §1).
+                for mask in 0..(1u32 << gated.len()) {
+                    let mut gi = 0u32;
                     let visible: Vec<&plan::OptionPlan> = node_opts
                         .iter()
                         .copied()
                         .filter(|o| {
-                            o.requires_flags
-                                .iter()
-                                .all(|f| satisfied.contains(f.as_str()))
+                            if option_display_gated(o, v04) {
+                                let bit = gi;
+                                gi += 1;
+                                mask & (1u32 << bit) != 0
+                            } else {
+                                true
+                            }
                         })
                         .collect();
                     dialogs.push((
@@ -2852,6 +3098,72 @@ fn emit_packtest(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::MovePl
     // v0.4: prop-on-activation, despawn removes body+hitbox, move arrives at
     // target. Emits nothing when the campaign uses none of them.
     emit_v04_packtests(plan, out, moves);
+
+    // v0.6: boundary return / never-move-inside. Emits nothing without a boundary.
+    emit_boundary_packtest(plan, out);
+}
+
+/// v0.6 boundary PackTests (spec-0013): a player outside the region is returned to
+/// the last checkpoint; a player inside is never moved. Drives the real
+/// `boundary_tick` on a dummy — its direct call IS the 1s clock's body, so no
+/// schedule wait is needed (well under the 2s acceptance bound). Uses only
+/// `assert score` (PackTest-known-good on the validation server): the player's
+/// block-x, captured via `data get … Pos[0]`, discriminates the checkpoint from
+/// the interior cell, and is robust to teleport centering (both sides floor the
+/// same way). Emits nothing when the campaign declares no `boundary`.
+fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let Some(region) = playable_region(plan) else {
+        return;
+    };
+    let Some(spawn) = campaign_spawn(plan) else {
+        return;
+    };
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    // setup_finish (which writes `dw:cp`) is placement-gated and cannot run in a
+    // bare PackTest, so seed the same spawn-cell value the real init would write.
+    let seed_cp = format!(
+        "data modify storage dw:cp pos set value [{}, {}, {}]",
+        spawn[0], spawn[1], spawn[2]
+    );
+
+    // Return: a dummy far outside the region (x well past the inflated max) is
+    // teleported back to the checkpoint's x within one clock tick.
+    let out_x = region.max[0] + 1000;
+    let mut b = packtest_header(&format!(
+        "{title}: a player outside the playable region returns to the last checkpoint"
+    ));
+    b.push(seed_cp.clone());
+    b.push(format!("tp @s {out_x} {} {}", spawn[1], spawn[2]));
+    b.push(format!("function {ns}:boundary_tick"));
+    b.push("execute store result score #bx dw.sys run data get entity @s Pos[0] 1".to_string());
+    b.push(format!("assert score #bx dw.sys matches {}", spawn[0]));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/v06_boundary_return.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+
+    // Inside: a dummy at an interior cell distinct from the checkpoint is untouched.
+    let in_x = spawn[0] + 5;
+    let mut b = packtest_header(&format!(
+        "{title}: a player inside the playable region is never moved"
+    ));
+    b.push(seed_cp);
+    b.push(format!("tp @s {in_x} {} {}", spawn[1], spawn[2]));
+    // Precondition: the interior cell really is inside the region (else the geometry
+    // is too small — fail informatively rather than silently pass).
+    b.push("execute store result score #px dw.sys run data get entity @s Pos[0] 1".to_string());
+    b.push(format!(
+        "assert score #px dw.sys matches {}..{}",
+        region.min[0], region.max[0]
+    ));
+    b.push(format!("function {ns}:boundary_tick"));
+    b.push("execute store result score #bx dw.sys run data get entity @s Pos[0] 1".to_string());
+    b.push(format!("assert score #bx dw.sys matches {in_x}"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/v06_boundary_inside.mcfunction"),
+        lines(&b).into_bytes(),
+    );
 }
 
 /// v0.4 PackTests (spec-0008): a prop appears only once its objective activates;
@@ -3067,6 +3379,110 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                     break 'killless;
                 }
             }
+        }
+    }
+
+    // Dialogue display gating (task #54): a `completes` option is DISPLAYED iff
+    // its objective is active — its quest active and the objective not yet
+    // complete — mirroring the click-handler guard. The chooser's `dmask_<npc>_<node>`
+    // computes the per-player availability bitmask (bit `i` = the node's i-th
+    // gated option is displayable); the variant it shows is `__m<mask>`. This test
+    // drives that mask for the first gated completing option and asserts the bit
+    // is 0 before the quest activates, 1 while active, and 0 again after the
+    // objective completes. If the node also has a flag-gated option, a final phase
+    // sets that flag in isolation and asserts its bit flips — proving the flag
+    // axis is unchanged and independent of the objective-state axis.
+    let v04 = campaign_is_v04(plan);
+    'dlg: for npc in &plan.npcs {
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        for probe in &npc.options {
+            if !seen.insert(probe.node_id.as_str()) {
+                continue;
+            }
+            let gated = node_gated_options(npc, &probe.node_id, v04);
+            // The option under test: the first gated option that completes an
+            // objective with a resolvable quest (the objective-state axis).
+            let Some((b, under_test, qid, obj)) = gated.iter().enumerate().find_map(|(i, o)| {
+                o.completes
+                    .iter()
+                    .find_map(|obj| objective_quest(c, obj).map(|(q, _)| (q, obj)))
+                    .map(|(q, obj)| (i, *o, q, obj.as_str()))
+            }) else {
+                continue;
+            };
+            let node_safe = plan::safe_local(&probe.node_id);
+            let dmask = format!("{ns}:dmask_{}_{}", npc.safe, node_safe);
+            let qa = quest_active_score(qid);
+            let os = obj_score(obj);
+
+            // Every score any of this node's gated options reads — zeroed so the
+            // mask isolates the bit under test (campaign-start quests would else
+            // leave sibling bits set).
+            let mut reset: BTreeSet<String> = BTreeSet::new();
+            for g in &gated {
+                for f in &g.requires_flags {
+                    reset.insert(plan::flag_score(f));
+                }
+                for o in &g.completes {
+                    if let Some((q, _)) = objective_quest(c, o) {
+                        reset.insert(quest_active_score(q));
+                        reset.insert(obj_score(o));
+                    }
+                }
+            }
+
+            let mut bt = packtest_header(&format!(
+                "{}: dialogue option `{}` is displayed only while its objective `{obj}` is active",
+                c.world.content.title, under_test.label
+            ));
+            bt.push(format!("function {ns}:setup"));
+            let clear = |bt: &mut Vec<String>| {
+                for s in &reset {
+                    bt.push(format!("scoreboard players set @a {s} 0"));
+                }
+            };
+            let run_mask = |bt: &mut Vec<String>| {
+                bt.push(format!("execute as @a run function {dmask}"));
+                bt.push(
+                    "execute store result score #dm dw.sys run scoreboard players get @a dw.dmask"
+                        .to_string(),
+                );
+            };
+
+            // Phase A — quest inactive: the option is hidden (its bit is 0).
+            clear(&mut bt);
+            run_mask(&mut bt);
+            bt.push("assert score #dm dw.sys matches 0".to_string());
+            // Phase B — quest active, objective incomplete: the option appears.
+            clear(&mut bt);
+            bt.push(format!("scoreboard players set @a {qa} 1"));
+            run_mask(&mut bt);
+            bt.push(format!("assert score #dm dw.sys matches {}", 1u32 << b));
+            // Phase C — objective complete: the option disappears again.
+            bt.push(format!("scoreboard players set @a {os} 1"));
+            run_mask(&mut bt);
+            bt.push("assert score #dm dw.sys matches 0".to_string());
+
+            // Flag axis (unchanged): a flag-only gated option's bit flips with its
+            // flag alone, independent of the objective-state axis.
+            if let Some((bf, flag_opt)) = gated
+                .iter()
+                .enumerate()
+                .find(|(_, o)| !o.requires_flags.is_empty() && o.completes.is_empty())
+            {
+                clear(&mut bt);
+                for f in &flag_opt.requires_flags {
+                    bt.push(format!(
+                        "scoreboard players set @a {} 1",
+                        plan::flag_score(f)
+                    ));
+                }
+                run_mask(&mut bt);
+                bt.push(format!("assert score #dm dw.sys matches {}", 1u32 << bf));
+            }
+
+            write("v04_dialogue_visibility", bt);
+            break 'dlg;
         }
     }
 }
@@ -3402,6 +3818,22 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     } else {
         "easy"
     };
+    // Horizon (DSL v0.6, spec-0013). `void` (default/absent) keeps the empty-layer
+    // superflat + `the_void` biome, byte-identical to v0.5. `ocean` swaps in a
+    // pinned bedrock/stone/water superflat: from the -64 build floor, 1+118+8
+    // layers top the water at y=62 (= sea level), so areas at y=64+ read as
+    // islands. No structures (generate-structures=false) or mobs (gamerule
+    // spawn_mobs false); the sea is pure backdrop. The string is a fixed literal,
+    // so both horizons stay deterministic (ADR-0006).
+    let ocean = matches!(
+        plan.campaign.world.content.horizon,
+        Some(delvewright_dsl::Horizon::Ocean)
+    );
+    let generator_settings = if ocean {
+        "{\"biome\":\"minecraft:ocean\",\"layers\":[{\"block\":\"minecraft:bedrock\",\"height\":1},{\"block\":\"minecraft:stone\",\"height\":118},{\"block\":\"minecraft:water\",\"height\":8}]}"
+    } else {
+        "{\"biome\":\"minecraft:the_void\",\"layers\":[]}"
+    };
     // server.properties (keys sorted for determinism).
     let props: BTreeMap<&str, String> = BTreeMap::from([
         ("allow-nether", "false".to_string()),
@@ -3409,10 +3841,7 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
         ("force-gamemode", "true".to_string()),
         ("gamemode", "adventure".to_string()),
         ("generate-structures", "false".to_string()),
-        (
-            "generator-settings",
-            "{\"biome\":\"minecraft:the_void\",\"layers\":[]}".to_string(),
-        ),
+        ("generator-settings", generator_settings.to_string()),
         ("level-name", "world".to_string()),
         ("level-seed", plan.seed.to_string()),
         ("level-type", "minecraft:flat".to_string()),
@@ -3426,7 +3855,13 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
         "# Generated by delvec for campaign {} (spec-0002 world strategy).\n",
         plan.namespace
     ));
-    text.push_str("# Void/superflat + fixed seed; the world is created on first boot.\n");
+    if ocean {
+        text.push_str(
+            "# Ocean superflat (spec-0013 backdrop) + fixed seed; created on first boot.\n",
+        );
+    } else {
+        text.push_str("# Void/superflat + fixed seed; the world is created on first boot.\n");
+    }
     for (k, v) in &props {
         text.push_str(&format!("{k}={v}\n"));
     }
@@ -3440,20 +3875,25 @@ The server jar is NOT shipped (ADR-0010); it is fetched by version at run time.\
             .to_vec(),
     );
 
+    let horizon_bullet = if ocean {
+        "- `level-type=minecraft:flat` + a pinned bedrock/stone/water `generator-settings`\n\
+  (sea level y=62, `minecraft:ocean` biome) ⇒ an island backdrop (spec-0013).\n"
+    } else {
+        "- `level-type=minecraft:flat` + `generator-settings` with an empty layer list and\n\
+  the `minecraft:the_void` biome ⇒ a void world.\n"
+    };
     out.insert(
         "server/README.md".to_string(),
         format!(
             "# server/\n\n\
 Level config for campaign `{}`. The world is generated on first server boot\n\
 from `server.properties` (no region files shipped, spec-0002):\n\n\
-- `level-type=minecraft:flat` + `generator-settings` with an empty layer list and\n\
-  the `minecraft:the_void` biome ⇒ a void world.\n\
-- `level-seed={}` pins world generation (ADR-0006); v0 uses no other randomness.\n\
+{}- `level-seed={}` pins world generation (ADR-0006); v0 uses no other randomness.\n\
 - `gamemode=adventure`, `difficulty=peaceful`, no structures/monsters.\n\n\
 The compiler-emitted `#minecraft:load` bootstrap (`datapack/`) places each area's\n\
 prefab with `/place template` and summons NPCs; nothing is baked into region\n\
 bytes, so byte-identity (ADR-0006) covers the whole `<out>/` tree.\n",
-            plan.namespace, plan.seed
+            plan.namespace, horizon_bullet, plan.seed
         )
         .into_bytes(),
     );
@@ -3637,6 +4077,18 @@ mod tests {
         );
         // Backslash and double-quote are escaped.
         assert_eq!(snbt_string("a\"b\\c"), "\"a\\\"b\\\\c\"");
+    }
+
+    #[test]
+    fn marker_name_fields_never_leak_a_raw_id() {
+        // A titled marker carries its title (byte-identical to the old behavior).
+        assert_eq!(
+            marker_name_fields(Some("Unbar the Inner Door")),
+            "CustomName:\"Unbar the Inner Door\",CustomNameVisible:1b,"
+        );
+        // An untitled objective yields NO name fields — the marker still glows but
+        // never surfaces its raw objective id (e.g. `obj/door`) to players.
+        assert_eq!(marker_name_fields(None), "");
     }
 
     #[test]
