@@ -42,6 +42,15 @@ pub enum BuildFailure {
     },
 }
 
+/// `DW0312`: a `spawn-wave` needs more standable spawn cells near its anchor than
+/// the anchor's own assembled room provides (task #41). Wave-mob placement seats
+/// each mob on a compiler-validated standable cell confined to that room; when the
+/// wave's mob count exceeds the room's footing, the build fails here rather than
+/// letting mobs pile into blocks or spill across a socket seam. Analysis-tier
+/// (exit 2, like reachability `DW02xx`): the fix is a content-design capacity
+/// choice — shrink the wave or use a larger room — not a compiler/geometry defect.
+pub const DW_WAVE_NO_ROOM: &str = "DW0312";
+
 impl From<crate::nav::NavError> for BuildFailure {
     fn from(e: crate::nav::NavError) -> Self {
         BuildFailure::Diagnostic {
@@ -178,18 +187,31 @@ pub fn build(
         });
     }
 
-    let moves: Vec<crate::nav::MovePlan> = if crate::nav::needs_world(plan) {
-        // Verify walkability over the assembled geometry *including* any colliding
-        // relight fixtures (campfire / floor lantern), so a fixture can never wedge
-        // a required path shut (spec-0010: nav verification re-runs after placement).
-        let world = crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid);
-        let moves = crate::nav::plan_moves(plan, &world)?;
-        crate::nav::check_cutscenes(plan, &world)?;
-        crate::nav::check_critical_path(plan, &world)?;
-        moves
-    } else {
-        Vec::new()
-    };
+    // The voxel occupancy model backs both nav verification (move-npc / cutscene /
+    // critical path) and spawn-wave mob placement (task #41), so build it once when
+    // either needs it. Includes any colliding relight fixtures (campfire / floor
+    // lantern) so a fixture can never wedge a required path shut *nor* be stood on
+    // by a spawned mob (spec-0010: verification re-runs after placement).
+    let has_waves = !plan.campaign.quests.content.waves.is_empty();
+    let (moves, wave_placements): (Vec<crate::nav::MovePlan>, WavePlacements) =
+        if crate::nav::needs_world(plan) || has_waves {
+            let world =
+                crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid);
+            let moves = if crate::nav::needs_world(plan) {
+                let m = crate::nav::plan_moves(plan, &world)?;
+                crate::nav::check_cutscenes(plan, &world)?;
+                crate::nav::check_critical_path(plan, &world)?;
+                m
+            } else {
+                Vec::new()
+            };
+            // Seat each wave mob on a validated standable cell near its anchor, in
+            // room only (DW0312 if the room lacks the footing).
+            let waves = plan_wave_spawns(plan, &world)?;
+            (moves, waves)
+        } else {
+            (Vec::new(), BTreeMap::new())
+        };
 
     // Every `spawn-wave` effect must resolve a spawn position, or its emitted
     // `function <ns>:spawn_<wave>` call would dangle to a never-emitted function and
@@ -246,7 +268,13 @@ pub fn build(
             }
         }
     }
-    let functions = emit_functions(plan, &sentinels, &moves, &relight.placements);
+    let functions = emit_functions(
+        plan,
+        &sentinels,
+        &moves,
+        &relight.placements,
+        &wave_placements,
+    );
     for (name, body) in &functions {
         out.insert(
             format!("datapack/data/{ns}/function/{name}.mcfunction"),
@@ -554,6 +582,7 @@ fn emit_functions(
     sentinels: &Sentinels,
     moves: &[crate::nav::MovePlan],
     relight: &[crate::light::Placement],
+    wave_placements: &WavePlacements,
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -1291,7 +1320,11 @@ fn emit_functions(
 
     // --- v0.3: wave spawn functions + verb reward functions ---
     for w in &c.quests.content.waves {
-        let Some(pos) = wave_spawn_pos(plan, w.id.as_str()) else {
+        // Compiler-validated standable spawn cells near the wave anchor, in the
+        // anchor's own room, one per mob (task #41). A wave whose spawn anchor
+        // resolves in no assembled area gets no entry here and is skipped exactly
+        // as before — DW0310 (check_wave_spawns) catches a dangling spawn-wave.
+        let Some(cells) = wave_placements.get(w.id.as_str()) else {
             continue;
         };
         let mut body: Vec<String> = Vec::new();
@@ -1324,14 +1357,16 @@ fn emit_functions(
             let has_effects = !mob.effects.is_empty();
             let tmp = if has_effects { ",\"dw_tmp\"" } else { "" };
             for _ in 0..mob.count {
-                // Spread stacks by a small deterministic offset; AI is left enabled
-                // (no NoAI) so the mobs fight.
+                // Each mob takes the next validated standable cell (ascending BFS
+                // distance from the anchor); `cells` has exactly one per mob. AI is
+                // left enabled (no NoAI) so the mobs fight.
+                let cell = cells[idx as usize];
                 body.push(format!(
                     "summon {} {} {} {} {{Tags:[\"{}\"{tmp}],PersistenceRequired:1b{name}{equip}{attrs}}}",
                     mob.entity,
-                    pos[0] + idx,
-                    pos[1],
-                    pos[2],
+                    cell[0],
+                    cell[1],
+                    cell[2],
                     plan::wave_tag(w.id.as_str())
                 ));
                 idx += 1;
@@ -1418,6 +1453,79 @@ fn emit_functions(
 
     fns.sort_by(|a, b| a.0.cmp(&b.0));
     fns
+}
+
+/// Validated spawn cells per wave: wave id → one standable cell per mob, in
+/// summon order (task #41). Only waves whose spawn anchor resolves have an entry.
+type WavePlacements = BTreeMap<String, Vec<[i32; 3]>>;
+
+/// Seat every wave's mobs on compiler-validated standable cells near the wave
+/// anchor, confined to the anchor's own assembled piece so the flock never strings
+/// across a socket seam into a neighbouring room (task #41: the field bug where six
+/// sheep spread `+x` off the den anchor across the den↔mouth seam toward void, some
+/// ending inside blocks or outside the room). Cells are chosen by ascending BFS
+/// distance from the anchor with a fixed `(y, z, x)` tie-break — deterministic
+/// (ADR-0006). A wave that needs more standable footing than its room offers fails
+/// the build with [`DW_WAVE_NO_ROOM`] (`DW0312`). A wave whose spawn anchor resolves
+/// in no assembled area is skipped (DW0310 handles the dangling reference).
+fn plan_wave_spawns(
+    plan: &Plan,
+    world: &crate::nav::World,
+) -> Result<WavePlacements, BuildFailure> {
+    let c = plan.campaign;
+    let mut out: WavePlacements = BTreeMap::new();
+    for w in &c.quests.content.waves {
+        let (Some(anchor), Some(area)) = (
+            wave_spawn_pos(plan, w.id.as_str()),
+            plan::wave_area(c, w.id.as_str()),
+        ) else {
+            continue;
+        };
+        let need = plan::wave_total(w).max(0) as usize;
+        let bounds = wave_piece_bounds(plan, area, anchor);
+        let cells = world.confined_standable_cells(anchor, bounds);
+        if cells.len() < need {
+            return Err(BuildFailure::Diagnostic {
+                code: DW_WAVE_NO_ROOM,
+                message: format!(
+                    "spawn-wave `{wave}` needs {need} standable spawn cell(s) near \
+                     anchor `{anchor_name}` in area `{area}`, but its room provides \
+                     only {found}. Each wave mob must stand on validated footing \
+                     inside the anchor's own piece (bounds {bounds:?}); the compiler \
+                     will not pile mobs into blocks or spill them across a socket \
+                     seam. Fix the content: shrink this wave's mob count (currently \
+                     {need}) or spawn it in a larger room. Do NOT widen the piece's \
+                     socket seams or move the anchor into an adjoining room — that \
+                     reopens the cross-seam spill this guard prevents.",
+                    wave = w.id.as_str(),
+                    anchor_name = w.anchor.as_str(),
+                    found = cells.len(),
+                ),
+            });
+        }
+        out.insert(
+            w.id.as_str().to_string(),
+            cells.into_iter().take(need).collect(),
+        );
+    }
+    Ok(out)
+}
+
+/// The AABB of the assembled piece carrying a wave's spawn anchor — the room the
+/// wave's mobs must stay inside, so the placement flood-fill never crosses a socket
+/// seam. Falls back to the whole area's bounds if the anchor sits in no single
+/// piece box (defensive; a single-prefab area has exactly one piece == the area).
+fn wave_piece_bounds(plan: &Plan, area_id: &str, anchor: [i32; 3]) -> ([i32; 3], [i32; 3]) {
+    let Some(area) = plan.areas.iter().find(|a| a.area_id == area_id) else {
+        return (anchor, anchor);
+    };
+    for piece in &area.pieces {
+        let (lo, hi) = piece.bbox();
+        if (0..3).all(|i| lo[i] <= anchor[i] && anchor[i] <= hi[i]) {
+            return (lo, hi);
+        }
+    }
+    area.bounds()
 }
 
 /// The absolute spawn position of a wave: the world coords of its `anchor`,

@@ -252,6 +252,78 @@ fn killless_spawn_wave_emits_function_and_packtest() {
     );
 }
 
+/// Task #41: every wave mob is summoned onto a distinct, compiler-validated
+/// standable cell inside its own wave's area — never inside a block, and never on
+/// the blind `+x` line the old emitter used (which could string a flock across a
+/// socket seam toward void). Rebuilds the assembled occupancy world the emitter
+/// placed mobs over and checks every wave summon coordinate for both the kill-less
+/// ambush and the killed-guards wave.
+#[test]
+fn wave_mobs_land_on_distinct_standable_in_room_cells() {
+    let dir = fixture_dir();
+    let loaded = load_campaign_dir(&dir).unwrap();
+    let campaign = parse_campaign(&loaded.raw).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).unwrap();
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
+            structures.insert(piece.structure_file.clone(), bytes);
+        }
+    }
+    // The exact occupancy world the emitter seated mobs over: assembled geometry
+    // plus any colliding relight fixtures (spec-0010), matching emit::build.
+    let relight = delvewright_compiler::light::relight(&plan, &structures);
+    let world = delvewright_compiler::nav::World::from_plan_with_extra(
+        &plan,
+        &structures,
+        &relight.extra_solid,
+    );
+
+    let out = build_showcase();
+    // Both showcase waves resolve to area/keep (wave_area_resolves_from_spawn_site).
+    let area = plan
+        .areas
+        .iter()
+        .find(|a| a.area_id == "area/keep")
+        .expect("area/keep placed");
+    let (lo, hi) = area.bounds();
+    for fn_name in ["spawn_guards", "spawn_ambush"] {
+        let cells = summon_cells(fn_body(&out, fn_name));
+        assert!(
+            cells.len() >= 2,
+            "{fn_name}: expected the wave's mob summons"
+        );
+        let uniq: std::collections::BTreeSet<_> = cells.iter().copied().collect();
+        assert_eq!(uniq.len(), cells.len(), "{fn_name}: two mobs share a cell");
+        for c in &cells {
+            assert!(
+                world.is_standable(*c),
+                "{fn_name}: mob at {c:?} is not on standable footing"
+            );
+            assert!(
+                (0..3).all(|i| lo[i] <= c[i] && c[i] <= hi[i]),
+                "{fn_name}: mob at {c:?} spilled beyond area bounds {lo:?}..={hi:?}"
+            );
+        }
+    }
+}
+
+/// The `[x, y, z]` cell of every `summon` line in a spawn-function body.
+fn summon_cells(body: &str) -> Vec<[i32; 3]> {
+    body.lines()
+        .filter_map(|l| {
+            let t: Vec<&str> = l.split_whitespace().collect();
+            if t.first() == Some(&"summon") && t.len() >= 5 {
+                Some([t[2].parse().ok()?, t[3].parse().ok()?, t[4].parse().ok()?])
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 /// `wave_area` resolves a wave's spawn area from its `spawn-wave` site regardless
 /// of objective type: `wave/ambush` (kill-less, spawned on the interact step) and
 /// `wave/guards` (spawned then killed) both resolve to `area/keep`; an unspawned
