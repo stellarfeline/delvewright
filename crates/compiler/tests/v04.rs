@@ -218,7 +218,10 @@ fn dialogue_display_gating_variants() {
 
     // The ungated option is present in every variant.
     for mask in 0..4 {
-        assert!(variant(mask).contains(ungated), "ungated option always shown");
+        assert!(
+            variant(mask).contains(ungated),
+            "ungated option always shown"
+        );
     }
     // m0: nothing displayable → only the ungated option.
     assert!(!variant(0).contains(completing) && !variant(0).contains(flag_gated));
