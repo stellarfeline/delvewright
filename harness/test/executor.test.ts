@@ -208,7 +208,7 @@ test("forcedMove resets the pathfinder only on a large cross-area jump", () => {
 
 // --- stall-recovery (task #45) ---------------------------------------------
 
-import { replayLegWithRecovery } from "../src/executor.ts";
+import { replayLegWithRecovery, type Unstick } from "../src/executor.ts";
 import type { GoalSpec } from "../src/waypoints.ts";
 
 // Record every goto the replay issues, and script per-hop outcomes.
@@ -277,4 +277,54 @@ test("replayLegWithRecovery rethrows if the hop is still unwalkable after recove
     () => replayLegWithRecovery([G(0, 65, 0), G(3, 65, 0), G(6, 65, 0, 3)], "npc x", alwaysFail),
     /persistent stall/,
   );
+});
+
+test("replayLegWithRecovery escalates to a physics unstick when the recovery pathfind also stalls", async () => {
+  // The wp9 pocket-wedge shape where the RECOVERY pathfind stalls too: both the hop
+  // and the range-0 re-path fail until a physics unstick burst frees the bot.
+  const unstickTargets: GoalSpec[] = [];
+  let unstuck = false;
+  const calls: string[] = [];
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    calls.push(label);
+    const isHop2 = label.includes("waypoint 2/3");
+    if (isHop2 && label.includes("recovery to last proven cell") && !unstuck) {
+      throw new Error("recovery pathfind wedged too");
+    }
+    if (isHop2 && !label.includes("recovery") && !unstuck) {
+      throw new Error("hop wedged");
+    }
+    // recovery-after-unstick and the retried hop succeed once unstuck
+  };
+  const unstick: Unstick = async (target) => {
+    unstickTargets.push(target);
+    unstuck = true; // one burst frees the bot
+  };
+  await replayLegWithRecovery([G(1, 65, -3), G(1, 65, 0), G(2, 66, 1, 3)], "npc x", goto, unstick);
+  assert.equal(unstickTargets.length, 1, "one physics-unstick burst was enough");
+  const t = unstickTargets[0]!;
+  assert.deepEqual([t.x, t.y, t.z], [1, 65, -3], "unstick drives toward the last proven cell");
+  assert.equal(t.range, 0, "toward the exact proven cell");
+  assert.ok(
+    calls.some((l) => l.includes("recovery after unstick")),
+    "re-paths to the proven cell after the burst",
+  );
+});
+
+test("replayLegWithRecovery bounds the physics unstick then fails loudly", async () => {
+  // A permanently wedged hop: recovery pathfind + every post-unstick re-path fail, so
+  // after UNSTICK_ATTEMPTS bursts the hop surfaces loudly (never a silent pass).
+  let bursts = 0;
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    if (label.includes("waypoint 2/3")) throw new Error(`permanently wedged at ${label}`);
+  };
+  const unstick: Unstick = async () => {
+    bursts += 1;
+  };
+  await assert.rejects(
+    () =>
+      replayLegWithRecovery([G(1, 65, -3), G(1, 65, 0), G(2, 66, 1, 3)], "npc x", goto, unstick),
+    /permanently wedged/,
+  );
+  assert.equal(bursts, 3, "bounded to UNSTICK_ATTEMPTS bursts before failing");
 });

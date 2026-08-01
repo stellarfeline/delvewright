@@ -31,26 +31,43 @@ import { BotDeathError, likelyDeathCause } from "./death.ts";
 import { allowNonCollidingEntities, configureLeg } from "./movement.ts";
 import { nextLegWaypoints, walkGoals, type GoalSpec, type Waypoints } from "./waypoints.ts";
 
+/** Bounded number of physics-unstick bursts before a wedged hop fails loudly. */
+const UNSTICK_ATTEMPTS = 3;
+
+/**
+ * A raw, pathfinder-free nudge toward `target` to dislodge a physically wedged bot
+ * (a concave corner beside a wall the A* pathfinder cannot escape). Navigation
+ * robustness, NOT game logic. Provided by the executor; injected so the recovery
+ * control flow stays unit-testable.
+ */
+export type Unstick = (target: GoalSpec) => Promise<void>;
+
 /**
  * Replay a leg's ordered goals with **stall-recovery** (task #45). Each `goto`
  * performs one verified hop (rejecting on stall / death). Extracted from `walkTo`
- * as a pure control-flow function — injecting `goto` — so the recovery logic is
- * unit-testable without a live pathfinder.
+ * as a pure control-flow function — injecting `goto` (and an optional physics
+ * `unstick`) — so the recovery logic is unit-testable without a live pathfinder.
  *
  * A leg replays compiler-proven cells at `WAYPOINT_RANGE = 1`. That range-1
  * tolerance lets the bot satisfy the PREVIOUS hop at an off-route cell — a corner
  * pocket beside a wall — from which the next hop wedges: the bot oscillates and
- * times out (the nobodys-cave perimedes approach). On such a stall, re-centre the
- * bot on the exact last proven cell (`range 0`, back onto the proven polyline) and
- * retry the hop once. Range 0 is used ONLY in recovery, so a legitimate
- * slab/stair fractional-height floor on the happy path is unaffected, and the
- * per-hop timeout inside `goto` is untouched. A first-hop stall (nothing proven
- * yet) is not this class and is rethrown unchanged.
+ * times out (the nobodys-cave perimedes approach). Recovery escalates:
+ *   1. re-path to the exact last proven cell (`range 0`, back onto the proven
+ *      polyline); if that succeeds the hop is retried;
+ *   2. if the recovery pathfind ITSELF stalls (the wedge defeats the pathfinder
+ *      too), fall back to a bounded {@link Unstick} — a raw look+forward+jump burst
+ *      toward the proven cell that bypasses the pathfinder — retrying the re-path
+ *      after each burst.
+ * Range 0 is used ONLY in recovery, so a legitimate slab/stair fractional-height
+ * floor on the happy path is unaffected, and the per-hop `goto` timeout is
+ * untouched. A first-hop stall (nothing proven yet) is not this class and is
+ * rethrown; a hop still unwalkable after recovery + unstick fails loudly.
  */
 export async function replayLegWithRecovery(
   goalsList: readonly GoalSpec[],
   label: string,
   goto: (spec: GoalSpec, label: string) => Promise<void>,
+  unstick?: Unstick,
 ): Promise<void> {
   let lastProven: GoalSpec | undefined;
   for (let g = 0; g < goalsList.length; g++) {
@@ -62,23 +79,53 @@ export async function replayLegWithRecovery(
     } catch (err) {
       if (err instanceof BotDeathError) throw err;
       if (!lastProven) throw err; // nothing proven yet — not the pocket-wedge class
-      process.stderr.write(
-        `[recover] re-centering on proven cell [${lastProven.x}, ${lastProven.y}, ` +
-          `${lastProven.z}] (range 0), then retrying ${glabel}\n`,
-      );
-      try {
-        await goto(
-          { x: lastProven.x, y: lastProven.y, z: lastProven.z, range: 0 },
-          `${glabel} recovery to last proven cell`,
-        );
-      } catch (recoverErr) {
-        if (recoverErr instanceof BotDeathError) throw recoverErr;
-        // Recovery is best-effort: even if the exact cell isn't hit, the attempt
-        // nudges the bot off the pocket — still retry the real hop below.
-      }
+      await recover(lastProven, glabel, goto, unstick);
       await goto(spec, glabel); // rethrows if the hop is genuinely unwalkable
     }
     lastProven = spec;
+  }
+}
+
+/** Try a `goto`, returning whether it arrived; a bot death still propagates. */
+async function reached(fn: () => Promise<void>): Promise<boolean> {
+  try {
+    await fn();
+    return true;
+  } catch (err) {
+    if (err instanceof BotDeathError) throw err;
+    return false;
+  }
+}
+
+/**
+ * Best-effort re-centre the bot on its last proven cell after a stall (task #45):
+ * first via the pathfinder (range 0), then — if the wedge defeats the pathfinder —
+ * via a bounded physics {@link Unstick}. Always returns (recovery is best-effort);
+ * the caller retries the real hop, which fails loudly if still unwalkable.
+ */
+async function recover(
+  proven: GoalSpec,
+  glabel: string,
+  goto: (spec: GoalSpec, label: string) => Promise<void>,
+  unstick?: Unstick,
+): Promise<void> {
+  const provenGoal: GoalSpec = { x: proven.x, y: proven.y, z: proven.z, range: 0 };
+  process.stderr.write(
+    `[recover] re-centering on proven cell [${proven.x}, ${proven.y}, ${proven.z}] ` +
+      `(range 0), then retrying ${glabel}\n`,
+  );
+  if (await reached(() => goto(provenGoal, `${glabel} recovery to last proven cell`))) {
+    return;
+  }
+  if (!unstick) return;
+  // The recovery pathfind stalled too — the bot is physically wedged. Escalate to a
+  // bounded raw-movement unstick toward the proven cell, re-pathing after each burst.
+  for (let a = 0; a < UNSTICK_ATTEMPTS; a++) {
+    process.stderr.write(`[recover] physics-unstick burst ${a + 1}/${UNSTICK_ATTEMPTS}\n`);
+    await unstick(provenGoal);
+    if (await reached(() => goto(provenGoal, `${glabel} recovery after unstick ${a + 1}`))) {
+      return;
+    }
   }
 }
 
@@ -147,6 +194,12 @@ const SCORE_SETTLE_MS = 15_000;
 const SCORE_POLL_MS = 250;
 /** Settle time (ms) after class selection (teleport + kit give) before moving on. */
 const CLASS_SETTLE_MS = 3_000;
+/**
+ * Physics-unstick (task #45): how long (ms) to drive forward+jump per burst to
+ * dislodge a wedged bot, and how long to let it settle before re-pathing.
+ */
+const UNSTICK_BURST_MS = 700;
+const UNSTICK_SETTLE_MS = 300;
 /**
  * gap 8: how long (ms) to wait for a cross-area teleport to land after a step whose
  * completion relocates the player, how close (blocks, horizontal) counts as
@@ -603,12 +656,48 @@ export class MineflayerExecutor implements StepExecutor {
         this.legCursor = match.cursor;
       }
       const goalsList = walkGoals(legWaypoints, [pos[0], pos[1], pos[2]], r);
-      await replayLegWithRecovery(goalsList, label, (spec, glabel) =>
-        this.runGoto(spec, glabel),
+      await replayLegWithRecovery(
+        goalsList,
+        label,
+        (spec, glabel) => this.runGoto(spec, glabel),
+        (target) => this.unstickToward(target),
       );
     } finally {
       restoreControls();
     }
+  }
+
+  /**
+   * Raw, pathfinder-free nudge toward `target` to dislodge a physically wedged bot
+   * (task #45). When the stall-recovery pathfind itself can't escape a concave
+   * corner beside a wall, this bypasses the A* pathfinder entirely: stop it, clear
+   * controls, face the proven cell, and drive forward with a jump for a short burst
+   * — raw movement that breaks the wedge the way a human would tap the stick. This
+   * is navigation robustness, NOT game logic; the caller re-paths afterwards and
+   * still fails loudly if the hop stays unwalkable.
+   */
+  private async unstickToward(target: GoalSpec): Promise<void> {
+    const bot = this.requireBot();
+    try {
+      bot.pathfinder.stop();
+    } catch {
+      // ignore
+    }
+    bot.clearControlStates();
+    // Face the block-centre of the proven cell so the forward drive heads toward it.
+    const p = bot.entity.position;
+    try {
+      await bot.lookAt(p.offset(target.x + 0.5 - p.x, 0, target.z + 0.5 - p.z), true);
+    } catch {
+      // best effort — an unforced look failure must not abort the unstick
+    }
+    bot.setControlState("forward", true);
+    bot.setControlState("jump", true);
+    await delay(UNSTICK_BURST_MS);
+    bot.setControlState("jump", false);
+    bot.setControlState("forward", false);
+    bot.clearControlStates();
+    await delay(UNSTICK_SETTLE_MS);
   }
 
   /**
