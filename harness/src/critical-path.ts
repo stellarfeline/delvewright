@@ -11,11 +11,22 @@
 // `assert-complete` carries a `scoreboard: { objective, value }` object.
 
 /**
- * The critical-path format is versioned with the DSL (spec-0002). v0.3 is an
- * additive superset (kill/collect/interact steps); both are accepted, and the
- * `version` field is campaign-derived (a v0.2 delve still emits a v0.2 path).
+ * The critical-path format is versioned with the DSL (spec-0002). Each DSL
+ * version is an additive superset (v0.3 kill/collect/interact steps; v0.4
+ * sneak/transport/cutscene step fields), and the `version` field is
+ * campaign-derived (a v0.2 delve still emits a v0.2 path). v0.5 (world
+ * time/weather/lighting) and v0.6 (horizon/boundary, checkpoints/stealth,
+ * sound/art, per-effect flag gating) add DSL/emission surface but leave the
+ * critical-path step contract the bot consumes unchanged, so their paths parse
+ * and run exactly as a v0.4 path does — the allowlist simply tracks the DSL.
  */
-export const SUPPORTED_DSL_VERSIONS = ["0.2.0", "0.3.0", "0.4.0"] as const;
+export const SUPPORTED_DSL_VERSIONS = [
+  "0.2.0",
+  "0.3.0",
+  "0.4.0",
+  "0.5.0",
+  "0.6.0",
+] as const;
 
 /** The closed set of critical-path step actions (spec-0002 / spec-0001 enum). */
 export const STEP_ACTIONS = [
