@@ -1,16 +1,15 @@
 # Delvewright
 
-*A factory that ships hand-crafted-feeling Minecraft dungeons on demand — built by
-robots, proven by robots, enjoyed by humans.*
+*A factory that ships hand-crafted-feeling Minecraft dungeons — built by robots,
+proven by robots, enjoyed by humans.*
 
 ## What is this?
 
 Delvewright is an automated production line for **delves**: self-contained,
-story-driven Minecraft adventure maps for 1–4 friends, generated whenever the group
-wants a fresh one. One evening, 2–3 hours,
+story-driven Minecraft adventure maps for 1–4 friends. One evening, 2–3 hours,
 adventure mode, pick a class at the door, zero grind. No mining for six hours to make
 a pickaxe. No building a base. You walk in, the story happens *to you*, you walk out
-with a tale.
+with a tale. When the group wants another one, you make another one.
 
 Each delve ships as a versioned container image. Running one is the whole install
 guide:
@@ -30,7 +29,7 @@ through [Claude Code](https://claude.com/claude-code) — that's the product for
 design (see [ADR-0012](docs/adr/0012-product-form-claude-code-skill.md)).
 
 You describe the delve you want — a one-line theme, or a full brief with specific
-levels and plot — and an agent skill (working name `/new-delve`) does the rest:
+levels and plot — and an agent skill, `/new-delve`, does the rest:
 writes the campaign as strict JSON, compiles it with `delvec`, runs the validation
 gauntlet below, and hands you a container image. Claude Code is the engine room;
 this repo is the machinery it operates.
@@ -38,10 +37,10 @@ this repo is the machinery it operates.
 The only thing that ever *runs* anywhere is the delve itself — a vanilla Minecraft
 server in a box. Everything else is a build step.
 
-## The `/new-delve` flow (current)
+## The `/new-delve` flow
 
 Open Claude Code **in this repo** (the skill and the whole toolchain live here;
-generated campaigns land in the content repo via the `campaigns/` symlink), type
+finished campaigns land in the separate content repo), type
 `/new-delve <your prompt>`, and this happens:
 
 ```mermaid
@@ -50,21 +49,21 @@ flowchart TD
 
     subgraph AUTHOR ["✍️ staged authoring — one stage at a time"]
         A["world → npcs → classes →<br/>quest-plan → quests → dialogue"]
-        A -->|"delvec validate<br/>(DW-code repair loop)"| A
+        A -->|"delvec validate<br/>(fix & re-check loop)"| A
         A -.->|"interactive mode:<br/>summary checkpoint per stage"| U([you])
         U -.-> A
     end
 
-    A --> L["🌐 l10n sidecars<br/>(only if you asked for languages;<br/>translated from finished English)"]
+    A --> L["🌐 translations<br/>(only if you asked for other languages;<br/>always from the finished English)"]
     L --> AN["delvec analyze<br/>reachability · deadlocks · dark rooms"]
-    AN --> B["delvec build<br/>deterministic: datapack + world +<br/>critical-path + render-plan"]
+    AN --> B["delvec build<br/>deterministic: datapack + world +<br/>everything the checks below need"]
 
     subgraph MACHINE ["🤖 machine gauntlet (sonnet subagent)"]
-        PT["PackTest —<br/>mechanism asserts"] --> BOT["mineflayer bot<br/>plays it start → credits"]
+        PT["PackTest —<br/>mechanism tests"] --> BOT["mineflayer bot<br/>plays it start → credits"]
     end
     B --> PT
 
-    BOT --> V["👁 visual review (authoring agent)<br/>renders vs. per-shot expect checklists<br/>fidelity gate first"]
+    BOT --> V["👁 visual review<br/>screenshots checked against<br/>what each scene is supposed to show"]
     V --> SB["📖 storybook<br/>non-spoiler README + media<br/>(exterior/starting shots only)"]
     SB --> R(["report + play commands<br/>EULA=TRUE docker compose … --profile play up"])
 
@@ -97,7 +96,7 @@ build.
         ▼
   🤖  the gauntlet                 — a graph analyzer proves every quest is
                                      completable; a headless server must load it
-        │                            with zero errors; PackTest asserts the
+        │                            with zero errors; PackTest checks the
         ▼                            mechanisms; then a mineflayer bot actually
   🧑‍🌾  humans                       PLAYS the whole thing, start to credits.
                                      Only then do humans get to see it.
@@ -129,9 +128,9 @@ With Docker and an accepted Minecraft EULA:
 EULA=TRUE docker compose -f validation/compose.yaml --profile play up
 ```
 
-…then join `localhost` from a vanilla 1.21.11 client. (What you'll find there
-depends on how far [the roadmap](docs/ROADMAP.md) has gotten — Milestone 1 is the
-"hello-world delve": one room, one keeper, one door, one small triumph.)
+…then join `localhost` from a vanilla 1.21.11 client. What you'll find is whatever
+delve is currently on the validation rig — see [the roadmap](docs/ROADMAP.md) for
+where the project stands.
 
 ## Map of the repo
 
@@ -142,7 +141,7 @@ depends on how far [the roadmap](docs/ROADMAP.md) has gotten — Milestone 1 is 
 | [`docs/specs/`](docs/specs/README.md) | Owner-approved specs; no spec, no feature |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Where this is going, milestone by milestone |
 | `crates/` | Rust workspace: `dsl` (schemas + validation), `compiler` (`delvec`), `orchestrator` |
-| `prefabs/` | Tileset generators (GPL) + docs; the `.nbt` room library itself lives in the content repo (`campaigns/prefabs/`, spec-0007) |
+| `prefabs/` | Tileset generators (GPL) + docs; the `.nbt` room library itself lives in the content repo under `prefabs/` |
 | `harness/` | The robot player (TypeScript + mineflayer) |
 | `packtest/` | PackTest templates for mechanism assertions |
 | `validation/` | Docker compose: the same rig for local checks, CI, and prod |
@@ -158,10 +157,9 @@ releases/images with their own license.
 - **Shipped delve content** (the campaigns/worlds you play): CC BY-SA 4.0.
 - **Prefab assets**: original, CC0, CC BY, MIT, Apache-2.0, or GPL-compatible
   (ADR-0013) — provenance recorded, no exceptions, and never anything NC/ND or
-  unlicensed. The library and its
-  `LICENSE-ASSETS.md` live in the content repo
-  ([`delvewright-campaigns`](https://github.com/stellarfeline/delvewright-campaigns))
-  under `prefabs/` (spec-0007 Step 0).
+  unlicensed. The library and its `LICENSE-ASSETS.md` live under `prefabs/` in the
+  content repo
+  ([`delvewright-campaigns`](https://github.com/stellarfeline/delvewright-campaigns)).
 
 ---
 
