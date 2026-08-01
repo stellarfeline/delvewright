@@ -306,8 +306,8 @@ test("replayLegWithRecovery escalates to a physics unstick when the recovery pat
   assert.deepEqual([t.x, t.y, t.z], [1, 65, -3], "unstick drives toward the last proven cell");
   assert.equal(t.range, 0, "toward the exact proven cell");
   assert.ok(
-    calls.some((l) => l.includes("recovery after unstick")),
-    "re-paths to the proven cell after the burst",
+    calls.some((l) => l.includes("retry after unstick")),
+    "retries the actual next hop after the burst (not the strict proven cell)",
   );
 });
 
