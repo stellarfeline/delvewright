@@ -216,6 +216,11 @@ pub fn build(
                 let m = crate::nav::plan_moves(plan, &world)?;
                 crate::nav::check_cutscenes(plan, &world)?;
                 crate::nav::check_critical_path(plan, &world)?;
+                // v0.6 checkpoint no-stranding + placement proofs (spec-0012,
+                // DW0315/DW0316) and stealth-zone standable/reachable proofs
+                // (spec-0014, DW0327), re-rooting DW0311 reachability at each beat.
+                crate::nav::check_checkpoints(plan, &world)?;
+                crate::nav::check_stealth_zones(plan, &world)?;
                 // Export the DW0311-proven critical-path routes as validation
                 // metadata (task #38): thinned per-leg waypoint polylines the harness
                 // replays as successive nearby goals, so no single giant mineflayer A*
@@ -772,6 +777,28 @@ fn emit_functions(
     if v03 && has_collect_objective(c) {
         setup.push(format!("scoreboard objectives add {COLLECT_HOLD} dummy"));
     }
+    // v0.6 checkpoints (spec-0012): the active-checkpoint marker + the vanilla
+    // `deathCount` respawn-detection scores. Emitted only when a checkpoint carries
+    // an `on_respawn` hook (the only consumer of the marker), so pre-0.6 campaigns —
+    // and checkpoint campaigns without hooks — stay byte-identical here.
+    if plan.any_checkpoint_on_respawn() {
+        setup.push("scoreboard players set #cp dw.sys -1".to_string());
+        setup.push("scoreboard objectives add dw.deaths deathCount".to_string());
+        setup.push("scoreboard objectives add dw.death_ack dummy".to_string());
+    }
+    // v0.6 stealth beats (spec-0014): the active-session marker + per-player sneak
+    // (vanilla `sneak_time` custom stat) / grace scores. Declared only when the
+    // campaign uses `begin-stealth`.
+    if !plan.stealth_beats.is_empty() {
+        setup.push("scoreboard players set #stealth dw.sys 0".to_string());
+        setup.push(
+            "scoreboard objectives add dw.st_sneak minecraft.custom:minecraft.sneak_time"
+                .to_string(),
+        );
+        setup.push("scoreboard objectives add dw.st_sneakack dummy".to_string());
+        setup.push("scoreboard objectives add dw.st_grace dummy".to_string());
+        setup.push("scoreboard objectives add dw.st_safe dummy".to_string());
+    }
     // Force-load the chunks covering each prefab. `forceload add` only MARKS
     // chunks; freshly-generated far chunks (found live: a fifth-level piece
     // straddling chunk z=-1) are not reliably loaded within the same tick, so
@@ -1162,7 +1189,25 @@ fn emit_functions(
     // v0.4: environment-trigger per-tick checks (empty for a campaign with no
     // triggers → byte-identical).
     tick.extend(env_trigger_tick(plan));
+    // v0.6 checkpoints (spec-0012): per-player respawn detection via the vanilla
+    // `deathCount` criterion, dispatching the active checkpoint's `on_respawn`.
+    // Only when a checkpoint carries an `on_respawn` hook.
+    if plan.any_checkpoint_on_respawn() {
+        tick.push(format!("execute as @a run function {ns}:cp_respawn_check"));
+    }
+    // v0.6 stealth (spec-0014): while a beat is active, run its per-tick judge.
+    for beat in &plan.stealth_beats {
+        tick.push(format!(
+            "execute if score #stealth dw.sys matches {} run function {ns}:stealth_tick_{}",
+            beat.index, beat.index
+        ));
+    }
     fns.push(("tick".to_string(), lines(&tick)));
+
+    // --- v0.6 checkpoint respawn dispatch (spec-0012) ---
+    fns.extend(emit_checkpoint_functions(plan));
+    // --- v0.6 stealth-beat functions (spec-0014) ---
+    fns.extend(emit_stealth_functions(plan));
 
     // --- show_class ---
     fns.push((
@@ -1231,6 +1276,11 @@ fn emit_functions(
             }
             for w in &opt.sets_weather {
                 body.push(format!("weather {}", w.token()));
+            }
+            // v0.6: party-wide respawn checkpoints this option sets (dialogue
+            // `set-checkpoint`, spec-0012).
+            for (anchor, on_respawn) in &opt.sets_checkpoints {
+                emit_set_checkpoint(plan, anchor, on_respawn, &mut body);
             }
             for obj in &opt.completes {
                 if let Some((qid, _)) = objective_quest(c, obj) {
@@ -1781,7 +1831,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
         QuestEffect::SetWeather { weather } => {
             body.push(format!("weather {}", weather.token()));
         }
-        // --- DSL v0.6 effects (spec-0014) ---
+        // --- DSL v0.6 effects (spec-0012 checkpoints, spec-0014 stealth + sound) ---
         QuestEffect::PlaySound {
             sound,
             at,
@@ -1789,6 +1839,19 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
             pitch,
         } => {
             emit_play_sound(plan, sound, at.as_ref(), *volume, *pitch, body);
+        }
+        QuestEffect::SetCheckpoint { anchor, on_respawn } => {
+            emit_set_checkpoint(plan, anchor.as_str(), on_respawn, body);
+        }
+        QuestEffect::BeginStealth {
+            zones, grace_ticks, ..
+        } => {
+            if let Some(beat) = plan.stealth_for(zones, *grace_ticks) {
+                body.push(format!("function {ns}:stealth_begin_{}", beat.index));
+            }
+        }
+        QuestEffect::EndStealth => {
+            body.push("scoreboard players set #stealth dw.sys 0".to_string());
         }
     }
 }
@@ -1834,6 +1897,151 @@ fn emit_play_sound(
         }
     }
     body.push(cmd);
+}
+
+/// Emit a `set-checkpoint` (DSL v0.6, spec-0012): the party-wide vanilla
+/// `spawnpoint @a`, the `storage dw:cp pos` mirror other features read
+/// (spec-0013 boundary return), and — when any checkpoint carries an
+/// `on_respawn` hook — the active-checkpoint marker `#cp dw.sys` the respawn
+/// dispatcher keys on. Party-wide via the explicit `@a`, regardless of the
+/// caller's `@s` context.
+fn emit_set_checkpoint(
+    plan: &Plan,
+    anchor: &str,
+    on_respawn: &[QuestEffect],
+    body: &mut Vec<String>,
+) {
+    if let Some(pos) = anchor_point_any(plan, anchor) {
+        body.push(format!("spawnpoint @a {} {} {}", pos[0], pos[1], pos[2]));
+        body.push(format!(
+            "data modify storage dw:cp pos set value [{}, {}, {}]",
+            pos[0], pos[1], pos[2]
+        ));
+        if plan.any_checkpoint_on_respawn() {
+            let idx = plan
+                .checkpoint_for(anchor, on_respawn)
+                .map(|c| c.index)
+                .unwrap_or(0);
+            body.push(format!("scoreboard players set #cp dw.sys {idx}"));
+        }
+    }
+}
+
+/// Generate the checkpoint respawn-dispatch functions (DSL v0.6, spec-0012).
+/// Empty unless some checkpoint carries an `on_respawn` hook. Respawn is detected
+/// via the vanilla `deathCount` criterion: a player whose death total exceeds the
+/// acknowledged total respawned since last tick; the active checkpoint (`#cp`)
+/// selects which per-player `on_respawn` list runs. Effects are emitted in
+/// declared (deterministic) order and are expected to be idempotent (spec-0012).
+fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut fns: Vec<(String, String)> = Vec::new();
+    if !plan.any_checkpoint_on_respawn() {
+        return fns;
+    }
+    // cp_respawn_check (as @s): fire on the death-count edge, then acknowledge.
+    fns.push((
+        "cp_respawn_check".to_string(),
+        lines(&[
+            format!(
+                "execute if score @s dw.deaths > @s dw.death_ack run function {ns}:cp_respawn_fire"
+            ),
+            "scoreboard players operation @s dw.death_ack = @s dw.deaths".to_string(),
+        ]),
+    ));
+    // cp_respawn_fire (as @s): dispatch on the active checkpoint.
+    let mut fire: Vec<String> = Vec::new();
+    for c in &plan.checkpoints {
+        if c.on_respawn.is_empty() {
+            continue;
+        }
+        fire.push(format!(
+            "execute if score #cp dw.sys matches {} run function {ns}:cp_on_respawn_{}",
+            c.index, c.index
+        ));
+    }
+    fns.push(("cp_respawn_fire".to_string(), lines(&fire)));
+    // cp_on_respawn_<idx> (as @s): the per-player scene-reset effects.
+    for c in &plan.checkpoints {
+        if c.on_respawn.is_empty() {
+            continue;
+        }
+        let mut body: Vec<String> = Vec::new();
+        for eff in &c.on_respawn {
+            emit_quest_effect(plan, eff, &mut body);
+        }
+        fns.push((format!("cp_on_respawn_{}", c.index), lines(&body)));
+    }
+    fns
+}
+
+/// Generate the stealth-beat functions (DSL v0.6, spec-0014). For each beat: an
+/// `arm` that activates the session and resets per-player grace/sneak state; a
+/// per-tick judge that, per player, tests "sneaking this tick (the vanilla
+/// `sneak_time` stat rose) AND inside some zone box", tracks a grace counter, and
+/// fires `on_caught` after `grace_ticks` of exposure. Zone membership is a pure
+/// position selector, so the whole check is deterministic and provable.
+fn emit_stealth_functions(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut fns: Vec<(String, String)> = Vec::new();
+    for beat in &plan.stealth_beats {
+        let i = beat.index;
+        // stealth_begin_<i>: activate + reset grace, snapshot the sneak stat.
+        fns.push((
+            format!("stealth_begin_{i}"),
+            lines(&[
+                format!("scoreboard players set #stealth dw.sys {i}"),
+                "execute as @a run scoreboard players set @s dw.st_grace 0".to_string(),
+                "execute as @a run scoreboard players operation @s dw.st_sneakack = @s dw.st_sneak"
+                    .to_string(),
+            ]),
+        ));
+        // stealth_tick_<i>: judge every player.
+        fns.push((
+            format!("stealth_tick_{i}"),
+            lines(&[format!("execute as @a run function {ns}:stealth_eval_{i}")]),
+        ));
+        // stealth_eval_<i> (as @s): compute safe flag, update grace, fire caught.
+        let mut eval: Vec<String> = vec!["scoreboard players set @s dw.st_safe 0".to_string()];
+        for (_, pos, extent) in &beat.zones {
+            let lo = [
+                pos[0] - extent[0] as i32,
+                pos[1] - extent[1] as i32,
+                pos[2] - extent[2] as i32,
+            ];
+            let size = [
+                2 * extent[0] as i32,
+                2 * extent[1] as i32,
+                2 * extent[2] as i32,
+            ];
+            eval.push(format!(
+                "execute if score @s dw.st_sneak > @s dw.st_sneakack if entity \
+                 @s[x={},dx={},y={},dy={},z={},dz={}] run scoreboard players set @s dw.st_safe 1",
+                lo[0], size[0], lo[1], size[1], lo[2], size[2]
+            ));
+        }
+        eval.push("scoreboard players operation @s dw.st_sneakack = @s dw.st_sneak".to_string());
+        eval.push(
+            "execute if score @s dw.st_safe matches 1 run scoreboard players set @s dw.st_grace 0"
+                .to_string(),
+        );
+        eval.push(
+            "execute if score @s dw.st_safe matches 0 run scoreboard players add @s dw.st_grace 1"
+                .to_string(),
+        );
+        eval.push(format!(
+            "execute if score @s dw.st_grace matches {}.. run function {ns}:stealth_caught_{i}",
+            beat.grace_ticks
+        ));
+        fns.push((format!("stealth_eval_{i}"), lines(&eval)));
+        // stealth_caught_<i> (as @s): reset grace, run on_caught.
+        let mut caught: Vec<String> = vec!["scoreboard players set @s dw.st_grace 0".to_string()];
+        for eff in &beat.on_caught {
+            emit_quest_effect(plan, eff, &mut caught);
+        }
+        fns.push((format!("stealth_caught_{i}"), lines(&caught)));
+    }
+    fns
 }
 
 /// Emit a `narrate` line in its channel (DSL v0.4). `chat` = `tellraw`; `title`
@@ -2326,12 +2534,13 @@ fn boundary_message(plan: &Plan) -> String {
 }
 
 /// Whether the emitted setup must initialize the `dw:cp` last-checkpoint storage
-/// mirror to the spawn cell. Single shared gate with spec-0012 checkpoints so the
-/// (idempotent) init line is emitted exactly once regardless of merge order —
-/// when checkpoints land, OR their "campaign declares a checkpoint" predicate in
-/// here.
+/// mirror to the spawn cell. Single shared gate so the (idempotent) init line is
+/// emitted exactly once regardless of merge order: a campaign needs it when it
+/// declares a `set-checkpoint` (spec-0012 — the mirror must read before the first
+/// checkpoint fires) OR a `boundary` (spec-0013 — its return clock reads the
+/// mirror). Absent both, non-v0.6 output stays byte-identical.
 fn needs_cp_init(plan: &Plan) -> bool {
-    plan.campaign.world.content.boundary.is_some()
+    !plan.checkpoints.is_empty() || plan.campaign.world.content.boundary.is_some()
 }
 
 /// The v0.6 boundary clock (spec-0013): a self-rescheduling 1s (20t) region check
@@ -3099,8 +3308,13 @@ fn emit_packtest(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::MovePl
     // target. Emits nothing when the campaign uses none of them.
     emit_v04_packtests(plan, out, moves);
 
-    // v0.6: boundary return / never-move-inside. Emits nothing without a boundary.
+    // v0.6: boundary return / never-move-inside (spec-0013). Emits nothing without
+    // a boundary.
     emit_boundary_packtest(plan, out);
+
+    // v0.6: checkpoint respawn contract + stealth kill/spare judge (spec-0012 /
+    // spec-0014). Emits nothing when the campaign uses neither.
+    emit_v06_packtests(plan, out);
 }
 
 /// v0.6 boundary PackTests (spec-0013): a player outside the region is returned to
@@ -3164,6 +3378,99 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
         format!("packtest-datapack/data/{ns}/test/v06_boundary_inside.mcfunction"),
         lines(&b).into_bytes(),
     );
+}
+
+/// v0.6 PackTests (spec-0012 checkpoints, spec-0014 stealth). Fake players cannot
+/// accrue the vanilla `sneak_time` stat nor respawn synchronously within a plain
+/// mcfunction test, so these drive the compiler-generated mechanics directly and
+/// assert their deterministic effects:
+///
+/// * **checkpoint**: applying the checkpoint's `spawnpoint @a` + `dw:cp pos`
+///   mirror makes `storage dw:cp pos` read back the checkpoint cell — the
+///   machine-checkable "last checkpoint" contract other features consume.
+/// * **stealth**: the generated `stealth_eval_<i>` judge catches an exposed
+///   (not-sneaking, out-of-zone) player after `grace_ticks` and spares a
+///   sneaking, in-zone one — driven via the `sneak`/zone scores that stand in for
+///   the stat/position a real player would carry.
+fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+
+    if let Some(cp) = plan.checkpoints.first() {
+        let [x, y, z] = cp.pos;
+        let mut t = packtest_header(&format!(
+            "{title}: checkpoint mirrors its cell into dw:cp (spec-0012)"
+        ));
+        t.push(format!("function {ns}:setup"));
+        // Apply the exact commands a `set-checkpoint` emits, then read the mirror
+        // back per-axis (rock-solid vs. an NBT compound match).
+        t.push(format!("spawnpoint @a {x} {y} {z}"));
+        t.push(format!(
+            "data modify storage dw:cp pos set value [{x}, {y}, {z}]"
+        ));
+        t.push(
+            "execute store result score #cx dw.sys run data get storage dw:cp pos[0]".to_string(),
+        );
+        t.push(
+            "execute store result score #cy dw.sys run data get storage dw:cp pos[1]".to_string(),
+        );
+        t.push(
+            "execute store result score #cz dw.sys run data get storage dw:cp pos[2]".to_string(),
+        );
+        t.push(format!("assert score #cx dw.sys matches {x}"));
+        t.push(format!("assert score #cy dw.sys matches {y}"));
+        t.push(format!("assert score #cz dw.sys matches {z}"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/v06_checkpoint_respawn.mcfunction"),
+            lines(&t).into_bytes(),
+        );
+    }
+
+    if let Some(beat) = plan.stealth_beats.first() {
+        let i = beat.index;
+        let grace = beat.grace_ticks;
+        let (_, zpos, zext) = &beat.zones[0];
+        let inside = *zpos;
+        let outside = [zpos[0] + zext[0] as i32 + 10, zpos[1], zpos[2]];
+        let mut t = packtest_header(&format!(
+            "{title}: stealth catches the exposed, spares the hidden (spec-0014)"
+        ));
+        t.push(format!("function {ns}:setup"));
+        // --- caught: an exposed (not sneaking, out of every zone) player accrues
+        //     grace and is caught on the grace_ticks-th judge tick (on_caught
+        //     resets grace to 0). ---
+        t.push(format!("function {ns}:stealth_begin_{i}"));
+        t.push("scoreboard players set @p dw.st_sneak 0".to_string());
+        t.push("scoreboard players set @p dw.st_sneakack 0".to_string());
+        t.push(format!(
+            "tp @p {} {} {}",
+            outside[0], outside[1], outside[2]
+        ));
+        // grace_ticks-1 judge ticks: grace climbs but has not yet tripped.
+        for _ in 0..grace.saturating_sub(1) {
+            t.push(format!("execute as @p run function {ns}:stealth_eval_{i}"));
+        }
+        t.push(format!(
+            "assert score @p dw.st_grace matches {}",
+            grace.saturating_sub(1)
+        ));
+        // One more tick trips on_caught, which resets grace to 0.
+        t.push(format!("execute as @p run function {ns}:stealth_eval_{i}"));
+        t.push("assert score @p dw.st_grace matches 0".to_string());
+        // --- spare: a sneaking (sneak > ack), in-zone player never accrues grace;
+        //     an accrued grace is reset the moment they are safe. ---
+        t.push(format!("function {ns}:stealth_begin_{i}"));
+        t.push("scoreboard players set @p dw.st_grace 5".to_string());
+        t.push("scoreboard players set @p dw.st_sneakack 0".to_string());
+        t.push("scoreboard players set @p dw.st_sneak 1".to_string());
+        t.push(format!("tp @p {} {} {}", inside[0], inside[1], inside[2]));
+        t.push(format!("execute as @p run function {ns}:stealth_eval_{i}"));
+        t.push("assert score @p dw.st_grace matches 0".to_string());
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/v06_stealth.mcfunction"),
+            lines(&t).into_bytes(),
+        );
+    }
 }
 
 /// v0.4 PackTests (spec-0008): a prop appears only once its objective activates;

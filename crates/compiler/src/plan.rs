@@ -30,6 +30,41 @@ pub const AREA_SPACING: i32 = 256;
 /// The Y of every area origin (structures carry their own floor at local y=0).
 pub const BASE_Y: i32 = 64;
 
+/// A resolved `set-checkpoint` effect (DSL v0.6, spec-0012), collected in
+/// deterministic content order so its `index` is a stable, byte-identical id used
+/// both for the active-checkpoint marker (`#cp dw.sys`) and its `on_respawn`
+/// dispatch function.
+#[derive(Clone, Debug)]
+pub struct CheckpointPlan {
+    /// Stable content-ordered id (0-based).
+    pub index: usize,
+    /// The checkpoint anchor name.
+    pub anchor: String,
+    /// The resolved absolute anchor cell.
+    pub pos: [i32; 3],
+    /// Per-player `on_respawn` effects (may be empty).
+    pub on_respawn: Vec<QuestEffect>,
+    /// `critical_path` step index at which this checkpoint fires (roots DW0315).
+    pub fire_step: usize,
+}
+
+/// A resolved `begin-stealth` beat (DSL v0.6, spec-0014), collected in
+/// deterministic content order; its `index` (1-based) is the active-session id
+/// written to `#stealth dw.sys` (0 = inactive).
+#[derive(Clone, Debug)]
+pub struct StealthBeat {
+    /// Stable content-ordered session id (1-based).
+    pub index: usize,
+    /// Zones: `(anchor name, resolved centre cell, half-extents)`.
+    pub zones: Vec<(String, [i32; 3], [u32; 3])>,
+    /// Per-player `on_caught` effects (may be empty).
+    pub on_caught: Vec<QuestEffect>,
+    /// Ticks of exposure tolerated before `on_caught` fires.
+    pub grace_ticks: u32,
+    /// `critical_path` step index that activates the beat (roots DW0327).
+    pub fire_step: usize,
+}
+
 /// The compiled model.
 pub struct Plan<'a> {
     /// The source campaign.
@@ -68,6 +103,10 @@ pub struct Plan<'a> {
     /// `Some(seconds)` when completing that step's objective triggers a
     /// `QuestEffect::Cutscene` → emitted as `cutscene_seconds`.
     pub critical_path_cutscene: Vec<Option<u32>>,
+    /// Resolved `set-checkpoint` effects (DSL v0.6, spec-0012), content-ordered.
+    pub checkpoints: Vec<CheckpointPlan>,
+    /// Resolved `begin-stealth` beats (DSL v0.6, spec-0014), content-ordered.
+    pub stealth_beats: Vec<StealthBeat>,
 }
 
 /// A placed area: one or more pieces plus their socket seals.
@@ -188,6 +227,9 @@ pub struct OptionPlan {
     pub sets_time: Vec<delvewright_dsl::WorldTime>,
     /// Weather cuts this option fires (DSL v0.5 dialogue `set-weather`), in order.
     pub sets_weather: Vec<delvewright_dsl::WorldWeather>,
+    /// Checkpoints this option sets (DSL v0.6 dialogue `set-checkpoint`), each
+    /// `(anchor, on_respawn)`, in order.
+    pub sets_checkpoints: Vec<(String, Vec<QuestEffect>)>,
 }
 
 /// A critical-path step (mirrors the amended `critical-path.json` shape).
@@ -572,6 +614,9 @@ impl<'a> Plan<'a> {
         // ---- critical path + inter-area transport ----
         let cp = build_critical_path(campaign, &anchors, &npcs)?;
 
+        // ---- v0.6 checkpoints + stealth beats (spec-0012 / spec-0014) ----
+        let (checkpoints, stealth_beats) = collect_v06_effects(campaign, &anchors, &cp.obj_step);
+
         Ok(Self {
             campaign,
             namespace,
@@ -585,6 +630,8 @@ impl<'a> Plan<'a> {
             critical_path_transport: cp.transport_by_step,
             critical_path_sneak: cp.sneak_by_step,
             critical_path_cutscene: cp.cutscene_by_step,
+            checkpoints,
+            stealth_beats,
         })
     }
 
@@ -616,6 +663,42 @@ impl<'a> Plan<'a> {
             Some(ResolvedAnchor::Point { pos, .. }) => Some(*pos),
             _ => None,
         }
+    }
+
+    /// Whether any collected checkpoint carries an `on_respawn` hook — gates the
+    /// vanilla respawn-detection machinery so checkpoint-free / hook-free campaigns
+    /// stay byte-identical (DSL v0.6, spec-0012).
+    pub fn any_checkpoint_on_respawn(&self) -> bool {
+        self.checkpoints.iter().any(|c| !c.on_respawn.is_empty())
+    }
+
+    /// The collected checkpoint matching a `set-checkpoint` effect (by anchor +
+    /// `on_respawn` list), giving the emitter its stable content-ordered index.
+    pub fn checkpoint_for(
+        &self,
+        anchor: &str,
+        on_respawn: &[QuestEffect],
+    ) -> Option<&CheckpointPlan> {
+        self.checkpoints
+            .iter()
+            .find(|c| c.anchor == anchor && c.on_respawn.as_slice() == on_respawn)
+    }
+
+    /// The collected stealth beat matching a `begin-stealth` effect (by zone
+    /// anchors + `grace_ticks`), giving the emitter its 1-based session id.
+    pub fn stealth_for(
+        &self,
+        zones: &[delvewright_dsl::StealthZone],
+        grace: u32,
+    ) -> Option<&StealthBeat> {
+        self.stealth_beats.iter().find(|b| {
+            b.grace_ticks == grace
+                && b.zones.len() == zones.len()
+                && b.zones
+                    .iter()
+                    .zip(zones)
+                    .all(|((a, _, e), z)| a.as_str() == z.anchor.as_str() && *e == z.extent)
+        })
     }
 }
 
@@ -761,6 +844,7 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
             let mut sets_flags = Vec::new();
             let mut sets_time = Vec::new();
             let mut sets_weather = Vec::new();
+            let mut sets_checkpoints = Vec::new();
             for e in &opt.effects {
                 match e {
                     DialogueEffect::CompleteObjective { objective } => {
@@ -771,6 +855,9 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
                     }
                     DialogueEffect::SetTime { time } => sets_time.push(*time),
                     DialogueEffect::SetWeather { weather } => sets_weather.push(*weather),
+                    DialogueEffect::SetCheckpoint { anchor, on_respawn } => {
+                        sets_checkpoints.push((anchor.as_str().to_string(), on_respawn.clone()));
+                    }
                 }
             }
             options.push(OptionPlan {
@@ -790,6 +877,7 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
                     .collect(),
                 sets_time,
                 sets_weather,
+                sets_checkpoints,
             });
         }
     }
@@ -810,6 +898,10 @@ struct CriticalPath {
     transport_by_step: Vec<Option<[i32; 3]>>,
     sneak_by_step: Vec<bool>,
     cutscene_by_step: Vec<Option<u32>>,
+    /// Objective id → its `critical_path` step index (v0.6): roots the checkpoint
+    /// no-stranding proof (DW0315) and the stealth-zone reachability proof
+    /// (DW0327) at the beat that fires the effect.
+    obj_step: BTreeMap<String, usize>,
 }
 
 /// Build the critical path: select first class, then each critical objective in
@@ -1028,13 +1120,180 @@ fn build_critical_path(
         }
     }
 
+    let obj_step: BTreeMap<String, usize> = obj_areas
+        .iter()
+        .map(|(id, _, idx)| (id.clone(), *idx))
+        .collect();
+
     Ok(CriticalPath {
         steps,
         transport,
         transport_by_step,
         sneak_by_step,
         cutscene_by_step,
+        obj_step,
     })
+}
+
+/// Resolve an anchor name to a point cell by scanning every area's resolved
+/// anchors (first match), mirroring the emitter's `anchor_point_any`.
+fn point_any(anchors: &BTreeMap<(String, String), ResolvedAnchor>, name: &str) -> Option<[i32; 3]> {
+    for ((_, n), resolved) in anchors {
+        if n == name {
+            return match resolved {
+                ResolvedAnchor::Point { pos, .. } => Some(*pos),
+                ResolvedAnchor::Gate { from, .. } => Some(*from),
+            };
+        }
+    }
+    None
+}
+
+/// The `critical_path` step index at which a quest's `on_complete` fires: its
+/// last objective's step (max over the quest's objectives). `0` if the quest has
+/// no positioned objective (degenerate; conservative — proves the whole path).
+fn quest_complete_step(quest: &Quest, obj_step: &BTreeMap<String, usize>) -> usize {
+    quest
+        .objectives
+        .iter()
+        .filter_map(|o| obj_step.get(o.id().as_str()).copied())
+        .max()
+        .unwrap_or(0)
+}
+
+/// The `critical_path` step index of the `talk-to` objective that a dialogue tree
+/// belongs to (its NPC's completing beat), rooting a dialogue-hosted
+/// `set-checkpoint`. `0` if none is found (degenerate).
+fn dialogue_fire_step(
+    campaign: &Campaign,
+    npc_id: &str,
+    obj_step: &BTreeMap<String, usize>,
+) -> usize {
+    campaign
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| q.objectives.iter())
+        .filter_map(|o| match o {
+            Objective::TalkTo { id, npc, .. } if npc.as_str() == npc_id => {
+                obj_step.get(id.as_str()).copied()
+            }
+            _ => None,
+        })
+        .min()
+        .unwrap_or(0)
+}
+
+/// Collect every `set-checkpoint` and `begin-stealth` effect (DSL v0.6) in a
+/// deterministic content order, resolving each anchor to a cell and rooting it at
+/// its firing step. An effect whose anchor does not resolve to a point is skipped
+/// here (validation guarantees the anchor exists; a pool anchor that fails to
+/// resolve at plan time simply carries no proof/emission).
+fn collect_v06_effects(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    obj_step: &BTreeMap<String, usize>,
+) -> (Vec<CheckpointPlan>, Vec<StealthBeat>) {
+    let mut c = V06Collector {
+        anchors,
+        checkpoints: Vec::new(),
+        stealth: Vec::new(),
+    };
+
+    // Stage 5 — quest effects (on_objective_complete, then on_complete).
+    for q in &campaign.quests.content.quests {
+        for (obj_id, effs) in &q.on_objective_complete {
+            let step = obj_step.get(obj_id.as_str()).copied().unwrap_or(0);
+            for eff in effs {
+                c.handle(eff, step);
+            }
+        }
+        let done_step = quest_complete_step(q, obj_step);
+        for eff in &q.on_complete {
+            c.handle(eff, done_step);
+        }
+    }
+
+    // Stage 5 — environment triggers (conservative fire step 0: a trigger fires on
+    // an environmental condition, not a critical beat, so require the checkpoint to
+    // re-reach the whole remaining path).
+    for t in &campaign.quests.content.triggers {
+        for eff in &t.effects {
+            c.handle(eff, 0);
+        }
+    }
+
+    // Stage 6 — dialogue `set-checkpoint` (rooted at the NPC's talk-to beat).
+    for tree in &campaign.dialogue.content.dialogues {
+        let step = dialogue_fire_step(campaign, tree.npc.as_str(), obj_step);
+        for node in &tree.nodes {
+            for opt in &node.options {
+                for eff in &opt.effects {
+                    if let Some((anchor, on_respawn)) = eff.set_checkpoint() {
+                        c.push_checkpoint(anchor.as_str(), on_respawn, step);
+                    }
+                }
+            }
+        }
+    }
+
+    (c.checkpoints, c.stealth)
+}
+
+/// Accumulates v0.6 checkpoints / stealth beats in content order while resolving
+/// their anchors (a struct so the collection borrows stay simple).
+struct V06Collector<'a> {
+    anchors: &'a BTreeMap<(String, String), ResolvedAnchor>,
+    checkpoints: Vec<CheckpointPlan>,
+    stealth: Vec<StealthBeat>,
+}
+
+impl V06Collector<'_> {
+    fn push_checkpoint(&mut self, anchor: &str, on_respawn: &[QuestEffect], fire_step: usize) {
+        if let Some(pos) = point_any(self.anchors, anchor) {
+            self.checkpoints.push(CheckpointPlan {
+                index: self.checkpoints.len(),
+                anchor: anchor.to_string(),
+                pos,
+                on_respawn: on_respawn.to_vec(),
+                fire_step,
+            });
+        }
+    }
+
+    fn push_stealth(
+        &mut self,
+        zones: &[delvewright_dsl::StealthZone],
+        on_caught: &[QuestEffect],
+        grace_ticks: u32,
+        fire_step: usize,
+    ) {
+        let resolved: Vec<(String, [i32; 3], [u32; 3])> = zones
+            .iter()
+            .filter_map(|z| {
+                point_any(self.anchors, z.anchor.as_str())
+                    .map(|p| (z.anchor.as_str().to_string(), p, z.extent))
+            })
+            .collect();
+        if resolved.len() == zones.len() {
+            self.stealth.push(StealthBeat {
+                index: self.stealth.len() + 1,
+                zones: resolved,
+                on_caught: on_caught.to_vec(),
+                grace_ticks,
+                fire_step,
+            });
+        }
+    }
+
+    fn handle(&mut self, eff: &QuestEffect, fire_step: usize) {
+        if let Some((anchor, on_respawn)) = eff.set_checkpoint() {
+            self.push_checkpoint(anchor.as_str(), on_respawn, fire_step);
+        } else if let Some((zones, on_caught, grace)) = eff.begin_stealth() {
+            self.push_stealth(zones, on_caught, grace, fire_step);
+        }
+    }
 }
 
 /// The `seconds` of the first `Cutscene` effect in `effects`, if any.
