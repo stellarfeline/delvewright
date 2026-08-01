@@ -147,7 +147,7 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Effect `spawn-wave` | Summons wave mobs (AI on), tag `dw_wave_<id>`. | 0.3 |
 | Effect `give-item{item,count,name?}` | Grants item (`name` v0.4). | 0.3 |
 | Effect `set-flag{flag}` | Sets `dw.f_<flag>` (per-player). | 0.3 |
-| Effect `narrate{text,style?,sound?}` | chat/title/subtitle; `text` → l10n. | 0.4 |
+| Effect `narrate{text,style?,sound?}` | chat/title/subtitle/**art**; `text` → l10n; `sound` validated (`DW0326`); `art` = large-glyph `delve:art` font, glyph-checked (`DW0328`). | 0.4 / art 0.6 |
 | Effect `set-block{anchor,block}` | `setblock` at anchor; base block id validated (`DW0193`). `block` accepts a verbatim blockstate suffix `id[key=value,…]` (v0.6). | 0.4 / state 0.6 |
 | Effect `requires_flags[]` (any effect) | Per-effect AND-gate (v0.6): wraps the effect's command(s) in a per-player `execute if score @s dw.f_<flag> matches 1 run …`. Valid on any `on_objective_complete` / `on_complete` / trigger effect **except** terminal `campaign-complete`; refs resolve like objective flags (`DW0172`). | 0.6 |
 | Effect `despawn-npc{npc}` | Removes NPC + hitbox. | 0.4 |
@@ -155,14 +155,15 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Effect `cutscene{path[],seconds}` | Two-camera spectator dolly; clip → `DW0308`. | 0.4 |
 | Effect `set-time{time}` | Instantaneous dimension-global cut (`time set <kw>`); persists (cycle frozen). | 0.5 |
 | Effect `set-weather{weather}` | Instantaneous dimension-global cut (`weather <kw>`); persists (cycle frozen). | 0.5 |
+| Effect `play-sound{sound,at?,volume?,pitch?}` | Plays a sound event; `sound` validated (`DW0326`); `at` = `{anchor}`\|`players` (default)\|`{actor}` (deferred → `DW0335`); positional or per-player. | 0.6 |
 
-Dialogue effects `set-flag` (v0.4) and `set-time`/`set-weather` (v0.5) and option
 `requires_flags` mirror the quest forms. Per-effect `requires_flags` is a v0.6
 **quests-stage** surface only (dialogue effects are not mirrored — a dialogue
 option's own `requires_flags` already gates its whole effect bundle). Under
 `0.2.0`, all v0.3 verbs/effects are reserved → `DW0141`; likewise v0.4 surface
 under pre-0.4, v0.5 surface (`time`/`weather`/`lighting`, `set-time`/`set-weather`)
-under pre-0.5, and per-effect `requires_flags` under pre-0.6. The blockstate
+under pre-0.5, and the v0.6 surface (the `play-sound` effect + `narrate`
+`style: art`, and per-effect `requires_flags`) under pre-0.6. The blockstate
 suffix on `set-block`/`prop` blocks is a lenient parse of an existing field, not
 version-gated: the base id is registry-checked and the `[…]` string is passed to
 `setblock` verbatim (vanilla validates the property names/values); a malformed
@@ -209,7 +210,8 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | `set-flag` / `requires_flags` | `dw.f_<flag>` scoreboard (per-player); required flags AND-ed into objective guards (layered on `after`). **Per-effect** `requires_flags` (v0.6) wraps each of the effect's emitted commands in `execute if score @s dw.f_<flag> matches 1 [… per flag] run <cmd>`; these effect functions already run per-player (`complete_<obj>` / `trig_<id>` are entered `as @a`/`@s`), and an ungated effect is emitted verbatim (byte-identical). |
 | `open-gate` | `/fill … air` over the gate region. |
 | `give-item` | Grants item to player (`name` → SNBT text component). |
-| `narrate` | chat / `title` / `subtitle` (+ optional sound). |
+| `narrate` | chat / `title` / `subtitle` (+ optional sound); `art` = `title` with a `{"font":"delve:art"}` text component, rendered uppercase. |
+| `play-sound` | `playsound <sound> master @s [<pos>] [<vol> [<pitch>]]` — effects run `as @a`, so `@s` is each player: `anchor` uses the resolved anchor pos (all hear it there), `players` uses `~ ~ ~`. |
 | `set-block` | `setblock` at resolved anchor. |
 | `despawn-npc` | Kills body + interaction hitbox. |
 | `move-npc` | Per-tick tp along A*-planned walkable waypoints (hitbox in lockstep). |
@@ -450,6 +452,20 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0320` | `horizon:"ocean"` declared without a `boundary` (an infinite swimmable sea with no return rule). v0.6, spec-0013. Numbered in the 032x world/region family but **validation-tier (exit 1)**, not a DW03x build code. |
 | `DW0321` | `boundary.margin` outside `0..=64`. v0.6, spec-0013. Validation-tier (exit 1). |
 
+### DW032x/033x — sound & art-title validation (`compiler::atmos`; error; exit 1)
+
+v0.6 (spec-0014) content checks that need compiler-vendored data (the pinned
+`sound_event` registry) or the `delve:art` font, run in the compiler's
+`validate_stage` (so `validate`/`analyze`/`build` all catch them) and reported at
+**validation tier (exit 1)** like the `DW01xx` codes — not build-tier. No-op for a
+campaign that uses neither the `play-sound` effect nor the `narrate` `art` style.
+
+| Code | Meaning |
+|------|---------|
+| `DW0326` | A `play-sound.sound` (v0.6) or `narrate.sound` (v0.4) id is not a known 1.21.11 sound event (validated against the vendored `sound_event` registry, `crates/compiler/data/sounds-1.21.11.json`; `minecraft:` prefix optional). |
+| `DW0328` | An `art`-styled `narrate` string — the English source **or** any declared-language sidecar translation — uses a character outside the `delve:art` font's glyph inventory (A–Z, 0–9, space, `! " ' ( ) , - . / : ; ?`; lowercase folds to uppercase). Forces per-language art titles to stay ASCII/Latin — a `zh-cn` art translation must be an ASCII rendition. |
+| `DW0335` | A `play-sound` targets `at: {actor: …}`, accepted by the schema but not yet wired — the actors surface (spec-0014 `actors[]`) has not landed. Use `at: {anchor}` or `at: players`. (Graduates when the actors PR wires actor-position resolution.) |
+
 ### DW02xx — analysis (`compiler::analyze` reachability + `compiler::light` lighting; error; exit 2)
 
 `DW0210`/`DW0211` are emitted by the assembled-world light model
@@ -531,6 +547,7 @@ this doc is current behavior).
 | Skins toolchain, resourcepack bake (`DW0309`) | spec-0009 |
 | Assembled-relight, measured `DW0210`, `DW0211`/`DW0196`, stage-1 `lighting`/`time`/`weather`, `set-time`/`set-weather` (all v0.5) | spec-0010 (landed, #35) |
 | Stage-1 `horizon` (ocean superflat), `boundary` (derived playable region + 1s return clock), `dw:region`/`dw:cp` mirrors, `DW0320`/`DW0321` (all v0.6) | spec-0013 (landed) |
+| Sound + art-title surface (`play-sound`, `narrate` `art`, `delve:art` font, `DW0326`/`DW0328`/`DW0335`) | spec-0014 (v0.6) |
 | Asset-pipeline tooling `DW07xx` (schem/render/admit) | spec-0007 |
 | Determinism invariants | ADR-0006 |
 

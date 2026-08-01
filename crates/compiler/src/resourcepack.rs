@@ -19,17 +19,17 @@ use serde_json::json;
 /// `min_format`/`max_format` rule applies to datapacks, not resource packs).
 pub const RESOURCE_PACK_FORMAT: u32 = 75;
 
-/// Build the deterministic resource-pack zip for `skins` (texture id → PNG
-/// bytes). Returns the zip bytes. `skins` must be non-empty (callers only build a
-/// pack when a campaign has skinned NPCs).
-pub fn build_pack(skins: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
-    // Assemble the entries: sorted by archive name for determinism. `assets/…`
-    // sorts before `pack.mcmeta`, and `skins` is a BTreeMap (sorted ids).
+/// Build the deterministic resource-pack zip carrying `skins` (texture id → PNG
+/// bytes, → `assets/delvewright/textures/npc/<id>.png`) plus any `extra` assets
+/// (archive path → bytes, e.g. the `delve:art` title font, spec-0014). Returns the
+/// zip bytes. Callers build a pack only when there is at least one skin or extra
+/// asset. Entries are sorted by archive name for determinism (ADR-0006).
+pub fn build_pack(skins: &BTreeMap<String, Vec<u8>>, extra: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
     let mcmeta = {
         let mut b = serde_json::to_vec_pretty(&json!({
             "pack": {
                 "pack_format": RESOURCE_PACK_FORMAT,
-                "description": "Delvewright NPC skins"
+                "description": "Delvewright resource pack"
             }
         }))
         .expect("json serializes");
@@ -42,6 +42,9 @@ pub fn build_pack(skins: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
             format!("assets/delvewright/textures/npc/{id}.png"),
             png.clone(),
         ));
+    }
+    for (path, bytes) in extra {
+        entries.push((path.clone(), bytes.clone()));
     }
     entries.push(("pack.mcmeta".to_string(), mcmeta));
     entries.sort_by(|a, b| a.0.cmp(&b.0));
@@ -194,8 +197,9 @@ mod tests {
     fn zip_is_deterministic_and_has_local_signature() {
         let mut skins = BTreeMap::new();
         skins.insert("a".to_string(), vec![1u8, 2, 3]);
-        let z1 = build_pack(&skins);
-        let z2 = build_pack(&skins);
+        let extra = BTreeMap::new();
+        let z1 = build_pack(&skins, &extra);
+        let z2 = build_pack(&skins, &extra);
         assert_eq!(z1, z2, "same input → byte-identical zip");
         assert_eq!(&z1[0..4], &0x0403_4b50u32.to_le_bytes());
     }

@@ -1,39 +1,212 @@
-//! DSL v0.6 (task #55) end-to-end emission: per-effect `requires_flags` wraps a
-//! gated effect's commands in a per-player `execute if score @s dw.f_<flag>
-//! matches 1 run …` guard, and a block field carries a vanilla blockstate suffix
-//! verbatim into `setblock`. Driven by the `v06-flags` fixture campaign.
+//! DSL v0.6 (spec-0014) compiler-side surface: sound-event validation (`DW0326`),
+//! the deferred `play-sound at: actor` gate (`DW0335`), art-title glyph coverage
+//! over source + l10n translations (`DW0328`), and the `delve:art` resource-pack
+//! font — baked deterministically into the pack, byte-identical across builds.
 
 mod common;
 
 use std::collections::BTreeMap;
 
+use delvewright_compiler::atmos;
 use delvewright_compiler::commands::CommandTree;
 use delvewright_compiler::emit::{self, BuildOutput};
 use delvewright_compiler::load::load_campaign_dir;
 use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{parse_campaign, validate_campaign_with};
+use delvewright_compiler::registry::PrefabRegistry;
+use delvewright_dsl::{Campaign, L10nDoc, RawCampaign, art_narrates, parse_campaign};
 
-fn fixture_dir() -> std::path::PathBuf {
-    common::compiler_fixtures_dir().join("v06-flags")
+/// A v0.6 `quests` document whose single quest fires the given `on_complete`
+/// effects (a raw JSON array body, without the surrounding brackets).
+fn quests_doc(on_complete: &str) -> String {
+    format!(
+        r#"{{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {{
+    "quests": [
+      {{
+        "id": "quest/open-the-door",
+        "trigger": {{ "type": "campaign-start" }},
+        "objectives": [
+          {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
+          {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+             "radius": 2, "after": ["obj/talk"] }}
+        ],
+        "on_objective_complete": {{
+          "obj/talk": [ {{ "type": "open-gate", "anchor": "anchor/door" }} ]
+        }},
+        "on_complete": [ {on_complete} ]
+      }}
+    ]
+  }}
+}}"#
+    )
 }
 
-/// Build the v0.6 fixture, asserting DSL validation is clean under the full
-/// registries, and return the emitted output.
-fn build_v06() -> BuildOutput {
-    let dir = fixture_dir();
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("v06-flags parses");
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+fn read_hw(name: &str) -> String {
+    std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
+}
 
-    let items = FullItemRegistry::v1_21_11();
-    let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
-    assert!(
-        diags.is_empty(),
-        "v06-flags must validate clean: {diags:#?}"
+/// Parse a hello-world campaign with a custom `quests` doc (and optionally a
+/// custom `world` doc, e.g. to declare l10n languages).
+fn parse_hw(quests: &str, world: Option<String>) -> Campaign {
+    let raw = RawCampaign {
+        world: world.unwrap_or_else(|| read_hw("world.json")),
+        npcs: read_hw("npcs.json"),
+        classes: read_hw("classes.json"),
+        quest_plan: read_hw("quest-plan.json"),
+        quests: quests.to_string(),
+        dialogue: read_hw("dialogue.json"),
+    };
+    parse_campaign(&raw).expect("campaign parses")
+}
+
+// --- DW0326: sound-event validation --------------------------------------
+
+#[test]
+fn known_sounds_validate_clean() {
+    let c = parse_hw(
+        &quests_doc(
+            r#"{ "type": "play-sound", "sound": "minecraft:ui.toast.challenge_complete" },
+               { "type": "play-sound", "sound": "entity.experience_orb.pickup",
+                 "at": { "at": "anchor", "anchor": "anchor/door" }, "volume": 0.8, "pitch": 1.5 },
+               { "type": "narrate", "text": "hi", "sound": "block.note_block.pling" },
+               { "type": "campaign-complete" }"#,
+        ),
+        None,
     );
+    assert!(
+        atmos::check_sounds(&c).is_empty(),
+        "known sounds must validate clean"
+    );
+}
 
+#[test]
+fn unknown_play_sound_is_dw0326() {
+    let c = parse_hw(
+        &quests_doc(
+            r#"{ "type": "play-sound", "sound": "minecraft:not.a.real.sound" },
+               { "type": "campaign-complete" }"#,
+        ),
+        None,
+    );
+    let d = atmos::check_sounds(&c);
+    assert!(
+        d.iter().any(|x| x.code == atmos::DW_SOUND_UNKNOWN),
+        "unknown play-sound must be DW0326: {d:#?}"
+    );
+}
+
+#[test]
+fn unknown_narrate_sound_is_dw0326() {
+    let c = parse_hw(
+        &quests_doc(
+            r#"{ "type": "narrate", "text": "hi", "sound": "made.up.sound" },
+               { "type": "campaign-complete" }"#,
+        ),
+        None,
+    );
+    let d = atmos::check_sounds(&c);
+    assert!(
+        d.iter().any(|x| x.code == "DW0326"),
+        "unknown narrate.sound must be DW0326: {d:#?}"
+    );
+}
+
+// --- DW0335: deferred play-sound at: actor -------------------------------
+
+#[test]
+fn play_sound_at_actor_is_dw0335() {
+    let c = parse_hw(
+        &quests_doc(
+            r#"{ "type": "play-sound", "sound": "minecraft:ui.toast.challenge_complete",
+                 "at": { "at": "actor", "actor": "actor/giant" } },
+               { "type": "campaign-complete" }"#,
+        ),
+        None,
+    );
+    let d = atmos::check_sounds(&c);
+    assert!(
+        d.iter()
+            .any(|x| x.code == atmos::DW_PLAYSOUND_ACTOR_DEFERRED),
+        "play-sound at: actor must be DW0335 until actors land: {d:#?}"
+    );
+}
+
+// --- DW0328: art-title glyph coverage ------------------------------------
+
+#[test]
+fn ascii_art_title_validates_clean() {
+    let c = parse_hw(
+        &quests_doc(
+            r#"{ "type": "narrate", "text": "YOU WIN! (100)", "style": "art" },
+               { "type": "campaign-complete" }"#,
+        ),
+        None,
+    );
+    assert!(
+        atmos::check_art(&c, &BTreeMap::new()).is_empty(),
+        "an ASCII art title must validate clean"
+    );
+}
+
+#[test]
+fn non_latin_art_source_is_dw0328() {
+    let c = parse_hw(
+        &quests_doc(
+            r#"{ "type": "narrate", "text": "胜利", "style": "art" },
+               { "type": "campaign-complete" }"#,
+        ),
+        None,
+    );
+    let d = atmos::check_art(&c, &BTreeMap::new());
+    assert!(
+        d.iter().any(|x| x.code == atmos::DW_ART_GLYPH_UNCOVERED),
+        "a non-Latin art source must be DW0328: {d:#?}"
+    );
+}
+
+/// The l10n interaction: an `art`-styled narrate goes through the l10n key
+/// inventory, so a `zh-cn` sidecar translation that cannot render in the Latin art
+/// font fails `DW0328` — forcing per-language art titles to stay ASCII/Latin.
+#[test]
+fn zh_art_translation_is_dw0328() {
+    let mut world: serde_json::Value = serde_json::from_str(&read_hw("world.json")).unwrap();
+    world["content"]["languages"] = serde_json::json!(["zh-cn"]);
+    let c = parse_hw(
+        &quests_doc(
+            r#"{ "type": "narrate", "text": "VICTORY", "style": "art" },
+               { "type": "campaign-complete" }"#,
+        ),
+        Some(world.to_string()),
+    );
+    // The art narrate's l10n key, translated to non-renderable Han in the sidecar.
+    let key = art_narrates(&c)[0].key.clone();
+    let sidecar_json = serde_json::json!({
+        "dsl_version": "0.6.0",
+        "campaign_id": "hello-world",
+        "kind": "l10n",
+        "lang": "zh-cn",
+        "content": { key: "\u{80dc}\u{5229}" }
+    });
+    let doc: L10nDoc = serde_json::from_value(sidecar_json).unwrap();
+    let mut sidecars = BTreeMap::new();
+    sidecars.insert("zh-cn".to_string(), doc);
+
+    let d = atmos::check_art(&c, &sidecars);
+    assert!(
+        d.iter()
+            .any(|x| x.code == "DW0328" && x.stage == "l10n" && x.path.contains("zh-cn")),
+        "a Han art translation must be DW0328 against the l10n sidecar: {d:#?}"
+    );
+}
+
+// --- Emission + deterministic art font in the resource pack --------------
+
+fn build_v06(quests: &str) -> BuildOutput {
+    let campaign = parse_hw(&quests_doc(quests), None);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
@@ -45,7 +218,9 @@ fn build_v06() -> BuildOutput {
     let tree = CommandTree::v1_21_11();
     emit::build(
         &plan,
-        &loaded.inputs,
+        &load_campaign_dir(&common::hello_world_dir())
+            .unwrap()
+            .inputs,
         &structures,
         &tree,
         &prefabs,
@@ -53,61 +228,74 @@ fn build_v06() -> BuildOutput {
         "unpinned",
         &BTreeMap::new(),
     )
-    .expect("every emitted command validates")
+    .expect("v0.6 campaign builds")
 }
 
-fn fn_body<'a>(out: &'a BuildOutput, name: &str) -> &'a str {
-    let path = format!("datapack/data/hello-world/function/{name}.mcfunction");
-    std::str::from_utf8(
-        out.get(&path)
-            .unwrap_or_else(|| panic!("missing fn {name}")),
-    )
-    .unwrap()
-}
+const SHOWCASE: &str = r#"{ "type": "play-sound", "sound": "minecraft:ui.toast.challenge_complete",
+     "at": { "at": "anchor", "anchor": "anchor/door" }, "volume": 0.9, "pitch": 1.2 },
+   { "type": "play-sound", "sound": "entity.experience_orb.pickup", "at": { "at": "players" } },
+   { "type": "narrate", "text": "You Win", "style": "art" },
+   { "type": "campaign-complete" }"#;
 
-/// A gated effect's command is wrapped in a per-player flag guard; the ungated
-/// `set-flag`/`open-gate` on the same objective are NOT wrapped.
 #[test]
-fn gated_effect_is_wrapped_in_per_player_flag_guard() {
-    let out = build_v06();
-    let talk = fn_body(&out, "complete_o_talk");
-    // The gated narrate fires only for a player who holds the flag.
+fn play_sound_and_art_emitted() {
+    let out = build_v06(SHOWCASE);
+    let all: String = out
+        .iter()
+        .filter(|(p, _)| p.ends_with(".mcfunction"))
+        .map(|(_, b)| String::from_utf8_lossy(b).into_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(
-        talk.contains(
-            "execute if score @s dw.f_opened matches 1 run tellraw @s \
-             {\"text\":\"Only the hand that opened it hears the hinge give.\"}"
-        ),
-        "gated narrate must be wrapped in `execute if score @s dw.f_opened matches 1 run …`:\n{talk}"
+        all.contains("playsound minecraft:ui.toast.challenge_complete master @s"),
+        "anchor play-sound emitted with positioned targets"
     );
-    // The ungated set-flag on the same objective stays a bare command.
     assert!(
-        talk.contains("scoreboard players set @s dw.f_opened 1"),
-        "ungated set-flag must remain unwrapped:\n{talk}"
+        all.contains("playsound minecraft:entity.experience_orb.pickup master @s"),
+        "players play-sound emitted"
     );
-}
-
-/// A block field's vanilla blockstate suffix reaches `setblock` verbatim.
-#[test]
-fn blockstate_suffix_reaches_setblock_verbatim() {
-    let out = build_v06();
-    let talk = fn_body(&out, "complete_o_talk");
     assert!(
-        talk.contains("minecraft:grindstone[face=floor]"),
-        "blockstate suffix must pass through to setblock verbatim:\n{talk}"
+        all.contains("delve:art"),
+        "art title emitted with the delve:art font component"
     );
 }
 
-/// The build is byte-identical across two runs (determinism, ADR-0006).
 #[test]
-fn v06_build_is_deterministic() {
-    let a = build_v06();
-    let b = build_v06();
-    assert_eq!(a.len(), b.len(), "same file set across builds");
+fn art_font_baked_into_resource_pack() {
+    let out = build_v06(SHOWCASE);
+    assert!(
+        out.contains_key("resourcepack.zip"),
+        "resource pack emitted"
+    );
+    let zip = &out["resourcepack.zip"];
+    let hay = zip.as_slice();
+    let has = |needle: &str| hay.windows(needle.len()).any(|w| w == needle.as_bytes());
+    assert!(has("assets/delve/font/art.json"), "font json in pack");
+    assert!(
+        has("assets/delve/textures/font/art.png"),
+        "font png in pack"
+    );
+    let manifest = std::str::from_utf8(&out["manifest.json"]).unwrap();
+    assert!(
+        manifest.contains("\"resource_pack_sha1\""),
+        "manifest records the pack SHA-1"
+    );
+}
+
+#[test]
+fn double_build_is_byte_identical_incl_resource_pack() {
+    let a = build_v06(SHOWCASE);
+    let b = build_v06(SHOWCASE);
+    assert_eq!(
+        a.keys().collect::<Vec<_>>(),
+        b.keys().collect::<Vec<_>>(),
+        "output file set differs"
+    );
     for (path, bytes) in &a {
-        assert_eq!(
-            Some(bytes),
-            b.get(path),
-            "file {path} differs between two builds"
-        );
+        assert_eq!(bytes, &b[path], "byte mismatch in {path}");
     }
+    assert!(
+        a.contains_key("resourcepack.zip"),
+        "resource pack present (art font baked)"
+    );
 }

@@ -46,12 +46,22 @@ not third-party reconstructions.
   `registries/data.min.json`, each id namespaced (`minecraft:<id>`), de-duplicated
   and sorted (same transform as the item registry). 157 entity types. Validates
   v0.3 wave mobs (`DW0173`).
+- **`sounds-1.21.11.json`** — the `sound_event` registry array from
+  `registries/data.min.json`, each id namespaced (`minecraft:<id>`), de-duplicated
+  and sorted (same transform as the item/entity registries). 1838 sound events.
+  Validates v0.6 `play-sound` / v0.4 `narrate.sound` ids (`DW0326`, spec-0014).
+  **Reproduce it** (not a one-off — CLAUDE.md debug doctrine "automate the pitfall
+  out of existence"): `python3 tools/extract-sound-registry.py <registries/data.min.json>
+  crates/compiler/data/sounds-1.21.11.json`. The script pins and checks the source
+  SHA-256 and applies the transform `sorted(set("minecraft:"+i for i in sound_event))`,
+  `json.dumps(indent=2, sort_keys=True)`.
 
 | Vendored file | SHA-256 |
 |---|---|
 | `items-1.21.11.json`    | `3965d9d5aabc0a2e6270b9e15c4faed76b67b93663d3136fa6ca6ca6f9371e8c` |
 | `commands-1.21.11.json` | `8e48958913bbd604bc6a084fa04f139c6012fbe6706391c79b265158221ff6ac` |
 | `entities-1.21.11.json` | `a10cc5f3dc042dfb632e87131823846011586d19bd97814bf62b1fa6e66160d2` |
+| `sounds-1.21.11.json`   | `841adcd38b83410bed32d57bab909829ce796c1ecd959f2891fcafbf427bc16c` |
 
 ## Not committed
 
