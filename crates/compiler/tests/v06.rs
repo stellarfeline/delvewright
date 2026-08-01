@@ -261,6 +261,75 @@ fn play_sound_and_art_emitted() {
     );
 }
 
+/// Build a v0.6 campaign after localizing its strings with `translations`, the way
+/// `delvec build --lang <code>` does (localize in place, then plan + emit).
+fn build_localized_v06(quests: &str, translations: &BTreeMap<String, String>) -> BuildOutput {
+    let mut campaign = parse_hw(&quests_doc(quests), None);
+    let night_vision = delvewright_compiler::light::has_night_vision(&campaign);
+    delvewright_dsl::localize(&mut campaign, translations);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
+            structures.insert(piece.structure_file.clone(), bytes);
+        }
+    }
+    let tree = CommandTree::v1_21_11();
+    emit::build(
+        &plan,
+        &load_campaign_dir(&common::hello_world_dir())
+            .unwrap()
+            .inputs,
+        &structures,
+        &tree,
+        &prefabs,
+        Some("zh-cn"),
+        "unpinned",
+        &BTreeMap::new(),
+        night_vision,
+    )
+    .expect("localized v0.6 campaign builds")
+}
+
+/// A `narrate` nested inside a `sequence` step (the Q4/Q7 cinematic shape).
+const SEQUENCE_NARRATE: &str = r#"{ "type": "sequence", "steps": [
+       { "at_ticks": 20, "effects": [ { "type": "narrate", "text": "The seal cracks open." } ] }
+     ] },
+   { "type": "campaign-complete" }"#;
+
+/// A `narrate` nested in a `sequence` is localized on the **emission** path: a
+/// translated build emits the translated line, not the English source. Regression
+/// for the cinematic narration that shipped English-only in `zh-cn`.
+#[test]
+fn sequence_narrate_is_localized_on_emission() {
+    // The nested key for on_complete effect 0 (sequence), step 0, nested effect 0.
+    let key = "fx.open-the-door.done.0.seq.0.0.narrate";
+    let mut tr = BTreeMap::new();
+    tr.insert(key.to_string(), "封印裂开了。".to_string());
+
+    let out = build_localized_v06(SEQUENCE_NARRATE, &tr);
+    let all: String = out
+        .iter()
+        .filter(|(p, _)| p.ends_with(".mcfunction"))
+        .map(|(_, b)| String::from_utf8_lossy(b).into_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        all.contains("封印裂开了。"),
+        "the translated sequence narrate must be emitted:\n{all}"
+    );
+    assert!(
+        !all.contains("The seal cracks open."),
+        "the English source of a translated nested narrate must not ship:\n{all}"
+    );
+
+    // Determinism (ADR-0006): the localized build is byte-identical twice.
+    let again = build_localized_v06(SEQUENCE_NARRATE, &tr);
+    assert_eq!(out, again, "localized build is byte-identical across runs");
+}
+
 #[test]
 fn art_font_baked_into_resource_pack() {
     let out = build_v06(SHOWCASE);
