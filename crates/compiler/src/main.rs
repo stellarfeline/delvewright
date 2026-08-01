@@ -345,11 +345,15 @@ fn run_build(
             return ExitCode::from(3);
         }
         Err(emit::BuildFailure::Diagnostic { code, message }) => {
-            // Lighting diagnostics (DW0210/DW0211, spec-0010) are analysis-tier
-            // (exit 2, like DW02xx reachability); geometry/navigation diagnostics
+            // Analysis-tier build diagnostics (exit 2, like DW02xx reachability): a
+            // content-design capacity mistake the author fixes by resizing content,
+            // not a compiler/geometry defect. These are the DW02xx lighting codes
+            // (DW0210/DW0211, spec-0010) plus wave-capacity DW0312 (task #41: a wave
+            // too big for its room). Geometry/navigation diagnostics
             // (DW0307/DW0308/DW0311) print like a solver DW03xx error and exit 3.
             print_build_error(code, &message, json);
-            let exit = if code.starts_with("DW02") { 2 } else { 3 };
+            let analysis_tier = code.starts_with("DW02") || code == emit::DW_WAVE_NO_ROOM;
+            let exit = if analysis_tier { 2 } else { 3 };
             return ExitCode::from(exit);
         }
     };
