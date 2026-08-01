@@ -154,7 +154,12 @@ Exactly one tree per stage-2 NPC (`DW0152`/`DW0153`). Nodes reachable from `root
 (`DW0120`/`DW0121`); `complete-objective` effects target a `talk-to` on the same
 NPC (`DW0122`); every `talk-to` has ≥1 reachable (`DW0123`) and ≥1 **ungated**
 (`DW0191`) completing option. Node `text` → l10n `dlg.<n>.<node>.text`, option
-labels → `.opt.<i>.label`.
+labels → `.opt.<i>.label`. **Display gating (v0.4+, task #54):** an option is
+*shown* only when clicking it would fire — every `requires_flags` set (flag axis)
+and every completed objective active, i.e. `dw.qa_<quest>==1` and
+`dw.o_<obj>!=1` (objective-state axis) — so `DW0191`'s ungated completing option
+is visible exactly while its objective is active (the guarantee holds
+automatically).
 
 ### l10n sidecars (`l10n/<code>.json`)
 
@@ -175,6 +180,7 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | Verb / effect | Emitted mechanism |
 |---------------|-------------------|
 | `talk-to` / dialog option | `minecraft:villager` body (NoAI/Invulnerable/Silent) + co-located `minecraft:interaction` (tag `dw_npc_<n>`); click advancement + `/trigger dw.dlg_<n>` both feed one per-tick option handler. |
+| dialog display gating (v0.4+) | A node with any display-gated option (`requires_flags` and/or `completes`) emits one `__m<mask>` variant per per-node availability bitmask + a chooser: `dmask_<n>_<node>` sets `dw.dmask` (bit `i` = the node's i-th gated option is displayable — its flags set and every completed objective active: `if …qa_<q>==1 unless …o_<obj>==1`), then `show_<n>_<node>` `dialog show`s the matching variant. Ungated nodes/options `dialog show` directly (v0.2/v0.3 byte-identical). Click handler keeps its own guard (defense-in-depth for the `/trigger` path). |
 | class select | Dialog button → `/trigger dw.class set <n>`. |
 | `reach-anchor` | Per-tick `execute if entity @s[box ±1 on each axis]`; glowing `end_rod` `item_display` marker (tag `dw_r_<obj>`). Completion despawns the marker (`kill @e[tag=dw_r_<obj>]`). |
 | `kill` / `spawn-wave` | `spawn-wave` summons mobs (AI on) tag `dw_wave_<id>`, countdown `#<id> dw.wave`; `player_killed_entity` advancement decrements; `kill` completes at 0. Armed species get `equipment` NBT (drop 0): `wither_skeleton→stone_sword`, `skeleton`/`stray→bow`. **Mob placement (task #41):** each mob is seated on a distinct compiler-validated standable cell (2-tall clearance, solid floor) chosen by a deterministic BFS outward from the wave anchor over the assembled occupancy world (`compiler::nav`), ordered by ascending BFS distance with a fixed `(y,z,x)` tie-break. The flood-fill is confined to the anchor's own assembled piece, so a flock never crosses a socket seam into a neighbouring room. A wave needing more footing than its room offers is `DW0312` (never `+x`-strung mobs piling into blocks or spilling toward void). |

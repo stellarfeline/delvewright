@@ -21,7 +21,7 @@ use crate::plan::{
 };
 use crate::{DELVEC_VERSION, MC_VERSION, PACK_FORMAT};
 
-use delvewright_dsl::{Objective, QuestEffect, Trigger, is_v03};
+use delvewright_dsl::{Objective, QuestEffect, Trigger, is_v03, is_v04};
 
 /// The emitted build tree: relative path → file bytes.
 pub type BuildOutput = BTreeMap<String, Vec<u8>>;
@@ -526,6 +526,13 @@ fn campaign_is_v03(plan: &Plan) -> bool {
     is_v03(plan.campaign.quests.dsl_version.as_str())
 }
 
+/// True for DSL v0.4+ campaigns. Gates the dialogue objective-state display axis
+/// (a `completes` option is hidden until its objective is active) so pre-v0.4
+/// campaigns stay byte-identical.
+fn campaign_is_v04(plan: &Plan) -> bool {
+    is_v04(plan.campaign.quests.dsl_version.as_str())
+}
+
 /// Escape a player-facing string as a double-quoted SNBT string. On 1.21.11
 /// `CustomName` is a **text component**, so a bare quoted SNBT string is read as
 /// literal text (the JSON-string form `'{"text":"…"}'` renders verbatim, incl. in
@@ -692,8 +699,9 @@ fn emit_functions(
             plan::flag_score(&flag)
         ));
     }
-    // v0.4: the per-player scratch bitmask used by flag-gated dialogue choosers.
-    // Declared only when a gated option exists, so v0.2/v0.3 setup is unchanged.
+    // v0.4: the per-player scratch bitmask used by display-gated dialogue choosers
+    // (flag axis and/or objective-state axis). Declared only when a gated option
+    // exists, so v0.2/v0.3 setup is unchanged.
     if has_gated_dialogue(c) {
         setup.push("scoreboard objectives add dw.dmask dummy".to_string());
     }
@@ -2324,82 +2332,136 @@ fn pending_guard(o: &Objective, quest_active: &str) -> String {
 // dialogs / advancements
 // ---------------------------------------------------------------------------
 
-/// The sorted, distinct flags gating any option of `node_id` (DSL v0.4). Empty
-/// for a node with no flag-gated options (v0.2/v0.3 nodes → byte-identical).
-fn node_gated_flags(npc: &plan::NpcPlan, node_id: &str) -> Vec<String> {
-    let mut set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for opt in &npc.options {
-        if opt.node_id == node_id {
-            for f in &opt.requires_flags {
-                set.insert(f.clone());
-            }
+/// Whether an option's display is gated (DSL v0.4+): it either requires flags
+/// (flag axis) or completes an objective (objective-state axis — visible only
+/// while that objective is active). Below v0.4 nothing is display-gated, so
+/// v0.2/v0.3 nodes stay byte-identical. `requires_flags` is itself a v0.4 verb,
+/// so the whole predicate collapses to `false` pre-v0.4.
+fn option_display_gated(opt: &plan::OptionPlan, v04: bool) -> bool {
+    v04 && (!opt.requires_flags.is_empty() || !opt.completes.is_empty())
+}
+
+/// The display-gated options of `node_id`, in declared order — the bit order of
+/// the node's per-player availability mask (`dw.dmask`). Empty for an ungated
+/// node (v0.2/v0.3, or a v0.4 node whose every option is unconditional).
+fn node_gated_options<'a>(
+    npc: &'a plan::NpcPlan,
+    node_id: &str,
+    v04: bool,
+) -> Vec<&'a plan::OptionPlan> {
+    npc.options
+        .iter()
+        .filter(|o| o.node_id == node_id && option_display_gated(o, v04))
+        .collect()
+}
+
+/// The ` if …`/` unless …` execute fragment (leading space) that is satisfied
+/// exactly when `opt` should be DISPLAYED: every `requires_flags` flag set (flag
+/// axis), and — v0.4+ — every completed objective's quest active and the
+/// objective itself not yet complete (objective-state axis). Mirrors the
+/// click-handler guard (emit.rs ~1166) so an option is shown iff clicking it
+/// would fire.
+fn option_display_conditions(c: &delvewright_dsl::Campaign, opt: &plan::OptionPlan) -> String {
+    let mut cond = String::new();
+    for f in &opt.requires_flags {
+        cond.push_str(&format!(" if score @s {} matches 1", plan::flag_score(f)));
+    }
+    for obj in &opt.completes {
+        if let Some((qid, _)) = objective_quest(c, obj) {
+            cond.push_str(&format!(
+                " if score @s {} matches 1 unless score @s {} matches 1",
+                quest_active_score(qid),
+                obj_score(obj)
+            ));
         }
     }
-    set.into_iter().collect()
+    cond
 }
 
 /// The command that displays `node_id`: a direct `dialog show` for an ungated
-/// node, or the flag-gate chooser function for a gated one (which shows the
-/// variant matching the player's flags).
+/// node, or the availability chooser function for a gated one (which shows the
+/// variant matching the player's satisfied flags + active objectives).
 fn show_node_cmd(plan: &Plan, npc: &plan::NpcPlan, node_id: &str) -> String {
     let ns = &plan.namespace;
+    let v04 = campaign_is_v04(plan);
     let node_safe = plan::safe_local(node_id);
-    if node_gated_flags(npc, node_id).is_empty() {
+    if node_gated_options(npc, node_id, v04).is_empty() {
         format!("dialog show @s {ns}:{}_{}", npc.safe, node_safe)
     } else {
         format!("function {ns}:show_{}_{}", npc.safe, node_safe)
     }
 }
 
-/// Flag-gate chooser functions (`show_<npc>_<node>`) for this NPC's gated nodes:
-/// compute a per-player bitmask of satisfied gating flags into `dw.dmask`, then
-/// `dialog show` the variant (`<npc>_<node>__m<mask>`) whose options are all
-/// available. One chooser per gated node.
+/// Availability chooser + mask functions for this NPC's display-gated nodes. Per
+/// gated node, two functions:
+///
+/// * `dmask_<npc>_<node>` computes the per-player availability bitmask into
+///   `dw.dmask` — bit `i` set iff the node's `i`-th gated option is currently
+///   displayable (flags satisfied and every completed objective active + not yet
+///   complete). Pure scoreboard math, so a PackTest can drive it and assert the
+///   mask without opening a dialog.
+/// * `show_<npc>_<node>` runs the mask function, then `dialog show`s the variant
+///   (`<npc>_<node>__m<mask>`) whose visible options match.
 fn gated_node_choosers(plan: &Plan, npc: &plan::NpcPlan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
+    let c = plan.campaign;
+    let v04 = campaign_is_v04(plan);
     let mut out = Vec::new();
     let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
     for opt in &npc.options {
         if !seen.insert(opt.node_id.as_str()) {
             continue;
         }
-        let flags = node_gated_flags(npc, &opt.node_id);
-        if flags.is_empty() {
+        let gated = node_gated_options(npc, &opt.node_id, v04);
+        if gated.is_empty() {
             continue;
         }
         let node_safe = plan::safe_local(&opt.node_id);
-        let mut body = vec!["scoreboard players set @s dw.dmask 0".to_string()];
-        for (i, f) in flags.iter().enumerate() {
-            body.push(format!(
-                "execute if score @s {} matches 1 run scoreboard players add @s dw.dmask {}",
-                plan::flag_score(f),
+
+        let mut dmask = vec!["scoreboard players set @s dw.dmask 0".to_string()];
+        for (i, g) in gated.iter().enumerate() {
+            dmask.push(format!(
+                "execute{} run scoreboard players add @s dw.dmask {}",
+                option_display_conditions(c, g),
                 1u32 << i
             ));
         }
-        for mask in 0..(1u32 << flags.len()) {
-            body.push(format!(
+        out.push((format!("dmask_{}_{}", npc.safe, node_safe), lines(&dmask)));
+
+        let mut show = vec![format!("function {ns}:dmask_{}_{}", npc.safe, node_safe)];
+        for mask in 0..(1u32 << gated.len()) {
+            show.push(format!(
                 "execute if score @s dw.dmask matches {mask} run dialog show @s {ns}:{}_{}__m{mask}",
                 npc.safe, node_safe
             ));
         }
-        out.push((format!("show_{}_{}", npc.safe, node_safe), lines(&body)));
+        out.push((format!("show_{}_{}", npc.safe, node_safe), lines(&show)));
     }
     out
 }
 
-/// Whether any dialogue option is flag-gated (gates the `dw.dmask` declaration).
+/// Whether any dialogue option is display-gated (gates the `dw.dmask`
+/// declaration): a v0.4+ option that requires flags or completes an objective.
 fn has_gated_dialogue(c: &delvewright_dsl::Campaign) -> bool {
-    c.dialogue
-        .content
-        .dialogues
-        .iter()
-        .flat_map(|t| &t.nodes)
-        .flat_map(|n| &n.options)
-        .any(|o| !o.requires_flags.is_empty())
+    use delvewright_dsl::DialogueEffect;
+    is_v04(c.quests.dsl_version.as_str())
+        && c.dialogue
+            .content
+            .dialogues
+            .iter()
+            .flat_map(|t| &t.nodes)
+            .flat_map(|n| &n.options)
+            .any(|o| {
+                !o.requires_flags.is_empty()
+                    || o.effects
+                        .iter()
+                        .any(|e| matches!(e, DialogueEffect::CompleteObjective { .. }))
+            })
 }
 
 fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
     let c = plan.campaign;
+    let v04 = campaign_is_v04(plan);
     let mut dialogs = Vec::new();
 
     // class selection
@@ -2447,9 +2509,10 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
                 .filter(|o| o.node_id == node.id.as_str())
                 .collect();
             let node_safe = plan::safe_local(node.id.as_str());
-            let flags = node_gated_flags(npc, node.id.as_str());
-            if flags.is_empty() {
-                // Ungated node → a single dialog (byte-identical to v0.2/v0.3).
+            let gated = node_gated_options(npc, node.id.as_str(), v04);
+            if gated.is_empty() {
+                // Ungated node → a single dialog (byte-identical to v0.2/v0.3, or a
+                // v0.4 node whose every option is unconditional).
                 dialogs.push((
                     format!("{}_{node_safe}", npc.safe),
                     build_node_dialog(
@@ -2460,24 +2523,26 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
                     ),
                 ));
             } else {
-                // v0.4 flag-gated node → one variant per satisfied-flag bitmask.
-                // The chooser function (`show_<npc>_<node>`) shows the variant
-                // matching the player's flags, so a gated option is genuinely
-                // absent until every flag it needs is set (spec-0008 §1).
-                for mask in 0..(1u32 << flags.len()) {
-                    let satisfied: std::collections::BTreeSet<&str> = flags
-                        .iter()
-                        .enumerate()
-                        .filter(|(i, _)| mask & (1u32 << i) != 0)
-                        .map(|(_, f)| f.as_str())
-                        .collect();
+                // v0.4 display-gated node → one variant per availability bitmask.
+                // Bit `i` (declared order among gated options) means "the i-th gated
+                // option is displayable now": every flag it needs is set (flag axis)
+                // and every objective it completes is active (objective-state axis).
+                // The chooser function (`show_<npc>_<node>`) computes the live mask
+                // and shows the matching variant, so a gated option is genuinely
+                // absent until it is displayable (spec-0008 §1).
+                for mask in 0..(1u32 << gated.len()) {
+                    let mut gi = 0u32;
                     let visible: Vec<&plan::OptionPlan> = node_opts
                         .iter()
                         .copied()
                         .filter(|o| {
-                            o.requires_flags
-                                .iter()
-                                .all(|f| satisfied.contains(f.as_str()))
+                            if option_display_gated(o, v04) {
+                                let bit = gi;
+                                gi += 1;
+                                mask & (1u32 << bit) != 0
+                            } else {
+                                true
+                            }
                         })
                         .collect();
                     dialogs.push((
@@ -2986,6 +3051,110 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                     break 'killless;
                 }
             }
+        }
+    }
+
+    // Dialogue display gating (task #54): a `completes` option is DISPLAYED iff
+    // its objective is active — its quest active and the objective not yet
+    // complete — mirroring the click-handler guard. The chooser's `dmask_<npc>_<node>`
+    // computes the per-player availability bitmask (bit `i` = the node's i-th
+    // gated option is displayable); the variant it shows is `__m<mask>`. This test
+    // drives that mask for the first gated completing option and asserts the bit
+    // is 0 before the quest activates, 1 while active, and 0 again after the
+    // objective completes. If the node also has a flag-gated option, a final phase
+    // sets that flag in isolation and asserts its bit flips — proving the flag
+    // axis is unchanged and independent of the objective-state axis.
+    let v04 = campaign_is_v04(plan);
+    'dlg: for npc in &plan.npcs {
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        for probe in &npc.options {
+            if !seen.insert(probe.node_id.as_str()) {
+                continue;
+            }
+            let gated = node_gated_options(npc, &probe.node_id, v04);
+            // The option under test: the first gated option that completes an
+            // objective with a resolvable quest (the objective-state axis).
+            let Some((b, under_test, qid, obj)) = gated.iter().enumerate().find_map(|(i, o)| {
+                o.completes
+                    .iter()
+                    .find_map(|obj| objective_quest(c, obj).map(|(q, _)| (q, obj)))
+                    .map(|(q, obj)| (i, *o, q, obj.as_str()))
+            }) else {
+                continue;
+            };
+            let node_safe = plan::safe_local(&probe.node_id);
+            let dmask = format!("{ns}:dmask_{}_{}", npc.safe, node_safe);
+            let qa = quest_active_score(qid);
+            let os = obj_score(obj);
+
+            // Every score any of this node's gated options reads — zeroed so the
+            // mask isolates the bit under test (campaign-start quests would else
+            // leave sibling bits set).
+            let mut reset: BTreeSet<String> = BTreeSet::new();
+            for g in &gated {
+                for f in &g.requires_flags {
+                    reset.insert(plan::flag_score(f));
+                }
+                for o in &g.completes {
+                    if let Some((q, _)) = objective_quest(c, o) {
+                        reset.insert(quest_active_score(q));
+                        reset.insert(obj_score(o));
+                    }
+                }
+            }
+
+            let mut bt = packtest_header(&format!(
+                "{}: dialogue option `{}` is displayed only while its objective `{obj}` is active",
+                c.world.content.title, under_test.label
+            ));
+            bt.push(format!("function {ns}:setup"));
+            let clear = |bt: &mut Vec<String>| {
+                for s in &reset {
+                    bt.push(format!("scoreboard players set @a {s} 0"));
+                }
+            };
+            let run_mask = |bt: &mut Vec<String>| {
+                bt.push(format!("execute as @a run function {dmask}"));
+                bt.push(
+                    "execute store result score #dm dw.sys run scoreboard players get @a dw.dmask"
+                        .to_string(),
+                );
+            };
+
+            // Phase A — quest inactive: the option is hidden (its bit is 0).
+            clear(&mut bt);
+            run_mask(&mut bt);
+            bt.push("assert score #dm dw.sys matches 0".to_string());
+            // Phase B — quest active, objective incomplete: the option appears.
+            clear(&mut bt);
+            bt.push(format!("scoreboard players set @a {qa} 1"));
+            run_mask(&mut bt);
+            bt.push(format!("assert score #dm dw.sys matches {}", 1u32 << b));
+            // Phase C — objective complete: the option disappears again.
+            bt.push(format!("scoreboard players set @a {os} 1"));
+            run_mask(&mut bt);
+            bt.push("assert score #dm dw.sys matches 0".to_string());
+
+            // Flag axis (unchanged): a flag-only gated option's bit flips with its
+            // flag alone, independent of the objective-state axis.
+            if let Some((bf, flag_opt)) = gated
+                .iter()
+                .enumerate()
+                .find(|(_, o)| !o.requires_flags.is_empty() && o.completes.is_empty())
+            {
+                clear(&mut bt);
+                for f in &flag_opt.requires_flags {
+                    bt.push(format!(
+                        "scoreboard players set @a {} 1",
+                        plan::flag_score(f)
+                    ));
+                }
+                run_mask(&mut bt);
+                bt.push(format!("assert score #dm dw.sys matches {}", 1u32 << bf));
+            }
+
+            write("v04_dialogue_visibility", bt);
+            break 'dlg;
         }
     }
 }
