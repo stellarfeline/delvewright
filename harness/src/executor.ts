@@ -287,10 +287,11 @@ function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<
  * Stable completion marker the compiler broadcasts on campaign completion:
  * `[Delvewright] complete <objective> <value>`. The bot observes THIS (chat is
  * reliably parsed by mineflayer) rather than the sidebar score, because mineflayer
- * 4.37.x cannot decode 1.21.11 scoreboard score packets. The datapack still
- * displays the objective in the sidebar (amended contract, spec-0002) — this is
- * only the harness's observation channel, and it can switch to the live sidebar
- * read once mineflayer gains 1.21.11 score support.
+ * 4.37.x cannot decode 1.21.11 scoreboard score packets. The datapack deliberately
+ * does NOT put the objective on the sidebar — a raw internal id must never surface
+ * to players (task #54 addendum) — so this chat token is the sole observation
+ * channel; it can move to a live sidebar/score read once mineflayer gains 1.21.11
+ * score support.
  */
 const COMPLETION_MARKER = /\[Delvewright\] complete (\S+) (-?\d+)/;
 
