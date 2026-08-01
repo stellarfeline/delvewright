@@ -199,6 +199,155 @@ pub fn inventory(c: &Campaign) -> BTreeMap<String, String> {
     out
 }
 
+/// One `narrate` `art` occurrence (DSL v0.6, spec-0014): its stage-doc path (for
+/// diagnostics), its l10n inventory key, and the canonical English text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArtNarrate {
+    /// JSON-pointer-ish path within the `quests` stage doc.
+    pub path: String,
+    /// The l10n inventory key (`fx.…​.narrate`) — always present, since every
+    /// `narrate` lives in an inventoried effect position.
+    pub key: String,
+    /// The canonical English text.
+    pub text: String,
+}
+
+/// Every `narrate` effect using the v0.6 `art` style, in a fixed deterministic
+/// order. Its l10n `key` is derived by the **same** traversal/keying as
+/// [`inventory`]/[`each_string`], so the compiler's art-font glyph check
+/// (`DW0328`) can look each art string up in every declared-language sidecar.
+/// Every art narrate lives in a quest `on_objective_complete`/`on_complete` or an
+/// environment trigger — all inventoried — so each `key` is guaranteed present in
+/// a fully-covered sidecar.
+pub fn art_narrates(c: &Campaign) -> Vec<ArtNarrate> {
+    let mut out = Vec::new();
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        let ql = local(q.id.as_str());
+        for (oid, effs) in &q.on_objective_complete {
+            let ol = local(oid.as_str());
+            for (i, eff) in effs.iter().enumerate() {
+                if let Some(text) = eff.narrate_art_text() {
+                    out.push(ArtNarrate {
+                        path: format!(
+                            "/content/quests/{qi}/on_objective_complete/{}/{i}/text",
+                            oid.as_str()
+                        ),
+                        key: format!("fx.{ql}.oc.{ol}.{i}.narrate"),
+                        text: text.to_string(),
+                    });
+                }
+            }
+        }
+        for (i, eff) in q.on_complete.iter().enumerate() {
+            if let Some(text) = eff.narrate_art_text() {
+                out.push(ArtNarrate {
+                    path: format!("/content/quests/{qi}/on_complete/{i}/text"),
+                    key: format!("fx.{ql}.done.{i}.narrate"),
+                    text: text.to_string(),
+                });
+            }
+        }
+    }
+    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
+        let tl = local(t.id.as_str());
+        for (i, eff) in t.effects.iter().enumerate() {
+            if let Some(text) = eff.narrate_art_text() {
+                out.push(ArtNarrate {
+                    path: format!("/content/triggers/{ti}/effects/{i}/text"),
+                    key: format!("fx.trig.{tl}.{i}.narrate"),
+                    text: text.to_string(),
+                });
+            }
+        }
+    }
+    out
+}
+
+/// One vanilla sound-event reference (DSL v0.6/v0.4): its stage-doc path and the
+/// referenced id, for registry validation (`DW0326`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SoundRef {
+    /// JSON-pointer-ish path within the `quests` stage doc.
+    pub path: String,
+    /// The referenced sound-event id (`minecraft:` prefix optional).
+    pub sound: String,
+}
+
+/// Every vanilla sound-event id referenced by a quest/trigger effect — a
+/// `play-sound`'s `sound` (v0.6) and a `narrate`'s optional `sound` (v0.4) — in a
+/// fixed deterministic order, for `DW0326` validation.
+pub fn sound_refs(c: &Campaign) -> Vec<SoundRef> {
+    let mut out = Vec::new();
+    let mut push = |path: String, eff: &QuestEffect| {
+        for (sub, sound) in eff.sound_refs() {
+            out.push(SoundRef {
+                path: format!("{path}/{sub}"),
+                sound: sound.to_string(),
+            });
+        }
+    };
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oid, effs) in &q.on_objective_complete {
+            for (i, eff) in effs.iter().enumerate() {
+                push(
+                    format!(
+                        "/content/quests/{qi}/on_objective_complete/{}/{i}",
+                        oid.as_str()
+                    ),
+                    eff,
+                );
+            }
+        }
+        for (i, eff) in q.on_complete.iter().enumerate() {
+            push(format!("/content/quests/{qi}/on_complete/{i}"), eff);
+        }
+    }
+    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
+        for (i, eff) in t.effects.iter().enumerate() {
+            push(format!("/content/triggers/{ti}/effects/{i}"), eff);
+        }
+    }
+    out
+}
+
+/// Every `play-sound` effect using the deferred `at: actor` target, in a fixed
+/// order, as `(path, actor-id)` pairs. The actor variant is accepted by the
+/// schema but rejected (`DW0335`) until the actors surface (spec-0014 `actors[]`)
+/// lands; the compiler applies that check. `SoundRef::sound` carries the actor id.
+pub fn play_sound_actor_refs(c: &Campaign) -> Vec<SoundRef> {
+    let mut out = Vec::new();
+    let mut push = |path: String, eff: &QuestEffect| {
+        if let Some(actor) = eff.play_sound_actor() {
+            out.push(SoundRef {
+                path: format!("{path}/at/actor"),
+                sound: actor.to_string(),
+            });
+        }
+    };
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oid, effs) in &q.on_objective_complete {
+            for (i, eff) in effs.iter().enumerate() {
+                push(
+                    format!(
+                        "/content/quests/{qi}/on_objective_complete/{}/{i}",
+                        oid.as_str()
+                    ),
+                    eff,
+                );
+            }
+        }
+        for (i, eff) in q.on_complete.iter().enumerate() {
+            push(format!("/content/quests/{qi}/on_complete/{i}"), eff);
+        }
+    }
+    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
+        for (i, eff) in t.effects.iter().enumerate() {
+            push(format!("/content/triggers/{ti}/effects/{i}"), eff);
+        }
+    }
+    out
+}
+
 /// Replace every inventoried string in `c` with its translation from
 /// `translations` (an l10n sidecar's `content`). Keys absent from the map are left
 /// as canonical English — but a fully-validated sidecar ([`validate_l10n`]) covers

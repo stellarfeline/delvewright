@@ -17,9 +17,10 @@ pub const SUPPORTED_DSL_VERSION: &str = "0.6.0";
 /// (spec-0008) adds dialogue state, props, narration, live-threat tuning, NPC
 /// lifecycle + skins, environment triggers, cutscenes and named given items;
 /// v0.5 (spec-0010) adds declared world `time`/`weather`, per-area `lighting`
-/// (deterministic relight), and the `set-time`/`set-weather` effect verbs;
-/// v0.6 (spec-0013) adds the stage-1 `horizon` (`ocean` superflat sea backdrop)
-/// and `boundary` (derived playable region + return-to-checkpoint enforcement).
+/// (deterministic relight), and the `set-time`/`set-weather` effect verbs; v0.6
+/// adds the stage-1 `horizon` (`ocean` backdrop) + `boundary` (spec-0013) and the
+/// staging surface — the `play-sound` effect and the `narrate` `art` style
+/// (spec-0014), alongside the actors/stealth/sequence surface from sibling PRs.
 /// Older campaigns remain valid and compile byte-identically. A construct
 /// introduced in a later version is rejected with `DW0141` in an earlier one.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &["0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0"];
@@ -46,14 +47,15 @@ pub fn is_v04(version: &str) -> bool {
 
 /// True if `version` enables the DSL v0.5 surface (spec-0010): declared world
 /// `time`/`weather`, per-area `lighting` (deterministic relight fixtures), and
-/// the `set-time`/`set-weather` effect verbs.
+/// the `set-time`/`set-weather` effect verbs. v0.6 is an additive superset.
 pub fn is_v05(version: &str) -> bool {
     version == "0.5.0" || version == "0.6.0"
 }
 
-/// True if `version` enables the DSL v0.6 surface (spec-0013): the stage-1
-/// `horizon` (`ocean`) and `boundary` (playable region) world fields. v0.6 is an
-/// additive superset, so it enables the whole v0.2..v0.5 surface too.
+/// True if `version` enables the DSL v0.6 surface: the stage-1 `horizon`/`boundary`
+/// world fields (spec-0013) and the `play-sound` effect + `narrate` `art` style
+/// (spec-0014). Additive over v0.5; a campaign that uses none is byte-identical,
+/// and a use of the v0.6 surface in an earlier campaign is rejected with `DW0141`.
 pub fn is_v06(version: &str) -> bool {
     version == "0.6.0"
 }

@@ -1188,6 +1188,47 @@ pub enum QuestEffect {
         /// The weather state to cut to.
         weather: WorldWeather,
     },
+    /// Plays a vanilla sound event, positionally or per-player (DSL v0.6,
+    /// spec-0014). `sound` is validated against the vendored pinned-1.21.11
+    /// sound-event registry (`DW0326` unknown). `at` selects where the sound
+    /// originates (default: each player's own position); `volume`/`pitch` map to
+    /// the `playsound` command's trailing args (pitch clamps to 0.0..=2.0 in
+    /// vanilla).
+    PlaySound {
+        /// The vanilla sound-event id (`minecraft:` prefix optional).
+        sound: String,
+        /// Where the sound plays from (default: `players`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<SoundAt>,
+        /// Playback volume (vanilla default 1.0; > 1.0 only extends audible range).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        volume: Option<f64>,
+        /// Playback pitch (vanilla 0.0..=2.0; default 1.0).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pitch: Option<f64>,
+    },
+}
+
+/// Where a [`QuestEffect::PlaySound`] originates (DSL v0.6, spec-0014). The
+/// `actor` variant is accepted by the schema but not yet wired — it is rejected
+/// with `DW0335` until the actors surface (spec-0014 `actors[]`) lands, at which
+/// point it resolves to the actor's position like `move-actor` does.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "at", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum SoundAt {
+    /// Play the sound positioned at a resolved anchor, audible to all players.
+    Anchor {
+        /// The anchor the sound plays from.
+        anchor: AnchorId,
+    },
+    /// Play the sound at each player's own position (the default).
+    Players,
+    /// Play the sound at a scripted actor's position (deferred — `DW0335` until
+    /// the actors surface lands).
+    Actor {
+        /// The actor id (stage-5 `actors[]`; not yet resolvable).
+        actor: String,
+    },
 }
 
 /// The presentation channel for a [`QuestEffect::Narrate`] (DSL v0.4).
@@ -1200,15 +1241,21 @@ pub enum NarrateStyle {
     Title,
     /// An on-screen subtitle.
     Subtitle,
+    /// A large-glyph "art" title rendered through the delve's custom resource-pack
+    /// font (`delve:art`) so endings can flash big art text (DSL v0.6, spec-0014).
+    /// Text is checked at compile time against the font's glyph inventory
+    /// (`DW0328`); characters outside it (e.g. non-Latin script) are rejected.
+    Art,
 }
 
 impl NarrateStyle {
-    /// The kebab tag (`chat` / `title` / `subtitle`).
+    /// The kebab tag (`chat` / `title` / `subtitle` / `art`).
     pub fn token(self) -> &'static str {
         match self {
             NarrateStyle::Chat => "chat",
             NarrateStyle::Title => "title",
             NarrateStyle::Subtitle => "subtitle",
+            NarrateStyle::Art => "art",
         }
     }
 }
@@ -1309,7 +1356,8 @@ impl QuestEffect {
             | QuestEffect::MoveNpc { .. }
             | QuestEffect::Cutscene { .. }
             | QuestEffect::SetTime { .. }
-            | QuestEffect::SetWeather { .. } => None,
+            | QuestEffect::SetWeather { .. }
+            | QuestEffect::PlaySound { .. } => None,
         }
     }
 
@@ -1350,6 +1398,65 @@ impl QuestEffect {
     pub fn set_weather(&self) -> Option<WorldWeather> {
         match self {
             QuestEffect::SetWeather { weather } => Some(*weather),
+            _ => None,
+        }
+    }
+
+    /// The v0.6 effect name if this effect is one introduced in DSL v0.6
+    /// (`play-sound`, spec-0014). Validates in a v0.6 campaign and is reserved
+    /// (`DW0141`) earlier. (The `narrate` `art` style is a v0.6 addition to an
+    /// existing verb — see [`QuestEffect::narrate_art`] — not a new effect.)
+    pub fn v06_effect(&self) -> Option<&'static str> {
+        match self {
+            QuestEffect::PlaySound { .. } => Some("play-sound"),
+            _ => None,
+        }
+    }
+
+    /// `true` if this is a `narrate` carrying the v0.6 `art` style (reserved
+    /// `DW0141` under a pre-0.6 campaign; glyph-checked `DW0328`).
+    pub fn narrate_art(&self) -> bool {
+        matches!(
+            self,
+            QuestEffect::Narrate {
+                style: Some(NarrateStyle::Art),
+                ..
+            }
+        )
+    }
+
+    /// The `narrate` line's text if this is a `narrate` with the `art` style.
+    pub fn narrate_art_text(&self) -> Option<&str> {
+        match self {
+            QuestEffect::Narrate {
+                text,
+                style: Some(NarrateStyle::Art),
+                ..
+            } => Some(text.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Every vanilla sound-event id this effect references, for registry
+    /// validation (`DW0326`): a `play-sound`'s `sound`, and a `narrate`'s optional
+    /// `sound`. Returns `(subpath, id)` pairs where `subpath` locates the field
+    /// within the effect (e.g. `sound`).
+    pub fn sound_refs(&self) -> Vec<(&'static str, &str)> {
+        match self {
+            QuestEffect::PlaySound { sound, .. } => vec![("sound", sound.as_str())],
+            QuestEffect::Narrate { sound: Some(s), .. } => vec![("sound", s.as_str())],
+            _ => Vec::new(),
+        }
+    }
+
+    /// The deferred `play-sound` `at: actor` id, if this effect is a `play-sound`
+    /// targeting an actor (rejected `DW0335` until the actors surface lands).
+    pub fn play_sound_actor(&self) -> Option<&str> {
+        match self {
+            QuestEffect::PlaySound {
+                at: Some(SoundAt::Actor { actor }),
+                ..
+            } => Some(actor.as_str()),
             _ => None,
         }
     }

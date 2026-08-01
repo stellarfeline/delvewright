@@ -70,6 +70,40 @@ impl EntityRegistry for FullEntityRegistry {
     }
 }
 
+/// The complete 1.21.11 `sound_event` registry (1838 ids), vendored under `data/`
+/// from the same `misode/mcmeta` summary as the item/entity registries (see
+/// `data/PROVENANCE.md`; regenerate with `tools/extract-sound-registry.py`).
+/// Validates v0.6 `play-sound` / v0.4 `narrate.sound` ids (`DW0326`, spec-0014).
+#[derive(Debug, Clone)]
+pub struct FullSoundRegistry {
+    ids: BTreeSet<String>,
+}
+
+impl FullSoundRegistry {
+    /// Load the vendored 1.21.11 sound-event registry (embedded at compile time).
+    pub fn v1_21_11() -> Self {
+        let raw = include_str!("../data/sounds-1.21.11.json");
+        let ids: Vec<String> =
+            serde_json::from_str(raw).expect("vendored sound registry is valid JSON");
+        Self {
+            ids: ids.into_iter().collect(),
+        }
+    }
+
+    /// True if `sound_id` is a known sound event in the pinned MC version. An
+    /// un-namespaced id is resolved under the default `minecraft:` namespace, as
+    /// the `playsound` command accepts.
+    pub fn contains(&self, sound_id: &str) -> bool {
+        if self.ids.contains(sound_id) {
+            return true;
+        }
+        if !sound_id.contains(':') {
+            return self.ids.contains(&format!("minecraft:{sound_id}"));
+        }
+        false
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Prefab metadata (`prefabs/<name>.json`)
 // ---------------------------------------------------------------------------
