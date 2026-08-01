@@ -3134,8 +3134,11 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
             };
             let run_mask = |bt: &mut Vec<String>| {
                 bt.push(format!("execute as @a run function {dmask}"));
+                // Copy the player's mask into a fake player for the assert. `as @a`
+                // keeps the read single-entity (`= @s …`): `scoreboard players get`
+                // / `operation` reject a multi-entity selector like a bare `@a`.
                 bt.push(
-                    "execute store result score #dm dw.sys run scoreboard players get @a dw.dmask"
+                    "execute as @a run scoreboard players operation #dm dw.sys = @s dw.dmask"
                         .to_string(),
                 );
             };

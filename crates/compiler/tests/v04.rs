@@ -282,6 +282,17 @@ fn dialogue_visibility_packtest_covers_both_axes() {
         2,
         "hidden asserted before activation and after completion"
     );
+    // The mask read must be single-entity: `scoreboard players get`/`operation`
+    // reject a multi-entity selector, so a bare `@a` read is a load-time command
+    // error (caught live by PackTest). Read via `as @a … = @s`.
+    assert!(
+        !pt.contains("get @a dw.dmask"),
+        "the dmask read must not use a multi-entity `@a` selector: {pt}"
+    );
+    assert!(
+        pt.contains("execute as @a run scoreboard players operation #dm dw.sys = @s dw.dmask"),
+        "the dmask read copies @s (single) into the assert scratch: {pt}"
+    );
 }
 
 /// Kill-less `spawn-wave` (spec-0008 §4 live threat): `wave/ambush` is spawned by a
