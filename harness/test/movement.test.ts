@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  allowNonCollidingEntities,
   configureLeg,
+  NON_COLLIDING_ENTITY_TYPES,
   type ControlBot,
   type LegMovements,
 } from "../src/movement.ts";
@@ -30,6 +32,29 @@ test("configureLeg locks adventure-mode movement and leaves sprint alone for a p
   // Restore is a no-op and must not toggle sneak on a leg that never sneaked.
   restore();
   assert.deepEqual(bot.toggles, []);
+});
+
+test("allowNonCollidingEntities marks display/interaction/marker entities passable", () => {
+  // A fresh Movements starts with the pathfinder's default passable set (mobs and
+  // the mannequin NPC are NOT in it and stay avoided). Seed one solid entity to
+  // prove it is left untouched.
+  const movements = { passableEntities: new Set<string>(["arrow"]) };
+  allowNonCollidingEntities(movements);
+  // Every non-colliding type is now passable.
+  for (const name of NON_COLLIDING_ENTITY_TYPES) {
+    assert.ok(
+      movements.passableEntities.has(name),
+      `${name} must be passable (it has no player-blocking collision box)`,
+    );
+  }
+  // The interaction hitbox that congested the terminal NPC approach is passable.
+  assert.ok(movements.passableEntities.has("interaction"));
+  // Solid/pushing entities are NOT added — a mob or mannequin stays an obstacle.
+  assert.ok(!movements.passableEntities.has("zombie"));
+  assert.ok(!movements.passableEntities.has("mannequin"));
+  assert.ok(!movements.passableEntities.has("armor_stand"));
+  // Pre-existing entries are preserved (additive, never removes).
+  assert.ok(movements.passableEntities.has("arrow"));
 });
 
 test("configureLeg disables sprint and turns sneak ON for a sneak leg", () => {
