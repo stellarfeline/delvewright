@@ -30,11 +30,23 @@
 //!     the bottom-centre). The solver reads socket geometry only, so island pieces
 //!     mate with the same machinery as cave/keep pieces.
 //!
-//! The galley is a STANDALONE set-piece (zero connectors, one `anchor/deck`),
-//! exactly the admitted `hero-galleon-oak` pattern: the terrain worker positions
-//! it offshore by anchor offset, so there is no inter-piece socket to mis-mate over
-//! water and no cross-seam flood interaction. See the PR description for the
-//! merged-vs-separate decision.
+//! The galley hull is authored once by `build_galley` and used TWO ways:
+//!   1. `island-galley` — the standalone set-piece (zero connectors, one
+//!      `anchor/deck`), the admitted `hero-galleon-oak` pattern. Output byte-
+//!      identical to before this merge; it stays a reusable offshore-ship asset.
+//!   2. `island-beach-camp` — the same hull is STAMPED into authored ocean water
+//!      south of the sand, so the camp piece contains its own moored galley,
+//!      visible offshore from spawn and boardable via a walkable gangplank
+//!      (`anchor/deck`, `anchor/prow`).
+//!
+//! Why merged (not offset at assembly): the DSL has no scenery-offset primitive
+//! and the solver spaces areas 256 blocks apart, so a *standalone* galley area can
+//! never be "anchored just offshore" from the beach — the two would sit a quarter-
+//! kilometre apart with no way to bridge them. The merged-piece fallback was the
+//! reserved plan for exactly this (design brief §5, tileset-doc "merged vs
+//! separate"). The stamp copies only the hull's SOLID cells over the beach's own
+//! sea, so the shared waterline (local y=2) and seabed stay a single water body —
+//! no cross-seam flood interaction, the concern that first motivated "separate".
 //!
 //! Usage: island-prefab-gen <out_dir>
 
@@ -427,10 +439,33 @@ fn assert_no_unsupported_gravity(id: &str, g: &Grid) {
     );
 }
 
+/// Stamp `src`'s SOLID cells into `dst` at offset `(ox,oy,oz)`, skipping air and
+/// water. Used to merge the galley hull into the beach camp's authored ocean:
+/// skipping water leaves the beach's own seabed + waterline intact (one water
+/// body, no second flood volume), while the hull, deck, mast, oars and dressing
+/// are copied in. Deterministic — a straight cell copy, no RNG.
+fn stamp_solids(dst: &mut Grid, src: &Grid, ox: i32, oy: i32, oz: i32) {
+    let [sx, sy, sz] = src.size;
+    for x in 0..sx {
+        for y in 0..sy {
+            for z in 0..sz {
+                let cell = src.get(x, y, z);
+                let skip = matches!(cell, Cell::Air)
+                    || matches!(cell, Cell::Block(name, _) if name == "minecraft:water");
+                if !skip {
+                    dst.set(x + ox, y + oy, z + oz, cell.clone());
+                }
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // PIECE 1 — island-beach-camp (open-air sea-level entry).
 //   Base stone y=0; sand beach y=1..2 (walk y=3); sea to the south (high Z) with
-//   waterline top at y=2; one inland (north) island:socket to greenfield.
+//   waterline top at y=2; one inland (north) island:socket to greenfield. The
+//   moored galley is stamped into that southern sea and a walkable gangplank
+//   bridges the beach to its deck (see the jetty/galley section near the end).
 // ---------------------------------------------------------------------------
 
 /// Ragged tide line: the first (south-most) sea row for column `x`. Dry beach is
@@ -582,15 +617,60 @@ fn build_beach_camp(size: [i32; 3], seed: u64) -> Grid {
         Some(vec![("hanging", "false")]),
     );
 
-    // --- Gangplank jetty reaching south over the water toward the galley. ---
+    // --- Jetty: a short pier reaching south over the shallows (walk y=3). ---
+    // Bounded to z=11..=16 (NOT run to the south wall): the moored galley and its
+    // boarding gangplank occupy the water beyond it. anchor/gangplank is [10,3,15].
     let jetty_x = 10;
-    for z in 11..sz {
-        // Deck plank at y=2 (walk y=3, flush with the beach); fence pile support.
-        g.blk(jetty_x, 1, z, "minecraft:oak_fence", None);
-        g.blk(jetty_x, 2, z, "minecraft:oak_planks", None);
+    for z in 11..=16 {
+        g.blk(jetty_x, 1, z, "minecraft:oak_fence", None); // pile support
+        g.blk(jetty_x, 2, z, "minecraft:oak_planks", None); // deck plank (walk y=3)
     }
-    // A tiny bollard at the jetty head.
-    g.blk(jetty_x, 3, sz - 1, "minecraft:oak_fence", None);
+
+    // --- Moored Greek galley, stamped into the authored ocean south of the sand.
+    // Native orientation (long axis +Z, pointed stern toward the beach); the SAME
+    // hull `build_galley` authors for the standalone `island-galley`. Only solid
+    // cells are copied (stamp_solids) so the beach's sea stays one water body, and
+    // the hull sits at merged x=7..15 / z=14..42, fully afloat (all z >= coast).
+    const GALLEY_OX: i32 = 7; // hull centreline (local cx=4) lands on merged x=11
+    const GALLEY_OZ: i32 = 14; // stern clears the coast (max 14); hull is offshore
+    let galley = build_galley([9, 15, 29], 0);
+    stamp_solids(&mut g, &galley, GALLEY_OX, 0, GALLEY_OZ);
+
+    // --- Boarding gangplank: jetty head (y=3) up onto the galley deck (y=5).
+    // The route hugs x=10 past the pointed stern (whose centreline stem posts at
+    // merged (11,·,17) and (11,·,18) form the support column), then steps east onto
+    // the deck spine at x=11. Every stand cell rises <=1 with >=2 air overhead, so
+    // it is DW0311-walkable from the jetty to the deck:
+    //   (10,3,16) -> (10,4,17) -> (10,5,18) -> (11,5,18) -> (11,5,19) deck spine
+    // spruce treads on oak-fence piles read as the ship's own gangplank.
+    // z=17 tread (stand y=4), on a pile down to the seabed.
+    g.blk(10, 1, 17, "minecraft:oak_fence", None);
+    g.blk(10, 2, 17, "minecraft:spruce_planks", None);
+    g.blk(10, 3, 17, "minecraft:spruce_planks", None);
+    // z=18 tread (stand y=5), on a pile down to the seabed.
+    g.blk(10, 1, 18, "minecraft:oak_fence", None);
+    g.blk(10, 2, 18, "minecraft:spruce_planks", None);
+    g.blk(10, 3, 18, "minecraft:spruce_planks", None);
+    g.blk(10, 4, 18, "minecraft:spruce_planks", None);
+    // Step east onto the deck: this tread rests on the stern stem post (11,3,18).
+    g.blk(11, 4, 18, "minecraft:spruce_planks", None);
+
+    // --- Deck lanterns (merged piece only — the galley appears in a dusk beat).
+    // Set on the bulwark caps fore & aft, clear of the deck walk lane (x=10..12).
+    g.blk(
+        13,
+        6,
+        23,
+        "minecraft:lantern",
+        Some(vec![("hanging", "false")]),
+    );
+    g.blk(
+        8,
+        6,
+        31,
+        "minecraft:lantern",
+        Some(vec![("hanging", "false")]),
+    );
 
     g
 }
@@ -1002,8 +1082,11 @@ fn specs() -> Vec<Spec> {
     use Side::*;
     vec![
         Spec {
+            // Beach camp + its moored galley (stamped in the southern sea) + the
+            // boarding gangplank. Extended +Z (open-sea side) and +Y (mast height);
+            // every pre-galley beach anchor keeps its original local coordinate.
             id: "island-beach-camp",
-            size: [21, 8, 17],
+            size: [21, 15, 44],
             kind: Kind::BeachCamp,
             doors: vec![(North, 2)], // inland island:socket to greenfield (walk y=3)
             anchors: vec![
@@ -1014,6 +1097,10 @@ fn specs() -> Vec<Spec> {
                 ("anchor/crew-b", a_pos([13, 3, 5], Some("west"))),
                 ("anchor/surf-wave", a_pos([8, 3, 10], Some("south"))),
                 ("anchor/gangplank", a_pos([10, 3, 15], Some("south"))),
+                // Galley deck (boarding target) + bow (scenic ending beat), both on
+                // the merged hull's walk plane y=5, facing to read from the camp.
+                ("anchor/deck", a_pos([11, 5, 22], Some("north"))),
+                ("anchor/prow", a_pos([11, 5, 35], Some("south"))),
             ],
             salt: 1,
         },

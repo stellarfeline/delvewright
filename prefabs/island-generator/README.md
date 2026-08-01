@@ -16,16 +16,22 @@ cargo run --manifest-path prefabs/island-generator/Cargo.toml -- campaigns/prefa
 Byte-identical on every run (double-run hash-checked). Both pieces are open-air,
 sky-lit island scenery, not enclosed rock:
 
-- **`island-beach-camp`** (21×8×17) — sand shore rising from a ragged tide line;
+- **`island-beach-camp`** (21×15×44) — sand shore rising from a ragged tide line;
   a campfire ring with log benches (the relight fixture), two wool/fence A-frame
-  tents, a barrel supply stack, a lantern class post, a plank gangplank jetty, and
-  driftwood / rock / seagrass greeble. One inland `island:socket` (floor_y=2) to
-  greenfield. Anchors: `entry`, `anchor/camp-fire`, `anchor/class-post`,
-  `anchor/crew-a`, `anchor/crew-b`, `anchor/surf-wave`, `anchor/gangplank`.
+  tents, a barrel supply stack, a lantern class post, and driftwood / rock /
+  seagrass greeble. One inland `island:socket` (floor_y=2) to greenfield. The
+  piece extends south into authored ocean where **the galley hull is stamped in,
+  moored just offshore**, reached by a bounded jetty + a walkable **gangplank**
+  (spruce treads on oak-fence piles) that climbs from the sand (y=3) to the deck
+  (y=5). Anchors: `entry`, `anchor/camp-fire`, `anchor/class-post`,
+  `anchor/crew-a`, `anchor/crew-b`, `anchor/surf-wave`, `anchor/gangplank`,
+  `anchor/deck`, `anchor/prow`.
 - **`island-galley`** (9×15×29) — a flared plank hull with a dark waterline wale,
   a ram + stempost prow, a curled aphlaston stern, oar rows (spruce trapdoors +
   button ports), a single mast with a white-wool square sail, and the apotropaic
   **eye (ophthalmos)** on both bows. Standalone set-piece, one `anchor/deck`.
+  `build_galley` authors this hull once; `island-beach-camp` reuses it via
+  `stamp_solids`, so this artifact's output is byte-identical to before the merge.
 
 See `../island-tileset.md` for the shared island convention (waterline y=2, walk
 plane y=3, `island:socket` floor_y=2), the flood-safety rationale, and the
