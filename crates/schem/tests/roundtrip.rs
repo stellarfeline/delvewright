@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use delvewright_schem::convert::{DATA_VERSION, read_structure};
-use delvewright_schem::diag::DW_STRIP;
+use delvewright_schem::diag::{DW_DATAVERSION, DW_SPLIT, DW_STRIP};
 use delvewright_schem::fixtures;
 use delvewright_schem::nbt::Nbt;
 use delvewright_schem::split::{part_filename, plan_split};
@@ -162,6 +162,13 @@ fn oversize_splits_and_reassembles() {
     let result = convert(&fixtures::v2_oversize(), "castle", 48).unwrap();
     assert_eq!(result.grid, [2, 1, 2]);
 
+    // The split is a diagnostic, not a silent behavior — the author must see it.
+    assert!(
+        result.diagnostics.iter().any(|d| d.code == DW_SPLIT),
+        "expected a DW0701 split diagnostic: {:?}",
+        result.diagnostics
+    );
+
     let parts = match &result.output {
         ConvertOutput::Split { parts, .. } => parts,
         _ => panic!("expected split"),
@@ -206,6 +213,23 @@ fn oversize_splits_and_reassembles() {
             }
         }
     }
+}
+
+#[test]
+fn wrong_data_version_is_dw0702_warning() {
+    let result = convert(&fixtures::v2_wrong_data_version(), "test", 48).unwrap();
+    assert!(
+        result.diagnostics.iter().any(|d| d.code == DW_DATAVERSION
+            && d.severity == delvewright_schem::diag::Severity::Warning),
+        "expected a DW0702 warning for a mismatched source DataVersion: {:?}",
+        result.diagnostics
+    );
+    // Block states are still reinterpreted (best-effort), not rejected.
+    let view = read_structure(&single(&fixtures::v2_wrong_data_version())).unwrap();
+    assert_eq!(
+        view.data_version, DATA_VERSION,
+        "output is re-stamped to the pinned target"
+    );
 }
 
 #[test]

@@ -310,6 +310,18 @@ non-solid cells. Unroutable/clipping/stranded → `DW0307`/`DW0308`/`DW0311` at 
 Every DW code in `crates/**/*.rs`. Grouped by range. `tools/check-dw-codes.py`
 verifies this catalog is bidirectionally exact against source (CI docs job).
 
+**Test-coverage gated** (owner, 2026-07-31; CLAUDE.md Conventions). The same
+script also fails CI if any documented, landed code has no test asserting it —
+either the literal code string or a symbolic diagnostic-code constant (e.g.
+`DW_STRIP`) that resolves to it, scoped per crate to avoid cross-crate name
+collisions (`DW_INPUT` names a different code in `delve-schem`, `delve-render`,
+and `delve-admit`) — appearing in `crates/<crate>/tests/**/*.rs` or a
+`#[cfg(test)]` module in `crates/<crate>/src/**/*.rs`. A code that is
+genuinely unreachable without external resources (e.g. `DW0720`, which needs a
+GPU adapter + the never-committed 1.21.11 client jar) may be declared in the
+script's `ALLOWLIST` with a one-line justification — kept minimal; writing the
+test is always preferred.
+
 **Remediation contract (task #39).** Every DW message is the repair protocol for a
 zero-context author: it states **what** is wrong (with the offending name/coord/
 count/limit interpolated), **where** to fix it (the campaign stage/field, the

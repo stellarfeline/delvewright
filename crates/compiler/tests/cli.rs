@@ -338,6 +338,10 @@ fn unreachable_finale_exits_2_with_dw0201() {
     assert_eq!(code(&a), 2, "analyze should exit 2");
     let stdout = String::from_utf8_lossy(&a.stdout);
     assert!(stdout.contains("DW0201"), "expected DW0201:\n{stdout}");
+    // The finale's own trigger names itself, so it never activates — the same
+    // deep fixpoint that proves the finale unreachable also proves the quest
+    // itself is a dead branch (DW0202): the two codes are companions here.
+    assert!(stdout.contains("DW0202"), "expected DW0202:\n{stdout}");
 
     // build also stops at analysis (exit 2), never emitting.
     let out = tmp("unreachable-out");
@@ -350,6 +354,164 @@ fn unreachable_finale_exits_2_with_dw0201() {
         pf.to_str().unwrap(),
     ]);
     assert_eq!(code(&b), 2, "build should exit 2 on unreachable finale");
+}
+
+/// `DW0203`: an objective can never complete because its own `requires_flags`
+/// gate can only ever be satisfied by an effect on its *own* completion (a
+/// self-cycle) — a genuinely deep reachability deadlock no static DSL rule
+/// catches (see `self-flag-deadlock.json`).
+#[test]
+fn self_flag_deadlock_exits_2_with_dw0203() {
+    let patch: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(common::compiler_fixtures_dir().join("self-flag-deadlock.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    let pf = common::prefabs_dir();
+    let camp = tmp("self-flag-deadlock");
+    common::materialize(&patch, &camp);
+
+    // validate passes (DW0172 does not fire: flag/loop IS produced by a real
+    // set-flag effect; the dialogue-level checks don't see the self-cycle either).
+    let v = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&v),
+        0,
+        "validate should pass: {}",
+        String::from_utf8_lossy(&v.stdout)
+    );
+
+    let a = delvec(&[
+        "analyze",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(code(&a), 2, "analyze should exit 2");
+    let stdout = String::from_utf8_lossy(&a.stdout);
+    assert!(stdout.contains("DW0203"), "expected DW0203:\n{stdout}");
+}
+
+/// `DW0300`: the prefab metadata resolves fine (the solver places the piece),
+/// but the referenced `.nbt` structure file is missing from the prefabs dir at
+/// build time — a prefab-library defect, not a campaign one. Uses a private
+/// copy of the real prefabs dir (never mutate `campaigns/prefabs` itself, which
+/// is a checkout of the separate content repo).
+#[test]
+fn missing_structure_file_exits_3_with_dw0300() {
+    let prefabs_copy = tmp("dw0300-prefabs");
+    common::copy_dir_all(&common::prefabs_dir(), &prefabs_copy);
+    std::fs::remove_file(prefabs_copy.join("hello-room.nbt")).unwrap();
+
+    let hw = common::hello_world_dir();
+    let out = tmp("dw0300-out");
+    let b = delvec(&[
+        "build",
+        hw.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        prefabs_copy.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(code(&b), 3, "missing structure file should exit 3");
+    let stdout = String::from_utf8_lossy(&b.stdout);
+    assert!(stdout.contains("DW0300"), "expected DW0300:\n{stdout}");
+}
+
+/// `DW0301`: a `prefab_pool` area needs the solver to place an `entry`-role
+/// piece first, but the pool declares none — a prefab-library metadata defect.
+/// keep-crawl's `pool/stone-keep` normally has exactly one (`keep-spawn-hall`);
+/// this test relabels it away in a private copy of `pools.json`.
+#[test]
+fn pool_without_entry_piece_exits_3_with_dw0301() {
+    let prefabs_copy = tmp("dw0301-prefabs");
+    common::copy_dir_all(&common::prefabs_dir(), &prefabs_copy);
+    let pools_path = prefabs_copy.join("pools.json");
+    let mut pools: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&pools_path).unwrap()).unwrap();
+    let members = pools["pools"]["pool/stone-keep"]["members"]
+        .as_array_mut()
+        .unwrap();
+    let mut relabeled = false;
+    for m in members.iter_mut() {
+        if m["role"] == "entry" {
+            m["role"] = serde_json::json!("connector");
+            relabeled = true;
+        }
+    }
+    assert!(relabeled, "pool/stone-keep must have had an entry member");
+    std::fs::write(&pools_path, serde_json::to_string_pretty(&pools).unwrap()).unwrap();
+
+    let kc = common::keep_crawl_dir();
+    let out = tmp("dw0301-out");
+    let b = delvec(&[
+        "build",
+        kc.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        prefabs_copy.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(code(&b), 3, "entry-less pool should exit 3");
+    let stdout = String::from_utf8_lossy(&b.stdout);
+    assert!(stdout.contains("DW0301"), "expected DW0301:\n{stdout}");
+}
+
+/// `DW0310`: a *kill-less* `spawn-wave` (spec-0008 §4 "live threat" — no `kill`
+/// objective ever drains it, exactly like `v04-showcase`'s `wave/ambush`) whose
+/// `anchor` does not resolve in any assembled area is a dangling spawn — no
+/// static DSL rule sees it (wave anchors are a build-time-only concept), so it
+/// passes validate + analyze and fails only at build. Uses hello-world's single
+/// bound prefab (not a pool): a pool area's solver collects wave anchors into
+/// its own "required anchors" set and would instead reject this earlier with
+/// `DW0302` (no pool piece provides it) — the dangling-*spawn* case this test
+/// targets only surfaces on a single-prefab area, where nothing cross-checks a
+/// wave's anchor against the bound prefab's declared anchors before build time.
+#[test]
+fn kill_less_dangling_spawn_wave_exits_3_with_dw0310() {
+    let patch: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(common::compiler_fixtures_dir().join("dangling-spawn-wave.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    let pf = common::prefabs_dir();
+    let camp = tmp("dangling-spawn-wave");
+    common::materialize(&patch, &camp);
+
+    let a = delvec(&[
+        "analyze",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&a),
+        0,
+        "analyze should pass (wave anchors are invisible to the DSL/analysis layers): {}",
+        String::from_utf8_lossy(&a.stdout)
+    );
+
+    let out = tmp("dw0310-out");
+    let b = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(code(&b), 3, "dangling kill-less spawn-wave should exit 3");
+    let stdout = String::from_utf8_lossy(&b.stdout);
+    assert!(stdout.contains("DW0310"), "expected DW0310:\n{stdout}");
 }
 
 // ---------------------------------------------------------------------------

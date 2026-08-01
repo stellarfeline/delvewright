@@ -114,6 +114,23 @@ pub fn compiler_fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }
 
+/// Recursively copy a directory tree (used to make a private, mutable copy of
+/// `prefabs_dir()` for tests that corrupt prefab metadata/structures — the real
+/// `campaigns/prefabs` is a checkout of the separate content repo and must never
+/// be written to by a test).
+pub fn copy_dir_all(src: &Path, dst: &Path) {
+    std::fs::create_dir_all(dst).unwrap();
+    for entry in std::fs::read_dir(src).unwrap() {
+        let path = entry.unwrap().path();
+        let to = dst.join(path.file_name().unwrap());
+        if path.is_dir() {
+            copy_dir_all(&path, &to);
+        } else {
+            std::fs::copy(&path, &to).unwrap();
+        }
+    }
+}
+
 /// Materialize a full campaign directory at `dst` = the valid hello-world base
 /// with each stage in `patch["documents"]` overwritten by its replacement
 /// envelope. Returns nothing; panics on IO error (tests).

@@ -69,9 +69,22 @@ pub fn build_v2(
     block_at: &dyn Fn(i32, i32, i32) -> usize,
     bes: &[FixtureBe],
 ) -> Vec<u8> {
+    build_v2_versioned(4671, size, palette, block_at, bes)
+}
+
+/// Like [`build_v2`], but with an explicit source `DataVersion` — used to
+/// synthesize a schematic whose `DataVersion` differs from the pinned MC
+/// 1.21.11 target (`DW0702`).
+pub fn build_v2_versioned(
+    data_version: i32,
+    size: [i32; 3],
+    palette: &[&str],
+    block_at: &dyn Fn(i32, i32, i32) -> usize,
+    bes: &[FixtureBe],
+) -> Vec<u8> {
     let mut root = BTreeMap::new();
     root.insert("Version".to_string(), Nbt::Int(2));
-    root.insert("DataVersion".to_string(), Nbt::Int(4671));
+    root.insert("DataVersion".to_string(), Nbt::Int(data_version));
     root.insert("Width".to_string(), Nbt::Short(size[0] as i16));
     root.insert("Height".to_string(), Nbt::Short(size[1] as i16));
     root.insert("Length".to_string(), Nbt::Short(size[2] as i16));
@@ -155,6 +168,12 @@ const BASIC_PALETTE: [&str; 2] = ["minecraft:air", "minecraft:stone"];
 
 pub fn v2_basic() -> Vec<u8> {
     build_v2([3, 3, 3], &BASIC_PALETTE, &basic_block_at, &[])
+}
+
+/// The basic room, but with a source `DataVersion` that is not the pinned MC
+/// 1.21.11 target (`DW0702`).
+pub fn v2_wrong_data_version() -> Vec<u8> {
+    build_v2_versioned(3700, [3, 3, 3], &BASIC_PALETTE, &basic_block_at, &[])
 }
 
 pub fn v3_basic() -> Vec<u8> {

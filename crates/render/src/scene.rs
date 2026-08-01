@@ -239,6 +239,12 @@ mod tests {
     const FIXTURE: &[u8] = include_bytes!("../tests/fixtures/render-plan-mini.json");
 
     #[test]
+    fn malformed_plan_json_is_dw0721() {
+        let err = scenes_from_plan(b"not json", &SceneOptions::default()).unwrap_err();
+        assert_eq!(err.code, DW_INPUT, "expected DW0721: {err:?}");
+    }
+
+    #[test]
     fn chunk_list_covers_aabb() {
         let cl = chunk_list([0, 64, 0], [17, 69, 3]);
         // x spans chunks 0..=1, z spans chunk 0 → [[0,0],[1,0]]

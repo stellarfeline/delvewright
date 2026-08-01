@@ -135,6 +135,10 @@ validation/          # docker compose: headless server + bot, same image as CI &
   library, ports an algorithm, or leans on a paper adds its entry (with verified
   license) to `docs/ACKNOWLEDGEMENTS.md` in the same PR. Unlicensed sources are
   ideas-only — never ported.
+- **DW-diagnostic coverage** (owner, 2026-07-31): every DW diagnostic must be
+  covered by at least one test asserting its code, CI-enforced
+  (`tools/check-dw-codes.py`, docs job) — a minimal, justified allowlist is the
+  only exemption.
 
 ## Environments
 
