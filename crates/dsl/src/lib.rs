@@ -47,7 +47,6 @@ pub use stages::{
     MobAttributes, MobEffect, NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective,
     Persona, Pieces, PlannedQuest, Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent,
     Relationship, Role, SkinModel, SoundAt, StealthZone, Trigger, TriggerOn, Wave, WaveMob,
-    WorldContent,
-    WorldTime, WorldWeather,
+    WorldContent, WorldTime, WorldWeather,
 };
 pub use validate::{validate_campaign, validate_campaign_with};

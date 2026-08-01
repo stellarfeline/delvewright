@@ -70,7 +70,11 @@ fn build_fixture() -> BuildOutput {
 
 fn fn_body<'a>(out: &'a BuildOutput, name: &str) -> &'a str {
     let path = format!("datapack/data/{NS}/function/{name}.mcfunction");
-    std::str::from_utf8(out.get(&path).unwrap_or_else(|| panic!("missing fn {name}"))).unwrap()
+    std::str::from_utf8(
+        out.get(&path)
+            .unwrap_or_else(|| panic!("missing fn {name}")),
+    )
+    .unwrap()
 }
 
 /// Every shipped-datapack function body concatenated (search convenience). The
