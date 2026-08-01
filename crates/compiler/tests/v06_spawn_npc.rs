@@ -100,7 +100,6 @@ fn build(campaign: &Campaign, prefabs: &PrefabRegistry) -> BuildOutput {
         None,
         "unpinned",
         &BTreeMap::new(),
-        delvewright_compiler::light::has_night_vision(campaign),
     )
     .expect("every emitted command validates")
 }

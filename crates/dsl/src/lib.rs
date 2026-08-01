@@ -42,12 +42,12 @@ pub use registry::{
 };
 pub use schema::stage_schema;
 pub use stages::{
-    Actor, Area, AreaLighting, Boundary, CameraWaypoint, Class, ClassesContent, DamageKind,
-    DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EnvTrigger,
-    Facing, Fixture, Horizon, KitItem, Lethality, MobAttributes, MobEffect, NarrateStyle, Npc,
-    NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces, PlannedQuest, Prop, Quest,
-    QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep, SkinModel,
-    SoundAt, StealthZone, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerOn,
-    Wave, WaveMob, WorldContent, WorldTime, WorldWeather,
+    Actor, Area, AreaLighting, AreaMitigation, Boundary, CameraWaypoint, Class, ClassesContent,
+    DamageKind, DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption,
+    EnvTrigger, Facing, Fixture, Horizon, KitItem, Lethality, MobAttributes, MobEffect,
+    NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces, PlannedQuest,
+    Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep,
+    SkinModel, SoundAt, StealthZone, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger,
+    TriggerOn, Wave, WaveMob, WorldContent, WorldTime, WorldWeather,
 };
 pub use validate::{validate_campaign, validate_campaign_with};

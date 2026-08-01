@@ -151,11 +151,6 @@ fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
 /// build stays byte-identical to a pre-i18n one); `Some("<code>")` records the
 /// language in the manifest. The `plan`'s campaign must already be localized to
 /// that language by the caller ([`delvewright_dsl::localize`]).
-///
-/// `night_vision` is the night-vision `DW0210` mitigation verdict, determined by
-/// the caller via [`crate::light::has_night_vision`] on the **canonical English**
-/// campaign — before localization — so the lighting gate reaches the same verdict
-/// in every build language (see [`crate::light::relight`]).
 #[allow(clippy::too_many_arguments)]
 pub fn build(
     plan: &Plan,
@@ -166,7 +161,6 @@ pub fn build(
     language: Option<&str>,
     content_sha: &str,
     skins: &BTreeMap<String, Vec<u8>>,
-    night_vision: bool,
 ) -> Result<BuildOutput, BuildFailure> {
     let ns = &plan.namespace;
     let mut out: BuildOutput = BTreeMap::new();
@@ -200,7 +194,7 @@ pub fn build(
     // adds are re-verified for walkability below. A `DW0210`/`DW0211` diagnostic
     // fails the build (exit 2, mapped in main). Empty for a campaign with no dark
     // reachable cells and no `lighting` declaration → output byte-identical.
-    let relight = crate::light::relight(plan, structures, night_vision);
+    let relight = crate::light::relight(plan, structures);
     if let Some(diag) = relight.diagnostics.first() {
         return Err(BuildFailure::Diagnostic {
             code: diag.code,
@@ -996,6 +990,13 @@ fn emit_functions(
         ));
         setup.push(format!("schedule function {ns}:boundary_tick 20t"));
     }
+    // v0.6 night-vision mitigation: start the per-second `effect give` clock for the
+    // areas that declare it. Empty otherwise → byte-identical.
+    if has_night_vision_areas(plan) {
+        setup.push(format!(
+            "schedule function {ns}:night_vision_tick {NIGHT_VISION_PERIOD_TICKS}t"
+        ));
+    }
     // v0.4: summon the interaction entities strike/use environment triggers watch
     // (empty for a campaign with no triggers → byte-identical).
     setup.extend(env_trigger_setup(plan));
@@ -1637,6 +1638,7 @@ fn emit_functions(
     fns.extend(env_trigger_fns(plan));
     fns.extend(trap_fns(plan));
     fns.extend(boundary_fns(plan));
+    fns.extend(night_vision_fns(plan));
 
     fns.sort_by(|a, b| a.0.cmp(&b.0));
     fns
@@ -3164,6 +3166,77 @@ fn needs_cp_init(plan: &Plan) -> bool {
     !plan.checkpoints.is_empty() || plan.campaign.world.content.boundary.is_some()
 }
 
+/// Re-application period of the night-vision clock, in ticks (1 s).
+const NIGHT_VISION_PERIOD_TICKS: u32 = 20;
+/// Duration handed to each `effect give`, in **seconds**. Must stay comfortably
+/// above vanilla's 10 s night-vision wind-down: `GameRenderer` ramps the night-
+/// vision brightness down (the flicker) once the remaining duration drops to
+/// 200 ticks, so with a 1 s clock the remaining duration never falls below
+/// `12 s − 1 s = 11 s` (220 ticks) and the effect never blinks. A player who walks
+/// out of a mitigated area keeps it for at most this long — deliberate: shortening
+/// it below ~11 s would re-introduce the flicker, and no vanilla primitive removes
+/// an effect on a region exit without also stripping effects the campaign granted
+/// for other reasons.
+const NIGHT_VISION_SECONDS: u32 = 12;
+
+/// The v0.6 night-vision mitigation clock: for every area declaring
+/// `mitigation: "night-vision"`, a self-rescheduling 1 s function that gives
+/// `minecraft:night_vision` to the players inside **that area's placed bounds**.
+///
+/// This is the mechanism the `DW0210` gate now keys on (`light::area_night_vision`).
+/// Before v0.6 the gate keyed on a class-kit item's display *name*, which a renamed
+/// water bottle satisfied — the check passed while nothing granted night vision
+/// (owner, island QA). Declaration and emission are now the same fact.
+///
+/// The selector box is the area's final placed bounds — compile-time literals, no
+/// runtime search — so emission is deterministic. Empty for a campaign that declares
+/// no mitigation, keeping pre-0.6 output byte-identical.
+fn night_vision_fns(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut gives: Vec<String> = Vec::new();
+    for area in &plan.areas {
+        let declared = plan
+            .campaign
+            .world
+            .content
+            .areas
+            .iter()
+            .find(|a| a.id.as_str() == area.area_id)
+            .is_some_and(crate::light::area_night_vision);
+        if !declared {
+            continue;
+        }
+        let (min, max) = area.bounds();
+        gives.push(format!(
+            "effect give @a[x={},dx={},y={},dy={},z={},dz={}] minecraft:night_vision {NIGHT_VISION_SECONDS} 0 true",
+            min[0],
+            max[0] - min[0] + 1,
+            min[1],
+            max[1] - min[1] + 1,
+            min[2],
+            max[2] - min[2] + 1,
+        ));
+    }
+    if gives.is_empty() {
+        return Vec::new();
+    }
+    // `schedule … <n>t` uses vanilla replace-mode, so the clock can never double up.
+    gives.push(format!(
+        "schedule function {ns}:night_vision_tick {NIGHT_VISION_PERIOD_TICKS}t"
+    ));
+    vec![("night_vision_tick".to_string(), lines(&gives))]
+}
+
+/// Whether the campaign declares the night-vision mitigation on any area.
+fn has_night_vision_areas(plan: &Plan) -> bool {
+    plan.campaign
+        .world
+        .content
+        .areas
+        .iter()
+        .any(crate::light::area_night_vision)
+}
+
 /// The v0.6 boundary clock (spec-0013): a self-rescheduling 1s (20t) region check
 /// plus a per-player macro return. Empty for a campaign with no `boundary`. The
 /// return teleports via `dw:cp` (the last checkpoint), so wanderers always land on
@@ -3950,6 +4023,7 @@ fn emit_packtest(
     // v0.6: boundary return / never-move-inside (spec-0013). Emits nothing without
     // a boundary.
     emit_boundary_packtest(plan, out);
+    emit_night_vision_packtest(plan, out);
 
     // v0.6: checkpoint respawn contract + stealth kill/spare judge (spec-0012 /
     // spec-0014). Emits nothing when the campaign uses neither.
@@ -4028,6 +4102,60 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
     }
     out.insert(
         format!("packtest-datapack/data/{ns}/test/v06_trap.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// v0.6 night-vision PackTest: a dummy standing inside a `mitigation:
+/// "night-vision"` area actually holds `minecraft:night_vision` after one clock
+/// tick, and a dummy far outside the area does not.
+///
+/// This is the gametest that makes the mitigation un-fakeable end-to-end: the
+/// `DW0210` gate keys on the declaration, and this asserts the declaration really
+/// puts the effect on a player in the world. Emits nothing for a campaign that
+/// declares no mitigation.
+fn emit_night_vision_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let Some(area) = plan.areas.iter().find(|a| {
+        plan.campaign
+            .world
+            .content
+            .areas
+            .iter()
+            .find(|d| d.id.as_str() == a.area_id)
+            .is_some_and(crate::light::area_night_vision)
+    }) else {
+        return;
+    };
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let (min, max) = area.bounds();
+    let mid = [
+        (min[0] + max[0]) / 2,
+        (min[1] + max[1]) / 2,
+        (min[2] + max[2]) / 2,
+    ];
+    let mut b = packtest_header(&format!(
+        "{title}: the declared night-vision mitigation really reaches a player in the area"
+    ));
+    b.push("effect clear @s minecraft:night_vision".to_string());
+    // Inside the declared bounds: one tick of the real clock must grant the effect.
+    b.push(format!("tp @s {} {} {}", mid[0], mid[1], mid[2]));
+    b.push(format!("function {ns}:night_vision_tick"));
+    b.push(
+        "execute store success score #nv dw.sys run effect clear @s minecraft:night_vision"
+            .to_string(),
+    );
+    b.push("assert score #nv dw.sys matches 1".to_string());
+    // Far outside: the same clock tick must NOT grant it (the selector is scoped).
+    b.push(format!("tp @s {} {} {}", max[0] + 1000, mid[1], mid[2]));
+    b.push(format!("function {ns}:night_vision_tick"));
+    b.push(
+        "execute store success score #nv dw.sys run effect clear @s minecraft:night_vision"
+            .to_string(),
+    );
+    b.push("assert score #nv dw.sys matches 0".to_string());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/v06_night_vision.mcfunction"),
         lines(&b).into_bytes(),
     );
 }

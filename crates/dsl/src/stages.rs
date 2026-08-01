@@ -236,6 +236,25 @@ fn default_min_light() -> u8 {
     7
 }
 
+/// A per-area **darkness mitigation** declaration (DSL v0.6).
+///
+/// The first-class answer to "this area is meant to be dark, and the players are
+/// equipped for it". Declaring it is what makes the compiler *emit* the mitigation
+/// (a clocked `effect give … night_vision` scoped to the area's placed bounds) and
+/// what satisfies the `DW0210` darkness gate — one declaration, one mechanism, no
+/// gap between the check and the feature.
+///
+/// It replaces the pre-0.6 heuristic that read a class kit item's display *name*
+/// for `night vision`: that accepted a renamed water bottle, so the gate passed
+/// while nothing in the world granted night vision (owner, island QA).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum AreaMitigation {
+    /// Every player inside the area's placed bounds is kept under
+    /// `minecraft:night_vision` by a compiler-emitted 1 s clock.
+    NightVision,
+}
+
 /// One area of the world, bound to a single prefab or a jigsaw prefab pool.
 ///
 /// An area binds **exactly one of** `prefab` (single piece) or `prefab_pool`
@@ -267,6 +286,13 @@ pub struct Area {
     /// with `DW0210` if a reachable walkable cell is dark and unmitigated).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lighting: Option<AreaLighting>,
+    /// Optional darkness-mitigation declaration (DSL v0.6). `night-vision` makes
+    /// the compiler emit a clocked `effect give` over this area's placed bounds and
+    /// is the (only) declaration that satisfies `DW0210` without `lighting`.
+    /// Independent of `lighting`: an area may declare both (fixtures *and* the
+    /// effect), either, or neither.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mitigation: Option<AreaMitigation>,
 }
 
 /// Inclusive piece-count bounds for a jigsaw `prefab_pool` area.

@@ -52,7 +52,6 @@ fn build_v06() -> BuildOutput {
         None,
         "unpinned",
         &BTreeMap::new(),
-        delvewright_compiler::light::has_night_vision(&campaign),
     )
     .expect("every emitted command validates")
 }

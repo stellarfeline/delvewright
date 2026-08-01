@@ -11,6 +11,9 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`, `0.6.0`**
   (additive supersets; `0.2.0` output stays byte-identical across the later
   versions).
+- v0.6 amends spec-0010's mitigation hierarchy: the night-vision mitigation is now
+  the stage-1 `areas[].mitigation` **declaration** (emitting a real clocked
+  `effect give`), not a class-kit display-name heuristic.
 - spec-0010 (#35) has **landed** at `dsl_version 0.5.0`: stage-1
   `lighting`/`time`/`weather`, effect verbs `set-time`/`set-weather`, the
   assembled-world light model + deterministic relight pass (`crate::light`), the
@@ -124,6 +127,7 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 | `languages[]` (opt) | BCP-47 codes; `en` implicit/never listed; drives l10n coverage + `--lang`. | 0.3 i18n |
 | `areas[]` | 1..N. Each binds **exactly one** of `prefab` or `prefab_pool`+`pieces{min,max}` (else `DW0160`). Area origin = `[i·256, 64, 0]`. | 0.1 / pool 0.2 |
 | `areas[].lighting {fixture,min_light}` (opt) | spec-0010: relight pass guarantees `min_light` (1..=14, default 7; `DW0196` out of range) over reachable walkable cells by placing `fixture` (`torch`/`lantern`/`campfire`/`shroomlight`), else `DW0211`. | 0.5 |
+| `areas[].mitigation` (opt) | `night-vision` — the first-class darkness declaration (v0.6). The compiler emits a self-rescheduling **1 s (20t)** `night_vision_tick` that runs `effect give @a[<this area's placed bounds>] minecraft:night_vision 12 0 true` (amplifier 0, particles hidden). 12 s ≫ vanilla's 10 s wind-down, so the remaining duration never drops below 11 s and the effect never blinks; a player who leaves the area keeps it ≤ 12 s. Independent of `lighting`. This declaration is the **sole** `DW0210` night-vision mitigation. | 0.6 |
 | `time` (opt) | `day`/`noon`/`night`/`midnight` (default `noon`). Dimension-global initial state, emitted in the sealing baseline (`time set <kw>`). | 0.5 |
 | `weather` (opt) | `clear`/`rain`/`thunder` (default `clear`; `clear` emits nothing — byte-identical to pre-0.5). Dimension-global, emitted after sealing (`weather <kw>`). Rain/thunder attenuate the assembled-light sky term. | 0.5 |
 | `horizon` (opt) | spec-0013: `void` (default/absent, byte-identical to v0.5) or `ocean` — a pinned bedrock/stone/water superflat (sea level y=62; areas at y=64+ read as islands), no structures/mobs. Drives `generator-settings`. | 0.6 |
@@ -144,13 +148,13 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 1..4 classes. `kit[]` = vanilla item id + count + optional display `name`
 (→ l10n `class.<c>.kit.<i>.name`). `name`/`blurb` player-visible. Reserved kit
 fields `lore`/`enchantments`/`attributes` are **not defined** → unknown-field
-`DW0100`. A kit night-vision item (id/name contains `night_vision` /
-`night vision`, case-insensitive) is the retained sufficient `DW0210`
-dark-mitigation (spec-0010 mitigation hierarchy). The mitigation verdict is taken
-on the **canonical English** campaign — before any `--lang` localization swaps the
-display `name` it reads — and threaded into the relight pass, so the `DW0210`
-verdict is identical in every build language (ADR-0006): a campaign cannot pass
-`en` and fail `zh-cn`.
+`DW0100`. Kit items carry **no semantics**: a night-vision potion in a kit is
+flavor. The `DW0210` dark mitigation is the stage-1 `areas[].mitigation`
+declaration only — the pre-0.6 heuristic that read a kit item's id/display name for
+`night_vision` was **deleted** (see §4 "Semantics never key on player-facing text").
+Because the signal is a declaration, the `DW0210` verdict is language-independent
+by construction (ADR-0006) — nothing is threaded past the `--lang` localization
+pass any more.
 
 ### Stage 4 — `quest-plan`
 
@@ -208,7 +212,7 @@ effects are not mirrored — a dialogue option's own `requires_flags` already ga
 its whole effect bundle). Under `0.2.0`, all v0.3 verbs/effects are reserved →
 `DW0141`; likewise v0.4 surface under pre-0.4, v0.5 surface
 (`time`/`weather`/`lighting`, `set-time`/`set-weather`) under pre-0.5, and the
-v0.6 surface (`close-gate`, `damage-players`, `set-checkpoint`,
+v0.6 surface (area `mitigation`, `close-gate`, `damage-players`, `set-checkpoint`,
 `begin-stealth`/`end-stealth`, the `play-sound` effect + `narrate` `style: art`,
 per-effect `requires_flags`, stage-2 `deferred` + the `spawn-npc` effect, stage-5
 `actors` + the staging effects `spawn`/`despawn`/`move`/`unleash-actor`,
@@ -280,6 +284,7 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | objective lifecycle | Activation shows `title`+`hint`+`note_block.pling` once (flag `dw.ann_<obj>`); completion sound `experience_orb.pickup`. **Marker cleanup (task #45):** completion despawns every entity the objective's activation summoned via the objective-scoped tag — `interact` hitbox + wayfinding marker (`dw_i_<obj>`), `reach` marker (`dw_r_<obj>`). Prop/affordance *blocks* (`interact.prop`, `collect` chest) are scenery and persist; `talk-to`/`kill` summon no per-objective marker. Gated on v0.3+ with a resolved activation, so v0.2 stays byte-identical. |
 | `set-time` / `set-weather` | `time set <kw>` / `weather <kw>` (dimension-global, no selector) inline in the effect/dialogue-option function; instantaneous cut, persists (cycle frozen). |
 | relight fixtures (`lighting`) | `setblock` per placed fixture in `setup_finish`, after structure placement + socket seals (spec-0010). Blocks: `torch`/`wall_torch`, `lantern[hanging=…]`, `campfire[lit=true]`, `shroomlight`. |
+| `mitigation: "night-vision"` | `night_vision_tick`: one `effect give @a[x=…,dx=…,y=…,dy=…,z=…,dz=…] minecraft:night_vision 12 0 true` per declaring area (selector = the area's final placed bounds, compile-time literals), then `schedule function <ns>:night_vision_tick 20t` (vanilla replace-mode, so the clock can never double up). `setup_finish` arms it once. A generated `v06_night_vision` PackTest teleports a dummy into the declared bounds, runs one clock tick and asserts it holds the effect — then teleports it 1000 blocks out and asserts it does not. |
 | `set-checkpoint` | Inline: `spawnpoint @a <x y z>` + `data modify storage dw:cp pos set value [x,y,z]` (the readable "last checkpoint" mirror); when any checkpoint has `on_respawn`, also `#cp dw.sys = <index>`. `setup_finish` seeds `dw:cp` to the spawn cell. `on_respawn`: `deathCount` objective (`dw.deaths`) + per-player ack; `tick` runs `cp_respawn_check` (fire on the death-count edge, dispatch `cp_on_respawn_<index>` for the active checkpoint). |
 | `begin-stealth` / `end-stealth` | `begin` → `#stealth dw.sys = <session>` + reset per-player `dw.st_grace`/`dw.st_sneakack`. `tick` runs `stealth_tick_<session>` while active → per-player `stealth_eval_<session>`: safe iff sneaking this tick (`dw.st_sneak`=`sneak_time` stat rose vs. ack) AND in a zone box; grace resets when safe, climbs when exposed, and at `grace_ticks` fires `stealth_caught_<session>` (`on_caught`). `end` → `#stealth dw.sys = 0`. The `v06_stealth` PackTest disarms `#stealth` (sets it 0) after each `stealth_begin` because it drives `stealth_eval` explicitly: an armed session would make the world `tick` loop run a *second* judge pass in the same tick, consuming the sneak edge and mis-accruing grace (this only isolates the test; runtime gameplay has the tick loop as sole caller). |
 | trap `dispense` (spec-0011) | `setup_finish`: `item replace block <disp> container.0 with <item> <count>` fills the prefab's pre-wired dispenser socket (the `anchor/trap` metadata `dispenser` cell) — a static, deterministic payload, the same mechanism as a `collect` chest. **No detection** is emitted for the harm: the plate/tripwire/trapped-chest → dispenser redstone is already in the prefab. Pressure plates and tripwire are modelled **passable** in the assembled occupancy (`crate::assembled::is_passable_trap_trigger`) so nav routes a player ONTO a trigger cell rather than around a "solid" plate. |
@@ -296,6 +301,17 @@ markers `#cp`/`#stealth` on `dw.sys`.
 ---
 
 ## 4. Hard invariants
+
+### Semantics never key on player-facing text
+
+**No semantic verdict may key on player-facing free text** (item/NPC display names,
+titles, blurbs, hints). Semantics live only in ids, structured schema fields, or
+first-class declarations. The removed night-vision name heuristic (`light.rs`,
+deleted in the v0.6 mitigation PR) is the cautionary precedent: it read a kit item's
+display name for "night vision", so a renamed water bottle passed `DW0210` while
+nothing in the shipped world granted night vision — a check that passed without the
+feature existing. Player-facing text is also localizable, so keying on it makes a
+verdict language-dependent (ADR-0006).
 
 ### Determinism (ADR-0006)
 
@@ -554,7 +570,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0132` | `finale` is not the convergent sink (some quest is not a transitive dependency of finale). |
 | `DW0133` | Non-mandatory quest (`mandatory:false`), reserved until M3. |
 | `DW0140` | Objective `after` cycle. |
-| `DW0141` | Reserved enum value/field for the campaign's `dsl_version` (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: `close-gate`, `damage-players`, `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, stage-2 npc `deferred` + the `spawn-npc` effect, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, and the `traps[]` section). |
+| `DW0141` | Reserved enum value/field for the campaign's `dsl_version` (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: area `mitigation`, `close-gate`, `damage-players`, `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, stage-2 npc `deferred` + the `spawn-npc` effect, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, and the `traps[]` section). |
 | `DW0142` | Anchor not provided by the area's bound prefab. |
 | `DW0143` | Item id not in the pinned 1.21.11 registry (kit / `collect` / `interact.requires_item` / `give-item`). |
 | `DW0150` | Planned quest (stage 4) has no stage-5 expansion. |
@@ -623,7 +639,7 @@ tier) in `main`; `DW0201`–`DW0203` come from `compiler::analyze` reachability.
 | `DW0201` | Finale quest can never complete (unreachable finale). |
 | `DW0202` | Quest can never be triggered (dead quest — its trigger source never completes). |
 | `DW0203` | Objective can never be completed (deadlock: unsatisfiable `after` chain, or a `talk-to` completing option unreachable through the trigger/`after` graph). |
-| `DW0210` | **Measured** (spec-0010): a reachable walkable cell of an area is below light 3, under the darkest reachable (time, weather) sky, with no `lighting` declaration and no night-vision kit mitigation. Judged over the assembled world (per-seam, sealed-cavity aware — unreachable cavities are never counted). Admission `LightingProfile` is no longer a gating input. |
+| `DW0210` | **Measured** (spec-0010): a reachable walkable cell of an area is below light 3, under the darkest reachable (time, weather) sky, with no `lighting` declaration and no `mitigation` declaration. Judged over the assembled world (per-seam, sealed-cavity aware — unreachable cavities are never counted). Admission `LightingProfile` is no longer a gating input. **v0.6:** keys on the stage-1 `areas[].mitigation` declaration; the display-name heuristic is deleted, so a renamed water bottle in a class kit no longer passes the gate. |
 | `DW0211` | An area's declared relight `fixture` cannot raise every reachable walkable cell to `min_light` — no valid placement site remains (spec-0010). |
 
 ### DW03xx — build / solver / nav (`compiler`; error; exit 3, `stage:"build"`)
