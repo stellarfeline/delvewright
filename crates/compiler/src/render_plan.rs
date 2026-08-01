@@ -22,15 +22,38 @@
 //! ## Determinism
 //!
 //! Shots are emitted in a fixed order (spawn → per-area interiors+seams → NPCs →
-//! interacts → gates), every list is plan-ordered or sorted, and there is no RNG
-//! or wall-clock input — so `render-plan.json` rides the ADR-0006 double-build
-//! byte-identity gate like every other output.
+//! interacts → gates → **player-POV**), every list is plan-ordered or sorted, and
+//! there is no RNG or wall-clock input — so `render-plan.json` rides the ADR-0006
+//! double-build byte-identity gate like every other output.
+//!
+//! ## Player-POV shots (the player's own eye)
+//!
+//! The other kinds are overhead/orbit cameras — useful for assembly review but not
+//! for judging what the *player* sees, the owner's standing concern. The `pov` kind
+//! closes that gap: a first-person camera at eye height ([`EYE_HEIGHT`] = 1.62) on
+//! every corner-thinned critical-path waypoint (the same [`crate::waypoints::thin`]
+//! list the harness replays), looking along the walk toward the next waypoint and,
+//! at each leg's final waypoint, toward the objective anchor it arrives at. Each
+//! shot carries its leg index, the objective it serves, and a one-sentence machine
+//! `expect` line composed from campaign data (area name + objective/anchor names +
+//! hint) — the (image ↔ expect) pair a vision model reviews. Every POV eye sits at
+//! the eye-height of a DW0314-proven-standable waypoint, so the camera is provably
+//! in open air; the DW0724 self-check ([`crate::nav::verify_pov_cameras`]) enforces
+//! it structurally.
 
 use delvewright_dsl::{Campaign, LightingProfile, Objective};
 use serde_json::{Value, json};
 
-use crate::plan::{Plan, ResolvedAnchor};
+use crate::nav::LegRoute;
+use crate::plan::{Plan, ResolvedAnchor, Step};
 use crate::registry::PrefabRegistry;
+
+/// Player eye height above the standing cell's floor (vanilla: 1.62 blocks). The
+/// first-person camera sits here so a render frames exactly what the player sees.
+pub const EYE_HEIGHT: f64 = 1.62;
+
+/// First-person field of view, degrees (vanilla default ~70°).
+pub const POV_FOV_DEG: f64 = 70.0;
 
 /// Unit facing vector for a Minecraft facing keyword (north = −Z).
 fn facing_vec(facing: Option<&str>) -> [f64; 3] {
@@ -103,8 +126,327 @@ fn spawn_of(plan: &Plan) -> Option<(String, [i32; 3], Option<String>)> {
     None
 }
 
+// ---- player-POV shots (spec-0003 visual tier: the player's own eye) ----------
+
+/// One planned first-person player-POV shot: a camera at eye height standing on a
+/// proven critical-path waypoint, looking the way the player walks. This is the
+/// tier that lets a vision review judge the scene as the player actually sees it —
+/// not from the overhead/orbit cameras of the other shot kinds.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PovShot {
+    /// Stable shot id (`pov/leg{L}/wp{W}`).
+    pub id: String,
+    /// Destination area id of the leg.
+    pub area: String,
+    /// Critical-path leg index (order the player walks the legs).
+    pub leg: usize,
+    /// Waypoint index within the leg (0 = leg start).
+    pub wp: usize,
+    /// Objective id this leg walks toward, if resolvable.
+    pub objective: Option<String>,
+    /// The standing (feet) cell — a DW0314-proven-standable waypoint.
+    pub standing_cell: [i32; 3],
+    /// Camera eye world position (feet + [`EYE_HEIGHT`], block-centred).
+    pub eye: [f64; 3],
+    /// World point the camera looks at (next waypoint's eye, or — at the leg's
+    /// final waypoint — the objective anchor it arrives at).
+    pub look_at: [f64; 3],
+    /// One-sentence machine description of what this frame should show, composed
+    /// from campaign data (area name + objective/anchor names + hint).
+    pub expect_line: String,
+    /// Structural expect checks appended after the description.
+    pub extra_expect: Vec<String>,
+}
+
+impl PovShot {
+    /// The integer block the eye sits in — the cell the DW0724 clear-eye self-check
+    /// verifies is unoccupied.
+    pub fn eye_cell(&self) -> [i32; 3] {
+        [
+            self.eye[0].floor() as i32,
+            self.eye[1].floor() as i32,
+            self.eye[2].floor() as i32,
+        ]
+    }
+}
+
+/// Plan the deterministic first-person POV shot list from the DW0311-proven
+/// critical-path routes: one camera at eye height on every corner-thinned waypoint
+/// (the same thinning the harness replays — turns + endpoints, never every cell),
+/// oriented along the walk toward the next waypoint, and — at each leg's final
+/// waypoint — toward the objective anchor it arrives at. Pure and deterministic
+/// (route order → waypoint order; no RNG/clock), so it rides the ADR-0006 gate.
+pub fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
+    let mut shots = Vec::new();
+    for (leg, route) in routes.iter().enumerate() {
+        let wps = crate::waypoints::thin(&route.cells);
+        if wps.is_empty() {
+            continue;
+        }
+        let objective = objective_at_step(plan, route.to_step);
+        let ctx = leg_context(plan, route, objective.as_deref());
+        let last = wps.len() - 1;
+        for (wp, &cell) in wps.iter().enumerate() {
+            let eye = [
+                cell[0] as f64 + 0.5,
+                cell[1] as f64 + EYE_HEIGHT,
+                cell[2] as f64 + 0.5,
+            ];
+            let (look_at, arriving) = if wp < last {
+                let n = wps[wp + 1];
+                (
+                    [
+                        n[0] as f64 + 0.5,
+                        n[1] as f64 + EYE_HEIGHT,
+                        n[2] as f64 + 0.5,
+                    ],
+                    false,
+                )
+            } else {
+                // Leg's final waypoint: frame the objective anchor (raw `to`) at
+                // body height. The snapped standing waypoint often sits directly on
+                // or above the anchor, so aiming straight at it looks vertically at
+                // the floor; when the anchor is within ~2 blocks horizontally, keep
+                // the approach heading (previous → last waypoint) and aim a few
+                // blocks ahead at the anchor's height — a forward arrival frame with
+                // the objective in view, never a straight-down floor shot.
+                let t = route.to;
+                let anchor = [t[0] as f64 + 0.5, t[1] as f64 + 1.0, t[2] as f64 + 0.5];
+                let horiz = ((anchor[0] - eye[0]).powi(2) + (anchor[2] - eye[2]).powi(2)).sqrt();
+                if horiz >= 2.0 {
+                    (anchor, true)
+                } else {
+                    let dir = approach_heading(&wps, anchor, eye);
+                    (
+                        [eye[0] + dir[0] * 4.0, anchor[1], eye[2] + dir[1] * 4.0],
+                        true,
+                    )
+                }
+            };
+            let compass = compass_toward(eye, look_at);
+            let expect_line = compose_pov_expect(&ctx, compass, arriving);
+            shots.push(PovShot {
+                id: format!("pov/leg{leg}/wp{wp}"),
+                area: ctx.area_id.clone(),
+                leg,
+                wp,
+                objective: objective.clone(),
+                standing_cell: cell,
+                eye,
+                look_at,
+                expect_line,
+                extra_expect: vec![
+                    "camera at standing eye height (1.62) — a first-person view, not overhead or \
+                     orbit"
+                        .to_string(),
+                    "the way ahead is open — no wall or block clipping the near camera".to_string(),
+                ],
+            });
+        }
+    }
+    shots
+}
+
+/// The horizontal unit heading `(dx, dz)` the player faces on arrival: the last
+/// walked segment (previous → final waypoint), falling back to eye→anchor, then to
+/// east — never a zero vector, so the arrival camera always faces a definite way.
+fn approach_heading(wps: &[[i32; 3]], anchor: [f64; 3], eye: [f64; 3]) -> [f64; 2] {
+    let candidates = [
+        wps.len()
+            .checked_sub(2)
+            .map(|p| {
+                let a = wps[p];
+                let b = wps[wps.len() - 1];
+                [(b[0] - a[0]) as f64, (b[2] - a[2]) as f64]
+            })
+            .unwrap_or([0.0, 0.0]),
+        [anchor[0] - eye[0], anchor[2] - eye[2]],
+        [1.0, 0.0],
+    ];
+    for c in candidates {
+        let len = (c[0] * c[0] + c[1] * c[1]).sqrt();
+        if len > 1e-6 {
+            return [c[0] / len, c[1] / len];
+        }
+    }
+    [1.0, 0.0]
+}
+
+/// The objective id whose critical-path step is `step` (inverse of
+/// `plan.objective_steps`), or `None` for a non-objective step.
+fn objective_at_step(plan: &Plan, step: usize) -> Option<String> {
+    plan.objective_steps
+        .iter()
+        .find(|(_, v)| **v == step)
+        .map(|(o, _)| o.clone())
+}
+
+/// Resolved leg-destination context for POV expect composition.
+struct LegContext {
+    area_id: String,
+    area_name: String,
+    /// Human phrase for what the player walks toward ("Perimedes", "the door").
+    target: String,
+    /// The objective's one-line hint, if any (trimmed to one clause).
+    hint: Option<String>,
+}
+
+/// Resolve the destination area name, target phrase, and hint for a leg.
+fn leg_context(plan: &Plan, route: &LegRoute, objective: Option<&str>) -> LegContext {
+    let c = plan.campaign;
+    let step = plan.critical_path.get(route.to_step);
+    let (target, area_id) = match step {
+        Some(Step::TalkTo { npc_id, .. }) => (npc_name(c, npc_id), plan.npc_area(npc_id)),
+        Some(Step::Reach { anchor_id, .. }) => {
+            (anchor_phrase(anchor_id), anchor_area(plan, anchor_id))
+        }
+        Some(Step::Interact { anchor_id, .. }) => {
+            (anchor_phrase(anchor_id), anchor_area(plan, anchor_id))
+        }
+        Some(Step::Collect { .. }) => ("the cache".to_string(), None),
+        Some(Step::Kill { .. }) => ("the fight".to_string(), None),
+        _ => ("the objective".to_string(), None),
+    };
+    // Prefer the objective's quest area (authoritative) when known.
+    let area_id = objective
+        .and_then(|o| objective_area(plan, o))
+        .or_else(|| area_id.map(str::to_string))
+        .unwrap_or_default();
+    let area_name = area_name_of(c, &area_id);
+    let hint = objective
+        .and_then(|o| find_objective(c, o))
+        .and_then(|o| o.hint())
+        .map(first_clause);
+    LegContext {
+        area_id,
+        area_name,
+        target,
+        hint,
+    }
+}
+
+/// Compose the one-sentence POV description.
+fn compose_pov_expect(ctx: &LegContext, compass: &str, arriving: bool) -> String {
+    let place = if ctx.area_name.is_empty() {
+        String::new()
+    } else {
+        format!(" in {}", ctx.area_name)
+    };
+    if arriving {
+        let hint = ctx
+            .hint
+            .as_ref()
+            .map(|h| format!(" ({h})"))
+            .unwrap_or_default();
+        format!(
+            "First-person view arriving at {}{place}{hint} — the objective should be ahead in frame.",
+            ctx.target
+        )
+    } else {
+        format!(
+            "First-person view walking {compass}{place} toward {} — the path ahead should be open.",
+            ctx.target
+        )
+    }
+}
+
+/// The dominant cardinal direction from `eye` toward `look_at` (Minecraft: −Z is
+/// north). Ties break toward the X axis for determinism.
+fn compass_toward(eye: [f64; 3], look_at: [f64; 3]) -> &'static str {
+    let dx = look_at[0] - eye[0];
+    let dz = look_at[2] - eye[2];
+    if dx.abs() >= dz.abs() {
+        if dx >= 0.0 { "east" } else { "west" }
+    } else if dz >= 0.0 {
+        "south"
+    } else {
+        "north"
+    }
+}
+
+/// The display name of an NPC, or its id's local part.
+fn npc_name(c: &Campaign, npc_id: &str) -> String {
+    c.npcs
+        .content
+        .npcs
+        .iter()
+        .find(|n| n.id.as_str() == npc_id)
+        .map(|n| n.name.clone())
+        .unwrap_or_else(|| local_of(npc_id))
+}
+
+/// Humanize an anchor id into a phrase ("anchor/door" → "the door").
+fn anchor_phrase(anchor_id: &str) -> String {
+    let local = local_of(anchor_id).replace(['_', '-'], " ");
+    format!("the {local}")
+}
+
+/// The area id of a point/gate anchor (first area declaring it), if any.
+fn anchor_area<'p>(plan: &'p Plan, anchor_id: &str) -> Option<&'p str> {
+    plan.anchors
+        .keys()
+        .find(|(_, name)| name == anchor_id)
+        .map(|(area, _)| area.as_str())
+}
+
+/// The quest area id of an objective, via its quest.
+fn objective_area(plan: &Plan, obj_id: &str) -> Option<String> {
+    let quest_id = plan
+        .campaign
+        .quests
+        .content
+        .quests
+        .iter()
+        .find(|q| q.objectives.iter().any(|o| o.id().as_str() == obj_id))
+        .map(|q| q.id.as_str())?;
+    plan.quest_area(quest_id).map(str::to_string)
+}
+
+/// Look up an objective by id in the stage-5 quests.
+fn find_objective<'a>(c: &'a Campaign, obj_id: &str) -> Option<&'a Objective> {
+    c.quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| &q.objectives)
+        .find(|o| o.id().as_str() == obj_id)
+}
+
+/// The display name of an area, or empty.
+fn area_name_of(c: &Campaign, area_id: &str) -> String {
+    c.world
+        .content
+        .areas
+        .iter()
+        .find(|a| a.id.as_str() == area_id)
+        .map(|a| a.name.clone())
+        .unwrap_or_default()
+}
+
+/// The first clause of a hint (up to the first sentence end), trimmed — keeps the
+/// expect line to one sentence.
+fn first_clause(hint: &str) -> String {
+    let end = hint.find(['.', ';', '—']).unwrap_or(hint.len());
+    hint[..end].trim().to_string()
+}
+
+/// The local (post-`/`) part of an id.
+fn local_of(id: &str) -> String {
+    id.rsplit('/').next().unwrap_or(id).to_string()
+}
+
+/// A camera JSON value with an explicit `fov` (POV shots carry the first-person
+/// FOV so the renderer frames what the player sees).
+fn pov_camera(pos: [f64; 3], look_at: [f64; 3], fov: f64) -> Value {
+    let mut cam = camera(pos, look_at);
+    cam.as_object_mut()
+        .unwrap()
+        .insert("fov".to_string(), json!(round3(fov)));
+    cam
+}
+
 /// Build the `render-plan.json` value for a compiled plan.
-pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry) -> Value {
+pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Value {
     let c = plan.campaign;
     let mut shots: Vec<Value> = Vec::new();
 
@@ -282,6 +624,25 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry) -> Value {
         }
     }
 
+    // --- player-POV shots (first-person, along the walked critical path) ---
+    // Appended after the overhead/orbit kinds so the deterministic prefix (spawn
+    // first, …) that existing consumers assert stays stable.
+    for shot in pov {
+        let mut expect: Vec<Value> = vec![Value::String(shot.expect_line.clone())];
+        expect.extend(shot.extra_expect.iter().cloned().map(Value::String));
+        shots.push(json!({
+            "id": shot.id,
+            "kind": "pov",
+            "area": shot.area,
+            "leg": shot.leg,
+            "waypoint": shot.wp,
+            "objective": shot.objective,
+            "standing_cell": shot.standing_cell,
+            "camera": pov_camera(shot.eye, shot.look_at, POV_FOV_DEG),
+            "expect": expect,
+        }));
+    }
+
     let (amin, amax) = layout_aabb(plan);
     json!({
         "version": c.world.dsl_version,
@@ -354,4 +715,63 @@ fn layout_aabb(plan: &Plan) -> ([i32; 3], [i32; 3]) {
         return ([0, 0, 0], [0, 0, 0]);
     }
     (min, max)
+}
+
+#[cfg(test)]
+mod pov_tests {
+    use super::*;
+
+    #[test]
+    fn compass_is_dominant_horizontal_axis() {
+        // Minecraft: −Z is north, +Z south, +X east, −X west.
+        assert_eq!(compass_toward([0.0, 0.0, 0.0], [5.0, 0.0, 1.0]), "east");
+        assert_eq!(compass_toward([0.0, 0.0, 0.0], [-5.0, 0.0, 1.0]), "west");
+        assert_eq!(compass_toward([0.0, 0.0, 0.0], [1.0, 0.0, 5.0]), "south");
+        assert_eq!(compass_toward([0.0, 0.0, 0.0], [1.0, 0.0, -5.0]), "north");
+        // Ignores the vertical component (a staircase still reads by its heading).
+        assert_eq!(compass_toward([0.0, 5.0, 0.0], [0.0, 0.0, -3.0]), "north");
+    }
+
+    #[test]
+    fn first_clause_stops_at_the_first_sentence() {
+        assert_eq!(
+            first_clause("He is on the sand beside you, and he will not let go. More."),
+            "He is on the sand beside you, and he will not let go"
+        );
+        assert_eq!(first_clause("no punctuation here"), "no punctuation here");
+    }
+
+    #[test]
+    fn approach_heading_uses_the_last_segment_then_falls_back() {
+        // Last segment runs +X (east); heading is the unit +X.
+        let wps = [[0, 65, 0], [3, 65, 0], [5, 65, 0]];
+        let h = approach_heading(&wps, [6.5, 66.0, 0.5], [5.5, 66.62, 0.5]);
+        assert!(
+            (h[0] - 1.0).abs() < 1e-9 && h[1].abs() < 1e-9,
+            "heading east: {h:?}"
+        );
+        // A single-waypoint leg has no segment → fall back to eye→anchor.
+        let one = [[5, 65, 0]];
+        let h2 = approach_heading(&one, [5.5, 66.0, 9.5], [5.5, 66.62, 5.5]);
+        assert!(h2[1] > 0.9, "falls back to eye→anchor (south): {h2:?}");
+    }
+
+    #[test]
+    fn eye_cell_floors_the_eye_position() {
+        let s = PovShot {
+            id: "pov/leg0/wp0".into(),
+            area: "area/keep".into(),
+            leg: 0,
+            wp: 0,
+            objective: None,
+            standing_cell: [5, 65, 4],
+            eye: [5.5, 66.62, 4.5],
+            look_at: [5.5, 66.62, 8.5],
+            expect_line: "x".into(),
+            extra_expect: vec![],
+        };
+        // Eye at y=66.62 sits in block Y=66 — the head cell above the standing cell,
+        // which standability already proves clear (so DW0724 cannot fire here).
+        assert_eq!(s.eye_cell(), [5, 66, 4]);
+    }
 }

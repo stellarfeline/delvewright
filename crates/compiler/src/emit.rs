@@ -207,6 +207,11 @@ pub fn build(
     // either needs it. Includes any colliding relight fixtures (campfire / floor
     // lantern) so a fixture can never wedge a required path shut *nor* be stood on
     // by a spawned mob (spec-0010: verification re-runs after placement).
+    // Visual-tier player-POV shots (spec-0003): first-person cameras along the
+    // proven critical-path routes. Filled inside the world block below (they need
+    // the routes + the assembled occupancy for the DW0724 clear-eye self-check);
+    // empty for a campaign with no walked leg, so its render plan stays byte-identical.
+    let mut pov_shots: Vec<crate::render_plan::PovShot> = Vec::new();
     let has_waves = !plan.campaign.quests.content.waves.is_empty();
     let (moves, wave_placements): (Vec<crate::nav::MovePlan>, WavePlacements) =
         if crate::nav::needs_world(plan) || has_waves {
@@ -243,6 +248,17 @@ pub fn build(
                         &crate::waypoints::waypoints_json(plan, &routes),
                     );
                 }
+                // Visual-tier POV cameras (spec-0003): one first-person shot per
+                // corner-thinned waypoint. Self-check every eye cell is clear in
+                // the FINAL assembled world (DW0724) — makes a camera looking out
+                // from inside a wall a build error, the owner's exact visual-review
+                // failure mode, caught at its source (the derivation).
+                pov_shots = crate::render_plan::pov_shots(plan, &routes);
+                let eyes: Vec<(String, [i32; 3])> = pov_shots
+                    .iter()
+                    .map(|s| (s.id.clone(), s.eye_cell()))
+                    .collect();
+                crate::nav::verify_pov_cameras(&world, &eyes)?;
                 m
             } else {
                 Vec::new()
@@ -365,7 +381,7 @@ pub fn build(
     put_json(
         &mut out,
         "render-plan.json",
-        &crate::render_plan::render_plan(plan, prefabs),
+        &crate::render_plan::render_plan(plan, prefabs, &pov_shots),
     );
 
     // ---- validate every emitted vanilla mcfunction ----
