@@ -15,11 +15,23 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   `lighting`/`time`/`weather`, effect verbs `set-time`/`set-weather`, the
   assembled-world light model + deterministic relight pass (`crate::light`), the
   measured redefinition of `DW0210`, and diagnostics `DW0211`/`DW0196`.
+- spec-0012 (#47) checkpoints + the spec-0014 stealth verbs have **landed** at
+  `dsl_version 0.6.0`: stage-5/dialogue `set-checkpoint{anchor, on_respawn?}`
+  (party-wide `spawnpoint @a` + the `storage dw:cp pos` mirror), the stage-5
+  `begin-stealth{zones, on_caught?, grace_ticks?}` / `end-stealth` verbs, the
+  no-stranding / placement proofs `DW0315`/`DW0316`, and the stealth-zone proof
+  `DW0327`. The `dw:cp` mirror is the shared "last checkpoint" contract spec-0013's
+  boundary return reads.
 - spec-0013 has **landed** at `dsl_version 0.6.0`: stage-1 `horizon`
   (`ocean` superflat sea backdrop) and `boundary` (derived playable region +
   per-second return-to-checkpoint clock), diagnostics `DW0320`/`DW0321`, and the
   `dw:region`/`dw:cp` storage mirrors. Absent `horizon`/`boundary` keeps v0.5
   output byte-identical.
+- spec-0014 sound + art-title have **landed** at `dsl_version 0.6.0`: the
+  `play-sound` effect (`DW0326` unknown sound, `DW0335` deferred `at: actor`) and
+  the `narrate` `style: art` large-glyph `delve:art` font (`DW0328` glyph
+  coverage). The remaining v0.6 surface (scripted actors) lands in a sibling PR
+  under the same version gate.
 
 ---
 
@@ -37,7 +49,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 6 | Solve jigsaw layout (per `prefab_pool` area, from seed) | `compiler::solver` | `DW030x` (exit 3) |
 | 7 | Assemble world model (placed pieces → voxel grid) | `compiler::plan` | `DW030x` (exit 3) |
 | 8 | Assembled-light + relight (measure, place fixtures) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
-| 9 | Nav checks (A* `move-npc`, cutscene clip, critical-path walkability — incl. relight fixtures + water flood; talk-to endpoint snap; waypoint self-check) | `compiler::nav` | `DW0307`/`DW0308`/`DW0311`/`DW0314` (exit 3) |
+| 9 | Nav checks (A* `move-npc`, cutscene clip, critical-path walkability — incl. relight fixtures + water flood; talk-to endpoint snap; waypoint self-check; v0.6 checkpoint no-stranding/placement + stealth-zone proofs) | `compiler::nav` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0327` (exit 3) |
 | 10 | Emit (datapack, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
 
 - `build` ⟹ `validate` + `analyze`; `analyze` ⟹ `validate`. A validation failure
@@ -59,7 +71,7 @@ delvec validate <dir>                      # stages 1–6 schema + referential
 delvec analyze  <dir>                      # + quest-graph reachability
 delvec build    <dir> -o <out>             # full deterministic build
 delvec schema   --stage <1..6|all>         # export JSON Schema
-delvec --version                           # "delvec 0.1.0, dsl 0.5.0, mc 1.21.11"
+delvec --version                           # "delvec 0.1.0, dsl 0.6.0, mc 1.21.11"
 ```
 
 Global flags: `--json` (one JSON diagnostic object per line), `--prefabs <dir>`
@@ -150,12 +162,17 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Effect `set-time{time}` | Instantaneous dimension-global cut (`time set <kw>`); persists (cycle frozen). | 0.5 |
 | Effect `set-weather{weather}` | Instantaneous dimension-global cut (`weather <kw>`); persists (cycle frozen). | 0.5 |
 | Effect `play-sound{sound,at?,volume?,pitch?}` | Plays a sound event; `sound` validated (`DW0326`); `at` = `{anchor}`\|`players` (default)\|`{actor}` (deferred → `DW0335`); positional or per-player. | 0.6 |
+| Effect `set-checkpoint{anchor,on_respawn?}` | Party-wide respawn point: `spawnpoint @a` at the anchor + `storage dw:cp pos` mirror. Monotonic by quest order. `on_respawn[]` = per-player effects re-run on respawn while active (vanilla `deathCount` detection). Proofs `DW0315`/`DW0316`. Also a dialogue effect. | 0.6 |
+| Effect `begin-stealth{zones[{anchor,extent}],on_caught?,grace_ticks?}` | Per-tick: every player must be inside some zone **and** sneaking (`sneak_time` stat); exposed for `grace_ticks` (default 20) → `on_caught`. Zone standable/reachable proof `DW0327`. | 0.6 |
+| Effect `end-stealth` | Ends the active stealth beat (clears the session marker). | 0.6 |
 
-Dialogue effects `set-flag` (v0.4) and `set-time`/`set-weather` (v0.5) and option
+Dialogue effects `set-flag` (v0.4), `set-time`/`set-weather` (v0.5),
+`set-checkpoint` (v0.6) and option
 `requires_flags` mirror the quest forms. Under `0.2.0`, all v0.3 verbs/effects are
 reserved → `DW0141`; likewise v0.4 surface under pre-0.4, v0.5 surface
 (`time`/`weather`/`lighting`, `set-time`/`set-weather`) under pre-0.5, and v0.6
-surface (the `play-sound` effect + `narrate` `style: art`) under pre-0.6.
+surface (`set-checkpoint`, `begin-stealth`/`end-stealth`, the `play-sound` effect
++ `narrate` `style: art`) under pre-0.6.
 
 ### Stage 6 — `dialogue`
 
@@ -208,10 +225,16 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | objective lifecycle | Activation shows `title`+`hint`+`note_block.pling` once (flag `dw.ann_<obj>`); completion sound `experience_orb.pickup`. **Marker cleanup (task #45):** completion despawns every entity the objective's activation summoned via the objective-scoped tag — `interact` hitbox + wayfinding marker (`dw_i_<obj>`), `reach` marker (`dw_r_<obj>`). Prop/affordance *blocks* (`interact.prop`, `collect` chest) are scenery and persist; `talk-to`/`kill` summon no per-objective marker. Gated on v0.3+ with a resolved activation, so v0.2 stays byte-identical. |
 | `set-time` / `set-weather` | `time set <kw>` / `weather <kw>` (dimension-global, no selector) inline in the effect/dialogue-option function; instantaneous cut, persists (cycle frozen). |
 | relight fixtures (`lighting`) | `setblock` per placed fixture in `setup_finish`, after structure placement + socket seals (spec-0010). Blocks: `torch`/`wall_torch`, `lantern[hanging=…]`, `campfire[lit=true]`, `shroomlight`. |
+| `set-checkpoint` | Inline: `spawnpoint @a <x y z>` + `data modify storage dw:cp pos set value [x,y,z]` (the readable "last checkpoint" mirror); when any checkpoint has `on_respawn`, also `#cp dw.sys = <index>`. `setup_finish` seeds `dw:cp` to the spawn cell. `on_respawn`: `deathCount` objective (`dw.deaths`) + per-player ack; `tick` runs `cp_respawn_check` (fire on the death-count edge, dispatch `cp_on_respawn_<index>` for the active checkpoint). |
+| `begin-stealth` / `end-stealth` | `begin` → `#stealth dw.sys = <session>` + reset per-player `dw.st_grace`/`dw.st_sneakack`. `tick` runs `stealth_tick_<session>` while active → per-player `stealth_eval_<session>`: safe iff sneaking this tick (`dw.st_sneak`=`sneak_time` stat rose vs. ack) AND in a zone box; grace resets when safe, climbs when exposed, and at `grace_ticks` fires `stealth_caught_<session>` (`on_caught`). `end` → `#stealth dw.sys = 0`. |
 
 Naming: `dw.o_<obj>`, `dw.q_<quest>`, `dw.qa_<quest>` (active), `dw.dlg_<npc>`,
 `dw.f_<flag>`, tags `dw_npc_<npc>`/`dw_wave_<id>`/`dw_i_<obj>`/`dw_r_<obj>`.
 `CustomName` is a plain SNBT text component (not `'{"text":…}'`).
+v0.6 checkpoints/stealth (spec-0012/0014): storage `dw:cp pos` (last-checkpoint
+mirror, a `[x,y,z]` int list); scores `dw.deaths` (`deathCount`) + `dw.death_ack`,
+`dw.st_sneak` (`sneak_time` stat) + `dw.st_sneakack`/`dw.st_grace`/`dw.st_safe`;
+markers `#cp`/`#stealth` on `dw.sys`.
 
 ---
 
@@ -415,7 +438,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0132` | `finale` is not the convergent sink (some quest is not a transitive dependency of finale). |
 | `DW0133` | Non-mandatory quest (`mandatory:false`), reserved until M3. |
 | `DW0140` | Objective `after` cycle. |
-| `DW0141` | Reserved enum value/field for the campaign's `dsl_version` (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: `horizon`/`boundary`). |
+| `DW0141` | Reserved enum value/field for the campaign's `dsl_version` (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`). |
 | `DW0142` | Anchor not provided by the area's bound prefab. |
 | `DW0143` | Item id not in the pinned 1.21.11 registry (kit / `collect` / `interact.requires_item` / `give-item`). |
 | `DW0150` | Planned quest (stage 4) has no stage-5 expansion. |
@@ -491,6 +514,9 @@ rows.
 | `DW0312` | A `spawn-wave` needs more standable spawn cells near its anchor than the anchor's own room provides (task #41). **Analysis-tier: exit 2**, like `DW02xx` — a content-design capacity mistake (shrink the wave or use a larger room), not a geometry defect; the message names the wave, area, and needed-vs-found count. |
 | `DW0313` | A placed gravity block (`sand`/`gravel`/`concrete_powder`/anvil/`dragon_egg`) despawns into the void at placement — an unsupported gravity floor over the `the_void` world falls out on the first block update, holing the shipped map even off the critical path (task #42). The authoritative gravity-settle gate (`crate::assembled`), not a downstream DW0311/DW0312 side effect. **Analysis-tier: exit 2** — a prefab/generator defect; the message attributes despawned cells+counts per piece and prescribes a non-falling substrate. Blocks that fall but **land on support** are faithfully modelled by the settle pass (no diagnostic): the shipped geometry is exact for every consumer, and the generator's own zero-unsupported invariant catches an *unintended* fall at authoring. Anti-dodge: swapping the floor palette to non-falling blocks to silence this is explicitly rejected — gravity floors are a first-class content need; add the substrate. |
 | `DW0314` | An exported critical-path waypoint is not standable in the FINAL assembled world (settled + water-flooded + relight fixtures) — the build-time self-check that makes the water-flow / post-nav-mutation divergence class structurally impossible to ship (task #45). Routes come from A* over that same world, so this fires only if a later pass mutates a cell nav relied on or an endpoint resolves off the walkable set; the message names the offending cell and leg. Fix the prefab/water or the assembly — never nudge the waypoint. |
+| `DW0315` | A `set-checkpoint` (spec-0012) strands the party: re-rooting the DW0311 reachability at the checkpoint cell, the first remaining required critical-path anchor is no longer walkable from it (a checkpoint behind a one-way drop the forward path can't re-cross after respawn). The message names the checkpoint and the first unreachable anchor and prescribes moving the checkpoint or adding a return route — never deleting the checkpoint to silence the proof. |
+| `DW0316` | A `set-checkpoint` anchor has no standable footing within snap range on the final assembled model (a trap-trigger / hazard / mid-air cell) — the party would respawn into void or a wall (spec-0012). Because the relight pass already proves every reachable walkable cell meets the area's `min_light`, a checkpoint that clears this and DW0315 provably meets `min_light` too. |
+| `DW0327` | A `begin-stealth` (spec-0014) zone is unstandable, or unreachable from the player's position at the beat that activates the stealth check — a guaranteed-unwinnable stealth beat. The message names the zone and prescribes placing it over reachable floor / within walkable reach of the activating beat. |
 
 ### DW07xx — workspace tooling (spec-0007; **not `delvec`**)
 
