@@ -28,7 +28,7 @@ import type {
 } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError, likelyDeathCause } from "./death.ts";
-import { configureLeg, tuneCaveMovements } from "./movement.ts";
+import { configureLeg } from "./movement.ts";
 import { nextLegWaypoints, walkGoals, type GoalSpec, type Waypoints } from "./waypoints.ts";
 
 /** Connection + identity for the bot. Sourced from the environment (see below). */
@@ -514,10 +514,12 @@ export class MineflayerExecutor implements StepExecutor {
     const r = Math.max(1, Math.floor(range));
     const movements = new Movements(bot);
     const restoreControls = configureLeg(bot, movements, sneak);
-    // task #38: tune the Movements for the cave block mix (penned mobs beside the
-    // corridor must not perturb the proven route). Applied after configureLeg so the
-    // adventure-mode block locks stand.
-    tuneCaveMovements(movements);
+    // task #38: no cave-specific Movements override is needed — the compiler-proven
+    // waypoints keep the bot on clear standable ground (the DW0311 A* treats water
+    // and fences as impassable, so the route never crosses them, and gravity blocks
+    // and stairs are ordinary floor). Entity detection is left ON (the pathfinder
+    // default) so the bot routes AROUND a transient mob on a hop rather than ramming
+    // it — disabling it made the bot wedge against a leaked mob and time out.
     bot.pathfinder.setMovements(movements);
     // Long multi-level layouts (e.g. a 5-storey keep, ~90 blocks + 4 staircases)
     // sit at the edge of the default A* budget and fail nondeterministically
@@ -602,6 +604,10 @@ export class MineflayerExecutor implements StepExecutor {
       }
     }
     const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
+    const near = Object.values(bot.entities)
+      .filter((e) => e && e !== bot.entity && bot.entity.position.distanceTo(e.position) < 12)
+      .map((e) => `${e.name ?? "?"}@${e.position.distanceTo(bot.entity.position).toFixed(1)}`);
+    process.stderr.write(`[stuck] near ${fmt(bot.entity.position)}: ${near.join(", ") || "none"}\n`);
     throw new Error(
       `failed ${label} at [${x}, ${y}, ${z}] (range ${range}); bot at ` +
         `${fmt(bot.entity.position)}: ${detail}`,
