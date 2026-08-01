@@ -283,6 +283,15 @@ a phantom floor the model wrongly "proves" solid (task #42). Determinism
 (ADR-0006): fixed placement/seal/gate order, `BTreeMap`-ordered column iteration,
 bottom-up stacking.
 
+The settle pass also feeds the **`DW0313` gravity-despawn gate**: a gravity block
+that despawns (falls with no support anywhere below) is always a defect — no DSL
+verb can intend it — so `crate::assembled::gravity_despawn_error` fails the build
+directly at its start, before any consumer, listing the offending pieces/cells and
+prescribing a substrate. This is the authoritative gate for the pitfall; a fall
+that merely lands on support is left to the faithful settle model (no diagnostic),
+and the tileset generator's own zero-unsupported invariant catches unintended
+falls at authoring time (strongest-form defence, per the debug doctrine).
+
 ### Nav (compile-time, over the assembled voxel grid)
 
 `move-npc` paths and the critical path are routed by A* over the placed-world
@@ -370,8 +379,9 @@ tier) in `main`; `DW0201`–`DW0203` come from `compiler::analyze` reachability.
 
 ### DW03xx — build / solver / nav (`compiler`; error; exit 3, `stage:"build"`)
 
-Exit 3 except `DW0312` (wave-capacity), which is analysis-tier and mapped to
-exit 2 in `main` like the `DW02xx` codes — see its row.
+Exit 3 except `DW0312` (wave-capacity) and `DW0313` (gravity-despawn), which are
+analysis-tier and mapped to exit 2 in `main` like the `DW02xx` codes — see their
+rows.
 
 | Code | Meaning |
 |------|---------|
@@ -388,6 +398,7 @@ exit 2 in `main` like the `DW02xx` codes — see its row.
 | `DW0310` | `spawn-wave` references a wave whose spawn anchor resolves in no assembled area (dangling spawn). |
 | `DW0311` | Critical path has a consecutive visited-anchor pair with no walkable A* connection and no inter-area transport (player stranded). |
 | `DW0312` | A `spawn-wave` needs more standable spawn cells near its anchor than the anchor's own room provides (task #41). **Analysis-tier: exit 2**, like `DW02xx` — a content-design capacity mistake (shrink the wave or use a larger room), not a geometry defect; the message names the wave, area, and needed-vs-found count. |
+| `DW0313` | A placed gravity block (`sand`/`gravel`/`concrete_powder`/anvil/`dragon_egg`) despawns into the void at placement — an unsupported gravity floor over the `the_void` world falls out on the first block update, holing the shipped map even off the critical path (task #42). The authoritative gravity-settle gate (`crate::assembled`), not a downstream DW0311/DW0312 side effect. **Analysis-tier: exit 2** — a prefab/generator defect; the message attributes despawned cells+counts per piece and prescribes a non-falling substrate. Blocks that fall but **land on support** are faithfully modelled by the settle pass (no diagnostic): the shipped geometry is exact for every consumer, and the generator's own zero-unsupported invariant catches an *unintended* fall at authoring. Anti-dodge: swapping the floor palette to non-falling blocks to silence this is explicitly rejected — gravity floors are a first-class content need; add the substrate. |
 
 ### DW07xx — workspace tooling (spec-0007; **not `delvec`**)
 
