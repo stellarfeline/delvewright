@@ -1318,3 +1318,74 @@ fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
         String::from_utf8_lossy(&v.stderr)
     );
 }
+
+/// `DW0345` + the entry-anchor alias. Every campaign must resolve an ENTRY POINT —
+/// the one cell that is `setworldspawn`, the class-apply teleport, the first-join
+/// placement and the `dw:cp` seed. The shipped tileset library spells that anchor
+/// two ways (`spawn` in the keep/cave/test tilesets, `entry` in the island one),
+/// so the compiler owns the resolution; resolving NEITHER used to compile clean
+/// and ship a delve with no start, which a dedicated server papers over (vanilla
+/// spawn search finds the surface) and the integrated singleplayer server does
+/// not (it drops the join at the build floor, inside stone).
+#[test]
+fn missing_entry_anchor_exits_3_with_dw0345_and_entry_is_an_alias_of_spawn() {
+    let prefabs_copy = tmp("dw0345-prefabs");
+    common::copy_dir_all(&common::prefabs_dir(), &prefabs_copy);
+    let meta_path = prefabs_copy.join("hello-room.json");
+    let read_meta = || -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap()
+    };
+    // Rename the entry anchor to the island tileset's spelling: still resolves.
+    let rename_entry_anchor_to = |name: &str| {
+        let mut meta = read_meta();
+        let anchors = meta["anchors"].as_object_mut().unwrap();
+        let v = anchors
+            .remove("spawn")
+            .or_else(|| anchors.remove("entry"))
+            .or_else(|| anchors.remove("lobby"))
+            .expect("hello-room declares an entry anchor");
+        anchors.insert(name.into(), v);
+        std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+    };
+
+    rename_entry_anchor_to("entry");
+    let out_alias = tmp("dw0345-out-alias");
+    let alias = delvec(&[
+        "build",
+        common::hello_world_dir().to_str().unwrap(),
+        "-o",
+        out_alias.to_str().unwrap(),
+        "--prefabs",
+        prefabs_copy.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&alias),
+        0,
+        "`entry` must resolve exactly like `spawn`: {}",
+        String::from_utf8_lossy(&alias.stderr)
+    );
+    let setup_finish = std::fs::read_to_string(
+        out_alias.join("datapack/data/hello-world/function/setup_finish.mcfunction"),
+    )
+    .unwrap();
+    assert!(
+        setup_finish.contains("setworldspawn "),
+        "the alias must still drive setworldspawn:\n{setup_finish}"
+    );
+
+    // Neither spelling → hard build error, not a silently start-less delve.
+    rename_entry_anchor_to("lobby");
+    let out = tmp("dw0345-out");
+    let b = delvec(&[
+        "build",
+        common::hello_world_dir().to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        prefabs_copy.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(code(&b), 3, "a campaign with no entry anchor must exit 3");
+    let stdout = String::from_utf8_lossy(&b.stdout);
+    assert!(stdout.contains("DW0345"), "expected DW0345:\n{stdout}");
+}
