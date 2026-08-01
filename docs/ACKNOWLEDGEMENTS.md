@@ -9,6 +9,13 @@ attributions (prefabs, campaign media) live in the content repo
 `prefabs/LICENSE-ASSETS.md`, catalog cards) and are aggregated into each build's
 `ATTRIBUTION` output — they are not duplicated here.
 
+## Special thanks
+
+- **[Luobo (@st2004tz)](https://github.com/st2004tz)** — funded the Claude Max
+  subscription that powers this project's development. Delvewright is built
+  end-to-end by Claude Code agents; this support quite literally keeps the
+  workshop running.
+
 ## Tools & libraries (in use)
 
 | Project | License | Role |
