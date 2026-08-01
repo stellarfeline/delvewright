@@ -100,6 +100,15 @@ All three profiles are driven by one compiler build output at
 >   **fidelity gate** (`delve-render fidelity-gate`, newest-block fixture, magenta
 >   placeholder → exit 4). Chunky scene emission (`delve-render scene`) from the
 >   render-plan.
+> - *(built, #18)* **Player-POV tier** — the render plan now carries first-person
+>   `pov` shots (camera at eye height 1.62 on every critical-path waypoint, oriented
+>   along the walk; per-shot leg/objective + a one-sentence machine `expect`
+>   composed from campaign data). The compiler proves every POV eye is clear over
+>   the assembled world (`DW0724`). POV shots render through the **Chunky** free
+>   camera (Nucleation is orbit-only and cannot place a free eye inside a room);
+>   `delve-render index` emits (image ↔ expect) pairs and `validation/render-shots.sh`
+>   produces the scene set + index for the reviewer. Entity overlays (NPCs/props)
+>   are a recorded limitation — the geometry renders, not the actor.
 > - *(built)* Wired into `/new-delve`: the authoring agent renders the piece sets
 >   and reviews them against each shot's `expect` before handing off.
 > - *(open)* Actually **running Chunky** (out-of-process, xvfb) in CI; recording the

@@ -107,6 +107,11 @@ pub struct Plan<'a> {
     pub checkpoints: Vec<CheckpointPlan>,
     /// Resolved `begin-stealth` beats (DSL v0.6, spec-0014), content-ordered.
     pub stealth_beats: Vec<StealthBeat>,
+    /// Objective id → its `critical_path` step index. The inverse of a step's
+    /// serving objective — used by the visual-tier POV shot planner
+    /// (`crate::render_plan`) to name the objective each player-POV leg walks
+    /// toward, and by the v0.6 checkpoint / stealth proofs to root a beat.
+    pub objective_steps: BTreeMap<String, usize>,
 }
 
 /// A placed area: one or more pieces plus their socket seals.
@@ -616,6 +621,7 @@ impl<'a> Plan<'a> {
 
         // ---- v0.6 checkpoints + stealth beats (spec-0012 / spec-0014) ----
         let (checkpoints, stealth_beats) = collect_v06_effects(campaign, &anchors, &cp.obj_step);
+        let objective_steps = cp.obj_step;
 
         Ok(Self {
             campaign,
@@ -632,6 +638,7 @@ impl<'a> Plan<'a> {
             critical_path_cutscene: cp.cutscene_by_step,
             checkpoints,
             stealth_beats,
+            objective_steps,
         })
     }
 

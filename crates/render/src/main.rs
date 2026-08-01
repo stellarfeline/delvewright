@@ -18,6 +18,7 @@ use delvewright_render::diag::{
     DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RENDER, Diagnostic, exit,
 };
 use delvewright_render::fidelity;
+use delvewright_render::index;
 use delvewright_render::meta::PrefabMeta;
 use delvewright_render::nbt;
 use delvewright_render::render::{self, RenderParams};
@@ -81,6 +82,15 @@ enum Command {
         #[arg(long, default_value = "world")]
         world: String,
     },
+    /// Emit a shot index (image ↔ expect pairs) from a build's `render-plan.json`,
+    /// for handing shots to a reviewing agent / vision model.
+    Index {
+        /// A `delvec build` output directory (containing `render-plan.json`).
+        build_dir: PathBuf,
+        /// Output file for the shot index JSON.
+        #[arg(short, long)]
+        out: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -94,6 +104,7 @@ fn main() -> ExitCode {
             out,
             world,
         } => run_scene(build_dir, out, world, &cli),
+        Command::Index { build_dir, out } => run_index(build_dir, out, &cli),
     }
 }
 
@@ -351,6 +362,43 @@ fn run_scene(build_dir: &Path, out: &Path, world: &str, cli: &Cli) -> ExitCode {
         out.display(),
         scene::CHUNKY_CORE
     );
+    ExitCode::SUCCESS
+}
+
+fn run_index(build_dir: &Path, out: &Path, cli: &Cli) -> ExitCode {
+    let plan_path = build_dir.join("render-plan.json");
+    let bytes = match std::fs::read(&plan_path) {
+        Ok(b) => b,
+        Err(e) => {
+            return fail(
+                Diagnostic::error(DW_INPUT, format!("read {}: {e}", plan_path.display())),
+                cli.json,
+                exit::INPUT,
+            );
+        }
+    };
+    let idx = match index::index_from_plan(&bytes) {
+        Ok(b) => b,
+        Err(d) => return fail(d, cli.json, exit::INPUT),
+    };
+    if let Some(parent) = out.parent()
+        && !parent.as_os_str().is_empty()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        return fail(
+            Diagnostic::error(DW_OUTPUT, format!("mkdir {}: {e}", parent.display())),
+            cli.json,
+            exit::OUTPUT,
+        );
+    }
+    if let Err(e) = std::fs::write(out, &idx) {
+        return fail(
+            Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", out.display())),
+            cli.json,
+            exit::OUTPUT,
+        );
+    }
+    eprintln!("wrote shot index -> {}", out.display());
     ExitCode::SUCCESS
 }
 

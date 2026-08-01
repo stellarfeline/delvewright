@@ -80,7 +80,14 @@ struct Cam {
     pitch: f64,
     #[allow(dead_code)]
     look_at: [f64; 3],
+    /// Per-shot field of view (degrees). Player-POV shots declare the first-person
+    /// FOV (~70°); other kinds omit it and take the scene default.
+    #[serde(default)]
+    fov: Option<f64>,
 }
+
+/// Default field of view (degrees) for shots that do not declare one.
+const DEFAULT_FOV_DEG: f64 = 70.0;
 
 // ---- Chunky scene (output) ----------------------------------------------------
 // Field names + order follow Chunky's scene description format (`sdfVersion`).
@@ -219,7 +226,7 @@ pub fn scenes_from_plan(
                     yaw: shot.camera.yaw.to_radians(),
                 },
                 projection_mode: "PINHOLE",
-                fov: 70.0,
+                fov: shot.camera.fov.unwrap_or(DEFAULT_FOV_DEG),
             },
             chunk_list: chunks.clone(),
         };

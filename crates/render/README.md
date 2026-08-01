@@ -25,6 +25,7 @@ piece <prefab.nbt> -o <dir>     deterministic multi-angle set for one prefab
 batch <dir> -o <dir>            piece set for every .nbt in a library dir
 fidelity-gate [-o <dir>]        render the newest-block fixture; FAIL on placeholder
 scene <build-dir> -o <dir>      Chunky scene JSON per shot from render-plan.json
+index <build-dir> -o <file>     shot index (image ↔ expect pairs) for vision review
 ```
 
 **Exit codes**: `0` ok · `2` input/usage · `3` output · `4` **fidelity-gate
@@ -96,10 +97,30 @@ delve-render fidelity-gate -o /tmp/fg          # exit 0 = pass, 4 = placeholder 
 
 The compiler emits `render-plan.json` in every build output — a deterministic
 shot list (spawn, per-NPC, interact, gate both-sides, piece seam, one interior per
-room), each shot with a camera (`pos` + `yaw`/`pitch` degrees) and a
-machine-generated `expect` checklist derived from the DSL. `delve-render scene`
-converts each shot into a **Chunky scene description JSON** (one file per shot,
-`chunkList` covering the layout AABB).
+room, **and player-POV**), each shot with a camera (`pos` + `yaw`/`pitch` degrees,
+optional `fov`) and a machine-generated `expect` checklist derived from the DSL.
+`delve-render scene` converts each shot into a **Chunky scene description JSON**
+(one file per shot, `chunkList` covering the layout AABB).
+
+**Player-POV shots are the Chunky path, by design.** The `pov` shots
+(spec-0003 #18) are first-person cameras at eye height (1.62) standing on each
+critical-path waypoint, looking along the walk — a **free camera at a fixed point
+inside the room**. Nucleation cannot render these: it is an orbit/turntable
+renderer that fits the camera to the model bounds (it always backs out to frame the
+whole model — there is no free-eye placement in `CameraConfig`). Chunky's scene
+camera is a true free camera (`position` + `orientation` + `fov`), so POV shots
+render through `scene` exactly as authored, carrying the first-person `fov` (~70°).
+The compiler already proves every POV eye cell is clear over the assembled world
+(`DW0724`), so a camera never looks out from inside a wall.
+
+**Limitations (recorded):**
+- **Entity overlays** — NPCs and props are entities, not blocks, so they are absent
+  from the `.nbt`/world geometry Chunky path-traces; POV/NPC shots render the *scene
+  the actor stands in*, not the actor. Judging NPC placement/facing/name-tags stays
+  a live-server concern. Recorded limitation, not a bug.
+- **Running Chunky** stays out-of-process / CI-future (needs a booted-world save;
+  see below); the shot set + index is the artifact, the vision verdict stays
+  agent-driven (spec-0003).
 
 Chunky itself is **not bundled** (GPLv3, out-of-process). Pinned snapshot core
 (1.21.x needs a snapshot; stable stops at 1.20.4), from
@@ -124,6 +145,19 @@ java -cp 'chunky-lib/*' se.llbit.chunky.main.Chunky -scene-dir scenes -render <n
 `pitch = atan2(-dy, horiz)` (+ looks down). This matches the axes the spike
 verified for Chunky (`yaw ≈ π/2` faces −Z, +pitch = down); scene emission converts
 degrees → radians directly.
+
+## `index` — (image ↔ expect) pairs for the vision reviewer
+
+`delve-render index <build-dir> -o shot-index.json` reads `render-plan.json` and
+writes one entry per shot: `id`, `kind`, `leg`/`objective` (POV shots), the `image`
+filename a renderer produces (`<scene_name>.png`, matching `scene`), and the shot's
+`expect` list. This is the visual tier's deliverable — a reviewing agent / vision
+model is handed each shot's rendered image beside its expected content. **No
+vision-model call is wired into CI**; the review stays agent-driven (spec-0003).
+Order and bytes mirror `render-plan.json` (deterministic).
+
+The ladder step `validation/render-shots.sh <build-dir>` runs `scene` + `index`
+together, producing the Chunky scene set and the index in one shot.
 
 ## Stability (double-render)
 

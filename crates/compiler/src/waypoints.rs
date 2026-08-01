@@ -54,7 +54,11 @@ pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
 /// the straight line the bot walks between consecutive waypoints IS the proven path
 /// there (distance-based thinning could cut a corner and send the bot into a wall).
 /// Deterministic and order-preserving.
-fn thin(cells: &[[i32; 3]]) -> Vec<[i32; 3]> {
+///
+/// Shared with the visual-tier POV shot planner (`crate::render_plan`): the same
+/// corner-thinned waypoint list the harness replays is where each first-person
+/// camera stands, so a POV shot is taken at every turn/endpoint (not every cell).
+pub(crate) fn thin(cells: &[[i32; 3]]) -> Vec<[i32; 3]> {
     if cells.len() <= 2 {
         return cells.to_vec();
     }

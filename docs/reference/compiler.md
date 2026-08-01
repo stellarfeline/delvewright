@@ -54,7 +54,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 6 | Solve jigsaw layout (per `prefab_pool` area, from seed) | `compiler::solver` | `DW030x` (exit 3) |
 | 7 | Assemble world model (placed pieces → voxel grid) | `compiler::plan` | `DW030x` (exit 3) |
 | 8 | Assembled-light + relight (measure, place fixtures) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
-| 9 | Nav checks (A* `move-npc`, cutscene clip, critical-path walkability — incl. relight fixtures + water flood; talk-to endpoint snap; waypoint self-check; v0.6 checkpoint no-stranding/placement + stealth-zone proofs) | `compiler::nav` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0327` (exit 3) |
+| 9 | Nav checks (A* `move-npc`, cutscene clip, critical-path walkability — incl. relight fixtures + water flood; talk-to endpoint snap; waypoint self-check; POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone proofs) | `compiler::nav` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0327`/`DW0724` (exit 3) |
 | 10 | Emit (datapack, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
 
 - `build` ⟹ `validate` + `analyze`; `analyze` ⟹ `validate`. A validation failure
@@ -329,6 +329,21 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   gameplay** — excluded from the delve image (like `packtest-datapack/`); emitted
   only when a walked critical leg exists, so a fully-transported campaign stays
   byte-identical.
+- `<out>/render-plan.json` **player-POV shots** (`crate::render_plan::pov_shots`):
+  the visual tier the owner's concern demands — the *player's own eye*, not the
+  overhead/orbit cameras of the other shot kinds. One first-person `pov` shot per
+  corner-thinned critical-path waypoint (the same `thin()` list the harness
+  replays), camera at eye height (`1.62` above the standing cell), oriented along
+  the walk toward the next waypoint and — at each leg's final waypoint — toward the
+  objective anchor it arrives at (approach-heading fallback when the anchor is
+  underfoot, so an arrival never degenerates to a straight-down floor shot). Each
+  shot carries `leg`, the served `objective`, `standing_cell`, a `camera` with the
+  first-person `fov` (~70°), and an `expect` whose first entry is a one-sentence
+  machine description composed from campaign data (area name + objective/anchor/NPC
+  names + objective hint) — the (image ↔ expect) pair a vision model reviews.
+  Deterministic (route order → waypoint order; no RNG/clock) and appended after the
+  overhead kinds so the existing shot prefix is unchanged. Emitted only when a
+  walked critical leg exists.
 
 ### Assembled-world model (shared, gravity-settled)
 
@@ -546,6 +561,7 @@ Catalogued here so the DW namespace is complete and CI-checked.
 | `DW0721` | `delve-render` | Input (`.nbt`/metadata/`render-plan.json`) unreadable (exit 2). |
 | `DW0722` | `delve-render` | Output file could not be written (exit 3). |
 | `DW0723` | `delve-render` | GPU renderer failed / textures absent (exit 5). |
+| `DW0724` | `delvec` (visual tier) | A player-POV camera eye cell is occupied (solid/water) in the FINAL assembled world — the frame would render the inside of a block, not the player's view. The self-check behind the visual tier (`compiler::nav::verify_pov_cameras`), mirroring the DW0314 waypoint self-check: every POV camera stands at the eye-height (1.62) of a DW0314-proven-standable waypoint, so this can only fire if the eye-height/standing-cell derivation changes to place the eye in a ceiling/wall (or a later pass mutates the cell). Numbered in the `DW072x` visual/render range; emitted by the compiler's nav pass (exit 3). Fix the camera derivation — never nudge the waypoint or the geometry. |
 | `DW0730` | `delve-admit` | Audit: a palette block is not in the allowlist. |
 | `DW0731` | `delve-admit` | Audit: a hard-forbidden code-injection vector (command/structure block, NBT spawner, embedded `Command`). |
 | `DW0732` | `delve-admit` | Input error (unreadable `.nbt`/metadata/JSON). |

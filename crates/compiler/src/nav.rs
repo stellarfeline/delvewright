@@ -174,6 +174,13 @@ impl World {
         self.standable(c)
     }
 
+    /// Whether a cell is unoccupied — neither a solid block nor water-flooded, so a
+    /// camera eye placed in it sees open air rather than the inside of a block.
+    /// Public wrapper for the visual-tier POV camera self-check ([`verify_pov_cameras`]).
+    pub fn is_clear(&self, c: [i32; 3]) -> bool {
+        !self.is_occupied(c)
+    }
+
     /// The nearest standable cell to `c` within `radius` (itself if already
     /// standable), broken deterministically by `(distance², cell)`; `None` if
     /// none. Public wrapper over `snap_standable` for the relight pass.
@@ -1053,6 +1060,11 @@ pub struct LegRoute {
     pub from: [i32; 3],
     /// The raw visited anchor the leg walks TO (this critical position).
     pub to: [i32; 3],
+    /// The `critical_path` step index of the destination position — the objective
+    /// this leg walks toward. Lets the visual-tier POV planner
+    /// (`crate::render_plan`) name the served objective without re-deriving the
+    /// leg selection.
+    pub to_step: usize,
     /// The standable-cell A* path from the snapped `from` floor to the snapped `to`
     /// floor, inclusive of both endpoints.
     pub cells: Vec<[i32; 3]>,
@@ -1080,7 +1092,12 @@ pub fn critical_path_routes(plan: &Plan, world: &World) -> Vec<LegRoute> {
             continue;
         };
         if let Some(cells) = world.find_path(start, goal) {
-            out.push(LegRoute { from, to, cells });
+            out.push(LegRoute {
+                from,
+                to,
+                to_step: pair[1].src_step,
+                cells,
+            });
         }
     }
     out
@@ -1124,6 +1141,42 @@ pub fn verify_exported_routes(world: &World, routes: &[LegRoute]) -> Result<(), 
     Ok(())
 }
 
+/// `DW0724`: a visual-tier player-POV camera eye cell is occupied (a solid block
+/// or water) in the FINAL assembled world — the frame would render the inside of a
+/// block instead of the scene the player sees. A self-check on the POV camera
+/// derivation (`crate::render_plan`), mirroring the DW0314 waypoint self-check:
+/// every POV camera stands at the eye-height of a DW0314-proven-standable waypoint,
+/// so this cannot fire unless the eye-height derivation changes to place the eye in
+/// a ceiling/wall (or a later pass mutates the cell). It makes "the camera clips a
+/// wall" — the owner's exact visual-review failure mode — a build error to fix at
+/// its source (the camera derivation), never a shot to nudge or a data value to
+/// change.
+pub const DW_POV_CAMERA_OCCLUDED: &str = "DW0724";
+
+/// Assert every player-POV camera eye cell is clear (unoccupied) in `world` — the
+/// final assembled model. Each entry is `(shot_id, eye_cell)` where `eye_cell` is
+/// the integer block the camera eye sits in (`floor` of the eye position). Returns
+/// [`DW_POV_CAMERA_OCCLUDED`] (`DW0724`) naming the first offending shot on
+/// violation. The structural guard behind the visual tier: it is impossible to ship
+/// a render plan whose first-person camera looks out from inside geometry.
+pub fn verify_pov_cameras(world: &World, cameras: &[(String, [i32; 3])]) -> Result<(), NavError> {
+    for (id, eye) in cameras {
+        if !world.is_clear(*eye) {
+            return Err(NavError {
+                code: DW_POV_CAMERA_OCCLUDED,
+                message: format!(
+                    "player-POV shot `{id}`: the camera eye cell {eye:?} is occupied (a solid \
+                     block or water) in the assembled world — the frame would render the inside \
+                     of a block, not the player's view. The eye sits at 1.62 above a proven \
+                     standable waypoint, so fix the POV camera derivation (eye height / standing \
+                     cell) — do NOT move the waypoint or the geometry."
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1152,6 +1205,22 @@ mod tests {
             talk_to: false,
             src_step: 0,
         }
+    }
+
+    #[test]
+    fn pov_camera_in_open_air_passes_but_inside_a_block_is_dw0724() {
+        // A flat floor at y=64 with headroom; the eye of a standing player is at
+        // y=65..66 (clear). A camera eye in a clear cell passes; one placed inside
+        // the floor block is DW0724.
+        let world = floored(5, 5, 65, &[]);
+        assert!(world.is_clear([2, 65, 2]), "standing eye cell is clear");
+        // Clear eye → ok.
+        verify_pov_cameras(&world, &[("pov/leg0/wp0".into(), [2, 65, 2])]).expect("clear eye ok");
+        // Eye buried in the solid floor → DW0724.
+        let err = verify_pov_cameras(&world, &[("pov/leg0/wp1".into(), [2, 64, 2])])
+            .expect_err("occupied eye must fail");
+        assert_eq!(err.code, DW_POV_CAMERA_OCCLUDED);
+        assert!(err.message.contains("pov/leg0/wp1"), "names the shot");
     }
 
     #[test]
@@ -1297,6 +1366,7 @@ mod tests {
         let routes = vec![LegRoute {
             from: [0, 65, 0],
             to: [3, 65, 0],
+            to_step: 1,
             cells: vec![[0, 65, 0], [1, 65, 0], [2, 65, 0], [3, 65, 0]],
         }];
         let err = verify_exported_routes(&world, &routes).unwrap_err();
@@ -1310,6 +1380,7 @@ mod tests {
         let dry = vec![LegRoute {
             from: [0, 65, 0],
             to: [1, 65, 0],
+            to_step: 1,
             cells: vec![[0, 65, 0], [1, 65, 0]],
         }];
         assert!(verify_exported_routes(&world, &dry).is_ok());

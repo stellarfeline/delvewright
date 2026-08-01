@@ -250,6 +250,39 @@ fn render_plan_shape_and_expect_vocabulary() {
 
     // The spawn shot is first (deterministic ordering).
     assert_eq!(shots[0]["kind"], "spawn");
+
+    // Player-POV tier: first-person cameras along the walked critical path.
+    let pov: Vec<&serde_json::Value> = shots.iter().filter(|s| s["kind"] == "pov").collect();
+    assert!(
+        !pov.is_empty(),
+        "hello-world has a walked leg, so it emits player-POV shots: {kinds:?}"
+    );
+    for s in &pov {
+        let cam = &s["camera"];
+        // Eye is at 1.62 above the standing cell floor (feet cell Y + 1.62).
+        let y = cam["pos"][1].as_f64().unwrap();
+        let cell_y = s["standing_cell"][1].as_f64().unwrap();
+        assert!(
+            (y - (cell_y + 1.62)).abs() < 1e-6,
+            "POV eye at cell_y+1.62: eye_y={y} cell_y={cell_y}"
+        );
+        // POV shots carry the first-person FOV and a leg/objective.
+        assert_eq!(cam["fov"].as_f64().unwrap(), 70.0);
+        assert!(s["leg"].is_number());
+        assert!(s["objective"].is_string(), "POV names the served objective");
+        // The first expect entry is the one-sentence first-person description.
+        let line = s["expect"][0].as_str().unwrap();
+        assert!(
+            line.starts_with("First-person view"),
+            "POV expect leads with the description: {line}"
+        );
+    }
+    // POV shots sort after the overhead/orbit kinds (deterministic suffix).
+    let first_pov = shots.iter().position(|s| s["kind"] == "pov").unwrap();
+    assert!(
+        shots[first_pov..].iter().all(|s| s["kind"] == "pov"),
+        "POV shots form the trailing block"
+    );
 }
 
 #[test]
