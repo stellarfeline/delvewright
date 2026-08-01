@@ -63,12 +63,14 @@ pub fn validate_campaign_with(
         let effects_reg = VendoredEffectRegistry::v1_21_11();
         v04_checks(c, anchors, &blocks, &effects_reg, &mut d);
     }
-    // DSL v0.6: scripted actors + staging effects (spec-0014). Actor entity ids
-    // validate against the injected entity registry; anchors against single-prefab
-    // area metadata (pool areas deferred to the compiler). Gated on the quests
-    // stage version.
+    // DSL v0.6: scripted actors + staging effects (spec-0014) and traps (spec-0011).
+    // Actor entity ids validate against the injected entity registry and anchors
+    // against single-prefab area metadata; traps bind `anchor/trap` markers and
+    // validate their dispense payload against the item registry (pool areas deferred
+    // to the compiler). Gated on the quests stage version.
     if is_v06(c.quests.dsl_version.as_str()) {
         v06_checks(c, anchors, entities, &mut d);
+        v06_trap_checks(c, items, anchors, &mut d);
     }
 
     d
@@ -1067,6 +1069,10 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
             for (m, eff) in t.effects.iter().enumerate() {
                 check(d, &format!("/content/triggers/{i}/effects/{m}"), eff);
             }
+        }
+        // Traps (spec-0011) are a v0.6 stage-5 surface: reserved before 0.6.0.
+        if !c.quests.content.traps.is_empty() {
+            res(d, "/content/traps".to_string(), "the `traps` section");
         }
     }
 
@@ -2160,38 +2166,10 @@ fn v04_checks(
     // area AND there are no pool areas (which the compiler resolves later).
     let anchor_resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
 
-    // Declared flags across quest / dialogue / trigger `set-flag` effects.
-    let mut flags: BTreeSet<&str> = BTreeSet::new();
-    for q in &quests.quests {
-        for e in q
-            .on_objective_complete
-            .values()
-            .flatten()
-            .chain(&q.on_complete)
-        {
-            if let Some(f) = e.set_flag() {
-                flags.insert(f.as_str());
-            }
-        }
-    }
-    for t in &quests.triggers {
-        for e in &t.effects {
-            if let Some(f) = e.set_flag() {
-                flags.insert(f.as_str());
-            }
-        }
-    }
-    for tree in &c.dialogue.content.dialogues {
-        for node in &tree.nodes {
-            for opt in &node.options {
-                for e in &opt.effects {
-                    if let Some(f) = e.set_flag() {
-                        flags.insert(f.as_str());
-                    }
-                }
-            }
-        }
-    }
+    // Declared flags across quest / dialogue / trigger `set-flag` effects and v0.6
+    // trap disarms (a disarm's `sets_flag` is a first-class declared flag other
+    // objectives/triggers may gate on).
+    let flags = collect_declared_flags(c);
     let declared_waves: BTreeSet<&str> = quests.waves.iter().map(|w| w.id.as_str()).collect();
 
     // --- skins (spec-0009) ---
@@ -2433,6 +2411,181 @@ fn check_block_field(
                 path,
                 reason,
             ));
+        }
+    }
+}
+
+/// Every flag id declared anywhere in the campaign — the union of `set-flag`
+/// effects (quest / dialogue / trigger) and v0.6 trap disarm `sets_flag`
+/// (spec-0011). The authoritative declared-flag set every `requires_flags`
+/// resolves against.
+fn collect_declared_flags(c: &Campaign) -> BTreeSet<&str> {
+    let mut flags: BTreeSet<&str> = BTreeSet::new();
+    for q in &c.quests.content.quests {
+        for e in q
+            .on_objective_complete
+            .values()
+            .flatten()
+            .chain(&q.on_complete)
+        {
+            if let Some(f) = e.set_flag() {
+                flags.insert(f.as_str());
+            }
+        }
+    }
+    for t in &c.quests.content.triggers {
+        for e in &t.effects {
+            if let Some(f) = e.set_flag() {
+                flags.insert(f.as_str());
+            }
+        }
+    }
+    for t in &c.quests.content.traps {
+        if let Some(dis) = &t.disarm {
+            flags.insert(dis.sets_flag.as_str());
+        }
+    }
+    for tree in &c.dialogue.content.dialogues {
+        for node in &tree.nodes {
+            for opt in &node.options {
+                for e in &opt.effects {
+                    if let Some(f) = e.set_flag() {
+                        flags.insert(f.as_str());
+                    }
+                }
+            }
+        }
+    }
+    flags
+}
+
+/// DSL v0.6 trap validation (spec-0011). Each trap binds to an `anchor/trap`
+/// marker and gives the mute prefab hardware meaning. Structural failures are
+/// `DW0340` (a malformed/duplicate id, an `at`/`disarm.via` no area's prefab
+/// provides, or a `disarm.via` colliding with the trap's own trigger anchor); a
+/// dispense payload item unknown to the pinned registry is `DW0341`. A trap's
+/// `requires_flags` resolves against the declared-flag set like a trigger's
+/// (`DW0172`). The completability obligation for a *lethal* trap is discharged
+/// later by the compiler nav proof (`DW0342`).
+fn v06_trap_checks(
+    c: &Campaign,
+    items: &dyn ItemRegistry,
+    anchors: &dyn AnchorRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let quests = &c.quests.content;
+    if quests.traps.is_empty() {
+        return;
+    }
+
+    // Area anchor sets (single-prefab areas) + whether any pool area exists, so
+    // resolution stays lenient for pool areas the compiler resolves later — the
+    // same policy as the v0.4 trigger check.
+    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
+    let mut has_pool_area = false;
+    for a in &c.world.content.areas {
+        if let Some(prefab) = &a.prefab {
+            if let Some(set) = anchors.anchors_for(prefab) {
+                known_anchor.extend(set.iter().map(String::as_str));
+            }
+        } else if a.prefab_pool.is_some() {
+            has_pool_area = true;
+        }
+    }
+    let anchor_resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
+
+    let flags = collect_declared_flags(c);
+
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for (i, t) in quests.traps.iter().enumerate() {
+        if !t.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::TRAP_INVALID,
+                "quests",
+                format!("/content/traps/{i}/id"),
+                format!(
+                    "malformed trap id `{}` — trap ids must be lowercase kebab-case with the \
+                     `trap/` prefix (e.g. `trap/dart-hall`)",
+                    t.id
+                ),
+            ));
+        }
+        if !seen.insert(t.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::TRAP_INVALID,
+                "quests",
+                format!("/content/traps/{i}/id"),
+                format!(
+                    "duplicate trap id `{}` — rename one so every trap id is unique",
+                    t.id
+                ),
+            ));
+        }
+        if !anchor_resolvable(t.at.as_str()) {
+            d.push(Diagnostic::error(
+                codes::TRAP_INVALID,
+                "quests",
+                format!("/content/traps/{i}/at"),
+                format!(
+                    "trap `at` anchor `{}` is not provided by any area's prefab — bind the trap to \
+                     an `anchor/trap` marker some area's prefab exposes (anchor names come from \
+                     prefab metadata; do NOT invent one)",
+                    t.at
+                ),
+            ));
+        }
+        if let Some(dis) = &t.disarm {
+            if !anchor_resolvable(dis.via.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::TRAP_INVALID,
+                    "quests",
+                    format!("/content/traps/{i}/disarm/via"),
+                    format!(
+                        "trap `disarm.via` anchor `{}` is not provided by any area's prefab — use \
+                         an anchor some area's prefab exposes for the disarm affordance",
+                        dis.via
+                    ),
+                ));
+            }
+            if dis.via == t.at {
+                d.push(Diagnostic::error(
+                    codes::TRAP_INVALID,
+                    "quests",
+                    format!("/content/traps/{i}/disarm/via"),
+                    format!(
+                        "trap `disarm.via` anchor `{}` is the trap's own trigger anchor — the \
+                         disarm must be a distinct, separately-reachable affordance, not the trap \
+                         cell itself",
+                        dis.via
+                    ),
+                ));
+            }
+        }
+        if let Some((item, _)) = t.dispense()
+            && !items.contains(item)
+        {
+            d.push(Diagnostic::error(
+                codes::TRAP_PAYLOAD_UNKNOWN,
+                "quests",
+                format!("/content/traps/{i}/effect/dispense/item"),
+                format!(
+                    "trap dispense payload item `{item}` is not in the pinned 1.21.11 item \
+                     registry — use a valid namespaced item id (e.g. `minecraft:arrow`)"
+                ),
+            ));
+        }
+        for (m, f) in t.requires_flags.iter().enumerate() {
+            if !flags.contains(f.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::FLAG_UNKNOWN,
+                    "quests",
+                    format!("/content/traps/{i}/requires_flags/{m}"),
+                    format!(
+                        "trap `requires_flags` references flag `{f}`, which no `set-flag` effect or \
+                         trap disarm ever produces — add a producer or correct the flag name"
+                    ),
+                ));
+            }
         }
     }
 }

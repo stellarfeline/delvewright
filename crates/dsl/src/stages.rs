@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::ids::{
     ActorId, AnchorId, AreaId, ClassId, DialogueId, FlagId, NpcId, ObjectiveId, PoolId, PrefabId,
-    QuestId, TriggerId, WaveId,
+    QuestId, TrapId, TriggerId, WaveId,
 };
 
 /// serde default helper: `true` (used by DSL v0.4 `trigger.once`).
@@ -688,6 +688,163 @@ pub struct QuestsContent {
     /// staging effects. Empty/absent before v0.6.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actors: Vec<Actor>,
+    /// Traps (DSL v0.6, spec-0011): redstone-native environmental hazards bound to
+    /// `anchor/trap` prefab markers. Each gives mute trap hardware meaning — its
+    /// trigger, dispenser payload, lethality, disarm, and reset. Empty/absent in
+    /// pre-0.6 campaigns (reserved `DW0141`), so a v0.5-or-earlier campaign that
+    /// declares none stays byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub traps: Vec<Trap>,
+}
+
+/// A stage-5 trap (DSL v0.6, spec-0011): a redstone-native environmental hazard.
+/// The trap *mechanism* — the trigger (pressure plate / tripwire / trapped chest)
+/// wired to a pre-placed empty dispenser — lives in the `.nbt` prefab at an
+/// `anchor/trap` marker; this declaration gives the mute hardware meaning. The
+/// compiler fills the dispenser payload, models the trigger cell as a hazard for
+/// the completability proofs (`DW0342`), and — for a disarmable trap — emits the
+/// disarm affordance. No detection is emitted for the harm itself: the redstone
+/// fires it ("harm is redstone-native", spec-0011). Player-vs-mob distinguishing
+/// matters in a sealed box-garden with controlled mobs, so `trapped-chest` (opened
+/// by a player) is called out as the only player-distinct trigger.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Trap {
+    /// Unique trap id (`trap/<kebab>`).
+    pub id: TrapId,
+    /// The `anchor/trap` marker this trap binds to. Its cell is the trigger/hazard
+    /// cell the compiler models; the anchor also carries the dispenser socket the
+    /// payload fills.
+    pub at: AnchorId,
+    /// What springs the trap (all redstone-native).
+    pub trigger: TrapTrigger,
+    /// What the trap does when sprung.
+    pub effect: TrapEffect,
+    /// How dangerous the trap is. A `lethal` trap on the forced critical path
+    /// carries the completability obligation (`DW0342`); `harmful`/`nonlethal`
+    /// carry none. Defaults to `harmful`.
+    #[serde(default)]
+    pub lethality: Lethality,
+    /// Optional disarm affordance (quest-coupling): an anchor the player acts on to
+    /// turn the trap off — setting a flag and emptying the dispenser — before the
+    /// trap cell is forced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disarm: Option<TrapDisarm>,
+    /// Whether the trap re-arms after firing. `once` = single-shot (fires, then
+    /// spent — the survivability path); `rearm` = re-fires each trigger (default).
+    #[serde(default)]
+    pub reset: TrapReset,
+    /// Flags that must be set before the trap is considered active (mirrors
+    /// [`EnvTrigger::requires_flags`]). Default empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires_flags: Vec<FlagId>,
+}
+
+impl Trap {
+    /// `(item, count)` if this trap's effect is a `dispense` payload.
+    pub fn dispense(&self) -> Option<(&str, u32)> {
+        match &self.effect {
+            TrapEffect::Dispense { item, count } => Some((item.as_str(), *count)),
+        }
+    }
+
+    /// Whether this trap is `lethal` (carries the `DW0342` obligation on the
+    /// forced critical path).
+    pub fn is_lethal(&self) -> bool {
+        matches!(self.lethality, Lethality::Lethal)
+    }
+}
+
+/// The mechanism that springs a [`Trap`] (DSL v0.6, spec-0011). All three are
+/// redstone-native — the hardware fires without any command — so the compiler
+/// emits no detection for them; it only models the trigger cell as a hazard and
+/// fills the dispenser payload. (`approach`, the compiler-detected v0.4 primitive,
+/// is deliberately *not* a trap trigger: it is already fully expressible as an
+/// [`EnvTrigger`], so admitting it here would only duplicate that surface.)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum TrapTrigger {
+    /// A pressure plate: any entity stepping on the cell. Auto-rearms on step-off.
+    PressurePlate,
+    /// A tripwire line: any entity crossing it. Auto-rearms.
+    Tripwire,
+    /// A trapped chest: a *player opening it* (comparator pulse). The only
+    /// player-distinct trigger — a controlled mob cannot spring it.
+    TrappedChest,
+}
+
+impl TrapTrigger {
+    /// The kebab tag (`pressure-plate` / `tripwire` / `trapped-chest`).
+    pub fn kind(&self) -> &'static str {
+        match self {
+            TrapTrigger::PressurePlate => "pressure-plate",
+            TrapTrigger::Tripwire => "tripwire",
+            TrapTrigger::TrappedChest => "trapped-chest",
+        }
+    }
+}
+
+/// What a [`Trap`] does when sprung (DSL v0.6, spec-0011). Externally tagged so a
+/// future effect adds a variant; a non-`dispense` key (e.g. `tnt`,
+/// `release-falling-block`, `crusher`) is an unknown variant → `DW0100`, keeping
+/// block-destroying and unmodeled effects out of the schema by construction
+/// (spec-0011 non-goals — no hardware the compiler cannot model reaches a world).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum TrapEffect {
+    /// Load the prefab's pre-wired dispenser with `count` of `item` (arrows, tipped
+    /// arrows, splash potions). The redstone fires it; terrain is untouched
+    /// (spec-0011 "primary lethal"). The item is round-tripped into the dispenser
+    /// `Items` NBT — a deterministic, static payload.
+    Dispense {
+        /// Vanilla item id (validated against the pinned 1.21.11 registry, `DW0341`).
+        item: String,
+        /// How many to load into the dispenser stack.
+        count: u32,
+    },
+}
+
+/// How dangerous a [`Trap`] is (DSL v0.6, spec-0011). Only `lethal` carries the
+/// forced-critical-path completability obligation (`DW0342`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Lethality {
+    /// Can kill a full-health player — carries the `DW0342` obligation on the path.
+    Lethal,
+    /// Hurts but is not designed to kill (the default).
+    #[default]
+    Harmful,
+    /// Cosmetic / trivial (a stumble, a scare).
+    Nonlethal,
+}
+
+/// Whether a [`Trap`] re-arms after firing (DSL v0.6, spec-0011).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum TrapReset {
+    /// Fires once, then is spent — the survivability path for a forced lethal trap
+    /// (respawn-safe with `keep_inventory`, non-re-triggering on the walk back; no
+    /// soft-loop).
+    Once,
+    /// Re-fires every time the trigger is met (default). A forced lethal `rearm`
+    /// trap must be avoidable or disarmable, else `DW0342`.
+    #[default]
+    Rearm,
+}
+
+/// A [`Trap`]'s disarm affordance (DSL v0.6, spec-0011): the player acts on the
+/// `via` anchor (an interaction the compiler emits, reusing the v0.4 interaction
+/// entity) to turn the trap off — setting `sets_flag` and emptying the dispenser —
+/// before the trap cell is forced. Discharges the `DW0342` obligation when the
+/// affordance is reachable ahead of the trap without crossing it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TrapDisarm {
+    /// The anchor the player interacts with to disarm.
+    pub via: AnchorId,
+    /// The flag set when the trap is disarmed (a new flag this trap produces; other
+    /// objectives/triggers may read it via `requires_flags`).
+    pub sets_flag: FlagId,
 }
 
 /// A stage-5 environment trigger (DSL v0.4). Emission uses vanilla-intended

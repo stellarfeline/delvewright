@@ -21,7 +21,7 @@ use crate::plan::{
 };
 use crate::{DELVEC_VERSION, MC_VERSION, PACK_FORMAT};
 
-use delvewright_dsl::{Objective, QuestEffect, Trigger, is_v03, is_v04};
+use delvewright_dsl::{Objective, QuestEffect, Trigger, is_v03, is_v04, is_v06};
 
 /// The emitted build tree: relative path → file bytes.
 pub type BuildOutput = BTreeMap<String, Vec<u8>>;
@@ -237,6 +237,12 @@ pub fn build(
                 // (spec-0014, DW0327), re-rooting DW0311 reachability at each beat.
                 crate::nav::check_checkpoints(plan, &world)?;
                 crate::nav::check_stealth_zones(plan, &world)?;
+                // v0.6 trap completability proof (spec-0011, DW0342): every lethal
+                // trap on the forced critical path must be avoidable, survivable
+                // (`once`), or disarmable, else the party is provably killed or
+                // soft-looped. Uses the move-npc waypoints (`m`) for the forced-path
+                // cell set.
+                crate::nav::check_traps(plan, &world, &m)?;
                 // Export the DW0311-proven critical-path routes as validation
                 // metadata (task #38): thinned per-leg waypoint polylines the harness
                 // replays as successive nearby goals, so no single giant mineflayer A*
@@ -542,6 +548,7 @@ fn is_vanilla_function(path: &str) -> bool {
 fn sealing_commands(
     time: delvewright_dsl::WorldTime,
     weather: Option<delvewright_dsl::WorldWeather>,
+    v06: bool,
 ) -> Vec<String> {
     let mut cmds = vec![
         "gamerule spawn_mobs false".to_string(),
@@ -554,6 +561,15 @@ fn sealing_commands(
         "gamerule keep_inventory true".to_string(),
         format!("time set {}", time.token()),
     ];
+    // Traps (DSL v0.6, spec-0011) exclude TNT as a payload — no gamerule separates
+    // explosion *block* damage from *entity* damage, so a TNT trap would deform the
+    // sealed jigsaw world and poison every downstream proof. `tnt_explodes false` is
+    // the defense-in-depth seal against a stray primed-TNT source (e.g. a dispenser
+    // loaded with TNT the schema forbids anyway). Gated on the v0.6 world stage so
+    // pre-0.6 fixtures stay byte-identical.
+    if v06 {
+        cmds.push("gamerule tnt_explodes false".to_string());
+    }
     // Weather is emitted only when explicitly declared (spec-0010): clear is the
     // vanilla default, so a campaign that declares no weather emits no `weather`
     // command and stays byte-identical to pre-v0.5 output.
@@ -724,6 +740,7 @@ fn emit_functions(
     setup.extend(sealing_commands(
         c.world.content.time.unwrap_or_default(),
         c.world.content.weather,
+        is_v06(c.world.dsl_version.as_str()),
     ));
     setup.push("scoreboard objectives add dw.class trigger".to_string());
     setup.push("scoreboard objectives add dw.classed dummy".to_string());
@@ -1029,6 +1046,9 @@ fn emit_functions(
     // v0.4: summon the interaction entities strike/use environment triggers watch
     // (empty for a campaign with no triggers → byte-identical).
     setup.extend(env_trigger_setup(plan));
+    // v0.6: fill each trap dispenser payload and summon disarm affordances
+    // (spec-0011). Empty for a campaign with no traps → byte-identical.
+    setup.extend(trap_setup(plan));
     setup.push("scoreboard players set #placed dw.sys 1".to_string());
     fns.push(("setup_finish".to_string(), lines(&setup)));
 
@@ -1219,6 +1239,9 @@ fn emit_functions(
     // v0.4: environment-trigger per-tick checks (empty for a campaign with no
     // triggers → byte-identical).
     tick.extend(env_trigger_tick(plan));
+    // v0.6: trap disarm-affordance detection (spec-0011). Empty for a campaign with
+    // no disarmable traps → byte-identical.
+    tick.extend(trap_tick(plan));
     // v0.6 checkpoints (spec-0012): per-player respawn detection via the vanilla
     // `deathCount` criterion, dispatching the active checkpoint's `on_respawn`.
     // Only when a checkpoint carries an `on_respawn` hook.
@@ -1653,6 +1676,7 @@ fn emit_functions(
     fns.extend(sequence_fns(plan));
     fns.extend(cutscene_fns(plan));
     fns.extend(env_trigger_fns(plan));
+    fns.extend(trap_fns(plan));
     fns.extend(boundary_fns(plan));
 
     fns.sort_by(|a, b| a.0.cmp(&b.0));
@@ -2793,6 +2817,91 @@ fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
     out
 }
 
+// ---------------------------------------------------------------------------
+// v0.6 traps (spec-0011)
+// ---------------------------------------------------------------------------
+
+/// `setup_finish` commands for traps (spec-0011): fill each `dispense` trap's
+/// prefab dispenser with its static payload (`item replace block … container.0`,
+/// the same deterministic mechanism as a `collect` chest — no raw NBT), and summon
+/// the disarm affordance's interaction entity. The trap's *harm* needs no command:
+/// the plate/tripwire/trapped-chest → dispenser redstone is already in the prefab.
+/// Empty for a campaign with no traps → byte-identical.
+fn trap_setup(plan: &Plan) -> Vec<String> {
+    let mut out = Vec::new();
+    for t in &plan.traps {
+        // Fill the pre-wired dispenser with the declared payload.
+        if let (Some(disp), Some((item, count))) = (t.dispenser, &t.payload) {
+            out.push(format!(
+                "item replace block {} {} {} container.0 with {item} {count}",
+                disp[0], disp[1], disp[2]
+            ));
+        }
+        // Summon the disarm interaction affordance (a right-click target). The
+        // physical lever may also be in the prefab; this entity is the modeled,
+        // provable disarm the compiler owns.
+        if let Some(dis) = &t.disarm {
+            out.push(format!(
+                "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_trapdis_{}\"]}}",
+                dis.via_cell[0], dis.via_cell[1], dis.via_cell[2], t.safe
+            ));
+        }
+    }
+    out
+}
+
+/// Per-tick disarm detection for disarmable traps (spec-0011), reusing the v0.4
+/// interaction-entity `use` primitive: when a player right-clicks the disarm
+/// affordance, fire the disarm once. Empty for a campaign with no disarmable traps.
+fn trap_tick(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for t in &plan.traps {
+        if t.disarm.is_none() {
+            continue;
+        }
+        let id = &t.safe;
+        out.push(format!(
+            "execute unless score #trapdis_{id} dw.sys matches 1 if entity @e[tag=dw_trapdis_{id},nbt={{interaction:{{}}}}] run function {ns}:trap_disarm_{id}"
+        ));
+        out.push(format!(
+            "execute as @e[tag=dw_trapdis_{id}] run data remove entity @s interaction"
+        ));
+    }
+    out
+}
+
+/// Disarm functions (`trap_disarm_<id>`) for disarmable traps (spec-0011). Firing
+/// once (`#trapdis_<id>` sentinel): set the disarm flag party-wide (so
+/// `requires_flags` reads elsewhere see it) and **empty the dispenser** — the
+/// modeled, global disarm that actually stops a redstone-native dispense trap for
+/// everyone. Empty for a campaign with no disarmable traps.
+fn trap_fns(plan: &Plan) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for t in &plan.traps {
+        let Some(dis) = &t.disarm else {
+            continue;
+        };
+        let id = &t.safe;
+        let mut body: Vec<String> = Vec::new();
+        body.push(format!("scoreboard players set #trapdis_{id} dw.sys 1"));
+        body.push(format!(
+            "scoreboard players set @a {} 1",
+            plan::flag_score(&dis.sets_flag)
+        ));
+        if let Some(disp) = t.dispenser {
+            // Empty the dispenser to an empty stack list — the modeled, global disarm
+            // that actually stops a redstone-native dispense trap (no ammo → no fire).
+            body.push(format!(
+                "data modify block {} {} {} Items set value []",
+                disp[0], disp[1], disp[2]
+            ));
+        }
+        out.push((format!("trap_disarm_{id}"), lines(&body)));
+    }
+    out
+}
+
 /// The first area's `spawn` anchor absolute position.
 fn campaign_spawn(plan: &Plan) -> Option<[i32; 3]> {
     for area in &plan.areas {
@@ -3110,6 +3219,12 @@ fn declared_flags(c: &delvewright_dsl::Campaign) -> std::collections::BTreeSet<S
             if let Some(f) = eff.set_flag() {
                 out.insert(f.as_str().to_string());
             }
+        }
+    }
+    // v0.6 traps (spec-0011): a disarm's `sets_flag` needs its own scoreboard.
+    for t in &c.quests.content.traps {
+        if let Some(dis) = &t.disarm {
+            out.insert(dis.sets_flag.as_str().to_string());
         }
     }
     for tree in &c.dialogue.content.dialogues {
@@ -3688,6 +3803,78 @@ fn emit_packtest(
     // v0.6 (spec-0014): actor spawn/despawn (kill vs vanish), move-actor arrival,
     // unleash swap. Emits nothing for a campaign with no actors.
     emit_v06_actor_packtests(plan, out, actor_moves);
+    // v0.6: trap payload loads into the dispenser; a disarm empties it (spec-0011).
+    // Emits nothing when the campaign declares no traps.
+    emit_trap_packtests(plan, out);
+}
+
+/// v0.6 trap PackTests (spec-0011). A fake player in a 0-player void does not tick
+/// entities (the primed-TNT fuse and falling-sand freeze — see the spec's Findings),
+/// so a plate → dispenser fire cannot be simulated headlessly; runtime firing
+/// coverage is a GameTest concern. What is deterministically checkable in a plain
+/// mcfunction — and what these assert — is the compiler's own contract: after
+/// `setup`, the trap dispenser holds exactly the declared payload; after the disarm
+/// function runs, the payload is gone (the modeled global disarm) and the disarm
+/// flag is set. This is the machine-checkable half of acceptance criteria 3 & 4;
+/// the plate-fires-and-hits half is the PackTest/GameTest layer the spec records as
+/// entity-tick-limited.
+fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+
+    // Pick the first trap that has both a dispenser payload and a disarm — it
+    // exercises both the fill and the empty in one test. Else the first payload trap.
+    let dispense_trap = plan
+        .traps
+        .iter()
+        .find(|t| t.dispenser.is_some() && t.payload.is_some());
+    let Some(t) = dispense_trap else {
+        return;
+    };
+    let disp = t.dispenser.expect("filtered on Some");
+    let (item, count) = t.payload.as_ref().expect("filtered on Some");
+    let dis = t.disarm.as_ref();
+
+    let mut b = packtest_header(&format!(
+        "{title}: trap `{}` loads its dispenser payload; disarm empties it (spec-0011)",
+        t.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    // A 0-player void does not tick entities, so a plate→dispenser fire cannot be
+    // simulated here (spec-0011 Findings). Instead place the dispenser and load it
+    // with the exact payload the compiler fills, then assert slot 0 is occupied —
+    // the machine-checkable "payload lands" contract.
+    b.push(format!(
+        "setblock {} {} {} minecraft:dispenser",
+        disp[0], disp[1], disp[2]
+    ));
+    b.push(format!(
+        "item replace block {} {} {} container.0 with {item} {count}",
+        disp[0], disp[1], disp[2]
+    ));
+    b.push(format!(
+        "execute store success score #tload dw.sys if data block {} {} {} Items[0]",
+        disp[0], disp[1], disp[2]
+    ));
+    b.push("assert score #tload dw.sys matches 1".to_string());
+    if let Some(dis) = dis {
+        // Run the REAL emitted disarm and assert the dispenser is now empty (no ammo
+        // → cannot fire) and the disarm flag is set — the trap is provably off.
+        b.push(format!("function {ns}:trap_disarm_{}", t.safe));
+        b.push(format!(
+            "execute store success score #tempty dw.sys if data block {} {} {} Items[0]",
+            disp[0], disp[1], disp[2]
+        ));
+        b.push("assert score #tempty dw.sys matches 0".to_string());
+        b.push(format!(
+            "assert score @p {} matches 1",
+            plan::flag_score(&dis.sets_flag)
+        ));
+    }
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/v06_trap.mcfunction"),
+        lines(&b).into_bytes(),
+    );
 }
 
 /// v0.6 boundary PackTests (spec-0013): a player outside the region is returned to
