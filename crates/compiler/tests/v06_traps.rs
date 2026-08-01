@@ -127,7 +127,6 @@ fn build_with_trap(name: &str, trap: serde_json::Value) -> Result<BuildOutput, B
         None,
         "unpinned",
         &BTreeMap::new(),
-        delvewright_compiler::light::has_night_vision(&campaign),
     )
 }
 

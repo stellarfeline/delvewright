@@ -66,7 +66,6 @@ fn build_fixture() -> BuildOutput {
         None,
         "unpinned",
         &skins,
-        delvewright_compiler::light::has_night_vision(&campaign),
     )
     .expect("every emitted command validates (DW0315/DW0316/DW0327 proofs pass)")
 }
@@ -356,7 +355,6 @@ fn set_checkpoint_nested_in_sequence_binds_its_own_index() {
         None,
         "unpinned",
         &skins,
-        delvewright_compiler::light::has_night_vision(&campaign),
     )
     .expect("nested-checkpoint build emits valid commands");
 

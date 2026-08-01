@@ -981,6 +981,18 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     .to_string(),
             ));
         }
+        for (i, a) in c.world.content.areas.iter().enumerate() {
+            if a.mitigation.is_some() {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "world",
+                    format!("/content/areas/{i}/mitigation"),
+                    "area `mitigation` requires dsl_version 0.6.0 — raise this stage's \
+                     `dsl_version` to 0.6.0, or remove the construct"
+                        .to_string(),
+                ));
+            }
+        }
     } else {
         // `horizon: "ocean"` without a return rule strands wanderers in an infinite sea.
         if matches!(c.world.content.horizon, Some(Horizon::Ocean))

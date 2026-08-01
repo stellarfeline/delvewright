@@ -104,7 +104,6 @@ fn build_with_structure(campaign: &Campaign, nbt: Vec<u8>) -> Result<BuildOutput
         None,
         "unpinned",
         &BTreeMap::new(),
-        light::has_night_vision(campaign),
     )
 }
 
@@ -119,8 +118,6 @@ fn build_localized(
     lang: &str,
     translations: &BTreeMap<String, String>,
 ) -> Result<BuildOutput, BuildFailure> {
-    // Verdict from the pre-localization English source (see has_night_vision).
-    let night_vision = light::has_night_vision(campaign_en);
     let mut c = campaign_en.clone();
     delvewright_dsl::localize(&mut c, translations);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -143,7 +140,6 @@ fn build_localized(
         Some(lang),
         "unpinned",
         &BTreeMap::new(),
-        night_vision,
     )
 }
 
@@ -176,7 +172,6 @@ fn build(campaign: &Campaign) -> Result<BuildOutput, BuildFailure> {
         None,
         "unpinned",
         &BTreeMap::new(),
-        light::has_night_vision(campaign),
     )
 }
 
@@ -266,12 +261,56 @@ fn crit6_dark_undeclared_build_fails_dw0210() {
     }
 }
 
-/// Criterion 5 (end-to-end): the same dark area builds clean once a class kit
-/// grants night vision (retained mitigation).
+/// Criterion 5 (end-to-end): the same dark area builds clean once the area
+/// **declares** `mitigation: "night-vision"` (DSL v0.6) — and the build actually
+/// emits the clocked `effect give` that backs the declaration.
 #[test]
-fn crit5_dark_with_night_vision_builds() {
+fn crit5_dark_with_declared_night_vision_builds() {
     let mut c = hello_world();
-    // Add a night-vision kit item to the first class.
+    c.world.dsl_version = "0.6.0".to_string();
+    c.world.content.areas[0].mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
+    // A dark box but the declared mitigation applies → no DW0210 (nav may still
+    // object, but the lighting gate must pass).
+    let r = build_with_structure(&c, dark_box_nbt([11, 6, 11], &[]));
+    match &r {
+        Ok(_) => {}
+        Err(BuildFailure::Diagnostic { code, .. }) => assert_ne!(
+            *code, "DW0210",
+            "a declared night-vision mitigation must satisfy the darkness gate"
+        ),
+        Err(other) => panic!("unexpected {other:?}"),
+    }
+    // The gate and the feature are the same fact: the build emits the clock.
+    let out = r.expect("the declared-mitigation build succeeds");
+    let tick = out
+        .keys()
+        .find(|k| k.ends_with("/function/night_vision_tick.mcfunction"))
+        .map(|k| String::from_utf8(out[k].clone()).unwrap())
+        .expect("declaring the mitigation emits night_vision_tick");
+    assert!(
+        tick.contains("effect give @a[x=") && tick.contains("minecraft:night_vision 12 0 true"),
+        "the clock must give hidden-particle night vision to players in the area box:\n{tick}"
+    );
+    assert!(
+        tick.contains("schedule function") && tick.contains("night_vision_tick 20t"),
+        "the clock must re-arm itself every second:\n{tick}"
+    );
+    assert!(
+        setup_finish(&out).contains("night_vision_tick 20t"),
+        "world init must start the clock"
+    );
+}
+
+/// The dead heuristic: a class kit item merely *named* "Potion of Night Vision" —
+/// a bare `minecraft:potion`, i.e. a renamed water bottle — grants nothing in the
+/// world and must NOT satisfy `DW0210`.
+///
+/// This is the regression for the owner's island finding: the pre-0.6 name
+/// heuristic accepted exactly this, so the check passed while the feature did not
+/// exist. Semantics never key on player-facing free text.
+#[test]
+fn renamed_potion_kit_item_no_longer_mitigates_dw0210() {
+    let mut c = hello_world();
     c.classes.content.classes[0]
         .kit
         .push(delvewright_dsl::KitItem {
@@ -279,14 +318,12 @@ fn crit5_dark_with_night_vision_builds() {
             count: 1,
             name: Some("Potion of Night Vision".to_string()),
         });
-    // A dark box but night vision mitigates → no DW0210 (nav may still object, but
-    // the lighting gate must pass): assert it is not a DW0210 failure.
-    match build_with_structure(&c, dark_box_nbt([11, 6, 11], &[])) {
-        Ok(_) => {}
-        Err(BuildFailure::Diagnostic { code, .. }) => {
-            assert_ne!(code, "DW0210", "night vision must mitigate the dark area")
-        }
-        Err(other) => panic!("unexpected {other:?}"),
+    match build_with_structure(&c, dark_box_nbt([11, 6, 11], &[])).unwrap_err() {
+        BuildFailure::Diagnostic { code, .. } => assert_eq!(
+            code, "DW0210",
+            "a renamed water bottle is not a night-vision mitigation"
+        ),
+        other => panic!("expected DW0210, got {other:?}"),
     }
 }
 
@@ -309,65 +346,32 @@ fn crit7_unsatisfiable_build_fails_dw0211() {
     }
 }
 
-/// The l10n inventory key for the display name of the last kit item of the first
-/// class (the night-vision item the language-independence tests append).
-fn last_kit_name_key(c: &Campaign) -> String {
-    let want = c.classes.content.classes[0]
-        .kit
-        .last()
-        .unwrap()
-        .name
-        .clone()
-        .unwrap();
-    delvewright_dsl::l10n_inventory(c)
-        .into_iter()
-        .find(|(k, v)| k.contains(".kit.") && k.ends_with(".name") && *v == want)
-        .map(|(k, _)| k)
-        .expect("kit-item name is inventoried")
-}
-
-/// Regression (root of FIX): the `DW0210` night-vision mitigation verdict must be
-/// **language-independent**. A kit item whose *English* name grants night vision
-/// mitigates a dark area in every build language, even when localization renames it
-/// to a string with no `night vision` substring — because the verdict is taken on
-/// the canonical English source, never the localized display name. Before the fix,
-/// `has_night_vision` ran on the already-localized campaign, so the same campaign
-/// passed `en` and failed `DW0210` under `zh-cn`.
+/// Regression: the `DW0210` mitigation verdict is **language-independent**. It is
+/// now so by construction — the signal is a stage-1 `mitigation` declaration, not a
+/// localizable display string — so an `en` build and a `zh-cn` build of the same
+/// campaign reach the same verdict with nothing threaded past localization.
 #[test]
 fn dw0210_night_vision_verdict_is_language_independent() {
     let mut c = hello_world();
+    c.world.dsl_version = "0.6.0".to_string();
     c.world.content.languages = vec!["zh-cn".to_string()];
-    c.classes.content.classes[0]
-        .kit
-        .push(delvewright_dsl::KitItem {
-            item: "minecraft:potion".to_string(),
-            count: 1,
-            name: Some("Draught of Night Vision".to_string()),
-        });
+    c.world.content.areas[0].mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
     let dark = dark_box_nbt([11, 6, 11], &[]);
 
-    // en: the English name grants night vision → mitigated (no DW0210).
     assert!(
         passes_dw0210(build_with_structure(&c, dark.clone())),
-        "night vision must mitigate DW0210 in the English build"
+        "the declared mitigation must satisfy DW0210 in the English build"
     );
 
-    // zh-cn: localization renames the kit item to a non-matching Chinese string.
-    // Recomputing the verdict from the localized name would (wrongly) re-fire
-    // DW0210; the fix takes it from the English source, so the verdict is unchanged.
-    let mut tr: BTreeMap<String, String> = BTreeMap::new();
-    tr.insert(last_kit_name_key(&c), "夜视药剂".to_string());
-    // Every other inventory key maps to itself so localize covers the campaign.
-    for (k, v) in delvewright_dsl::l10n_inventory(&c) {
-        tr.entry(k).or_insert(v);
-    }
+    // Identity translation for the whole inventory, so localize runs cleanly.
+    let tr: BTreeMap<String, String> = delvewright_dsl::l10n_inventory(&c).into_iter().collect();
     assert!(
         passes_dw0210(build_localized(&c, dark, "zh-cn", &tr)),
-        "the same night-vision kit must mitigate DW0210 in the zh-cn build"
+        "the same declaration must satisfy DW0210 in the zh-cn build"
     );
 }
 
-/// Complementary verdict: with **no** night-vision kit item, a dark undeclared area
+/// Complementary verdict: with **no** `mitigation` declaration, a dark undeclared area
 /// fails `DW0210` in every build language (en and zh-cn alike) — the gate is not
 /// silently suppressed by localization either.
 #[test]
@@ -402,7 +406,7 @@ fn hello_room_measures_not_dark() {
             structures.insert(piece.structure_file.clone(), bytes);
         }
     }
-    let r = light::relight(&plan, &structures, light::has_night_vision(&c));
+    let r = light::relight(&plan, &structures);
     assert!(
         r.diagnostics.is_empty(),
         "lit hello-room must not trip DW0210: {:?}",

@@ -227,7 +227,6 @@ fn build_v06(quests: &str) -> BuildOutput {
         None,
         "unpinned",
         &BTreeMap::new(),
-        delvewright_compiler::light::has_night_vision(&campaign),
     )
     .expect("v0.6 campaign builds")
 }
@@ -265,7 +264,6 @@ fn play_sound_and_art_emitted() {
 /// `delvec build --lang <code>` does (localize in place, then plan + emit).
 fn build_localized_v06(quests: &str, translations: &BTreeMap<String, String>) -> BuildOutput {
     let mut campaign = parse_hw(&quests_doc(quests), None);
-    let night_vision = delvewright_compiler::light::has_night_vision(&campaign);
     delvewright_dsl::localize(&mut campaign, translations);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
@@ -288,7 +286,6 @@ fn build_localized_v06(quests: &str, translations: &BTreeMap<String, String>) ->
         Some("zh-cn"),
         "unpinned",
         &BTreeMap::new(),
-        night_vision,
     )
     .expect("localized v0.6 campaign builds")
 }
