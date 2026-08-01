@@ -1245,6 +1245,21 @@ fn emit_functions(
                 ));
                 body.push("playsound minecraft:entity.experience_orb.pickup player @s".to_string());
             }
+            // Objective-marker lifecycle (task #45): despawn every ENTITY this
+            // objective's activation summoned, so a completed interact/reach
+            // objective leaves nothing behind. Two motivations, strongest first:
+            // (1) a finished interact objective must not remain clickable — its
+            // `minecraft:interaction` hitbox is a game-design correctness issue, not
+            // mere clutter; (2) the leaked hitboxes and wayfinding item_displays are
+            // non-colliding but congest the critical-path bot's pathfinding around
+            // later NPCs. Prop BLOCKS (spec-0008 interact prop, collect chest) are
+            // the affordance itself — real world blocks, intended scenery — so they
+            // persist; only summoned entities are removed. Gated identically to the
+            // summon (v03 + a non-empty activation) so v0.2 campaigns and objectives
+            // with no summon stay byte-identical.
+            if v03 && !activation_commands(plan, q_area, o).is_empty() {
+                body.extend(completion_cleanup(o));
+            }
             for eff in objective_effects(c, oid) {
                 emit_quest_effect(plan, eff, &mut body);
             }
@@ -2200,6 +2215,30 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
     cmds
 }
 
+/// The despawn commands run when an objective COMPLETES (task #45): remove every
+/// entity its [`activation_commands`] summoned. The objective-scoped tag
+/// (`dw_i_<obj>` on an interact's hitbox and its wayfinding marker, `dw_r_<obj>` on
+/// a reach marker) is deterministic and unique to the objective, so a single tight
+/// `kill @e[tag=…]` covers all of them without touching players (players never
+/// carry these tags) or any other objective's markers. Interact-with-prop summons
+/// only the hitbox (the prop is a block, not tagged); interact-without-prop and
+/// reach also summon a `dw_marker` item_display carrying the same objective tag.
+/// Prop BLOCKS and collect chests are the affordance itself and intentionally
+/// persist as scenery — they are not entities and are not killed here. `collect`
+/// (chest block only), `talk-to` and `kill` summon no per-objective entity, so they
+/// contribute nothing.
+fn completion_cleanup(o: &Objective) -> Vec<String> {
+    match o {
+        Objective::Interact { id, .. } => {
+            vec![format!("kill @e[tag={}]", interact_entity_tag(id.as_str()))]
+        }
+        Objective::ReachAnchor { id, .. } => {
+            vec![format!("kill @e[tag={}]", reach_marker_tag(id.as_str()))]
+        }
+        Objective::Collect { .. } | Objective::TalkTo { .. } | Objective::Kill { .. } => Vec::new(),
+    }
+}
+
 /// The flags any `set-flag` effect produces (sorted, deduped) — quest effects,
 /// plus (DSL v0.4) dialogue `set-flag` effects and environment-trigger effects.
 /// Empty extra sources for v0.2/v0.3, keeping their scoreboard setup identical.
@@ -2779,6 +2818,45 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                 ));
                 write("v04_prop", b);
                 break 'prop;
+            }
+        }
+    }
+
+    // interact-marker lifecycle (task #45): a completed interact objective leaves
+    // NO `minecraft:interaction` hitbox behind — it must not stay clickable, and a
+    // leaked hitbox congests the critical-path bot. Activate the first interact
+    // objective (summons the hitbox), assert it exists, complete it, assert the
+    // interaction count under its tag is 0.
+    'cleanup: for q in &c.quests.content.quests {
+        let area = plan.quest_area(q.id.as_str()).unwrap_or("");
+        for o in &q.objectives {
+            if let Objective::Interact { id, anchor, .. } = o
+                && plan.point(area, anchor.as_str()).is_some()
+            {
+                let tag = interact_entity_tag(id.as_str());
+                let mut b = packtest_header(&format!(
+                    "{}: completing interact `{id}` removes its interaction hitbox",
+                    c.world.content.title
+                ));
+                b.push(format!("function {ns}:setup"));
+                b.push(format!(
+                    "function {ns}:activate_{}",
+                    safe_obj_fn(id.as_str())
+                ));
+                b.push(format!(
+                    "execute store result score #before dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
+                ));
+                b.push("assert score #before dw.sys matches 1..".to_string());
+                b.push(format!(
+                    "execute as @a run function {ns}:complete_{}",
+                    safe_obj_fn(id.as_str())
+                ));
+                b.push(format!(
+                    "execute store result score #after dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
+                ));
+                b.push("assert score #after dw.sys matches 0".to_string());
+                write("v04_interact_cleanup", b);
+                break 'cleanup;
             }
         }
     }
