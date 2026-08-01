@@ -1858,6 +1858,23 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
                 }
             }
         }
+        QuestEffect::CloseGate { anchor, .. } => {
+            // The physical dual of `open-gate`: fill the gate region with the block
+            // the anchor declares (basalt boulder, iron bars, …), sealing it back
+            // into a wall. A blockless gate anchor is rejected at validate-time
+            // (`DW0343`), so the resolved `block` is the real fill here.
+            for ((_, name), resolved) in &plan.anchors {
+                if name == anchor.as_str()
+                    && let ResolvedAnchor::Gate { from, to, block } = resolved
+                {
+                    body.push(format!(
+                        "fill {} {} {} {} {} {} {}",
+                        from[0], from[1], from[2], to[0], to[1], to[2], block
+                    ));
+                    return;
+                }
+            }
+        }
         QuestEffect::CampaignComplete => {
             body.push(format!("function {ns}:campaign_complete"));
         }

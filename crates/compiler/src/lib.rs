@@ -21,6 +21,7 @@ pub mod atmos;
 pub mod commands;
 pub mod creator;
 pub mod emit;
+pub mod gates;
 pub mod light;
 pub mod load;
 pub mod nav;

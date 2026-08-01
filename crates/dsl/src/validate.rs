@@ -1635,6 +1635,22 @@ fn anchors_and_items(
                     ),
                 ));
             }
+            // v0.6 `close-gate` anchor (mirrors `open-gate`; the fill-block
+            // declaration is checked in the compiler, DW0343).
+            if let Some(anchor) = eff.close_gate_anchor()
+                && !set.contains(anchor.as_str())
+            {
+                d.push(Diagnostic::error(
+                    codes::ANCHOR_UNRESOLVED,
+                    "quests",
+                    format!("/content/quests/{i}/{path}/anchor"),
+                    format!(
+                        "`close-gate` anchor `{anchor}` is not provided by the prefab bound to \
+                         this quest's area — use a gate anchor the prefab exposes (anchor names \
+                         come from prefab metadata; do NOT invent one)"
+                    ),
+                ));
+            }
             // v0.6 `set-checkpoint` anchor (spec-0012).
             if let Some((anchor, _)) = eff.set_checkpoint()
                 && !set.contains(anchor.as_str())
