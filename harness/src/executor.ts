@@ -28,7 +28,7 @@ import type {
 } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError, likelyDeathCause } from "./death.ts";
-import { configureLeg } from "./movement.ts";
+import { allowNonCollidingEntities, configureLeg } from "./movement.ts";
 import { nextLegWaypoints, walkGoals, type GoalSpec, type Waypoints } from "./waypoints.ts";
 
 /** Connection + identity for the bot. Sourced from the environment (see below). */
@@ -520,6 +520,14 @@ export class MineflayerExecutor implements StepExecutor {
     // and stairs are ordinary floor). Entity detection is left ON (the pathfinder
     // default) so the bot routes AROUND a transient mob on a hop rather than ramming
     // it — disabling it made the bot wedge against a leaked mob and time out.
+    // task #45: but the pathfinder's default treats EVERY non-passable entity as an
+    // obstacle, including non-colliding display/interaction/marker entities that
+    // block nothing in-world. Those (a completed interact objective's leaked
+    // `interaction` hitbox, an NPC's co-located hitbox, floating item/text displays)
+    // congested the terminal approach to an NPC and timed the leg out. Mark them
+    // passable so the bot paths through them — physics-honest, and solid entities
+    // (mobs, the mannequin NPC itself) are still avoided.
+    allowNonCollidingEntities(movements);
     bot.pathfinder.setMovements(movements);
     // Long multi-level layouts (e.g. a 5-storey keep, ~90 blocks + 4 staircases)
     // sit at the edge of the default A* budget and fail nondeterministically

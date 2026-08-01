@@ -21,6 +21,48 @@ export interface LegMovements {
 }
 
 /**
+ * Vanilla 1.21.11 entity types whose bounding box does NOT collide with a player —
+ * display/marker/interaction entities and the area-effect cloud. Physically they
+ * obstruct nothing: a player walks straight through an `interaction` hitbox, a
+ * floating `item_display`/`text_display` marker, or a zero-size `marker`. The
+ * pathfinder must therefore route THROUGH them, not around them. This is
+ * model-alignment with game physics, NOT a check being weakened: a solid obstacle
+ * would still block the bot. Genuinely solid or pushing entities (mobs, mannequin
+ * NPCs, armor stands, boats, minecarts) are deliberately absent from this list and
+ * keep the pathfinder's default avoidance.
+ *
+ * Names are mineflayer `entity.name` values (no `minecraft:` prefix), matching the
+ * keys mineflayer-pathfinder's `Movements.passableEntities` set is checked against.
+ */
+export const NON_COLLIDING_ENTITY_TYPES: readonly string[] = [
+  "interaction",
+  "item_display",
+  "text_display",
+  "block_display",
+  "marker",
+  "area_effect_cloud",
+];
+
+/** The subset of a mineflayer-pathfinder `Movements` that lists entity types the
+ * pathfinder is allowed to path through without avoidance cost. */
+export interface PassableMovements {
+  passableEntities: Set<string>;
+}
+
+/**
+ * Mark every {@link NON_COLLIDING_ENTITY_TYPES} entity passable on a pathfinder
+ * `Movements`, so the bot no longer wedges against a non-colliding `interaction`
+ * hitbox or a floating `item_display` marker that leaked from a completed objective
+ * (or from any co-located NPC hitbox). Additive — it never removes an entity the
+ * pathfinder already avoids, so real threats stay avoided.
+ */
+export function allowNonCollidingEntities(movements: PassableMovements): void {
+  for (const name of NON_COLLIDING_ENTITY_TYPES) {
+    movements.passableEntities.add(name);
+  }
+}
+
+/**
  * Apply the standard adventure-mode movement locks, and — for a sneak leg — disable
  * sprinting in the Movements and turn the bot's sneak control state ON. Returns a
  * restore function that clears the sneak control state again; the caller MUST invoke
