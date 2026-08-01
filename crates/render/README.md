@@ -140,11 +140,21 @@ delve-render scene out -o scenes --world ./world
 java -cp 'chunky-lib/*' se.llbit.chunky.main.Chunky -scene-dir scenes -render <name> -f -target 500
 ```
 
-**Camera convention** (shared by `render-plan.json` and scene emission): `yaw`/
-`pitch` in **degrees**, `yaw = atan2(-dz, dx)` (0→+X east, 90→−Z north),
-`pitch = atan2(-dy, horiz)` (+ looks down). This matches the axes the spike
-verified for Chunky (`yaw ≈ π/2` faces −Z, +pitch = down); scene emission converts
-degrees → radians directly.
+**Camera convention.** `render-plan.json` gives `yaw`/`pitch` in **degrees**,
+`yaw = atan2(-dz, dx)` (0→+X east, 90→−Z north), `pitch = atan2(-dy, horiz)`
+(+ looks down). Chunky's scene camera is **not** the same basis — verified against
+the pinned snapshot core's bytecode (`Camera.updateTransform` =
+`rotY(π/2+yaw)·rotX(π/2−pitch)·rotZ(roll)`, pinhole centre ray local `+Z`,
+screen-`y` down). Scene emission therefore maps
+
+```
+yaw_chunky   = yaw_deg·π/180 + π      pitch_chunky = pitch_deg·π/180 − π/2   roll = 0
+```
+
+(a level 0° pitch → Chunky `−π/2`, upright). The earlier "straight deg→rad"
+emission aimed every POV camera at the ground; the offsets were confirmed by
+rendering nobodys-cave-island POV shots (2026-08-01). See `scene.rs` header for
+the full derivation.
 
 ## `index` — (image ↔ expect) pairs for the vision reviewer
 
