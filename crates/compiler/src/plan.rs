@@ -438,7 +438,9 @@ impl<'a> Plan<'a> {
                         DW_BUILD,
                         format!(
                             "area `{area_id}` binds prefab `{prefab_id}` but no matching prefab \
-                             metadata was found in the prefabs dir"
+                             metadata was found in the prefabs dir — bind a prefab that exists in \
+                             the prefab library, or add `{prefab_id}` (`.nbt` + metadata) to it. \
+                             This is a prefab-library/naming issue, not a quest-logic one"
                         ),
                     )
                 })?;
@@ -482,7 +484,13 @@ impl<'a> Plan<'a> {
                     let meta = prefabs.get(&placed.prefab_id).ok_or_else(|| {
                         PlanError::new(
                             DW_BUILD,
-                            format!("solver placed unknown prefab `{}`", placed.prefab_id),
+                            format!(
+                                "internal invariant violation: the solver placed prefab `{}`, \
+                                 which has no metadata entry — the solver and metadata registry \
+                                 disagree. This is a compiler bug, not a campaign error; stop and \
+                                 escalate",
+                                placed.prefab_id
+                            ),
                         )
                     })?;
                     // Transform this piece's anchors to world space. Each required
@@ -511,7 +519,11 @@ impl<'a> Plan<'a> {
                 // Validation (DW0160) guarantees exactly one binding.
                 return Err(PlanError::new(
                     DW_BUILD,
-                    format!("area `{area_id}` binds neither `prefab` nor `prefab_pool`"),
+                    format!(
+                        "internal invariant violation: area `{area_id}` binds neither `prefab` \
+                         nor `prefab_pool` at build time — `DW0160` should have rejected this \
+                         during validation. This is a compiler bug; stop and escalate"
+                    ),
                 ));
             };
             areas.push(placement);
@@ -855,7 +867,12 @@ fn build_critical_path(
                             .ok_or_else(|| {
                                 PlanError::new(
                                     DW_BUILD,
-                                    format!("talk-to references unknown npc `{npc}`"),
+                                    format!(
+                                        "internal invariant violation: `talk-to` references npc \
+                                         `{npc}` with no build-time plan — `DW0112`/`DW0152` \
+                                         should have caught this in validation. This is a compiler \
+                                         bug; stop and escalate"
+                                    ),
                                 )
                             })?;
                     let opt = npc_plan
@@ -864,7 +881,10 @@ fn build_critical_path(
                         .find(|o| o.completes.iter().any(|c| c == id.as_str()))
                         .ok_or_else(|| {
                             PlanError::new(DW_BUILD, format!(
-                                "objective `{id}` has no dialogue option completing it (analyze should have caught this)"
+                                "internal invariant violation: objective `{id}` has no dialogue \
+                                 option completing it at build time — `DW0123`/`DW0203` should \
+                                 have caught this in validation/analysis. This is a compiler bug; \
+                                 stop and escalate"
                             ))
                         })?;
                     // NPC position: its declared anchor within its area.
@@ -911,7 +931,12 @@ fn build_critical_path(
                     let w = wave_of(campaign, wave.as_str()).ok_or_else(|| {
                         PlanError::new(
                             DW_BUILD,
-                            format!("kill objective references unknown wave `{wave}`"),
+                            format!(
+                                "internal invariant violation: `kill` objective references wave \
+                                 `{wave}` with no declaration at build time — `DW0170` should have \
+                                 caught this in validation. This is a compiler bug; stop and \
+                                 escalate"
+                            ),
                         )
                     })?;
                     let pos = point_of(anchors, area, w.anchor.as_str())?;
@@ -1045,7 +1070,12 @@ fn point_of(
         Some(ResolvedAnchor::Gate { from, .. }) => Ok(*from),
         None => Err(PlanError::new(
             DW_BUILD,
-            format!("anchor `{anchor}` in area `{area}` did not resolve"),
+            format!(
+                "anchor `{anchor}` in area `{area}` did not resolve to a world position at build \
+                 time — if the campaign references an anchor no bound prefab/pool provides, \
+                 `DW0142`/`DW0302` should have named it; reaching here means the resolver and \
+                 validator disagree, a compiler bug — stop and escalate"
+            ),
         )),
     }
 }
@@ -1107,7 +1137,9 @@ fn finale_quest_order(campaign: &Campaign) -> Result<Vec<String>, PlanError> {
     if order.len() != needed.len() {
         return Err(PlanError::new(
             DW_BUILD,
-            "quest dependency cycle in critical path",
+            "internal invariant violation: a quest dependency cycle survived into critical-path \
+             ordering — `DW0130` should have rejected it in validation. This is a compiler bug; \
+             stop and escalate",
         ));
     }
     Ok(order)
@@ -1275,9 +1307,11 @@ fn check_gate_reachability(
                 DW_GATE_DEADLOCK,
                 format!(
                     "objective `{}` (anchor `{tname}` in area `{area_id}`) is only reachable \
-                     through a gate that no earlier objective opens (sealed gate(s): {culprit}); \
-                     the delve deadlocks — an anchor cannot sit beyond the gate that a later \
-                     objective opens",
+                     through a gate that no earlier objective opens (sealed gate(s): {culprit}), \
+                     so the delve deadlocks. Fix the quest order: add an earlier objective whose \
+                     `open-gate` effect opens {culprit} before this objective, or move `{tname}` \
+                     to the near side of the gate. Do NOT delete the gate to dodge the check — \
+                     that removes intended progression",
                     step.obj.id()
                 ),
             ));

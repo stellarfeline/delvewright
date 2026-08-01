@@ -165,11 +165,17 @@ impl CatalogCard {
         if !(1..=5).contains(&self.quality) {
             diags.push(Diagnostic::error(
                 DW_CATALOG,
-                format!("quality {} out of range (1..=5)", self.quality),
+                format!(
+                    "catalog card `quality` {} is out of range — set it to an integer in 1..=5",
+                    self.quality
+                ),
             ));
         }
         if self.description.trim().is_empty() {
-            diags.push(Diagnostic::error(DW_CATALOG, "description is empty"));
+            diags.push(Diagnostic::error(
+                DW_CATALOG,
+                "catalog card `description` is empty — add a one-line description of the asset",
+            ));
         }
         if self.style_fit.rationale.trim().is_empty() {
             diags.push(Diagnostic::error(
@@ -189,7 +195,12 @@ impl CatalogCard {
             if let Err(reason) = license_allowed(&self.license.spdx) {
                 diags.push(Diagnostic::error(
                     DW_LICENSE,
-                    format!("license `{}` rejected: {reason}", self.license.spdx),
+                    format!(
+                        "license `{}` rejected: {reason} — only CC0, CC-BY, MIT, Apache-2.0, \
+                         GPL-3.0-compatible, or `original` assets are admissible (ADR-0013). Use a \
+                         differently-licensed asset; do NOT relabel the card to pass",
+                        self.license.spdx
+                    ),
                 ));
             }
             // "Free download ≠ licensed": a non-original license needs a source URL.
@@ -198,7 +209,9 @@ impl CatalogCard {
             if !original && self.license.url.as_deref().unwrap_or("").trim().is_empty() {
                 diags.push(Diagnostic::error(
                     DW_LICENSE,
-                    "non-original license has no `url` (license must be verifiable, not just 'free to download')",
+                    "non-original license has no `url` — a license must be verifiable, not just \
+                     'free to download'; add a `license.url` pointing at the license/source, or \
+                     mark the asset `original`",
                 ));
             }
         }

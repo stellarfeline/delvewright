@@ -283,8 +283,10 @@ fn run_fidelity_gate(out: Option<&Path>, cli: &Cli) -> ExitCode {
             let d = Diagnostic::error(
                 DW_MISSING_TEXTURE,
                 format!(
-                    "fidelity gate FAILED: missing-texture placeholder detected \
-                     ({} px, {:.3}%, first at {},{}) — a newest-block texture is unresolved",
+                    "fidelity gate FAILED: missing-texture (magenta) placeholder detected \
+                     ({} px, {:.3}%, first at {},{}) — a block in the prefab has no texture in the \
+                     supplied pack. Supply a complete 1.21.11 client jar/texture pack (`--textures`), \
+                     or replace the unresolved block. Do NOT lower the fidelity gate to pass",
                     m.count,
                     m.fraction * 100.0,
                     m.sample.0,

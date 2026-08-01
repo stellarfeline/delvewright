@@ -284,7 +284,12 @@ fn run_build(
                 Err(e) => {
                     print_build_error(
                         "DW0300",
-                        &format!("cannot read prefab {}: {e}", path.display()),
+                        &format!(
+                            "cannot read prefab structure file `{}`: {e} — the prefab metadata \
+                             points at an `.nbt` that is missing or unreadable in the prefabs dir. \
+                             Restore the file or fix the metadata path (prefab-library issue)",
+                            path.display()
+                        ),
                         json,
                     );
                     return ExitCode::from(3);
@@ -312,7 +317,13 @@ fn run_build(
                 Err(e) => {
                     print_build_error(
                         "DW0309",
-                        &format!("cannot read skin png {}: {e}", path.display()),
+                        &format!(
+                            "cannot read skin PNG `{}`: {e} — a mannequin npc declares this \
+                             `skin.texture_id` but the campaign has no matching \
+                             `skins/<texture_id>.png`. Add the PNG at that path, or remove the \
+                             npc's `skin`",
+                            path.display()
+                        ),
                         json,
                     );
                     return ExitCode::from(3);

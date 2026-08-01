@@ -42,7 +42,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::diagnostic::{Diagnostic, codes};
-use crate::envelope::{Campaign, is_supported_version};
+use crate::envelope::{Campaign, SUPPORTED_DSL_VERSIONS, is_supported_version};
 use crate::ids::CampaignId;
 use crate::stages::QuestEffect;
 
@@ -226,7 +226,7 @@ pub fn validate_l10n(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<
                 format!("/world/languages/{lang}"),
                 format!(
                     "`{lang}` is the canonical language and must not be declared in \
-                     `world.languages` (English is implicit)"
+                     `world.languages` — English is implicit; remove `{lang}` from the list"
                 ),
             ));
             continue;
@@ -236,7 +236,11 @@ pub fn validate_l10n(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<
                 codes::L10N_MISSING,
                 "l10n",
                 format!("l10n/{lang}.json"),
-                format!("declared language `{lang}` has no `l10n/{lang}.json` sidecar"),
+                format!(
+                    "declared language `{lang}` has no `l10n/{lang}.json` sidecar — add the \
+                     sidecar (a full key→translation map), or remove `{lang}` from \
+                     `world.languages`"
+                ),
             ));
             continue;
         };
@@ -248,7 +252,8 @@ pub fn validate_l10n(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<
                 "l10n",
                 format!("l10n/{lang}.json"),
                 format!(
-                    "sidecar campaign_id `{}` differs from `{campaign_id}`",
+                    "sidecar `campaign_id` `{}` differs from the campaign's `{campaign_id}` — set \
+                     the sidecar's `campaign_id` to `{campaign_id}`",
                     doc.campaign_id
                 ),
             ));
@@ -259,7 +264,8 @@ pub fn validate_l10n(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<
                 "l10n",
                 format!("l10n/{lang}.json"),
                 format!(
-                    "sidecar `lang` field `{}` differs from filename code `{lang}`",
+                    "sidecar `lang` field `{}` differs from filename code `{lang}` — set the \
+                     sidecar's `lang` to `{lang}` (it must match the `l10n/{lang}.json` filename)",
                     doc.lang
                 ),
             ));
@@ -269,7 +275,11 @@ pub fn validate_l10n(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<
                 codes::L10N_MISSING,
                 "l10n",
                 format!("l10n/{lang}.json"),
-                format!("sidecar has unsupported dsl_version `{}`", doc.dsl_version),
+                format!(
+                    "sidecar has unsupported dsl_version `{}` — set it to a supported version \
+                     matching the stage docs (one of {SUPPORTED_DSL_VERSIONS:?})",
+                    doc.dsl_version
+                ),
             ));
         }
         // Coverage: exactly the inventory — missing (DW0180) and orphan (DW0181).
@@ -279,7 +289,10 @@ pub fn validate_l10n(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<
                 codes::L10N_MISSING,
                 "l10n",
                 format!("l10n/{lang}.json"),
-                format!("missing translation for key `{missing}`"),
+                format!(
+                    "sidecar is missing a translation for inventory key `{missing}` — add \
+                     `{missing}` to `l10n/{lang}.json` (coverage must be exact)"
+                ),
             ));
         }
         for orphan in side_keys.difference(&inv_keys) {
@@ -287,7 +300,10 @@ pub fn validate_l10n(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<
                 codes::L10N_ORPHAN,
                 "l10n",
                 format!("l10n/{lang}.json#/content/{orphan}"),
-                format!("orphan key `{orphan}` is not in the string inventory"),
+                format!(
+                    "orphan key `{orphan}` is not in the string inventory — remove it from \
+                     `l10n/{lang}.json` (the sidecar must cover exactly the inventory, no extras)"
+                ),
             ));
         }
     }

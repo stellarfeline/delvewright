@@ -144,7 +144,13 @@ fn parse_stage<T: for<'de> Deserialize<'de>>(
                 codes::SCHEMA,
                 stage.name(),
                 "",
-                format!("schema violation: {e}"),
+                format!(
+                    "`{}` stage document does not conform to its schema: {e}. Fix the offending \
+                     field (unknown field, wrong type, or missing required one) in the campaign \
+                     JSON to match the schema — run `delvec schema --stage <1..6>` to see the \
+                     exact shape.",
+                    stage.name()
+                ),
             ));
         }
     }
