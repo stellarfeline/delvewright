@@ -32,7 +32,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 6 | Solve jigsaw layout (per `prefab_pool` area, from seed) | `compiler::solver` | `DW030x` (exit 3) |
 | 7 | Assemble world model (placed pieces → voxel grid) | `compiler::plan` | `DW030x` (exit 3) |
 | 8 | Assembled-light + relight (measure, place fixtures) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
-| 9 | Nav checks (A* `move-npc`, cutscene clip, critical-path walkability — incl. relight fixtures) | `compiler::nav` | `DW0307`/`DW0308`/`DW0311` (exit 3) |
+| 9 | Nav checks (A* `move-npc`, cutscene clip, critical-path walkability — incl. relight fixtures + water flood; talk-to endpoint snap; waypoint self-check) | `compiler::nav` | `DW0307`/`DW0308`/`DW0311`/`DW0314` (exit 3) |
 | 10 | Emit (datapack, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
 
 - `build` ⟹ `validate` + `analyze`; `analyze` ⟹ `validate`. A validation failure
@@ -292,16 +292,46 @@ that merely lands on support is left to the faithful settle model (no diagnostic
 and the tileset generator's own zero-unsupported invariant catches unintended
 falls at authoring time (strongest-form defence, per the debug doctrine).
 
+The settle pass is followed by a **water-flood pass** (task #45), the fluid peer of
+gravity settling. Free `minecraft:water` cells seed a deterministic, **conservative
+superset** of vanilla flow (mirroring spec-0010's never-overestimate-walkability
+stance): (1) infinite-water source formation — a supported air cell flanked by ≥2
+source cells becomes a source, cascading, so a walled pool basin fills completely,
+not just 7 cells from its seeds; (2) 7-level horizontal decay from the completed
+source set plus infinite downward flow. Vanilla's drop-seeking *direction* rule is
+omitted (spread goes every way), which only over-marks. Every flooded cell (any
+water level, plus sources) is **impassable and never standable floor** for every
+consumer — nav, wave seating, relight fixture placement, waypoint export — the same
+single-model discipline as settle. This closes the water analogue of the gravity
+divergence: a `cave-shore` pool floods `[261,66,1]`, a cell an unpatched model
+routed a talk-to leg's step-up through. (Waterlogged solids keep their host id and
+stay solid; they do not seed the flood — vanilla waterlogging never spreads.)
+
 ### Nav (compile-time, over the assembled voxel grid)
 
 `move-npc` paths and the critical path are routed by A* over the placed-world
-block data (every non-air block is an obstacle; gate cells are passable). Steps are
+block data (every non-air block is an obstacle; **water-flooded cells are
+impassable and are never valid floor**; gate cells are passable). Steps are
 cardinal, one block up or down; a step **up** additionally requires head clearance
 to jump (the cell two above the source feet must be air), so a routed/exported path
 is one an entity — including the mineflayer bot — can actually walk (a ramp up under
 a low ceiling is unroutable, not a silent strand). Cutscene dollies must pass only
 non-solid cells. Unroutable/clipping/stranded → `DW0307`/`DW0308`/`DW0311` at build
 (never a runtime glitch).
+
+**Talk-to endpoint (task #45):** a talk-to leg's target anchor is the NPC's own
+occupied cell (the mannequin stands there, its interaction hitbox fills it). The
+leg's goal is snapped to the nearest standable cell *beside* the NPC — excluding
+the NPC's own cell and any flooded cell — so a shore NPC resolves onto dry footing
+within interaction range, never onto the mannequin or a water tongue.
+
+**Waypoint self-check (`DW0314`, task #45):** after routing, every exported
+critical-path waypoint is re-asserted standable in the FINAL world (settled +
+water-flooded + relight fixtures). Since the routes come from A* over that same
+world, this can only fire if a later pass mutates a cell nav relied on or an
+endpoint resolves off the walkable set — making it structurally impossible to ship
+a waypoint the game floods or walls (the water-flow / post-nav-mutation divergence
+class), a loud build failure instead of a runtime strand.
 
 ---
 
@@ -411,6 +441,7 @@ rows.
 | `DW0311` | Critical path has a consecutive visited-anchor pair with no walkable A* connection and no inter-area transport (player stranded). |
 | `DW0312` | A `spawn-wave` needs more standable spawn cells near its anchor than the anchor's own room provides (task #41). **Analysis-tier: exit 2**, like `DW02xx` — a content-design capacity mistake (shrink the wave or use a larger room), not a geometry defect; the message names the wave, area, and needed-vs-found count. |
 | `DW0313` | A placed gravity block (`sand`/`gravel`/`concrete_powder`/anvil/`dragon_egg`) despawns into the void at placement — an unsupported gravity floor over the `the_void` world falls out on the first block update, holing the shipped map even off the critical path (task #42). The authoritative gravity-settle gate (`crate::assembled`), not a downstream DW0311/DW0312 side effect. **Analysis-tier: exit 2** — a prefab/generator defect; the message attributes despawned cells+counts per piece and prescribes a non-falling substrate. Blocks that fall but **land on support** are faithfully modelled by the settle pass (no diagnostic): the shipped geometry is exact for every consumer, and the generator's own zero-unsupported invariant catches an *unintended* fall at authoring. Anti-dodge: swapping the floor palette to non-falling blocks to silence this is explicitly rejected — gravity floors are a first-class content need; add the substrate. |
+| `DW0314` | An exported critical-path waypoint is not standable in the FINAL assembled world (settled + water-flooded + relight fixtures) — the build-time self-check that makes the water-flow / post-nav-mutation divergence class structurally impossible to ship (task #45). Routes come from A* over that same world, so this fires only if a later pass mutates a cell nav relied on or an endpoint resolves off the walkable set; the message names the offending cell and leg. Fix the prefab/water or the assembly — never nudge the waypoint. |
 
 ### DW07xx — workspace tooling (spec-0007; **not `delvec`**)
 
