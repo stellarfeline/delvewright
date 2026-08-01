@@ -31,6 +31,124 @@ import { BotDeathError, likelyDeathCause } from "./death.ts";
 import { allowNonCollidingEntities, configureLeg } from "./movement.ts";
 import { nextLegWaypoints, walkGoals, type GoalSpec, type Waypoints } from "./waypoints.ts";
 
+/** Bounded number of physics-unstick bursts before a wedged hop fails loudly. */
+const UNSTICK_ATTEMPTS = 3;
+
+/**
+ * A raw, pathfinder-free nudge toward `target` to dislodge a physically wedged bot
+ * (a concave corner beside a wall the A* pathfinder cannot escape). Returns how far
+ * (blocks) the bot actually moved, so the caller can adapt the aim when a burst is
+ * wall-blocked. Navigation robustness, NOT game logic. Provided by the executor;
+ * injected so the recovery control flow stays unit-testable.
+ */
+export type Unstick = (target: GoalSpec) => Promise<number>;
+
+/**
+ * Replay a leg's ordered goals with **stall-recovery** (task #45). Each `goto`
+ * performs one verified hop (rejecting on stall / death). Extracted from `walkTo`
+ * as a pure control-flow function — injecting `goto` (and an optional physics
+ * `unstick`) — so the recovery logic is unit-testable without a live pathfinder.
+ *
+ * A leg replays compiler-proven cells at `WAYPOINT_RANGE = 1`. That range-1
+ * tolerance lets the bot satisfy the PREVIOUS hop at an off-route cell — a corner
+ * pocket beside a wall — from which the next hop wedges: the bot oscillates and
+ * times out (the nobodys-cave perimedes approach). Recovery escalates:
+ *   1. re-path to the exact last proven cell (`range 0`, back onto the proven
+ *      polyline); if that succeeds, retry the hop;
+ *   2. if the recovery pathfind ITSELF stalls (the wedge defeats the pathfinder
+ *      too), fall back to a bounded {@link Unstick} — a raw look+forward(+jump)
+ *      burst toward the proven cell that bypasses the pathfinder — and after each
+ *      burst retry the **actual next hop at its own range** (never the proven cell
+ *      at range 0: a freed bot overshoots the strict target and oscillates; the
+ *      hop's normal range 1 is forgiving enough to land).
+ * Range 0 is used only for the level-1 re-centre, so a legitimate slab/stair
+ * fractional-height floor on the happy path is unaffected, and the per-hop `goto`
+ * timeout is untouched. A first-hop stall (nothing proven yet) is not this class and
+ * is rethrown; a hop still unwalkable after recovery + unstick fails loudly.
+ */
+export async function replayLegWithRecovery(
+  goalsList: readonly GoalSpec[],
+  label: string,
+  goto: (spec: GoalSpec, label: string) => Promise<void>,
+  unstick?: Unstick,
+): Promise<void> {
+  let lastProven: GoalSpec | undefined;
+  for (let g = 0; g < goalsList.length; g++) {
+    const spec = goalsList[g]!;
+    const last = g === goalsList.length - 1;
+    const glabel = last ? label : `${label} waypoint ${g + 1}/${goalsList.length}`;
+    try {
+      await goto(spec, glabel);
+    } catch (err) {
+      if (err instanceof BotDeathError) throw err;
+      if (!lastProven) throw err; // nothing proven yet — not the pocket-wedge class
+      await recoverAndRetry(spec, glabel, lastProven, goto, unstick);
+    }
+    lastProven = spec;
+  }
+}
+
+/** Try a `goto`, returning whether it arrived; a bot death still propagates. */
+async function reached(fn: () => Promise<void>): Promise<boolean> {
+  try {
+    await fn();
+    return true;
+  } catch (err) {
+    if (err instanceof BotDeathError) throw err;
+    return false;
+  }
+}
+
+/**
+ * Recover from a stalled hop and retry it (task #45). Level 1: re-path to the last
+ * proven cell (range 0) to re-centre on the polyline, then retry the hop. Level 2
+ * (the wedge defeats the pathfinder too): a bounded physics {@link Unstick} to break
+ * the bot free, retrying the ACTUAL hop at its own range after each burst. A hop
+ * still unwalkable after the budget fails loudly.
+ *
+ * Level-2 aim is **adaptive** (trace-derived, task #45): drive toward the GOAL for
+ * forward progress, but if a burst measured no progress the bot is wall-blocked (the
+ * goal lies through the concave-corner wall) — the next burst aims at the PROVEN cell
+ * instead, the open away-from-wall direction that escapes the pocket. Neither fixed
+ * direction alone works: goal-only can't escape the initial pocket (drives into the
+ * wall), proven-only shoves an already-advanced bot backward and oscillates.
+ */
+async function recoverAndRetry(
+  spec: GoalSpec,
+  glabel: string,
+  proven: GoalSpec,
+  goto: (spec: GoalSpec, label: string) => Promise<void>,
+  unstick?: Unstick,
+): Promise<void> {
+  const provenGoal: GoalSpec = { x: proven.x, y: proven.y, z: proven.z, range: 0 };
+  process.stderr.write(
+    `[recover] re-centering on proven cell [${proven.x}, ${proven.y}, ${proven.z}] ` +
+      `(range 0), then retrying ${glabel}\n`,
+  );
+  // Level 1: pathfinder re-centre, then retry the hop.
+  if (await reached(() => goto(provenGoal, `${glabel} recovery to last proven cell`))) {
+    await goto(spec, glabel); // retry; rethrows if still stuck
+    return;
+  }
+  // Level 2: bounded adaptive physics-unstick, retrying the hop after each burst.
+  if (unstick) {
+    let lastMoved = Number.POSITIVE_INFINITY; // first burst aims at the goal
+    for (let a = 0; a < UNSTICK_ATTEMPTS; a++) {
+      const towardGoal = lastMoved >= UNSTICK_MIN_PROGRESS;
+      const target = towardGoal ? spec : provenGoal;
+      process.stderr.write(
+        `[recover] physics-unstick burst ${a + 1}/${UNSTICK_ATTEMPTS} toward ` +
+          `${towardGoal ? "goal" : "proven cell"}\n`,
+      );
+      lastMoved = await unstick(target);
+      if (await reached(() => goto(spec, `${glabel} retry after unstick ${a + 1}`))) {
+        return;
+      }
+    }
+  }
+  await goto(spec, glabel); // budget exhausted — surface the failure loudly
+}
+
 /** Connection + identity for the bot. Sourced from the environment (see below). */
 export interface BotConfig {
   readonly host: string;
@@ -96,6 +214,15 @@ const SCORE_SETTLE_MS = 15_000;
 const SCORE_POLL_MS = 250;
 /** Settle time (ms) after class selection (teleport + kit give) before moving on. */
 const CLASS_SETTLE_MS = 3_000;
+/**
+ * Physics-unstick (task #45): a SHORT forward tap per burst (~a cell, not a launch —
+ * a long burst overshoots a tight 2-wide corridor and oscillates wall-to-wall), a
+ * jump only when a gentle burst moved less than `UNSTICK_MIN_PROGRESS` blocks (truly
+ * wedged against a lip), and a brief settle before re-pathing.
+ */
+const UNSTICK_BURST_MS = 250;
+const UNSTICK_MIN_PROGRESS = 0.5;
+const UNSTICK_SETTLE_MS = 300;
 /**
  * gap 8: how long (ms) to wait for a cross-area teleport to land after a step whose
  * completion relocates the player, how close (blocks, horizontal) counts as
@@ -552,14 +679,54 @@ export class MineflayerExecutor implements StepExecutor {
         this.legCursor = match.cursor;
       }
       const goalsList = walkGoals(legWaypoints, [pos[0], pos[1], pos[2]], r);
-      for (let g = 0; g < goalsList.length; g++) {
-        const spec = goalsList[g]!;
-        const last = g === goalsList.length - 1;
-        await this.runGoto(spec, last ? label : `${label} waypoint ${g + 1}/${goalsList.length}`);
-      }
+      await replayLegWithRecovery(
+        goalsList,
+        label,
+        (spec, glabel) => this.runGoto(spec, glabel),
+        (target) => this.unstickToward(target),
+      );
     } finally {
       restoreControls();
     }
+  }
+
+  /**
+   * Raw, pathfinder-free nudge toward `target` to dislodge a physically wedged bot
+   * (task #45). When the stall-recovery pathfind itself can't escape a concave corner
+   * beside a wall, this bypasses the A* pathfinder: clear controls, face the target
+   * cell, and drive forward for a SHORT burst — a gentle tap, not a launch, so on a
+   * tight 2-wide corridor the bot edges toward the corridor axis instead of
+   * overshooting to the far wall. Only if that gentle burst makes no progress (the
+   * bot is truly stuck against a lip) does it add a jump. It deliberately does NOT
+   * call `pathfinder.stop()`: the previous hop already returned, and stopping here
+   * churns pathfinder state and interrupts the caller's very next `goto` ("Path was
+   * stopped"). Navigation robustness, NOT game logic; the caller re-paths afterwards
+   * and still fails loudly if the hop stays unwalkable. Returns the blocks moved so
+   * the caller can adapt aim: a near-zero move means the target lies through a wall.
+   */
+  private async unstickToward(target: GoalSpec): Promise<number> {
+    const bot = this.requireBot();
+    bot.clearControlStates();
+    // Face the block-centre of the target cell so the forward drive heads toward it.
+    const p0 = bot.entity.position;
+    try {
+      await bot.lookAt(p0.offset(target.x + 0.5 - p0.x, 0, target.z + 0.5 - p0.z), true);
+    } catch {
+      // best effort — an unforced look failure must not abort the unstick
+    }
+    const before = bot.entity.position.clone();
+    bot.setControlState("forward", true);
+    await delay(UNSTICK_BURST_MS);
+    // Jump only when the gentle forward burst got nowhere (wedged against a lip).
+    if (bot.entity.position.distanceTo(before) < UNSTICK_MIN_PROGRESS) {
+      bot.setControlState("jump", true);
+      await delay(UNSTICK_BURST_MS);
+      bot.setControlState("jump", false);
+    }
+    bot.setControlState("forward", false);
+    bot.clearControlStates();
+    await delay(UNSTICK_SETTLE_MS);
+    return bot.entity.position.distanceTo(before);
   }
 
   /**
@@ -580,6 +747,14 @@ export class MineflayerExecutor implements StepExecutor {
   private async runGoto(spec: GoalSpec, label: string): Promise<void> {
     const bot = this.requireBot();
     const { x, y, z, range } = spec;
+    // Already within the goal? Return without pathfinding. mineflayer-pathfinder
+    // rejects a `goto` issued when the bot already sits at the target with "Path was
+    // stopped before it could be completed" (task #45: after a physics-unstick lands
+    // the bot inside a hop's range, the retry `goto` would otherwise fail spuriously
+    // on a goal that is in fact already satisfied).
+    if (this.withinGoal(spec)) {
+      return;
+    }
     let lastErr: unknown;
     for (let attempt = 0; attempt < 2; attempt++) {
       if (attempt > 0) {
