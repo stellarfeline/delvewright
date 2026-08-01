@@ -734,6 +734,14 @@ export class MineflayerExecutor implements StepExecutor {
   private async runGoto(spec: GoalSpec, label: string): Promise<void> {
     const bot = this.requireBot();
     const { x, y, z, range } = spec;
+    // Already within the goal? Return without pathfinding. mineflayer-pathfinder
+    // rejects a `goto` issued when the bot already sits at the target with "Path was
+    // stopped before it could be completed" (task #45: after a physics-unstick lands
+    // the bot inside a hop's range, the retry `goto` would otherwise fail spuriously
+    // on a goal that is in fact already satisfied).
+    if (this.withinGoal(spec)) {
+      return;
+    }
     let lastErr: unknown;
     for (let attempt = 0; attempt < 2; attempt++) {
       if (attempt > 0) {
