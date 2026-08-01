@@ -4007,6 +4007,14 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
         //     grace and is caught on the grace_ticks-th judge tick (on_caught
         //     resets grace to 0). ---
         t.push(format!("function {ns}:stealth_begin_{i}"));
+        // Disarm the live session marker `stealth_begin` just set: this test drives
+        // `stealth_eval` explicitly, so the world `tick` loop (which runs
+        // `stealth_eval` on every player while `#stealth` is armed) must NOT also
+        // fire — a second judge pass in the same tick would consume the sneak edge
+        // (`sneak > ack` false once ack catches up) and mis-accrue grace, corrupting
+        // the controlled state the asserts read. Runtime gameplay is unaffected
+        // (there the tick loop is the sole caller); this only isolates the test.
+        t.push("scoreboard players set #stealth dw.sys 0".to_string());
         t.push("scoreboard players set @p dw.st_sneak 0".to_string());
         t.push("scoreboard players set @p dw.st_sneakack 0".to_string());
         t.push(format!(
@@ -4027,6 +4035,8 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
         // --- spare: a sneaking (sneak > ack), in-zone player never accrues grace;
         //     an accrued grace is reset the moment they are safe. ---
         t.push(format!("function {ns}:stealth_begin_{i}"));
+        // Disarm again (this second `begin` re-armed `#stealth`); see note above.
+        t.push("scoreboard players set #stealth dw.sys 0".to_string());
         t.push("scoreboard players set @p dw.st_grace 5".to_string());
         t.push("scoreboard players set @p dw.st_sneakack 0".to_string());
         t.push("scoreboard players set @p dw.st_sneak 1".to_string());
@@ -4389,11 +4399,12 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
     // complete — mirroring the click-handler guard. The chooser's `dmask_<npc>_<node>`
     // computes the per-player availability bitmask (bit `i` = the node's i-th
     // gated option is displayable); the variant it shows is `__m<mask>`. This test
-    // drives that mask for the first gated completing option and asserts the bit
-    // is 0 before the quest activates, 1 while active, and 0 again after the
-    // objective completes. If the node also has a flag-gated option, a final phase
-    // sets that flag in isolation and asserts its bit flips — proving the flag
-    // axis is unchanged and independent of the objective-state axis.
+    // drives that mask for the first gated completing option and asserts *that
+    // option's isolated bit* (not the whole mask — sibling options in the node can
+    // share a quest-active score) is 0 before the quest activates, 1 while active,
+    // and 0 again after the objective completes. If the node also has a flag-gated
+    // option, a final phase sets that flag in isolation and asserts its bit flips —
+    // proving the flag axis is unchanged and independent of the objective-state axis.
     let v04 = campaign_is_v04(plan);
     'dlg: for npc in &plan.npcs {
         let mut seen: BTreeSet<&str> = BTreeSet::new();
@@ -4443,33 +4454,50 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                     bt.push(format!("scoreboard players set @a {s} 0"));
                 }
             };
-            let run_mask = |bt: &mut Vec<String>| {
+            // Run the mask, then ISOLATE the option-under-test's bit before the
+            // assert: `(dw.dmask >> bit) & 1` via `%= 2^(bit+1)` then `/= 2^bit`. A
+            // node's other gated options can share a quest-active score (e.g. two
+            // options completing objectives of the same quest), so activating that
+            // quest lights several bits at once — comparing the *whole* `dw.dmask`
+            // would then read a sibling's bit as this option's and mis-assert.
+            let assert_bit = |bt: &mut Vec<String>, bit: usize, present: bool| {
                 bt.push(format!("execute as @a run function {dmask}"));
-                // Copy the player's mask into a fake player for the assert. `as @a`
-                // keeps the read single-entity (`= @s …`): `scoreboard players get`
-                // / `operation` reject a multi-entity selector like a bare `@a`.
+                // Copy the player's mask into a fake player. `as @a` keeps the read
+                // single-entity (`= @s …`): `scoreboard players get`/`operation`
+                // reject a multi-entity selector like a bare `@a`.
                 bt.push(
                     "execute as @a run scoreboard players operation #dm dw.sys = @s dw.dmask"
                         .to_string(),
                 );
+                bt.push(format!(
+                    "scoreboard players set #dmhi dw.sys {}",
+                    1u32 << (bit + 1)
+                ));
+                bt.push("scoreboard players operation #dm dw.sys %= #dmhi dw.sys".to_string());
+                bt.push(format!(
+                    "scoreboard players set #dmlo dw.sys {}",
+                    1u32 << bit
+                ));
+                bt.push("scoreboard players operation #dm dw.sys /= #dmlo dw.sys".to_string());
+                bt.push(format!(
+                    "assert score #dm dw.sys matches {}",
+                    u32::from(present)
+                ));
             };
 
             // Phase A — quest inactive: the option is hidden (its bit is 0).
             clear(&mut bt);
-            run_mask(&mut bt);
-            bt.push("assert score #dm dw.sys matches 0".to_string());
+            assert_bit(&mut bt, b, false);
             // Phase B — quest active, objective incomplete: the option appears.
             clear(&mut bt);
             bt.push(format!("scoreboard players set @a {qa} 1"));
-            run_mask(&mut bt);
-            bt.push(format!("assert score #dm dw.sys matches {}", 1u32 << b));
+            assert_bit(&mut bt, b, true);
             // Phase C — objective complete: the option disappears again.
             bt.push(format!("scoreboard players set @a {os} 1"));
-            run_mask(&mut bt);
-            bt.push("assert score #dm dw.sys matches 0".to_string());
+            assert_bit(&mut bt, b, false);
 
-            // Flag axis (unchanged): a flag-only gated option's bit flips with its
-            // flag alone, independent of the objective-state axis.
+            // Flag axis: a flag-only gated option's bit flips with its flag alone,
+            // independent of the objective-state axis.
             if let Some((bf, flag_opt)) = gated
                 .iter()
                 .enumerate()
@@ -4482,8 +4510,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                         plan::flag_score(f)
                     ));
                 }
-                run_mask(&mut bt);
-                bt.push(format!("assert score #dm dw.sys matches {}", 1u32 << bf));
+                assert_bit(&mut bt, bf, true);
             }
 
             write("v04_dialogue_visibility", bt);
