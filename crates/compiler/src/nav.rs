@@ -596,14 +596,53 @@ impl World {
     }
 }
 
+/// The world position an entity standing in cell `c` occupies: the **horizontal
+/// centre** of the cell, on its floor.
+///
+/// A Minecraft block cell `(x, y, z)` spans `[x, x+1)` on each horizontal axis, and
+/// an entity's position is the centre of its AABB. Emitting the bare integer cell
+/// coordinate therefore parks the body on the *corner* where four columns meet: a
+/// 0.6-wide villager at `x = 7.0` spans `[6.7, 7.3]`, i.e. 70 % of it sits inside
+/// column 6 — inside the wall, whenever the proven-walkable cell is 7. That is the
+/// owner's "the NPC visibly passes through blocks" defect (island QA: 234 of 385
+/// waypoints on the beach→cave walk had the body AABB inside a solid). The `+0.5`
+/// is the whole fix: on a cardinal path through cell centres the AABB stays inside
+/// the proven-walkable columns.
+///
+/// This is the single conversion for **every entity the compiler places or moves**;
+/// block-targeting commands (`setblock`/`fill`/`place`/`spawnpoint`) keep integer
+/// cell coordinates, which is what they take.
+pub fn cell_center(c: [i32; 3]) -> [f64; 3] {
+    [c[0] as f64 + 0.5, c[1] as f64, c[2] as f64 + 0.5]
+}
+
 /// Resample a cell path into per-tick waypoints at `speed` blocks/tick along the
-/// polyline through the integer cell centres. Guarantees the final waypoint is
-/// exactly the goal cell and at least one step exists.
+/// polyline through the cell centres ([`cell_center`]). Guarantees the final
+/// waypoint is exactly the goal cell's centre and at least one step exists.
+///
+/// **Vertical steps are L-shaped, not diagonal.** A one-block step up inserts an
+/// intermediate vertex directly above the source cell (rise in place, then cross at
+/// the new height); a step down crosses at the source height, then drops. A straight
+/// lerp between the two cell centres would sweep the body through the *corner* of
+/// the step block — the same "inside the geometry" artifact at a stair that the
+/// centring fixes along a wall. Both legs of the L stay inside cells the neighbour
+/// rule already proved clear (`standable_fp` + the jump head-clearance check).
 fn resample(cells: &[[i32; 3]], speed: f64) -> Vec<[f64; 3]> {
-    let pts: Vec<[f64; 3]> = cells
-        .iter()
-        .map(|c| [c[0] as f64, c[1] as f64, c[2] as f64])
-        .collect();
+    let mut pts: Vec<[f64; 3]> = Vec::with_capacity(cells.len() * 2);
+    for (i, c) in cells.iter().enumerate() {
+        let p = cell_center(*c);
+        if i > 0 {
+            let prev = cells[i - 1];
+            match c[1] - prev[1] {
+                // step up: rise over the source column first, then cross.
+                1 => pts.push([prev[0] as f64 + 0.5, c[1] as f64, prev[2] as f64 + 0.5]),
+                // step down: cross at the source height first, then drop.
+                -1 => pts.push([p[0], prev[1] as f64, p[2]]),
+                _ => {}
+            }
+        }
+        pts.push(p);
+    }
     if pts.len() == 1 {
         return vec![pts[0]];
     }
@@ -1807,6 +1846,148 @@ mod tests {
         }
     }
 
+    /// Whether an entity of `width` standing (feet) at `p` has any part of its AABB
+    /// inside a solid cell. Height 1.95 (the player/villager box).
+    fn aabb_clips(world: &World, p: [f64; 3], width: f64) -> bool {
+        let span = |c: f64| {
+            (
+                (c - width / 2.0).floor() as i32,
+                (c + width / 2.0 - 1e-9).floor() as i32,
+            )
+        };
+        let (x0, x1) = span(p[0]);
+        let (z0, z1) = span(p[2]);
+        let (y0, y1) = (p[1].floor() as i32, (p[1] + 1.95 - 1e-9).floor() as i32);
+        (x0..=x1).any(|x| (z0..=z1).any(|z| (y0..=y1).any(|y| world.solid_at([x, y, z]))))
+    }
+
+    /// The full walked path for `cells`, as the emitter would teleport it.
+    fn walked(cells: &[[i32; 3]]) -> Vec<[f64; 3]> {
+        resample(cells, DEFAULT_SPEED)
+    }
+
+    /// **Regression (owner, island QA): "the NPC visibly passes through blocks".**
+    ///
+    /// A 1-wide corridor with solid walls on both sides. Every planned waypoint must
+    /// keep the mover's whole AABB out of the walls. The bare integer cell
+    /// coordinate — what the emitter used before `cell_center` — puts 70 % of a
+    /// 0.6-wide body inside the neighbouring column, i.e. inside the wall, for the
+    /// entire walk; the second half of this test asserts exactly that, so the defect
+    /// cannot silently come back.
+    #[test]
+    fn walked_path_keeps_the_body_out_of_corridor_walls() {
+        let y = 65;
+        let mut walls = Vec::new();
+        for z in 0..8 {
+            for dy in 0..2 {
+                walls.push([0, y + dy, z]); // west wall
+                walls.push([2, y + dy, z]); // east wall
+            }
+        }
+        let world = floored(3, 8, y, &walls);
+        let cells: Vec<[i32; 3]> = (0..8).map(|z| [1, y, z]).collect();
+        let path = world
+            .find_path(cells[0], *cells.last().unwrap())
+            .expect("the corridor is walkable");
+        assert_eq!(path, cells, "a 1-wide corridor has exactly one route");
+
+        for w in walked(&path) {
+            assert!(
+                !aabb_clips(&world, w, 0.6),
+                "waypoint {w:?} puts the body inside a corridor wall"
+            );
+        }
+        // The pre-fix emission (bare cell coordinates) DID clip — the defect this
+        // test guards. Keep as the counter-example, never as the behaviour.
+        assert!(
+            aabb_clips(&world, [1.0, y as f64, 3.0], 0.6),
+            "a body at the bare integer cell straddles the wall columns"
+        );
+    }
+
+    /// An L-shaped corridor whose inside corner is solid. A* is strictly cardinal
+    /// (`neighbors_fp` offers 4 horizontal moves, never a diagonal), so no path can
+    /// cut the corner; this pins that property *and* proves the interpolated body
+    /// never enters the corner block on the turn.
+    #[test]
+    fn corner_turn_routes_around_the_corner_block_not_through_it() {
+        let y = 65;
+        // Open cells: the column z=1..=4 at x=1, then x=1..=4 at z=4. Everything
+        // else at head height is solid, including the inside corner [2, y, 1].
+        let open: BTreeSet<[i32; 3]> = (1..=4)
+            .map(|z| [1, y, z])
+            .chain((1..=4).map(|x| [x, y, 4]))
+            .collect();
+        let mut walls = Vec::new();
+        for x in 0..6 {
+            for z in 0..6 {
+                for dy in 0..2 {
+                    if !open.contains(&[x, y, z]) {
+                        walls.push([x, y + dy, z]);
+                    }
+                }
+            }
+        }
+        let world = floored(6, 6, y, &walls);
+        let path = world
+            .find_path([1, y, 1], [4, y, 4])
+            .expect("the L-corridor is walkable");
+        assert!(
+            path.iter().all(|c| open.contains(c)),
+            "the route must stay in the open cells: {path:?}"
+        );
+        for w in walked(&path) {
+            assert!(
+                !aabb_clips(&world, w, 0.6),
+                "waypoint {w:?} clips the corner block"
+            );
+        }
+    }
+
+    /// A one-block step up is interpolated as an **L** (rise over the source column,
+    /// then cross), not a diagonal lerp: a straight line between the two cell centres
+    /// drags the body through the corner of the step block. Both legs stay inside
+    /// cells the neighbour rule already proved clear (`standable_fp` + the jump
+    /// head-clearance check), so the AABB never enters the step.
+    #[test]
+    fn vertical_step_is_l_shaped_and_never_clips_the_step_block() {
+        let y = 65;
+        let mut solid = BTreeSet::new();
+        for x in 0..4 {
+            for z in 0..3 {
+                solid.insert([x, y - 1, z]); // lower floor
+                solid.insert([x, y + 4, z]); // ceiling, clear of both levels
+            }
+        }
+        // A raised ledge at x∈{2,3}: its top face is the upper walking surface.
+        for x in [2, 3] {
+            for z in 0..3 {
+                solid.insert([x, y, z]);
+            }
+        }
+        let world = World::from_solid_cells(solid);
+        let path = world
+            .find_path([1, y, 1], [3, y + 1, 1])
+            .expect("a one-block step up is walkable");
+        assert_eq!(path, vec![[1, y, 1], [2, y + 1, 1], [3, y + 1, 1]]);
+
+        let pts = walked(&path);
+        // The rise happens over the SOURCE column: some waypoint sits at the source
+        // cell's centre already at the upper height.
+        let src = cell_center([1, y, 1]);
+        assert!(
+            pts.iter()
+                .any(|w| w[0] == src[0] && w[2] == src[2] && w[1] > y as f64),
+            "the step up must rise in place before crossing: {pts:?}"
+        );
+        for w in &pts {
+            assert!(
+                !aabb_clips(&world, *w, 0.6),
+                "waypoint {w:?} clips the step block"
+            );
+        }
+    }
+
     #[test]
     fn pov_camera_in_open_air_passes_but_inside_a_block_is_dw0724() {
         // A flat floor at y=64 with headroom; the eye of a standing player is at
@@ -2109,9 +2290,10 @@ mod tests {
         let fast = resample(&cells, 1.0);
         // Slower speed → more per-tick waypoints for the same distance.
         assert!(slow.len() > fast.len());
-        // The final waypoint is exactly the integer target cell.
-        assert_eq!(*slow.last().unwrap(), [10.0, 65.0, 0.0]);
-        assert_eq!(slow[0], [0.0, 65.0, 0.0]);
+        // Endpoints are the CENTRES of the start/goal cells, not their corners:
+        // a body positioned on the integer cell coordinate straddles four columns.
+        assert_eq!(*slow.last().unwrap(), cell_center([10, 65, 0]));
+        assert_eq!(slow[0], cell_center([0, 65, 0]));
     }
 
     // --- v0.6 checkpoint / stealth proofs (spec-0012 / spec-0014) ---

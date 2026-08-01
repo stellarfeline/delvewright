@@ -278,7 +278,7 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | `set-block` | `setblock` at resolved anchor. |
 | `despawn-npc` | Kills body + interaction hitbox. |
 | `spawn-npc` | `function <ns>:spawn_npc_<npc>` — the generated entrance function, emitted once per **deferred** NPC. Its two lines are the world-init summons, each independently guarded: body by `unless entity @e[tag=dw_npc,tag=dw_npc_<n>]`, hitbox by `unless entity @e[tag=dw_npc_<n>,tag=!dw_npc]` (both carry the id tag, so a single shared guard would let the body's own summon suppress the hitbox). The `npc_summons` PackTest fires each deferred NPC's entrance after `setup_finish` and asserts exactly one body. |
-| `move-npc` | Per-tick tp along A*-planned walkable waypoints (hitbox in lockstep). |
+| `move-npc` | Per-tick tp along A*-planned walkable waypoints (hitbox in lockstep), at cell **centres** with L-shaped vertical steps — see §4 "Entity placement". |
 | `cutscene` | Per player: save gamemode+pos → spectator → alternate `spectate` between two co-located dolly cameras each tick → restore. |
 | `campaign-complete` | `dw.campaign` = 1 (dummy objective, **never on the sidebar** — a raw internal id must not surface to players); broadcast `[Delvewright] complete dw.campaign 1` (dark-gray bot channel, the harness's completion signal); title fanfare. |
 | objective lifecycle | Activation shows `title`+`hint`+`note_block.pling` once (flag `dw.ann_<obj>`); completion sound `experience_orb.pickup`. **Marker cleanup (task #45):** completion despawns every entity the objective's activation summoned via the objective-scoped tag — `interact` hitbox + wayfinding marker (`dw_i_<obj>`), `reach` marker (`dw_r_<obj>`). Prop/affordance *blocks* (`interact.prop`, `collect` chest) are scenery and persist; `talk-to`/`kill` summon no per-objective marker. Gated on v0.3+ with a resolved activation, so v0.2 stays byte-identical. |
@@ -459,6 +459,39 @@ faithful model — a plate rests on a solid support block below, so standability
 unchanged — and it is load-bearing for the `DW0342` trap proof: a player must be
 routed *onto* a trigger cell (so the compiler can prove the trap avoidable or not),
 never around a phantom "solid" plate that would call every trap avoidable.
+
+### Entity placement: cells are centred, blocks are not
+
+Every entity the compiler **summons or teleports** is positioned at
+`nav::cell_center(cell)` = `(x + 0.5, y, z + 0.5)` — the horizontal centre of its
+proven-walkable cell. Block-targeting commands (`setblock`, `fill`, `place`,
+`spawnpoint`) keep the bare integer cell, which is the coordinate space they take.
+
+The distinction is load-bearing. A block cell `(x, y, z)` spans `[x, x+1)`, but an
+*entity's* position is the centre of its AABB, so summoning at the bare integer
+coordinate parks the body on the corner where four columns meet: a 0.6-wide villager
+at `x = 7.0` occupies `[6.7, 7.3]`, i.e. **70 % of it inside column 6**. Against a
+wall that is an NPC standing in the wall; along a walked path it was the owner's
+"the NPC visibly passes through blocks" island finding — measured at **234 of 385**
+waypoints on the beach→cave `move-npc` leg with the body AABB inside a solid, now 0.
+Nav itself was never wrong (A* is strictly cardinal — `neighbors_fp` offers four
+horizontal moves and no diagonal transition exists, so corner-cutting is structurally
+impossible); the defect was entirely in cell→position conversion at emission.
+
+Applies to: NPC bodies + interaction hitboxes, `spawn-npc` entrances, actor puppets,
+wave mobs, `interact` hitboxes and `interact`/`reach` wayfinding markers,
+environment-trigger and trap-disarm interactions, and every `move-npc`/`move-actor`
+waypoint. Cutscene dolly cameras already used centred coordinates
+(`nav::camera_points`). **Player** teleports keep integer coordinates: vanilla
+resolves player-vs-block overlap by pushing out, and the `dw:cp` mirror is a
+documented int-triple contract (spec-0013).
+
+**Vertical steps interpolate as an L, not a diagonal.** A one-block step up rises
+over the source column first, then crosses at the new height; a step down crosses at
+the source height, then drops. A straight lerp between the two cell centres would
+drag the body through the corner of the step block — the stair-shaped instance of the
+same artifact. Both legs of the L stay inside cells `standable_fp` + the jump
+head-clearance rule already proved clear.
 
 ### Nav (compile-time, over the assembled voxel grid)
 
