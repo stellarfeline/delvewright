@@ -141,13 +141,21 @@ fn ceiling_palette() -> Vec<Recipe> {
         r("minecraft:dripstone_block", 0.08),
     ]
 }
-/// Cave floor: sand→gravel→stone gradient with cobble and coarse dirt.
+/// Cave floor: sandstone→tuff→stone gradient with cobble and coarse dirt.
+///
+/// Every block here MUST be non-`FallingBlock` (task #42): the delve ships into a
+/// `the_void` world, so an unsupported `sand`/`gravel` floor cell placed by
+/// `/place template` falls out of the world and leaves a hole (the compiler's
+/// gravity-settled model, `crate::assembled`, correctly rejects such a floor with
+/// DW0311/DW0312). `sand`→`sandstone` and `gravel`→`tuff` keep the sandy/gravelly
+/// gradient with solid, non-falling rock. Do NOT reintroduce a `FallingBlock` in a
+/// floor role — it will fall into the void and break walkability.
 fn floor_palette() -> Vec<Recipe> {
     vec![
-        r("minecraft:gravel", 0.30),
+        r("minecraft:tuff", 0.30),
         r("minecraft:cobblestone", 0.22),
         r("minecraft:stone", 0.18),
-        r("minecraft:sand", 0.14),
+        r("minecraft:sandstone", 0.14),
         r("minecraft:andesite", 0.08),
         r("minecraft:coarse_dirt", 0.08),
     ]
