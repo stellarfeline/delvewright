@@ -157,4 +157,8 @@ pub mod codes {
     /// (v0.6) `boundary.margin` outside the `0..=64` range (spec-0013):
     /// validation-tier (exit 1).
     pub const BOUNDARY_MARGIN: &str = "DW0321";
+    /// (v0.6) A `sequence` effect is nested inside another `sequence` (directly, or
+    /// reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse
+    /// (spec-0014). Flatten the inner steps into the outer timeline.
+    pub const NESTED_SEQUENCE: &str = "DW0329";
 }

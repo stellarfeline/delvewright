@@ -10,8 +10,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{
-    AnchorId, AreaId, ClassId, DialogueId, FlagId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId,
-    TriggerId, WaveId,
+    ActorId, AnchorId, AreaId, ClassId, DialogueId, FlagId, NpcId, ObjectiveId, PoolId, PrefabId,
+    QuestId, TriggerId, WaveId,
 };
 
 /// serde default helper: `true` (used by DSL v0.4 `trigger.once`).
@@ -682,6 +682,12 @@ pub struct QuestsContent {
     /// of [`QuestEffect`]s. Empty/absent in v0.2/v0.3 campaigns.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub triggers: Vec<EnvTrigger>,
+    /// Scripted actors (DSL v0.6, spec-0014): NoAI/Silent/no-loot puppets moved by
+    /// compiler-emitted per-tick teleport (task #46). Distinct from stage-2 NPCs
+    /// (no dialogue, any mob type). Summoned/removed/moved/unleashed by the actor
+    /// staging effects. Empty/absent before v0.6.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actors: Vec<Actor>,
 }
 
 /// A stage-5 environment trigger (DSL v0.4). Emission uses vanilla-intended
@@ -994,6 +1000,104 @@ pub enum Objective {
 pub struct Prop {
     /// Vanilla block id (e.g. `minecraft:lever`).
     pub block: String,
+}
+
+// ---------------------------------------------------------------------------
+// Stage 5 — scripted actors (DSL v0.6, spec-0014)
+// ---------------------------------------------------------------------------
+
+/// A scripted stage actor (DSL v0.6, spec-0014): a NoAI/Silent/no-loot puppet,
+/// distinct from a stage-2 [`Npc`] (no dialogue, any mob type). Emitted with tag
+/// `dw_actor_<id>`, `Invulnerable` unless `vulnerable` (a damageable puppet stays
+/// knockback-immune — the tower-defense creep). `skin` re-dresses it as a
+/// `minecraft:mannequin`, exactly as a stage-2 NPC skin. The puppet is summoned by
+/// a `spawn-actor` effect (not at load), moved by `move-actor`, and can be replaced
+/// by a real-AI twin with `unleash-actor`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Actor {
+    /// Unique actor id (`actor/<kebab>`).
+    pub id: ActorId,
+    /// The vanilla entity to puppet, e.g. `minecraft:warden`. Validated against the
+    /// pinned 1.21.11 entity registry (`DW0173`).
+    pub entity: String,
+    /// Optional custom name shown above the puppet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Optional player-model skin (mannequin), as a stage-2 NPC (`DW0190`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skin: Option<NpcSkin>,
+    /// The anchor the puppet is summoned on (resolved across areas, like an
+    /// `open-gate` / `move-npc` destination).
+    pub anchor: AnchorId,
+    /// Initial facing (default `south`). The puppet spawns yawed this way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub facing: Option<Facing>,
+    /// If `true`, the puppet is damageable (a tower-defense creep) but stays
+    /// knockback-immune; default `false` (fully `Invulnerable`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub vulnerable: bool,
+}
+
+/// A cardinal facing keyword (DSL v0.6). Emitted as the puppet's spawn yaw
+/// (MC: yaw 0 = +z/south).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Facing {
+    /// Facing +z (yaw 0) — the default.
+    South,
+    /// Facing -z (yaw 180).
+    North,
+    /// Facing -x (yaw 90).
+    West,
+    /// Facing +x (yaw 270).
+    East,
+}
+
+impl Facing {
+    /// The kebab token (`south` / `north` / `west` / `east`).
+    pub fn token(self) -> &'static str {
+        match self {
+            Facing::South => "south",
+            Facing::North => "north",
+            Facing::West => "west",
+            Facing::East => "east",
+        }
+    }
+}
+
+/// How a `despawn-actor` removes its puppet (DSL v0.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum DespawnStyle {
+    /// Silent removal (`kill @e` with no death animation is not possible; the
+    /// compiler removes the entity via `/kill` on an `Invulnerable` puppet, or a
+    /// data-driven removal — see the emitter — so no death particles/sound show).
+    Vanish,
+    /// Plays the vanilla death animation (a cutscene death).
+    Kill,
+}
+
+impl DespawnStyle {
+    /// The kebab token (`vanish` / `kill`).
+    pub fn token(self) -> &'static str {
+        match self {
+            DespawnStyle::Vanish => "vanish",
+            DespawnStyle::Kill => "kill",
+        }
+    }
+}
+
+/// One step of a [`QuestEffect::Sequence`] (DSL v0.6): a group of effects fired at
+/// an exact tick offset from the sequence's start.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SequenceStep {
+    /// Tick offset from the sequence start at which `effects` fire.
+    pub at_ticks: u32,
+    /// The effects fired at `at_ticks`. Any stage-5 effect except a nested
+    /// `sequence` (rejected with `DW0329`).
+    pub effects: Vec<QuestEffect>,
 }
 
 impl Objective {
@@ -1311,6 +1415,53 @@ pub enum QuestEffect {
     },
     /// Ends the active stealth beat (DSL v0.6, spec-0014). No-op if none active.
     EndStealth,
+    // --- DSL v0.6 actor staging effects (spec-0014) ---
+    /// Summons a stage-5 actor's puppet at its anchor (DSL v0.6). Idempotent: a
+    /// spawn of an already-present actor is a no-op (re-caging after `unleash`).
+    SpawnActor {
+        /// The actor (stage-5 `actors` ref) to summon.
+        actor: ActorId,
+    },
+    /// Removes an actor's puppet (DSL v0.6). `kill` plays the vanilla death
+    /// animation (cutscene deaths); `vanish` is silent removal.
+    DespawnActor {
+        /// The actor (stage-5 `actors` ref) to remove.
+        actor: ActorId,
+        /// How the puppet is removed.
+        style: DespawnStyle,
+    },
+    /// Walks an actor's puppet to an anchor by A*-planned per-tick teleport over
+    /// the assembled model, using the actor's hitbox footprint, yawed along the
+    /// path tangent (DSL v0.6, task #46). Concurrent movers are allowed (a herded
+    /// flock is N synchronized `move-actor`s). Unroutable → `DW0325`. `on_arrive`
+    /// effects fire once the puppet reaches the destination cell.
+    MoveActor {
+        /// The actor (stage-5 `actors` ref) to move.
+        actor: ActorId,
+        /// The destination anchor.
+        to_anchor: AnchorId,
+        /// Optional travel speed in blocks/tick (defaults to ~0.15).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        speed: Option<f64>,
+        /// Effects fired once the puppet arrives at the destination cell.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        on_arrive: Vec<QuestEffect>,
+    },
+    /// Replaces an actor's puppet with a real-AI twin of the same type / position /
+    /// name / attributes / tag (DSL v0.6) — the "attack the idle giant → real
+    /// fight" beat. Re-caging is `despawn-actor` + `spawn-actor` (idempotent), not a
+    /// special verb.
+    UnleashActor {
+        /// The actor (stage-5 `actors` ref) to unleash.
+        actor: ActorId,
+    },
+    /// A deterministic timeline (DSL v0.6): one schedule chain firing effect groups
+    /// at exact tick offsets. Effects are any in the stage-5 set except a nested
+    /// `sequence` (rejected with `DW0329`).
+    Sequence {
+        /// Timeline steps; each fires its `effects` at `at_ticks` from the start.
+        steps: Vec<SequenceStep>,
+    },
 }
 
 /// Default `grace_ticks` for [`QuestEffect::BeginStealth`] (spec-0014).
@@ -1483,7 +1634,12 @@ impl QuestEffect {
             | QuestEffect::PlaySound { .. }
             | QuestEffect::SetCheckpoint { .. }
             | QuestEffect::BeginStealth { .. }
-            | QuestEffect::EndStealth => None,
+            | QuestEffect::EndStealth
+            | QuestEffect::SpawnActor { .. }
+            | QuestEffect::DespawnActor { .. }
+            | QuestEffect::MoveActor { .. }
+            | QuestEffect::UnleashActor { .. }
+            | QuestEffect::Sequence { .. } => None,
         }
     }
 
@@ -1514,15 +1670,22 @@ impl QuestEffect {
 
     /// The v0.6 effect name if this effect is one introduced in DSL v0.6
     /// (`set-checkpoint`, spec-0012; `begin-stealth`/`end-stealth`, spec-0014;
-    /// `play-sound`, spec-0014). These validate in v0.6 campaigns and are reserved
-    /// (`DW0141`) earlier. (The `narrate` `art` style is a v0.6 addition to an
-    /// existing verb — see [`QuestEffect::narrate_art`] — not a new effect.)
+    /// `play-sound`, spec-0014; the scripted-actor staging verbs
+    /// `spawn-actor`/`despawn-actor`/`move-actor`/`unleash-actor`/`sequence`,
+    /// spec-0014). These validate in v0.6 campaigns and are reserved (`DW0141`)
+    /// earlier. (The `narrate` `art` style is a v0.6 addition to an existing verb
+    /// — see [`QuestEffect::narrate_art`] — not a new effect.)
     pub fn v06_effect(&self) -> Option<&'static str> {
         match self {
             QuestEffect::SetCheckpoint { .. } => Some("set-checkpoint"),
             QuestEffect::BeginStealth { .. } => Some("begin-stealth"),
             QuestEffect::EndStealth => Some("end-stealth"),
             QuestEffect::PlaySound { .. } => Some("play-sound"),
+            QuestEffect::SpawnActor { .. } => Some("spawn-actor"),
+            QuestEffect::DespawnActor { .. } => Some("despawn-actor"),
+            QuestEffect::MoveActor { .. } => Some("move-actor"),
+            QuestEffect::UnleashActor { .. } => Some("unleash-actor"),
+            QuestEffect::Sequence { .. } => Some("sequence"),
             _ => None,
         }
     }
@@ -1635,14 +1798,34 @@ impl QuestEffect {
             | QuestEffect::SetWeather { requires_flags, .. }
             | QuestEffect::PlaySound { requires_flags, .. } => requires_flags,
             // Terminal / party- or session-global verbs are not per-effect
-            // gatable: `campaign-complete` is terminal, and `set-checkpoint`
+            // gatable: `campaign-complete` is terminal; `set-checkpoint`
             // (`spawnpoint @a`) / `begin-stealth` / `end-stealth` are party-wide
-            // session state, not per-player `@s` effects. Gate these at the
-            // objective / dialogue-option level instead.
+            // session state; and the actor staging verbs (`spawn-actor` /
+            // `despawn-actor` / `move-actor` / `unleash-actor` / `sequence`) are
+            // world-global staging — none are per-player `@s` effects. Gate these
+            // at the objective / dialogue-option level instead.
             QuestEffect::CampaignComplete
             | QuestEffect::SetCheckpoint { .. }
             | QuestEffect::BeginStealth { .. }
-            | QuestEffect::EndStealth => &[],
+            | QuestEffect::EndStealth
+            | QuestEffect::SpawnActor { .. }
+            | QuestEffect::DespawnActor { .. }
+            | QuestEffect::MoveActor { .. }
+            | QuestEffect::UnleashActor { .. }
+            | QuestEffect::Sequence { .. } => &[],
+        }
+    }
+
+    /// The actor id this effect targets, if it is one of the actor staging effects
+    /// (`spawn-actor`/`despawn-actor`/`move-actor`/`unleash-actor`). `sequence` has
+    /// no single actor (its nested effects each carry their own).
+    pub fn actor_ref(&self) -> Option<&ActorId> {
+        match self {
+            QuestEffect::SpawnActor { actor }
+            | QuestEffect::DespawnActor { actor, .. }
+            | QuestEffect::MoveActor { actor, .. }
+            | QuestEffect::UnleashActor { actor } => Some(actor),
+            _ => None,
         }
     }
 }

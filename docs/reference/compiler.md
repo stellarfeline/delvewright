@@ -54,7 +54,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 6 | Solve jigsaw layout (per `prefab_pool` area, from seed) | `compiler::solver` | `DW030x` (exit 3) |
 | 7 | Assemble world model (placed pieces → voxel grid) | `compiler::plan` | `DW030x` (exit 3) |
 | 8 | Assembled-light + relight (measure, place fixtures) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
-| 9 | Nav checks (A* `move-npc`, cutscene clip, critical-path walkability — incl. relight fixtures + water flood; talk-to endpoint snap; waypoint self-check; POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone proofs) | `compiler::nav` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0327`/`DW0724` (exit 3) |
+| 9 | Nav checks (A* `move-npc`/`move-actor` (footprint-aware), cutscene clip, critical-path walkability — incl. relight fixtures + water flood; talk-to endpoint snap; waypoint self-check; POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone proofs) | `compiler::nav` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0325`/`DW0327`/`DW0724` (exit 3) |
 | 10 | Emit (datapack, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
 
 - `build` ⟹ `validate` + `analyze`; `analyze` ⟹ `validate`. A validation failure
@@ -171,6 +171,12 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Effect `set-checkpoint{anchor,on_respawn?}` | Party-wide respawn point: `spawnpoint @a` at the anchor + `storage dw:cp pos` mirror. Monotonic by quest order. `on_respawn[]` = per-player effects re-run on respawn while active (vanilla `deathCount` detection). Proofs `DW0315`/`DW0316`. Also a dialogue effect. | 0.6 |
 | Effect `begin-stealth{zones[{anchor,extent}],on_caught?,grace_ticks?}` | Per-tick: every player must be inside some zone **and** sneaking (`sneak_time` stat); exposed for `grace_ticks` (default 20) → `on_caught`. Zone standable/reachable proof `DW0327`. | 0.6 |
 | Effect `end-stealth` | Ends the active stealth beat (clears the session marker). | 0.6 |
+| Stage-5 `actors[] {id,entity,name?,skin?,anchor,facing?,vulnerable?}` | Scripted NoAI/Silent/no-loot puppets, tag `dw_actor_<id>` (+ puppet marker `dw_pup_<id>`); `Invulnerable` unless `vulnerable` (then knockback-immune); `skin` → mannequin. Summoned by `spawn-actor`, not at load. | 0.6 |
+| Effect `spawn-actor{actor}` | Idempotent puppet summon at the actor's anchor. | 0.6 |
+| Effect `despawn-actor{actor,style}` | `kill` = vanilla death animation in place; `vanish` = relocate-then-kill (silent, out of view). Targets `dw_actor_<id>` (puppet or twin). | 0.6 |
+| Effect `move-actor{actor,to_anchor,speed?,on_arrive[]}` | Footprint-aware A*-planned per-tick tp of the puppet, yaw along the path tangent; `on_arrive` fires at the destination cell; unroutable → `DW0325`. `move-npc` is a thin wrapper over the same planner (player footprint). | 0.6 |
+| Effect `unleash-actor{actor}` | Replaces the puppet with a real-AI twin (same entity/pos/name/tag, no puppet marker). Re-caging = `despawn-actor` + `spawn-actor`. | 0.6 |
+| Effect `sequence{steps[]{at_ticks,effects[]}}` | Deterministic timeline: one schedule chain firing effect groups at exact tick offsets. No nested `sequence` → `DW0329`. | 0.6 |
 
 Dialogue effects `set-flag` (v0.4), `set-time`/`set-weather` (v0.5),
 `set-checkpoint` (v0.6) and option `requires_flags` mirror the quest forms.
@@ -180,7 +186,9 @@ its whole effect bundle). Under `0.2.0`, all v0.3 verbs/effects are reserved →
 `DW0141`; likewise v0.4 surface under pre-0.4, v0.5 surface
 (`time`/`weather`/`lighting`, `set-time`/`set-weather`) under pre-0.5, and the
 v0.6 surface (`set-checkpoint`, `begin-stealth`/`end-stealth`, the `play-sound`
-effect + `narrate` `style: art`, and per-effect `requires_flags`) under pre-0.6.
+effect + `narrate` `style: art`, per-effect `requires_flags`, and stage-5
+`actors` + the staging effects `spawn`/`despawn`/`move`/`unleash-actor`,
+`sequence`) under pre-0.6.
 The blockstate suffix on `set-block`/`prop` blocks is a lenient parse of an
 existing field, not version-gated: the base id is registry-checked and the `[…]`
 string is passed to `setblock` verbatim (vanilla validates the property
@@ -466,7 +474,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0132` | `finale` is not the convergent sink (some quest is not a transitive dependency of finale). |
 | `DW0133` | Non-mandatory quest (`mandatory:false`), reserved until M3. |
 | `DW0140` | Objective `after` cycle. |
-| `DW0141` | Reserved enum value/field for the campaign's `dsl_version` (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, and per-effect `requires_flags`). |
+| `DW0141` | Reserved enum value/field for the campaign's `dsl_version` (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, and stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`). |
 | `DW0142` | Anchor not provided by the area's bound prefab. |
 | `DW0143` | Item id not in the pinned 1.21.11 registry (kit / `collect` / `interact.requires_item` / `give-item`). |
 | `DW0150` | Planned quest (stage 4) has no stage-5 expansion. |
@@ -544,7 +552,9 @@ rows.
 | `DW0314` | An exported critical-path waypoint is not standable in the FINAL assembled world (settled + water-flooded + relight fixtures) — the build-time self-check that makes the water-flow / post-nav-mutation divergence class structurally impossible to ship (task #45). Routes come from A* over that same world, so this fires only if a later pass mutates a cell nav relied on or an endpoint resolves off the walkable set; the message names the offending cell and leg. Fix the prefab/water or the assembly — never nudge the waypoint. |
 | `DW0315` | A `set-checkpoint` (spec-0012) strands the party: re-rooting the DW0311 reachability at the checkpoint cell, the first remaining required critical-path anchor is no longer walkable from it (a checkpoint behind a one-way drop the forward path can't re-cross after respawn). The message names the checkpoint and the first unreachable anchor and prescribes moving the checkpoint or adding a return route — never deleting the checkpoint to silence the proof. |
 | `DW0316` | A `set-checkpoint` anchor has no standable footing within snap range on the final assembled model (a trap-trigger / hazard / mid-air cell) — the party would respawn into void or a wall (spec-0012). Because the relight pass already proves every reachable walkable cell meets the area's `min_light`, a checkpoint that clears this and DW0315 provably meets `min_light` too. |
+| `DW0325` | A `move-actor` destination is unreachable over the assembled geometry for the **actor's footprint** (per-entity dims table; warden 0.9×2.9 needs 3 cells of headroom, so it can be stranded where a player fits), or an actor spawn/destination anchor resolves to no world position (spec-0014). Build-tier (exit 3), `compiler::nav`; the message names the actor, the leg, and a best-effort first blocked cell. |
 | `DW0327` | A `begin-stealth` (spec-0014) zone is unstandable, or unreachable from the player's position at the beat that activates the stealth check — a guaranteed-unwinnable stealth beat. The message names the zone and prescribes placing it over reachable floor / within walkable reach of the activating beat. |
+| `DW0329` | A `sequence` effect is nested inside another `sequence` (directly, or reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse (spec-0014). Validation-tier (exit 1), `dsl::validate`. Flatten the inner steps into the outer timeline (shift their `at_ticks`). |
 
 ### DW07xx — workspace tooling (spec-0007; **not `delvec`**)
 
@@ -588,6 +598,7 @@ this doc is current behavior).
 | Validation ↔ runtime split; `DW02xx` analysis role | ADR-0005 / spec-0005 |
 | v0.4 surface (dialogue state, props, narrate, wave tuning, NPC lifecycle, skins, triggers, cutscene, `DW0190`–`DW0195`, `DW0307`–`DW0311`) | spec-0008 |
 | Skins toolchain, resourcepack bake (`DW0309`) | spec-0009 |
+| v0.6 scripted actors + staging effects (`actors[]`, `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`; footprint-aware nav; `DW0325`/`DW0329`) | spec-0014 |
 | Assembled-relight, measured `DW0210`, `DW0211`/`DW0196`, stage-1 `lighting`/`time`/`weather`, `set-time`/`set-weather` (all v0.5) | spec-0010 (landed, #35) |
 | Stage-1 `horizon` (ocean superflat), `boundary` (derived playable region + 1s return clock), `dw:region`/`dw:cp` mirrors, `DW0320`/`DW0321` (all v0.6) | spec-0013 (landed) |
 | Sound + art-title surface (`play-sound`, `narrate` `art`, `delve:art` font, `DW0326`/`DW0328`/`DW0335`) | spec-0014 (v0.6) |

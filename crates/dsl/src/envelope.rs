@@ -58,10 +58,12 @@ pub fn is_v05(version: &str) -> bool {
 /// True if `version` enables the DSL v0.6 surface: the `set-checkpoint` effect
 /// (with its optional `on_respawn` hook) and the `begin-stealth`/`end-stealth`
 /// verbs (spec-0012 checkpoints + spec-0014 stealth zones), the stage-1 `horizon`
-/// (`ocean`) and `boundary` (playable region) world fields (spec-0013), and the
-/// `play-sound` effect + `narrate` `art` style (spec-0014). Additive over v0.5; a
-/// campaign that uses none is byte-identical, and a use of the v0.6 surface in an
-/// earlier campaign is rejected with `DW0141`.
+/// (`ocean`) and `boundary` (playable region) world fields (spec-0013), the
+/// `play-sound` effect + `narrate` `art` style (spec-0014), and the stage-5
+/// scripted `actors` + staging effects (`spawn`/`despawn`/`move`/`unleash-actor`,
+/// `sequence`, spec-0014). Additive over v0.5; a campaign that uses none is
+/// byte-identical, and a use of the v0.6 surface in an earlier campaign is
+/// rejected with `DW0141`.
 pub fn is_v06(version: &str) -> bool {
     version == "0.6.0"
 }

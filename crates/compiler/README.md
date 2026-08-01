@@ -40,7 +40,7 @@ content repo checked out at `campaigns/` (spec-0007 Step 0). Integration tests:
 | `analyze.rs` | Deep quest/objective/dialogue reachability + dark-light mitigation (`DW02xx`, exit 2). |
 | `solver.rs` | Jigsaw layout solver — grows a socket-graph layout from the seed, emits `/place template` per piece (`DW030x`). |
 | `plan.rs` | Resolve a validated campaign → placement + naming model; assembled voxel grid. |
-| `nav.rs` | Compile-time A* over the voxel grid: `move-npc` routing, cutscene clip, critical-path walkability (`DW0307`/`DW0308`/`DW0311`). |
+| `nav.rs` | Compile-time A* over the voxel grid: `move-npc`/`move-actor` (footprint-aware) routing, cutscene clip, critical-path walkability (`DW0307`/`DW0308`/`DW0311`/`DW0325`); per-entity dims table + `Footprint`. |
 | `emit.rs` | Deterministic emission of the whole `<out>/` tree. |
 | `commands.rs` | Vendored Brigadier command-tree validator (see below). |
 | `render_plan.rs` | `render-plan.json` (visual tier, spec-0003/0007). |
