@@ -252,6 +252,54 @@ fn killless_spawn_wave_emits_function_and_packtest() {
     );
 }
 
+/// Task #45: objective-marker lifecycle. Completing an interact objective kills
+/// the `minecraft:interaction` hitbox + wayfinding marker it summoned (both carry
+/// `dw_i_<obj>`); completing a reach objective kills its `dw_r_<obj>` marker. The
+/// prop BLOCK (lever) is scenery and is NOT removed. A regression PackTest proves
+/// the interaction count drops to 0 on completion.
+#[test]
+fn completed_objectives_despawn_their_summoned_markers() {
+    let out = build_showcase();
+
+    // interact obj/door: complete kills its interaction-hitbox tag (dw_i_door);
+    // the prop lever setblock stays in the world (affordance scenery, not killed).
+    let door = fn_body(&out, "complete_o_door");
+    assert!(
+        door.contains("kill @e[tag=dw_i_door]"),
+        "interact completion despawns its summoned interaction entity: {door}"
+    );
+    assert!(
+        !door.contains("setblock") || !door.contains("minecraft:air"),
+        "interact completion does not remove the prop block: {door}"
+    );
+
+    // reach obj/shrine: complete kills its end-rod marker tag (dw_r_shrine).
+    let shrine = fn_body(&out, "complete_o_shrine");
+    assert!(
+        shrine.contains("kill @e[tag=dw_r_shrine]"),
+        "reach completion despawns its summoned marker: {shrine}"
+    );
+
+    // talk-to obj/talk summons no per-objective entity → no cleanup kill.
+    let talk = fn_body(&out, "complete_o_talk");
+    assert!(
+        !talk.contains("kill @e[tag=dw_i_") && !talk.contains("kill @e[tag=dw_r_"),
+        "talk-to completion emits no marker cleanup: {talk}"
+    );
+
+    // Regression PackTest: after activate + complete, the interaction count is 0.
+    let pt = std::str::from_utf8(
+        &out["packtest-datapack/data/v04-showcase/test/v04_interact_cleanup.mcfunction"],
+    )
+    .unwrap();
+    assert!(
+        pt.contains("assert score #before dw.sys matches 1..")
+            && pt.contains("function v04-showcase:complete_o_door")
+            && pt.contains("assert score #after dw.sys matches 0"),
+        "interact-cleanup PackTest asserts hitbox exists then is gone: {pt}"
+    );
+}
+
 /// Task #41: every wave mob is summoned onto a distinct, compiler-validated
 /// standable cell inside its own wave's area — never inside a block, and never on
 /// the blind `+x` line the old emitter used (which could string a flock across a
