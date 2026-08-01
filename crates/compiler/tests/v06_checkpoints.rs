@@ -13,7 +13,9 @@ use delvewright_compiler::emit::{self, BuildOutput};
 use delvewright_compiler::load::load_campaign_dir;
 use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{parse_campaign, validate_campaign_with};
+use delvewright_dsl::{
+    AnchorId, QuestEffect, SequenceStep, parse_campaign, validate_campaign_with,
+};
 
 const NS: &str = "v06-checkpoints";
 
@@ -251,4 +253,123 @@ fn double_build_is_byte_identical() {
     for (path, bytes) in &a {
         assert_eq!(b.get(path), Some(bytes), "byte-identical: {path}");
     }
+}
+
+/// Regression (FIX: sequence-nested producers): a `set-checkpoint` nested inside a
+/// `sequence` step is a real checkpoint. The plan must collect it with its own
+/// content-ordered index, and emission must bind `#cp` to that index — never the
+/// silent fallback to `0`. Before the fix the collector scanned only top-level
+/// effects, so a nested checkpoint was never registered, `checkpoint_for` returned
+/// `None`, and `emit_set_checkpoint` mis-bound its marker to checkpoint 0 (running
+/// the wrong `on_respawn` hook on respawn).
+#[test]
+fn set_checkpoint_nested_in_sequence_binds_its_own_index() {
+    let dir = fixture_dir();
+    let loaded = load_campaign_dir(&dir).unwrap();
+    let mut campaign = parse_campaign(&loaded.raw).expect("parses");
+
+    // Locate the fixture's existing top-level checkpoint: its anchor is a proven
+    // standable, reachable cell we can reuse for a second, distinct checkpoint.
+    let (anchor, oid, qi): (AnchorId, _, usize) = {
+        let mut found = None;
+        for (qi, q) in campaign.quests.content.quests.iter().enumerate() {
+            for (oid, effs) in &q.on_objective_complete {
+                for e in effs {
+                    if let Some((a, _)) = e.set_checkpoint() {
+                        found = Some((a.clone(), oid.clone(), qi));
+                    }
+                }
+            }
+        }
+        found.expect("fixture has a top-level set-checkpoint")
+    };
+
+    // A distinct on_respawn hook makes this a distinct checkpoint (index 1).
+    let nested_hook = vec![QuestEffect::Narrate {
+        text: "You steady yourself again, deeper in.".to_string(),
+        style: None,
+        sound: None,
+        requires_flags: vec![],
+    }];
+    let nested = QuestEffect::Sequence {
+        steps: vec![SequenceStep {
+            at_ticks: 0,
+            effects: vec![QuestEffect::SetCheckpoint {
+                anchor: anchor.clone(),
+                on_respawn: nested_hook.clone(),
+            }],
+        }],
+    };
+    campaign.quests.content.quests[qi]
+        .on_objective_complete
+        .get_mut(&oid)
+        .unwrap()
+        .push(nested);
+
+    let items = FullItemRegistry::v1_21_11();
+    let entities = FullEntityRegistry::v1_21_11();
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    assert!(
+        diags.is_empty(),
+        "nested-checkpoint campaign still validates clean: {diags:#?}"
+    );
+
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    // Both checkpoints are collected; the nested one keeps its own index (1).
+    assert_eq!(
+        plan.checkpoints.len(),
+        2,
+        "both the top-level and sequence-nested checkpoints are collected"
+    );
+    let cp = plan
+        .checkpoint_for(anchor.as_str(), &nested_hook)
+        .expect("nested checkpoint is registered (not dropped)");
+    assert_eq!(
+        cp.index, 1,
+        "the nested checkpoint keeps its content-ordered index, never a silent 0"
+    );
+
+    // Emission: the marker + dispatch use index 1.
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
+            structures.insert(piece.structure_file.clone(), bytes);
+        }
+    }
+    let mut skins: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for npc in &campaign.npcs.content.npcs {
+        if let Some(skin) = &npc.skin {
+            let png = std::fs::read(dir.join("skins").join(format!("{}.png", skin.texture_id)))
+                .expect("skin png present");
+            skins.insert(skin.texture_id.clone(), png);
+        }
+    }
+    let tree = CommandTree::v1_21_11();
+    let out = emit::build(
+        &plan,
+        &loaded.inputs,
+        &structures,
+        &tree,
+        &prefabs,
+        None,
+        "unpinned",
+        &skins,
+        delvewright_compiler::light::has_night_vision(&campaign),
+    )
+    .expect("nested-checkpoint build emits valid commands");
+
+    let all = all_functions(&out);
+    assert_eq!(
+        all.matches("scoreboard players set #cp dw.sys 1").count(),
+        1,
+        "the nested checkpoint emits its own #cp index 1 exactly once"
+    );
+    // The per-index dispatch function for index 1 exists and carries its own hook.
+    let hook = fn_body(&out, "cp_on_respawn_1");
+    assert!(
+        hook.contains("You steady yourself again, deeper in."),
+        "cp_on_respawn_1 runs the nested checkpoint's own on_respawn hook"
+    );
 }

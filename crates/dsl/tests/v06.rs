@@ -264,6 +264,51 @@ fn v06_effect_requires_flags_unknown_is_dw0172() {
     );
 }
 
+/// A flag produced **only** by a `set-flag` nested inside a `sequence` step is a
+/// real producer: a later `requires_flags` referencing it must resolve, not
+/// spuriously trip `DW0172`. Regression for the shallow producer scan that skipped
+/// nested `set-flag`s.
+const QUESTS_V06_SEQUENCE_SETS_FLAG: &str = r#"{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"] }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [
+            { "type": "sequence", "steps": [
+              { "at_ticks": 0, "effects": [ { "type": "set-flag", "flag": "flag/opened" } ] }
+            ] },
+            { "type": "open-gate", "anchor": "anchor/door", "requires_flags": ["flag/opened"] }
+          ]
+        },
+        "on_complete": [ { "type": "campaign-complete" } ]
+      }
+    ]
+  }
+}"#;
+
+#[test]
+fn v06_set_flag_nested_in_sequence_is_a_producer_no_dw0172() {
+    let diags = check_campaign(&campaign_with_quests(QUESTS_V06_SEQUENCE_SETS_FLAG));
+    assert!(
+        !diags.iter().any(|d| d.code == "DW0172"),
+        "a set-flag nested in a sequence produces its flag — requires_flags must \
+         resolve, no spurious DW0172: {diags:#?}"
+    );
+    assert!(
+        diags.is_empty(),
+        "the nested-set-flag campaign must validate clean: {diags:#?}"
+    );
+}
+
 /// A block field carrying a well-formed vanilla blockstate validates clean.
 #[test]
 fn v06_blockstate_suffix_validates_clean() {

@@ -1409,6 +1409,16 @@ impl V06Collector<'_> {
         } else if let Some((zones, on_caught, grace)) = eff.begin_stealth() {
             self.push_stealth(zones, on_caught, grace, fire_step);
         }
+        // Descend into every nested effect list (`sequence` steps, `on_respawn`,
+        // `on_caught`, `on_arrive`): a `set-checkpoint`/`begin-stealth` nested in a
+        // `sequence` step is a real checkpoint/beat, fired at the same critical-path
+        // step, and must be collected — else its content-ordered index is never
+        // registered and `emit_set_checkpoint` silently mis-binds `#cp` to 0.
+        for list in eff.nested_effect_lists() {
+            for inner in list {
+                self.handle(inner, fire_step);
+            }
+        }
     }
 }
 
