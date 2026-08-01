@@ -111,7 +111,7 @@ discharge exactly one of:
 
 - **(a) Avoidable** — the trigger cell is never a critical-path/waypoint cell;
   the exported waypoints already steer the bot clear. Preferred. Failure →
-  **DW0313**.
+  **DW0314**.
 - **(b) Survivable** — worst-case effect damage is bounded below lethal given
   the class kit (armor/health), **or** respawn-safe *and* non-re-triggering on
   the walk back from world-spawn (no soft-loop). 
@@ -169,7 +169,7 @@ honored).
 |------|-------------|---------|
 | `DW0197` | validation / 1 | Trap declaration invalid: `at` not an `anchor/trap` the bound prefab provides, bad `trigger`/`effect`/`lethality` enum, duplicate trap id, or `disarm.via`/`sets_flag` dangling. |
 | `DW0198` | validation / 1 | Trap payload item/entity id not in the pinned 1.21.11 registry (mirrors DW0143/DW0173). |
-| `DW0313` | analysis / **2** | A lethal trap's trigger cell lies on the forced critical path with **no discharge** — not avoidable, not proven survivable, not disarmable (player provably killed or soft-looped). Content-design mistake (move the trap off the path, make it survivable, or add a disarm), analysis-tier like DW0312. |
+| `DW0314` | analysis / **2** | A lethal trap's trigger cell lies on the forced critical path with **no discharge** — not avoidable, not proven survivable, not disarmable (player provably killed or soft-looped). Content-design mistake (move the trap off the path, make it survivable, or add a disarm), analysis-tier like DW0312. |
 | `DW0733` | delve-admit / DW07xx | Audit: a piece contains trap hardware (dispenser, wired plate/tripwire, trapped chest) **not** declared by an `anchor/trap` marker + trap metadata — an unmodeled mechanism. Refuse admission (the gravity-incident guard: no hardware the compiler cannot model reaches a shipped world). |
 
 ## Acceptance criteria (machine-checkable)
@@ -185,8 +185,8 @@ honored).
 5. Avoidance: a lethal trap whose trigger cell is off the critical path builds
    clean and the exported waypoints never enter the cell; the bot ladder passes
    without a trap death.
-6. **DW0313**: a lethal trap placed on the forced critical path with no
-   survivability/disarm → DW0313, exit 2.
+6. **DW0314**: a lethal trap placed on the forced critical path with no
+   survivability/disarm → DW0314, exit 2.
 7. **DW0733**: a prefab carrying an undeclared dispenser/wired-plate → admission
    refuses with DW0733.
 8. TNT / released-falling-block / crusher `effect` → rejected at validation
@@ -209,7 +209,7 @@ honored).
 
 1. **Lethal traps ARE allowed on the forced critical path**, gated by the hard
    proof obligations: every critical-path trigger cell must discharge
-   avoidable OR survivable OR disarmable, else DW0313. Restricting lethal traps
+   avoidable OR survivable OR disarmable, else DW0314. Restricting lethal traps
    to branch areas was rejected — maximum expressive space, enforced by proof.
 2. **Checkpoint / respawn-anchor feature approved as its own spec**
    (spec-0012, drafted alongside this spec; implementation may lag). Trap
@@ -217,3 +217,20 @@ honored).
    implemented, the survivability proof must assume entrance respawn.
 3. **Dispenser payload is DSL-authored** (compiler fills the prefab dispenser,
    mirroring `collect` item syntax). Prefab-baked payloads rejected.
+
+## Owner design direction — souls-mode (2026-07-31, recorded post-approval)
+
+Target expressiveness (owner, verbatim intent): Dark-Souls-grade malice —
+corner kills, door-opening kills, alcove mobs that knock players off ledges,
+timing-gated passages, lethal parkour, doors that cannot be opened from this
+side; death or resting at a "bonfire" resets traps and enemies, making
+death-driven trial-and-error a **legitimate design pattern**, not a failure.
+
+This spec is the baseline and ships first. The souls-mode extension is designed
+by the planning agent personally (owner assignment) in the expressiveness
+phase, as a follow-up spec. Implications parked there: reset semantics
+(vanilla `deathCount` scoreboard criterion + bonfire = spec-0012 checkpoint +
+a compiler-emitted re-arm function for traps/waves — all modeled, no new
+hacks); one-way doors need direction-aware nav edges in the walkability model;
+timing-gated passages and lethal parkour need timing-/jump-aware provability —
+the hardest proof extensions, likely staged.

@@ -38,7 +38,7 @@
    required anchor of the critical path must still be reachable/walkable
    (DW0311 machinery re-rooted at the checkpoint). A checkpoint behind a
    one-way drop that the forward path later leaves unreachable is a build
-   error — new diagnostic **DW0314** (exit 2, prescription per the #73 rubric:
+   error — new diagnostic **DW0315** (exit 2, prescription per the #73 rubric:
    move the checkpoint or add a return route; do NOT delete the checkpoint to
    silence the proof).
 3. **spec-0011 coupling**: the survivability obligation for a lethal trap may
@@ -64,7 +64,7 @@ No scoreboard state needed — vanilla holds the respawn point.
 2. Emitted datapack contains exactly one `spawnpoint` command per declared
    checkpoint, at the declared trigger point, byte-identical across double
    builds.
-3. A campaign with a checkpoint stranded behind a one-way drop fails DW0314
+3. A campaign with a checkpoint stranded behind a one-way drop fails DW0315
    (negative test); the same campaign with a return route passes.
 4. PackTest respawn assertion green on the showcase campaign once one
    checkpoint is authored.
@@ -81,3 +81,11 @@ No scoreboard state needed — vanilla holds the respawn point.
 1. **Party-wide `@a`** respawn (recommended) — confirm.
 2. **Explicit `set-checkpoint` only**, no automatic per-area checkpoints
    (recommended: author intent, no magic) — confirm.
+
+## Note — souls-mode reframing (owner, 2026-07-31)
+
+The owner's souls-mode direction (spec-0011 final section) reframes checkpoints
+as **bonfires**: resting may reset traps/enemies, and death-driven retry is a
+legitimate pattern. The open decisions above stay open and will be settled
+inside the planner's souls-mode design; this spec's respawn mechanics are the
+substrate it builds on.
