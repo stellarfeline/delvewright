@@ -4,11 +4,13 @@ import {
   parseWaypoints,
   parseWaypointsJson,
   nextLegWaypoints,
+  retainStandableWaypoints,
   walkGoals,
   WaypointsParseError,
   WAYPOINT_RANGE,
   type Waypoints,
 } from "../src/waypoints.ts";
+import type { Vec3Tuple } from "../src/critical-path.ts";
 
 // A cave that VISITS [197, 69, -20] twice and RETURNS to the entry [262, 66, 1] —
 // exactly the nobodys-cave shape whose duplicate destinations broke a by-coordinate
@@ -164,4 +166,43 @@ test("walkGoals falls back to a single destination goal when no leg matched", ()
   const goals = walkGoals(undefined, [999, 64, 999], 3);
   assert.equal(goals.length, 1);
   assert.deepEqual([goals[0]!.x, goals[0]!.y, goals[0]!.z, goals[0]!.range], [999, 64, 999, 3]);
+});
+
+test("retainStandableWaypoints drops a fence-top proven cell, keeps the rest in order", () => {
+  // The ram-pen leg (nobodys-cave-island): the compiler routed the player OVER the
+  // oak_fence at [17, 78, -63] because its full-solid model treats a fence as a
+  // stand-on-able 1×1×1 cube. Vanilla physics cannot climb a 1.5-tall fence, so this
+  // cell is un-standable and must be dropped; the level cells on either side stay.
+  const leg: Vec3Tuple[] = [
+    [17, 77, -62],
+    [17, 78, -63], // stands on the oak_fence → un-standable, dropped
+    [17, 77, -64],
+    [17, 77, -65],
+    [17, 77, -66],
+    [18, 77, -66],
+  ];
+  // Support of the fence-top cell ([17, 77, -63]) is the fence; every other cell
+  // stands on stone.
+  const fenceTopped = new Set(["17,77,-63"]);
+  const kept = retainStandableWaypoints(
+    leg,
+    (c) => !fenceTopped.has(`${c[0]},${c[1] - 1},${c[2]}`),
+  );
+  assert.deepEqual(kept, [
+    [17, 77, -62],
+    [17, 77, -64],
+    [17, 77, -65],
+    [17, 77, -66],
+    [18, 77, -66],
+  ]);
+});
+
+test("retainStandableWaypoints is identity when every cell is standable", () => {
+  const leg: Vec3Tuple[] = [
+    [0, 64, 0],
+    [1, 64, 0],
+    [2, 65, 0],
+  ];
+  const kept = retainStandableWaypoints(leg, () => true);
+  assert.deepEqual(kept, leg);
 });
