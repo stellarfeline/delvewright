@@ -871,19 +871,21 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v06(c, d);
 }
 
-/// DSL v0.6 reserved-feature gating + validation. Two independent surfaces landed
-/// under v0.6, each gated on the stage that carries it (both default to
-/// absent/unused, so a v0.5-or-earlier campaign is byte-identical):
-/// - stage-1 `horizon`/`boundary` world fields (spec-0013): reserved (`DW0141`)
-///   under a pre-0.6 world; under 0.6, `horizon: "ocean"` requires a `boundary`
-///   (`DW0320`) and `boundary.margin` must lie in `0..=64` (`DW0321`).
-/// - the `play-sound` effect and `narrate` `art` style (spec-0014), carried by
-///   stage-5 quest/trigger effects: reserved (`DW0141`) under a pre-0.6 quests
-///   stage. (Sound-id `DW0326` and art-glyph `DW0328` are compiler-side checks.)
+/// DSL v0.6 reserved-feature gating + validation. Several independent,
+/// stage-gated feature groups land under `dsl_version 0.6.0`, each rejected with
+/// `DW0141` in a pre-0.6 campaign (all fields default to absent/empty, so a
+/// v0.5-or-earlier campaign that uses none is byte-identical):
+/// - **spec-0013 (stage 1)**: `horizon` + `boundary`. Under a v0.6 world,
+///   `horizon: "ocean"` requires a `boundary` (`DW0320`) and `boundary.margin`
+///   must lie in `0..=64` (`DW0321`).
+/// - **spec-0012 / spec-0014 (stages 5/6)**: the `set-checkpoint` effect, the
+///   `begin-stealth`/`end-stealth` verbs, the `play-sound` effect and the
+///   `narrate` `art` style. (Sound-id `DW0326` and art-glyph `DW0328` are
+///   compiler-side checks.)
 fn reserved_v06(c: &Campaign, d: &mut Vec<Diagnostic>) {
     use crate::stages::Horizon;
 
-    // --- stage 1: horizon / boundary (spec-0013), gated on the world stage ---
+    // --- Stage 1: horizon / boundary (spec-0013), gated on the world stage ---
     if !is_v06(c.world.dsl_version.as_str()) {
         if c.world.content.horizon.is_some() {
             d.push(Diagnostic::error(
@@ -937,7 +939,10 @@ fn reserved_v06(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
     }
 
-    // --- stage 5: play-sound / narrate `art` (spec-0014), gated on the quests stage ---
+    // --- Stage 5: quest + trigger effects (spec-0012 / spec-0014), gated on the
+    //     quests stage. `check` covers every v0.6 effect verb (`set-checkpoint`,
+    //     `begin-stealth`/`end-stealth`, `play-sound` — via `v06_effect`) and the
+    //     `narrate` `art` style. ---
     if !is_v06(c.quests.dsl_version.as_str()) {
         let res = |d: &mut Vec<Diagnostic>, path: String, what: &str| {
             d.push(Diagnostic::error(
@@ -978,6 +983,32 @@ fn reserved_v06(c: &Campaign, d: &mut Vec<Diagnostic>) {
         for (i, t) in c.quests.content.triggers.iter().enumerate() {
             for (m, eff) in t.effects.iter().enumerate() {
                 check(d, &format!("/content/triggers/{i}/effects/{m}"), eff);
+            }
+        }
+    }
+
+    // --- Stage 6: dialogue effects (spec-0012 `set-checkpoint`; play-sound / art
+    //     are quest/trigger-only), gated on the dialogue stage. ---
+    if !is_v06(c.dialogue.dsl_version.as_str()) {
+        for (i, t) in c.dialogue.content.dialogues.iter().enumerate() {
+            for (j, node) in t.nodes.iter().enumerate() {
+                for (k, opt) in node.options.iter().enumerate() {
+                    for (m, eff) in opt.effects.iter().enumerate() {
+                        if let Some(name) = eff.v06_effect() {
+                            d.push(Diagnostic::error(
+                                codes::RESERVED,
+                                "dialogue",
+                                format!(
+                                    "/content/dialogues/{i}/nodes/{j}/options/{k}/effects/{m}/type"
+                                ),
+                                format!(
+                                    "dialogue effect `{name}` requires dsl_version 0.6.0 — raise \
+                                     this stage's `dsl_version` to 0.6.0, or remove the construct"
+                                ),
+                            ));
+                        }
+                    }
+                }
             }
         }
     }
@@ -1316,6 +1347,39 @@ fn anchors_and_items(
                          come from prefab metadata; do NOT invent one)"
                     ),
                 ));
+            }
+            // v0.6 `set-checkpoint` anchor (spec-0012).
+            if let Some((anchor, _)) = eff.set_checkpoint()
+                && !set.contains(anchor.as_str())
+            {
+                d.push(Diagnostic::error(
+                    codes::ANCHOR_UNRESOLVED,
+                    "quests",
+                    format!("/content/quests/{i}/{path}/anchor"),
+                    format!(
+                        "`set-checkpoint` anchor `{anchor}` is not provided by the prefab bound \
+                         to this quest's area — use a checkpoint anchor the prefab exposes (anchor \
+                         names come from prefab metadata; do NOT invent one)"
+                    ),
+                ));
+            }
+            // v0.6 `begin-stealth` zone anchors (spec-0014).
+            if let Some((zones, _, _)) = eff.begin_stealth() {
+                for (z, zone) in zones.iter().enumerate() {
+                    if !set.contains(zone.anchor.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::ANCHOR_UNRESOLVED,
+                            "quests",
+                            format!("/content/quests/{i}/{path}/zones/{z}/anchor"),
+                            format!(
+                                "`begin-stealth` zone anchor `{}` is not provided by the prefab \
+                                 bound to this quest's area — use an anchor the prefab exposes \
+                                 (anchor names come from prefab metadata; do NOT invent one)",
+                                zone.anchor
+                            ),
+                        ));
+                    }
+                }
             }
         });
     }
