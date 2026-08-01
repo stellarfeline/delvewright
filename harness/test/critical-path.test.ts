@@ -368,6 +368,14 @@ test("accepts the 0.4.0 dsl version", () => {
   assert.equal(parseCriticalPath(raw).version, "0.4.0");
 });
 
+test("accepts the 0.5.0 and 0.6.0 dsl versions (additive; same path contract)", () => {
+  for (const v of ["0.5.0", "0.6.0"]) {
+    const raw = validRaw();
+    raw["version"] = v;
+    assert.equal(parseCriticalPath(raw).version, v);
+  }
+});
+
 test("rejects a non-integer assert-complete scoreboard value", () => {
   const raw = validRaw();
   (raw["steps"] as Array<Record<string, unknown>>)[3]!["scoreboard"] = {
