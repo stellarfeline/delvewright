@@ -123,13 +123,15 @@ async function recoverAndRetry(
     return;
   }
   // Level 2: the recovery pathfind stalled too — the bot is physically wedged. Break
-  // it free with a bounded raw-movement burst toward the proven cell, then retry the
-  // ACTUAL hop at its own (forgiving) range. Escalate the burst to a jump only when a
-  // gentle burst made no progress.
+  // it free with a bounded raw-movement burst toward the GOAL (not the proven cell:
+  // the proven cell is BEHIND a bot that has partly advanced, so driving toward it
+  // shoves the bot backward and it oscillates — observed on waypoint 15). Driving
+  // toward the goal always makes forward progress and still escapes the initial
+  // pocket. Retry the actual hop at its own (forgiving) range after each burst.
   if (unstick) {
     for (let a = 0; a < UNSTICK_ATTEMPTS; a++) {
-      process.stderr.write(`[recover] physics-unstick burst ${a + 1}/${UNSTICK_ATTEMPTS}\n`);
-      await unstick(provenGoal);
+      process.stderr.write(`[recover] physics-unstick burst ${a + 1}/${UNSTICK_ATTEMPTS} toward goal\n`);
+      await unstick(spec);
       if (await reached(() => goto(spec, `${glabel} retry after unstick ${a + 1}`))) {
         return;
       }
@@ -682,7 +684,7 @@ export class MineflayerExecutor implements StepExecutor {
   /**
    * Raw, pathfinder-free nudge toward `target` to dislodge a physically wedged bot
    * (task #45). When the stall-recovery pathfind itself can't escape a concave corner
-   * beside a wall, this bypasses the A* pathfinder: clear controls, face the proven
+   * beside a wall, this bypasses the A* pathfinder: clear controls, face the target
    * cell, and drive forward for a SHORT burst — a gentle tap, not a launch, so on a
    * tight 2-wide corridor the bot edges toward the corridor axis instead of
    * overshooting to the far wall. Only if that gentle burst makes no progress (the

@@ -303,8 +303,7 @@ test("replayLegWithRecovery escalates to a physics unstick when the recovery pat
   await replayLegWithRecovery([G(1, 65, -3), G(1, 65, 0), G(2, 66, 1, 3)], "npc x", goto, unstick);
   assert.equal(unstickTargets.length, 1, "one physics-unstick burst was enough");
   const t = unstickTargets[0]!;
-  assert.deepEqual([t.x, t.y, t.z], [1, 65, -3], "unstick drives toward the last proven cell");
-  assert.equal(t.range, 0, "toward the exact proven cell");
+  assert.deepEqual([t.x, t.y, t.z], [1, 65, 0], "unstick drives toward the GOAL (forward), not backward");
   assert.ok(
     calls.some((l) => l.includes("retry after unstick")),
     "retries the actual next hop after the burst (not the strict proven cell)",
