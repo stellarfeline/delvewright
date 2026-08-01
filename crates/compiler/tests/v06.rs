@@ -227,6 +227,7 @@ fn build_v06(quests: &str) -> BuildOutput {
         None,
         "unpinned",
         &BTreeMap::new(),
+        delvewright_compiler::light::has_night_vision(&campaign),
     )
     .expect("v0.6 campaign builds")
 }

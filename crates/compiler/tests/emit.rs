@@ -78,6 +78,7 @@ fn build_hello_world() -> BuildOutput {
         None,
         "unpinned",
         &BTreeMap::new(),
+        delvewright_compiler::light::has_night_vision(&campaign),
     )
     .expect("emission succeeds")
 }
@@ -109,6 +110,7 @@ fn build_campaign_dir(dir: &std::path::Path) -> BuildOutput {
         None,
         "unpinned",
         &BTreeMap::new(),
+        delvewright_compiler::light::has_night_vision(&campaign),
     )
     .expect("emission succeeds")
 }

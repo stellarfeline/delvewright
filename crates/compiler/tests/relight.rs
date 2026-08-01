@@ -104,7 +104,53 @@ fn build_with_structure(campaign: &Campaign, nbt: Vec<u8>) -> Result<BuildOutput
         None,
         "unpinned",
         &BTreeMap::new(),
+        light::has_night_vision(campaign),
     )
+}
+
+/// Build `campaign` against a synthetic dark structure the way `delvec build
+/// --lang <lang>` does: determine the night-vision `DW0210` verdict on the
+/// **canonical English** campaign first, then localize a clone with `translations`
+/// (the l10n sidecar swap) before planning + emitting. This mirrors `main.rs` so a
+/// test can prove the lighting gate reaches the same verdict in every language.
+fn build_localized(
+    campaign_en: &Campaign,
+    nbt: Vec<u8>,
+    lang: &str,
+    translations: &BTreeMap<String, String>,
+) -> Result<BuildOutput, BuildFailure> {
+    // Verdict from the pre-localization English source (see has_night_vision).
+    let night_vision = light::has_night_vision(campaign_en);
+    let mut c = campaign_en.clone();
+    delvewright_dsl::localize(&mut c, translations);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            structures.insert(piece.structure_file.clone(), nbt.clone());
+        }
+    }
+    let tree = CommandTree::v1_21_11();
+    emit::build(
+        &plan,
+        &load_campaign_dir(&common::hello_world_dir())
+            .unwrap()
+            .inputs,
+        &structures,
+        &tree,
+        &prefabs,
+        Some(lang),
+        "unpinned",
+        &BTreeMap::new(),
+        night_vision,
+    )
+}
+
+/// True unless the build failed specifically with `DW0210` (a nav/other failure is
+/// treated as "lighting gate passed" — matching `crit5_dark_with_night_vision_builds`).
+fn passes_dw0210(r: Result<BuildOutput, BuildFailure>) -> bool {
+    !matches!(r, Err(BuildFailure::Diagnostic { code, .. }) if code == "DW0210")
 }
 
 /// Build a (possibly v0.5-mutated) campaign through the real emit path.
@@ -130,6 +176,7 @@ fn build(campaign: &Campaign) -> Result<BuildOutput, BuildFailure> {
         None,
         "unpinned",
         &BTreeMap::new(),
+        light::has_night_vision(campaign),
     )
 }
 
@@ -262,6 +309,85 @@ fn crit7_unsatisfiable_build_fails_dw0211() {
     }
 }
 
+/// The l10n inventory key for the display name of the last kit item of the first
+/// class (the night-vision item the language-independence tests append).
+fn last_kit_name_key(c: &Campaign) -> String {
+    let want = c.classes.content.classes[0]
+        .kit
+        .last()
+        .unwrap()
+        .name
+        .clone()
+        .unwrap();
+    delvewright_dsl::l10n_inventory(c)
+        .into_iter()
+        .find(|(k, v)| k.contains(".kit.") && k.ends_with(".name") && *v == want)
+        .map(|(k, _)| k)
+        .expect("kit-item name is inventoried")
+}
+
+/// Regression (root of FIX): the `DW0210` night-vision mitigation verdict must be
+/// **language-independent**. A kit item whose *English* name grants night vision
+/// mitigates a dark area in every build language, even when localization renames it
+/// to a string with no `night vision` substring — because the verdict is taken on
+/// the canonical English source, never the localized display name. Before the fix,
+/// `has_night_vision` ran on the already-localized campaign, so the same campaign
+/// passed `en` and failed `DW0210` under `zh-cn`.
+#[test]
+fn dw0210_night_vision_verdict_is_language_independent() {
+    let mut c = hello_world();
+    c.world.content.languages = vec!["zh-cn".to_string()];
+    c.classes.content.classes[0]
+        .kit
+        .push(delvewright_dsl::KitItem {
+            item: "minecraft:potion".to_string(),
+            count: 1,
+            name: Some("Draught of Night Vision".to_string()),
+        });
+    let dark = dark_box_nbt([11, 6, 11], &[]);
+
+    // en: the English name grants night vision → mitigated (no DW0210).
+    assert!(
+        passes_dw0210(build_with_structure(&c, dark.clone())),
+        "night vision must mitigate DW0210 in the English build"
+    );
+
+    // zh-cn: localization renames the kit item to a non-matching Chinese string.
+    // Recomputing the verdict from the localized name would (wrongly) re-fire
+    // DW0210; the fix takes it from the English source, so the verdict is unchanged.
+    let mut tr: BTreeMap<String, String> = BTreeMap::new();
+    tr.insert(last_kit_name_key(&c), "夜视药剂".to_string());
+    // Every other inventory key maps to itself so localize covers the campaign.
+    for (k, v) in delvewright_dsl::l10n_inventory(&c) {
+        tr.entry(k).or_insert(v);
+    }
+    assert!(
+        passes_dw0210(build_localized(&c, dark, "zh-cn", &tr)),
+        "the same night-vision kit must mitigate DW0210 in the zh-cn build"
+    );
+}
+
+/// Complementary verdict: with **no** night-vision kit item, a dark undeclared area
+/// fails `DW0210` in every build language (en and zh-cn alike) — the gate is not
+/// silently suppressed by localization either.
+#[test]
+fn dw0210_fires_in_every_language_without_night_vision() {
+    let mut c = hello_world();
+    c.world.content.languages = vec!["zh-cn".to_string()];
+    let dark = dark_box_nbt([11, 6, 11], &[]);
+
+    match build_with_structure(&c, dark.clone()).unwrap_err() {
+        BuildFailure::Diagnostic { code, .. } => assert_eq!(code, "DW0210"),
+        other => panic!("en: expected DW0210, got {other:?}"),
+    }
+    // Identity translation for the (unchanged) inventory, so localize runs cleanly.
+    let tr: BTreeMap<String, String> = delvewright_dsl::l10n_inventory(&c).into_iter().collect();
+    match build_localized(&c, dark, "zh-cn", &tr).unwrap_err() {
+        BuildFailure::Diagnostic { code, .. } => assert_eq!(code, "DW0210"),
+        other => panic!("zh-cn: expected DW0210, got {other:?}"),
+    }
+}
+
 /// Sanity: the assembled-light model measures the lit hello-room as not-dark
 /// (no `DW0210` for the shipped campaign), matching its `lit` admission profile.
 #[test]
@@ -276,7 +402,7 @@ fn hello_room_measures_not_dark() {
             structures.insert(piece.structure_file.clone(), bytes);
         }
     }
-    let r = light::relight(&plan, &structures);
+    let r = light::relight(&plan, &structures, light::has_night_vision(&c));
     assert!(
         r.diagnostics.is_empty(),
         "lit hello-room must not trip DW0210: {:?}",

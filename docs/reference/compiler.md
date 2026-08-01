@@ -143,8 +143,13 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 1..4 classes. `kit[]` = vanilla item id + count + optional display `name`
 (→ l10n `class.<c>.kit.<i>.name`). `name`/`blurb` player-visible. Reserved kit
 fields `lore`/`enchantments`/`attributes` are **not defined** → unknown-field
-`DW0100`. A kit night-vision item (id/name contains `night_vision`) is the
-retained sufficient `DW0210` dark-mitigation (spec-0010 mitigation hierarchy).
+`DW0100`. A kit night-vision item (id/name contains `night_vision` /
+`night vision`, case-insensitive) is the retained sufficient `DW0210`
+dark-mitigation (spec-0010 mitigation hierarchy). The mitigation verdict is taken
+on the **canonical English** campaign — before any `--lang` localization swaps the
+display `name` it reads — and threaded into the relight pass, so the `DW0210`
+verdict is identical in every build language (ADR-0006): a campaign cannot pass
+`en` and fail `zh-cn`.
 
 ### Stage 4 — `quest-plan`
 
