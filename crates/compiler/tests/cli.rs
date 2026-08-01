@@ -810,6 +810,50 @@ fn move_unroutable_exits_3_with_dw0307() {
     assert!(stdout.contains("DW0307"), "expected DW0307:\n{stdout}");
 }
 
+/// A `move-actor` whose destination cannot be reached over the assembled geometry
+/// for the actor's footprint fails the build with exit 3 and `DW0325` (spec-0014).
+/// Reuses keep-crawl's cross-void geometry: an actor spawned in the gatehouse is
+/// walked to `anchor/objective` in the keep — two areas across the inter-area void.
+#[test]
+fn move_actor_unroutable_exits_3_with_dw0325() {
+    let pf = common::prefabs_dir();
+    let camp = tmp("ma-cross-void");
+    copy_dir(&common::keep_crawl_dir(), &camp);
+    let qp = camp.join("quests.json");
+    let q = std::fs::read_to_string(&qp)
+        .unwrap()
+        .replace("\"dsl_version\": \"0.2.0\"", "\"dsl_version\": \"0.6.0\"")
+        .replace(
+            "{ \"type\": \"open-gate\", \"anchor\": \"anchor/gate\" }",
+            "{ \"type\": \"open-gate\", \"anchor\": \"anchor/gate\" },\n            \
+             { \"type\": \"move-actor\", \"actor\": \"actor/beast\", \"to_anchor\": \"anchor/objective\" }",
+        )
+        .replace(
+            "    ]\n  }\n}",
+            "    ],\n    \"actors\": [\n      { \"id\": \"actor/beast\", \"entity\": \
+             \"minecraft:zombie\", \"anchor\": \"anchor/keeper-stand\" }\n    ]\n  }\n}",
+        );
+    std::fs::write(&qp, q).unwrap();
+    let out = tmp("ma-cross-void-out");
+    let b = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(
+        code(&b),
+        3,
+        "unroutable move-actor should exit 3: {}",
+        String::from_utf8_lossy(&b.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&b.stdout);
+    assert!(stdout.contains("DW0325"), "expected DW0325:\n{stdout}");
+}
+
 /// A cutscene whose camera dolly clips a solid block fails the build with exit 3
 /// and `DW0308` (spec-0008 addendum). Here the first camera waypoint is lifted
 /// into the shrine ceiling.
@@ -1037,5 +1081,99 @@ fn v06_absent_fields_keep_void_output_unchanged() {
     assert!(
         !tree.contains_key("datapack/data/hello-world/function/boundary_tick.mcfunction"),
         "no boundary function without a declared boundary"
+    );
+}
+
+/// A routable v0.6 campaign (patched hello-world) builds cleanly and the emitted
+/// datapack carries the actor mechanics: a NoAI/no-loot puppet summon, a per-tick
+/// move-actor tp, a `sequence` scheduling its second step at the exact tick, an
+/// `unleash` that swaps the puppet for a real-AI twin, and the on-arrive vanish
+/// (relocate-then-kill). Asserted against the concatenated function bodies.
+#[test]
+fn v06_actor_datapack_emits_the_mechanics() {
+    let search = r#"            {
+              "type": "open-gate",
+              "anchor": "anchor/door"
+            }"#;
+    let replace = r#"            { "type": "open-gate", "anchor": "anchor/door" },
+            { "type": "spawn-actor", "actor": "actor/giant" },
+            { "type": "move-actor", "actor": "actor/giant", "to_anchor": "anchor/exit",
+              "on_arrive": [ { "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" } ] },
+            { "type": "unleash-actor", "actor": "actor/giant" },
+            { "type": "sequence", "steps": [
+              { "at_ticks": 0, "effects": [ { "type": "spawn-actor", "actor": "actor/giant" } ] },
+              { "at_ticks": 40, "effects": [ { "type": "despawn-actor", "actor": "actor/giant", "style": "kill" } ] }
+            ] }"#;
+    let actors = "    ],\n    \"actors\": [\n      { \"id\": \"actor/giant\", \"entity\": \"minecraft:zombie\", \"name\": \"The Sleeper\", \"anchor\": \"anchor/keeper-stand\", \"facing\": \"east\" }\n    ]\n  }\n}";
+
+    let pf = common::prefabs_dir();
+    let camp = tmp("v06-actors");
+    copy_dir(&common::hello_world_dir(), &camp);
+    let qp = camp.join("quests.json");
+    let q = std::fs::read_to_string(&qp)
+        .unwrap()
+        .replace("\"dsl_version\": \"0.2.0\"", "\"dsl_version\": \"0.6.0\"")
+        .replace(search, replace)
+        .replace("    ]\n  }\n}", actors);
+    std::fs::write(&qp, q).unwrap();
+    let out = tmp("v06-actors-out");
+    let b = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(
+        code(&b),
+        0,
+        "v0.6 actor campaign should build: {}",
+        String::from_utf8_lossy(&b.stdout)
+    );
+
+    let fn_dir = out.join("datapack/data/hello-world/function");
+    let mut all = String::new();
+    for e in std::fs::read_dir(&fn_dir).unwrap() {
+        let p = e.unwrap().path();
+        if p.extension().and_then(|s| s.to_str()) == Some("mcfunction") {
+            all.push_str(&std::fs::read_to_string(&p).unwrap());
+            all.push('\n');
+        }
+    }
+
+    assert!(
+        all.contains("summon minecraft:zombie") && all.contains("NoAI:1b"),
+        "puppet is a NoAI zombie"
+    );
+    assert!(
+        all.contains("DeathLootTable:\"minecraft:empty\""),
+        "puppet drops no loot"
+    );
+    assert!(
+        all.contains("dw_pup_giant"),
+        "puppet carries its marker tag"
+    );
+    assert!(
+        all.contains("execute unless entity @e[tag=dw_actor_giant] run summon minecraft:zombie"),
+        "spawn-actor is idempotent"
+    );
+    assert!(
+        all.contains("tp @e[tag=dw_pup_giant]"),
+        "move-actor teleports the puppet"
+    );
+    assert!(
+        all.contains("tp @e[tag=dw_actor_giant] ~ -128 ~"),
+        "on-arrive vanish relocates before killing"
+    );
+    assert!(
+        all.contains(" 40t"),
+        "sequence schedules its second step at tick 40"
+    );
+    assert!(
+        all.contains("execute at @e[tag=dw_pup_giant,limit=1] run summon minecraft:zombie")
+            && all.contains("kill @e[tag=dw_pup_giant]"),
+        "unleash summons a twin at the puppet then removes the puppet"
     );
 }

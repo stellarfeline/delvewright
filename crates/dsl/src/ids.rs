@@ -97,6 +97,11 @@ prefixed_id!(
     /// Environment-trigger id: `trigger/<kebab>` (stage-5 `triggers` section,
     /// DSL v0.4). Unique within the stage-5 triggers namespace.
     TriggerId, "trigger");
+prefixed_id!(
+    /// Scripted-actor id: `actor/<kebab>` (stage-5 `actors` section, DSL v0.6,
+    /// spec-0014). Unique within the stage-5 actors namespace; the puppet body
+    /// is tagged `dw_actor_<kebab>`.
+    ActorId, "actor");
 
 /// Campaign id: a bare kebab-case token (no type prefix).
 #[derive(

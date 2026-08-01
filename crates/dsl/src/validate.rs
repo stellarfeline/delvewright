@@ -63,6 +63,13 @@ pub fn validate_campaign_with(
         let effects_reg = VendoredEffectRegistry::v1_21_11();
         v04_checks(c, anchors, &blocks, &effects_reg, &mut d);
     }
+    // DSL v0.6: scripted actors + staging effects (spec-0014). Actor entity ids
+    // validate against the injected entity registry; anchors against single-prefab
+    // area metadata (pool areas deferred to the compiler). Gated on the quests
+    // stage version.
+    if is_v06(c.quests.dsl_version.as_str()) {
+        v06_checks(c, anchors, entities, &mut d);
+    }
 
     d
 }
@@ -203,6 +210,9 @@ fn syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
             );
         }
     }
+    for (i, a) in c.quests.content.actors.iter().enumerate() {
+        chk!(a.id, "quests", format!("/content/actors/{i}/id"));
+    }
     for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
         for (j, node) in tree.nodes.iter().enumerate() {
             chk!(
@@ -311,6 +321,18 @@ fn uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
             }),
         "quests",
         "objective",
+        d,
+    );
+    // Scripted-actor ids: unique within the stage-5 actors namespace (DSL v0.6).
+    dup_check(
+        c.quests
+            .content
+            .actors
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (a.id.as_str(), format!("/content/actors/{i}/id"))),
+        "quests",
+        "actor",
         d,
     );
     // Dialogue trees: at most one per NPC (a duplicate tree is a duplicate npc
@@ -882,6 +904,8 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
 ///   `begin-stealth`/`end-stealth` verbs, the `play-sound` effect and the
 ///   `narrate` `art` style. (Sound-id `DW0326` and art-glyph `DW0328` are
 ///   compiler-side checks.)
+/// - **spec-0014 (stage 5)**: scripted `actors` + the staging effects
+///   (`spawn-actor`/`despawn-actor`/`move-actor`/`unleash-actor`, `sequence`).
 /// - **task #55 (stage 5)**: the per-effect `requires_flags` flag gate on
 ///   quest/trigger effects (see [`reserved_v06_effect_flags`]).
 fn reserved_v06(c: &Campaign, d: &mut Vec<Diagnostic>) {
@@ -926,10 +950,10 @@ fn reserved_v06_effect_flags(c: &Campaign, d: &mut Vec<Diagnostic>) {
 }
 
 /// Stage-1 `horizon`/`boundary` gating + validation (spec-0013), plus the
-/// stage-5 v0.6 effect-verb gating (spec-0012/0014: `set-checkpoint`,
-/// `begin-stealth`/`end-stealth`, `play-sound`, `narrate art`; gated on the
-/// quests stage). The per-effect `requires_flags` gate is handled separately in
-/// [`reserved_v06_effect_flags`].
+/// stage-5 v0.6 gating of `actors` and the effect verbs (spec-0012/0014:
+/// `set-checkpoint`, `begin-stealth`/`end-stealth`, `play-sound`, `narrate art`,
+/// and the actor staging verbs; gated on the quests stage). The per-effect
+/// `requires_flags` gate is handled separately in [`reserved_v06_effect_flags`].
 fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
     use crate::stages::Horizon;
 
@@ -987,11 +1011,22 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
     }
 
-    // --- Stage 5: quest + trigger effects (spec-0012 / spec-0014), gated on the
-    //     quests stage. `check` covers every v0.6 effect verb (`set-checkpoint`,
-    //     `begin-stealth`/`end-stealth`, `play-sound` — via `v06_effect`) and the
-    //     `narrate` `art` style. ---
+    // --- Stage 5: scripted actors + quest / trigger effects (spec-0012 /
+    //     spec-0014), gated on the quests stage. `check` covers every v0.6 effect
+    //     verb (`set-checkpoint`, `begin-stealth`/`end-stealth`, `play-sound`,
+    //     `spawn-actor`/`despawn-actor`/`move-actor`/`unleash-actor`, `sequence`
+    //     — via `v06_effect`) and the `narrate` `art` style. ---
     if !is_v06(c.quests.dsl_version.as_str()) {
+        if !c.quests.content.actors.is_empty() {
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "quests",
+                "/content/actors".to_string(),
+                "stage-5 `actors` require dsl_version 0.6.0 — raise this stage's `dsl_version` to \
+                 0.6.0, or remove the actors"
+                    .to_string(),
+            ));
+        }
         let res = |d: &mut Vec<Diagnostic>, path: String, what: &str| {
             d.push(Diagnostic::error(
                 codes::RESERVED,
@@ -1307,6 +1342,212 @@ fn for_each_effect(q: &crate::stages::Quest, mut f: impl FnMut(String, &QuestEff
     }
     for (m, eff) in q.on_complete.iter().enumerate() {
         f(format!("on_complete/{m}"), eff);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DSL v0.6 — scripted actors + staging effects (spec-0014)
+// ---------------------------------------------------------------------------
+
+/// Recursively visit every effect in `effs`, descending into `sequence` steps and
+/// `move-actor` `on_arrive` bundles.
+fn walk_effects_deep(effs: &[QuestEffect], f: &mut dyn FnMut(&QuestEffect)) {
+    for e in effs {
+        f(e);
+        match e {
+            QuestEffect::Sequence { steps } => {
+                for s in steps {
+                    walk_effects_deep(&s.effects, f);
+                }
+            }
+            QuestEffect::MoveActor { on_arrive, .. } => walk_effects_deep(on_arrive, f),
+            _ => {}
+        }
+    }
+}
+
+/// True if `e` is (or transitively reaches, via a `move-actor` `on_arrive`) a
+/// `sequence` — the recursion `DW0329` forbids inside another sequence's steps.
+fn reaches_sequence(e: &QuestEffect) -> bool {
+    match e {
+        QuestEffect::Sequence { .. } => true,
+        QuestEffect::MoveActor { on_arrive, .. } => on_arrive.iter().any(reaches_sequence),
+        _ => false,
+    }
+}
+
+/// Reject a `sequence` nested inside another `sequence` (`DW0329`). Recurses into a
+/// `move-actor` `on_arrive` (a sequence there is legal — not yet inside a sequence)
+/// but not into an already-flagged sequence's steps (avoids double-reporting).
+fn check_no_nested_sequence(effs: &[QuestEffect], path: &str, d: &mut Vec<Diagnostic>) {
+    for e in effs {
+        match e {
+            QuestEffect::Sequence { steps } => {
+                for s in steps {
+                    for inner in &s.effects {
+                        if reaches_sequence(inner) {
+                            d.push(Diagnostic::error(
+                                codes::NESTED_SEQUENCE,
+                                "quests",
+                                path.to_string(),
+                                "a `sequence` effect is nested inside another `sequence` — \
+                                 timelines do not recurse (spec-0014). Flatten the inner steps \
+                                 into the outer timeline (shift their `at_ticks` by the inner \
+                                 sequence's start), or drive the second beat from a flag/objective"
+                                    .to_string(),
+                            ));
+                        }
+                    }
+                }
+            }
+            QuestEffect::MoveActor { on_arrive, .. } => {
+                check_no_nested_sequence(on_arrive, path, d);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// DSL v0.6 checks (spec-0014): actor entity ids, skins, anchor resolution, actor
+/// references from staging effects, and the no-nested-`sequence` rule. Gated on the
+/// quests stage version by the caller.
+fn v06_checks(
+    c: &Campaign,
+    anchors: &dyn AnchorRegistry,
+    entities: &dyn EntityRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let quests = &c.quests.content;
+    let declared: BTreeSet<&str> = quests.actors.iter().map(|a| a.id.as_str()).collect();
+
+    // Anchor names provided by single-prefab areas (pool areas resolve anchors in
+    // the compiler, so their presence defers the check — mirroring `DW0142`'s
+    // single-prefab-only scope; never a false positive).
+    let mut anchor_union: BTreeSet<&str> = BTreeSet::new();
+    for a in &c.world.content.areas {
+        if let Some(prefab) = &a.prefab
+            && let Some(set) = anchors.anchors_for(prefab)
+        {
+            for name in set {
+                anchor_union.insert(name.as_str());
+            }
+        }
+    }
+    let defer_anchors = c
+        .world
+        .content
+        .areas
+        .iter()
+        .any(|a| a.prefab_pool.is_some());
+    let anchor_known = |name: &str| defer_anchors || anchor_union.contains(name);
+
+    // Actor declarations: entity id, skin, spawn anchor.
+    let mut seen_skins: BTreeSet<&str> = BTreeSet::new();
+    for (i, a) in quests.actors.iter().enumerate() {
+        if !entities.contains(&a.entity) {
+            d.push(Diagnostic::error(
+                codes::ENTITY_UNKNOWN,
+                "quests",
+                format!("/content/actors/{i}/entity"),
+                format!(
+                    "actor entity `{}` is not a known 1.21.11 entity id — use a valid namespaced \
+                     entity id (e.g. `minecraft:warden`)",
+                    a.entity
+                ),
+            ));
+        }
+        if let Some(skin) = &a.skin {
+            if !is_kebab(&skin.texture_id) {
+                d.push(Diagnostic::error(
+                    codes::SKIN_INVALID,
+                    "quests",
+                    format!("/content/actors/{i}/skin/texture_id"),
+                    format!(
+                        "actor skin `texture_id` `{}` is malformed — it must be a bare kebab token \
+                         (e.g. `giant-idle`), matching the `skins/<texture_id>.png` filename",
+                        skin.texture_id
+                    ),
+                ));
+            } else if !seen_skins.insert(skin.texture_id.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::SKIN_INVALID,
+                    "quests",
+                    format!("/content/actors/{i}/skin/texture_id"),
+                    format!(
+                        "duplicate actor skin `texture_id` `{}` — each mannequin needs a distinct \
+                         texture; rename one (and its `skins/<id>.png`)",
+                        skin.texture_id
+                    ),
+                ));
+            }
+        }
+        if !anchor_known(a.anchor.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ANCHOR_UNRESOLVED,
+                "quests",
+                format!("/content/actors/{i}/anchor"),
+                format!(
+                    "actor anchor `{}` is not provided by any area's prefab — use an anchor a \
+                     prefab exposes, or bind a prefab/pool that carries it",
+                    a.anchor
+                ),
+            ));
+        }
+    }
+
+    // Effect-level: actor references (DW0112), move-actor destination anchors
+    // (DW0142), and the no-nested-sequence rule (DW0329). Deep-walk so effects
+    // nested in a `sequence` / `move-actor` `on_arrive` are covered.
+    let mut groups: Vec<(String, &[QuestEffect])> = Vec::new();
+    for (i, q) in quests.quests.iter().enumerate() {
+        for (key, effs) in &q.on_objective_complete {
+            groups.push((
+                format!("/content/quests/{i}/on_objective_complete/{key}"),
+                effs.as_slice(),
+            ));
+        }
+        groups.push((
+            format!("/content/quests/{i}/on_complete"),
+            q.on_complete.as_slice(),
+        ));
+    }
+    for (i, t) in quests.triggers.iter().enumerate() {
+        groups.push((
+            format!("/content/triggers/{i}/effects"),
+            t.effects.as_slice(),
+        ));
+    }
+    for (path, effs) in &groups {
+        let mut visit = |e: &QuestEffect| {
+            if let Some(actor) = e.actor_ref()
+                && !declared.contains(actor.as_str())
+            {
+                d.push(Diagnostic::error(
+                    codes::DANGLING_REF,
+                    "quests",
+                    path.clone(),
+                    format!(
+                        "actor staging effect references unknown actor `{actor}` — declare it in \
+                         the stage-5 `actors` list, or fix the reference"
+                    ),
+                ));
+            }
+            if let QuestEffect::MoveActor { to_anchor, .. } = e
+                && !anchor_known(to_anchor.as_str())
+            {
+                d.push(Diagnostic::error(
+                    codes::ANCHOR_UNRESOLVED,
+                    "quests",
+                    path.clone(),
+                    format!(
+                        "move-actor destination anchor `{to_anchor}` is not provided by any area's \
+                         prefab — use an anchor a prefab exposes"
+                    ),
+                ));
+            }
+        };
+        walk_effects_deep(effs, &mut visit);
+        check_no_nested_sequence(effs, path, d);
     }
 }
 

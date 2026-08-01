@@ -60,9 +60,80 @@ type ZoneCell = (String, [i32; 3], [u32; 3]);
 /// A stealth beat probe for [`verify_stealth`]: `(zones, firing step)`.
 type StealthProbe = (Vec<ZoneCell>, usize);
 
+/// `DW0325`: a `move-actor` destination unreachable by the actor's footprint over
+/// the assembled geometry, or an actor spawn/destination anchor that does not
+/// resolve to a placeable cell (spec-0014). Names the actor, the leg, and the
+/// first blocked cell.
+pub const DW_ACTOR_UNROUTABLE: &str = "DW0325";
+
 /// Default NPC walking speed in blocks/tick (spec-0008 §5; owner spike). Used when
 /// a `move-npc` effect omits `speed`.
 pub const DEFAULT_SPEED: f64 = 0.15;
+
+/// An entity's collision footprint over the voxel grid: the set of column offsets
+/// it occupies horizontally and the number of vertical cells it needs clear
+/// (`ceil(height)`). Standing feet-centred on a cell, an entity of `width <= 1`
+/// occupies a single column; a taller entity needs more headroom (the warden, 2.9
+/// tall, needs 3 cells vs a player's 2 — so it cannot walk a 2-high gap a player
+/// fits). Drives footprint-aware standability + A* so a `move-actor` path is
+/// walkable for the ACTUAL puppet, not a generic 1×2 humanoid (spec-0014, task #46).
+#[derive(Debug, Clone)]
+pub struct Footprint {
+    /// Horizontal column offsets `[dx, dz]` the body occupies (feet cell = `[0, 0]`).
+    cols: Vec<[i32; 2]>,
+    /// Vertical cells of clearance the body needs (`ceil(height)`, min 1).
+    height: i32,
+}
+
+impl Footprint {
+    /// The footprint for the given hitbox `width` × `height` in blocks. Feet-centred
+    /// on a cell: columns are the unit cells the width-wide AABB overlaps; height is
+    /// `ceil(height)` (min 1).
+    pub fn for_dims(width: f64, height: f64) -> Footprint {
+        let half = width / 2.0;
+        let lo = (0.5 - half).floor() as i32;
+        let hi = (0.5 + half - 1e-9).floor() as i32;
+        let mut cols = Vec::new();
+        for dx in lo..=hi {
+            for dz in lo..=hi {
+                cols.push([dx, dz]);
+            }
+        }
+        if cols.is_empty() {
+            cols.push([0, 0]);
+        }
+        let h = (height.ceil() as i32).max(1);
+        Footprint { cols, height: h }
+    }
+
+    /// The default humanoid footprint (player / villager / mannequin: 0.6 × 1.8 →
+    /// single column, 2 cells tall). Byte-identical to the pre-spec-0014 walkability
+    /// model, so `move-npc` and critical-path routing are unchanged.
+    pub fn player() -> Footprint {
+        Footprint::for_dims(0.6, 1.8)
+    }
+}
+
+/// The hitbox footprint for a vanilla entity id (spec-0014 per-entity dims table).
+/// Standing hitboxes for the 1.21.11 mobs an actor is likely to puppet; anything
+/// unlisted falls back to the humanoid default (0.6 × 1.95). Width only matters
+/// past 1.0 (sub-block mobs are single-column); height gates vertical clearance.
+pub fn entity_footprint(entity: &str) -> Footprint {
+    let (w, h) = match entity.strip_prefix("minecraft:").unwrap_or(entity) {
+        "warden" => (0.9, 2.9),
+        "iron_golem" => (1.4, 2.7),
+        "ravager" => (1.95, 2.2),
+        "hoglin" | "zoglin" => (1.4, 1.4),
+        "sheep" | "goat" | "pig" | "cow" | "mooshroom" | "wolf" | "fox" | "panda" => (0.9, 1.4),
+        "villager" | "zombie" | "husk" | "zombie_villager" => (0.6, 1.95),
+        "skeleton" | "stray" | "wither_skeleton" => (0.6, 1.99),
+        "creeper" | "enderman" => (0.6, 1.9),
+        "allay" | "vex" => (0.35, 0.6),
+        "armor_stand" | "player" | "mannequin" => (0.6, 1.8),
+        _ => (0.6, 1.95),
+    };
+    Footprint::for_dims(w, h)
+}
 
 /// How far to search for a standable floor cell when a `move-npc` endpoint anchor
 /// is a solid affordance (altar / gate bars / wall marker) the NPC must stop in
@@ -356,9 +427,18 @@ impl World {
     /// floor — a water surface is not standable, so the floor must be solid, not
     /// merely occupied; task #45).
     fn standable(&self, c: [i32; 3]) -> bool {
-        !self.is_occupied(c)
-            && !self.is_occupied([c[0], c[1] + 1, c[2]])
-            && self.is_solid([c[0], c[1] - 1, c[2]])
+        self.standable_fp(c, &Footprint::player())
+    }
+
+    /// Footprint-aware standability (spec-0014): every occupied column has its
+    /// `height` feet+body cells passable with solid floor directly below. For the
+    /// player footprint (single column, 2 tall) this is exactly the pre-0.6 rule.
+    fn standable_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
+        fp.cols.iter().all(|&[dx, dz]| {
+            let base = [c[0] + dx, c[1], c[2] + dz];
+            self.is_solid([base[0], base[1] - 1, base[2]])
+                && (0..fp.height).all(|dy| !self.is_occupied([base[0], base[1] + dy, base[2]]))
+        })
     }
 
     /// The nearest standable cell to `c` (itself if already standable), searched
@@ -370,7 +450,13 @@ impl World {
     /// (owner's "lands inside a wall" finding). Snapping resolves the walk to the
     /// floor cell in front of such an anchor.
     fn snap_standable(&self, c: [i32; 3], radius: i32) -> Option<[i32; 3]> {
-        if self.standable(c) {
+        self.snap_standable_fp(c, radius, &Footprint::player())
+    }
+
+    /// Footprint-aware nearest-standable snap (spec-0014), used by `move-actor`
+    /// endpoint resolution so a wide/tall puppet snaps to a cell IT can stand on.
+    fn snap_standable_fp(&self, c: [i32; 3], radius: i32, fp: &Footprint) -> Option<[i32; 3]> {
+        if self.standable_fp(c, fp) {
             return Some(c);
         }
         let mut best: Option<(i32, [i32; 3])> = None;
@@ -378,7 +464,7 @@ impl World {
             for dz in -radius..=radius {
                 for dx in -radius..=radius {
                     let n = [c[0] + dx, c[1] + dy, c[2] + dz];
-                    if !self.standable(n) {
+                    if !self.standable_fp(n, fp) {
                         continue;
                     }
                     let d2 = dx * dx + dy * dy + dz * dz;
@@ -404,8 +490,18 @@ impl World {
     /// error instead of a runtime strand on geometry the compiler wrongly "proved"
     /// connected (task #38). Steps level or down need no such clearance.
     fn neighbors(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
+        self.neighbors_fp(c, &Footprint::player())
+    }
+
+    /// Footprint-aware standable neighbours (spec-0014). A step **up** is a jump:
+    /// every occupied column's cell `height` above the feet (the swept head cell)
+    /// must be clear, generalising the player's single `c+2` head-bonk check.
+    fn neighbors_fp(&self, c: [i32; 3], fp: &Footprint) -> Vec<[i32; 3]> {
         const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
-        let head_clear_to_jump = !self.is_occupied([c[0], c[1] + 2, c[2]]);
+        let head_clear_to_jump = fp
+            .cols
+            .iter()
+            .all(|&[dx, dz]| !self.is_occupied([c[0] + dx, c[1] + fp.height, c[2] + dz]));
         let mut out = Vec::new();
         for (dx, dz) in HORIZ {
             for dy in [0i32, -1, 1] {
@@ -413,7 +509,7 @@ impl World {
                     continue; // no room to jump up from here
                 }
                 let n = [c[0] + dx, c[1] + dy, c[2] + dz];
-                if self.standable(n) {
+                if self.standable_fp(n, fp) {
                     out.push(n);
                 }
             }
@@ -426,10 +522,23 @@ impl World {
     /// frontier is ordered by `(f, g, cell)` and neighbours expand in a fixed
     /// order.
     fn find_path(&self, start: [i32; 3], goal: [i32; 3]) -> Option<Vec<[i32; 3]>> {
+        self.find_path_fp(start, goal, &Footprint::player())
+    }
+
+    /// Footprint-aware A* (spec-0014). Identical to the pre-0.6 A* for the player
+    /// footprint (so `move-npc` and critical-path routing stay byte-identical); a
+    /// wider/taller footprint prunes cells the puppet cannot occupy. Deterministic:
+    /// frontier ordered by `(f, g, cell)`, fixed neighbour order.
+    fn find_path_fp(
+        &self,
+        start: [i32; 3],
+        goal: [i32; 3],
+        fp: &Footprint,
+    ) -> Option<Vec<[i32; 3]>> {
         if start == goal {
-            return self.standable(start).then(|| vec![start]);
+            return self.standable_fp(start, fp).then(|| vec![start]);
         }
-        if !self.standable(start) || !self.standable(goal) {
+        if !self.standable_fp(start, fp) || !self.standable_fp(goal, fp) {
             return None;
         }
         let h = |c: [i32; 3]| ((c[0] - goal[0]).abs() + (c[2] - goal[2]).abs()) as u32;
@@ -453,7 +562,7 @@ impl World {
             if g > *g_score.get(&cur).unwrap_or(&u32::MAX) {
                 continue;
             }
-            for n in self.neighbors(cur) {
+            for n in self.neighbors_fp(cur, fp) {
                 let tentative = g + 1;
                 if tentative < *g_score.get(&n).unwrap_or(&u32::MAX) {
                     came_from.insert(n, cur);
@@ -639,6 +748,223 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
     Ok(out)
 }
 
+/// A planned `move-actor` (spec-0014): resolved endpoints, the per-tick waypoint
+/// polyline the emitter teleports the puppet along, and a yaw per waypoint tangent
+/// to the path (a wrong yaw moonwalks — task #46). `ticks() + 1` entries.
+#[derive(Debug, Clone)]
+pub struct ActorMovePlan {
+    /// The moving actor id (`actor/…`).
+    pub actor: String,
+    /// The destination anchor id (`anchor/…`).
+    pub to_anchor: String,
+    /// The integer target cell (feet), for the arrival assertion.
+    pub target: [i32; 3],
+    /// Per-tick world positions along the walked path.
+    pub waypoints: Vec<[f64; 3]>,
+    /// Per-waypoint yaw (degrees), tangent to the path (facing the next step).
+    pub yaws: Vec<i32>,
+}
+
+impl ActorMovePlan {
+    /// The final tick index (`waypoints.len() - 1`).
+    pub fn ticks(&self) -> usize {
+        self.waypoints.len().saturating_sub(1)
+    }
+}
+
+/// The stage-5 actor with this id, if declared.
+fn actor_of<'a>(plan: &'a Plan, actor_id: &str) -> Option<&'a delvewright_dsl::Actor> {
+    plan.campaign
+        .quests
+        .content
+        .actors
+        .iter()
+        .find(|a| a.id.as_str() == actor_id)
+}
+
+/// Resolve an anchor name to a world point by scanning every area (first match) —
+/// actors carry no area, so their anchors resolve globally like `open-gate`.
+fn actor_anchor_pos(plan: &Plan, anchor: &str) -> Option<[i32; 3]> {
+    for ((_, name), resolved) in &plan.anchors {
+        if name == anchor {
+            return Some(match resolved {
+                ResolvedAnchor::Point { pos, .. } => *pos,
+                ResolvedAnchor::Gate { from, .. } => *from,
+            });
+        }
+    }
+    None
+}
+
+/// The MC yaw (degrees, 0 = +z/south) for a horizontal movement delta, or `None`
+/// for no horizontal motion. `yaw = atan2(-dx, dz)`.
+fn yaw_of(dx: f64, dz: f64) -> Option<i32> {
+    if dx.abs() < 1e-6 && dz.abs() < 1e-6 {
+        return None;
+    }
+    let deg = (-dx).atan2(dz).to_degrees();
+    let mut y = deg.round() as i32 % 360;
+    if y < 0 {
+        y += 360;
+    }
+    Some(y)
+}
+
+/// A yaw per waypoint, each tangent to the path (facing the next distinct
+/// waypoint); the last reuses the previous. A puppet tp'd without a matching yaw
+/// moonwalks (task #46 packet evidence).
+fn yaws_along(waypoints: &[[f64; 3]]) -> Vec<i32> {
+    let n = waypoints.len();
+    let mut yaws = vec![0i32; n];
+    // Forward pass: each waypoint faces its NEXT step; the final waypoint reuses the
+    // last motion direction (so arrival keeps the walk facing, not a snap to south).
+    let mut last = 0i32;
+    for i in 0..n {
+        if i + 1 < n {
+            let a = waypoints[i];
+            let b = waypoints[i + 1];
+            if let Some(y) = yaw_of(b[0] - a[0], b[2] - a[2]) {
+                last = y;
+            }
+        }
+        yaws[i] = last;
+    }
+    yaws
+}
+
+/// The first cell along the straight start→target line the actor's footprint cannot
+/// stand on — a best-effort "first blocked cell" for the `DW0325` message.
+fn first_blocked_fp(world: &World, start: [i32; 3], target: [i32; 3], fp: &Footprint) -> [i32; 3] {
+    let d = [
+        target[0] - start[0],
+        target[1] - start[1],
+        target[2] - start[2],
+    ];
+    let steps = d[0].abs().max(d[1].abs()).max(d[2].abs()).max(1);
+    for s in 0..=steps {
+        let cell = [
+            start[0] + d[0] * s / steps,
+            start[1] + d[1] * s / steps,
+            start[2] + d[2] * s / steps,
+        ];
+        if !world.standable_fp(cell, fp) {
+            return cell;
+        }
+    }
+    target
+}
+
+/// Plan every `move-actor` into a walked-path [`ActorMovePlan`] over the actor's
+/// footprint, deduped by `(actor, to_anchor)` in first-seen order. `DW0325` when a
+/// move is unroutable (names actor, leg, first blocked cell).
+pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>, NavError> {
+    let mut out = Vec::new();
+    let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
+    for eff in all_effects(plan) {
+        let QuestEffect::MoveActor {
+            actor,
+            to_anchor,
+            speed,
+            ..
+        } = eff
+        else {
+            continue;
+        };
+        let key = (actor.as_str().to_string(), to_anchor.as_str().to_string());
+        if !seen.insert(key) {
+            continue;
+        }
+        let a = actor_of(plan, actor.as_str()).ok_or_else(|| NavError {
+            code: DW_ACTOR_UNROUTABLE,
+            message: format!(
+                "move-actor: unknown actor `{}` — declare it in the stage-5 `actors` list",
+                actor.as_str()
+            ),
+        })?;
+        let fp = entity_footprint(&a.entity);
+        let start_anchor = actor_anchor_pos(plan, a.anchor.as_str()).ok_or_else(|| NavError {
+            code: DW_ACTOR_UNROUTABLE,
+            message: format!(
+                "move-actor: actor `{}` spawn anchor `{}` did not resolve to a world position — \
+                 use a spawn `anchor` some area's prefab provides",
+                actor.as_str(),
+                a.anchor.as_str()
+            ),
+        })?;
+        let dest = actor_anchor_pos(plan, to_anchor.as_str()).ok_or_else(|| NavError {
+            code: DW_ACTOR_UNROUTABLE,
+            message: format!(
+                "move-actor: destination anchor `{}` for actor `{}` did not resolve to a world \
+                 position — use a `to_anchor` some area's prefab provides",
+                to_anchor.as_str(),
+                actor.as_str()
+            ),
+        })?;
+        let start = world
+            .snap_standable_fp(start_anchor, SNAP_RADIUS, &fp)
+            .unwrap_or(start_anchor);
+        let target = world
+            .snap_standable_fp(dest, SNAP_RADIUS, &fp)
+            .ok_or_else(|| NavError {
+                code: DW_ACTOR_UNROUTABLE,
+                message: format!(
+                    "move-actor: no cell the `{}` footprint can stand on near destination anchor \
+                     `{}` {dest:?} for actor `{}` — the anchor is walled in, too low a ceiling for \
+                     this mob, or over void",
+                    a.entity,
+                    to_anchor.as_str(),
+                    actor.as_str()
+                ),
+            })?;
+        let cells = world.find_path_fp(start, target, &fp).ok_or_else(|| {
+            let blocked = first_blocked_fp(world, start, target, &fp);
+            NavError {
+                code: DW_ACTOR_UNROUTABLE,
+                message: format!(
+                    "move-actor: actor `{}` ({}) cannot walk the leg `{}` {start:?} → `{}` {target:?} \
+                     — no collision-free path for its footprint over the assembled geometry (first \
+                     blocked cell ~{blocked:?}). Route the move within one connected area, widen the \
+                     corridor/ceiling for this mob, or split it into shorter reachable hops",
+                    actor.as_str(),
+                    a.entity,
+                    a.anchor.as_str(),
+                    to_anchor.as_str(),
+                ),
+            }
+        })?;
+        let waypoints = resample(&cells, speed.unwrap_or(DEFAULT_SPEED));
+        let yaws = yaws_along(&waypoints);
+        out.push(ActorMovePlan {
+            actor: actor.as_str().to_string(),
+            to_anchor: to_anchor.as_str().to_string(),
+            target,
+            waypoints,
+            yaws,
+        });
+    }
+    Ok(out)
+}
+
+/// Verify every declared actor's spawn anchor resolves to a world position (the
+/// puppet has somewhere to spawn). `DW0325` when it does not. Needs no `World` (a
+/// spawn is a summon, not a walk), so it runs even for spawn-only campaigns.
+pub fn check_actor_placement(plan: &Plan) -> Result<(), NavError> {
+    for a in &plan.campaign.quests.content.actors {
+        if actor_anchor_pos(plan, a.anchor.as_str()).is_none() {
+            return Err(NavError {
+                code: DW_ACTOR_UNROUTABLE,
+                message: format!(
+                    "actor `{}` spawn anchor `{}` did not resolve to a world position — use an \
+                     `anchor` some area's prefab provides",
+                    a.id.as_str(),
+                    a.anchor.as_str()
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
 /// The home-anchor id of an NPC, for diagnostics (or `?` if unknown).
 fn plan_npc_anchor(plan: &Plan, npc_id: &str) -> String {
     plan.campaign
@@ -742,15 +1068,38 @@ fn all_effects<'a>(plan: &'a Plan) -> Vec<&'a QuestEffect> {
             .flatten()
             .chain(&q.on_complete)
         {
-            out.push(e);
+            push_deep(e, &mut out);
         }
     }
     for t in &plan.campaign.quests.content.triggers {
         for e in &t.effects {
-            out.push(e);
+            push_deep(e, &mut out);
         }
     }
     out
+}
+
+/// Push `e` and, recursively, every effect nested in a `sequence` step or a
+/// `move-actor` `on_arrive` (spec-0014), so nav planning sees moves/cutscenes
+/// wherever they appear. Pre-0.6 campaigns have no nesting, so the flattened list
+/// equals the shallow one — output stays byte-identical.
+fn push_deep<'a>(e: &'a QuestEffect, out: &mut Vec<&'a QuestEffect>) {
+    out.push(e);
+    match e {
+        QuestEffect::Sequence { steps } => {
+            for s in steps {
+                for inner in &s.effects {
+                    push_deep(inner, out);
+                }
+            }
+        }
+        QuestEffect::MoveActor { on_arrive, .. } => {
+            for inner in on_arrive {
+                push_deep(inner, out);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Whether the campaign uses any verb that needs the voxel `World` (`move-npc` or
@@ -760,7 +1109,7 @@ pub fn needs_world(plan: &Plan) -> bool {
     all_effects(plan).iter().any(|e| {
         matches!(
             e,
-            QuestEffect::MoveNpc { .. } | QuestEffect::Cutscene { .. }
+            QuestEffect::MoveNpc { .. } | QuestEffect::Cutscene { .. } | QuestEffect::MoveActor { .. }
         )
     })
     // The critical-path walkability check (DW0311) also needs the occupancy model.
@@ -1591,5 +1940,71 @@ mod tests {
             0usize,
         )];
         assert!(verify_stealth(&world, &beats, &[at_step([0, 65, 1], 0)]).is_ok());
+    }
+
+    #[test]
+    fn player_footprint_matches_pre_0_6_walkability() {
+        // find_path (the delegating wrapper) must equal find_path_fp(player) — the
+        // byte-identity guarantee for move-npc / critical-path.
+        let world = floored(6, 3, 65, &[[3, 65, 1]]);
+        let fp = Footprint::player();
+        let a = [0, 65, 1];
+        let b = [5, 65, 1];
+        assert_eq!(world.find_path(a, b), world.find_path_fp(a, b, &fp));
+        // Player footprint is one column, two cells tall.
+        assert_eq!(fp.cols, vec![[0, 0]]);
+        assert_eq!(fp.height, 2);
+    }
+
+    #[test]
+    fn tall_footprint_cannot_walk_a_two_high_gap_a_player_fits() {
+        // `floored` gives a floor at y-1 and a ceiling at y+2 → two clear cells (y,
+        // y+1): a player (2 tall) fits; a warden (2.9 → 3 tall) head-bonks the
+        // ceiling, so its footprint has no walkable path (the DW0325 condition).
+        let world = floored(6, 3, 65, &[]);
+        let a = [0, 65, 1];
+        let b = [5, 65, 1];
+        let player = Footprint::player();
+        let warden = entity_footprint("minecraft:warden");
+        assert_eq!(warden.height, 3, "warden is 2.9 tall → 3 cells");
+        assert!(
+            world.find_path_fp(a, b, &player).is_some(),
+            "a player fits the 2-high corridor"
+        );
+        assert!(
+            !world.standable_fp(a, &warden),
+            "a warden cannot stand under a 2-high ceiling"
+        );
+        assert!(
+            world.find_path_fp(a, b, &warden).is_none(),
+            "a warden cannot walk the 2-high corridor → unroutable"
+        );
+        // The best-effort blocked-cell reporter names a non-standable cell on the leg.
+        let blocked = first_blocked_fp(&world, a, b, &warden);
+        assert!(!world.standable_fp(blocked, &warden));
+    }
+
+    #[test]
+    fn dims_table_and_default_fallback() {
+        // Sub-block-wide mobs are single-column; the default fallback is humanoid.
+        assert_eq!(entity_footprint("minecraft:sheep").cols, vec![[0, 0]]);
+        assert_eq!(entity_footprint("minecraft:sheep").height, 2); // 1.3 → 2
+        assert_eq!(entity_footprint("minecraft:iron_golem").height, 3); // 2.7 → 3
+        let unknown = entity_footprint("minecraft:some_new_mob");
+        assert_eq!(unknown.cols, vec![[0, 0]]);
+        assert_eq!(unknown.height, 2);
+    }
+
+    #[test]
+    fn yaw_follows_the_movement_tangent() {
+        // MC yaw: 0 = +z (south), 90 = -x (west), 180 = -z (north), 270 = +x (east).
+        assert_eq!(yaw_of(0.0, 1.0), Some(0));
+        assert_eq!(yaw_of(-1.0, 0.0), Some(90));
+        assert_eq!(yaw_of(0.0, -1.0), Some(180));
+        assert_eq!(yaw_of(1.0, 0.0), Some(270));
+        assert_eq!(yaw_of(0.0, 0.0), None);
+        // A straight +x path yaws every waypoint east (270), including the last.
+        let wps = vec![[0.0, 65.0, 0.0], [1.0, 65.0, 0.0], [2.0, 65.0, 0.0]];
+        assert_eq!(yaws_along(&wps), vec![270, 270, 270]);
     }
 }

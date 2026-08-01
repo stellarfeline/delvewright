@@ -212,13 +212,24 @@ pub fn build(
     // the routes + the assembled occupancy for the DW0724 clear-eye self-check);
     // empty for a campaign with no walked leg, so its render plan stays byte-identical.
     let mut pov_shots: Vec<crate::render_plan::PovShot> = Vec::new();
+
+    // Actor spawn anchors must resolve to a world position (spec-0014); a spawn is a
+    // summon, not a walk, so this needs no occupancy model. DW0325 if one dangles.
+    crate::nav::check_actor_placement(plan)?;
     let has_waves = !plan.campaign.quests.content.waves.is_empty();
-    let (moves, wave_placements): (Vec<crate::nav::MovePlan>, WavePlacements) =
-        if crate::nav::needs_world(plan) || has_waves {
+    let (moves, actor_moves, wave_placements): (
+        Vec<crate::nav::MovePlan>,
+        Vec<crate::nav::ActorMovePlan>,
+        WavePlacements,
+    ) = if crate::nav::needs_world(plan) || has_waves {
+        {
             let world =
                 crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid);
-            let moves = if crate::nav::needs_world(plan) {
+            let (moves, actor_moves) = if crate::nav::needs_world(plan) {
                 let m = crate::nav::plan_moves(plan, &world)?;
+                // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
+                // unroutable. Planned alongside move-npc from the same occupancy model.
+                let am = crate::nav::plan_actor_moves(plan, &world)?;
                 crate::nav::check_cutscenes(plan, &world)?;
                 crate::nav::check_critical_path(plan, &world)?;
                 // v0.6 checkpoint no-stranding + placement proofs (spec-0012,
@@ -259,17 +270,18 @@ pub fn build(
                     .map(|s| (s.id.clone(), s.eye_cell()))
                     .collect();
                 crate::nav::verify_pov_cameras(&world, &eyes)?;
-                m
+                (m, am)
             } else {
-                Vec::new()
+                (Vec::new(), Vec::new())
             };
             // Seat each wave mob on a validated standable cell near its anchor, in
             // room only (DW0312 if the room lacks the footing).
             let waves = plan_wave_spawns(plan, &world)?;
-            (moves, waves)
-        } else {
-            (Vec::new(), BTreeMap::new())
-        };
+            (moves, actor_moves, waves)
+        }
+    } else {
+        (Vec::new(), Vec::new(), BTreeMap::new())
+    };
 
     // Every `spawn-wave` effect must resolve a spawn position, or its emitted
     // `function <ns>:spawn_<wave>` call would dangle to a never-emitted function and
@@ -330,6 +342,7 @@ pub fn build(
         plan,
         &sentinels,
         &moves,
+        &actor_moves,
         &relight.placements,
         &wave_placements,
     );
@@ -359,7 +372,7 @@ pub fn build(
     }
 
     // ---- packtest datapack ----
-    emit_packtest(plan, &mut out, &moves);
+    emit_packtest(plan, &mut out, &moves, &actor_moves);
 
     // ---- creator overlay (playtest-only; spec-0006) ----
     // A self-contained module (crate::creator). Its `.mcfunction`s are plain
@@ -681,6 +694,7 @@ fn emit_functions(
     plan: &Plan,
     sentinels: &Sentinels,
     moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
     relight: &[crate::light::Placement],
     wave_placements: &WavePlacements,
 ) -> Vec<(String, String)> {
@@ -1635,6 +1649,8 @@ fn emit_functions(
     // v0.4 generated functions: NPC moves, cutscene drivers, trigger effects.
     // Each is empty for a campaign that uses none (byte-identical v0.2/v0.3).
     fns.extend(movenpc_fns(plan, moves));
+    fns.extend(actor_fns(plan, actor_moves));
+    fns.extend(sequence_fns(plan));
     fns.extend(cutscene_fns(plan));
     fns.extend(env_trigger_fns(plan));
     fns.extend(boundary_fns(plan));
@@ -1897,6 +1913,51 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
         }
         QuestEffect::EndStealth => {
             body.push("scoreboard players set #stealth dw.sys 0".to_string());
+        }
+        // --- DSL v0.6 actor staging effects (spec-0014) ---
+        QuestEffect::SpawnActor { actor } => {
+            body.push(format!(
+                "function {ns}:spawn_actor_{}",
+                plan::safe_local(actor.as_str())
+            ));
+        }
+        QuestEffect::DespawnActor { actor, style } => {
+            emit_despawn_actor(actor.as_str(), *style, body);
+        }
+        QuestEffect::MoveActor {
+            actor, to_anchor, ..
+        } => {
+            body.push(format!(
+                "function {ns}:{}",
+                moveactor_fn(actor.as_str(), to_anchor.as_str())
+            ));
+        }
+        QuestEffect::UnleashActor { actor } => {
+            body.push(format!(
+                "function {ns}:unleash_{}",
+                plan::safe_local(actor.as_str())
+            ));
+        }
+        QuestEffect::Sequence { steps } => {
+            body.push(format!("function {ns}:{}", sequence_fn(steps)));
+        }
+    }
+}
+
+/// Emit a `despawn-actor` inline (spec-0014). Both styles target the actor body tag
+/// `dw_actor_<id>` (so a puppet **or** an unleashed twin is removed — re-caging is
+/// despawn + spawn). `kill` plays the vanilla death animation in place; `vanish`
+/// relocates the (Silent) body far below the floor first, so the death sequence
+/// plays entirely out of the players' view — a silent removal from two intended
+/// primitives (tp + kill).
+fn emit_despawn_actor(actor: &str, style: delvewright_dsl::DespawnStyle, body: &mut Vec<String>) {
+    use delvewright_dsl::DespawnStyle;
+    let safe = plan::safe_local(actor);
+    match style {
+        DespawnStyle::Kill => body.push(format!("kill @e[tag=dw_actor_{safe}]")),
+        DespawnStyle::Vanish => {
+            body.push(format!("tp @e[tag=dw_actor_{safe}] ~ -128 ~"));
+            body.push(format!("kill @e[tag=dw_actor_{safe}]"));
         }
     }
 }
@@ -2167,7 +2228,9 @@ fn flag_scores_selector(flags: &[delvewright_dsl::FlagId]) -> String {
 }
 
 /// Every quest effect in the campaign (objective-complete, quest-complete, and
-/// trigger effects), for collecting v0.4 lifecycle/cutscene targets.
+/// trigger effects), flattened through `sequence` steps and `move-actor` `on_arrive`
+/// (spec-0014) so nested lifecycle/cutscene/actor targets are collected. Pre-0.6
+/// campaigns have no nesting, so this equals the shallow list (byte-identical).
 fn all_campaign_effects(c: &delvewright_dsl::Campaign) -> Vec<&QuestEffect> {
     let mut out = Vec::new();
     for q in &c.quests.content.quests {
@@ -2177,15 +2240,36 @@ fn all_campaign_effects(c: &delvewright_dsl::Campaign) -> Vec<&QuestEffect> {
             .flatten()
             .chain(&q.on_complete)
         {
-            out.push(e);
+            push_effect_deep(e, &mut out);
         }
     }
     for t in &c.quests.content.triggers {
         for e in &t.effects {
-            out.push(e);
+            push_effect_deep(e, &mut out);
         }
     }
     out
+}
+
+/// Push `e` and every effect nested in a `sequence` step / `move-actor` `on_arrive`
+/// (spec-0014).
+fn push_effect_deep<'a>(e: &'a QuestEffect, out: &mut Vec<&'a QuestEffect>) {
+    out.push(e);
+    match e {
+        QuestEffect::Sequence { steps } => {
+            for s in steps {
+                for inner in &s.effects {
+                    push_effect_deep(inner, out);
+                }
+            }
+        }
+        QuestEffect::MoveActor { on_arrive, .. } => {
+            for inner in on_arrive {
+                push_effect_deep(inner, out);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// The scoreboard-safe suffix shared by a move's driver functions/sentinels.
@@ -2242,6 +2326,241 @@ fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, Stri
             total + 1
         ));
         out.push((format!("mv_tick_{bare}"), lines(&tick)));
+    }
+    out
+}
+
+/// The spawn yaw for an actor from its `facing` (default south = 0).
+fn actor_facing_yaw(a: &delvewright_dsl::Actor) -> i32 {
+    a.facing.map(|f| facing_yaw(Some(f.token()))).unwrap_or(0)
+}
+
+/// The `/summon` command for an actor's caged puppet (spec-0014). NoAI/Silent/
+/// no-loot (`DeathLootTable` empty), tag `dw_actor` + `dw_actor_<id>` + a
+/// puppet-only `dw_pup_<id>` marker (so `unleash`/`move` target the puppet without
+/// touching a real-AI twin). `Invulnerable` unless `vulnerable`; a vulnerable puppet
+/// stays knockback-immune (`knockback_resistance` 1.0) — the tower-defense creep. A
+/// `skin` re-dresses it as a `minecraft:mannequin`, exactly as a stage-2 NPC.
+fn actor_puppet_summon(a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> String {
+    let safe = plan::safe_local(a.id.as_str());
+    let tags = format!("Tags:[\"dw_actor\",\"dw_actor_{safe}\",\"dw_pup_{safe}\"]");
+    if let Some(skin) = &a.skin {
+        let desc = a
+            .name
+            .as_deref()
+            .unwrap_or_else(|| a.id.as_str().rsplit('/').next().unwrap_or("actor"));
+        format!(
+            "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,pose:\"standing\",Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},{tags}}}",
+            pos[0],
+            pos[1],
+            pos[2],
+            skin.texture_id,
+            skin.model.token(),
+            snbt_text_component(desc)
+        )
+    } else {
+        let inv = if a.vulnerable { 0 } else { 1 };
+        let name = a
+            .name
+            .as_deref()
+            .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)))
+            .unwrap_or_default();
+        let attrs = if a.vulnerable {
+            ",attributes:[{id:\"minecraft:knockback_resistance\",base:1.0}]"
+        } else {
+            ""
+        };
+        format!(
+            "summon {} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Invulnerable:{inv}b,DeathLootTable:\"minecraft:empty\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}}}",
+            a.entity, pos[0], pos[1], pos[2]
+        )
+    }
+}
+
+/// The `/summon` command (relative coords, run `execute at` the puppet) for an
+/// actor's real-AI twin (spec-0014 `unleash`): the real `entity` with AI enabled,
+/// same name and body tag (`dw_actor` + `dw_actor_<id>`), but **no** `dw_pup_<id>`
+/// marker — so killing the puppet by its marker leaves the twin fighting.
+fn actor_twin_summon(a: &delvewright_dsl::Actor) -> String {
+    let safe = plan::safe_local(a.id.as_str());
+    let name = a
+        .name
+        .as_deref()
+        .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)))
+        .unwrap_or_default();
+    format!(
+        "summon {} ~ ~ ~ {{PersistenceRequired:1b,DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}}}",
+        a.entity
+    )
+}
+
+/// The generated start-function name for a `move-actor` (content key).
+fn moveactor_fn(actor: &str, to_anchor: &str) -> String {
+    format!(
+        "ma_{}_{}",
+        plan::safe_local(actor),
+        plan::safe_local(to_anchor)
+    )
+}
+
+/// The scoreboard-safe suffix shared by a move-actor's driver functions/sentinels.
+fn moveactor_bare(actor: &str, to_anchor: &str) -> String {
+    moveactor_fn(actor, to_anchor)
+        .strip_prefix("ma_")
+        .unwrap_or("move")
+        .to_string()
+}
+
+/// A deterministic content key for a `sequence` (spec-0014) — FNV-1a over the steps'
+/// stable `Debug` rendering, so identical timelines share one function and different
+/// ones do not collide. No wall-clock / hash-order input (ADR-0006).
+fn sequence_key(steps: &[delvewright_dsl::SequenceStep]) -> String {
+    let s = format!("{steps:?}");
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in s.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
+/// The generated start-function name for a `sequence` effect (content key).
+fn sequence_fn(steps: &[delvewright_dsl::SequenceStep]) -> String {
+    format!("seq_{}", sequence_key(steps))
+}
+
+/// Actor staging functions (spec-0014): a `spawn_actor_<id>` (idempotent summon) and
+/// `unleash_<id>` (puppet → real-AI twin) per declared actor, plus a per-tick
+/// teleport driver (with tangent yaw and an `on_arrive` bundle) per planned
+/// `move-actor`. Empty for a campaign with no actors (pre-0.6 byte-identical).
+fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for a in &plan.campaign.quests.content.actors {
+        let safe = plan::safe_local(a.id.as_str());
+        let Some(pos) = anchor_point_any(plan, a.anchor.as_str()) else {
+            continue; // resolution guaranteed by check_actor_placement (DW0325)
+        };
+        let yaw = actor_facing_yaw(a);
+        out.push((
+            format!("spawn_actor_{safe}"),
+            lines(&[format!(
+                "execute unless entity @e[tag=dw_actor_{safe}] run {}",
+                actor_puppet_summon(a, pos, yaw)
+            )]),
+        ));
+        out.push((
+            format!("unleash_{safe}"),
+            lines(&[
+                format!(
+                    "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
+                    actor_twin_summon(a)
+                ),
+                format!("kill @e[tag=dw_pup_{safe}]"),
+            ]),
+        ));
+    }
+    // move-actor per-tick drivers.
+    for m in actor_moves {
+        let safe = plan::safe_local(&m.actor);
+        let bare = moveactor_bare(&m.actor, &m.to_anchor);
+        let total = m.ticks();
+        // The on_arrive bundle for this (actor, to_anchor) — the first-seen effect,
+        // matching the planner's dedup order.
+        let on_arrive: &[QuestEffect] = all_campaign_effects(plan.campaign)
+            .into_iter()
+            .find_map(|e| match e {
+                QuestEffect::MoveActor {
+                    actor,
+                    to_anchor,
+                    on_arrive,
+                    ..
+                } if actor.as_str() == m.actor && to_anchor.as_str() == m.to_anchor => {
+                    Some(on_arrive.as_slice())
+                }
+                _ => None,
+            })
+            .unwrap_or(&[]);
+
+        let start = vec![
+            format!("execute if score #arun_{bare} dw.sys matches 1 run return fail"),
+            format!("scoreboard players set #arun_{bare} dw.sys 1"),
+            format!("scoreboard players set #at_{bare} dw.sys 0"),
+            format!("schedule function {ns}:ma_tick_{bare} 1t"),
+        ];
+        out.push((moveactor_fn(&m.actor, &m.to_anchor), lines(&start)));
+
+        let mut tick: Vec<String> = Vec::new();
+        for (t, (w, y)) in m.waypoints.iter().zip(m.yaws.iter()).enumerate() {
+            tick.push(format!(
+                "execute if score #at_{bare} dw.sys matches {t} run tp @e[tag=dw_pup_{safe}] {} {} {} {y} 0",
+                fmt_f64(w[0]),
+                fmt_f64(w[1]),
+                fmt_f64(w[2])
+            ));
+        }
+        if !on_arrive.is_empty() {
+            tick.push(format!(
+                "execute if score #at_{bare} dw.sys matches {total} run function {ns}:ma_arrive_{bare}"
+            ));
+        }
+        tick.push(format!("scoreboard players add #at_{bare} dw.sys 1"));
+        tick.push(format!(
+            "execute if score #at_{bare} dw.sys matches {}.. run scoreboard players set #arun_{bare} dw.sys 0",
+            total + 1
+        ));
+        tick.push(format!(
+            "execute unless score #at_{bare} dw.sys matches {}.. run schedule function {ns}:ma_tick_{bare} 1t",
+            total + 1
+        ));
+        out.push((format!("ma_tick_{bare}"), lines(&tick)));
+
+        if !on_arrive.is_empty() {
+            let mut arrive: Vec<String> = Vec::new();
+            for e in on_arrive {
+                emit_quest_effect(plan, e, &mut arrive);
+            }
+            out.push((format!("ma_arrive_{bare}"), lines(&arrive)));
+        }
+    }
+    out
+}
+
+/// `sequence` timeline functions (spec-0014): one start function that schedules each
+/// step's effect-group at its exact `at_ticks` offset, plus one function per step.
+/// Deduped by content key. Empty for a campaign with no sequences (byte-identical).
+fn sequence_fns(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for eff in all_campaign_effects(plan.campaign) {
+        let QuestEffect::Sequence { steps } = eff else {
+            continue;
+        };
+        let key = sequence_key(steps);
+        if !seen.insert(key.clone()) {
+            continue;
+        }
+        let base = format!("seq_{key}");
+        let mut start: Vec<String> = Vec::new();
+        for (i, step) in steps.iter().enumerate() {
+            if step.at_ticks == 0 {
+                start.push(format!("function {ns}:{base}_{i}"));
+            } else {
+                start.push(format!(
+                    "schedule function {ns}:{base}_{i} {}t",
+                    step.at_ticks
+                ));
+            }
+        }
+        out.push((base.clone(), lines(&start)));
+        for (i, step) in steps.iter().enumerate() {
+            let mut b: Vec<String> = Vec::new();
+            for e in &step.effects {
+                emit_quest_effect(plan, e, &mut b);
+            }
+            out.push((format!("{base}_{i}"), lines(&b)));
+        }
     }
     out
 }
@@ -3243,7 +3562,12 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
 /// with `-Dpacktest.auto` (exit code = failed tests). These functions use
 /// PackTest-only commands and run on the modded validation server, so they are
 /// exempt from the vanilla command-tree validator (see `is_vanilla_function`).
-fn emit_packtest(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::MovePlan]) {
+fn emit_packtest(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+) {
     let ns = &plan.namespace;
     let c = plan.campaign;
     put_json(
@@ -3360,6 +3684,10 @@ fn emit_packtest(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::MovePl
     // v0.6: checkpoint respawn contract + stealth kill/spare judge (spec-0012 /
     // spec-0014). Emits nothing when the campaign uses neither.
     emit_v06_packtests(plan, out);
+
+    // v0.6 (spec-0014): actor spawn/despawn (kill vs vanish), move-actor arrival,
+    // unleash swap. Emits nothing for a campaign with no actors.
+    emit_v06_actor_packtests(plan, out, actor_moves);
 }
 
 /// v0.6 boundary PackTests (spec-0013): a player outside the region is returned to
@@ -3515,6 +3843,134 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
             format!("packtest-datapack/data/{ns}/test/v06_stealth.mcfunction"),
             lines(&t).into_bytes(),
         );
+    }
+}
+
+/// v0.6 PackTests (spec-0014): a `spawn-actor` puppet appears and both despawn
+/// styles remove it; a `move-actor` walks its puppet to the destination cell (its
+/// `on_arrive` bundle runs on the same final tick); `unleash-actor` swaps the NoAI
+/// puppet for a real-AI twin. Single-tick assertable; sequence-exact-tick timing and
+/// per-tick yaw/NBT are covered by compiler unit tests (they assert the emitted
+/// commands directly — stronger and faster than a timing gametest). Emits nothing
+/// when the campaign declares no actors.
+fn emit_v06_actor_packtests(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    actor_moves: &[crate::nav::ActorMovePlan],
+) {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let actors = &c.quests.content.actors;
+    if actors.is_empty() {
+        return;
+    }
+    let mut write = |name: &str, body: Vec<String>| {
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
+            lines(&body).into_bytes(),
+        );
+    };
+
+    // spawn-actor + despawn kill/vanish: the puppet appears, and either style
+    // removes it. The visible difference (kill = in-place death animation, vanish =
+    // silent relocate-then-kill out of view) is a client-eyes distinction; CI
+    // asserts both leave zero entities under the actor tag.
+    if let Some(a) = actors.first() {
+        let safe = plan::safe_local(a.id.as_str());
+        let mut b = packtest_header(&format!(
+            "{}: spawn-actor appears; despawn kill & vanish both remove it",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!(
+            "execute store result score #sp dw.sys if entity @e[tag=dw_actor_{safe}]"
+        ));
+        b.push("assert score #sp dw.sys matches 1..".to_string());
+        // kill style removes it.
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        b.push(format!(
+            "execute store result score #k dw.sys if entity @e[tag=dw_actor_{safe}]"
+        ));
+        b.push("assert score #k dw.sys matches 0".to_string());
+        // re-spawn (idempotent), then vanish style also removes it.
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!("tp @e[tag=dw_actor_{safe}] ~ -128 ~"));
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        b.push(format!(
+            "execute store result score #v dw.sys if entity @e[tag=dw_actor_{safe}]"
+        ));
+        b.push("assert score #v dw.sys matches 0".to_string());
+        write("v06_spawn_despawn", b);
+    }
+
+    // spawn-actor is idempotent (re-caging after unleash): two spawns yield exactly
+    // one puppet, not two.
+    if let Some(a) = actors.first() {
+        let safe = plan::safe_local(a.id.as_str());
+        let mut b = packtest_header(&format!(
+            "{}: spawn-actor is idempotent (one puppet, not two)",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!(
+            "execute store result score #n dw.sys if entity @e[tag=dw_pup_{safe}]"
+        ));
+        b.push("assert score #n dw.sys matches 1".to_string());
+        write("v06_spawn_idempotent", b);
+    }
+
+    // unleash-actor: the NoAI puppet (dw_pup) is replaced by a real-AI twin (same
+    // body tag, real entity type, no puppet marker).
+    if let Some(a) = actors.first() {
+        let safe = plan::safe_local(a.id.as_str());
+        let mut b = packtest_header(&format!(
+            "{}: unleash-actor swaps the puppet for a real-AI twin",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!(
+            "execute store result score #pup dw.sys if entity @e[tag=dw_pup_{safe}]"
+        ));
+        b.push("assert score #pup dw.sys matches 1".to_string());
+        b.push(format!("function {ns}:unleash_{safe}"));
+        // puppet marker gone, one twin of the real entity type remains.
+        b.push(format!(
+            "execute store result score #pup2 dw.sys if entity @e[tag=dw_pup_{safe}]"
+        ));
+        b.push("assert score #pup2 dw.sys matches 0".to_string());
+        b.push(format!(
+            "execute store result score #twin dw.sys if entity @e[type={},tag=dw_actor_{safe}]",
+            a.entity
+        ));
+        b.push("assert score #twin dw.sys matches 1".to_string());
+        write("v06_unleash", b);
+    }
+
+    // move-actor: fast-forward the driver to its final waypoint (running on_arrive on
+    // that same tick) and assert the puppet is at the destination cell.
+    if let Some(m) = actor_moves.first() {
+        let safe = plan::safe_local(&m.actor);
+        let bare = moveactor_bare(&m.actor, &m.to_anchor);
+        let total = m.ticks();
+        let p = m.target;
+        let mut b = packtest_header(&format!(
+            "{}: move-actor walks its puppet to the destination cell",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!("scoreboard players set #at_{bare} dw.sys {total}"));
+        b.push(format!("function {ns}:ma_tick_{bare}"));
+        b.push(format!(
+            "execute store result score #arr dw.sys if entity @e[tag=dw_pup_{safe},x={},dx=0,y={},dy=0,z={},dz=0]",
+            p[0], p[1], p[2]
+        ));
+        b.push("assert score #arr dw.sys matches 1..".to_string());
+        write("v06_move_actor", b);
     }
 }
 
@@ -4470,5 +4926,120 @@ mod tests {
         // zombie stays unarmed; drowned's trident is not a default.
         assert!(default_equipment("minecraft:zombie").is_none());
         assert!(default_equipment("minecraft:drowned").is_none());
+    }
+
+    // --- DSL v0.6 actor emission (spec-0014) ---
+
+    fn mk_actor(id: &str, entity: &str, vulnerable: bool) -> delvewright_dsl::Actor {
+        delvewright_dsl::Actor {
+            id: delvewright_dsl::ActorId(id.to_string()),
+            entity: entity.to_string(),
+            name: Some("Boss".to_string()),
+            skin: None,
+            anchor: delvewright_dsl::AnchorId("anchor/stage".to_string()),
+            facing: Some(delvewright_dsl::Facing::West),
+            vulnerable,
+        }
+    }
+
+    #[test]
+    fn puppet_summon_is_noai_no_loot_and_tagged() {
+        let a = mk_actor("actor/giant", "minecraft:warden", false);
+        let s = actor_puppet_summon(&a, [10, 65, 20], facing_yaw(Some("west")));
+        assert!(s.starts_with("summon minecraft:warden 10 65 20 "));
+        assert!(s.contains("NoAI:1b") && s.contains("Silent:1b") && s.contains("NoGravity:1b"));
+        assert!(s.contains("Invulnerable:1b"));
+        assert!(s.contains("DeathLootTable:\"minecraft:empty\""));
+        assert!(s.contains("dw_actor_giant") && s.contains("dw_pup_giant"));
+        assert!(s.contains("Rotation:[90f,0f]"));
+        assert!(
+            !s.contains("knockback_resistance"),
+            "invulnerable puppet has no kb attr"
+        );
+    }
+
+    #[test]
+    fn vulnerable_puppet_is_damageable_but_knockback_immune() {
+        let a = mk_actor("actor/creep", "minecraft:zombie", true);
+        let s = actor_puppet_summon(&a, [0, 64, 0], 0);
+        assert!(
+            s.contains("Invulnerable:0b"),
+            "vulnerable puppet takes damage"
+        );
+        assert!(
+            s.contains("knockback_resistance") && s.contains("base:1.0"),
+            "vulnerable puppet stays knockback-immune: {s}"
+        );
+    }
+
+    #[test]
+    fn skinned_puppet_is_a_mannequin() {
+        let mut a = mk_actor("actor/keeper", "minecraft:warden", false);
+        a.skin = Some(delvewright_dsl::NpcSkin {
+            texture_id: "giant-idle".to_string(),
+            model: delvewright_dsl::SkinModel::Wide,
+        });
+        let s = actor_puppet_summon(&a, [1, 2, 3], 180);
+        assert!(s.starts_with("summon minecraft:mannequin 1 2 3 "));
+        assert!(s.contains("profile:{texture:\"delvewright:npc/giant-idle\",model:\"wide\"}"));
+        assert!(s.contains("dw_pup_keeper"));
+    }
+
+    #[test]
+    fn twin_summon_has_ai_and_no_puppet_marker() {
+        let a = mk_actor("actor/giant", "minecraft:warden", false);
+        let s = actor_twin_summon(&a);
+        assert!(s.starts_with("summon minecraft:warden ~ ~ ~ "));
+        assert!(!s.contains("NoAI"), "the twin has real AI");
+        assert!(s.contains("dw_actor_giant") && !s.contains("dw_pup"));
+        assert!(s.contains("PersistenceRequired:1b"));
+    }
+
+    #[test]
+    fn despawn_styles_differ() {
+        let mut kill = Vec::new();
+        emit_despawn_actor(
+            "actor/giant",
+            delvewright_dsl::DespawnStyle::Kill,
+            &mut kill,
+        );
+        assert_eq!(kill, vec!["kill @e[tag=dw_actor_giant]".to_string()]);
+        let mut vanish = Vec::new();
+        emit_despawn_actor(
+            "actor/giant",
+            delvewright_dsl::DespawnStyle::Vanish,
+            &mut vanish,
+        );
+        assert_eq!(
+            vanish,
+            vec![
+                "tp @e[tag=dw_actor_giant] ~ -128 ~".to_string(),
+                "kill @e[tag=dw_actor_giant]".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn sequence_key_is_deterministic_and_content_addressed() {
+        let step = |t: u32| delvewright_dsl::SequenceStep {
+            at_ticks: t,
+            effects: vec![delvewright_dsl::QuestEffect::UnleashActor {
+                actor: delvewright_dsl::ActorId("actor/giant".to_string()),
+            }],
+        };
+        let a = vec![step(0), step(40)];
+        let b = vec![step(0), step(40)];
+        let c = vec![step(0), step(41)];
+        assert_eq!(
+            sequence_key(&a),
+            sequence_key(&b),
+            "same content → same key"
+        );
+        assert_ne!(
+            sequence_key(&a),
+            sequence_key(&c),
+            "different content → different key"
+        );
+        assert_eq!(sequence_fn(&a), format!("seq_{}", sequence_key(&a)));
     }
 }
