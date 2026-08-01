@@ -258,7 +258,10 @@ fn dialogue_display_gating_variants() {
 
 /// The generated PackTest drives the availability mask through the objective-state
 /// axis transitions (hidden before the quest activates, shown while active, hidden
-/// again after completion) plus the flag axis in isolation (task #54).
+/// again after completion) plus the flag axis in isolation (task #54). It asserts
+/// the option-under-test's *isolated* bit, never the whole mask: sibling gated
+/// options in the same node can share a quest-active score, so a whole-mask compare
+/// would read a sibling's bit as this option's and mis-assert.
 #[test]
 fn dialogue_visibility_packtest_covers_both_axes() {
     let out = build_showcase();
@@ -266,22 +269,39 @@ fn dialogue_visibility_packtest_covers_both_axes() {
         &out["packtest-datapack/data/v04-showcase/test/v04_dialogue_visibility.mcfunction"],
     )
     .unwrap();
-    // Quest inactive → mask 0 (option hidden).
+    // Quest inactive → the completing option (bit 0) is hidden.
     assert!(pt.contains("scoreboard players set @a dw.qa_greet 0"));
-    // Quest active, objective incomplete → the completing option's bit (1).
+    // Quest active, objective incomplete → the completing option appears.
     assert!(pt.contains("scoreboard players set @a dw.qa_greet 1"));
-    assert!(pt.contains("assert score #dm dw.sys matches 1"));
-    // Objective complete → hidden again (mask 0).
+    // Objective complete → hidden again.
     assert!(pt.contains("scoreboard players set @a dw.o_talk 1"));
-    // Flag axis in isolation → the flag option's bit (2).
+    // Flag axis in isolation → the flag option (bit 1) appears.
     assert!(pt.contains("scoreboard players set @a dw.f_summoned 1"));
-    assert!(pt.contains("assert score #dm dw.sys matches 2"));
     // Every phase runs the emitted mask function (no re-implementation).
     assert!(pt.contains("execute as @a run function v04-showcase:dmask_keeper_greet"));
+    // Bit isolation `(dmask >> bit) & 1`: bit 0 via `%= 2` then `/= 1`; bit 1
+    // (the flag option) via `%= 4` then `/= 2`. Both axes assert 0/1, never 2.
+    assert!(pt.contains("scoreboard players set #dmhi dw.sys 2"));
+    assert!(pt.contains("scoreboard players set #dmlo dw.sys 1"));
+    assert!(pt.contains("scoreboard players set #dmhi dw.sys 4"));
+    assert!(pt.contains("scoreboard players set #dmlo dw.sys 2"));
+    assert!(pt.contains("scoreboard players operation #dm dw.sys %= #dmhi dw.sys"));
+    assert!(pt.contains("scoreboard players operation #dm dw.sys /= #dmlo dw.sys"));
+    // Isolated asserts are always 0 (hidden) or 1 (shown) — the whole-mask value
+    // (e.g. 2 for a lit high bit) must never appear.
+    assert!(
+        !pt.contains("assert score #dm dw.sys matches 2"),
+        "isolated-bit asserts must be 0/1, never a raw mask value: {pt}"
+    );
     assert_eq!(
         pt.matches("assert score #dm dw.sys matches 0").count(),
         2,
         "hidden asserted before activation and after completion"
+    );
+    assert_eq!(
+        pt.matches("assert score #dm dw.sys matches 1").count(),
+        2,
+        "shown asserted while active (objective axis) and for the flag axis"
     );
     // The mask read must be single-entity: `scoreboard players get`/`operation`
     // reject a multi-entity selector, so a bare `@a` read is a load-time command
