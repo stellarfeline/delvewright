@@ -639,9 +639,14 @@ fn relight_area(
                 out.diagnostics.push(LightDiag {
                     code: DW_RELIGHT_UNSATISFIABLE,
                     message: format!(
-                        "area `{area_id}`: fixture `{}` cannot reach min_light {min_light} — the \
-                         darkest reachable walkable cell at {dark:?} has no valid placement site \
-                         left (spec-0010 DW0211)",
+                        "area `{area_id}`: declared relight fixture `{}` cannot reach \
+                         `min_light` {min_light} — the darkest reachable walkable cell at {dark:?} \
+                         has no valid placement site left. Fix in stage-1 `world.areas[].lighting`: \
+                         choose a fixture that fits the geometry (`lantern`/`shroomlight` need \
+                         less clearance than `torch`/`campfire`), lower the declared `min_light` \
+                         (still within 1..=14), or open the room so a fixture site exists. Do NOT \
+                         relax this by widening the reachable set — the cell is genuinely lit \
+                         below target (spec-0010 DW0211)",
                         spec.fixture.token()
                     ),
                 });
@@ -678,8 +683,12 @@ fn measure_undeclared(
             code: DW_DARK_UNMITIGATED,
             message: format!(
                 "area `{area_id}` has a reachable walkable cell at {cell:?} measured at light {l} \
-                 (< {DARK_THRESHOLD}) under the darkest reachable sky (effective {sky}) with no \
-                 `lighting` declaration and no night-vision class kit"
+                 (< {DARK_THRESHOLD}) under the darkest reachable (time, weather) sky (effective \
+                 {sky}), with no `lighting` declaration and no night-vision class kit. Mitigate \
+                 one of three ways: declare `world.areas[].lighting` (a relight `fixture` + \
+                 `min_light`) for this area, brighten the scene (`world.time`/`weather`), or give \
+                 a class a night-vision kit item. Do NOT lower `DARK_THRESHOLD` or trim the \
+                 reachable set — the darkness is real (spec-0010 DW0210)"
             ),
         })
     } else {

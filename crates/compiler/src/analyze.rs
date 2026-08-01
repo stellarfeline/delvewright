@@ -179,7 +179,9 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
                 "quests",
                 format!("/content/quests/{i}"),
                 format!(
-                    "quest `{}` can never be triggered (its trigger's source never completes)",
+                    "quest `{}` can never be triggered — its `quest-complete` trigger names a \
+                     quest that itself never completes (a dead branch). Point the trigger at a \
+                     completable quest, or make the source quest completable",
                     q.id
                 ),
             ));
@@ -196,10 +198,15 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
                 let why = match obj {
                     Objective::TalkTo { npc, .. } => {
                         format!(
-                            "no dialogue option reachable from `{npc}`'s root fires `complete-objective` for it (or its prerequisites are unsatisfiable)"
+                            "no dialogue option reachable from `{npc}`'s root fires \
+                             `complete-objective` for it (or its prerequisites are unsatisfiable) \
+                             — add a reachable completing option, or satisfy the blocking \
+                             `after`/`requires_flags` prerequisite"
                         )
                     }
-                    _ => "its `after` prerequisites can never all complete".to_string(),
+                    _ => "its `after` prerequisites can never all complete — break the \
+                          unsatisfiable `after` chain so each prerequisite is itself reachable"
+                        .to_string(),
                 };
                 diags.push(Diagnostic::error(
                     codes::OBJECTIVE_DEADLOCK,
@@ -218,7 +225,12 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
             codes::FINALE_UNREACHABLE,
             "quest-plan",
             "/content/finale",
-            format!("finale quest `{finale}` can never complete (deep reachability)"),
+            format!(
+                "finale quest `{finale}` can never complete (deep reachability) — some objective \
+                 on the finale's completion path is unreachable. Look for the accompanying \
+                 `DW0202`/`DW0203` on the blocking quest/objective and fix that; the finale \
+                 clears once every quest on its `depends_on` chain can complete"
+            ),
         ));
     }
 

@@ -383,9 +383,16 @@ pub fn solve_area(
     origin: [i32; 3],
     stream: &mut Splitmix64,
 ) -> Result<AreaLayout, SolveError> {
-    let members: &[PoolMember] = registry
-        .pool(pool_id)
-        .ok_or_else(|| SolveError::new(DW_NO_ENTRY, format!("pool `{pool_id}` is not declared")))?;
+    let members: &[PoolMember] = registry.pool(pool_id).ok_or_else(|| {
+        SolveError::new(
+            DW_NO_ENTRY,
+            format!(
+                "prefab pool `{pool_id}` is not declared in the prefab metadata — bind a pool \
+                     that exists in the prefab library, or add `{pool_id}` to it (prefab-library \
+                     issue, not quest logic)"
+            ),
+        )
+    })?;
 
     // Entry piece (role `entry`). Exactly one is expected; the first wins.
     let entry_prefab = members
@@ -395,7 +402,11 @@ pub fn solve_area(
         .ok_or_else(|| {
             SolveError::new(
                 DW_NO_ENTRY,
-                format!("pool `{pool_id}` declares no `entry`-role piece"),
+                format!(
+                    "prefab pool `{pool_id}` declares no `entry`-role piece to seed the layout — \
+                     add an `entry`-role member to the pool's metadata (prefab-library issue, not \
+                     quest logic)"
+                ),
             )
         })?;
 
@@ -439,7 +450,10 @@ pub fn solve_area(
             return Err(SolveError::new(
                 DW_UNSATISFIABLE_ANCHOR,
                 format!(
-                    "pool `{pool_id}` has no non-entry piece providing required anchor `{anchor}`"
+                    "prefab pool `{pool_id}` has no non-entry piece providing required anchor \
+                     `{anchor}` — either the campaign references an anchor the pool cannot supply \
+                     (use one a pool piece carries), or the pool is missing a piece that defines \
+                     `{anchor}` (add it to the pool metadata)"
                 ),
             ));
         };
@@ -484,7 +498,9 @@ pub fn solve_area(
             DW_RANGE_TOO_SMALL,
             format!(
                 "pool `{pool_id}` needs at least {min_with_branch} pieces (entry + {} required \
-                 anchor-bearing{}) but `pieces.max` is {pieces_max}",
+                 anchor-bearing{}) but the area's `pieces.max` is {pieces_max} — raise \
+                 `pieces.max` to at least {min_with_branch}, or reduce the anchors this area must \
+                 provide",
                 required_prefabs.len(),
                 if branch_needed > 0 {
                     format!(" + {branch_needed} branch")
@@ -520,7 +536,11 @@ pub fn solve_area(
     if connector_members.is_empty() && filler_count > 0 {
         return Err(SolveError::new(
             DW_NO_ENTRY,
-            format!("pool `{pool_id}` declares no `connector`-role filler pieces"),
+            format!(
+                "prefab pool `{pool_id}` needs `connector`-role filler pieces to span its \
+                 `pieces` budget but declares none — add a `connector`-role member to the pool \
+                 metadata, or lower the area's `pieces.min` (prefab-library issue)"
+            ),
         ));
     }
 
@@ -718,8 +738,10 @@ fn grow_branching(
         return Err(SolveError::new(
             DW_INFEASIBLE,
             format!(
-                "pool `{pool_id}` needs a branch piece (tee/cross, ≥3 sockets) to host \
-                 {} terminals, but declares none",
+                "prefab pool `{pool_id}` needs a branch piece (tee/cross, ≥3 sockets) to host \
+                 {} dead-end terminals, but declares none — add a ≥3-socket branch member to the \
+                 pool metadata, or reduce the number of anchor-bearing dead-end rooms this area \
+                 requires (prefab-library issue)",
                 terminals.len()
             ),
         ));
@@ -773,7 +795,13 @@ fn grow_branching(
     Err(last_err.unwrap_or_else(|| {
         SolveError::new(
             DW_INFEASIBLE,
-            format!("pool `{pool_id}` could not place all terminals without overlap"),
+            format!(
+                "prefab pool `{pool_id}` could not place all terminal rooms without overlap after \
+                 every deterministic retry — the layout is infeasible for this pool. Give the \
+                 pool larger `pieces` budget, more/smaller connector pieces, or fewer required \
+                 dead-end anchors. Do NOT reroll the `seed` to dodge this (ADR-0006): the seed is \
+                 fixed and a different one would not make the pool geometrically fit"
+            ),
         )
     }))
 }
@@ -829,8 +857,10 @@ fn try_branching(
             return Err(SolveError::new(
                 DW_INFEASIBLE,
                 format!(
-                    "pool `{pool_id}` ran out of filler budget opening branches for \
-                     {} terminals",
+                    "prefab pool `{pool_id}` ran out of `pieces` filler budget while opening \
+                     branches for {} terminal rooms — raise the area's `pieces.max` so there is \
+                     budget for a branch piece per extra terminal, or require fewer dead-end \
+                     anchor rooms",
                     terminals.len()
                 ),
             ));
@@ -925,7 +955,11 @@ fn place_piece(
     let meta = registry.get(prefab_id).ok_or_else(|| {
         SolveError::new(
             DW_INFEASIBLE,
-            format!("prefab `{prefab_id}` metadata missing"),
+            format!(
+                "internal invariant violation: the solver selected prefab `{prefab_id}` but its \
+                 metadata is missing from the registry — pool membership and the metadata registry \
+                 disagree. This is a compiler/prefab-library bug; stop and escalate"
+            ),
         )
     })?;
     let (bbox_min, bbox_max) = rotation.bbox(pos, meta.structure.size);
@@ -963,7 +997,11 @@ fn attach_piece(
     let meta = registry.get(prefab_id).ok_or_else(|| {
         SolveError::new(
             DW_INFEASIBLE,
-            format!("prefab `{prefab_id}` metadata missing"),
+            format!(
+                "internal invariant violation: the solver selected prefab `{prefab_id}` but its \
+                 metadata is missing from the registry — pool membership and the metadata registry \
+                 disagree. This is a compiler/prefab-library bug; stop and escalate"
+            ),
         )
     })?;
     let cand = Candidate {
@@ -1036,7 +1074,12 @@ fn attach_piece(
     }
     Err(SolveError::new(
         DW_INFEASIBLE,
-        format!("could not place `{prefab_id}` at any open socket without overlap"),
+        format!(
+            "could not place prefab `{prefab_id}` at any open socket without overlap — the \
+             partial layout leaves no non-colliding socket for this piece. Enlarge the pool's \
+             connector variety or `pieces` budget, or shrink the piece footprints. Do NOT reroll \
+             the `seed` to dodge this (ADR-0006) — the seed is fixed"
+        ),
     ))
 }
 
@@ -1049,7 +1092,12 @@ fn socket_world(
     let f = Facing::parse(&conn.facing).ok_or_else(|| {
         SolveError::new(
             DW_INFEASIBLE,
-            format!("connector has invalid facing `{}`", conn.facing),
+            format!(
+                "prefab connector declares invalid facing `{}` — a connector's `facing` must be \
+                 one of north/south/east/west/up/down. Fix the prefab's socket metadata \
+                 (prefab-library defect, not a campaign error)",
+                conn.facing
+            ),
         )
     })?;
     let t = rot.transform(conn.local_pos);

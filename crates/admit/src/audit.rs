@@ -129,7 +129,12 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
             diags.push(
                 Diagnostic::error(
                     DW_FORBIDDEN,
-                    format!("forbidden block `{}` (code-injection vector)", entry.name),
+                    format!(
+                        "forbidden block `{}` — a code-injection vector (command/structure/jigsaw \
+                         block). Remove it from the prefab; this is hard-forbidden with no \
+                         allowlist path (ADR-0003 vanilla-first)",
+                        entry.name
+                    ),
                 )
                 .at(b.pos),
             );
@@ -142,8 +147,15 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
         {
             forbidden += 1;
             diags.push(
-                Diagnostic::error(DW_FORBIDDEN, format!("forbidden block entity: {reason}"))
-                    .at(b.pos),
+                Diagnostic::error(
+                    DW_FORBIDDEN,
+                    format!(
+                        "forbidden block entity: {reason} — a code-injection vector (NBT-bearing \
+                         spawner or embedded `Command`). Strip it from the prefab; hard-forbidden \
+                         with no allowlist path"
+                    ),
+                )
+                .at(b.pos),
             );
         }
 
@@ -154,7 +166,12 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
             diags.push(
                 Diagnostic::error(
                     DW_ALLOWLIST,
-                    format!("block `{}` is not in the palette allowlist", entry.name),
+                    format!(
+                        "block `{}` is not in the palette allowlist — swap it for an allowlisted \
+                         block, or, if the prefab genuinely needs it, propose adding it to the \
+                         allowlist under review. Do NOT bypass the allowlist to admit the asset",
+                        entry.name
+                    ),
                 )
                 .at(b.pos),
             );
