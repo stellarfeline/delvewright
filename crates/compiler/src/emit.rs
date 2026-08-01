@@ -165,6 +165,21 @@ pub fn build(
     let ns = &plan.namespace;
     let mut out: BuildOutput = BTreeMap::new();
 
+    // Gravity-despawn gate (task #42, owner addendum): before any downstream model
+    // is built, reject a prefab whose gravity floor (sand/gravel/…) sits
+    // unsupported over the delve's `the_void` world and would despawn at placement,
+    // silently deforming the shipped map. This is the authoritative direct gate —
+    // it does not wait for a fall to happen to intersect the critical path (DW0311)
+    // or a wave seat (DW0312). Analysis-tier (exit 2, mapped in main): a
+    // prefab/generator defect the author fixes by adding a substrate. No-op for any
+    // campaign whose prefabs have no gravity blocks (byte-identical output).
+    if let Some(message) = crate::assembled::gravity_despawn_error(plan, structures) {
+        return Err(BuildFailure::Diagnostic {
+            code: crate::assembled::DW_GRAVITY_DESPAWN,
+            message,
+        });
+    }
+
     // v0.4 navigation planning over the solved voxel grid (spec-0008 addendum):
     // collision-safe `move-npc` walked paths (DW0307) + cutscene air-corridor
     // checks (DW0308). Only built when the campaign uses those verbs, so v0.2/v0.3

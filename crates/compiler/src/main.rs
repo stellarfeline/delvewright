@@ -357,13 +357,17 @@ fn run_build(
         }
         Err(emit::BuildFailure::Diagnostic { code, message }) => {
             // Analysis-tier build diagnostics (exit 2, like DW02xx reachability): a
-            // content-design capacity mistake the author fixes by resizing content,
-            // not a compiler/geometry defect. These are the DW02xx lighting codes
-            // (DW0210/DW0211, spec-0010) plus wave-capacity DW0312 (task #41: a wave
-            // too big for its room). Geometry/navigation diagnostics
-            // (DW0307/DW0308/DW0311) print like a solver DW03xx error and exit 3.
+            // content/prefab defect the author fixes in the content, not a
+            // compiler/geometry defect. These are the DW02xx lighting codes
+            // (DW0210/DW0211, spec-0010), wave-capacity DW0312 (task #41: a wave too
+            // big for its room), and DW0313 (task #42: a gravity floor that despawns
+            // into the void — fix the prefab with a substrate). Geometry/navigation
+            // diagnostics (DW0307/DW0308/DW0311) print like a solver DW03xx error and
+            // exit 3.
             print_build_error(code, &message, json);
-            let analysis_tier = code.starts_with("DW02") || code == emit::DW_WAVE_NO_ROOM;
+            let analysis_tier = code.starts_with("DW02")
+                || code == emit::DW_WAVE_NO_ROOM
+                || code == delvewright_compiler::assembled::DW_GRAVITY_DESPAWN;
             let exit = if analysis_tier { 2 } else { 3 };
             return ExitCode::from(exit);
         }
