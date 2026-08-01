@@ -177,6 +177,14 @@ pub struct Plan<'a> {
     /// `close-gate` completability model in `crate::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
     pub gate_events: Vec<GateEvent>,
+    /// For each objective's `critical_path` step, the set of steps of its **strict
+    /// DAG ancestors** — objectives guaranteed to complete before it in *every* valid
+    /// play order (transitive `after` within its quest ∪ every objective of a
+    /// transitive `depends_on`-ancestor quest). The `close-gate` seal model
+    /// (`crate::nav`) uses this so a gate only seals a leg whose objective is a true
+    /// causal descendant of the gate's firing objective — not a parallel branch the
+    /// lineariser merely interleaved ahead of it.
+    pub strict_ancestor_steps: BTreeMap<usize, BTreeSet<usize>>,
 }
 
 /// A placed area: one or more pieces plus their socket seals.
@@ -708,6 +716,7 @@ impl<'a> Plan<'a> {
 
         // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
         let gate_events = collect_gate_events(campaign, &anchors, &objective_steps);
+        let strict_ancestor_steps = compute_strict_ancestor_steps(campaign, &objective_steps);
 
         Ok(Self {
             campaign,
@@ -727,7 +736,22 @@ impl<'a> Plan<'a> {
             objective_steps,
             traps,
             gate_events,
+            strict_ancestor_steps,
         })
+    }
+
+    /// Whether a gate firing at critical-path step `g` is guaranteed to have fired
+    /// before a walked leg arriving at step `s` — i.e. `g`'s objective is a strict
+    /// DAG ancestor of `s`'s objective (see [`Self::strict_ancestor_steps`]). Step
+    /// `0` (class-select / an environment trigger's conservative fire step) is
+    /// treated as always-preceding. Drives the `close-gate` seal model in
+    /// `crate::nav`.
+    pub fn gate_fired_before(&self, g: usize, s: usize) -> bool {
+        g == 0
+            || self
+                .strict_ancestor_steps
+                .get(&s)
+                .is_some_and(|anc| anc.contains(&g))
     }
 
     /// The area an NPC or quest belongs to.
@@ -1405,6 +1429,103 @@ fn collect_gate_events(
         for eff in &t.effects {
             handle(eff, 0, &mut out);
         }
+    }
+    out
+}
+
+/// Compute, for each objective's `critical_path` step, the set of steps of its
+/// **strict DAG ancestors** (see [`Plan::strict_ancestor_steps`]): the transitive
+/// `after`-closure within its own quest, plus every objective of every transitive
+/// `depends_on`-ancestor quest (a quest completes — all its objectives — before any
+/// dependent quest starts). Pure DAG structure, so it is deterministic and
+/// independent of the lineariser's choice among valid orders.
+/// Transitive-reachability closure over a `node → direct successors` adjacency,
+/// seeded by `start` (exclusive of the seeds' own membership only insofar as they
+/// re-enter via the graph). Shared by the quest-`depends_on` and objective-`after`
+/// ancestor computations.
+fn transitive_closure<'a>(
+    start: &[&'a str],
+    next: &BTreeMap<&'a str, Vec<&'a str>>,
+) -> BTreeSet<&'a str> {
+    let mut seen: BTreeSet<&'a str> = BTreeSet::new();
+    let mut stack: Vec<&'a str> = start.to_vec();
+    while let Some(x) = stack.pop() {
+        if seen.insert(x)
+            && let Some(nx) = next.get(x)
+        {
+            stack.extend(nx.iter().copied());
+        }
+    }
+    seen
+}
+
+fn compute_strict_ancestor_steps(
+    campaign: &Campaign,
+    obj_step: &BTreeMap<String, usize>,
+) -> BTreeMap<usize, BTreeSet<usize>> {
+    // Quest direct `depends_on`, then its transitive-ancestor closure.
+    let quest_deps: BTreeMap<&str, Vec<&str>> = campaign
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .map(|q| {
+            (
+                q.id.as_str(),
+                q.depends_on.iter().map(|d| d.as_str()).collect(),
+            )
+        })
+        .collect();
+    let quest_anc: BTreeMap<&str, BTreeSet<&str>> = quest_deps
+        .iter()
+        .map(|(q, deps)| (*q, transitive_closure(deps, &quest_deps)))
+        .collect();
+
+    // Objective structure from stage 5: quest→objectives, objective→quest, `after`.
+    let mut quest_objs: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    let mut obj_quest: BTreeMap<&str, &str> = BTreeMap::new();
+    let mut obj_after: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for q in &campaign.quests.content.quests {
+        let qid = q.id.as_str();
+        for o in &q.objectives {
+            let oid = o.id().as_str();
+            quest_objs.entry(qid).or_default().push(oid);
+            obj_quest.insert(oid, qid);
+            obj_after.insert(oid, o.after().iter().map(|a| a.as_str()).collect());
+        }
+    }
+    let after_closure: BTreeMap<&str, BTreeSet<&str>> = obj_after
+        .iter()
+        .map(|(o, a)| (*o, transitive_closure(a, &obj_after)))
+        .collect();
+
+    // Assemble the step-level ancestor sets.
+    let mut out: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
+    for (&oid, &qid) in &obj_quest {
+        let Some(&s) = obj_step.get(oid) else {
+            continue;
+        };
+        let mut anc: BTreeSet<usize> = BTreeSet::new();
+        let add = |name: &str, anc: &mut BTreeSet<usize>| {
+            if let Some(&st) = obj_step.get(name) {
+                anc.insert(st);
+            }
+        };
+        if let Some(cl) = after_closure.get(oid) {
+            for a in cl {
+                add(a, &mut anc);
+            }
+        }
+        if let Some(aq) = quest_anc.get(qid) {
+            for q2 in aq {
+                if let Some(objs) = quest_objs.get(*q2) {
+                    for a in objs {
+                        add(a, &mut anc);
+                    }
+                }
+            }
+        }
+        out.insert(s, anc);
     }
     out
 }

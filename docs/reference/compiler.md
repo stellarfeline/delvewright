@@ -452,20 +452,30 @@ a low ceiling is unroutable, not a silent strand). Cutscene dollies must pass on
 non-solid cells. Unroutable/clipping/stranded → `DW0307`/`DW0308`/`DW0311` at build
 (never a runtime glitch).
 
-**Close-gate solidity (v0.6).** The base occupancy model treats every gate region
-as **passable** (the conservative "assume the gate the player needs is opened"
-stance `DW0306` separately proves at the piece-connectivity level) — so `open-gate`
-does not dynamically flip cells at nav time, and an `open-gate`-only campaign routes
-exactly as before. `close-gate` is the physical dual: the compiler collects every
-`open`/`close` firing with its critical-path firing step (`plan.gate_events`,
-content-ordered, deep-walked through `sequence`/lifecycle bundles), and each walked
-critical leg — and each checkpoint→forward-path leg — is routed over the world with
-any gate whose **latest firing strictly before the leg is a `close`** (not reopened
-by a later `open-gate`) forced **solid**. So a forced path that must re-cross a
-sealed gate fails `DW0311` (`DW0315` from a checkpoint) with a message that names
+**Close-gate solidity (v0.6, DAG-causal).** The base occupancy model treats every
+gate region as **passable** (the conservative "assume the gate the player needs is
+opened" stance `DW0306` separately proves at the piece-connectivity level) — so
+`open-gate` does not dynamically flip cells at nav time, and an `open-gate`-only
+campaign routes exactly as before. `close-gate` is the physical dual: the compiler
+collects every `open`/`close` firing with its firing objective's critical-path step
+(`plan.gate_events`, content-ordered, **deep-walked through `sequence`/lifecycle
+bundles** via the shared `visit_deep` authority — a gate nested in a timeline is
+collected exactly like a top-level one), and each walked critical leg — and each
+checkpoint→forward-path leg — is routed with a gate forced **solid** iff its
+causally-latest firing **among the leg-objective's DAG ancestors** is a `close` (not
+reopened by a later `open-gate`). The ordering is **DAG-causal, not linear**
+(`plan.strict_ancestor_steps` / `Plan::gate_fired_before`): a gate only seals a leg
+whose objective is a true causal descendant of the gate's firing objective, so a
+gate on a **parallel quest branch** the lineariser merely interleaves ahead of a leg
+does not falsely seal it (island `take-the-cheese` flee legs are not sealed by the
+`hide` branch's boulder). The seal is applied only to a **causal leg** (its start
+objective is itself a DAG ancestor of the arrival) — the lineariser concatenates
+sibling branches into artifact "legs" the player never walks under the arrival's
+gate state, and base `DW0311` already proved every leg walkable in the open world. A
+genuinely-forced re-crossing (a causal leg whose sealed gate is never reopened
+before it) still fails `DW0311` (`DW0315` from a checkpoint) with a message naming
 the sealed gate — the "point of no return by geometry" the owner's staging vision
-wants, provable at compile time. A gate reopened by an `open-gate` before the leg
-routes normally again.
+wants, provable at compile time.
 
 **Talk-to endpoint (task #45):** a talk-to leg's target anchor is the NPC's own
 occupied cell (the mannequin stands there, its interaction hitbox fills it). The
@@ -565,6 +575,20 @@ v0.6 (spec-0014) content checks that need compiler-vendored data (the pinned
 `validate_stage` (so `validate`/`analyze`/`build` all catch them) and reported at
 **validation tier (exit 1)** like the `DW01xx` codes — not build-tier. No-op for a
 campaign that uses neither the `play-sound` effect nor the `narrate` `art` style.
+
+**Nested-effect consumer recursion.** These scans (`sound_refs`/
+`play_sound_actor_refs` → `DW0326`/`DW0335`, `art_narrates` → `DW0328`) descend
+**every nested effect list** (`sequence` steps, `on_respawn`/`on_caught`/`on_arrive`
+bundles) through the one `each_effect_ref` traversal, keyed by the same position
+scheme as the l10n inventory — so a bad sound id / non-Latin art string buried in a
+timeline is caught, not shipped unvalidated. The DSL-side effect-ref consumer scans
+(`spawn-wave` → `DW0170`, `give-item`/`collect`/`requires_item` → `DW0143`,
+`set-block`/`prop` → `DW0193`, `move-npc`/`despawn-npc` → `DW0112`, per-effect
+`requires_flags` → `DW0172`) likewise recurse via `for_each_effect_deep` /
+`for_each_trigger_effect_deep`. This matches how the flag/wave **producer** scans and
+emission already descend (the class of bug fixed piecewise in #102/#104); top-level
+paths/keys are unchanged, so a nesting-free campaign validates byte-for-byte
+identically.
 
 | Code | Meaning |
 |------|---------|

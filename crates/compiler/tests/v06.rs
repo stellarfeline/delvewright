@@ -369,3 +369,67 @@ fn double_build_is_byte_identical_incl_resource_pack() {
         "resource pack present (art font baked)"
     );
 }
+
+// --- nested-effect consumer recursion (task: 4th of the #102/#104 bug class) ----
+
+/// A `play-sound` with a bogus id **nested in a `sequence` step** fires `DW0326`
+/// — the sound-event scan (`sound_refs`) now descends nested effects, so a bad ref
+/// buried in a timeline is caught, not shipped unvalidated.
+#[test]
+fn nested_play_sound_bad_id_is_dw0326() {
+    let c = parse_hw(
+        &quests_doc(
+            r#"{ "type": "sequence", "steps": [ { "at_ticks": 0, "effects": [
+                 { "type": "play-sound", "sound": "minecraft:not.a.real.sound" } ] } ] },
+               { "type": "campaign-complete" }"#,
+        ),
+        None,
+    );
+    let d = atmos::check_sounds(&c);
+    assert!(
+        d.iter().any(|x| x.code == atmos::DW_SOUND_UNKNOWN),
+        "a sequence-nested bogus play-sound must be DW0326: {d:#?}"
+    );
+}
+
+/// An `art`-styled `narrate` with non-Latin text **nested in a `sequence` step**
+/// fires `DW0328` — the art-glyph scan (`art_narrates`) descends nested effects.
+#[test]
+fn nested_art_narrate_non_latin_is_dw0328() {
+    let c = parse_hw(
+        &quests_doc(
+            r#"{ "type": "sequence", "steps": [ { "at_ticks": 0, "effects": [
+                 { "type": "narrate", "text": "胜利", "style": "art" } ] } ] },
+               { "type": "campaign-complete" }"#,
+        ),
+        None,
+    );
+    let d = atmos::check_art(&c, &BTreeMap::new());
+    assert!(
+        d.iter().any(|x| x.code == atmos::DW_ART_GLYPH_UNCOVERED),
+        "a sequence-nested non-Latin art narrate must be DW0328: {d:#?}"
+    );
+}
+
+/// A valid `play-sound`/art `narrate` nested in a sequence validates clean — the
+/// deep scan must not spuriously reject a good nested ref (island uses these).
+#[test]
+fn nested_valid_sound_and_art_are_clean() {
+    let c = parse_hw(
+        &quests_doc(
+            r#"{ "type": "sequence", "steps": [ { "at_ticks": 0, "effects": [
+                 { "type": "play-sound", "sound": "minecraft:block.note_block.pling" },
+                 { "type": "narrate", "text": "YOU WIN", "style": "art" } ] } ] },
+               { "type": "campaign-complete" }"#,
+        ),
+        None,
+    );
+    assert!(
+        atmos::check_sounds(&c).is_empty(),
+        "valid nested sound is clean"
+    );
+    assert!(
+        atmos::check_art(&c, &BTreeMap::new()).is_empty(),
+        "valid nested art is clean"
+    );
+}

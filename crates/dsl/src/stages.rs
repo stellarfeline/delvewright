@@ -2060,6 +2060,48 @@ impl QuestEffect {
         }
     }
 
+    /// Immutable sibling of [`Self::nested_effect_lists_keyed_mut`] that additionally
+    /// exposes the **JSON-pointer path segment** for each nested list, so a deep
+    /// consumer scan (sound/art/give/wave refs) can report a precise diagnostic path
+    /// *and* the matching l10n key. Each entry is `(path_seg, key_seg, list)`; the
+    /// caller appends the per-effect index — `/{j}` to the path, `.{j}` to the key.
+    /// Kept in lockstep with `nested_effect_lists` / `nested_effect_lists_keyed_mut`
+    /// (same lists, same order): the l10n key segments match
+    /// `nested_effect_lists_keyed_mut` exactly (`seq.<step>`/`respawn`/`caught`/
+    /// `arrive`), and the path segments name the real fields
+    /// (`steps/<step>/effects`, `on_respawn`, `on_caught`, `on_arrive`).
+    pub fn nested_effect_lists_labeled(&self) -> Vec<(String, String, &[QuestEffect])> {
+        match self {
+            QuestEffect::Sequence { steps } => steps
+                .iter()
+                .enumerate()
+                .map(|(s, st)| {
+                    (
+                        format!("steps/{s}/effects"),
+                        format!("seq.{s}"),
+                        st.effects.as_slice(),
+                    )
+                })
+                .collect(),
+            QuestEffect::SetCheckpoint { on_respawn, .. } => vec![(
+                "on_respawn".to_string(),
+                "respawn".to_string(),
+                on_respawn.as_slice(),
+            )],
+            QuestEffect::BeginStealth { on_caught, .. } => vec![(
+                "on_caught".to_string(),
+                "caught".to_string(),
+                on_caught.as_slice(),
+            )],
+            QuestEffect::MoveActor { on_arrive, .. } => vec![(
+                "on_arrive".to_string(),
+                "arrive".to_string(),
+                on_arrive.as_slice(),
+            )],
+            _ => Vec::new(),
+        }
+    }
+
     /// `true` if this is a `narrate` carrying the v0.6 `art` style (reserved
     /// `DW0141` under a pre-0.6 campaign; glyph-checked `DW0328`).
     pub fn narrate_art(&self) -> bool {
