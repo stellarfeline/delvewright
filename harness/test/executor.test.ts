@@ -205,3 +205,76 @@ test("forcedMove resets the pathfinder only on a large cross-area jump", () => {
   bot.emit("forcedMove");
   assert.equal(bot.pathfinderStops, 1);
 });
+
+// --- stall-recovery (task #45) ---------------------------------------------
+
+import { replayLegWithRecovery } from "../src/executor.ts";
+import type { GoalSpec } from "../src/waypoints.ts";
+
+// Record every goto the replay issues, and script per-hop outcomes.
+function recorder(failFirstAt: (spec: GoalSpec, label: string) => boolean) {
+  const calls: Array<{ spec: GoalSpec; label: string }> = [];
+  const failedOnce = new Set<string>();
+  const goto = async (spec: GoalSpec, label: string): Promise<void> => {
+    calls.push({ spec, label });
+    // A hop that should stall the first time it's attempted (and not a recovery).
+    if (failFirstAt(spec, label) && !label.includes("recovery") && !failedOnce.has(label)) {
+      failedOnce.add(label);
+      throw new Error(`stall at ${label}`);
+    }
+  };
+  return { calls, goto };
+}
+
+const G = (x: number, y: number, z: number, range = 1): GoalSpec => ({ x, y, z, range });
+
+test("replayLegWithRecovery walks a clean leg with no recovery", async () => {
+  const { calls, goto } = recorder(() => false);
+  await replayLegWithRecovery([G(0, 65, 0), G(0, 65, 3), G(0, 65, 6, 3)], "npc x", goto);
+  assert.equal(calls.length, 3); // one goto per goal, no recovery
+  assert.ok(!calls.some((c) => c.label.includes("recovery")));
+});
+
+test("replayLegWithRecovery re-centers on the last proven cell then retries a stalled hop", async () => {
+  // Stall on the SECOND hop (the wp8->wp9 pocket-wedge shape). Recovery must go to
+  // the FIRST hop's exact cell at range 0, then the retry succeeds.
+  const { calls, goto } = recorder((_spec, label) => label.includes("waypoint 2/3"));
+  await replayLegWithRecovery([G(1, 65, -3), G(1, 65, 0), G(2, 66, 1, 3)], "npc perimedes", goto);
+  // Sequence: hop1 ok, hop2 stall, recovery→[1,65,-3] range 0, hop2 retry ok, hop3 ok.
+  const labels = calls.map((c) => c.label);
+  assert.deepEqual(labels, [
+    "npc perimedes waypoint 1/3",
+    "npc perimedes waypoint 2/3",
+    "npc perimedes waypoint 2/3 recovery to last proven cell",
+    "npc perimedes waypoint 2/3",
+    "npc perimedes",
+  ]);
+  const recovery = calls.find((c) => c.label.includes("recovery"))!;
+  assert.deepEqual([recovery.spec.x, recovery.spec.y, recovery.spec.z], [1, 65, -3]);
+  assert.equal(recovery.spec.range, 0, "recovery snaps to the exact proven cell");
+});
+
+test("replayLegWithRecovery rethrows a first-hop stall (nothing proven yet)", async () => {
+  const { calls, goto } = recorder((_spec, label) => label.includes("waypoint 1/2"));
+  await assert.rejects(
+    () => replayLegWithRecovery([G(0, 65, 0), G(0, 65, 3, 3)], "npc x", goto),
+    /stall at/,
+  );
+  // No recovery attempted for a first-hop stall.
+  assert.ok(!calls.some((c) => c.label.includes("recovery")));
+});
+
+test("replayLegWithRecovery rethrows if the hop is still unwalkable after recovery", async () => {
+  // A non-terminal hop that fails every real attempt (even after recovery) must
+  // surface loudly — recovery is a best-effort nudge, never a way to pass a genuinely
+  // unwalkable hop. Recovery gotos (range 0) succeed; the real hop keeps failing.
+  const alwaysFail = async (_spec: GoalSpec, label: string): Promise<void> => {
+    if (label.includes("waypoint 2/3") && !label.includes("recovery")) {
+      throw new Error(`persistent stall at ${label}`);
+    }
+  };
+  await assert.rejects(
+    () => replayLegWithRecovery([G(0, 65, 0), G(3, 65, 0), G(6, 65, 0, 3)], "npc x", alwaysFail),
+    /persistent stall/,
+  );
+});

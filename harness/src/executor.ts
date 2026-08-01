@@ -31,6 +31,57 @@ import { BotDeathError, likelyDeathCause } from "./death.ts";
 import { allowNonCollidingEntities, configureLeg } from "./movement.ts";
 import { nextLegWaypoints, walkGoals, type GoalSpec, type Waypoints } from "./waypoints.ts";
 
+/**
+ * Replay a leg's ordered goals with **stall-recovery** (task #45). Each `goto`
+ * performs one verified hop (rejecting on stall / death). Extracted from `walkTo`
+ * as a pure control-flow function — injecting `goto` — so the recovery logic is
+ * unit-testable without a live pathfinder.
+ *
+ * A leg replays compiler-proven cells at `WAYPOINT_RANGE = 1`. That range-1
+ * tolerance lets the bot satisfy the PREVIOUS hop at an off-route cell — a corner
+ * pocket beside a wall — from which the next hop wedges: the bot oscillates and
+ * times out (the nobodys-cave perimedes approach). On such a stall, re-centre the
+ * bot on the exact last proven cell (`range 0`, back onto the proven polyline) and
+ * retry the hop once. Range 0 is used ONLY in recovery, so a legitimate
+ * slab/stair fractional-height floor on the happy path is unaffected, and the
+ * per-hop timeout inside `goto` is untouched. A first-hop stall (nothing proven
+ * yet) is not this class and is rethrown unchanged.
+ */
+export async function replayLegWithRecovery(
+  goalsList: readonly GoalSpec[],
+  label: string,
+  goto: (spec: GoalSpec, label: string) => Promise<void>,
+): Promise<void> {
+  let lastProven: GoalSpec | undefined;
+  for (let g = 0; g < goalsList.length; g++) {
+    const spec = goalsList[g]!;
+    const last = g === goalsList.length - 1;
+    const glabel = last ? label : `${label} waypoint ${g + 1}/${goalsList.length}`;
+    try {
+      await goto(spec, glabel);
+    } catch (err) {
+      if (err instanceof BotDeathError) throw err;
+      if (!lastProven) throw err; // nothing proven yet — not the pocket-wedge class
+      process.stderr.write(
+        `[recover] re-centering on proven cell [${lastProven.x}, ${lastProven.y}, ` +
+          `${lastProven.z}] (range 0), then retrying ${glabel}\n`,
+      );
+      try {
+        await goto(
+          { x: lastProven.x, y: lastProven.y, z: lastProven.z, range: 0 },
+          `${glabel} recovery to last proven cell`,
+        );
+      } catch (recoverErr) {
+        if (recoverErr instanceof BotDeathError) throw recoverErr;
+        // Recovery is best-effort: even if the exact cell isn't hit, the attempt
+        // nudges the bot off the pocket — still retry the real hop below.
+      }
+      await goto(spec, glabel); // rethrows if the hop is genuinely unwalkable
+    }
+    lastProven = spec;
+  }
+}
+
 /** Connection + identity for the bot. Sourced from the environment (see below). */
 export interface BotConfig {
   readonly host: string;
@@ -552,11 +603,9 @@ export class MineflayerExecutor implements StepExecutor {
         this.legCursor = match.cursor;
       }
       const goalsList = walkGoals(legWaypoints, [pos[0], pos[1], pos[2]], r);
-      for (let g = 0; g < goalsList.length; g++) {
-        const spec = goalsList[g]!;
-        const last = g === goalsList.length - 1;
-        await this.runGoto(spec, last ? label : `${label} waypoint ${g + 1}/${goalsList.length}`);
-      }
+      await replayLegWithRecovery(goalsList, label, (spec, glabel) =>
+        this.runGoto(spec, glabel),
+      );
     } finally {
       restoreControls();
     }
