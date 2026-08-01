@@ -70,3 +70,37 @@ Real-AI pathfinding control (excluded, task #46); combat behavior scripting for
 unleashed mobs (vanilla AI takes over); crowd avoidance between concurrent
 movers (paths are authored not emergent); runtime branching inside `sequence`
 (branch via flags/objectives instead).
+
+## Addendum (v0.6.1) — close-gate & damage-players
+
+Two staging effects added while authoring the island remake; both landed as
+separate engine PRs. Decision-record form; `docs/reference/compiler.md` is the
+authoritative current-behavior record.
+
+- **`close-gate{anchor}`** — the physical dual of `open-gate`. Where `open-gate`
+  fills a gate region with air, `close-gate` fills it with the block the gate
+  anchor's prefab metadata declares (the island boulder's `minecraft:basalt`),
+  re-sealing an opened threshold into a wall — the owner's "point of no return by
+  geometry, not narration". Emission mirrors `open-gate`: a deterministic
+  `fill <region> <block>` (no `replace` clause). A gate anchor that declares no
+  fill `block` cannot be sealed → new **DW0343** (validation tier; compiler-side,
+  since the block is prefab metadata). Anchor existence reuses `open-gate`'s
+  DW0142. **Completability:** the occupancy model treats every gate as passable
+  (the conservative "the needed gate opens" stance DW0306 proves); `close-gate`
+  is the dual — each walked critical / checkpoint-forward leg is routed with any
+  gate whose latest firing before it is a `close` (not reopened) forced **solid**,
+  so a forced path that must re-cross a sealed gate fails **DW0311** (DW0315 from
+  a checkpoint). A later `open-gate` before the leg reopens it.
+
+- **`damage-players{amount, in?, damage_type?}`** — the real consequence a stealth
+  `on_caught` / souls beat needs, over vanilla `/damage`. Per-`@s`
+  (`damage @s <amount> <type>`): top-level hits every player once, in `on_caught`
+  the caught player. `amount` in half-hearts (≥ 40 lethal through golden apples).
+  `in {anchor, extent}` narrows to acting players inside the anchor-centred box
+  (stealth-zone box model; anchor DW0142), staying per-`@s`. `damage_type` is a
+  **curated enum** of vanilla types that respect `keepInventory` and do NOT bypass
+  totems (no `out_of_world`/`generic_kill`); default `generic`; unknown value =
+  schema DW0100 (no new registry). Named `damage_type`, not `type`, because the
+  effect enum is internally tagged on `type`. Per-effect `requires_flags` allowed
+  (per-`@s` verb). No new DW code. A `v06_damage` PackTest asserts a dummy's health
+  drops.
