@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use delvewright_schem::convert::read_structure;
+use delvewright_schem::diag::DW_INPUT;
 use delvewright_schem::fixtures;
 
 const BIN: &str = env!("CARGO_BIN_EXE_delve-schem");
@@ -81,15 +82,19 @@ fn cli_reports_bad_input_with_exit_2() {
     let out = dir.join("junk.nbt");
     std::fs::write(&input, b"not nbt at all").unwrap();
 
-    let code = Command::new(BIN)
+    let result = Command::new(BIN)
         .args(["convert"])
         .arg(&input)
         .arg("--out")
         .arg(&out)
-        .status()
-        .unwrap()
-        .code();
-    assert_eq!(code, Some(2));
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains(DW_INPUT),
+        "expected {DW_INPUT} in stderr: {stderr}"
+    );
 
     std::fs::remove_dir_all(&dir).ok();
 }
