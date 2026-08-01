@@ -381,15 +381,24 @@ pub fn build(
     // zip; its SHA-1 is what a client verifies against the itzg RESOURCE_PACK_SHA1
     // env. The serving/env plumbing is the packaging task's; here we emit the zip,
     // its sha1 (in the manifest), and a SKINS.md note listing the env to set.
-    let resource_pack_sha1 = if skins.is_empty() {
+    // The pack also carries the `delve:art` title font (spec-0014) when the
+    // campaign uses the `narrate` `art` style — baked only when needed, so a
+    // non-art campaign's pack is byte-identical.
+    let art = crate::atmos::uses_art(plan.campaign);
+    let extra_assets = if art {
+        crate::atmos::art_font_assets()
+    } else {
+        BTreeMap::new()
+    };
+    let resource_pack_sha1 = if skins.is_empty() && extra_assets.is_empty() {
         None
     } else {
-        let zip = crate::resourcepack::build_pack(skins);
+        let zip = crate::resourcepack::build_pack(skins, &extra_assets);
         let sha1 = crate::resourcepack::sha1_hex(&zip);
         out.insert("resourcepack.zip".to_string(), zip);
         out.insert(
             "SKINS.md".to_string(),
-            skins_note(&sha1, skins).into_bytes(),
+            pack_note(&sha1, skins, art).into_bytes(),
         );
         Some(sha1)
     };
@@ -409,23 +418,36 @@ pub fn build(
 }
 
 /// The `SKINS.md` build-output note: how the packaging task wires the emitted
-/// resource pack into the delve image (itzg env), plus the pack SHA-1.
-fn skins_note(sha1: &str, skins: &BTreeMap<String, Vec<u8>>) -> String {
+/// resource pack into the delve image (itzg env), plus the pack SHA-1. The pack
+/// carries the mannequin NPC skins (spec-0009) and/or the `delve:art` title font
+/// (spec-0014), depending on what the campaign uses.
+fn pack_note(sha1: &str, skins: &BTreeMap<String, Vec<u8>>, art: bool) -> String {
     let mut s = String::new();
-    s.push_str("# NPC skin resource pack\n\n");
+    s.push_str("# Delve resource pack\n\n");
     s.push_str(
-        "This delve ships a server resource pack (`resourcepack.zip`) carrying the\n\
-         mannequin NPC skins (spec-0009). The packaging task serves it and sets the\n\
-         itzg env so vanilla clients receive it:\n\n",
+        "This delve ships a server resource pack (`resourcepack.zip`). The packaging\n\
+         task serves it and sets the itzg env so vanilla clients receive it:\n\n",
     );
     s.push_str(&format!(
         "- `RESOURCE_PACK` = the URL the delve serves `resourcepack.zip` at\n\
          - `RESOURCE_PACK_SHA1` = `{sha1}`\n\
          - `RESOURCE_PACK_PROMPT` = a JSON text component (not a bare string)\n\n",
     ));
-    s.push_str("Baked skins (`skins/<id>.png` → `assets/delvewright/textures/npc/<id>.png`):\n\n");
-    for id in skins.keys() {
-        s.push_str(&format!("- `{id}`\n"));
+    if !skins.is_empty() {
+        s.push_str(
+            "Baked skins (`skins/<id>.png` → `assets/delvewright/textures/npc/<id>.png`):\n\n",
+        );
+        for id in skins.keys() {
+            s.push_str(&format!("- `{id}`\n"));
+        }
+        s.push('\n');
+    }
+    if art {
+        s.push_str(
+            "Art-title font (spec-0014): `delve:art` — an original large-glyph bitmap\n\
+             font at `assets/delve/font/art.json` (+ `assets/delve/textures/font/art.png`),\n\
+             used by `narrate` `style: art`.\n",
+        );
     }
     s
 }
@@ -1711,7 +1733,59 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
         QuestEffect::SetWeather { weather } => {
             body.push(format!("weather {}", weather.token()));
         }
+        // --- DSL v0.6 effects (spec-0014) ---
+        QuestEffect::PlaySound {
+            sound,
+            at,
+            volume,
+            pitch,
+        } => {
+            emit_play_sound(plan, sound, at.as_ref(), *volume, *pitch, body);
+        }
     }
+}
+
+/// Emit a `play-sound` effect (DSL v0.6). Effects run in an `as @a` context, so
+/// `@s` is each player: an anchor sound plays once per player positioned at the
+/// resolved anchor (all hear it there); the default `players` target plays at each
+/// player's own position (`~ ~ ~`). `at: actor` never reaches emission — it is
+/// rejected at validate-time (`DW0335`) until the actors surface lands.
+fn emit_play_sound(
+    plan: &Plan,
+    sound: &str,
+    at: Option<&delvewright_dsl::SoundAt>,
+    volume: Option<f64>,
+    pitch: Option<f64>,
+    body: &mut Vec<String>,
+) {
+    use delvewright_dsl::SoundAt;
+    // Canonicalize a bare id to the default namespace so the emitted command is
+    // explicit (`playsound` accepts either form).
+    let sound = if sound.contains(':') {
+        sound.to_string()
+    } else {
+        format!("minecraft:{sound}")
+    };
+    let pos = match at {
+        Some(SoundAt::Anchor { anchor }) => match anchor_point_any(plan, anchor.as_str()) {
+            Some(p) => Some(format!("{} {} {}", p[0], p[1], p[2])),
+            None => return, // unresolved anchor (referential validation reports it)
+        },
+        Some(SoundAt::Actor { .. }) => return, // deferred: DW0335 at validate-time
+        _ => None,                             // `players` (default): player-relative
+    };
+    let mut cmd = format!("playsound {sound} master @s");
+    if pos.is_some() || volume.is_some() || pitch.is_some() {
+        let p = pos.unwrap_or_else(|| "~ ~ ~".to_string());
+        cmd.push_str(&format!(" {p}"));
+        if volume.is_some() || pitch.is_some() {
+            cmd.push_str(&format!(" {}", volume.unwrap_or(1.0)));
+            if let Some(pt) = pitch {
+                cmd.push_str(&format!(" {pt}"));
+            }
+        }
+    }
+    body.push(cmd);
 }
 
 /// Emit a `narrate` line in its channel (DSL v0.4). `chat` = `tellraw`; `title`
@@ -1731,6 +1805,13 @@ fn emit_narrate(
         NarrateStyle::Subtitle => {
             body.push(format!("title @s title {}", json!({ "text": " " })));
             body.push(format!("title @s subtitle {comp}"));
+        }
+        // Large-glyph "art" title through the delve's custom resource-pack font
+        // (`delve:art`, DSL v0.6). The font is uppercase-only (glyph coverage is
+        // checked at compile time, DW0328), so render uppercase.
+        NarrateStyle::Art => {
+            let art = json!({ "text": text.to_ascii_uppercase(), "font": "delve:art" });
+            body.push(format!("title @s title {art}"));
         }
     }
     if let Some(s) = sound {

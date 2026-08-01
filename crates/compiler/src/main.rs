@@ -163,6 +163,13 @@ fn validate_stage(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> Result
             // runs on every validate/analyze/build. No-op for English-only campaigns.
             let sidecars = parse_sidecars(&loaded.l10n, &mut diags);
             diags.extend(delvewright_dsl::validate_l10n(&campaign, &sidecars));
+            // v0.6 sound + art-title surface (spec-0014): sound-event ids
+            // (DW0326), the deferred `play-sound at: actor` gate (DW0335), and
+            // art-title glyph coverage against the `delve:art` font over the source
+            // text and every declared-language sidecar (DW0328). Validation-tier
+            // (exit 1) — no-op for a campaign that uses neither surface.
+            diags.extend(delvewright_compiler::atmos::check_sounds(&campaign));
+            diags.extend(delvewright_compiler::atmos::check_art(&campaign, &sidecars));
             print_diags(&diags, json);
             Ok(Validated {
                 campaign,

@@ -17,6 +17,7 @@
 
 pub mod analyze;
 pub mod assembled;
+pub mod atmos;
 pub mod commands;
 pub mod creator;
 pub mod emit;

@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
-    Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, is_v03, is_v04, is_v05,
+    Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06,
 };
 use crate::ids::is_kebab;
 use crate::registry::{
@@ -868,6 +868,59 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
 
     reserved_v04(c, d);
     reserved_v05(c, d);
+    reserved_v06(c, d);
+}
+
+/// DSL v0.6 reserved-feature gating (spec-0014): the `play-sound` effect and the
+/// `narrate` `art` style, both carried by stage-5 quest/trigger effects, are
+/// rejected with `DW0141` in a pre-0.6.0 campaign, gated on the quests stage's
+/// version. Additive: a v0.5 (or earlier) campaign that uses neither is
+/// byte-identical.
+fn reserved_v06(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    if is_v06(c.quests.dsl_version.as_str()) {
+        return;
+    }
+    let res = |d: &mut Vec<Diagnostic>, path: String, what: &str| {
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            "quests",
+            path,
+            format!(
+                "{what} requires dsl_version 0.6.0 — raise the quests stage's `dsl_version` to \
+                 0.6.0, or remove the construct"
+            ),
+        ));
+    };
+    let check = |d: &mut Vec<Diagnostic>, path_base: &str, eff: &QuestEffect| {
+        if let Some(name) = eff.v06_effect() {
+            res(d, format!("{path_base}/type"), &format!("effect `{name}`"));
+        }
+        if eff.narrate_art() {
+            res(d, format!("{path_base}/style"), "narrate `style: art`");
+        }
+    };
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        for (oid, effs) in &q.on_objective_complete {
+            for (m, eff) in effs.iter().enumerate() {
+                check(
+                    d,
+                    &format!(
+                        "/content/quests/{i}/on_objective_complete/{}/{m}",
+                        oid.as_str()
+                    ),
+                    eff,
+                );
+            }
+        }
+        for (m, eff) in q.on_complete.iter().enumerate() {
+            check(d, &format!("/content/quests/{i}/on_complete/{m}"), eff);
+        }
+    }
+    for (i, t) in c.quests.content.triggers.iter().enumerate() {
+        for (m, eff) in t.effects.iter().enumerate() {
+            check(d, &format!("/content/triggers/{i}/effects/{m}"), eff);
+        }
+    }
 }
 
 /// DSL v0.5 reserved-feature gating (spec-0010): declared world `time`/`weather`

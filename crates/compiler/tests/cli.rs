@@ -30,7 +30,7 @@ fn version_line() {
     assert_eq!(code(&out), 0);
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.contains("delvec 0.1.0"), "{s}");
-    assert!(s.contains("dsl 0.5.0"), "{s}");
+    assert!(s.contains("dsl 0.6.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 

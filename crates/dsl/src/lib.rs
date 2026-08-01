@@ -32,8 +32,8 @@ pub use ids::{
     PrefabId, QuestId, TriggerId, WaveId,
 };
 pub use l10n::{
-    CANONICAL_LANG, L10nDoc, L10nKind, each_string, inventory as l10n_inventory, localize,
-    validate_l10n,
+    ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, SoundRef, art_narrates, each_string,
+    inventory as l10n_inventory, localize, play_sound_actor_refs, sound_refs, validate_l10n,
 };
 pub use registry::{
     AnchorRegistry, BlockRegistry, EffectRegistry, EntityRegistry, ItemBackedBlockRegistry,
@@ -46,6 +46,6 @@ pub use stages::{
     DialogueNode, DialogueOption, EnvTrigger, Fixture, KitItem, MobAttributes, MobEffect,
     NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces, PlannedQuest,
     Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SkinModel,
-    Trigger, TriggerOn, Wave, WaveMob, WorldContent, WorldTime, WorldWeather,
+    SoundAt, Trigger, TriggerOn, Wave, WaveMob, WorldContent, WorldTime, WorldWeather,
 };
 pub use validate::{validate_campaign, validate_campaign_with};
