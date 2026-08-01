@@ -147,4 +147,14 @@ pub mod codes {
     pub const NPC_DESPAWNED_REF: &str = "DW0195";
     /// (v0.5) An area `lighting.min_light` is out of the 1..=14 range (spec-0010).
     pub const LIGHTING_RANGE: &str = "DW0196";
+
+    /// (v0.6) `horizon: "ocean"` declared without a `boundary` (spec-0013):
+    /// validation-tier (exit 1). An infinite swimmable sea with no return rule is
+    /// an authoring error. Grouped in the DW032x world/region family by domain;
+    /// unlike the compiler-tier DW030x geometry codes it is raised at DSL
+    /// validation, so it exits 1.
+    pub const OCEAN_NO_BOUNDARY: &str = "DW0320";
+    /// (v0.6) `boundary.margin` outside the `0..=64` range (spec-0013):
+    /// validation-tier (exit 1).
+    pub const BOUNDARY_MARGIN: &str = "DW0321";
 }

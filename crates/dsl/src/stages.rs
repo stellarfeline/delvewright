@@ -63,6 +63,18 @@ pub struct WorldContent {
     /// thunder attenuate effective sky brightness in the assembled-light model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weather: Option<WorldWeather>,
+    /// Scenic horizon (DSL v0.6, spec-0013). Absent or `void` = the void world
+    /// (byte-identical to v0.5). `ocean` swaps the world generator for a
+    /// deterministic superflat sea (bedrock/stone/water, sea level y=62) so areas
+    /// sitting at y=64+ read as islands. No structures or mobs either way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub horizon: Option<Horizon>,
+    /// Playable-region boundary (DSL v0.6, spec-0013). When present, the compiler
+    /// derives a region from the placed geometry and a per-second clock returns any
+    /// player who leaves it to the last checkpoint. Required when `horizon` is
+    /// `ocean` (an infinite swimmable sea with no return rule is `DW0320`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boundary: Option<Boundary>,
 }
 
 /// A declared world time state (DSL v0.5, spec-0010). Values are the vanilla
@@ -130,6 +142,49 @@ impl WorldWeather {
             WorldWeather::Thunder => "thunder",
         }
     }
+}
+
+/// A scenic horizon (DSL v0.6, spec-0013). `void` is the default and is
+/// byte-identical to v0.5 (empty-layer superflat, `minecraft:the_void` biome);
+/// `ocean` selects a pinned bedrock/stone/water superflat with sea level y=62,
+/// pure backdrop with no structures or mobs. The compiler owns the exact
+/// generator-settings; this enum only picks which one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Horizon {
+    /// The void world (default) — no sky-filling geometry.
+    #[default]
+    Void,
+    /// A superflat sea backdrop; areas at y=64+ read as islands.
+    Ocean,
+}
+
+/// The default boundary `margin` (blocks of horizontal breathing room added
+/// around the derived region). Separate function so `serde(default = …)` and the
+/// documented literal cannot drift.
+fn default_margin() -> u16 {
+    16
+}
+
+/// A playable-region boundary declaration (DSL v0.6, spec-0013). The region
+/// itself is **derived** by the compiler (union of the final placed-piece AABBs,
+/// inflated horizontally by `margin`, unbounded upward, floored at the lowest
+/// placed block − 8) — never authored — so "every anchor is inside" is structural.
+/// Enforcement is a per-second clock that returns any player outside the region to
+/// the last checkpoint (`dw:cp`) with an actionbar message and a soft sound; no
+/// damage, no items lost.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Boundary {
+    /// Horizontal breathing room in blocks added around the derived region on
+    /// every side (default 16). Range-checked to `0..=64` (`DW0321`).
+    #[serde(default = "default_margin")]
+    pub margin: u16,
+    /// Actionbar message shown on return. Absent = the compiler's English default.
+    /// When set, it is inventoried under l10n key `world.boundary.message` and is
+    /// translated like every other player-facing string.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 /// A supplemental-lighting fixture the relight pass may place (DSL v0.5,
