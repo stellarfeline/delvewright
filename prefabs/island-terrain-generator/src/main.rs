@@ -880,6 +880,26 @@ fn greenfield_scatter(spec: &Spec, g: &mut Grid, seed: u64) {
         }
         false
     };
+    // Anchor cells + their forward sightline stay clear of tree/flower dressing so the
+    // meadow/fold anchors read clean and their facing view is unobstructed.
+    let protected = |x: i32, z: i32| -> bool {
+        for (_, a) in &spec.anchors {
+            let Some(p) = a.pos else { continue };
+            let (dx, dz) = match a.facing.as_deref() {
+                Some("north") => (0, -1),
+                Some("south") => (0, 1),
+                Some("east") => (1, 0),
+                Some("west") => (-1, 0),
+                _ => (0, 0),
+            };
+            for k in 0..=2 {
+                if x == p[0] + dx * k && z == p[2] + dz * k {
+                    return true;
+                }
+            }
+        }
+        false
+    };
     // Low mossy-cobblestone empty sheep fold (foreshadowing — the sheep are his):
     // a 1-tall wall rectangle with a gap "gate", in the west meadow away from path.
     let fold = fold_rect(spec);
@@ -906,71 +926,121 @@ fn greenfield_scatter(spec: &Spec, g: &mut Grid, seed: u64) {
             g.blk(fx0 + 1, 1, fz0 + 1, "minecraft:short_grass", None);
         }
     }
-    // Oaks: trunk + a small leaf ball, noise-scattered off-walk on the meadow floor.
+    // Oaks: 2–3 small hand-shaped oaks per piece, chosen deterministically from the
+    // highest-noise off-corridor meadow cells with a spacing rule so they spread out.
+    // Strictly off the walk corridor, the fold, and the anchor sightlines; the canopy
+    // is never grown over a corridor cell, so the socket-to-socket path keeps full
+    // headroom (the compiler's DW0311 walkability gate is the authority at assembly).
+    let mut cand: Vec<(f64, i32, i32)> = Vec::new();
     for x in 2..sx - 2 {
         for z in 2..sz - 2 {
-            if on_walk(x, z) || greenfield_surface(spec, x, z, seed) != 0 {
+            if on_walk(x, z) || in_fold(spec, x, z) || protected(x, z) {
                 continue;
             }
-            if in_fold(spec, x, z) {
+            if greenfield_surface(spec, x, z, seed) != 0 {
                 continue;
             }
-            let n = value_noise(seed, x, 5, z, 0.5, 41);
-            if n > 0.90 && g.is_solid(x, 0, z) && g.is_air(x, 1, z) {
-                let h = 4 + (value_noise(seed, x, 0, z, 0.6, 43) > 0.5) as i32;
-                for y in 1..=h {
-                    g.blk(x, y, z, "minecraft:oak_log", Some(vec![("axis", "y")]));
-                }
-                for dx in -2..=2 {
-                    for dz in -2..=2 {
-                        for dy in h - 1..=h + 1 {
-                            let (lx, lz) = (x + dx, z + dz);
-                            let r2 = dx * dx + dz * dz + (dy - h) * (dy - h);
-                            if r2 <= 5 && g.inb(lx, dy, lz) && g.is_air(lx, dy, lz) {
-                                g.blk(
-                                    lx,
-                                    dy,
-                                    lz,
-                                    "minecraft:oak_leaves",
-                                    Some(vec![("persistent", "true")]),
-                                );
-                            }
-                        }
-                    }
-                }
-                g.blk(
-                    x,
-                    h + 2,
-                    z,
-                    "minecraft:oak_leaves",
-                    Some(vec![("persistent", "true")]),
-                );
+            if g.is_solid(x, 0, z) && g.is_air(x, 1, z) {
+                cand.push((value_noise(seed, x, 5, z, 0.5, 41), x, z));
             }
         }
     }
-    // Flowers + grass tufts on the open meadow (never on walk, never under a tree).
+    cand.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+    let mut planted: Vec<(i32, i32)> = Vec::new();
+    for (_, x, z) in cand {
+        if planted.len() >= 3 {
+            break;
+        }
+        // reject only when close on BOTH axes so the oaks stay spread across the dell
+        if planted
+            .iter()
+            .any(|&(px, pz)| (px - x).abs() < 4 && (pz - z).abs() < 4)
+        {
+            continue;
+        }
+        place_oak(g, x, z, seed, &on_walk);
+        planted.push((x, z));
+    }
+
+    // Poppies + daisies (the design-named meadow flowers) with an occasional cornflower
+    // accent and a short-grass dusting, scattered on the open grass only (never on the
+    // worn dirt path — restricted to true grass cells — never in the fold pen, on an
+    // anchor, or under a trunk). Noise-thresholded to ~10% flower density so the meadow
+    // reads as a wildflower pasture, not a bare courtyard. The array is weighted (poppy
+    // 2 / daisy 2 / cornflower 1) so the two named flowers dominate on small samples.
     let flowers = [
         "minecraft:poppy",
         "minecraft:oxeye_daisy",
+        "minecraft:poppy",
+        "minecraft:oxeye_daisy",
         "minecraft:cornflower",
-        "minecraft:dandelion",
     ];
     for x in 1..sx - 1 {
         for z in 1..sz - 1 {
-            if on_walk(x, z) || greenfield_surface(spec, x, z, seed) != 0 {
+            if on_walk(x, z) || in_fold(spec, x, z) || protected(x, z) {
                 continue;
             }
-            if !g.is_solid(x, 0, z) || !g.is_air(x, 1, z) {
+            if greenfield_surface(spec, x, z, seed) != 0 {
                 continue;
             }
-            let n = value_noise(seed, x, 1, z, 0.7, 51);
-            if n > 0.90 {
-                let f = flowers[((n * 997.0) as usize) % flowers.len()];
+            // grass only — the dirt path, podzol/moss dapples, and trunks stay bare
+            if !matches!(g.get(x, 0, z), Cell::Block(name, _) if name == "minecraft:grass_block") {
+                continue;
+            }
+            if !g.is_air(x, 1, z) {
+                continue;
+            }
+            if hash01(seed, x, 1, z, 151) < 0.10 {
+                let f = flowers
+                    [(hash01(seed, x, 3, z, 155) * flowers.len() as f64) as usize % flowers.len()];
                 g.blk(x, 1, z, f, None);
-            } else if n < 0.34 && value_noise(seed, x, 2, z, 0.8, 53) > 0.62 {
+            } else if hash01(seed, x, 2, z, 153) < 0.15 {
                 g.blk(x, 1, z, "minecraft:short_grass", None);
             }
         }
+    }
+}
+
+/// Place one small hand-shaped oak (3–4 log trunk + a compact leaf ball) rooted at
+/// (x,z) on the meadow floor (y=0 solid, y=1 air). The canopy is never written over a
+/// walk-corridor cell (`on_walk`), so the critical socket-to-socket path keeps full
+/// headroom regardless of how close an oak is planted to it.
+fn place_oak(g: &mut Grid, x: i32, z: i32, seed: u64, on_walk: &impl Fn(i32, i32) -> bool) {
+    let h = 3 + (value_noise(seed, x, 0, z, 0.6, 43) > 0.5) as i32; // 3 or 4 logs
+    for y in 1..=h {
+        g.blk(x, y, z, "minecraft:oak_log", Some(vec![("axis", "y")]));
+    }
+    // compact leaf ball: a rounded 5-wide band at the trunk top, narrowing upward.
+    for dy in (h - 1)..=(h + 1) {
+        let rad = if dy == h + 1 { 1 } else { 2 };
+        for dx in -rad..=rad {
+            for dz in -rad..=rad {
+                let (lx, lz) = (x + dx, z + dz);
+                if on_walk(lx, lz) {
+                    continue; // never overhang the critical corridor
+                }
+                let r2 = dx * dx + dz * dz + (dy - h) * (dy - h);
+                if r2 <= 5 && g.inb(lx, dy, lz) && g.is_air(lx, dy, lz) {
+                    g.blk(
+                        lx,
+                        dy,
+                        lz,
+                        "minecraft:oak_leaves",
+                        Some(vec![("persistent", "true")]),
+                    );
+                }
+            }
+        }
+    }
+    // a single crown leaf caps the ball
+    if g.inb(x, h + 2, z) && g.is_air(x, h + 2, z) {
+        g.blk(
+            x,
+            h + 2,
+            z,
+            "minecraft:oak_leaves",
+            Some(vec![("persistent", "true")]),
+        );
     }
 }
 
@@ -1026,7 +1096,7 @@ const M_MOUTH_XC: i32 = 17; // mouth centre x
 /// base; sides stay full-height to bound the slot.
 fn mountain_surface(sx: i32, sy: i32, sz: i32, x: i32, z: i32, seed: u64) -> i32 {
     let peak = sy - 1;
-    let side = x < M_CAV_X0 || x > M_CAV_X1;
+    let side = !(M_CAV_X0..=M_CAV_X1).contains(&x);
     if z < M_SLOPE_Z0 {
         // Massif over the cavern body + mouth wall: a domed rocky cap (rounded, not a
         // flat plateau) with a ragged crown. Radial dome from the massif centre.
@@ -1159,7 +1229,7 @@ fn roughen_massif(g: &mut Grid, seed: u64) {
             let depth = (n * 3.4).floor() as i32;
             let mut removed = 0;
             let mut y = sy - 1;
-            while removed < depth && y >= M_CEIL + 1 {
+            while removed < depth && y > M_CEIL {
                 if g.is_solid(x, y, z) && g.is_solid(x, y - 1, z) {
                     g.set(x, y, z, Cell::Air);
                     removed += 1;
