@@ -508,6 +508,16 @@ pub enum DialogueEffect {
         /// The weather state to cut to.
         weather: WorldWeather,
     },
+    /// Sets the party-wide respawn checkpoint (DSL v0.6, spec-0012), mirroring
+    /// [`QuestEffect::SetCheckpoint`] — usable from a dialogue outcome.
+    SetCheckpoint {
+        /// The prefab checkpoint anchor the party respawns at.
+        anchor: AnchorId,
+        /// Per-player effects re-run on respawn while this checkpoint is active
+        /// (scene reset). Empty = no hook.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        on_respawn: Vec<QuestEffect>,
+    },
 }
 
 impl DialogueEffect {
@@ -517,6 +527,25 @@ impl DialogueEffect {
         match self {
             DialogueEffect::SetTime { .. } => Some("set-time"),
             DialogueEffect::SetWeather { .. } => Some("set-weather"),
+            _ => None,
+        }
+    }
+
+    /// The v0.6 effect name if this dialogue effect is one introduced in DSL v0.6
+    /// (`set-checkpoint`, spec-0012). Reserved (`DW0141`) in an earlier campaign.
+    pub fn v06_effect(&self) -> Option<&'static str> {
+        match self {
+            DialogueEffect::SetCheckpoint { .. } => Some("set-checkpoint"),
+            _ => None,
+        }
+    }
+
+    /// `(anchor, on_respawn)` if this is a v0.6 `set-checkpoint` dialogue effect.
+    pub fn set_checkpoint(&self) -> Option<(&AnchorId, &[QuestEffect])> {
+        match self {
+            DialogueEffect::SetCheckpoint { anchor, on_respawn } => {
+                Some((anchor, on_respawn.as_slice()))
+            }
             _ => None,
         }
     }
@@ -1247,6 +1276,60 @@ pub enum QuestEffect {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
     },
+    /// Sets the party-wide respawn checkpoint (DSL v0.6, spec-0012). Emits
+    /// `spawnpoint @a` at the anchor cell and mirrors the coords into
+    /// `storage dw:cp pos`. Party-wide and monotonic by quest order (a later
+    /// `set-checkpoint` always replaces an earlier one). The compiler proves the
+    /// cell is standable (`DW0316`) and that the remaining critical path stays
+    /// reachable from it (`DW0315`).
+    SetCheckpoint {
+        /// The prefab checkpoint anchor the party respawns at.
+        anchor: AnchorId,
+        /// Per-player effects re-run each time a player respawns while this
+        /// checkpoint is the active one — scene reset (e.g. re-caging an
+        /// unleashed actor). Emitted idempotently in declared order; empty = no
+        /// hook. Respawn is detected via the vanilla `deathCount` criterion.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        on_respawn: Vec<QuestEffect>,
+    },
+    /// Begins a stealth beat (DSL v0.6, spec-0014). While active, every player
+    /// must be inside some `zone` **and** sneaking each tick; a player failing
+    /// both for `grace_ticks` fires `on_caught` (typically a kill → checkpoint
+    /// respawn). Sneaking is read from the vanilla `sneak_time` custom stat; zone
+    /// membership from the player's position. The compiler proves each zone is
+    /// standable and reachable from the activating beat (`DW0327`).
+    BeginStealth {
+        /// The "shadow" regions, each an anchor-centred box (see [`StealthZone`]).
+        zones: Vec<StealthZone>,
+        /// Per-player effects fired when a player is caught (out of every zone or
+        /// standing, for `grace_ticks`). Empty = no consequence.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        on_caught: Vec<QuestEffect>,
+        /// Ticks a player may be exposed before `on_caught` fires (default 20).
+        #[serde(default = "default_grace_ticks")]
+        grace_ticks: u32,
+    },
+    /// Ends the active stealth beat (DSL v0.6, spec-0014). No-op if none active.
+    EndStealth,
+}
+
+/// Default `grace_ticks` for [`QuestEffect::BeginStealth`] (spec-0014).
+fn default_grace_ticks() -> u32 {
+    20
+}
+
+/// A stealth "shadow" region (DSL v0.6, spec-0014): an axis-aligned box centred
+/// on `anchor`, extending `extent` blocks along each axis (so the box spans
+/// `anchor ± extent`). Presented in-world via dark cells but judged purely by
+/// region membership, so the check is deterministic and provable.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StealthZone {
+    /// The prefab anchor at the centre of the zone box.
+    pub anchor: AnchorId,
+    /// Half-extents `[x, y, z]` in blocks from the anchor (each component ≥ 0);
+    /// the zone AABB is `[anchor - extent, anchor + extent]`.
+    pub extent: [u32; 3],
 }
 
 /// Where a [`QuestEffect::PlaySound`] originates (DSL v0.6, spec-0014). The
@@ -1397,7 +1480,10 @@ impl QuestEffect {
             | QuestEffect::Cutscene { .. }
             | QuestEffect::SetTime { .. }
             | QuestEffect::SetWeather { .. }
-            | QuestEffect::PlaySound { .. } => None,
+            | QuestEffect::PlaySound { .. }
+            | QuestEffect::SetCheckpoint { .. }
+            | QuestEffect::BeginStealth { .. }
+            | QuestEffect::EndStealth => None,
         }
     }
 
@@ -1426,6 +1512,43 @@ impl QuestEffect {
         }
     }
 
+    /// The v0.6 effect name if this effect is one introduced in DSL v0.6
+    /// (`set-checkpoint`, spec-0012; `begin-stealth`/`end-stealth`, spec-0014;
+    /// `play-sound`, spec-0014). These validate in v0.6 campaigns and are reserved
+    /// (`DW0141`) earlier. (The `narrate` `art` style is a v0.6 addition to an
+    /// existing verb — see [`QuestEffect::narrate_art`] — not a new effect.)
+    pub fn v06_effect(&self) -> Option<&'static str> {
+        match self {
+            QuestEffect::SetCheckpoint { .. } => Some("set-checkpoint"),
+            QuestEffect::BeginStealth { .. } => Some("begin-stealth"),
+            QuestEffect::EndStealth => Some("end-stealth"),
+            QuestEffect::PlaySound { .. } => Some("play-sound"),
+            _ => None,
+        }
+    }
+
+    /// `(anchor, on_respawn)` if this is a v0.6 `set-checkpoint` effect.
+    pub fn set_checkpoint(&self) -> Option<(&AnchorId, &[QuestEffect])> {
+        match self {
+            QuestEffect::SetCheckpoint { anchor, on_respawn } => {
+                Some((anchor, on_respawn.as_slice()))
+            }
+            _ => None,
+        }
+    }
+
+    /// `(zones, on_caught, grace_ticks)` if this is a v0.6 `begin-stealth` effect.
+    pub fn begin_stealth(&self) -> Option<(&[StealthZone], &[QuestEffect], u32)> {
+        match self {
+            QuestEffect::BeginStealth {
+                zones,
+                on_caught,
+                grace_ticks,
+            } => Some((zones.as_slice(), on_caught.as_slice(), *grace_ticks)),
+            _ => None,
+        }
+    }
+
     /// The target time if this is a v0.5 `set-time` effect.
     pub fn set_time(&self) -> Option<WorldTime> {
         match self {
@@ -1438,17 +1561,6 @@ impl QuestEffect {
     pub fn set_weather(&self) -> Option<WorldWeather> {
         match self {
             QuestEffect::SetWeather { weather, .. } => Some(*weather),
-            _ => None,
-        }
-    }
-
-    /// The v0.6 effect name if this effect is one introduced in DSL v0.6
-    /// (`play-sound`, spec-0014). Validates in a v0.6 campaign and is reserved
-    /// (`DW0141`) earlier. (The `narrate` `art` style is a v0.6 addition to an
-    /// existing verb — see [`QuestEffect::narrate_art`] — not a new effect.)
-    pub fn v06_effect(&self) -> Option<&'static str> {
-        match self {
-            QuestEffect::PlaySound { .. } => Some("play-sound"),
             _ => None,
         }
     }
@@ -1503,10 +1615,11 @@ impl QuestEffect {
 
     /// The per-effect flag gate (DSL v0.6, task #55): flags that must ALL be set
     /// (per player) for this effect to fire. Empty for an ungated effect and for
-    /// the terminal `campaign-complete` (which is never gatable). Emission wraps
-    /// a gated effect's commands in a per-player `execute if score @s
-    /// dw.f_<flag> matches 1` guard; a pre-0.6 campaign that gates any effect is
-    /// rejected (`DW0141`).
+    /// the verbs that are not per-effect gatable — terminal `campaign-complete`
+    /// and the party/session-global `set-checkpoint` / `begin-stealth` /
+    /// `end-stealth`. Emission wraps a gated effect's commands in a per-player
+    /// `execute if score @s dw.f_<flag> matches 1` guard; a pre-0.6 campaign that
+    /// gates any effect is rejected (`DW0141`).
     pub fn requires_flags(&self) -> &[FlagId] {
         match self {
             QuestEffect::OpenGate { requires_flags, .. }
@@ -1521,7 +1634,15 @@ impl QuestEffect {
             | QuestEffect::SetTime { requires_flags, .. }
             | QuestEffect::SetWeather { requires_flags, .. }
             | QuestEffect::PlaySound { requires_flags, .. } => requires_flags,
-            QuestEffect::CampaignComplete => &[],
+            // Terminal / party- or session-global verbs are not per-effect
+            // gatable: `campaign-complete` is terminal, and `set-checkpoint`
+            // (`spawnpoint @a`) / `begin-stealth` / `end-stealth` are party-wide
+            // session state, not per-player `@s` effects. Gate these at the
+            // objective / dialogue-option level instead.
+            QuestEffect::CampaignComplete
+            | QuestEffect::SetCheckpoint { .. }
+            | QuestEffect::BeginStealth { .. }
+            | QuestEffect::EndStealth => &[],
         }
     }
 }

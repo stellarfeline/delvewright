@@ -42,6 +42,23 @@ pub const DW_CUTSCENE_CLIP: &str = "DW0308";
 /// doorway shut / opened a void gap and only a runtime bot caught it) into a
 /// compile error.
 pub const DW_CRITICAL_UNROUTABLE: &str = "DW0311";
+/// `DW0315`: a `set-checkpoint` (spec-0012) that would strand the party — from the
+/// checkpoint cell, a remaining required critical-path anchor is no longer
+/// walkable (a checkpoint behind a one-way drop). Re-roots the DW0311 reachability
+/// at the checkpoint.
+pub const DW_CHECKPOINT_STRANDED: &str = "DW0315";
+/// `DW0316`: a `set-checkpoint` anchor with no standable footing on the final
+/// assembled model (a trap-trigger / hazard / mid-air cell), so the party would
+/// respawn into the void or a wall.
+pub const DW_CHECKPOINT_UNSTANDABLE: &str = "DW0316";
+/// `DW0327`: a `begin-stealth` (spec-0014) zone that is unstandable, or unreachable
+/// from the player's position at the beat that activates the stealth check.
+pub const DW_STEALTH_ZONE: &str = "DW0327";
+
+/// A resolved stealth zone `(anchor name, centre cell, half-extents)`.
+type ZoneCell = (String, [i32; 3], [u32; 3]);
+/// A stealth beat probe for [`verify_stealth`]: `(zones, firing step)`.
+type StealthProbe = (Vec<ZoneCell>, usize);
 
 /// Default NPC walking speed in blocks/tick (spec-0008 §5; owner spike). Used when
 /// a `move-npc` effect omits `speed`.
@@ -741,6 +758,10 @@ pub fn needs_world(plan: &Plan) -> bool {
     })
     // The critical-path walkability check (DW0311) also needs the occupancy model.
         || has_walkable_critical_leg(plan)
+    // The checkpoint (DW0315/DW0316) and stealth-zone (DW0327) proofs, v0.6, need
+    // the assembled occupancy model too.
+        || !plan.checkpoints.is_empty()
+        || !plan.stealth_beats.is_empty()
 }
 
 /// The player-visited critical-path positions in order, each tagged with whether
@@ -761,6 +782,9 @@ struct VisitedPos {
     /// range beside* the NPC, never on the mannequin-occupied anchor cell, so the
     /// goal snap must exclude that cell (task #45).
     talk_to: bool,
+    /// The originating `critical_path` step index (v0.6): lets the checkpoint /
+    /// stealth proofs select the positions at or after a firing step.
+    src_step: usize,
 }
 
 fn critical_positions(plan: &Plan) -> Vec<VisitedPos> {
@@ -780,6 +804,7 @@ fn critical_positions(plan: &Plan) -> Vec<VisitedPos> {
                 pos,
                 transport_before: transport_pending,
                 talk_to: matches!(step, Step::TalkTo { .. }),
+                src_step: i,
             });
             transport_pending = false;
         }
@@ -862,6 +887,155 @@ fn route_visited(world: &World, positions: &[VisitedPos]) -> Result<(), NavError
                      assembled layout (or, if the jump is intended, a missing inter-area transport)."
                 ),
             });
+        }
+    }
+    Ok(())
+}
+
+/// Prove no `set-checkpoint` strands the party (DSL v0.6, spec-0012). Two
+/// obligations, per checkpoint:
+///
+/// 1. **Placement** ([`DW_CHECKPOINT_UNSTANDABLE`], `DW0316`): the checkpoint
+///    anchor must have a standable floor cell within [`SNAP_RADIUS`] on the final
+///    assembled model, or the party respawns into void / a wall. (Because the
+///    relight pass — which runs before nav — proves every reachable walkable cell
+///    meets the area's `min_light`, a standable, reachable checkpoint cell
+///    provably meets `min_light` too; no separate light probe is needed.)
+/// 2. **No stranding** ([`DW_CHECKPOINT_STRANDED`], `DW0315`, the core proof):
+///    the DW0311 reachability, re-rooted at the checkpoint cell, must still reach
+///    the remaining critical path. Since consecutive walked legs are already
+///    proven forward-walkable, it suffices to reach the FIRST walked critical
+///    position that fires after the checkpoint — reconnecting the whole forward
+///    path. The message names the checkpoint and that first unreachable anchor,
+///    and prescribes moving the checkpoint or adding a return route (never
+///    deleting the checkpoint to silence the proof; #73 rubric).
+pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), NavError> {
+    let cps: Vec<(String, [i32; 3], usize)> = plan
+        .checkpoints
+        .iter()
+        .map(|c| (c.anchor.clone(), c.pos, c.fire_step))
+        .collect();
+    verify_checkpoints(world, &cps, &critical_positions(plan))
+}
+
+/// The pure core of [`check_checkpoints`] (split out so it is unit-testable
+/// against a synthetic [`World`] without a full [`Plan`]). Each checkpoint is
+/// `(anchor, cell, fire_step)`.
+fn verify_checkpoints(
+    world: &World,
+    checkpoints: &[(String, [i32; 3], usize)],
+    positions: &[VisitedPos],
+) -> Result<(), NavError> {
+    for (anchor, pos, fire_step) in checkpoints {
+        let Some(cell) = world.snap_standable(*pos, SNAP_RADIUS) else {
+            return Err(NavError {
+                code: DW_CHECKPOINT_UNSTANDABLE,
+                message: format!(
+                    "checkpoint anchor `{anchor}` at {pos:?} has no standable floor within \
+                     {SNAP_RADIUS} blocks on the assembled model — the party would respawn into \
+                     void or a wall. Move the checkpoint onto reachable floor (not a trap-trigger, \
+                     hazard, or mid-air cell); if the prefab looks correct, this is an \
+                     assembly/toolchain defect — escalate rather than hide it."
+                ),
+            });
+        };
+        // The first walked critical position strictly after the checkpoint fires.
+        let Some(target) = positions
+            .iter()
+            .filter(|p| p.src_step > *fire_step && !p.transport_before)
+            .min_by_key(|p| p.src_step)
+        else {
+            continue; // nothing left to walk to (checkpoint at/near the finale)
+        };
+        let Some(goal) = world.snap_endpoint(target.pos, target.talk_to) else {
+            continue; // the target itself is unsnappable → a DW0311 concern, not ours
+        };
+        if world.find_path(cell, goal).is_none() {
+            return Err(NavError {
+                code: DW_CHECKPOINT_STRANDED,
+                message: format!(
+                    "checkpoint `{anchor}` (cell {cell:?}) strands the party: the next required \
+                     anchor {:?} is not walkable from it over the assembled geometry (a checkpoint \
+                     behind a one-way drop the forward path can't re-cross after respawn). Move the \
+                     checkpoint to a cell that keeps the remaining path reachable, or add a return \
+                     route back up — do NOT delete the checkpoint to silence this proof.",
+                    target.pos
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Prove every `begin-stealth` zone is standable and reachable from the beat that
+/// activates it (DSL v0.6, spec-0014) — [`DW_STEALTH_ZONE`] (`DW0327`). A zone the
+/// player can never legally occupy (walled/void) or can never walk to from the
+/// activating position is a guaranteed unwinnable stealth beat.
+pub fn check_stealth_zones(plan: &Plan, world: &World) -> Result<(), NavError> {
+    let beats: Vec<StealthProbe> = plan
+        .stealth_beats
+        .iter()
+        .map(|b| (b.zones.clone(), b.fire_step))
+        .collect();
+    verify_stealth(world, &beats, &critical_positions(plan))
+}
+
+/// The pure core of [`check_stealth_zones`] (unit-testable against a synthetic
+/// [`World`]). Each beat is `(zones, fire_step)`; each zone `(name, centre,
+/// half-extents)`.
+fn verify_stealth(
+    world: &World,
+    beats: &[StealthProbe],
+    positions: &[VisitedPos],
+) -> Result<(), NavError> {
+    for (zones, fire_step) in beats {
+        // The player's position at the activating beat: the visited position at the
+        // firing step, else the nearest earlier one, else the first position.
+        let player_pos = positions
+            .iter()
+            .filter(|p| p.src_step <= *fire_step)
+            .max_by_key(|p| p.src_step)
+            .or_else(|| positions.first())
+            .map(|p| p.pos);
+        for (name, pos, extent) in zones {
+            let lo = [
+                pos[0] - extent[0] as i32,
+                pos[1] - extent[1] as i32,
+                pos[2] - extent[2] as i32,
+            ];
+            let hi = [
+                pos[0] + extent[0] as i32,
+                pos[1] + extent[1] as i32,
+                pos[2] + extent[2] as i32,
+            ];
+            let in_box = |c: [i32; 3]| (0..3).all(|k| lo[k] <= c[k] && c[k] <= hi[k]);
+            let radius = extent.iter().copied().max().unwrap_or(0) as i32;
+            let Some(stand) = world.snap_in_bounds(*pos, radius, &in_box) else {
+                return Err(NavError {
+                    code: DW_STEALTH_ZONE,
+                    message: format!(
+                        "stealth zone `{name}` (box {lo:?}..{hi:?}) has no standable cell — a \
+                         player can never legally hide there, so the beat is unwinnable. Place the \
+                         zone over reachable floor, or widen its `extent` to include a standable \
+                         cell."
+                    ),
+                });
+            };
+            let start = player_pos.and_then(|p| world.snap_standable(p, SNAP_RADIUS));
+            if let Some(start) = start
+                && world.find_path(start, stand).is_none()
+            {
+                return Err(NavError {
+                    code: DW_STEALTH_ZONE,
+                    message: format!(
+                        "stealth zone `{name}` (cell {stand:?}) is not reachable from the player's \
+                         position {:?} when the stealth beat begins — the player would be caught \
+                         before ever reaching cover. Route the zone within walkable reach of the \
+                         activating beat, or move where the beat starts.",
+                        player_pos.unwrap()
+                    ),
+                });
+            }
         }
     }
     Ok(())
@@ -976,6 +1150,7 @@ mod tests {
             pos,
             transport_before,
             talk_to: false,
+            src_step: 0,
         }
     }
 
@@ -1258,5 +1433,92 @@ mod tests {
         // The final waypoint is exactly the integer target cell.
         assert_eq!(*slow.last().unwrap(), [10.0, 65.0, 0.0]);
         assert_eq!(slow[0], [0.0, 65.0, 0.0]);
+    }
+
+    // --- v0.6 checkpoint / stealth proofs (spec-0012 / spec-0014) ---
+
+    /// Two floor patches (x∈{0,1} and x∈{3,4}) with a void gap at x=2.
+    fn split_world(y: i32) -> World {
+        let mut solid = BTreeSet::new();
+        for x in [0, 1, 3, 4] {
+            for z in 0..3 {
+                solid.insert([x, y - 1, z]); // floor
+                solid.insert([x, y + 2, z]); // ceiling
+            }
+        }
+        World::from_solid_cells(solid)
+    }
+
+    fn at_step(pos: [i32; 3], src_step: usize) -> VisitedPos {
+        VisitedPos {
+            pos,
+            transport_before: false,
+            talk_to: false,
+            src_step,
+        }
+    }
+
+    #[test]
+    fn checkpoint_behind_a_one_way_drop_is_dw0315() {
+        // Checkpoint on the near patch; the next required anchor is on the far,
+        // disconnected patch → not walkable from the checkpoint → DW0315.
+        let world = split_world(65);
+        let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
+        let positions = vec![at_step([4, 65, 1], 1)];
+        let err = verify_checkpoints(&world, &cps, &positions).unwrap_err();
+        assert_eq!(err.code, DW_CHECKPOINT_STRANDED); // DW0315
+    }
+
+    #[test]
+    fn checkpoint_with_reachable_remaining_path_passes() {
+        // Both the checkpoint and the next anchor sit on the same connected floor.
+        let world = floored(5, 3, 65, &[]);
+        let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
+        let positions = vec![at_step([4, 65, 1], 1)];
+        assert!(verify_checkpoints(&world, &cps, &positions).is_ok());
+    }
+
+    #[test]
+    fn checkpoint_over_void_is_dw0316() {
+        // The checkpoint cell has no standable floor within snap radius.
+        let world = floored(5, 3, 65, &[]);
+        let cps = vec![("cp/rest".to_string(), [20, 65, 20], 0usize)];
+        let err = verify_checkpoints(&world, &cps, &[]).unwrap_err();
+        assert_eq!(err.code, DW_CHECKPOINT_UNSTANDABLE); // DW0316
+    }
+
+    #[test]
+    fn stealth_zone_over_void_is_dw0327() {
+        // A zero-extent zone centred on a void cell → no standable cell → DW0327.
+        let world = floored(5, 3, 65, &[]);
+        let beats = vec![(
+            vec![("zone/shadow".to_string(), [20, 65, 20], [0, 0, 0])],
+            0usize,
+        )];
+        let err = verify_stealth(&world, &beats, &[at_step([2, 65, 1], 0)]).unwrap_err();
+        assert_eq!(err.code, DW_STEALTH_ZONE); // DW0327
+    }
+
+    #[test]
+    fn stealth_zone_unreachable_from_beat_is_dw0327() {
+        // The zone is standable on the far patch, but the activating beat sits on
+        // the near patch across a void gap → unreachable → DW0327.
+        let world = split_world(65);
+        let beats = vec![(
+            vec![("zone/shadow".to_string(), [4, 65, 1], [1, 1, 1])],
+            0usize,
+        )];
+        let err = verify_stealth(&world, &beats, &[at_step([0, 65, 1], 0)]).unwrap_err();
+        assert_eq!(err.code, DW_STEALTH_ZONE); // DW0327
+    }
+
+    #[test]
+    fn stealth_zone_standable_and_reachable_passes() {
+        let world = floored(6, 3, 65, &[]);
+        let beats = vec![(
+            vec![("zone/shadow".to_string(), [4, 65, 1], [1, 1, 1])],
+            0usize,
+        )];
+        assert!(verify_stealth(&world, &beats, &[at_step([0, 65, 1], 0)]).is_ok());
     }
 }
