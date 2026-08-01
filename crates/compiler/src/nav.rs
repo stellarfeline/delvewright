@@ -613,7 +613,8 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
         let start = npc_start(plan, npc.as_str()).ok_or_else(|| NavError {
             code: DW_MOVE_UNROUTABLE,
             message: format!(
-                "move-npc: NPC `{}` has no resolved home anchor to walk from",
+                "move-npc: NPC `{}` has no resolved home anchor to walk from — give the npc a \
+                 stage-2 `anchor` that its area's prefab provides, so the walk has a start",
                 npc.as_str()
             ),
         })?;
@@ -621,7 +622,8 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
             move_target(plan, npc.as_str(), to_anchor.as_str()).ok_or_else(|| NavError {
                 code: DW_MOVE_UNROUTABLE,
                 message: format!(
-                    "move-npc: destination anchor `{}` for NPC `{}` did not resolve",
+                    "move-npc: destination anchor `{}` for NPC `{}` did not resolve to a world \
+                     position — use a `to_anchor` that the NPC's area prefab provides",
                     to_anchor.as_str(),
                     npc.as_str()
                 ),
@@ -629,18 +631,26 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
         // The NPC walks up to a solid affordance, not into it: snap both endpoints
         // to the floor cell nearest the anchor.
         let start = world.snap_standable(start, SNAP_RADIUS).unwrap_or(start);
-        let target = world.snap_standable(anchor_pos, SNAP_RADIUS).ok_or_else(|| NavError {
-            code: DW_MOVE_UNROUTABLE,
-            message: format!(
-                "move-npc: no standable floor cell near destination anchor `{}` {anchor_pos:?} for NPC `{}`",
-                to_anchor.as_str(),
-                npc.as_str()
-            ),
-        })?;
+        let target = world
+            .snap_standable(anchor_pos, SNAP_RADIUS)
+            .ok_or_else(|| NavError {
+                code: DW_MOVE_UNROUTABLE,
+                message: format!(
+                    "move-npc: no standable floor cell near destination anchor `{}` {anchor_pos:?} \
+                 for NPC `{}` — the anchor is walled in or over void; place `{}` beside walkable \
+                 floor the npc can stand on",
+                    to_anchor.as_str(),
+                    npc.as_str(),
+                    to_anchor.as_str(),
+                ),
+            })?;
         let cells = world.find_path(start, target).ok_or_else(|| NavError {
             code: DW_MOVE_UNROUTABLE,
             message: format!(
-                "move-npc: NPC `{}` cannot walk from `{}` {start:?} to `{}` {anchor_pos:?} (floor {target:?}) — no collision-free path over the solved geometry",
+                "move-npc: NPC `{}` cannot walk from `{}` {start:?} to `{}` {anchor_pos:?} (floor \
+                 {target:?}) — no collision-free path over the solved geometry. Route the move \
+                 within one connected area (a wall/void/closed gate separates start and \
+                 destination), or split it into shorter reachable hops",
                 npc.as_str(),
                 plan_npc_anchor(plan, npc.as_str()),
                 to_anchor.as_str(),
@@ -705,7 +715,9 @@ pub fn check_cutscenes(plan: &Plan, world: &World) -> Result<(), NavError> {
             return Err(NavError {
                 code: DW_CUTSCENE_CLIP,
                 message: format!(
-                    "cutscene: camera dolly segment {seg} (from {:?} to {:?}) clips a solid block at {cell:?}",
+                    "cutscene: camera dolly segment {seg} (from {:?} to {:?}) clips a solid block \
+                     at {cell:?} — cameras must fly through open air; move the segment's \
+                     waypoint `anchor`/`offset` so the whole path clears solid blocks",
                     round3(pts[seg]),
                     round3(pts[seg + 1]),
                 ),
@@ -852,13 +864,20 @@ fn route_visited(world: &World, positions: &[([i32; 3], bool)]) -> Result<(), Na
         let start = world.snap_standable(from, SNAP_RADIUS).ok_or_else(|| NavError {
             code: DW_CRITICAL_UNROUTABLE,
             message: format!(
-                "critical path: no standable floor within {SNAP_RADIUS} blocks of visited anchor {from:?}"
+                "critical path: no standable floor within {SNAP_RADIUS} blocks of visited anchor \
+                 {from:?} — a player-visited anchor sits walled in or over void. Fix the prefab \
+                 so this anchor sits on/next to reachable floor; if the prefab looks correct, this \
+                 is an assembly/toolchain defect — escalate rather than move the anchor into a \
+                 wall"
             ),
         })?;
         let goal = world.snap_standable(to, SNAP_RADIUS).ok_or_else(|| NavError {
             code: DW_CRITICAL_UNROUTABLE,
             message: format!(
-                "critical path: no standable floor within {SNAP_RADIUS} blocks of visited anchor {to:?}"
+                "critical path: no standable floor within {SNAP_RADIUS} blocks of visited anchor \
+                 {to:?} — a player-visited anchor sits walled in or over void. Fix the prefab so \
+                 this anchor sits on/next to reachable floor; if the prefab looks correct, this is \
+                 an assembly/toolchain defect — escalate rather than move the anchor into a wall"
             ),
         })?;
         if world.find_path(start, goal).is_none() {

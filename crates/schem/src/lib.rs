@@ -56,7 +56,9 @@ pub fn convert(input: &[u8], base: &str, split_max: i32) -> Result<ConvertResult
         diagnostics.push(Diagnostic::warning(
             DW_DATAVERSION,
             format!(
-                "source DataVersion {dv} != target {} (1.21.11); block states assumed compatible",
+                "source DataVersion {dv} != target {} (1.21.11): block states are reinterpreted \
+                 without migration and may be wrong — re-export the schematic from Minecraft \
+                 1.21.11 to silence this and guarantee fidelity",
                 convert::DATA_VERSION
             ),
         ));

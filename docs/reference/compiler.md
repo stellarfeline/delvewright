@@ -267,13 +267,23 @@ dollies must pass only non-solid cells. Unroutable/clipping/stranded → `DW0307
 Every DW code in `crates/**/*.rs`. Grouped by range. `tools/check-dw-codes.py`
 verifies this catalog is bidirectionally exact against source (CI docs job).
 
+**Remediation contract (task #39).** Every DW message is the repair protocol for a
+zero-context author: it states **what** is wrong (with the offending name/coord/
+count/limit interpolated), **where** to fix it (the campaign stage/field, the
+prefab/tileset, or — for an invariant breach — "compiler bug, escalate"), and
+**how** to fix it; where a tempting wrong fix exists (weaken a threshold, reroll
+the `seed` against ADR-0006, widen a socket seam, bypass the allowlist) the
+message names it with an explicit "do NOT". The rows below summarize each code's
+*meaning*; the emitted message additionally carries the prescription. Gold
+standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
+
 ### DW01xx — validation (`dsl`; severity error; exit 1)
 
 | Code | Meaning |
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0}`). |
+| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0}`). |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |

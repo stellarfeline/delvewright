@@ -99,9 +99,12 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 expected.name(),
                 "/stage",
                 format!(
-                    "stage is `{}` but this document is the `{}` stage",
+                    "`stage` is `{}` but this is the `{}` stage document — set `stage` to `{}` (or \
+                     move this content into the `{}` document it belongs to)",
                     actual.name(),
-                    expected.name()
+                    expected.name(),
+                    expected.name(),
+                    actual.name(),
                 ),
             ));
         }
@@ -140,7 +143,11 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 codes::CAMPAIGN_ID_MISMATCH,
                 stage.name(),
                 "/campaign_id",
-                format!("campaign_id `{id}` differs from `{canonical}` in the world stage"),
+                format!(
+                    "campaign_id `{id}` differs from `{canonical}` (the world stage's id) — set \
+                     every stage's `campaign_id` to `{canonical}` so all six documents name one \
+                     campaign"
+                ),
             ));
         }
     }
@@ -158,7 +165,11 @@ fn syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     codes::ID_SYNTAX,
                     $stage,
                     $path,
-                    format!("malformed id `{}`", $id),
+                    format!(
+                        "malformed id `{}` — ids must be lowercase kebab-case with their type \
+                         prefix (e.g. `area/keep`, `npc/keeper`, `quest/find-key`)",
+                        $id
+                    ),
                 ));
             }
         };
@@ -220,7 +231,7 @@ fn dup_check<'a>(
                 codes::ID_DUPLICATE,
                 stage,
                 path,
-                format!("duplicate {what} id `{id}`"),
+                format!("duplicate {what} id `{id}` — rename one so every {what} id is unique"),
             ));
         }
     }
@@ -371,7 +382,11 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
             area_ids.contains(npc.area.as_str()),
             "npcs",
             format!("/content/npcs/{i}/area"),
-            format!("npc references unknown area `{}`", npc.area),
+            format!(
+                "npc references unknown area `{}` — declare it in stage-1 `world.areas` or \
+                 correct the reference",
+                npc.area
+            ),
         );
         // Persona relationships are same-stage NPC refs (validated within stage 2).
         for (k, rel) in npc.persona.relationships.iter().enumerate() {
@@ -380,7 +395,11 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 npc_ids.contains(rel.npc.as_str()),
                 "npcs",
                 format!("/content/npcs/{i}/persona/relationships/{k}/npc"),
-                format!("persona relationship references unknown npc `{}`", rel.npc),
+                format!(
+                    "persona relationship references unknown npc `{}` — declare that npc in \
+                     stage 2 or correct the reference",
+                    rel.npc
+                ),
             );
         }
     }
@@ -391,7 +410,11 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
             area_ids.contains(q.area.as_str()),
             "quest-plan",
             format!("/content/quests/{i}/area"),
-            format!("quest references unknown area `{}`", q.area),
+            format!(
+                "quest references unknown area `{}` — declare it in stage-1 `world.areas` or \
+                 correct the reference",
+                q.area
+            ),
         );
         for (k, npc) in q.npcs.iter().enumerate() {
             dangling(
@@ -399,7 +422,10 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 npc_ids.contains(npc.as_str()),
                 "quest-plan",
                 format!("/content/quests/{i}/npcs/{k}"),
-                format!("quest references unknown npc `{npc}`"),
+                format!(
+                    "quest references unknown npc `{npc}` — declare it in stage 2 or correct the \
+                     reference"
+                ),
             );
         }
         for (k, dep) in q.depends_on.iter().enumerate() {
@@ -408,7 +434,10 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 planned_ids.contains(dep.as_str()),
                 "quest-plan",
                 format!("/content/quests/{i}/depends_on/{k}"),
-                format!("quest depends on unknown quest `{dep}`"),
+                format!(
+                    "quest depends on unknown quest `{dep}` — declare it in the stage-4 quest \
+                     plan or correct the `depends_on` entry"
+                ),
             );
         }
     }
@@ -420,7 +449,10 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 expanded_ids.contains(quest.as_str()),
                 "quests",
                 format!("/content/quests/{i}/trigger/quest"),
-                format!("trigger references unknown quest `{quest}`"),
+                format!(
+                    "quest trigger `quest-complete` references unknown quest `{quest}` — declare \
+                     that quest in stage 5 or correct the reference"
+                ),
             );
         }
         let local_objs: BTreeSet<&str> = q.objectives.iter().map(|o| o.id().as_str()).collect();
@@ -431,7 +463,10 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     npc_ids.contains(npc.as_str()),
                     "quests",
                     format!("/content/quests/{i}/objectives/{j}/npc"),
-                    format!("objective references unknown npc `{npc}`"),
+                    format!(
+                        "`talk-to` objective references unknown npc `{npc}` — declare it in \
+                         stage 2 or correct the reference"
+                    ),
                 );
             }
             for (m, aft) in obj.after().iter().enumerate() {
@@ -440,7 +475,11 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     local_objs.contains(aft.as_str()),
                     "quests",
                     format!("/content/quests/{i}/objectives/{j}/after/{m}"),
-                    format!("objective `after` references unknown objective `{aft}`"),
+                    format!(
+                        "objective `after` references unknown objective `{aft}` — `after` may \
+                         only name another objective in the same quest; declare it or correct \
+                         the reference"
+                    ),
                 );
             }
         }
@@ -450,7 +489,10 @@ fn references(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 local_objs.contains(key.as_str()),
                 "quests",
                 format!("/content/quests/{i}/on_objective_complete/{key}"),
-                format!("on_objective_complete references unknown objective `{key}`"),
+                format!(
+                    "`on_objective_complete` is keyed by unknown objective `{key}` — the key must \
+                     name an objective declared in this quest; declare it or correct the key"
+                ),
             );
         }
     }
@@ -492,7 +534,10 @@ fn dialogue(c: &Campaign, d: &mut Vec<Diagnostic>) {
                         codes::DIALOGUE_BAD_REF,
                         "dialogue",
                         format!("/content/dialogues/{i}/nodes/{j}/options/{k}/next"),
-                        format!("option `next` references unknown node `{next}`"),
+                        format!(
+                            "dialogue option `next` references unknown node `{next}` — add a node \
+                             with that id to this tree or correct the reference"
+                        ),
                     ));
                 }
                 for (m, eff) in opt.effects.iter().enumerate() {
@@ -505,7 +550,9 @@ fn dialogue(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     );
                     let msg = if !all_objectives.contains(oid) {
                         Some(format!(
-                            "dialogue effect references unknown objective `{objective}`"
+                            "dialogue `complete-objective` effect references unknown objective \
+                             `{objective}` — it must name a `talk-to` objective on this tree's \
+                             npc; declare it or correct the reference"
                         ))
                     } else if let Some(owner) = talk_npc.get(oid) {
                         if *owner == tree.npc.as_str() {
@@ -513,14 +560,17 @@ fn dialogue(c: &Campaign, d: &mut Vec<Diagnostic>) {
                         } else {
                             Some(format!(
                                 "dialogue effect completes `talk-to` objective `{objective}`, \
-                                 which belongs to npc `{owner}`, not this tree's npc `{}`",
+                                 which belongs to npc `{owner}`, not this tree's npc `{}` — a tree \
+                                 may only complete its own npc's objectives; move the effect into \
+                                 `{owner}`'s tree",
                                 tree.npc
                             ))
                         }
                     } else {
                         Some(format!(
-                            "dialogue effect targets objective `{objective}`, which is not a \
-                             `talk-to` objective"
+                            "dialogue `complete-objective` effect targets objective `{objective}`, \
+                             which is not a `talk-to` objective — only `talk-to` objectives are \
+                             completed through dialogue; retarget it or change the objective's type"
                         ))
                     };
                     if let Some(msg) = msg {
@@ -541,7 +591,11 @@ fn dialogue(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 codes::DIALOGUE_BAD_REF,
                 "dialogue",
                 format!("/content/dialogues/{i}/root"),
-                format!("dialogue root references unknown node `{}`", tree.root),
+                format!(
+                    "dialogue tree `root` references unknown node `{}` — add a node with that id \
+                     or point `root` at an existing node",
+                    tree.root
+                ),
             ));
             continue; // reachability is undefined without a root
         }
@@ -574,7 +628,11 @@ fn dialogue(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     codes::DIALOGUE_UNREACHABLE,
                     "dialogue",
                     format!("/content/dialogues/{i}/nodes/{j}"),
-                    format!("dialogue node `{}` is unreachable from root", node.id),
+                    format!(
+                        "dialogue node `{}` is unreachable from `root` — add an option whose \
+                         `next` leads here from a reachable node, or remove this node",
+                        node.id
+                    ),
                 ));
             }
         }
@@ -610,7 +668,9 @@ fn dialogue(c: &Campaign, d: &mut Vec<Diagnostic>) {
                         format!("/content/quests/{qi}/objectives/{oi}"),
                         format!(
                             "`talk-to` objective `{id}` has no reachable dialogue option in npc \
-                             `{npc}`'s tree that completes it"
+                             `{npc}`'s tree that completes it — add an option (reachable from \
+                             `root`) with a `complete-objective` effect for `{id}`, else the \
+                             objective can never finish"
                         ),
                     ));
                 }
@@ -634,7 +694,11 @@ fn plan(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 codes::NON_MANDATORY,
                 "quest-plan",
                 format!("/content/quests/{i}/mandatory"),
-                format!("quest `{}` is non-mandatory (reserved until M3)", q.id),
+                format!(
+                    "quest `{}` sets `mandatory: false`, which is reserved until M3 — set \
+                     `mandatory: true` (every v0 quest is on the critical path)",
+                    q.id
+                ),
             ));
         }
     }
@@ -660,7 +724,8 @@ fn plan(c: &Campaign, d: &mut Vec<Diagnostic>) {
             codes::PLAN_CYCLE,
             "quest-plan",
             "/content/quests",
-            "quest dependency graph contains a cycle",
+            "stage-4 quest `depends_on` graph contains a cycle — the plan must be a DAG; remove a \
+             `depends_on` edge so the quests form an acyclic order",
         ));
         return; // reachability is meaningless with a cycle
     }
@@ -671,7 +736,11 @@ fn plan(c: &Campaign, d: &mut Vec<Diagnostic>) {
             codes::FINALE_UNKNOWN,
             "quest-plan",
             "/content/finale",
-            format!("finale `{}` is not a declared quest", plan.finale),
+            format!(
+                "stage-4 `finale` `{}` is not a declared quest — set `finale` to the id of an \
+                 existing planned quest (the one that ends the delve)",
+                plan.finale
+            ),
         ));
         return;
     }
@@ -694,9 +763,10 @@ fn plan(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 "quest-plan",
                 format!("/content/quests/{i}"),
                 format!(
-                    "quest `{}` is not a (transitive) dependency of finale `{}`; \
-                     the plan does not converge on the finale",
-                    q.id, plan.finale
+                    "quest `{}` is not a (transitive) dependency of finale `{}`, so the plan does \
+                     not converge on the finale — add a `depends_on` chain so `{}` eventually \
+                     depends on `{}` (or drop `{}` if it is not part of this delve)",
+                    q.id, plan.finale, plan.finale, q.id, q.id
                 ),
             ));
         }
@@ -730,7 +800,8 @@ fn after_ordering(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 "quests",
                 format!("/content/quests/{i}/objectives"),
                 format!(
-                    "objective `after` ordering in quest `{}` contains a cycle",
+                    "objective `after` ordering in quest `{}` contains a cycle — the `after` \
+                     edges must form a DAG; remove one `after` entry to break the cycle",
                     q.id
                 ),
             ));
@@ -754,7 +825,11 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 codes::RESERVED,
                 "npcs",
                 format!("/content/npcs/{i}/role"),
-                format!("role `{name}` is reserved (not implemented in v0)"),
+                format!(
+                    "npc role `{name}` is reserved and not implemented in v0 — use role \
+                     `quest-giver` or `flavor`. Do NOT raise `dsl_version` to try to enable it: \
+                     `vendor`/`boss` are not implemented at any version yet"
+                ),
             ));
         }
     }
@@ -767,7 +842,10 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     codes::RESERVED,
                     "quests",
                     format!("/content/quests/{i}/objectives/{j}/type"),
-                    format!("objective type `{name}` is reserved (requires dsl_version 0.3.0)"),
+                    format!(
+                        "objective type `{name}` requires dsl_version 0.3.0 — raise this stage's \
+                         `dsl_version` to at least 0.3.0, or remove the objective"
+                    ),
                 ));
             }
         }
@@ -779,7 +857,10 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     codes::RESERVED,
                     "quests",
                     format!("/content/quests/{i}/{path}/type"),
-                    format!("effect `{name}` is reserved (requires dsl_version 0.3.0)"),
+                    format!(
+                        "effect `{name}` requires dsl_version 0.3.0 — raise this stage's \
+                         `dsl_version` to at least 0.3.0, or remove the effect"
+                    ),
                 ));
             }
         });
@@ -805,7 +886,10 @@ fn reserved_v05(c: &Campaign, d: &mut Vec<Diagnostic>) {
             codes::RESERVED,
             stage,
             path,
-            format!("{what} is reserved (requires dsl_version 0.5.0)"),
+            format!(
+                "{what} requires dsl_version 0.5.0 — raise this stage's `dsl_version` to 0.5.0, \
+                 or remove the construct"
+            ),
         ));
     };
 
@@ -843,7 +927,8 @@ fn reserved_v05(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     "world",
                     format!("/content/areas/{i}/lighting/min_light"),
                     format!(
-                        "area `{}` lighting.min_light = {} is out of range (must be 1..=14)",
+                        "area `{}` `lighting.min_light` = {} is out of range — set it to a value \
+                         in 1..=14 (7 is the default)",
                         area.id, lighting.min_light
                     ),
                 ));
@@ -903,7 +988,10 @@ fn reserved_v04(c: &Campaign, d: &mut Vec<Diagnostic>) {
             codes::RESERVED,
             stage,
             path,
-            format!("{what} is reserved (requires dsl_version 0.4.0)"),
+            format!(
+                "{what} requires dsl_version 0.4.0 — raise this stage's `dsl_version` to at least \
+                 0.4.0, or remove the construct"
+            ),
         ));
     };
 
@@ -1069,8 +1157,10 @@ fn anchors_and_items(
                 "npcs",
                 format!("/content/npcs/{i}/anchor"),
                 format!(
-                    "anchor `{}` is not provided by the prefab bound to area `{}`",
-                    npc.anchor, npc.area
+                    "npc anchor `{}` is not provided by the prefab bound to area `{}` — use an \
+                     anchor the prefab exposes, or bind a prefab/pool that carries `{}`. Anchor \
+                     names come from prefab metadata; do NOT invent one",
+                    npc.anchor, npc.area, npc.anchor
                 ),
             ));
         }
@@ -1091,7 +1181,11 @@ fn anchors_and_items(
                     codes::ANCHOR_UNRESOLVED,
                     "quests",
                     format!("/content/quests/{i}/objectives/{j}/anchor"),
-                    format!("anchor `{anchor}` is not provided by the quest's prefab"),
+                    format!(
+                        "objective anchor `{anchor}` is not provided by the prefab bound to this \
+                         quest's area — use an anchor the prefab exposes (anchor names come from \
+                         prefab metadata; do NOT invent one)"
+                    ),
                 ));
             }
         }
@@ -1103,7 +1197,11 @@ fn anchors_and_items(
                     codes::ANCHOR_UNRESOLVED,
                     "quests",
                     format!("/content/quests/{i}/{path}/anchor"),
-                    format!("gate anchor `{anchor}` is not provided by the quest's prefab"),
+                    format!(
+                        "`open-gate` anchor `{anchor}` is not provided by the prefab bound to \
+                         this quest's area — use a gate anchor the prefab exposes (anchor names \
+                         come from prefab metadata; do NOT invent one)"
+                    ),
                 ));
             }
         });
@@ -1117,7 +1215,11 @@ fn anchors_and_items(
                     codes::ITEM_UNKNOWN,
                     "classes",
                     format!("/content/classes/{i}/kit/{j}/item"),
-                    format!("item `{}` is not in the 1.21.11 registry", it.item),
+                    format!(
+                        "kit item `{}` is not in the pinned 1.21.11 item registry — use a valid \
+                         namespaced item id (e.g. `minecraft:iron_sword`)",
+                        it.item
+                    ),
                 ));
             }
         }
@@ -1161,7 +1263,11 @@ fn prefab_binding(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagno
                 codes::POOL_UNKNOWN,
                 "world",
                 format!("/content/areas/{i}/prefab_pool"),
-                format!("prefab pool `{pool}` is not declared in the prefab metadata"),
+                format!(
+                    "area `prefab_pool` `{pool}` is not declared in the prefab metadata — bind a \
+                     pool that exists in the prefabs dir, or add `{pool}` to the prefab library. \
+                     This is a prefab-library/naming issue, not a quest-logic one"
+                ),
             ));
         }
     }
@@ -1193,7 +1299,11 @@ fn cross_stage(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 codes::QUEST_NOT_EXPANDED,
                 "quest-plan",
                 format!("/content/quests/{i}"),
-                format!("planned quest `{}` has no stage-5 expansion", q.id),
+                format!(
+                    "planned quest `{}` has no stage-5 expansion — add a stage-5 quest with id \
+                     `{}` (objectives/effects), or drop it from the stage-4 plan",
+                    q.id, q.id
+                ),
             ));
         }
     }
@@ -1203,7 +1313,11 @@ fn cross_stage(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 codes::QUEST_NOT_PLANNED,
                 "quests",
                 format!("/content/quests/{i}"),
-                format!("quest `{}` is expanded but not planned in stage 4", q.id),
+                format!(
+                    "stage-5 quest `{}` is not planned in stage 4 — add a stage-4 plan entry with \
+                     id `{}` (every quest must be planned), or remove this expansion",
+                    q.id, q.id
+                ),
             ));
         }
     }
@@ -1223,7 +1337,11 @@ fn cross_stage(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 codes::NPC_WITHOUT_TREE,
                 "dialogue",
                 format!("/content/npcs/{i}"),
-                format!("npc `{}` has no stage-6 dialogue tree", npc.id),
+                format!(
+                    "npc `{}` has no stage-6 dialogue tree — every stage-2 npc needs exactly one \
+                     tree; add a dialogue tree for `{}`, or remove the npc",
+                    npc.id, npc.id
+                ),
             ));
         }
     }
@@ -1234,7 +1352,8 @@ fn cross_stage(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 "dialogue",
                 format!("/content/dialogues/{i}/npc"),
                 format!(
-                    "dialogue tree references npc `{}`, which is not declared in stage 2",
+                    "dialogue tree targets npc `{}`, which is not declared in stage 2 — declare \
+                     that npc in stage 2, or point this tree at an existing npc",
                     tree.npc
                 ),
             ));
@@ -1277,7 +1396,11 @@ fn v03_checks(
                 codes::ID_SYNTAX,
                 "quests",
                 format!("/content/waves/{i}/id"),
-                format!("malformed wave id `{}`", w.id),
+                format!(
+                    "malformed wave id `{}` — wave ids must be lowercase kebab-case with the \
+                     `wave/` prefix (e.g. `wave/ambush`)",
+                    w.id
+                ),
             ));
         }
         if !seen_waves.insert(w.id.as_str()) {
@@ -1285,7 +1408,10 @@ fn v03_checks(
                 codes::ID_DUPLICATE,
                 "quests",
                 format!("/content/waves/{i}/id"),
-                format!("duplicate wave id `{}`", w.id),
+                format!(
+                    "duplicate wave id `{}` — rename one so every wave id is unique",
+                    w.id
+                ),
             ));
         }
         declared_waves.insert(w.id.as_str());
@@ -1295,7 +1421,11 @@ fn v03_checks(
                     codes::ENTITY_UNKNOWN,
                     "quests",
                     format!("/content/waves/{i}/mobs/{k}/entity"),
-                    format!("`{}` is not a known 1.21.11 entity id", m.entity),
+                    format!(
+                        "wave-mob entity `{}` is not a known 1.21.11 entity id — use a valid \
+                         namespaced entity id (e.g. `minecraft:zombie`)",
+                        m.entity
+                    ),
                 ));
             }
         }
@@ -1376,7 +1506,10 @@ fn v03_checks(
                             codes::WAVE_UNKNOWN,
                             "quests",
                             format!("/content/quests/{i}/objectives/{j}/wave"),
-                            format!("kill objective references unknown wave `{wave}`"),
+                            format!(
+                                "`kill` objective references unknown wave `{wave}` — declare it \
+                                 in the stage-5 `waves` section or correct the reference"
+                            ),
                         ));
                     } else if !spawned_waves.contains(wave.as_str()) {
                         d.push(Diagnostic::error(
@@ -1385,8 +1518,9 @@ fn v03_checks(
                             format!("/content/quests/{i}/objectives/{j}/wave"),
                             format!(
                                 "wave `{wave}` is killed but never spawned by any `spawn-wave` \
-                                 effect; a wave must be spawned before its kill objective is \
-                                 reachable"
+                                 effect — a wave must be spawned before its `kill` objective is \
+                                 reachable; add a `spawn-wave` effect for `{wave}` on an earlier \
+                                 objective/quest"
                             ),
                         ));
                     }
@@ -1397,7 +1531,11 @@ fn v03_checks(
                             codes::ITEM_UNKNOWN,
                             "quests",
                             format!("/content/quests/{i}/objectives/{j}/item"),
-                            format!("item `{item}` is not in the 1.21.11 registry"),
+                            format!(
+                                "collect item `{item}` is not in the pinned 1.21.11 item \
+                                 registry — use a valid namespaced item id (e.g. \
+                                 `minecraft:emerald`)"
+                            ),
                         ));
                     }
                     anchor_resolves(set, anchor, i, j, "anchor", d);
@@ -1414,7 +1552,11 @@ fn v03_checks(
                             codes::ITEM_UNKNOWN,
                             "quests",
                             format!("/content/quests/{i}/objectives/{j}/requires_item"),
-                            format!("requires_item `{it}` is not in the 1.21.11 registry"),
+                            format!(
+                                "`interact.requires_item` `{it}` is not in the pinned 1.21.11 \
+                                 item registry — use a valid namespaced item id (e.g. \
+                                 `minecraft:tripwire_hook`)"
+                            ),
                         ));
                     }
                     anchor_resolves(set, anchor, i, j, "anchor", d);
@@ -1429,8 +1571,9 @@ fn v03_checks(
                         "quests",
                         format!("/content/quests/{i}/objectives/{j}/requires_flags/{m}"),
                         format!(
-                            "requires_flags references flag `{f}`, which no `set-flag` effect \
-                             ever produces"
+                            "objective `requires_flags` references flag `{f}`, which no \
+                             `set-flag` effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` \
+                             effect on an earlier objective/quest, or correct the flag name"
                         ),
                     ));
                 }
@@ -1445,7 +1588,10 @@ fn v03_checks(
                     codes::WAVE_UNKNOWN,
                     "quests",
                     format!("/content/quests/{i}/{path}/wave"),
-                    format!("spawn-wave effect references unknown wave `{w}`"),
+                    format!(
+                        "`spawn-wave` effect references unknown wave `{w}` — declare it in the \
+                         stage-5 `waves` section or correct the reference"
+                    ),
                 ));
             }
             if let Some(it) = eff.give_item()
@@ -1455,7 +1601,10 @@ fn v03_checks(
                     codes::ITEM_UNKNOWN,
                     "quests",
                     format!("/content/quests/{i}/{path}/item"),
-                    format!("give-item effect item `{it}` is not in the 1.21.11 registry"),
+                    format!(
+                        "`give-item` item `{it}` is not in the pinned 1.21.11 item registry — use \
+                         a valid namespaced item id (e.g. `minecraft:golden_apple`)"
+                    ),
                 ));
             }
         });
@@ -1553,7 +1702,8 @@ fn v04_checks(
                     "npcs",
                     format!("/content/npcs/{i}/skin/texture_id"),
                     format!(
-                        "skin texture_id `{}` is malformed (expected a bare kebab token)",
+                        "skin `texture_id` `{}` is malformed — it must be a bare kebab token \
+                         (e.g. `keeper-armor`), matching the `skins/<texture_id>.png` filename",
                         skin.texture_id
                     ),
                 ));
@@ -1563,7 +1713,11 @@ fn v04_checks(
                     codes::SKIN_INVALID,
                     "npcs",
                     format!("/content/npcs/{i}/skin/texture_id"),
-                    format!("duplicate skin texture_id `{}`", skin.texture_id),
+                    format!(
+                        "duplicate skin `texture_id` `{}` — each mannequin needs a distinct \
+                         texture; rename one (and its `skins/<id>.png`)",
+                        skin.texture_id
+                    ),
                 ));
             }
         }
@@ -1578,7 +1732,11 @@ fn v04_checks(
                         codes::EFFECT_UNKNOWN,
                         "quests",
                         format!("/content/waves/{i}/mobs/{k}/effects/{e}/effect"),
-                        format!("`{}` is not a known 1.21.11 effect id", eff.effect),
+                        format!(
+                            "wave-mob effect `{}` is not a known 1.21.11 status-effect id — use a \
+                             valid namespaced effect id (e.g. `minecraft:strength`)",
+                            eff.effect
+                        ),
                     ));
                 }
             }
@@ -1596,7 +1754,8 @@ fn v04_checks(
                     "quests",
                     format!("/content/quests/{i}/objectives/{j}/prop/block"),
                     format!(
-                        "prop block `{}` is not a known 1.21.11 block id",
+                        "`interact.prop` block `{}` is not a known 1.21.11 block id — use a valid \
+                         namespaced block id (e.g. `minecraft:lever`)",
                         prop.block
                     ),
                 ));
@@ -1622,7 +1781,11 @@ fn v04_checks(
                 codes::TRIGGER_INVALID,
                 "quests",
                 format!("/content/triggers/{i}/id"),
-                format!("malformed trigger id `{}`", t.id),
+                format!(
+                    "malformed trigger id `{}` — trigger ids must be lowercase kebab-case with \
+                     the `trigger/` prefix (e.g. `trigger/pressure-plate`)",
+                    t.id
+                ),
             ));
         }
         if !seen_triggers.insert(t.id.as_str()) {
@@ -1630,7 +1793,10 @@ fn v04_checks(
                 codes::TRIGGER_INVALID,
                 "quests",
                 format!("/content/triggers/{i}/id"),
-                format!("duplicate trigger id `{}`", t.id),
+                format!(
+                    "duplicate trigger id `{}` — rename one so every trigger id is unique",
+                    t.id
+                ),
             ));
         }
         if !anchor_resolvable(t.at.as_str()) {
@@ -1639,7 +1805,9 @@ fn v04_checks(
                 "quests",
                 format!("/content/triggers/{i}/at"),
                 format!(
-                    "trigger anchor `{}` is not provided by any area's prefab",
+                    "trigger `at` anchor `{}` is not provided by any area's prefab — set `at` to \
+                     an anchor some area's prefab exposes (anchor names come from prefab metadata; \
+                     do NOT invent one)",
                     t.at
                 ),
             ));
@@ -1651,7 +1819,8 @@ fn v04_checks(
                 codes::TRIGGER_INVALID,
                 "quests",
                 format!("/content/triggers/{i}/on/range"),
-                "approach trigger `range` must be > 0".to_string(),
+                "`approach` trigger `range` must be > 0 — set a positive block radius (e.g. 3)"
+                    .to_string(),
             ));
         }
         for (m, f) in t.requires_flags.iter().enumerate() {
@@ -1661,8 +1830,9 @@ fn v04_checks(
                     "quests",
                     format!("/content/triggers/{i}/requires_flags/{m}"),
                     format!(
-                        "trigger requires_flags references flag `{f}`, which no `set-flag` \
-                             effect ever produces"
+                        "trigger `requires_flags` references flag `{f}`, which no `set-flag` \
+                         effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
+                         somewhere, or correct the flag name"
                     ),
                 ));
             }
@@ -1704,7 +1874,10 @@ fn check_effect_v04(
                     codes::BLOCK_UNKNOWN,
                     "quests",
                     format!("{base_path}/block"),
-                    format!("set-block block `{block}` is not a known 1.21.11 block id"),
+                    format!(
+                        "`set-block` block `{block}` is not a known 1.21.11 block id — use a \
+                         valid namespaced block id (e.g. `minecraft:air`)"
+                    ),
                 ));
             }
         }
@@ -1716,7 +1889,10 @@ fn check_effect_v04(
                 codes::DANGLING_REF,
                 "quests",
                 format!("{base_path}/npc"),
-                format!("{verb} references unknown npc `{npc}`"),
+                format!(
+                    "`{verb}` references unknown npc `{npc}` — declare it in stage 2 or correct \
+                     the reference"
+                ),
             ));
         }
         _ => {}
@@ -1741,8 +1917,9 @@ fn dialogue_v04(c: &Campaign, flags: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
                                 "/content/dialogues/{i}/nodes/{j}/options/{k}/requires_flags/{m}"
                             ),
                             format!(
-                                "dialogue option requires_flags references flag `{f}`, which no \
-                                 `set-flag` effect ever produces"
+                                "dialogue option `requires_flags` references flag `{f}`, which no \
+                                 `set-flag` effect ever produces — add a `set-flag {{ flag: \
+                                 \"{f}\" }}` effect somewhere, or correct the flag name"
                             ),
                         ));
                     }
@@ -1790,8 +1967,9 @@ fn dialogue_v04(c: &Campaign, flags: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
                         format!("/content/quests/{qi}/objectives/{oi}"),
                         format!(
                             "`talk-to` objective `{id}` has no ungated completing dialogue option \
-                             in npc `{npc}`'s tree — every completing option is flag-gated, so it \
-                             can deadlock the moment it activates"
+                             in npc `{npc}`'s tree — every completing option is `requires_flags`- \
+                             gated, so it can deadlock the moment it activates; keep at least one \
+                             completing option with no `requires_flags`"
                         ),
                     ));
                 }
@@ -1860,8 +2038,9 @@ fn despawned_ref_check(c: &Campaign, _npc_ids: &BTreeSet<&str>, d: &mut Vec<Diag
                     "quests",
                     format!("/content/quests/{qi}/objectives/{oi}/npc"),
                     format!(
-                        "`talk-to` targets npc `{npc}`, which a prerequisite quest despawns; the \
-                         npc is gone by the time this objective activates"
+                        "`talk-to` targets npc `{npc}`, which a prerequisite quest despawns — the \
+                         npc is gone by the time this objective activates; talk to `{npc}` before \
+                         the quest that despawns it, or drop the `despawn-npc`"
                     ),
                 ));
             }
@@ -1886,7 +2065,11 @@ fn anchor_resolves(
             codes::ANCHOR_UNRESOLVED,
             "quests",
             format!("/content/quests/{qi}/objectives/{oi}/{field}"),
-            format!("anchor `{anchor}` is not provided by the quest's prefab"),
+            format!(
+                "objective `{field}` anchor `{anchor}` is not provided by the prefab bound to \
+                 this quest's area — use an anchor the prefab exposes (anchor names come from \
+                 prefab metadata; do NOT invent one)"
+            ),
         ));
     }
 }
