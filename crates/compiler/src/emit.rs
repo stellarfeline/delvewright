@@ -225,6 +225,12 @@ pub fn build(
                 // campaign with none stays byte-identical to before. Uses the same
                 // relight-aware `world` as the DW0311 check it exports.
                 let routes = crate::nav::critical_path_routes(plan, &world);
+                // Structural self-check (task #45): every exported waypoint must be
+                // genuinely standable in this FINAL world (settled + water-flooded +
+                // fixtures). Makes it impossible to ship a waypoint the game floods
+                // or walls — the water-flow / post-nav-mutation divergence class —
+                // failing the build loudly (DW0314) instead of stranding the bot.
+                crate::nav::verify_exported_routes(&world, &routes)?;
                 if !routes.is_empty() {
                     put_json(
                         &mut out,

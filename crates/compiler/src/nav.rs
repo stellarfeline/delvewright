@@ -84,14 +84,23 @@ impl MovePlan {
     }
 }
 
-/// A solid-block occupancy model of the assembled world (spec-0008 addendum),
+/// A collision/standability model of the assembled world (spec-0008 addendum),
 /// derived from the shared gravity-settled assembled-world model
 /// ([`crate::assembled`]): every placed prefab block, plus the solver's socket
 /// seals, with gate thresholds cleared and unsupported falling blocks settled
-/// (task #42). Cells absent from `solid` are passable (interior air, opened
+/// (task #42). Cells absent from both sets are passable (interior air, opened
 /// sockets, gate thresholds, and any cell a gravity block fell out of).
+///
+/// Water is modelled separately from solids (task #45): `flooded` holds every cell
+/// a conservative superset of vanilla water flow reaches (see
+/// [`crate::assembled::assembled_occupancy`]). A flooded cell is **impassable** (a
+/// walker cannot stand or pass through it) yet is **not solid floor** (you cannot
+/// stand *on* a water surface) — the two sets are disjoint and both gate
+/// standability, so nav / wave seating / relight / waypoint export never treat a
+/// flooded cell as walkable ground.
 pub struct World {
     solid: BTreeSet<[i32; 3]>,
+    flooded: BTreeSet<[i32; 3]>,
 }
 
 impl World {
@@ -101,10 +110,8 @@ impl World {
     /// falls out of the void world is passable (a hole), exactly as in game
     /// (task #42), not a phantom floor the model wrongly seats mobs on.
     pub fn from_plan(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Self {
-        let solid = crate::assembled::assembled_blocks(plan, structures)
-            .into_keys()
-            .collect();
-        World { solid }
+        let (solid, flooded) = crate::assembled::assembled_occupancy(plan, structures);
+        World { solid, flooded }
     }
 
     /// Build the occupancy model exactly like [`World::from_plan`], then add
@@ -127,10 +134,20 @@ impl World {
         self.is_solid(c)
     }
 
-    /// Build a [`World`] directly from a set of solid cells (test / synthetic
-    /// entry point; the relight unit tests build a world without a full [`Plan`]).
+    /// Build a [`World`] directly from a set of solid cells, with no water (test /
+    /// synthetic entry point; the relight unit tests build a world without a full
+    /// [`Plan`]).
     pub fn from_solid_cells(solid: BTreeSet<[i32; 3]>) -> Self {
-        World { solid }
+        World {
+            solid,
+            flooded: BTreeSet::new(),
+        }
+    }
+
+    /// Build a [`World`] directly from disjoint solid + flooded cell sets (test /
+    /// synthetic entry point for the flood-aware standability rules).
+    pub fn from_solid_and_flooded(solid: BTreeSet<[i32; 3]>, flooded: BTreeSet<[i32; 3]>) -> Self {
+        World { solid, flooded }
     }
 
     /// Whether a cell is a valid standing position (feet + head passable, solid
@@ -182,14 +199,15 @@ impl World {
         // Critical-path legs.
         let positions = critical_positions(plan);
         for pair in positions.windows(2) {
-            let (from, _) = pair[0];
-            let (to, transport_before) = pair[1];
-            if transport_before {
+            let from = pair[0].pos;
+            let to = pair[1].pos;
+            if pair[1].transport_before {
                 continue;
             }
-            let (Some(start), Some(goal)) =
-                (self.snap(from, SNAP_RADIUS), self.snap(to, SNAP_RADIUS))
-            else {
+            let (Some(start), Some(goal)) = (
+                self.snap_endpoint(from, false),
+                self.snap_endpoint(to, pair[1].talk_to),
+            ) else {
                 continue;
             };
             if let Some(path) = self.find_path(start, goal) {
@@ -280,16 +298,42 @@ impl World {
         best.map(|(_, n)| n)
     }
 
+    /// Snap a walked-leg endpoint (`from`/`to`) to the cell the player stands on.
+    ///
+    /// Normally the nearest standable cell to the visited anchor. For a **talk-to**
+    /// target (`off_cell`), the anchor is the NPC's own occupied cell (the mannequin
+    /// stands there and its interaction hitbox fills it): the player stands within
+    /// interaction range *beside* the NPC, so exclude the anchor cell itself and
+    /// take the nearest OTHER standable cell (task #45). Flooded cells are already
+    /// excluded (they are not standable), so a shore NPC never resolves onto a
+    /// water-tongue cell.
+    fn snap_endpoint(&self, c: [i32; 3], off_cell: bool) -> Option<[i32; 3]> {
+        if off_cell {
+            self.snap_in_bounds(c, SNAP_RADIUS, &|n| n != c)
+        } else {
+            self.snap_standable(c, SNAP_RADIUS)
+        }
+    }
+
     fn is_solid(&self, c: [i32; 3]) -> bool {
         self.solid.contains(&c)
     }
 
+    /// Whether a cell is occupied — a solid block **or** flooded by water (task
+    /// #45). An occupied cell cannot hold a walker's feet or head, and cannot be
+    /// jumped through. Water blocks passage but, unlike a solid, is never a floor.
+    fn is_occupied(&self, c: [i32; 3]) -> bool {
+        self.solid.contains(&c) || self.flooded.contains(&c)
+    }
+
     /// Whether a cell is a valid standing position: the feet-cell and the
-    /// head-cell above it are both passable, with solid ground directly below (an
-    /// entity is 2 blocks tall and needs a floor).
+    /// head-cell above it are both passable (neither solid nor flooded), with
+    /// **solid** ground directly below (an entity is 2 blocks tall and needs a
+    /// floor — a water surface is not standable, so the floor must be solid, not
+    /// merely occupied; task #45).
     fn standable(&self, c: [i32; 3]) -> bool {
-        !self.is_solid(c)
-            && !self.is_solid([c[0], c[1] + 1, c[2]])
+        !self.is_occupied(c)
+            && !self.is_occupied([c[0], c[1] + 1, c[2]])
             && self.is_solid([c[0], c[1] - 1, c[2]])
     }
 
@@ -337,7 +381,7 @@ impl World {
     /// connected (task #38). Steps level or down need no such clearance.
     fn neighbors(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
         const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
-        let head_clear_to_jump = !self.is_solid([c[0], c[1] + 2, c[2]]);
+        let head_clear_to_jump = !self.is_occupied([c[0], c[1] + 2, c[2]]);
         let mut out = Vec::new();
         for (dx, dz) in HORIZ {
             for dy in [0i32, -1, 1] {
@@ -702,7 +746,23 @@ pub fn needs_world(plan: &Plan) -> bool {
 /// the player was teleported here by an inter-area transport on the preceding
 /// step (a ride, not a walk). `select-class` / `assert-complete` steps carry no
 /// position and are skipped.
-fn critical_positions(plan: &Plan) -> Vec<([i32; 3], bool)> {
+/// A player-visited critical-path position, with the metadata walked-leg routing
+/// needs. Replaces the bare `([i32;3], bool)` tuple so a talk-to target — whose
+/// anchor cell is the NPC's own occupied cell — can be endpoint-snapped correctly.
+#[derive(Debug, Clone, Copy)]
+struct VisitedPos {
+    /// The raw visited anchor cell (an NPC stand, altar, chest, wave marker, …).
+    pos: [i32; 3],
+    /// The player rides an inter-area transport INTO this position, so the move
+    /// here is a teleport, not a walk to validate/export.
+    transport_before: bool,
+    /// This position is a talk-to NPC anchor: the player stands *within interaction
+    /// range beside* the NPC, never on the mannequin-occupied anchor cell, so the
+    /// goal snap must exclude that cell (task #45).
+    talk_to: bool,
+}
+
+fn critical_positions(plan: &Plan) -> Vec<VisitedPos> {
     let mut out = Vec::new();
     let mut transport_pending = false;
     for (i, step) in plan.critical_path.iter().enumerate() {
@@ -715,7 +775,11 @@ fn critical_positions(plan: &Plan) -> Vec<([i32; 3], bool)> {
             Step::SelectClass { .. } | Step::AssertComplete { .. } => None,
         };
         if let Some(pos) = pos {
-            out.push((pos, transport_pending));
+            out.push(VisitedPos {
+                pos,
+                transport_before: transport_pending,
+                talk_to: matches!(step, Step::TalkTo { .. }),
+            });
             transport_pending = false;
         }
         // A transport marker on step `i` teleports the player when that step's
@@ -737,7 +801,9 @@ fn critical_positions(plan: &Plan) -> Vec<([i32; 3], bool)> {
 /// critical-path positions with no inter-area transport between them — a leg the
 /// player must walk, hence one DW0311 must validate.
 fn has_walkable_critical_leg(plan: &Plan) -> bool {
-    critical_positions(plan).windows(2).any(|w| !w[1].1)
+    critical_positions(plan)
+        .windows(2)
+        .any(|w| !w[1].transport_before)
 }
 
 /// Validate that every consecutive pair of player-visited critical-path anchors is
@@ -756,16 +822,15 @@ pub fn check_critical_path(plan: &Plan, world: &World) -> Result<(), NavError> {
 
 /// Route every walked leg between consecutive visited positions (the pure core of
 /// [`check_critical_path`], split out so it is unit-testable without a full
-/// [`Plan`]). `positions[i].1` is the transport-before flag: `true` legs are
-/// teleport rides and skipped.
-fn route_visited(world: &World, positions: &[([i32; 3], bool)]) -> Result<(), NavError> {
+/// [`Plan`]). A `transport_before` leg is a teleport ride and is skipped.
+fn route_visited(world: &World, positions: &[VisitedPos]) -> Result<(), NavError> {
     for pair in positions.windows(2) {
-        let (from, _) = pair[0];
-        let (to, transport_before) = pair[1];
-        if transport_before {
+        let from = pair[0].pos;
+        let to = pair[1].pos;
+        if pair[1].transport_before {
             continue; // an inter-area teleport hop: the player is moved, not walking
         }
-        let start = world.snap_standable(from, SNAP_RADIUS).ok_or_else(|| NavError {
+        let start = world.snap_endpoint(from, false).ok_or_else(|| NavError {
             code: DW_CRITICAL_UNROUTABLE,
             message: format!(
                 "critical path: no standable floor within {SNAP_RADIUS} blocks of visited anchor \
@@ -775,13 +840,15 @@ fn route_visited(world: &World, positions: &[([i32; 3], bool)]) -> Result<(), Na
                  wall"
             ),
         })?;
-        let goal = world.snap_standable(to, SNAP_RADIUS).ok_or_else(|| NavError {
+        let goal = world.snap_endpoint(to, pair[1].talk_to).ok_or_else(|| NavError {
             code: DW_CRITICAL_UNROUTABLE,
             message: format!(
                 "critical path: no standable floor within {SNAP_RADIUS} blocks of visited anchor \
-                 {to:?} — a player-visited anchor sits walled in or over void. Fix the prefab so \
-                 this anchor sits on/next to reachable floor; if the prefab looks correct, this is \
-                 an assembly/toolchain defect — escalate rather than move the anchor into a wall"
+                 {to:?} — a player-visited anchor sits walled in or over void (a talk-to NPC needs \
+                 a dry standable cell beside it, within interaction range and clear of water). Fix \
+                 the prefab so this anchor sits on/next to reachable floor; if the prefab looks \
+                 correct, this is an assembly/toolchain defect — escalate rather than move it into \
+                 a wall"
             ),
         })?;
         if world.find_path(start, goal).is_none() {
@@ -826,14 +893,14 @@ pub fn critical_path_routes(plan: &Plan, world: &World) -> Vec<LegRoute> {
     let positions = critical_positions(plan);
     let mut out = Vec::new();
     for pair in positions.windows(2) {
-        let (from, _) = pair[0];
-        let (to, transport_before) = pair[1];
-        if transport_before {
+        let from = pair[0].pos;
+        let to = pair[1].pos;
+        if pair[1].transport_before {
             continue; // an inter-area teleport hop: the player is moved, not walking
         }
         let (Some(start), Some(goal)) = (
-            world.snap_standable(from, SNAP_RADIUS),
-            world.snap_standable(to, SNAP_RADIUS),
+            world.snap_endpoint(from, false),
+            world.snap_endpoint(to, pair[1].talk_to),
         ) else {
             continue;
         };
@@ -842,6 +909,44 @@ pub fn critical_path_routes(plan: &Plan, world: &World) -> Vec<LegRoute> {
         }
     }
     out
+}
+
+/// `DW0314`: an exported critical-path waypoint is not standable in the FINAL
+/// assembled world (settled + water-flooded + relight fixtures). A build-time
+/// self-check over the very cells the harness will replay: it makes it structurally
+/// impossible to ship a waypoint the game floods or walls (the water-flow /
+/// post-nav-mutation divergence class — task #45). Every cell a leg exports comes
+/// from `find_path` over this same world, so this can only fire if a later pass
+/// mutates a cell nav relied on or an endpoint resolves off the walkable set — in
+/// which case it is a compiler/assembly defect to escalate, never a cell to nudge.
+pub const DW_WAYPOINT_NOT_STANDABLE: &str = "DW0314";
+
+/// Assert every exported waypoint cell is standable in `world` — the final model the
+/// routes were computed over (settled + flooded + fixtures). Returns
+/// [`DW_WAYPOINT_NOT_STANDABLE`] (`DW0314`) naming the first offending cell/leg on
+/// violation. This is the structural guard the water-flood model exists to make
+/// enforceable: a waypoint in a flooded (or newly-walled) cell fails the build
+/// loudly instead of stranding the bot at runtime (task #45).
+pub fn verify_exported_routes(world: &World, routes: &[LegRoute]) -> Result<(), NavError> {
+    for leg in routes {
+        for &cell in &leg.cells {
+            if !world.is_standable(cell) {
+                return Err(NavError {
+                    code: DW_WAYPOINT_NOT_STANDABLE,
+                    message: format!(
+                        "critical-path waypoint export: cell {cell:?} on the leg to {to:?} is not \
+                         standable in the final assembled world (it is solid, water-flooded, or \
+                         has no floor). A proven route must not cross a cell a later pass mutated \
+                         — this is the water-flow / post-nav-mutation divergence class: fix the \
+                         prefab/water or the assembly, do not move the waypoint. (leg from {from:?})",
+                        to = leg.to,
+                        from = leg.from,
+                    ),
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -861,7 +966,16 @@ mod tests {
         for &c in walls {
             solid.insert(c);
         }
-        World { solid }
+        World::from_solid_cells(solid)
+    }
+
+    /// A non-talk-to visited position (test convenience for `route_visited`).
+    fn vp(pos: [i32; 3], transport_before: bool) -> VisitedPos {
+        VisitedPos {
+            pos,
+            transport_before,
+            talk_to: false,
+        }
     }
 
     #[test]
@@ -892,7 +1006,7 @@ mod tests {
                 solid.insert([x, 67, z]);
             }
         }
-        let world = World { solid };
+        let world = World::from_solid_cells(solid);
         assert!(world.standable([0, 65, 1]));
         assert!(world.standable([4, 65, 1]));
         assert!(world.find_path([0, 65, 1], [4, 65, 1]).is_none());
@@ -920,7 +1034,7 @@ mod tests {
                 }
             }
         }
-        let world = World { solid };
+        let world = World::from_solid_cells(solid);
         assert!(world.snap_standable([10, 65, 10], 2).is_none());
     }
 
@@ -947,22 +1061,89 @@ mod tests {
                 solid.insert([x, 67, z]);
             }
         }
-        let world = World { solid };
+        let world = World::from_solid_cells(solid);
         let a = [0, 65, 1];
         let b = [4, 65, 1];
         assert!(world.standable(a) && world.standable(b));
         // Walked leg → unroutable → DW0311.
-        let err = route_visited(&world, &[(a, false), (b, false)]).unwrap_err();
+        let err = route_visited(&world, &[vp(a, false), vp(b, false)]).unwrap_err();
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
         // Same leg ridden by an inter-area transport → skipped, ok.
-        assert!(route_visited(&world, &[(a, false), (b, true)]).is_ok());
+        assert!(route_visited(&world, &[vp(a, false), vp(b, true)]).is_ok());
+    }
+
+    #[test]
+    fn talk_to_endpoint_excludes_the_npc_cell_and_flooded_cells() {
+        // A flat floor; the NPC anchor cell is standable (a mannequin stands on the
+        // floor), and one adjacent cell is flooded. The talk-to goal snap must NOT
+        // return the NPC's own cell, and must skip the flooded neighbour — it lands
+        // on a dry standable cell beside the NPC, within interaction range.
+        let mut solid = BTreeSet::new();
+        for x in 0..5 {
+            for z in 0..5 {
+                solid.insert([x, 64, z]); // floor at y=64, standable at y=65
+            }
+        }
+        let npc = [2, 65, 2];
+        let flooded: BTreeSet<[i32; 3]> = [[1, 65, 2]].into_iter().collect(); // west neighbour is water
+        let world = World::from_solid_and_flooded(solid, flooded);
+        assert!(
+            world.standable(npc),
+            "the NPC cell itself is standable in the model"
+        );
+        let goal = world
+            .snap_endpoint(npc, true)
+            .expect("a dry standable cell beside the NPC exists");
+        assert_ne!(goal, npc, "must not stand on the NPC's own (occupied) cell");
+        assert!(
+            !world.flooded.contains(&goal),
+            "must not stand in water: {goal:?}"
+        );
+        assert!(world.standable(goal));
+        // …and it is within interaction range (adjacent) of the NPC.
+        let d2 = (0..3).map(|i| (goal[i] - npc[i]).pow(2)).sum::<i32>();
+        assert!(
+            d2 <= SNAP_RADIUS * SNAP_RADIUS,
+            "goal {goal:?} within range of NPC"
+        );
+    }
+
+    #[test]
+    fn verify_exported_routes_rejects_a_flooded_waypoint_dw0314() {
+        // Synthetic negative for the DW0314 self-check (task #45): a hand-built leg
+        // whose polyline crosses a flooded cell must fail the standability guard.
+        let mut solid = BTreeSet::new();
+        for x in 0..4 {
+            solid.insert([x, 64, 0]); // floor
+        }
+        let flooded: BTreeSet<[i32; 3]> = [[2, 65, 0]].into_iter().collect(); // a water tongue on the route
+        let world = World::from_solid_and_flooded(solid, flooded);
+        let routes = vec![LegRoute {
+            from: [0, 65, 0],
+            to: [3, 65, 0],
+            cells: vec![[0, 65, 0], [1, 65, 0], [2, 65, 0], [3, 65, 0]],
+        }];
+        let err = verify_exported_routes(&world, &routes).unwrap_err();
+        assert_eq!(err.code, DW_WAYPOINT_NOT_STANDABLE);
+        assert!(
+            err.message.contains("[2, 65, 0]"),
+            "names the offending cell: {}",
+            err.message
+        );
+        // A route entirely on dry standable floor passes.
+        let dry = vec![LegRoute {
+            from: [0, 65, 0],
+            to: [1, 65, 0],
+            cells: vec![[0, 65, 0], [1, 65, 0]],
+        }];
+        assert!(verify_exported_routes(&world, &dry).is_ok());
     }
 
     #[test]
     fn critical_path_routable_leg_passes() {
         // A flat connected floor: consecutive visited cells are walkable → ok.
         let world = floored(6, 3, 65, &[]);
-        assert!(route_visited(&world, &[([0, 65, 1], false), ([5, 65, 1], false)]).is_ok());
+        assert!(route_visited(&world, &[vp([0, 65, 1], false), vp([5, 65, 1], false)]).is_ok());
     }
 
     #[test]
@@ -999,7 +1180,7 @@ mod tests {
                 solid.insert([x, 67, z]); // ceiling
             }
         }
-        let world = World { solid };
+        let world = World::from_solid_cells(solid);
         let left_bounds = ([0, 64, 0], [2, 66, 2]);
         let cells = world.confined_standable_cells([1, 65, 1], left_bounds);
         assert!(!cells.is_empty());
@@ -1036,7 +1217,7 @@ mod tests {
             if low_ceiling {
                 solid.insert([0, 67, 0]); // ceiling two above the jumper's feet
             }
-            World { solid }
+            World::from_solid_cells(solid)
         };
         // Open headroom: the jump-up is walkable.
         let open = mk(false);
