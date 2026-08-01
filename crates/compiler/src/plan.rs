@@ -19,7 +19,8 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_dsl::{
-    Campaign, DialogueEffect, DialogueId, Npc, NpcDialogue, Objective, Quest, QuestEffect, Trigger,
+    Campaign, DialogueEffect, DialogueId, Lethality, Npc, NpcDialogue, Objective, Quest,
+    QuestEffect, TrapReset, TrapTrigger, Trigger,
 };
 
 use crate::registry::{AnchorMeta, PrefabRegistry};
@@ -63,6 +64,45 @@ pub struct StealthBeat {
     pub grace_ticks: u32,
     /// `critical_path` step index that activates the beat (roots DW0327).
     pub fire_step: usize,
+}
+
+/// A resolved trap (DSL v0.6, spec-0011), collected in deterministic content
+/// order. Carries everything the nav proof (`DW0342`), the payload/disarm
+/// emission, and the PackTest need.
+#[derive(Clone, Debug)]
+pub struct TrapPlan {
+    /// The raw trap id (`trap/<name>`).
+    pub id: String,
+    /// Sanitized local name (`dart_hall`) for emitted function/tag names.
+    pub safe: String,
+    /// The declared trigger kind (informs the hazard model + PackTest).
+    pub trigger: TrapTrigger,
+    /// The resolved absolute trigger/hazard cell (the trap's `at` anchor cell).
+    pub trigger_cell: [i32; 3],
+    /// The resolved absolute dispenser socket cell (from the `at` anchor's
+    /// `dispenser` metadata), or `None` if the prefab exposes none.
+    pub dispenser: Option<[i32; 3]>,
+    /// The dispense payload `(item, count)` this trap loads, if any.
+    pub payload: Option<(String, u32)>,
+    /// How dangerous the trap is.
+    pub lethality: Lethality,
+    /// Whether the trap re-arms after firing.
+    pub reset: TrapReset,
+    /// The resolved disarm affordance, if declared.
+    pub disarm: Option<TrapDisarmPlan>,
+    /// Flags that gate the trap being active.
+    pub requires_flags: Vec<String>,
+}
+
+/// A resolved trap disarm affordance (DSL v0.6, spec-0011).
+#[derive(Clone, Debug)]
+pub struct TrapDisarmPlan {
+    /// The disarm anchor name (`anchor/…`).
+    pub via_anchor: String,
+    /// The resolved absolute cell of the disarm affordance.
+    pub via_cell: [i32; 3],
+    /// The flag the disarm sets.
+    pub sets_flag: String,
 }
 
 /// The compiled model.
@@ -112,6 +152,8 @@ pub struct Plan<'a> {
     /// (`crate::render_plan`) to name the objective each player-POV leg walks
     /// toward, and by the v0.6 checkpoint / stealth proofs to root a beat.
     pub objective_steps: BTreeMap<String, usize>,
+    /// Resolved traps (DSL v0.6, spec-0011), content-ordered.
+    pub traps: Vec<TrapPlan>,
 }
 
 /// A placed area: one or more pieces plus their socket seals.
@@ -472,6 +514,10 @@ impl<'a> Plan<'a> {
         // ---- placements + anchors ----
         let mut areas = Vec::new();
         let mut anchors: BTreeMap<(String, String), ResolvedAnchor> = BTreeMap::new();
+        // v0.6 (spec-0011): the absolute dispenser socket cell for each `anchor/trap`
+        // marker that declares one, keyed like `anchors`. Empty for a campaign with no
+        // trap hardware.
+        let mut dispenser_cells: BTreeMap<(String, String), [i32; 3]> = BTreeMap::new();
         for (i, area) in campaign.world.content.areas.iter().enumerate() {
             let area_id = area.id.as_str().to_string();
             let origin = [i as i32 * AREA_SPACING, BASE_Y, 0];
@@ -493,6 +539,12 @@ impl<'a> Plan<'a> {
                 })?;
                 for (name, am) in &meta.anchors {
                     anchors.insert((area_id.clone(), name.clone()), resolve_anchor(origin, am));
+                    if let Some(dp) = am.dispenser {
+                        dispenser_cells.insert(
+                            (area_id.clone(), name.clone()),
+                            [origin[0] + dp[0], origin[1] + dp[1], origin[2] + dp[2]],
+                        );
+                    }
                 }
                 AreaPlacement {
                     area_id: area_id.clone(),
@@ -547,6 +599,11 @@ impl<'a> Plan<'a> {
                         anchors
                             .entry((area_id.clone(), name.clone()))
                             .or_insert_with(|| resolve_piece_anchor(placed, am));
+                        if let Some(dp) = am.dispenser {
+                            dispenser_cells
+                                .entry((area_id.clone(), name.clone()))
+                                .or_insert_with(|| solver::transform_point(placed, dp));
+                        }
                     }
                     pieces.push(PiecePlacement {
                         prefab_id: placed.prefab_id.clone(),
@@ -623,6 +680,9 @@ impl<'a> Plan<'a> {
         let (checkpoints, stealth_beats) = collect_v06_effects(campaign, &anchors, &cp.obj_step);
         let objective_steps = cp.obj_step;
 
+        // ---- v0.6 traps (spec-0011) ----
+        let traps = collect_traps(campaign, &anchors, &dispenser_cells);
+
         Ok(Self {
             campaign,
             namespace,
@@ -639,6 +699,7 @@ impl<'a> Plan<'a> {
             checkpoints,
             stealth_beats,
             objective_steps,
+            traps,
         })
     }
 
@@ -1246,6 +1307,54 @@ fn collect_v06_effects(
     }
 
     (c.checkpoints, c.stealth)
+}
+
+/// Resolve every stage-5 trap (DSL v0.6, spec-0011) in content order into a
+/// [`TrapPlan`]: the trigger/hazard cell (the trap's `at` anchor), the dispenser
+/// socket cell (from the `at` anchor's metadata), the dispense payload, and the
+/// disarm affordance. A trap whose `at` anchor does not resolve to a point is
+/// skipped (validation guarantees the anchor exists; an unresolved pool anchor
+/// simply carries no proof/emission — the same policy as `collect_v06_effects`).
+fn collect_traps(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    dispenser_cells: &BTreeMap<(String, String), [i32; 3]>,
+) -> Vec<TrapPlan> {
+    let mut out = Vec::new();
+    for t in &campaign.quests.content.traps {
+        let Some(trigger_cell) = point_any(anchors, t.at.as_str()) else {
+            continue;
+        };
+        let dispenser = dispenser_cells
+            .iter()
+            .find(|((_, name), _)| name == t.at.as_str())
+            .map(|(_, cell)| *cell);
+        let payload = t.dispense().map(|(item, count)| (item.to_string(), count));
+        let disarm = t.disarm.as_ref().and_then(|dis| {
+            point_any(anchors, dis.via.as_str()).map(|via_cell| TrapDisarmPlan {
+                via_anchor: dis.via.as_str().to_string(),
+                via_cell,
+                sets_flag: dis.sets_flag.as_str().to_string(),
+            })
+        });
+        out.push(TrapPlan {
+            id: t.id.as_str().to_string(),
+            safe: safe_local(t.id.as_str()),
+            trigger: t.trigger,
+            trigger_cell,
+            dispenser,
+            payload,
+            lethality: t.lethality,
+            reset: t.reset,
+            disarm,
+            requires_flags: t
+                .requires_flags
+                .iter()
+                .map(|f| f.as_str().to_string())
+                .collect(),
+        });
+    }
+    out
 }
 
 /// Accumulates v0.6 checkpoints / stealth beats in content order while resolving

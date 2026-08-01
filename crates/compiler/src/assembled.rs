@@ -46,6 +46,18 @@ pub fn is_air(name: &str) -> bool {
     )
 }
 
+/// Thin, walkable trap-trigger blocks (DSL v0.6, spec-0011) a player steps *onto*
+/// rather than being blocked by: pressure plates and tripwire. Their cells are
+/// modelled **passable** so nav routes a player ONTO a critical-path trap trigger
+/// (the hazard the `DW0342` proof reasons about) instead of routing around a
+/// "solid" plate and falsely calling every trap avoidable. They are non-collidable
+/// in game, so this is the faithful model; a `_pressure_plate`/`tripwire` cell
+/// always rests on a solid support block below, so standability is unaffected.
+pub fn is_passable_trap_trigger(name: &str) -> bool {
+    let id = name.strip_prefix("minecraft:").unwrap_or(name);
+    id.ends_with("_pressure_plate") || matches!(id, "tripwire" | "tripwire_hook")
+}
+
 /// Whether a palette block id is **free water** (a source or flowing block that
 /// occupies its whole cell as fluid), as opposed to a waterlogged solid block.
 ///
@@ -374,6 +386,10 @@ pub fn occupancy_of(
     for (cell, name) in &blocks {
         if is_water(name) {
             sources.insert(*cell);
+        } else if is_passable_trap_trigger(name) {
+            // A pressure plate / tripwire is walkable floor decoration, not an
+            // obstacle (spec-0011) — leave its cell passable so the trap-trigger
+            // cell stays on the walkable path.
         } else {
             solid.insert(*cell);
         }

@@ -26,9 +26,9 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
-use delvewright_dsl::{CameraWaypoint, QuestEffect};
+use delvewright_dsl::{CameraWaypoint, Lethality, QuestEffect, TrapReset};
 
-use crate::plan::{Plan, ResolvedAnchor, Step};
+use crate::plan::{Plan, ResolvedAnchor, Step, TrapPlan};
 
 /// `DW0307`: a `move-npc` destination unreachable by any walkable path from the
 /// NPC's position over the assembled geometry.
@@ -54,6 +54,14 @@ pub const DW_CHECKPOINT_UNSTANDABLE: &str = "DW0316";
 /// `DW0327`: a `begin-stealth` (spec-0014) zone that is unstandable, or unreachable
 /// from the player's position at the beat that activates the stealth check.
 pub const DW_STEALTH_ZONE: &str = "DW0327";
+/// `DW0342`: a **lethal** trap (spec-0011) whose trigger cell lies on the forced
+/// critical path with no discharge — not avoidable (the trigger cell is a required
+/// path cell), not survivable (`rearm`, so a respawn walk-back re-triggers it →
+/// soft-loop), and not disarmable (no disarm affordance reachable before it). The
+/// player is provably killed or soft-looped. Analysis-tier (exit 2) like `DW0312`:
+/// a content-design mistake, not a geometry defect. (Renumbered from the spec's
+/// stale `DW0314`.)
+pub const DW_TRAP_LETHAL_UNAVOIDABLE: &str = "DW0342";
 
 /// A resolved stealth zone `(anchor name, centre cell, half-extents)`.
 type ZoneCell = (String, [i32; 3], [u32; 3]);
@@ -1115,9 +1123,10 @@ pub fn needs_world(plan: &Plan) -> bool {
     // The critical-path walkability check (DW0311) also needs the occupancy model.
         || has_walkable_critical_leg(plan)
     // The checkpoint (DW0315/DW0316) and stealth-zone (DW0327) proofs, v0.6, need
-    // the assembled occupancy model too.
+    // the assembled occupancy model too, as does the trap proof (DW0342, spec-0011).
         || !plan.checkpoints.is_empty()
         || !plan.stealth_beats.is_empty()
+        || !plan.traps.is_empty()
 }
 
 /// The player-visited critical-path positions in order, each tagged with whether
@@ -1395,6 +1404,126 @@ fn verify_stealth(
         }
     }
     Ok(())
+}
+
+/// Prove every **lethal** trap on the forced critical path is discharged (DSL
+/// v0.6, spec-0011) — [`DW_TRAP_LETHAL_UNAVOIDABLE`] (`DW0342`). Death is
+/// recoverable but costly (`keep_inventory true`, respawn at the entrance or last
+/// checkpoint), so an unavoidable lethal trap deep in the delve can soft-loop the
+/// party. For every trap whose lethality is `lethal` and whose trigger cell is a
+/// required critical-path cell, exactly one discharge must hold:
+///
+/// - **Avoidable** — the trigger cell is not a forced-path cell (the exported
+///   waypoints already steer clear). No obligation; the preferred outcome.
+/// - **Survivable** — the trap is `reset: once`: it fires, is spent, and the
+///   respawn walk-back never re-triggers it, so there is no soft-loop.
+/// - **Disarmable** — a disarm affordance is reachable from the spawn **without
+///   crossing the trap cell**, so the party can turn the trap off before being
+///   forced onto it.
+///
+/// A forced lethal `rearm` trap with no reachable disarm provably soft-loops the
+/// party → `DW0342`. Non-critical-path (branch/optional) lethal traps carry no
+/// obligation here (existing `DW0306` gate-reachability covers not sealing off a
+/// mandatory anchor).
+pub fn check_traps(plan: &Plan, world: &World, moves: &[MovePlan]) -> Result<(), NavError> {
+    if plan.traps.is_empty() {
+        return Ok(());
+    }
+    let required = world.required_path_cells(plan, moves);
+    let spawn_starts: Vec<[i32; 3]> = plan
+        .anchors
+        .iter()
+        .filter(|((_, name), _)| name == "spawn")
+        .filter_map(|(_, a)| match a {
+            ResolvedAnchor::Point { pos, .. } => Some(*pos),
+            ResolvedAnchor::Gate { .. } => None,
+        })
+        .collect();
+    verify_traps(world, &plan.traps, &required, &spawn_starts)
+}
+
+/// The pure core of [`check_traps`] (unit-testable against a synthetic [`World`]).
+/// `required` is the forced critical-path cell set; `spawn_starts` are the spawn
+/// cells the disarm-reachability search roots at.
+fn verify_traps(
+    world: &World,
+    traps: &[TrapPlan],
+    required: &BTreeSet<[i32; 3]>,
+    spawn_starts: &[[i32; 3]],
+) -> Result<(), NavError> {
+    for t in traps {
+        if !matches!(t.lethality, Lethality::Lethal) {
+            continue; // only lethal traps carry the obligation
+        }
+        let tc = t.trigger_cell;
+        // (a) Avoidable: the trigger cell is never a forced critical-path cell.
+        if !required.contains(&tc) {
+            continue;
+        }
+        // (b) Survivable: a single-shot trap fires once and is spent; the respawn
+        // walk-back (keep_inventory) never re-triggers it → no soft-loop.
+        if matches!(t.reset, TrapReset::Once) {
+            continue;
+        }
+        // (c) Disarmable: a disarm affordance reachable before the trap is forced.
+        if let Some(dis) = &t.disarm
+            && disarm_reachable_before(world, spawn_starts, dis.via_cell, tc)
+        {
+            continue;
+        }
+        return Err(NavError {
+            code: DW_TRAP_LETHAL_UNAVOIDABLE,
+            message: format!(
+                "lethal trap `{}` sits on the forced critical path at {tc:?} with no discharge — \
+                 it is not avoidable (its trigger cell is a required path cell), not survivable (it \
+                 `rearm`s, so a respawn walk-back re-triggers it → soft-loop), and not disarmable \
+                 (no disarm affordance is reachable before it). Move the trap off the critical \
+                 path, set `reset: once`, or add a `disarm` whose `via` anchor is reachable before \
+                 the trap cell — do NOT weaken this check to get green.",
+                t.id
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Whether the disarm affordance at `via` is reachable from any spawn start over
+/// the walkable world **without ever stepping on the trap cell** — i.e. the party
+/// can reach and use the disarm before being forced onto the trap. A BFS over
+/// standable cells with `trap_cell` removed from the walkable set.
+fn disarm_reachable_before(
+    world: &World,
+    starts: &[[i32; 3]],
+    via: [i32; 3],
+    trap_cell: [i32; 3],
+) -> bool {
+    let Some(goal) = world.snap_standable(via, SNAP_RADIUS) else {
+        return false;
+    };
+    if goal == trap_cell {
+        return false;
+    }
+    let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut queue: std::collections::VecDeque<[i32; 3]> = std::collections::VecDeque::new();
+    for s in starts {
+        if let Some(start) = world.snap_standable(*s, SNAP_RADIUS)
+            && start != trap_cell
+            && seen.insert(start)
+        {
+            queue.push_back(start);
+        }
+    }
+    while let Some(cur) = queue.pop_front() {
+        if cur == goal {
+            return true;
+        }
+        for n in world.neighbors(cur) {
+            if n != trap_cell && seen.insert(n) {
+                queue.push_back(n);
+            }
+        }
+    }
+    seen.contains(&goal)
 }
 
 /// A walked critical-path leg with the full A* cell route the compiler proved
@@ -2006,5 +2135,111 @@ mod tests {
         // A straight +x path yaws every waypoint east (270), including the last.
         let wps = vec![[0.0, 65.0, 0.0], [1.0, 65.0, 0.0], [2.0, 65.0, 0.0]];
         assert_eq!(yaws_along(&wps), vec![270, 270, 270]);
+    }
+
+    // --- v0.6 trap completability proof (spec-0011, DW0342) ---
+
+    use crate::plan::TrapDisarmPlan;
+    use delvewright_dsl::{Lethality, TrapReset, TrapTrigger};
+
+    /// A 1-wide walkable corridor along z=1: a floor strip at `[0..len, y-1, 1]`.
+    /// `[x, y, 1]` are the only standable cells, so the corridor has no bypass — a
+    /// cell on it is a genuine chokepoint the player cannot walk around.
+    fn corridor(len: i32, y: i32) -> World {
+        let mut solid = BTreeSet::new();
+        for x in 0..len {
+            solid.insert([x, y - 1, 1]);
+        }
+        World::from_solid_cells(solid)
+    }
+
+    /// A minimal lethal trap for the proof tests.
+    fn lethal_trap(cell: [i32; 3], reset: TrapReset, disarm: Option<TrapDisarmPlan>) -> TrapPlan {
+        TrapPlan {
+            id: "trap/darts".to_string(),
+            safe: "darts".to_string(),
+            trigger: TrapTrigger::PressurePlate,
+            trigger_cell: cell,
+            dispenser: None,
+            payload: None,
+            lethality: Lethality::Lethal,
+            reset,
+            disarm,
+            requires_flags: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn forced_lethal_rearm_trap_with_no_discharge_is_dw0342() {
+        // A rearming lethal trap on a required chokepoint, no disarm → soft-loop.
+        let world = corridor(6, 65);
+        let tc = [3, 65, 1];
+        let required: BTreeSet<[i32; 3]> = (0..6).map(|x| [x, 65, 1]).collect();
+        let traps = [lethal_trap(tc, TrapReset::Rearm, None)];
+        let err = verify_traps(&world, &traps, &required, &[[0, 65, 1]]).unwrap_err();
+        assert_eq!(err.code, DW_TRAP_LETHAL_UNAVOIDABLE);
+    }
+
+    #[test]
+    fn forced_lethal_once_trap_is_survivable() {
+        // The same forced trap set to `once` fires and is spent — no soft-loop.
+        let world = corridor(6, 65);
+        let tc = [3, 65, 1];
+        let required: BTreeSet<[i32; 3]> = (0..6).map(|x| [x, 65, 1]).collect();
+        let traps = [lethal_trap(tc, TrapReset::Once, None)];
+        assert!(verify_traps(&world, &traps, &required, &[[0, 65, 1]]).is_ok());
+    }
+
+    #[test]
+    fn off_path_lethal_trap_is_avoidable() {
+        // A rearming lethal trap whose trigger cell is NOT a required path cell.
+        let world = corridor(6, 65);
+        let tc = [3, 65, 1];
+        let required: BTreeSet<[i32; 3]> = BTreeSet::new(); // path avoids the trap
+        let traps = [lethal_trap(tc, TrapReset::Rearm, None)];
+        assert!(verify_traps(&world, &traps, &required, &[[0, 65, 1]]).is_ok());
+    }
+
+    #[test]
+    fn forced_lethal_trap_with_reachable_disarm_is_discharged() {
+        // Disarm affordance BEFORE the trap on the corridor (reachable from spawn
+        // without crossing the trap cell) → disarmable.
+        let world = corridor(6, 65);
+        let tc = [4, 65, 1];
+        let required: BTreeSet<[i32; 3]> = (0..6).map(|x| [x, 65, 1]).collect();
+        let disarm = TrapDisarmPlan {
+            via_anchor: "anchor/lever".to_string(),
+            via_cell: [1, 65, 1],
+            sets_flag: "flag/darts-off".to_string(),
+        };
+        let traps = [lethal_trap(tc, TrapReset::Rearm, Some(disarm))];
+        assert!(verify_traps(&world, &traps, &required, &[[0, 65, 1]]).is_ok());
+    }
+
+    #[test]
+    fn forced_lethal_trap_with_disarm_behind_the_trap_is_dw0342() {
+        // The only route to the disarm crosses the trap chokepoint, so the disarm
+        // cannot be reached first → still a soft-loop → DW0342.
+        let world = corridor(6, 65);
+        let tc = [3, 65, 1];
+        let required: BTreeSet<[i32; 3]> = (0..6).map(|x| [x, 65, 1]).collect();
+        let disarm = TrapDisarmPlan {
+            via_anchor: "anchor/lever".to_string(),
+            via_cell: [5, 65, 1],
+            sets_flag: "flag/darts-off".to_string(),
+        };
+        let traps = [lethal_trap(tc, TrapReset::Rearm, Some(disarm))];
+        let err = verify_traps(&world, &traps, &required, &[[0, 65, 1]]).unwrap_err();
+        assert_eq!(err.code, DW_TRAP_LETHAL_UNAVOIDABLE);
+    }
+
+    #[test]
+    fn non_lethal_forced_trap_carries_no_obligation() {
+        // A harmful (non-lethal) trap on the forced path is fine — no DW0342.
+        let world = corridor(6, 65);
+        let mut t = lethal_trap([3, 65, 1], TrapReset::Rearm, None);
+        t.lethality = Lethality::Harmful;
+        let required: BTreeSet<[i32; 3]> = (0..6).map(|x| [x, 65, 1]).collect();
+        assert!(verify_traps(&world, &[t], &required, &[[0, 65, 1]]).is_ok());
     }
 }

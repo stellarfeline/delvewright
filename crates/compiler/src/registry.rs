@@ -225,6 +225,13 @@ pub struct AnchorMeta {
     /// The block filling a gate region (e.g. `minecraft:iron_bars`).
     #[serde(default)]
     pub block: Option<String>,
+    /// The pre-wired dispenser socket cell (local coords) for an `anchor/trap`
+    /// marker (DSL v0.6, spec-0011). `pos` is the trap's trigger/hazard cell (the
+    /// plate/tripwire/chest the compiler models as a hazard); `dispenser` is the
+    /// separate cell holding the empty dispenser whose payload the compiler fills.
+    /// Absent for every non-trap anchor (byte-identical for existing metadata).
+    #[serde(default)]
+    pub dispenser: Option<[i32; 3]>,
 }
 
 /// An inclusive local block region (two corners).

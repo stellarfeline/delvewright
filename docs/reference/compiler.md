@@ -37,6 +37,18 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   trigger effect except `campaign-complete`) and a verbatim blockstate suffix
   `id[key=value,…]` on `set-block`/`interact.prop` blocks. Both default to
   absent, so a campaign that uses neither is byte-identical.
+- spec-0011 (traps) has **landed** at `dsl_version 0.6.0`: the stage-5 `traps[]`
+  surface (redstone-native hazards bound to `anchor/trap` markers — trigger
+  `pressure-plate`/`tripwire`/`trapped-chest`, a compiler-filled `dispense`
+  payload, `lethality`, `disarm`, `reset`), the completability proof `DW0342` (a
+  forced lethal trap must be avoidable, `once`-survivable, or disarmable), the
+  declaration/payload validation `DW0340`/`DW0341`, and the defense-in-depth
+  `gamerule tnt_explodes false` seal (v0.6-gated). Absent `traps` keeps pre-0.6
+  output byte-identical. The trap `effect` is `dispense` only in this landing;
+  `release-wave`/`set-hazard` (spec-0011's other effect variants) and the
+  `anchor/trap` prefab-hardware admission audit are deferred to follow-ups. The
+  spec's reserved diagnostic numbers were stale (all taken since) and were
+  renumbered off them (0197/0198/0314) to `DW0340`/`DW0341`/`DW0342`.
 
 ---
 
@@ -54,7 +66,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 6 | Solve jigsaw layout (per `prefab_pool` area, from seed) | `compiler::solver` | `DW030x` (exit 3) |
 | 7 | Assemble world model (placed pieces → voxel grid) | `compiler::plan` | `DW030x` (exit 3) |
 | 8 | Assembled-light + relight (measure, place fixtures) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
-| 9 | Nav checks (A* `move-npc`/`move-actor` (footprint-aware), cutscene clip, critical-path walkability — incl. relight fixtures + water flood; talk-to endpoint snap; waypoint self-check; POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone proofs) | `compiler::nav` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0325`/`DW0327`/`DW0724` (exit 3) |
+| 9 | Nav checks (A* `move-npc`/`move-actor` (footprint-aware), cutscene clip, critical-path walkability — incl. relight fixtures + water flood; talk-to endpoint snap; waypoint self-check; POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone + trap completability proofs) | `compiler::nav` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0325`/`DW0327`/`DW0342`/`DW0724` (exit 3; `DW0342` → exit 2) |
 | 10 | Emit (datapack, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
 
 - `build` ⟹ `validate` + `analyze`; `analyze` ⟹ `validate`. A validation failure
@@ -177,6 +189,7 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Effect `move-actor{actor,to_anchor,speed?,on_arrive[]}` | Footprint-aware A*-planned per-tick tp of the puppet, yaw along the path tangent; `on_arrive` fires at the destination cell; unroutable → `DW0325`. `move-npc` is a thin wrapper over the same planner (player footprint). | 0.6 |
 | Effect `unleash-actor{actor}` | Replaces the puppet with a real-AI twin (same entity/pos/name/tag, no puppet marker). Re-caging = `despawn-actor` + `spawn-actor`. | 0.6 |
 | Effect `sequence{steps[]{at_ticks,effects[]}}` | Deterministic timeline: one schedule chain firing effect groups at exact tick offsets. No nested `sequence` → `DW0329`. | 0.6 |
+| `traps[]` | spec-0011: `{id,at,trigger,effect,lethality?,disarm?,reset?,requires_flags?}`. `at` binds an `anchor/trap` prefab marker (the trigger/hazard cell; its `dispenser` metadata cell holds the payload socket). `trigger` ∈ `pressure-plate`/`tripwire`/`trapped-chest` (all redstone-native; `trapped-chest` = the only player-distinct trigger). `effect` = `{dispense:{item,count}}` (item `DW0341`; a non-`dispense` key e.g. `tnt` is an unknown variant → `DW0100`). `lethality` ∈ `lethal`/`harmful`(default)/`nonlethal`. `disarm{via,sets_flag}` = a reachable affordance that turns the trap off. `reset` ∈ `once`/`rearm`(default). Structural errors `DW0340`; a lethal forced-path trap without discharge `DW0342`. Reserved (`DW0141`) before 0.6. | 0.6 |
 
 Dialogue effects `set-flag` (v0.4), `set-time`/`set-weather` (v0.5),
 `set-checkpoint` (v0.6) and option `requires_flags` mirror the quest forms.
@@ -186,9 +199,9 @@ its whole effect bundle). Under `0.2.0`, all v0.3 verbs/effects are reserved →
 `DW0141`; likewise v0.4 surface under pre-0.4, v0.5 surface
 (`time`/`weather`/`lighting`, `set-time`/`set-weather`) under pre-0.5, and the
 v0.6 surface (`set-checkpoint`, `begin-stealth`/`end-stealth`, the `play-sound`
-effect + `narrate` `style: art`, per-effect `requires_flags`, and stage-5
-`actors` + the staging effects `spawn`/`despawn`/`move`/`unleash-actor`,
-`sequence`) under pre-0.6.
+effect + `narrate` `style: art`, per-effect `requires_flags`, stage-5 `actors` +
+the staging effects `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, and the
+`traps[]` section) under pre-0.6.
 The blockstate suffix on `set-block`/`prop` blocks is a lenient parse of an
 existing field, not version-gated: the base id is registry-checked and the `[…]`
 string is passed to `setblock` verbatim (vanilla validates the property
@@ -248,6 +261,8 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | relight fixtures (`lighting`) | `setblock` per placed fixture in `setup_finish`, after structure placement + socket seals (spec-0010). Blocks: `torch`/`wall_torch`, `lantern[hanging=…]`, `campfire[lit=true]`, `shroomlight`. |
 | `set-checkpoint` | Inline: `spawnpoint @a <x y z>` + `data modify storage dw:cp pos set value [x,y,z]` (the readable "last checkpoint" mirror); when any checkpoint has `on_respawn`, also `#cp dw.sys = <index>`. `setup_finish` seeds `dw:cp` to the spawn cell. `on_respawn`: `deathCount` objective (`dw.deaths`) + per-player ack; `tick` runs `cp_respawn_check` (fire on the death-count edge, dispatch `cp_on_respawn_<index>` for the active checkpoint). |
 | `begin-stealth` / `end-stealth` | `begin` → `#stealth dw.sys = <session>` + reset per-player `dw.st_grace`/`dw.st_sneakack`. `tick` runs `stealth_tick_<session>` while active → per-player `stealth_eval_<session>`: safe iff sneaking this tick (`dw.st_sneak`=`sneak_time` stat rose vs. ack) AND in a zone box; grace resets when safe, climbs when exposed, and at `grace_ticks` fires `stealth_caught_<session>` (`on_caught`). `end` → `#stealth dw.sys = 0`. |
+| trap `dispense` (spec-0011) | `setup_finish`: `item replace block <disp> container.0 with <item> <count>` fills the prefab's pre-wired dispenser socket (the `anchor/trap` metadata `dispenser` cell) — a static, deterministic payload, the same mechanism as a `collect` chest. **No detection** is emitted for the harm: the plate/tripwire/trapped-chest → dispenser redstone is already in the prefab. Pressure plates and tripwire are modelled **passable** in the assembled occupancy (`crate::assembled::is_passable_trap_trigger`) so nav routes a player ONTO a trigger cell rather than around a "solid" plate. |
+| trap `disarm` (spec-0011) | `setup_finish` summons a `minecraft:interaction` at the disarm `via` cell (tag `dw_trapdis_<trap>`); `tick` fires `trap_disarm_<trap>` once on a right-click (`nbt={interaction:{}}`, reusing the v0.4 `use` primitive). `trap_disarm_<trap>` sets the party-wide `dw.f_<flag>` and empties the dispenser (`data modify block <disp> Items set value []`) — the modeled, global disarm that actually stops a redstone dispense trap. |
 
 Naming: `dw.o_<obj>`, `dw.q_<quest>`, `dw.qa_<quest>` (active), `dw.dlg_<npc>`,
 `dw.f_<flag>`, tags `dw_npc_<npc>`/`dw_wave_<id>`/`dw_i_<obj>`/`dw_r_<obj>`.
@@ -285,6 +300,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 | `doFireTick` | `gamerule fire_spread_radius_around_player 0` (no boolean successor; radius 0 = no spread) |
 | `mobGriefing` | `gamerule mob_griefing false` |
 | — | `gamerule keep_inventory true` (box-garden death policy; **not in spec-0002** — see §6) |
+| — | `gamerule tnt_explodes false` (**v0.6-gated**, spec-0011): defense-in-depth against a stray primed-TNT source deforming the sealed world. No gamerule separates explosion block vs. entity damage, so TNT is excluded as a trap payload by the schema and belt-and-braces sealed here. Emitted **only** when the world stage is `dsl_version 0.6.0`, so pre-0.6 fixtures stay byte-identical. |
 | — | `time set <kw>` (declared `world.time`, default `noon` = daytime 6000; the sole seal with a vanilla read-back) |
 | — | `weather <kw>` (declared `world.weather`; emitted **only when declared** — `clear` is the vanilla default, so an undeclared campaign emits nothing and stays byte-identical to pre-0.5) |
 
@@ -399,6 +415,14 @@ divergence: a `cave-shore` pool floods `[261,66,1]`, a cell an unpatched model
 routed a talk-to leg's step-up through. (Waterlogged solids keep their host id and
 stay solid; they do not seed the flood — vanilla waterlogging never spreads.)
 
+Trap triggers (spec-0011): `*_pressure_plate`, `tripwire`, and `tripwire_hook`
+(`crate::assembled::is_passable_trap_trigger`) are non-collidable in game, so the
+occupancy model treats their cells as **passable** rather than solid. This is the
+faithful model — a plate rests on a solid support block below, so standability is
+unchanged — and it is load-bearing for the `DW0342` trap proof: a player must be
+routed *onto* a trigger cell (so the compiler can prove the trap avoidable or not),
+never around a phantom "solid" plate that would call every trap avoidable.
+
 ### Nav (compile-time, over the assembled voxel grid)
 
 `move-npc` paths and the critical path are routed by A* over the placed-world
@@ -474,7 +498,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0132` | `finale` is not the convergent sink (some quest is not a transitive dependency of finale). |
 | `DW0133` | Non-mandatory quest (`mandatory:false`), reserved until M3. |
 | `DW0140` | Objective `after` cycle. |
-| `DW0141` | Reserved enum value/field for the campaign's `dsl_version` (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, and stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`). |
+| `DW0141` | Reserved enum value/field for the campaign's `dsl_version` (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, and the `traps[]` section). |
 | `DW0142` | Anchor not provided by the area's bound prefab. |
 | `DW0143` | Item id not in the pinned 1.21.11 registry (kit / `collect` / `interact.requires_item` / `give-item`). |
 | `DW0150` | Planned quest (stage 4) has no stage-5 expansion. |
@@ -498,6 +522,8 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0196` | Area `lighting.min_light` out of range (must be 1..=14). v0.5, spec-0010. |
 | `DW0320` | `horizon:"ocean"` declared without a `boundary` (an infinite swimmable sea with no return rule). v0.6, spec-0013. Numbered in the 032x world/region family but **validation-tier (exit 1)**, not a DW03x build code. |
 | `DW0321` | `boundary.margin` outside `0..=64`. v0.6, spec-0013. Validation-tier (exit 1). |
+| `DW0340` | Trap declaration structurally invalid (v0.6, spec-0011): a malformed/duplicate `trap/<id>`, an `at`/`disarm.via` that no area's prefab provides, or a `disarm.via` that collides with the trap's own trigger anchor. Renumbered off the spec's stale reserved number (0197). |
+| `DW0341` | A trap `dispense` payload item id is not in the pinned 1.21.11 registry (v0.6, spec-0011; mirrors `DW0143`). Renumbered off the spec's stale reserved number (0198). |
 
 ### DW032x/033x — sound & art-title validation (`compiler::atmos`; error; exit 1)
 
@@ -529,9 +555,9 @@ tier) in `main`; `DW0201`–`DW0203` come from `compiler::analyze` reachability.
 
 ### DW03xx — build / solver / nav (`compiler`; error; exit 3, `stage:"build"`)
 
-Exit 3 except `DW0312` (wave-capacity) and `DW0313` (gravity-despawn), which are
-analysis-tier and mapped to exit 2 in `main` like the `DW02xx` codes — see their
-rows.
+Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
+(lethal-trap completability), which are analysis-tier and mapped to exit 2 in
+`main` like the `DW02xx` codes — see their rows.
 
 | Code | Meaning |
 |------|---------|
@@ -555,6 +581,7 @@ rows.
 | `DW0325` | A `move-actor` destination is unreachable over the assembled geometry for the **actor's footprint** (per-entity dims table; warden 0.9×2.9 needs 3 cells of headroom, so it can be stranded where a player fits), or an actor spawn/destination anchor resolves to no world position (spec-0014). Build-tier (exit 3), `compiler::nav`; the message names the actor, the leg, and a best-effort first blocked cell. |
 | `DW0327` | A `begin-stealth` (spec-0014) zone is unstandable, or unreachable from the player's position at the beat that activates the stealth check — a guaranteed-unwinnable stealth beat. The message names the zone and prescribes placing it over reachable floor / within walkable reach of the activating beat. |
 | `DW0329` | A `sequence` effect is nested inside another `sequence` (directly, or reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse (spec-0014). Validation-tier (exit 1), `dsl::validate`. Flatten the inner steps into the outer timeline (shift their `at_ticks`). |
+| `DW0342` | A **lethal** trap (spec-0011) whose trigger cell lies on the forced critical path with no discharge — not avoidable (the trigger cell is a required path cell), not survivable (`rearm`, so a respawn walk-back re-triggers it → soft-loop), and not disarmable (no disarm affordance reachable before it, over the world with the trap cell blocked). The player is provably killed or soft-looped. **Analysis-tier: exit 2**, like `DW0312` — a content-design mistake, not a geometry defect; the message names the trap and prescribes moving it off the path, setting `reset: once`, or adding a reachable `disarm`. Renumbered off the spec's stale reserved number (0314 — since taken by the waypoint self-check). |
 
 ### DW07xx — workspace tooling (spec-0007; **not `delvec`**)
 
@@ -602,6 +629,7 @@ this doc is current behavior).
 | Assembled-relight, measured `DW0210`, `DW0211`/`DW0196`, stage-1 `lighting`/`time`/`weather`, `set-time`/`set-weather` (all v0.5) | spec-0010 (landed, #35) |
 | Stage-1 `horizon` (ocean superflat), `boundary` (derived playable region + 1s return clock), `dw:region`/`dw:cp` mirrors, `DW0320`/`DW0321` (all v0.6) | spec-0013 (landed) |
 | Sound + art-title surface (`play-sound`, `narrate` `art`, `delve:art` font, `DW0326`/`DW0328`/`DW0335`) | spec-0014 (v0.6) |
+| Traps: stage-5 `traps[]`, `anchor/trap` dispenser fill + disarm emission, `tnt_explodes` seal, passable plate/tripwire model, `DW0340`/`DW0341`/`DW0342` (all v0.6) | spec-0011 (landed) |
 | Asset-pipeline tooling `DW07xx` (schem/render/admit) | spec-0007 |
 | Determinism invariants | ADR-0006 |
 
