@@ -4758,6 +4758,21 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         b.push("scoreboard players set #placed dw.sys 1".to_string());
         b.push(format!("kill @e[tag=dw_npc_{safe}]"));
         b.push(format!("function {ns}:setup_finish"));
+        // A `deferred` NPC (DSL v0.6) is deliberately absent after `setup_finish` —
+        // it enters via `spawn-npc`. Fire its entrance here so the despawn path is
+        // exercised against the same body+hitbox pair a scripted entrance places
+        // (the presence assertion below is unchanged, and stays a real assertion).
+        // No line is emitted for a non-deferred target → byte-identical output for
+        // campaigns that declare no deferred NPC.
+        // The guard mirrors `spawn_npc_fns` exactly (planned NPC + `deferred`), so
+        // the test never calls an entrance function that was not emitted.
+        if plan
+            .npcs
+            .iter()
+            .any(|n| n.npc_id == npc.as_str() && npc_is_deferred(c, &n.npc_id))
+        {
+            b.push(format!("function {ns}:{}", spawn_npc_fn(npc.as_str())));
+        }
         // body + interaction hitbox both carry `dw_npc_<npc>` → two entities.
         b.push(format!(
             "execute store result score #before dw.sys if entity @e[tag=dw_npc_{safe}]"
