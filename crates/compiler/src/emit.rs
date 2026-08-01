@@ -2281,24 +2281,18 @@ fn all_campaign_effects(c: &delvewright_dsl::Campaign) -> Vec<&QuestEffect> {
     out
 }
 
-/// Push `e` and every effect nested in a `sequence` step / `move-actor` `on_arrive`
-/// (spec-0014).
+/// Push `e` and every transitively nested effect, descending through every nested
+/// effect list ([`QuestEffect::nested_effect_lists`]: `sequence` steps,
+/// `set-checkpoint` `on_respawn`, `begin-stealth` `on_caught`, `move-actor`
+/// `on_arrive`). Completeness matters: e.g. a `sequence` nested in an `on_respawn`
+/// must be reached here so `sequence_fns` generates its `seq_…` function — the
+/// `emit_quest_effect` for the nested effect emits a `function` call to it.
 fn push_effect_deep<'a>(e: &'a QuestEffect, out: &mut Vec<&'a QuestEffect>) {
     out.push(e);
-    match e {
-        QuestEffect::Sequence { steps } => {
-            for s in steps {
-                for inner in &s.effects {
-                    push_effect_deep(inner, out);
-                }
-            }
+    for list in e.nested_effect_lists() {
+        for inner in list {
+            push_effect_deep(inner, out);
         }
-        QuestEffect::MoveActor { on_arrive, .. } => {
-            for inner in on_arrive {
-                push_effect_deep(inner, out);
-            }
-        }
-        _ => {}
     }
 }
 
@@ -3208,23 +3202,30 @@ fn completion_cleanup(o: &Objective) -> Vec<String> {
 /// Empty extra sources for v0.2/v0.3, keeping their scoreboard setup identical.
 fn declared_flags(c: &delvewright_dsl::Campaign) -> std::collections::BTreeSet<String> {
     let mut out = std::collections::BTreeSet::new();
+    // Descend the whole effect tree: a `set-flag` nested in a `sequence` step (or an
+    // `on_respawn`/`on_caught`/`on_arrive` bundle) still emits a `dw.f_<flag>` write,
+    // so its scoreboard objective must be initialized here — else the nested
+    // `set-flag` writes to an uninitialized objective at runtime.
+    let note = |eff: &QuestEffect, out: &mut std::collections::BTreeSet<String>| {
+        eff.visit_deep(&mut |e| {
+            if let Some(f) = e.set_flag() {
+                out.insert(f.as_str().to_string());
+            }
+        });
+    };
     for q in &c.quests.content.quests {
-        let effs = q
+        for eff in q
             .on_objective_complete
             .values()
             .flatten()
-            .chain(q.on_complete.iter());
-        for eff in effs {
-            if let Some(f) = eff.set_flag() {
-                out.insert(f.as_str().to_string());
-            }
+            .chain(&q.on_complete)
+        {
+            note(eff, &mut out);
         }
     }
     for t in &c.quests.content.triggers {
         for eff in &t.effects {
-            if let Some(f) = eff.set_flag() {
-                out.insert(f.as_str().to_string());
-            }
+            note(eff, &mut out);
         }
     }
     // v0.6 traps (spec-0011): a disarm's `sets_flag` needs its own scoreboard.
