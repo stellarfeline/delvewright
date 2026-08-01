@@ -172,6 +172,7 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | `waves[]` | `{id,anchor,mobs[{entity,count,name?,attributes?,effects?}]}`; entity validated (`DW0173`); `attributes`/`effects` are v0.4 (`DW0192`). | 0.3 / tuning 0.4 |
 | `triggers[]` | `{id,at,on:strike\|use\|approach{range},requires_flags?,once?,effects[]}` (v0.4). Bad/dup/`range 0` → `DW0194`. | 0.4 |
 | Effect `open-gate` | Fills gate anchor to air. | 0.1 |
+| Effect `close-gate{anchor}` | The physical dual of `open-gate` (v0.6): fills the gate anchor's region with the block the anchor's prefab metadata declares (basalt boulder, iron bars), re-sealing an opened threshold into a wall. A gate anchor that declares no `block` is `DW0343`. Same anchor-existence check as `open-gate` (`DW0142`). Per-effect `requires_flags` like the other per-`@s` verbs. | 0.6 |
 | Effect `campaign-complete` | Sets `dw.campaign`; finale fanfare. | 0.1 |
 | Effect `spawn-wave` | Summons wave mobs (AI on), tag `dw_wave_<id>`. | 0.3 |
 | Effect `give-item{item,count,name?}` | Grants item (`name` v0.4). | 0.3 |
@@ -203,10 +204,10 @@ effects are not mirrored — a dialogue option's own `requires_flags` already ga
 its whole effect bundle). Under `0.2.0`, all v0.3 verbs/effects are reserved →
 `DW0141`; likewise v0.4 surface under pre-0.4, v0.5 surface
 (`time`/`weather`/`lighting`, `set-time`/`set-weather`) under pre-0.5, and the
-v0.6 surface (`set-checkpoint`, `begin-stealth`/`end-stealth`, the `play-sound`
-effect + `narrate` `style: art`, per-effect `requires_flags`, stage-5 `actors` +
-the staging effects `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, and the
-`traps[]` section) under pre-0.6.
+v0.6 surface (`close-gate`, `set-checkpoint`, `begin-stealth`/`end-stealth`, the
+`play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, stage-5
+`actors` + the staging effects `spawn`/`despawn`/`move`/`unleash-actor`,
+`sequence`, and the `traps[]` section) under pre-0.6.
 The blockstate suffix on `set-block`/`prop` blocks is a lenient parse of an
 existing field, not version-gated: the base id is registry-checked and the `[…]`
 string is passed to `setblock` verbatim (vanilla validates the property
@@ -260,6 +261,7 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | `interact` | `minecraft:interaction` (tag `dw_i_<obj>`) + `player_interacted_with_entity` advancement + `/trigger dw.i_<obj>`; `requires_item` = `execute if items`; glowing lantern `item_display` marker (also tag `dw_i_<obj>`, only when no `prop`), labeled with the objective `title` — untitled → nameless glow, never a raw-id label. `prop{block}` = `setblock` affordance. Completion despawns both entities (`kill @e[tag=dw_i_<obj>]`) so a finished objective is not clickable; the `prop` block persists as scenery. |
 | `set-flag` / `requires_flags` | `dw.f_<flag>` scoreboard (per-player); required flags AND-ed into objective guards (layered on `after`). **Per-effect** `requires_flags` (v0.6) wraps each of the effect's emitted commands in `execute if score @s dw.f_<flag> matches 1 [… per flag] run <cmd>`; these effect functions already run per-player (`complete_<obj>` / `trig_<id>` are entered `as @a`/`@s`), and an ungated effect is emitted verbatim (byte-identical). |
 | `open-gate` | `/fill … air` over the gate region. |
+| `close-gate` | `/fill <region> <block>` over the gate region with the anchor's declared fill block (no `replace` clause — the dual of `open-gate`). |
 | `give-item` | Grants item to player (`name` → SNBT text component). |
 | `narrate` | chat / `title` / `subtitle` (+ optional sound); `art` = `title` with a `{"font":"delve:art"}` text component, rendered uppercase. |
 | `play-sound` | `playsound <sound> master @s [<pos>] [<vol> [<pitch>]]` — effects run `as @a`, so `@s` is each player: `anchor` uses the resolved anchor pos (all hear it there), `players` uses `~ ~ ~`. |
@@ -447,6 +449,21 @@ a low ceiling is unroutable, not a silent strand). Cutscene dollies must pass on
 non-solid cells. Unroutable/clipping/stranded → `DW0307`/`DW0308`/`DW0311` at build
 (never a runtime glitch).
 
+**Close-gate solidity (v0.6).** The base occupancy model treats every gate region
+as **passable** (the conservative "assume the gate the player needs is opened"
+stance `DW0306` separately proves at the piece-connectivity level) — so `open-gate`
+does not dynamically flip cells at nav time, and an `open-gate`-only campaign routes
+exactly as before. `close-gate` is the physical dual: the compiler collects every
+`open`/`close` firing with its critical-path firing step (`plan.gate_events`,
+content-ordered, deep-walked through `sequence`/lifecycle bundles), and each walked
+critical leg — and each checkpoint→forward-path leg — is routed over the world with
+any gate whose **latest firing strictly before the leg is a `close`** (not reopened
+by a later `open-gate`) forced **solid**. So a forced path that must re-cross a
+sealed gate fails `DW0311` (`DW0315` from a checkpoint) with a message that names
+the sealed gate — the "point of no return by geometry" the owner's staging vision
+wants, provable at compile time. A gate reopened by an `open-gate` before the leg
+routes normally again.
+
 **Talk-to endpoint (task #45):** a talk-to leg's target anchor is the NPC's own
 occupied cell (the mannequin stands there, its interaction hitbox fills it). The
 leg's goal is snapped to the nearest standable cell *beside* the NPC — excluding
@@ -510,7 +527,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0132` | `finale` is not the convergent sink (some quest is not a transitive dependency of finale). |
 | `DW0133` | Non-mandatory quest (`mandatory:false`), reserved until M3. |
 | `DW0140` | Objective `after` cycle. |
-| `DW0141` | Reserved enum value/field for the campaign's `dsl_version` (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, and the `traps[]` section). |
+| `DW0141` | Reserved enum value/field for the campaign's `dsl_version` (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: `close-gate`, `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, and the `traps[]` section). |
 | `DW0142` | Anchor not provided by the area's bound prefab. |
 | `DW0143` | Item id not in the pinned 1.21.11 registry (kit / `collect` / `interact.requires_item` / `give-item`). |
 | `DW0150` | Planned quest (stage 4) has no stage-5 expansion. |
@@ -536,6 +553,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0321` | `boundary.margin` outside `0..=64`. v0.6, spec-0013. Validation-tier (exit 1). |
 | `DW0340` | Trap declaration structurally invalid (v0.6, spec-0011): a malformed/duplicate `trap/<id>`, an `at`/`disarm.via` that no area's prefab provides, or a `disarm.via` that collides with the trap's own trigger anchor. Renumbered off the spec's stale reserved number (0197). |
 | `DW0341` | A trap `dispense` payload item id is not in the pinned 1.21.11 registry (v0.6, spec-0011; mirrors `DW0143`). Renumbered off the spec's stale reserved number (0198). |
+| `DW0343` | A `close-gate` (v0.6) targets a gate anchor whose prefab metadata declares no fill `block` (or is not a gate region at all), so the compiler cannot seal it — `close-gate` fills the region with the anchor's declared block. Compiler-side (needs prefab metadata the DSL anchor registry does not carry), reported at **validation tier (exit 1)** like the atmos `DW032x` checks; scan is over every prefab (gate anchors resolve globally like `open-gate`), and **all** region-providers of the anchor must declare a `block`. Prescription: declare `block` on the gate anchor, or remove the `close-gate`. |
 
 ### DW032x/033x — sound & art-title validation (`compiler::atmos`; error; exit 1)
 

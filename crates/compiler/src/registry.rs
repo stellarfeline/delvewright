@@ -314,6 +314,37 @@ impl PrefabRegistry {
         self.pool_members.get(pool_id).map(|v| v.as_slice())
     }
 
+    /// Classify how the loaded prefabs provide a gate anchor for the `close-gate`
+    /// block-declared check (`DW0343`). `close-gate` fills the region with the block
+    /// the anchor declares, so a blockless (or non-region) anchor cannot be sealed:
+    ///
+    /// - `None` — no loaded prefab declares `anchor_name` as a **gate region**
+    ///   (it is a point anchor, a trap anchor, or unknown): nothing to seal.
+    /// - `Some(false)` — at least one region-provider declares the anchor but omits
+    ///   `block`: the compiler cannot know what to fill with (and the solver may
+    ///   place that blockless member).
+    /// - `Some(true)` — every prefab that declares this anchor as a gate region also
+    ///   declares a fill `block`.
+    ///
+    /// Gate anchors resolve globally (like `open-gate`), so the scan is over every
+    /// prefab — the conservative "all region-providers must declare a block" rule
+    /// guarantees whichever member the solver places can be sealed.
+    pub fn gate_anchor_block(&self, anchor_name: &str) -> Option<bool> {
+        let mut any_region = false;
+        let mut all_have_block = true;
+        for meta in self.by_id.values() {
+            if let Some(am) = meta.anchors.get(anchor_name)
+                && am.region.is_some()
+            {
+                any_region = true;
+                if am.block.is_none() {
+                    all_have_block = false;
+                }
+            }
+        }
+        any_region.then_some(all_have_block)
+    }
+
     /// The prefab ids in `pool_id` that declare `anchor_name` in their metadata.
     pub fn pool_prefabs_with_anchor(&self, pool_id: &str, anchor_name: &str) -> Vec<String> {
         let Some(members) = self.pool_members.get(pool_id) else {

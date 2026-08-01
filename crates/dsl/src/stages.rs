@@ -1394,6 +1394,21 @@ pub enum QuestEffect {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
     },
+    /// Seals a prefab-declared gate — the physical dual of `open-gate` (DSL v0.6):
+    /// fills the gate anchor's region with the block the anchor declares (e.g. the
+    /// boulder's `minecraft:basalt`), turning an opened threshold back into a wall.
+    /// The declared fill block is prefab metadata; a gate anchor with no `block` is
+    /// rejected (`DW0343`). The completability model treats the region as **solid**
+    /// from the point in the quest DAG where this fires (mirroring how `open-gate`'s
+    /// clearing is modelled) — a critical path that must cross a gate after it seals
+    /// fails the DW0311 reachability proof.
+    CloseGate {
+        /// The gate anchor to seal.
+        anchor: AnchorId,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
+    },
     /// Marks the campaign complete (final advancement + credits). Terminal — not
     /// flag-gatable (gating the campaign's own completion is a deadlock footgun),
     /// so this variant carries no `requires_flags`.
@@ -1717,6 +1732,14 @@ impl QuestEffect {
         }
     }
 
+    /// The gate anchor if this is `close-gate` (DSL v0.6).
+    pub fn close_gate_anchor(&self) -> Option<&AnchorId> {
+        match self {
+            QuestEffect::CloseGate { anchor, .. } => Some(anchor),
+            _ => None,
+        }
+    }
+
     /// The wave id if this is `spawn-wave` (v0.3).
     pub fn spawn_wave(&self) -> Option<&WaveId> {
         match self {
@@ -1778,7 +1801,9 @@ impl QuestEffect {
             QuestEffect::GiveItem { .. } => Some("give-item"),
             QuestEffect::SetFlag { .. } => Some("set-flag"),
             QuestEffect::SpawnWave { .. } => Some("spawn-wave"),
-            QuestEffect::OpenGate { .. } | QuestEffect::CampaignComplete => None,
+            QuestEffect::OpenGate { .. }
+            | QuestEffect::CloseGate { .. }
+            | QuestEffect::CampaignComplete => None,
             // v0.4 effects report via `v04_effect`; v0.5 via `v05_effect`; they
             // are not v0.3 verbs.
             QuestEffect::Narrate { .. }
@@ -1834,6 +1859,7 @@ impl QuestEffect {
     /// — see [`QuestEffect::narrate_art`] — not a new effect.)
     pub fn v06_effect(&self) -> Option<&'static str> {
         match self {
+            QuestEffect::CloseGate { .. } => Some("close-gate"),
             QuestEffect::SetCheckpoint { .. } => Some("set-checkpoint"),
             QuestEffect::BeginStealth { .. } => Some("begin-stealth"),
             QuestEffect::EndStealth => Some("end-stealth"),
@@ -2004,6 +2030,7 @@ impl QuestEffect {
     pub fn requires_flags(&self) -> &[FlagId] {
         match self {
             QuestEffect::OpenGate { requires_flags, .. }
+            | QuestEffect::CloseGate { requires_flags, .. }
             | QuestEffect::GiveItem { requires_flags, .. }
             | QuestEffect::SetFlag { requires_flags, .. }
             | QuestEffect::SpawnWave { requires_flags, .. }

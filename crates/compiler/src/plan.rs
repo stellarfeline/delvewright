@@ -94,6 +94,25 @@ pub struct TrapPlan {
     pub requires_flags: Vec<String>,
 }
 
+/// A gate open/close firing (DSL v0.6), collected in deterministic content order.
+/// `close-gate` seals the gate region (fills it with the anchor's declared block)
+/// from its firing beat; `open-gate` clears it back to air. The occupancy model
+/// (`crate::assembled`) otherwise treats every gate cell as always passable — the
+/// conservative "assume the gate the player needs is opened" stance DW0306 checks.
+/// `close-gate` is the physical dual: the critical-path / checkpoint reachability
+/// proofs treat the region as **solid** on any walked leg reached *after* the
+/// latest firing at or before it is a close (and not reopened by a later
+/// `open-gate`), so a path that must cross a sealed gate fails `DW0311`/`DW0315`.
+#[derive(Clone, Debug)]
+pub struct GateEvent {
+    /// The gate region's inclusive corners (absolute world coords).
+    pub region: ([i32; 3], [i32; 3]),
+    /// `true` for `close-gate` (seals the region), `false` for `open-gate` (clears).
+    pub closes: bool,
+    /// The `critical_path` step index at which this firing happens.
+    pub fire_step: usize,
+}
+
 /// A resolved trap disarm affordance (DSL v0.6, spec-0011).
 #[derive(Clone, Debug)]
 pub struct TrapDisarmPlan {
@@ -154,6 +173,10 @@ pub struct Plan<'a> {
     pub objective_steps: BTreeMap<String, usize>,
     /// Resolved traps (DSL v0.6, spec-0011), content-ordered.
     pub traps: Vec<TrapPlan>,
+    /// Resolved gate open/close firings (DSL v0.6), content-ordered — drives the
+    /// `close-gate` completability model in `crate::nav`. Empty when the campaign
+    /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
+    pub gate_events: Vec<GateEvent>,
 }
 
 /// A placed area: one or more pieces plus their socket seals.
@@ -683,6 +706,9 @@ impl<'a> Plan<'a> {
         // ---- v0.6 traps (spec-0011) ----
         let traps = collect_traps(campaign, &anchors, &dispenser_cells);
 
+        // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
+        let gate_events = collect_gate_events(campaign, &anchors, &objective_steps);
+
         Ok(Self {
             campaign,
             namespace,
@@ -700,6 +726,7 @@ impl<'a> Plan<'a> {
             stealth_beats,
             objective_steps,
             traps,
+            gate_events,
         })
     }
 
@@ -847,6 +874,9 @@ fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> Vec<String> 
 /// guarantees they exist in the assembled area.
 fn collect_effect_anchors(e: &QuestEffect, set: &mut BTreeSet<String>) {
     if let Some(a) = e.open_gate_anchor() {
+        set.insert(a.as_str().to_string());
+    }
+    if let Some(a) = e.close_gate_anchor() {
         set.insert(a.as_str().to_string());
     }
     if let Some((a, _)) = e.set_block() {
@@ -1307,6 +1337,76 @@ fn collect_v06_effects(
     }
 
     (c.checkpoints, c.stealth)
+}
+
+/// The absolute gate region `(from, to)` a gate anchor resolves to (globally, like
+/// `open-gate`/`close-gate` resolution). `None` if the anchor is not a gate.
+fn gate_region_any(
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    name: &str,
+) -> Option<([i32; 3], [i32; 3])> {
+    for ((_, n), resolved) in anchors {
+        if n == name
+            && let ResolvedAnchor::Gate { from, to, .. } = resolved
+        {
+            return Some((*from, *to));
+        }
+    }
+    None
+}
+
+/// Collect every `open-gate` / `close-gate` firing (DSL v0.6) in deterministic
+/// content order — quest `on_objective_complete`, then `on_complete`, then
+/// environment triggers (conservative fire step 0, like `collect_v06_effects`),
+/// then dialogue options — resolving each anchor to its gate region and rooting it
+/// at its firing step. Descends every nested effect list so a gate effect inside a
+/// `sequence` step / lifecycle bundle is registered at the same firing step. An
+/// effect whose anchor is not a resolvable gate is skipped (a point anchor / bad
+/// close-gate is a validation concern, `DW0142`/`DW0343`). Feeds the `close-gate`
+/// completability model in `crate::nav`. Gates are a quest/trigger-effect surface
+/// only (the `DialogueEffect` enum carries no gate verb), so dialogue is not
+/// scanned.
+fn collect_gate_events(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    obj_step: &BTreeMap<String, usize>,
+) -> Vec<GateEvent> {
+    let mut out = Vec::new();
+    let handle = |eff: &QuestEffect, fire_step: usize, out: &mut Vec<GateEvent>| {
+        eff.visit_deep(&mut |e| {
+            let gate = e
+                .open_gate_anchor()
+                .map(|a| (a, false))
+                .or_else(|| e.close_gate_anchor().map(|a| (a, true)));
+            if let Some((anchor, closes)) = gate
+                && let Some(region) = gate_region_any(anchors, anchor.as_str())
+            {
+                out.push(GateEvent {
+                    region,
+                    closes,
+                    fire_step,
+                });
+            }
+        });
+    };
+    for q in &campaign.quests.content.quests {
+        for (obj_id, effs) in &q.on_objective_complete {
+            let step = obj_step.get(obj_id.as_str()).copied().unwrap_or(0);
+            for eff in effs {
+                handle(eff, step, &mut out);
+            }
+        }
+        let done_step = quest_complete_step(q, obj_step);
+        for eff in &q.on_complete {
+            handle(eff, done_step, &mut out);
+        }
+    }
+    for t in &campaign.quests.content.triggers {
+        for eff in &t.effects {
+            handle(eff, 0, &mut out);
+        }
+    }
+    out
 }
 
 /// Resolve every stage-5 trap (DSL v0.6, spec-0011) in content order into a

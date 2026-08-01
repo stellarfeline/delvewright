@@ -170,6 +170,12 @@ fn validate_stage(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> Result
             // (exit 1) — no-op for a campaign that uses neither surface.
             diags.extend(delvewright_compiler::atmos::check_sounds(&campaign));
             diags.extend(delvewright_compiler::atmos::check_art(&campaign, &sidecars));
+            // v0.6 `close-gate` gate-block declaration (DW0343): the fill block is
+            // prefab metadata, so this compiler-side check runs here (validation
+            // tier). No-op for a campaign that uses no `close-gate`.
+            diags.extend(delvewright_compiler::gates::check_close_gates(
+                &campaign, &prefabs,
+            ));
             print_diags(&diags, json);
             Ok(Validated {
                 campaign,

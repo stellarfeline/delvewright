@@ -28,7 +28,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use delvewright_dsl::{CameraWaypoint, Lethality, QuestEffect, TrapReset};
 
-use crate::plan::{Plan, ResolvedAnchor, Step, TrapPlan};
+use crate::plan::{GateEvent, Plan, ResolvedAnchor, Step, TrapPlan};
 
 /// `DW0307`: a `move-npc` destination unreachable by any walkable path from the
 /// NPC's position over the assembled geometry.
@@ -228,6 +228,19 @@ impl World {
     /// Whether a cell is occupied by a solid block in the assembled world.
     pub fn solid_at(&self, c: [i32; 3]) -> bool {
         self.is_solid(c)
+    }
+
+    /// A copy of this world with `extra` cells forced solid — a `close-gate`'s
+    /// sealed region for the completability proof (DSL v0.6). The base occupancy
+    /// model treats every gate cell as passable; sealing a gate for the legs that
+    /// occur after it closes makes a path that must re-cross it fail routing.
+    fn with_sealed(&self, extra: &BTreeSet<[i32; 3]>) -> World {
+        let mut solid = self.solid.clone();
+        solid.extend(extra.iter().copied());
+        World {
+            solid,
+            flooded: self.flooded.clone(),
+        }
     }
 
     /// Build a [`World`] directly from a set of solid cells, with no water (test /
@@ -1208,20 +1221,63 @@ fn has_walkable_critical_leg(plan: &Plan) -> bool {
 /// a solid affordance — an altar, a wave marker, an NPC stand — the player walks up
 /// to, not into), exactly as `move-npc` planning does.
 pub fn check_critical_path(plan: &Plan, world: &World) -> Result<(), NavError> {
-    route_visited(world, &critical_positions(plan))
+    route_visited(world, &critical_positions(plan), &plan.gate_events)
+}
+
+/// The gate-region cells sealed on a walked leg arriving at a position with
+/// `src_step == before` (DSL v0.6 close-gate completability). A gate firing at
+/// `fire_step` s affects a leg reaching a position with `src_step > s` (the same
+/// `> fire_step` convention the checkpoint / stealth proofs use), so the gate state
+/// during this leg is the **latest** firing on that region with `fire_step < before`
+/// — sealed iff that firing is a `close-gate` (a later `open-gate` reopens it).
+/// Regions with no qualifying close contribute nothing, so an open-gate-only
+/// campaign yields an empty set and routes byte-identically to the base world.
+fn sealed_gate_cells(gate_events: &[GateEvent], before: usize) -> BTreeSet<[i32; 3]> {
+    // Per region, the final closed-state among firings strictly before `before`
+    // (content order → last qualifying firing wins; deterministic).
+    let mut state: BTreeMap<([i32; 3], [i32; 3]), bool> = BTreeMap::new();
+    for ev in gate_events {
+        if ev.fire_step < before {
+            state.insert(ev.region, ev.closes);
+        }
+    }
+    let mut sealed = BTreeSet::new();
+    for (region, closed) in state {
+        if closed {
+            for cell in crate::assembled::region_cells(region.0, region.1) {
+                sealed.insert(cell);
+            }
+        }
+    }
+    sealed
 }
 
 /// Route every walked leg between consecutive visited positions (the pure core of
 /// [`check_critical_path`], split out so it is unit-testable without a full
-/// [`Plan`]). A `transport_before` leg is a teleport ride and is skipped.
-fn route_visited(world: &World, positions: &[VisitedPos]) -> Result<(), NavError> {
+/// [`Plan`]). A `transport_before` leg is a teleport ride and is skipped. Each leg
+/// is routed over the world with any gate sealed by an earlier `close-gate`
+/// ([`sealed_gate_cells`]) forced solid, so a forced path that must re-cross a
+/// sealed gate fails [`DW_CRITICAL_UNROUTABLE`].
+fn route_visited(
+    world: &World,
+    positions: &[VisitedPos],
+    gate_events: &[GateEvent],
+) -> Result<(), NavError> {
     for pair in positions.windows(2) {
         let from = pair[0].pos;
         let to = pair[1].pos;
         if pair[1].transport_before {
             continue; // an inter-area teleport hop: the player is moved, not walking
         }
-        let start = world.snap_endpoint(from, false).ok_or_else(|| NavError {
+        let sealed = sealed_gate_cells(gate_events, pair[1].src_step);
+        let leg_world_owned;
+        let leg_world: &World = if sealed.is_empty() {
+            world
+        } else {
+            leg_world_owned = world.with_sealed(&sealed);
+            &leg_world_owned
+        };
+        let start = leg_world.snap_endpoint(from, false).ok_or_else(|| NavError {
             code: DW_CRITICAL_UNROUTABLE,
             message: format!(
                 "critical path: no standable floor within {SNAP_RADIUS} blocks of visited anchor \
@@ -1231,25 +1287,35 @@ fn route_visited(world: &World, positions: &[VisitedPos]) -> Result<(), NavError
                  wall"
             ),
         })?;
-        let goal = world.snap_endpoint(to, pair[1].talk_to).ok_or_else(|| NavError {
-            code: DW_CRITICAL_UNROUTABLE,
-            message: format!(
-                "critical path: no standable floor within {SNAP_RADIUS} blocks of visited anchor \
-                 {to:?} — a player-visited anchor sits walled in or over void (a talk-to NPC needs \
-                 a dry standable cell beside it, within interaction range and clear of water). Fix \
-                 the prefab so this anchor sits on/next to reachable floor; if the prefab looks \
-                 correct, this is an assembly/toolchain defect — escalate rather than move it into \
-                 a wall"
-            ),
-        })?;
-        if world.find_path(start, goal).is_none() {
+        let goal = leg_world
+            .snap_endpoint(to, pair[1].talk_to)
+            .ok_or_else(|| NavError {
+                code: DW_CRITICAL_UNROUTABLE,
+                message: format!(
+                    "critical path: no standable floor within {SNAP_RADIUS} blocks of visited \
+                     anchor {to:?} — a player-visited anchor sits walled in or over void (a \
+                     talk-to NPC needs a dry standable cell beside it, within interaction range \
+                     and clear of water). Fix the prefab so this anchor sits on/next to reachable \
+                     floor; if the prefab looks correct, this is an assembly/toolchain defect — \
+                     escalate rather than move it into a wall"
+                ),
+            })?;
+        if leg_world.find_path(start, goal).is_none() {
+            let gate_hint = if sealed.is_empty() {
+                "this is a wedged doorway seam or a void gap in the assembled layout (or, if the \
+                 jump is intended, a missing inter-area transport)."
+            } else {
+                "a `close-gate` has sealed a gate region on/before this leg (a point of no \
+                 return), and the forced path must re-cross it. Reopen it with `open-gate` \
+                 before this leg, route the forced path so it does not re-cross the sealed gate, \
+                 or fire the `close-gate` later — do NOT delete the proof."
+            };
             return Err(NavError {
                 code: DW_CRITICAL_UNROUTABLE,
                 message: format!(
-                    "critical path: the player cannot walk from {from:?} (floor {start:?}) to {to:?} \
-                     (floor {goal:?}) over the assembled geometry — no collision-free path. A same-area \
-                     leg must be walkable end to end; this is a wedged doorway seam or a void gap in the \
-                     assembled layout (or, if the jump is intended, a missing inter-area transport)."
+                    "critical path: the player cannot walk from {from:?} (floor {start:?}) to \
+                     {to:?} (floor {goal:?}) over the assembled geometry — no collision-free \
+                     path. A same-area leg must be walkable end to end; {gate_hint}"
                 ),
             });
         }
@@ -1280,7 +1346,7 @@ pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), NavError> {
         .iter()
         .map(|c| (c.anchor.clone(), c.pos, c.fire_step))
         .collect();
-    verify_checkpoints(world, &cps, &critical_positions(plan))
+    verify_checkpoints(world, &cps, &critical_positions(plan), &plan.gate_events)
 }
 
 /// The pure core of [`check_checkpoints`] (split out so it is unit-testable
@@ -1290,6 +1356,7 @@ fn verify_checkpoints(
     world: &World,
     checkpoints: &[(String, [i32; 3], usize)],
     positions: &[VisitedPos],
+    gate_events: &[GateEvent],
 ) -> Result<(), NavError> {
     for (anchor, pos, fire_step) in checkpoints {
         let Some(cell) = world.snap_standable(*pos, SNAP_RADIUS) else {
@@ -1312,10 +1379,21 @@ fn verify_checkpoints(
         else {
             continue; // nothing left to walk to (checkpoint at/near the finale)
         };
-        let Some(goal) = world.snap_endpoint(target.pos, target.talk_to) else {
+        // Seal any gate closed by the time the party reaches the target (the same
+        // per-leg gate state DW0311 routes under), so a checkpoint whose forward
+        // path is walled off by a `close-gate` strands the party (DSL v0.6).
+        let sealed = sealed_gate_cells(gate_events, target.src_step);
+        let leg_world_owned;
+        let leg_world: &World = if sealed.is_empty() {
+            world
+        } else {
+            leg_world_owned = world.with_sealed(&sealed);
+            &leg_world_owned
+        };
+        let Some(goal) = leg_world.snap_endpoint(target.pos, target.talk_to) else {
             continue; // the target itself is unsnappable → a DW0311 concern, not ours
         };
-        if world.find_path(cell, goal).is_none() {
+        if leg_world.find_path(cell, goal).is_none() {
             return Err(NavError {
                 code: DW_CHECKPOINT_STRANDED,
                 message: format!(
@@ -1789,10 +1867,10 @@ mod tests {
         let b = [4, 65, 1];
         assert!(world.standable(a) && world.standable(b));
         // Walked leg → unroutable → DW0311.
-        let err = route_visited(&world, &[vp(a, false), vp(b, false)]).unwrap_err();
+        let err = route_visited(&world, &[vp(a, false), vp(b, false)], &[]).unwrap_err();
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
         // Same leg ridden by an inter-area transport → skipped, ok.
-        assert!(route_visited(&world, &[vp(a, false), vp(b, true)]).is_ok());
+        assert!(route_visited(&world, &[vp(a, false), vp(b, true)], &[]).is_ok());
     }
 
     #[test]
@@ -1868,7 +1946,9 @@ mod tests {
     fn critical_path_routable_leg_passes() {
         // A flat connected floor: consecutive visited cells are walkable → ok.
         let world = floored(6, 3, 65, &[]);
-        assert!(route_visited(&world, &[vp([0, 65, 1], false), vp([5, 65, 1], false)]).is_ok());
+        assert!(
+            route_visited(&world, &[vp([0, 65, 1], false), vp([5, 65, 1], false)], &[]).is_ok()
+        );
     }
 
     #[test]
@@ -2007,6 +2087,69 @@ mod tests {
         }
     }
 
+    // --- close-gate completability (DSL v0.6) --------------------------------
+
+    /// A `close-gate` firing before a forced walked leg seals the gate region, so a
+    /// critical path that must re-cross it fails DW0311; a later `open-gate` before
+    /// the same leg reopens it and the route passes again.
+    #[test]
+    fn close_gate_seals_a_forced_leg_is_dw0311() {
+        // A 1-wide corridor along x, y=65; the pass-through cell [2,65,0] is the sole
+        // connection between the two ends. Base world (gate open) routes end to end.
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        assert!(
+            route_visited(&world, &[a, b], &[]).is_ok(),
+            "the open corridor must route with no gate events"
+        );
+        // A close-gate seals the pass-through before the leg to `b` (fire_step 0 < 2).
+        let close = GateEvent {
+            region: ([2, 65, 0], [2, 65, 0]),
+            closes: true,
+            fire_step: 0,
+        };
+        let err = route_visited(&world, &[a, b], std::slice::from_ref(&close)).unwrap_err();
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE); // DW0311
+        assert!(
+            err.message.contains("close-gate"),
+            "the message must name the sealed gate: {}",
+            err.message
+        );
+        // Reopening the gate before the leg (open-gate at a later fire_step) restores it.
+        let open = GateEvent {
+            region: ([2, 65, 0], [2, 65, 0]),
+            closes: false,
+            fire_step: 1,
+        };
+        assert!(
+            route_visited(&world, &[a, b], &[close, open]).is_ok(),
+            "a gate reopened by open-gate before the leg must route again"
+        );
+    }
+
+    /// A `close-gate` that walls off the forward path from a checkpoint strands the
+    /// party (DW0315) — the checkpoint gate proof routes under the same per-leg seal.
+    #[test]
+    fn close_gate_walls_off_checkpoint_forward_path_is_dw0315() {
+        let world = floored(5, 1, 65, &[]);
+        // Checkpoint at the near end (fire_step 0); the next required anchor is past
+        // the gate cell [2,65,0].
+        let cps = vec![("cp/rest".to_string(), [0, 65, 0], 0usize)];
+        let positions = vec![at_step([4, 65, 0], 1)];
+        // Open gate → reachable.
+        assert!(verify_checkpoints(&world, &cps, &positions, &[]).is_ok());
+        // Sealed before the party reaches the target (fire_step 0 < 1) → stranded.
+        let close = GateEvent {
+            region: ([2, 65, 0], [2, 65, 0]),
+            closes: true,
+            fire_step: 0,
+        };
+        let err =
+            verify_checkpoints(&world, &cps, &positions, std::slice::from_ref(&close)).unwrap_err();
+        assert_eq!(err.code, DW_CHECKPOINT_STRANDED); // DW0315
+    }
+
     #[test]
     fn checkpoint_behind_a_one_way_drop_is_dw0315() {
         // Checkpoint on the near patch; the next required anchor is on the far,
@@ -2014,7 +2157,7 @@ mod tests {
         let world = split_world(65);
         let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
         let positions = vec![at_step([4, 65, 1], 1)];
-        let err = verify_checkpoints(&world, &cps, &positions).unwrap_err();
+        let err = verify_checkpoints(&world, &cps, &positions, &[]).unwrap_err();
         assert_eq!(err.code, DW_CHECKPOINT_STRANDED); // DW0315
     }
 
@@ -2024,7 +2167,7 @@ mod tests {
         let world = floored(5, 3, 65, &[]);
         let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
         let positions = vec![at_step([4, 65, 1], 1)];
-        assert!(verify_checkpoints(&world, &cps, &positions).is_ok());
+        assert!(verify_checkpoints(&world, &cps, &positions, &[]).is_ok());
     }
 
     #[test]
@@ -2032,7 +2175,7 @@ mod tests {
         // The checkpoint cell has no standable floor within snap radius.
         let world = floored(5, 3, 65, &[]);
         let cps = vec![("cp/rest".to_string(), [20, 65, 20], 0usize)];
-        let err = verify_checkpoints(&world, &cps, &[]).unwrap_err();
+        let err = verify_checkpoints(&world, &cps, &[], &[]).unwrap_err();
         assert_eq!(err.code, DW_CHECKPOINT_UNSTANDABLE); // DW0316
     }
 
