@@ -706,6 +706,24 @@ fn fmt_f64(x: f64) -> String {
     }
 }
 
+/// The world position an entity is summoned at, formatted per axis: the horizontal
+/// **centre** of the cell, on its floor ([`crate::nav::cell_center`]).
+///
+/// A block cell `(x, y, z)` spans `[x, x+1)`, and an entity's position is the centre
+/// of its AABB — so summoning at the bare integer cell parks the body on the corner
+/// where four columns meet, with most of it inside the neighbouring columns (a
+/// 0.6-wide villager at `x = 7.0` occupies `[6.7, 7.3]`). Against a wall that reads
+/// as an NPC standing inside the wall; along a walked path it is the owner's
+/// "visibly passes through blocks" defect. Every entity the compiler places or
+/// moves goes through this conversion.
+///
+/// Block-targeting commands (`setblock`, `fill`, `place`, `spawnpoint`) keep the
+/// integer cell — that is the coordinate space they take.
+fn ent_xyz(c: [i32; 3]) -> [String; 3] {
+    let p = crate::nav::cell_center(c);
+    [fmt_f64(p[0]), fmt_f64(p[1]), fmt_f64(p[2])]
+}
+
 fn emit_functions(
     plan: &Plan,
     sentinels: &Sentinels,
@@ -1544,12 +1562,13 @@ fn emit_functions(
                 // distance from the anchor); `cells` has exactly one per mob. AI is
                 // left enabled (no NoAI) so the mobs fight.
                 let cell = cells[idx as usize];
+                let c = ent_xyz(cell);
                 body.push(format!(
                     "summon {} {} {} {} {{Tags:[\"{}\"{tmp}],PersistenceRequired:1b{name}{equip}{attrs}}}",
                     mob.entity,
-                    cell[0],
-                    cell[1],
-                    cell[2],
+                    c[0],
+                    c[1],
+                    c[2],
                     plan::wave_tag(w.id.as_str())
                 ));
                 idx += 1;
@@ -2294,6 +2313,7 @@ fn npc_summon_commands(
         .map(|n| n.base_entity.as_str())
         .unwrap_or("minecraft:villager");
     let yaw = facing_yaw(facing);
+    let p = ent_xyz(pos);
     let mut out = Vec::new();
     if let Some(skin) = dsl_npc.and_then(|n| n.skin.as_ref()) {
         // DSL v0.4 mannequin NPC (spec-0008 §6 / spec-0009). The label is
@@ -2309,7 +2329,7 @@ fn npc_summon_commands(
         // crouching, swimming, fall_flying, sleeping (spec-0009 template).
         out.push(format!(
             "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,pose:\"standing\",Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},Tags:[\"dw_npc\",\"{}\"]}}",
-            pos[0], pos[1], pos[2], skin.texture_id, skin.model.token(),
+            p[0], p[1], p[2], skin.texture_id, skin.model.token(),
             snbt_text_component(name), npc.tag
         ));
     } else {
@@ -2325,12 +2345,12 @@ fn npc_summon_commands(
         };
         out.push(format!(
             "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"],CustomName:{},CustomNameVisible:1b,VillagerData:{{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}}}}",
-            pos[0], pos[1], pos[2], npc.tag, cname_field
+            p[0], p[1], p[2], npc.tag, cname_field
         ));
     }
     out.push(format!(
         "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{}\"]}}",
-        pos[0], pos[1], pos[2], npc.tag
+        p[0], p[1], p[2], npc.tag
     ));
     out
 }
@@ -2517,6 +2537,7 @@ fn actor_facing_yaw(a: &delvewright_dsl::Actor) -> i32 {
 /// `skin` re-dresses it as a `minecraft:mannequin`, exactly as a stage-2 NPC.
 fn actor_puppet_summon(a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> String {
     let safe = plan::safe_local(a.id.as_str());
+    let p = ent_xyz(pos);
     let tags = format!("Tags:[\"dw_actor\",\"dw_actor_{safe}\",\"dw_pup_{safe}\"]");
     if let Some(skin) = &a.skin {
         let desc = a
@@ -2525,9 +2546,9 @@ fn actor_puppet_summon(a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> S
             .unwrap_or_else(|| a.id.as_str().rsplit('/').next().unwrap_or("actor"));
         format!(
             "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,pose:\"standing\",Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},{tags}}}",
-            pos[0],
-            pos[1],
-            pos[2],
+            p[0],
+            p[1],
+            p[2],
             skin.texture_id,
             skin.model.token(),
             snbt_text_component(desc)
@@ -2546,7 +2567,7 @@ fn actor_puppet_summon(a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> S
         };
         format!(
             "summon {} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Invulnerable:{inv}b,DeathLootTable:\"minecraft:empty\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}}}",
-            a.entity, pos[0], pos[1], pos[2]
+            a.entity, p[0], p[1], p[2]
         )
     }
 }
@@ -2877,9 +2898,10 @@ fn env_trigger_setup(plan: &Plan) -> Vec<String> {
             continue;
         }
         if let Some(p) = anchor_point_any(plan, t.at.as_str()) {
+            let q = ent_xyz(p);
             out.push(format!(
                 "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_trig_{}\"]}}",
-                p[0], p[1], p[2], plan::safe_local(t.id.as_str())
+                q[0], q[1], q[2], plan::safe_local(t.id.as_str())
             ));
         }
     }
@@ -2991,9 +3013,10 @@ fn trap_setup(plan: &Plan) -> Vec<String> {
         // physical lever may also be in the prefab; this entity is the modeled,
         // provable disarm the compiler owns.
         if let Some(dis) = &t.disarm {
+            let v = ent_xyz(dis.via_cell);
             out.push(format!(
                 "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_trapdis_{}\"]}}",
-                dis.via_cell[0], dis.via_cell[1], dis.via_cell[2], t.safe
+                v[0], v[1], v[2], t.safe
             ));
         }
     }
@@ -3346,9 +3369,10 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
         }
         Objective::Interact { id, anchor, .. } => {
             if let Some(pos) = plan.point(area, anchor.as_str()) {
+                let e = ent_xyz(pos);
                 cmds.push(format!(
                     "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{}\"]}}",
-                    pos[0], pos[1], pos[2], interact_entity_tag(id.as_str())
+                    e[0], e[1], e[2], interact_entity_tag(id.as_str())
                 ));
                 if let Some(prop) = o.prop() {
                     // v0.4: the prop block IS the affordance (spec-0008 §2) — place
@@ -3366,7 +3390,7 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
                     let name_fields = marker_name_fields(o.title());
                     cmds.push(format!(
                         "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],{}billboard:\"center\",item:{{id:\"minecraft:lantern\",count:1}}}}",
-                        pos[0], pos[1], pos[2], interact_entity_tag(id.as_str()), name_fields
+                        e[0], e[1], e[2], interact_entity_tag(id.as_str()), name_fields
                     ));
                 }
             }
@@ -3384,9 +3408,10 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
             // so a beacon-like light marks a reach destination. Named from the
             // objective `title`; untitled → nameless glow, never a raw-id label.
             let name_fields = marker_name_fields(o.title());
+            let e = ent_xyz(pos);
             cmds.push(format!(
                 "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],{}billboard:\"center\",item:{{id:\"minecraft:end_rod\",count:1}}}}",
-                pos[0], pos[1], pos[2], reach_marker_tag(id.as_str()), name_fields
+                e[0], e[1], e[2], reach_marker_tag(id.as_str()), name_fields
             ));
         }
         Objective::TalkTo { .. } | Objective::Kill { .. } => {}
@@ -5538,7 +5563,10 @@ mod tests {
     fn puppet_summon_is_noai_no_loot_and_tagged() {
         let a = mk_actor("actor/giant", "minecraft:warden", false);
         let s = actor_puppet_summon(&a, [10, 65, 20], facing_yaw(Some("west")));
-        assert!(s.starts_with("summon minecraft:warden 10 65 20 "));
+        assert!(
+            s.starts_with("summon minecraft:warden 10.5 65.0 20.5 "),
+            "puppet stands at the CENTRE of its cell, not the four-column corner: {s}"
+        );
         assert!(s.contains("NoAI:1b") && s.contains("Silent:1b") && s.contains("NoGravity:1b"));
         assert!(s.contains("Invulnerable:1b"));
         assert!(s.contains("DeathLootTable:\"minecraft:empty\""));
@@ -5572,7 +5600,10 @@ mod tests {
             model: delvewright_dsl::SkinModel::Wide,
         });
         let s = actor_puppet_summon(&a, [1, 2, 3], 180);
-        assert!(s.starts_with("summon minecraft:mannequin 1 2 3 "));
+        assert!(
+            s.starts_with("summon minecraft:mannequin 1.5 2.0 3.5 "),
+            "mannequin stands at the centre of its cell: {s}"
+        );
         assert!(s.contains("profile:{texture:\"delvewright:npc/giant-idle\",model:\"wide\"}"));
         assert!(s.contains("dw_pup_keeper"));
     }

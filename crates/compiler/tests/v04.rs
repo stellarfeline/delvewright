@@ -459,13 +459,18 @@ fn wave_mobs_land_on_distinct_standable_in_room_cells() {
     }
 }
 
-/// The `[x, y, z]` cell of every `summon` line in a spawn-function body.
+/// The `[x, y, z]` **cell** of every `summon` line in a spawn-function body.
+///
+/// Entities are summoned at the horizontal centre of their cell (`x+0.5`/`z+0.5`,
+/// `nav::cell_center`) — a body positioned on the bare integer coordinate would
+/// straddle four columns — so the emitted position floors back to the cell.
 fn summon_cells(body: &str) -> Vec<[i32; 3]> {
+    let cell = |t: &str| t.parse::<f64>().ok().map(|v| v.floor() as i32);
     body.lines()
         .filter_map(|l| {
             let t: Vec<&str> = l.split_whitespace().collect();
             if t.first() == Some(&"summon") && t.len() >= 5 {
-                Some([t[2].parse().ok()?, t[3].parse().ok()?, t[4].parse().ok()?])
+                Some([cell(t[2])?, cell(t[3])?, cell(t[4])?])
             } else {
                 None
             }
