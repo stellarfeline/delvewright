@@ -299,15 +299,39 @@ test("replayLegWithRecovery escalates to a physics unstick when the recovery pat
   const unstick: Unstick = async (target) => {
     unstickTargets.push(target);
     unstuck = true; // one burst frees the bot
+    return 1; // moved a block
   };
   await replayLegWithRecovery([G(1, 65, -3), G(1, 65, 0), G(2, 66, 1, 3)], "npc x", goto, unstick);
   assert.equal(unstickTargets.length, 1, "one physics-unstick burst was enough");
   const t = unstickTargets[0]!;
-  assert.deepEqual([t.x, t.y, t.z], [1, 65, -3], "unstick drives toward the proven cell to escape the pocket");
+  // First burst aims at the GOAL (forward progress); the hop's goal is waypoint 2.
+  assert.deepEqual([t.x, t.y, t.z], [1, 65, 0], "the first unstick burst aims at the goal");
   assert.ok(
     calls.some((l) => l.includes("retry after unstick")),
     "retries the actual next hop after the burst (not the strict proven cell)",
   );
+});
+
+test("replayLegWithRecovery unstick falls back to the proven cell after a zero-progress burst", async () => {
+  // Goal-direction bursts are wall-blocked (0 progress, the concave pocket); the
+  // adaptive aim must switch the NEXT burst toward the proven cell, which frees the
+  // bot. Proves both directions are tried within the budget.
+  const aims: GoalSpec[] = [];
+  let freed = false;
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    const isHop2 = label.includes("waypoint 2/3");
+    if (isHop2 && label.includes("recovery to last proven cell") && !freed) throw new Error("re-path wedged");
+    if (isHop2 && !label.includes("recovery") && !freed) throw new Error("hop wedged");
+  };
+  const unstick: Unstick = async (target) => {
+    aims.push(target);
+    const towardGoal = target.z === 0; // goal is [1,65,0]; proven is [1,65,-3]
+    if (!towardGoal) freed = true; // a proven-direction burst escapes the pocket
+    return towardGoal ? 0 : 1; // goal-direction is wall-blocked → 0 progress
+  };
+  await replayLegWithRecovery([G(1, 65, -3), G(1, 65, 0), G(2, 66, 1, 3)], "npc x", goto, unstick);
+  assert.equal(aims[0]!.z, 0, "burst 1 aims at the goal");
+  assert.equal(aims[1]!.z, -3, "burst 2 falls back to the proven cell after zero progress");
 });
 
 test("replayLegWithRecovery bounds the physics unstick then fails loudly", async () => {
@@ -319,6 +343,7 @@ test("replayLegWithRecovery bounds the physics unstick then fails loudly", async
   };
   const unstick: Unstick = async () => {
     bursts += 1;
+    return 0;
   };
   await assert.rejects(
     () =>

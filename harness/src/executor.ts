@@ -36,11 +36,12 @@ const UNSTICK_ATTEMPTS = 3;
 
 /**
  * A raw, pathfinder-free nudge toward `target` to dislodge a physically wedged bot
- * (a concave corner beside a wall the A* pathfinder cannot escape). Navigation
- * robustness, NOT game logic. Provided by the executor; injected so the recovery
- * control flow stays unit-testable.
+ * (a concave corner beside a wall the A* pathfinder cannot escape). Returns how far
+ * (blocks) the bot actually moved, so the caller can adapt the aim when a burst is
+ * wall-blocked. Navigation robustness, NOT game logic. Provided by the executor;
+ * injected so the recovery control flow stays unit-testable.
  */
-export type Unstick = (target: GoalSpec) => Promise<void>;
+export type Unstick = (target: GoalSpec) => Promise<number>;
 
 /**
  * Replay a leg's ordered goals with **stall-recovery** (task #45). Each `goto`
@@ -101,9 +102,16 @@ async function reached(fn: () => Promise<void>): Promise<boolean> {
 /**
  * Recover from a stalled hop and retry it (task #45). Level 1: re-path to the last
  * proven cell (range 0) to re-centre on the polyline, then retry the hop. Level 2
- * (the wedge defeats the pathfinder too): a bounded physics {@link Unstick} toward
- * the proven cell to break the bot free, retrying the ACTUAL hop at its own range
- * after each burst. A hop still unwalkable after the budget fails loudly.
+ * (the wedge defeats the pathfinder too): a bounded physics {@link Unstick} to break
+ * the bot free, retrying the ACTUAL hop at its own range after each burst. A hop
+ * still unwalkable after the budget fails loudly.
+ *
+ * Level-2 aim is **adaptive** (trace-derived, task #45): drive toward the GOAL for
+ * forward progress, but if a burst measured no progress the bot is wall-blocked (the
+ * goal lies through the concave-corner wall) — the next burst aims at the PROVEN cell
+ * instead, the open away-from-wall direction that escapes the pocket. Neither fixed
+ * direction alone works: goal-only can't escape the initial pocket (drives into the
+ * wall), proven-only shoves an already-advanced bot backward and oscillates.
  */
 async function recoverAndRetry(
   spec: GoalSpec,
@@ -122,18 +130,17 @@ async function recoverAndRetry(
     await goto(spec, glabel); // retry; rethrows if still stuck
     return;
   }
-  // Level 2: the recovery pathfind stalled too — the bot is physically wedged. Break
-  // it free with a bounded raw-movement burst toward the proven cell (the open,
-  // away-from-wall direction that escapes a concave pocket), then retry the ACTUAL
-  // hop at its own (forgiving) range after each burst. (Trace note, task #45: this
-  // direction escapes the initial pocket and cleared the corridor's first wedge
-  // waypoint, but shoves an already-advanced bot backward at a later waypoint — a
-  // single fixed direction can't both escape the pocket AND progress; see the
-  // adaptive-direction proposal in the task report.)
+  // Level 2: bounded adaptive physics-unstick, retrying the hop after each burst.
   if (unstick) {
+    let lastMoved = Number.POSITIVE_INFINITY; // first burst aims at the goal
     for (let a = 0; a < UNSTICK_ATTEMPTS; a++) {
-      process.stderr.write(`[recover] physics-unstick burst ${a + 1}/${UNSTICK_ATTEMPTS}\n`);
-      await unstick(provenGoal);
+      const towardGoal = lastMoved >= UNSTICK_MIN_PROGRESS;
+      const target = towardGoal ? spec : provenGoal;
+      process.stderr.write(
+        `[recover] physics-unstick burst ${a + 1}/${UNSTICK_ATTEMPTS} toward ` +
+          `${towardGoal ? "goal" : "proven cell"}\n`,
+      );
+      lastMoved = await unstick(target);
       if (await reached(() => goto(spec, `${glabel} retry after unstick ${a + 1}`))) {
         return;
       }
@@ -694,12 +701,13 @@ export class MineflayerExecutor implements StepExecutor {
    * call `pathfinder.stop()`: the previous hop already returned, and stopping here
    * churns pathfinder state and interrupts the caller's very next `goto` ("Path was
    * stopped"). Navigation robustness, NOT game logic; the caller re-paths afterwards
-   * and still fails loudly if the hop stays unwalkable.
+   * and still fails loudly if the hop stays unwalkable. Returns the blocks moved so
+   * the caller can adapt aim: a near-zero move means the target lies through a wall.
    */
-  private async unstickToward(target: GoalSpec): Promise<void> {
+  private async unstickToward(target: GoalSpec): Promise<number> {
     const bot = this.requireBot();
     bot.clearControlStates();
-    // Face the block-centre of the proven cell so the forward drive heads toward it.
+    // Face the block-centre of the target cell so the forward drive heads toward it.
     const p0 = bot.entity.position;
     try {
       await bot.lookAt(p0.offset(target.x + 0.5 - p0.x, 0, target.z + 0.5 - p0.z), true);
@@ -718,6 +726,7 @@ export class MineflayerExecutor implements StepExecutor {
     bot.setControlState("forward", false);
     bot.clearControlStates();
     await delay(UNSTICK_SETTLE_MS);
+    return bot.entity.position.distanceTo(before);
   }
 
   /**
