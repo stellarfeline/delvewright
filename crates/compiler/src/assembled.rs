@@ -46,6 +46,21 @@ pub fn is_air(name: &str) -> bool {
     )
 }
 
+/// Whether a palette block id is **free water** (a source or flowing block that
+/// occupies its whole cell as fluid), as opposed to a waterlogged solid block.
+///
+/// Structure `.nbt` palettes carry `Name` + optional `Properties`; the decoder
+/// ([`structure_named_cells`]) keeps only `Name`, so a *waterlogged* block (fence,
+/// stairs, slab with `waterlogged=true`) reads as its solid host id and is modelled
+/// as solid — correct for nav, and vanilla waterlogging never spreads to a
+/// neighbour. Only a `minecraft:water` cell is free water that flows, so only it
+/// seeds the flood. A stored flowing-water cell (`level>0`) also reads as
+/// `minecraft:water`; the flood treats every water cell as a full-strength source,
+/// which over-marks its reach — deliberately safe (see [`flood`]).
+pub fn is_water(name: &str) -> bool {
+    name == "minecraft:water"
+}
+
 /// Whether a block falls under gravity when the cell below cannot support it
 /// (vanilla `FallingBlock`). In the delve's `the_void` world such a block, placed
 /// unsupported by `/place template`, drops out of the world and leaves air — so
@@ -304,6 +319,205 @@ pub fn assembled_blocks(
     assemble(plan, structures).blocks
 }
 
+/// The standard vanilla horizontal flow decay: a water source spreads at most this
+/// many cells horizontally before running dry (level 1..=7 → 7 steps).
+const WATER_FLOW_RANGE: u8 = 7;
+
+/// The nav occupancy split of the settled assembled world (task #45): the SOLID
+/// (non-water) block cells and the FLOODED cells (free water). A cell is one of
+/// solid / flooded / air (absent from both) — the three are disjoint.
+///
+/// ## Why water is modelled, and why as a *superset* of vanilla flow
+///
+/// A `minecraft:water` block placed by `/place template` does not stay put: vanilla
+/// fluid physics spreads it at world-load into neighbouring air cells the prefab
+/// left empty. The compile-time model must reflect that, or nav proves a route/seat
+/// standable on a cell the game floods — the water analogue of the gravity-despawn
+/// divergence (task #42). Field case: the `cave-shore` pool floods `[261,66,1]`, a
+/// cell an unpatched model routed the perimedes talk-to leg's step-up through.
+///
+/// [`flood`] is a deliberate **conservative superset** of real flow, mirroring
+/// spec-0010's never-overestimate-walkability stance: it may mark a cell wet that
+/// vanilla would leave dry, but never the reverse. Over-marking can only turn a
+/// proof red (caught, escalated); under-marking would let a wet cell ship as
+/// proven-dry (a silent bot strand). So downstream nav/wave/relight/waypoint
+/// consumers treat every flooded cell as impassable and never as standable floor.
+///
+/// It models **two** vanilla mechanics that both matter for standability:
+/// - **Infinite-water source formation** (pooling): a supported flowing cell with
+///   ≥2 horizontally-adjacent source cells becomes a new source, cascading — so a
+///   walled basin seeded by prefab sources fills completely, not just 7 cells out.
+///   Missing this silently under-marks a pool's edge (the perimedes field case: the
+///   `cave-shore` prefab omits the middle of one source row, and vanilla's infinite
+///   water fills the gap, pushing the flow one cell further onto `[261,66,1]`).
+/// - **7-level flow decay** from the (now complete) source set, plus infinite
+///   downward flow. Vanilla's drop-seeking *direction* preference is omitted (spread
+///   goes every way with decay), which only ever over-marks — preserving the
+///   superset guarantee.
+///
+/// Settle runs **before** flood: a settled sand column can dam or open a channel, so
+/// the flood must see the post-gravity geometry (task #42 order preserved).
+pub fn assembled_occupancy(
+    plan: &Plan,
+    structures: &BTreeMap<String, Vec<u8>>,
+) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
+    occupancy_of(assemble(plan, structures).blocks)
+}
+
+/// Pure core of [`assembled_occupancy`]: split a settled cell→block map into
+/// `(solid, flooded)`. Split out so the flood is unit-testable without a [`Plan`].
+pub fn occupancy_of(
+    blocks: BTreeMap<[i32; 3], String>,
+) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
+    let mut solid: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut sources: BTreeSet<[i32; 3]> = BTreeSet::new();
+    for (cell, name) in &blocks {
+        if is_water(name) {
+            sources.insert(*cell);
+        } else {
+            solid.insert(*cell);
+        }
+    }
+    let flooded = flood(&solid, &sources);
+    (solid, flooded)
+}
+
+/// The four cardinal horizontal steps, in a fixed order (determinism, ADR-0006).
+const HORIZ4: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+
+/// A deterministic, conservative **superset** of vanilla water flow from `sources`
+/// through the air cells of a world whose solid barriers are `solid`. Returns every
+/// flooded cell (the sources themselves plus every air cell water reaches).
+///
+/// Two phases (see the [`assembled_occupancy`] module note for the field case):
+/// 1. [`form_sources`] grows the source set by vanilla **infinite-water** pooling —
+///    a supported air cell flanked by ≥2 source cells becomes a source, cascading —
+///    so a walled basin fills completely rather than only 7 cells from its seeds.
+/// 2. [`spread`] then flows the completed source set outward (7-level decay +
+///    infinite downward), omitting only vanilla's drop-seeking direction preference
+///    (a safe over-mark).
+fn flood(solid: &BTreeSet<[i32; 3]>, sources: &BTreeSet<[i32; 3]>) -> BTreeSet<[i32; 3]> {
+    if sources.is_empty() {
+        return BTreeSet::new();
+    }
+    let pooled = form_sources(solid, sources);
+    spread(solid, &pooled)
+}
+
+/// Whether cell `c` has support below (a solid floor or standing water) — the
+/// condition under which vanilla water pools/forms a source instead of flowing down.
+fn supported_below(solid: &BTreeSet<[i32; 3]>, sources: &BTreeSet<[i32; 3]>, c: [i32; 3]) -> bool {
+    let below = [c[0], c[1] - 1, c[2]];
+    solid.contains(&below) || sources.contains(&below)
+}
+
+/// Grow `init` by vanilla infinite-water source formation: a **supported** air cell
+/// with ≥2 horizontally-adjacent source cells becomes a source, cascading to
+/// fixpoint. This fills a walled basin (the field case: the `cave-shore` pool's
+/// omitted source-row middle) that plain decay would leave dry one cell short.
+///
+/// Deterministic (ADR-0006): a queue cascade guarded by a `BTreeSet`; the fixpoint
+/// source set is independent of visit order.
+fn form_sources(solid: &BTreeSet<[i32; 3]>, init: &BTreeSet<[i32; 3]>) -> BTreeSet<[i32; 3]> {
+    use std::collections::VecDeque;
+    let mut sources = init.clone();
+    // Seed the cascade with the open (air) cells neighbouring a source — the only
+    // cells that can newly qualify.
+    let mut queue: VecDeque<[i32; 3]> = VecDeque::new();
+    for &s in &sources {
+        for &c in &open_neighbours(solid, &sources, s) {
+            queue.push_back(c);
+        }
+    }
+    while let Some(c) = queue.pop_front() {
+        if sources.contains(&c) || solid.contains(&c) {
+            continue;
+        }
+        if !supported_below(solid, &sources, c) {
+            continue;
+        }
+        let adjacent_sources = HORIZ4
+            .iter()
+            .filter(|(dx, dz)| sources.contains(&[c[0] + dx, c[1], c[2] + dz]))
+            .count();
+        if adjacent_sources >= 2 {
+            sources.insert(c);
+            // c is a new source: its air neighbours (and the cell above, for stacked
+            // pools) may now qualify — re-examine them.
+            for &n in &open_neighbours(solid, &sources, c) {
+                queue.push_back(n);
+            }
+            let up = [c[0], c[1] + 1, c[2]];
+            if !solid.contains(&up) && !sources.contains(&up) {
+                queue.push_back(up);
+            }
+        }
+    }
+    sources
+}
+
+/// The horizontally-adjacent cells of `c` that are open (not solid, not already a
+/// source) — the candidates a new source can propagate pooling into.
+fn open_neighbours(
+    solid: &BTreeSet<[i32; 3]>,
+    sources: &BTreeSet<[i32; 3]>,
+    c: [i32; 3],
+) -> Vec<[i32; 3]> {
+    HORIZ4
+        .iter()
+        .map(|(dx, dz)| [c[0] + dx, c[1], c[2] + dz])
+        .filter(|n| !solid.contains(n) && !sources.contains(n))
+        .collect()
+}
+
+/// Flow `sources` outward through air: infinite downward fall (level reset to 0 on
+/// the way down) plus horizontal spread with 1-per-step decay up to
+/// [`WATER_FLOW_RANGE`], blocked by solid cells. Returns every wet cell.
+///
+/// Deterministic (ADR-0006): 0-1 BFS (down = level-0 edge, horizontal = +1 edge)
+/// seeded from `sources` in sorted order with a fixed neighbour order; the resulting
+/// wet-cell set is independent of visit order. Downward is bounded at the lowest
+/// solid/source cell — a column into the void reaches no standable ground.
+fn spread(solid: &BTreeSet<[i32; 3]>, sources: &BTreeSet<[i32; 3]>) -> BTreeSet<[i32; 3]> {
+    use std::collections::VecDeque;
+    let Some(min_y) = solid
+        .iter()
+        .chain(sources.iter())
+        .map(|c| c[1])
+        .min()
+        .map(|y| y - 1)
+    else {
+        return BTreeSet::new();
+    };
+    let mut level: BTreeMap<[i32; 3], u8> = BTreeMap::new();
+    let mut dq: VecDeque<[i32; 3]> = VecDeque::new();
+    for &s in sources {
+        level.insert(s, 0);
+        dq.push_back(s);
+    }
+    while let Some(c) = dq.pop_front() {
+        let l = level[&c];
+        // Downward: infinite fall, resets to full strength (level 0). A 0-cost edge.
+        let d = [c[0], c[1] - 1, c[2]];
+        if d[1] >= min_y && !solid.contains(&d) && level.get(&d).is_none_or(|&e| e > 0) {
+            level.insert(d, 0);
+            dq.push_front(d);
+        }
+        // Horizontal: cardinal spread with 1-per-step decay, blocked by solid. A
+        // +1-cost edge; stops at the flow range.
+        if l < WATER_FLOW_RANGE {
+            for (dx, dz) in HORIZ4 {
+                let n = [c[0] + dx, c[1], c[2] + dz];
+                if !solid.contains(&n) && level.get(&n).is_none_or(|&e| e > l + 1) {
+                    level.insert(n, l + 1);
+                    dq.push_back(n);
+                }
+            }
+        }
+    }
+    level.into_keys().collect()
+}
+
 /// `DW0313`: one or more placed gravity blocks despawn into the void at placement.
 /// A gravity floor (`sand`/`gravel`/…) laid unsupported over the delve's `the_void`
 /// world falls out of the world on the first block update, silently deforming the
@@ -458,6 +672,252 @@ mod tests {
         assert!(blocks.contains_key(&[0, 66, 0]));
         assert!(!blocks.contains_key(&[0, 67, 0]));
         assert!(!blocks.contains_key(&[0, 68, 0]));
+    }
+
+    // --- water flood model (task #45) ---
+
+    /// A flat solid floor at `y` over `[x0,x1] × [z0,z1]`.
+    fn floor(y: i32, x0: i32, x1: i32, z0: i32, z1: i32) -> BTreeMap<[i32; 3], String> {
+        let mut b = BTreeMap::new();
+        for x in x0..=x1 {
+            for z in z0..=z1 {
+                b.insert([x, y, z], "minecraft:stone".to_string());
+            }
+        }
+        b
+    }
+
+    #[test]
+    fn flood_horizontal_decay_stops_at_seven() {
+        // A source on a long flat floor spreads exactly 7 cells each way, no more —
+        // the standard vanilla horizontal decay (level 1..=7).
+        let mut b = floor(64, -10, 10, 0, 0);
+        b.insert([0, 65, 0], "minecraft:water".to_string()); // source at x=0
+        let (_solid, flooded) = occupancy_of(b);
+        for x in -7..=7 {
+            assert!(flooded.contains(&[x, 65, 0]), "x={x} should flood");
+        }
+        assert!(!flooded.contains(&[8, 65, 0]), "x=8 is out of 7-range");
+        assert!(!flooded.contains(&[-8, 65, 0]), "x=-8 is out of 7-range");
+    }
+
+    #[test]
+    fn flood_falls_downward_infinitely_and_respreads() {
+        // A source high over a deep floor falls the full drop through the open column
+        // and, on landing, spreads again at full strength — downward is a level-0
+        // (free) edge, so the respread reaches the full 7-range from the landing.
+        let mut b = BTreeMap::new();
+        for x in 0..=9 {
+            b.insert([x, 60, 0], "minecraft:stone".to_string()); // deep floor
+        }
+        b.insert([0, 72, 0], "minecraft:water".to_string()); // source high above x=0
+        let (_solid, flooded) = occupancy_of(b);
+        // Falls down the open column x=0 from 72 to just above the y=60 floor…
+        for y in 61..=72 {
+            assert!(flooded.contains(&[0, y, 0]), "column cell [0,{y},0] floods");
+        }
+        // …then respreads full-strength (7) along the deep floor.
+        assert!(
+            flooded.contains(&[7, 61, 0]),
+            "respread reaches x=7 on landing"
+        );
+    }
+
+    /// A 1-wide flat corridor at floor `y` walled on both z sides at `y+1`, so water
+    /// is confined to the z=0 lane (the superset otherwise flows around a 1-cell
+    /// obstacle over the open floorless sides).
+    fn walled_corridor(y: i32, x0: i32, x1: i32) -> BTreeMap<[i32; 3], String> {
+        let mut b = BTreeMap::new();
+        for x in x0..=x1 {
+            b.insert([x, y, 0], "minecraft:stone".to_string()); // floor
+            b.insert([x, y + 1, 1], "minecraft:stone".to_string()); // +z wall
+            b.insert([x, y + 1, -1], "minecraft:stone".to_string()); // -z wall
+        }
+        b
+    }
+
+    #[test]
+    fn flood_is_dammed_by_solid_and_settled_sand() {
+        // A full-height dam across a walled corridor stops the source: cells past the
+        // dam stay dry. A settled sand block is a dam exactly like stone.
+        let mut b = walled_corridor(64, 0, 10);
+        b.insert([0, 65, 0], "minecraft:water".to_string()); // source in the lane
+        b.insert([3, 65, 0], "minecraft:sand".to_string()); // supported → stays, dams the lane
+        let (solid, flooded) = occupancy_of(b);
+        assert!(
+            solid.contains(&[3, 65, 0]),
+            "the sand dam is solid, not flooded"
+        );
+        assert!(flooded.contains(&[2, 65, 0]), "water reaches up to the dam");
+        assert!(
+            !flooded.contains(&[3, 65, 0]),
+            "the dam cell itself is solid, not water"
+        );
+        assert!(!flooded.contains(&[4, 65, 0]), "water is dammed past x=3");
+    }
+
+    #[test]
+    fn settle_then_flood_order_a_fallen_sand_dam_still_dams() {
+        // Prove the flood sees POST-settle geometry: a sand "dam" authored one block
+        // too high settles DOWN into the lane and still dams. settle() runs first
+        // (as `assemble` does), then occupancy_of floods the settled result.
+        let mut b = walled_corridor(64, 0, 10);
+        b.insert([0, 65, 0], "minecraft:water".to_string()); // source
+        b.insert([3, 66, 0], "minecraft:sand".to_string()); // authored high; air at [3,65,0]
+        settle(&mut b); // sand falls from 66 → 65 (onto the floor at 64)
+        assert_eq!(
+            b.get(&[3, 65, 0]).map(String::as_str),
+            Some("minecraft:sand"),
+            "sand settled down into the lane"
+        );
+        let (_solid, flooded) = occupancy_of(b);
+        assert!(
+            flooded.contains(&[2, 65, 0]),
+            "water reaches the settled dam"
+        );
+        assert!(!flooded.contains(&[4, 65, 0]), "settled sand dams the lane");
+    }
+
+    #[test]
+    fn settle_then_flood_order_a_despawned_sand_opens_the_channel() {
+        // The complementary case: a sand "dam" over a hole in the floor despawns into
+        // the void (settle), so it is NOT a dam and the flood flows through. Under-
+        // settling here would have wrongly kept a phantom dam and marked cells dry.
+        let mut b = walled_corridor(64, 0, 10);
+        b.remove(&[5, 64, 0]); // a hole in the floor at x=5
+        b.insert([0, 65, 0], "minecraft:water".to_string()); // source
+        b.insert([5, 66, 0], "minecraft:sand".to_string()); // over the hole → despawns
+        settle(&mut b);
+        assert!(!b.contains_key(&[5, 66, 0]), "sand over the hole despawned");
+        assert!(
+            !b.contains_key(&[5, 65, 0]),
+            "…and did not settle onto a missing floor"
+        );
+        let (_solid, flooded) = occupancy_of(b);
+        // No dam remains, so the flow passes x=5 (and falls into the hole column).
+        assert!(
+            flooded.contains(&[6, 65, 0]),
+            "flow passes the (despawned) non-dam"
+        );
+    }
+
+    #[test]
+    fn infinite_water_fills_a_pool_basin_past_the_seven_range() {
+        // The perimedes field case in miniature: a long walled basin whose source
+        // rows have a GAP in the middle. Vanilla infinite water fills the gap (a
+        // flowing cell flanked by ≥2 sources becomes a source), so the pool fills its
+        // whole basin — reaching a cell a plain 7-decay flood would leave dry.
+        let mut b = BTreeMap::new();
+        // A walled trough at y=65 (floor y=64), 1 wide (z=0), x 0..=20.
+        for x in 0..=20 {
+            b.insert([x, 64, 0], "minecraft:stone".to_string());
+            b.insert([x, 65, 1], "minecraft:stone".to_string()); // +z wall
+            b.insert([x, 65, -1], "minecraft:stone".to_string()); // -z wall
+        }
+        b.insert([0, 66, 0], "minecraft:stone".to_string()); // end caps at y=66 too
+        b.insert([20, 66, 0], "minecraft:stone".to_string());
+        for x in 0..=20 {
+            b.insert([x, 66, 1], "minecraft:stone".to_string());
+            b.insert([x, 66, -1], "minecraft:stone".to_string());
+        }
+        // Source rows at both ends, but a GAP in the middle (x 6..=14 has no seed).
+        for x in [0, 1, 2, 3, 4, 5, 15, 16, 17, 18, 19, 20] {
+            b.insert([x, 65, 0], "minecraft:water".to_string());
+        }
+        let (_solid, flooded) = occupancy_of(b);
+        // The gap fills completely — every basin cell is wet, well past 7 from any
+        // original seed (x=10 is 5 past the x=5 seed's 7-range… reachable only via
+        // infinite-water source formation cascading across the gap).
+        for x in 0..=20 {
+            assert!(
+                flooded.contains(&[x, 65, 0]),
+                "basin cell x={x} must be flooded"
+            );
+        }
+    }
+
+    #[test]
+    fn single_puddle_does_not_infinitely_fill() {
+        // A lone source on an open flat floor does NOT form new sources (no ≥2-source
+        // cell), so it makes a bounded 7-cell puddle, not a whole-floor flood — the
+        // infinite-water rule stays tight, not runaway.
+        let mut b = floor(64, -20, 20, 0, 0);
+        b.insert([0, 65, 0], "minecraft:water".to_string());
+        let (_solid, flooded) = occupancy_of(b);
+        assert!(flooded.contains(&[7, 65, 0]), "reaches 7");
+        assert!(
+            !flooded.contains(&[8, 65, 0]),
+            "a single source does not fill the floor"
+        );
+    }
+
+    #[test]
+    fn flood_superset_marks_unsupported_horizontal_spread() {
+        // The superset omits vanilla's "only spread level on a supported floor": a
+        // source spreads horizontally over an open ledge (no floor under the flow),
+        // which vanilla would instead drop straight down. Over-marking is safe.
+        let mut b = BTreeMap::new();
+        b.insert([0, 64, 0], "minecraft:stone".to_string()); // only the source has a floor
+        b.insert([0, 65, 0], "minecraft:water".to_string()); // source
+        let (_solid, flooded) = occupancy_of(b);
+        // No floor under [1,65,0], yet the superset still marks it wet (vanilla would
+        // let it fall). This is the intentional over-approximation.
+        assert!(
+            flooded.contains(&[1, 65, 0]),
+            "superset marks unsupported horizontal spread wet"
+        );
+    }
+
+    #[test]
+    fn shore_pool_floods_the_approach_tongue_but_not_a_walled_dry_alcove() {
+        // The `cave-shore`/perimedes field case (task #45), reduced: a sand shore at
+        // y=65 with a water source pooled on it floods the open shore cells (the flow
+        // TONGUE a talk-to leg must never step through), while a cell fully walled off
+        // from the water on every horizontal side stays a DRY, standable alcove.
+        let mut b = BTreeMap::new();
+        // Sand shore floor at y=65 over x 0..=6, z=0 (standing level y=66).
+        for x in 0..=6 {
+            b.insert([x, 65, 0], "minecraft:sand".to_string());
+        }
+        // Water source pooled on the shore at x=0.
+        b.insert([0, 66, 0], "minecraft:water".to_string());
+        // A dry alcove at x=6: wall it off from the flow with stone at x=5 (full
+        // height at the standing + head level), so water cannot reach it.
+        b.insert([5, 66, 0], "minecraft:stone".to_string());
+        b.insert([5, 67, 0], "minecraft:stone".to_string());
+        let (solid, flooded) = occupancy_of(b);
+        // The open shore between source and wall is the flooded tongue (7-range).
+        assert!(
+            flooded.contains(&[1, 66, 0]),
+            "approach tongue must be marked flooded"
+        );
+        assert!(
+            flooded.contains(&[4, 66, 0]),
+            "tongue reaches up to the wall"
+        );
+        // The walled alcove is dry and standable (sand floor, clear head).
+        assert!(
+            !flooded.contains(&[6, 66, 0]),
+            "the walled dry alcove must NOT be flooded"
+        );
+        assert!(
+            solid.contains(&[6, 65, 0]),
+            "the alcove has a solid floor below it"
+        );
+        assert!(
+            !flooded.contains(&[6, 67, 0]),
+            "the alcove head cell is clear"
+        );
+    }
+
+    #[test]
+    fn no_water_leaves_flooded_empty_and_solid_unchanged() {
+        // Determinism / no-op guarantee: a waterless world has an empty flood set and
+        // every block stays solid.
+        let b = floor(64, 0, 3, 0, 3);
+        let (solid, flooded) = occupancy_of(b.clone());
+        assert!(flooded.is_empty());
+        assert_eq!(solid, b.into_keys().collect());
     }
 
     #[test]
