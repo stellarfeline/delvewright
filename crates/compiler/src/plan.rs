@@ -573,6 +573,23 @@ pub const DW_GATE_DEADLOCK: &str = "DW0306";
 /// land at sea level — the piece floats above the sea or is drowned by it.
 pub const DW_OCEAN_WATERLINE: &str = "DW0344";
 
+/// `DW0345`: the assembled world resolves **no entry anchor** — the compiler has
+/// no cell to call the campaign's start, so it cannot `setworldspawn`, cannot place
+/// a first-joining player, and cannot teleport a player who picks a class. The
+/// world then falls back to the vanilla spawn search, which a dedicated server
+/// resolves to the surface but the integrated (singleplayer) server resolves to
+/// the build floor — inside solid stone. Silent before; a hard build error now.
+pub const DW_NO_ENTRY_ANCHOR: &str = "DW0345";
+
+/// The prefab-metadata anchor names that mark a campaign's **entry point**, in
+/// resolution order. One concept, two spellings in the shipped tileset library:
+/// the keep/cave/test tilesets name it `spawn`, the island tileset names it
+/// `entry`. The compiler owns the resolution (CLAUDE.md: never leave a layer
+/// boundary to downstream folklore) — every consumer goes through
+/// [`Plan::entry_point`] / `emit::campaign_spawn`, and a campaign that resolves
+/// none of these names fails the build with [`DW_NO_ENTRY_ANCHOR`].
+pub const ENTRY_ANCHOR_NAMES: [&str; 2] = ["spawn", "entry"];
+
 /// Ocean-horizon waterline invariant (DW0344). In a `horizon: ocean` world every
 /// placed piece that **declares** a waterline (`waterline_y` in its prefab metadata,
 /// local y of its top authored water block) must land with that waterline at world
@@ -2003,8 +2020,14 @@ fn check_gate_reachability(
     let sockets = world_sockets(pieces, registry);
     let adj = build_adjacency(&sockets, pieces, registry, &gates);
 
-    let Some(spawn) = anchor_node(pieces, registry, "spawn", &gates) else {
-        return Ok(()); // no spawn anchor resolved → cannot reason; leave to other checks
+    // The entry piece, resolved through the same alias list every other consumer
+    // uses (`spawn`, then `entry`) — the gate-deadlock proof must start where the
+    // player actually starts, and the island tileset spells that anchor `entry`.
+    let Some(spawn) = ENTRY_ANCHOR_NAMES
+        .iter()
+        .find_map(|name| anchor_node(pieces, registry, name, &gates))
+    else {
+        return Ok(()); // no entry anchor in this area → DW0345 reports it at build
     };
 
     for (i, step) in order.iter().enumerate() {

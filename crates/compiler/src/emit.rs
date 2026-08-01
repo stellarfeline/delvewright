@@ -295,6 +295,28 @@ pub fn build(
     // where the spawn position was resolvable only via a `kill` objective.
     check_wave_spawns(plan)?;
 
+    // Every campaign must resolve an ENTRY POINT (DW0345). Without one the world
+    // gets no `setworldspawn`, a class-picking player is never teleported, and a
+    // joining player is left to the vanilla spawn search — which a dedicated server
+    // resolves to the surface but the integrated (singleplayer) server resolves to
+    // the build floor, i.e. inside solid stone. This used to fail silently: an area
+    // whose tileset spells the anchor `entry` instead of `spawn` compiled clean and
+    // shipped a delve with no start.
+    if campaign_spawn(plan).is_none() {
+        return Err(BuildFailure::Diagnostic {
+            code: plan::DW_NO_ENTRY_ANCHOR,
+            message: format!(
+                "the assembled world resolves no entry anchor — no area places a \
+                 piece declaring any of {names:?} in its prefab metadata. The \
+                 compiler then has no cell to call the campaign's start: no \
+                 `setworldspawn`, no class-apply teleport, no first-join placement. \
+                 Give the pool's entry-role prefab an entry anchor (its metadata \
+                 `anchors`), or bind the area to a prefab that has one.",
+                names = plan::ENTRY_ANCHOR_NAMES,
+            ),
+        });
+    }
+
     // ---- datapack ----
     put_json(
         &mut out,
@@ -533,6 +555,7 @@ fn is_vanilla_function(path: &str) -> bool {
 /// | `doWeatherCycle`     | `advance_weather`                       |
 /// | `doFireTick`         | `fire_spread_radius_around_player` (int)|
 /// | `mobGriefing`        | `mob_griefing`                          |
+/// | `spawnRadius`        | `respawn_radius` (spawn scatter, int)   |
 ///
 /// `doFireTick` has **no boolean successor**; 1.21.11 models fire spread as an
 /// integer radius around players, so `0` disables it (the sealing intent: no
@@ -556,6 +579,15 @@ fn sealing_commands(
         "gamerule advance_weather false".to_string(),
         "gamerule fire_spread_radius_around_player 0".to_string(),
         "gamerule mob_griefing false".to_string(),
+        // Spawn scatter OFF. Vanilla scatters a first join / spawnpoint-less
+        // respawn uniformly in a square of this radius around world spawn; in a box
+        // garden every scattered cell is solid prefab (or void), so the only
+        // correct radius is 0 — the exact anchor the compiler chose. 1.21.11
+        // renamed the legacy `spawnRadius` to `respawn_radius` (the legacy spelling
+        // is rejected outright); verified against the vendored 1.21.11 command tree
+        // (`data/commands-1.21.11.json`, which is what the compiler's own command
+        // validator checks every emitted line against).
+        "gamerule respawn_radius 0".to_string(),
         // Box-garden death policy: dying must never cost quest items (a dropped
         // trial key despawns in 5 minutes = softlock for a human player).
         "gamerule keep_inventory true".to_string(),
@@ -1035,6 +1067,23 @@ fn emit_functions(
     tick.push(format!(
         "execute if score #init dw.sys matches 1 unless score #placed dw.sys matches 1 run function {ns}:place_verify"
     ));
+    // Datapack-owned FIRST-JOIN placement (singleplayer parity). A joining player
+    // is placed by the datapack, never by the server's interpretation of the
+    // level.dat spawn: the integrated (singleplayer) server does not reliably
+    // honour the emitted spawn state and drops the first join at the superflat
+    // floor (x/z of world spawn, y = build-floor) — inside stone, unescapable
+    // except by dying. A dedicated server places the same world correctly, so no
+    // rung of the validation ladder can ever observe this. Gated on `#placed` so
+    // the teleport lands on real geometry (the structures are placed over the
+    // first ticks), and on the per-player `dw_joined` tag so it fires exactly once
+    // per player — a relog keeps the tag and therefore the player's position, and
+    // RESPAWN is untouched (that is `spawnpoint @a` + the checkpoint machinery).
+    // Empty for a campaign with no `spawn` anchor → byte-identical.
+    if campaign_spawn(plan).is_some() {
+        tick.push(format!(
+            "execute if score #placed dw.sys matches 1 as @a[tag=!dw_joined] run function {ns}:join_place"
+        ));
+    }
     tick.push("scoreboard players enable @a dw.class".to_string());
     for npc in &plan.npcs {
         tick.push(format!(
@@ -1233,6 +1282,26 @@ fn emit_functions(
     fns.extend(emit_checkpoint_functions(plan));
     // --- v0.6 stealth-beat functions (spec-0014) ---
     fns.extend(emit_stealth_functions(plan));
+
+    // --- join_place: first-join placement (see the `tick` driver above) ---
+    //
+    // The target is the campaign ENTRY POINT (the first area's `spawn` anchor),
+    // not the live `dw:cp` checkpoint. `dw:cp` is *seeded* to this very cell at
+    // setup, so the two agree at world start; they diverge only after a checkpoint
+    // fires, and at that point a first-joining player is a player who has not
+    // played yet — the entry point is where the campaign begins, and it is exactly
+    // where `class_apply_*` teleports every player when they pick a class. Reading
+    // `dw:cp` would also need a macro function (the mirror is a `[x, y, z]` list,
+    // not tp-shaped arguments) for no behavioural gain.
+    if let Some(pos) = campaign_spawn(plan) {
+        fns.push((
+            "join_place".to_string(),
+            lines(&[
+                format!("teleport @s {} {} {}", pos[0], pos[1], pos[2]),
+                "tag @s add dw_joined".to_string(),
+            ]),
+        ));
+    }
 
     // --- show_class ---
     fns.push((
@@ -3075,14 +3144,19 @@ fn trap_fns(plan: &Plan) -> Vec<(String, String)> {
     out
 }
 
-/// The first area's `spawn` anchor absolute position.
+/// The campaign's **entry point**: the absolute position of the first area's
+/// entry anchor, resolved through [`plan::ENTRY_ANCHOR_NAMES`] (`spawn`, then
+/// `entry` — one concept, two spellings in the shipped tileset library). This one
+/// cell is `setworldspawn`, the class-apply teleport, the first-join placement,
+/// and the `dw:cp` seed. `None` is a hard build error (`DW0345`).
 fn campaign_spawn(plan: &Plan) -> Option<[i32; 3]> {
     for area in &plan.areas {
-        if let Some(ResolvedAnchor::Point { pos, .. }) = plan
-            .anchors
-            .get(&(area.area_id.clone(), "spawn".to_string()))
-        {
-            return Some(*pos);
+        for name in plan::ENTRY_ANCHOR_NAMES {
+            if let Some(ResolvedAnchor::Point { pos, .. }) =
+                plan.anchors.get(&(area.area_id.clone(), name.to_string()))
+            {
+                return Some(*pos);
+            }
         }
     }
     None

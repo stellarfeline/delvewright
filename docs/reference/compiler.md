@@ -336,6 +336,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 | `doWeatherCycle` | `gamerule advance_weather false` |
 | `doFireTick` | `gamerule fire_spread_radius_around_player 0` (no boolean successor; radius 0 = no spread) |
 | `mobGriefing` | `gamerule mob_griefing false` |
+| `spawnRadius` | `gamerule respawn_radius 0` (spawn **scatter** off — vanilla otherwise scatters a first join / spawnpoint-less respawn uniformly in a square of this radius around world spawn; every scattered cell in a box garden is solid prefab or void, so the only correct radius is the exact compiler-chosen anchor) |
 | — | `gamerule keep_inventory true` (box-garden death policy; **not in spec-0002** — see §6) |
 | — | `gamerule tnt_explodes false` (**v0.6-gated**, spec-0011): defense-in-depth against a stray primed-TNT source deforming the sealed world. No gamerule separates explosion block vs. entity damage, so TNT is excluded as a trap payload by the schema and belt-and-braces sealed here. Emitted **only** when the world stage is `dsl_version 0.6.0`, so pre-0.6 fixtures stay byte-identical. |
 | — | `time set <kw>` (declared `world.time`, default `noon` = daytime 6000; the sole seal with a vanilla read-back) |
@@ -395,6 +396,32 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   every `@a` outside the region via `boundary_return` (a macro `$tp @s $(x) $(y)
   $(z)` off `dw:cp`, + actionbar message + soft sound). The region selector is
   compile-time-derived literals; nothing is authored.
+- **Entry point.** One cell per campaign — `setworldspawn`, the `class_apply_*`
+  teleport, first-join placement, the `dw:cp` seed and the gate-deadlock proof's
+  start node all use it. It is the first area's entry anchor, resolved by the
+  compiler through an ordered alias list (`plan::ENTRY_ANCHOR_NAMES` = `spawn`,
+  then `entry`): one concept with two spellings in the shipped tileset library
+  (keep/cave/test say `spawn`, the island tileset says `entry`), so the compiler
+  owns the resolution rather than leaving it to per-tileset folklore. Resolving
+  **none** of them is `DW0345`.
+- **First-join placement is datapack-owned** (not the server's reading of
+  level.dat). `tick` runs `execute if score #placed dw.sys matches 1 as
+  @a[tag=!dw_joined] run function <ns>:join_place`; `join_place` teleports `@s` to
+  the campaign entry point (the first area's `spawn` anchor — the same cell
+  `class_apply_*` uses) and then adds the `dw_joined` tag, so it fires exactly
+  once per player and a relog keeps the player where they stood. **Respawn is
+  untouched** (`spawnpoint @a` + the spec-0012 checkpoint machinery). The `#placed`
+  gate makes the teleport land on real geometry — the prefabs are `/place
+  template`d over the first ticks. *Why it exists:* the **integrated
+  (singleplayer) server** does not reliably honour the emitted spawn state and
+  drops the first join at the superflat floor (x/z of world spawn, y = build
+  floor) — inside stone, unescapable except by dying. A dedicated server places
+  the same world correctly, so no rung of the validation ladder can observe it;
+  the assertion is therefore static (`first_join_placement_emitted`). The target
+  is the entry point rather than the live `dw:cp` checkpoint deliberately: `dw:cp`
+  is *seeded* to that same cell at setup, so they agree at world start and diverge
+  only once a checkpoint has fired — at which point a *first*-joining player is a
+  player who has not played, and the entry point is where the campaign begins.
 - `datapack/pack.mcmeta`: `min_format`/`max_format` = `[94, 1]` (a bare
   `pack_format` is rejected for formats > 81).
 - `<out>/`: `manifest.json` (SHA-256 of the 6 inputs + every output; non-`en`
@@ -727,6 +754,7 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0329` | A `sequence` effect is nested inside another `sequence` (directly, or reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse (spec-0014). Validation-tier (exit 1), `dsl::validate`. Flatten the inner steps into the outer timeline (shift their `at_ticks`). |
 | `DW0342` | A **lethal** trap (spec-0011) whose trigger cell lies on the forced critical path with no discharge — not avoidable (the trigger cell is a required path cell), not survivable (`rearm`, so a respawn walk-back re-triggers it → soft-loop), and not disarmable (no disarm affordance reachable before it, over the world with the trap cell blocked). The player is provably killed or soft-looped. **Analysis-tier: exit 2**, like `DW0312` — a content-design mistake, not a geometry defect; the message names the trap and prescribes moving it off the path, setting `reset: once`, or adding a reachable `disarm`. Renumbered off the spec's stale reserved number (0314 — since taken by the waypoint self-check). |
 | `DW0344` | In a `horizon: ocean` world, a placed piece whose prefab metadata declares `waterline_y` does not land that waterline at sea level (`piece.y + waterline_y ≠ 62`) — the piece floats above the sea (its shore an unclimbable cliff, its authored water pocket hanging in the air) or is drowned under it. Build-tier (exit 3), `compiler::plan`, checked after placement. Nothing downstream can catch this: nav, boundary, POV and PackTest all derive from the very placement that is wrong, so a mis-datumed island validates green and ships unplayable. The message names the area, prefab, placed y and the signed offset, and prescribes correcting the declared `waterline_y` (the local y of the piece's top water block; the island convention is 2) or rebuilding the piece against the convention — ocean areas are placed at y=60 and a piece with a different waterline cannot share that datum. Pieces declaring no `waterline_y` author no sea and are not checked. |
+| `DW0345` | The assembled world resolves **no entry anchor** — no placed piece declares any of the entry-anchor names (`spawn`, `entry`; see §4 "First-join placement"). The compiler then has no cell to call the campaign's start: no `setworldspawn`, no class-apply teleport, no first-join placement, no `dw:cp` seed. Build-tier (exit 3), `compiler::emit`. Silent before — the delve compiled clean and fell back to the vanilla spawn search, which a **dedicated** server resolves to the surface (so every rung of the validation ladder stayed green) and the **integrated singleplayer** server resolves to the build floor, i.e. inside solid stone. Prescription: give the pool's entry-role prefab an entry anchor in its metadata `anchors`, or bind the area to a prefab that has one. |
 
 ### DW07xx — workspace tooling (spec-0007; **not `delvec`**)
 

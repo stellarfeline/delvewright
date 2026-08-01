@@ -543,6 +543,7 @@ fn environment_sealing_emitted() {
         "gamerule advance_weather false",              // was doWeatherCycle
         "gamerule fire_spread_radius_around_player 0", // was doFireTick (now an int radius)
         "gamerule mob_griefing false",                 // was mobGriefing
+        "gamerule respawn_radius 0",                   // was spawnRadius (spawn scatter off)
         "time set noon",                               // fixed authored time (v0 default)
     ];
     for cmd in expected {
@@ -560,6 +561,7 @@ fn environment_sealing_emitted() {
         "doWeatherCycle",
         "doFireTick",
         "mobGriefing",
+        "spawnRadius",
     ] {
         assert!(
             !setup.contains(legacy),
@@ -586,6 +588,63 @@ fn environment_sealing_emitted() {
         assert!(
             tree.validate_line(cmd).is_ok(),
             "sealing command fails the 1.21.11 command-tree validator: `{cmd}`"
+        );
+    }
+}
+
+/// Datapack-owned FIRST-JOIN placement (singleplayer parity). The integrated
+/// (singleplayer) server does not reliably honour the emitted level.dat spawn and
+/// drops the first join at the superflat floor — inside stone. No rung of the
+/// validation ladder runs an integrated server, so this is asserted statically:
+/// the tick function must drive a once-per-player `join_place`, and `join_place`
+/// must teleport to the campaign entry point (the same cell `class_apply_*` uses)
+/// and then mark the player, so a relog never re-teleports.
+#[test]
+fn first_join_placement_emitted() {
+    let out = build_hello_world();
+    let tick = text(&out, "datapack/data/hello-world/function/tick.mcfunction");
+    let join = text(
+        &out,
+        "datapack/data/hello-world/function/join_place.mcfunction",
+    );
+
+    // Driver: gated on placement being verified (so the teleport lands on real
+    // geometry) and on the absence of the per-player tag (so it fires once).
+    let driver = "execute if score #placed dw.sys matches 1 as @a[tag=!dw_joined] \
+                  run function hello-world:join_place";
+    assert!(
+        tick.lines().any(|l| l.trim() == driver),
+        "tick must drive first-join placement: `{driver}`\ntick:\n{tick}"
+    );
+
+    // The teleport target is the campaign entry point — identical to the cell the
+    // class-apply handler teleports to.
+    let tp = join
+        .lines()
+        .find(|l| l.starts_with("teleport @s "))
+        .expect("join_place teleports the player");
+    let class_apply_path = out
+        .keys()
+        .find(|p| p.contains("/function/class_apply_"))
+        .expect("a class-apply handler is emitted")
+        .clone();
+    let class_apply = text(&out, &class_apply_path);
+    assert!(
+        class_apply.lines().any(|l| l.trim() == tp),
+        "first-join placement must use the campaign entry point (`{tp}`)\n\
+         {class_apply_path}:\n{class_apply}"
+    );
+    assert!(
+        join.lines().any(|l| l.trim() == "tag @s add dw_joined"),
+        "join_place must mark the player so a relog never re-teleports\n{join}"
+    );
+
+    // Both lines are real 1.21.11 commands.
+    let tree = CommandTree::v1_21_11();
+    for line in join.lines().filter(|l| !l.trim().is_empty()) {
+        assert!(
+            tree.validate_line(line).is_ok(),
+            "join_place line fails the 1.21.11 command-tree validator: `{line}`"
         );
     }
 }
