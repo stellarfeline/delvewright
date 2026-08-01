@@ -542,6 +542,19 @@ fn snbt_string(s: &str) -> String {
     format!("\"{esc}\"")
 }
 
+/// The `CustomName:…,CustomNameVisible:1b,` NBT fragment (trailing comma) that
+/// labels a floating objective marker with its objective `title`. When the
+/// objective has no title, the marker carries NO name — an empty fragment — so it
+/// still glows and is findable but never surfaces the raw objective id (e.g.
+/// `obj/door`) as player-visible floating text (presentation hygiene, task #54
+/// addendum). Titled markers are unchanged (byte-identical).
+fn marker_name_fields(title: Option<&str>) -> String {
+    match title {
+        Some(t) => format!("CustomName:{},CustomNameVisible:1b,", snbt_string(t)),
+        None => String::new(),
+    }
+}
+
 /// A text-component SNBT **compound** for a player-visible string:
 /// `{text:"<escaped>"}`. Used for mannequin `description` (DSL v0.4) and any
 /// component-form NBT field. This is deliberately NOT the stringified-JSON form
@@ -682,8 +695,12 @@ fn emit_functions(
             quest_score(q.id.as_str())
         ));
     }
+    // The completion objective. It is NOT put on the sidebar: a `setdisplay
+    // sidebar dw.campaign` slot would show players a permanent raw internal id
+    // (`dw.campaign`), and it serves no purpose — the validation bot observes
+    // completion via the `[Delvewright] complete …` chat token (executor.ts),
+    // never the sidebar (mineflayer 4.37.x cannot decode 1.21.11 score packets).
     setup.push("scoreboard objectives add dw.campaign dummy".to_string());
-    setup.push("scoreboard objectives setdisplay sidebar dw.campaign".to_string());
     // v0.3: the shared wave countdown, per-flag scores, and interact triggers.
     // Each loop is empty for a v0.2 campaign, so hello-world / keep-crawl setup is
     // byte-identical.
@@ -2198,11 +2215,12 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
                     // Visible, glowing, adventure-safe marker so a human can find the
                     // interact target (M2 fix 3): an `item_display` has no collision,
                     // so it obstructs neither movement nor the interaction hitbox.
-                    // Its name derives from the objective `title` (fallback: id).
-                    let marker_name = snbt_string(o.title().unwrap_or(id.as_str()));
+                    // Named from the objective `title`; an untitled objective gets a
+                    // nameless (but still glowing) marker rather than a raw-id label.
+                    let name_fields = marker_name_fields(o.title());
                     cmds.push(format!(
-                        "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],CustomName:{},CustomNameVisible:1b,billboard:\"center\",item:{{id:\"minecraft:lantern\",count:1}}}}",
-                        pos[0], pos[1], pos[2], interact_entity_tag(id.as_str()), marker_name
+                        "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],{}billboard:\"center\",item:{{id:\"minecraft:lantern\",count:1}}}}",
+                        pos[0], pos[1], pos[2], interact_entity_tag(id.as_str()), name_fields
                     ));
                 }
             }
@@ -2217,11 +2235,12 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
                 None => return cmds,
             };
             // A distinct, thematically neutral `end_rod` (vs. the interact lantern)
-            // so a beacon-like light marks a reach destination.
-            let marker_name = snbt_string(o.title().unwrap_or(id.as_str()));
+            // so a beacon-like light marks a reach destination. Named from the
+            // objective `title`; untitled → nameless glow, never a raw-id label.
+            let name_fields = marker_name_fields(o.title());
             cmds.push(format!(
-                "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],CustomName:{},CustomNameVisible:1b,billboard:\"center\",item:{{id:\"minecraft:end_rod\",count:1}}}}",
-                pos[0], pos[1], pos[2], reach_marker_tag(id.as_str()), marker_name
+                "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],{}billboard:\"center\",item:{{id:\"minecraft:end_rod\",count:1}}}}",
+                pos[0], pos[1], pos[2], reach_marker_tag(id.as_str()), name_fields
             ));
         }
         Objective::TalkTo { .. } | Objective::Kill { .. } => {}
@@ -3725,6 +3744,18 @@ mod tests {
         );
         // Backslash and double-quote are escaped.
         assert_eq!(snbt_string("a\"b\\c"), "\"a\\\"b\\\\c\"");
+    }
+
+    #[test]
+    fn marker_name_fields_never_leak_a_raw_id() {
+        // A titled marker carries its title (byte-identical to the old behavior).
+        assert_eq!(
+            marker_name_fields(Some("Unbar the Inner Door")),
+            "CustomName:\"Unbar the Inner Door\",CustomNameVisible:1b,"
+        );
+        // An untitled objective yields NO name fields — the marker still glows but
+        // never surfaces its raw objective id (e.g. `obj/door`) to players.
+        assert_eq!(marker_name_fields(None), "");
     }
 
     #[test]

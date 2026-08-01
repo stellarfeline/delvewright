@@ -286,9 +286,22 @@ fn critical_path_shape_and_commands() {
         }
     }
 
-    // The completion objective is displayed in the sidebar for the bot to read.
+    // The completion objective exists but is NOT put on the sidebar: a raw
+    // internal id (`dw.campaign`) must never surface to players (task #54
+    // addendum). The bot observes completion via the chat token, not the sidebar.
     let setup = text(&out, "datapack/data/hello-world/function/setup.mcfunction");
-    assert!(setup.contains("scoreboard objectives setdisplay sidebar dw.campaign"));
+    assert!(setup.contains("scoreboard objectives add dw.campaign dummy"));
+    assert!(
+        !setup.contains("setdisplay sidebar"),
+        "no raw-id sidebar display leaks to players: {setup}"
+    );
+    // Completion still sets the objective (chat-token marker + PackTest assert).
+    let complete = text(
+        &out,
+        "datapack/data/hello-world/function/campaign_complete.mcfunction",
+    );
+    assert!(complete.contains("scoreboard players set @s dw.campaign 1"));
+    assert!(complete.contains("[Delvewright] complete dw.campaign 1"));
 }
 
 /// task #38: the compiler exports the DW0311-proven critical-path routes as a
