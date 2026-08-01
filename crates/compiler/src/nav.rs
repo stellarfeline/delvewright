@@ -25,7 +25,6 @@
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
-use std::io::Read;
 
 use delvewright_dsl::{CameraWaypoint, QuestEffect};
 
@@ -85,134 +84,26 @@ impl MovePlan {
     }
 }
 
-fn is_air(name: &str) -> bool {
-    matches!(
-        name,
-        "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
-    )
-}
-
-/// Inclusive cell iterator over a region given two (possibly unordered) corners.
-fn region_cells(a: [i32; 3], b: [i32; 3]) -> impl Iterator<Item = [i32; 3]> {
-    let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
-    let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
-    (lo[1]..=hi[1]).flat_map(move |y| {
-        (lo[2]..=hi[2]).flat_map(move |z| (lo[0]..=hi[0]).map(move |x| [x, y, z]))
-    })
-}
-
-/// Parse a gzipped vanilla structure `.nbt`, returning its non-air block cells as
-/// local `[x, y, z]` positions. Mirrors the palette/blocks decode the emitter's
-/// sentinel picker uses. Unparseable structures contribute nothing.
-fn structure_solid_cells(bytes: &[u8]) -> Vec<[i32; 3]> {
-    let mut raw = Vec::new();
-    if flate2::read::GzDecoder::new(bytes)
-        .read_to_end(&mut raw)
-        .is_err()
-    {
-        return Vec::new();
-    }
-    let Ok(fastnbt::Value::Compound(root)) = fastnbt::from_bytes::<fastnbt::Value>(&raw) else {
-        return Vec::new();
-    };
-    let palette: Vec<Option<String>> = match root.get("palette") {
-        Some(fastnbt::Value::List(entries)) => entries
-            .iter()
-            .map(|e| match e {
-                fastnbt::Value::Compound(c) => match c.get("Name") {
-                    Some(fastnbt::Value::String(s)) => Some(s.clone()),
-                    _ => None,
-                },
-                _ => None,
-            })
-            .collect(),
-        _ => return Vec::new(),
-    };
-    let mut out = Vec::new();
-    if let Some(fastnbt::Value::List(blocks)) = root.get("blocks") {
-        for b in blocks {
-            let fastnbt::Value::Compound(b) = b else {
-                continue;
-            };
-            let pos = match b.get("pos") {
-                Some(fastnbt::Value::List(p)) if p.len() == 3 => {
-                    let mut o = [0i32; 3];
-                    let mut ok = true;
-                    for (i, v) in p.iter().enumerate() {
-                        match v {
-                            fastnbt::Value::Int(n) => o[i] = *n,
-                            _ => ok = false,
-                        }
-                    }
-                    if !ok {
-                        continue;
-                    }
-                    o
-                }
-                _ => continue,
-            };
-            let state = match b.get("state") {
-                Some(fastnbt::Value::Int(n)) => *n as usize,
-                _ => continue,
-            };
-            match palette.get(state) {
-                Some(Some(name)) if !is_air(name) => out.push(pos),
-                _ => {}
-            }
-        }
-    }
-    out
-}
-
 /// A solid-block occupancy model of the assembled world (spec-0008 addendum),
-/// built from the placed prefab structures plus the solver's socket seals. Cells
-/// absent from `solid` are passable (interior air, opened sockets, gate
-/// thresholds).
+/// derived from the shared gravity-settled assembled-world model
+/// ([`crate::assembled`]): every placed prefab block, plus the solver's socket
+/// seals, with gate thresholds cleared and unsupported falling blocks settled
+/// (task #42). Cells absent from `solid` are passable (interior air, opened
+/// sockets, gate thresholds, and any cell a gravity block fell out of).
 pub struct World {
     solid: BTreeSet<[i32; 3]>,
 }
 
 impl World {
     /// Build the occupancy model from the plan's placed pieces and the structure
-    /// `.nbt` bytes. Applies the solver's seals (air clears an opened socket;
-    /// anything else seals it) and clears gate anchor regions to passable.
+    /// `.nbt` bytes, via the shared assembled-world model. Every non-air cell of
+    /// that settled map is a solid cell here — so a `sand`/`gravel` floor that
+    /// falls out of the void world is passable (a hole), exactly as in game
+    /// (task #42), not a phantom floor the model wrongly seats mobs on.
     pub fn from_plan(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Self {
-        let mut solid = BTreeSet::new();
-        for area in &plan.areas {
-            for piece in &area.pieces {
-                let Some(bytes) = structures.get(&piece.structure_file) else {
-                    continue;
-                };
-                for local in structure_solid_cells(bytes) {
-                    let t = piece.rotation.transform(local);
-                    solid.insert([
-                        piece.pos[0] + t[0],
-                        piece.pos[1] + t[1],
-                        piece.pos[2] + t[2],
-                    ]);
-                }
-            }
-            // Seals land after placement: an air fill opens a mated socket (clears
-            // the jigsaw block); a solid fill seals an unused socket.
-            for s in &area.seals {
-                let clear = is_air(&s.block);
-                for cell in region_cells(s.from, s.to) {
-                    if clear {
-                        solid.remove(&cell);
-                    } else {
-                        solid.insert(cell);
-                    }
-                }
-            }
-        }
-        // Gate thresholds are passable (see module docs).
-        for resolved in plan.anchors.values() {
-            if let ResolvedAnchor::Gate { from, to, .. } = resolved {
-                for cell in region_cells(*from, *to) {
-                    solid.remove(&cell);
-                }
-            }
-        }
+        let solid = crate::assembled::assembled_blocks(plan, structures)
+            .into_keys()
+            .collect();
         World { solid }
     }
 

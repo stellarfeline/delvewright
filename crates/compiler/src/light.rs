@@ -26,7 +26,6 @@
 //! `(distance², y, z, x)` — same DSL + seed → byte-identical placements.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::io::Read;
 
 use delvewright_dsl::{AreaLighting, Campaign, Fixture, WorldTime, WorldWeather};
 
@@ -200,45 +199,13 @@ pub struct LightModel {
 }
 
 impl LightModel {
-    /// Build the assembled light model from the plan's placed pieces + seals.
+    /// Build the assembled light model from the shared gravity-settled
+    /// assembled-world model ([`crate::assembled`]): placed pieces, solver seals,
+    /// gate clears, and unsupported falling blocks settled (task #42). Relight
+    /// therefore evaluates opacity/emission over the same world the game assembles,
+    /// so a `sand` floor that fell into the void is air here, not phantom rock.
     pub fn from_plan(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Self {
-        let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
-        for area in &plan.areas {
-            for piece in &area.pieces {
-                let Some(bytes) = structures.get(&piece.structure_file) else {
-                    continue;
-                };
-                for (local, name) in structure_named_cells(bytes) {
-                    let t = piece.rotation.transform(local);
-                    blocks.insert(
-                        [
-                            piece.pos[0] + t[0],
-                            piece.pos[1] + t[1],
-                            piece.pos[2] + t[2],
-                        ],
-                        name,
-                    );
-                }
-            }
-            for s in &area.seals {
-                let clear = is_air(&s.block);
-                for cell in region_cells(s.from, s.to) {
-                    if clear {
-                        blocks.remove(&cell);
-                    } else {
-                        blocks.insert(cell, s.block.clone());
-                    }
-                }
-            }
-        }
-        for resolved in plan.anchors.values() {
-            if let ResolvedAnchor::Gate { from, to, .. } = resolved {
-                for cell in region_cells(*from, *to) {
-                    blocks.remove(&cell);
-                }
-            }
-        }
-        Self::from_blocks(blocks)
+        Self::from_blocks(crate::assembled::assembled_blocks(plan, structures))
     }
 
     /// Build directly from a cell→block map (test entry point; no plan needed).
@@ -873,93 +840,13 @@ fn candidate(
 }
 
 // ---------------------------------------------------------------------------
-// helpers (shared shape with nav)
+// helpers
 // ---------------------------------------------------------------------------
-
-fn is_air(name: &str) -> bool {
-    matches!(
-        name,
-        "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
-    )
-}
 
 fn in_bounds(c: [i32; 3], min: [i32; 3], max: [i32; 3]) -> bool {
     (min[0]..=max[0]).contains(&c[0])
         && (min[1]..=max[1]).contains(&c[1])
         && (min[2]..=max[2]).contains(&c[2])
-}
-
-fn region_cells(a: [i32; 3], b: [i32; 3]) -> impl Iterator<Item = [i32; 3]> {
-    let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
-    let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
-    (lo[1]..=hi[1]).flat_map(move |y| {
-        (lo[2]..=hi[2]).flat_map(move |z| (lo[0]..=hi[0]).map(move |x| [x, y, z]))
-    })
-}
-
-/// Parse a gzipped vanilla structure `.nbt`, returning its non-air block cells as
-/// `(local [x,y,z], block id)`. Mirrors [`crate::nav`]'s solid-cell decode but
-/// keeps block identity for opacity/emission. Unparseable structures contribute
-/// nothing.
-fn structure_named_cells(bytes: &[u8]) -> Vec<([i32; 3], String)> {
-    let mut raw = Vec::new();
-    if flate2::read::GzDecoder::new(bytes)
-        .read_to_end(&mut raw)
-        .is_err()
-    {
-        return Vec::new();
-    }
-    let Ok(fastnbt::Value::Compound(root)) = fastnbt::from_bytes::<fastnbt::Value>(&raw) else {
-        return Vec::new();
-    };
-    let palette: Vec<Option<String>> = match root.get("palette") {
-        Some(fastnbt::Value::List(entries)) => entries
-            .iter()
-            .map(|e| match e {
-                fastnbt::Value::Compound(c) => match c.get("Name") {
-                    Some(fastnbt::Value::String(s)) => Some(s.clone()),
-                    _ => None,
-                },
-                _ => None,
-            })
-            .collect(),
-        _ => return Vec::new(),
-    };
-    let mut out = Vec::new();
-    if let Some(fastnbt::Value::List(blocks)) = root.get("blocks") {
-        for b in blocks {
-            let fastnbt::Value::Compound(b) = b else {
-                continue;
-            };
-            let pos = match b.get("pos") {
-                Some(fastnbt::Value::List(p)) if p.len() == 3 => {
-                    let mut o = [0i32; 3];
-                    let mut ok = true;
-                    for (i, v) in p.iter().enumerate() {
-                        match v {
-                            fastnbt::Value::Int(n) => o[i] = *n,
-                            _ => ok = false,
-                        }
-                    }
-                    if !ok {
-                        continue;
-                    }
-                    o
-                }
-                _ => continue,
-            };
-            let state = match b.get("state") {
-                Some(fastnbt::Value::Int(n)) => *n as usize,
-                _ => continue,
-            };
-            if let Some(Some(name)) = palette.get(state)
-                && !is_air(name)
-            {
-                out.push((pos, name.clone()));
-            }
-        }
-    }
-    out
 }
 
 // ---------------------------------------------------------------------------

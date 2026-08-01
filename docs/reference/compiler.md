@@ -261,6 +261,28 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   only when a walked critical leg exists, so a fully-transported campaign stays
   byte-identical.
 
+### Assembled-world model (shared, gravity-settled)
+
+`crate::assembled` builds the one authoritative cell→block map of the world the
+shipped delve actually assembles — placed prefab structures (`/place template`),
+solver socket seals, gate clears — **then settles gravity-affected blocks**. The
+delve ships into a `the_void` flat world (no natural floor), so a vanilla
+`FallingBlock` (`sand`/`red_sand`/`gravel`/`*_concrete_powder`/anvils/`dragon_egg`)
+placed unsupported by `/place template` immediately falls out of the world and
+leaves air. Settling reproduces this per `(x,z)` column: non-falling blocks are
+immovable supports (stone floats), each falling block drops onto the highest
+support at or below it, and a falling block with no support anywhere below it
+despawns into the void. `pointed_dripstone`/`scaffolding` attach upward / by
+support-distance and are deliberately not settled by the below-support rule (a
+ceiling stalactite must not be mistaken for an unsupported floor block). Both the
+nav occupancy model (`crate::nav::World`) and the relight light model
+(`crate::light::LightModel`) derive from this single settled map, so a `sand`
+floor laid over void is a *hole* in every consumer — DW0311 walkability, DW0312
+wave seating, the relight pass, and the waypoint export — exactly as in game, not
+a phantom floor the model wrongly "proves" solid (task #42). Determinism
+(ADR-0006): fixed placement/seal/gate order, `BTreeMap`-ordered column iteration,
+bottom-up stacking.
+
 ### Nav (compile-time, over the assembled voxel grid)
 
 `move-npc` paths and the critical path are routed by A* over the placed-world
