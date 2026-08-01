@@ -137,6 +137,7 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 | `role` | Enum `quest-giver|flavor`; `vendor`/`boss` reserved → `DW0141`. | 0.2 |
 | `persona{archetype,speech_style,motivation,…,relationships[]}` | Structured; **excluded** from l10n; relationship refs validated in-stage (`DW0112`). | 0.2 |
 | `skin{texture_id,model}` (opt) | Switches body to `minecraft:mannequin`; PNG baked to resourcepack. Missing PNG → `DW0309`; bad/dup id → `DW0190`. | 0.4 |
+| `deferred` (opt, bool) | **Not** summoned at world init; the NPC's body + hitbox appear only when a `spawn-npc` effect fires, at this same `anchor` (the dual of `despawn-npc`). Default `false` = pre-0.6 behavior, byte-identical. Never spawned → `DW0197`; a `talk-to` provably ahead of every spawn → `DW0198`. | 0.6 |
 
 ### Stage 3 — `classes`
 
@@ -181,6 +182,7 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Effect `set-block{anchor,block}` | `setblock` at anchor; base block id validated (`DW0193`). `block` accepts a verbatim blockstate suffix `id[key=value,…]` (v0.6). | 0.4 / state 0.6 |
 | Effect `requires_flags[]` (any effect) | Per-effect AND-gate (v0.6): wraps the effect's command(s) in a per-player `execute if score @s dw.f_<flag> matches 1 run …`. Valid on any `on_objective_complete` / `on_complete` / trigger effect **except** terminal `campaign-complete`; refs resolve like objective flags (`DW0172`). | 0.6 |
 | Effect `despawn-npc{npc}` | Removes NPC + hitbox. | 0.4 |
+| Effect `spawn-npc{npc}` | The dual of `despawn-npc` (v0.6): summons a `deferred` stage-2 NPC — body + interaction hitbox + name display — at its declared anchor, via the **same** `npc_summon_commands` authority world init uses. Idempotent (per-entity tag guards), so a re-fire never doubles a body. Also a dialogue effect. World-global staging → no per-effect `requires_flags`. | 0.6 |
 | Effect `move-npc{npc,to_anchor,speed?}` | A*-planned per-tick tp through walkable space; unroutable → `DW0307`. | 0.4 |
 | Effect `cutscene{path[],seconds}` | Two-camera spectator dolly; clip → `DW0308`. | 0.4 |
 | Effect `set-time{time}` | Instantaneous dimension-global cut (`time set <kw>`); persists (cycle frozen). | 0.5 |
@@ -199,7 +201,8 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | `traps[]` | spec-0011: `{id,at,trigger,effect,lethality?,disarm?,reset?,requires_flags?}`. `at` binds an `anchor/trap` prefab marker (the trigger/hazard cell; its `dispenser` metadata cell holds the payload socket). `trigger` ∈ `pressure-plate`/`tripwire`/`trapped-chest` (all redstone-native; `trapped-chest` = the only player-distinct trigger). `effect` = `{dispense:{item,count}}` (item `DW0341`; a non-`dispense` key e.g. `tnt` is an unknown variant → `DW0100`). `lethality` ∈ `lethal`/`harmful`(default)/`nonlethal`. `disarm{via,sets_flag}` = a reachable affordance that turns the trap off. `reset` ∈ `once`/`rearm`(default). Structural errors `DW0340`; a lethal forced-path trap without discharge `DW0342`. Reserved (`DW0141`) before 0.6. | 0.6 |
 
 Dialogue effects `set-flag` (v0.4), `set-time`/`set-weather` (v0.5),
-`set-checkpoint` (v0.6) and option `requires_flags` mirror the quest forms.
+`set-checkpoint`/`spawn-npc` (v0.6) and option `requires_flags` mirror the quest
+forms.
 Per-effect `requires_flags` is a v0.6 **quests-stage** surface only (dialogue
 effects are not mirrored — a dialogue option's own `requires_flags` already gates
 its whole effect bundle). Under `0.2.0`, all v0.3 verbs/effects are reserved →
@@ -207,9 +210,9 @@ its whole effect bundle). Under `0.2.0`, all v0.3 verbs/effects are reserved →
 (`time`/`weather`/`lighting`, `set-time`/`set-weather`) under pre-0.5, and the
 v0.6 surface (`close-gate`, `damage-players`, `set-checkpoint`,
 `begin-stealth`/`end-stealth`, the `play-sound` effect + `narrate` `style: art`,
-per-effect `requires_flags`, stage-5 `actors` + the staging effects
-`spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, and the `traps[]` section)
-under pre-0.6.
+per-effect `requires_flags`, stage-2 `deferred` + the `spawn-npc` effect, stage-5
+`actors` + the staging effects `spawn`/`despawn`/`move`/`unleash-actor`,
+`sequence`, and the `traps[]` section) under pre-0.6.
 The blockstate suffix on `set-block`/`prop` blocks is a lenient parse of an
 existing field, not version-gated: the base id is registry-checked and the `[…]`
 string is passed to `setblock` verbatim (vanilla validates the property
@@ -270,6 +273,7 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | `damage-players` | `damage @s <amount> <type>` (per-`@s`; default `minecraft:generic`). With `in`: `execute if entity @s[x=…,dx=2·ext,…] run damage @s …` (the stealth-zone box model, so it stays per-`@s` — no double-hit). A generated `v06_damage` PackTest summons a tagged dummy, applies the declared amount+type, and asserts its `Health` strictly dropped. |
 | `set-block` | `setblock` at resolved anchor. |
 | `despawn-npc` | Kills body + interaction hitbox. |
+| `spawn-npc` | `function <ns>:spawn_npc_<npc>` — the generated entrance function, emitted once per **deferred** NPC. Its two lines are the world-init summons, each independently guarded: body by `unless entity @e[tag=dw_npc,tag=dw_npc_<n>]`, hitbox by `unless entity @e[tag=dw_npc_<n>,tag=!dw_npc]` (both carry the id tag, so a single shared guard would let the body's own summon suppress the hitbox). The `npc_summons` PackTest fires each deferred NPC's entrance after `setup_finish` and asserts exactly one body. |
 | `move-npc` | Per-tick tp along A*-planned walkable waypoints (hitbox in lockstep). |
 | `cutscene` | Per player: save gamemode+pos → spectator → alternate `spectate` between two co-located dolly cameras each tick → restore. |
 | `campaign-complete` | `dw.campaign` = 1 (dummy objective, **never on the sidebar** — a raw internal id must not surface to players); broadcast `[Delvewright] complete dw.campaign 1` (dark-gray bot channel, the harness's completion signal); title fanfare. |
@@ -483,6 +487,16 @@ leg's goal is snapped to the nearest standable cell *beside* the NPC — excludi
 the NPC's own cell and any flooded cell — so a shore NPC resolves onto dry footing
 within interaction range, never onto the mannequin or a water tongue.
 
+**Deferred-NPC staging order (`DW0197`/`DW0198`, scope note).** The ordering proof
+is the stage-4 `depends_on` closure (the same machinery `DW0195` uses), taken at DSL
+validation tier — not the compiler's `plan.strict_ancestor_steps`. It therefore
+proves only the **decidable** half: a `talk-to` whose every `spawn-npc` sits in a
+strict DAG *descendant* quest is `DW0198`. Not proven, deliberately: a `spawn-npc`
+fired from an environment trigger, a dialogue option, or the talk-to's own quest —
+none of which has a position on the quest DAG — so those suppress the check rather
+than risk a false positive on legitimate staging. `DW0197` (never spawned at all) is
+total and covers the common defect.
+
 **Waypoint self-check (`DW0314`, task #45):** after routing, every exported
 critical-path waypoint is re-asserted standable in the FINAL world (settled +
 water-flooded + relight fixtures). Since the routes come from A* over that same
@@ -540,7 +554,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0132` | `finale` is not the convergent sink (some quest is not a transitive dependency of finale). |
 | `DW0133` | Non-mandatory quest (`mandatory:false`), reserved until M3. |
 | `DW0140` | Objective `after` cycle. |
-| `DW0141` | Reserved enum value/field for the campaign's `dsl_version` (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: `close-gate`, `damage-players`, `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, and the `traps[]` section). |
+| `DW0141` | Reserved enum value/field for the campaign's `dsl_version` (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: `close-gate`, `damage-players`, `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, stage-2 npc `deferred` + the `spawn-npc` effect, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, and the `traps[]` section). |
 | `DW0142` | Anchor not provided by the area's bound prefab. |
 | `DW0143` | Item id not in the pinned 1.21.11 registry (kit / `collect` / `interact.requires_item` / `give-item`). |
 | `DW0150` | Planned quest (stage 4) has no stage-5 expansion. |
@@ -562,6 +576,8 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0194` | Environment-trigger id malformed/duplicated, or `approach` `range` 0. |
 | `DW0195` | A `talk-to` targets an NPC despawned by a prerequisite quest. |
 | `DW0196` | Area `lighting.min_light` out of range (must be 1..=14). v0.5, spec-0010. |
+| `DW0197` | A stage-2 NPC declares `deferred: true` but **no** `spawn-npc` effect anywhere (quest, trigger, nested timeline, or dialogue) summons it — the NPC never enters the world, so its dialogue tree and any `talk-to` on it are unreachable content. v0.6; the staging dual of `DW0195`. Prescription: add the `spawn-npc` at the entrance beat, or drop `deferred`. (0197/0198 were *reserved* by spec-0011's draft and released when it renumbered to `DW0340`/`DW0341`; no code ever emitted them.) |
+| `DW0198` | A `talk-to` on a `deferred` NPC provably activates before the NPC exists: every `spawn-npc` for it fires in a quest that is a **strict DAG descendant** of the objective's quest. Conservative by construction — a spawn from a trigger, from dialogue, or from the objective's own quest is not DAG-ordered and suppresses the proof rather than risking a false positive (see the gap note below). v0.6. |
 | `DW0320` | `horizon:"ocean"` declared without a `boundary` (an infinite swimmable sea with no return rule). v0.6, spec-0013. Numbered in the 032x world/region family but **validation-tier (exit 1)**, not a DW03x build code. |
 | `DW0321` | `boundary.margin` outside `0..=64`. v0.6, spec-0013. Validation-tier (exit 1). |
 | `DW0340` | Trap declaration structurally invalid (v0.6, spec-0011): a malformed/duplicate `trap/<id>`, an `at`/`disarm.via` that no area's prefab provides, or a `disarm.via` that collides with the trap's own trigger anchor. Renumbered off the spec's stale reserved number (0197). |

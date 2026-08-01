@@ -950,69 +950,16 @@ fn emit_functions(
             p.pos[0], p.pos[1], p.pos[2], p.block
         ));
     }
-    // summon NPCs (villager body + interaction hitbox)
+    // Summon NPCs (body + interaction hitbox) at world init. A `deferred: true`
+    // stage-2 NPC (DSL v0.6) is skipped here — it enters the world only when a
+    // `spawn-npc` effect fires `spawn_npc_<id>`, which runs the very same commands
+    // (`npc_summon_commands`), so a staged character is not a statue standing at
+    // its mark from minute one.
     for npc in &plan.npcs {
-        let area = plan.npc_area(&npc.npc_id).unwrap_or("");
-        let anchor = c
-            .npcs
-            .content
-            .npcs
-            .iter()
-            .find(|n| n.id.as_str() == npc.npc_id)
-            .map(|n| n.anchor.as_str())
-            .unwrap_or("");
-        let (pos, facing) = match plan.anchors.get(&(area.to_string(), anchor.to_string())) {
-            Some(ResolvedAnchor::Point { pos, facing }) => (*pos, facing.as_deref()),
-            _ => ([0, plan::BASE_Y, 0], None),
-        };
-        let dsl_npc = c
-            .npcs
-            .content
-            .npcs
-            .iter()
-            .find(|n| n.id.as_str() == npc.npc_id);
-        let name = dsl_npc.map(|n| n.name.as_str()).unwrap_or("NPC");
-        let base = dsl_npc
-            .map(|n| n.base_entity.as_str())
-            .unwrap_or("minecraft:villager");
-        let yaw = facing_yaw(facing);
-        if let Some(skin) = dsl_npc.and_then(|n| n.skin.as_ref()) {
-            // DSL v0.4 mannequin NPC (spec-0008 §6 / spec-0009). The label is
-            // emitted as `description`, a **text-component SNBT compound**
-            // (`{text:"…"}`) — NOT a stringified-JSON text component
-            // (`'{"text":…}'`), which renders as literal raw JSON above the head on
-            // 1.21.11 (owner-verified). NoAI/PersistenceRequired/VillagerData are
-            // dropped (silently ignored on a mannequin); the interaction hitbox is
-            // unchanged.
-            // `pose:"standing"` is emitted explicitly: a mannequin summoned without
-            // it serializes its pose as `DYING` (a gametest save-teardown warning),
-            // wrong data for a standing NPC. Valid 1.21.11 mannequin poses: standing,
-            // crouching, swimming, fall_flying, sleeping (spec-0009 template).
-            setup.push(format!(
-                "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,pose:\"standing\",Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},Tags:[\"dw_npc\",\"{}\"]}}",
-                pos[0], pos[1], pos[2], skin.texture_id, skin.model.token(),
-                snbt_text_component(name), npc.tag
-            ));
-        } else {
-            // CustomName is a 1.21.11 text component. v0.3+ emits a plain SNBT
-            // string (renders correctly, incl. death messages — M2 fix 1); v0.2
-            // keeps the legacy `'{"text":…}'` form so hello-world / keep-crawl stay
-            // byte-identical.
-            let cname_field = if v03 {
-                snbt_string(name)
-            } else {
-                let cname = json!({ "text": name }).to_string().replace('\'', "\\'");
-                format!("'{cname}'")
-            };
-            setup.push(format!(
-                "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"],CustomName:{},CustomNameVisible:1b,VillagerData:{{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}}}}",
-                pos[0], pos[1], pos[2], npc.tag, cname_field
-            ));
+        if npc_is_deferred(c, &npc.npc_id) {
+            continue;
         }
-        setup.push(format!(
-            "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{}\"]}}",
-            pos[0], pos[1], pos[2], npc.tag
-        ));
+        setup.extend(npc_summon_commands(c, plan, npc, v03));
     }
     // v0.3 collect chests, interact hitboxes/markers and reach markers are NOT
     // placed here. They are placed/summoned when their objective ACTIVATES (see the
@@ -1340,6 +1287,11 @@ fn emit_functions(
             // `set-checkpoint`, spec-0012).
             for (anchor, on_respawn) in &opt.sets_checkpoints {
                 emit_set_checkpoint(plan, anchor, on_respawn, &mut body);
+            }
+            // v0.6: deferred NPCs this option brings into the world (dialogue
+            // `spawn-npc`) — a character walking in mid-conversation.
+            for n in &opt.spawns_npcs {
+                body.push(format!("function {ns}:{}", spawn_npc_fn(n)));
             }
             for obj in &opt.completes {
                 if let Some((qid, _)) = objective_quest(c, obj) {
@@ -1677,6 +1629,7 @@ fn emit_functions(
 
     // v0.4 generated functions: NPC moves, cutscene drivers, trigger effects.
     // Each is empty for a campaign that uses none (byte-identical v0.2/v0.3).
+    fns.extend(spawn_npc_fns(plan));
     fns.extend(movenpc_fns(plan, moves));
     fns.extend(actor_fns(plan, actor_moves));
     fns.extend(sequence_fns(plan));
@@ -1996,6 +1949,9 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
         QuestEffect::Sequence { steps } => {
             body.push(format!("function {ns}:{}", sequence_fn(steps)));
         }
+        QuestEffect::SpawnNpc { npc } => {
+            body.push(format!("function {ns}:{}", spawn_npc_fn(npc.as_str())));
+        }
     }
 }
 
@@ -2290,6 +2246,131 @@ fn anchor_point_any(plan: &Plan, anchor: &str) -> Option<[i32; 3]> {
         }
     }
     None
+}
+
+/// Whether a stage-2 NPC declares `deferred: true` (DSL v0.6) — it is not summoned
+/// at world init and enters only via a `spawn-npc` effect.
+fn npc_is_deferred(c: &delvewright_dsl::Campaign, npc_id: &str) -> bool {
+    c.npcs
+        .content
+        .npcs
+        .iter()
+        .find(|n| n.id.as_str() == npc_id)
+        .map(|n| n.deferred)
+        .unwrap_or(false)
+}
+
+/// The one authority for an NPC's world presence: the `/summon` commands that place
+/// its body (villager re-dress or mannequin) **and** its co-located interaction
+/// hitbox at its declared anchor, with its name display.
+///
+/// Called from exactly two places — the world-init `setup_finish` block (a normal
+/// NPC) and the generated `spawn_npc_<id>` function (a `deferred` NPC, DSL v0.6) —
+/// so a scripted entrance produces byte-for-byte the same entity as an init-time
+/// one. Extracted for that duality; the command text is unchanged from pre-0.6, so
+/// a campaign with no deferred NPC is byte-identical.
+fn npc_summon_commands(
+    c: &delvewright_dsl::Campaign,
+    plan: &Plan,
+    npc: &plan::NpcPlan,
+    v03: bool,
+) -> Vec<String> {
+    let area = plan.npc_area(&npc.npc_id).unwrap_or("");
+    let dsl_npc = c
+        .npcs
+        .content
+        .npcs
+        .iter()
+        .find(|n| n.id.as_str() == npc.npc_id);
+    let anchor = dsl_npc.map(|n| n.anchor.as_str()).unwrap_or("");
+    let (pos, facing) = match plan.anchors.get(&(area.to_string(), anchor.to_string())) {
+        Some(ResolvedAnchor::Point { pos, facing }) => (*pos, facing.as_deref()),
+        _ => ([0, plan::BASE_Y, 0], None),
+    };
+    let name = dsl_npc.map(|n| n.name.as_str()).unwrap_or("NPC");
+    let base = dsl_npc
+        .map(|n| n.base_entity.as_str())
+        .unwrap_or("minecraft:villager");
+    let yaw = facing_yaw(facing);
+    let mut out = Vec::new();
+    if let Some(skin) = dsl_npc.and_then(|n| n.skin.as_ref()) {
+        // DSL v0.4 mannequin NPC (spec-0008 §6 / spec-0009). The label is
+        // emitted as `description`, a **text-component SNBT compound**
+        // (`{text:"…"}`) — NOT a stringified-JSON text component
+        // (`'{"text":…}'`), which renders as literal raw JSON above the head on
+        // 1.21.11 (owner-verified). NoAI/PersistenceRequired/VillagerData are
+        // dropped (silently ignored on a mannequin); the interaction hitbox is
+        // unchanged.
+        // `pose:"standing"` is emitted explicitly: a mannequin summoned without
+        // it serializes its pose as `DYING` (a gametest save-teardown warning),
+        // wrong data for a standing NPC. Valid 1.21.11 mannequin poses: standing,
+        // crouching, swimming, fall_flying, sleeping (spec-0009 template).
+        out.push(format!(
+            "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,pose:\"standing\",Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},Tags:[\"dw_npc\",\"{}\"]}}",
+            pos[0], pos[1], pos[2], skin.texture_id, skin.model.token(),
+            snbt_text_component(name), npc.tag
+        ));
+    } else {
+        // CustomName is a 1.21.11 text component. v0.3+ emits a plain SNBT
+        // string (renders correctly, incl. death messages — M2 fix 1); v0.2
+        // keeps the legacy `'{"text":…}'` form so hello-world / keep-crawl stay
+        // byte-identical.
+        let cname_field = if v03 {
+            snbt_string(name)
+        } else {
+            let cname = json!({ "text": name }).to_string().replace('\'', "\\'");
+            format!("'{cname}'")
+        };
+        out.push(format!(
+            "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"],CustomName:{},CustomNameVisible:1b,VillagerData:{{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}}}}",
+            pos[0], pos[1], pos[2], npc.tag, cname_field
+        ));
+    }
+    out.push(format!(
+        "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{}\"]}}",
+        pos[0], pos[1], pos[2], npc.tag
+    ));
+    out
+}
+
+/// The generated function name for a `spawn-npc` effect (DSL v0.6).
+fn spawn_npc_fn(npc: &str) -> String {
+    format!("spawn_npc_{}", plan::safe_local(npc))
+}
+
+/// `spawn_npc_<id>` functions (DSL v0.6): one per **deferred** stage-2 NPC, the
+/// scripted-entrance dual of `despawn-npc`. Emitted only for deferred NPCs, so a
+/// campaign that declares none is byte-identical to pre-0.6.
+///
+/// Each of the two summons is **independently** idempotent, so a re-fired
+/// `spawn-npc` never doubles an entity. Body and hitbox share the per-NPC id tag,
+/// so the guards discriminate on the body-only `dw_npc` tag: the body is guarded by
+/// `[tag=dw_npc,tag=<id>]`, the hitbox by its negation `[tag=<id>,tag=!dw_npc]` — a
+/// single `unless entity @e[tag=<id>]` guard on both lines would let the body's own
+/// summon suppress the hitbox.
+fn spawn_npc_fns(plan: &Plan) -> Vec<(String, String)> {
+    let c = plan.campaign;
+    let v03 = campaign_is_v03(plan);
+    let mut out = Vec::new();
+    for npc in &plan.npcs {
+        if !npc_is_deferred(c, &npc.npc_id) {
+            continue;
+        }
+        let cmds = npc_summon_commands(c, plan, npc, v03);
+        let body: Vec<String> = cmds
+            .iter()
+            .map(|cmd| {
+                let guard = if cmd.starts_with("summon minecraft:interaction ") {
+                    format!("@e[tag={},tag=!dw_npc]", npc.tag)
+                } else {
+                    format!("@e[tag=dw_npc,tag={}]", npc.tag)
+                };
+                format!("execute unless entity {guard} run {cmd}")
+            })
+            .collect();
+        out.push((spawn_npc_fn(&npc.npc_id), lines(&body)));
+    }
+    out
 }
 
 /// The generated function name for a `move-npc` effect (content-derived key, so
@@ -4930,6 +5011,14 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             b.push(format!("kill @e[tag={}]", npc.tag));
         }
         b.push(format!("function {ns}:setup_finish"));
+        // A `deferred` NPC (DSL v0.6) is deliberately absent after `setup_finish` —
+        // it enters via `spawn-npc`. Fire its entrance here, so this test proves the
+        // deferred path summons exactly the same one body + one hitbox.
+        for npc in &plan.npcs {
+            if npc_is_deferred(c, &npc.npc_id) {
+                b.push(format!("function {ns}:{}", spawn_npc_fn(&npc.npc_id)));
+            }
+        }
         for npc in &plan.npcs {
             // The NPC body carries BOTH `dw_npc` and its unique id tag; the separate
             // interaction hitbox carries only the id tag — so `dw_npc` + id tag

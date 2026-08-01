@@ -318,6 +318,15 @@ pub struct Npc {
     /// Non-skinned NPCs are byte-identical to v0.3.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skin: Option<NpcSkin>,
+    /// Deferred entrance (DSL v0.6): when `true` the NPC is **not** summoned at
+    /// world init — its body and interaction hitbox only appear when a
+    /// [`QuestEffect::SpawnNpc`] fires, at this same `anchor`. The dual of
+    /// `despawn-npc`: a character with a scripted entrance must not stand at its
+    /// mark as a statue from minute one. A deferred NPC that no `spawn-npc` ever
+    /// spawns is unreachable content (`DW0197`). Default `false` = summoned at
+    /// init, byte-identical to pre-0.6.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub deferred: bool,
 }
 
 /// A mannequin NPC's player-model skin (DSL v0.4). The skin PNG ships in the
@@ -518,6 +527,12 @@ pub enum DialogueEffect {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         on_respawn: Vec<QuestEffect>,
     },
+    /// Summons a `deferred` stage-2 NPC (DSL v0.6), mirroring
+    /// [`QuestEffect::SpawnNpc`] — a character who walks in mid-conversation.
+    SpawnNpc {
+        /// The NPC (stage-2 ref) to summon.
+        npc: NpcId,
+    },
 }
 
 impl DialogueEffect {
@@ -532,10 +547,20 @@ impl DialogueEffect {
     }
 
     /// The v0.6 effect name if this dialogue effect is one introduced in DSL v0.6
-    /// (`set-checkpoint`, spec-0012). Reserved (`DW0141`) in an earlier campaign.
+    /// (`set-checkpoint`, spec-0012; `spawn-npc`). Reserved (`DW0141`) in an
+    /// earlier campaign.
     pub fn v06_effect(&self) -> Option<&'static str> {
         match self {
             DialogueEffect::SetCheckpoint { .. } => Some("set-checkpoint"),
+            DialogueEffect::SpawnNpc { .. } => Some("spawn-npc"),
+            _ => None,
+        }
+    }
+
+    /// The NPC id if this is a v0.6 `spawn-npc` dialogue effect.
+    pub fn spawn_npc(&self) -> Option<&NpcId> {
+        match self {
+            DialogueEffect::SpawnNpc { npc } => Some(npc),
             _ => None,
         }
     }
@@ -1614,6 +1639,15 @@ pub enum QuestEffect {
     },
     /// Ends the active stealth beat (DSL v0.6, spec-0014). No-op if none active.
     EndStealth,
+    /// Summons a `deferred` stage-2 NPC (body + interaction hitbox + name display)
+    /// at its declared anchor (DSL v0.6) — the dual of `despawn-npc`, and the
+    /// scripted entrance a staged character needs. Idempotent: spawning an NPC
+    /// already in the world is a no-op. Only meaningful for an NPC declared
+    /// `deferred: true`; a non-deferred NPC is already in the world from init.
+    SpawnNpc {
+        /// The NPC (stage-2 ref) to summon.
+        npc: NpcId,
+    },
     // --- DSL v0.6 actor staging effects (spec-0014) ---
     /// Summons a stage-5 actor's puppet at its anchor (DSL v0.6). Idempotent: a
     /// spawn of an already-present actor is a no-op (re-caging after `unleash`).
@@ -1898,6 +1932,7 @@ impl QuestEffect {
             | QuestEffect::DespawnActor { .. }
             | QuestEffect::MoveActor { .. }
             | QuestEffect::UnleashActor { .. }
+            | QuestEffect::SpawnNpc { .. }
             | QuestEffect::Sequence { .. } => None,
         }
     }
@@ -1947,6 +1982,16 @@ impl QuestEffect {
             QuestEffect::MoveActor { .. } => Some("move-actor"),
             QuestEffect::UnleashActor { .. } => Some("unleash-actor"),
             QuestEffect::Sequence { .. } => Some("sequence"),
+            QuestEffect::SpawnNpc { .. } => Some("spawn-npc"),
+            _ => None,
+        }
+    }
+
+    /// The NPC id if this is a v0.6 `spawn-npc` effect (the dual of
+    /// [`QuestEffect::despawn_npc`]).
+    pub fn spawn_npc(&self) -> Option<&NpcId> {
+        match self {
+            QuestEffect::SpawnNpc { npc } => Some(npc),
             _ => None,
         }
     }
@@ -2177,10 +2222,11 @@ impl QuestEffect {
             // gatable: `campaign-complete` is terminal; `set-checkpoint`
             // (`spawnpoint @a`) / `begin-stealth` / `end-stealth` are party-wide
             // session state; and the actor staging verbs (`spawn-actor` /
-            // `despawn-actor` / `move-actor` / `unleash-actor` / `sequence`) are
-            // world-global staging — none are per-player `@s` effects. Gate these
-            // at the objective / dialogue-option level instead.
+            // `despawn-actor` / `move-actor` / `unleash-actor` / `sequence`) and
+            // `spawn-npc` are world-global staging — none are per-player `@s`
+            // effects. Gate these at the objective / dialogue-option level instead.
             QuestEffect::CampaignComplete
+            | QuestEffect::SpawnNpc { .. }
             | QuestEffect::SetCheckpoint { .. }
             | QuestEffect::BeginStealth { .. }
             | QuestEffect::EndStealth
