@@ -11,6 +11,7 @@
 // NPC first (realism + reach mechanics that some dialogs gate on).
 
 import { createBot, type Bot } from "mineflayer";
+import type { Entity } from "prismarine-entity";
 // mineflayer-pathfinder is CommonJS; import the default and destructure (the only
 // harness dependency added for v0.3 — replaces the naive "face + hold forward"
 // walk so turns/branches in jigsaw layouts are walkable).
@@ -205,6 +206,27 @@ const REACH_POLL_MS = 250;
 const KILL_TIMEOUT_MS = 90_000;
 /** Attack cadence (ms) — roughly the vanilla sword cooldown. */
 const ATTACK_INTERVAL_MS = 400;
+/**
+ * How long (ms) the bot may melee a single target, in range, without it dying before
+ * that target is deemed unkillable and blacklisted (task: bot-kill-hunt). A living
+ * wave mob dies in a few sword swings; an Invulnerable story actor summoned into the
+ * combat area — a `minecraft:warden` posing as Polyphemus, a `minecraft:mannequin`
+ * class-post puppet — never dies, so without this the `nearestEntity` target selection
+ * fixates on it and the wave never "clears" (a 90s timeout). The window is generous
+ * (far longer than any wave mob survives) so a legitimately tanky mob is never
+ * mis-blacklisted; it only ever catches a truly unkillable entity. NOT a threshold on
+ * the kill objective — the wave still requires every real mob dead.
+ */
+const WAVE_UNKILLABLE_MS = 6_000;
+/**
+ * How near the wave anchor (blocks) an entity's last-known position must be, when it
+ * winks out, to count as a bot-inflicted wave kill rather than a chunk unload or a far
+ * despawn. Wave mobs are fought at the anchor and die in melee beside the bot; a mob
+ * vanishing well away from the anchor is not a confirmed kill. Comfortably larger than
+ * the melee envelope, tighter than the cross-area gaps (~64+ blocks) that separate the
+ * wave from Invulnerable actors elsewhere in the delve.
+ */
+const WAVE_KILL_NEAR = 16;
 /**
  * How long (ms) to wait for a scoreboard value to reach its target after a chat
  * command. The datapack acts on the trigger on the next server tick(s); give it a
@@ -814,10 +836,29 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * Slay a wave: go to the wave anchor, then attack the nearest hostile mob in a
-   * loop until none remain (the world is sealed, so the only mobs are the wave)
-   * or the budget runs out. The datapack's kill advancement + countdown complete
-   * the objective when the last mob dies.
+   * Slay a wave: go to the wave anchor, then hunt and kill the wave's mobs until the
+   * required `step.count` are confirmed dead (the primary, objective-semantic signal)
+   * or no eligible wave mob remains, or the budget runs out.
+   *
+   * The delve world is sealed (`spawn_mobs false`), but it is NOT empty of mob-shaped
+   * entities: story actors are summoned as ordinary living mobs — an Invulnerable
+   * `minecraft:warden` posing as the cyclops Polyphemus, `minecraft:mannequin` NPC
+   * puppets at the class posts — and they sit right where combat happens (the surf
+   * wave spawns beside the eurylochus mannequin; the warden waits ~64 blocks off in a
+   * later cave area). `nearestEntity` cannot tell them from a wave mob by shape, and
+   * mineflayer on 1.21.11 cannot read the entity `Tags`/scoreboard that would (the
+   * `KillStep.tag` is informational only). So the bot proves the wave down without
+   * ever attacking — or walking to — a story actor:
+   *   * mannequin NPCs are excluded from targeting outright (see NON_WAVE_ENTITIES);
+   *   * a confirmed KILL is a targeted mob that winks out in melee near the anchor;
+   *     reaching `step.count` clears the wave and returns immediately, so the bot
+   *     never treks off to the distant warden (which would trip later-area triggers);
+   *   * any candidate the bot cannot kill (meleed past {@link WAVE_UNKILLABLE_MS} and
+   *     still alive → Invulnerable) or cannot path to is blacklisted, so the loop
+   *     hunts the next real wave mob instead of fixating on an unkillable one; when no
+   *     eligible wave mob is left, the wave is likewise cleared.
+   * Navigation + assertion only: the datapack's kill advancement + countdown are what
+   * actually complete the objective when the last tagged mob dies.
    */
   async kill(step: KillStep): Promise<void> {
     const bot = this.requireBot();
@@ -831,32 +872,78 @@ export class MineflayerExecutor implements StepExecutor {
       .map((e) => `${e.name ?? "?"}(t=${e.type},k=${(e as { kind?: string }).kind ?? "?"},h=${e.height ?? "?"})`);
     process.stderr.write(`[kill ${step.wave}] nearby(${near.length}): ${near.join(", ") || "none"}\n`);
 
-    const deadline = Date.now() + KILL_TIMEOUT_MS;
-    let emptyStreak = 0;
-    while (Date.now() < deadline) {
-      // Fail fast if a mob killed the bot mid-fight (gap 7) rather than looping.
-      if (this.death) throw this.death;
-      const mob = bot.nearestEntity((e) => isWaveMob(e, bot.entity));
-      if (!mob) {
-        // A sustained absence of wave mobs (world is sealed) → wave cleared.
-        if (++emptyStreak >= 8) return;
-        await delay(REACH_POLL_MS);
-        continue;
+    // Confirmed kills: a mob the bot has attacked in melee that then vanishes near the
+    // wave anchor. Counting these (rather than "no mob-shaped entity remains") is what
+    // lets the step end at `step.count` without walking to a far Invulnerable actor.
+    const anchor = { x: step.pos[0] + 0.5, y: step.pos[1], z: step.pos[2] + 0.5 };
+    const attacked = new Set<number>();
+    let killed = 0;
+    const onGone = (e: Entity): void => {
+      if (!attacked.has(e.id)) return;
+      attacked.delete(e.id);
+      const p = e.position;
+      if (p && Math.hypot(p.x - anchor.x, p.y - anchor.y, p.z - anchor.z) <= WAVE_KILL_NEAR) {
+        killed += 1;
       }
-      emptyStreak = 0;
-      const dist = bot.entity.position.distanceTo(mob.position);
-      if (dist > 3) {
-        await this.walkTo(
-          [Math.floor(mob.position.x), Math.floor(mob.position.y), Math.floor(mob.position.z)],
-          2,
-          `mob ${mob.name ?? "?"}`,
-          step.sneak,
-        );
-      } else {
-        await bot.lookAt(mob.position.offset(0, (mob.height ?? 1) * 0.5, 0), true);
-        bot.attack(mob);
-        await delay(ATTACK_INTERVAL_MS);
+    };
+    bot.on("entityGone", onGone);
+    // Entities the bot has proven it can neither kill nor reach — never re-targeted.
+    const blacklist = new Set<number>();
+    try {
+      const deadline = Date.now() + KILL_TIMEOUT_MS;
+      let emptyStreak = 0;
+      let engagedId: number | undefined;
+      let engagedSince = 0;
+      while (Date.now() < deadline) {
+        // Fail fast if a mob killed the bot mid-fight (gap 7) rather than looping.
+        if (this.death) throw this.death;
+        // The whole wave is confirmed down — done, wherever the bot happens to stand.
+        if (killed >= step.count) return;
+        const mob = bot.nearestEntity((e) => isWaveMob(e, bot.entity) && !blacklist.has(e.id));
+        if (!mob) {
+          // No eligible wave mob remains (every real mob dead; any unkillable actor
+          // blacklisted) → wave cleared.
+          if (++emptyStreak >= 8) return;
+          await delay(REACH_POLL_MS);
+          continue;
+        }
+        emptyStreak = 0;
+        const dist = bot.entity.position.distanceTo(mob.position);
+        if (dist > 3) {
+          engagedId = undefined; // moving; re-establish the melee timer on arrival
+          try {
+            await this.walkTo(
+              [Math.floor(mob.position.x), Math.floor(mob.position.y), Math.floor(mob.position.z)],
+              2,
+              `mob ${mob.name ?? "?"}`,
+              step.sneak,
+            );
+          } catch (err) {
+            if (err instanceof BotDeathError) throw err;
+            // Cannot path to this candidate (wedged in geometry, across a void gap, or
+            // a far Invulnerable actor) — drop it and hunt the next real wave mob
+            // rather than failing the whole step on an unreachable non-target.
+            blacklist.add(mob.id);
+          }
+        } else {
+          if (engagedId !== mob.id) {
+            engagedId = mob.id;
+            engagedSince = Date.now();
+          }
+          attacked.add(mob.id);
+          await bot.lookAt(mob.position.offset(0, (mob.height ?? 1) * 0.5, 0), true);
+          bot.attack(mob);
+          await delay(ATTACK_INTERVAL_MS);
+          // Meleed in range this long and still alive → Invulnerable story actor;
+          // blacklist it so the loop stops fixating and looks for a real wave mob.
+          if (Date.now() - engagedSince >= WAVE_UNKILLABLE_MS) {
+            blacklist.add(mob.id);
+            engagedId = undefined;
+          }
+        }
       }
+    } finally {
+      bot.removeListener("entityGone", onGone);
     }
     throw new Error(
       `kill timed out after ${KILL_TIMEOUT_MS}ms: wave ${step.wave} ` +
@@ -1079,6 +1166,19 @@ function fmt(p: { x: number; y: number; z: number }): string {
 const NON_WAVE_ENTITIES = new Set<string>([
   "player",
   "villager",
+  // Every Delvewright NPC (class-post puppet, quest-giver) is summoned as an
+  // Invulnerable `minecraft:mannequin` (compiler emit.rs — `immovable:1b`,
+  // `Invulnerable:1b`). mineflayer's minecraft-data DOES resolve its name
+  // ("mannequin", type "living", height 1.8), so without this exclusion the kill
+  // loop's nearestEntity(isWaveMob) classifies a mannequin as a slayable wave mob.
+  // When a wave anchor sits next to a class post (the nobodys-cave surf wave spawns
+  // a block from the eurylochus mannequin), the nearest "wave mob" becomes an
+  // Invulnerable mannequin at d<3: the bot attacks it in place forever, never
+  // clearing the wave and never hunting the real remaining drowned that wandered
+  // off — a 90s kill timeout. NPCs are never combat targets, so exclude the whole
+  // entity type; this generalizes to every future mannequin-beside-combat layout
+  // rather than depending on anchor placement.
+  "mannequin",
   "interaction",
   "item",
   "experience_orb",
@@ -1103,7 +1203,7 @@ const NON_WAVE_ENTITIES = new Set<string>([
  * entities). Classified by name (reliable across mineflayer versions) rather than
  * `type`/`kind`, which vary.
  */
-function isWaveMob(e: unknown, self: unknown): boolean {
+export function isWaveMob(e: unknown, self: unknown): boolean {
   if (!e || e === self) return false;
   const ent = e as { name?: string; height?: number };
   const name = ent.name ?? "";

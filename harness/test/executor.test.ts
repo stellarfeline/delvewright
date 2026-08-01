@@ -208,7 +208,7 @@ test("forcedMove resets the pathfinder only on a large cross-area jump", () => {
 
 // --- stall-recovery (task #45) ---------------------------------------------
 
-import { replayLegWithRecovery, type Unstick } from "../src/executor.ts";
+import { isWaveMob, replayLegWithRecovery, type Unstick } from "../src/executor.ts";
 import type { GoalSpec } from "../src/waypoints.ts";
 
 // Record every goto the replay issues, and script per-hop outcomes.
@@ -351,4 +351,32 @@ test("replayLegWithRecovery bounds the physics unstick then fails loudly", async
     /permanently wedged/,
   );
   assert.equal(bursts, 3, "bounded to UNSTICK_ATTEMPTS bursts before failing");
+});
+
+// Wave-mob classification (kill-step target selection). Regression: an Invulnerable
+// `minecraft:mannequin` NPC — mineflayer resolves its name to "mannequin", height
+// 1.8 — must NOT be a wave-mob target. When a wave anchor sits beside a class-post
+// mannequin (nobodys-cave surf wave), misclassifying it fixated the bot on an
+// unkillable puppet at d<3 and timed the kill step out with drowned still alive.
+const SELF = { name: "delve-bot", height: 1.8, position: { x: 0, y: 64, z: 0 } };
+function ent(name: string | undefined, height = 1.8): unknown {
+  return { name, height, position: { x: 1, y: 64, z: 0 } };
+}
+
+test("isWaveMob classifies a living hostile as a wave mob", () => {
+  assert.equal(isWaveMob(ent("drowned", 1.95), SELF), true);
+  assert.equal(isWaveMob(ent("zombie"), SELF), true);
+});
+
+test("isWaveMob never targets an Invulnerable mannequin NPC (regression)", () => {
+  assert.equal(isWaveMob(ent("mannequin", 1.8), SELF), false);
+});
+
+test("isWaveMob excludes NPCs, displays, drops, and the bot itself", () => {
+  for (const name of ["villager", "armor_stand", "interaction", "item", "text_display"]) {
+    assert.equal(isWaveMob(ent(name), SELF), false, `${name} must not be a wave mob`);
+  }
+  assert.equal(isWaveMob(SELF, SELF), false, "the bot is not its own target");
+  assert.equal(isWaveMob(ent(undefined), SELF), false, "an unnamed entity is not a target");
+  assert.equal(isWaveMob(ent("item", 0.25), SELF), false, "a short dropped entity is excluded");
 });
