@@ -147,6 +147,19 @@ pub mod codes {
     pub const NPC_DESPAWNED_REF: &str = "DW0195";
     /// (v0.5) An area `lighting.min_light` is out of the 1..=14 range (spec-0010).
     pub const LIGHTING_RANGE: &str = "DW0196";
+    /// (v0.6) A stage-2 NPC declares `deferred: true` but **no** `spawn-npc` effect
+    /// anywhere in the campaign ever summons it — the NPC never enters the world,
+    /// so its dialogue tree and any `talk-to` on it are unreachable content. The
+    /// NPC-lifecycle dual of [`NPC_DESPAWNED_REF`] / `DW0195`.
+    ///
+    /// (0197/0198 were *reserved* by spec-0011's draft and released when that spec
+    /// renumbered to `DW0340`/`DW0341`; they were never emitted by any code.)
+    pub const NPC_NEVER_SPAWNED: &str = "DW0197";
+    /// (v0.6) A `talk-to` on a `deferred` NPC activates before the NPC can exist:
+    /// every `spawn-npc` for it sits in a quest that is a strict *descendant* of the
+    /// objective's quest on the stage-4 DAG (and none fires from a trigger or
+    /// dialogue), so the objective provably activates on an empty anchor.
+    pub const NPC_SPAWNED_LATE: &str = "DW0198";
 
     /// (v0.6) `horizon: "ocean"` declared without a `boundary` (spec-0013):
     /// validation-tier (exit 1). An infinite swimmable sea with no return rule is

@@ -308,6 +308,8 @@ pub struct OptionPlan {
     /// Checkpoints this option sets (DSL v0.6 dialogue `set-checkpoint`), each
     /// `(anchor, on_respawn)`, in order.
     pub sets_checkpoints: Vec<(String, Vec<QuestEffect>)>,
+    /// Deferred NPCs this option summons (DSL v0.6 dialogue `spawn-npc`), in order.
+    pub spawns_npcs: Vec<String>,
 }
 
 /// A critical-path step (mirrors the amended `critical-path.json` shape).
@@ -967,6 +969,7 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
             let mut sets_time = Vec::new();
             let mut sets_weather = Vec::new();
             let mut sets_checkpoints = Vec::new();
+            let mut spawns_npcs = Vec::new();
             for e in &opt.effects {
                 match e {
                     DialogueEffect::CompleteObjective { objective } => {
@@ -979,6 +982,9 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
                     DialogueEffect::SetWeather { weather } => sets_weather.push(*weather),
                     DialogueEffect::SetCheckpoint { anchor, on_respawn } => {
                         sets_checkpoints.push((anchor.as_str().to_string(), on_respawn.clone()));
+                    }
+                    DialogueEffect::SpawnNpc { npc } => {
+                        spawns_npcs.push(npc.as_str().to_string());
                     }
                 }
             }
@@ -1000,6 +1006,7 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
                 sets_time,
                 sets_weather,
                 sets_checkpoints,
+                spawns_npcs,
             });
         }
     }

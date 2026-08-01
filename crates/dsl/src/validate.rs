@@ -1076,6 +1076,22 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
     }
 
+    // --- Stage 2: `deferred` NPC entrance, gated on the npcs stage. ---
+    if !is_v06(c.npcs.dsl_version.as_str()) {
+        for (i, n) in c.npcs.content.npcs.iter().enumerate() {
+            if n.deferred {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "npcs",
+                    format!("/content/npcs/{i}/deferred"),
+                    "npc `deferred` requires dsl_version 0.6.0 — raise this stage's \
+                     `dsl_version` to 0.6.0, or remove the field"
+                        .to_string(),
+                ));
+            }
+        }
+    }
+
     // --- Stage 6: dialogue effects (spec-0012 `set-checkpoint`; play-sound / art
     //     are quest/trigger-only), gated on the dialogue stage. ---
     if !is_v06(c.dialogue.dsl_version.as_str()) {
@@ -2412,6 +2428,7 @@ fn v04_checks(
 
     // --- despawned-npc references (DW0195) ---
     despawned_ref_check(c, &npc_ids, d);
+    deferred_npc_checks(c, &npc_ids, d);
 }
 
 /// Split a block field into its base id and (optional) blockstate suffix,
@@ -2694,10 +2711,17 @@ fn check_effect_v04(
                 d,
             );
         }
-        QuestEffect::DespawnNpc { npc, .. } | QuestEffect::MoveNpc { npc, .. }
+        // NPC-lifecycle refs. `spawn-npc` (v0.6) joins the v0.4 `despawn-npc`/
+        // `move-npc` family: an unknown npc id is the same `DW0112` dangling ref.
+        QuestEffect::DespawnNpc { npc, .. }
+        | QuestEffect::MoveNpc { npc, .. }
+        | QuestEffect::SpawnNpc { npc }
             if !npc_ids.contains(npc.as_str()) =>
         {
-            let verb = eff.v04_effect().unwrap_or("lifecycle");
+            let verb = eff
+                .v04_effect()
+                .or_else(|| eff.v06_effect())
+                .unwrap_or("lifecycle");
             d.push(Diagnostic::error(
                 codes::DANGLING_REF,
                 "quests",
@@ -2857,6 +2881,174 @@ fn despawned_ref_check(c: &Campaign, _npc_ids: &BTreeSet<&str>, d: &mut Vec<Diag
                     ),
                 ));
             }
+        }
+    }
+}
+
+/// Transitive stage-4 quest ancestors: `q -> {every quest that must complete before
+/// q starts}` (the `depends_on` closure). Acyclicity is guaranteed by `DW0130`.
+fn quest_ancestors(c: &Campaign) -> BTreeMap<&str, BTreeSet<&str>> {
+    let deps: BTreeMap<&str, &Vec<crate::ids::QuestId>> = c
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .map(|q| (q.id.as_str(), &q.depends_on))
+        .collect();
+    let mut out = BTreeMap::new();
+    for q in c.quest_plan.content.quests.iter() {
+        let mut anc: BTreeSet<&str> = BTreeSet::new();
+        let mut stack = vec![q.id.as_str()];
+        while let Some(cur) = stack.pop() {
+            if let Some(ds) = deps.get(cur) {
+                for dep in ds.iter() {
+                    if anc.insert(dep.as_str()) {
+                        stack.push(dep.as_str());
+                    }
+                }
+            }
+        }
+        out.insert(q.id.as_str(), anc);
+    }
+    out
+}
+
+/// `deferred` NPC staging proofs (DSL v0.6), the dual of `despawned_ref_check`:
+///
+/// * `DW0112` — a dialogue `spawn-npc` naming an unknown NPC (the quest-effect form
+///   is covered by `check_effect_v04`).
+/// * `DW0197` — a `deferred: true` NPC that **no** `spawn-npc` anywhere summons: it
+///   never enters the world, so its tree and any `talk-to` on it are dead content.
+/// * `DW0198` — a `talk-to` on a deferred NPC that provably activates before the
+///   NPC exists: every `spawn-npc` for it lives in a quest that is a strict DAG
+///   *descendant* of the objective's quest. Conservative by construction — a spawn
+///   from a trigger, from dialogue, or from the objective's own quest is not
+///   DAG-ordered, so it suppresses the proof rather than risking a false positive.
+fn deferred_npc_checks(c: &Campaign, npc_ids: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
+    use crate::stages::DialogueEffect;
+    let deferred: BTreeSet<&str> = c
+        .npcs
+        .content
+        .npcs
+        .iter()
+        .filter(|n| n.deferred)
+        .map(|n| n.id.as_str())
+        .collect();
+
+    // Spawn sites. `quest_spawns`: npc -> quests whose effects spawn it (DAG-ordered).
+    // `loose_spawns`: npcs spawned from a trigger or a dialogue option — sources with
+    // no position on the quest DAG.
+    let mut quest_spawns: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut loose_spawns: BTreeSet<String> = BTreeSet::new();
+    for q in &c.quests.content.quests {
+        let qid = q.id.as_str().to_string();
+        for_each_effect_deep(q, |_path, eff| {
+            if let Some(npc) = eff.spawn_npc() {
+                quest_spawns
+                    .entry(npc.as_str().to_string())
+                    .or_default()
+                    .insert(qid.clone());
+            }
+        });
+    }
+    for t in &c.quests.content.triggers {
+        for_each_trigger_effect_deep(t, |_path, eff| {
+            if let Some(npc) = eff.spawn_npc() {
+                loose_spawns.insert(npc.as_str().to_string());
+            }
+        });
+    }
+    for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
+        for (j, node) in tree.nodes.iter().enumerate() {
+            for (k, opt) in node.options.iter().enumerate() {
+                for (m, eff) in opt.effects.iter().enumerate() {
+                    let DialogueEffect::SpawnNpc { npc } = eff else {
+                        continue;
+                    };
+                    if !npc_ids.contains(npc.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::DANGLING_REF,
+                            "dialogue",
+                            format!("/content/dialogues/{i}/nodes/{j}/options/{k}/effects/{m}/npc"),
+                            format!(
+                                "dialogue `spawn-npc` references unknown npc `{npc}` — declare it \
+                                 in stage 2 or correct the reference"
+                            ),
+                        ));
+                        continue;
+                    }
+                    loose_spawns.insert(npc.as_str().to_string());
+                }
+            }
+        }
+    }
+
+    // DW0197: deferred but never spawned anywhere.
+    for (i, n) in c.npcs.content.npcs.iter().enumerate() {
+        if !n.deferred {
+            continue;
+        }
+        let id = n.id.as_str();
+        if quest_spawns.contains_key(id) || loose_spawns.contains(id) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            codes::NPC_NEVER_SPAWNED,
+            "npcs",
+            format!("/content/npcs/{i}/deferred"),
+            format!(
+                "npc `{id}` is `deferred: true` but no `spawn-npc` effect anywhere in the \
+                 campaign summons it — it never enters the world, so its dialogue tree (and any \
+                 `talk-to` on it) is unreachable content. Add a `spawn-npc {{ npc: \"{id}\" }}` \
+                 effect at the beat where the character should walk in, or drop `deferred` so it \
+                 stands at its anchor from world init. Do NOT delete the dialogue tree to silence \
+                 this — every stage-2 npc needs one (`DW0152`)"
+            ),
+        ));
+    }
+    if deferred.is_empty() {
+        return;
+    }
+
+    // DW0198: a `talk-to` on a deferred npc whose every spawn site is a strict DAG
+    // descendant of the objective's quest.
+    let ancestors = quest_ancestors(c);
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oi, o) in q.objectives.iter().enumerate() {
+            let Objective::TalkTo { npc, .. } = o else {
+                continue;
+            };
+            let npc = npc.as_str();
+            if !deferred.contains(npc) || loose_spawns.contains(npc) {
+                continue;
+            }
+            let Some(sqs) = quest_spawns.get(npc) else {
+                continue; // never spawned at all — already DW0197
+            };
+            let all_later = sqs.iter().all(|sq| {
+                sq.as_str() != q.id.as_str()
+                    && ancestors
+                        .get(sq.as_str())
+                        .is_some_and(|anc| anc.contains(q.id.as_str()))
+            });
+            if !all_later {
+                continue;
+            }
+            let names: Vec<&str> = sqs.iter().map(|s| s.as_str()).collect();
+            d.push(Diagnostic::error(
+                codes::NPC_SPAWNED_LATE,
+                "quests",
+                format!("/content/quests/{qi}/objectives/{oi}/npc"),
+                format!(
+                    "`talk-to` targets deferred npc `{npc}`, but every `spawn-npc` for it fires \
+                     in a quest that depends on this one (`{}`) — the objective activates on an \
+                     empty anchor and can never complete. Move the `spawn-npc` to this quest or \
+                     one of its prerequisites, or move the `talk-to` after the entrance. Do NOT \
+                     drop `deferred` just to pass this — that puts the character back on stage \
+                     from minute one",
+                    names.join("`, `")
+                ),
+            ));
         }
     }
 }
