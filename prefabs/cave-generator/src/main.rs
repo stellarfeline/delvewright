@@ -1469,11 +1469,113 @@ fn build_shore(spec: &Spec, g: &mut Grid, seed: u64) {
 }
 
 // ---------------------------------------------------------------------------
+// Gravity-floor substrate (task #42)
+// ---------------------------------------------------------------------------
+
+/// Vanilla `FallingBlock`s — mirrors `crate::assembled::is_falling_block` in the
+/// compiler. A cave floor may use these (sand/gravel are a first-class content
+/// need), but in the delve's `the_void` world each one must rest on a solid block
+/// or it despawns (compiler `DW0313`).
+fn is_falling(name: &str) -> bool {
+    let id = name.strip_prefix("minecraft:").unwrap_or(name);
+    matches!(
+        id,
+        "sand" | "red_sand" | "gravel" | "anvil" | "chipped_anvil" | "damaged_anvil" | "dragon_egg"
+    ) || id.ends_with("_concrete_powder")
+}
+
+/// The hidden non-falling substrate laid directly beneath every gravity floor cell
+/// (cave bedrock) so sand/gravel floors survive the void world, exactly as
+/// cave-shore's beach seabed rests its sand on solid rock.
+const SUBSTRATE: &str = "minecraft:stone";
+
+/// Lift a built enclosed piece one block and fill a non-falling [`SUBSTRATE`] cell
+/// directly beneath every gravity block that would otherwise sit over air (task
+/// #42): the visible sand/gravel surface is preserved, but now supported. Applied
+/// uniformly to every enclosed piece, so all socket/anchor Ys shift by the same +1
+/// and pieces still mate; the solver's socket mating absorbs the placement offset,
+/// keeping assembled world coordinates stable. Deterministic (a pure grid map).
+fn with_substrate(g: &Grid) -> Grid {
+    let [sx, sy, sz] = g.size;
+    let mut out = Grid::new([sx, sy + 1, sz]);
+    for x in 0..sx {
+        for y in 0..sy {
+            for z in 0..sz {
+                out.set(x, y + 1, z, g.get(x, y, z).clone());
+            }
+        }
+    }
+    for x in 0..sx {
+        for y in 1..=sy {
+            for z in 0..sz {
+                let falling = matches!(out.get(x, y, z), Cell::Block(name, _) if is_falling(name));
+                if falling && !matches!(out.get(x, y - 1, z), Cell::Block(_, _)) {
+                    out.set(x, y - 1, z, Cell::Block(SUBSTRATE.to_string(), None));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Generator invariant (belt-and-braces, task #42): every gravity block in a
+/// finished piece must rest on a solid cell — a placement over air despawns in the
+/// void world. Fails generation if any remain, automating the pitfall out of
+/// existence at the tooling layer (the compiler's `DW0313` is the authoritative
+/// gate). Returns the count of gravity cells checked (for logging).
+fn assert_no_unsupported_gravity(id: &str, g: &Grid) -> usize {
+    let [sx, sy, sz] = g.size;
+    let mut gravity = 0usize;
+    let mut bad = Vec::new();
+    for x in 0..sx {
+        for y in 0..sy {
+            for z in 0..sz {
+                if matches!(g.get(x, y, z), Cell::Block(name, _) if is_falling(name)) {
+                    gravity += 1;
+                    if !(y > 0 && matches!(g.get(x, y - 1, z), Cell::Block(_, _))) {
+                        bad.push([x, y, z]);
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "cave-generator invariant: piece `{id}` has {} unsupported gravity block(s) over air \
+         (would despawn in the_void — add a substrate): {:?}",
+        bad.len(),
+        &bad[..bad.len().min(8)]
+    );
+    gravity
+}
+
+// ---------------------------------------------------------------------------
 // Emit
 // ---------------------------------------------------------------------------
 
 fn write_piece(out: &Path, spec: &Spec) {
-    let grid = build(spec);
+    let grid0 = build(spec);
+    // Light is measured over the authored walkable floor (y=0 frame), before the
+    // substrate lift, so the estimate is unchanged by the hidden sub-floor.
+    let min_light = if spec.open_air {
+        15
+    } else {
+        estimate_min_floor_light(&grid0)
+    };
+    // Enclosed pieces get a non-falling substrate under every gravity floor cell,
+    // which lifts their local geometry (floor/walls/ceiling/doorways/anchors) by 1
+    // (task #42). The open-air shore already builds a solid seabed under its beach,
+    // so it is left as-authored. `yoff` is applied to the emitted metadata Ys so
+    // sockets/anchors track the shifted grid; the solver's socket mating keeps the
+    // assembled world coordinates stable across the uniform shift.
+    let (grid, yoff) = if spec.open_air {
+        (grid0, 0)
+    } else {
+        (with_substrate(&grid0), 1)
+    };
+    let size = [spec.size[0], spec.size[1] + yoff, spec.size[2]];
+    // Belt-and-braces: no gravity block may sit over air in the shipped piece.
+    assert_no_unsupported_gravity(spec.id, &grid);
     let structure = serialize(&grid);
     let nbt = fastnbt::to_bytes(&structure).expect("nbt");
     let mut gz = GzBuilder::new()
@@ -1483,10 +1585,11 @@ fn write_piece(out: &Path, spec: &Spec) {
     let framed = gz.finish().expect("finish");
     std::fs::write(out.join(format!("{}.nbt", spec.id)), &framed).expect("write nbt");
 
-    // connectors
+    // connectors (jigsaw Y tracks the substrate lift)
     let mut connectors: Vec<ConnectorJson> = Vec::new();
     for &(side, fy) in &spec.doors {
-        let (_, jc) = doorway_cells(spec.size, side, fy);
+        let (_, mut jc) = doorway_cells(spec.size, side, fy);
+        jc[1] += yoff;
         connectors.push(ConnectorJson {
             name: "cave:socket",
             target: "cave:socket",
@@ -1496,7 +1599,7 @@ fn write_piece(out: &Path, spec: &Spec) {
             joint: "aligned",
         });
     }
-    // anchors
+    // anchors (pos/region Y track the substrate lift)
     let anchors: BTreeMap<String, AnchorJson> = spec
         .anchors
         .iter()
@@ -1504,11 +1607,11 @@ fn write_piece(out: &Path, spec: &Spec) {
             (
                 k.to_string(),
                 AnchorJson {
-                    pos: v.pos,
+                    pos: v.pos.map(|p| [p[0], p[1] + yoff, p[2]]),
                     facing: v.facing.clone(),
                     region: v.region.as_ref().map(|r| RegionJson {
-                        from: r.from,
-                        to: r.to,
+                        from: [r.from[0], r.from[1] + yoff, r.from[2]],
+                        to: [r.to[0], r.to[1] + yoff, r.to[2]],
                     }),
                     block: v.block.clone(),
                 },
@@ -1516,12 +1619,11 @@ fn write_piece(out: &Path, spec: &Spec) {
         })
         .collect();
 
-    // derived lighting
-    let (profile, min_light): (&'static str, i32) = if spec.open_air {
-        ("lit", 15)
+    // derived lighting (profile from the pre-lift floor-light estimate above)
+    let profile = if spec.open_air {
+        "lit"
     } else {
-        let m = estimate_min_floor_light(&grid);
-        (classify(m), m)
+        classify(min_light)
     };
     let method = if spec.open_air {
         "open-air cove: sky-lit (block-light estimate not applicable); floor daylight 15"
@@ -1534,7 +1636,7 @@ fn write_piece(out: &Path, spec: &Spec) {
         structure: StructureJson {
             file: format!("{}.nbt", spec.id),
             id: spec.id.into(),
-            size: spec.size,
+            size,
             data_version: DATA_VERSION,
             generator: GENERATOR.into(),
         },
@@ -1684,21 +1786,17 @@ fn specs() -> Vec<Spec> {
             wall_thickness: 2,
             open_air: false,
             lantern_grid: true,
-            // No sheep pen: cave-den is a 9×5×9 room whose 5×5 interior is fully
-            // consumed by the door-to-door critical corridor (both N and S sockets
-            // open on the same x=3..5 columns), so any fenced pen necessarily sits
-            // ON or immediately flanking the proven path — it blew up the mineflayer
-            // A* search space and boxed the wave-spawned flock against the corridor
-            // by the spawn cell (task #37). The flock is a `spawn-wave`, not penned
-            // stock; the representative sheep pen lives in cave-cavern, which has the
-            // room to hold one clear of its path. Removing the fence maze also frees
-            // the wave-spawn cell so the six sheep are not shoved toward the exits.
+            // cave-den is a 9×5×9 room whose 5×5 interior is fully consumed by the
+            // door-to-door critical corridor (both N and S sockets open on the same
+            // x=3..5 columns). It carries NO herd/wave anchor: any wave seated here
+            // has no footing ≥3 Chebyshev off the proven path, so the flock would
+            // wall the 1-wide return corridor (task #42). The flock is hosted by
+            // cave-cavern, which has a genuine side alcove for it. Removing the
+            // `anchor/wave` entirely makes that mistake unrepresentable — a
+            // corridor-only piece exposes no wave seat (owner decision, task #42).
             modules: vec![],
             stair: false,
-            anchors: vec![
-                ("anchor/npc-stand", a_pos([3, 1, 4], Some("north"))),
-                ("anchor/wave", a_pos([3, 1, 4], Some("north"))),
-            ],
+            anchors: vec![("anchor/npc-stand", a_pos([3, 1, 4], Some("north")))],
             rationale: None,
             salt: 8,
         },
@@ -1769,6 +1867,13 @@ fn specs() -> Vec<Spec> {
             anchors: vec![
                 ("anchor/boss", a_pos([6, 1, 10], Some("north"))),
                 ("anchor/objective", a_pos([6, 1, 12], Some("north"))),
+                // The flock's spawn-wave home (task #42, owner decision): a genuine
+                // side alcove in the east of the 13×6×15 cavern. The proven path runs
+                // down the x=6 centreline (north door z0 → boss z10..12); every cell
+                // of the x≥9 strip is ≥3 Chebyshev from that line, and the open cavern
+                // floor there seats ≥6 sheep on supported rock without walling the
+                // boss approach or colliding with the front-west pen (x2..4).
+                ("anchor/wave", a_pos([9, 1, 5], Some("west"))),
             ],
             rationale: Some(
                 "boss cavern lit by scattered hearth-fire: dramatic firelight pockets, dark at the vault edges by design (the Cyclops' hall)",
