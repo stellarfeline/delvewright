@@ -16,6 +16,7 @@
 //! - [`creator`]: the playtest-only creator overlay (`creator-datapack/`, spec-0006).
 
 pub mod analyze;
+pub mod assembled;
 pub mod commands;
 pub mod creator;
 pub mod emit;
