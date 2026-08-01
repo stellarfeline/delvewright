@@ -3,9 +3,12 @@
 //!
 //! ## Coordinate scheme (deterministic)
 //!
-//! Each stage-1 area is placed at origin `[index * AREA_SPACING, BASE_Y, 0]`
-//! (M1 has one area → `[0, 64, 0]`). A prefab's local anchor position resolves to
-//! `origin + local`. All coordinates are integers; no randomness is used in v0.
+//! Each stage-1 area is placed at origin `[index * AREA_SPACING, base_y, 0]`
+//! (M1 has one area → `[0, 64, 0]`). The origin Y is fixed per **horizon**
+//! (spec-0013): `void` → [`BASE_Y`] (64), `ocean` → [`OCEAN_BASE_Y`] (60), which is
+//! `sea_level - island waterline` so authored island water meets the world ocean.
+//! A prefab's local anchor position resolves to `origin + local`. All coordinates
+//! are integers; no randomness is used in v0.
 //!
 //! ## Naming scheme (scoreboard/function-safe)
 //!
@@ -28,8 +31,40 @@ use crate::solver::{self, Facing, Rotation, SealFill, Splitmix64};
 
 /// World-space distance between successive area origins.
 pub const AREA_SPACING: i32 = 256;
-/// The Y of every area origin (structures carry their own floor at local y=0).
+/// The Y of every area origin under `horizon: void` (structures carry their own
+/// floor at local y=0). Also the fallback Y for an unresolvable position.
 pub const BASE_Y: i32 = 64;
+/// Sea level of the `ocean` horizon superflat (spec-0013): the pinned
+/// bedrock/stone/water layer stack (1 + 118 + 8 from the -64 build floor) tops the
+/// water at y=62. Emission pins the same stack in `generator-settings`.
+pub const SEA_LEVEL: i32 = 62;
+/// The island tileset's authored waterline (`prefabs/island-tileset.md`): every
+/// island piece puts its top water block at **local y=2**, with the walkable land
+/// plane one block above it at local y=3.
+///
+/// Assumption (documented in `docs/reference/compiler.md`): the tileset convention
+/// is a *library* constant, not a per-piece one — prefab metadata may *declare* its
+/// waterline (`waterline_y`), which [`check_ocean_waterline`] then verifies against
+/// sea level, but placement itself uses this single convention height so that every
+/// area of an ocean world sits on one deterministic datum.
+pub const ISLAND_WATERLINE_Y: i32 = 2;
+/// The Y of every area origin under `horizon: ocean`: the piece base sits at
+/// `SEA_LEVEL - ISLAND_WATERLINE_Y` (= 60) so the authored waterline (local y=2)
+/// meets the world ocean (y=62) and the walk plane (local y=3) is the vanilla-normal
+/// one block above the sea. Placing ocean areas at [`BASE_Y`] instead floats the
+/// island ~4 blocks above the sea: a player who falls into open water cannot climb
+/// ashore.
+pub const OCEAN_BASE_Y: i32 = SEA_LEVEL - ISLAND_WATERLINE_Y;
+
+/// The area-origin Y for a campaign's horizon (spec-0013). `void` (default/absent)
+/// keeps [`BASE_Y`], so every pre-0.6 / void campaign stays byte-identical; `ocean`
+/// uses [`OCEAN_BASE_Y`] so the island waterline convention holds.
+pub fn base_y(campaign: &Campaign) -> i32 {
+    match campaign.world.content.horizon {
+        Some(delvewright_dsl::Horizon::Ocean) => OCEAN_BASE_Y,
+        _ => BASE_Y,
+    }
+}
 
 /// A resolved `set-checkpoint` effect (DSL v0.6, spec-0012), collected in
 /// deterministic content order so its `index` is a stable, byte-identical id used
@@ -534,6 +569,81 @@ pub const DW_BUILD: &str = "DW0300";
 /// a key chest sealed behind the very gate its key opens.
 pub const DW_GATE_DEADLOCK: &str = "DW0306";
 
+/// `DW0344`: an ocean-horizon world places a piece whose declared waterline does not
+/// land at sea level — the piece floats above the sea or is drowned by it.
+pub const DW_OCEAN_WATERLINE: &str = "DW0344";
+
+/// Ocean-horizon waterline invariant (DW0344). In a `horizon: ocean` world every
+/// placed piece that **declares** a waterline (`waterline_y` in its prefab metadata,
+/// local y of its top authored water block) must land with that waterline at world
+/// [`SEA_LEVEL`] — `piece.pos.y + waterline_y == 62`.
+///
+/// Why this is a hard invariant rather than a style rule: the island convention
+/// (`prefabs/island-tileset.md`) puts the walkable land plane one block above the
+/// waterline, which is the vanilla-normal beach relationship — a player swimming in
+/// open sea can climb ashore, and the authored water reads as one body with the
+/// world ocean. Off by a few blocks and the whole island floats above the sea: the
+/// shore becomes an unclimbable cliff and the authored water pocket hangs in the
+/// air. Nothing downstream (nav, boundary, POV, PackTest) can see this, because
+/// every one of them derives from the very placement that is wrong.
+///
+/// Pieces that declare no `waterline_y` (interior keep/cave pieces, `hello-room`)
+/// are not island pieces and are not checked.
+fn check_ocean_waterline(
+    campaign: &Campaign,
+    areas: &[AreaPlacement],
+    prefabs: &PrefabRegistry,
+) -> Result<(), PlanError> {
+    if !matches!(
+        campaign.world.content.horizon,
+        Some(delvewright_dsl::Horizon::Ocean)
+    ) {
+        return Ok(());
+    }
+    for area in areas {
+        for piece in &area.pieces {
+            let Some(meta) = prefabs.get(&piece.prefab_id) else {
+                continue; // missing metadata is already DW0300 upstream
+            };
+            let Some(w) = meta.waterline_y else {
+                continue;
+            };
+            let placed = piece.pos[1] + w;
+            if placed != SEA_LEVEL {
+                let delta = placed - SEA_LEVEL;
+                let (dir, verb) = if delta > 0 {
+                    (
+                        "above",
+                        "floats above the sea — its shore is an unclimbable cliff",
+                    )
+                } else {
+                    ("below", "is drowned — the walk plane sits under the sea")
+                };
+                return Err(PlanError::new(
+                    DW_OCEAN_WATERLINE,
+                    format!(
+                        "area `{}` places prefab `{}` at y={} with a declared waterline of local \
+                         y={w}, putting its waterline at world y={placed} — {} blocks {dir} the \
+                         ocean sea level (y={SEA_LEVEL}). The piece {verb}. Prefab metadata and \
+                         placement disagree about the island datum: either declare the waterline \
+                         the piece really authors (`waterline_y` in `{}.json`, the local y of its \
+                         top water block — the island tileset convention is {ISLAND_WATERLINE_Y}), \
+                         or rebuild the piece against that convention. Ocean areas are placed at \
+                         y={OCEAN_BASE_Y} (= sea level - {ISLAND_WATERLINE_Y}); a piece with a \
+                         different waterline cannot share that datum",
+                        area.area_id,
+                        piece.prefab_id,
+                        piece.pos[1],
+                        delta.abs(),
+                        meta.structure.id,
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Inter-area transport map: objective id → absolute teleport target (see
 /// [`Plan::transport`]).
 pub type TransportMap = BTreeMap<String, [i32; 3]>;
@@ -551,9 +661,12 @@ impl<'a> Plan<'a> {
         // marker that declares one, keyed like `anchors`. Empty for a campaign with no
         // trap hardware.
         let mut dispenser_cells: BTreeMap<(String, String), [i32; 3]> = BTreeMap::new();
+        // Origin Y is a per-horizon datum (spec-0013): void keeps 64, ocean drops to
+        // sea_level-2 so the island waterline convention holds.
+        let base_y = base_y(campaign);
         for (i, area) in campaign.world.content.areas.iter().enumerate() {
             let area_id = area.id.as_str().to_string();
-            let origin = [i as i32 * AREA_SPACING, BASE_Y, 0];
+            let origin = [i as i32 * AREA_SPACING, base_y, 0];
 
             let placement = if let Some(prefab) = &area.prefab {
                 // Single-prefab area (the M1 degenerate assembly): one piece at
@@ -673,6 +786,9 @@ impl<'a> Plan<'a> {
         for area in &areas {
             check_gate_reachability(campaign, &area.area_id, &area.pieces, prefabs)?;
         }
+
+        // ---- ocean waterline invariant (DW0344) ----
+        check_ocean_waterline(campaign, &areas, prefabs)?;
 
         // ---- classes ----
         let classes = campaign

@@ -118,6 +118,15 @@ pub struct PrefabMeta {
     pub structure: StructureMeta,
     /// Named anchors, keyed by DSL anchor name (`spawn`, `anchor/…`).
     pub anchors: BTreeMap<String, AnchorMeta>,
+    /// The local y of this piece's **top authored water block** — its waterline —
+    /// for open-air island pieces built to the `prefabs/island-tileset.md`
+    /// convention (waterline local y=2, walk plane local y=3). Consumed by the
+    /// ocean-horizon placement invariant (`DW0344`, `plan::check_ocean_waterline`):
+    /// in a `horizon: ocean` world the declared waterline must land at world sea
+    /// level. Absent for pieces that author no sea (interiors, keep/cave tilesets),
+    /// which are then not checked.
+    #[serde(default)]
+    pub waterline_y: Option<i32>,
     /// keep-socket-v1 connectors (jigsaw sockets). Empty for single-piece prefabs
     /// (e.g. `hello-room`); the layout solver (`crate::solver`) mates these when
     /// assembling a `prefab_pool` area (M2 task #9). Optional so single-piece

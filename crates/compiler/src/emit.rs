@@ -5249,8 +5249,8 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // Horizon (DSL v0.6, spec-0013). `void` (default/absent) keeps the empty-layer
     // superflat + `the_void` biome, byte-identical to v0.5. `ocean` swaps in a
     // pinned bedrock/stone/water superflat: from the -64 build floor, 1+118+8
-    // layers top the water at y=62 (= sea level), so areas at y=64+ read as
-    // islands. No structures (generate-structures=false) or mobs (gamerule
+    // layers top the water at y=62 (= sea level); areas are placed on that datum
+    // (`plan::OCEAN_BASE_Y` = 60) so island pieces read as land ringed by the sea. No structures (generate-structures=false) or mobs (gamerule
     // spawn_mobs false); the sea is pure backdrop. The string is a fixed literal,
     // so both horizons stay deterministic (ADR-0006).
     let ocean = matches!(

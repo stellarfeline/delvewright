@@ -67,7 +67,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 4 | l10n sidecar coverage | `dsl::validate_l10n` | `DW0180`/`DW0181` (exit 1) |
 | 5 | Analyze (deep quest/dialogue reachability) | `compiler::analyze` | `DW02xx` (exit 2) |
 | 6 | Solve jigsaw layout (per `prefab_pool` area, from seed) | `compiler::solver` | `DW030x` (exit 3) |
-| 7 | Assemble world model (placed pieces → voxel grid) | `compiler::plan` | `DW030x` (exit 3) |
+| 7 | Assemble world model (placed pieces → voxel grid; ocean sea-level datum check) | `compiler::plan` | `DW030x`/`DW0344` (exit 3) |
 | 8 | Assembled-light + relight (measure, place fixtures) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
 | 9 | Nav checks (A* `move-npc`/`move-actor` (footprint-aware), cutscene clip, critical-path walkability — incl. relight fixtures + water flood; talk-to endpoint snap; waypoint self-check; POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone + trap completability proofs) | `compiler::nav` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0325`/`DW0327`/`DW0342`/`DW0724` (exit 3; `DW0342` → exit 2) |
 | 10 | Emit (datapack, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
@@ -125,12 +125,12 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 | `seed` (u64) | Sole downstream randomness (layout PRNG). | 0.1 |
 | `target_minutes` | Informational (pacing). | 0.1 |
 | `languages[]` (opt) | BCP-47 codes; `en` implicit/never listed; drives l10n coverage + `--lang`. | 0.3 i18n |
-| `areas[]` | 1..N. Each binds **exactly one** of `prefab` or `prefab_pool`+`pieces{min,max}` (else `DW0160`). Area origin = `[i·256, 64, 0]`. | 0.1 / pool 0.2 |
+| `areas[]` | 1..N. Each binds **exactly one** of `prefab` or `prefab_pool`+`pieces{min,max}` (else `DW0160`). Area origin = `[i·256, base_y, 0]`, where `base_y` is the **horizon datum**: `void` → 64, `ocean` → 60 (see `horizon`). | 0.1 / pool 0.2 |
 | `areas[].lighting {fixture,min_light}` (opt) | spec-0010: relight pass guarantees `min_light` (1..=14, default 7; `DW0196` out of range) over reachable walkable cells by placing `fixture` (`torch`/`lantern`/`campfire`/`shroomlight`), else `DW0211`. | 0.5 |
 | `areas[].mitigation` (opt) | `night-vision` — the first-class darkness declaration (v0.6). The compiler emits a self-rescheduling **1 s (20t)** `night_vision_tick` that runs `effect give @a[<this area's placed bounds>] minecraft:night_vision 12 0 true` (amplifier 0, particles hidden). 12 s ≫ vanilla's 10 s wind-down, so the remaining duration never drops below 11 s and the effect never blinks; a player who leaves the area keeps it ≤ 12 s. Independent of `lighting`. This declaration is the **sole** `DW0210` night-vision mitigation. | 0.6 |
 | `time` (opt) | `day`/`noon`/`night`/`midnight` (default `noon`). Dimension-global initial state, emitted in the sealing baseline (`time set <kw>`). | 0.5 |
 | `weather` (opt) | `clear`/`rain`/`thunder` (default `clear`; `clear` emits nothing — byte-identical to pre-0.5). Dimension-global, emitted after sealing (`weather <kw>`). Rain/thunder attenuate the assembled-light sky term. | 0.5 |
-| `horizon` (opt) | spec-0013: `void` (default/absent, byte-identical to v0.5) or `ocean` — a pinned bedrock/stone/water superflat (sea level y=62; areas at y=64+ read as islands), no structures/mobs. Drives `generator-settings`. | 0.6 |
+| `horizon` (opt) | spec-0013: `void` (default/absent, byte-identical to v0.5) or `ocean` — a pinned bedrock/stone/water superflat (sea level y=62), no structures/mobs. Drives `generator-settings` **and the area-origin datum**: ocean areas are placed at y=60 = `sea_level − 2`, so an island piece's authored waterline (local y=2) meets the world ocean and its walk plane (local y=3) is the vanilla-normal one block above the sea. Enforced by `DW0344`. | 0.6 |
 | `boundary {margin?,message?}` (opt) | spec-0013: declares a **derived** playable region (union of final placed-piece AABBs, inflated horizontally by `margin` (`0..=64`, default 16; else `DW0321`), unbounded up, floor = lowest placed block − 8). A 1s clock returns any player outside it to the last checkpoint (`dw:cp`) with an actionbar `message` (l10n `world.boundary.message`, English default when absent) + a soft sound; no damage, no item loss. `horizon:"ocean"` without a `boundary` = `DW0320`. | 0.6 |
 
 ### Stage 2 — `npcs` (casting sheets, stationary)
@@ -362,9 +362,31 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 - `horizon:"ocean"` (v0.6, spec-0013) swaps `generator-settings` for a pinned
   superflat `{"biome":"minecraft:ocean","layers":[bedrock×1, stone×118,
   water×8]}`: from the −64 build floor the top water block lands at **y=62** (sea
-  level), so areas at y=64+ read as islands. Still no structures/mobs
-  (`generate-structures=false` + gamerule `spawn_mobs false`). `void`/absent is
-  byte-identical to v0.5.
+  level). Still no structures/mobs (`generate-structures=false` + gamerule
+  `spawn_mobs false`). `void`/absent is byte-identical to v0.5.
+- **Sea-level datum (ocean).** An ocean world places its areas at **y=60**
+  (`plan::OCEAN_BASE_Y` = `SEA_LEVEL − ISLAND_WATERLINE_Y`), not at the void
+  datum 64. The island tileset (`prefabs/island-tileset.md`) authors every piece
+  with its waterline — the top authored water block — at **local y=2** and its
+  walkable land plane at local y=3; placing the base at `sea_level−2` makes the
+  authored water one body with the world ocean and puts the shore exactly one
+  block above the sea, the vanilla-normal beach a swimming player can climb.
+  Placed at 64 instead, the whole island floats ~4 blocks above the sea: the
+  authored water pocket hangs in the air and open water becomes an inescapable
+  moat. *Assumption:* the waterline height is a **library** constant, not a
+  per-piece one — placement uses the single tileset convention (2) so every area
+  of an ocean world shares one datum, and prefab metadata's optional
+  `waterline_y` is a *declaration checked against* that datum (`DW0344`), never
+  an input that moves it. Everything downstream (nav/critical path, boundary
+  region, checkpoint storage, POV shots, PackTests) derives from placement and
+  simply follows the new Y. The water-flood model is unaffected: it seeds only
+  from authored `minecraft:water` cells inside placed pieces and never climbs,
+  so the walk plane one block above the waterline stays dry by construction —
+  the world ocean is backdrop, not a flood source.
+- Prefab metadata may declare **`waterline_y`** (optional, integer, local y of
+  the piece's top authored water block). Island-tileset pieces declare `2`;
+  pieces that author no sea (keep/cave interiors, `hello-room`) omit it and are
+  not checked. Consumed only by `DW0344`.
 - `boundary` (v0.6, spec-0013) emits, in `setup_finish`: a `dw:region bounds`
   storage mirror (readable region contract), a `dw:cp pos` init to the spawn cell
   (shared with spec-0012 checkpoints — the last-checkpoint mirror the return
@@ -704,6 +726,7 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0327` | A `begin-stealth` (spec-0014) zone is unstandable, or unreachable from the player's position at the beat that activates the stealth check — a guaranteed-unwinnable stealth beat. The message names the zone and prescribes placing it over reachable floor / within walkable reach of the activating beat. |
 | `DW0329` | A `sequence` effect is nested inside another `sequence` (directly, or reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse (spec-0014). Validation-tier (exit 1), `dsl::validate`. Flatten the inner steps into the outer timeline (shift their `at_ticks`). |
 | `DW0342` | A **lethal** trap (spec-0011) whose trigger cell lies on the forced critical path with no discharge — not avoidable (the trigger cell is a required path cell), not survivable (`rearm`, so a respawn walk-back re-triggers it → soft-loop), and not disarmable (no disarm affordance reachable before it, over the world with the trap cell blocked). The player is provably killed or soft-looped. **Analysis-tier: exit 2**, like `DW0312` — a content-design mistake, not a geometry defect; the message names the trap and prescribes moving it off the path, setting `reset: once`, or adding a reachable `disarm`. Renumbered off the spec's stale reserved number (0314 — since taken by the waypoint self-check). |
+| `DW0344` | In a `horizon: ocean` world, a placed piece whose prefab metadata declares `waterline_y` does not land that waterline at sea level (`piece.y + waterline_y ≠ 62`) — the piece floats above the sea (its shore an unclimbable cliff, its authored water pocket hanging in the air) or is drowned under it. Build-tier (exit 3), `compiler::plan`, checked after placement. Nothing downstream can catch this: nav, boundary, POV and PackTest all derive from the very placement that is wrong, so a mis-datumed island validates green and ships unplayable. The message names the area, prefab, placed y and the signed offset, and prescribes correcting the declared `waterline_y` (the local y of the piece's top water block; the island convention is 2) or rebuilding the piece against the convention — ocean areas are placed at y=60 and a piece with a different waterline cannot share that datum. Pieces declaring no `waterline_y` author no sea and are not checked. |
 
 ### DW07xx — workspace tooling (spec-0007; **not `delvec`**)
 

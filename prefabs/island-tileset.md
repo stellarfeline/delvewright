@@ -13,16 +13,26 @@ contiguous walkable island (design brief §1, §5).
 
 ## Island convention (shared — greenfield/mountain align to this)
 
-The world horizon is `ocean` (spec-0013): a superflat with **sea level y=62**;
-areas sit at y=64+ so land reads as islands. Every island piece authors its own
-local geometry against these fixed local heights:
+The world horizon is `ocean` (spec-0013): a superflat with **sea level y=62**.
+The compiler places every area of an ocean world with its base at **y=60**
+(`sea_level - 2`), the datum this convention assumes — so the piece's walk plane
+(local y=3) lands at world y=63, one block above the sea, exactly like a vanilla
+beach. Every island piece authors its own local geometry against these fixed
+local heights:
 
 | local y | meaning |
 | ------- | ------- |
 | `0`     | solid base (sand/gravel substrate + seabed) — never air under a beach |
 | `1..2`  | sand beach body (dry land) **or** sea water column |
-| `2`     | **waterline** — the top water block; place the piece base at world `sea_level-2` (y=60) and the authored water meets the world ocean seamlessly |
+| `2`     | **waterline** — the top water block; with the piece base at world `sea_level-2` (y=60) the authored water meets the world ocean seamlessly |
 | `3`     | **walkable land plane** — one block ABOVE the waterline |
+
+Every piece declares this waterline in its metadata as **`waterline_y: 2`**, and
+the compiler *enforces* that it lands at sea level when the area is placed
+(`DW0344`). A piece built to a different datum is a build error, not a subtle
+in-world defect: a mis-datumed island validates green — nav, boundary, POV and
+PackTests all derive from placement — and ships as an island floating above an
+inescapable sea.
 
 **Why the walk plane is one above the waterline.** The compiler flood
 (`crates/compiler/src/assembled.rs`) is a conservative superset of vanilla water
