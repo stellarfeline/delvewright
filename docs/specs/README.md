@@ -19,4 +19,5 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0008](spec-0008-dsl-v0.4.md) | DSL v0.4 — expressiveness (dialogue state, props, narration, live threats, presentation) | Approved |
 | [spec-0009](spec-0009-npc-skins.md) | NPC skin pipeline — creation-first, resource-pack delivery | Approved |
 | [spec-0010](spec-0010-assembled-relight.md) | Assembled-world lighting, deterministic relight, declared time & weather | Implemented |
-| [spec-0011](spec-0011-traps.md) | Traps — lethal & non-lethal environmental hazards | Proposed |
+| [spec-0011](spec-0011-traps.md) | Traps — lethal & non-lethal environmental hazards | Approved |
+| [spec-0012](spec-0012-checkpoints.md) | Checkpoints (respawn anchors) | Proposed |

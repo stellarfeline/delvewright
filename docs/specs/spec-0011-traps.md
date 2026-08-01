@@ -1,6 +1,7 @@
 # spec-0011 — Traps (lethal & non-lethal environmental hazards)
 
-- **Status**: Proposed (task #43, owner-initiated 2026-07-31)
+- **Status**: Approved (task #43, owner-initiated 2026-07-31; open decisions
+  resolved by owner in conversation, 2026-07-31)
 - **Owner framing**: "我们的DSL要给陷阱留出空间…这些应该作为预制件还是应该
   有其他的实现方式?" — should traps be prefabs or something else?
 - **Answer (this spec)**: a **three-layer hybrid**, mirroring the existing
@@ -200,20 +201,19 @@ honored).
 - Block-power polling for quest state (hack; excluded).
 - Look-at / break-attempt triggers (no vanilla primitive; same exclusion as
   spec-0008 §7).
-- Per-area checkpoint respawn / respawn anchors (a separate feature — see owner
-  decision 2).
+- Per-area checkpoint respawn / respawn anchors — split out as spec-0012
+  (owner decision 2).
 - Trap "balance" tuning beyond `lethality` + payload; randomized/timed traps.
 
-## Resolved by owner (genuine open decisions)
+## Resolved by owner (2026-07-31, in conversation)
 
-1. **Lethal traps on the *forced* critical path** — allow them (gated by the
-   survivable/disarmable obligations) or restrict lethal traps to optional/branch
-   areas and keep the critical path **avoidance-only**? A philosophy call about
-   how punishing a delve should be given respawn-to-entrance.
-2. **Respawn model** — trap death currently returns the player to the *delve
-   entrance* (world spawn). Accept that ("a trap resets your run"), or does trap
-   death motivate a **checkpoint / respawn-anchor** feature (separate spec)? This
-   decision bounds how deep a lethal trap can sit.
-3. **Dispenser payload ownership** — payload authored in the **DSL** (compiler
-   fills the prefab dispenser; recommended, mirrors `collect`) vs baked into the
-   prefab (fixed hazard identity). This spec assumes DSL-authored; confirm.
+1. **Lethal traps ARE allowed on the forced critical path**, gated by the hard
+   proof obligations: every critical-path trigger cell must discharge
+   avoidable OR survivable OR disarmable, else DW0313. Restricting lethal traps
+   to branch areas was rejected — maximum expressive space, enforced by proof.
+2. **Checkpoint / respawn-anchor feature approved as its own spec**
+   (spec-0012, drafted alongside this spec; implementation may lag). Trap
+   depth is therefore NOT bounded by respawn-to-entrance; until spec-0012 is
+   implemented, the survivability proof must assume entrance respawn.
+3. **Dispenser payload is DSL-authored** (compiler fills the prefab dispenser,
+   mirroring `collect` item syntax). Prefab-baked payloads rejected.
