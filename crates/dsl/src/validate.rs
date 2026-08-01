@@ -1355,20 +1355,12 @@ fn for_each_effect(q: &crate::stages::Quest, mut f: impl FnMut(String, &QuestEff
 // DSL v0.6 — scripted actors + staging effects (spec-0014)
 // ---------------------------------------------------------------------------
 
-/// Recursively visit every effect in `effs`, descending into `sequence` steps and
-/// `move-actor` `on_arrive` bundles.
+/// Recursively visit every effect in `effs`, descending into every nested effect
+/// list ([`QuestEffect::nested_effect_lists`]: `sequence` steps, `set-checkpoint`
+/// `on_respawn`, `begin-stealth` `on_caught`, `move-actor` `on_arrive`).
 fn walk_effects_deep(effs: &[QuestEffect], f: &mut dyn FnMut(&QuestEffect)) {
     for e in effs {
-        f(e);
-        match e {
-            QuestEffect::Sequence { steps } => {
-                for s in steps {
-                    walk_effects_deep(&s.effects, f);
-                }
-            }
-            QuestEffect::MoveActor { on_arrive, .. } => walk_effects_deep(on_arrive, f),
-            _ => {}
-        }
+        e.visit_deep(f);
     }
 }
 
@@ -1907,24 +1899,32 @@ fn v03_checks(
     // needed before the reference checks below).
     let mut declared_flags: BTreeSet<&str> = BTreeSet::new();
     let mut spawned_waves: BTreeSet<&str> = BTreeSet::new();
+    // A `set-flag`/`spawn-wave` produces its flag/wave from anywhere it can fire —
+    // including nested in a `sequence` step or an `on_respawn`/`on_caught`/
+    // `on_arrive` bundle — so the producer scan descends the whole effect tree
+    // (`visit_deep`). A shallow scan spuriously reported a nested `set-flag`'s flag
+    // as never-produced (`DW0172`).
     for q in &quests.quests {
         let effs = q
             .on_objective_complete
             .values()
             .flatten()
-            .chain(q.on_complete.iter());
+            .chain(&q.on_complete);
         for eff in effs {
-            if let Some(f) = eff.set_flag() {
-                declared_flags.insert(f.as_str());
-            }
-            if let Some(w) = eff.spawn_wave() {
-                spawned_waves.insert(w.as_str());
-            }
+            eff.visit_deep(&mut |e| {
+                if let Some(f) = e.set_flag() {
+                    declared_flags.insert(f.as_str());
+                }
+                if let Some(w) = e.spawn_wave() {
+                    spawned_waves.insert(w.as_str());
+                }
+            });
         }
     }
     // v0.4: flags/waves may also come from dialogue `set-flag` effects and
     // environment-trigger effects. Empty for v0.2/v0.3 campaigns (no such
-    // constructs), so their flag resolution is unchanged.
+    // constructs), so their flag resolution is unchanged. Dialogue effects are a
+    // flat list (no nesting), so a direct scan suffices there.
     for tree in &c.dialogue.content.dialogues {
         for node in &tree.nodes {
             for opt in &node.options {
@@ -1938,12 +1938,14 @@ fn v03_checks(
     }
     for t in &quests.triggers {
         for eff in &t.effects {
-            if let Some(f) = eff.set_flag() {
-                declared_flags.insert(f.as_str());
-            }
-            if let Some(w) = eff.spawn_wave() {
-                spawned_waves.insert(w.as_str());
-            }
+            eff.visit_deep(&mut |e| {
+                if let Some(f) = e.set_flag() {
+                    declared_flags.insert(f.as_str());
+                }
+                if let Some(w) = e.spawn_wave() {
+                    spawned_waves.insert(w.as_str());
+                }
+            });
         }
     }
 

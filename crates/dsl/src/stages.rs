@@ -1885,6 +1885,38 @@ impl QuestEffect {
         }
     }
 
+    /// The effect lists nested one level inside this effect (DSL v0.6): a
+    /// `sequence`'s per-step effects (in step order), a `set-checkpoint`'s
+    /// `on_respawn`, a `begin-stealth`'s `on_caught`, and a `move-actor`'s
+    /// `on_arrive`. Empty for a leaf effect.
+    ///
+    /// This is the **single authority** on effect nesting. Every deep traversal —
+    /// the flag/wave producer scans, the checkpoint/stealth collector, the l10n
+    /// string inventory, and emission — walks the tree through it (see
+    /// [`Self::visit_deep`]), so a new nesting site is picked up everywhere at
+    /// once and no walker can silently miss a list (the class of bug where a
+    /// `set-flag`/`set-checkpoint` nested in a `sequence` was skipped).
+    pub fn nested_effect_lists(&self) -> Vec<&[QuestEffect]> {
+        match self {
+            QuestEffect::Sequence { steps } => steps.iter().map(|s| s.effects.as_slice()).collect(),
+            QuestEffect::SetCheckpoint { on_respawn, .. } => vec![on_respawn.as_slice()],
+            QuestEffect::BeginStealth { on_caught, .. } => vec![on_caught.as_slice()],
+            QuestEffect::MoveActor { on_arrive, .. } => vec![on_arrive.as_slice()],
+            _ => Vec::new(),
+        }
+    }
+
+    /// Visit `self` and every transitively nested effect (depth-first, pre-order),
+    /// descending through [`Self::nested_effect_lists`].
+    pub fn visit_deep<'a>(&'a self, f: &mut dyn FnMut(&'a QuestEffect)) {
+        f(self);
+        for list in self.nested_effect_lists() {
+            for e in list {
+                e.visit_deep(f);
+            }
+        }
+    }
+
     /// `true` if this is a `narrate` carrying the v0.6 `art` style (reserved
     /// `DW0141` under a pre-0.6 campaign; glyph-checked `DW0328`).
     pub fn narrate_art(&self) -> bool {
