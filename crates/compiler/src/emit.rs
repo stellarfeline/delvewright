@@ -1314,7 +1314,7 @@ fn emit_functions(
                 body.extend(completion_cleanup(o));
             }
             for eff in objective_effects(c, oid) {
-                emit_quest_effect(plan, eff, &mut body);
+                emit_gated_effect(plan, eff, &mut body);
             }
             // Inter-area transport: if completing this objective moves the player
             // into a different area on the critical path, teleport them to that
@@ -1357,7 +1357,7 @@ fn emit_functions(
             quest_score(q.id.as_str())
         ));
         for eff in &q.on_complete {
-            emit_quest_effect(plan, eff, &mut done);
+            emit_gated_effect(plan, eff, &mut done);
         }
         // activate quests triggered by this quest's completion
         for dep in &c.quests.content.quests {
@@ -1682,11 +1682,35 @@ fn check_wave_spawns(plan: &Plan) -> Result<(), BuildFailure> {
     Ok(())
 }
 
+/// Emit a quest effect, wrapping every command it produces in a per-player flag
+/// guard when the effect declares `requires_flags` (DSL v0.6). The guard is
+/// `execute if score @s dw.f_<flag> matches 1 [… per flag] run <command>`. These
+/// effects already run in per-player context (`complete_<obj>` and `trig_<id>`
+/// are entered `as @a`/`@s`), so `@s` resolves to the acting player. An ungated
+/// effect (empty `requires_flags`) is emitted verbatim — byte-identical to the
+/// pre-0.6 output, preserving determinism for every existing campaign.
+fn emit_gated_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
+    let flags = eff.requires_flags();
+    if flags.is_empty() {
+        emit_quest_effect(plan, eff, body);
+        return;
+    }
+    let mut inner: Vec<String> = Vec::new();
+    emit_quest_effect(plan, eff, &mut inner);
+    let guard: String = flags
+        .iter()
+        .map(|f| format!("if score @s {} matches 1 ", plan::flag_score(f.as_str())))
+        .collect();
+    for line in inner {
+        body.push(format!("execute {guard}run {line}"));
+    }
+}
+
 /// Emit a quest effect's commands into `body`.
 fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
     let ns = &plan.namespace;
     match eff {
-        QuestEffect::OpenGate { anchor } => {
+        QuestEffect::OpenGate { anchor, .. } => {
             // Find the gate anchor across areas (first match).
             for ((_, name), resolved) in &plan.anchors {
                 if name == anchor.as_str()
@@ -1703,35 +1727,39 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
         QuestEffect::CampaignComplete => {
             body.push(format!("function {ns}:campaign_complete"));
         }
-        QuestEffect::GiveItem { item, count, name } => {
+        QuestEffect::GiveItem {
+            item, count, name, ..
+        } => {
             let comp = match name {
                 Some(n) => format!("[custom_name={}]", json!({ "text": n, "italic": false })),
                 None => String::new(),
             };
             body.push(format!("give @s {item}{comp} {count}"));
         }
-        QuestEffect::SetFlag { flag } => {
+        QuestEffect::SetFlag { flag, .. } => {
             body.push(format!(
                 "scoreboard players set @s {} 1",
                 plan::flag_score(flag.as_str())
             ));
         }
-        QuestEffect::SpawnWave { wave } => {
+        QuestEffect::SpawnWave { wave, .. } => {
             body.push(format!(
                 "function {ns}:spawn_{}",
                 plan::safe_local(wave.as_str())
             ));
         }
         // --- DSL v0.4 effects ---
-        QuestEffect::Narrate { text, style, sound } => {
+        QuestEffect::Narrate {
+            text, style, sound, ..
+        } => {
             emit_narrate(text, *style, sound.as_deref(), body);
         }
-        QuestEffect::SetBlock { anchor, block } => {
+        QuestEffect::SetBlock { anchor, block, .. } => {
             if let Some(pos) = anchor_point_any(plan, anchor.as_str()) {
                 body.push(format!("setblock {} {} {} {block}", pos[0], pos[1], pos[2]));
             }
         }
-        QuestEffect::DespawnNpc { npc } => {
+        QuestEffect::DespawnNpc { npc, .. } => {
             // Removes both the body and the interaction hitbox — both carry the
             // per-npc id tag (spec-0008 §5).
             body.push(format!(
@@ -1745,7 +1773,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
                 movenpc_fn(npc.as_str(), to_anchor.as_str())
             ));
         }
-        QuestEffect::Cutscene { path, seconds } => {
+        QuestEffect::Cutscene { path, seconds, .. } => {
             body.push(format!("function {ns}:{}", cutscene_fn(path, *seconds)));
         }
         // --- DSL v0.5 effects (spec-0010) ---
@@ -1753,10 +1781,10 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
         // environment sealing (`advance_time`/`advance_weather false`), so the set
         // state persists until the next cut. No selector: `/time set` and
         // `/weather` act on the whole dimension.
-        QuestEffect::SetTime { time } => {
+        QuestEffect::SetTime { time, .. } => {
             body.push(format!("time set {}", time.token()));
         }
-        QuestEffect::SetWeather { weather } => {
+        QuestEffect::SetWeather { weather, .. } => {
             body.push(format!("weather {}", weather.token()));
         }
     }
@@ -1926,7 +1954,7 @@ fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for eff in all_campaign_effects(plan.campaign) {
-        let QuestEffect::Cutscene { path, seconds } = eff else {
+        let QuestEffect::Cutscene { path, seconds, .. } = eff else {
             continue;
         };
         // `start` = the function emit_quest_effect calls (`cs_<bare>`); `bare` is
@@ -2129,7 +2157,7 @@ fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
         }
         let mut effs: Vec<String> = Vec::new();
         for e in &t.effects {
-            emit_quest_effect(plan, e, &mut effs);
+            emit_gated_effect(plan, e, &mut effs);
         }
         let sel = flag_scores_selector(&t.requires_flags);
         for line in effs {

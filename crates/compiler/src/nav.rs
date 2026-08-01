@@ -550,6 +550,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
             npc,
             to_anchor,
             speed,
+            ..
         } = eff
         else {
             continue;

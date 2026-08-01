@@ -138,3 +138,165 @@ fn v06_void_horizon_needs_no_boundary() {
         "explicit void horizon needs no boundary: {diags:#?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// v0.6 per-effect `requires_flags` gate + blockstate suffix (task #55)
+// ---------------------------------------------------------------------------
+
+/// Build a full campaign with a custom stage-5 `quests` document (0.6.0), reusing
+/// the valid hello-world documents for every other stage.
+fn campaign_with_quests(quests: &str) -> RawCampaign {
+    RawCampaign {
+        world: common::read_valid("world.json"),
+        npcs: common::read_valid("npcs.json"),
+        classes: common::read_valid("classes.json"),
+        quest_plan: common::read_valid("quest-plan.json"),
+        quests: quests.to_string(),
+        dialogue: common::read_valid("dialogue.json"),
+    }
+}
+
+/// A 0.6.0 quests document: an `open-gate` effect gated on a flag the same
+/// objective sets first (the happy path for per-effect `requires_flags`).
+const QUESTS_V06_GATED_EFFECT: &str = r#"{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"] }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [
+            { "type": "set-flag", "flag": "flag/opened" },
+            { "type": "open-gate", "anchor": "anchor/door", "requires_flags": ["flag/opened"] }
+          ]
+        },
+        "on_complete": [ { "type": "campaign-complete" } ]
+      }
+    ]
+  }
+}"#;
+
+/// A per-effect `requires_flags` that references a flag no `set-flag` produces.
+const QUESTS_V06_GATED_EFFECT_UNKNOWN_FLAG: &str = r#"{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"] }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [
+            { "type": "open-gate", "anchor": "anchor/door", "requires_flags": ["flag/never-set"] }
+          ]
+        },
+        "on_complete": [ { "type": "campaign-complete" } ]
+      }
+    ]
+  }
+}"#;
+
+/// A 0.6.0 quests document placing a block that carries a vanilla blockstate.
+const QUESTS_V06_BLOCKSTATE: &str = r#"{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"] }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [
+            { "type": "set-block", "anchor": "anchor/door", "block": "minecraft:water[level=0]" }
+          ]
+        },
+        "on_complete": [ { "type": "campaign-complete" } ]
+      }
+    ]
+  }
+}"#;
+
+/// A per-effect flag gate that resolves validates clean under 0.6.0.
+#[test]
+fn v06_effect_requires_flags_validates_clean() {
+    let diags = check_campaign(&campaign_with_quests(QUESTS_V06_GATED_EFFECT));
+    assert!(
+        diags.is_empty(),
+        "a resolved per-effect requires_flags must validate clean at 0.6.0: {diags:#?}"
+    );
+}
+
+/// The same gated effect under a pre-0.6 quests stage is reserved -> `DW0141`.
+#[test]
+fn v06_effect_requires_flags_reserved_before_0_6() {
+    let pre = QUESTS_V06_GATED_EFFECT.replacen("\"0.6.0\"", "\"0.5.0\"", 1);
+    let diags = check_campaign(&campaign_with_quests(&pre));
+    assert!(
+        diags.iter().any(|d| d.code == "DW0141"),
+        "per-effect requires_flags must be reserved under 0.5.0 (DW0141): {diags:#?}"
+    );
+}
+
+/// A per-effect `requires_flags` referencing an unproduced flag is `DW0172`.
+#[test]
+fn v06_effect_requires_flags_unknown_is_dw0172() {
+    let diags = check_campaign(&campaign_with_quests(QUESTS_V06_GATED_EFFECT_UNKNOWN_FLAG));
+    assert!(
+        diags.iter().any(|d| d.code == "DW0172"),
+        "an unproduced effect requires_flags must be DW0172: {diags:#?}"
+    );
+}
+
+/// A block field carrying a well-formed vanilla blockstate validates clean.
+#[test]
+fn v06_blockstate_suffix_validates_clean() {
+    let diags = check_campaign(&campaign_with_quests(QUESTS_V06_BLOCKSTATE));
+    assert!(
+        diags.is_empty(),
+        "a well-formed blockstate suffix must validate clean: {diags:#?}"
+    );
+}
+
+/// A malformed blockstate suffix reuses the invalid-block diagnostic `DW0193`.
+#[test]
+fn v06_malformed_blockstate_is_dw0193() {
+    let bad =
+        QUESTS_V06_BLOCKSTATE.replacen("minecraft:water[level=0]", "minecraft:water[level=0", 1);
+    let diags = check_campaign(&campaign_with_quests(&bad));
+    assert!(
+        diags.iter().any(|d| d.code == "DW0193"),
+        "an unbalanced blockstate suffix must be DW0193: {diags:#?}"
+    );
+}
+
+/// An unknown base id with a well-formed state suffix is still `DW0193`.
+#[test]
+fn v06_blockstate_base_id_still_registry_checked() {
+    let bad = QUESTS_V06_BLOCKSTATE.replacen(
+        "minecraft:water[level=0]",
+        "minecraft:not_a_block[level=0]",
+        1,
+    );
+    let diags = check_campaign(&campaign_with_quests(&bad));
+    assert!(
+        diags.iter().any(|d| d.code == "DW0193"),
+        "an unknown base id must still be DW0193 even with a valid state: {diags:#?}"
+    );
+}

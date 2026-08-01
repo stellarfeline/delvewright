@@ -1,0 +1,21 @@
+{
+  "dsl_version": "0.2.0",
+  "campaign_id": "hello-world",
+  "stage": "quest-plan",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "goal": "Get the Keeper to open the door and leave the keep.",
+        "area": "area/keep",
+        "npcs": [
+          "npc/keeper"
+        ],
+        "depends_on": [],
+        "mandatory": true,
+        "act": 1
+      }
+    ],
+    "finale": "quest/open-the-door"
+  }
+}

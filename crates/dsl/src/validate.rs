@@ -871,13 +871,56 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v06(c, d);
 }
 
-/// DSL v0.6 reserved-feature gating + validation (spec-0013): the stage-1
-/// `horizon` and `boundary` world fields are rejected with `DW0141` in a
-/// pre-0.6.0 campaign (both default to absent, so a v0.5 campaign that uses
-/// neither is byte-identical). Under a v0.6 campaign they are validated:
-/// `horizon: "ocean"` requires a `boundary` (`DW0320`), and `boundary.margin`
-/// must lie in `0..=64` (`DW0321`).
+/// DSL v0.6 reserved-feature gating + validation (spec-0013 + task #55): the
+/// stage-1 `horizon`/`boundary` world fields (gated on the world stage) and the
+/// per-effect `requires_flags` flag gate (gated on the quests stage) are each
+/// rejected with `DW0141` before 0.6.0. All default to absent/empty, so a v0.5
+/// campaign that uses none is byte-identical. Under a v0.6 campaign the world
+/// fields are validated: `horizon: "ocean"` requires a `boundary` (`DW0320`),
+/// and `boundary.margin` must lie in `0..=64` (`DW0321`).
 fn reserved_v06(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    reserved_v06_world(c, d);
+    reserved_v06_effect_flags(c, d);
+}
+
+/// Per-effect `requires_flags` (task #55) is a v0.6 quests-stage surface: any
+/// quest effect (`on_objective_complete` / `on_complete`) or environment-trigger
+/// effect that carries a non-empty `requires_flags` under a pre-0.6 quests stage
+/// is reserved (`DW0141`). `campaign-complete` cannot carry the field at all.
+fn reserved_v06_effect_flags(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    if is_v06(c.quests.dsl_version.as_str()) {
+        return;
+    }
+    let msg = "effect `requires_flags` (per-effect flag gating) requires dsl_version 0.6.0 — raise \
+               this stage's `dsl_version` to 0.6.0, or remove the field";
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        for_each_effect(q, |path, eff| {
+            if !eff.requires_flags().is_empty() {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("/content/quests/{i}/{path}/requires_flags"),
+                    msg.to_string(),
+                ));
+            }
+        });
+    }
+    for (i, t) in c.quests.content.triggers.iter().enumerate() {
+        for (m, eff) in t.effects.iter().enumerate() {
+            if !eff.requires_flags().is_empty() {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("/content/triggers/{i}/effects/{m}/requires_flags"),
+                    msg.to_string(),
+                ));
+            }
+        }
+    }
+}
+
+/// Stage-1 `horizon`/`boundary` gating + validation (spec-0013).
+fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
     use crate::stages::Horizon;
 
     if !is_v06(c.world.dsl_version.as_str()) {
@@ -1671,7 +1714,43 @@ fn v03_checks(
                     ),
                 ));
             }
+            // v0.6: per-effect `requires_flags` must resolve to a produced flag,
+            // mirroring the objective/trigger `requires_flags` check (DW0172).
+            for (n, f) in eff.requires_flags().iter().enumerate() {
+                if !declared_flags.contains(f.as_str()) {
+                    d.push(Diagnostic::error(
+                        codes::FLAG_UNKNOWN,
+                        "quests",
+                        format!("/content/quests/{i}/{path}/requires_flags/{n}"),
+                        format!(
+                            "effect `requires_flags` references flag `{f}`, which no `set-flag` \
+                             effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
+                             earlier, or correct the flag name"
+                        ),
+                    ));
+                }
+            }
         });
+    }
+
+    // v0.6: environment-trigger effect `requires_flags` resolution (DW0172).
+    for (i, t) in quests.triggers.iter().enumerate() {
+        for (m, eff) in t.effects.iter().enumerate() {
+            for (n, f) in eff.requires_flags().iter().enumerate() {
+                if !declared_flags.contains(f.as_str()) {
+                    d.push(Diagnostic::error(
+                        codes::FLAG_UNKNOWN,
+                        "quests",
+                        format!("/content/triggers/{i}/effects/{m}/requires_flags/{n}"),
+                        format!(
+                            "effect `requires_flags` references flag `{f}`, which no `set-flag` \
+                             effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
+                             earlier, or correct the flag name"
+                        ),
+                    ));
+                }
+            }
+        }
     }
 }
 
@@ -1810,19 +1889,15 @@ fn v04_checks(
     // --- block ids: interact props + set-block effects (quest + trigger) ---
     for (i, q) in quests.quests.iter().enumerate() {
         for (j, o) in q.objectives.iter().enumerate() {
-            if let Some(prop) = o.prop()
-                && !blocks.contains(&prop.block)
-            {
-                d.push(Diagnostic::error(
-                    codes::BLOCK_UNKNOWN,
-                    "quests",
+            if let Some(prop) = o.prop() {
+                check_block_field(
+                    blocks,
+                    &prop.block,
                     format!("/content/quests/{i}/objectives/{j}/prop/block"),
-                    format!(
-                        "`interact.prop` block `{}` is not a known 1.21.11 block id — use a valid \
-                         namespaced block id (e.g. `minecraft:lever`)",
-                        prop.block
-                    ),
-                ));
+                    "interact.prop",
+                    "minecraft:lever",
+                    d,
+                );
             }
         }
         for_each_effect(q, |path, eff| {
@@ -1920,6 +1995,89 @@ fn v04_checks(
     despawned_ref_check(c, &npc_ids, d);
 }
 
+/// Split a block field into its base id and (optional) blockstate suffix,
+/// validating the suffix's syntax (DSL v0.6, task #55). Returns the base id to
+/// check against the block registry; `Err(reason)` when a `[...]` suffix is
+/// present but malformed (unbalanced brackets, empty, or a token that is not a
+/// lowercase `key=value`). A well-formed state string is passed through verbatim
+/// to `setblock` — vanilla validates the property names/values against the
+/// block's own state definition, so the compiler only guards the surface syntax.
+fn split_blockstate(block: &str) -> Result<&str, String> {
+    let Some(open) = block.find('[') else {
+        return Ok(block);
+    };
+    let rest = &block[open..];
+    if !rest.ends_with(']') {
+        return Err(format!(
+            "malformed blockstate in `{block}` — the `[...]` suffix must close with `]` \
+             (e.g. `minecraft:grindstone[face=floor]`)"
+        ));
+    }
+    let inner = &rest[1..rest.len() - 1];
+    if inner.trim().is_empty() {
+        return Err(format!(
+            "malformed blockstate in `{block}` — the `[...]` suffix is empty; drop the brackets or \
+             add a `key=value` property"
+        ));
+    }
+    let is_token = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_')
+    };
+    for prop in inner.split(',') {
+        let mut kv = prop.splitn(2, '=');
+        let key = kv.next().unwrap_or("").trim();
+        match kv.next().map(str::trim) {
+            Some(val) if is_token(key) && is_token(val) => {}
+            _ => {
+                return Err(format!(
+                    "malformed blockstate in `{block}` — each property must be `key=value` with \
+                     lowercase `[a-z0-9_]` tokens (e.g. `face=floor`)"
+                ));
+            }
+        }
+    }
+    Ok(&block[..open])
+}
+
+/// Validate a block field (interact prop / set-block) allowing an optional
+/// verbatim blockstate suffix (DSL v0.6). The base id must be in the block
+/// registry (`DW0193`); a malformed `[...]` suffix reuses `DW0193` with a clear
+/// message. Always a quests-stage diagnostic.
+fn check_block_field(
+    blocks: &dyn BlockRegistry,
+    block: &str,
+    path: String,
+    kind: &str,
+    example: &str,
+    d: &mut Vec<Diagnostic>,
+) {
+    match split_blockstate(block) {
+        Ok(base) => {
+            if !blocks.contains(base) {
+                d.push(Diagnostic::error(
+                    codes::BLOCK_UNKNOWN,
+                    "quests",
+                    path,
+                    format!(
+                        "`{kind}` block `{block}` is not a known 1.21.11 block id — use a valid \
+                         namespaced block id (e.g. `{example}`)"
+                    ),
+                ));
+            }
+        }
+        Err(reason) => {
+            d.push(Diagnostic::error(
+                codes::BLOCK_UNKNOWN,
+                "quests",
+                path,
+                reason,
+            ));
+        }
+    }
+}
+
 /// Validate a v0.4-relevant [`QuestEffect`]'s refs: `set-block` block id
 /// (`DW0193`), `despawn-npc`/`move-npc` npc ids (`DW0112`), `move-npc` speed
 /// positivity. Item/wave/flag refs are covered by the shared v0.3 checks.
@@ -1933,19 +2091,16 @@ fn check_effect_v04(
 ) {
     match eff {
         QuestEffect::SetBlock { block, .. } => {
-            if !blocks.contains(block) {
-                d.push(Diagnostic::error(
-                    codes::BLOCK_UNKNOWN,
-                    "quests",
-                    format!("{base_path}/block"),
-                    format!(
-                        "`set-block` block `{block}` is not a known 1.21.11 block id — use a \
-                         valid namespaced block id (e.g. `minecraft:air`)"
-                    ),
-                ));
-            }
+            check_block_field(
+                blocks,
+                block,
+                format!("{base_path}/block"),
+                "set-block",
+                "minecraft:air",
+                d,
+            );
         }
-        QuestEffect::DespawnNpc { npc } | QuestEffect::MoveNpc { npc, .. }
+        QuestEffect::DespawnNpc { npc, .. } | QuestEffect::MoveNpc { npc, .. }
             if !npc_ids.contains(npc.as_str()) =>
         {
             let verb = eff.v04_effect().unwrap_or("lifecycle");

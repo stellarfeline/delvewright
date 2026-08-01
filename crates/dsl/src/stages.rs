@@ -1100,8 +1100,13 @@ pub enum QuestEffect {
     OpenGate {
         /// The gate anchor to open.
         anchor: AnchorId,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
-    /// Marks the campaign complete (final advancement + credits).
+    /// Marks the campaign complete (final advancement + credits). Terminal — not
+    /// flag-gatable (gating the campaign's own completion is a deadlock footgun),
+    /// so this variant carries no `requires_flags`.
     CampaignComplete,
     /// Gives the player an item (v0.3).
     GiveItem {
@@ -1112,16 +1117,25 @@ pub enum QuestEffect {
         /// Optional display name (DSL v0.4), matching [`KitItem::name`].
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Sets a campaign flag, enabling flag-gated objectives (v0.3).
     SetFlag {
         /// The flag to set.
         flag: FlagId,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Spawns a stage-5 wave's mobs at its anchor (v0.3).
     SpawnWave {
         /// The wave (stage-5 `waves` ref) to spawn.
         wave: WaveId,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Narrates a player-visible line (DSL v0.4, spec-0008 §3). `text` enters the
     /// l10n key inventory like any player-visible string.
@@ -1134,19 +1148,30 @@ pub enum QuestEffect {
         /// Optional sound id played alongside the line.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sound: Option<String>,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Sets a block at an anchor (DSL v0.4, spec-0008 §2). General form of a prop
-    /// placement. Block id validated against the pinned 1.21.11 block registry.
+    /// placement. Block id validated against the pinned 1.21.11 block registry;
+    /// a vanilla blockstate suffix (`minecraft:grindstone[face=floor]`) is
+    /// accepted and passed through verbatim (DSL v0.6).
     SetBlock {
         /// The anchor to place the block at.
         anchor: AnchorId,
         /// Vanilla block id to place.
         block: String,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Despawns an NPC and its interaction hitbox (DSL v0.4, spec-0008 §5).
     DespawnNpc {
         /// The NPC (stage-2 ref) to remove.
         npc: NpcId,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Moves an NPC (and its interaction hitbox in lockstep) to an anchor (DSL
     /// v0.4, spec-0008 §5 + addendum). The compiler plans a **collision-safe walked
@@ -1161,6 +1186,9 @@ pub enum QuestEffect {
         /// Optional travel speed in blocks/tick (defaults to ~0.15).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         speed: Option<f64>,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Plays a scripted camera cutscene (DSL v0.4 addendum). Per player: save
     /// gamemode+position, spectator, then dolly two co-located cameras along a
@@ -1174,6 +1202,9 @@ pub enum QuestEffect {
         path: Vec<CameraWaypoint>,
         /// Cutscene duration in seconds.
         seconds: u32,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Cuts the dimension-global world time to a new state (DSL v0.5, spec-0010).
     /// Instantaneous (vanilla has no gradual transition); the state persists
@@ -1181,12 +1212,18 @@ pub enum QuestEffect {
     SetTime {
         /// The time state to cut to.
         time: WorldTime,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Cuts the dimension-global weather to a new state (DSL v0.5, spec-0010).
     /// Instantaneous; persists because the weather cycle is frozen by sealing.
     SetWeather {
         /// The weather state to cut to.
         weather: WorldWeather,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
 }
 
@@ -1234,7 +1271,7 @@ impl QuestEffect {
     /// The gate anchor if this is `open-gate`.
     pub fn open_gate_anchor(&self) -> Option<&AnchorId> {
         match self {
-            QuestEffect::OpenGate { anchor } => Some(anchor),
+            QuestEffect::OpenGate { anchor, .. } => Some(anchor),
             _ => None,
         }
     }
@@ -1242,7 +1279,7 @@ impl QuestEffect {
     /// The wave id if this is `spawn-wave` (v0.3).
     pub fn spawn_wave(&self) -> Option<&WaveId> {
         match self {
-            QuestEffect::SpawnWave { wave } => Some(wave),
+            QuestEffect::SpawnWave { wave, .. } => Some(wave),
             _ => None,
         }
     }
@@ -1250,7 +1287,7 @@ impl QuestEffect {
     /// The flag id if this is `set-flag` (v0.3).
     pub fn set_flag(&self) -> Option<&FlagId> {
         match self {
-            QuestEffect::SetFlag { flag } => Some(flag),
+            QuestEffect::SetFlag { flag, .. } => Some(flag),
             _ => None,
         }
     }
@@ -1271,7 +1308,7 @@ impl QuestEffect {
     /// The `set-block` block id if this is a v0.4 `set-block` effect.
     pub fn set_block(&self) -> Option<(&AnchorId, &str)> {
         match self {
-            QuestEffect::SetBlock { anchor, block } => Some((anchor, block.as_str())),
+            QuestEffect::SetBlock { anchor, block, .. } => Some((anchor, block.as_str())),
             _ => None,
         }
     }
@@ -1279,7 +1316,7 @@ impl QuestEffect {
     /// The NPC id if this is a v0.4 `despawn-npc` effect.
     pub fn despawn_npc(&self) -> Option<&NpcId> {
         match self {
-            QuestEffect::DespawnNpc { npc } => Some(npc),
+            QuestEffect::DespawnNpc { npc, .. } => Some(npc),
             _ => None,
         }
     }
@@ -1341,7 +1378,7 @@ impl QuestEffect {
     /// The target time if this is a v0.5 `set-time` effect.
     pub fn set_time(&self) -> Option<WorldTime> {
         match self {
-            QuestEffect::SetTime { time } => Some(*time),
+            QuestEffect::SetTime { time, .. } => Some(*time),
             _ => None,
         }
     }
@@ -1349,8 +1386,31 @@ impl QuestEffect {
     /// The target weather if this is a v0.5 `set-weather` effect.
     pub fn set_weather(&self) -> Option<WorldWeather> {
         match self {
-            QuestEffect::SetWeather { weather } => Some(*weather),
+            QuestEffect::SetWeather { weather, .. } => Some(*weather),
             _ => None,
+        }
+    }
+
+    /// The per-effect flag gate (DSL v0.6): flags that must ALL be set (per
+    /// player) for this effect to fire. Empty for an ungated effect and for the
+    /// terminal `campaign-complete` (which is never gatable). Emission wraps a
+    /// gated effect's commands in a per-player `execute if score @s dw.f_<flag>
+    /// matches 1` guard; a pre-0.6 campaign that gates any effect is rejected
+    /// (`DW0141`).
+    pub fn requires_flags(&self) -> &[FlagId] {
+        match self {
+            QuestEffect::OpenGate { requires_flags, .. }
+            | QuestEffect::GiveItem { requires_flags, .. }
+            | QuestEffect::SetFlag { requires_flags, .. }
+            | QuestEffect::SpawnWave { requires_flags, .. }
+            | QuestEffect::Narrate { requires_flags, .. }
+            | QuestEffect::SetBlock { requires_flags, .. }
+            | QuestEffect::DespawnNpc { requires_flags, .. }
+            | QuestEffect::MoveNpc { requires_flags, .. }
+            | QuestEffect::Cutscene { requires_flags, .. }
+            | QuestEffect::SetTime { requires_flags, .. }
+            | QuestEffect::SetWeather { requires_flags, .. } => requires_flags,
+            QuestEffect::CampaignComplete => &[],
         }
     }
 }
