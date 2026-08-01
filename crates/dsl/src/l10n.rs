@@ -252,46 +252,90 @@ pub struct ArtNarrate {
 /// a fully-covered sidecar.
 pub fn art_narrates(c: &Campaign) -> Vec<ArtNarrate> {
     let mut out = Vec::new();
+    each_effect_ref(c, &mut |path, keybase, eff| {
+        if let Some(text) = eff.narrate_art_text() {
+            out.push(ArtNarrate {
+                path: format!("{path}/text"),
+                key: format!("{keybase}.narrate"),
+                text: text.to_string(),
+            });
+        }
+    });
+    out
+}
+
+/// Visit every quest/trigger effect — **top-level and every transitively-nested**
+/// one (a `sequence` step, an `on_respawn`/`on_caught`/`on_arrive` bundle) — in the
+/// fixed inventory order, invoking `f(path, keybase, effect)`. `path` is the
+/// effect's JSON-pointer within the `quests` stage doc (for diagnostics); `keybase`
+/// is its l10n key prefix, derived by the **same** position-keying as
+/// [`each_string`]/[`effect_strings_deep`] (so an art narrate's key matches its
+/// inventory key, and a nested `play-sound`/`give-item` ref is reported at a precise
+/// path). Shared by [`art_narrates`], [`sound_refs`] and [`play_sound_actor_refs`]
+/// so the consumer checks (`DW0326`/`DW0328`/`DW0335`) descend nested effects
+/// exactly as emission and the l10n inventory already do (task: nested-effect
+/// consumer recursion). Top-level positions keep their prior path/key, so a
+/// nesting-free campaign is unaffected; nested refs are additive.
+fn each_effect_ref<'a>(c: &'a Campaign, f: &mut dyn FnMut(&str, &str, &'a QuestEffect)) {
     for (qi, q) in c.quests.content.quests.iter().enumerate() {
         let ql = local(q.id.as_str());
         for (oid, effs) in &q.on_objective_complete {
             let ol = local(oid.as_str());
             for (i, eff) in effs.iter().enumerate() {
-                if let Some(text) = eff.narrate_art_text() {
-                    out.push(ArtNarrate {
-                        path: format!(
-                            "/content/quests/{qi}/on_objective_complete/{}/{i}/text",
-                            oid.as_str()
-                        ),
-                        key: format!("fx.{ql}.oc.{ol}.{i}.narrate"),
-                        text: text.to_string(),
-                    });
-                }
+                effect_deep(
+                    eff,
+                    &format!(
+                        "/content/quests/{qi}/on_objective_complete/{}/{i}",
+                        oid.as_str()
+                    ),
+                    &format!("fx.{ql}.oc.{ol}.{i}"),
+                    f,
+                );
             }
         }
         for (i, eff) in q.on_complete.iter().enumerate() {
-            if let Some(text) = eff.narrate_art_text() {
-                out.push(ArtNarrate {
-                    path: format!("/content/quests/{qi}/on_complete/{i}/text"),
-                    key: format!("fx.{ql}.done.{i}.narrate"),
-                    text: text.to_string(),
-                });
-            }
+            effect_deep(
+                eff,
+                &format!("/content/quests/{qi}/on_complete/{i}"),
+                &format!("fx.{ql}.done.{i}"),
+                f,
+            );
         }
     }
     for (ti, t) in c.quests.content.triggers.iter().enumerate() {
         let tl = local(t.id.as_str());
         for (i, eff) in t.effects.iter().enumerate() {
-            if let Some(text) = eff.narrate_art_text() {
-                out.push(ArtNarrate {
-                    path: format!("/content/triggers/{ti}/effects/{i}/text"),
-                    key: format!("fx.trig.{tl}.{i}.narrate"),
-                    text: text.to_string(),
-                });
-            }
+            effect_deep(
+                eff,
+                &format!("/content/triggers/{ti}/effects/{i}"),
+                &format!("fx.trig.{tl}.{i}"),
+                f,
+            );
         }
     }
-    out
+}
+
+/// Visit `eff` and every transitively-nested effect (depth-first, pre-order),
+/// threading the JSON-pointer `path` and l10n `keybase` through each nested list via
+/// [`QuestEffect::nested_effect_lists_labeled`] (path segment + key segment + the
+/// per-effect index). The key segments match [`effect_strings_deep`] exactly.
+fn effect_deep<'a>(
+    eff: &'a QuestEffect,
+    path: &str,
+    keybase: &str,
+    f: &mut dyn FnMut(&str, &str, &'a QuestEffect),
+) {
+    f(path, keybase, eff);
+    for (pseg, kseg, list) in eff.nested_effect_lists_labeled() {
+        for (j, inner) in list.iter().enumerate() {
+            effect_deep(
+                inner,
+                &format!("{path}/{pseg}/{j}"),
+                &format!("{keybase}.{kseg}.{j}"),
+                f,
+            );
+        }
+    }
 }
 
 /// One vanilla sound-event reference (DSL v0.6/v0.4): its stage-doc path and the
@@ -309,35 +353,14 @@ pub struct SoundRef {
 /// fixed deterministic order, for `DW0326` validation.
 pub fn sound_refs(c: &Campaign) -> Vec<SoundRef> {
     let mut out = Vec::new();
-    let mut push = |path: String, eff: &QuestEffect| {
+    each_effect_ref(c, &mut |path, _key, eff| {
         for (sub, sound) in eff.sound_refs() {
             out.push(SoundRef {
                 path: format!("{path}/{sub}"),
                 sound: sound.to_string(),
             });
         }
-    };
-    for (qi, q) in c.quests.content.quests.iter().enumerate() {
-        for (oid, effs) in &q.on_objective_complete {
-            for (i, eff) in effs.iter().enumerate() {
-                push(
-                    format!(
-                        "/content/quests/{qi}/on_objective_complete/{}/{i}",
-                        oid.as_str()
-                    ),
-                    eff,
-                );
-            }
-        }
-        for (i, eff) in q.on_complete.iter().enumerate() {
-            push(format!("/content/quests/{qi}/on_complete/{i}"), eff);
-        }
-    }
-    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
-        for (i, eff) in t.effects.iter().enumerate() {
-            push(format!("/content/triggers/{ti}/effects/{i}"), eff);
-        }
-    }
+    });
     out
 }
 
@@ -347,35 +370,14 @@ pub fn sound_refs(c: &Campaign) -> Vec<SoundRef> {
 /// lands; the compiler applies that check. `SoundRef::sound` carries the actor id.
 pub fn play_sound_actor_refs(c: &Campaign) -> Vec<SoundRef> {
     let mut out = Vec::new();
-    let mut push = |path: String, eff: &QuestEffect| {
+    each_effect_ref(c, &mut |path, _key, eff| {
         if let Some(actor) = eff.play_sound_actor() {
             out.push(SoundRef {
                 path: format!("{path}/at/actor"),
                 sound: actor.to_string(),
             });
         }
-    };
-    for (qi, q) in c.quests.content.quests.iter().enumerate() {
-        for (oid, effs) in &q.on_objective_complete {
-            for (i, eff) in effs.iter().enumerate() {
-                push(
-                    format!(
-                        "/content/quests/{qi}/on_objective_complete/{}/{i}",
-                        oid.as_str()
-                    ),
-                    eff,
-                );
-            }
-        }
-        for (i, eff) in q.on_complete.iter().enumerate() {
-            push(format!("/content/quests/{qi}/on_complete/{i}"), eff);
-        }
-    }
-    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
-        for (i, eff) in t.effects.iter().enumerate() {
-            push(format!("/content/triggers/{ti}/effects/{i}"), eff);
-        }
-    }
+    });
     out
 }
 

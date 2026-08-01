@@ -1351,6 +1351,54 @@ fn for_each_effect(q: &crate::stages::Quest, mut f: impl FnMut(String, &QuestEff
     }
 }
 
+/// Visit every quest effect **and every transitively-nested effect** (a `sequence`
+/// step, an `on_respawn`/`on_caught`/`on_arrive` bundle) with its relative path
+/// fragment, threading the JSON-pointer path through
+/// [`QuestEffect::nested_effect_lists_labeled`] (`steps/<step>/effects`,
+/// `on_respawn`, …). The deep counterpart of [`for_each_effect`] — the effect-ref
+/// consumer checks (unknown wave / item / block / npc references) use this so a bad
+/// ref nested in a timeline is caught, not shipped unvalidated (mirroring how the
+/// flag/wave *producer* scans and emission already descend). Top-level paths are
+/// unchanged, so a nesting-free campaign is validated identically.
+fn for_each_effect_deep(q: &crate::stages::Quest, mut f: impl FnMut(String, &QuestEffect)) {
+    fn descend(path: String, eff: &QuestEffect, f: &mut dyn FnMut(String, &QuestEffect)) {
+        f(path.clone(), eff);
+        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            for (j, inner) in list.iter().enumerate() {
+                descend(format!("{path}/{pseg}/{j}"), inner, f);
+            }
+        }
+    }
+    for (key, effs) in &q.on_objective_complete {
+        for (m, eff) in effs.iter().enumerate() {
+            descend(format!("on_objective_complete/{key}/{m}"), eff, &mut f);
+        }
+    }
+    for (m, eff) in q.on_complete.iter().enumerate() {
+        descend(format!("on_complete/{m}"), eff, &mut f);
+    }
+}
+
+/// Visit an environment trigger's effects **and every transitively-nested effect**
+/// with a relative path fragment (`effects/<m>`, then nested segments) — the
+/// trigger analogue of [`for_each_effect_deep`].
+fn for_each_trigger_effect_deep(
+    t: &crate::stages::EnvTrigger,
+    mut f: impl FnMut(String, &QuestEffect),
+) {
+    fn descend(path: String, eff: &QuestEffect, f: &mut dyn FnMut(String, &QuestEffect)) {
+        f(path.clone(), eff);
+        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            for (j, inner) in list.iter().enumerate() {
+                descend(format!("{path}/{pseg}/{j}"), inner, f);
+            }
+        }
+    }
+    for (m, eff) in t.effects.iter().enumerate() {
+        descend(format!("effects/{m}"), eff, &mut f);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // DSL v0.6 — scripted actors + staging effects (spec-0014)
 // ---------------------------------------------------------------------------
@@ -2086,7 +2134,7 @@ fn v03_checks(
             }
         }
 
-        for_each_effect(q, |path, eff| {
+        for_each_effect_deep(q, |path, eff| {
             if let Some(w) = eff.spawn_wave()
                 && !declared_waves.contains(w.as_str())
             {
@@ -2134,13 +2182,13 @@ fn v03_checks(
 
     // v0.6: environment-trigger effect `requires_flags` resolution (DW0172).
     for (i, t) in quests.triggers.iter().enumerate() {
-        for (m, eff) in t.effects.iter().enumerate() {
+        for_each_trigger_effect_deep(t, |path, eff| {
             for (n, f) in eff.requires_flags().iter().enumerate() {
                 if !declared_flags.contains(f.as_str()) {
                     d.push(Diagnostic::error(
                         codes::FLAG_UNKNOWN,
                         "quests",
-                        format!("/content/triggers/{i}/effects/{m}/requires_flags/{n}"),
+                        format!("/content/triggers/{i}/{path}/requires_flags/{n}"),
                         format!(
                             "effect `requires_flags` references flag `{f}`, which no `set-flag` \
                              effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
@@ -2149,7 +2197,7 @@ fn v03_checks(
                     ));
                 }
             }
-        }
+        });
     }
 }
 
@@ -2271,7 +2319,7 @@ fn v04_checks(
                 );
             }
         }
-        for_each_effect(q, |path, eff| {
+        for_each_effect_deep(q, |path, eff| {
             check_effect_v04(
                 eff,
                 blocks,
@@ -2347,16 +2395,16 @@ fn v04_checks(
                 ));
             }
         }
-        for (m, eff) in t.effects.iter().enumerate() {
+        for_each_trigger_effect_deep(t, |path, eff| {
             check_effect_v04(
                 eff,
                 blocks,
                 &declared_waves,
-                &format!("/content/triggers/{i}/effects/{m}"),
+                &format!("/content/triggers/{i}/{path}"),
                 &npc_ids,
                 d,
             );
-        }
+        });
     }
 
     // --- dialogue requires_flags resolution + flag-deadlock guard ---

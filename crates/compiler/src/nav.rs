@@ -1221,28 +1221,44 @@ fn has_walkable_critical_leg(plan: &Plan) -> bool {
 /// a solid affordance — an altar, a wave marker, an NPC stand — the player walks up
 /// to, not into), exactly as `move-npc` planning does.
 pub fn check_critical_path(plan: &Plan, world: &World) -> Result<(), NavError> {
-    route_visited(world, &critical_positions(plan), &plan.gate_events)
+    route_visited(
+        world,
+        &critical_positions(plan),
+        &plan.gate_events,
+        &|g, s| plan.gate_fired_before(g, s),
+    )
 }
 
-/// The gate-region cells sealed on a walked leg arriving at a position with
-/// `src_step == before` (DSL v0.6 close-gate completability). A gate firing at
-/// `fire_step` s affects a leg reaching a position with `src_step > s` (the same
-/// `> fire_step` convention the checkpoint / stealth proofs use), so the gate state
-/// during this leg is the **latest** firing on that region with `fire_step < before`
-/// — sealed iff that firing is a `close-gate` (a later `open-gate` reopens it).
-/// Regions with no qualifying close contribute nothing, so an open-gate-only
-/// campaign yields an empty set and routes byte-identically to the base world.
-fn sealed_gate_cells(gate_events: &[GateEvent], before: usize) -> BTreeSet<[i32; 3]> {
-    // Per region, the final closed-state among firings strictly before `before`
-    // (content order → last qualifying firing wins; deterministic).
-    let mut state: BTreeMap<([i32; 3], [i32; 3]), bool> = BTreeMap::new();
+/// The gate-region cells sealed on a walked leg arriving at the objective at
+/// critical-path step `arrival` (DSL v0.6 close-gate completability). A gate event
+/// counts only if its firing objective is a **causal (DAG) ancestor** of the leg's
+/// objective — `ancestor(ev.fire_step, arrival)` — i.e. it is guaranteed to have
+/// fired before this leg in *every* valid play order. That excludes a gate on a
+/// parallel quest branch that the lineariser merely happens to interleave ahead of
+/// this leg (which would falsely seal it). Among the causally-preceding events on a
+/// region, the **latest** (max `fire_step`, respecting the DAG linearisation) wins;
+/// the region is sealed iff that latest firing is a `close-gate` (a later
+/// `open-gate` reopens it). Regions with no qualifying close contribute nothing, so
+/// an open-gate-only campaign yields an empty set and routes byte-identically to the
+/// base world.
+fn sealed_gate_cells(
+    gate_events: &[GateEvent],
+    arrival: usize,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+) -> BTreeSet<[i32; 3]> {
+    // Per region, the causally-latest closed-state among firings that precede this
+    // leg (ancestor of the arrival objective); higher `fire_step` overrides.
+    let mut state: BTreeMap<([i32; 3], [i32; 3]), (usize, bool)> = BTreeMap::new();
     for ev in gate_events {
-        if ev.fire_step < before {
-            state.insert(ev.region, ev.closes);
+        if ancestor(ev.fire_step, arrival) {
+            let e = state.entry(ev.region).or_insert((ev.fire_step, ev.closes));
+            if ev.fire_step >= e.0 {
+                *e = (ev.fire_step, ev.closes);
+            }
         }
     }
     let mut sealed = BTreeSet::new();
-    for (region, closed) in state {
+    for (region, (_, closed)) in state {
         if closed {
             for cell in crate::assembled::region_cells(region.0, region.1) {
                 sealed.insert(cell);
@@ -1262,6 +1278,7 @@ fn route_visited(
     world: &World,
     positions: &[VisitedPos],
     gate_events: &[GateEvent],
+    ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<(), NavError> {
     for pair in positions.windows(2) {
         let from = pair[0].pos;
@@ -1269,7 +1286,20 @@ fn route_visited(
         if pair[1].transport_before {
             continue; // an inter-area teleport hop: the player is moved, not walking
         }
-        let sealed = sealed_gate_cells(gate_events, pair[1].src_step);
+        // Only apply the close-gate seal to a **causal** leg — one whose start
+        // objective is a DAG ancestor of the arrival objective, i.e. a step the
+        // player is genuinely forced to walk to reach `to`. The lineariser
+        // concatenates parallel quest branches, producing artifact "legs" between
+        // objectives with no causal order (e.g. a `take-the-cheese` beat followed by
+        // a `nobody` beat on a sibling branch); the player never actually walks that
+        // pairing under the arrival's gate state, so sealing it would falsely fail. A
+        // genuinely-forced re-crossing (start IS a causal ancestor) is still sealed,
+        // preserving the proof. Base DW0311 (open world) already checked every leg.
+        let sealed = if ancestor(pair[0].src_step, pair[1].src_step) {
+            sealed_gate_cells(gate_events, pair[1].src_step, ancestor)
+        } else {
+            BTreeSet::new()
+        };
         let leg_world_owned;
         let leg_world: &World = if sealed.is_empty() {
             world
@@ -1346,7 +1376,13 @@ pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), NavError> {
         .iter()
         .map(|c| (c.anchor.clone(), c.pos, c.fire_step))
         .collect();
-    verify_checkpoints(world, &cps, &critical_positions(plan), &plan.gate_events)
+    verify_checkpoints(
+        world,
+        &cps,
+        &critical_positions(plan),
+        &plan.gate_events,
+        &|g, s| plan.gate_fired_before(g, s),
+    )
 }
 
 /// The pure core of [`check_checkpoints`] (split out so it is unit-testable
@@ -1357,6 +1393,7 @@ fn verify_checkpoints(
     checkpoints: &[(String, [i32; 3], usize)],
     positions: &[VisitedPos],
     gate_events: &[GateEvent],
+    ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<(), NavError> {
     for (anchor, pos, fire_step) in checkpoints {
         let Some(cell) = world.snap_standable(*pos, SNAP_RADIUS) else {
@@ -1382,7 +1419,7 @@ fn verify_checkpoints(
         // Seal any gate closed by the time the party reaches the target (the same
         // per-leg gate state DW0311 routes under), so a checkpoint whose forward
         // path is walled off by a `close-gate` strands the party (DSL v0.6).
-        let sealed = sealed_gate_cells(gate_events, target.src_step);
+        let sealed = sealed_gate_cells(gate_events, target.src_step, ancestor);
         let leg_world_owned;
         let leg_world: &World = if sealed.is_empty() {
             world
@@ -1753,6 +1790,13 @@ mod tests {
         World::from_solid_cells(solid)
     }
 
+    /// The linear "every earlier step is an ancestor" gate-ordering used by the
+    /// synthetic gate tests (no parallel branches). Production routing uses the
+    /// campaign's real DAG-causal predicate (`Plan::gate_fired_before`).
+    fn linear(g: usize, s: usize) -> bool {
+        g < s
+    }
+
     /// A non-talk-to visited position (test convenience for `route_visited`).
     fn vp(pos: [i32; 3], transport_before: bool) -> VisitedPos {
         VisitedPos {
@@ -1867,10 +1911,10 @@ mod tests {
         let b = [4, 65, 1];
         assert!(world.standable(a) && world.standable(b));
         // Walked leg → unroutable → DW0311.
-        let err = route_visited(&world, &[vp(a, false), vp(b, false)], &[]).unwrap_err();
+        let err = route_visited(&world, &[vp(a, false), vp(b, false)], &[], &linear).unwrap_err();
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
         // Same leg ridden by an inter-area transport → skipped, ok.
-        assert!(route_visited(&world, &[vp(a, false), vp(b, true)], &[]).is_ok());
+        assert!(route_visited(&world, &[vp(a, false), vp(b, true)], &[], &linear).is_ok());
     }
 
     #[test]
@@ -1947,7 +1991,13 @@ mod tests {
         // A flat connected floor: consecutive visited cells are walkable → ok.
         let world = floored(6, 3, 65, &[]);
         assert!(
-            route_visited(&world, &[vp([0, 65, 1], false), vp([5, 65, 1], false)], &[]).is_ok()
+            route_visited(
+                &world,
+                &[vp([0, 65, 1], false), vp([5, 65, 1], false)],
+                &[],
+                &linear
+            )
+            .is_ok()
         );
     }
 
@@ -2100,7 +2150,7 @@ mod tests {
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
         assert!(
-            route_visited(&world, &[a, b], &[]).is_ok(),
+            route_visited(&world, &[a, b], &[], &linear).is_ok(),
             "the open corridor must route with no gate events"
         );
         // A close-gate seals the pass-through before the leg to `b` (fire_step 0 < 2).
@@ -2109,7 +2159,8 @@ mod tests {
             closes: true,
             fire_step: 0,
         };
-        let err = route_visited(&world, &[a, b], std::slice::from_ref(&close)).unwrap_err();
+        let err =
+            route_visited(&world, &[a, b], std::slice::from_ref(&close), &linear).unwrap_err();
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE); // DW0311
         assert!(
             err.message.contains("close-gate"),
@@ -2123,9 +2174,38 @@ mod tests {
             fire_step: 1,
         };
         assert!(
-            route_visited(&world, &[a, b], &[close, open]).is_ok(),
+            route_visited(&world, &[a, b], &[close, open], &linear).is_ok(),
             "a gate reopened by open-gate before the leg must route again"
         );
+    }
+
+    /// The seal is **DAG-causal**, not linear: a `close-gate` fired on a parallel
+    /// quest branch (not a causal ancestor of the leg) must NOT seal it, even though
+    /// its `fire_step` is numerically earlier — the fix for the lineariser
+    /// interleaving a sibling branch ahead of a sealed leg (island `take-the-cheese`
+    /// vs `hide`). A genuinely-forced causal re-crossing is still sealed.
+    #[test]
+    fn close_gate_seal_is_dag_causal_not_linear() {
+        let world = floored(5, 1, 65, &[]);
+        let close = GateEvent {
+            region: ([2, 65, 0], [2, 65, 0]),
+            closes: true,
+            fire_step: 8,
+        };
+        let a = at_step([0, 65, 0], 9);
+        let b = at_step([4, 65, 0], 10);
+        // Parallel: neither the close (step 8) nor the prior position (step 9) is a
+        // causal ancestor of the arrival (step 10) — a cross-branch artifact leg.
+        let parallel = |g: usize, s: usize| !((g == 8 || g == 9) && s == 10) && g < s;
+        assert!(
+            route_visited(&world, &[a, b], std::slice::from_ref(&close), &parallel).is_ok(),
+            "a close on a parallel branch must not seal a non-causal leg"
+        );
+        // Causal: step 8 (close) and step 9 are ancestors of step 10 (a forced
+        // re-crossing with no reopen) → sealed → DW0311 (proof preserved).
+        let err = route_visited(&world, &[a, b], std::slice::from_ref(&close), &linear)
+            .expect_err("a forced causal re-crossing of a sealed gate must fail");
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
     }
 
     /// A `close-gate` that walls off the forward path from a checkpoint strands the
@@ -2138,15 +2218,21 @@ mod tests {
         let cps = vec![("cp/rest".to_string(), [0, 65, 0], 0usize)];
         let positions = vec![at_step([4, 65, 0], 1)];
         // Open gate → reachable.
-        assert!(verify_checkpoints(&world, &cps, &positions, &[]).is_ok());
+        assert!(verify_checkpoints(&world, &cps, &positions, &[], &linear).is_ok());
         // Sealed before the party reaches the target (fire_step 0 < 1) → stranded.
         let close = GateEvent {
             region: ([2, 65, 0], [2, 65, 0]),
             closes: true,
             fire_step: 0,
         };
-        let err =
-            verify_checkpoints(&world, &cps, &positions, std::slice::from_ref(&close)).unwrap_err();
+        let err = verify_checkpoints(
+            &world,
+            &cps,
+            &positions,
+            std::slice::from_ref(&close),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_CHECKPOINT_STRANDED); // DW0315
     }
 
@@ -2157,7 +2243,7 @@ mod tests {
         let world = split_world(65);
         let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
         let positions = vec![at_step([4, 65, 1], 1)];
-        let err = verify_checkpoints(&world, &cps, &positions, &[]).unwrap_err();
+        let err = verify_checkpoints(&world, &cps, &positions, &[], &linear).unwrap_err();
         assert_eq!(err.code, DW_CHECKPOINT_STRANDED); // DW0315
     }
 
@@ -2167,7 +2253,7 @@ mod tests {
         let world = floored(5, 3, 65, &[]);
         let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
         let positions = vec![at_step([4, 65, 1], 1)];
-        assert!(verify_checkpoints(&world, &cps, &positions, &[]).is_ok());
+        assert!(verify_checkpoints(&world, &cps, &positions, &[], &linear).is_ok());
     }
 
     #[test]
@@ -2175,7 +2261,7 @@ mod tests {
         // The checkpoint cell has no standable floor within snap radius.
         let world = floored(5, 3, 65, &[]);
         let cps = vec![("cp/rest".to_string(), [20, 65, 20], 0usize)];
-        let err = verify_checkpoints(&world, &cps, &[], &[]).unwrap_err();
+        let err = verify_checkpoints(&world, &cps, &[], &[], &linear).unwrap_err();
         assert_eq!(err.code, DW_CHECKPOINT_UNSTANDABLE); // DW0316
     }
 

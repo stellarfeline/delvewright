@@ -183,3 +183,30 @@ fn close_gate_emits_fill_with_declared_block() {
         "close-gate must emit a plain `fill … iron_bars`:\n{all}"
     );
 }
+
+/// A `close-gate` and `open-gate` nested inside a `sequence` step are collected as
+/// gate events (via the shared `visit_deep`/`nested_effect_lists` authority), so the
+/// close-gate completability model sees a sequence-nested seal AND its reopen —
+/// the fix for the island's nested boulder seal/reopen. Regression for the DW0311
+/// gate-ordering scan being top-level-only.
+#[test]
+fn nested_sequence_gate_effects_are_collected() {
+    let c = parse_hw(&quests_doc(
+        r#"{ "type": "sequence", "steps": [
+              { "at_ticks": 0, "effects": [ { "type": "close-gate", "anchor": "anchor/door" } ] },
+              { "at_ticks": 40, "effects": [ { "type": "open-gate", "anchor": "anchor/door" } ] }
+           ] },
+           { "type": "campaign-complete" }"#,
+    ));
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds with nested gate effects");
+    let closes: Vec<bool> = plan.gate_events.iter().map(|e| e.closes).collect();
+    assert!(
+        closes.contains(&true),
+        "the sequence-nested close-gate must be collected: {closes:?}"
+    );
+    assert!(
+        closes.contains(&false),
+        "the sequence-nested open-gate must be collected: {closes:?}"
+    );
+}
