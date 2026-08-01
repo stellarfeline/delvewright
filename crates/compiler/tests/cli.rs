@@ -1177,3 +1177,144 @@ fn v06_actor_datapack_emits_the_mechanics() {
         "unleash summons a twin at the puppet then removes the puppet"
     );
 }
+
+/// spec-0013 sea-level datum: an `ocean` world places its areas at
+/// `sea_level - island waterline` (y=60) so the island tileset's authored
+/// waterline (local y=2) meets the world ocean (y=62) and its walk plane (local
+/// y=3) is the vanilla-normal one block above the sea. A `void` world is
+/// unchanged at y=64 — the byte-identity guarantee for every existing campaign.
+#[test]
+fn ocean_areas_sit_on_the_sea_level_datum_void_unchanged() {
+    let pf = common::prefabs_dir();
+
+    let place_line = |horizon: Option<&str>, name: &str| -> String {
+        let camp = tmp(name);
+        copy_dir(&common::hello_world_dir(), &camp);
+        let mut world: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap())
+                .unwrap();
+        if let Some(h) = horizon {
+            world["dsl_version"] = serde_json::json!("0.6.0");
+            let content = world["content"].as_object_mut().unwrap();
+            content.insert("horizon".into(), serde_json::json!(h));
+            content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
+        }
+        std::fs::write(
+            camp.join("world.json"),
+            serde_json::to_string_pretty(&world).unwrap(),
+        )
+        .unwrap();
+        let out = tmp(&format!("{name}-out"));
+        let r = delvec(&[
+            "build",
+            camp.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--prefabs",
+            pf.to_str().unwrap(),
+        ]);
+        assert_eq!(code(&r), 0, "build: {}", String::from_utf8_lossy(&r.stderr));
+        std::fs::read_to_string(out.join("datapack/data/hello-world/function/place_all.mcfunction"))
+            .unwrap()
+    };
+
+    let ocean = place_line(Some("ocean"), "datum-ocean");
+    assert!(
+        ocean.contains("place template hello-world:hello-room 0 60 0"),
+        "ocean areas must sit at sea_level-2 (y=60):\n{ocean}"
+    );
+    let void = place_line(None, "datum-void");
+    assert!(
+        void.contains("place template hello-world:hello-room 0 64 0"),
+        "void areas must stay at y=64 (byte-identity):\n{void}"
+    );
+}
+
+/// `DW0344`: in an `ocean` world, a placed piece whose metadata declares a
+/// waterline that does not land at sea level (y=62) is a build error — the piece
+/// would float above the sea (an unclimbable shore) or drown under it. Nothing
+/// downstream can catch this: nav, boundary, POV and PackTest all derive from the
+/// very placement that is wrong. Uses a private copy of the real prefabs dir.
+#[test]
+fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
+    let prefabs_copy = tmp("dw0344-prefabs");
+    common::copy_dir_all(&common::prefabs_dir(), &prefabs_copy);
+    // hello-room is not an island piece; declaring a waterline one block off the
+    // convention is exactly the mis-authored-datum case the check exists for.
+    let meta_path = prefabs_copy.join("hello-room.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
+    meta["waterline_y"] = serde_json::json!(3);
+    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+
+    let camp = tmp("dw0344-camp");
+    copy_dir(&common::hello_world_dir(), &camp);
+    let mut world: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
+    world["dsl_version"] = serde_json::json!("0.6.0");
+    let content = world["content"].as_object_mut().unwrap();
+    content.insert("horizon".into(), serde_json::json!("ocean"));
+    content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
+    std::fs::write(
+        camp.join("world.json"),
+        serde_json::to_string_pretty(&world).unwrap(),
+    )
+    .unwrap();
+
+    let out = tmp("dw0344-out");
+    let b = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        prefabs_copy.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(code(&b), 3, "off-level waterline should exit 3");
+    let stdout = String::from_utf8_lossy(&b.stdout);
+    assert!(stdout.contains("DW0344"), "expected DW0344:\n{stdout}");
+
+    // The same piece declaring the island convention (local y=2) lands its
+    // waterline exactly at sea level and builds clean.
+    meta["waterline_y"] = serde_json::json!(2);
+    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+    let out_ok = tmp("dw0344-out-ok");
+    let ok = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out_ok.to_str().unwrap(),
+        "--prefabs",
+        prefabs_copy.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&ok),
+        0,
+        "convention waterline must build: {}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+
+    // A `void` world is not an ocean, so the same metadata is not checked there.
+    let void_camp = tmp("dw0344-void-camp");
+    copy_dir(&common::hello_world_dir(), &void_camp);
+    let mut m2: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
+    m2["waterline_y"] = serde_json::json!(3);
+    std::fs::write(&meta_path, serde_json::to_string_pretty(&m2).unwrap()).unwrap();
+    let out_void = tmp("dw0344-void-out");
+    let v = delvec(&[
+        "build",
+        void_camp.to_str().unwrap(),
+        "-o",
+        out_void.to_str().unwrap(),
+        "--prefabs",
+        prefabs_copy.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&v),
+        0,
+        "void world must ignore waterline metadata: {}",
+        String::from_utf8_lossy(&v.stderr)
+    );
+}

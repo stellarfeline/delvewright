@@ -42,6 +42,12 @@ use serde::Serialize;
 const DATA_VERSION: i32 = 4671; // MC 1.21.11
 const GENERATOR: &str = "prefabs/island-terrain-generator (island-terrain-gen)";
 const MEASURED_DATE: &str = "2026-08-01";
+/// The island convention's waterline datum (`../island-tileset.md`): sea surface at
+/// local y=2, walk plane at local y=3. Inland terrain pieces author no water, but
+/// they are lifted onto the same datum (`lift_substrate`) so their walk plane mates
+/// with the beach camp's — declaring it makes the compiler's ocean-horizon
+/// placement invariant (`DW0344`) cover the whole tileset, not just the shore.
+const WATERLINE_Y: i32 = 2;
 const SOCKET_NAME: &str = "island:socket";
 const SOCKET_POOL: &str = "island:pool";
 
@@ -472,6 +478,9 @@ struct LicenseJson {
 struct MetaJson {
     prefab_id: String,
     structure: StructureJson,
+    /// Local y of the island waterline datum (see [`WATERLINE_Y`]); the compiler
+    /// pins it to world sea level when placing an ocean-horizon area (`DW0344`).
+    waterline_y: i32,
     anchors: BTreeMap<String, AnchorJson>,
     connectors: Vec<ConnectorJson>,
     lighting: LightingJson,
@@ -1740,6 +1749,7 @@ fn write_piece(out: &Path, spec: &Spec) {
             data_version: DATA_VERSION,
             generator: GENERATOR.into(),
         },
+        waterline_y: WATERLINE_Y,
         anchors,
         connectors,
         lighting: LightingJson {

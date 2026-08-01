@@ -65,8 +65,9 @@ pub struct WorldContent {
     pub weather: Option<WorldWeather>,
     /// Scenic horizon (DSL v0.6, spec-0013). Absent or `void` = the void world
     /// (byte-identical to v0.5). `ocean` swaps the world generator for a
-    /// deterministic superflat sea (bedrock/stone/water, sea level y=62) so areas
-    /// sitting at y=64+ read as islands. No structures or mobs either way.
+    /// deterministic superflat sea (bedrock/stone/water, sea level y=62) and drops
+    /// the area datum to y=60 (`sea_level-2`) so island pieces meet the sea at their
+    /// authored waterline. No structures or mobs either way.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub horizon: Option<Horizon>,
     /// Playable-region boundary (DSL v0.6, spec-0013). When present, the compiler
@@ -155,7 +156,8 @@ pub enum Horizon {
     /// The void world (default) — no sky-filling geometry.
     #[default]
     Void,
-    /// A superflat sea backdrop; areas at y=64+ read as islands.
+    /// A superflat sea backdrop; areas are placed on the sea-level datum (y=60) so
+    /// island pieces read as land ringed by the ocean.
     Ocean,
 }
 
