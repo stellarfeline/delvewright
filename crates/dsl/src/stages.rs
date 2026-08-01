@@ -1917,6 +1917,35 @@ impl QuestEffect {
         }
     }
 
+    /// Each nested effect list ([`Self::nested_effect_lists`]) paired with the
+    /// **stable key segment** used to derive child l10n keys / diagnostic paths, and
+    /// exposed mutably so the localization pass can rewrite nested player-visible
+    /// strings in place. Segments: `seq.<step>` for each sequence step (step index),
+    /// `respawn` for `set-checkpoint.on_respawn`, `caught` for
+    /// `begin-stealth.on_caught`, `arrive` for `move-actor.on_arrive`. Kept in
+    /// lockstep with `nested_effect_lists` (same lists, same order) — the position-
+    /// derived segments make every derived key deterministic and stable across
+    /// builds (ADR-0006 byte-identity).
+    pub fn nested_effect_lists_keyed_mut(&mut self) -> Vec<(String, &mut [QuestEffect])> {
+        match self {
+            QuestEffect::Sequence { steps } => steps
+                .iter_mut()
+                .enumerate()
+                .map(|(s, st)| (format!("seq.{s}"), st.effects.as_mut_slice()))
+                .collect(),
+            QuestEffect::SetCheckpoint { on_respawn, .. } => {
+                vec![("respawn".to_string(), on_respawn.as_mut_slice())]
+            }
+            QuestEffect::BeginStealth { on_caught, .. } => {
+                vec![("caught".to_string(), on_caught.as_mut_slice())]
+            }
+            QuestEffect::MoveActor { on_arrive, .. } => {
+                vec![("arrive".to_string(), on_arrive.as_mut_slice())]
+            }
+            _ => Vec::new(),
+        }
+    }
+
     /// `true` if this is a `narrate` carrying the v0.6 `art` style (reserved
     /// `DW0141` under a pre-0.6 campaign; glyph-checked `DW0328`).
     pub fn narrate_art(&self) -> bool {

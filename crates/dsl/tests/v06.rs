@@ -8,7 +8,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::{RawCampaign, check_campaign, l10n_inventory, localize, parse_campaign};
 
 /// A v0.6 stage-1 world document: ocean horizon + a boundary (the happy path).
 const WORLD_V06: &str = r#"{
@@ -294,6 +294,85 @@ const QUESTS_V06_SEQUENCE_SETS_FLAG: &str = r#"{
     ]
   }
 }"#;
+
+/// A quests doc with a `narrate` nested inside a `sequence` step (the Q4/Q7
+/// cinematic shape): its player-visible text must be inventoried under a stable,
+/// position-derived nested key so a translated build ships it localized instead of
+/// English-only.
+const QUESTS_V06_SEQUENCE_NARRATE: &str = r#"{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"] }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [
+            { "type": "sequence", "steps": [
+              { "at_ticks": 0, "effects": [ { "type": "narrate", "text": "Top-of-step line." } ] },
+              { "at_ticks": 40, "effects": [ { "type": "narrate", "text": "The seal cracks open." } ] }
+            ] }
+          ]
+        },
+        "on_complete": [ { "type": "campaign-complete" } ]
+      }
+    ]
+  }
+}"#;
+
+/// The nested-narrate key for a `sequence` narrate in quest `open-the-door`,
+/// objective `talk`, top-level effect 0, step 1, nested effect 0.
+const NESTED_NARRATE_KEY: &str = "fx.open-the-door.oc.talk.0.seq.1.0.narrate";
+
+/// A `narrate` nested inside a `sequence` step enters the l10n inventory under a
+/// stable, position-derived key, and `localize` swaps it — so a translated build
+/// no longer ships nested cinematic narration English-only. Regression for the
+/// shallow inventory that only walked top-level effects.
+#[test]
+fn v06_sequence_narrate_is_inventoried_and_localized() {
+    let raw = campaign_with_quests(QUESTS_V06_SEQUENCE_NARRATE);
+    assert!(
+        check_campaign(&raw).is_empty(),
+        "the sequence-narrate campaign validates clean: {:#?}",
+        check_campaign(&raw)
+    );
+    let mut campaign = parse_campaign(&raw).expect("parses");
+
+    // The nested narrate is inventoried with its canonical English text.
+    let inv = l10n_inventory(&campaign);
+    assert_eq!(
+        inv.get(NESTED_NARRATE_KEY).map(String::as_str),
+        Some("The seal cracks open."),
+        "sequence narrate must be inventoried under a stable nested key; inventory: {inv:#?}"
+    );
+    // Determinism: the key derivation is stable across builds (byte-identity gate).
+    assert_eq!(inv, l10n_inventory(&campaign), "inventory is deterministic");
+
+    // Localize swaps the nested narrate in place (the emission path reads this).
+    let mut tr = std::collections::BTreeMap::new();
+    tr.insert(NESTED_NARRATE_KEY.to_string(), "封印裂开了。".to_string());
+    localize(&mut campaign, &tr);
+    let oid = delvewright_dsl::ObjectiveId("obj/talk".to_string());
+    let narrate_texts: Vec<&str> = campaign.quests.content.quests[0].on_objective_complete[&oid]
+        .iter()
+        .flat_map(|e| e.nested_effect_lists())
+        .flatten()
+        .filter_map(|e| match e {
+            delvewright_dsl::QuestEffect::Narrate { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        narrate_texts.contains(&"封印裂开了。"),
+        "localize must swap the nested sequence narrate, got {narrate_texts:?}"
+    );
+}
 
 #[test]
 fn v06_set_flag_nested_in_sequence_is_a_producer_no_dw0172() {

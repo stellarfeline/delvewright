@@ -31,6 +31,20 @@
 //! | `dlg.<npc>.<node>.text` | each stage-6 dialogue node `text` |
 //! | `dlg.<npc>.<node>.opt.<i>.label` | each dialogue option `label` |
 //! | `wave.<wave>.mob.<i>.name` | a wave mob's custom `name` (only if set) |
+//! | `fx.…​.narrate` / `fx.…​.give` | a `narrate` line / named `give-item` in an effect list |
+//!
+//! ## Nested effects (DSL v0.6)
+//!
+//! Effect strings nested inside a `sequence` step or a lifecycle bundle
+//! (`on_respawn`/`on_caught`/`on_arrive`) are player-visible too, so they are
+//! inventoried under **position-derived** child keys: the parent effect's `fx.…`
+//! key, then a stable segment ([`crate::stages::QuestEffect::nested_effect_lists_keyed_mut`])
+//! — `seq.<step>` for a sequence step, `respawn`/`caught`/`arrive` for the bundles —
+//! then the effect's index in that list, then the leaf (`.narrate`/`.give`).
+//! Example: a narrate in sequence step 1, effect 0 of `on_objective_complete`
+//! effect 0 → `fx.<quest>.oc.<obj>.0.seq.1.0.narrate`. Nesting is arbitrary-depth
+//! (a `move-actor.on_arrive` inside a `sequence` step nests both segments). Keys are
+//! purely position-derived → deterministic and stable across builds (ADR-0006).
 //!
 //! Player-visible strings only. Deliberately **excluded** (authoring context the
 //! player never sees, so translating them is pointless and out of scope): world
@@ -54,6 +68,23 @@ fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, 
         QuestEffect::Narrate { text, .. } => f(&format!("{keybase}.narrate"), text),
         QuestEffect::GiveItem { name: Some(n), .. } => f(&format!("{keybase}.give"), n),
         _ => {}
+    }
+}
+
+/// Walk the player-visible strings of `eff` **and every effect nested inside it**
+/// (DSL v0.6): a `narrate`/`give-item` inside a `sequence` step or an
+/// `on_respawn`/`on_caught`/`on_arrive` bundle is player-visible and must enter the
+/// inventory (and be localized on the emission path), else it ships English-only in
+/// a translated build. Child keys extend `keybase` with the effect's stable key
+/// segment ([`QuestEffect::nested_effect_lists_keyed_mut`]) and the effect's index
+/// within that list, e.g. `<keybase>.seq.<step>.<j>.narrate` for a narrate in
+/// sequence step `<step>`, effect `<j>`. Deterministic and stable across builds.
+fn effect_strings_deep(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, &mut String)) {
+    effect_strings(eff, keybase, f);
+    for (seg, list) in eff.nested_effect_lists_keyed_mut() {
+        for (j, inner) in list.iter_mut().enumerate() {
+            effect_strings_deep(inner, &format!("{keybase}.{seg}.{j}"), f);
+        }
     }
 }
 
@@ -152,18 +183,18 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
         for (oid, effs) in &mut q.on_objective_complete {
             let ol = local(oid.as_str()).to_string();
             for (i, eff) in effs.iter_mut().enumerate() {
-                effect_strings(eff, &format!("fx.{ql}.oc.{ol}.{i}"), f);
+                effect_strings_deep(eff, &format!("fx.{ql}.oc.{ol}.{i}"), f);
             }
         }
         for (i, eff) in q.on_complete.iter_mut().enumerate() {
-            effect_strings(eff, &format!("fx.{ql}.done.{i}"), f);
+            effect_strings_deep(eff, &format!("fx.{ql}.done.{i}"), f);
         }
     }
     // Stage 5 — v0.4 environment-trigger effect strings.
     for t in &mut c.quests.content.triggers {
         let tl = local(t.id.as_str()).to_string();
         for (i, eff) in t.effects.iter_mut().enumerate() {
-            effect_strings(eff, &format!("fx.trig.{tl}.{i}"), f);
+            effect_strings_deep(eff, &format!("fx.trig.{tl}.{i}"), f);
         }
     }
     // Stage 6 — dialogue node text + option labels.

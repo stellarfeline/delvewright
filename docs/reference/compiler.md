@@ -232,9 +232,16 @@ Envelope `{dsl_version,campaign_id,kind:"l10n",lang,content}`; `content` = flat
 **stable key → translated string**. Key inventory derived from stage docs
 (`world.title`, `area.<a>.name`, `class.<c>.name/.blurb/.kit.<i>.name`,
 `npc.<n>.name`, `quest.<q>.goal`, `obj.<q>.<o>.title/.hint`,
-`dlg.<n>.<node>.text/.opt.<i>.label`, `wave.<w>.mob.<i>.name`). Coverage is
-**exact**: missing/absent/inconsistent → `DW0180`; orphan → `DW0181`. Excludes
-authoring context (theme/premise/persona).
+`dlg.<n>.<node>.text/.opt.<i>.label`, `wave.<w>.mob.<i>.name`) plus effect strings
+`fx.<q>.oc.<o>.<i>.narrate|.give`, `fx.<q>.done.<i>.…`, `fx.trig.<t>.<i>.…`.
+**Nested effects** (DSL v0.6): a `narrate`/`give-item` inside a `sequence` step or
+an `on_respawn`/`on_caught`/`on_arrive` bundle is inventoried and localized too,
+under a position-derived child key = parent `fx.…` key + a stable segment
+(`seq.<step>` for a sequence step; `respawn`/`caught`/`arrive` for the bundles) +
+the effect's list index + leaf, e.g. `fx.<q>.oc.<o>.0.seq.1.0.narrate` (nesting is
+arbitrary-depth). Keys are purely position-derived → deterministic + byte-stable.
+Coverage is **exact**: missing/absent/inconsistent → `DW0180`; orphan → `DW0181`.
+Excludes authoring context (theme/premise/persona).
 
 ---
 
