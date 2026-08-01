@@ -215,12 +215,30 @@ fn packtest_checkpoint_and_stealth_tests_emitted() {
         )),
         "checkpoint respawn packtest emitted"
     );
-    assert!(
-        out.contains_key(&format!(
-            "packtest-datapack/data/{NS}/test/v06_stealth.mcfunction"
-        )),
-        "stealth packtest emitted"
+    let stealth = std::str::from_utf8(
+        &out[&format!("packtest-datapack/data/{NS}/test/v06_stealth.mcfunction")],
+    )
+    .unwrap();
+    // The test drives `stealth_eval` explicitly, so it must DISARM the live session
+    // marker after each `stealth_begin` — otherwise the world `tick` loop fires a
+    // second judge pass in the same tick, consuming the sneak edge and corrupting
+    // the grace the asserts read (the failure that surfaced on the first live run).
+    assert_eq!(
+        stealth
+            .matches("scoreboard players set #stealth dw.sys 0")
+            .count(),
+        2,
+        "each stealth_begin is followed by a session disarm: {stealth}"
     );
+    for (begin, disarm) in stealth
+        .match_indices(&format!("function {NS}:stealth_begin_1"))
+        .zip(stealth.match_indices("scoreboard players set #stealth dw.sys 0"))
+    {
+        assert!(
+            disarm.0 > begin.0,
+            "disarm follows its stealth_begin: {stealth}"
+        );
+    }
 }
 
 /// Determinism (ADR-0006): a double build is byte-identical, including all v0.6

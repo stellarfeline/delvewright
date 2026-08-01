@@ -41,10 +41,12 @@ ENV TYPE=VANILLA \
     DATAPACKS=/delve/datapack \
     # World config mirrored from the compiler's server/server.properties (spec-0002
     # void/superflat + fixed seed). The campaign-varying values (`difficulty`,
-    # `level-seed`) are sourced from that file by the entrypoint wrapper below, so
-    # they cannot drift; these ENV values are only the fallback if the file is
-    # absent. (v0.3: combat-wave campaigns need `difficulty=easy` — peaceful removes
-    # summoned mobs — while wave-free delves stay `peaceful`.)
+    # `level-seed`, and — spec-0013 v0.6 — `level-type` + `generator-settings`) are
+    # sourced from that file by the entrypoint wrapper below, so they cannot drift;
+    # these ENV values are only the fallback if the file is absent. (v0.3: combat-wave
+    # campaigns need `difficulty=easy` — peaceful removes summoned mobs — while
+    # wave-free delves stay `peaceful`. v0.6: `horizon:"ocean"` campaigns emit an
+    # ocean superflat generator-settings the wrapper picks up here.)
     MODE=adventure \
     DIFFICULTY=peaceful \
     FORCE_GAMEMODE=true \
@@ -74,6 +76,13 @@ props=/delve/server/server.properties
 if [ -f "$props" ]; then
   d=$(sed -n 's/^difficulty=//p' "$props" | head -1); [ -n "$d" ] && export DIFFICULTY="$d"
   s=$(sed -n 's/^level-seed=//p' "$props" | head -1); [ -n "$s" ] && export SEED="$s"
+  # World generator (spec-0013 v0.6 `horizon`): void by default, ocean superflat for
+  # horizon=ocean. Sourced here so the shipped image builds the SAME world the
+  # compiler declared. Without this the fixed void ENV below wins and an ocean delve
+  # boots as a void: content sits at y>=60 but there is no terrain, so the joining
+  # player (and the validate-profile bot) falls out of the world.
+  lt=$(sed -n 's/^level-type=//p' "$props" | head -1); [ -n "$lt" ] && export LEVEL_TYPE="$lt"
+  gs=$(sed -n 's/^generator-settings=//p' "$props" | head -1); [ -n "$gs" ] && export GENERATOR_SETTINGS="$gs"
 fi
 exec /image/scripts/start "$@"
 EOS
