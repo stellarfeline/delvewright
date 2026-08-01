@@ -60,6 +60,7 @@ fn build_showcase() -> BuildOutput {
         None,
         "unpinned",
         &skins,
+        delvewright_compiler::light::has_night_vision(&campaign),
     )
     .expect("every emitted command validates")
 }
@@ -403,7 +404,11 @@ fn wave_mobs_land_on_distinct_standable_in_room_cells() {
     }
     // The exact occupancy world the emitter seated mobs over: assembled geometry
     // plus any colliding relight fixtures (spec-0010), matching emit::build.
-    let relight = delvewright_compiler::light::relight(&plan, &structures);
+    let relight = delvewright_compiler::light::relight(
+        &plan,
+        &structures,
+        delvewright_compiler::light::has_night_vision(&campaign),
+    );
     let world = delvewright_compiler::nav::World::from_plan_with_extra(
         &plan,
         &structures,

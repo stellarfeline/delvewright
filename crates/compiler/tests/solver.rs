@@ -39,6 +39,7 @@ fn build_campaign(dir: &Path) -> BuildOutput {
         None,
         "unpinned",
         &BTreeMap::new(),
+        delvewright_compiler::light::has_night_vision(&campaign),
     )
     .expect("emission succeeds")
 }

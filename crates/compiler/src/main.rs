@@ -244,6 +244,11 @@ fn run_build(
     // the requested build (exit 1, spec-0002).
     let is_english = lang == delvewright_dsl::CANONICAL_LANG;
     let mut campaign = campaign;
+    // Determine the night-vision `DW0210` mitigation verdict on the canonical
+    // English campaign, before any localization swaps the kit-item display names it
+    // reads. Threading this into the build keeps the lighting gate language-
+    // independent (ADR-0006): the same campaign cannot pass `en` and fail `zh-cn`.
+    let night_vision = delvewright_compiler::light::has_night_vision(&campaign);
     if !is_english {
         if !campaign.world.content.languages.iter().any(|l| l == lang) {
             eprintln!(
@@ -350,6 +355,7 @@ fn run_build(
         build_lang,
         &content_sha,
         &skins,
+        night_vision,
     ) {
         Ok(o) => o,
         Err(emit::BuildFailure::Validation(errors)) => {

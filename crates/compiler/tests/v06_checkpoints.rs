@@ -64,6 +64,7 @@ fn build_fixture() -> BuildOutput {
         None,
         "unpinned",
         &skins,
+        delvewright_compiler::light::has_night_vision(&campaign),
     )
     .expect("every emitted command validates (DW0315/DW0316/DW0327 proofs pass)")
 }

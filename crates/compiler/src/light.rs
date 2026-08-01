@@ -471,6 +471,15 @@ pub fn darkest_effective_sky(c: &Campaign) -> u8 {
 /// `night_vision` / `night vision` (case-insensitive). This is a static policy
 /// gate ("you declared darkness, so declare a light source or hand out night
 /// vision"), not a runtime guarantee.
+///
+/// **Must be called on the canonical (pre-localization) English campaign.** The
+/// only signal in the current kit schema is the display `name`, and the build-time
+/// l10n pass ([`delvewright_dsl::localize`]) overwrites that name in place with the
+/// target-language string. Deriving the verdict from a localized campaign would let
+/// `--lang` flip a `DW0210` verdict (the same campaign passing `en` and failing
+/// `zh-cn` — a language-dependent build result, forbidden by ADR-0006's spirit), so
+/// the caller determines it once on the English source and threads the result into
+/// [`relight`]. l10n must never change a validation verdict.
 pub fn has_night_vision(c: &Campaign) -> bool {
     c.classes.content.classes.iter().any(|class| {
         class.kit.iter().any(|item| {
@@ -494,10 +503,16 @@ pub fn has_night_vision(c: &Campaign) -> bool {
 /// measured darkness (`DW0210` unless a reachable cell is ≥ 3 or night-vision
 /// mitigates). Never mutates the caller's inputs; returns placements + the
 /// colliding-fixture cells for post-relight nav verification.
-pub fn relight(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Relight {
+///
+/// `night_vision` is the night-vision mitigation verdict, determined by the caller
+/// via [`has_night_vision`] on the **canonical English** campaign (before any
+/// `--lang` localization). It is passed in rather than recomputed here because
+/// `plan.campaign` may already be localized, and the mitigation signal (a kit
+/// item's display name) is localized in place — see [`has_night_vision`]. This
+/// keeps the `DW0210` verdict identical across build languages (ADR-0006).
+pub fn relight(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>, night_vision: bool) -> Relight {
     let c = plan.campaign;
     let sky = darkest_effective_sky(c);
-    let night_vision = has_night_vision(c);
 
     // The base assembled geometry (nav) and required-path cells fixtures must avoid.
     let nav = World::from_plan(plan, structures);

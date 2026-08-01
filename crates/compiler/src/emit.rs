@@ -151,6 +151,11 @@ fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
 /// build stays byte-identical to a pre-i18n one); `Some("<code>")` records the
 /// language in the manifest. The `plan`'s campaign must already be localized to
 /// that language by the caller ([`delvewright_dsl::localize`]).
+///
+/// `night_vision` is the night-vision `DW0210` mitigation verdict, determined by
+/// the caller via [`crate::light::has_night_vision`] on the **canonical English**
+/// campaign — before localization — so the lighting gate reaches the same verdict
+/// in every build language (see [`crate::light::relight`]).
 #[allow(clippy::too_many_arguments)]
 pub fn build(
     plan: &Plan,
@@ -161,6 +166,7 @@ pub fn build(
     language: Option<&str>,
     content_sha: &str,
     skins: &BTreeMap<String, Vec<u8>>,
+    night_vision: bool,
 ) -> Result<BuildOutput, BuildFailure> {
     let ns = &plan.namespace;
     let mut out: BuildOutput = BTreeMap::new();
@@ -194,7 +200,7 @@ pub fn build(
     // adds are re-verified for walkability below. A `DW0210`/`DW0211` diagnostic
     // fails the build (exit 2, mapped in main). Empty for a campaign with no dark
     // reachable cells and no `lighting` declaration → output byte-identical.
-    let relight = crate::light::relight(plan, structures);
+    let relight = crate::light::relight(plan, structures, night_vision);
     if let Some(diag) = relight.diagnostics.first() {
         return Err(BuildFailure::Diagnostic {
             code: diag.code,
