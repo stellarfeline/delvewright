@@ -1948,6 +1948,14 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
         } => {
             emit_play_sound(plan, sound, at.as_ref(), *volume, *pitch, body);
         }
+        QuestEffect::DamagePlayers {
+            amount,
+            within,
+            damage_type,
+            ..
+        } => {
+            emit_damage_players(plan, *amount, within.as_ref(), *damage_type, body);
+        }
         QuestEffect::SetCheckpoint { anchor, on_respawn } => {
             emit_set_checkpoint(plan, anchor.as_str(), on_respawn, body);
         }
@@ -2050,6 +2058,48 @@ fn emit_play_sound(
         }
     }
     body.push(cmd);
+}
+
+/// Emit a `damage-players` effect (DSL v0.6). Effects run in an `as @a` / `as @s`
+/// context, so `@s` is each acting player: `damage @s <amount> <type>` damages
+/// every acting player once (in a stealth `on_caught`, the single caught player).
+/// `amount` is in half-hearts (1 HP each); the type is a curated vanilla damage
+/// type (default `minecraft:generic`). A `within` box narrows to acting players
+/// standing inside the anchor-centred AABB — the same `@s[x=…,dx=…]` box model the
+/// stealth zone check uses — preserving the per-`@s` semantics (no double-hit).
+fn emit_damage_players(
+    plan: &Plan,
+    amount: u32,
+    within: Option<&delvewright_dsl::StealthZone>,
+    damage_type: Option<delvewright_dsl::DamageKind>,
+    body: &mut Vec<String>,
+) {
+    use delvewright_dsl::DamageKind;
+    let kind = damage_type.unwrap_or(DamageKind::Generic).id();
+    let cmd = format!("damage @s {amount} {kind}");
+    match within {
+        Some(zone) => {
+            // A blank box when the anchor is unresolved (referential validation
+            // reports that, DW0142) — emit nothing rather than an invalid selector.
+            if let Some(pos) = anchor_point_any(plan, zone.anchor.as_str()) {
+                let lo = [
+                    pos[0] - zone.extent[0] as i32,
+                    pos[1] - zone.extent[1] as i32,
+                    pos[2] - zone.extent[2] as i32,
+                ];
+                let size = [
+                    2 * zone.extent[0] as i32,
+                    2 * zone.extent[1] as i32,
+                    2 * zone.extent[2] as i32,
+                ];
+                body.push(format!(
+                    "execute if entity @s[x={},dx={},y={},dy={},z={},dz={}] run {cmd}",
+                    lo[0], size[0], lo[1], size[1], lo[2], size[2]
+                ));
+            }
+        }
+        None => body.push(cmd),
+    }
 }
 
 /// Emit a `set-checkpoint` (DSL v0.6, spec-0012): the party-wide vanilla
@@ -4065,6 +4115,93 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
             lines(&t).into_bytes(),
         );
     }
+
+    // damage-players: the `/damage` primitive the effect emits actually subtracts
+    // health. A 0-player void does not tick a real player, so the test drives the
+    // damage on a summoned dummy (NoAI/Silent zombie, full 20 HP) with the exact
+    // amount + type the first declared `damage-players` uses, then asserts its
+    // Health dropped by that amount. Emitted only when the campaign uses the verb.
+    if let Some((amount, kind)) = first_damage_players(plan.campaign) {
+        let type_id = kind.id();
+        let mut t = packtest_header(&format!(
+            "{title}: damage-players subtracts {amount} half-hearts ({type_id}) (spec-0014)"
+        ));
+        t.push(format!("function {ns}:setup"));
+        // A dummy at a fixed cell near origin: NoAI so it never moves, Silent, full
+        // health. `damage` applies synchronously, so a 0-player void still shows it.
+        t.push(
+            "summon minecraft:zombie 0 -60 0 {Tags:[\"dw_dmgtest\"],NoAI:1b,Silent:1b,\
+             PersistenceRequired:1b,Health:20f}"
+                .to_string(),
+        );
+        t.push(
+            "execute store result score #hp0 dw.sys run data get entity \
+             @e[tag=dw_dmgtest,limit=1] Health 100"
+                .to_string(),
+        );
+        t.push(format!(
+            "damage @e[tag=dw_dmgtest,limit=1] {amount} {type_id}"
+        ));
+        t.push(
+            "execute store result score #hp1 dw.sys run data get entity \
+             @e[tag=dw_dmgtest,limit=1] Health 100"
+                .to_string(),
+        );
+        // The dummy's Health (×100) must have dropped: drop = hp0 - hp1 ≥ 1. Asserting
+        // "strictly decreased" rather than an exact amount keeps the test robust across
+        // damage types (armor-respecting types reduce the number, but the hit still
+        // lands); the exact `damage @s <amount> <type>` string is asserted by a
+        // compiler unit test.
+        t.push("scoreboard players operation #drop dw.sys = #hp0 dw.sys".to_string());
+        t.push("scoreboard players operation #drop dw.sys -= #hp1 dw.sys".to_string());
+        t.push("assert score #drop dw.sys matches 1..".to_string());
+        t.push("kill @e[tag=dw_dmgtest]".to_string());
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/v06_damage.mcfunction"),
+            lines(&t).into_bytes(),
+        );
+    }
+}
+
+/// The `(amount, damage_type)` of the first `damage-players` effect declared in the
+/// campaign (deep-walked through nested effect lists), in quest-then-trigger order.
+/// `None` when the campaign uses no `damage-players`. Drives the damage PackTest.
+fn first_damage_players(
+    c: &delvewright_dsl::Campaign,
+) -> Option<(u32, delvewright_dsl::DamageKind)> {
+    use delvewright_dsl::DamageKind;
+    let mut found: Option<(u32, DamageKind)> = None;
+    let mut scan = |eff: &QuestEffect| {
+        if found.is_none() {
+            eff.visit_deep(&mut |e| {
+                if found.is_none()
+                    && let QuestEffect::DamagePlayers {
+                        amount,
+                        damage_type,
+                        ..
+                    } = e
+                {
+                    found = Some((*amount, damage_type.unwrap_or(DamageKind::Generic)));
+                }
+            });
+        }
+    };
+    for q in &c.quests.content.quests {
+        for effs in q.on_objective_complete.values() {
+            for eff in effs {
+                scan(eff);
+            }
+        }
+        for eff in &q.on_complete {
+            scan(eff);
+        }
+    }
+    for t in &c.quests.content.triggers {
+        for eff in &t.effects {
+            scan(eff);
+        }
+    }
+    found
 }
 
 /// v0.6 PackTests (spec-0014): a `spawn-actor` puppet appears and both despawn

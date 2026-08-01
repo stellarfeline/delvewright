@@ -1666,6 +1666,22 @@ fn anchors_and_items(
                     ),
                 ));
             }
+            // v0.6 `damage-players` `in` filter-zone anchor (spec-0014).
+            if let Some(zone) = eff.damage_within()
+                && !set.contains(zone.anchor.as_str())
+            {
+                d.push(Diagnostic::error(
+                    codes::ANCHOR_UNRESOLVED,
+                    "quests",
+                    format!("/content/quests/{i}/{path}/in/anchor"),
+                    format!(
+                        "`damage-players` `in` anchor `{}` is not provided by the prefab bound to \
+                         this quest's area — use an anchor the prefab exposes (anchor names come \
+                         from prefab metadata; do NOT invent one)",
+                        zone.anchor
+                    ),
+                ));
+            }
             // v0.6 `begin-stealth` zone anchors (spec-0014).
             if let Some((zones, _, _)) = eff.begin_stealth() {
                 for (z, zone) in zones.iter().enumerate() {

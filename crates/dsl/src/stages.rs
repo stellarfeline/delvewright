@@ -1552,6 +1552,33 @@ pub enum QuestEffect {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
     },
+    /// Deals damage to the acting player(s) (DSL v0.6): the real consequence a
+    /// stealth `on_caught` or a souls-style beat needs — vanilla's `/damage`
+    /// primitive. Runs in the effect's `as @a` / `as @s` context, so `@s` is each
+    /// acting player: at top level it damages every player once; inside a stealth
+    /// `on_caught` it damages the caught player (the "caught → death → respawn at
+    /// checkpoint" beat). `amount` is in **half-hearts** (1 HP each); an amount ≥ 40
+    /// is lethal through golden apples / absorption. `within` (JSON `in`) narrows to
+    /// acting players standing inside an anchor-centred box (the same box model as a
+    /// stealth zone), keeping the per-`@s` semantics. `damage_type` is the damage
+    /// type — a curated set of vanilla types that all respect `keepInventory` and do
+    /// **not** bypass totems (no `out_of_world`/`generic_kill`); default `generic`.
+    /// (The field is `damage_type`, not `type`, because the effect enum is
+    /// internally tagged on `type`.)
+    DamagePlayers {
+        /// Damage dealt, in half-hearts (1 = 1 HP; ≥ 40 is effectively lethal).
+        amount: u32,
+        /// Optional spatial filter: only damage an acting player inside this
+        /// anchor-centred box (`anchor ± extent`). Absent = every acting player.
+        #[serde(default, rename = "in", skip_serializing_if = "Option::is_none")]
+        within: Option<StealthZone>,
+        /// The damage type (default [`DamageKind::Generic`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        damage_type: Option<DamageKind>,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
+    },
     /// Sets the party-wide respawn checkpoint (DSL v0.6, spec-0012). Emits
     /// `spawnpoint @a` at the anchor cell and mirrors the coords into
     /// `storage dw:cp pos`. Party-wide and monotonic by quest order (a later
@@ -1675,6 +1702,55 @@ pub enum SoundAt {
         /// The actor id (stage-5 `actors[]`; not yet resolvable).
         actor: String,
     },
+}
+
+/// The damage type of a [`QuestEffect::DamagePlayers`] effect (DSL v0.6). A
+/// **curated** subset of the vanilla 1.21.11 damage-type registry: every variant
+/// respects the `keepInventory` death flow (a gamerule, so all deaths do) and does
+/// **not** bypass a totem of undying — the totem-bypassing `out_of_world` /
+/// `generic_kill` types are deliberately excluded, so a scripted consequence can
+/// never silently void a player's held totem. Modelled as an enum (not a free
+/// string) so an unknown type is a schema rejection (`DW0100`) and needs no separate
+/// registry / diagnostic. `generic` is the default: command damage that respects
+/// totems + absorption but ignores armor, so a scripted hit lands regardless of gear.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum DamageKind {
+    /// `minecraft:generic` — armor-ignoring command damage (default).
+    Generic,
+    /// `minecraft:magic` — magical damage.
+    Magic,
+    /// `minecraft:wither` — the wither/withering effect's damage type.
+    Wither,
+    /// `minecraft:on_fire` — burning damage.
+    Fire,
+    /// `minecraft:drown` — drowning damage.
+    Drown,
+    /// `minecraft:freeze` — powder-snow freezing damage.
+    Freeze,
+    /// `minecraft:fall` — fall damage.
+    Fall,
+    /// `minecraft:lightning_bolt` — a lightning strike's damage type.
+    LightningBolt,
+    /// `minecraft:explosion` — a (non-player) explosion's damage type.
+    Explosion,
+}
+
+impl DamageKind {
+    /// The vanilla `minecraft:` damage-type id emitted to `/damage`.
+    pub fn id(self) -> &'static str {
+        match self {
+            DamageKind::Generic => "minecraft:generic",
+            DamageKind::Magic => "minecraft:magic",
+            DamageKind::Wither => "minecraft:wither",
+            DamageKind::Fire => "minecraft:on_fire",
+            DamageKind::Drown => "minecraft:drown",
+            DamageKind::Freeze => "minecraft:freeze",
+            DamageKind::Fall => "minecraft:fall",
+            DamageKind::LightningBolt => "minecraft:lightning_bolt",
+            DamageKind::Explosion => "minecraft:explosion",
+        }
+    }
 }
 
 /// The presentation channel for a [`QuestEffect::Narrate`] (DSL v0.4).
@@ -1814,6 +1890,7 @@ impl QuestEffect {
             | QuestEffect::SetTime { .. }
             | QuestEffect::SetWeather { .. }
             | QuestEffect::PlaySound { .. }
+            | QuestEffect::DamagePlayers { .. }
             | QuestEffect::SetCheckpoint { .. }
             | QuestEffect::BeginStealth { .. }
             | QuestEffect::EndStealth
@@ -1864,6 +1941,7 @@ impl QuestEffect {
             QuestEffect::BeginStealth { .. } => Some("begin-stealth"),
             QuestEffect::EndStealth => Some("end-stealth"),
             QuestEffect::PlaySound { .. } => Some("play-sound"),
+            QuestEffect::DamagePlayers { .. } => Some("damage-players"),
             QuestEffect::SpawnActor { .. } => Some("spawn-actor"),
             QuestEffect::DespawnActor { .. } => Some("despawn-actor"),
             QuestEffect::MoveActor { .. } => Some("move-actor"),
@@ -1879,6 +1957,16 @@ impl QuestEffect {
             QuestEffect::SetCheckpoint { anchor, on_respawn } => {
                 Some((anchor, on_respawn.as_slice()))
             }
+            _ => None,
+        }
+    }
+
+    /// The `within` filter zone if this is a v0.6 `damage-players` effect that
+    /// declares one (the `in` spatial scope). `None` for an unscoped
+    /// `damage-players` and for every other effect.
+    pub fn damage_within(&self) -> Option<&StealthZone> {
+        match self {
+            QuestEffect::DamagePlayers { within, .. } => within.as_ref(),
             _ => None,
         }
     }
@@ -2041,7 +2129,8 @@ impl QuestEffect {
             | QuestEffect::Cutscene { requires_flags, .. }
             | QuestEffect::SetTime { requires_flags, .. }
             | QuestEffect::SetWeather { requires_flags, .. }
-            | QuestEffect::PlaySound { requires_flags, .. } => requires_flags,
+            | QuestEffect::PlaySound { requires_flags, .. }
+            | QuestEffect::DamagePlayers { requires_flags, .. } => requires_flags,
             // Terminal / party- or session-global verbs are not per-effect
             // gatable: `campaign-complete` is terminal; `set-checkpoint`
             // (`spawnpoint @a`) / `begin-stealth` / `end-stealth` are party-wide
