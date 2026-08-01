@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
-    Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, is_v03, is_v04, is_v05,
+    Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06,
 };
 use crate::ids::is_kebab;
 use crate::registry::{
@@ -868,6 +868,70 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
 
     reserved_v04(c, d);
     reserved_v05(c, d);
+    reserved_v06(c, d);
+}
+
+/// DSL v0.6 reserved-feature gating + validation (spec-0013): the stage-1
+/// `horizon` and `boundary` world fields are rejected with `DW0141` in a
+/// pre-0.6.0 campaign (both default to absent, so a v0.5 campaign that uses
+/// neither is byte-identical). Under a v0.6 campaign they are validated:
+/// `horizon: "ocean"` requires a `boundary` (`DW0320`), and `boundary.margin`
+/// must lie in `0..=64` (`DW0321`).
+fn reserved_v06(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    use crate::stages::Horizon;
+
+    if !is_v06(c.world.dsl_version.as_str()) {
+        if c.world.content.horizon.is_some() {
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "world",
+                "/content/horizon".to_string(),
+                "world `horizon` requires dsl_version 0.6.0 — raise this stage's `dsl_version` to \
+                 0.6.0, or remove the construct"
+                    .to_string(),
+            ));
+        }
+        if c.world.content.boundary.is_some() {
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "world",
+                "/content/boundary".to_string(),
+                "world `boundary` requires dsl_version 0.6.0 — raise this stage's `dsl_version` to \
+                 0.6.0, or remove the construct"
+                    .to_string(),
+            ));
+        }
+        return;
+    }
+
+    // `horizon: "ocean"` without a return rule strands wanderers in an infinite sea.
+    if matches!(c.world.content.horizon, Some(Horizon::Ocean)) && c.world.content.boundary.is_none()
+    {
+        d.push(Diagnostic::error(
+            codes::OCEAN_NO_BOUNDARY,
+            "world",
+            "/content/horizon".to_string(),
+            "`horizon: \"ocean\"` needs a `boundary` — an infinite swimmable sea with no return \
+             rule lets players wander off the map. Add a `boundary` (a bare `{}` uses the default \
+             margin), or set `horizon` to `void`"
+                .to_string(),
+        ));
+    }
+    // `margin` range check (0..=64).
+    if let Some(b) = &c.world.content.boundary
+        && !(0..=64).contains(&b.margin)
+    {
+        d.push(Diagnostic::error(
+            codes::BOUNDARY_MARGIN,
+            "world",
+            "/content/boundary/margin".to_string(),
+            format!(
+                "`boundary.margin` = {} is out of range — set it to a value in 0..=64 (16 is the \
+                 default)",
+                b.margin
+            ),
+        ));
+    }
 }
 
 /// DSL v0.5 reserved-feature gating (spec-0010): declared world `time`/`weather`
