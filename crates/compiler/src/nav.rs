@@ -63,7 +63,7 @@ pub const DW_CHECKPOINT_UNSTANDABLE: &str = "DW0316";
 /// `DW0327`: a `begin-stealth` (spec-0014) zone that is unstandable, or unreachable
 /// from the player's position at the beat that activates the stealth check.
 pub const DW_STEALTH_ZONE: &str = "DW0327";
-/// `DW0352`: a **punishing** `begin-stealth` whose grace window cannot be beaten —
+/// `DW0355`: a **punishing** `begin-stealth` whose grace window cannot be beaten —
 /// from a position a player legally occupies the instant the beat arms (the
 /// activating objective's anchor, or any checkpoint that can respawn them into the
 /// running session), no zone is reachable within `grace_ticks` at sprint speed over
@@ -73,7 +73,7 @@ pub const DW_STEALTH_ZONE: &str = "DW0327";
 /// or human — a fixed couple of seconds later, and if the checkpoint it respawns
 /// them at is also outside cover, the retry loop never terminates. A structurally
 /// unavoidable death is not 初见杀 (spec-0016), it is a broken beat.
-pub const DW_STEALTH_ONSET: &str = "DW0352";
+pub const DW_STEALTH_ONSET: &str = "DW0355";
 /// `DW0342`: a **lethal** trap (spec-0011) whose trigger cell lies on the forced
 /// critical path with no discharge — not avoidable (the trigger cell is a required
 /// path cell), not survivable (`rearm`, so a respawn walk-back re-triggers it →
@@ -1787,7 +1787,7 @@ fn verify_stealth(
     Ok(())
 }
 
-// --- DW0352: stealth onset survivability ------------------------------------
+// --- DW0355: stealth onset survivability ------------------------------------
 
 /// Ticks a sprinting player needs to cross one block. Vanilla sprint is
 /// 5.612 blocks/s = 0.2806 blocks/tick → 3.56 t/block; rounded **up** to 4 so the
@@ -1809,7 +1809,7 @@ const ONSET_REACTION_TICKS: u32 = 10;
 type OnsetStart = (String, [i32; 3]);
 
 /// Prove every **punishing** `begin-stealth` beat is escapable at onset (DSL v0.6,
-/// spec-0014 + spec-0016) — [`DW_STEALTH_ONSET`] (`DW0352`).
+/// spec-0014 + spec-0016) — [`DW_STEALTH_ONSET`] (`DW0355`).
 ///
 /// DW0327 already proves each zone is standable and connected to the beat. That is
 /// not enough: `begin-stealth` arms *instantly*, the judge starts counting on the
@@ -3229,7 +3229,7 @@ mod tests {
         assert!(verify_stealth(&world, &beats, &[at_step([0, 65, 1], 0)]).is_ok());
     }
 
-    // --- DW0352: stealth onset survivability --------------------------------
+    // --- DW0355: stealth onset survivability --------------------------------
 
     /// The island defect in miniature: cover EXISTS and is reachable (DW0327 is
     /// happy) but is too far to reach inside the grace window, so the beat kills
@@ -3239,7 +3239,7 @@ mod tests {
         // A 40-long corridor; the beat arms at x=0, the only zone sits at x=39.
         let world = floored(40, 3, 65, &[]);
         let zones = vec![("zone/alcove".to_string(), [39, 65, 1], [1, 1, 1])];
-        // Reachability alone passes — this is exactly the gap DW0352 closes.
+        // Reachability alone passes — this is exactly the gap DW0355 closes.
         assert!(
             verify_stealth(&world, &[(zones.clone(), 0)], &[at_step([0, 65, 1], 0)]).is_ok(),
             "DW0327 must be satisfied, so the failure below is purely a timing one"
@@ -3247,7 +3247,7 @@ mod tests {
         let starts = vec![("the activating objective's anchor".to_string(), [0, 65, 1])];
         let err = verify_stealth_onset(&world, &zones, 50, &starts, 1)
             .expect_err("cover 38 blocks away cannot be reached in 50 ticks");
-        assert_eq!(err.code, DW_STEALTH_ONSET); // DW0352
+        assert_eq!(err.code, DW_STEALTH_ONSET); // DW0355
         assert!(
             err.message.contains("zone/alcove") && err.message.contains("short by"),
             "the diagnostic names the nearest zone and the tick deficit: {}",

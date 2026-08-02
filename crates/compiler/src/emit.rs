@@ -298,7 +298,7 @@ pub fn build_with_warnings(
                 // (spec-0014, DW0327), re-rooting DW0311 reachability at each beat.
                 crate::nav::check_checkpoints(plan, &world)?;
                 crate::nav::check_stealth_zones(plan, &world)?;
-                // …and the onset-survivability proof on top of them (DW0352): a
+                // …and the onset-survivability proof on top of them (DW0355): a
                 // punishing beat must be escapable in `grace_ticks` from where the
                 // player provably stands when it arms, and from every checkpoint
                 // that can respawn them back into it.

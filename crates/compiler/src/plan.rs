@@ -104,7 +104,7 @@ pub struct StealthBeat {
     /// firing step of the first `end-stealth` after `fire_step`, or of the next
     /// `begin-stealth` (a new session replaces the running one), whichever comes
     /// first. `None` = the beat is never closed and runs to the end of the
-    /// campaign. Roots the DW0352 onset proof's respawn-position set: a
+    /// campaign. Roots the DW0355 onset proof's respawn-position set: a
     /// checkpoint reigning anywhere in `[fire_step, end_step]` can drop a player
     /// into this beat.
     pub end_step: Option<usize>,
@@ -114,7 +114,7 @@ impl StealthBeat {
     /// Whether being caught in this beat actually **punishes** the player — the
     /// `on_caught` tree contains a `damage-players` (direct harm) or a
     /// `spawn-wave` (hostile mobs). A beat that only narrates has nothing to
-    /// escape from, so the DW0352 onset-survivability obligation does not apply
+    /// escape from, so the DW0355 onset-survivability obligation does not apply
     /// to it; a punishing beat must be escapable from every position a player can
     /// legally occupy when it starts.
     pub fn is_punishing(&self) -> bool {
