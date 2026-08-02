@@ -1751,3 +1751,40 @@ fn dw0330_warning_reports_but_does_not_fail_the_build() {
         String::from_utf8_lossy(&out.stdout)
     );
 }
+
+/// `DW0309` — a mannequin NPC declares a `skin`, but `skins/<texture_id>.png` is
+/// not in the campaign directory. A build error, not a silent skip: the mannequin
+/// would otherwise be summoned pointing at a texture the resource pack never
+/// received, and ship as the default skin.
+#[test]
+fn a_missing_skin_png_is_dw0309() {
+    let dir = tmp("skin-missing");
+    let mut npcs: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(common::hello_world_dir().join("npcs.json")).unwrap(),
+    )
+    .unwrap();
+    npcs["dsl_version"] = "0.4.0".into();
+    npcs["content"]["npcs"][0]["skin"] =
+        serde_json::json!({ "texture_id": "keeper", "model": "wide" });
+    common::materialize_from(
+        &common::hello_world_dir(),
+        &serde_json::json!({ "documents": { "npcs": npcs } }),
+        &dir,
+    );
+    // Deliberately do NOT create `skins/keeper.png`.
+    let out = delvec(&[
+        "build",
+        dir.to_str().unwrap(),
+        "-o",
+        tmp("skin-missing-out").to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stderr.contains("DW0309") || stdout.contains("DW0309"),
+        "expected DW0309 for a missing skin PNG:\nstderr: {stderr}\nstdout: {stdout}"
+    );
+    assert_ne!(code(&out), 0, "a missing skin PNG must fail the build");
+}
