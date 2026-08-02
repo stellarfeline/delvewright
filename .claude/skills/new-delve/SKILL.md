@@ -131,13 +131,18 @@ non-English language **and asks for localized in-game text** (中文文本 etc.)
 
 1. Declare the codes in `world.json`: `"languages": ["zh-cn", …]` (BCP-47-style;
    `en` is implicit/canonical and is **never** listed). Stage docs stay English.
-2. `delvec schema` has no l10n stage; get the exact key inventory by writing the
-   sidecar and letting `delvec validate` tell you what is missing/orphan
-   (`DW0180`/`DW0181`). Author `l10n/<code>.json`:
+2. **Who translates** — if the repo's `delvewright.toml`/`delvewright.local.toml`
+   has an `[i18n]` section AND the env var it names (`api_key_env`) is set, run
+   `python3 tools/i18n-translate.py <campaign-dir> --lang <code>` (external LLM
+   API; it writes and validates the sidecar for you, then go to step 4).
+   Otherwise translate in-agent, steps 3–4. Generation-time only either way —
+   shipped delves never call an LLM. See `docs/reference/i18n.md`.
+3. In-agent: `delvec l10n-inventory <campaign-dir> --lang <code>` gives the exact
+   key inventory as JSON (key, English, speaking NPC, existing translation).
+   **Translate FROM the finished English** (never author a language natively) —
+   honor each NPC's `persona.speech_style`, keep a Minecraft-appropriate register,
+   cover the inventory **exactly**. Write `l10n/<code>.json`:
    `{ dsl_version, campaign_id, kind: "l10n", lang: "<code>", content: { <key>: … } }`.
-3. **Translate FROM the finished English** (never author a language natively) —
-   honor each NPC's `persona.speech_style` in the target language, and keep a
-   Minecraft-appropriate register. Cover the inventory **exactly**.
 4. Re-`validate` until zero `DW0180`/`DW0181`. The default build stays English;
    `delvec build --lang <code>` emits the localized delve (same layout, strings
    swapped; `critical-path.json` is language-neutral so the ladder is unchanged).
