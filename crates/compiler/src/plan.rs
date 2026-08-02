@@ -128,6 +128,20 @@ pub struct ShortcutPlan {
     pub on_unlock: Vec<QuestEffect>,
 }
 
+/// A resolved stage-5 `ambush` (spec-0016 §3), collected in declared order —
+/// the trigger cell and the cell each ambusher will stand on. An ambush whose
+/// anchors do not resolve carries no entry (and so no proof); the desugared
+/// trigger's own anchor checks report that.
+#[derive(Clone, Debug)]
+pub struct AmbushPlan {
+    /// The full ambush id (`ambush/<kebab>`).
+    pub id: String,
+    /// The resolved trigger cell — where the player is standing when it springs.
+    pub at: [i32; 3],
+    /// One resolved spawn cell per ambusher, in declared order.
+    pub actor_cells: Vec<[i32; 3]>,
+}
+
 /// A resolved `begin-stealth` beat (DSL v0.6, spec-0014), collected in
 /// deterministic content order; its `index` (1-based) is the active-session id
 /// written to `#stealth dw.sys` (0 = inactive).
@@ -291,6 +305,8 @@ pub struct Plan<'a> {
     pub traps: Vec<TrapPlan>,
     /// Resolved shortcut doors (spec-0016 §2), content-ordered.
     pub shortcuts: Vec<ShortcutPlan>,
+    /// Resolved ambushes (spec-0016 §3), declaration-ordered.
+    pub ambushes: Vec<AmbushPlan>,
     /// Resolved gate open/close firings (DSL v0.6), content-ordered — drives the
     /// `close-gate` completability model in `crate::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
@@ -1033,6 +1049,9 @@ impl<'a> Plan<'a> {
         // ---- shortcut doors (spec-0016 §2) ----
         let shortcuts = collect_shortcuts(campaign, &anchors);
 
+        // ---- ambushes (spec-0016 §3) ----
+        let ambushes = collect_ambushes(campaign, &anchors);
+
         // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
         let mut gate_events = collect_gate_events(campaign, &anchors, &objective_steps);
         // A shortcut gate is sealed from world-load and is opened only by an
@@ -1068,6 +1087,7 @@ impl<'a> Plan<'a> {
             objective_steps,
             traps,
             shortcuts,
+            ambushes,
             gate_events,
             strict_ancestor_steps,
             massing_bounds,
@@ -1831,6 +1851,41 @@ fn collect_shortcuts(
             unlock_anchor: sc.unlock.as_str().to_string(),
             unlock,
             on_unlock: sc.on_unlock.clone(),
+        });
+    }
+    out
+}
+
+/// Collect every stage-5 `ambush` (spec-0016 §3) in declared order, resolving the
+/// trigger cell and each ambusher's spawn cell. An ambush whose trigger anchor or
+/// whose every actor cell fails to resolve is skipped (the desugared trigger's own
+/// anchor checks own that failure).
+fn collect_ambushes(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+) -> Vec<AmbushPlan> {
+    let by_id: BTreeMap<&str, &delvewright_dsl::Actor> = campaign
+        .quests
+        .content
+        .actors
+        .iter()
+        .map(|a| (a.id.as_str(), a))
+        .collect();
+    let mut out = Vec::new();
+    for amb in &campaign.quests.content.ambushes {
+        let Some(at) = point_any(anchors, amb.at.as_str()) else {
+            continue;
+        };
+        let actor_cells: Vec<[i32; 3]> = amb
+            .actors
+            .iter()
+            .filter_map(|id| by_id.get(id.as_str()))
+            .filter_map(|a| point_any(anchors, a.anchor.as_str()))
+            .collect();
+        out.push(AmbushPlan {
+            id: amb.id.as_str().to_string(),
+            at,
+            actor_cells,
         });
     }
     out

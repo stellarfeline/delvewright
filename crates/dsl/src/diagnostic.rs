@@ -242,7 +242,7 @@ pub mod codes {
     /// `spawn-actor` is a guarded no-op, so the author's intent silently halves).
     /// The telegraph is deliberately NOT required — an un-telegraphed ambush is
     /// core souls vocabulary (owner ruling 2026-08-02).
-    pub const AMBUSH_INVALID: &str = "DW0361";
+    pub const AMBUSH_INVALID: &str = "DW0365";
     /// (v0.6) A trap dispense-payload item id is not in the pinned 1.21.11 registry
     /// (spec-0011; mirrors `DW0143`). Validation-tier (exit 1). Renumbered off the
     /// spec's stale reserved number (0198 — since taken).

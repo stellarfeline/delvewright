@@ -1195,6 +1195,10 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 "the `shortcuts` section",
             );
         }
+        // Ambushes (spec-0016 §3) likewise.
+        if !c.quests.content.ambushes.is_empty() {
+            res(d, "/content/ambushes".to_string(), "the `ambushes` section");
+        }
         // Wave-mob `equipment` (task #65) is a v0.6 stage-5 surface: reserved
         // before 0.6.0 (the field defaults to absent, so an earlier campaign
         // that uses none is byte-identical).
@@ -4664,7 +4668,7 @@ fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
 // spec-0016 §3 — ambushes
 // ---------------------------------------------------------------------------
 
-/// Validate the stage-5 `ambushes` section (spec-0016 §3), `DW0361`.
+/// Validate the stage-5 `ambushes` section (spec-0016 §3), `DW0365`.
 ///
 /// An ambush desugars to an ordinary environment trigger at parse time, so it
 /// inherits every trigger diagnostic already in the compiler — id/range checks
@@ -4675,7 +4679,7 @@ fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
 /// It deliberately does **not** require a `telegraph`. The un-telegraphed
 /// ambush is core souls vocabulary (owner ruling 2026-08-02) — 初见杀 is how a
 /// level teaches. What the engine owes the player is counterplay on the retry,
-/// which is a geometric question and is proven in `compiler::nav` (`DW0362`).
+/// which is a geometric question and is proven in `compiler::nav` (`DW0366`).
 fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     for (i, a) in c.quests.content.ambushes.iter().enumerate() {

@@ -329,6 +329,9 @@ pub fn build_with_warnings(
                 // already proven with every shortcut gate SEALED (Plan::build seals
                 // them at step 0), so the delve is finishable the long way.
                 crate::nav::check_shortcuts(plan, &world, campaign_spawn(plan))?;
+                // spec-0016 §3 ambush counterplay (DW0366): 初见杀 is legitimate,
+                // a pocket with no retreat is not.
+                crate::nav::check_ambushes(plan, &world, campaign_spawn(plan))?;
                 // Export the DW0311-proven critical-path routes as validation
                 // metadata (task #38): thinned per-leg waypoint polylines the harness
                 // replays as successive nearby goals, so no single giant mineflayer A*

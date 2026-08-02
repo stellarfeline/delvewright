@@ -29,8 +29,7 @@ pub use envelope::{
 };
 pub use ids::{
     ActorId, AmbushId, AnchorId, AreaId, CampaignId, ClassId, DialogueId, EditBatchId, FlagId,
-    NpcId,
-    ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId, TriggerId, WaveId,
+    NpcId, ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId, TriggerId, WaveId,
 };
 pub use l10n::{
     ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, MARKER_SIGIL, ScreenNarrate, SoundRef,
@@ -44,8 +43,8 @@ pub use registry::{
 };
 pub use schema::stage_schema;
 pub use stages::{
-    Actor, Ambush, Area, AreaLighting, AreaMitigation, Boundary, CameraShot, CameraSubject, CameraTarget,
-    CameraWaypoint, Class, ClassesContent, DamageKind, DespawnStyle, DialogueContent,
+    Actor, Ambush, Area, AreaLighting, AreaMitigation, Boundary, CameraShot, CameraSubject,
+    CameraTarget, CameraWaypoint, Class, ClassesContent, DamageKind, DespawnStyle, DialogueContent,
     DialogueEffect, DialogueNode, DialogueOption, EnvTrigger, Facing, Fixture, Horizon, KitItem,
     Lethality, MobAttributes, MobEffect, MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin,
     NpcsContent, Objective, Persona, Pieces, PlannedQuest, Prop, Quest, QuestEffect,

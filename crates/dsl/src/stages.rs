@@ -984,7 +984,7 @@ pub struct TrapDisarm {
 /// What the engine *does* owe the player is **counterplay on the retry**: having
 /// died once, an informed player must have something to do about it. Determinism
 /// guarantees the second attempt meets the same ambushers in the same cells; the
-/// compiler adds the missing half — `DW0362` proves the trigger cell is not a
+/// compiler adds the missing half — `DW0366` proves the trigger cell is not a
 /// sealed pocket, i.e. that with every ambusher standing where it will stand,
 /// a route out still exists (a retreat, luring ground, a positioning line).
 /// Dying uninformed is a lesson; dying with no play available is a broken beat.
@@ -1028,7 +1028,10 @@ impl Ambush {
             effects.push(QuestEffect::UnleashActor { actor: a.clone() });
         }
         EnvTrigger {
-            id: TriggerId(format!("trigger/{}", crate::l10n::local_id(self.id.as_str()))),
+            id: TriggerId(format!(
+                "trigger/{}",
+                crate::l10n::local_id(self.id.as_str())
+            )),
             at: self.at.clone(),
             on: self.trigger.clone(),
             requires_flags: Vec::new(),
