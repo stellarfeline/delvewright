@@ -16,6 +16,21 @@ covered by at least one test asserting its code.
   catalog entry into a normal row and drop it from PENDING).
 - A PENDING code not actually documented            -> FAIL (document it).
 
+## Uniqueness (one code, one rule)
+
+A DW code is a name, and a name that denotes two rules denotes neither:
+
+- A code declared by two different diagnostic constants -> FAIL.
+- A code with two diagnostics-catalog rows in the doc   -> FAIL.
+
+This is the parallel-branch collision class: two branches each pick "the next
+free code" against the main they branched from, and the merge silently ships one
+number for two rules. Every OTHER gate here passes on a colliding pair — both
+rules are in source, both are documented, both are tested — so consistency and
+coverage cannot see it. Landed after PR #157 shipped `DW0352` for stealth-onset
+survivability into a main that had just given `DW0352` to the map editor's
+trap-hardware integrity check (#155).
+
 ## Test-coverage gate
 
 Every documented, landed (non-PENDING) DW code must be referenced by at least
@@ -131,6 +146,34 @@ def crate_symbol_table(crate: str) -> dict[str, str]:
     return table
 
 
+def declared_constants() -> dict[str, set[tuple[str, str]]]:
+    """DW code -> {(crate, constant name)} over every `const NAME: &str = "DWxxxx"`
+    in crates/**/*.rs. The source-of-truth view for the uniqueness gate: one code
+    declared by two different diagnostic constants means two rules are wearing the
+    same number."""
+    table: dict[str, set[tuple[str, str]]] = {}
+    for rs in sorted(CRATES_DIR.rglob("*.rs")):
+        try:
+            crate = rs.relative_to(CRATES_DIR).parts[0]
+        except ValueError:  # pragma: no cover - rglob always yields children
+            continue
+        for name, code in CONST_RE.findall(rs.read_text(encoding="utf-8")):
+            table.setdefault(code, set()).add((crate, name))
+    return table
+
+
+def catalog_row_counts() -> dict[str, int]:
+    """DW code -> number of diagnostics-catalog table rows introducing it in the
+    reference (`| `DWxxxx` | …`). A code with two rows documents two rules."""
+    counts: dict[str, int] = {}
+    row_re = re.compile(r"^\|\s*`(DW[0-9]{4})`\s*\|")
+    for line in DOC_PATH.read_text(encoding="utf-8").splitlines():
+        m = row_re.match(line)
+        if m:
+            counts[m.group(1)] = counts.get(m.group(1), 0) + 1
+    return counts
+
+
 def crate_test_scope_texts(crate: str) -> list[str]:
     """Every text blob that counts as 'test code' for a crate: whole files
     under crates/<crate>/tests/**/*.rs, plus #[cfg(test)] module bodies inside
@@ -205,6 +248,35 @@ def main() -> int:
         errors.append(
             "PENDING DW codes not documented in the reference (add their "
             f"'approved, landing' entries): {', '.join(pending_undocumented)}"
+        )
+
+    # --- uniqueness gate: one code, one rule --------------------------------
+    # A DW code is a name, and a name that denotes two rules denotes neither. Two
+    # branches developed in parallel will each pick "the next free code" against
+    # the main they branched from and collide on merge — silently, because every
+    # other gate here is satisfied by a colliding pair (both rules are in source,
+    # both are documented, both are tested). This gate is the one that isn't.
+    collisions = sorted(
+        (code, sorted(owners))
+        for code, owners in declared_constants().items()
+        if len({name for _, name in owners}) > 1
+    )
+    for code, owners in collisions:
+        where = ", ".join(f"{crate}::{name}" for crate, name in owners)
+        errors.append(
+            f"{code} is declared by MORE THAN ONE diagnostic constant ({where}) — two "
+            "rules are wearing the same code. This is the parallel-branch merge "
+            "collision: renumber the one that landed second to the next genuinely "
+            "free code (check the merged catalog, not your branch point) across "
+            "source, tests, the reference catalog and any content-repo mention"
+        )
+
+    dup_rows = sorted(code for code, n in catalog_row_counts().items() if n > 1)
+    if dup_rows:
+        errors.append(
+            "DW codes with MORE THAN ONE diagnostics-catalog row in "
+            "docs/reference/compiler.md — one code documents one rule "
+            f"(renumber or merge the duplicate row): {', '.join(dup_rows)}"
         )
 
     # --- test-coverage gate -------------------------------------------------

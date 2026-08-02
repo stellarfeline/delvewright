@@ -100,6 +100,38 @@ pub struct StealthBeat {
     pub grace_ticks: u32,
     /// `critical_path` step index that activates the beat (roots DW0327).
     pub fire_step: usize,
+    /// `critical_path` step index at which the beat stops judging players — the
+    /// firing step of the first `end-stealth` after `fire_step`, or of the next
+    /// `begin-stealth` (a new session replaces the running one), whichever comes
+    /// first. `None` = the beat is never closed and runs to the end of the
+    /// campaign. Roots the DW0355 onset proof's respawn-position set: a
+    /// checkpoint reigning anywhere in `[fire_step, end_step]` can drop a player
+    /// into this beat.
+    pub end_step: Option<usize>,
+}
+
+impl StealthBeat {
+    /// Whether being caught in this beat actually **punishes** the player — the
+    /// `on_caught` tree contains a `damage-players` (direct harm) or a
+    /// `spawn-wave` (hostile mobs). A beat that only narrates has nothing to
+    /// escape from, so the DW0355 onset-survivability obligation does not apply
+    /// to it; a punishing beat must be escapable from every position a player can
+    /// legally occupy when it starts.
+    pub fn is_punishing(&self) -> bool {
+        fn punishing(eff: &QuestEffect) -> bool {
+            if matches!(
+                eff,
+                QuestEffect::DamagePlayers { .. } | QuestEffect::SpawnWave { .. }
+            ) {
+                return true;
+            }
+            eff.nested_effect_lists()
+                .into_iter()
+                .flatten()
+                .any(punishing)
+        }
+        self.on_caught.iter().any(punishing)
+    }
 }
 
 /// A resolved trap (DSL v0.6, spec-0011), collected in deterministic content
@@ -1614,6 +1646,7 @@ fn collect_v06_effects(
         anchors,
         checkpoints: Vec::new(),
         stealth: Vec::new(),
+        stealth_ends: Vec::new(),
     };
 
     // Stage 5 — quest effects (on_objective_complete, then on_complete).
@@ -1653,7 +1686,26 @@ fn collect_v06_effects(
         }
     }
 
+    close_stealth_windows(&mut c.stealth, &c.stealth_ends);
     (c.checkpoints, c.stealth)
+}
+
+/// Close every beat's active window: a running session ends at the first
+/// `end-stealth` fired after it, or when the next `begin-stealth` replaces it
+/// (`#stealth dw.sys` holds ONE session id), whichever is earlier. A beat with
+/// neither runs to the end of the campaign (`None`). Deterministic: driven by the
+/// content-ordered collections only.
+fn close_stealth_windows(beats: &mut [StealthBeat], ends: &[usize]) {
+    let fires: Vec<usize> = beats.iter().map(|b| b.fire_step).collect();
+    for (i, beat) in beats.iter_mut().enumerate() {
+        let after = |s: &usize| *s > beat.fire_step;
+        let first_end = ends.iter().filter(|s| after(s)).min().copied();
+        let next_begin = fires.iter().skip(i + 1).filter(|s| after(s)).min().copied();
+        beat.end_step = match (first_end, next_begin) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+    }
 }
 
 /// The absolute gate region `(from, to)` a gate anchor resolves to (globally, like
@@ -1882,6 +1934,9 @@ struct V06Collector<'a> {
     anchors: &'a BTreeMap<(String, String), ResolvedAnchor>,
     checkpoints: Vec<CheckpointPlan>,
     stealth: Vec<StealthBeat>,
+    /// Firing steps of every `end-stealth`, in content order — closes each beat's
+    /// active window ([`StealthBeat::end_step`]).
+    stealth_ends: Vec<usize>,
 }
 
 impl V06Collector<'_> {
@@ -1918,6 +1973,7 @@ impl V06Collector<'_> {
                 on_caught: on_caught.to_vec(),
                 grace_ticks,
                 fire_step,
+                end_step: None, // filled in by `close_stealth_windows`
             });
         }
     }
@@ -1927,6 +1983,8 @@ impl V06Collector<'_> {
             self.push_checkpoint(anchor.as_str(), on_respawn, fire_step);
         } else if let Some((zones, on_caught, grace)) = eff.begin_stealth() {
             self.push_stealth(zones, on_caught, grace, fire_step);
+        } else if matches!(eff, QuestEffect::EndStealth) {
+            self.stealth_ends.push(fire_step);
         }
         // Descend into every nested effect list (`sequence` steps, `on_respawn`,
         // `on_caught`, `on_arrive`): a `set-checkpoint`/`begin-stealth` nested in a
