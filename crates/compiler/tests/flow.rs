@@ -51,12 +51,30 @@ fn variant(name: &str, quests: serde_json::Value) -> Campaign {
     parse(&dst)
 }
 
-/// The fixture's stage-5 document, as a mutable JSON value.
-fn quests_json() -> serde_json::Value {
+/// Materialize `branch-endings` with an arbitrary set of stage documents
+/// replaced, and parse it (structural parse only, as above).
+fn variant_docs(name: &str, docs: serde_json::Value) -> Campaign {
+    let dst = std::env::temp_dir().join(format!("dw-flow-{name}"));
+    let _ = std::fs::remove_dir_all(&dst);
+    common::materialize_from(
+        &branch_endings_dir(),
+        &serde_json::json!({ "documents": docs }),
+        &dst,
+    );
+    parse(&dst)
+}
+
+/// One of the fixture's stage documents, as a mutable JSON value.
+fn stage_json(stage: &str) -> serde_json::Value {
     serde_json::from_str(
-        &std::fs::read_to_string(branch_endings_dir().join("quests.json")).unwrap(),
+        &std::fs::read_to_string(branch_endings_dir().join(format!("{stage}.json"))).unwrap(),
     )
     .unwrap()
+}
+
+/// The fixture's stage-5 document, as a mutable JSON value.
+fn quests_json() -> serde_json::Value {
+    stage_json("quests")
 }
 
 fn codes(c: &Campaign) -> Vec<String> {
@@ -287,6 +305,49 @@ fn reaction_bundle_set_flag_is_not_a_producer() {
         "an on_respawn set-flag must not count as a producer"
     );
     assert!(codes(&c).contains(&"DW0203".to_string()));
+}
+
+/// Dialogue reachability honors the gates on **intermediate** options, not just
+/// on the completing one. `obj/watch`'s completing option is ungated (`DW0191`
+/// requires that), but it sits behind a node whose only entrance requires
+/// `flag/wait` — so with nothing left that can produce `flag/wait` (only the
+/// self-gated re-affirm effect, which produces nothing), the objective is
+/// unreachable. The old walk ignored intermediate gates and called it reachable.
+#[test]
+fn gated_intermediate_option_blocks_dialogue_reachability() {
+    let mut dlg = stage_json("dialogue");
+    // Drop the option that sets flag/wait; the flee option and the flag/wait-gated
+    // door into `dlg/watch` both stay.
+    let nodes = dlg["content"]["dialogues"][0]["nodes"]
+        .as_array_mut()
+        .unwrap();
+    let opts = nodes[0]["options"].as_array_mut().unwrap();
+    opts.retain(|o| {
+        !o["effects"]
+            .as_array()
+            .is_some_and(|es| es.iter().any(|e| e["flag"] == "flag/wait"))
+    });
+    let mut q = quests_json();
+    // The remaining flee option must still complete obj/decide, and obj/watch must
+    // stop demanding flag/wait so the ONLY thing left blocking it is the gated
+    // intermediate option.
+    for quest in q["content"]["quests"].as_array_mut().unwrap() {
+        for obj in quest["objectives"].as_array_mut().unwrap() {
+            if obj["id"] == "obj/watch" || obj["id"] == "obj/walk-out" {
+                obj.as_object_mut().unwrap().remove("requires_flags");
+            }
+        }
+    }
+    let c = variant_docs(
+        "gated-intermediate",
+        serde_json::json!({ "dialogue": dlg, "quests": q }),
+    );
+    let flow = Flow::new(&c);
+    assert!(
+        !flow.any_completable().contains("obj/watch"),
+        "the completing option sits behind a flag-gated intermediate option"
+    );
+    assert!(codes(&c).contains(&"DW0203".to_string()), "{:?}", codes(&c));
 }
 
 /// A dialogue option's `set-flag` IS a producer. This is the false-red the old
