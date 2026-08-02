@@ -36,8 +36,18 @@ import {
   retainStandableWaypoints,
   walkGoals,
   type GoalSpec,
+  type TimedGate,
   type Waypoints,
 } from "./waypoints.ts";
+import {
+  GATE_MIN_ATTEMPTS,
+  GATE_POLL_MS,
+  describeGates,
+  gateRegionCells,
+  gateRetryBudgetMs,
+  gateWindowWaitMs,
+  needsStandoff,
+} from "./timed-gate.ts";
 
 /** Bounded number of physics-unstick bursts before a wedged hop fails loudly. */
 const UNSTICK_ATTEMPTS = 3;
@@ -79,7 +89,9 @@ export async function replayLegWithRecovery(
   label: string,
   goto: (spec: GoalSpec, label: string) => Promise<void>,
   unstick?: Unstick,
+  gate?: GateAssist,
 ): Promise<void> {
+  const gates = gate?.gates ?? [];
   let lastProven: GoalSpec | undefined;
   for (let g = 0; g < goalsList.length; g++) {
     const spec = goalsList[g]!;
@@ -89,11 +101,152 @@ export async function replayLegWithRecovery(
       await goto(spec, glabel);
     } catch (err) {
       if (err instanceof BotDeathError) throw err;
-      if (!lastProven) throw err; // nothing proven yet — not the pocket-wedge class
-      await recoverAndRetry(spec, glabel, lastProven, goto, unstick);
+      // A leg the compiler proved walks THROUGH a timed gate (spec-0016 §4) gets the
+      // window wait; every other leg keeps the old behaviour exactly, so a real
+      // navigation regression still fails on the first stall.
+      if (gate && gates.length > 0) {
+        await crossTimedGate(spec, glabel, lastProven, gate, goto, unstick, err);
+      } else {
+        if (!lastProven) throw err; // nothing proven yet — not the pocket-wedge class
+        await recoverAndRetry(spec, glabel, lastProven, goto, unstick);
+      }
     }
     lastProven = spec;
   }
+}
+
+/**
+ * The bot-facing half of a timed-gate crossing, injected by the executor so the
+ * control flow above stays unit-testable without a live server.
+ */
+export interface GateAssist {
+  /** The gates the compiler proved this leg's route crosses (empty ⇒ no assist). */
+  readonly gates: readonly TimedGate[];
+  /**
+   * Block (bounded) until `gates` are observed to go from closed to OPEN, so the
+   * crossing begins at the top of a window rather than its tail. Resolves early if
+   * the edge cannot be observed — the caller then simply tries the hop.
+   */
+  readonly waitForWindow: (gates: readonly TimedGate[]) => Promise<void>;
+  /** The bot's current feet cell, or `undefined` when it cannot be read. */
+  readonly feetCell: () => Vec3Tuple | undefined;
+  /** Injectable clock (tests). */
+  readonly now?: () => number;
+}
+
+/**
+ * Retry a hop that a `timed-gate` clock can interrupt (spec-0016 §4).
+ *
+ * mineflayer-pathfinder has no concept of a window: when the gate region fills
+ * mid-approach it aborts the path ("Path was stopped before it could be completed!")
+ * and, before this, the leg failed as though the geometry were broken. The compiler
+ * already proves the crossing is READABLE (DW0378: ≥20% of every cycle admits it);
+ * this teaches the runtime rung the same verb.
+ *
+ * Each attempt is: **stand off** — only when the bot is standing IN the fill (see
+ * {@link needsStandoff}); every retreated block has to be re-walked inside the open
+ * window, and DW0378's proof covers the gate SPAN, not an arbitrary run-up to it, so
+ * a bot already clear waits exactly where it stands — then **wait** for the
+ * closed→open edge, then re-run the hop, escalating to the ordinary task-#45
+ * stall recovery inside the same window (the pathfinder loses a path whose blocks
+ * are rewritten under it; a walk does not). The loop is bounded by
+ * {@link gateRetryBudgetMs} (two full cycles + margin) and {@link GATE_MIN_ATTEMPTS};
+ * once the budget is spent it makes one final full physical recovery (in case the
+ * hop was never about the clock) and then fails loudly, naming the gate and its
+ * cycle.
+ *
+ * This is bounded patience for legs the compiler MARKED, never a blanket retry: an
+ * unmarked leg is untouched, and a marked leg that is genuinely unwalkable still
+ * fails — the check is not weakened, only told what a gate is.
+ */
+async function crossTimedGate(
+  spec: GoalSpec,
+  glabel: string,
+  proven: GoalSpec | undefined,
+  gate: GateAssist,
+  goto: (spec: GoalSpec, label: string) => Promise<void>,
+  unstick: Unstick | undefined,
+  firstErr: unknown,
+): Promise<void> {
+  const gates = gate.gates;
+  const now = gate.now ?? (() => Date.now());
+  const budget = gateRetryBudgetMs(gates);
+  const start = now();
+  let lastErr = firstErr;
+  let attempt = 0;
+  process.stderr.write(
+    `[timed-gate] ${glabel} was interrupted by ${describeGates(gates)}; waiting for a ` +
+      `window (budget ${(budget / 1_000).toFixed(1)}s, min ${GATE_MIN_ATTEMPTS} attempts)\n`,
+  );
+  while (attempt < GATE_MIN_ATTEMPTS || now() - start < budget) {
+    attempt++;
+    if (proven && needsStandoff(gate.feetCell(), gates)) {
+      process.stderr.write(
+        `[timed-gate] standing off to [${proven.x}, ${proven.y}, ${proven.z}] — the bot ` +
+          `is inside the gate's fill\n`,
+      );
+      await reached(() => goto({ ...proven, range: 1 }, `${glabel} gate standoff`));
+    }
+    await gate.waitForWindow(gates);
+    const alabel = `${glabel} gate attempt ${attempt}`;
+    try {
+      await goto(spec, alabel);
+      return;
+    } catch (err) {
+      if (err instanceof BotDeathError) throw err;
+      lastErr = err;
+      // Every attempt's own reason is logged, not just the last one: a run where the
+      // bot never moved and a run where it crossed and was cut off look identical in
+      // a single terminal message, and telling them apart is the whole diagnosis.
+      process.stderr.write(
+        `[timed-gate] attempt ${attempt} pathfind failed: ` +
+          `${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    }
+    // Escalate INSIDE the window (observed on the-drowned-bell's portcullis): the
+    // pathfinder walks the bot to the cell at the gate's mouth and then aborts with
+    // "Path was stopped before it could be completed!", every window, while the raw
+    // physics burst walks the very same span in a fraction of a second. A path whose
+    // blocks are rewritten under it twice per cycle is not something A* can hold on
+    // to; the last blocks of a clocked span have to be crossed by walking. That is
+    // the ordinary task-#45 stall escalation (pathfind → look-and-walk burst →
+    // re-path), reused verbatim — plain movement a human player makes, still
+    // bounded, and it still has to physically get through an open gate.
+    if (proven) {
+      try {
+        await recoverAndRetry(spec, alabel, proven, goto, unstick);
+        return;
+      } catch (err) {
+        if (err instanceof BotDeathError) throw err;
+        lastErr = err;
+        process.stderr.write(
+          `[timed-gate] attempt ${attempt} physical crossing failed: ` +
+            `${err instanceof Error ? err.message : String(err)}\n`,
+        );
+      }
+    }
+  }
+  // Budget spent. Before calling it a failure, give the hop the ordinary physical
+  // recovery — the gate mark says a clock CAN interrupt this leg, not that every
+  // failure on it is the clock's doing.
+  try {
+    if (proven) {
+      await recoverAndRetry(spec, glabel, proven, goto, unstick);
+    } else {
+      await goto(spec, glabel);
+    }
+    return;
+  } catch (err) {
+    if (err instanceof BotDeathError) throw err;
+    lastErr = err;
+  }
+  const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
+  throw new Error(
+    `${glabel}: still blocked after ${attempt} timed-gate crossing attempt(s) over ` +
+      `${((now() - start) / 1_000).toFixed(1)}s — more than two full cycles of ` +
+      `${describeGates(gates)}. The window is not the problem; this is a real ` +
+      `navigation failure: ${detail}`,
+  );
 }
 
 /** Try a `goto`, returning whether it arrived; a bot death still propagates. */
@@ -818,6 +971,9 @@ export class MineflayerExecutor implements StepExecutor {
       // as walked; a non-matching walk (a sub-walk, or a post-transport step) does
       // not consume and falls back to the single destination goal.
       let legWaypoints: readonly Vec3Tuple[] | undefined;
+      // spec-0016 §4 (task #81): the timed gates this leg's proven route walks
+      // THROUGH. Only a marked leg is allowed the window wait below.
+      let legGates: readonly TimedGate[] = [];
       if (this.waypoints) {
         const match = nextLegWaypoints(this.waypoints.legs, this.legCursor, [
           pos[0],
@@ -825,7 +981,13 @@ export class MineflayerExecutor implements StepExecutor {
           pos[2],
         ]);
         legWaypoints = match.waypoints;
+        legGates = match.timedGates;
         this.legCursor = match.cursor;
+      }
+      if (legGates.length > 0) {
+        process.stderr.write(
+          `[timed-gate] ${label}: proven route crosses ${describeGates(legGates)}\n`,
+        );
       }
       // Drop proven waypoints the bot cannot physically stand on. The compiler models
       // every non-air block as a full 1×1×1 solid, so a leg may be proven by standing
@@ -856,6 +1018,13 @@ export class MineflayerExecutor implements StepExecutor {
         label,
         (spec, glabel) => this.runGoto(spec, glabel),
         (target) => this.unstickToward(target),
+        legGates.length > 0
+          ? {
+              gates: legGates,
+              waitForWindow: (gates) => this.waitForGateWindow(gates),
+              feetCell: () => this.feetCell(),
+            }
+          : undefined,
       );
     } finally {
       restoreControls();
@@ -881,6 +1050,79 @@ export class MineflayerExecutor implements StepExecutor {
     const support = bot.blockAt(p.offset(cell[0] - p.x, cell[1] - 1 - p.y, cell[2] - p.z));
     if (!support) return true; // support unknown (chunk not loaded) → keep the waypoint
     return !fences.has(support.type);
+  }
+
+  /** The bot's current feet cell (floored block position), or `undefined` if the bot
+   * is not connected. Read-only observation, used only to decide whether a timed-gate
+   * retry must retreat to a standoff first. */
+  private feetCell(): Vec3Tuple | undefined {
+    const bot = this.bot;
+    if (!bot?.entity) return undefined;
+    const p = bot.entity.position;
+    return [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)];
+  }
+
+  /**
+   * Whether every cell of `gate`'s compiler-declared region currently reads as empty
+   * space — i.e. the clock has the gate OPEN. `undefined` when the region's blocks
+   * cannot be read (chunk not loaded), so the caller can distinguish "shut" from
+   * "cannot see". The emptiness test is the block's own collision shape
+   * (`boundingBox === "empty"`), not a block-name comparison, so it stays correct for
+   * whatever block a campaign fills its gate with.
+   */
+  private gateOpen(gate: TimedGate): boolean | undefined {
+    const bot = this.requireBot();
+    const p = bot.entity.position;
+    for (const [x, y, z] of gateRegionCells(gate)) {
+      const block = bot.blockAt(p.offset(x - p.x, y - p.y, z - p.z));
+      if (!block) return undefined; // not loaded — state unknown
+      if (block.boundingBox !== "empty") return false;
+    }
+    return true;
+  }
+
+  /**
+   * Wait for `gates` to swing from closed to OPEN, so a crossing starts at the top of
+   * the window rather than its tail (spec-0016 §4, task #81).
+   *
+   * Two bounded phases: first watch until the gates read CLOSED (so an already-open
+   * window whose remaining ticks are unknown is not mistaken for a fresh one), then
+   * watch until they read OPEN. Each phase is capped at {@link gateWindowWaitMs} —
+   * one full cycle plus margin, within which the clock is guaranteed to produce the
+   * edge — so an unreadable region (chunk not loaded) can never hang the run; the
+   * wait simply gives up and the caller tries the hop anyway.
+   *
+   * This is navigation, not game logic: the harness reads the world only to TIME a
+   * movement the compiler already proved possible. It asserts nothing about the gate.
+   */
+  private async waitForGateWindow(gates: readonly TimedGate[]): Promise<void> {
+    const cap = gateWindowWaitMs(gates);
+    const allOpen = (): boolean | undefined => {
+      let known = true;
+      for (const g of gates) {
+        const open = this.gateOpen(g);
+        if (open === undefined) known = false;
+        else if (!open) return false;
+      }
+      return known ? true : undefined;
+    };
+    const watch = async (want: boolean, phase: string): Promise<boolean> => {
+      const deadline = Date.now() + cap;
+      while (Date.now() < deadline) {
+        if (allOpen() === want) return true;
+        await delay(GATE_POLL_MS);
+      }
+      process.stderr.write(
+        `[timed-gate] gave up waiting for the gate to read ${phase} after ` +
+          `${(cap / 1_000).toFixed(1)}s — crossing on the next attempt regardless\n`,
+      );
+      return false;
+    };
+    if (!(await watch(false, "closed"))) return;
+    process.stderr.write(`[timed-gate] gate is shut; waiting for it to open\n`);
+    if (await watch(true, "open")) {
+      process.stderr.write(`[timed-gate] window open — crossing now\n`);
+    }
   }
 
   /**

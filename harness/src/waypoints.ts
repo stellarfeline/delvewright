@@ -24,22 +24,48 @@ const WAYPOINTS_SUBPATH = ["validation", "critical-path-waypoints.json"] as cons
  * waypoints are standable floor cells and the hops between them are short. */
 export const WAYPOINT_RANGE = 1;
 
+/**
+ * A compiler-exported `timed-gate` (spec-0016 §4): a world region a datapack clock
+ * fills and clears on a fixed cycle, so passage is a timing read. The harness gets
+ * it as pure navigation metadata — WHERE the fill lands and HOW LONG each half of
+ * the cycle runs — which is exactly what it needs to wait for a window instead of
+ * declaring a leg unwalkable the moment the gate shuts on it. `region` corners are
+ * inclusive and canonical (`min` ≤ `max` componentwise).
+ */
+export interface TimedGate {
+  readonly id: string;
+  readonly min: Vec3Tuple;
+  readonly max: Vec3Tuple;
+  /** The block the region is filled with while closed (informational). */
+  readonly block: string;
+  readonly openTicks: number;
+  readonly closedTicks: number;
+  /** Ticks after world init before the first open window. */
+  readonly phase: number;
+}
+
 /** One walked critical-path leg: the ordered waypoint polyline connecting `from` to
- * `to`, both raw visited anchor cells (matching `critical-path.json` step `pos`). */
+ * `to`, both raw visited anchor cells (matching `critical-path.json` step `pos`).
+ * `timedGates` are the gates the compiler proved this leg's route walks THROUGH —
+ * empty for a leg no gate clock can interrupt. */
 export interface WaypointLeg {
   readonly from: Vec3Tuple;
   readonly to: Vec3Tuple;
   readonly waypoints: readonly Vec3Tuple[];
+  readonly timedGates: readonly TimedGate[];
 }
 
 /** The parsed waypoints artifact. Legs are in critical-path order — the compiler
  * emits exactly one leg per WALKED critical position, and the harness walks those
  * positions in the same order, so legs are consumed in lockstep (see
  * {@link nextLegWaypoints}). Keying by destination alone is ambiguous when an anchor
- * is visited more than once, so order — not coordinate — is authoritative. */
+ * is visited more than once, so order — not coordinate — is authoritative.
+ * `timedGates` is the campaign's whole gate table; each leg carries the (resolved)
+ * subset its route crosses. */
 export interface Waypoints {
   readonly version: string;
   readonly campaignId: string;
+  readonly timedGates: readonly TimedGate[];
   readonly legs: readonly WaypointLeg[];
 }
 
@@ -102,6 +128,58 @@ function samePos(a: Vec3Tuple, b: Vec3Tuple): boolean {
   return a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
 }
 
+/** A non-negative integer field (a tick count). */
+function requireTicks(obj: Record<string, unknown>, key: string, pointer: string): number {
+  const value = obj[key];
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    fail(`${pointer}/${key}`, `must be a non-negative integer, got ${describe(value)}`);
+  }
+  return value;
+}
+
+/** Parse the optional top-level `timed_gates` table (spec-0016 §4). Absent → `[]`
+ * (a campaign with no gate clock, and every pre-task-#81 artifact). */
+function parseTimedGates(raw: Record<string, unknown>): TimedGate[] {
+  const value = raw["timed_gates"];
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    fail("/timed_gates", `must be an array, got ${describe(value)}`);
+  }
+  return value.map((entry, i) => {
+    const pointer = `/timed_gates/${i}`;
+    if (!isRecord(entry)) {
+      fail(pointer, `must be an object, got ${describe(entry)}`);
+    }
+    const region = entry["region"];
+    if (!isRecord(region)) {
+      fail(`${pointer}/region`, `must be an object, got ${describe(region)}`);
+    }
+    const min = requireVec3(region["min"], `${pointer}/region/min`);
+    const max = requireVec3(region["max"], `${pointer}/region/max`);
+    for (let axis = 0; axis < 3; axis++) {
+      if (min[axis]! > max[axis]!) {
+        fail(`${pointer}/region`, `min must not exceed max on axis ${axis}`);
+      }
+    }
+    const openTicks = requireTicks(entry, "open_ticks", pointer);
+    const closedTicks = requireTicks(entry, "closed_ticks", pointer);
+    if (openTicks === 0 || closedTicks === 0) {
+      // A half-cycle of 0 is DW0377 at compile time; if one ever reached the harness
+      // the wait below would have no window to wait for, so refuse it here.
+      fail(pointer, "open_ticks and closed_ticks must both be positive (a clock, not a static gate)");
+    }
+    return {
+      id: requireString(entry, "id", pointer),
+      min,
+      max,
+      block: requireString(entry, "block", pointer),
+      openTicks,
+      closedTicks,
+      phase: requireTicks(entry, "phase", pointer),
+    };
+  });
+}
+
 /** Validate and normalize a parsed JSON value into a {@link Waypoints}. */
 export function parseWaypoints(raw: unknown): Waypoints {
   if (!isRecord(raw)) {
@@ -115,6 +193,8 @@ export function parseWaypoints(raw: unknown): Waypoints {
     );
   }
   const campaignId = requireString(raw, "campaign_id", "");
+  const timedGates = parseTimedGates(raw);
+  const gatesById = new Map(timedGates.map((g) => [g.id, g]));
 
   const legsValue = raw["legs"];
   if (!Array.isArray(legsValue)) {
@@ -135,10 +215,33 @@ export function parseWaypoints(raw: unknown): Waypoints {
       fail(`${pointer}/waypoints`, "must contain at least one waypoint");
     }
     const waypoints = wpsValue.map((w, j) => requireVec3(w, `${pointer}/waypoints/${j}`));
-    return { from, to, waypoints };
+    // Gate ids are resolved against the table at PARSE time, so a leg naming a gate
+    // the artifact does not declare is a hard structural fault (the run would
+    // otherwise silently lose the wait the compiler said this leg needs).
+    const gatesValue = entry["timed_gates"];
+    let legGates: readonly TimedGate[] = [];
+    if (gatesValue !== undefined) {
+      if (!Array.isArray(gatesValue)) {
+        fail(`${pointer}/timed_gates`, `must be an array, got ${describe(gatesValue)}`);
+      }
+      legGates = gatesValue.map((id, j) => {
+        if (typeof id !== "string") {
+          fail(`${pointer}/timed_gates/${j}`, `must be a string, got ${describe(id)}`);
+        }
+        const gate = gatesById.get(id);
+        if (!gate) {
+          fail(
+            `${pointer}/timed_gates/${j}`,
+            `names ${JSON.stringify(id)}, which is not declared in the top-level timed_gates table`,
+          );
+        }
+        return gate;
+      });
+    }
+    return { from, to, waypoints, timedGates: legGates };
   });
 
-  return { version, campaignId, legs };
+  return { version, campaignId, timedGates, legs };
 }
 
 /** Parse waypoints JSON text: JSON.parse then structural validation. */
@@ -179,6 +282,9 @@ export async function loadWaypointsForCriticalPath(
  * `undefined` for single-goal fallback) and the advanced cursor. */
 export interface LegMatch {
   readonly waypoints: readonly Vec3Tuple[] | undefined;
+  /** The timed gates the matched leg's proven route crosses (empty when none, and
+   * when no leg matched — an unmatched walk gets no gate licence to retry). */
+  readonly timedGates: readonly TimedGate[];
   readonly cursor: number;
 }
 
@@ -202,9 +308,9 @@ export function nextLegWaypoints(
 ): LegMatch {
   const leg = legs[cursor];
   if (leg && samePos(leg.to, pos)) {
-    return { waypoints: leg.waypoints, cursor: cursor + 1 };
+    return { waypoints: leg.waypoints, timedGates: leg.timedGates, cursor: cursor + 1 };
   }
-  return { waypoints: undefined, cursor };
+  return { waypoints: undefined, timedGates: [], cursor };
 }
 
 /**

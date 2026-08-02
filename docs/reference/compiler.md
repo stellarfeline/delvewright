@@ -899,6 +899,31 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   excluded from the delve image (like `packtest-datapack/`); emitted only when a
   walked critical leg exists, so a fully-transported campaign stays
   byte-identical.
+  A campaign with `timed_gates[]` (spec-0016 §4) additionally carries a top-level
+  `timed_gates` table — one entry per declared gate, in declared order, with
+  `id`, `region: {min, max}` (inclusive, canonical world-coordinate bbox),
+  `block`, `open_ticks`, `closed_ticks`, `phase` — and every leg whose proven
+  route walks through one carries `timed_gates: [<id>, …]`. A leg **crosses** a
+  gate iff at some cell of its full A* route the player's own 2-block occupancy
+  (feet cell or the cell above) lies inside the region — i.e. closing the gate
+  would land the fill on the walk. The test is stated over the *unthinned* route
+  (a straight run through the gate thins to its endpoints) and is exact rather
+  than proximity-based: a leg that merely walks *past* a gate is deliberately
+  unmarked, because the mark is what licenses the harness to retry a failed leg
+  and a looser mark would grant blanket retries that mask navigation
+  regressions. The gate **mouth** — each in-region route cell plus its immediate
+  route neighbours — is force-kept as waypoints, exactly as a `use_gates` cell
+  is: corner-thinning would otherwise collapse a corridor through a gate to its
+  endpoints and ask the bot to walk the whole run inside one open window (18
+  blocks through a 5 s window on the-drowned-bell, which loses the race), where
+  pinning the mouth splits it into an uninterruptible approach plus a one-block
+  crossing — which is what `DW0378` actually proves admissible (the *span*, not
+  an arbitrary run-up to it). `DW0378` proves the window is *readable*; this
+  export is what lets the runtime rung act on it — the harness stands off (only
+  when caught inside the fill), waits for the closed→open edge and retries,
+  bounded by two full cycles plus margin, instead of failing the leg when the
+  gate fills mid-approach. Both keys are omitted entirely for a campaign with no
+  gate clock, so such campaigns stay byte-identical.
 - `<out>/render-plan.json` **player-POV shots** (`crate::render_plan::pov_shots`):
   the visual tier the owner's concern demands — the *player's own eye*, not the
   overhead/orbit cameras of the other shot kinds. One first-person `pov` shot per
@@ -1720,7 +1745,7 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0314` | An exported critical-path waypoint is not standable in the FINAL assembled world (settled + water-flooded + relight fixtures) — the build-time self-check that makes the water-flow / post-nav-mutation divergence class structurally impossible to ship (task #45). Routes come from A* over that same world, so this fires only if a later pass mutates a cell nav relied on or an endpoint resolves off the walkable set; the message names the offending cell and leg. Fix the prefab/water or the assembly — never nudge the waypoint. |
 | `DW0315` | A `set-checkpoint` (spec-0012) strands the party: re-rooting the DW0311 reachability at the checkpoint cell, the first remaining required critical-path anchor is no longer walkable from it (a checkpoint behind a one-way drop the forward path can't re-cross after respawn). The message names the checkpoint and the first unreachable anchor and prescribes moving the checkpoint or adding a return route — never deleting the checkpoint to silence the proof. |
 | `DW0316` | A `set-checkpoint` anchor has no standable footing within snap range on the final assembled model (a trap-trigger / hazard / mid-air cell) — the party would respawn into void or a wall (spec-0012). Because the relight pass already proves every reachable walkable cell meets the area's `min_light`, a checkpoint that clears this and DW0315 provably meets `min_light` too. |
-| `DW0378` | A `timed-gate` (spec-0016 §4) is a **coin flip, not a timing read**: the entry phases from which a walking player clears the span before it shuts cover less than **20%** of the cycle. All-phase passability is explicitly NOT the requirement (owner ruling 2026-08-02) — punishing bad timing is the point; punishing *every* timing is a slot machine no amount of learning the level makes fair. The crossing cost is the A* step count between the footings either side of the region with the gate open, charged at the same 4 t/block sprint model `DW0355` uses; the admitting window is `max(0, open_ticks − cross + 1)` of `open_ticks + closed_ticks`, computed in integers (no float rounding in a proof, ADR-0006) and rounded DOWN. `compiler::nav::check_timed_gates`, build-tier (exit 3). Prescription: lengthen `open_ticks`, shorten `closed_ticks`, or narrow the span — never lower the floor. |
+| `DW0378` | A `timed-gate` (spec-0016 §4) is a **coin flip, not a timing read**: the entry phases from which a walking player clears the span before it shuts cover less than **20%** of the cycle. All-phase passability is explicitly NOT the requirement (owner ruling 2026-08-02) — punishing bad timing is the point; punishing *every* timing is a slot machine no amount of learning the level makes fair. The crossing cost is the A* step count between the footings either side of the region with the gate open, charged at the same 4 t/block sprint model `DW0355` uses; the admitting window is `max(0, open_ticks − cross + 1)` of `open_ticks + closed_ticks`, computed in integers (no float rounding in a proof, ADR-0006) and rounded DOWN. `compiler::nav::check_timed_gates`, build-tier (exit 3). Prescription: lengthen `open_ticks`, shorten `closed_ticks`, or narrow the span — never lower the floor. The runtime counterpart is the waypoint artifact's `timed_gates` table + per-leg crossing marks (see above): the harness bot waits out the window instead of failing a leg the gate shut on. |
 | `DW0376` | An `ambush` (spec-0016 §3) with **no counterplay**: standing every ambusher on the cell it will occupy, no checkpoint, bonfire or campaign entry is walkable from the trigger cell any more — the party is sealed in a pocket with the ambush and can only trade blows blind. The `DW0342` trap-avoidability machinery generalized from one hazard cell to an occupied cell set. This is NOT a telegraph requirement: 初见杀 is legitimate and determinism guarantees the second attempt meets the same ambushers in the same cells; what this proves is that the second attempt has a *play* — a retreat, luring ground, an exit. `compiler::nav::check_ambushes`, build-tier (exit 3). |
 | `DW0373` | A `shortcut` (spec-0016 §2) has **no long route**: with its gate sealed, the far-side `unlock` affordance is not walkable from the campaign entry, so the mechanism that opens the shortcut sits behind the shortcut and can never be pulled. `compiler::nav::check_shortcuts`, build-tier (exit 3). Prescription: connect the far side by a long route, or move the unlock onto one — never open the gate at world-load to silence it. |
 | `DW0374` | A `shortcut` (spec-0016 §2) **leaks**: opening its gate does not strictly shorten the A* walk from the campaign entry to its own `unlock`, so the unlock is not on the far side of anything and the loop-back the shortcut exists for never happens. The classic form is an `unlock` placed on the NEAR side of its own gate — this is the proof that makes `unlock` a far-side anchor rather than a label. Both distances are measured over the same nav model, differing only in the gate. `compiler::nav::check_shortcuts`, build-tier (exit 3). |

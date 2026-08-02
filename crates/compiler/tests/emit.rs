@@ -482,6 +482,20 @@ fn critical_path_waypoints_artifact_shape() {
         !out.keys().any(|p| p.starts_with("datapack/validation")),
         "waypoints artifact must not live inside the datapack"
     );
+
+    // task #81: the spec-0016 §4 timed-gate keys are ADDITIVE. hello-world declares
+    // no gate clock, so neither the gate table nor any per-leg mark appears and the
+    // artifact stays byte-identical to its pre-task-#81 shape (ADR-0006).
+    assert!(
+        wp.get("timed_gates").is_none(),
+        "no gate table for a campaign with no clock: {wp}"
+    );
+    for leg in legs {
+        assert!(
+            leg.get("timed_gates").is_none(),
+            "no per-leg gate mark either: {leg}"
+        );
+    }
 }
 
 /// Regressions for bugs found during the live 1.21.11 load shakeout (M1).

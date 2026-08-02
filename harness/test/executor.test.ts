@@ -497,3 +497,203 @@ test("requireObjective accepts a marker that arrived before the step started", a
   executor.beginStep(2);
   await executor.requireObjective("obj/exit", "reach anchor/exit");
 });
+
+// --- timed-gate crossings (spec-0016 §4, task #81) --------------------------
+
+import type { GateAssist } from "../src/executor.ts";
+import type { TimedGate } from "../src/waypoints.ts";
+import { GATE_MIN_ATTEMPTS, gateRetryBudgetMs } from "../src/timed-gate.ts";
+
+/** The-drowned-bell portcullis: 5×3×1 at z = -10, 100 open / 100 closed. */
+const PORTCULLIS: TimedGate = {
+  id: "timed-gate/portcullis",
+  min: [22, 63, -10],
+  max: [26, 65, -10],
+  block: "minecraft:iron_bars",
+  openTicks: 100,
+  closedTicks: 100,
+  phase: 0,
+};
+
+/** A GateAssist with a virtual clock, so the bounded wait costs no wall time. */
+function fakeGate(
+  opts: { feet?: () => [number, number, number] | undefined } = {},
+): GateAssist & { waits: number; clock: { t: number } } {
+  const clock = { t: 0 };
+  const state = { waits: 0 };
+  return {
+    gates: [PORTCULLIS],
+    // Each wait advances the virtual clock by one full cycle.
+    waitForWindow: async () => {
+      state.waits++;
+      clock.t += 10_000;
+    },
+    feetCell: opts.feet ?? (() => [24, 63, -9]),
+    now: () => clock.t,
+    get waits() {
+      return state.waits;
+    },
+    clock,
+  };
+}
+
+test("a gate-crossing hop waits for the window and retries instead of failing", async () => {
+  // The observed ladder failure: the portcullis fills mid-approach and the pathfinder
+  // aborts. The hop must succeed once the window is waited out — not fail the leg.
+  const gate = fakeGate();
+  const labels: string[] = [];
+  let shut = true;
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    labels.push(label);
+    if (label.includes("waypoint 1/2") && shut) {
+      shut = false; // the very next attempt lands inside an open window
+      throw new Error("Path was stopped before it could be completed!");
+    }
+  };
+  await replayLegWithRecovery(
+    [G(24, 63, -14), G(24, 63, -14, 3)],
+    "anchor anchor/l1a-ward",
+    goto,
+    undefined,
+    gate,
+  );
+  assert.equal(gate.waits, 1, "waited for exactly one window");
+  assert.ok(
+    labels.some((l) => l.includes("gate attempt 1")),
+    `the retry is labelled as a gate attempt: ${labels.join(" | ")}`,
+  );
+});
+
+test("a gate-crossing hop does not retreat when the bot is already clear of the fill", async () => {
+  // Retreating costs blocks that must be re-walked inside the open window, so the bot
+  // only stands off when it is caught IN the fill.
+  const gate = fakeGate({ feet: () => [24, 63, -9] }); // one block clear
+  const labels: string[] = [];
+  let first = true;
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    labels.push(label);
+    if (label.includes("waypoint 2/3") && first) {
+      first = false;
+      throw new Error("Path was stopped before it could be completed!");
+    }
+  };
+  await replayLegWithRecovery(
+    [G(24, 63, 4), G(24, 63, -14), G(24, 63, -14, 3)],
+    "anchor anchor/l1a-ward",
+    goto,
+    undefined,
+    gate,
+  );
+  assert.ok(!labels.some((l) => l.includes("standoff")), labels.join(" | "));
+});
+
+test("a gate-crossing hop retreats to the last proven cell when caught inside the fill", async () => {
+  const gate = fakeGate({ feet: () => [24, 63, -10] }); // standing IN the region
+  const specs: Array<{ spec: GoalSpec; label: string }> = [];
+  let first = true;
+  const goto = async (spec: GoalSpec, label: string): Promise<void> => {
+    specs.push({ spec, label });
+    if (label.includes("waypoint 2/3") && first) {
+      first = false;
+      throw new Error("Path was stopped before it could be completed!");
+    }
+  };
+  await replayLegWithRecovery(
+    [G(24, 63, 4), G(24, 63, -14), G(24, 63, -14, 3)],
+    "anchor anchor/l1a-ward",
+    goto,
+    undefined,
+    gate,
+  );
+  const standoff = specs.find((s) => s.label.includes("standoff"));
+  assert.ok(standoff, "stood off out of the fill");
+  assert.deepEqual(
+    [standoff!.spec.x, standoff!.spec.y, standoff!.spec.z],
+    [24, 63, 4],
+    "the standoff is the last proven waypoint",
+  );
+});
+
+test("a genuinely unwalkable gate leg still fails, naming the gate and its cycle", async () => {
+  // The bound is strict: patience is not a pass. Past two full cycles the leg fails.
+  const gate = fakeGate();
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    if (label.includes("waypoint 1/2") || label.includes("gate attempt")) {
+      throw new Error("No path to the goal!");
+    }
+  };
+  await assert.rejects(
+    () =>
+      replayLegWithRecovery(
+        [G(24, 63, -14), G(24, 63, -14, 3)],
+        "anchor anchor/l1a-ward",
+        goto,
+        undefined,
+        gate,
+      ),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.match(err.message, /timed-gate\/portcullis/);
+      assert.match(err.message, /100t open \/ 100t closed/);
+      assert.match(err.message, /real \s*navigation failure|No path to the goal/);
+      return true;
+    },
+  );
+  assert.ok(gate.waits >= GATE_MIN_ATTEMPTS, `at least ${GATE_MIN_ATTEMPTS} attempts`);
+  assert.ok(
+    gate.clock.t > 2 * (gateRetryBudgetMs([PORTCULLIS]) / 3),
+    "the budget spans more than two full cycles before giving up",
+  );
+});
+
+test("an UNMARKED leg gets no gate retries — a real navigation regression still fails fast", async () => {
+  // The licence to retry comes from the compiler's crossing mark, never from the
+  // harness. A leg with no gate keeps the pre-task-#81 behaviour exactly.
+  let attempts = 0;
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    if (label.includes("waypoint 2/3") && !label.includes("recovery")) {
+      attempts++;
+      throw new Error("Path was stopped before it could be completed!");
+    }
+  };
+  await assert.rejects(
+    () =>
+      replayLegWithRecovery(
+        [G(0, 65, 0), G(0, 65, 3), G(0, 65, 6, 3)],
+        "anchor anchor/plain",
+        goto,
+      ),
+    /Path was stopped/,
+  );
+  // One initial try plus the single stall-recovery retry — no window loop.
+  assert.equal(attempts, 2, "no blanket retry on an unmarked leg");
+});
+
+test("a gate crossing the pathfinder cannot hold is finished by walking, inside the window", async () => {
+  // The-drowned-bell portcullis, observed: the pathfinder walks the bot to the gate's
+  // mouth and aborts every window ("Path was stopped…"), while a raw physics burst
+  // crosses the same span at once — a path whose blocks are rewritten under it twice
+  // per cycle is not something A* holds on to. The attempt must escalate to the
+  // ordinary task-#45 recovery WITHIN the window, not only after the budget is spent.
+  const gate = fakeGate();
+  let freed = false;
+  const bursts: GoalSpec[] = [];
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    const isHop = label.includes("waypoint 2/3");
+    if (isHop && !freed) throw new Error("Path was stopped before it could be completed!");
+  };
+  const unstick: Unstick = async (target) => {
+    bursts.push(target);
+    freed = true; // one burst walks the span
+    return 1;
+  };
+  await replayLegWithRecovery(
+    [G(24, 63, -9), G(24, 63, -11), G(24, 63, -14, 3)],
+    "anchor anchor/l1a-ward",
+    goto,
+    unstick,
+    gate,
+  );
+  assert.equal(bursts.length, 1, "one physical crossing burst was enough");
+  assert.equal(gate.waits, 1, "and it happened inside the FIRST window, not after the budget");
+});
