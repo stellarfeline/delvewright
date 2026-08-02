@@ -32,6 +32,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use delvewright_dsl::{CameraWaypoint, Lethality, QuestEffect, TrapReset};
 
 use crate::plan::{GateEvent, Plan, ResolvedAnchor, Step, TrapPlan};
+use delvewright_dsl::Diagnostic;
 
 /// `DW0307`: a `move-npc` destination unreachable by any walkable path from the
 /// NPC's position over the assembled geometry.
@@ -60,6 +61,57 @@ pub const DW_CHECKPOINT_STRANDED: &str = "DW0315";
 /// assembled model (a trap-trigger / hazard / mid-air cell), so the party would
 /// respawn into the void or a wall.
 pub const DW_CHECKPOINT_UNSTANDABLE: &str = "DW0316";
+/// `DW0378`: a `timed-gate` (spec-0016 §4) that is a coin flip rather than a
+/// timing read — the set of entry phases from which a walking player clears the
+/// span before the gate shuts covers **less than 20% of the cycle** (owner ruling
+/// 2026-08-02). All-phase passability is explicitly NOT the requirement: a gate
+/// that punishes bad timing is the point. A gate that punishes *every* timing is
+/// not a skill check, it is a slot machine, and no amount of learning the level
+/// makes it fair.
+pub const DW_TIMED_GATE_COIN_FLIP: &str = "DW0378";
+/// `DW0376`: an `ambush` (spec-0016 §3) with no counterplay — with every
+/// ambusher standing where it will stand, no rest point (a checkpoint, a bonfire,
+/// or the campaign entry) is walkable from the trigger cell any more. The player
+/// is sealed in a pocket with the ambush and can only trade blows blind.
+///
+/// This is deliberately NOT a telegraph requirement. The un-telegraphed ambush is
+/// core souls vocabulary (owner ruling 2026-08-02): dying uninformed once is how
+/// the level teaches, and determinism guarantees the second attempt meets the same
+/// ambushers in the same cells. What the engine owes the informed player is a
+/// *play* — a retreat, luring ground, a positioning line — and that is what this
+/// proves exists.
+pub const DW_AMBUSH_NO_COUNTERPLAY: &str = "DW0376";
+/// `DW0373`: a `shortcut` (spec-0016 §2) whose far-side `unlock` affordance is
+/// not reachable while the gate is still sealed — the LONG route does not exist,
+/// so the mechanism that opens the shortcut can never be pulled and the gate is
+/// dead scenery. The whole pattern is "earn the far side the hard way, then open
+/// the door forever"; without a hard way there is nothing to earn.
+pub const DW_SHORTCUT_NO_LONG_ROUTE: &str = "DW0373";
+/// `DW0374`: a `shortcut` (spec-0016 §2) that **leaks** — opening its gate does not
+/// shorten the walk from the campaign entry to its own `unlock` affordance, so the
+/// unlock is not on the far side of anything. The pattern is "earn the far side
+/// the hard way, then open the door forever"; if the door is irrelevant to
+/// reaching the mechanism that opens it, the loop-back moment — which IS the
+/// design — never happens. The classic form is an `unlock` placed on the NEAR
+/// side of its own gate.
+pub const DW_SHORTCUT_NO_GAIN: &str = "DW0374";
+/// `DW0379`: **retry cost** (spec-0016 §7, warning tier) — the proven walk from a
+/// rest point to a beat it can respawn the party into is longer than
+/// [`RETRY_BUDGET_TICKS`]. Dying must be an investment, not a commute: past the
+/// budget the loop stops teaching and starts taxing. A **warning**, deliberately:
+/// a long walk can be the authored point (a pilgrimage, a set-piece approach),
+/// and the compiler will not overrule that — it names the distance and leaves the
+/// judgement to the owner's QA hour.
+pub const DW_RETRY_COST: &str = "DW0379";
+/// `DW0380`: **optional-elite bypass** (spec-0016 §7, warning tier) — an enemy the
+/// critical path never requires the party to kill has no route around it: every
+/// proven forward leg passes inside its aggro radius, so "optional" is a lie and
+/// the fight is mandatory in everything but the objective list.
+///
+/// The Tree Sentinel pattern — a powerful optional enemy near the start, fight it
+/// or walk around it — is explicitly legitimate (owner ruling 2026-08-02), and
+/// this is the one obligation it carries: the walk-around has to exist.
+pub const DW_OPTIONAL_ELITE_UNAVOIDABLE: &str = "DW0380";
 /// `DW0327`: a `begin-stealth` (spec-0014) zone that is unstandable, or unreachable
 /// from the player's position at the beat that activates the stealth check.
 pub const DW_STEALTH_ZONE: &str = "DW0327";
@@ -2054,6 +2106,495 @@ fn verify_checkpoints(
     Ok(())
 }
 
+/// The minimum share of a `timed-gate` cycle that must admit a crossing
+/// (spec-0016 §4, owner ruling 2026-08-02). Below this the gate stops being a
+/// timing read and becomes a coin flip. Expressed as a percentage so the
+/// arithmetic below stays in integers — no float rounding in a proof (ADR-0006).
+const TIMED_GATE_MIN_ADMIT_PERCENT: u32 = 20;
+
+/// Prove every `timed-gate` is readable — [`DW_TIMED_GATE_COIN_FLIP`] (`DW0378`).
+///
+/// The requirement is deliberately **not** all-phase passability: spec-0016 §4 is
+/// explicit that a gate which punishes bad timing is the entire point. What must
+/// hold is that the gate can be *read*: over one full cycle, the entry phases from
+/// which a walking player clears the span before it shuts must cover at least
+/// [`TIMED_GATE_MIN_ADMIT_PERCENT`] of the cycle.
+///
+/// The crossing cost comes from the same nav model every other proof uses: the A*
+/// step count from the footing on one side of the gate region to the footing on
+/// the other with the gate open, charged at [`SPRINT_TICKS_PER_BLOCK`]. A player
+/// who starts the crossing `p` ticks into the open window arrives in time iff
+/// `p + cross <= open_ticks`, so the admitting window is
+/// `max(0, open_ticks - cross + 1)` ticks out of `open_ticks + closed_ticks`.
+///
+/// A gate whose two sides have no walkable footing, or that no route connects even
+/// while open, is left to the geometry proofs that own it (`DW0311`) rather than
+/// double-reported here.
+pub fn check_timed_gates(plan: &Plan, world: &World) -> Result<(), NavError> {
+    verify_timed_gates(world, &plan.timed_gates)
+}
+
+/// The pure core of [`check_timed_gates`] (unit-testable against a synthetic
+/// [`World`]).
+fn verify_timed_gates(world: &World, gates: &[crate::plan::TimedGatePlan]) -> Result<(), NavError> {
+    for g in gates {
+        let cells: BTreeSet<[i32; 3]> =
+            crate::assembled::region_cells(g.gate_region.0, g.gate_region.1).collect();
+        let Some((near, far)) = gate_crossing_footings(world, g.gate_region, &cells) else {
+            continue; // no footing on both sides — a geometry concern, not a timing one
+        };
+        let Some(path) = world.find_path(near, far) else {
+            continue; // the open gate connects nothing — DW0311's business
+        };
+        // `path` includes both endpoints; the crossing is the moves between them.
+        let cross_ticks = (path.len().saturating_sub(1) as u32) * SPRINT_TICKS_PER_BLOCK;
+        let cycle = g.open_ticks + g.closed_ticks;
+        let admits =
+            g.open_ticks.saturating_sub(cross_ticks) + u32::from(cross_ticks <= g.open_ticks);
+        // Integer percentage, rounded DOWN — the proof never credits the gate with
+        // a share it does not have.
+        let percent = admits.saturating_mul(100) / cycle.max(1);
+        if percent < TIMED_GATE_MIN_ADMIT_PERCENT {
+            return Err(NavError {
+                code: DW_TIMED_GATE_COIN_FLIP,
+                message: format!(
+                    "timed gate `{}` is a coin flip, not a timing read: crossing its span takes \
+                     {cross_ticks} ticks ({} blocks at {SPRINT_TICKS_PER_BLOCK} t/block), so only \
+                     {admits} of its {cycle}-tick cycle ({percent}%) admit a player who starts \
+                     walking then — under the {TIMED_GATE_MIN_ADMIT_PERCENT}% floor (spec-0016 §4, \
+                     owner ruling 2026-08-02). Punishing bad timing is the point; punishing EVERY \
+                     timing is a slot machine. Lengthen `open_ticks`, shorten `closed_ticks`, or \
+                     narrow the span — never lower the floor.",
+                    g.id,
+                    path.len().saturating_sub(1)
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The standable footings immediately on either side of a gate region, over the
+/// world with the region SEALED so neither endpoint can land inside it or snap
+/// through. The crossing axis is whichever horizontal axis actually has footing on
+/// both sides — trying x then z rather than guessing from the region's extents is
+/// both deterministic and correct for a square 1×1 gate column, where the extents
+/// tie and a guess would pick the wall's own plane.
+fn gate_crossing_footings(
+    world: &World,
+    region: ([i32; 3], [i32; 3]),
+    cells: &BTreeSet<[i32; 3]>,
+) -> Option<([i32; 3], [i32; 3])> {
+    let sealed = world.with_sealed(cells);
+    let (from, to) = region;
+    for axis in [0usize, 2] {
+        let mut near = None;
+        let mut far = None;
+        for cell in crate::assembled::region_cells(from, to) {
+            for (slot, delta) in [(&mut near, -1), (&mut far, 1)] {
+                if slot.is_some() {
+                    continue;
+                }
+                let mut c = cell;
+                c[axis] += delta;
+                if !cells.contains(&c) && sealed.standable(c) {
+                    *slot = Some(c);
+                }
+            }
+            if near.is_some() && far.is_some() {
+                break;
+            }
+        }
+        if let (Some(n), Some(f)) = (near, far) {
+            return Some((n, f));
+        }
+    }
+    None
+}
+
+/// Prove every `ambush` (spec-0016 §3) leaves the player a play —
+/// [`DW_AMBUSH_NO_COUNTERPLAY`] (`DW0376`).
+///
+/// The obligation is *not* "warn the player". Spec-0016 is explicit that the
+/// un-telegraphed ambush — 初见杀, the shove off the cliff you could not have
+/// known about — is legitimate and essential: you die uninformed once, and the
+/// SECOND attempt is where the design pays off. Determinism already guarantees
+/// that second attempt meets the same ambushers in the same cells.
+///
+/// What the compiler adds is the half determinism cannot supply: that there is
+/// something to *do* about them. Generalizing the trap-avoidability machinery
+/// (`DW0342`'s "reachable with the hazard cell blocked"), this stands every
+/// ambusher on the cell it will occupy and re-asks whether the trigger cell still
+/// connects to any rest point — a checkpoint, a bonfire, or the campaign entry.
+/// If it does, a retreat exists: luring ground, a positioning line, an exit. If it
+/// does not, the player is sealed in a pocket with the ambush and the beat has no
+/// second attempt to reward — that is a broken beat, not a hard one.
+pub fn check_ambushes(plan: &Plan, world: &World, entry: Option<[i32; 3]>) -> Result<(), NavError> {
+    let mut rests: Vec<[i32; 3]> = plan.checkpoints.iter().map(|c| c.pos).collect();
+    rests.extend(entry);
+    verify_ambushes(world, &plan.ambushes, &rests)
+}
+
+/// The pure core of [`check_ambushes`] (unit-testable against a synthetic
+/// [`World`]). `rests` are the cells that count as safety — every checkpoint and
+/// bonfire cell plus the campaign entry.
+fn verify_ambushes(
+    world: &World,
+    ambushes: &[crate::plan::AmbushPlan],
+    rests: &[[i32; 3]],
+) -> Result<(), NavError> {
+    if ambushes.is_empty() || rests.is_empty() {
+        return Ok(());
+    }
+    for amb in ambushes {
+        let blocked: BTreeSet<[i32; 3]> = amb
+            .actor_cells
+            .iter()
+            .copied()
+            .filter(|c| *c != amb.at)
+            .collect();
+        if blocked.is_empty() {
+            continue; // nothing stands in the player's way
+        }
+        let occupied = world.with_sealed(&blocked);
+        let Some(from) = occupied.snap_standable(amb.at, SNAP_RADIUS) else {
+            continue; // an unstandable trigger cell is another proof's concern
+        };
+        let escapes = rests.iter().any(|r| {
+            occupied
+                .snap_standable(*r, SNAP_RADIUS)
+                .is_some_and(|goal| occupied.find_path(from, goal).is_some())
+        });
+        if !escapes {
+            return Err(NavError {
+                code: DW_AMBUSH_NO_COUNTERPLAY,
+                message: format!(
+                    "ambush `{}` at {:?} leaves no counterplay: with its ambushers standing on \
+                     {:?}, no checkpoint, bonfire or campaign entry is walkable from the trigger \
+                     cell any more — the party is sealed in a pocket with the ambush and can only \
+                     trade blows blind. An un-telegraphed ambush is fine (spec-0016 §3: dying \
+                     uninformed once is how the level teaches); an ambush with no retreat, no \
+                     luring ground and no exit is not, because the second attempt has nothing to \
+                     reward. Widen the room, move an ambusher off the only way out, or add a rest \
+                     point behind the player — do NOT delete the proof.",
+                    amb.id, amb.at, amb.actor_cells
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Prove every `shortcut` door (spec-0016 §2) is a real shortcut.
+///
+/// The base occupancy model treats every gate region as passable (the
+/// "assume the gate the player needs is opened" stance), and `Plan::build`
+/// registers each shortcut gate as sealed from step 0, so the critical path,
+/// the checkpoints and the traps are all already proven **without** any shortcut
+/// taken. What remains are the two obligations the pattern itself carries, both
+/// measured against the same sealed world:
+///
+/// 1. [`DW_SHORTCUT_NO_LONG_ROUTE`] (`DW0373`) — with the gate SEALED, the
+///    far-side `unlock` affordance must still be walkable from the campaign
+///    entry. That walk IS the long route. Without it the mechanism that opens the
+///    shortcut sits behind the shortcut, and the gate is dead scenery.
+/// 2. [`DW_SHORTCUT_NO_GAIN`] (`DW0374`) — opening the gate must strictly shorten
+///    that same walk. This is the anti-leak proof: it is what makes `unlock` a
+///    FAR-side anchor rather than a label. An unlock on the near side of its own
+///    gate measures identically sealed and open, and fails here.
+///
+/// Distances are A* step counts over the nav model — the same routing every other
+/// completability proof uses, so the two numbers are directly comparable.
+pub fn check_shortcuts(
+    plan: &Plan,
+    world: &World,
+    entry: Option<[i32; 3]>,
+) -> Result<(), NavError> {
+    verify_shortcuts(world, &plan.shortcuts, entry)
+}
+
+/// The pure core of [`check_shortcuts`] (split out so it is unit-testable against
+/// a synthetic [`World`] without a full [`Plan`]). With no resolvable entry cell
+/// there is nothing to measure from and both proofs are vacuous — `DW0345`
+/// already fails a campaign whose entry does not resolve.
+fn verify_shortcuts(
+    world: &World,
+    shortcuts: &[crate::plan::ShortcutPlan],
+    entry: Option<[i32; 3]>,
+) -> Result<(), NavError> {
+    let Some(entry) = entry else {
+        return Ok(());
+    };
+    for sc in shortcuts {
+        let cells: BTreeSet<[i32; 3]> =
+            crate::assembled::region_cells(sc.gate_region.0, sc.gate_region.1).collect();
+        let sealed = world.with_sealed(&cells);
+
+        // Both walks are measured from the same footing and to the same goal; only
+        // the gate differs. Snapping happens on the SEALED world so neither
+        // endpoint can land inside the gate region itself.
+        let start = sealed.snap_standable(entry, SNAP_RADIUS);
+        let goal = sealed.snap_standable(sc.unlock, SNAP_RADIUS);
+        let (Some(start), Some(goal)) = (start, goal) else {
+            // An unstandable entry or unlock is another proof's concern
+            // (`DW0345` / the anchor checks); do not double-report it here.
+            continue;
+        };
+
+        // (1) the long route exists while the gate is sealed.
+        let Some(long) = sealed.find_path(start, goal).map(|p| p.len()) else {
+            return Err(NavError {
+                code: DW_SHORTCUT_NO_LONG_ROUTE,
+                message: format!(
+                    "shortcut `{}`: no long route — its unlock affordance at `{}` ({:?}) is not \
+                     walkable from the campaign entry while gate `{}` is sealed, so the mechanism \
+                     that opens the shortcut sits behind the shortcut and can never be pulled. A \
+                     shortcut is earned the hard way first (spec-0016 §2): connect the far side by \
+                     a long route, or move the unlock onto one. Do NOT open the gate at world-load \
+                     to silence this.",
+                    sc.id, sc.unlock_anchor, sc.unlock, sc.gate_anchor
+                ),
+            });
+        };
+
+        // (2) opening the gate strictly shortens that same walk (anti-leak).
+        let short = world
+            .find_path(start, goal)
+            .map(|p| p.len())
+            .unwrap_or(long);
+        if short >= long {
+            return Err(NavError {
+                code: DW_SHORTCUT_NO_GAIN,
+                message: format!(
+                    "shortcut `{}` leaks: opening gate `{}` does not shorten the walk from the \
+                     campaign entry to its own unlock `{}` ({long} steps sealed, {short} open), so \
+                     the unlock is not on the far side of anything and the loop-back the shortcut \
+                     is FOR never happens. Put the unlock past the gate, on the end of the long \
+                     route (spec-0016 §2) — never delete the proof.",
+                    sc.id, sc.gate_anchor, sc.unlock_anchor
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The retry-cost budget (spec-0016 §7): 60 s of traversal from a rest point to
+/// the beat it respawns the party into, in ticks.
+const RETRY_BUDGET_TICKS: u32 = 60 * 20;
+
+/// Default aggro radius for a wave mob with no declared `follow_range` — vanilla's
+/// `generic.follow_range` default for the common hostiles (zombie, skeleton,
+/// husk, pillager). Used by the optional-elite bypass lint when the author has
+/// not tuned the attribute.
+const DEFAULT_FOLLOW_RANGE: u32 = 16;
+
+/// The spec-0016 §7 pacing lints. **Warning tier** — every finding here is a
+/// design judgement the compiler can measure but must not overrule, so these
+/// return diagnostics rather than failing the build.
+///
+/// 1. [`DW_RETRY_COST`] (`DW0379`) — bonfire/checkpoint → the beat it respawns
+///    into, over the proven path, must be under [`RETRY_BUDGET_TICKS`]. Dying
+///    should be an investment, not a commute.
+/// 2. [`DW_OPTIONAL_ELITE_UNAVOIDABLE`] (`DW0380`) — an enemy no critical-path
+///    `kill` objective requires must have a route around it. The Tree Sentinel
+///    pattern is legitimate; a "walk around it" you cannot walk around is not.
+pub fn pacing_lints(plan: &Plan, world: &World) -> Vec<Diagnostic> {
+    let mut out = Vec::new();
+    out.extend(retry_cost_lint(plan, world));
+    out.extend(optional_elite_lint(plan, world));
+    out
+}
+
+/// `DW0379`: the walk back from each rest point to the first beat that follows it.
+fn retry_cost_lint(plan: &Plan, world: &World) -> Vec<Diagnostic> {
+    let cps: Vec<(String, [i32; 3], usize, bool)> = plan
+        .checkpoints
+        .iter()
+        .map(|c| (c.anchor.clone(), c.pos, c.fire_step, c.rest))
+        .collect();
+    verify_retry_cost(world, &cps, &critical_positions(plan))
+}
+
+/// A rest point as the retry-cost lint sees it.
+struct RestRef<'a> {
+    anchor: &'a str,
+    pos: [i32; 3],
+    fire_step: usize,
+    rest: bool,
+}
+
+/// The pure core of [`retry_cost_lint`] (unit-testable against a synthetic
+/// [`World`]). Each rest point is `(anchor, cell, fire_step, is_bonfire)`.
+fn verify_retry_cost(
+    world: &World,
+    rests: &[(String, [i32; 3], usize, bool)],
+    positions: &[VisitedPos],
+) -> Vec<Diagnostic> {
+    let mut out = Vec::new();
+    for (anchor, pos, fire_step, is_rest) in rests {
+        let cp = RestRef {
+            anchor,
+            pos: *pos,
+            fire_step: *fire_step,
+            rest: *is_rest,
+        };
+        let Some(from) = world.snap_standable(cp.pos, SNAP_RADIUS) else {
+            continue; // DW0316 owns an unstandable rest point
+        };
+        let Some(target) = positions
+            .iter()
+            .filter(|p| p.src_step > cp.fire_step && !p.transport_before)
+            .min_by_key(|p| p.src_step)
+        else {
+            continue;
+        };
+        let Some(goal) = world.snap_endpoint(target.pos, target.talk_to) else {
+            continue;
+        };
+        let Some(path) = world.find_path(from, goal) else {
+            continue; // DW0315 owns an unreachable one
+        };
+        let blocks = path.len().saturating_sub(1) as u32;
+        let ticks = blocks * SPRINT_TICKS_PER_BLOCK;
+        if ticks > RETRY_BUDGET_TICKS {
+            out.push(Diagnostic::warning(
+                DW_RETRY_COST,
+                "quests",
+                format!("/content/quests/checkpoint/{}", cp.anchor),
+                format!(
+                    "retry cost: {} `{}` is {blocks} blocks ({} s at {SPRINT_TICKS_PER_BLOCK} \
+                     t/block) from the next beat it respawns the party into — over the {} s \
+                     budget (spec-0016 §7). Dying must be an investment, not a commute: past this \
+                     the loop stops teaching and starts taxing. Move the rest point forward, or \
+                     add one closer to the beat.",
+                    if cp.rest { "bonfire" } else { "checkpoint" },
+                    cp.anchor,
+                    ticks / 20,
+                    RETRY_BUDGET_TICKS / 20
+                ),
+            ));
+        }
+    }
+    out
+}
+
+/// `DW0380`: every optional enemy must be walkable around.
+///
+/// A wave is **optional** when no `kill` objective on the critical path names it —
+/// the party is never required to fight it. For each such wave, its mobs' aggro
+/// spheres (the declared `follow_range`, else [`DEFAULT_FOLLOW_RANGE`]) are
+/// forced solid around the wave anchor and the forced critical path is re-routed:
+/// if a leg that routed before no longer does, every way forward runs through the
+/// fight and "optional" is a lie.
+fn optional_elite_lint(plan: &Plan, world: &World) -> Vec<Diagnostic> {
+    use delvewright_dsl::Objective;
+    let c = plan.campaign;
+    let required: BTreeSet<&str> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| q.objectives.iter())
+        .filter_map(|o| match o {
+            Objective::Kill { wave, .. } => Some(wave.as_str()),
+            _ => None,
+        })
+        .collect();
+    let elites: Vec<(String, [i32; 3], i32)> = c
+        .quests
+        .content
+        .waves
+        .iter()
+        .filter(|w| !required.contains(w.id.as_str()))
+        .filter_map(|w| {
+            let centre = crate::plan::point_any(&plan.anchors, w.anchor.as_str())?;
+            let radius = w
+                .mobs
+                .iter()
+                .filter_map(|m| m.attributes.and_then(|a| a.follow_range))
+                .map(|r| r.max(0.0) as i32)
+                .max()
+                .unwrap_or(DEFAULT_FOLLOW_RANGE as i32);
+            Some((w.id.as_str().to_string(), centre, radius))
+        })
+        .collect();
+    verify_optional_elites(world, &elites, &critical_positions(plan))
+}
+
+/// The pure core of [`optional_elite_lint`] (unit-testable against a synthetic
+/// [`World`]). Each elite is `(wave id, anchor cell, aggro radius)`.
+fn verify_optional_elites(
+    world: &World,
+    elites: &[(String, [i32; 3], i32)],
+    positions: &[VisitedPos],
+) -> Vec<Diagnostic> {
+    let mut out = Vec::new();
+    for (id, centre, radius) in elites {
+        let r = *radius;
+        let mut sphere: BTreeSet<[i32; 3]> = BTreeSet::new();
+        for dx in -r..=r {
+            for dy in -r..=r {
+                for dz in -r..=r {
+                    if dx * dx + dy * dy + dz * dz <= r * r {
+                        sphere.insert([centre[0] + dx, centre[1] + dy, centre[2] + dz]);
+                    }
+                }
+            }
+        }
+        let aggroed = world.with_sealed(&sphere);
+        let blocked = positions.windows(2).find(|pair| {
+            if pair[1].transport_before {
+                return false;
+            }
+            let (Some(a), Some(b)) = (
+                world.snap_endpoint(pair[0].pos, pair[0].talk_to),
+                world.snap_endpoint(pair[1].pos, pair[1].talk_to),
+            ) else {
+                return false;
+            };
+            // A leg that goes nowhere, or that never routed in the clean world,
+            // is not this lint's business (`DW0311` owns the latter).
+            if a == b || world.find_path(a, b).is_none() {
+                return false;
+            }
+            // An endpoint INSIDE the aggro sphere is not a missing bypass — the
+            // party is required to stand there, so the fight is contested ground
+            // by design (a "live threat" wave seated on an objective anchor is a
+            // legitimate, landed pattern). This lint is about the ROUTE being
+            // swallowed, not the destination being dangerous.
+            if sphere.contains(&a) || sphere.contains(&b) {
+                return false;
+            }
+            let (Some(a2), Some(b2)) = (
+                aggroed.snap_endpoint(pair[0].pos, pair[0].talk_to),
+                aggroed.snap_endpoint(pair[1].pos, pair[1].talk_to),
+            ) else {
+                return true;
+            };
+            aggroed.find_path(a2, b2).is_none()
+        });
+        if let Some(pair) = blocked {
+            out.push(Diagnostic::warning(
+                DW_OPTIONAL_ELITE_UNAVOIDABLE,
+                "quests",
+                format!("/content/waves/{id}"),
+                format!(
+                    "optional enemy `{id}` at {centre:?} has no bypass: with its {r}-block aggro \
+                     radius blocked, the forced walk from {:?} to {:?} no longer routes — every \
+                     way forward runs through the fight, so \"optional\" is a lie (spec-0016 §7). \
+                     A powerful OPTIONAL enemy near the start is legitimate — the Tree Sentinel \
+                     pattern — and this is its one obligation: the walk-around has to exist. \
+                     Widen the room, move the wave off the corridor, or make the kill a real \
+                     objective.",
+                    pair[0].pos, pair[1].pos
+                ),
+            ));
+        }
+    }
+    out
+}
+
 /// Prove every `begin-stealth` zone is standable and reachable from the beat that
 /// activates it (DSL v0.6, spec-0014) — [`DW_STEALTH_ZONE`] (`DW0327`). A zone the
 /// player can never legally occupy (walled/void) or can never walk to from the
@@ -3293,6 +3834,145 @@ mod tests {
     }
 
     /// A non-talk-to visited position (test convenience for `route_visited`).
+    /// A room `w × d` split by a wall at `z = zw` with a single doorway at
+    /// `x = gx`, and (optionally) a second permanent opening at `x = bx` — the
+    /// walk-around. Ceilinged, so a body standing in the doorway cannot be
+    /// climbed over.
+    fn two_room_world(w: i32, d: i32, y: i32, zw: i32, gx: i32, bypass: Option<i32>) -> World {
+        let mut walls = Vec::new();
+        for x in 0..w {
+            if x == gx || Some(x) == bypass {
+                continue;
+            }
+            walls.push([x, y, zw]);
+            walls.push([x, y + 1, zw]);
+        }
+        floored(w, d, y, &walls)
+    }
+
+    /// A sentinel parked in the only doorway between two beats: with its aggro
+    /// radius blocked, the forced walk no longer routes. There is nothing to
+    /// walk around it by, so "optional" is a lie — `DW0380`, at warning tier.
+    #[test]
+    fn an_optional_elite_in_the_only_doorway_is_dw0380() {
+        let world = two_room_world(12, 9, 65, 4, 6, None);
+        let elites = vec![("wave/sentinel".to_string(), [6, 65, 4], 2)];
+        let diags = verify_optional_elites(
+            &world,
+            &elites,
+            &[vp_at([1, 65, 1], 0), vp_at([1, 65, 7], 1)],
+        );
+        assert_eq!(diags.len(), 1, "expected one finding: {diags:#?}");
+        assert_eq!(diags[0].code, DW_OPTIONAL_ELITE_UNAVOIDABLE); // DW0380
+        assert_eq!(
+            diags[0].severity,
+            delvewright_dsl::Severity::Warning,
+            "spec-0016 §7 is the design-contract section: this measures, it does not gate"
+        );
+        assert!(
+            diags[0].message.contains("Tree Sentinel"),
+            "the finding must not read as 'no optional enemies' — the pattern is legitimate, \
+             only the missing walk-around is the problem: {}",
+            diags[0].message
+        );
+    }
+
+    /// The same sentinel with a second door far enough away to stay outside its
+    /// aggro radius: the walk-around exists, so the Tree Sentinel pattern stands
+    /// and nothing is reported.
+    #[test]
+    fn an_optional_elite_with_a_walk_around_is_legitimate() {
+        let world = two_room_world(12, 9, 65, 4, 6, Some(0));
+        let elites = vec![("wave/sentinel".to_string(), [6, 65, 4], 2)];
+        let diags = verify_optional_elites(
+            &world,
+            &elites,
+            &[vp_at([1, 65, 1], 0), vp_at([1, 65, 7], 1)],
+        );
+        assert!(
+            diags.is_empty(),
+            "a route around the sentinel is all the engine asks for: {diags:#?}"
+        );
+    }
+
+    /// A beat the party is required to STAND on, inside the aggro radius, is
+    /// contested ground by design — a landed "live threat" pattern, not a missing
+    /// bypass. The lint is about the route, never the destination.
+    #[test]
+    fn an_elite_seated_on_a_beat_is_contested_ground_not_a_missing_bypass() {
+        let world = two_room_world(12, 9, 65, 4, 6, None);
+        let elites = vec![("wave/threat".to_string(), [1, 65, 1], 4)];
+        let diags = verify_optional_elites(
+            &world,
+            &elites,
+            &[vp_at([1, 65, 1], 0), vp_at([1, 65, 7], 1)],
+        );
+        assert!(
+            diags.is_empty(),
+            "an objective inside the fight is design, not a defect: {diags:#?}"
+        );
+    }
+
+    /// A visited critical position at a given step (spec-0016 §7 lints select on
+    /// `src_step`, which the plain `vp` helper always leaves at 0).
+    fn vp_at(pos: [i32; 3], src_step: usize) -> VisitedPos {
+        VisitedPos {
+            pos,
+            transport_before: false,
+            talk_to: false,
+            src_step,
+        }
+    }
+
+    /// A rest point 4 blocks from the next beat is a real retry loop: 16 ticks
+    /// back, well inside the 60 s budget. No warning.
+    #[test]
+    fn a_close_rest_point_is_within_the_retry_budget() {
+        let world = corridor(400, 65);
+        let rests = vec![("anchor/fire".to_string(), [0, 65, 1], 0usize, true)];
+        let diags = verify_retry_cost(&world, &rests, &[vp_at([4, 65, 1], 1)]);
+        assert!(diags.is_empty(), "4 blocks is not a commute: {diags:#?}");
+    }
+
+    /// A rest point 350 blocks from the beat it respawns into is 70 s of walking
+    /// back on every death — `DW0379`, at warning tier.
+    #[test]
+    fn a_distant_rest_point_is_dw0379() {
+        let world = corridor(400, 65);
+        let rests = vec![("anchor/fire".to_string(), [0, 65, 1], 0usize, true)];
+        let diags = verify_retry_cost(&world, &rests, &[vp_at([350, 65, 1], 1)]);
+        assert_eq!(diags.len(), 1, "one finding expected: {diags:#?}");
+        assert_eq!(diags[0].code, DW_RETRY_COST); // DW0379
+        assert_eq!(
+            diags[0].severity,
+            delvewright_dsl::Severity::Warning,
+            "retry cost is a judgement the compiler measures but must not overrule"
+        );
+        assert!(
+            diags[0].message.contains("bonfire `anchor/fire`"),
+            "the message names the rest point: {}",
+            diags[0].message
+        );
+    }
+
+    /// The budget is measured to the FIRST beat after the rest point, not the
+    /// last — a rest point followed immediately by its beat is cheap even if the
+    /// delve runs on for hundreds of blocks afterwards.
+    #[test]
+    fn retry_cost_measures_the_first_beat_after_the_rest_point() {
+        let world = corridor(400, 65);
+        let rests = vec![("anchor/fire".to_string(), [0, 65, 1], 0usize, false)];
+        let diags = verify_retry_cost(
+            &world,
+            &rests,
+            &[vp_at([2, 65, 1], 1), vp_at([390, 65, 1], 2)],
+        );
+        assert!(
+            diags.is_empty(),
+            "the far LATER beat must not be charged to this rest point: {diags:#?}"
+        );
+    }
+
     fn vp(pos: [i32; 3], transport_before: bool) -> VisitedPos {
         VisitedPos {
             pos,
@@ -4318,6 +4998,200 @@ mod tests {
             solid.insert([x, y - 1, 1]);
         }
         World::from_solid_cells(solid)
+    }
+
+    /// A 1-wide, ceilinged corridor along x at z=1 (walls at z=0 and z=2, floor
+    /// at y=64, ceiling at y=67). A body standing in it cannot be climbed over —
+    /// the headroom above a blocked cell is the ceiling.
+    fn walled_corridor() -> World {
+        let mut walls = Vec::new();
+        for x in 0..9 {
+            for y in [65, 66] {
+                walls.push([x, y, 0]);
+                walls.push([x, y, 2]);
+            }
+        }
+        floored(9, 3, 65, &walls)
+    }
+
+    fn timed_gate(
+        region: ([i32; 3], [i32; 3]),
+        open_ticks: u32,
+        closed_ticks: u32,
+    ) -> crate::plan::TimedGatePlan {
+        crate::plan::TimedGatePlan {
+            id: "timed-gate/piston-hall".to_string(),
+            safe: "piston_hall".to_string(),
+            gate_anchor: "anchor/gate".to_string(),
+            gate_region: region,
+            gate_block: "minecraft:iron_bars".to_string(),
+            open_ticks,
+            closed_ticks,
+            phase: 0,
+        }
+    }
+
+    /// A generous window: crossing a 1-cell doorway costs a handful of ticks and
+    /// the gate stands open for 60 of every 100, so most of the cycle is a legal
+    /// entry. A readable gate.
+    #[test]
+    fn timed_gate_with_a_generous_window_is_readable() {
+        let world = shortcut_world(12, 9, 65, 4, 1, None);
+        let g = timed_gate(([1, 65, 4], [1, 66, 4]), 60, 40);
+        verify_timed_gates(&world, &[g]).expect("60 open of a 100-tick cycle is a timing read");
+    }
+
+    /// The same span with an open window barely longer than the crossing itself:
+    /// almost every entry phase is a death, so the gate is a coin flip. `DW0378`.
+    #[test]
+    fn timed_gate_whose_window_barely_admits_a_crossing_is_dw0378() {
+        let world = shortcut_world(12, 9, 65, 4, 1, None);
+        // Crossing the doorway is 2 moves = 8 ticks; a 10-tick open window inside
+        // a 200-tick cycle admits 3 of 200 phases = 1%.
+        let g = timed_gate(([1, 65, 4], [1, 66, 4]), 10, 190);
+        let err = verify_timed_gates(&world, &[g])
+            .expect_err("a window that admits ~1% of the cycle is a slot machine");
+        assert_eq!(err.code, DW_TIMED_GATE_COIN_FLIP); // DW0378
+        assert!(
+            err.message.contains("coin flip"),
+            "the message must name the failure: {}",
+            err.message
+        );
+    }
+
+    /// An open window SHORTER than the crossing admits nothing at all — the
+    /// degenerate end of the same rule, and the one a player can never learn.
+    #[test]
+    fn timed_gate_no_one_can_ever_cross_is_dw0378() {
+        let world = shortcut_world(12, 9, 65, 4, 1, None);
+        let g = timed_gate(([1, 65, 4], [1, 66, 4]), 2, 20);
+        let err = verify_timed_gates(&world, &[g])
+            .expect_err("a window shorter than the crossing admits no phase at all");
+        assert_eq!(err.code, DW_TIMED_GATE_COIN_FLIP); // DW0378
+    }
+
+    fn ambush(at: [i32; 3], actor_cells: Vec<[i32; 3]>) -> crate::plan::AmbushPlan {
+        crate::plan::AmbushPlan {
+            id: "ambush/stair-turn".to_string(),
+            at,
+            actor_cells,
+        }
+    }
+
+    /// An ambush in an open room: the ambusher stands beside the player, so a
+    /// retreat to the entry is still walkable. Un-telegraphed and lethal is fine
+    /// — there is a play on the retry, which is all the engine owes.
+    #[test]
+    fn ambush_in_open_ground_has_counterplay() {
+        let world = floored(9, 9, 65, &[]);
+        let amb = ambush([4, 65, 4], vec![[5, 65, 4]]);
+        verify_ambushes(&world, &[amb], &[[0, 65, 0]])
+            .expect("an ambusher in open ground never seals the room");
+    }
+
+    /// A 1-wide corridor with the ambusher between the player and everything
+    /// behind them: no retreat, no luring ground, no exit. `DW0376`.
+    #[test]
+    fn ambush_that_seals_the_only_way_out_is_dw0376() {
+        let world = walled_corridor();
+        // Player at the dead end (x=8); the ambusher spawns at x=7, behind them.
+        let amb = ambush([8, 65, 1], vec![[7, 65, 1]]);
+        let err = verify_ambushes(&world, &[amb], &[[0, 65, 1]])
+            .expect_err("an ambush that corks the only corridor has no counterplay");
+        assert_eq!(err.code, DW_AMBUSH_NO_COUNTERPLAY); // DW0376
+        assert!(
+            err.message.contains("no counterplay"),
+            "the message must name the missing play: {}",
+            err.message
+        );
+    }
+
+    /// The same corridor, but a bonfire sits at the dead end WITH the player:
+    /// dying is now cheap and the retry is a real second attempt, so the beat
+    /// carries no obligation.
+    #[test]
+    fn ambush_with_a_rest_point_on_the_players_side_has_counterplay() {
+        let world = walled_corridor();
+        let amb = ambush([8, 65, 1], vec![[7, 65, 1]]);
+        verify_ambushes(&world, &[amb], &[[0, 65, 1], [8, 65, 1]])
+            .expect("a rest point on the player's own side is a play");
+    }
+
+    /// A synthetic shortcut-door world (spec-0016 §2): a room `w × d` split by a
+    /// solid wall at `z = zw`, with a 1-cell **gate** doorway at `x = gx` and an
+    /// optional **bypass** hole at `x = bx` (the long way round). The gate cells
+    /// are open in the base world — the assembled model always clears a gate
+    /// region — and the proof re-seals them itself.
+    fn shortcut_world(w: i32, d: i32, y: i32, zw: i32, gx: i32, bypass: Option<i32>) -> World {
+        let mut walls = Vec::new();
+        for x in 0..w {
+            if x == gx || Some(x) == bypass {
+                continue;
+            }
+            walls.push([x, y, zw]);
+            walls.push([x, y + 1, zw]);
+        }
+        floored(w, d, y, &walls)
+    }
+
+    /// A shortcut plan over a 1-cell gate column at `(gx, y..y+1, zw)`.
+    fn shortcut(gx: i32, y: i32, zw: i32, unlock: [i32; 3]) -> crate::plan::ShortcutPlan {
+        crate::plan::ShortcutPlan {
+            id: "shortcut/lift".to_string(),
+            safe: "lift".to_string(),
+            gate_anchor: "anchor/gate".to_string(),
+            gate_region: ([gx, y, zw], [gx, y + 1, zw]),
+            gate_block: "minecraft:iron_bars".to_string(),
+            unlock_anchor: "anchor/lift-lever".to_string(),
+            unlock,
+            on_unlock: Vec::new(),
+        }
+    }
+
+    /// The happy path: a wall with a barred doorway AND a far bypass hole. The
+    /// unlock is reachable the long way while the gate is sealed, and opening the
+    /// gate genuinely shortens the crossing — a real shortcut.
+    #[test]
+    fn shortcut_with_a_long_way_round_passes_both_proofs() {
+        let world = shortcut_world(12, 9, 65, 4, 1, Some(10));
+        let sc = shortcut(1, 65, 4, [1, 65, 7]);
+        verify_shortcuts(&world, &[sc], Some([1, 65, 1]))
+            .expect("a gate with a genuine detour around it is a real shortcut");
+    }
+
+    /// No bypass: sealing the gate cuts the room in two, so the unlock on the far
+    /// side can never be reached the hard way — the mechanism that opens the
+    /// shortcut is behind the shortcut. `DW0373`.
+    #[test]
+    fn shortcut_whose_unlock_is_only_behind_its_own_gate_is_dw0373() {
+        let world = shortcut_world(12, 9, 65, 4, 1, None);
+        let sc = shortcut(1, 65, 4, [1, 65, 7]);
+        let err = verify_shortcuts(&world, &[sc], Some([1, 65, 1]))
+            .expect_err("a shortcut with no long route must fail");
+        assert_eq!(err.code, DW_SHORTCUT_NO_LONG_ROUTE); // DW0373
+        assert!(
+            err.message.contains("no long route"),
+            "the message must name the missing long route: {}",
+            err.message
+        );
+    }
+
+    /// The classic leak: the `unlock` sits on the NEAR side of its own gate, so
+    /// the player can pull it without ever earning the far side — and opening the
+    /// gate measurably changes nothing about reaching it. `DW0374`.
+    #[test]
+    fn shortcut_whose_unlock_is_on_the_near_side_is_dw0374() {
+        let world = shortcut_world(12, 9, 65, 4, 1, Some(10));
+        // Entry z=1, wall z=4: an unlock at z=2 is on the entry's own side.
+        let sc = shortcut(1, 65, 4, [5, 65, 2]);
+        let err = verify_shortcuts(&world, &[sc], Some([1, 65, 1]))
+            .expect_err("an unlock the gate does not stand in front of is a leak");
+        assert_eq!(err.code, DW_SHORTCUT_NO_GAIN); // DW0374
+        assert!(
+            err.message.contains("leaks"),
+            "the message must name the leak: {}",
+            err.message
+        );
     }
 
     /// A minimal lethal trap for the proof tests.

@@ -74,6 +74,9 @@ pub fn validate_campaign_with(
     if is_v06(c.quests.dsl_version.as_str()) {
         v06_checks(c, items, anchors, entities, &mut d);
         v06_trap_checks(c, items, anchors, &mut d);
+        shortcut_checks(c, anchors, &mut d);
+        ambush_checks(c, &mut d);
+        timed_gate_checks(c, &mut d);
     }
     // DSL v0.6 stage 7 (spec-0017): the map-editor edit script. Structural
     // checks only — frame/region *resolution* happens at build time against the
@@ -1233,6 +1236,26 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
         if !c.quests.content.traps.is_empty() {
             res(d, "/content/traps".to_string(), "the `traps` section");
         }
+        // Shortcut doors (spec-0016 §2) are a v0.6 stage-5 surface too.
+        if !c.quests.content.shortcuts.is_empty() {
+            res(
+                d,
+                "/content/shortcuts".to_string(),
+                "the `shortcuts` section",
+            );
+        }
+        // Ambushes (spec-0016 §3) likewise.
+        if !c.quests.content.ambushes.is_empty() {
+            res(d, "/content/ambushes".to_string(), "the `ambushes` section");
+        }
+        // Timed gates (spec-0016 §4) likewise.
+        if !c.quests.content.timed_gates.is_empty() {
+            res(
+                d,
+                "/content/timed_gates".to_string(),
+                "the `timed_gates` section",
+            );
+        }
         // Wave-mob `equipment` (task #65) is a v0.6 stage-5 surface: reserved
         // before 0.6.0 (the field defaults to absent, so an earlier campaign
         // that uses none is byte-identical).
@@ -1245,6 +1268,14 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                         "wave-mob `equipment`",
                     );
                 }
+            }
+            // Bonfire re-seating (spec-0016 §1) is a v0.6 stage-5 surface.
+            if w.respawns_on_rest {
+                res(
+                    d,
+                    format!("/content/waves/{i}/respawns_on_rest"),
+                    "wave `respawns_on_rest`",
+                );
             }
         }
     }
@@ -1649,7 +1680,7 @@ fn check_no_nested_sequence(effs: &[QuestEffect], path: &str, d: &mut Vec<Diagno
 }
 
 /// Reject a `carrier: "one"` `give-item` inside a **scheduler-only** bundle
-/// (`DW0357`, spec-0018).
+/// (`DW0371`, spec-0018).
 ///
 /// `carrier: "one"` means "hand this one quest prop to the player whose action
 /// earned it". A `sequence` step and a `move-npc`/`move-actor` `on_arrive` are
@@ -1873,6 +1904,40 @@ fn v06_checks(
                         ),
                     ));
                 }
+            }
+        }
+    }
+
+    // spec-0016 §1: `respawns_on_rest` is re-seating *by a bonfire*. With no
+    // `bonfire` anywhere in the campaign nothing can ever fire the re-seat, so
+    // the field is a silent no-op — the class of defect this compiler always
+    // turns loud (`DW0370`).
+    let mut has_bonfire = false;
+    for q in &c.quests.content.quests {
+        for_each_effect_deep(q, |_path, eff| {
+            has_bonfire |= eff.bonfire().is_some();
+        });
+    }
+    for t in &c.quests.content.triggers {
+        for_each_trigger_effect_deep(t, |_path, eff| {
+            has_bonfire |= eff.bonfire().is_some();
+        });
+    }
+    if !has_bonfire {
+        for (i, w) in quests.waves.iter().enumerate() {
+            if w.respawns_on_rest {
+                d.push(Diagnostic::error(
+                    codes::REST_RESEAT_NO_BONFIRE,
+                    "quests",
+                    format!("/content/waves/{i}/respawns_on_rest"),
+                    format!(
+                        "wave `{}` declares `respawns_on_rest: true` but this campaign declares \
+                         no `bonfire` — nothing can ever re-seat it, so the field is inert. Add \
+                         the `bonfire` the re-seat hangs off (spec-0016 §1), or drop the field; \
+                         do NOT leave a silently dead declaration in the DSL.",
+                        w.id.as_str()
+                    ),
+                ));
             }
         }
     }
@@ -4580,6 +4645,317 @@ fn world_edits_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mut Vec<Diag
                     }
                 }
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// spec-0016 §2 — shortcut doors
+// ---------------------------------------------------------------------------
+
+/// Validate the stage-5 `shortcuts` section (spec-0016 §2).
+///
+/// Two rules, two codes:
+/// * `DW0371` — the declaration must resolve: a well-formed, unique
+///   `shortcut/<id>`, a `gate` and an `unlock` some area's prefab provides, and
+///   the two must be different anchors (the mechanism sits on the FAR side, not
+///   in the doorway it opens).
+/// * `DW0372` — no `close-gate` anywhere may target a gate a shortcut owns. A
+///   shortcut opens permanently; making that structural is cheaper and safer than
+///   trusting every author to never reach for the re-seal verb. `close-gate` on
+///   any other gate (the point-of-no-return beat) is untouched.
+///
+/// Anchor resolution stays lenient for pool areas the compiler resolves later —
+/// the same policy as the trap and trigger checks.
+fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
+    let quests = &c.quests.content;
+    if quests.shortcuts.is_empty() {
+        return;
+    }
+    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
+    let mut has_pool_area = false;
+    for a in &c.world.content.areas {
+        if let Some(prefab) = &a.prefab {
+            if let Some(set) = anchors.anchors_for(prefab) {
+                known_anchor.extend(set.iter().map(String::as_str));
+            }
+        } else if a.prefab_pool.is_some() {
+            has_pool_area = true;
+        }
+    }
+    let resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
+
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for (i, sc) in quests.shortcuts.iter().enumerate() {
+        if !sc.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::SHORTCUT_INVALID,
+                "quests",
+                format!("/content/shortcuts/{i}/id"),
+                format!(
+                    "malformed shortcut id `{}` — shortcut ids must be lowercase kebab-case with \
+                     the `shortcut/` prefix (e.g. `shortcut/keep-lift`)",
+                    sc.id
+                ),
+            ));
+        }
+        if !seen.insert(sc.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::SHORTCUT_INVALID,
+                "quests",
+                format!("/content/shortcuts/{i}/id"),
+                format!(
+                    "duplicate shortcut id `{}` — rename one so every shortcut id is unique",
+                    sc.id
+                ),
+            ));
+        }
+        for (field, anchor) in [("gate", &sc.gate), ("unlock", &sc.unlock)] {
+            if !resolvable(anchor.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::SHORTCUT_INVALID,
+                    "quests",
+                    format!("/content/shortcuts/{i}/{field}"),
+                    format!(
+                        "shortcut `{field}` anchor `{anchor}` is not provided by any area's \
+                         prefab — use an anchor a prefab exposes (anchor names come from prefab \
+                         metadata; do NOT invent one)"
+                    ),
+                ));
+            }
+        }
+        if sc.gate == sc.unlock {
+            d.push(Diagnostic::error(
+                codes::SHORTCUT_INVALID,
+                "quests",
+                format!("/content/shortcuts/{i}/unlock"),
+                format!(
+                    "shortcut `{}` unlocks at its own gate anchor `{}` — the mechanism belongs on \
+                     the FAR side of the door you have not opened yet, which is the entire point \
+                     of the pattern (spec-0016 §2)",
+                    sc.id, sc.gate
+                ),
+            ));
+        }
+    }
+
+    // `close-gate` may never target a shortcut gate: permanence is structural.
+    let owned: BTreeSet<&str> = quests.shortcuts.iter().map(|s| s.gate.as_str()).collect();
+    let report = |path: String, anchor: &str, d: &mut Vec<Diagnostic>| {
+        d.push(Diagnostic::error(
+            codes::SHORTCUT_RESEALED,
+            "quests",
+            path,
+            format!(
+                "`close-gate` targets `{anchor}`, a gate a `shortcut` owns — a shortcut opens \
+                 PERMANENTLY (spec-0016 §2), so nothing may re-seal it. Use a different gate for \
+                 the point-of-no-return beat, or drop the shortcut declaration."
+            ),
+        ));
+    };
+    for (qi, q) in quests.quests.iter().enumerate() {
+        for_each_effect_deep(q, |path, eff| {
+            if let Some(a) = eff.close_gate_anchor()
+                && owned.contains(a.as_str())
+            {
+                report(format!("/content/quests/{qi}/{path}/anchor"), a.as_str(), d);
+            }
+        });
+    }
+    for (ti, t) in quests.triggers.iter().enumerate() {
+        for_each_trigger_effect_deep(t, |path, eff| {
+            if let Some(a) = eff.close_gate_anchor()
+                && owned.contains(a.as_str())
+            {
+                report(
+                    format!("/content/triggers/{ti}/{path}/anchor"),
+                    a.as_str(),
+                    d,
+                );
+            }
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// spec-0016 §3 — ambushes
+// ---------------------------------------------------------------------------
+
+/// Validate the stage-5 `ambushes` section (spec-0016 §3), `DW0375`.
+///
+/// An ambush desugars to an ordinary environment trigger at parse time, so it
+/// inherits every trigger diagnostic already in the compiler — id/range checks
+/// (`DW0194`), anchor resolution, unknown actor refs, the `use`-on-an-NPC rule
+/// (`DW0350`). This function only owns what the sugar itself can get wrong:
+/// its own id, and an actor list that does not actually stage an ambush.
+///
+/// It deliberately does **not** require a `telegraph`. The un-telegraphed
+/// ambush is core souls vocabulary (owner ruling 2026-08-02) — 初见杀 is how a
+/// level teaches. What the engine owes the player is counterplay on the retry,
+/// which is a geometric question and is proven in `compiler::nav` (`DW0376`).
+fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for (i, a) in c.quests.content.ambushes.iter().enumerate() {
+        if !a.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::AMBUSH_INVALID,
+                "quests",
+                format!("/content/ambushes/{i}/id"),
+                format!(
+                    "malformed ambush id `{}` — ambush ids must be lowercase kebab-case with the \
+                     `ambush/` prefix (e.g. `ambush/stair-turn`)",
+                    a.id
+                ),
+            ));
+        }
+        if !seen.insert(a.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::AMBUSH_INVALID,
+                "quests",
+                format!("/content/ambushes/{i}/id"),
+                format!(
+                    "duplicate ambush id `{}` — rename one so every ambush id is unique (each \
+                     desugars to a trigger named after it)",
+                    a.id
+                ),
+            ));
+        }
+        if a.actors.is_empty() {
+            d.push(Diagnostic::error(
+                codes::AMBUSH_INVALID,
+                "quests",
+                format!("/content/ambushes/{i}/actors"),
+                format!(
+                    "ambush `{}` lists no actors — it would spring nothing. List the actors that \
+                     ambush the player, or delete the declaration; a beat that fires and does \
+                     nothing is never what was meant.",
+                    a.id
+                ),
+            ));
+        }
+        let mut dup: BTreeSet<&str> = BTreeSet::new();
+        for (j, actor) in a.actors.iter().enumerate() {
+            if !dup.insert(actor.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::AMBUSH_INVALID,
+                    "quests",
+                    format!("/content/ambushes/{i}/actors/{j}"),
+                    format!(
+                        "ambush `{}` lists actor `{actor}` twice — `spawn-actor` is idempotent, so \
+                         the second one is a silent no-op and the ambush is half the size it \
+                         reads as. Declare a second actor instead.",
+                        a.id
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// spec-0016 §4 — timed gates
+// ---------------------------------------------------------------------------
+
+/// Validate the stage-5 `timed_gates` section (spec-0016 §4), `DW0377`.
+///
+/// The structural half only: ids, a cycle that actually cycles, a phase inside
+/// the cycle, and one owner per gate region. The *design* half — that the gate is
+/// a timing read and not a coin flip — needs the nav model's crossing time and
+/// lives in `compiler::nav` (`DW0378`). The fill-block requirement is `DW0343`,
+/// the same rule `close-gate` and `shortcut` obey.
+fn timed_gate_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let quests = &c.quests.content;
+    if quests.timed_gates.is_empty() {
+        return;
+    }
+    let shortcut_gates: BTreeSet<&str> = quests.shortcuts.iter().map(|s| s.gate.as_str()).collect();
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    let mut driven: BTreeSet<&str> = BTreeSet::new();
+    for (i, g) in quests.timed_gates.iter().enumerate() {
+        let err = |path: String, msg: String, d: &mut Vec<Diagnostic>| {
+            d.push(Diagnostic::error(
+                codes::TIMED_GATE_INVALID,
+                "quests",
+                path,
+                msg,
+            ));
+        };
+        if !g.id.is_valid_syntax() {
+            err(
+                format!("/content/timed_gates/{i}/id"),
+                format!(
+                    "malformed timed-gate id `{}` — ids must be lowercase kebab-case with the \
+                     `timed-gate/` prefix (e.g. `timed-gate/piston-hall`)",
+                    g.id
+                ),
+                d,
+            );
+        }
+        if !seen.insert(g.id.as_str()) {
+            err(
+                format!("/content/timed_gates/{i}/id"),
+                format!("duplicate timed-gate id `{}` — rename one", g.id),
+                d,
+            );
+        }
+        for (field, ticks) in [
+            ("open_ticks", g.open_ticks),
+            ("closed_ticks", g.closed_ticks),
+        ] {
+            if ticks == 0 {
+                err(
+                    format!("/content/timed_gates/{i}/{field}"),
+                    format!(
+                        "timed gate `{}` declares `{field}: 0` — a gate that never {} is not a \
+                         timing gate. Use `open-gate`/`close-gate` for a one-way state change, or \
+                         give both halves of the cycle a real duration.",
+                        g.id,
+                        if field == "open_ticks" {
+                            "opens"
+                        } else {
+                            "closes"
+                        }
+                    ),
+                    d,
+                );
+            }
+        }
+        let cycle = g.open_ticks.saturating_add(g.closed_ticks);
+        if cycle > 0 && g.phase >= cycle {
+            err(
+                format!("/content/timed_gates/{i}/phase"),
+                format!(
+                    "timed gate `{}` declares `phase: {}` at or beyond its own {cycle}-tick cycle \
+                     — a phase is an offset INTO the cycle, so it must be less than it (use \
+                     `phase % cycle`).",
+                    g.id, g.phase
+                ),
+                d,
+            );
+        }
+        if !driven.insert(g.gate.as_str()) {
+            err(
+                format!("/content/timed_gates/{i}/gate"),
+                format!(
+                    "gate `{}` is driven by two timed gates — two clocks filling and clearing the \
+                     same region race every tick and the region's state becomes emission order, \
+                     not design. One clock per gate.",
+                    g.gate
+                ),
+                d,
+            );
+        }
+        if shortcut_gates.contains(g.gate.as_str()) {
+            err(
+                format!("/content/timed_gates/{i}/gate"),
+                format!(
+                    "gate `{}` is both a `shortcut` gate and a `timed-gate` — a shortcut opens \
+                     PERMANENTLY (spec-0016 §2) and a clock would re-seal it every cycle, which \
+                     is exactly the re-seal `DW0358` exists to forbid. Use two different gates.",
+                    g.gate
+                ),
+                d,
+            );
         }
     }
 }

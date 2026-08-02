@@ -238,15 +238,25 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
             Ok(quests),
             Ok(dialogue),
             Ok(world_edits),
-        ) => Ok(Campaign {
-            world,
-            npcs,
-            classes,
-            quest_plan,
-            quests,
-            dialogue,
-            world_edits,
-        }),
+        ) => {
+            let mut campaign = Campaign {
+                world,
+                npcs,
+                classes,
+                quest_plan,
+                quests,
+                dialogue,
+                world_edits,
+            };
+            // spec-0016 §3: expand the `ambush` sugar into real environment
+            // triggers, ONCE, at the DSL boundary. Every downstream consumer —
+            // validation, l10n, the flow producer scans, nav, emission — then
+            // sees the same `triggers` list it always has, so the sugar has no
+            // second code path to drift down and an ambush is exactly as
+            // debuggable as the trigger an author would otherwise hand-write.
+            campaign.quests.content.expand_ambushes();
+            Ok(campaign)
+        }
         _ => Err(diags),
     }
 }

@@ -89,10 +89,78 @@ pub struct CheckpointPlan {
     pub anchor: String,
     /// The resolved absolute anchor cell.
     pub pos: [i32; 3],
-    /// Per-player `on_respawn` effects (may be empty).
+    /// Per-player `on_respawn` effects (may be empty). For a bonfire
+    /// (`rest == true`) this is the `on_rest` bundle: the same effects run on a
+    /// rest and on a respawn (spec-0016 §1).
     pub on_respawn: Vec<QuestEffect>,
     /// `critical_path` step index at which this checkpoint fires (roots DW0315).
+    /// For a bonfire this is the step that **arms** the rest affordance — the
+    /// earliest beat at which a rest (and therefore a respawn here) is possible,
+    /// so the no-stranding proof stays conservative.
     pub fire_step: usize,
+    /// `true` for a `bonfire` (spec-0016 §1): the checkpoint moves only when the
+    /// party rests at the affordance, not when the effect fires. `false` for a
+    /// plain `set-checkpoint` (spec-0012), which is immediate.
+    pub rest: bool,
+}
+
+/// A resolved stage-5 `shortcut` (spec-0016 §2), collected in deterministic
+/// content order. A shortcut whose `gate` is not a resolvable gate region, or
+/// whose `unlock` anchor does not resolve to a point, carries no plan entry (and
+/// so no emission and no proof) — `DW0371` rejects those at validation.
+#[derive(Clone, Debug)]
+pub struct ShortcutPlan {
+    /// The full shortcut id (`shortcut/<kebab>`).
+    pub id: String,
+    /// The function/tag-safe local id.
+    pub safe: String,
+    /// The gate anchor name.
+    pub gate_anchor: String,
+    /// The gate region's inclusive corners (absolute world coords).
+    pub gate_region: ([i32; 3], [i32; 3]),
+    /// The block the gate region is filled with (cleared to air on unlock).
+    pub gate_block: String,
+    /// The unlock anchor name.
+    pub unlock_anchor: String,
+    /// The resolved far-side unlock cell.
+    pub unlock: [i32; 3],
+    /// Effects fired once, when the shortcut opens.
+    pub on_unlock: Vec<QuestEffect>,
+}
+
+/// A resolved stage-5 `timed-gate` (spec-0016 §4), in declared order.
+#[derive(Clone, Debug)]
+pub struct TimedGatePlan {
+    /// The full timed-gate id.
+    pub id: String,
+    /// The function/tag-safe local id.
+    pub safe: String,
+    /// The gate anchor name.
+    pub gate_anchor: String,
+    /// The gate region's inclusive corners (absolute world coords).
+    pub gate_region: ([i32; 3], [i32; 3]),
+    /// The block the region is filled with while closed.
+    pub gate_block: String,
+    /// Ticks open per cycle.
+    pub open_ticks: u32,
+    /// Ticks closed per cycle.
+    pub closed_ticks: u32,
+    /// Ticks after world init before the first open window.
+    pub phase: u32,
+}
+
+/// A resolved stage-5 `ambush` (spec-0016 §3), collected in declared order —
+/// the trigger cell and the cell each ambusher will stand on. An ambush whose
+/// anchors do not resolve carries no entry (and so no proof); the desugared
+/// trigger's own anchor checks report that.
+#[derive(Clone, Debug)]
+pub struct AmbushPlan {
+    /// The full ambush id (`ambush/<kebab>`).
+    pub id: String,
+    /// The resolved trigger cell — where the player is standing when it springs.
+    pub at: [i32; 3],
+    /// One resolved spawn cell per ambusher, in declared order.
+    pub actor_cells: Vec<[i32; 3]>,
 }
 
 /// A resolved `begin-stealth` beat (DSL v0.6, spec-0014), collected in
@@ -256,6 +324,12 @@ pub struct Plan<'a> {
     pub objective_steps: BTreeMap<String, usize>,
     /// Resolved traps (DSL v0.6, spec-0011), content-ordered.
     pub traps: Vec<TrapPlan>,
+    /// Resolved shortcut doors (spec-0016 §2), content-ordered.
+    pub shortcuts: Vec<ShortcutPlan>,
+    /// Resolved ambushes (spec-0016 §3), declaration-ordered.
+    pub ambushes: Vec<AmbushPlan>,
+    /// Resolved timed gates (spec-0016 §4), declaration-ordered.
+    pub timed_gates: Vec<TimedGatePlan>,
     /// Resolved gate open/close firings (DSL v0.6), content-ordered — drives the
     /// `close-gate` completability model in `crate::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
@@ -1017,9 +1091,49 @@ impl<'a> Plan<'a> {
         // ---- v0.6 traps (spec-0011) ----
         let traps = collect_traps(campaign, &anchors, &dispenser_cells);
 
+        // ---- shortcut doors (spec-0016 §2) ----
+        let shortcuts = collect_shortcuts(campaign, &anchors);
+
+        // ---- ambushes (spec-0016 §3) ----
+        let ambushes = collect_ambushes(campaign, &anchors);
+
+        // ---- timed gates (spec-0016 §4) ----
+        let timed_gates: Vec<TimedGatePlan> = campaign
+            .quests
+            .content
+            .timed_gates
+            .iter()
+            .filter_map(|g| {
+                let (from, to, block) = gate_region_block_any(&anchors, g.gate.as_str())?;
+                Some(TimedGatePlan {
+                    id: g.id.as_str().to_string(),
+                    safe: safe_local(g.id.as_str()),
+                    gate_anchor: g.gate.as_str().to_string(),
+                    gate_region: (from, to),
+                    gate_block: block,
+                    open_ticks: g.open_ticks,
+                    closed_ticks: g.closed_ticks,
+                    phase: g.phase,
+                })
+            })
+            .collect();
+
         // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
-        let gate_events = collect_gate_events(campaign, &anchors, &objective_steps);
+        let mut gate_events = collect_gate_events(campaign, &anchors, &objective_steps);
+        // A shortcut gate is sealed from world-load and is opened only by an
+        // OPTIONAL far-side interaction no proof can order (spec-0016 §2). Seal it
+        // for the whole completability model — `fire_step: 0` precedes every leg —
+        // so the critical path, the checkpoints and the traps are all proven over
+        // a world where no shortcut has been taken. The delve must be finishable
+        // the long way; the shortcut is a reward, never a requirement.
+        gate_events.extend(shortcuts.iter().map(|sc| GateEvent {
+            region: sc.gate_region,
+            closes: true,
+            fire_step: 0,
+        }));
         let strict_ancestor_steps = compute_strict_ancestor_steps(campaign, &objective_steps);
+
+        let gate_events = gate_events;
 
         Ok(Self {
             campaign,
@@ -1038,6 +1152,9 @@ impl<'a> Plan<'a> {
             stealth_beats,
             objective_steps,
             traps,
+            shortcuts,
+            ambushes,
+            timed_gates,
             gate_events,
             strict_ancestor_steps,
             massing_bounds,
@@ -1092,7 +1209,25 @@ impl<'a> Plan<'a> {
     /// vanilla respawn-detection machinery so checkpoint-free / hook-free campaigns
     /// stay byte-identical (DSL v0.6, spec-0012).
     pub fn any_checkpoint_on_respawn(&self) -> bool {
-        self.checkpoints.iter().any(|c| !c.on_respawn.is_empty())
+        self.checkpoints.iter().any(|c| !c.on_respawn.is_empty()) || !self.reseat_waves().is_empty()
+    }
+
+    /// The waves a bonfire rest / bonfire respawn re-seats (spec-0016 §1), in
+    /// content order. Empty unless the campaign declares BOTH a `bonfire` and at
+    /// least one wave with `respawns_on_rest` — `DW0370` rejects the half that
+    /// declares the field without a bonfire, so this is empty exactly for
+    /// campaigns that use none of the surface (byte-identical emission).
+    pub fn reseat_waves(&self) -> Vec<&delvewright_dsl::Wave> {
+        if !self.checkpoints.iter().any(|c| c.rest) {
+            return Vec::new();
+        }
+        self.campaign
+            .quests
+            .content
+            .waves
+            .iter()
+            .filter(|w| w.respawns_on_rest)
+            .collect()
     }
 
     /// The collected checkpoint matching a `set-checkpoint` effect (by anchor +
@@ -1104,7 +1239,23 @@ impl<'a> Plan<'a> {
     ) -> Option<&CheckpointPlan> {
         self.checkpoints
             .iter()
-            .find(|c| c.anchor == anchor && c.on_respawn.as_slice() == on_respawn)
+            .find(|c| !c.rest && c.anchor == anchor && c.on_respawn.as_slice() == on_respawn)
+    }
+
+    /// The collected **bonfire** matching a `bonfire` effect (by anchor +
+    /// `on_rest` list), giving the emitter its stable content-ordered index
+    /// (spec-0016 §1). Disjoint from [`Self::checkpoint_for`]: a bonfire and a
+    /// plain `set-checkpoint` may share an anchor and a hook list and still be
+    /// two distinct rest points.
+    pub fn bonfire_for(&self, anchor: &str, on_rest: &[QuestEffect]) -> Option<&CheckpointPlan> {
+        self.checkpoints
+            .iter()
+            .find(|c| c.rest && c.anchor == anchor && c.on_respawn.as_slice() == on_rest)
+    }
+
+    /// Every collected bonfire (spec-0016 §1), content-ordered.
+    pub fn bonfires(&self) -> impl Iterator<Item = &CheckpointPlan> {
+        self.checkpoints.iter().filter(|c| c.rest)
     }
 
     /// The collected stealth beat matching a `begin-stealth` effect (by zone
@@ -1619,7 +1770,10 @@ fn build_critical_path(
 
 /// Resolve an anchor name to a point cell by scanning every area's resolved
 /// anchors (first match), mirroring the emitter's `anchor_point_any`.
-fn point_any(anchors: &BTreeMap<(String, String), ResolvedAnchor>, name: &str) -> Option<[i32; 3]> {
+pub(crate) fn point_any(
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    name: &str,
+) -> Option<[i32; 3]> {
     for ((_, n), resolved) in anchors {
         if n == name {
             return match resolved {
@@ -1714,7 +1868,7 @@ fn collect_v06_effects(
             for opt in &node.options {
                 for eff in &opt.effects {
                     if let Some((anchor, on_respawn)) = eff.set_checkpoint() {
-                        c.push_checkpoint(anchor.as_str(), on_respawn, step);
+                        c.push_checkpoint(anchor.as_str(), on_respawn, step, false);
                     }
                 }
             }
@@ -1741,6 +1895,86 @@ fn close_stealth_windows(beats: &mut [StealthBeat], ends: &[usize]) {
             (a, b) => a.or(b),
         };
     }
+}
+
+/// Collect every stage-5 `shortcut` (spec-0016 §2) in declared order, resolving
+/// its gate region and far-side unlock cell. A shortcut whose anchors do not
+/// resolve is skipped here (validation owns that, `DW0371`).
+fn collect_shortcuts(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+) -> Vec<ShortcutPlan> {
+    let mut out = Vec::new();
+    for sc in &campaign.quests.content.shortcuts {
+        let Some((from, to, block)) = gate_region_block_any(anchors, sc.gate.as_str()) else {
+            continue;
+        };
+        let Some(unlock) = point_any(anchors, sc.unlock.as_str()) else {
+            continue;
+        };
+        out.push(ShortcutPlan {
+            id: sc.id.as_str().to_string(),
+            safe: safe_local(sc.id.as_str()),
+            gate_anchor: sc.gate.as_str().to_string(),
+            gate_region: (from, to),
+            gate_block: block,
+            unlock_anchor: sc.unlock.as_str().to_string(),
+            unlock,
+            on_unlock: sc.on_unlock.clone(),
+        });
+    }
+    out
+}
+
+/// Collect every stage-5 `ambush` (spec-0016 §3) in declared order, resolving the
+/// trigger cell and each ambusher's spawn cell. An ambush whose trigger anchor or
+/// whose every actor cell fails to resolve is skipped (the desugared trigger's own
+/// anchor checks own that failure).
+fn collect_ambushes(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+) -> Vec<AmbushPlan> {
+    let by_id: BTreeMap<&str, &delvewright_dsl::Actor> = campaign
+        .quests
+        .content
+        .actors
+        .iter()
+        .map(|a| (a.id.as_str(), a))
+        .collect();
+    let mut out = Vec::new();
+    for amb in &campaign.quests.content.ambushes {
+        let Some(at) = point_any(anchors, amb.at.as_str()) else {
+            continue;
+        };
+        let actor_cells: Vec<[i32; 3]> = amb
+            .actors
+            .iter()
+            .filter_map(|id| by_id.get(id.as_str()))
+            .filter_map(|a| point_any(anchors, a.anchor.as_str()))
+            .collect();
+        out.push(AmbushPlan {
+            id: amb.id.as_str().to_string(),
+            at,
+            actor_cells,
+        });
+    }
+    out
+}
+
+/// The absolute gate region **and fill block** a gate anchor resolves to. `None`
+/// if the anchor is not a gate region.
+fn gate_region_block_any(
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    name: &str,
+) -> Option<([i32; 3], [i32; 3], String)> {
+    for ((_, n), resolved) in anchors {
+        if n == name
+            && let ResolvedAnchor::Gate { from, to, block } = resolved
+        {
+            return Some((*from, *to, block.clone()));
+        }
+    }
+    None
 }
 
 /// The absolute gate region `(from, to)` a gate anchor resolves to (globally, like
@@ -1976,7 +2210,13 @@ struct V06Collector<'a> {
 }
 
 impl V06Collector<'_> {
-    fn push_checkpoint(&mut self, anchor: &str, on_respawn: &[QuestEffect], fire_step: usize) {
+    fn push_checkpoint(
+        &mut self,
+        anchor: &str,
+        on_respawn: &[QuestEffect],
+        fire_step: usize,
+        rest: bool,
+    ) {
         if let Some(pos) = point_any(self.anchors, anchor) {
             self.checkpoints.push(CheckpointPlan {
                 index: self.checkpoints.len(),
@@ -1984,6 +2224,7 @@ impl V06Collector<'_> {
                 pos,
                 on_respawn: on_respawn.to_vec(),
                 fire_step,
+                rest,
             });
         }
     }
@@ -2016,7 +2257,12 @@ impl V06Collector<'_> {
 
     fn handle(&mut self, eff: &QuestEffect, fire_step: usize) {
         if let Some((anchor, on_respawn)) = eff.set_checkpoint() {
-            self.push_checkpoint(anchor.as_str(), on_respawn, fire_step);
+            self.push_checkpoint(anchor.as_str(), on_respawn, fire_step, false);
+        } else if let Some((anchor, on_rest)) = eff.bonfire() {
+            // A bonfire IS a checkpoint (spec-0016 §1) — it inherits DW0315 /
+            // DW0316 by being collected here. It is rooted at the arming step,
+            // the earliest beat a rest can happen.
+            self.push_checkpoint(anchor.as_str(), on_rest, fire_step, true);
         } else if let Some((zones, on_caught, grace)) = eff.begin_stealth() {
             self.push_stealth(zones, on_caught, grace, fire_step);
         } else if matches!(eff, QuestEffect::EndStealth) {

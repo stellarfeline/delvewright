@@ -10,8 +10,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{
-    ActorId, AnchorId, AreaId, ClassId, DialogueId, EditBatchId, FlagId, NpcId, ObjectiveId,
-    PoolId, PrefabId, QuestId, RegionId, TrapId, TriggerId, WaveId,
+    ActorId, AmbushId, AnchorId, AreaId, ClassId, DialogueId, EditBatchId, FlagId, NpcId,
+    ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId, TimedGateId, TrapId, TriggerId,
+    WaveId,
 };
 
 /// serde default helper: `true` (used by DSL v0.4 `trigger.once`).
@@ -94,7 +95,7 @@ pub struct WorldContent {
     /// Progression is party state either way (spec-0018), so this is a *declaration
     /// of intent*, not a mechanism: it makes a mandatory-n design first-class
     /// (owner amendment 2026-08-02) and turns on the analyzer's n-agent division
-    /// proof. Out of `1..=4` is `DW0356`.
+    /// proof. Out of `1..=4` is `DW0370`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_players: Option<u8>,
 }
@@ -799,6 +800,64 @@ pub struct QuestsContent {
     /// declares none stays byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub traps: Vec<Trap>,
+    /// Shortcut doors (spec-0016 §2): a gate that is sealed from world-load and
+    /// is opened — permanently — from the FAR side. Empty/absent in pre-0.6
+    /// campaigns (reserved `DW0141`), so a campaign that declares none stays
+    /// byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shortcuts: Vec<Shortcut>,
+    /// Ambushes (spec-0016 §3): sugar over "deferred actors + a trigger that
+    /// springs them". Empty/absent in pre-0.6 campaigns (reserved `DW0141`).
+    ///
+    /// **Never serialized.** [`parse_campaign`](crate::parse_campaign) expands
+    /// each ambush into `triggers`, so the canonical form of a campaign is its
+    /// **desugared** form. That is what keeps the canonical round-trip idempotent
+    /// (re-parsing canonical output finds no `ambushes` and so cannot expand a
+    /// second time and duplicate the trigger ids), and it means the sugar exists
+    /// at exactly one layer boundary — the authored `.json` — with nothing
+    /// downstream needing to know it was ever there. The list itself is kept in
+    /// memory so diagnostics can name the ambush the author wrote.
+    /// Timed gates (spec-0016 §4): gates on a deterministic open/close clock.
+    /// Empty/absent in pre-0.6 campaigns (reserved `DW0141`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub timed_gates: Vec<TimedGate>,
+    #[serde(default, skip_serializing)]
+    pub ambushes: Vec<Ambush>,
+    /// Whether [`Self::expand_ambushes`] has already run (never serialized). The
+    /// authored `ambushes` are deliberately KEPT after expansion so validation
+    /// and the counterplay proof can attribute diagnostics to the ambush the
+    /// author actually wrote; this flag is what makes a second expansion a no-op.
+    #[serde(skip)]
+    pub ambushes_expanded: bool,
+}
+
+impl QuestsContent {
+    /// Every environment trigger this stage produces: the authored `triggers`
+    /// followed by the ones each `ambush` desugars to (spec-0016 §3), in
+    /// declared order.
+    ///
+    /// **This is the single trigger authority.** Validation, the l10n
+    /// inventory, the flag/wave producer scans, the nav proofs and emission all
+    /// read triggers through it, so an ambush behaves exactly like the trigger
+    /// an author would otherwise hand-write — there is no second code path for
+    /// the sugar to drift down. Deterministic (declaration order, no hashing).
+    pub fn all_triggers(&self) -> Vec<EnvTrigger> {
+        let mut out = self.triggers.clone();
+        out.extend(self.ambushes.iter().map(Ambush::to_trigger));
+        out
+    }
+
+    /// Desugar every `ambush` into a real environment trigger and clear the
+    /// ambush list (spec-0016 §3). Called once, by
+    /// [`parse_campaign`](crate::parse_campaign); idempotent by construction
+    /// (a second call sees no ambushes left to expand).
+    pub fn expand_ambushes(&mut self) {
+        if self.ambushes_expanded || self.ambushes.is_empty() {
+            return;
+        }
+        self.triggers = self.all_triggers();
+        self.ambushes_expanded = true;
+    }
 }
 
 /// A stage-5 trap (DSL v0.6, spec-0011): a redstone-native environmental hazard.
@@ -955,6 +1014,146 @@ pub struct TrapDisarm {
     pub sets_flag: FlagId,
 }
 
+/// A stage-5 **timed gate** (spec-0016 §4): a gate region driven by a
+/// deterministic open/close clock, so passage is a timing read rather than a
+/// permanent state.
+///
+/// **The proof is deliberately NOT all-phase passability** (owner ruling
+/// 2026-08-02) — a gate that punishes bad timing is the entire point. What the
+/// compiler requires is that the gate is *readable*: the set of entry phases from
+/// which a walking player clears the span before it shuts must cover **≥ 20% of
+/// the cycle** (`DW0378`). Below that it is a coin flip, not a skill, and no
+/// amount of learning the level makes it fair.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TimedGate {
+    /// Unique timed-gate id (`timed-gate/<kebab>`).
+    pub id: TimedGateId,
+    /// The gate anchor the clock drives. Its prefab metadata must declare a fill
+    /// `block` (`DW0343`), the same requirement `close-gate` and `shortcut` have.
+    pub gate: AnchorId,
+    /// Ticks the gate stays OPEN each cycle (> 0).
+    pub open_ticks: u32,
+    /// Ticks the gate stays CLOSED each cycle (> 0).
+    pub closed_ticks: u32,
+    /// Ticks after world init before the first open window begins (default 0) —
+    /// how two gates in the same room are put out of step with each other. Must
+    /// be less than the full cycle.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub phase: u32,
+}
+
+/// serde `skip_serializing_if` helper: skip a `0`.
+fn is_zero(n: &u32) -> bool {
+    *n == 0
+}
+
+/// A stage-5 **ambush** (spec-0016 §3) — one declaration for a beat that
+/// otherwise takes a deferred actor set plus a hand-wired trigger.
+///
+/// **`telegraph` is optional, and that is a design ruling, not an oversight**
+/// (owner, 2026-08-02). The un-telegraphed ambush — the shove off the cliff you
+/// could not have known about — is core souls vocabulary: 初见杀 is how the level
+/// teaches. The engine does not sand that edge off.
+///
+/// What the engine *does* owe the player is **counterplay on the retry**: having
+/// died once, an informed player must have something to do about it. Determinism
+/// guarantees the second attempt meets the same ambushers in the same cells; the
+/// compiler adds the missing half — `DW0376` proves the trigger cell is not a
+/// sealed pocket, i.e. that with every ambusher standing where it will stand,
+/// a route out still exists (a retreat, luring ground, a positioning line).
+/// Dying uninformed is a lesson; dying with no play available is a broken beat.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Ambush {
+    /// Unique ambush id (`ambush/<kebab>`).
+    pub id: AmbushId,
+    /// The anchor the trigger watches — the corner, doorway or ledge the player
+    /// walks into.
+    pub at: AnchorId,
+    /// The stage-5 actors that spring (1..N). Each is summoned at its own
+    /// declared anchor and immediately unleashed to real AI.
+    pub actors: Vec<ActorId>,
+    /// What springs it (`approach{range}` / `strike` / `use`), exactly the v0.4
+    /// environment-trigger vocabulary.
+    pub trigger: TriggerOn,
+    /// The **optional** tell, fired at the trigger before the ambushers exist:
+    /// a sound, a shadow, a line of narration. Empty = un-telegraphed, which is
+    /// fully legal (owner ruling 2026-08-02).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub telegraph: Vec<QuestEffect>,
+}
+
+impl Ambush {
+    /// The environment trigger this ambush desugars to (spec-0016 §3): a
+    /// one-shot trigger at `at` whose effects are the telegraph, then a
+    /// `spawn-actor` + `unleash-actor` per listed actor, in declared order.
+    ///
+    /// This is the **single** expansion authority. Every consumer — validation,
+    /// the l10n inventory, the flag/wave producer scans, nav, emission — reads
+    /// triggers through [`QuestsContent::all_triggers`], so the sugar cannot
+    /// diverge from a hand-written equivalent, and an ambush is exactly as
+    /// debuggable as the trigger an author would otherwise type.
+    pub fn to_trigger(&self) -> EnvTrigger {
+        let mut effects = self.telegraph.clone();
+        for a in &self.actors {
+            effects.push(QuestEffect::SpawnActor { actor: a.clone() });
+        }
+        for a in &self.actors {
+            effects.push(QuestEffect::UnleashActor { actor: a.clone() });
+        }
+        EnvTrigger {
+            id: TriggerId(format!(
+                "trigger/{}",
+                crate::l10n::local_id(self.id.as_str())
+            )),
+            at: self.at.clone(),
+            on: self.trigger.clone(),
+            requires_flags: Vec::new(),
+            forbids_flags: Vec::new(),
+            once: true,
+            effects,
+        }
+    }
+}
+
+/// A stage-5 **shortcut door** (spec-0016 §2) — the souls loop-back.
+///
+/// The owner's definition of the pattern: between two rest points there are two
+/// routes. The **short** one starts sealed and holds nothing; the **long** one is
+/// full of enemies and mechanisms. You earn the far side the hard way, pull one
+/// mechanism, and the short route opens **forever**. That moment is the design.
+///
+/// The compiler owns three obligations, none of them optional:
+/// 1. the `unlock` affordance is reachable while the gate is still sealed — the
+///    long route genuinely exists (`DW0373`);
+/// 2. opening the gate genuinely shortens the trip across it — a shortcut that
+///    pays nothing is a leak, not a shortcut (`DW0360`);
+/// 3. permanence is **structural**: no `close-gate` may target a shortcut gate
+///    (`DW0372`). There is no re-sealing verb to reach for.
+///
+/// `close-gate` on a NON-shortcut gate (the point-of-no-return staging beat) is
+/// untouched by this — the two verbs are deliberately disjoint.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Shortcut {
+    /// Unique shortcut id (`shortcut/<kebab>`).
+    pub id: ShortcutId,
+    /// The gate anchor this shortcut opens. Sealed from world-load (the prefab
+    /// carries the physical fill), and its metadata must declare the fill `block`
+    /// the compiler clears — the same requirement `close-gate` has.
+    pub gate: AnchorId,
+    /// The FAR-side anchor whose interaction fires the permanent open. The
+    /// compiler summons the affordance there and polls it, reusing the v0.4
+    /// interaction-entity `use` primitive.
+    pub unlock: AnchorId,
+    /// Effects fired once, when the shortcut opens — the bar lifting, the
+    /// elevator descending, the sound of a door you will never have to earn
+    /// again. Emitted server-source-safe (the poll lives on the tick).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub on_unlock: Vec<QuestEffect>,
+}
+
 /// A stage-5 environment trigger (DSL v0.4). Emission uses vanilla-intended
 /// primitives only (spec-0008 §7): `strike`/`use` read a `minecraft:interaction`
 /// entity's attack/interaction records; `approach` is a `distance` selector on
@@ -1029,6 +1228,16 @@ pub struct Wave {
     pub anchor: AnchorId,
     /// The mobs that make up the wave (1..N).
     pub mobs: Vec<WaveMob>,
+    /// Re-seat this wave every time the party rests at (or respawns from) a
+    /// bonfire (spec-0016 §1) — the souls contract: progress is kept, the
+    /// enemies come back. The compiler kills any survivor carrying the wave tag
+    /// and re-runs the wave's own spawn function, so the room is restored to its
+    /// authored composition and spawn cells.
+    ///
+    /// Inert without a `bonfire` in the campaign, which is a compile error
+    /// (`DW0370`) rather than a silent no-op.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub respawns_on_rest: bool,
 }
 
 /// One mob stack in a [`Wave`].
@@ -1643,7 +1852,7 @@ pub enum QuestEffect {
         name: Option<String>,
         /// Who receives it (DSL v0.6, spec-0018). Absent = [`Carrier::All`] — every
         /// party member. `one` hands a single copy to the player whose action fired
-        /// the effect; it is rejected in a scheduler-only bundle (`DW0357`), which
+        /// the effect; it is rejected in a scheduler-only bundle (`DW0371`), which
         /// has no acting player.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         carrier: Option<Carrier>,
@@ -1903,6 +2112,30 @@ pub enum QuestEffect {
         /// hook. Respawn is detected via the vanilla `deathCount` criterion.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         on_respawn: Vec<QuestEffect>,
+    },
+    /// Places a **bonfire** rest point (DSL v0.6, spec-0016 §1) — the sibling of
+    /// [`QuestEffect::SetCheckpoint`] for souls-mode pacing. The effect *arms*
+    /// the rest affordance (a `minecraft:interaction` the player right-clicks at
+    /// the anchor, the campfire prop being prefab dressing); the checkpoint moves
+    /// only **when the party actually rests**. Resting fires `on_rest` — the
+    /// scene reset that makes retry cheap: re-arming traps, re-seating waves
+    /// declared `respawns_on_rest`, restoring actor postures. Death respawns the
+    /// party at the last-rested bonfire and runs the **same** `on_rest` bundle,
+    /// so the world's answer to a death and to a rest is identical (spec-0016:
+    /// death is an investment, never a tax).
+    ///
+    /// Proofs are inherited from the checkpoint machinery: the anchor must be
+    /// standable (`DW0316`) and must not strand the party (`DW0315`), rooted at
+    /// the beat that arms the bonfire (the earliest moment a rest can happen).
+    Bonfire {
+        /// The prefab anchor the rest affordance stands at, and the cell the
+        /// party respawns at once rested.
+        anchor: AnchorId,
+        /// Effects re-run on every rest **and** on every respawn at this bonfire
+        /// — the scene reset. Emitted in declared order and expected to be
+        /// idempotent (the same contract as `set-checkpoint`'s `on_respawn`).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        on_rest: Vec<QuestEffect>,
     },
     /// Begins a stealth beat (DSL v0.6, spec-0014; owner ruling 2026-08-01:
     /// zone presence alone = hidden — no sneak requirement, which collided with
@@ -2200,6 +2433,11 @@ impl std::fmt::Debug for QuestEffect {
                 .debug_struct("SetCheckpoint")
                 .field("anchor", anchor)
                 .field("on_respawn", on_respawn)
+                .finish(),
+            QuestEffect::Bonfire { anchor, on_rest } => f
+                .debug_struct("Bonfire")
+                .field("anchor", anchor)
+                .field("on_rest", on_rest)
                 .finish(),
             QuestEffect::BeginStealth {
                 zones,
@@ -2680,6 +2918,7 @@ impl QuestEffect {
             QuestEffect::PlaySound { .. } => "play-sound",
             QuestEffect::DamagePlayers { .. } => "damage-players",
             QuestEffect::SetCheckpoint { .. } => "set-checkpoint",
+            QuestEffect::Bonfire { .. } => "bonfire",
             QuestEffect::BeginStealth { .. } => "begin-stealth",
             QuestEffect::EndStealth => "end-stealth",
             QuestEffect::SpawnNpc { .. } => "spawn-npc",
@@ -2800,6 +3039,7 @@ impl QuestEffect {
             | QuestEffect::PlaySound { .. }
             | QuestEffect::DamagePlayers { .. }
             | QuestEffect::SetCheckpoint { .. }
+            | QuestEffect::Bonfire { .. }
             | QuestEffect::BeginStealth { .. }
             | QuestEffect::EndStealth
             | QuestEffect::SpawnActor { .. }
@@ -2847,6 +3087,7 @@ impl QuestEffect {
         match self {
             QuestEffect::CloseGate { .. } => Some("close-gate"),
             QuestEffect::SetCheckpoint { .. } => Some("set-checkpoint"),
+            QuestEffect::Bonfire { .. } => Some("bonfire"),
             QuestEffect::BeginStealth { .. } => Some("begin-stealth"),
             QuestEffect::EndStealth => Some("end-stealth"),
             QuestEffect::PlaySound { .. } => Some("play-sound"),
@@ -2876,6 +3117,14 @@ impl QuestEffect {
             QuestEffect::SetCheckpoint { anchor, on_respawn } => {
                 Some((anchor, on_respawn.as_slice()))
             }
+            _ => None,
+        }
+    }
+
+    /// `(anchor, on_rest)` if this is a `bonfire` effect (spec-0016 §1).
+    pub fn bonfire(&self) -> Option<(&AnchorId, &[QuestEffect])> {
+        match self {
+            QuestEffect::Bonfire { anchor, on_rest } => Some((anchor, on_rest.as_slice())),
             _ => None,
         }
     }
@@ -2933,6 +3182,7 @@ impl QuestEffect {
         match self {
             QuestEffect::Sequence { steps } => steps.iter().map(|s| s.effects.as_slice()).collect(),
             QuestEffect::SetCheckpoint { on_respawn, .. } => vec![on_respawn.as_slice()],
+            QuestEffect::Bonfire { on_rest, .. } => vec![on_rest.as_slice()],
             QuestEffect::BeginStealth { on_caught, .. } => vec![on_caught.as_slice()],
             QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
                 vec![on_arrive.as_slice()]
@@ -2971,6 +3221,9 @@ impl QuestEffect {
             QuestEffect::SetCheckpoint { on_respawn, .. } => {
                 vec![("respawn".to_string(), on_respawn.as_mut_slice())]
             }
+            QuestEffect::Bonfire { on_rest, .. } => {
+                vec![("rest".to_string(), on_rest.as_mut_slice())]
+            }
             QuestEffect::BeginStealth { on_caught, .. } => {
                 vec![("caught".to_string(), on_caught.as_mut_slice())]
             }
@@ -3008,6 +3261,11 @@ impl QuestEffect {
                 "on_respawn".to_string(),
                 "respawn".to_string(),
                 on_respawn.as_slice(),
+            )],
+            QuestEffect::Bonfire { on_rest, .. } => vec![(
+                "on_rest".to_string(),
+                "rest".to_string(),
+                on_rest.as_slice(),
             )],
             QuestEffect::BeginStealth { on_caught, .. } => vec![(
                 "on_caught".to_string(),
@@ -3063,7 +3321,8 @@ impl QuestEffect {
             QuestEffect::OpenGate { anchor, .. }
             | QuestEffect::CloseGate { anchor, .. }
             | QuestEffect::SetBlock { anchor, .. }
-            | QuestEffect::SetCheckpoint { anchor, .. } => vec![("anchor".to_string(), anchor)],
+            | QuestEffect::SetCheckpoint { anchor, .. }
+            | QuestEffect::Bonfire { anchor, .. } => vec![("anchor".to_string(), anchor)],
             QuestEffect::MoveNpc { to_anchor, .. } | QuestEffect::MoveActor { to_anchor, .. } => {
                 vec![("to_anchor".to_string(), to_anchor)]
             }
@@ -3260,6 +3519,7 @@ impl QuestEffect {
             QuestEffect::CampaignComplete
             | QuestEffect::SpawnNpc { .. }
             | QuestEffect::SetCheckpoint { .. }
+            | QuestEffect::Bonfire { .. }
             | QuestEffect::BeginStealth { .. }
             | QuestEffect::EndStealth
             | QuestEffect::SpawnActor { .. }
@@ -3297,6 +3557,7 @@ impl QuestEffect {
             QuestEffect::CampaignComplete
             | QuestEffect::SpawnNpc { .. }
             | QuestEffect::SetCheckpoint { .. }
+            | QuestEffect::Bonfire { .. }
             | QuestEffect::BeginStealth { .. }
             | QuestEffect::EndStealth
             | QuestEffect::SpawnActor { .. }

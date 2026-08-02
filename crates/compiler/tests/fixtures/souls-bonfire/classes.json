@@ -1,0 +1,23 @@
+{
+  "dsl_version": "0.4.0",
+  "campaign_id": "souls-bonfire",
+  "stage": "classes",
+  "content": {
+    "classes": [
+      {
+        "id": "class/warden",
+        "name": "Warden",
+        "blurb": "Iron sword and mail — made for the front rank.",
+        "kit": [
+          { "item": "minecraft:iron_sword", "count": 1 },
+          { "item": "minecraft:iron_helmet", "count": 1 },
+          { "item": "minecraft:iron_chestplate", "count": 1 },
+          { "item": "minecraft:iron_leggings", "count": 1 },
+          { "item": "minecraft:iron_boots", "count": 1 },
+          { "item": "minecraft:cooked_beef", "count": 8 },
+          { "item": "minecraft:torch", "count": 8 }
+        ]
+      }
+    ]
+  }
+}

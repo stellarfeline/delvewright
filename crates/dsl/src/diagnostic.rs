@@ -141,6 +141,11 @@ pub mod codes {
     /// (v0.3) A `requires_flags` entry references a `flag/<id>` that no `set-flag`
     /// effect ever produces (dangling flag reference).
     pub const FLAG_UNKNOWN: &str = "DW0172";
+    /// (spec-0016 §1) A wave declares `respawns_on_rest: true` but the campaign
+    /// declares no `bonfire` — nothing can ever re-seat it, so the field is a
+    /// silent no-op. Either add the bonfire the re-seat is meant to hang off, or
+    /// drop the field.
+    pub const REST_RESEAT_NO_BONFIRE: &str = "DW0370";
     /// (v0.3) A wave mob `entity` is not a known vanilla entity id. (Item-id
     /// checks for `collect.item`, `interact.requires_item` and `give-item.item`
     /// reuse [`ITEM_UNKNOWN`] / `DW0143`.)
@@ -221,6 +226,30 @@ pub mod codes {
     /// Validation-tier (exit 1). Renumbered off the spec's stale reserved number
     /// (0197 — since taken).
     pub const TRAP_INVALID: &str = "DW0340";
+    /// (spec-0016 §2) A `shortcut` declaration is structurally invalid: a
+    /// malformed or duplicate `shortcut/<id>`, a `gate`/`unlock` anchor no area's
+    /// prefab provides, or a `gate` that IS the `unlock` (the mechanism must sit
+    /// on the far side, not in the doorway).
+    pub const SHORTCUT_INVALID: &str = "DW0371";
+    /// (spec-0016 §2) A `close-gate` effect targets a gate a `shortcut` owns.
+    /// A shortcut opens **permanently** — that is the whole pattern — so its
+    /// permanence is structural: there is no verb that can put it back. Use a
+    /// different gate for the point-of-no-return beat.
+    pub const SHORTCUT_RESEALED: &str = "DW0372";
+    /// (spec-0016 §3) An `ambush` declaration is structurally invalid: a
+    /// malformed or duplicate `ambush/<id>`, an empty `actors` list (an ambush
+    /// that ambushes nobody), or the same actor listed twice (the second
+    /// `spawn-actor` is a guarded no-op, so the author's intent silently halves).
+    /// The telegraph is deliberately NOT required — an un-telegraphed ambush is
+    /// core souls vocabulary (owner ruling 2026-08-02).
+    pub const AMBUSH_INVALID: &str = "DW0375";
+    /// (spec-0016 §4) A `timed-gate` declaration is structurally invalid: a
+    /// malformed or duplicate `timed-gate/<id>`, an `open_ticks` or
+    /// `closed_ticks` of 0 (a gate that never opens, or never closes — neither is
+    /// a timing gate), a `phase` at or beyond the full cycle, or a gate another
+    /// `timed-gate` or a `shortcut` already owns (two clocks fighting over one
+    /// region, or a clock fighting a permanent open).
+    pub const TIMED_GATE_INVALID: &str = "DW0377";
     /// (v0.6) A trap dispense-payload item id is not in the pinned 1.21.11 registry
     /// (spec-0011; mirrors `DW0143`). Validation-tier (exit 1). Renumbered off the
     /// spec's stale reserved number (0198 — since taken).
