@@ -2463,53 +2463,77 @@ impl ShotStyle {
 /// **plus one block up** (torso height, so a close shot does not frame feet)
 /// before `offset` is applied; an `anchor` subject aims at the block centre
 /// exactly like a [`CameraTarget`].
+/// Each variant's payload is a **named struct** carrying `deny_unknown_fields`
+/// (task #78). Serde has no variant-level `deny_unknown_fields`, so an untagged
+/// enum with inline struct variants silently *ignores* any key it does not
+/// recognise: `{"npc": …, "ofset": [0,1,0]}` deserialized happily with the offset
+/// dropped, and `{"anchor": …, "npc": …}` quietly matched `Anchor` and discarded
+/// the NPC. Lifting each variant into its own type restores the repo-wide
+/// deny-unknown rule for both serde and the published JSON Schema
+/// (`additionalProperties: false`): a mistyped shot subject now fails the schema
+/// instead of rendering a shot pointed somewhere the author never asked for.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum CameraSubject {
     /// A fixed world point: prefab anchor + offset.
-    Anchor {
-        /// The anchor the subject sits at.
-        anchor: AnchorId,
-        /// Integer `[x, y, z]` block offset (default `[0, 0, 0]`).
-        #[serde(default, skip_serializing_if = "is_zero3")]
-        offset: [i32; 3],
-    },
+    Anchor(AnchorSubject),
     /// A stage-2 NPC — moving if a `move-npc` for it runs in the same effect
     /// group / sequence, else static at its declared (or spawn) anchor.
-    Npc {
-        /// The NPC (stage-2 ref).
-        npc: NpcId,
-        /// Integer `[x, y, z]` block offset (default `[0, 0, 0]`).
-        #[serde(default, skip_serializing_if = "is_zero3")]
-        offset: [i32; 3],
-    },
+    Npc(NpcSubject),
     /// A stage-5 actor — moving if a `move-actor` for it runs in the same
     /// effect group / sequence, else static at its declared anchor.
-    Actor {
-        /// The actor (stage-5 `actors` ref).
-        actor: ActorId,
-        /// Integer `[x, y, z]` block offset (default `[0, 0, 0]`).
-        #[serde(default, skip_serializing_if = "is_zero3")]
-        offset: [i32; 3],
-    },
+    Actor(ActorSubject),
+}
+
+/// A [`CameraSubject::Anchor`] payload: a fixed world point.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AnchorSubject {
+    /// The anchor the subject sits at.
+    pub anchor: AnchorId,
+    /// Integer `[x, y, z]` block offset (default `[0, 0, 0]`).
+    #[serde(default, skip_serializing_if = "is_zero3")]
+    pub offset: [i32; 3],
+}
+
+/// A [`CameraSubject::Npc`] payload: a stage-2 NPC.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NpcSubject {
+    /// The NPC (stage-2 ref).
+    pub npc: NpcId,
+    /// Integer `[x, y, z]` block offset (default `[0, 0, 0]`).
+    #[serde(default, skip_serializing_if = "is_zero3")]
+    pub offset: [i32; 3],
+}
+
+/// A [`CameraSubject::Actor`] payload: a stage-5 actor.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ActorSubject {
+    /// The actor (stage-5 `actors` ref).
+    pub actor: ActorId,
+    /// Integer `[x, y, z]` block offset (default `[0, 0, 0]`).
+    #[serde(default, skip_serializing_if = "is_zero3")]
+    pub offset: [i32; 3],
 }
 
 impl CameraSubject {
     /// The subject's integer offset, whichever variant.
     pub fn offset(&self) -> [i32; 3] {
         match self {
-            CameraSubject::Anchor { offset, .. }
-            | CameraSubject::Npc { offset, .. }
-            | CameraSubject::Actor { offset, .. } => *offset,
+            CameraSubject::Anchor(s) => s.offset,
+            CameraSubject::Npc(s) => s.offset,
+            CameraSubject::Actor(s) => s.offset,
         }
     }
 
     /// A short canonical rendering for digests/diagnostics.
     pub fn canon(&self) -> String {
         let (kind, id, o) = match self {
-            CameraSubject::Anchor { anchor, offset } => ("a", anchor.as_str(), offset),
-            CameraSubject::Npc { npc, offset } => ("n", npc.as_str(), offset),
-            CameraSubject::Actor { actor, offset } => ("c", actor.as_str(), offset),
+            CameraSubject::Anchor(s) => ("a", s.anchor.as_str(), &s.offset),
+            CameraSubject::Npc(s) => ("n", s.npc.as_str(), &s.offset),
+            CameraSubject::Actor(s) => ("c", s.actor.as_str(), &s.offset),
         };
         format!("{kind}:{id}@{},{},{}", o[0], o[1], o[2])
     }

@@ -241,7 +241,7 @@ fn replay_with(
                         let Some(current) = assembled.blocks.get(&cell) else {
                             continue; // air never matches a base id
                         };
-                        if !matches.contains(strip_ns(current.as_str())) {
+                        if !matches.contains(strip_ns(base_id(current))) {
                             continue;
                         }
                         let block = pick(recipe, noise_at(seed, cell, recipe))
@@ -688,7 +688,7 @@ fn check_support(
         // A later batch overwrote this cell: it is no longer our placement.
         let base = strip_ns(base_id(block));
         match assembled.blocks.get(cell) {
-            Some(current) if strip_ns(current.as_str()) == base => {}
+            Some(current) if strip_ns(base_id(current)) == base => {}
             _ => continue,
         }
         let Some(need) = support_of(block) else {
@@ -703,7 +703,7 @@ fn check_support(
                 "has no block below it at all",
                 "have no block below them at all",
             ),
-            (Support::Soil, Some(u)) if !SOIL.contains(&strip_ns(u.as_str())) => (
+            (Support::Soil, Some(u)) if !SOIL.contains(&strip_ns(base_id(u))) => (
                 "sits on a block flowers cannot root in",
                 "sit on a block flowers cannot root in",
             ),
@@ -761,23 +761,23 @@ pub fn anchor_starts(plan: &Plan) -> Vec<[i32; 3]> {
         .collect()
 }
 
-/// Write one cell: the assembled model stores the **base** block id (the
-/// classification helpers match exact names), the batch write-log keeps the
-/// full blockstate-carrying form for runtime `setblock`/`fill` emission. An
-/// air write removes the cell (absent = air) and always clears any open-gate
-/// marking; a non-air write over an authored open gate likewise closes it
-/// (the runtime `setblock` replaces the whole block, state included).
+/// Write one cell: the assembled model and the batch write-log both keep the
+/// **full blockstate-carrying** form — the model because waterlogging, slab
+/// halves and snow layers change the fluid and step models (task #78), the
+/// write-log because it is the runtime `setblock`/`fill` line. An air write
+/// removes the cell (absent = air) and always clears any open-gate marking; a
+/// non-air write over an authored open gate likewise closes it (the runtime
+/// `setblock` replaces the whole block, state included).
 fn write_cell(
     assembled: &mut Assembled,
     batch_writes: &mut BTreeMap<[i32; 3], String>,
     cell: [i32; 3],
     block: &str,
 ) {
-    let base = base_id(block);
-    if assembled::is_air(base) {
+    if assembled::is_air(block) {
         assembled.blocks.remove(&cell);
     } else {
-        assembled.blocks.insert(cell, base.to_string());
+        assembled.blocks.insert(cell, block.to_string());
     }
     assembled.open_gates.remove(&cell);
     batch_writes.insert(cell, block.to_string());
@@ -920,7 +920,7 @@ fn resolve_shape(
                     assembled
                         .blocks
                         .get(*cell)
-                        .is_some_and(|name| matches.contains(strip_ns(name.as_str())))
+                        .is_some_and(|name| matches.contains(strip_ns(base_id(name))))
                 })
                 .copied()
                 .collect())

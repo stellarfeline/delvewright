@@ -537,6 +537,16 @@ placement, and an explicit `path`/`look_at`/`seconds` overrides any part.
 Entity subjects (`npc`/`actor`) aim one block above the feet cell (torso)
 before `offset`; `anchor` subjects use the block centre exactly.
 
+A `subject` is discriminated by its key — exactly one of `anchor` / `npc` /
+`actor`, plus an optional `offset`, **and nothing else**. Each spelling is its own
+`deny_unknown_fields` type (`AnchorSubject` / `NpcSubject` / `ActorSubject`), so
+both serde and the exported JSON Schema (`additionalProperties: false`) reject a
+typo'd key or a subject naming two discriminators at once with `DW0100` (task
+#78). Before that, the untagged enum silently *ignored* an unrecognised key: a
+mistyped `ofset` deserialized fine with the offset dropped, and
+`{"anchor": …, "npc": …}` quietly matched the anchor and discarded the npc —
+shipping a shot framed somewhere the author never asked for.
+
 | Style | Expansion (camera relative to subject S) | Aim | `dist` default | Default `seconds` | Notes |
 |---|---|---|---|---|---|
 | `insert` | Static at `dist` (3), +0.5 up | S | 3 | 2 | A prop, an inscription. Structurally judder-free. |
@@ -786,14 +796,28 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 
 `crate::assembled` builds the one authoritative cell→block map of the world the
 shipped delve actually assembles — placed prefab structures (`/place template`),
-solver socket seals, gate clears — **then settles gravity-affected blocks**. The
+solver socket seals, gate clears — **then settles gravity-affected blocks**.
+
+The map stores **full blockstates** (`minecraft:oak_slab[type=top]`), not bare
+ids (task #78): waterlogging, slab halves and snow-layer counts are block *state*,
+and the fluid and step models below are wrong without them. Consumers that need
+the bare id call `crate::assembled::base_id`; state-sensitive rules read their
+property with `state_value`.
+
+The
 delve ships into a `the_void` flat world (no natural floor), so a vanilla
 `FallingBlock` (`sand`/`red_sand`/`gravel`/`*_concrete_powder`/anvils/`dragon_egg`)
 placed unsupported by `/place template` immediately falls out of the world and
-leaves air. Settling reproduces this per `(x,z)` column: non-falling blocks are
-immovable supports (stone floats), each falling block drops onto the highest
-support at or below it, and a falling block with no support anywhere below it
-despawns into the void. `pointed_dripstone`/`scaffolding` attach upward / by
+leaves air. Settling reproduces this per `(x,z)` column: non-falling **solid**
+blocks are immovable supports (stone floats), each falling block drops onto the
+highest support at or below it, and a falling block with no support anywhere below
+it despawns into the void. **Fluids are not supports** (task #78): vanilla's
+`FallingBlock.isFree` counts a water/lava cell as free space, so a falling block
+sinks straight through and lands on the first genuinely solid block, *displacing*
+the fluid in the cell it rests in — and a gravity block over water with no floor
+beneath still despawns. (The pre-#78 model floated sand on the water surface, a
+phantom floor that then dammed the flood and that nav walked on.)
+`pointed_dripstone`/`scaffolding` attach upward / by
 support-distance and are deliberately not settled by the below-support rule (a
 ceiling stalactite must not be mistaken for an unsupported floor block). Both the
 nav occupancy model (`crate::nav::World`) and the relight light model
@@ -814,8 +838,8 @@ and the tileset generator's own zero-unsupported invariant catches unintended
 falls at authoring time (strongest-form defence, per the debug doctrine).
 
 The settle pass is followed by a **water-flood pass** (task #45), the fluid peer of
-gravity settling. Free `minecraft:water` cells seed a deterministic, **conservative
-superset** of vanilla flow (mirroring spec-0010's never-overestimate-walkability
+gravity settling. Free `minecraft:water` cells **and every `waterlogged=true`
+block** (task #78) seed a deterministic, **conservative superset** of vanilla flow (mirroring spec-0010's never-overestimate-walkability
 stance): (1) infinite-water source formation — a supported air cell flanked by ≥2
 source cells becomes a source, cascading, so a walled pool basin fills completely,
 not just 7 cells from its seeds; (2) 7-level horizontal decay from the completed
@@ -825,8 +849,18 @@ water level, plus sources) is **impassable and never standable floor** for every
 consumer — nav, wave seating, relight fixture placement, waypoint export — the same
 single-model discipline as settle. This closes the water analogue of the gravity
 divergence: a `cave-shore` pool floods `[261,66,1]`, a cell an unpatched model
-routed a talk-to leg's step-up through. (Waterlogged solids keep their host id and
-stay solid; they do not seed the flood — vanilla waterlogging never spreads.)
+routed a talk-to leg's step-up through.
+
+**Waterlogging is water** (task #78). Since MC 1.13 a `waterlogged=true` block's
+cell holds a genuine water *source* that ticks and spreads into adjacent air
+exactly like a free source (place one waterlogged stair on dry land and water
+flows around it). The pre-#78 model stored bare ids and asserted the opposite
+("waterlogging never spreads to a neighbour"), which **under-marked** the flood —
+the one direction the never-under-mark contract forbids, since an under-marked
+cell ships as proven-dry and strands the bot. A waterlogged cell is now both a
+flood source *and* its host block's normal collision class: nothing walks or flows
+*into* it, and `flooded` stays disjoint from every block class (it means "a walker
+would be in open water here").
 
 Trap triggers (spec-0011): `*_pressure_plate`, `tripwire`, and `tripwire_hook`
 (`crate::assembled::is_passable_trap_trigger`) are non-collidable in game, so the
@@ -845,15 +879,33 @@ classified:
 | solid | every other non-air block (full-cube, the conservative default) | no | yes |
 | tall barrier | `*_fence` (incl. `nether_brick_fence`), `*_wall` — 1.5-tall | no | **no** |
 | use-gate | closed `*_fence_gate` (1.5-tall, right-click-openable) | player: yes (USE); autonomous mobs: no | **no** |
-| passable | open `*_fence_gate` (block state `open=true`, read from the prefab palette), trap triggers | yes | no |
+| passable | open `*_fence_gate` (block state `open=true`, read from the prefab palette), trap triggers, thin decoration (< 8/16 collision) | yes | no |
 | flooded | water reach | no | no |
+| partial | a solid cell's true top-face height in sixteenths, when < 16 | no | yes, **at that height** |
+
+**Partial floor heights (task #78).** `crate::assembled::collision_top_16` reports
+a block's collision-box top face in sixteenths, against the 1.21.11 shapes:
+
+| Block | Height | Note |
+|---|---|---|
+| `*_slab` `type=bottom` (**the default state**) | 8/16 | a half-step |
+| `*_slab` `type=top` / `type=double` | 16/16 | the face is the cell top |
+| `snow[layers=N]` | `(N-1)·2 / 16` | `layers=1` (the default) has **no** collision box; `layers=8` is 14/16 |
+| `*_carpet`, `moss_carpet` | 1/16 | `pale_moss_carpet` only when `bottom=true`, else 0 |
+| `dirt_path`, `farmland` | 15/16 | |
+| everything else | 16/16 | the conservative default |
+
+A block under 8/16 is **thin decoration**: its cell is passable and is never a
+floor level of its own (a walker stands on whatever is below it, and a 2-high
+corridor with a carpet in it stays walkable). At 8/16–15/16 the cell blocks
+passage but its walkable face is recorded in `Occupancy::partial`, which is what
+makes the nav step rule physical rather than cell-counting — see below.
 
 Modelled **precisely**: fences, walls, fence gates (open vs closed), trap
-triggers, water. Modelled **conservatively** — treated as a full solid cube, never
-as walkable-through: slabs, stairs, carpets, snow layers, doors, trapdoors, and
-every other partial-collision block (the only inaccuracy this can introduce is a
-floor face one cell off the true surface height, which may over-block a route but
-never over-proves one). The tall/gate classes close the owner-hit soundness hole:
+triggers, thin decoration, water and waterlogging, and partial floor heights.
+Modelled **conservatively** — treated as a full solid cube, never as
+walkable-through: stairs, doors, trapdoors, and every other partial-collision
+block. The tall/gate classes close the owner-hit soundness hole:
 the full-solid model proved the island pen leg by standing the player ON TOP of a
 1.5-tall `oak_fence` (a "legal" +1 step no vanilla player or bot can perform —
 harness #110 worked around it by filtering fence-lip waypoints), and a gateless
@@ -912,13 +964,35 @@ head-clearance rule already proved clear.
 block data (obstacles per the collision classes above — full-cube solids, 1.5-tall
 fence/wall barriers, closed fence gates for walkers that cannot use them;
 **water-flooded cells are impassable and are never valid floor**; compiler gate
-regions are passable). Steps are
-cardinal, one block up or down; a step **up** additionally requires head clearance
-to jump (the cell two above the source feet must be air), so a routed/exported path
-is one an entity — including the mineflayer bot — can actually walk (a ramp up under
-a low ceiling is unroutable, not a silent strand). Cutscene dollies must pass only
-non-solid cells. Unroutable/clipping/stranded → `DW0307`/`DW0308`/`DW0311` at build
-(never a runtime glitch).
+regions are passable). Steps are cardinal, one cell up or down.
+
+**The step rule is physical, not cell-adjacency (task #78).** Each standing cell
+has a true **feet height** in sixteenths — the cell below's `partial` face height,
+so standing on a bottom slab is `y - 0.5`, not `y` — and a candidate step is gated
+on the **rise** between the two feet heights:
+
+| Rise | Verdict |
+|---|---|
+| ≤ 9/16 (0.5625) | a walk-up. Vanilla `maxUpStep` is 0.6, so no jump — and therefore **no headroom** is required above the source cell |
+| ≤ 20/16 (1.25) | a jump; the swept head cell above the source feet must be clear or the entity head-bonks |
+| > 20/16 | **impossible** — a vanilla jump apex is ≈1.2522 blocks, so 1.3125 is unreachable |
+
+This corrects the rule in both directions. It **rejects** what the old full-cube
+model proved: stepping off a bottom slab (feet at `y+0.5`) onto a ledge whose face
+is at `y+2` is a **1.5-block** rise, which the old rule read as an ordinary "+1
+cell" step and certified as a walkable route no player or mineflayer bot can
+perform. It **admits** what the old model refused: stepping from a full floor onto
+a bottom slab is a 0.5-block auto-step, legal even directly under a ceiling that
+would block a jump. Vertical candidates stay `{0, −1, +1}` cells — a `+2`-cell hop
+between two very thin floors can be physically legal, but omitting it only ever
+refuses a route, never proves one.
+
+Cutscene dollies must pass only non-solid cells; the clip test is an **exact 3-D
+grid walk** (Amanatides–Woo DDA) visiting every cell each segment intersects, with
+no error term — it replaced a ≤0.25-block sampler that could miss a cell a shot
+only grazed through a corner and certify the shot clear (task #78).
+Unroutable/clipping/stranded → `DW0307`/`DW0308`/`DW0311` at build (never a
+runtime glitch).
 
 **Close-gate solidity (v0.6, DAG-causal).** The base occupancy model treats every
 gate region as **passable** (the conservative "assume the gate the player needs is
@@ -944,6 +1018,18 @@ genuinely-forced re-crossing (a causal leg whose sealed gate is never reopened
 before it) still fails `DW0311` (`DW0315` from a checkpoint) with a message naming
 the sealed gate — the "point of no return by geometry" the owner's staging vision
 wants, provable at compile time.
+
+**One leg model for every consumer (task #78).** The per-leg seal
+(`nav::leg_seal`) and the routing that uses it (`nav::route_walked_legs`) are now
+the single definition shared by the completability proof, the forced-cell set the
+`DW0342` trap proof reasons about (`World::required_path_cells`), and the exported
+harness waypoints (`nav::critical_path_routes`). Previously only the proof ran
+under seals while the other two routed the fully-open world, so the compiler could
+(a) hand the bot a route through a gate the campaign had already sealed and (b)
+call a lethal trap "avoidable" when the player only walks its detour *because* a
+`close-gate` shut the direct route. A trap's disarm-reachability search likewise
+runs under the gate state of the earliest leg that crosses the trap cell, not the
+fully-open world.
 
 **Talk-to endpoint (task #45):** a talk-to leg's target anchor is the NPC's own
 occupied cell (the mannequin stands there, its interaction hitbox fills it). The
@@ -1289,6 +1375,24 @@ cover); the author decides.
 tier) in `main`; `DW0201`–`DW0204` come from `compiler::analyze` over the
 branch-coherent flow model (`compiler::flow`).
 
+**The emitter table never overestimates (`crate::light::emission`).** Both gates
+are only sound if the modelled light is a *lower* bound on the game's — a block
+modelled brighter than vanilla lets a genuinely dark area ship unmitigated. The
+table is evaluated over each block's **actual blockstate** (the assembled map
+carries full states) against verified 1.21.11 values, with a source cited per
+entry in the code. Blocks absent from the table emit 0 (an underestimate, the safe
+direction). Task #78 corrected seven entries that broke the contract by collapsing
+a state-dependent block onto its brightest state, or on plain wrong values:
+`sea_pickle` 15 → `3 + 3·pickles` when waterlogged and **0 when dry**;
+`redstone_ore` 7 → **0** idle (9 when `lit`); `respawn_anchor` 7 → **0** at
+`charges=0`; `amethyst_cluster` 7 → 5 (buds 4/2/1); `brewing_stand` and
+`brown_mushroom` 3 → **1**; `glow_item_frame` 7 → **0** (it is an entity, not a
+block, and emits no block light in Java — the 7 was a Bedrock value). A
+nonexistent `minecraft:froglight` id was dropped, and the furnace family now
+reports 13 when `lit`. Blocks whose `lit`/`charges`/`berries` state has a *bright*
+default (campfire, soul campfire, redstone torch) still evaluate bright from a
+bare id, so the compiler's own relight fixtures are unaffected.
+
 | Code | Meaning |
 |------|---------|
 | `DW0201` | Finale quest can never complete (unreachable finale). |
@@ -1386,7 +1490,7 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0352` | A world-edits batch writes into a cell a trap's hardware occupies (v0.6, spec-0017 + spec-0011): its trigger/hazard cell, its dispenser socket, or its disarm-affordance cell. `setup_finish` runs `world_edits` **before** `trap_setup`, so the edit lands first and the trap is loaded into a block that is no longer there — vanilla's `item replace block … container.0` on a non-container fails with **no output**, so the delve ships a dead trap with every proof green (`DW0342` proves the *planned* hazard, not the surviving hardware; no geometry proof models "is this still a dispenser"). `compiler::edit`, checked first in the per-batch invariants, build-tier (exit 3). The message names the batch, the cell, the trap and which role the cell plays; prescription is to move the region off the trap's cells or re-anchor the trap — never to assume the edit leaves the redstone intact. |
 | `DW0354` | A support-dependent block the edit script placed has no valid support in the post-batch world (v0.6, spec-0017): a torch/lantern/campfire/rail-family block with **nothing below it** after a later batch carved its support away, or flora rooted in a block flowers cannot stand on (a `scatter` over bare stone). Vanilla pops such a block off as an item on the first chunk tick, so the write silently vanishes from the delivered world while every snapshot still shows it. **Two tiers, one code**: advisory (exit 0) for decoration, aggregated per reason + block with a count and one example cell; **error (exit 3)** when the popped block is a fixture the script's own `relight` verb placed — that is a declared `min_light` guarantee the `DW0211` proof accepted, and losing it re-darkens the region. `compiler::edit`, evaluated at every batch close over the cumulative placement set. Deliberately conservative: blocks supported sideways or from above (`wall_torch`, `hanging=true` lanterns) are classified as needing no support, and "support removed" means removed to **air** — the check never guesses about a block it cannot classify. |
 | `DW0325` | A `move-actor` destination is unreachable over the assembled geometry for the **actor's footprint** (per-entity dims table; warden 0.9×2.9 needs 3 cells of headroom, so it can be stranded where a player fits), or an actor spawn/destination anchor resolves to no world position (spec-0014). Build-tier (exit 3), `compiler::nav`; the message names the actor, the leg, and a best-effort first blocked cell. |
-| `DW0327` | A `begin-stealth` (spec-0014) zone is unstandable, or unreachable from the player's position at the beat that activates the stealth check — a guaranteed-unwinnable stealth beat. The message names the zone and prescribes placing it over reachable floor / within walkable reach of the activating beat. |
+| `DW0327` | A `begin-stealth` (spec-0014) zone has **no** standable cell, or **no** standable cell of the zone is reachable from the player's position at the beat that activates the stealth check — a guaranteed-unwinnable stealth beat. Reachability is **reachable-any over every cell of the zone box** (task #78): testing only the cell nearest the zone centre raised a spurious `DW0327` whenever that one cell happened to snap into a walled-off pocket of an otherwise perfectly reachable zone. The message names the zone and prescribes placing it over reachable floor / within walkable reach of the activating beat. |
 | `DW0355` | A **punishing** `begin-stealth` beat whose grace window cannot be beaten (spec-0014 + spec-0016): from a position a player legally occupies the instant the session arms, no zone is reachable within `grace_ticks` at sprint speed over the assembled geometry. DW0327 proves cover exists and is *connected*; this proves it is reachable **in time** — the gap that shipped the island's blinding beat, where the beat armed under the player's feet at the fire-pit and killed every player (bot and human alike) ~2 s later, on a first honest ladder run. Start positions: the activating objective's anchor **and** every `set-checkpoint` reigning inside the beat's active window `[fire_step, end_step]` — a respawn point that cannot beat the window makes the retry loop non-terminating rather than a souls retry. Cost model: 4 ticks/block (vanilla sprint 0.2806 blocks/tick, rounded up — no sprint-jump credit) + 6 ticks per block climbed + 10 ticks of standing-start reaction; routed over the same per-leg geometry DW0311/DW0315 use (gates causally sealed by the firing step forced solid). Build-tier (exit 3), `compiler::nav`. The message names the beat, the start, the nearest zone cell, the measured flee time and the tick deficit. Scope: only beats whose `on_caught` tree actually punishes (`damage-players` / `spawn-wave`) — a narrate-only beat has nothing to escape. Prescription: raise `grace_ticks` to at least the measured need plus a tension margin, put a zone within reach of where the beat starts, move the checkpoint into/beside a zone, or arm the beat from a less exposed objective. **Delaying the arm does not discharge it** (a `sequence` step buys drama, not proof: the clock still starts with the player free to be standing at the start cell), and deleting the `on_caught` consequence is explicitly not a fix. Numbered `DW0355`, not `DW0352`: this rule and the map editor's trap-hardware check were developed on parallel branches, each picking the next free code against its own branch point, and collided on merge — `tools/check-dw-codes.py` now gates one-code-one-rule so that class fails CI instead of shipping. |
 | `DW0329` | A `sequence` effect is nested inside another `sequence` (directly, or reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse (spec-0014). Validation-tier (exit 1), `dsl::validate`. Flatten the inner steps into the outer timeline (shift their `at_ticks`). |
 | `DW0342` | A **lethal** trap (spec-0011) whose trigger cell lies on the forced critical path with no discharge — not avoidable (the trigger cell is a required path cell), not survivable (`rearm`, so a respawn walk-back re-triggers it → soft-loop), and not disarmable (no disarm affordance reachable before it, over the world with the trap cell blocked). The player is provably killed or soft-looped. **Analysis-tier: exit 2**, like `DW0312` — a content-design mistake, not a geometry defect; the message names the trap and prescribes moving it off the path, setting `reset: once`, or adding a reachable `disarm`. Renumbered off the spec's stale reserved number (0314 — since taken by the waypoint self-check). |

@@ -3054,9 +3054,9 @@ fn cutscene_fn(shots: &[delvewright_dsl::CameraShot]) -> String {
             // subject's id instead, so the function name stays greppable.
             head.shot_style.map(|style| {
                 let subj = match &head.subject {
-                    Some(delvewright_dsl::CameraSubject::Anchor { anchor, .. }) => anchor.as_str(),
-                    Some(delvewright_dsl::CameraSubject::Npc { npc, .. }) => npc.as_str(),
-                    Some(delvewright_dsl::CameraSubject::Actor { actor, .. }) => actor.as_str(),
+                    Some(delvewright_dsl::CameraSubject::Anchor(s)) => s.anchor.as_str(),
+                    Some(delvewright_dsl::CameraSubject::Npc(s)) => s.npc.as_str(),
+                    Some(delvewright_dsl::CameraSubject::Actor(s)) => s.actor.as_str(),
                     None => "none",
                 };
                 format!(

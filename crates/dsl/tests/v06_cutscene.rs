@@ -287,3 +287,62 @@ fn unknown_shot_field_is_dw0100() {
         "unknown shot field must be a schema rejection: {d:#?}"
     );
 }
+
+// --------------------------------------------------------------------------
+// Shot subjects deny unknown fields (task #78)
+// --------------------------------------------------------------------------
+
+/// A mistyped or over-specified shot subject must FAIL the schema (`DW0100`),
+/// not be silently accepted with the stray key dropped.
+///
+/// `CameraSubject` is an untagged enum — the discriminator is the key name
+/// (`anchor` / `npc` / `actor`). Serde has no variant-level
+/// `deny_unknown_fields`, so with inline struct variants it quietly ignored any
+/// key it did not recognise: a typo'd `ofset` deserialized fine with the offset
+/// dropped, and a subject naming BOTH an anchor and an npc matched `Anchor` and
+/// discarded the npc — a shot silently framing something the author never asked
+/// for. Each variant now has its own `deny_unknown_fields` payload type.
+#[test]
+fn mistyped_shot_subject_fields_are_dw0100() {
+    let cases = [
+        // a typo'd `offset`
+        r#"{ "type": "cutscene", "shots": [
+             { "shot_style": "insert",
+               "subject": { "anchor": "anchor/exit", "ofset": [0, 1, 0] } } ] }"#,
+        // two discriminators at once — which one wins must never be implicit
+        r#"{ "type": "cutscene", "shots": [
+             { "shot_style": "insert",
+               "subject": { "anchor": "anchor/exit", "npc": "npc/keeper" } } ] }"#,
+        // an unknown key on an npc subject
+        r#"{ "type": "cutscene", "shots": [
+             { "shot_style": "insert",
+               "subject": { "npc": "npc/keeper", "height": 2 } } ] }"#,
+        // …and on `subject_b`
+        r#"{ "type": "cutscene", "shots": [
+             { "shot_style": "two-shot",
+               "subject": { "anchor": "anchor/exit" },
+               "subject_b": { "anchor": "anchor/door", "ofsett": [0, 1, 0] } } ] }"#,
+    ];
+    for body in cases {
+        let d = diags("0.6.0", body);
+        assert!(
+            d.iter().any(|x| x.code == "DW0100"),
+            "a mistyped shot subject must be a schema error, not silently \
+             ignored — expected DW0100 for {body}: {d:#?}"
+        );
+    }
+}
+
+/// The control: the well-formed spellings of all three subject kinds still
+/// deserialize, so the deny-unknown tightening did not narrow the surface.
+#[test]
+fn well_formed_shot_subjects_still_validate() {
+    let d = diags(
+        "0.6.0",
+        r#"{ "type": "cutscene", "shots": [
+             { "shot_style": "two-shot",
+               "subject": { "anchor": "anchor/exit", "offset": [0, 1, 0] },
+               "subject_b": { "npc": "npc/keeper" } } ] }"#,
+    );
+    assert!(d.is_empty(), "valid subjects must stay valid: {d:#?}");
+}
