@@ -40,8 +40,22 @@
 //! the eye-height of a DW0314-proven-standable waypoint, so the camera is provably
 //! in open air; the DW0724 self-check ([`crate::nav::verify_pov_cameras`]) enforces
 //! it structurally.
+//!
+//! ## `lighting` stamp (declared-dark areas stay reviewable)
+//!
+//! POV and interior shots carry a `lighting` stamp derived **purely from the
+//! shot's area's stage-1 declarations** ([`area_lighting_stamp`]): `lighting`
+//! declared (the relight pass guarantees `min_light`) → `{"profile": "lit"}`;
+//! only `mitigation: "night-vision"` declared → `{"profile": "dark",
+//! "mitigation": "night-vision"}`; both → lit profile plus the mitigation;
+//! neither → **no stamp key at all**, so campaigns without lighting declarations
+//! stay byte-identical. The stamp is pure metadata for the render layer: a
+//! declared-dark scene renders pure black in an honest path tracer (the first
+//! Chunky run proved exposure boosts cannot reveal a sealed cave — no light means
+//! amplified noise), so `delve-render scene` uses the stamp to apply its
+//! documented night-vision review emulation to exactly those shots and no others.
 
-use delvewright_dsl::{Campaign, LightingProfile, Objective};
+use delvewright_dsl::{AreaMitigation, Campaign, LightingProfile, Objective};
 use serde_json::{Value, json};
 
 use crate::nav::LegRoute;
@@ -498,14 +512,15 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
                 }
                 None => "room lighting unmeasured — verify readability".into(),
             }));
-            shots.push(json!({
+            let shot = json!({
                 "id": format!("interior/{}/{pi}", short(&area.area_id)),
                 "kind": "interior",
                 "area": area.area_id,
                 "prefab": piece.prefab_id,
                 "camera": camera(eye, look),
                 "expect": expect,
-            }));
+            });
+            push_stamped(&mut shots, c, &area.area_id, shot);
         }
         // Seam (doorway) shots: air-clear seals are cut openings between mated
         // pieces; wall-fill seals seal dead-end sockets (skipped — nothing to see).
@@ -630,7 +645,7 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
     for shot in pov {
         let mut expect: Vec<Value> = vec![Value::String(shot.expect_line.clone())];
         expect.extend(shot.extra_expect.iter().cloned().map(Value::String));
-        shots.push(json!({
+        let v = json!({
             "id": shot.id,
             "kind": "pov",
             "area": shot.area,
@@ -640,7 +655,8 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
             "standing_cell": shot.standing_cell,
             "camera": pov_camera(shot.eye, shot.look_at, POV_FOV_DEG),
             "expect": expect,
-        }));
+        });
+        push_stamped(&mut shots, c, &shot.area, v);
     }
 
     let (amin, amax) = layout_aabb(plan);
@@ -657,6 +673,62 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
 fn short(id: &str) -> String {
     let local = id.rsplit('/').next().unwrap_or(id);
     local.replace(['-', '.', ':'], "_")
+}
+
+/// The `lighting` stamp for a shot in `area_id`, derived **purely from the
+/// area's stage-1 declarations** (never from measurement — the measured model
+/// already gates via `DW0210`/`DW0211`; the stamp only tells the render layer
+/// what the declaration *intends*):
+///
+/// - `lighting` declared → `{"profile": "lit"}` (the relight pass guarantees
+///   `min_light` on every reachable walkable cell, so the assembled scene has
+///   real fixtures for a path tracer to see);
+/// - only `mitigation` declared → `{"profile": "dark", "mitigation":
+///   "night-vision"}` (the area is *meant* to be dark and the players are
+///   equipped — an honest render of it is black, so `delve-render scene`
+///   applies its documented night-vision review emulation);
+/// - both declared → lit profile plus the mitigation (fixtures light the scene;
+///   no emulation needed or applied);
+/// - neither → `None`: **no stamp key is emitted**, keeping campaigns without
+///   lighting declarations byte-identical.
+fn area_lighting_stamp(c: &Campaign, area_id: &str) -> Option<Value> {
+    let area = c
+        .world
+        .content
+        .areas
+        .iter()
+        .find(|a| a.id.as_str() == area_id)?;
+    let profile = if area.lighting.is_some() {
+        "lit"
+    } else if area.mitigation.is_some() {
+        "dark"
+    } else {
+        return None;
+    };
+    let mut stamp = serde_json::Map::new();
+    stamp.insert("profile".to_string(), json!(profile));
+    if let Some(m) = area.mitigation {
+        // Exhaustive on purpose: a new mitigation variant must decide its
+        // stamp spelling here (kept in lockstep with the DSL's kebab-case
+        // serde name).
+        let name = match m {
+            AreaMitigation::NightVision => "night-vision",
+        };
+        stamp.insert("mitigation".to_string(), json!(name));
+    }
+    Some(Value::Object(stamp))
+}
+
+/// Push `shot` after stamping it with its area's `lighting` declaration (no-op
+/// for undeclared areas — the key is absent, not null, so byte output only
+/// changes for campaigns that declare).
+fn push_stamped(shots: &mut Vec<Value>, c: &Campaign, area_id: &str, mut shot: Value) {
+    if let Some(stamp) = area_lighting_stamp(c, area_id) {
+        shot.as_object_mut()
+            .expect("shot is a JSON object")
+            .insert("lighting".to_string(), stamp);
+    }
+    shots.push(shot);
 }
 
 /// Whether a placed prefab's declared lighting profile is `lit` (`Some(true)`),

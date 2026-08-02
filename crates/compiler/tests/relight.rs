@@ -413,3 +413,78 @@ fn hello_room_measures_not_dark() {
         r.diagnostics
     );
 }
+
+/// The render-plan `lighting` stamp (dark-review tier): POV and interior shots
+/// carry `{"profile","mitigation"}` derived purely from the area's stage-1
+/// declarations — dark+mitigation for a mitigation-only area, lit when
+/// `lighting` is declared (with the mitigation still recorded when both are) —
+/// and **no `lighting` key at all** for an undeclared campaign, so plans
+/// without declarations stay byte-identical.
+#[test]
+fn render_plan_lighting_stamp_follows_the_declarations() {
+    let stamped_shots = |out: &BuildOutput| -> Vec<serde_json::Value> {
+        let rp: serde_json::Value =
+            serde_json::from_slice(out.get("render-plan.json").unwrap()).unwrap();
+        rp["shots"].as_array().unwrap().clone()
+    };
+
+    // Baseline: hello-world declares neither → no shot carries the key.
+    let c0 = hello_world();
+    let out0 = build(&c0).expect("baseline builds");
+    for s in stamped_shots(&out0) {
+        assert!(
+            s.get("lighting").is_none(),
+            "undeclared campaign must emit no lighting stamp: {s}"
+        );
+    }
+
+    // mitigation only → every POV/interior shot stamped dark + night-vision.
+    // (One nbt buffer for both builds: `dark_box_nbt` serializes HashMap
+    // compounds, so two *calls* give differently-ordered — thus different —
+    // input bytes; determinism is same input → same output.)
+    let dark = dark_box_nbt([11, 6, 11], &[]);
+    let mut c1 = hello_world();
+    c1.world.dsl_version = "0.6.0".to_string();
+    c1.world.content.areas[0].mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
+    let out1 = build_with_structure(&c1, dark.clone()).expect("declared-mitigation build succeeds");
+    let shots1 = stamped_shots(&out1);
+    let mut saw = (false, false);
+    for s in &shots1 {
+        match s["kind"].as_str().unwrap() {
+            k @ ("pov" | "interior") => {
+                assert_eq!(s["lighting"]["profile"], "dark", "kind {k}: {s}");
+                assert_eq!(s["lighting"]["mitigation"], "night-vision", "kind {k}");
+                if k == "pov" {
+                    saw.0 = true;
+                } else {
+                    saw.1 = true;
+                }
+            }
+            // The stamp's scope is exactly the POV/interior review tier.
+            _ => assert!(s.get("lighting").is_none(), "only POV/interior: {s}"),
+        }
+    }
+    assert!(saw.0 && saw.1, "both a pov and an interior shot stamped");
+
+    // lighting + mitigation → lit profile, mitigation still recorded (fixtures
+    // light the scene, so the render layer must not emulate).
+    let mut c2 = hello_world();
+    c2.world.dsl_version = "0.6.0".to_string();
+    c2.world.content.areas[0].lighting = Some(AreaLighting {
+        fixture: Fixture::Lantern,
+        min_light: 7,
+    });
+    c2.world.content.areas[0].mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
+    let out2 = build_with_structure(&c2, dark_box_nbt([11, 6, 11], &[]))
+        .expect("relit+mitigated build succeeds");
+    let pov2 = stamped_shots(&out2)
+        .into_iter()
+        .find(|s| s["kind"] == "pov")
+        .expect("a pov shot");
+    assert_eq!(pov2["lighting"]["profile"], "lit");
+    assert_eq!(pov2["lighting"]["mitigation"], "night-vision");
+
+    // Stamped builds stay byte-identical across a double build (ADR-0006).
+    let again = build_with_structure(&c1, dark.clone()).unwrap();
+    assert_eq!(out1, again, "stamped build is deterministic");
+}

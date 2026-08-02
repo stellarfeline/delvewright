@@ -551,6 +551,17 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   Deterministic (route order → waypoint order; no RNG/clock) and appended after the
   overhead kinds so the existing shot prefix is unchanged. Emitted only when a
   walked critical leg exists.
+- **`lighting` stamp** (POV + interior shots, `crate::render_plan::area_lighting_stamp`):
+  pure metadata derived from the shot's area's **stage-1 declarations** — never from
+  measurement (the measured model gates via `DW0210`/`DW0211`). `lighting` declared
+  → `{"profile": "lit"}`; only `mitigation: "night-vision"` declared →
+  `{"profile": "dark", "mitigation": "night-vision"}`; both → lit profile plus the
+  mitigation; neither → **no key** (absent, not null), so campaigns without lighting
+  declarations build byte-identically. Purpose: a declared-dark scene is pure black
+  to an honest path tracer (the first island Chunky run proved exposure boosts
+  cannot reveal a sealed cave — no light, only amplified noise — while real
+  emitters render), so the stamp tells `delve-render` exactly which shots need its
+  night-vision review emulation (below) and guarantees it touches no others.
 
 ### Assembled-world model (shared, gravity-settled)
 
@@ -997,6 +1008,28 @@ Catalogued here so the DW namespace is complete and CI-checked.
 
 `delve-render` exit codes: `0` ok · `2` input · `3` output · `4` fidelity-gate
 failure · `5` renderer/GPU · `10` internal.
+
+#### `delve-render` dark-shot REVIEW POLICY (night-vision emulation)
+
+For shots stamped `{"profile": "dark", "mitigation": "night-vision"}` — and only
+those — `delve-render scene` emits the Chunky scene with a review-only
+`materials` override: every non-light-emitting block of the build's shipped
+structure palettes (union over `datapack/data/*/structure/*.nbt`, sorted,
+deduped, state brackets stripped) gets a low uniform emittance
+(`scene::REVIEW_EMITTANCE` = 0.05), and the scene carries
+`"delvewrightReviewPolicy": "night-vision-emulated — review only"` (Chunky
+ignores unknown keys). `delve-render index` marks the same shots with
+`review_policy` and passes the `lighting` stamp through. **This is an honest
+approximation, not ground truth**: faint uniform self-glow is the closest
+Chunky analogue of Minecraft night vision (which renders every block at full,
+flat brightness), chosen after the exposure-boost route failed on the island
+cavern; real emitters are deny-listed out of the override so a placed fixture
+still reads as a genuine glow. Legibility of geometry/layout in an emulated
+frame is reviewable; its *lighting* is not — the compiler's measured light
+model remains the only light-truth. Lit-stamped and unstamped shots are
+byte-untouched; a dark-stamped shot with no structure palette available is a
+`DW0721` error (a silently-black "reviewable" scene would re-blind the review).
+Deterministic throughout (`BTreeMap`-sorted override keys, sorted file walk).
 
 ---
 
