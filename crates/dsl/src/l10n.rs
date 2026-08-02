@@ -58,7 +58,7 @@ use serde::{Deserialize, Serialize};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{Campaign, SUPPORTED_DSL_VERSIONS, is_supported_version};
 use crate::ids::CampaignId;
-use crate::stages::QuestEffect;
+use crate::stages::{NarrateStyle, QuestEffect};
 
 /// Walk the player-visible strings of a single quest effect (DSL v0.4): a
 /// `narrate` line and a named `give-item`'s display name. `keybase` is the
@@ -283,6 +283,41 @@ pub fn art_narrates(c: &Campaign) -> Vec<ArtNarrate> {
             out.push(ArtNarrate {
                 path: format!("{path}/text"),
                 key: format!("{keybase}.narrate"),
+                text: text.to_string(),
+            });
+        }
+    });
+    out
+}
+
+/// One on-screen `narrate` occurrence — `title`, `subtitle` or `art` — its stage-doc
+/// path, its l10n inventory key, its style, and the canonical English text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScreenNarrate {
+    /// JSON-pointer-ish path within the `quests` stage doc.
+    pub path: String,
+    /// The l10n inventory key (`fx.…​.narrate`).
+    pub key: String,
+    /// Which on-screen channel vanilla draws it in — this selects the width budget.
+    pub style: NarrateStyle,
+    /// The canonical English text.
+    pub text: String,
+}
+
+/// Every `narrate` effect vanilla draws **on screen** (`title` / `subtitle` / `art`),
+/// in a fixed deterministic order. Like [`art_narrates`], each `key` is derived by the
+/// **same** traversal/keying as [`inventory`]/[`each_string`], so the compiler's
+/// text-fit check (`DW0330`) can look every string up in each declared-language
+/// sidecar and report it under the offending locale and key. `chat` narrates are
+/// excluded: chat wraps and scrolls, so it has no width budget.
+pub fn on_screen_narrates(c: &Campaign) -> Vec<ScreenNarrate> {
+    let mut out = Vec::new();
+    each_effect_ref(c, &mut |path, keybase, eff| {
+        if let Some((style, text)) = eff.narrate_on_screen() {
+            out.push(ScreenNarrate {
+                path: format!("{path}/text"),
+                key: format!("{keybase}.narrate"),
+                style,
                 text: text.to_string(),
             });
         }

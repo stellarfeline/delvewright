@@ -2302,6 +2302,28 @@ impl QuestEffect {
         }
     }
 
+    /// The `narrate` line's style and text if this is a `narrate` rendered **on
+    /// screen** — `title`, `subtitle` or `art` — rather than in chat. These are the
+    /// styles vanilla draws centred and unwrapped, so their rendered width is
+    /// length-checked against the screen (`DW0330`); `chat` scrolls and wraps, so it
+    /// is exempt.
+    pub fn narrate_on_screen(&self) -> Option<(NarrateStyle, &str)> {
+        match self {
+            QuestEffect::Narrate {
+                text,
+                style: Some(s),
+                ..
+            } if matches!(
+                s,
+                NarrateStyle::Title | NarrateStyle::Subtitle | NarrateStyle::Art
+            ) =>
+            {
+                Some((*s, text.as_str()))
+            }
+            _ => None,
+        }
+    }
+
     /// Every vanilla sound-event id this effect references, for registry
     /// validation (`DW0326`): a `play-sound`'s `sound`, and a `narrate`'s optional
     /// `sound`. Returns `(subpath, id)` pairs where `subpath` locates the field

@@ -1513,3 +1513,68 @@ fn l10n_inventory_carries_speakers_and_existing_translations() {
         assert!(e.get("existing").is_none(), "{}", e["key"]);
     }
 }
+/// A warning-tier diagnostic (`DW0330`) is **reported but does not fail the run**:
+/// `delvec` exits non-zero only on `Severity::Error`. This exit-code contract is what
+/// makes an advisory rule possible at all — without it a warning would be an error
+/// wearing a different label. Errors are unaffected (see the `DW0180`/`DW0181` test,
+/// which still exits 1).
+#[test]
+fn dw0330_warning_reports_but_does_not_fail_the_build() {
+    let pf = common::prefabs_dir();
+    let dir = tmp("textfit-warning");
+
+    let mut quests: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(common::hello_world_dir().join("quests.json")).unwrap(),
+    )
+    .unwrap();
+    // `narrate` is a v0.4 effect; the hello-world fixture is v0.3.
+    quests["dsl_version"] = serde_json::json!("0.6.0");
+    // An on-screen title far wider than any screen renders.
+    quests["content"]["quests"][0]["on_complete"]
+        .as_array_mut()
+        .unwrap()
+        .insert(
+            0,
+            serde_json::json!({
+                "type": "narrate",
+                "style": "title",
+                "text": "A Title So Long That No Screen Anywhere Could Ever Hope To Show It"
+            }),
+        );
+    common::materialize_from(
+        &common::hello_world_dir(),
+        &serde_json::json!({ "documents": { "quests": quests } }),
+        &dir,
+    );
+
+    let out = delvec(&[
+        "validate",
+        dir.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(s.contains("DW0330"), "expected DW0330 to be reported:\n{s}");
+    assert!(
+        s.contains("warning"),
+        "DW0330 must render at warning severity:\n{s}"
+    );
+    assert_eq!(code(&out), 0, "a warning must not fail validate:\n{s}");
+
+    // …and the same holds through a full build.
+    let built = tmp("textfit-warning-out");
+    let out = delvec(&[
+        "build",
+        dir.to_str().unwrap(),
+        "-o",
+        built.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&out),
+        0,
+        "a warning must not fail build:\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+}

@@ -105,8 +105,14 @@ rejection (exit 1). Codes are stable API; the CI fixture matrix asserts them.
 
 **`--json` diagnostic shape**:
 `{ "code":"DW####", "severity":"error|warning", "stage":"<stage>",
-"path":"<json-pointer-ish>", "message":"…" }`. Every v0 code is `error`;
-`warning` exists in the shape for future advisory rules.
+"path":"<json-pointer-ish>", "message":"…" }`.
+
+**Severity is load-bearing.** `delvec` exits non-zero only on `error`. A `warning`
+is printed and emitted in `--json` exactly like an error but never fails
+`validate`/`analyze`/`build`. The tier is reserved for rules whose verdict depends
+on something outside the campaign — currently only `DW0330`, where how much text
+fits depends on the player's window size and GUI scale. Every other code is `error`
+and rejects as before.
 
 ---
 
@@ -767,6 +773,44 @@ identically.
 | `DW0326` | A `play-sound.sound` (v0.6) or `narrate.sound` (v0.4) id is not a known 1.21.11 sound event (validated against the vendored `sound_event` registry, `crates/compiler/data/sounds-1.21.11.json`; `minecraft:` prefix optional). |
 | `DW0328` | An `art`-styled `narrate` string — the English source **or** any declared-language sidecar translation — uses a character outside the `delve:art` font's glyph inventory (A–Z, 0–9, space, `! " ' ( ) , - . / : ; ?`; lowercase folds to uppercase). Forces per-language art titles to stay ASCII/Latin — a `zh-cn` art translation must be an ASCII rendition. |
 | `DW0335` | A `play-sound` targets `at: {actor: …}`, accepted by the schema but not yet wired — the actors surface (spec-0014 `actors[]`) has not landed. Use `at: {anchor}` or `at: players`. (Graduates when the actors PR wires actor-position resolution.) |
+
+### DW0330 — on-screen text fit (`compiler::textfit`; **warning**; exit 0)
+
+The only **advisory** code in the compiler. Vanilla draws a `title`, a `subtitle`
+and an art title centred, on **one line, with no wrapping and no shrink-to-fit** —
+text wider than the screen just runs off both edges, silently. `DW0330` measures
+each on-screen `narrate` string's **rendered width in font pixels** and compares it
+to the style's budget.
+
+**Why measured, not counted.** `i` and `W` differ by 3× in the vanilla font, and a
+Han glyph is 9 px against a Latin letter's 6 (1.5×, *not* the 2× a "CJK counts
+double" rule assumes). A character count is unfair to whichever script it was not
+tuned for, so the check sums real advances: the ASCII sheet's per-glyph widths, the
+`unihex` full-width advance for CJK, and — for `art` — the `delve:art` font's own
+glyph metrics, derived from the same constants that emit the font.
+
+**Budget.** `Gui.renderTitle` renders a title at pose scale **×4** and a subtitle at
+**×2**; an art title is a title, so it takes ×4 *and* the art font's 4×-scaled
+glyphs (the two multiply — art fits ~4 characters). Against a reference GUI width of
+**426** scaled px (what Minecraft's auto GUI scale yields at 1280×720 and 2560×1440;
+1920×1080 gives 480, and 320 is the auto floor) at **85%** usable width, the budgets
+are **90** font px for `title` and `art` and **181** for `subtitle`. `chat` has no
+budget — it wraps and scrolls.
+
+**Why warning, not error.** The true limit is a property of the player's window and
+GUI scale, which the compiler cannot know; rejecting on it would dress a judgement
+call as a fact, and would hard-block a translation for being honestly longer than its
+English source. It reports, and the author shortens.
+
+**Scope.** The canonical English source **and** every declared-language sidecar
+rendition, walked by the same `each_effect_ref` traversal and l10n keying as
+`DW0326`/`DW0328` — so a sidecar finding is reported at
+`l10n/<lang>.json#/content/<key>`, naming the exact string to shorten. Nested
+effects are covered.
+
+| Code | Meaning |
+|------|---------|
+| `DW0330` | An on-screen `narrate` string (`title` / `subtitle` / `art`) — English source or any declared-language sidecar rendition — renders wider than fits on screen. Advisory (exit 0): shorten the line. Do **not** demote a title to `chat` to silence it, and do not assume a wider monitor fixes it — the overflow scales with GUI scale, not away from it. |
 
 ### DW02xx — analysis (`compiler::analyze` reachability + `compiler::light` lighting; error; exit 2)
 
