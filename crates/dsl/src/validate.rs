@@ -1011,6 +1011,18 @@ fn reserved_v06_effect_flags(c: &Campaign, d: &mut Vec<Diagnostic>) {
         });
     }
     for (i, t) in c.quests.content.triggers.iter().enumerate() {
+        // `strike-npc` (the body-targeting trigger form) is a v0.6 surface.
+        if matches!(t.on, crate::stages::TriggerOn::StrikeNpc { .. }) {
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "quests",
+                format!("/content/triggers/{i}/on"),
+                "trigger `on: strike-npc` (targeting an NPC's body rather than a cell) requires \
+                 dsl_version 0.6.0 — raise this stage's `dsl_version` to 0.6.0, or use `strike` \
+                 at an anchor"
+                    .to_string(),
+            ));
+        }
         if !t.forbids_flags.is_empty() {
             d.push(Diagnostic::error(
                 codes::RESERVED,
@@ -2762,16 +2774,60 @@ fn v04_checks(
                 ),
             ));
         }
-        if !anchor_resolvable(t.at.as_str()) {
-            d.push(Diagnostic::error(
+        // `at` names a place; `strike-npc` names a character. Exactly one of the
+        // two must be supplied, so neither form can be authored half-way (an
+        // ignored anchor would read as meaningful and silently do nothing).
+        match (t.on.needs_anchor(), t.at_anchor()) {
+            (true, None) => d.push(Diagnostic::error(
+                codes::TRIGGER_INVALID,
+                "quests",
+                format!("/content/triggers/{i}/at"),
+                format!(
+                    "trigger `{}` fires on `{}`, which watches a place, but declares no `at` \
+                     anchor — add one (anchor names come from prefab metadata; do NOT invent \
+                     one), or switch to `strike-npc` if the target is an NPC's body",
+                    t.id,
+                    t.on.kind()
+                ),
+            )),
+            (false, Some(at)) => d.push(Diagnostic::error(
+                codes::TRIGGER_INVALID,
+                "quests",
+                format!("/content/triggers/{i}/at"),
+                format!(
+                    "trigger `{}` fires on `strike-npc`, whose target is NPC `{}`'s body — it \
+                     watches no cell, so the `at` anchor `{at}` names nothing and would be \
+                     silently ignored. Remove `at`.",
+                    t.id,
+                    t.on.npc_target().map(|n| n.as_str()).unwrap_or("?")
+                ),
+            )),
+            (true, Some(at)) if !anchor_resolvable(at) => d.push(Diagnostic::error(
                 codes::ANCHOR_UNRESOLVED,
                 "quests",
                 format!("/content/triggers/{i}/at"),
                 format!(
-                    "trigger `at` anchor `{}` is not provided by any area's prefab — set `at` to \
+                    "trigger `at` anchor `{at}` is not provided by any area's prefab — set `at` to \
                      an anchor some area's prefab exposes (anchor names come from prefab metadata; \
-                     do NOT invent one)",
-                    t.at
+                     do NOT invent one)"
+                ),
+            )),
+            _ => {}
+        }
+        // A `strike-npc` target must be a real stage-2 NPC: the trigger's tag
+        // rides that NPC's hitbox, so an unknown id would emit a tag on nothing
+        // and the trigger could never fire.
+        if let Some(npc) = t.on.npc_target()
+            && !c.npcs.content.npcs.iter().any(|n| n.id == *npc)
+        {
+            d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                "quests",
+                format!("/content/triggers/{i}/on/npc"),
+                format!(
+                    "`strike-npc` trigger `{}` targets NPC `{npc}`, which stage 2 does not \
+                     declare — use a declared npc id",
+                    t.id
                 ),
             ));
         }
@@ -2787,12 +2843,8 @@ fn v04_checks(
             ));
         }
         if matches!(t.on, TriggerOn::Use)
-            && let Some(npc) = c
-                .npcs
-                .content
-                .npcs
-                .iter()
-                .find(|n| n.anchor.as_str() == t.at.as_str())
+            && let Some(at) = t.at_anchor()
+            && let Some(npc) = c.npcs.content.npcs.iter().find(|n| n.anchor.as_str() == at)
         {
             d.push(Diagnostic::error(
                 codes::USE_TRIGGER_ON_NPC,
@@ -2804,9 +2856,8 @@ fn v04_checks(
                      interaction hitboxes in one cell race for the same click (the loser is \
                      silently dead, which can soft-lock the delve). Move the trigger to its \
                      own anchor, or express the interaction as a dialogue option on the NPC. \
-                     (`strike` triggers may share an NPC's anchor: a left-click has no \
-                     dialogue meaning, so the NPC's hitbox carries the trigger.)",
-                    t.id, t.at, npc.id
+                     (To make an NPC's body itself the target, use `strike-npc`.)",
+                    t.id, at, npc.id
                 ),
             ));
         }

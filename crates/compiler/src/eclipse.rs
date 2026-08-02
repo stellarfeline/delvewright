@@ -356,19 +356,24 @@ fn affordances(plan: &Plan) -> Vec<Affordance> {
         if matches!(t.on, TriggerOn::Approach { .. }) {
             continue;
         }
-        // The sanctioned shared-hitbox form: a `strike` trigger on an NPC's own
+        // `strike-npc` (DSL v0.6) has no cell at all — it rides the NPC's own
+        // hitbox by construction, so eclipse is its *mechanism*, not a defect.
+        let Some(at) = t.at_anchor() else {
+            continue;
+        };
+        // The same shape spelled the old way: a `strike` trigger on an NPC's own
         // anchor rides that NPC's hitbox and summons nothing (see the module
         // docs). No second entity, nothing to eclipse.
-        if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, t.at.as_str()) {
+        if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
             continue;
         }
-        let Some(pos) = plan.point_any(t.at.as_str()) else {
+        let Some(pos) = plan.point_any(at) else {
             continue;
         };
         out.push(Affordance {
             kind: "trigger",
             id: t.id.as_str().to_string(),
-            anchor: t.at.as_str().to_string(),
+            anchor: at.to_string(),
             pos,
         });
     }
