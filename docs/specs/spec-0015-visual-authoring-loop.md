@@ -27,15 +27,22 @@
    and screen-space bboxes, occlusion flag. The shared vocabulary: review
    feedback and edits reference ids and boxes, never prose-only ("raise the
    shelf in [200..204, 63..66, -12..-8]" is now expressible and mappable).
-3. **Blocking chart** — per-area annotated orthographic top-down slice
-   (theater blocking): all anchors, NPC/actor posts, interact markers,
-   stealth zones, trigger regions, walk corridor. NPC-crowding-class defects
-   become visible pre-build.
-4. **Shot assertions** (optional, compiled) — a cutscene shot or authored
-   camera may declare `expect_in_frame: [{target, min_screen_share?}]`;
-   the compiler proves it via the manifest math or fails with a DW code.
-   Camera quality becomes a checkable constraint (the sea-facing seal shot
-   would have been a compile error).
+3. **Blocking chart** — per-elevation CUTAWAY orthographic slice rendered
+   straight from the voxel model (no in-world camera exists, so ceilings are
+   simply excluded above the cut plane — dollhouse view); walkable-Y
+   clustering auto-detects levels (cavern floor vs ramp/pen = two slices).
+   All anchors, NPC/actor posts, interact markers, stealth zones, trigger
+   regions, walk corridor labeled. NPC-crowding-class defects visible
+   pre-build; interiors fully covered by construction.
+4. **Shot grammar = the assertion** (owner correction: hard share thresholds
+   would strangle wide shots). A shot declares its GRADE (`establishing` /
+   `medium` / `close` / `insert`) plus optional framing (screen-position
+   soft zone, FOV); the ONLY compiled check is "the frame matches the
+   declared grade": establishing asserts subject-in-frame & unoccluded
+   (a small silhouette passes — that is what a wide shot is), close asserts
+   a share floor, undeclared asserts nothing. Creative control and proof are
+   the same declaration; the sea-facing shot still dies at compile (its
+   subject was absent entirely).
 5. **Partial rebuild + visual regression** — `delvec preview --beat <obj>`
    recomputes only the placement/emission the edit touches and re-renders
    only affected shots; image-diff against the previous set proves a fix
@@ -47,6 +54,17 @@ Author edits DSL → sub-second model rebuild → agent snapshots what it is
 unsure about (its own choice of cameras) → reads image + manifest → edits →
 re-snapshots. Fixed render tiers (orbit sets, POV ladder, Chunky beauty)
 demote to regression/review checkpoints, not the iteration medium.
+
+## Shot-style template library (research-backed)
+
+Procedural cinematic cameras in RDR2/GTA V cinematic mode and Unity
+Cinemachine are algorithmic, not AI: a curated template bag (static
+pan-tracking, side-track dolly, crane/orbit, low-follow), damped look-at
+springs, per-template lens/FOV, min/max shot durations, cut-on-occlusion
+rather than wall-sliding. spec adds `shot_style` presets the cutscene DSL can
+invoke; the compiler expands a style deterministically into path + look-at +
+FOV. A research dossier (sources → ACKNOWLEDGEMENTS) parameterizes the
+template set before implementation.
 
 ## Delivery order
 
