@@ -35,6 +35,7 @@ the shared datum and mate with the beach camp's north socket.
   scattered scrub oaks, poppy/daisy/cornflower flowers, and a low mossy-cobblestone
   **empty sheep fold** (foreshadowing — the sheep are the Cyclops'). The bend variant
   elbows S→E for layout flexibility. Anchors: `anchor/meadow`, `anchor/fold`.
+  Oaks keep the corridor clear **by shape, never by cutting** (see below).
 - **island-mountain** — a solid rock massif built **fill-then-carve**. A terraced
   **switchback path** (grass-to-stone gradient + a coarse-dirt trail, stair treads on
   every riser so it is walked natively) climbs the south face to a **cave-mouth
@@ -62,6 +63,34 @@ the shared datum and mate with the beach camp's north socket.
   two sky-open shafts exist; the compiler re-measures the assembled world and relights
   declared areas minimally (spec-0010). The per-piece estimate is block-light only
   (sky shafts not counted) — a conservative authoring value, not a live probe.
+
+## Greenfield canopy rule (owner QA round 4)
+
+Oak trunks are always planted off the walk corridor, but an earlier version kept the
+corridor clear by **skipping** any leaf that fell over it — which left vertically
+sheared half-trees with a flat plane of leaves flush against the path ("half-sliced
+trees are not a fix", owner). The corridor is now respected **structurally**, and a
+canopy is only ever grown as a whole blob:
+
+1. **Lean** — an oak whose leaf ball would reach the corridor leans its blob one block
+   directly away from the nearest corridor cell (oaks crowd off trodden ground; the
+   offset blob still caps the trunk). If that clears it, the oak keeps its natural
+   3–4-log height.
+2. **Grow** — if leaning is not enough, the oak grows tall instead: the trunk rises so
+   the *entire* canopy sits at `G_WALK_Y + G_CANOPY_CLEARANCE` (walk plane +3) and
+   arches over the path as a leafy ceiling.
+
+`G_CANOPY_CLEARANCE = 3` — the nav model needs 2 cells (player height 1.8); the third
+keeps the canopy reading as a ceiling rather than a hat, and leaves margin for the
+compiler's `DW0311` walk. Only the walk plane is constrained: overhang **above** +3 is
+wanted, not merely tolerated.
+
+`assert_greenfield_corridor_clear` is the generator-side proof (debug doctrine —
+the lesson is pinned as a generator invariant, not prose): every corridor cell must sit
+at the meadow datum and be free of any block, dressing or otherwise, up to the
+clearance height. Generation fails rather than shipping an obstructed or re-sliced
+corridor. `greenfield_on_walk` is the single corridor definition all three consumers
+(scatter, canopy shape, invariant) share, so they cannot drift.
 
 ## Walkability (verified)
 

@@ -740,6 +740,17 @@ struct Spec {
 // GREENFIELD (open-air meadow connector)
 // ===========================================================================
 
+/// The greenfield walk plane (piece-local, before `lift_substrate`): the meadow floor
+/// is solid to y=0, so a player on the corridor stands with feet at y=1, head at y=2.
+const G_WALK_Y: i32 = 1;
+
+/// How far above the walk plane dressing must clear a walk-corridor cell. The nav model
+/// needs 2 cells (player height 1.8); the third keeps an overhanging canopy reading as a
+/// natural ceiling instead of a hat brushing the player's head, and leaves margin for
+/// the compiler's `DW0311` walk. Corridor dressing is lifted to this height as a whole
+/// — never cut off at it (see `place_oak`).
+const G_CANOPY_CLEARANCE: i32 = 3;
+
 /// A worn dirt path spine from the south socket to the north/side socket, 3 wide.
 /// Returns the path-centre X at a given Z (piece-relative), for the straight and
 /// corner variants alike.
@@ -833,6 +844,9 @@ fn build_greenfield(spec: &Spec, g: &mut Grid, seed: u64) {
     // 3. Scatter: oaks, flowers, tufts, and the empty sheep fold. All off the path
     //    spine and the socket lanes so the walk envelope stays clear.
     greenfield_scatter(spec, g, seed);
+
+    // 4. Prove the walk envelope survived the dressing.
+    assert_greenfield_corridor_clear(spec, g, seed);
 }
 
 /// Top solid Y of the greenfield ground at (x,z): 0 across the meadow, rising into
@@ -864,31 +878,68 @@ fn greenfield_surface(spec: &Spec, x: i32, z: i32, seed: u64) -> i32 {
     }
 }
 
-fn greenfield_scatter(spec: &Spec, g: &mut Grid, seed: u64) {
+/// The greenfield walk corridor: the 3-wide path spine (both legs of the bend) and the
+/// socket lanes. The single authority on "keep this clear" — shared by the dressing
+/// scatter, the canopy shape rule, and `assert_greenfield_corridor_clear`.
+fn greenfield_on_walk(spec: &Spec, x: i32, z: i32) -> bool {
     let [sx, _sy, sz] = spec.size;
-    let on_walk = |x: i32, z: i32| -> bool {
-        // path spine or socket lane — keep clear
-        if let Some(pc) = greenfield_path_center(spec.size, &spec.doors, z) {
-            if (x - pc).abs() <= 1 {
-                return true;
-            }
-        }
-        let has_east = spec.doors.iter().any(|(s, _)| *s == Side::East);
-        if has_east && (z - sz / 2).abs() <= 1 && x >= sx / 2 {
+    // path spine or socket lane — keep clear
+    if let Some(pc) = greenfield_path_center(spec.size, &spec.doors, z) {
+        if (x - pc).abs() <= 1 {
             return true;
         }
-        for &(side, _fy) in &spec.doors {
-            let jc = door_center(spec.size, side, 0);
-            let lane = match side {
-                Side::North | Side::South => (x - jc[0]).abs() <= 1 && (z - jc[2]).abs() <= 3,
-                Side::West | Side::East => (z - jc[2]).abs() <= 1 && (x - jc[0]).abs() <= 3,
-            };
-            if lane {
-                return true;
+    }
+    let has_east = spec.doors.iter().any(|(s, _)| *s == Side::East);
+    if has_east && (z - sz / 2).abs() <= 1 && x >= sx / 2 {
+        return true;
+    }
+    for &(side, _fy) in &spec.doors {
+        let jc = door_center(spec.size, side, 0);
+        let lane = match side {
+            Side::North | Side::South => (x - jc[0]).abs() <= 1 && (z - jc[2]).abs() <= 3,
+            Side::West | Side::East => (z - jc[2]).abs() <= 1 && (x - jc[0]).abs() <= 3,
+        };
+        if lane {
+            return true;
+        }
+    }
+    false
+}
+
+/// Generator invariant (debug doctrine): dressing may never intrude on the greenfield
+/// walk corridor below `G_WALK_Y + G_CANOPY_CLEARANCE`, and the corridor itself is flat
+/// at the meadow datum. Fails generation rather than letting a sheared canopy or a stray
+/// prop reach the compiler's `DW0311` gate — or the owner's QA hour.
+fn assert_greenfield_corridor_clear(spec: &Spec, g: &Grid, seed: u64) {
+    let [sx, _sy, sz] = spec.size;
+    for x in 0..sx {
+        for z in 0..sz {
+            if !greenfield_on_walk(spec, x, z) {
+                continue;
+            }
+            let surf = greenfield_surface(spec, x, z, seed);
+            assert_eq!(
+                surf, 0,
+                "{}: corridor cell ({x},{z}) is not at the meadow datum (surface {surf})",
+                spec.id
+            );
+            // Air or the socket's jigsaw marker (vanilla replaces it at placement) only —
+            // any block, collidable or not, is dressing that does not belong here.
+            for y in G_WALK_Y..(G_WALK_Y + G_CANOPY_CLEARANCE) {
+                assert!(
+                    !g.is_solid(x, y, z),
+                    "{}: corridor cell ({x},{y},{z}) is obstructed — dressing must clear \
+                     the corridor by {G_CANOPY_CLEARANCE} as a whole shape, never be cut off at it",
+                    spec.id
+                );
             }
         }
-        false
-    };
+    }
+}
+
+fn greenfield_scatter(spec: &Spec, g: &mut Grid, seed: u64) {
+    let [sx, _sy, sz] = spec.size;
+    let on_walk = |x: i32, z: i32| -> bool { greenfield_on_walk(spec, x, z) };
     // Anchor cells + their forward sightline stay clear of tree/flower dressing so the
     // meadow/fold anchors read clean and their facing view is unobstructed.
     let protected = |x: i32, z: i32| -> bool {
@@ -937,9 +988,11 @@ fn greenfield_scatter(spec: &Spec, g: &mut Grid, seed: u64) {
     }
     // Oaks: 2–3 small hand-shaped oaks per piece, chosen deterministically from the
     // highest-noise off-corridor meadow cells with a spacing rule so they spread out.
-    // Strictly off the walk corridor, the fold, and the anchor sightlines; the canopy
-    // is never grown over a corridor cell, so the socket-to-socket path keeps full
-    // headroom (the compiler's DW0311 walkability gate is the authority at assembly).
+    // Trunks are strictly off the walk corridor, the fold, and the anchor sightlines. A
+    // canopy that would reach the corridor leans away from it, or — failing that — grows
+    // tall enough to arch over it whole (`place_oak`); it is never sliced, and never
+    // intrudes below G_WALK_Y + G_CANOPY_CLEARANCE, so the socket-to-socket path keeps
+    // full headroom (the compiler's DW0311 gate is the authority at assembly).
     let mut cand: Vec<(f64, i32, i32)> = Vec::new();
     for x in 2..sx - 2 {
         for z in 2..sz - 2 {
@@ -1010,26 +1063,75 @@ fn greenfield_scatter(spec: &Spec, g: &mut Grid, seed: u64) {
     }
 }
 
-/// Place one small hand-shaped oak (3–4 log trunk + a compact leaf ball) rooted at
-/// (x,z) on the meadow floor (y=0 solid, y=1 air). The canopy is never written over a
-/// walk-corridor cell (`on_walk`), so the critical socket-to-socket path keeps full
-/// headroom regardless of how close an oak is planted to it.
+/// Horizontal radius of the widest canopy layer, and the squared radius that rounds
+/// the leaf ball off. The blob footprint is `dx² + dz² <= CANOPY_R2`.
+const CANOPY_RAD: i32 = 2;
+const CANOPY_R2: i32 = 5;
+
+/// Whether a canopy blob centred at (cx,cz) would cover any walk-corridor cell.
+fn canopy_over_corridor(cx: i32, cz: i32, on_walk: &impl Fn(i32, i32) -> bool) -> bool {
+    (-CANOPY_RAD..=CANOPY_RAD).any(|dx| {
+        (-CANOPY_RAD..=CANOPY_RAD)
+            .any(|dz| dx * dx + dz * dz <= CANOPY_R2 && on_walk(cx + dx, cz + dz))
+    })
+}
+
+/// The one-block step that leans a canopy directly away from the nearest walk-corridor
+/// cell within `reach` of a trunk at (x,z); `(0,0)` when no corridor is in reach.
+/// Deterministic: nearest by squared distance, ties broken by the fixed scan order.
+fn corridor_lean(x: i32, z: i32, reach: i32, on_walk: &impl Fn(i32, i32) -> bool) -> (i32, i32) {
+    let mut best: Option<(i32, i32, i32)> = None;
+    for dx in -reach..=reach {
+        for dz in -reach..=reach {
+            if (dx, dz) == (0, 0) || !on_walk(x + dx, z + dz) {
+                continue;
+            }
+            let d2 = dx * dx + dz * dz;
+            if best.is_none_or(|(b, _, _)| d2 < b) {
+                best = Some((d2, dx, dz));
+            }
+        }
+    }
+    best.map_or((0, 0), |(_, dx, dz)| (-dx.signum(), -dz.signum()))
+}
+
+/// Place one hand-shaped oak rooted at (x,z) on the meadow floor (y=0 solid, y=1 air).
+///
+/// The corridor rule is **structural, never a cut**. The trunk is always off the walk
+/// corridor (the caller's planting filter), and the leaf ball is only ever grown whole:
+///
+/// 1. **Lean.** An oak whose blob would reach over the corridor first leans one block
+///    directly away from it — oaks crowd off trodden ground, and the offset blob still
+///    caps the trunk. If that clears the corridor the oak keeps its natural small
+///    height (3–4 logs).
+/// 2. **Grow.** If leaning is not enough, the oak grows tall instead: the trunk is
+///    raised so the *entire* canopy sits at `G_WALK_Y + G_CANOPY_CLEARANCE`, arching
+///    over the path as a ceiling with full headroom beneath it.
+///
+/// No leaf is ever skipped for being over the corridor, so no oak is left vertically
+/// sheared. `assert_greenfield_corridor_clear` is the generator-side proof.
 fn place_oak(g: &mut Grid, x: i32, z: i32, seed: u64, on_walk: &impl Fn(i32, i32) -> bool) {
-    let h = 3 + (value_noise(seed, x, 0, z, 0.6, 43) > 0.5) as i32; // 3 or 4 logs
-    for y in 1..=h {
+    // 1. Lean away from the corridor; keep the small-oak height when that clears it.
+    let (lean_x, lean_z) = corridor_lean(x, z, CANOPY_RAD + 1, on_walk);
+    // 2. Otherwise centre the blob back on the trunk and lift it clear of the corridor.
+    let (cx, cz, base) = if canopy_over_corridor(x + lean_x, z + lean_z, on_walk) {
+        (x, z, G_WALK_Y + G_CANOPY_CLEARANCE)
+    } else {
+        let natural = 2 + (value_noise(seed, x, 0, z, 0.6, 43) > 0.5) as i32; // base 2 or 3
+        (x + lean_x, z + lean_z, natural)
+    };
+    let h = base + 1; // trunk top sits inside the blob's mid layer
+    for y in G_WALK_Y..=h {
         g.blk(x, y, z, "minecraft:oak_log", Some(vec![("axis", "y")]));
     }
     // compact leaf ball: a rounded 5-wide band at the trunk top, narrowing upward.
-    for dy in (h - 1)..=(h + 1) {
-        let rad = if dy == h + 1 { 1 } else { 2 };
+    for dy in base..=(base + 2) {
+        let rad = if dy == base + 2 { 1 } else { CANOPY_RAD };
         for dx in -rad..=rad {
             for dz in -rad..=rad {
-                let (lx, lz) = (x + dx, z + dz);
-                if on_walk(lx, lz) {
-                    continue; // never overhang the critical corridor
-                }
+                let (lx, lz) = (cx + dx, cz + dz);
                 let r2 = dx * dx + dz * dz + (dy - h) * (dy - h);
-                if r2 <= 5 && g.inb(lx, dy, lz) && g.is_air(lx, dy, lz) {
+                if r2 <= CANOPY_R2 && g.inb(lx, dy, lz) && g.is_air(lx, dy, lz) {
                     g.blk(
                         lx,
                         dy,
@@ -1042,11 +1144,11 @@ fn place_oak(g: &mut Grid, x: i32, z: i32, seed: u64, on_walk: &impl Fn(i32, i32
         }
     }
     // a single crown leaf caps the ball
-    if g.inb(x, h + 2, z) && g.is_air(x, h + 2, z) {
+    if g.inb(cx, base + 3, cz) && g.is_air(cx, base + 3, cz) {
         g.blk(
-            x,
-            h + 2,
-            z,
+            cx,
+            base + 3,
+            cz,
             "minecraft:oak_leaves",
             Some(vec![("persistent", "true")]),
         );
