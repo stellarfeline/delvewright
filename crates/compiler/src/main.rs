@@ -70,6 +70,13 @@ enum Command {
         #[arg(short, long)]
         out: PathBuf,
     },
+    /// Emit the l10n key inventory (key → canonical English) as JSON, with the
+    /// existing `--lang` sidecar and NPC persona context — the machine-readable
+    /// input for translation tooling (`tools/i18n-translate.py`, docs/reference/i18n.md).
+    L10nInventory {
+        /// Campaign directory.
+        campaign_dir: PathBuf,
+    },
     /// Export a stage's JSON Schema (LLM authoring aid).
     Schema {
         /// Stage `1..6` or `all`.
@@ -96,6 +103,9 @@ fn main() -> ExitCode {
         Command::Analyze { campaign_dir } => run_analyze(campaign_dir, &cli.prefabs, cli.json),
         Command::Build { campaign_dir, out } => {
             run_build(campaign_dir, out, &cli.prefabs, &cli.lang, cli.json)
+        }
+        Command::L10nInventory { campaign_dir } => {
+            run_l10n_inventory(campaign_dir, &cli.lang, cli.json)
         }
         Command::Schema { stage } => run_schema(stage),
     }
@@ -214,6 +224,120 @@ fn run_analyze(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode 
         ExitCode::SUCCESS
     } else {
         ExitCode::from(2)
+    }
+}
+
+/// One `l10n-inventory` row: an inventory key, its canonical English source, the
+/// NPC whose voice it is (when the key scheme names one), and the translation the
+/// current sidecar already carries (absent = untranslated).
+#[derive(serde::Serialize)]
+struct InventoryEntry<'a> {
+    key: &'a str,
+    en: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    speaker: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    existing: Option<&'a str>,
+}
+
+/// The persona context a translator needs to keep a character's voice: who they
+/// are and — above all — how they speak. Deliberately excludes `secret`,
+/// `backstory` and `relationships`: plot context no line's *register* depends on.
+#[derive(serde::Serialize)]
+struct NpcContext<'a> {
+    id: &'a str,
+    name: &'a str,
+    archetype: &'a str,
+    speech_style: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    demeanor: Option<&'a str>,
+    motivation: &'a str,
+}
+
+/// `delvec l10n-inventory <campaign-dir> [--lang <code>]` — the l10n key inventory
+/// as JSON on stdout.
+///
+/// The inventory is [`delvewright_dsl::l10n_inventory`] itself, i.e. **exactly** the
+/// key set `DW0180`/`DW0181` enforce, so a translator (human, in-agent, or an
+/// external API via `tools/i18n-translate.py`) can be handed the work list up front
+/// instead of discovering it by writing an empty sidecar and reading the coverage
+/// diagnostics back. Rows carry the canonical English, the speaking NPC (via
+/// [`delvewright_dsl::key_speaker`]) and any translation the current
+/// `l10n/<lang>.json` already has — so re-running only fills the gaps (idempotence).
+///
+/// Deliberately runs **before** validation gating: an incomplete sidecar is the
+/// normal state when you ask for the inventory. Only an unparseable campaign fails
+/// (exit 1); no prefab library is needed.
+fn run_l10n_inventory(campaign_dir: &Path, lang: &str, json: bool) -> ExitCode {
+    let loaded = match load_campaign_dir(campaign_dir) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("internal error: cannot read campaign dir: {e}");
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    };
+    let campaign = match parse_campaign(&loaded.raw) {
+        Ok(c) => c,
+        Err(diags) => {
+            print_diags(&diags, json);
+            return ExitCode::from(1);
+        }
+    };
+    // A malformed sidecar reads as absent — every key is then reported untranslated,
+    // which is the honest work list (and what `validate` says about it too).
+    let sidecar = loaded
+        .l10n
+        .get(lang)
+        .and_then(|b| serde_json::from_slice::<delvewright_dsl::L10nDoc>(b).ok());
+    let existing = sidecar.as_ref().map(|d| &d.content);
+
+    let inv = delvewright_dsl::l10n_inventory(&campaign);
+    let entries: Vec<InventoryEntry<'_>> = inv
+        .iter()
+        .map(|(key, en)| InventoryEntry {
+            key,
+            en,
+            speaker: delvewright_dsl::key_speaker(key),
+            existing: existing.and_then(|m| m.get(key)).map(String::as_str),
+        })
+        .collect();
+    let npcs: Vec<NpcContext<'_>> = campaign
+        .npcs
+        .content
+        .npcs
+        .iter()
+        .map(|n| NpcContext {
+            id: delvewright_dsl::local_id(n.id.as_str()),
+            name: &n.name,
+            archetype: &n.persona.archetype,
+            speech_style: &n.persona.speech_style,
+            demeanor: n.persona.demeanor.as_deref(),
+            motivation: &n.persona.motivation,
+        })
+        .collect();
+
+    let doc = serde_json::json!({
+        "campaign_id": campaign.world.campaign_id.as_str(),
+        // The sidecar envelope a fresh `l10n/<lang>.json` must carry, taken from
+        // the stage docs (the existing sidecar's own version is preserved by the
+        // writing tool, not restated here).
+        "dsl_version": campaign.world.dsl_version,
+        "lang": lang,
+        "declared": campaign.world.content.languages.iter().any(|l| l == lang),
+        "sidecar_present": sidecar.is_some(),
+        "world_title": campaign.world.content.title,
+        "npcs": npcs,
+        "entries": entries,
+    });
+    match serde_json::to_string_pretty(&doc) {
+        Ok(s) => {
+            println!("{s}");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("internal error: cannot serialize inventory: {e}");
+            ExitCode::from(EXIT_INTERNAL)
+        }
     }
 }
 
