@@ -135,9 +135,13 @@ const FN_DIR: &str = "datapack/data/hello-world/function";
 fn move_npc_on_arrive_fires_on_final_waypoint_tick() {
     let out = built();
     let arrive = file(&out, &format!("{FN_DIR}/mv_arrive_keeper_exit.mcfunction"));
+    // The arrive bundle is reached ONLY through `schedule` (the walk driver), so
+    // the set-flag must re-bind the party itself — a bare `@s` here has no
+    // executor to resolve against and silently sets nobody's flag (AUDIT-P0; the
+    // full invariant lives in `tests/scheduled_executor.rs`).
     assert!(
-        arrive.contains("scoreboard players set @s dw.f_arrived 1"),
-        "the on_arrive set-flag must be emitted in the arrive bundle: {arrive}"
+        arrive.contains("execute as @a run scoreboard players set @s dw.f_arrived 1"),
+        "the on_arrive set-flag must be emitted per-player in the arrive bundle: {arrive}"
     );
     let tick = file(&out, &format!("{FN_DIR}/mv_tick_keeper_exit.mcfunction"));
     assert!(

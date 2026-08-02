@@ -160,10 +160,19 @@ fn build_handoff_hello_world() -> BuildOutput {
     out
 }
 
-/// The generated PackTest templates of a build: `(file name, body)`.
+/// The generated PackTest **templates** of a build: `(file name, body)`.
+///
+/// Only `data/<ns>/test/` — the files PackTest discovers as tests. The suite
+/// datapack also carries ordinary `data/<ns>/function/` mechanism functions
+/// (e.g. the scheduled-executor probe), which are runtime code the templates
+/// drive, not templates, and are deliberately party-wide.
 fn templates(out: &BuildOutput) -> Vec<(String, String)> {
     out.iter()
-        .filter(|(p, _)| p.starts_with("packtest-datapack/") && p.ends_with(".mcfunction"))
+        .filter(|(p, _)| {
+            p.starts_with("packtest-datapack/")
+                && p.contains("/test/")
+                && p.ends_with(".mcfunction")
+        })
         .map(|(p, b)| {
             (
                 p.rsplit('/').next().unwrap().to_string(),
