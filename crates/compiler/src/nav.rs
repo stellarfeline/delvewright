@@ -194,8 +194,22 @@ impl MovePlan {
 /// stand *on* a water surface) — the two sets are disjoint and both gate
 /// standability, so nav / wave seating / relight / waypoint export never treat a
 /// flooded cell as walkable ground.
+///
+/// Collision classes (task #59, [`crate::assembled::Occupancy`]): `solid` holds
+/// only full-cube cells (passage-blocking AND valid floor); `tall` holds 1.5-tall
+/// fence/wall cells (passage-blocking, **never** valid floor — a walking player
+/// cannot jump 1.5, so a fence-top is not standable and the old full-solid model's
+/// "stand on the fence" routes are gone); `use_gates` holds closed fence-gate
+/// cells, passable for the **player** via an adventure-legal right-click (a
+/// "use-gate" edge, exported to the harness) but impassable for NPC/actor/wave
+/// walkers ([`World::without_gate_use`]) — and never valid floor either, so no
+/// route stands on a gate-top. Because a tall/gate cell is never floor, the cell
+/// above it has no footing, which also models the barrier's upper half blocking
+/// walk-overs at `y+1` for free.
 pub struct World {
     solid: BTreeSet<[i32; 3]>,
+    tall: BTreeSet<[i32; 3]>,
+    use_gates: BTreeSet<[i32; 3]>,
     flooded: BTreeSet<[i32; 3]>,
 }
 
@@ -206,8 +220,18 @@ impl World {
     /// falls out of the void world is passable (a hole), exactly as in game
     /// (task #42), not a phantom floor the model wrongly seats mobs on.
     pub fn from_plan(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Self {
-        let (solid, flooded) = crate::assembled::assembled_occupancy(plan, structures);
-        World { solid, flooded }
+        Self::from_occupancy(crate::assembled::assembled_occupancy(plan, structures))
+    }
+
+    /// Build the walkability model from a collision-classified [`Occupancy`]
+    /// (task #59) — the sets map across one-to-one.
+    pub fn from_occupancy(occ: crate::assembled::Occupancy) -> Self {
+        World {
+            solid: occ.solid,
+            tall: occ.tall,
+            use_gates: occ.use_gates,
+            flooded: occ.flooded,
+        }
     }
 
     /// Build the occupancy model exactly like [`World::from_plan`], then add
@@ -239,8 +263,42 @@ impl World {
         solid.extend(extra.iter().copied());
         World {
             solid,
+            tall: self.tall.clone(),
+            use_gates: self.use_gates.clone(),
             flooded: self.flooded.clone(),
         }
+    }
+
+    /// A copy of this world for **autonomous** walkers that cannot use gates —
+    /// wave mobs seated at spawn (task #59). Opening a fence gate is a right-click
+    /// USE, so for a mob acting on its own a closed gate is exactly a 1.5-tall
+    /// fence: the use-gate cells are folded into the tall-barrier set, and the
+    /// seating flood neither seats a mob in a gate threshold nor spills through
+    /// one. Scripted walks (`move-npc` / `move-actor`) deliberately do NOT use
+    /// this view — see [`plan_moves`]. A world with no use-gates is returned
+    /// unchanged in content (call sites skip the clone via
+    /// [`World::has_use_gates`]).
+    pub fn without_gate_use(&self) -> World {
+        let mut tall = self.tall.clone();
+        tall.extend(self.use_gates.iter().copied());
+        World {
+            solid: self.solid.clone(),
+            tall,
+            use_gates: BTreeSet::new(),
+            flooded: self.flooded.clone(),
+        }
+    }
+
+    /// Whether any closed fence-gate (use-gate) cell exists in this world.
+    pub fn has_use_gates(&self) -> bool {
+        !self.use_gates.is_empty()
+    }
+
+    /// Whether `c` is a closed fence-gate cell — a "use-gate": the player walks
+    /// through it after an adventure-legal right-click (task #59). Exported per
+    /// leg in the critical-path waypoint metadata so the harness knows the edge.
+    pub fn is_use_gate(&self, c: [i32; 3]) -> bool {
+        self.use_gates.contains(&c)
     }
 
     /// Build a [`World`] directly from a set of solid cells, with no water (test /
@@ -249,6 +307,8 @@ impl World {
     pub fn from_solid_cells(solid: BTreeSet<[i32; 3]>) -> Self {
         World {
             solid,
+            tall: BTreeSet::new(),
+            use_gates: BTreeSet::new(),
             flooded: BTreeSet::new(),
         }
     }
@@ -256,7 +316,12 @@ impl World {
     /// Build a [`World`] directly from disjoint solid + flooded cell sets (test /
     /// synthetic entry point for the flood-aware standability rules).
     pub fn from_solid_and_flooded(solid: BTreeSet<[i32; 3]>, flooded: BTreeSet<[i32; 3]>) -> Self {
-        World { solid, flooded }
+        World {
+            solid,
+            tall: BTreeSet::new(),
+            use_gates: BTreeSet::new(),
+            flooded,
+        }
     }
 
     /// Whether a cell is a valid standing position (feet + head passable, solid
@@ -435,11 +500,23 @@ impl World {
         self.solid.contains(&c)
     }
 
-    /// Whether a cell is occupied — a solid block **or** flooded by water (task
-    /// #45). An occupied cell cannot hold a walker's feet or head, and cannot be
-    /// jumped through. Water blocks passage but, unlike a solid, is never a floor.
+    /// Whether a cell contains block geometry a cutscene camera must not fly
+    /// through: a full-cube solid, a 1.5-tall fence/wall, or a fence gate (task
+    /// #59). Water does not clip a camera (pre-#45 behaviour preserved).
+    fn blocks_camera(&self, c: [i32; 3]) -> bool {
+        self.solid.contains(&c) || self.tall.contains(&c) || self.use_gates.contains(&c)
+    }
+
+    /// Whether a cell is occupied — a solid block, a 1.5-tall barrier (fence /
+    /// wall; task #59), **or** flooded by water (task #45). An occupied cell
+    /// cannot hold a walker's feet or head, and cannot be jumped through. Water
+    /// blocks passage but, unlike a solid, is never a floor; a tall barrier
+    /// likewise blocks passage but is never a floor (not standable on top). A
+    /// use-gate cell is deliberately NOT occupied here: the player passes it with
+    /// a right-click (walkers that cannot are routed on
+    /// [`World::without_gate_use`]).
     fn is_occupied(&self, c: [i32; 3]) -> bool {
-        self.solid.contains(&c) || self.flooded.contains(&c)
+        self.solid.contains(&c) || self.tall.contains(&c) || self.flooded.contains(&c)
     }
 
     /// Whether a cell is a valid standing position: the feet-cell and the
@@ -735,6 +812,15 @@ fn move_target(plan: &Plan, npc_id: &str, to_anchor: &str) -> Option<[i32; 3]> {
 
 /// Plan every `move-npc` in the campaign into a walked-path [`MovePlan`], deduped
 /// by `(npc, to_anchor)` in first-seen order. `DW0307` when a move is unroutable.
+///
+/// **Use-gate cells are walkable edges here** (task #59): a scripted walk is a
+/// compiler-emitted, supervised tp polyline fired by a campaign beat, and the
+/// beat's fiction controls the gate (the island ram leaves its pen only after the
+/// player has opened the pen gate to reach it). Routing through the openable
+/// threshold is strictly more faithful than the old full-solid model, which
+/// "proved" the same legs by hopping the body over a fence-top. Only autonomous
+/// placement (wave seating) uses the no-gate-use view — a spawned mob really
+/// cannot pass a closed gate on its own.
 pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError> {
     let mut out = Vec::new();
     let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
@@ -917,6 +1003,11 @@ fn first_blocked_fp(world: &World, start: [i32; 3], target: [i32; 3], fp: &Footp
 /// Plan every `move-actor` into a walked-path [`ActorMovePlan`] over the actor's
 /// footprint, deduped by `(actor, to_anchor)` in first-seen order. `DW0325` when a
 /// move is unroutable (names actor, leg, first blocked cell).
+///
+/// Use-gate cells are walkable edges for a scripted puppet walk, exactly as for
+/// `move-npc` (see [`plan_moves`]): the island ram's pen→mouth leg crosses the pen
+/// gate the player has just opened — through the threshold, no longer over the
+/// fence-top the full-solid model wrongly proved (task #59).
 pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>, NavError> {
     let mut out = Vec::new();
     let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
@@ -1118,7 +1209,7 @@ fn first_clip(world: &World, pts: &[[f64; 3]]) -> Option<(usize, [i32; 3])> {
                 (a[1] + (b[1] - a[1]) * f).floor() as i32,
                 (a[2] + (b[2] - a[2]) * f).floor() as i32,
             ];
-            if world.is_solid(cell) {
+            if world.blocks_camera(cell) {
                 return Some((seg, cell));
             }
         }
@@ -1388,8 +1479,10 @@ fn route_visited(
             })?;
         if leg_world.find_path(start, goal).is_none() {
             let gate_hint = if sealed.is_empty() {
-                "this is a wedged doorway seam or a void gap in the assembled layout (or, if the \
-                 jump is intended, a missing inter-area transport)."
+                "this is a wedged doorway seam, a void gap in the assembled layout, or an \
+                 unbroken 1.5-tall barrier (fence/wall) ring — a walking player can neither pass \
+                 through nor stand on top of a fence, so a pen needs a fence-gate opening (or, if \
+                 the jump is intended, a missing inter-area transport)."
             } else {
                 "a `close-gate` has sealed a gate region on/before this leg (a point of no \
                  return), and the forced path must re-cross it. Reopen it with `open-gate` \
@@ -1717,6 +1810,12 @@ pub struct LegRoute {
     /// The standable-cell A* path from the snapped `from` floor to the snapped `to`
     /// floor, inclusive of both endpoints.
     pub cells: Vec<[i32; 3]>,
+    /// The cells of `cells` that are closed fence gates the player must right-click
+    /// open to pass ("use-gate" edges, task #59), in path order. Exported in the
+    /// waypoint metadata so the harness bot knows the leg crosses a gate (its
+    /// pathfinder's `canOpenDoors` performs the adventure-legal click — harness
+    /// PR #110); always kept as thinned waypoints.
+    pub use_gates: Vec<[i32; 3]>,
 }
 
 /// Compute the proven A* cell route for every WALKED critical-path leg (transport
@@ -1741,11 +1840,17 @@ pub fn critical_path_routes(plan: &Plan, world: &World) -> Vec<LegRoute> {
             continue;
         };
         if let Some(cells) = world.find_path(start, goal) {
+            let use_gates = cells
+                .iter()
+                .copied()
+                .filter(|&c| world.is_use_gate(c))
+                .collect();
             out.push(LegRoute {
                 from,
                 to,
                 to_step: pair[1].src_step,
                 cells,
+                use_gates,
             });
         }
     }
@@ -2166,6 +2271,7 @@ mod tests {
             to: [3, 65, 0],
             to_step: 1,
             cells: vec![[0, 65, 0], [1, 65, 0], [2, 65, 0], [3, 65, 0]],
+            use_gates: Vec::new(),
         }];
         let err = verify_exported_routes(&world, &routes).unwrap_err();
         assert_eq!(err.code, DW_WAYPOINT_NOT_STANDABLE);
@@ -2180,6 +2286,7 @@ mod tests {
             to: [1, 65, 0],
             to_step: 1,
             cells: vec![[0, 65, 0], [1, 65, 0]],
+            use_gates: Vec::new(),
         }];
         assert!(verify_exported_routes(&world, &dry).is_ok());
     }
@@ -2282,6 +2389,162 @@ mod tests {
         let low = mk(true);
         assert!(low.standable([0, 65, 0]) && low.standable([2, 66, 0]));
         assert!(low.find_path([0, 65, 0], [2, 66, 0]).is_none());
+    }
+
+    // --- collision-accurate standability: fences / walls / fence gates (task #59) ---
+
+    /// A world from explicit collision classes (task #59): a flat solid floor at
+    /// `y-1` over `[0,w) × [0,d)` with the given `tall` (fence/wall) and
+    /// `use_gates` (closed fence gate) cells at stand level.
+    fn classified(w: i32, d: i32, y: i32, tall: &[[i32; 3]], use_gates: &[[i32; 3]]) -> World {
+        let mut solid = BTreeSet::new();
+        for x in 0..w {
+            for z in 0..d {
+                solid.insert([x, y - 1, z]);
+            }
+        }
+        World::from_occupancy(crate::assembled::Occupancy {
+            solid,
+            tall: tall.iter().copied().collect(),
+            use_gates: use_gates.iter().copied().collect(),
+            flooded: BTreeSet::new(),
+        })
+    }
+
+    /// The gateless ram-pen shape: a closed fence ring at stand level around an
+    /// interior anchor. `gate`, when set, replaces one ring cell with a closed
+    /// fence gate (a use-gate cell).
+    fn fence_ring_world(gate: Option<[i32; 3]>) -> World {
+        let y = 65;
+        let mut ring: Vec<[i32; 3]> = Vec::new();
+        for i in 1..=5 {
+            ring.push([i, y, 1]);
+            ring.push([i, y, 5]);
+            ring.push([1, y, i]);
+            ring.push([5, y, i]);
+        }
+        let gates: Vec<[i32; 3]> = gate.into_iter().collect();
+        ring.retain(|c| !gates.contains(c));
+        classified(7, 7, y, &ring, &gates)
+    }
+
+    #[test]
+    fn fence_top_is_not_standable_and_fence_is_not_passable() {
+        // The owner-hit island bug, modelled: a 1.5-tall oak_fence is neither a
+        // floor (no walking player can jump 1.5 onto its top) nor a passable cell.
+        let world = classified(3, 1, 65, &[[1, 65, 0]], &[]);
+        assert!(
+            !world.standable([1, 66, 0]),
+            "a fence-top cell must not be standable (the old full-solid model's bug)"
+        );
+        assert!(
+            !world.standable([1, 65, 0]),
+            "the fence cell itself must not be passable"
+        );
+        // The two floor cells beside it are fine but no longer connected.
+        assert!(world.standable([0, 65, 0]) && world.standable([2, 65, 0]));
+        assert!(
+            world.find_path([0, 65, 0], [2, 65, 0]).is_none(),
+            "no route through or over a fence line"
+        );
+    }
+
+    #[test]
+    fn gateless_fence_ring_is_dw0311() {
+        // The soundness hole the full-solid model had: a pen fenced on every side
+        // with NO gate "passed" the completability proof by standing the player on
+        // the fence-top. It must now be a DW0311 build failure.
+        let world = fence_ring_world(None);
+        let inside = [3, 65, 3];
+        let outside = [0, 65, 0]; // corner, outside the ring
+        assert!(world.standable(inside) && world.standable(outside));
+        let err = route_visited(
+            &world,
+            &[vp(outside, false), vp(inside, false)],
+            &[],
+            &linear,
+        )
+        .expect_err("a humanly impassable gateless fence ring must fail the proof");
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE); // DW0311
+        assert!(
+            err.message.contains("fence"),
+            "the message should name the barrier class: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn fence_ring_with_closed_gate_routes_through_it_as_a_use_gate_edge() {
+        // The island ram pen: the ring's only opening is a closed oak_fence_gate.
+        // The player passes it with an adventure-legal right-click, so the proof
+        // routes THROUGH the gate cell — a first-class use-gate edge, not a
+        // fence-top hop and not a harness workaround.
+        let gate = [3, 65, 1];
+        let world = fence_ring_world(Some(gate));
+        let inside = [3, 65, 3];
+        let outside = [3, 65, 0];
+        let path = world
+            .find_path(outside, inside)
+            .expect("the pen is enterable through its gate");
+        assert!(
+            path.contains(&gate),
+            "the proven route must pass through the gate cell: {path:?}"
+        );
+        assert!(world.is_use_gate(gate), "the gate cell is tagged use-gate");
+        // Every route cell is standable in the final model (the DW0314 guard).
+        for &c in &path {
+            assert!(world.is_standable(c), "route cell {c:?} standable");
+        }
+        assert!(
+            route_visited(
+                &world,
+                &[vp(outside, false), vp(inside, false)],
+                &[],
+                &linear
+            )
+            .is_ok()
+        );
+        // The gate is still never a floor: its top is not standable.
+        assert!(!world.standable([3, 66, 1]));
+    }
+
+    #[test]
+    fn autonomous_walkers_treat_a_closed_gate_as_a_fence() {
+        // A wave mob acting on its own cannot right-click: on the no-gate-use view
+        // (wave seating) the pen is sealed again.
+        let gate = [3, 65, 1];
+        let world = fence_ring_world(Some(gate));
+        let entity_world = world.without_gate_use();
+        assert!(world.has_use_gates() && !entity_world.has_use_gates());
+        assert!(
+            entity_world.find_path([3, 65, 0], [3, 65, 3]).is_none(),
+            "a non-player walker must not route through a closed gate"
+        );
+        // Wave seating never picks the gate threshold or anything past it.
+        let cells = entity_world.confined_standable_cells([3, 65, 3], ([2, 64, 2], [4, 66, 4]));
+        assert!(!cells.is_empty());
+        assert!(!cells.contains(&gate), "no mob seated in the gate cell");
+    }
+
+    #[test]
+    fn open_fence_gate_is_a_passable_threshold_with_no_use_tag() {
+        // An authored-open gate (block state open=true) is just a passable cell:
+        // no use-gate tag, and even gate-incapable walkers pass it.
+        let world = classified(3, 1, 65, &[], &[]); // flat; the "gate" cell is plain air
+        assert!(world.find_path([0, 65, 0], [2, 65, 0]).is_some());
+        assert!(!world.is_use_gate([1, 65, 0]));
+    }
+
+    #[test]
+    fn camera_dolly_clips_fences_and_closed_gates() {
+        // A fence contains visible geometry: a cutscene camera flying through its
+        // cell is a DW0308 clip, exactly like a full solid — and so is a closed
+        // fence gate (the camera would fly through the gate leaves).
+        let world = classified(5, 3, 65, &[[2, 65, 1]], &[[2, 65, 2]]);
+        let through_fence = [[0.5, 65.5, 1.5], [4.5, 65.5, 1.5]];
+        assert_eq!(first_clip(&world, &through_fence), Some((0, [2, 65, 1])));
+        let through_gate = [[0.5, 65.5, 2.5], [4.5, 65.5, 2.5]];
+        assert_eq!(first_clip(&world, &through_gate), Some((0, [2, 65, 2])));
     }
 
     #[test]

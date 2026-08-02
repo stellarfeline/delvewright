@@ -1819,6 +1819,16 @@ fn plan_wave_spawns(
     plan: &Plan,
     world: &crate::nav::World,
 ) -> Result<WavePlacements, BuildFailure> {
+    // Wave mobs cannot right-click a fence gate open: seat them on the
+    // no-gate-use view, where a closed gate cell is a 1.5-tall barrier — never a
+    // seat, and never a doorway the seating flood spills through (task #59).
+    let entity_world_owned;
+    let world: &crate::nav::World = if world.has_use_gates() {
+        entity_world_owned = world.without_gate_use();
+        &entity_world_owned
+    } else {
+        world
+    };
     let c = plan.campaign;
     let mut out: WavePlacements = BTreeMap::new();
     for w in &c.quests.content.waves {

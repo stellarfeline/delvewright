@@ -497,11 +497,17 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   positions; a waypoint at each corner/floor-height change **and the corridor commit
   cell one step past each corner** — task #45: a wide-room→corridor corner is
   range-1-satisfiable from an off-route pocket beside it, so the post-corner cell
-  gives the harness a close corridor-axis target for its stall-recovery). The
+  gives the harness a close corridor-axis target for its stall-recovery). A leg
+  that walks through a closed fence gate carries a `use_gates` array (task #59):
+  the gate cells the player right-clicks open (an adventure-legal USE), each also
+  force-kept as an explicit waypoint (never thinned away mid-run); the field is
+  omitted for gate-free legs, so gate-free campaigns stay byte-identical. The
   harness replays these as successive nearby pathfinder goals so no single distant
-  A* solve strands the bot on a large open cave. **Validation metadata, not shipped
-  gameplay** — excluded from the delve image (like `packtest-datapack/`); emitted
-  only when a walked critical leg exists, so a fully-transported campaign stays
+  A* solve strands the bot on a large open cave (its pathfinder's `canOpenDoors`
+  performs the gate click — harness PR #110, whose fence-lip waypoint filter
+  remains as defence-in-depth). **Validation metadata, not shipped gameplay** —
+  excluded from the delve image (like `packtest-datapack/`); emitted only when a
+  walked critical leg exists, so a fully-transported campaign stays
   byte-identical.
 - `<out>/render-plan.json` **player-POV shots** (`crate::render_plan::pov_shots`):
   the visual tier the owner's concern demands — the *player's own eye*, not the
@@ -573,6 +579,43 @@ unchanged — and it is load-bearing for the `DW0342` trap proof: a player must 
 routed *onto* a trigger cell (so the compiler can prove the trap avoidable or not),
 never around a phantom "solid" plate that would call every trap avoidable.
 
+**Collision classes (task #59, `crate::assembled::Occupancy`).** The occupancy is
+no longer a single every-non-air-block-is-a-1×1×1-cube solid set; cells are
+classified:
+
+| Class | Blocks | Walk through? | Stand on top? |
+|---|---|---|---|
+| solid | every other non-air block (full-cube, the conservative default) | no | yes |
+| tall barrier | `*_fence` (incl. `nether_brick_fence`), `*_wall` — 1.5-tall | no | **no** |
+| use-gate | closed `*_fence_gate` (1.5-tall, right-click-openable) | player: yes (USE); autonomous mobs: no | **no** |
+| passable | open `*_fence_gate` (block state `open=true`, read from the prefab palette), trap triggers | yes | no |
+| flooded | water reach | no | no |
+
+Modelled **precisely**: fences, walls, fence gates (open vs closed), trap
+triggers, water. Modelled **conservatively** — treated as a full solid cube, never
+as walkable-through: slabs, stairs, carpets, snow layers, doors, trapdoors, and
+every other partial-collision block (the only inaccuracy this can introduce is a
+floor face one cell off the true surface height, which may over-block a route but
+never over-proves one). The tall/gate classes close the owner-hit soundness hole:
+the full-solid model proved the island pen leg by standing the player ON TOP of a
+1.5-tall `oak_fence` (a "legal" +1 step no vanilla player or bot can perform —
+harness #110 worked around it by filtering fence-lip waypoints), and a gateless
+fence ring would have PASSED the completability proof while being humanly
+impassable (now `DW0311`). A tall/gate cell is never valid floor, which also
+models the barrier's upper half blocking same-level walk-overs for free. Closed
+fence gates are **use-gate** edges: walkable for the player (adventure-legal
+right-click, the same action a human performs), exported first-class per leg (see
+`use_gates` above) — and walkable for scripted `move-npc`/`move-actor` tp
+polylines, whose firing beat's fiction controls the gate (the island ram walks
+out through the pen gate the player just opened — through the threshold, no
+longer teleport-hopping the fence-top). Autonomous placement (`spawn-wave`
+seating) uses the no-gate-use view (`World::without_gate_use`): a spawned mob is
+never seated in a gate threshold and the seating flood never spills through a
+closed gate. Cutscene dolly clipping (`DW0308`) treats fence, wall, and gate
+cells as solids — they contain visible geometry. Water flow is unaffected:
+vanilla water flows only into air, so every non-air block (fences and gates
+included) dams the flood exactly as before.
+
 ### Entity placement: cells are centred, blocks are not
 
 Every entity the compiler **summons or teleports** is positioned at
@@ -609,8 +652,10 @@ head-clearance rule already proved clear.
 ### Nav (compile-time, over the assembled voxel grid)
 
 `move-npc` paths and the critical path are routed by A* over the placed-world
-block data (every non-air block is an obstacle; **water-flooded cells are
-impassable and are never valid floor**; gate cells are passable). Steps are
+block data (obstacles per the collision classes above — full-cube solids, 1.5-tall
+fence/wall barriers, closed fence gates for walkers that cannot use them;
+**water-flooded cells are impassable and are never valid floor**; compiler gate
+regions are passable). Steps are
 cardinal, one block up or down; a step **up** additionally requires head clearance
 to jump (the cell two above the source feet must be air), so a routed/exported path
 is one an entity — including the mineflayer bot — can actually walk (a ramp up under
@@ -883,7 +928,7 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0308` | `cutscene` camera dolly clips a solid block (checked per shot; the message names the shot and segment). |
 | `DW0309` | Mannequin NPC declares `skin.texture_id` but no `skins/<id>.png` to bake. |
 | `DW0310` | `spawn-wave` references a wave whose spawn anchor resolves in no assembled area (dangling spawn). |
-| `DW0311` | Critical path has a consecutive visited-anchor pair with no walkable A* connection and no inter-area transport (player stranded). |
+| `DW0311` | Critical path has a consecutive visited-anchor pair with no walkable A* connection and no inter-area transport (player stranded). Routed over the collision-classified occupancy (task #59), so a required anchor sealed behind an unbroken 1.5-tall fence/wall ring with no fence-gate opening fails here — the full-solid model wrongly proved such pens by standing the player on a fence-top. |
 | `DW0312` | A `spawn-wave` needs more standable spawn cells near its anchor than the anchor's own room provides (task #41). **Analysis-tier: exit 2**, like `DW02xx` — a content-design capacity mistake (shrink the wave or use a larger room), not a geometry defect; the message names the wave, area, and needed-vs-found count. |
 | `DW0313` | A placed gravity block (`sand`/`gravel`/`concrete_powder`/anvil/`dragon_egg`) despawns into the void at placement — an unsupported gravity floor over the `the_void` world falls out on the first block update, holing the shipped map even off the critical path (task #42). The authoritative gravity-settle gate (`crate::assembled`), not a downstream DW0311/DW0312 side effect. **Analysis-tier: exit 2** — a prefab/generator defect; the message attributes despawned cells+counts per piece and prescribes a non-falling substrate. Blocks that fall but **land on support** are faithfully modelled by the settle pass (no diagnostic): the shipped geometry is exact for every consumer, and the generator's own zero-unsupported invariant catches an *unintended* fall at authoring. Anti-dodge: swapping the floor palette to non-falling blocks to silence this is explicitly rejected — gravity floors are a first-class content need; add the substrate. |
 | `DW0314` | An exported critical-path waypoint is not standable in the FINAL assembled world (settled + water-flooded + relight fixtures) — the build-time self-check that makes the water-flow / post-nav-mutation divergence class structurally impossible to ship (task #45). Routes come from A* over that same world, so this fires only if a later pass mutates a cell nav relied on or an endpoint resolves off the walkable set; the message names the offending cell and leg. Fix the prefab/water or the assembly — never nudge the waypoint. |
