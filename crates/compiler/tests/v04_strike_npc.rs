@@ -26,7 +26,7 @@ const NS: &str = "hello-world";
 fn quests_doc(triggers: &str) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.4.0",
+  "dsl_version": "0.6.0",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -374,5 +374,92 @@ fn strike_talk_packtest_pins_the_single_hitbox_invariant() {
     assert!(
         body.contains("run data remove entity @s attack"),
         "the hand-written record is consumed (no residue):\n{body}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// `on: strike-npc` (DSL v0.6) — the first-class body-targeting form
+// ---------------------------------------------------------------------------
+
+/// A `strike-npc` trigger targeting `npc/keeper`, spelled with **no** `at`: its
+/// target is a character, not a cell.
+const STRIKE_NPC: &str = r#"{
+  "id": "trigger/wake",
+  "on": { "on": "strike-npc", "npc": "npc/keeper" },
+  "once": true,
+  "effects": [ { "type": "narrate", "style": "chat", "text": "He stirs." } ]
+}"#;
+
+/// The v0.6 spelling routes exactly like the pre-0.6 collision it replaces: the
+/// NPC's own interaction hitbox carries the trigger's tag, and nothing else is
+/// summoned. It is the *only* form that can express "hit the giant" — a
+/// `strike` at a world anchor summons a second entity the giant's body
+/// eclipses (`DW0359`), whereas this one has no cell to be eclipsed.
+#[test]
+fn strike_npc_rides_the_npc_hitbox_and_summons_nothing() {
+    let out = build(STRIKE_NPC);
+    let line = npc_hitbox_line(&out);
+    assert!(
+        line.ends_with(r#"Tags:["dw_npc_keeper","dw_trig_wake"]}"#),
+        "the NPC's hitbox must carry the strike-npc trigger's tag:\n{line}"
+    );
+    let standalone = all_functions(&out)
+        .lines()
+        .filter(|l| l.starts_with("summon minecraft:interaction ") && l.contains("dw_trig_wake"))
+        .filter(|l| !l.contains("dw_npc_keeper"))
+        .count();
+    assert_eq!(
+        standalone, 0,
+        "a strike-npc trigger must summon no entity of its own"
+    );
+}
+
+/// `strike-npc` needs no anchor to work, so it keeps working when the NPC is
+/// nowhere near any authored trigger anchor — the property that makes it the
+/// fix rather than a rename. The tick's detection is the same single selector
+/// reading the `attack` record; the dialogue's right-click record
+/// (`interaction`) is a different field on the same entity and is never
+/// consumed by it.
+#[test]
+fn strike_npc_detection_reads_attack_and_leaves_interaction_alone() {
+    let fns = all_functions(&build(STRIKE_NPC));
+    assert!(
+        fns.contains("if entity @e[tag=dw_trig_wake,nbt={attack:{}}]"),
+        "strike-npc must fire off the `attack` record:\n{fns}"
+    );
+    assert!(
+        fns.contains("execute as @e[tag=dw_trig_wake] run data remove entity @s attack"),
+        "…and consume exactly that record:\n{fns}"
+    );
+    assert!(
+        !fns.contains("dw_trig_wake] run data remove entity @s interaction"),
+        "the right-click record belongs to the NPC's dialogue and must be left alone:\n{fns}"
+    );
+}
+
+/// The PackTest the collision emits now covers `strike-npc` too, including the
+/// separability leg: a right-click record on the shared hitbox must leave the
+/// left-click trigger unfired.
+#[test]
+fn strike_npc_packtest_proves_the_two_click_streams_are_separate() {
+    let out = build(STRIKE_NPC);
+    let path = format!("packtest-datapack/data/{NS}/test/v04_strike_npc.mcfunction");
+    let body = std::str::from_utf8(out.get(&path).expect("strike packtest emitted")).unwrap();
+    assert!(
+        body.contains("tag=dw_npc_keeper,tag=dw_trig_wake"),
+        "packtest must assert the routing:\n{body}"
+    );
+    assert!(
+        body.contains("interaction set value {player:[I;0,0,0,0],timestamp:1L}"),
+        "packtest must drive a right-click record:\n{body}"
+    );
+    let after_rc = body
+        .split_once("interaction set value")
+        .expect("right-click leg present")
+        .1;
+    assert!(
+        after_rc.contains("assert score #rc_stnp dw.sys matches 0")
+            && after_rc.contains("assert score #trig_wake dw.sys matches 0"),
+        "…and prove the right-click neither wrote `attack` nor fired the trigger:\n{body}"
     );
 }

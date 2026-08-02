@@ -3831,10 +3831,10 @@ fn npc_summon_commands(
             p[0], p[1], p[2], npc.tag, cname_field
         ));
     }
-    // The interaction hitbox also carries the tag of every `strike` trigger
-    // watching this NPC's anchor — see `strike_trigger_tags_at`.
+    // The interaction hitbox also carries the tag of every left-click trigger
+    // that watches this NPC — see `npc_hitbox_trigger_tags`.
     let mut tags = vec![npc.tag.clone()];
-    tags.extend(strike_trigger_tags_at(c, anchor));
+    tags.extend(npc_hitbox_trigger_tags(c, anchor, &npc.npc_id));
     let tag_list = tags
         .iter()
         .map(|t| format!("\"{t}\""))
@@ -3871,33 +3871,49 @@ fn npc_summon_commands(
 /// Scope: `strike` only. Right-click (`use`) on an NPC already belongs to the
 /// dialogue advancement, so a co-located `use` trigger is an authoring
 /// conflict, rejected at validate time (`DW0350`).
-/// The first `(strike trigger, npc id, npc entity tag)` triple whose trigger
-/// anchor is also an NPC's stand anchor — the collision
-/// [`strike_trigger_tags_at`] resolves. Campaign order (deterministic); `None`
-/// when no campaign NPC shares an anchor with a `strike` trigger.
+/// The first `(trigger, npc id, npc entity tag)` triple whose trigger rides an
+/// NPC's own interaction hitbox — either a `strike-npc` naming that NPC (DSL
+/// v0.6) or a `strike` whose anchor is that NPC's stand anchor. The collision
+/// [`npc_hitbox_trigger_tags`] resolves. Campaign order (deterministic); `None`
+/// when no trigger rides an NPC.
 fn first_strike_trigger_on_npc<'a>(
     plan: &'a Plan,
 ) -> Option<(&'a delvewright_dsl::EnvTrigger, String, String)> {
-    use delvewright_dsl::TriggerOn;
     let c = plan.campaign;
     for t in &c.quests.content.triggers {
-        if !matches!(t.on, TriggerOn::Strike) {
-            continue;
-        }
         for n in &plan.npcs {
-            let anchor = c
+            let decl = c
                 .npcs
                 .content
                 .npcs
                 .iter()
-                .find(|d| d.id.as_str() == n.npc_id)
-                .map(|d| d.anchor.as_str());
-            if anchor == Some(t.at.as_str()) {
+                .find(|d| d.id.as_str() == n.npc_id);
+            let anchor = decl.map(|d| d.anchor.as_str()).unwrap_or("");
+            if trigger_rides_npc(t, anchor, &n.npc_id) {
                 return Some((t, n.npc_id.clone(), n.tag.clone()));
             }
         }
     }
     None
+}
+
+/// Whether `t` is a left-click trigger carried by the interaction hitbox of the
+/// NPC `npc_id` standing at `anchor`.
+///
+/// Two spellings, one mechanism. `strike-npc` (DSL v0.6) names the NPC
+/// **directly** and is the intended form: it works wherever the NPC stands and
+/// whatever its body is, because it never asks for a cell. A bare `strike` whose
+/// `at` happens to be the NPC's own anchor is the pre-0.6 spelling of the same
+/// thing, kept working: co-locating a second interaction entity with an NPC is
+/// the one-cell-two-hitboxes defect (`DW0350`/`DW0359`), so the compiler shares
+/// the NPC's hitbox instead of summoning one.
+fn trigger_rides_npc(t: &delvewright_dsl::EnvTrigger, anchor: &str, npc_id: &str) -> bool {
+    use delvewright_dsl::TriggerOn;
+    match &t.on {
+        TriggerOn::StrikeNpc { npc } => npc.as_str() == npc_id,
+        TriggerOn::Strike => !anchor.is_empty() && t.at_anchor() == Some(anchor),
+        _ => false,
+    }
 }
 
 /// True when `anchor` is a planned NPC's stand anchor — the cell where that
@@ -3916,16 +3932,19 @@ fn npc_stands_at(plan: &Plan, anchor: &str) -> bool {
     })
 }
 
-fn strike_trigger_tags_at(c: &delvewright_dsl::Campaign, anchor: &str) -> Vec<String> {
-    use delvewright_dsl::TriggerOn;
-    if anchor.is_empty() {
-        return Vec::new();
-    }
+/// The `dw_trig_<id>` tags every left-click trigger riding this NPC's hitbox
+/// contributes, in campaign declaration order (deterministic). Empty for an NPC
+/// no trigger watches, so every campaign without one stays byte-identical.
+fn npc_hitbox_trigger_tags(
+    c: &delvewright_dsl::Campaign,
+    anchor: &str,
+    npc_id: &str,
+) -> Vec<String> {
     c.quests
         .content
         .triggers
         .iter()
-        .filter(|t| matches!(t.on, TriggerOn::Strike) && t.at.as_str() == anchor)
+        .filter(|t| trigger_rides_npc(t, anchor, npc_id))
         .map(|t| format!("dw_trig_{}", plan::safe_local(t.id.as_str())))
         .collect()
 }
@@ -4809,9 +4828,10 @@ fn cutscene_fns(
 /// `setup_finish`. Approach triggers need no entity. Empty for a campaign with no
 /// triggers (byte-identical v0.2/v0.3).
 ///
-/// A `strike` trigger on an NPC's stand anchor gets **no entity of its own**:
-/// the NPC's interaction hitbox is the trigger's sole carrier
-/// ([`strike_trigger_tags_at`]). Emitting a second, exactly co-located hitbox
+/// A left-click trigger that rides an NPC — `strike-npc` (DSL v0.6), or the
+/// pre-0.6 `strike` on the NPC's own stand anchor — gets **no entity of its
+/// own**: the NPC's interaction hitbox is the trigger's sole carrier
+/// ([`npc_hitbox_trigger_tags`]). Emitting a second, exactly co-located hitbox
 /// here made the vanilla client's entity ray-pick ambiguous — an exact tie
 /// resolves to whichever entity the pick iterates first, in practice this
 /// world-init summon — so every right-click landed on an entity without the
@@ -4827,10 +4847,15 @@ fn env_trigger_setup(plan: &Plan) -> Vec<String> {
         if matches!(t.on, TriggerOn::Approach { .. }) {
             continue;
         }
-        if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, t.at.as_str()) {
+        // `strike-npc` never has a cell of its own; a `strike` on an NPC's stand
+        // anchor gives its cell up to that NPC's hitbox. Either way, no summon.
+        let Some(at) = t.at_anchor() else {
+            continue;
+        };
+        if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
             continue;
         }
-        if let Some(p) = anchor_point_any(plan, t.at.as_str()) {
+        if let Some(p) = anchor_point_any(plan, at) {
             let q = ent_xyz(p);
             out.push(format!(
                 "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_trig_{}\"]}}",
@@ -4870,12 +4895,17 @@ fn env_trigger_tick(plan: &Plan) -> Vec<String> {
             })
             .collect();
         match &t.on {
-            TriggerOn::Strike | TriggerOn::Use => {
-                let (rec, tag) = match t.on {
-                    TriggerOn::Strike => ("attack", "dw_trig"),
-                    _ => ("interaction", "dw_trig"),
+            TriggerOn::Strike | TriggerOn::Use | TriggerOn::StrikeNpc { .. } => {
+                // The two click streams are separate NBT fields on ONE
+                // `minecraft:interaction`: a left-click writes `attack`, a
+                // right-click writes `interaction`. That is what lets a
+                // `strike-npc` trigger share the hitbox with the NPC's dialogue
+                // — the dialogue advancement reads the right-click, this reads
+                // the left-click, and neither consumes the other's record.
+                let rec = match t.on {
+                    TriggerOn::Use => "interaction",
+                    _ => "attack",
                 };
-                let _ = tag;
                 // Fire when the interaction entity has recorded the event and (if
                 // gated) the party holds the flags; then clear the record.
                 let flag_cond = if flag_guard.is_empty() {
@@ -4891,7 +4921,7 @@ fn env_trigger_tick(plan: &Plan) -> Vec<String> {
                 ));
             }
             TriggerOn::Approach { range } => {
-                if let Some(p) = anchor_point_any(plan, t.at.as_str()) {
+                if let Some(p) = t.at_anchor().and_then(|at| anchor_point_any(plan, at)) {
                     // The proximity test stays per-player (`@a[distance=…]` — SOME
                     // party member walked in); the flag gate is a party read
                     // alongside it, no longer merged into the selector.
@@ -8044,6 +8074,28 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
             b.push(format!("function {ns}:tick"));
             b.push(format!("assert score #trig_{id} dw.sys matches 0"));
         }
+        // Separability — the property the whole `strike-npc` form rests on. One
+        // `minecraft:interaction` records the two click kinds in two distinct
+        // NBT fields: a left-click writes `attack`, a right-click writes
+        // `interaction`. Write the RIGHT-click record on the shared hitbox and
+        // tick: the left-click trigger must not fire and no `attack` record may
+        // appear. That is what lets the NPC's dialogue keep the right-click
+        // while this trigger takes the left-click on the very same entity.
+        if trigger.once {
+            b.push(format!("scoreboard players set #trig_{id} dw.sys 0"));
+        }
+        b.push(format!(
+            "data modify entity {hitbox} interaction set value {{player:[I;0,0,0,0],timestamp:1L}}"
+        ));
+        b.push(format!(
+            "execute store result score #rc_stnp dw.sys if data entity {hitbox} attack"
+        ));
+        b.push("assert score #rc_stnp dw.sys matches 0".to_string());
+        b.push(format!("function {ns}:tick"));
+        if trigger.once {
+            b.push(format!("assert score #trig_{id} dw.sys matches 0"));
+        }
+        b.push(format!("data remove entity {hitbox} interaction"));
         write("v04_strike_npc", b);
 
         // Round-6 island QA regression: the owner attacked the giant, then could

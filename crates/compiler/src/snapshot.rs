@@ -1029,7 +1029,7 @@ pub fn collect_targets(plan: &Plan) -> Vec<Target> {
     // Trigger regions: an `approach` trigger is a box of its range; `strike`/
     // `use` triggers are the single interaction-entity cell.
     for t in &c.quests.content.triggers {
-        let Some((area, pos)) = resolve_any_area(plan, t.at.as_str()) else {
+        let Some((area, pos)) = t.at_anchor().and_then(|at| resolve_any_area(plan, at)) else {
             continue;
         };
         let r = match t.on {

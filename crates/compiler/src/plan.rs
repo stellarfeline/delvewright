@@ -1362,7 +1362,9 @@ fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> Vec<String> 
     // avoided so the solver is not asked for an anchor an area's pool cannot fit.
     if campaign.world.content.areas.len() == 1 {
         for t in &campaign.quests.content.triggers {
-            set.insert(t.at.as_str().to_string());
+            if let Some(at) = t.at_anchor() {
+                set.insert(at.to_string());
+            }
             for e in &t.effects {
                 collect_effect_anchors(e, &mut set);
             }

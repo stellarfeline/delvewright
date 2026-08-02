@@ -88,7 +88,7 @@ fn ambush_desugars_to_a_one_shot_trigger() {
         .find(|t| t.id.as_str() == "trigger/door-turn")
         .expect("the ambush desugared to a trigger named after itself");
     assert!(trig.once, "an ambush springs once");
-    assert_eq!(trig.at.as_str(), "anchor/exit");
+    assert_eq!(trig.at_anchor(), Some("anchor/exit"));
     assert!(matches!(trig.on, TriggerOn::Approach { range: 3 }));
     let verbs: Vec<&str> = trig.effects.iter().map(|e| e.verb()).collect();
     assert_eq!(
