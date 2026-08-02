@@ -1,0 +1,63 @@
+{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "dialogue",
+  "content": {
+    "dialogues": [
+      {
+        "npc": "npc/keeper",
+        "root": "dlg/greeting",
+        "nodes": [
+          {
+            "id": "dlg/greeting",
+            "text": "Halt, traveler. The moor road is drowned and the gate stays shut. Well? Do we hold, or do you run?",
+            "options": [
+              {
+                "label": "Who are you?",
+                "next": "dlg/lore"
+              },
+              {
+                "label": "We hold. I will stand the watch with you.",
+                "effects": [
+                  { "type": "set-flag", "flag": "flag/wait" },
+                  { "type": "complete-objective", "objective": "obj/decide" }
+                ]
+              },
+              {
+                "label": "I run. Keep your drowned road.",
+                "effects": [
+                  { "type": "set-flag", "flag": "flag/flee" },
+                  { "type": "complete-objective", "objective": "obj/decide" }
+                ]
+              },
+              {
+                "label": "The watch is stood.",
+                "requires_flags": ["flag/wait"],
+                "next": "dlg/watch"
+              }
+            ]
+          },
+          {
+            "id": "dlg/lore",
+            "text": "I am the Keeper. I have watched this gate since the moor swallowed the old road.",
+            "options": [
+              { "label": "Back.", "next": "dlg/greeting" }
+            ]
+          },
+          {
+            "id": "dlg/watch",
+            "text": "So it is. Dawn, and the moor kept its distance. The gate is yours.",
+            "options": [
+              {
+                "label": "Open it.",
+                "effects": [
+                  { "type": "complete-objective", "objective": "obj/watch" }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -5,6 +5,9 @@
 //! - [`registry`]: the full pinned-MC item registry and prefab/anchor metadata.
 //! - [`commands`]: the vendored 1.21.11 Brigadier command-tree validator.
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
+//! - [`flow`]: the branch-coherent flag/quest flow model — XOR dialogue branches,
+//!   gate-conditional flag producers, the single-branch critical-path extraction
+//!   and its step-by-step replay proof (`DW0204`).
 //! - [`plan`]: resolve the campaign into a placement/naming model.
 //! - [`nav`]: compile-time pathfinding over the solved voxel grid — collision-safe
 //!   `move-npc` walked paths (`DW0307`) + cutscene air-corridor checks (`DW0308`).
@@ -36,6 +39,7 @@ pub mod continuity;
 pub mod creator;
 pub mod edit;
 pub mod emit;
+pub mod flow;
 pub mod gates;
 pub mod light;
 pub mod load;

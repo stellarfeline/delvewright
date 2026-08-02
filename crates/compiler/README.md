@@ -26,8 +26,9 @@ cargo test -p delvewright-compiler                   # unit + integration tests
 Tests read the prefab library (`campaigns/prefabs/*.nbt`, git-lfs) from the
 content repo checked out at `campaigns/` (spec-0007 Step 0). Integration tests:
 `tests/cli.rs` (the ADR-0006 double-build byte-identity gate + `--lang` builds),
-`tests/analyze.rs` (reachability + dark-mitigation fixtures), `tests/solver.rs`
-(layout determinism / overlap), `tests/emit.rs`, `tests/v04.rs`.
+`tests/analyze.rs` + `tests/flow.rs` (reachability, branch coherence, path
+replay), `tests/solver.rs` (layout determinism / overlap), `tests/emit.rs`,
+`tests/v04.rs`.
 
 ## Module map (`src/`)
 
@@ -37,7 +38,8 @@ content repo checked out at `campaigns/` (spec-0007 Step 0). Integration tests:
 | `lib.rs` | Version constants; re-exports. |
 | `load.rs` | Read a campaign dir (6 stage docs + `l10n/` sidecars) into raw bytes. |
 | `registry.rs` | Full pinned-1.21.11 item/entity registries + `PrefabRegistry` (anchors, pools, lighting) injected into DSL validation. |
-| `analyze.rs` | Deep quest/objective/dialogue reachability + dark-light mitigation (`DW02xx`, exit 2). |
+| `analyze.rs` | Branch-coherent quest/objective/dialogue reachability diagnostics (`DW02xx`, exit 2). |
+| `flow.rs` | The flow model behind it: XOR dialogue branches, gate-conditional flag producers, single-branch critical-path extraction + step-by-step replay proof (`DW0204`). |
 | `solver.rs` | Jigsaw layout solver — grows a socket-graph layout from the seed, emits `/place template` per piece (`DW030x`). |
 | `plan.rs` | Resolve a validated campaign → placement + naming model; assembled voxel grid. |
 | `nav.rs` | Compile-time A* over the voxel grid: `move-npc`/`move-actor` (footprint-aware) routing, cutscene clip, critical-path walkability (`DW0307`/`DW0308`/`DW0311`/`DW0325`); per-entity dims table + `Footprint`. |

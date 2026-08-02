@@ -65,7 +65,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 2 | Parse (serde, `deny_unknown_fields`) | `dsl::parse_campaign` | `DW0100` (exit 1) |
 | 3 | Validate stages 1–7 (schema + referential, full injected registries) | `dsl::validate_campaign_with` | `DW01xx` (exit 1) |
 | 4 | l10n sidecar coverage + reserved marker channel | `dsl::validate_l10n`, `dsl::validate_marker_channel` | `DW0180`/`DW0181`/`DW0182` (exit 1) |
-| 5 | Analyze (deep quest/dialogue reachability) | `compiler::analyze` | `DW02xx` (exit 2) |
+| 5 | Analyze (branch-coherent quest/dialogue reachability + critical-path replay) | `compiler::analyze` over `compiler::flow` | `DW02xx` (exit 2) |
 | 6 | Solve jigsaw layout (per `prefab_pool` area, from seed) | `compiler::solver` | `DW030x` (exit 3) |
 | 7 | Assemble world model (placed pieces → voxel grid; ocean sea-level datum check) | `compiler::plan` | `DW030x`/`DW0344` (exit 3) |
 | 8 | Replay the stage-7 edit script over the assembled model (spec-0017; per-batch invariant re-proofs — gravity, relight, walkability, boundary safety). Skipped entirely for a campaign without one (byte-identical). | `compiler::edit` | `DW0322`/`DW0323` + reused invariant codes, batch-attributed (tier per code) |
@@ -1237,28 +1237,74 @@ cover); the author decides.
 
 `DW0210`/`DW0211` are emitted by the assembled-world light model
 (`crate::light`), surfaced through the build path but mapped to exit 2 (analysis
-tier) in `main`; `DW0201`–`DW0203` come from `compiler::analyze` reachability.
+tier) in `main`; `DW0201`–`DW0204` come from `compiler::analyze` over the
+branch-coherent flow model (`compiler::flow`).
 
 | Code | Meaning |
 |------|---------|
 | `DW0201` | Finale quest can never complete (unreachable finale). |
 | `DW0202` | Quest can never be triggered (dead quest — its trigger source never completes). |
-| `DW0203` | Objective can never be completed (deadlock: unsatisfiable `after` chain, or a `talk-to` completing option unreachable through the trigger/`after` graph). |
+| `DW0203` | Objective can never be completed **in any branch** (deadlock: unsatisfiable `after` chain, an unproducible `requires_flags` gate, or a `talk-to` completing option unreachable through the trigger/`after`/dialogue graph). |
+| `DW0204` | The exported critical path is not a playthrough any player can walk: some step is not activatable/completable at its position, or `campaign-complete` fires before the final step (the signature of two mutually exclusive endings sharing one path). Names the first incoherent step. |
 | `DW0210` | **Measured** (spec-0010): a reachable walkable cell of an area is below light 3, under the darkest reachable (time, weather) sky, with no `lighting` declaration and no `mitigation` declaration. Judged over the assembled world (per-seam, sealed-cavity aware — unreachable cavities are never counted). Admission `LightingProfile` is no longer a gating input. **v0.6:** keys on the stage-1 `areas[].mitigation` declaration; the display-name heuristic is deleted, so a renamed water bottle in a class kit no longer passes the gate. |
 | `DW0211` | An area's declared relight `fixture` cannot raise every reachable walkable cell to `min_light` — no valid placement site remains (spec-0010). |
 
+**The branch-coherent flow model (`compiler::flow`).** Reachability is not one
+union fixpoint over "every `set-flag` anywhere". A **choice group** is a dialogue
+node with ≥2 options that each set a flag — taking one means not taking its
+siblings, so the options are XOR alternatives. A **world** picks one alternative
+per group (the product over the *flag-reading* groups only, capped at 512;
+groups past the cap stay unconstrained, i.e. exactly the pre-model behavior).
+The fixpoint runs **per world**, and a quest/objective is reported unreachable
+only when it is unreachable in **every** world — so the branch model makes
+`DW0202`/`DW0203` strictly more precise, never looser.
+
+A flag producer is conditional on its gating context:
+
+| Producer | Available when |
+|----------|----------------|
+| `set-flag` in `on_objective_complete[o]` | `o` is completable **and** every `requires_flags` gate on the enclosing effect chain is satisfied |
+| `set-flag` in a quest's `on_complete` | that quest completes, same gate rule |
+| `set-flag` on a dialogue option | the option is reachable from its tree `root` through options whose own gates are satisfied, and is the world's selected alternative of its group |
+| `set-flag` in an environment trigger's `effects` | the trigger's `requires_flags` are satisfied — **ambient** (a `strike`/`use`/`approach` trigger is player-initiated and has no DAG position) |
+| a trap's `disarm.sets_flag` | the trap's `requires_flags` are satisfied (ambient, same reasoning) |
+| `set-flag` in an `on_respawn` / `on_caught` reaction bundle | **never** — reaction bundles fire at statically unknowable times, so nothing inside one is a producer (the conservative stance `compiler::continuity` already takes) |
+
+Consequences worth stating plainly: a `set-flag` gated on the very flag it sets
+(the "re-affirm the branch" idiom) produces nothing; a flag produced only on the
+`flag/flee` branch cannot satisfy a gate on the `flag/wait` branch; and flags set
+from dialogue, triggers and trap disarms are first-class producers, so those
+legitimate shapes no longer die as spurious `DW0203`.
+
+**The exported critical path is one branch (`DW0204`).** `compiler::plan` does
+not walk the finale's whole stage-4 `depends_on` closure. It walks the
+**playthrough** the flow model proves: the first world (deterministic
+enumeration order, all-first-alternative first) whose finale quest completes,
+restricted to the quests that complete in it, with each `talk-to` taking the
+completing dialogue option that belongs to that branch. Before export, the
+sequence is **replayed** step by step through the flag/objective/quest state
+machine: every step's quest must be active, its `after` prerequisites completed,
+its `requires_flags` set and its `forbids_flags` unset *at that position*, its
+completing dialogue option reachable *at that position*, and `campaign-complete`
+must fire exactly at the final step. The first violation is `DW0204`, naming the
+step. `compiler::plan`'s gate-aware reachability (`DW0306`) judges the same
+sequence, so the static proofs and the exported bot contract agree by
+construction. When no world completes the finale the campaign is already
+`DW0201`; the model then degenerates to the whole closure so the geometry-only
+commands (`chart`, `snapshot`) still run on an unanalyzable campaign.
+
 **`forbids_flags` and producibility (v0.6, conservative).** The reachability
 fixpoint models `requires_flags` producibility (a gating flag must be producible
-by an already-completable producer) but deliberately **ignores** `forbids_flags`:
-whether a forbidden flag is set when an element is needed depends on play order —
-full temporal reasoning the static layer does not attempt. An element with a
-negative gate is therefore treated as fireable (a listed flag may simply not be
-set on some valid play-through), so `forbids_flags` can never cause a spurious
-`DW0202`/`DW0203` — and a genuinely un-completable forbids arrangement is not
-statically proven here; the runtime validation ladder (PackTest + bot) is the
-arbiter. The static guarantees that DO hold: every `forbids_flags` reference
-resolves to a produced flag (`DW0172`), and a completing dialogue option gated
-only by `forbids_flags` still counts as gated for `DW0191`.
+by an already-completable producer on the same branch) but deliberately
+**ignores** `forbids_flags`: whether a forbidden flag is set when an element is
+needed depends on play order — full temporal reasoning the existence fixpoint
+does not attempt. An element with a negative gate is therefore treated as
+fireable, so `forbids_flags` can never cause a spurious `DW0202`/`DW0203`. The
+**compensating stronger check** is the `DW0204` path replay, which does have a
+concrete order and enforces every negative gate at its real position on the
+exported path. The other static guarantees that hold: every `forbids_flags`
+reference resolves to a produced flag (`DW0172`), and a completing dialogue
+option gated only by `forbids_flags` still counts as gated for `DW0191`.
 
 ### DW03xx — build / solver / nav (`compiler`; error; exit 3, `stage:"build"`)
 
