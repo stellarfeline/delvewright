@@ -506,7 +506,7 @@ fn pack_note(sha1: &str, skins: &BTreeMap<String, Vec<u8>>, art: bool) -> String
     }
     if art {
         s.push_str(
-            "Art-title font (spec-0014): `delve:art` — an original large-glyph bitmap\n\
+            "Art-title font (spec-0014): `delve:art` — an original 5x7 pixel bitmap\n\
              font at `assets/delve/font/art.json` (+ `assets/delve/textures/font/art.png`),\n\
              used by `narrate` `style: art`.\n",
         );

@@ -1,6 +1,6 @@
 //! Sound + art-title surface (DSL v0.6, spec-0014): sound-event validation
 //! (`DW0326`), the deferred `play-sound at: actor` gate (`DW0335`), and the
-//! large-glyph "art" title font (`delve:art`) with its compile-time glyph-coverage
+//! pixel-banner "art" title font (`delve:art`) with its compile-time glyph-coverage
 //! check (`DW0328`).
 //!
 //! ## Art font provenance / license
@@ -164,14 +164,46 @@ pub const CELL: usize = 8;
 pub const GW: usize = 5;
 const GH: usize = 7;
 
+/// The integer factor the bitmap provider renders each source pixel at.
+///
+/// A vanilla bitmap provider scales its atlas by `height / cellHeight`, so this is
+/// the one knob that sets how physically large an art title draws. It must stay an
+/// **integer**: the font atlas is sampled nearest-neighbour, so a fractional factor
+/// splits a source pixel across screen pixels and the glyph edges go ragged.
+///
+/// It is **1** (source size, 1 texel = 1 font px). It was 4 through v0.6, which drew
+/// a 21-font-px advance per glyph — and since an art `narrate` renders in the vanilla
+/// **title** slot, at that slot's ×4 pose scale, the two multiplied: `budget(Art)` is
+/// 90 font px, so only *four* glyphs fit and every real banner ran off both edges
+/// (owner-confirmed on screen, QA round 5: `NOBODY` at 126 px, `HOMEWARD` at 168 px).
+/// Halving to 2 was not enough — 11 px/glyph fits 8, which `HOMEWARD` exactly
+/// exhausts. 1 is the largest integer factor that fits **15** glyphs, clearing the
+/// ≥12 an ending banner needs with headroom. The glyph is still drawn ×4 by the title
+/// pose, so it reads as a title-sized blocky banner, not as body text; only its
+/// oversize relative to the slot is gone.
+pub const ART_SCALE: usize = 1;
+
 /// The `delve:art` bitmap provider's rendered glyph height in font pixels, and the
-/// baseline offset. The atlas cell is [`CELL`] px tall, so the provider renders each
-/// glyph at `ART_HEIGHT / CELL` = 4× its source size — that scale is what makes an
-/// art title a full-width banner, and it is what [`crate::textfit`] measures against.
-pub const ART_HEIGHT: usize = 32;
-const ART_ASCENT: usize = 28;
-/// The advance the art font's `space` provider gives a space, in font pixels.
-pub const ART_SPACE_ADVANCE: usize = 16;
+/// baseline offset. Both derive from [`ART_SCALE`] so the provider JSON, the atlas
+/// and [`crate::textfit`]'s width model cannot drift apart.
+pub const ART_HEIGHT: usize = CELL * ART_SCALE;
+/// The baseline offset: the glyph ink is [`GH`] of the [`CELL`] rows, sitting on the
+/// baseline, so the ascent scales with the glyph.
+const ART_ASCENT: usize = GH * ART_SCALE;
+
+/// The advance a single art glyph occupies, in font pixels.
+///
+/// Vanilla's `BitmapProvider` derives a glyph advance as
+/// `round(inkWidth * height / cellHeight) + 1`. Every letter and digit in
+/// [`ART_GLYPHS`] inks the full [`GW`] columns, so this is exact for them; the few
+/// narrow punctuation glyphs (`'`, `(`, `!`) ink fewer columns and really advance
+/// less, which makes this model **conservative** — it never under-measures a line.
+/// This is the single source both the font emission and `DW0330` read.
+pub const ART_GLYPH_ADVANCE: usize = GW * ART_SCALE + 1;
+
+/// The advance the art font's `space` provider gives a space, in font pixels — the
+/// vanilla default font's 4 px, scaled with the glyphs so word gaps stay proportional.
+pub const ART_SPACE_ADVANCE: usize = 4 * ART_SCALE;
 
 /// True if the campaign uses the art title style anywhere (so the font is only
 /// baked into the pack when needed — a non-art campaign's pack is byte-identical).

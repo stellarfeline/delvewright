@@ -1851,10 +1851,12 @@ pub enum NarrateStyle {
     Title,
     /// An on-screen subtitle.
     Subtitle,
-    /// A large-glyph "art" title rendered through the delve's custom resource-pack
-    /// font (`delve:art`) so endings can flash big art text (DSL v0.6, spec-0014).
-    /// Text is checked at compile time against the font's glyph inventory
-    /// (`DW0328`); characters outside it (e.g. non-Latin script) are rejected.
+    /// An "art" title rendered through the delve's custom resource-pack pixel-banner
+    /// font (`delve:art`) so endings can flash blocky all-caps text (DSL v0.6,
+    /// spec-0014). Text is checked at compile time against the font's glyph inventory
+    /// (`DW0328`); characters outside it (e.g. non-Latin script) are rejected. It
+    /// renders in the vanilla title slot, so it is width-checked like any title
+    /// (`DW0330`) — roughly 15 glyphs fit on screen.
     Art,
 }
 
