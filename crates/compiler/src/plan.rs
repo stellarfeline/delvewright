@@ -39,6 +39,16 @@ pub const BASE_Y: i32 = 64;
 /// bedrock/stone/water layer stack (1 + 118 + 8 from the -64 build floor) tops the
 /// water at y=62. Emission pins the same stack in `generator-settings`.
 pub const SEA_LEVEL: i32 = 62;
+/// Height of the `ocean` horizon superflat's water layer (spec-0013) — the `8`
+/// in the pinned `generator-settings` stack emission writes
+/// (`emit::emit_server`). Ambient water occupies `SEA_LEVEL - 7 ..= SEA_LEVEL`.
+pub const OCEAN_WATER_LAYERS: i32 = 8;
+/// Y of the topmost ambient **solid** block of the `ocean` horizon superflat: the
+/// sea floor (stone) directly under the water layers, at 54. The ambient model
+/// boundary safety reasons about (`nav::Sea`) starts here — below it the world is
+/// stone all the way to bedrock, which is why an ocean world has no void column
+/// anywhere.
+pub const SEA_FLOOR_TOP_Y: i32 = SEA_LEVEL - OCEAN_WATER_LAYERS;
 /// The island tileset's authored waterline (`prefabs/island-tileset.md`): every
 /// island piece puts its top water block at **local y=2**, with the walkable land
 /// plane one block above it at local y=3.
