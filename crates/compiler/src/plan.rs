@@ -128,6 +128,27 @@ pub struct ShortcutPlan {
     pub on_unlock: Vec<QuestEffect>,
 }
 
+/// A resolved stage-5 `timed-gate` (spec-0016 §4), in declared order.
+#[derive(Clone, Debug)]
+pub struct TimedGatePlan {
+    /// The full timed-gate id.
+    pub id: String,
+    /// The function/tag-safe local id.
+    pub safe: String,
+    /// The gate anchor name.
+    pub gate_anchor: String,
+    /// The gate region's inclusive corners (absolute world coords).
+    pub gate_region: ([i32; 3], [i32; 3]),
+    /// The block the region is filled with while closed.
+    pub gate_block: String,
+    /// Ticks open per cycle.
+    pub open_ticks: u32,
+    /// Ticks closed per cycle.
+    pub closed_ticks: u32,
+    /// Ticks after world init before the first open window.
+    pub phase: u32,
+}
+
 /// A resolved stage-5 `ambush` (spec-0016 §3), collected in declared order —
 /// the trigger cell and the cell each ambusher will stand on. An ambush whose
 /// anchors do not resolve carries no entry (and so no proof); the desugared
@@ -307,6 +328,8 @@ pub struct Plan<'a> {
     pub shortcuts: Vec<ShortcutPlan>,
     /// Resolved ambushes (spec-0016 §3), declaration-ordered.
     pub ambushes: Vec<AmbushPlan>,
+    /// Resolved timed gates (spec-0016 §4), declaration-ordered.
+    pub timed_gates: Vec<TimedGatePlan>,
     /// Resolved gate open/close firings (DSL v0.6), content-ordered — drives the
     /// `close-gate` completability model in `crate::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
@@ -1052,6 +1075,27 @@ impl<'a> Plan<'a> {
         // ---- ambushes (spec-0016 §3) ----
         let ambushes = collect_ambushes(campaign, &anchors);
 
+        // ---- timed gates (spec-0016 §4) ----
+        let timed_gates: Vec<TimedGatePlan> = campaign
+            .quests
+            .content
+            .timed_gates
+            .iter()
+            .filter_map(|g| {
+                let (from, to, block) = gate_region_block_any(&anchors, g.gate.as_str())?;
+                Some(TimedGatePlan {
+                    id: g.id.as_str().to_string(),
+                    safe: safe_local(g.id.as_str()),
+                    gate_anchor: g.gate.as_str().to_string(),
+                    gate_region: (from, to),
+                    gate_block: block,
+                    open_ticks: g.open_ticks,
+                    closed_ticks: g.closed_ticks,
+                    phase: g.phase,
+                })
+            })
+            .collect();
+
         // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
         let mut gate_events = collect_gate_events(campaign, &anchors, &objective_steps);
         // A shortcut gate is sealed from world-load and is opened only by an
@@ -1088,6 +1132,7 @@ impl<'a> Plan<'a> {
             traps,
             shortcuts,
             ambushes,
+            timed_gates,
             gate_events,
             strict_ancestor_steps,
             massing_bounds,

@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::ids::{
     ActorId, AmbushId, AnchorId, AreaId, ClassId, DialogueId, EditBatchId, FlagId, NpcId,
-    ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId, TrapId, TriggerId, WaveId,
+    ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId, TimedGateId, TrapId,
+    TriggerId, WaveId,
 };
 
 /// serde default helper: `true` (used by DSL v0.4 `trigger.once`).
@@ -780,6 +781,10 @@ pub struct QuestsContent {
     /// at exactly one layer boundary — the authored `.json` — with nothing
     /// downstream needing to know it was ever there. The list itself is kept in
     /// memory so diagnostics can name the ambush the author wrote.
+    /// Timed gates (spec-0016 §4): gates on a deterministic open/close clock.
+    /// Empty/absent in pre-0.6 campaigns (reserved `DW0141`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub timed_gates: Vec<TimedGate>,
     #[serde(default, skip_serializing)]
     pub ambushes: Vec<Ambush>,
     /// Whether [`Self::expand_ambushes`] has already run (never serialized). The
@@ -971,6 +976,40 @@ pub struct TrapDisarm {
     /// The flag set when the trap is disarmed (a new flag this trap produces; other
     /// objectives/triggers may read it via `requires_flags`).
     pub sets_flag: FlagId,
+}
+
+/// A stage-5 **timed gate** (spec-0016 §4): a gate region driven by a
+/// deterministic open/close clock, so passage is a timing read rather than a
+/// permanent state.
+///
+/// **The proof is deliberately NOT all-phase passability** (owner ruling
+/// 2026-08-02) — a gate that punishes bad timing is the entire point. What the
+/// compiler requires is that the gate is *readable*: the set of entry phases from
+/// which a walking player clears the span before it shuts must cover **≥ 20% of
+/// the cycle** (`DW0368`). Below that it is a coin flip, not a skill, and no
+/// amount of learning the level makes it fair.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TimedGate {
+    /// Unique timed-gate id (`timed-gate/<kebab>`).
+    pub id: TimedGateId,
+    /// The gate anchor the clock drives. Its prefab metadata must declare a fill
+    /// `block` (`DW0343`), the same requirement `close-gate` and `shortcut` have.
+    pub gate: AnchorId,
+    /// Ticks the gate stays OPEN each cycle (> 0).
+    pub open_ticks: u32,
+    /// Ticks the gate stays CLOSED each cycle (> 0).
+    pub closed_ticks: u32,
+    /// Ticks after world init before the first open window begins (default 0) —
+    /// how two gates in the same room are put out of step with each other. Must
+    /// be less than the full cycle.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub phase: u32,
+}
+
+/// serde `skip_serializing_if` helper: skip a `0`.
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 /// A stage-5 **ambush** (spec-0016 §3) — one declaration for a beat that

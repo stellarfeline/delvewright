@@ -243,6 +243,13 @@ pub mod codes {
     /// The telegraph is deliberately NOT required — an un-telegraphed ambush is
     /// core souls vocabulary (owner ruling 2026-08-02).
     pub const AMBUSH_INVALID: &str = "DW0365";
+    /// (spec-0016 §4) A `timed-gate` declaration is structurally invalid: a
+    /// malformed or duplicate `timed-gate/<id>`, an `open_ticks` or
+    /// `closed_ticks` of 0 (a gate that never opens, or never closes — neither is
+    /// a timing gate), a `phase` at or beyond the full cycle, or a gate another
+    /// `timed-gate` or a `shortcut` already owns (two clocks fighting over one
+    /// region, or a clock fighting a permanent open).
+    pub const TIMED_GATE_INVALID: &str = "DW0367";
     /// (v0.6) A trap dispense-payload item id is not in the pinned 1.21.11 registry
     /// (spec-0011; mirrors `DW0143`). Validation-tier (exit 1). Renumbered off the
     /// spec's stale reserved number (0198 — since taken).
