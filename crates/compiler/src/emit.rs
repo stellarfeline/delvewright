@@ -272,6 +272,11 @@ pub fn build_with_warnings(
     // to move a shot that was never the problem. Name the root cause instead.
     check_effect_anchors(plan)?;
 
+    // A dialogue node's conditionally-visible options are encoded as 2^n precomputed
+    // variants; past the cap that is a pack-size decision, and past 32 it was a
+    // compiler panic (DW0362).
+    check_dialogue_variant_cap(plan)?;
+
     // Actor spawn anchors must resolve to a world position (spec-0014); a spawn is a
     // summon, not a walk, so this needs no occupancy model. DW0325 if one dangles.
     crate::nav::check_actor_placement(plan)?;
@@ -454,28 +459,35 @@ pub fn build_with_warnings(
         }),
     );
     for (name, body) in &functions {
-        out.insert(
+        insert_unique(
+            &mut out,
             format!("datapack/data/{ns}/function/{name}.mcfunction"),
             body.clone().into_bytes(),
-        );
+            "function",
+            name,
+        )?;
     }
 
     // dialogs
     for (name, value) in emit_dialogs(plan) {
-        put_json(
+        insert_unique(
             &mut out,
-            &format!("datapack/data/{ns}/dialog/{name}.json"),
-            &value,
-        );
+            format!("datapack/data/{ns}/dialog/{name}.json"),
+            json_bytes(&value),
+            "dialog",
+            &name,
+        )?;
     }
 
     // advancements
     for (name, value) in emit_advancements(plan) {
-        put_json(
+        insert_unique(
             &mut out,
-            &format!("datapack/data/{ns}/advancement/{name}.json"),
-            &value,
-        );
+            format!("datapack/data/{ns}/advancement/{name}.json"),
+            json_bytes(&value),
+            "advancement",
+            &name,
+        )?;
     }
 
     // predicates — currently only the cutscene bounce's sneak-held gate (see
@@ -1312,6 +1324,13 @@ fn emit_functions(
             "execute if score #placed dw.sys matches 1 as @a[tag=!dw_joined] run function {ns}:join_place"
         ));
     }
+    // A player who disconnects mid-cutscene keeps `dw_cutscene` and spectator
+    // across the relog, but `cs_end_<bare>` is `@a`-scoped and already ran without
+    // them: they rejoin as a ghost, in a world they can fly through and not touch,
+    // with no way back. `join_place` cannot help — it is gated on `dw_joined`,
+    // which a relog also keeps. So the repair is its own tick clause, keyed on the
+    // stuck state itself. Empty for a cutscene-less campaign → byte-identical.
+    tick.extend(cutscene_repair_tick(plan));
     tick.push("scoreboard players enable @a dw.class".to_string());
     for npc in &plan.npcs {
         tick.push(format!(
@@ -1510,6 +1529,9 @@ fn emit_functions(
     fns.extend(emit_checkpoint_functions(plan));
     // --- v0.6 stealth-beat functions (spec-0014) ---
     fns.extend(emit_stealth_functions(plan));
+
+    // --- cs_repair: rejoin-after-cutscene repair (see the `tick` driver above) ---
+    fns.extend(cutscene_repair_fns(plan));
 
     // --- join_place: first-join placement (see the `tick` driver above) ---
     //
@@ -2113,6 +2135,133 @@ fn wave_spawn_pos(plan: &Plan, wave_id: &str) -> Option<[i32; 3]> {
     let w = plan::wave_of(c, wave_id)?;
     let area = plan::wave_area(c, wave_id)?;
     plan.point(area, w.anchor.as_str())
+}
+
+/// The closing line on the completion advancement: the authored `world.outro`
+/// (l10n key `world.outro`), else the finale quest's `goal` (key
+/// `quest.<id>.goal`) — the thing the party just accomplished, already inventoried
+/// and translated. Both are campaign content, so no English is baked in here.
+/// Falls back to the delve title only if the finale names no planned quest, which
+/// cross-stage validation (`DW0160`) already rejects.
+fn campaign_outro(c: &delvewright_dsl::Campaign) -> String {
+    if let Some(outro) = &c.world.content.outro {
+        return outro.clone();
+    }
+    let finale = c.quest_plan.content.finale.as_str();
+    c.quest_plan
+        .content
+        .quests
+        .iter()
+        .find(|q| q.id.as_str() == finale)
+        .map(|q| q.goal.clone())
+        .unwrap_or_else(|| c.world.content.title.clone())
+}
+
+/// `DW0362`: a dialogue node declares more conditionally-visible options than the
+/// variant-dialog encoding can carry. Validation-tier content-shape limit.
+pub const DW_DIALOGUE_VARIANT_CAP: &str = "DW0362";
+
+/// The most gated options one dialogue node may declare.
+///
+/// Vanilla has no conditional option inside a `dialog`, so the compiler encodes
+/// visibility by **precomputing every combination**: `n` gated options emit `2^n`
+/// dialog JSONs plus a `2^n`-clause dispatcher keyed on a `dw.dmask` bitmask. Ten
+/// is 1024 variants for a single node — already an order of magnitude past
+/// anything authorable (the largest node in any shipped campaign gates four), and
+/// the point past which the pack size, not the author, decides what the delve is.
+///
+/// There is a hard wall behind the soft one: the mask is built with `1u32 << i`
+/// (undefined past 31, a debug-build panic at 32 — the original symptom of this
+/// gap) and compared against a Minecraft scoreboard, i.e. an `i32`, so bit 31 is
+/// unrepresentable at runtime regardless. The cap keeps the build well clear of
+/// both, and turns a compiler panic into a coded content diagnostic that names the
+/// node.
+pub const MAX_GATED_DIALOGUE_OPTIONS: usize = 10;
+
+/// Fail the build if any dialogue node exceeds [`MAX_GATED_DIALOGUE_OPTIONS`]
+/// (`DW0362`). Runs before any variant emission so the `1u32 << n` shifts in
+/// `gated_node_choosers` / `emit_dialogs` are unreachable past the cap.
+fn check_dialogue_variant_cap(plan: &Plan) -> Result<(), BuildFailure> {
+    let v04 = campaign_is_v04(plan);
+    for npc in &plan.npcs {
+        let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        for opt in &npc.options {
+            if !seen.insert(opt.node_id.as_str()) {
+                continue;
+            }
+            let n = node_gated_options(npc, &opt.node_id, v04).len();
+            if n > MAX_GATED_DIALOGUE_OPTIONS {
+                return Err(BuildFailure::Diagnostic {
+                    code: DW_DIALOGUE_VARIANT_CAP,
+                    message: format!(
+                        "dialogue node `{}` on npc `{}` declares {n} conditionally-visible \
+                         options (`requires_flags` / `forbids_flags` / a `complete-objective` \
+                         effect); the cap is {MAX_GATED_DIALOGUE_OPTIONS}. Vanilla cannot hide a \
+                         dialog option, so the compiler precomputes every combination: this node \
+                         would emit 2^{n} dialog variants and a dispatcher of the same size. \
+                         Split the node into a short chain of nodes, or move some of the gating \
+                         onto the objective that reaches the node.",
+                        opt.node_id, npc.npc_id,
+                    ),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `DW0361`: two distinct generated artifacts sanitize to the same name, so one
+/// would silently overwrite the other in the emitted pack.
+pub const DW_NAME_COLLISION: &str = "DW0361";
+
+/// Insert an emitted artifact, refusing to let one silently overwrite another
+/// (`DW0361`).
+///
+/// Generated names are built by underscore-joining [`plan::safe_local`] outputs,
+/// and `safe_local` is doubly lossy: it drops the `<kind>/` prefix and maps `-`,
+/// `/` and `.` all to `_`. So a wave `wave/npc-x` and an NPC `npc/x` both name
+/// `spawn_npc_x`, and `move-npc npc/guard-a → anchor/post` collides with
+/// `npc/guard → anchor/a-post` (which also aliases their tick counters and
+/// re-entry sentinels — two live movement drivers sharing one score). The output
+/// map is a `BTreeMap`, so the loser used to vanish without a word: the wave simply
+/// never spawned.
+///
+/// Re-emitting the **same bytes** under the same name is fine and expected (the
+/// emitters dedup by content key, and several are called per-consumer), so only a
+/// genuine divergence fails the build.
+fn insert_unique(
+    out: &mut BuildOutput,
+    path: String,
+    bytes: Vec<u8>,
+    kind: &str,
+    name: &str,
+) -> Result<(), BuildFailure> {
+    if let Some(existing) = out.get(&path)
+        && existing != &bytes
+    {
+        return Err(BuildFailure::Diagnostic {
+            code: DW_NAME_COLLISION,
+            message: format!(
+                "two different generated {kind}s both sanitize to `{name}` — one would \
+                 silently overwrite the other at `{path}`. Generated names drop an id's \
+                 `<kind>/` prefix and fold `-`, `/` and `.` into `_`, so ids that look \
+                 distinct can collide (e.g. wave `wave/npc-x` with npc `npc/x`, or \
+                 `move-npc npc/guard-a → anchor/post` with `npc/guard → anchor/a-post`). \
+                 Rename one of the colliding ids so their sanitized local parts differ."
+            ),
+        });
+    }
+    out.insert(path, bytes);
+    Ok(())
+}
+
+/// The canonical pretty-printed bytes of an emitted JSON artifact — the same
+/// rendering [`put_json`] writes, factored out so collision detection can compare
+/// artifacts byte-for-byte before inserting.
+fn json_bytes(value: &Value) -> Vec<u8> {
+    let mut bytes = serde_json::to_vec_pretty(value).expect("json serializes");
+    bytes.push(b'\n');
+    bytes
 }
 
 /// `DW0360`: an anchor-bearing quest/trigger effect names an anchor that resolves
@@ -2981,8 +3130,9 @@ fn npc_summon_commands(
             let cname = json!({ "text": name }).to_string().replace('\'', "\\'");
             format!("'{cname}'")
         };
+        let pose = mannequin_pose_nbt(base);
         out.push(format!(
-            "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"],CustomName:{},CustomNameVisible:1b,VillagerData:{{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}}}}",
+            "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"],CustomName:{},CustomNameVisible:1b,VillagerData:{{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}}}}",
             p[0], p[1], p[2], npc.tag, cname_field
         ));
     }
@@ -3410,10 +3560,32 @@ fn actor_puppet_summon(a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> S
         } else {
             ""
         };
+        let pose = mannequin_pose_nbt(&a.entity);
         format!(
-            "summon {} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Invulnerable:{inv}b,DeathLootTable:\"minecraft:empty\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}}}",
+            "summon {} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Invulnerable:{inv}b,DeathLootTable:\"minecraft:empty\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}}}",
             a.entity, p[0], p[1], p[2]
         )
+    }
+}
+
+/// The `pose` NBT field a `minecraft:mannequin` needs, or `""` for any other
+/// entity — spliced into every summon whose entity id is author-supplied.
+///
+/// A mannequin summoned without an explicit `pose` serializes it as `DYING`, which
+/// the server then fails to encode at save time (`Failed to encode value 'DYING'`
+/// in a PackTest world's teardown log) and which is simply wrong data for a
+/// standing figure. The skinned NPC/actor paths hardcode `minecraft:mannequin` and
+/// have always emitted it; the paths that take the entity id **from content**
+/// (`npc.base_entity`, `actor.entity`, and the `unleash` twin, which has no skin
+/// branch at all) did not — so an author who spelled `minecraft:mannequin` by hand
+/// got the broken pose. Valid 1.21.11 mannequin poses: standing, crouching,
+/// swimming, fall_flying, sleeping (spec-0009 template).
+fn mannequin_pose_nbt(entity: &str) -> &'static str {
+    let id = entity.strip_prefix("minecraft:").unwrap_or(entity);
+    if id == "mannequin" {
+        ",pose:\"standing\""
+    } else {
+        ""
     }
 }
 
@@ -3428,8 +3600,9 @@ fn actor_twin_summon(a: &delvewright_dsl::Actor) -> String {
         .as_deref()
         .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)))
         .unwrap_or_default();
+    let pose = mannequin_pose_nbt(&a.entity);
     format!(
-        "summon {} ~ ~ ~ {{PersistenceRequired:1b,DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}}}",
+        "summon {} ~ ~ ~ {{PersistenceRequired:1b{pose},DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}}}",
         a.entity
     )
 }
@@ -3653,6 +3826,70 @@ fn campaign_has_cutscene(campaign: &delvewright_dsl::Campaign) -> bool {
         .any(|(eff, _)| eff.cutscene_shots().is_some_and(|s| !s.is_empty()))
 }
 
+/// The campaign-wide count of cutscenes currently playing. A refcount rather than
+/// a flag because nothing forbids two cutscenes overlapping (each `cs_<bare>` only
+/// guards re-entry into *itself*). Never initialized, so an `unless … matches 1..`
+/// test reads correctly before the first cutscene ever runs.
+const CS_LIVE: &str = "#cs_live";
+
+/// The `tick` clause that repairs a player stranded by a mid-cutscene disconnect.
+///
+/// The cutscene bracket is entirely `@a`-scoped: `cs_end_<bare>` restores gamemode,
+/// teleports, and removes [`CUTSCENE_TAG`] from *the players who are online when it
+/// ends*. A player who dropped during the shot is not among them, so they come back
+/// tagged, in spectator, with the marker they would have been teleported to already
+/// killed. `join_place` is no help — it is gated on `dw_joined`, which survives a
+/// relog exactly like the cutscene tag does.
+///
+/// The stuck state is decidable without any per-player bookkeeping: *tagged
+/// `dw_cutscene` while no cutscene is playing*. Empty for a cutscene-less campaign,
+/// so those packs stay byte-identical.
+fn cutscene_repair_tick(plan: &Plan) -> Vec<String> {
+    if !campaign_has_cutscene(plan.campaign) {
+        return Vec::new();
+    }
+    let ns = &plan.namespace;
+    vec![format!(
+        "execute unless score {CS_LIVE} dw.sys matches 1.. as @a[tag={CUTSCENE_TAG}] run function {ns}:cs_repair"
+    )]
+}
+
+/// The repair itself, per stranded player (`@s`): back to adventure, untagged, and
+/// returned to the party's live checkpoint.
+///
+/// The destination is `storage dw:cp pos` — the checkpoint mirror, seeded to the
+/// entry point at setup and rewritten by every `set-checkpoint` — because the
+/// cutscene's own saved position (a single `dw_csmark_<bare>` marker) is destroyed
+/// by `cs_end_<bare>` before this can ever run. It is a macro teleport for the same
+/// reason the boundary return is one: the mirror is an `[x, y, z]` list, not
+/// tp-shaped arguments. Emitted only when the campaign resolves an entry anchor,
+/// which is what seeds the mirror in the first place.
+fn cutscene_repair_fns(plan: &Plan) -> Vec<(String, String)> {
+    if !campaign_has_cutscene(plan.campaign) {
+        return Vec::new();
+    }
+    let ns = &plan.namespace;
+    let mut repair = vec![
+        "gamemode adventure @s".to_string(),
+        format!("tag @s remove {CUTSCENE_TAG}"),
+    ];
+    let mut out = Vec::new();
+    if campaign_spawn(plan).is_some() {
+        for (i, axis) in ["x", "y", "z"].iter().enumerate() {
+            repair.push(format!(
+                "data modify storage dw:cs at.{axis} set from storage dw:cp pos[{i}]"
+            ));
+        }
+        repair.push(format!("function {ns}:cs_repair_tp with storage dw:cs at"));
+        out.push((
+            "cs_repair_tp".to_string(),
+            lines(&["$tp @s $(x) $(y) $(z)".to_string()]),
+        ));
+    }
+    out.push(("cs_repair".to_string(), lines(&repair)));
+    out
+}
+
 /// Cutscene functions (spec-0008 addendum; keyframe dolly per task #64): the
 /// two-camera bounce. Per cutscene (deduped by content key) emits a start
 /// function, a self-scheduling keyframe/`spectate` driver, and an end/restore
@@ -3745,6 +3982,10 @@ fn cutscene_fns(
             "execute if score #run_{bare} dw.sys matches 1 run return fail"
         ));
         start.push(format!("scoreboard players set #run_{bare} dw.sys 1"));
+        // The campaign-wide "some cutscene is playing" refcount. Placed AFTER the
+        // re-entry `return fail` so a re-entrant start never inflates it. Read by
+        // the join repair driver — see `cutscene_repair_fns`.
+        start.push(format!("scoreboard players add {CS_LIVE} dw.sys 1"));
         start.push(format!("scoreboard players set #t_{bare} dw.sys 0"));
         start.push(format!("scoreboard players set #p_{bare} dw.sys 1"));
         start.push(format!(
@@ -3856,6 +4097,7 @@ fn cutscene_fns(
         // during the cutscene, so the beat picks up exactly where it paused.
         end.push(format!("tag @a remove {CUTSCENE_TAG}"));
         end.push(format!("scoreboard players set #run_{bare} dw.sys 0"));
+        end.push(format!("scoreboard players remove {CS_LIVE} dw.sys 1"));
         out.push((format!("cs_end_{bare}"), lines(&end)));
     }
     out
@@ -4929,7 +5171,14 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
         ));
     }
 
-    // campaign-complete advancement (granted by command)
+    // campaign-complete advancement (granted by command). Both player-visible
+    // strings are campaign-derived and therefore localized: `localize` rewrites the
+    // whole `Campaign` before emission, so whatever we read here is already in the
+    // target language. The description was a hardcoded `"You left the keep."` on
+    // every delve ever built — the reference keep-crawl's line, shipped verbatim to
+    // a shipwreck campaign and untranslatable in every sidecar because it never
+    // passed through a `Campaign` field at all.
+    let outro = campaign_outro(c);
     advs.push((
         "campaign_complete".to_string(),
         json!({
@@ -4937,7 +5186,7 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
             "display": {
                 "icon": { "id": "minecraft:iron_door" },
                 "title": c.world.content.title,
-                "description": "You left the keep.",
+                "description": outro,
                 "frame": "goal",
                 "show_toast": true,
                 "announce_to_chat": false,

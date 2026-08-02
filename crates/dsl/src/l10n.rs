@@ -197,6 +197,13 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
     {
         f("world.boundary.message", msg);
     }
+    // Stage 1 — campaign outro (v0.6, only when authored): the closing line on the
+    // completion advancement. Unauthored, the emitter falls back to the finale
+    // quest's `goal`, which is inventoried in its own right — so the last sentence
+    // of a delve is campaign-derived and translated either way.
+    if let Some(outro) = c.world.content.outro.as_mut() {
+        f("world.outro", outro);
+    }
     // Stage 3 — class names/blurbs + optional kit item display names.
     for class in &mut c.classes.content.classes {
         let cl = local(class.id.as_str()).to_string();

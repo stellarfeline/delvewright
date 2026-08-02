@@ -76,6 +76,14 @@ pub struct WorldContent {
     /// `ocean` (an infinite swimmable sea with no return rule is `DW0320`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub boundary: Option<Boundary>,
+    /// The closing line on the campaign-completion advancement — the last
+    /// player-visible sentence of the delve (DSL v0.6). Player-visible, so it is
+    /// l10n-inventoried as `world.outro` and sidecars translate it. Absent = the
+    /// finale quest's `goal`, which is already both campaign-derived and
+    /// inventoried; the description was previously the hardcoded English
+    /// "You left the keep." on *every* delve, whatever its theme or language.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outro: Option<String>,
 }
 
 /// A declared world time state (DSL v0.5, spec-0010). Values are the vanilla
