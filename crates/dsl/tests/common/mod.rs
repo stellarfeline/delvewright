@@ -28,6 +28,7 @@ pub fn valid_raw() -> RawCampaign {
         quest_plan: read_valid("quest-plan.json"),
         quests: read_valid("quests.json"),
         dialogue: read_valid("dialogue.json"),
+        world_edits: None,
     }
 }
 
@@ -50,6 +51,7 @@ pub fn stage_of(name: &str) -> Stage {
         "quest-plan" => Stage::QuestPlan,
         "quests" => Stage::Quests,
         "dialogue" => Stage::Dialogue,
+        "world-edits" => Stage::WorldEdits,
         other => panic!("unknown stage `{other}`"),
     }
 }
@@ -66,6 +68,7 @@ pub fn apply(fixture: &InvalidFixture) -> RawCampaign {
             "quest-plan" => raw.quest_plan = s,
             "quests" => raw.quests = s,
             "dialogue" => raw.dialogue = s,
+            "world-edits" => raw.world_edits = Some(s),
             other => panic!("unknown stage `{other}`"),
         }
     }

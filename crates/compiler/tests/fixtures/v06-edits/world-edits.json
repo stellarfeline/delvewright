@@ -1,0 +1,149 @@
+{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "world-edits",
+  "content": {
+    "batches": [
+      {
+        "id": "batch/dress-floor",
+        "area": "area/keep",
+        "note": "Break the uniform stone floor into weathered variation (fixture: piece-local box + palette-match + replace).",
+        "edits": [
+          {
+            "verb": "select",
+            "name": "region/interior",
+            "shape": {
+              "kind": "box",
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "min": [1, 0, 1],
+              "max": [9, 0, 9]
+            }
+          },
+          {
+            "verb": "select",
+            "name": "region/floor-stone",
+            "shape": {
+              "kind": "palette-match",
+              "within": "region/interior",
+              "blocks": ["minecraft:stone"]
+            }
+          },
+          {
+            "verb": "replace",
+            "region": "region/floor-stone",
+            "matching": ["minecraft:stone"],
+            "recipe": {
+              "blocks": [
+                { "block": "minecraft:stone", "weight": 3.0 },
+                { "block": "minecraft:cobblestone", "weight": 1.5 },
+                { "block": "minecraft:mossy_cobblestone", "weight": 0.5 }
+              ],
+              "scale": 0.35
+            }
+          }
+        ]
+      },
+      {
+        "id": "batch/hearth-nook",
+        "area": "area/keep",
+        "note": "Carve a second doorway through the inner wall and dress a pad by the exit (fixture: carve + anchor-relative frame + surface-band + fill).",
+        "edits": [
+          {
+            "verb": "select",
+            "name": "region/nook",
+            "shape": {
+              "kind": "box",
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "min": [7, 1, 6],
+              "max": [8, 2, 6]
+            }
+          },
+          {
+            "verb": "carve",
+            "region": "region/nook"
+          },
+          {
+            "verb": "select",
+            "name": "region/exit-pad",
+            "shape": {
+              "kind": "box",
+              "frame": { "kind": "anchor-relative", "anchor": "anchor/exit" },
+              "min": [-1, -1, -1],
+              "max": [1, -1, 1]
+            }
+          },
+          {
+            "verb": "select",
+            "name": "region/pad-surface",
+            "shape": {
+              "kind": "surface-band",
+              "over": "region/exit-pad",
+              "from": 0,
+              "to": 0
+            }
+          },
+          {
+            "verb": "fill",
+            "region": "region/pad-surface",
+            "recipe": {
+              "blocks": [
+                { "block": "minecraft:polished_andesite", "weight": 2.0 },
+                { "block": "minecraft:andesite", "weight": 1.0 }
+              ],
+              "scale": 0.5
+            }
+          }
+        ]
+      },
+      {
+        "id": "batch/corner-terraces",
+        "area": "area/keep",
+        "note": "Raise low corner terraces in both chambers (fixture: union + morph raise).",
+        "edits": [
+          {
+            "verb": "select",
+            "name": "region/outer-corner",
+            "shape": {
+              "kind": "box",
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "min": [1, 0, 1],
+              "max": [2, 0, 2]
+            }
+          },
+          {
+            "verb": "select",
+            "name": "region/inner-corner",
+            "shape": {
+              "kind": "box",
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "min": [8, 0, 8],
+              "max": [9, 0, 9]
+            }
+          },
+          {
+            "verb": "select",
+            "name": "region/corners",
+            "shape": {
+              "kind": "union",
+              "of": ["region/outer-corner", "region/inner-corner"]
+            }
+          },
+          {
+            "verb": "morph",
+            "region": "region/corners",
+            "op": {
+              "kind": "raise",
+              "by": 1,
+              "recipe": {
+                "blocks": [
+                  { "block": "minecraft:stone_bricks", "weight": 2.0 },
+                  { "block": "minecraft:mossy_stone_bricks", "weight": 1.0 }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

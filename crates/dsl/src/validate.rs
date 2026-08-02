@@ -15,7 +15,9 @@ use crate::registry::{
     ItemRegistry, VendoredAnchorRegistry, VendoredEffectRegistry, VendoredEntityRegistry,
     VendoredItemRegistry,
 };
-use crate::stages::{Objective, QuestEffect, TriggerOn};
+use crate::stages::{
+    EditFrame, MorphOp, Objective, QuestEffect, RegionShape, TriggerOn, WorldEdit,
+};
 
 /// Validate a campaign against all spec-0001 rules using the vendored v0
 /// registries (subset item + entity registries + hello-world anchor metadata).
@@ -73,6 +75,13 @@ pub fn validate_campaign_with(
         v06_checks(c, items, anchors, entities, &mut d);
         v06_trap_checks(c, items, anchors, &mut d);
     }
+    // DSL v0.6 stage 7 (spec-0017): the map-editor edit script. Structural
+    // checks only — frame/region *resolution* happens at build time against the
+    // solved layout (the compiler's `DW0323`).
+    if c.world_edits.is_some() {
+        let blocks = ItemBackedBlockRegistry::new(items);
+        world_edits_checks(c, &blocks, &mut d);
+    }
 
     d
 }
@@ -102,6 +111,14 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
             c.dialogue.dsl_version.as_str(),
         ),
     ];
+    let stages: Vec<(Stage, Stage, &str)> = stages
+        .into_iter()
+        .chain(
+            c.world_edits
+                .iter()
+                .map(|e| (Stage::WorldEdits, e.stage, e.dsl_version.as_str())),
+        )
+        .collect();
     for (expected, actual, version) in stages {
         if actual != expected {
             d.push(Diagnostic::error(
@@ -130,14 +147,21 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
     }
 
-    let ids = [
+    let ids: Vec<(Stage, &crate::ids::CampaignId)> = [
         (Stage::World, &c.world.campaign_id),
         (Stage::Npcs, &c.npcs.campaign_id),
         (Stage::Classes, &c.classes.campaign_id),
         (Stage::QuestPlan, &c.quest_plan.campaign_id),
         (Stage::Quests, &c.quests.campaign_id),
         (Stage::Dialogue, &c.dialogue.campaign_id),
-    ];
+    ]
+    .into_iter()
+    .chain(
+        c.world_edits
+            .iter()
+            .map(|e| (Stage::WorldEdits, &e.campaign_id)),
+    )
+    .collect();
     let canonical = c.world.campaign_id.as_str();
     for (stage, id) in ids {
         if !id.is_valid_syntax() {
@@ -3739,4 +3763,422 @@ fn dfs_cycle<'a>(
     }
     color.insert(node, 2);
     false
+}
+
+// ---------------------------------------------------------------------------
+// Stage 7 — world-edits (the map-editor edit script, DSL v0.6, spec-0017)
+// ---------------------------------------------------------------------------
+
+/// Structural validation of the stage-7 edit script: id syntax/uniqueness
+/// (`DW0110`/`DW0111`), area refs (`DW0112`), strictly-backward region refs and
+/// shape/recipe well-formedness (`DW0162`), block ids (`DW0193`), and the v0.6
+/// stage gate (`DW0141`). Frame/region *resolution* against the solved layout
+/// is the compiler's job (`DW0323`) — validation never needs prefabs.
+fn world_edits_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mut Vec<Diagnostic>) {
+    let Some(env) = &c.world_edits else {
+        return;
+    };
+    let stage = Stage::WorldEdits.name();
+    if is_supported_version(env.dsl_version.as_str()) && !is_v06(env.dsl_version.as_str()) {
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            stage,
+            "/dsl_version",
+            format!(
+                "the `world-edits` stage is DSL v0.6 surface (spec-0017) but this document \
+                 declares dsl_version `{}` — set it to `0.6.0` (the stage did not exist before \
+                 v0.6, so an earlier version cannot carry it)",
+                env.dsl_version
+            ),
+        ));
+    }
+
+    let areas: BTreeSet<&str> = c
+        .world
+        .content
+        .areas
+        .iter()
+        .map(|a| a.id.as_str())
+        .collect();
+
+    // Small helpers, each pushing at most one diagnostic.
+    fn bad_syntax(d: &mut Vec<Diagnostic>, stage: &str, path: String, what: &str, id: &str) {
+        d.push(Diagnostic::error(
+            codes::ID_SYNTAX,
+            stage,
+            path,
+            format!(
+                "malformed {what} id `{id}` (expected `{}`)",
+                what_pattern(what)
+            ),
+        ));
+    }
+    fn what_pattern(what: &str) -> String {
+        format!("{what}/<kebab>")
+    }
+    fn check_region_ref(
+        d: &mut Vec<Diagnostic>,
+        stage: &str,
+        regions: &BTreeSet<&str>,
+        path: String,
+        r: &crate::ids::RegionId,
+    ) {
+        if !r.is_valid_syntax() {
+            bad_syntax(d, stage, path, "region", r.as_str());
+        } else if !regions.contains(r.as_str()) {
+            d.push(Diagnostic::error(
+                codes::EDIT_INVALID,
+                stage,
+                path,
+                format!(
+                    "region `{r}` is not defined by an earlier `select` in this batch — every \
+                     region reference is strictly backward within its batch; add a `select` verb \
+                     naming `{r}` above this edit (or fix the name)"
+                ),
+            ));
+        }
+    }
+    fn check_recipe(
+        d: &mut Vec<Diagnostic>,
+        stage: &str,
+        blocks: &dyn BlockRegistry,
+        path: &str,
+        recipe: &crate::stages::PaletteRecipe,
+    ) {
+        if recipe.blocks.is_empty() {
+            d.push(Diagnostic::error(
+                codes::EDIT_INVALID,
+                stage,
+                format!("{path}/blocks"),
+                "palette recipe has no entries — give it at least one weighted block (and \
+                 prefer ≥ 2 so the seeded noise reads as natural variation, never a uniform \
+                 fill)"
+                    .to_string(),
+            ));
+        }
+        for (i, b) in recipe.blocks.iter().enumerate() {
+            if !(b.weight.is_finite() && b.weight > 0.0) {
+                d.push(Diagnostic::error(
+                    codes::EDIT_INVALID,
+                    stage,
+                    format!("{path}/blocks/{i}/weight"),
+                    format!(
+                        "palette weight `{}` for `{}` must be a finite number > 0",
+                        b.weight, b.block
+                    ),
+                ));
+            }
+            check_edit_block(
+                d,
+                stage,
+                blocks,
+                format!("{path}/blocks/{i}/block"),
+                &b.block,
+            );
+        }
+        if let Some(scale) = recipe.scale
+            && !(scale.is_finite() && scale > 0.0)
+        {
+            d.push(Diagnostic::error(
+                codes::EDIT_INVALID,
+                stage,
+                format!("{path}/scale"),
+                format!("recipe `scale` `{scale}` must be a finite number > 0 (blocks⁻¹)"),
+            ));
+        }
+    }
+    fn check_edit_block(
+        d: &mut Vec<Diagnostic>,
+        stage: &str,
+        blocks: &dyn BlockRegistry,
+        path: String,
+        block: &str,
+    ) {
+        match split_blockstate(block) {
+            Ok(base) => {
+                if !blocks.contains(base) {
+                    d.push(Diagnostic::error(
+                        codes::BLOCK_UNKNOWN,
+                        stage,
+                        path,
+                        format!(
+                            "block `{block}` is not a known 1.21.11 block id — use a valid \
+                             namespaced block id (e.g. `minecraft:mossy_stone_bricks`)"
+                        ),
+                    ));
+                }
+            }
+            Err(reason) => {
+                d.push(Diagnostic::error(codes::BLOCK_UNKNOWN, stage, path, reason));
+            }
+        }
+    }
+
+    let mut batch_ids: BTreeSet<&str> = BTreeSet::new();
+    for (bi, batch) in env.content.batches.iter().enumerate() {
+        let bpath = format!("/batches/{bi}");
+        if !batch.id.is_valid_syntax() {
+            bad_syntax(d, stage, format!("{bpath}/id"), "batch", batch.id.as_str());
+        } else if !batch_ids.insert(batch.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ID_DUPLICATE,
+                stage,
+                format!("{bpath}/id"),
+                format!(
+                    "duplicate batch id `{}` — batch ids are unique across the edit script \
+                     (they name snapshots and seed streams)",
+                    batch.id
+                ),
+            ));
+        }
+        if !areas.contains(batch.area.as_str()) {
+            d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                stage,
+                format!("{bpath}/area"),
+                format!(
+                    "batch `{}` targets area `{}` which stage 1 does not declare — use one of \
+                     the world stage's area ids",
+                    batch.id, batch.area
+                ),
+            ));
+        }
+
+        // Regions defined so far in THIS batch (strictly backward references).
+        let mut regions: BTreeSet<&str> = BTreeSet::new();
+        for (ei, edit) in batch.edits.iter().enumerate() {
+            let epath = format!("{bpath}/edits/{ei}");
+            match edit {
+                WorldEdit::Select { name, shape } => {
+                    match shape {
+                        RegionShape::Box { frame, min, max } => {
+                            if min.iter().zip(max).any(|(lo, hi)| lo > hi) {
+                                d.push(Diagnostic::error(
+                                    codes::EDIT_INVALID,
+                                    stage,
+                                    format!("{epath}/shape"),
+                                    format!(
+                                        "box region `{name}` has min {min:?} > max {max:?} on \
+                                         an axis — corners are inclusive with min ≤ max per axis"
+                                    ),
+                                ));
+                            }
+                            match frame {
+                                EditFrame::PieceLocal { prefab, .. } => {
+                                    if !prefab.is_valid_syntax() {
+                                        bad_syntax(
+                                            d,
+                                            stage,
+                                            format!("{epath}/shape/frame/prefab"),
+                                            "prefab",
+                                            prefab.as_str(),
+                                        );
+                                    }
+                                }
+                                EditFrame::AnchorRelative { anchor } => {
+                                    if !anchor.is_valid_syntax() {
+                                        bad_syntax(
+                                            d,
+                                            stage,
+                                            format!("{epath}/shape/frame/anchor"),
+                                            "anchor",
+                                            anchor.as_str(),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        RegionShape::SurfaceBand { over, from, to } => {
+                            check_region_ref(
+                                d,
+                                stage,
+                                &regions,
+                                format!("{epath}/shape/over"),
+                                over,
+                            );
+                            if from > to {
+                                d.push(Diagnostic::error(
+                                    codes::EDIT_INVALID,
+                                    stage,
+                                    format!("{epath}/shape"),
+                                    format!(
+                                        "surface band `{name}` has from {from} > to {to} — the \
+                                         band is inclusive with from ≤ to (offsets relative to \
+                                         each column's surface)"
+                                    ),
+                                ));
+                            }
+                        }
+                        RegionShape::PaletteMatch { within, blocks: bl } => {
+                            check_region_ref(
+                                d,
+                                stage,
+                                &regions,
+                                format!("{epath}/shape/within"),
+                                within,
+                            );
+                            if bl.is_empty() {
+                                d.push(Diagnostic::error(
+                                    codes::EDIT_INVALID,
+                                    stage,
+                                    format!("{epath}/shape/blocks"),
+                                    format!(
+                                        "palette-match region `{name}` lists no blocks — name \
+                                         at least one base block id to match"
+                                    ),
+                                ));
+                            }
+                            for (i, b) in bl.iter().enumerate() {
+                                check_edit_block(
+                                    d,
+                                    stage,
+                                    blocks,
+                                    format!("{epath}/shape/blocks/{i}"),
+                                    b,
+                                );
+                            }
+                        }
+                        RegionShape::Union { of } | RegionShape::Intersect { of } => {
+                            if of.len() < 2 {
+                                d.push(Diagnostic::error(
+                                    codes::EDIT_INVALID,
+                                    stage,
+                                    format!("{epath}/shape/of"),
+                                    format!(
+                                        "composition region `{name}` lists {} region(s) — a \
+                                         union/intersection needs at least 2 (a single-region \
+                                         composition is just the region; use it directly)",
+                                        of.len()
+                                    ),
+                                ));
+                            }
+                            for (i, r) in of.iter().enumerate() {
+                                check_region_ref(
+                                    d,
+                                    stage,
+                                    &regions,
+                                    format!("{epath}/shape/of/{i}"),
+                                    r,
+                                );
+                            }
+                        }
+                        RegionShape::Subtract { base, remove } => {
+                            check_region_ref(
+                                d,
+                                stage,
+                                &regions,
+                                format!("{epath}/shape/base"),
+                                base,
+                            );
+                            if remove.is_empty() {
+                                d.push(Diagnostic::error(
+                                    codes::EDIT_INVALID,
+                                    stage,
+                                    format!("{epath}/shape/remove"),
+                                    format!(
+                                        "subtract region `{name}` removes nothing — list at \
+                                         least one region to subtract (or use `base` directly)"
+                                    ),
+                                ));
+                            }
+                            for (i, r) in remove.iter().enumerate() {
+                                check_region_ref(
+                                    d,
+                                    stage,
+                                    &regions,
+                                    format!("{epath}/shape/remove/{i}"),
+                                    r,
+                                );
+                            }
+                        }
+                    }
+                    if !name.is_valid_syntax() {
+                        bad_syntax(d, stage, format!("{epath}/name"), "region", name.as_str());
+                    } else if !regions.insert(name.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::ID_DUPLICATE,
+                            stage,
+                            format!("{epath}/name"),
+                            format!(
+                                "duplicate region name `{name}` in batch `{}` — region names \
+                                 are unique within their batch",
+                                batch.id
+                            ),
+                        ));
+                    }
+                }
+                WorldEdit::Fill { region, recipe } => {
+                    check_region_ref(d, stage, &regions, format!("{epath}/region"), region);
+                    check_recipe(d, stage, blocks, &format!("{epath}/recipe"), recipe);
+                }
+                WorldEdit::Replace {
+                    region,
+                    matching,
+                    recipe,
+                } => {
+                    check_region_ref(d, stage, &regions, format!("{epath}/region"), region);
+                    if matching.is_empty() {
+                        d.push(Diagnostic::error(
+                            codes::EDIT_INVALID,
+                            stage,
+                            format!("{epath}/matching"),
+                            "replace matches no blocks — list at least one base block id to \
+                             rewrite (an unconditional rewrite is `fill`)"
+                                .to_string(),
+                        ));
+                    }
+                    for (i, b) in matching.iter().enumerate() {
+                        check_edit_block(d, stage, blocks, format!("{epath}/matching/{i}"), b);
+                    }
+                    check_recipe(d, stage, blocks, &format!("{epath}/recipe"), recipe);
+                }
+                WorldEdit::Carve { region } => {
+                    check_region_ref(d, stage, &regions, format!("{epath}/region"), region);
+                }
+                WorldEdit::Morph { region, op } => {
+                    check_region_ref(d, stage, &regions, format!("{epath}/region"), region);
+                    match op {
+                        MorphOp::Raise { by, recipe } => {
+                            if *by == 0 {
+                                d.push(Diagnostic::error(
+                                    codes::EDIT_INVALID,
+                                    stage,
+                                    format!("{epath}/op/by"),
+                                    "morph raise `by` is 0 — a zero raise is a no-op; give a \
+                                     positive height (or drop the edit)"
+                                        .to_string(),
+                                ));
+                            }
+                            check_recipe(d, stage, blocks, &format!("{epath}/op/recipe"), recipe);
+                        }
+                        MorphOp::Lower { by } => {
+                            if *by == 0 {
+                                d.push(Diagnostic::error(
+                                    codes::EDIT_INVALID,
+                                    stage,
+                                    format!("{epath}/op/by"),
+                                    "morph lower `by` is 0 — a zero lower is a no-op; give a \
+                                     positive depth (or drop the edit)"
+                                        .to_string(),
+                                ));
+                            }
+                        }
+                        MorphOp::Smooth { passes, recipe } => {
+                            if *passes == 0 {
+                                d.push(Diagnostic::error(
+                                    codes::EDIT_INVALID,
+                                    stage,
+                                    format!("{epath}/op/passes"),
+                                    "morph smooth `passes` is 0 — a zero-pass smooth is a \
+                                     no-op; give a positive pass count (or drop the edit)"
+                                        .to_string(),
+                                ));
+                            }
+                            check_recipe(d, stage, blocks, &format!("{epath}/op/recipe"), recipe);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

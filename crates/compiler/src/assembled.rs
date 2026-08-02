@@ -366,6 +366,15 @@ fn settle(blocks: &mut BTreeMap<[i32; 3], String>) -> Vec<Settled> {
     outcomes
 }
 
+/// Re-run gravity settling over an (edited) cell→block map — the map editor's
+/// re-entry into the settle model (spec-0017): a `setblock`-placed falling
+/// block falls exactly like a template-placed one, so after every edit batch
+/// the model re-settles and the same despawn rule applies. Same algorithm,
+/// same determinism as the assembly-time [`settle`].
+pub(crate) fn resettle(blocks: &mut BTreeMap<[i32; 3], String>) -> Vec<Settled> {
+    settle(blocks)
+}
+
 /// The authoritative assembled-world model: the settled cell→block map plus the
 /// per-falling-block settle outcomes (for the gravity-despawn diagnostic).
 pub struct Assembled {

@@ -7,6 +7,7 @@ use crate::diagnostic::{Diagnostic, codes};
 use crate::ids::CampaignId;
 use crate::stages::{
     ClassesContent, DialogueContent, NpcsContent, QuestPlanContent, QuestsContent, WorldContent,
+    WorldEditsContent,
 };
 
 /// The latest `dsl_version` this crate implements (identity / tooling default).
@@ -84,6 +85,8 @@ pub enum Stage {
     Quests,
     /// Stage 6.
     Dialogue,
+    /// Stage 7 (optional; DSL v0.6, spec-0017): the map-editor edit script.
+    WorldEdits,
 }
 
 impl Stage {
@@ -97,6 +100,7 @@ impl Stage {
             Stage::QuestPlan => "quest-plan",
             Stage::Quests => "quests",
             Stage::Dialogue => "dialogue",
+            Stage::WorldEdits => "world-edits",
         }
     }
 }
@@ -115,7 +119,8 @@ pub struct Envelope<T> {
     pub content: T,
 }
 
-/// The six parsed stage documents that make up one campaign.
+/// The parsed stage documents that make up one campaign: the six required
+/// stages plus the optional stage-7 edit script (spec-0017).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Campaign {
     /// Stage 1.
@@ -130,9 +135,14 @@ pub struct Campaign {
     pub quests: Envelope<QuestsContent>,
     /// Stage 6.
     pub dialogue: Envelope<DialogueContent>,
+    /// Stage 7 (optional; DSL v0.6, spec-0017): the map-editor edit script.
+    /// `None` = no `world-edits.json` in the campaign directory — byte-identical
+    /// to a campaign from before the stage existed.
+    pub world_edits: Option<Envelope<WorldEditsContent>>,
 }
 
-/// The six stage documents as raw JSON strings (compiler input).
+/// The stage documents as raw JSON strings (compiler input): six required, the
+/// stage-7 edit script optional.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RawCampaign {
     /// `world.json`.
@@ -147,6 +157,9 @@ pub struct RawCampaign {
     pub quests: String,
     /// `dialogue.json`.
     pub dialogue: String,
+    /// `world-edits.json` (optional stage 7, spec-0017); `None` when the
+    /// campaign directory ships none.
+    pub world_edits: Option<String>,
 }
 
 fn parse_stage<T: for<'de> Deserialize<'de>>(
@@ -166,7 +179,7 @@ fn parse_stage<T: for<'de> Deserialize<'de>>(
                 format!(
                     "`{}` stage document does not conform to its schema: {e}. Fix the offending \
                      field (unknown field, wrong type, or missing required one) in the campaign \
-                     JSON to match the schema — run `delvec schema --stage <1..6>` to see the \
+                     JSON to match the schema — run `delvec schema --stage <1..7>` to see the \
                      exact shape.",
                     stage.name()
                 ),
@@ -199,18 +212,41 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
     );
     parse_stage(&raw.quests, Stage::Quests, &mut quests, &mut diags);
     parse_stage(&raw.dialogue, Stage::Dialogue, &mut dialogue, &mut diags);
+    // The optional stage-7 edit script (spec-0017): absent = `None`; present but
+    // unparseable = a `DW0100` like any other stage.
+    let mut world_edits: Result<Option<Envelope<WorldEditsContent>>, ()> = Ok(None);
+    if let Some(src) = &raw.world_edits {
+        let mut parsed = Err(());
+        parse_stage(src, Stage::WorldEdits, &mut parsed, &mut diags);
+        world_edits = parsed.map(Some);
+    }
 
-    match (world, npcs, classes, quest_plan, quests, dialogue) {
-        (Ok(world), Ok(npcs), Ok(classes), Ok(quest_plan), Ok(quests), Ok(dialogue)) => {
-            Ok(Campaign {
-                world,
-                npcs,
-                classes,
-                quest_plan,
-                quests,
-                dialogue,
-            })
-        }
+    match (
+        world,
+        npcs,
+        classes,
+        quest_plan,
+        quests,
+        dialogue,
+        world_edits,
+    ) {
+        (
+            Ok(world),
+            Ok(npcs),
+            Ok(classes),
+            Ok(quest_plan),
+            Ok(quests),
+            Ok(dialogue),
+            Ok(world_edits),
+        ) => Ok(Campaign {
+            world,
+            npcs,
+            classes,
+            quest_plan,
+            quests,
+            dialogue,
+            world_edits,
+        }),
         _ => Err(diags),
     }
 }

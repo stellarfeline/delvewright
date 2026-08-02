@@ -22,6 +22,9 @@
 //!   visual-authoring-loop renderers draw on.
 //! - [`snapshot`]: `delvec snapshot` — the voxel raycaster + scene manifest that
 //!   let an authoring agent look at its own build (spec-0015).
+//! - [`edit`]: the map editor's stage-7 edit-script replay (spec-0017) — seeded
+//!   L3 verbs over the assembled world, per-batch invariant re-proofs, runtime
+//!   `fill`/`setblock` materialization.
 
 pub mod analyze;
 pub mod assembled;
@@ -31,6 +34,7 @@ pub mod camera;
 pub mod commands;
 pub mod continuity;
 pub mod creator;
+pub mod edit;
 pub mod emit;
 pub mod gates;
 pub mod light;

@@ -41,6 +41,7 @@ fn campaign_with_world(world: &str) -> RawCampaign {
         quest_plan: common::read_valid("quest-plan.json"),
         quests: common::read_valid("quests.json"),
         dialogue: common::read_valid("dialogue.json"),
+        world_edits: None,
     }
 }
 

@@ -61,16 +61,17 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 
 | # | Pass | Crate/module | Fails with |
 |---|------|--------------|-----------|
-| 1 | Load campaign dir (6 stage docs + `l10n/` sidecars) | `compiler::load` | internal (≥10) on unreadable dir |
+| 1 | Load campaign dir (6 stage docs + optional `world-edits.json` + `l10n/` sidecars) | `compiler::load` | internal (≥10) on unreadable dir |
 | 2 | Parse (serde, `deny_unknown_fields`) | `dsl::parse_campaign` | `DW0100` (exit 1) |
-| 3 | Validate stages 1–6 (schema + referential, full injected registries) | `dsl::validate_campaign_with` | `DW01xx` (exit 1) |
+| 3 | Validate stages 1–7 (schema + referential, full injected registries) | `dsl::validate_campaign_with` | `DW01xx` (exit 1) |
 | 4 | l10n sidecar coverage | `dsl::validate_l10n` | `DW0180`/`DW0181` (exit 1) |
 | 5 | Analyze (deep quest/dialogue reachability) | `compiler::analyze` | `DW02xx` (exit 2) |
 | 6 | Solve jigsaw layout (per `prefab_pool` area, from seed) | `compiler::solver` | `DW030x` (exit 3) |
 | 7 | Assemble world model (placed pieces → voxel grid; ocean sea-level datum check) | `compiler::plan` | `DW030x`/`DW0344` (exit 3) |
-| 8 | Assembled-light + relight (measure, place fixtures) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
-| 9 | Nav checks (A* `move-npc`/`move-actor` (footprint-aware), cutscene clip (authored polyline + rendered keyframe chords) + angular budget, critical-path walkability — incl. relight fixtures + water flood; talk-to endpoint snap; waypoint self-check; POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone + trap completability proofs) | `compiler::nav` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0325`/`DW0327`/`DW0342`/`DW0347`/`DW0724` (exit 3; `DW0342` → exit 2) |
-| 10 | Emit (datapack, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
+| 8 | Replay the stage-7 edit script over the assembled model (spec-0017; per-batch invariant re-proofs — gravity, relight, walkability, boundary safety). Skipped entirely for a campaign without one (byte-identical). | `compiler::edit` | `DW0322`/`DW0323` + reused invariant codes, batch-attributed (tier per code) |
+| 9 | Assembled-light + relight (measure, place fixtures; over the **edited** model when a script exists) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
+| 10 | Nav checks (A* `move-npc`/`move-actor` (footprint-aware), cutscene clip (authored polyline + rendered keyframe chords) + angular budget, critical-path walkability — incl. relight fixtures + water flood; talk-to endpoint snap; waypoint self-check; POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone + trap completability proofs) — all over the **edited** model when a script exists | `compiler::nav` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0325`/`DW0327`/`DW0342`/`DW0347`/`DW0724` (exit 3; `DW0342` → exit 2) |
+| 11 | Emit (datapack incl. the `world_edits` function, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
 
 - `build` ⟹ `validate` + `analyze`; `analyze` ⟹ `validate`. A validation failure
   short-circuits (exit 1) before analysis; analysis failure (exit 2) before build.
@@ -87,13 +88,15 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 ### CLI contract
 
 ```
-delvec validate <dir>                      # stages 1–6 schema + referential
+delvec validate <dir>                      # stages 1–7 schema + referential
 delvec analyze  <dir>                      # + quest-graph reachability
 delvec build    <dir> -o <out>             # full deterministic build
-delvec schema   --stage <1..6|all>         # export JSON Schema
+delvec schema   --stage <1..7|all>         # export JSON Schema
 delvec l10n-inventory <dir> [--lang <c>]   # l10n key inventory as JSON (translation input)
 delvec snapshot <dir> [framing] [-o f.png] # draft frame + scene manifest (§7)
 delvec blocking-chart <dir> [-o dir]       # per-elevation cutaway floor plans (§7)
+delvec edit apply   <dir> [--batch f] [-o dir]  # replay edit script (+ candidate), persist on green (§7)
+delvec edit preview <dir> [--batch f] [-o dir]  # same replay + renders, never persists
 delvec --version                           # "delvec 0.1.0, dsl 0.6.0, mc 1.21.11"
 ```
 
@@ -251,6 +254,26 @@ active, i.e. `dw.qa_<quest>==1` and
 `dw.o_<obj>!=1` (objective-state axis) — so `DW0191`'s ungated completing option
 is visible exactly while its objective is active (the guarantee holds
 automatically).
+
+### Stage 7 — `world-edits` (optional; v0.6, spec-0017)
+
+The map editor's edit script (`world-edits.json`), the artifact of record for
+L3 world detailing. **Optional**: absent = no edit stage, and the build is
+byte-identical to pre-stage-7. Replayed deterministically by the compiler
+after world assembly (§1 pass 8); editing sessions leave no state outside the
+script. `note` fields are authoring context — machine-ignored and **excluded**
+from l10n (no stage-7 string is player-visible).
+
+| Element | Behavior |
+|---------|----------|
+| `batches[]` | Ordered `{id: batch/<kebab>, area, note?, edits[]}`. Batch ids are unique (`DW0111`), the seed-stream label and the snapshot name; `area` must be a stage-1 area (`DW0112`). After EVERY batch the invariants re-prove (§4). |
+| `select` | `{name: region/<kebab>, shape}` — defines a named region for later verbs **in the same batch** (strictly backward; dangling/forward = `DW0162`, duplicate = `DW0111`). Shapes: `box` (inclusive `min`/`max` in a declared frame), `surface-band` (`over` + `from..=to` offsets from each column's surface), `palette-match` (`within` + base-id `blocks`), `union`/`intersect` (`of`, ≥2), `subtract` (`base` − `remove`). |
+| Frames | `piece-local` (`piece` placement index + `prefab` drift-guard — mismatch is `DW0323`) or `anchor-relative` (a resolved anchor of the batch's area) — never raw world coordinates, so a script survives placement moves. |
+| `fill` / `replace` | Seeded palette-recipe write over a region (`replace` only rewrites cells whose base id is in `matching`). A recipe is weighted `blocks[]` (+ optional noise `scale`, default 0.35 blocks⁻¹) sampled by smooth value noise — picks cluster into strata/patches, never a uniform fill. Block ids validate against the pinned registry with optional verbatim blockstate suffix (`DW0193`); weights/scale finite > 0 (`DW0162`). |
+| `carve` | Clear a region to air. Sealing-aware by construction: the carved region re-enters relight + walkability + boundary proofs. |
+| `morph` | Surface reshape per region column: `raise{by,recipe}`, `lower{by}`, `smooth{passes,recipe}` (±1/pass relaxation toward the cardinal-neighbour mean). The region gives the footprint + where the surface is read; `raise`/`smooth` may add cells above the region top. |
+| Seeding | Every seeded verb streams from `stream_seed(campaign_seed, "edits/<batch-id>/<edit-index>")` — renaming a batch (or moving an edit) deliberately reseeds it; nothing else does (ADR-0006). |
+| Emission | The replay lowers to a `world_edits` function (x-run-coalesced `fill`/`setblock`), called from `setup_finish` after the socket seals and before the relight fixtures — the exact model order. `world-edits.json` is hashed into `manifest.json` inputs. |
 
 ### l10n sidecars (`l10n/<code>.json`)
 
@@ -815,6 +838,39 @@ endpoint resolves off the walkable set — making it structurally impossible to 
 a waypoint the game floods or walls (the water-flow / post-nav-mutation divergence
 class), a loud build failure instead of a runtime strand.
 
+### The map editor edit stage (spec-0017, v0.6)
+
+`crate::edit` replays the optional stage-7 script over the assembled model
+(§1 pass 8) so **every** downstream consumer — relight, nav, wave seating,
+waypoint/POV export, `snapshot`/`blocking-chart`, emission — sees the edited
+world. Invariants:
+
+- **Per-batch re-proofs.** After each batch the replay re-settles gravity
+  (`DW0313` on a despawn, batch-attributed), re-runs the spec-0010 relight
+  (`DW0210`/`DW0211`), re-proves critical-path + checkpoint walkability
+  (`DW0311`/`DW0315`/`DW0316`, with the relight fixtures solid), and runs the
+  **boundary-safety** check (`DW0322`, `nav::verify_boundary_safety`): no
+  reachable walkable cell may border a **void drop** — a neighbouring column
+  the player can step (or open a gate) into with nothing anywhere below to
+  arrest the fall (solid, fence/wall top, gate, or water all count as arrest;
+  a deep drop onto real geometry is falling, not leaving the world). This is
+  the guarantee the greenfield berm provided physically, made checkable so an
+  edit script may reshape a boundary into natural landform. Reused codes keep
+  their tiers; failures are prefixed `after world-edits batch `<id>``.
+- **Determinism (ADR-0006).** Edit noise is position-addressed value noise
+  (the island/cave generators' primitive family, ported into `crate::edit`)
+  seeded per script position; the double-build gate covers the edited fixture
+  (`tests/edit.rs`).
+- **View mode.** `snapshot`/`blocking-chart` replay the script **without**
+  enforcing invariants (`edit::replay_view`) — a broken state must be
+  viewable; only region-resolution failures (`DW0323`) stop a view.
+- **The loop** (`delvec edit apply|preview`, §7): full validation → replay
+  with invariants → one labelled snapshot + manifest per batch (framing the
+  batch's edited AABB over the final edited world). `apply --batch` appends a
+  candidate batch and persists `world-edits.json` (canonical form) only when
+  the whole replay is green; `preview` never writes to the campaign dir. A
+  red candidate can never leave a broken script behind.
+
 ---
 
 ## 5. Diagnostics catalog (complete, as of current `main`)
@@ -873,6 +929,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0153` | Stage-6 tree references an NPC not in stage 2. |
 | `DW0160` | Area binds neither or both of `prefab`/`prefab_pool`. |
 | `DW0161` | `prefab_pool` references a pool absent from `prefabs/` metadata. |
+| `DW0162` | Stage-7 edit script structurally invalid (v0.6, spec-0017): an edit names a region no earlier `select` in its batch defined (region refs are strictly backward within a batch), a `union`/`intersect` lists < 2 regions / a `subtract` removes nothing, a box `min` > `max` on an axis, a surface band `from` > `to`, a palette recipe is empty or carries a non-positive/non-finite `weight`/`scale`, a `matching` list is empty, or a morph `by`/`passes` is 0. (Unknown recipe/matching block ids reuse `DW0193`; id syntax `DW0110`; duplicate batch/region names `DW0111`; a `world-edits` doc under a pre-0.6 `dsl_version` `DW0141`.) |
 | `DW0170` | `kill`/`spawn-wave` references an undeclared `wave/<id>`. |
 | `DW0171` | A killed wave is never spawned by any `spawn-wave`. |
 | `DW0172` | `requires_flags` references a flag no `set-flag` produces. The producer scan descends every nested effect list (`sequence` steps, `on_respawn`/`on_caught`/`on_arrive`), so a `set-flag` nested in a timeline still counts as a producer (no spurious fire). |
@@ -1096,6 +1153,8 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0314` | An exported critical-path waypoint is not standable in the FINAL assembled world (settled + water-flooded + relight fixtures) — the build-time self-check that makes the water-flow / post-nav-mutation divergence class structurally impossible to ship (task #45). Routes come from A* over that same world, so this fires only if a later pass mutates a cell nav relied on or an endpoint resolves off the walkable set; the message names the offending cell and leg. Fix the prefab/water or the assembly — never nudge the waypoint. |
 | `DW0315` | A `set-checkpoint` (spec-0012) strands the party: re-rooting the DW0311 reachability at the checkpoint cell, the first remaining required critical-path anchor is no longer walkable from it (a checkpoint behind a one-way drop the forward path can't re-cross after respawn). The message names the checkpoint and the first unreachable anchor and prescribes moving the checkpoint or adding a return route — never deleting the checkpoint to silence the proof. |
 | `DW0316` | A `set-checkpoint` anchor has no standable footing within snap range on the final assembled model (a trap-trigger / hazard / mid-air cell) — the party would respawn into void or a wall (spec-0012). Because the relight pass already proves every reachable walkable cell meets the area's `min_light`, a checkpoint that clears this and DW0315 provably meets `min_light` too. |
+| `DW0322` | Post-edit boundary safety (v0.6, spec-0017 invariant 4): after a world-edits batch, a reachable walkable cell borders a **void drop** — a horizontally adjacent column the player can step (or open a gate) into with no fall-arrest of any kind below (no solid, no fence/wall/gate top, no water); one step off the proven ground falls out of the world. `nav::verify_boundary_safety`, run after every edit batch (never on the no-edit path, whose worlds provide the guarantee physically); the message names the walkable cell, the drop cell and the batch. Build-tier (exit 3). Numbered in the 032x world/region family beside the spec-0013 boundary pair (`DW0320`/`DW0321` are validation-tier; this one is build-tier — it needs the edited geometry). Prescription: extend the terrain under the exposed edge (fill/morph a slope or outcrop) or reinstate a barrier shape — never weaken the check or reroute the path around it. |
+| `DW0323` | A stage-7 edit fails to **resolve** against the solved layout (v0.6, spec-0017): a piece-local frame's `piece` index is out of range or its `prefab` guard mismatches the placed piece (layout drift — the loud alternative to a silently misplaced edit), an `anchor-relative` frame names an anchor the batch's area does not resolve, or a verb's target region resolves to **zero cells** (a silent no-op is always a defect: the select drifted off the content it targeted). `compiler::edit`, build-tier (exit 3); the message names the batch and prescribes re-inspecting the layout with `delvec snapshot` — never deleting the prefab guard or leaving a dead edit. |
 | `DW0325` | A `move-actor` destination is unreachable over the assembled geometry for the **actor's footprint** (per-entity dims table; warden 0.9×2.9 needs 3 cells of headroom, so it can be stranded where a player fits), or an actor spawn/destination anchor resolves to no world position (spec-0014). Build-tier (exit 3), `compiler::nav`; the message names the actor, the leg, and a best-effort first blocked cell. |
 | `DW0327` | A `begin-stealth` (spec-0014) zone is unstandable, or unreachable from the player's position at the beat that activates the stealth check — a guaranteed-unwinnable stealth beat. The message names the zone and prescribes placing it over reachable floor / within walkable reach of the activating beat. |
 | `DW0329` | A `sequence` effect is nested inside another `sequence` (directly, or reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse (spec-0014). Validation-tier (exit 1), `dsl::validate`. Flatten the inner steps into the outer timeline (shift their `at_ticks`). |
@@ -1175,6 +1234,7 @@ this doc is current behavior).
 | Sound + art-title surface (`play-sound`, `narrate` `art`, `delve:art` font, `DW0326`/`DW0328`/`DW0335`) | spec-0014 (v0.6) |
 | Traps: stage-5 `traps[]`, `anchor/trap` dispenser fill + disarm emission, `tnt_explodes` seal, passable plate/tripwire model, `DW0340`/`DW0341`/`DW0342` (all v0.6) | spec-0011 (landed) |
 | Visual authoring loop: `delvec snapshot` + `delvec blocking-chart`, the voxel raycaster, scene manifest and cutaway floor plans (§7) | spec-0015 (P1+P2 landed) |
+| The map editor: stage-7 `world-edits.json`, the L3 verbs (`select`/`fill`/`replace`/`carve`/`morph`), per-batch invariant re-proofs, `DW0162`/`DW0322`/`DW0323`, `delvec edit apply|preview` (all v0.6) | spec-0017 (PR 1) |
 | Asset-pipeline tooling `DW07xx` (schem/render/admit) | spec-0007 |
 | Determinism invariants | ADR-0006 |
 
@@ -1421,6 +1481,29 @@ naming its area, band index, floor Y and cut range.
 
 **Performance** (measured, `nobodys-cave-island`, release): **≈90 ms** for the
 whole campaign's four slices, including the nav model and critical-path routing.
+
+### `delvec edit apply` / `delvec edit preview` (spec-0017)
+
+The map editor's write half, closing the loop with the read half above: edit
+verb → deterministic replay → snapshot. Both subcommands run full validation
+(exit 1 on any error — unlike the view commands, an edit session must not
+build on a broken campaign), `Plan::build`, the checked replay (§4 "The map
+editor edit stage"), then render **one labelled snapshot + manifest per
+batch** into `-o` (default `edit-shots/`): the camera frames the batch's
+edited AABB over the final edited world, dollhouse-style, pulled into open
+air like `--at` (so an interior edit is viewed from inside its room). File
+names are the batch's kebab (`batch/dress-floor` → `dress-floor.png` +
+`dress-floor.manifest.json`).
+
+`--batch <file>` appends one candidate `EditBatch` object (the `delvec schema
+--stage 7` shape's batch element) to the script in memory. `apply` persists
+the augmented script to `world-edits.json` (canonical 2-space form, trailing
+newline) **only after the whole replay is green** — a red candidate exits with
+its diagnostic and writes nothing, so a session can never leave a broken
+script behind. `preview` is byte-for-byte the same run but never writes to
+the campaign directory. `apply` without `--batch` replays + re-renders only.
+Exit codes: 0 green · 1 validation · 2/3 replay failure by the failing code's
+tier (same mapping as `build`).
 
 ### PNG writing
 

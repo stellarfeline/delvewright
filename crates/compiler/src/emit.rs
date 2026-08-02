@@ -180,6 +180,17 @@ pub fn build(
         });
     }
 
+    // Stage-7 edit-script replay (spec-0017): apply the campaign's world edits
+    // over the assembled model, re-proving the invariants after every batch
+    // (gravity, relight, walkability, boundary safety — each failure names its
+    // batch). `None` for a campaign without an edit script — every downstream
+    // pass then takes its exact pre-stage-7 path, byte-identically.
+    let edit_replay =
+        crate::edit::replay(plan, structures).map_err(|e| BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        })?;
+
     // v0.4 navigation planning over the solved voxel grid (spec-0008 addendum):
     // collision-safe `move-npc` walked paths (DW0307) + cutscene air-corridor
     // checks (DW0308). Only built when the campaign uses those verbs, so v0.2/v0.3
@@ -194,7 +205,10 @@ pub fn build(
     // adds are re-verified for walkability below. A `DW0210`/`DW0211` diagnostic
     // fails the build (exit 2, mapped in main). Empty for a campaign with no dark
     // reachable cells and no `lighting` declaration → output byte-identical.
-    let relight = crate::light::relight(plan, structures);
+    let relight = match &edit_replay {
+        Some(er) => crate::light::relight_over(plan, &er.assembled),
+        None => crate::light::relight(plan, structures),
+    };
     if let Some(diag) = relight.diagnostics.first() {
         return Err(BuildFailure::Diagnostic {
             code: diag.code,
@@ -223,8 +237,19 @@ pub fn build(
         WavePlacements,
     ) = if crate::nav::needs_world(plan) || has_waves {
         {
-            let world =
-                crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid);
+            let world = match &edit_replay {
+                Some(er) => {
+                    let mut occ = crate::assembled::occupancy_of(
+                        er.assembled.blocks.clone(),
+                        &er.assembled.open_gates,
+                    );
+                    occ.solid.extend(relight.extra_solid.iter().copied());
+                    crate::nav::World::from_occupancy(occ)
+                }
+                None => {
+                    crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid)
+                }
+            };
             let (moves, actor_moves) = if crate::nav::needs_world(plan) {
                 let m = crate::nav::plan_moves(plan, &world)?;
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
@@ -373,6 +398,7 @@ pub fn build(
         &actor_moves,
         &relight.placements,
         &wave_placements,
+        edit_replay.as_ref().map_or(&[][..], |er| &er.commands),
     );
     for (name, body) in &functions {
         out.insert(
@@ -807,6 +833,7 @@ fn ent_xyz(c: [i32; 3]) -> [String; 3] {
     [fmt_f64(p[0]), fmt_f64(p[1]), fmt_f64(p[2])]
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_functions(
     plan: &Plan,
     sentinels: &Sentinels,
@@ -814,6 +841,7 @@ fn emit_functions(
     actor_moves: &[crate::nav::ActorMovePlan],
     relight: &[crate::light::Placement],
     wave_placements: &WavePlacements,
+    world_edits: &[String],
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -1029,6 +1057,17 @@ fn emit_functions(
                 seal.block
             ));
         }
+    }
+    // Stage-7 world edits (spec-0017): the edit script's runtime materialization,
+    // applied after the socket seals and before the relight fixtures — the exact
+    // order the compile-time model replayed them in (the relight pass measured
+    // the EDITED world, so its fixtures must land after the edits). One function
+    // call keeps setup_finish readable; the coalesced `fill`/`setblock` body
+    // lives in `world_edits.mcfunction`. Empty for a campaign without an edit
+    // script → setup_finish byte-identical to pre-stage-7.
+    if !world_edits.is_empty() {
+        setup.push(format!("function {ns}:world_edits"));
+        fns.push(("world_edits".to_string(), lines(world_edits)));
     }
     // Relight fixtures (spec-0010): supplemental lighting placed after the world is
     // fully assembled (structures placed + sockets sealed), so the block writes

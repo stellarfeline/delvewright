@@ -16,6 +16,11 @@ pub const STAGE_FILES: [&str; 6] = [
     "dialogue.json",
 ];
 
+/// The optional stage-7 edit-script filename (spec-0017). Not in
+/// [`STAGE_FILES`]: a campaign without one builds byte-identically to a
+/// pre-stage-7 campaign, so its absence is never an error.
+pub const WORLD_EDITS_FILE: &str = "world-edits.json";
+
 /// A loaded campaign directory: the parsed-ready [`RawCampaign`] plus the exact
 /// raw file contents (by filename) for deterministic input hashing.
 pub struct LoadedCampaign {
@@ -47,6 +52,14 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
     let quest_plan = read("quest-plan.json")?;
     let quests = read("quests.json")?;
     let dialogue = read("dialogue.json")?;
+    // The optional stage-7 edit script (spec-0017): absent = no edit stage
+    // (byte-identical build); present = loaded, parsed, validated and hashed
+    // into the manifest inputs like any other stage document.
+    let world_edits = if dir.join(WORLD_EDITS_FILE).is_file() {
+        Some(read(WORLD_EDITS_FILE)?)
+    } else {
+        None
+    };
     let l10n = load_l10n_dir(&dir.join("l10n"))?;
     Ok(LoadedCampaign {
         raw: RawCampaign {
@@ -56,6 +69,7 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
             quest_plan,
             quests,
             dialogue,
+            world_edits,
         },
         inputs,
         l10n,

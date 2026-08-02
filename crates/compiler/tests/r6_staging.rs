@@ -85,6 +85,7 @@ fn parse_hw() -> Campaign {
         quest_plan: read_hw("quest-plan.json"),
         quests: QUESTS_V06.to_string(),
         dialogue: dialogue_with_forbids(),
+        world_edits: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }
@@ -312,6 +313,7 @@ fn chained_moves_plan_from_last_staged_location() {
         quest_plan: read_hw("quest-plan.json"),
         quests,
         dialogue: dialogue_with_forbids(),
+        world_edits: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -351,6 +353,7 @@ fn chained_moves_plan_from_last_staged_location() {
         quest_plan: read_hw("quest-plan.json"),
         quests: quests_npc,
         dialogue: dialogue_with_forbids(),
+        world_edits: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let out = build(&campaign, &prefabs);

@@ -122,6 +122,15 @@ pub mod codes {
     pub const PREFAB_BINDING: &str = "DW0160";
     /// Area `prefab_pool` references a pool absent from `prefabs/` metadata.
     pub const POOL_UNKNOWN: &str = "DW0161";
+    /// (v0.6, spec-0017) A stage-7 edit script is structurally invalid: an edit
+    /// names a region no earlier `select` in its batch defined, a composition
+    /// (`union`/`intersect`/`subtract`) lists too few regions, a box `min`
+    /// exceeds `max` on an axis, a surface band's `from` exceeds `to`, a palette
+    /// recipe is empty / carries a non-positive or non-finite weight or `scale`,
+    /// a `matching` list is empty, or a morph `by`/`passes` is 0. (Unknown block
+    /// ids in recipes reuse [`BLOCK_UNKNOWN`] / `DW0193`; id-syntax and
+    /// duplicate-name violations reuse `DW0110`/`DW0111`.)
+    pub const EDIT_INVALID: &str = "DW0162";
     /// (v0.3) A `kill` objective or `spawn-wave` effect references a `wave/<id>`
     /// not declared in the stage-5 `waves` section (dangling wave reference).
     pub const WAVE_UNKNOWN: &str = "DW0170";

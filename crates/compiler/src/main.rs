@@ -141,6 +141,44 @@ enum Command {
         #[arg(long)]
         timing: bool,
     },
+    /// The map editor (spec-0017): replay the stage-7 `world-edits.json` edit
+    /// script, enforce the post-batch invariants, and render one snapshot per
+    /// batch — the edit → replay → snapshot loop.
+    Edit {
+        #[command(subcommand)]
+        action: EditAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum EditAction {
+    /// Replay the edit script — plus an optional `--batch` candidate — and, on
+    /// a fully green replay, persist the candidate into `world-edits.json`
+    /// (canonical form). Without `--batch`, replays and re-renders only.
+    Apply {
+        /// Campaign directory.
+        campaign_dir: PathBuf,
+        /// A candidate batch (one stage-7 `EditBatch` JSON object) to append to
+        /// the script. Persisted only if the whole replay is green.
+        #[arg(long)]
+        batch: Option<PathBuf>,
+        /// Directory for the per-batch snapshot PNGs + manifests.
+        #[arg(short, long, default_value = "edit-shots")]
+        out: PathBuf,
+    },
+    /// Exactly `apply`, but never writes to the campaign directory — the
+    /// candidate batch is replayed, checked and rendered only.
+    Preview {
+        /// Campaign directory.
+        campaign_dir: PathBuf,
+        /// A candidate batch (one stage-7 `EditBatch` JSON object) to append to
+        /// the script for this replay only.
+        #[arg(long)]
+        batch: Option<PathBuf>,
+        /// Directory for the per-batch snapshot PNGs + manifests.
+        #[arg(short, long, default_value = "edit-shots")]
+        out: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -200,6 +238,32 @@ fn main() -> ExitCode {
             out,
             timing,
         } => run_blocking_chart(campaign_dir, &cli.prefabs, out, *timing, cli.json),
+        Command::Edit { action } => match action {
+            EditAction::Apply {
+                campaign_dir,
+                batch,
+                out,
+            } => run_edit(
+                campaign_dir,
+                &cli.prefabs,
+                batch.as_deref(),
+                out,
+                true,
+                cli.json,
+            ),
+            EditAction::Preview {
+                campaign_dir,
+                batch,
+                out,
+            } => run_edit(
+                campaign_dir,
+                &cli.prefabs,
+                batch.as_deref(),
+                out,
+                false,
+                cli.json,
+            ),
+        },
     }
 }
 
@@ -246,6 +310,17 @@ fn validate_stage(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> Result
         eprintln!("internal error: cannot read campaign dir: {e}");
         EXIT_INTERNAL
     })?;
+    validate_loaded(loaded, prefabs_dir, json)
+}
+
+/// [`validate_stage`] over an already-loaded (possibly augmented) campaign —
+/// split out so `delvec edit` can validate a script with a candidate batch
+/// appended before anything touches the campaign directory.
+fn validate_loaded(
+    loaded: delvewright_compiler::load::LoadedCampaign,
+    prefabs_dir: &Path,
+    json: bool,
+) -> Result<Validated, u8> {
     let prefabs = PrefabRegistry::load_dir(prefabs_dir).map_err(|e| {
         eprintln!(
             "internal error: cannot read prefabs dir {}: {e}",
@@ -519,7 +594,10 @@ fn run_snapshot(
     };
 
     let started = std::time::Instant::now();
-    let blocks = delvewright_compiler::assembled::assembled_blocks(&plan, &structures);
+    let blocks = match edited_assembled(&plan, &structures, json) {
+        Ok(a) => a.blocks,
+        Err(code) => return ExitCode::from(code),
+    };
     let grid = snapshot::VoxelGrid::build(&blocks);
     let assembled_ms = started.elapsed().as_secs_f64() * 1000.0;
 
@@ -619,6 +697,25 @@ fn run_snapshot(
 /// A path with no extension simply gains one.
 fn manifest_path_for(out: &Path) -> PathBuf {
     out.with_extension("manifest.json")
+}
+
+/// The assembled world a **view** command shows: the stage-7 edit script
+/// applied in view mode (spec-0017 — invariants not enforced, so a broken
+/// state can be looked at), or the plain assembly for an unedited campaign.
+/// A region-resolution failure (`DW0323`) has no world state to show → exit 3.
+fn edited_assembled(
+    plan: &Plan,
+    structures: &BTreeMap<String, Vec<u8>>,
+    json: bool,
+) -> Result<delvewright_compiler::assembled::Assembled, u8> {
+    match delvewright_compiler::edit::replay_view(plan, structures) {
+        Ok(Some(er)) => Ok(er.assembled),
+        Ok(None) => Ok(delvewright_compiler::assembled::assemble(plan, structures)),
+        Err(e) => {
+            print_build_error(e.code, &e.message, json);
+            Err(3)
+        }
+    }
 }
 
 /// The `ocean`-horizon sea level to draw as a background plane, or `None` for a
@@ -949,8 +1046,17 @@ fn run_blocking_chart(
     };
 
     let started = std::time::Instant::now();
-    let blocks = delvewright_compiler::assembled::assembled_blocks(&plan, &structures);
-    let world = delvewright_compiler::nav::World::from_plan(&plan, &structures);
+    let assembled = match edited_assembled(&plan, &structures, json) {
+        Ok(a) => a,
+        Err(code) => return ExitCode::from(code),
+    };
+    let world = delvewright_compiler::nav::World::from_occupancy(
+        delvewright_compiler::assembled::occupancy_of(
+            assembled.blocks.clone(),
+            &assembled.open_gates,
+        ),
+    );
+    let blocks = assembled.blocks;
     let targets = delvewright_compiler::snapshot::collect_targets(&plan);
     let corridor: std::collections::BTreeSet<[i32; 3]> =
         delvewright_compiler::nav::critical_path_routes(&plan, &world)
@@ -1171,6 +1277,259 @@ fn run_build(
     ExitCode::SUCCESS
 }
 
+/// `delvec edit apply|preview` (spec-0017): the edit → replay → snapshot loop.
+///
+/// Replays the stage-7 edit script — with an optional `--batch` candidate
+/// appended — through full validation, the deterministic replay with its
+/// per-batch invariant proofs, and one auto-rendered snapshot per batch
+/// (framing the batch's edited region over the final edited world). `apply`
+/// additionally persists the candidate into `world-edits.json` (canonical
+/// form) once the whole replay is green; `preview` never writes to the
+/// campaign directory. Editing sessions leave no state outside the script.
+fn run_edit(
+    campaign_dir: &Path,
+    prefabs_dir: &Path,
+    batch: Option<&Path>,
+    out_dir: &Path,
+    persist: bool,
+    json: bool,
+) -> ExitCode {
+    use delvewright_compiler::load::WORLD_EDITS_FILE;
+    use delvewright_compiler::snapshot::{
+        self, Camera, DEFAULT_FOV, DEFAULT_HEIGHT, DEFAULT_WIDTH,
+    };
+
+    let mut loaded = match load_campaign_dir(campaign_dir) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("internal error: cannot read campaign dir: {e}");
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    };
+
+    // Append the candidate batch to the (possibly absent) stage-7 document, in
+    // memory only — nothing touches the campaign dir unless the replay is green
+    // AND this is `apply`.
+    if let Some(bpath) = batch {
+        let src = match std::fs::read_to_string(bpath) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!(
+                    "internal error: cannot read --batch {}: {e}",
+                    bpath.display()
+                );
+                return ExitCode::from(EXIT_INTERNAL);
+            }
+        };
+        let candidate: delvewright_dsl::EditBatch = match serde_json::from_str(&src) {
+            Ok(b) => b,
+            Err(e) => {
+                print_build_error(
+                    delvewright_dsl::codes::SCHEMA,
+                    &format!(
+                        "--batch {} is not a stage-7 `EditBatch` object: {e}. Run `delvec \
+                         schema --stage 7` for the exact shape (the file holds ONE batch \
+                         object, not a whole world-edits document)",
+                        bpath.display()
+                    ),
+                    json,
+                );
+                return ExitCode::from(1);
+            }
+        };
+        let mut env: delvewright_dsl::Envelope<delvewright_dsl::WorldEditsContent> =
+            match &loaded.raw.world_edits {
+                Some(s) => match serde_json::from_str(s) {
+                    Ok(env) => env,
+                    Err(e) => {
+                        print_build_error(
+                            delvewright_dsl::codes::SCHEMA,
+                            &format!(
+                                "existing world-edits.json does not parse: {e} — fix it before \
+                                 appending batches"
+                            ),
+                            json,
+                        );
+                        return ExitCode::from(1);
+                    }
+                },
+                None => {
+                    let world: serde_json::Value =
+                        serde_json::from_str(&loaded.raw.world).unwrap_or_default();
+                    let cid = world
+                        .get("campaign_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    delvewright_dsl::Envelope {
+                        dsl_version: delvewright_dsl::SUPPORTED_DSL_VERSION.to_string(),
+                        campaign_id: delvewright_dsl::CampaignId(cid),
+                        stage: Stage::WorldEdits,
+                        content: delvewright_dsl::WorldEditsContent {
+                            batches: Vec::new(),
+                        },
+                    }
+                }
+            };
+        env.content.batches.push(candidate);
+        let script = match delvewright_dsl::to_canonical_string(&env) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("internal error: cannot serialize world-edits: {e}");
+                return ExitCode::from(EXIT_INTERNAL);
+            }
+        };
+        loaded
+            .inputs
+            .insert(WORLD_EDITS_FILE.to_string(), script.clone().into_bytes());
+        loaded.raw.world_edits = Some(script);
+    }
+    let augmented_script = loaded.raw.world_edits.clone();
+
+    let v = match validate_loaded(loaded, prefabs_dir, json) {
+        Ok(v) => v,
+        Err(code) => return ExitCode::from(code),
+    };
+    if has_error(&v.diags) {
+        return ExitCode::from(1);
+    }
+    let plan = match Plan::build(&v.campaign, &v.prefabs) {
+        Ok(p) => p,
+        Err(e) => {
+            print_build_error(e.code, &e.message, json);
+            return ExitCode::from(3);
+        }
+    };
+    let structures = match read_structures(&plan, prefabs_dir, json) {
+        Ok(s) => s,
+        Err(code) => return ExitCode::from(code),
+    };
+
+    let replay = match delvewright_compiler::edit::replay(&plan, &structures) {
+        Ok(r) => r,
+        Err(e) => {
+            print_build_error(e.code, &e.message, json);
+            // Same tier mapping as `build` (analysis-tier content defects → 2).
+            let analysis_tier = e.code.starts_with("DW02")
+                || e.code == emit::DW_WAVE_NO_ROOM
+                || e.code == delvewright_compiler::assembled::DW_GRAVITY_DESPAWN
+                || e.code == delvewright_compiler::nav::DW_TRAP_LETHAL_UNAVOIDABLE;
+            return ExitCode::from(if analysis_tier { 2 } else { 3 });
+        }
+    };
+    let Some(replay) = replay else {
+        println!("no edit batches — nothing to replay (add one with `--batch <file>`)");
+        return ExitCode::SUCCESS;
+    };
+
+    // One snapshot per batch: frame the batch's edited region over the FINAL
+    // edited world (a dollhouse view pulled into open air, like `--at`).
+    let grid = snapshot::VoxelGrid::build(&replay.assembled.blocks);
+    let targets = snapshot::collect_targets(&plan);
+    let opts = snapshot::FrameOpts {
+        width: DEFAULT_WIDTH,
+        height: DEFAULT_HEIGHT,
+        sea_level: sea_level_of(&v.campaign),
+        labels: true,
+    };
+    let mut shots: Vec<(String, String)> = Vec::new(); // (batch id, png path)
+    for b in &replay.batches {
+        let Some((lo, hi)) = b.bounds else { continue };
+        let centre = [
+            (lo[0] + hi[0]) as f64 / 2.0,
+            (lo[1] + hi[1]) as f64 / 2.0,
+            (lo[2] + hi[2]) as f64 / 2.0,
+        ];
+        let span = ((hi[0] - lo[0]).max(hi[1] - lo[1]).max(hi[2] - lo[2])) as f64;
+        let d = (span * 1.1).max(12.0);
+        let eye = [
+            centre[0] + d * 0.75,
+            centre[1] + d * 0.65,
+            centre[2] + d * 0.75,
+        ];
+        let cam = Camera::looking_at(pull_into_open_air(&grid, centre, eye), centre, DEFAULT_FOV);
+
+        let mut frame = snapshot::render_frame(&grid, &cam, &opts);
+        let (inside, outside) = snapshot::resolve_targets(&grid, &cam, &opts, &targets);
+        snapshot::draw_labels(&mut frame, &grid, &cam, &inside);
+        let png = delvewright_compiler::png::encode_rgba(
+            frame.canvas.width,
+            frame.canvas.height,
+            &frame.canvas.rgba,
+        );
+        let name = b.id.strip_prefix("batch/").unwrap_or(&b.id);
+        let image_name = format!("{name}.png");
+        let png_path = out_dir.join(&image_name);
+        let doc = snapshot::manifest(
+            v.campaign.world.campaign_id.as_str(),
+            &image_name,
+            &cam,
+            &opts,
+            &grid,
+            &inside,
+            &outside,
+        );
+        let mut manifest_bytes = match serde_json::to_vec_pretty(&doc) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("internal error: cannot serialize manifest: {e}");
+                return ExitCode::from(EXIT_INTERNAL);
+            }
+        };
+        manifest_bytes.push(b'\n');
+        if let Err(e) = write_file(&png_path, &png)
+            .and_then(|()| write_file(&manifest_path_for(&png_path), &manifest_bytes))
+        {
+            eprintln!("internal error: cannot write snapshot: {e}");
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+        shots.push((b.id.clone(), png_path.display().to_string()));
+    }
+
+    // Persist the accepted candidate — `apply` only, green replay only (we are
+    // past every invariant gate here).
+    let persisted = persist && batch.is_some();
+    if persisted
+        && let Some(script) = &augmented_script
+        && let Err(e) = std::fs::write(campaign_dir.join(WORLD_EDITS_FILE), script)
+    {
+        eprintln!("internal error: cannot write {WORLD_EDITS_FILE}: {e}");
+        return ExitCode::from(EXIT_INTERNAL);
+    }
+
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "batches": replay.batches.iter().map(|b| &b.id).collect::<Vec<_>>(),
+                "commands": replay.commands.len(),
+                "snapshots": shots.iter().map(|(id, p)| serde_json::json!({
+                    "batch": id, "png": p,
+                })).collect::<Vec<_>>(),
+                "persisted": persisted,
+            })
+        );
+    } else {
+        for (id, path) in &shots {
+            println!("{id} → {path}");
+        }
+        println!(
+            "{} batch(es) replayed green, {} runtime command(s){}",
+            replay.batches.len(),
+            replay.commands.len(),
+            if persisted {
+                format!(
+                    " — persisted to {}",
+                    campaign_dir.join(WORLD_EDITS_FILE).display()
+                )
+            } else {
+                String::new()
+            }
+        );
+    }
+    ExitCode::SUCCESS
+}
+
 /// The pinned content-repo SHA stamped into `manifest.json` (spec-0007 Step 0).
 ///
 /// Read from `versions.toml` `[content].sha` — the value pinned in the repo, NOT
@@ -1243,6 +1602,7 @@ fn run_schema(stage: &str) -> ExitCode {
         "4" => vec![Stage::QuestPlan],
         "5" => vec![Stage::Quests],
         "6" => vec![Stage::Dialogue],
+        "7" => vec![Stage::WorldEdits],
         "all" => vec![
             Stage::World,
             Stage::Npcs,
@@ -1250,9 +1610,10 @@ fn run_schema(stage: &str) -> ExitCode {
             Stage::QuestPlan,
             Stage::Quests,
             Stage::Dialogue,
+            Stage::WorldEdits,
         ],
         other => {
-            eprintln!("unknown stage `{other}` (want 1..6 or all)");
+            eprintln!("unknown stage `{other}` (want 1..7 or all)");
             return ExitCode::from(EXIT_INTERNAL);
         }
     };

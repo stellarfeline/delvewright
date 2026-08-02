@@ -2037,6 +2037,72 @@ pub fn verify_pov_cameras(world: &World, cameras: &[(String, [i32; 3])]) -> Resu
     Ok(())
 }
 
+/// `DW0322`: after a world edit, a reachable walkable cell borders a **void
+/// drop** — a horizontally adjacent column the player can step (or open a gate)
+/// into that has no support of any kind below, so one step off the proven
+/// ground falls out of the world (spec-0017 invariant 4). This is the guarantee
+/// the greenfield generator's bounding berm used to provide *physically*, made
+/// a checked invariant so an edit script is free to reshape the boundary into
+/// natural landform — as long as the landform still holds the line.
+pub const DW_EDIT_BORDERS_VOID: &str = "DW0322";
+
+/// Assert no reachable walkable cell borders a void drop (spec-0017 boundary
+/// safety; [`DW_EDIT_BORDERS_VOID`]). `starts` are the reachability roots (the
+/// plan's resolved anchors — the same roots the relight pass floods from).
+///
+/// A neighbour column is a void drop when the player could enter it — its feet
+/// and head cells are clear (a closed fence gate counts as enterable: opening
+/// it is an adventure-legal right-click) — and **nothing anywhere below** would
+/// arrest the fall: no solid, no 1.5-tall barrier top, no gate top, no water.
+/// A deep drop onto real geometry is legal (that is falling, not leaving the
+/// world); only a bottomless column is an error. Run after every edit batch —
+/// never on the no-edit path, whose worlds provide this physically.
+pub fn verify_boundary_safety(world: &World, starts: &[[i32; 3]]) -> Result<(), NavError> {
+    // Per-column lowest fall-arresting cell: solid, tall barrier, use-gate, or
+    // flooded — anything vanilla stops a falling player on (or in).
+    let mut col_min: BTreeMap<(i32, i32), i32> = BTreeMap::new();
+    for set in [&world.solid, &world.tall, &world.use_gates, &world.flooded] {
+        for c in set.iter() {
+            col_min
+                .entry((c[0], c[2]))
+                .and_modify(|m| *m = (*m).min(c[1]))
+                .or_insert(c[1]);
+        }
+    }
+    for cell in world.reachable_walkable(starts) {
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            let n = [cell[0] + dx, cell[1], cell[2] + dz];
+            let head = [n[0], n[1] + 1, n[2]];
+            // Enterable: feet + head clear of solids/talls/water. A use-gate
+            // cell is deliberately enterable (the player can open it and walk
+            // through — a gate onto a bottomless drop is exactly the hazard).
+            let blocked = |c: [i32; 3]| {
+                world.solid.contains(&c) || world.tall.contains(&c) || world.flooded.contains(&c)
+            };
+            if blocked(n) || blocked(head) {
+                continue;
+            }
+            let has_support = col_min
+                .get(&(n[0], n[2]))
+                .is_some_and(|&lowest| lowest < n[1]);
+            if !has_support {
+                return Err(NavError {
+                    code: DW_EDIT_BORDERS_VOID,
+                    message: format!(
+                        "boundary safety (spec-0017): reachable walkable cell {cell:?} borders a \
+                         void drop at {n:?} — one step off the proven ground falls out of the \
+                         world. The edit stripped the physical boundary here: extend the terrain \
+                         under the exposed edge (fill/morph a slope or outcrop below {n:?}) or \
+                         reinstate a barrier shape; do NOT weaken this check or reroute the \
+                         path to sidestep it"
+                    ),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2062,6 +2128,59 @@ mod tests {
     /// campaign's real DAG-causal predicate (`Plan::gate_fired_before`).
     fn linear(g: usize, s: usize) -> bool {
         g < s
+    }
+
+    /// Boundary safety (spec-0017 invariant 4): a walkable platform edge whose
+    /// neighbour column has NOTHING below is a void drop → `DW0322`; ringing the
+    /// platform with a 2-high (unjumpable) rim, or giving the neighbour column
+    /// real geometry anywhere below (a deep drop onto land is falling, not
+    /// leaving the world), passes.
+    #[test]
+    fn boundary_safety_flags_a_walkable_edge_over_void_dw0322() {
+        // A bare 3×3 platform: every rim cell borders bottomless columns.
+        let mut solid = BTreeSet::new();
+        for x in 0..3 {
+            for z in 0..3 {
+                solid.insert([x, 63, z]);
+            }
+        }
+        let world = World::from_solid_cells(solid);
+        let err = verify_boundary_safety(&world, &[[1, 64, 1]]).expect_err("edge borders void");
+        assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
+        assert!(err.message.contains("void drop"), "names the hazard");
+    }
+
+    #[test]
+    fn boundary_safety_accepts_rimmed_platforms_and_deep_drops() {
+        // (a) The same platform ringed by a 2-high rim (feet + head blocked, and
+        // the rim top is +2 — unclimbable, so it never joins the walkable set).
+        let mut solid = BTreeSet::new();
+        for x in 0..3 {
+            for z in 0..3 {
+                solid.insert([x, 63, z]);
+            }
+        }
+        for x in -1..4 {
+            for z in -1..4 {
+                if (0..3).contains(&x) && (0..3).contains(&z) {
+                    continue;
+                }
+                solid.insert([x, 64, z]);
+                solid.insert([x, 65, z]);
+            }
+        }
+        let world = World::from_solid_cells(solid);
+        verify_boundary_safety(&world, &[[1, 64, 1]]).expect("a 2-high rim holds the line");
+
+        // (b) A single floor cell whose four neighbour columns all have geometry
+        // far below: a deep drop is legal (falling, not leaving the world).
+        let mut solid = BTreeSet::new();
+        solid.insert([0, 63, 0]);
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            solid.insert([dx, 10, dz]);
+        }
+        let world = World::from_solid_cells(solid);
+        verify_boundary_safety(&world, &[[0, 64, 0]]).expect("deep drops onto land are legal");
     }
 
     /// A non-talk-to visited position (test convenience for `route_visited`).

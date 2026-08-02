@@ -66,6 +66,7 @@ fn v03_campaign() -> RawCampaign {
         quest_plan: to_v03(&common::read_valid("quest-plan.json")),
         quests: QUESTS_V03.to_string(),
         dialogue: to_v03(&common::read_valid("dialogue.json")),
+        world_edits: None,
     }
 }
 
