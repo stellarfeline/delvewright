@@ -60,6 +60,14 @@ pub const DW_CHECKPOINT_STRANDED: &str = "DW0315";
 /// assembled model (a trap-trigger / hazard / mid-air cell), so the party would
 /// respawn into the void or a wall.
 pub const DW_CHECKPOINT_UNSTANDABLE: &str = "DW0316";
+/// `DW0378`: a `timed-gate` (spec-0016 §4) that is a coin flip rather than a
+/// timing read — the set of entry phases from which a walking player clears the
+/// span before the gate shuts covers **less than 20% of the cycle** (owner ruling
+/// 2026-08-02). All-phase passability is explicitly NOT the requirement: a gate
+/// that punishes bad timing is the point. A gate that punishes *every* timing is
+/// not a skill check, it is a slot machine, and no amount of learning the level
+/// makes it fair.
+pub const DW_TIMED_GATE_COIN_FLIP: &str = "DW0378";
 /// `DW0376`: an `ambush` (spec-0016 §3) with no counterplay — with every
 /// ambusher standing where it will stand, no rest point (a checkpoint, a bonfire,
 /// or the campaign entry) is walkable from the trigger cell any more. The player
@@ -2078,6 +2086,112 @@ fn verify_checkpoints(
         }
     }
     Ok(())
+}
+
+/// The minimum share of a `timed-gate` cycle that must admit a crossing
+/// (spec-0016 §4, owner ruling 2026-08-02). Below this the gate stops being a
+/// timing read and becomes a coin flip. Expressed as a percentage so the
+/// arithmetic below stays in integers — no float rounding in a proof (ADR-0006).
+const TIMED_GATE_MIN_ADMIT_PERCENT: u32 = 20;
+
+/// Prove every `timed-gate` is readable — [`DW_TIMED_GATE_COIN_FLIP`] (`DW0378`).
+///
+/// The requirement is deliberately **not** all-phase passability: spec-0016 §4 is
+/// explicit that a gate which punishes bad timing is the entire point. What must
+/// hold is that the gate can be *read*: over one full cycle, the entry phases from
+/// which a walking player clears the span before it shuts must cover at least
+/// [`TIMED_GATE_MIN_ADMIT_PERCENT`] of the cycle.
+///
+/// The crossing cost comes from the same nav model every other proof uses: the A*
+/// step count from the footing on one side of the gate region to the footing on
+/// the other with the gate open, charged at [`SPRINT_TICKS_PER_BLOCK`]. A player
+/// who starts the crossing `p` ticks into the open window arrives in time iff
+/// `p + cross <= open_ticks`, so the admitting window is
+/// `max(0, open_ticks - cross + 1)` ticks out of `open_ticks + closed_ticks`.
+///
+/// A gate whose two sides have no walkable footing, or that no route connects even
+/// while open, is left to the geometry proofs that own it (`DW0311`) rather than
+/// double-reported here.
+pub fn check_timed_gates(plan: &Plan, world: &World) -> Result<(), NavError> {
+    verify_timed_gates(world, &plan.timed_gates)
+}
+
+/// The pure core of [`check_timed_gates`] (unit-testable against a synthetic
+/// [`World`]).
+fn verify_timed_gates(world: &World, gates: &[crate::plan::TimedGatePlan]) -> Result<(), NavError> {
+    for g in gates {
+        let cells: BTreeSet<[i32; 3]> =
+            crate::assembled::region_cells(g.gate_region.0, g.gate_region.1).collect();
+        let Some((near, far)) = gate_crossing_footings(world, g.gate_region, &cells) else {
+            continue; // no footing on both sides — a geometry concern, not a timing one
+        };
+        let Some(path) = world.find_path(near, far) else {
+            continue; // the open gate connects nothing — DW0311's business
+        };
+        // `path` includes both endpoints; the crossing is the moves between them.
+        let cross_ticks = (path.len().saturating_sub(1) as u32) * SPRINT_TICKS_PER_BLOCK;
+        let cycle = g.open_ticks + g.closed_ticks;
+        let admits =
+            g.open_ticks.saturating_sub(cross_ticks) + u32::from(cross_ticks <= g.open_ticks);
+        // Integer percentage, rounded DOWN — the proof never credits the gate with
+        // a share it does not have.
+        let percent = admits.saturating_mul(100) / cycle.max(1);
+        if percent < TIMED_GATE_MIN_ADMIT_PERCENT {
+            return Err(NavError {
+                code: DW_TIMED_GATE_COIN_FLIP,
+                message: format!(
+                    "timed gate `{}` is a coin flip, not a timing read: crossing its span takes \
+                     {cross_ticks} ticks ({} blocks at {SPRINT_TICKS_PER_BLOCK} t/block), so only \
+                     {admits} of its {cycle}-tick cycle ({percent}%) admit a player who starts \
+                     walking then — under the {TIMED_GATE_MIN_ADMIT_PERCENT}% floor (spec-0016 §4, \
+                     owner ruling 2026-08-02). Punishing bad timing is the point; punishing EVERY \
+                     timing is a slot machine. Lengthen `open_ticks`, shorten `closed_ticks`, or \
+                     narrow the span — never lower the floor.",
+                    g.id,
+                    path.len().saturating_sub(1)
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The standable footings immediately on either side of a gate region, over the
+/// world with the region SEALED so neither endpoint can land inside it or snap
+/// through. The crossing axis is whichever horizontal axis actually has footing on
+/// both sides — trying x then z rather than guessing from the region's extents is
+/// both deterministic and correct for a square 1×1 gate column, where the extents
+/// tie and a guess would pick the wall's own plane.
+fn gate_crossing_footings(
+    world: &World,
+    region: ([i32; 3], [i32; 3]),
+    cells: &BTreeSet<[i32; 3]>,
+) -> Option<([i32; 3], [i32; 3])> {
+    let sealed = world.with_sealed(cells);
+    let (from, to) = region;
+    for axis in [0usize, 2] {
+        let mut near = None;
+        let mut far = None;
+        for cell in crate::assembled::region_cells(from, to) {
+            for (slot, delta) in [(&mut near, -1), (&mut far, 1)] {
+                if slot.is_some() {
+                    continue;
+                }
+                let mut c = cell;
+                c[axis] += delta;
+                if !cells.contains(&c) && sealed.standable(c) {
+                    *slot = Some(c);
+                }
+            }
+            if near.is_some() && far.is_some() {
+                break;
+            }
+        }
+        if let (Some(n), Some(f)) = (near, far) {
+            return Some((n, f));
+        }
+    }
+    None
 }
 
 /// Prove every `ambush` (spec-0016 §3) leaves the player a play —
@@ -4525,6 +4639,62 @@ mod tests {
             }
         }
         floored(9, 3, 65, &walls)
+    }
+
+    fn timed_gate(
+        region: ([i32; 3], [i32; 3]),
+        open_ticks: u32,
+        closed_ticks: u32,
+    ) -> crate::plan::TimedGatePlan {
+        crate::plan::TimedGatePlan {
+            id: "timed-gate/piston-hall".to_string(),
+            safe: "piston_hall".to_string(),
+            gate_anchor: "anchor/gate".to_string(),
+            gate_region: region,
+            gate_block: "minecraft:iron_bars".to_string(),
+            open_ticks,
+            closed_ticks,
+            phase: 0,
+        }
+    }
+
+    /// A generous window: crossing a 1-cell doorway costs a handful of ticks and
+    /// the gate stands open for 60 of every 100, so most of the cycle is a legal
+    /// entry. A readable gate.
+    #[test]
+    fn timed_gate_with_a_generous_window_is_readable() {
+        let world = shortcut_world(12, 9, 65, 4, 1, None);
+        let g = timed_gate(([1, 65, 4], [1, 66, 4]), 60, 40);
+        verify_timed_gates(&world, &[g]).expect("60 open of a 100-tick cycle is a timing read");
+    }
+
+    /// The same span with an open window barely longer than the crossing itself:
+    /// almost every entry phase is a death, so the gate is a coin flip. `DW0378`.
+    #[test]
+    fn timed_gate_whose_window_barely_admits_a_crossing_is_dw0378() {
+        let world = shortcut_world(12, 9, 65, 4, 1, None);
+        // Crossing the doorway is 2 moves = 8 ticks; a 10-tick open window inside
+        // a 200-tick cycle admits 3 of 200 phases = 1%.
+        let g = timed_gate(([1, 65, 4], [1, 66, 4]), 10, 190);
+        let err = verify_timed_gates(&world, &[g])
+            .expect_err("a window that admits ~1% of the cycle is a slot machine");
+        assert_eq!(err.code, DW_TIMED_GATE_COIN_FLIP); // DW0378
+        assert!(
+            err.message.contains("coin flip"),
+            "the message must name the failure: {}",
+            err.message
+        );
+    }
+
+    /// An open window SHORTER than the crossing admits nothing at all — the
+    /// degenerate end of the same rule, and the one a player can never learn.
+    #[test]
+    fn timed_gate_no_one_can_ever_cross_is_dw0378() {
+        let world = shortcut_world(12, 9, 65, 4, 1, None);
+        let g = timed_gate(([1, 65, 4], [1, 66, 4]), 2, 20);
+        let err = verify_timed_gates(&world, &[g])
+            .expect_err("a window shorter than the crossing admits no phase at all");
+        assert_eq!(err.code, DW_TIMED_GATE_COIN_FLIP); // DW0378
     }
 
     fn ambush(at: [i32; 3], actor_cells: Vec<[i32; 3]>) -> crate::plan::AmbushPlan {

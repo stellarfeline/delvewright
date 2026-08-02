@@ -332,6 +332,10 @@ pub fn build_with_warnings(
                 // spec-0016 §3 ambush counterplay (DW0376): 初见杀 is legitimate,
                 // a pocket with no retreat is not.
                 crate::nav::check_ambushes(plan, &world, campaign_spawn(plan))?;
+                // spec-0016 §4 timed gates (DW0378): a gate that punishes bad
+                // timing is the point; one that punishes every timing is a slot
+                // machine. At least 20% of the cycle must admit a crossing.
+                crate::nav::check_timed_gates(plan, &world)?;
                 // Export the DW0311-proven critical-path routes as validation
                 // metadata (task #38): thinned per-leg waypoint polylines the harness
                 // replays as successive nearby goals, so no single giant mineflayer A*
@@ -1295,6 +1299,9 @@ fn emit_functions(
     // spec-0016 §2: summon each shortcut's far-side unlock affordance. The gate
     // itself needs no command — it is sealed from world-load by the prefab.
     setup.extend(shortcut_setup(plan));
+    // spec-0016 §4: start each timed gate's clock. The gate is sealed from
+    // world-load by the prefab, so the clock's first act is always an OPEN.
+    setup.extend(timed_gate_setup(plan));
     // Forceload lifecycle (map-editor audit finding 6, planner decision). The
     // edit-AABB forceloads exist for ONE reason — letting the one-shot
     // `world_edits` writes land — and `place_verify` above has now proven every
@@ -1582,6 +1589,8 @@ fn emit_functions(
     fns.extend(emit_bonfire_functions(plan));
     // --- spec-0016 §2 shortcut unlock functions ---
     fns.extend(emit_shortcut_functions(plan));
+    // --- spec-0016 §4 timed-gate clock functions ---
+    fns.extend(emit_timed_gate_functions(plan));
     // --- v0.6 stealth-beat functions (spec-0014) ---
     fns.extend(emit_stealth_functions(plan));
 
@@ -3073,6 +3082,70 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
         fns.push((format!("cp_on_respawn_{}", c.index), lines(&body)));
     }
     fns
+}
+
+// ---------------------------------------------------------------------------
+// spec-0016 §4 timed gates
+// ---------------------------------------------------------------------------
+
+/// `setup_finish` commands for timed gates (spec-0016 §4): start each gate's
+/// clock. The gate is physically sealed by the prefab at world-load, so the
+/// clock's first act is always an OPEN — a `phase` of 0 opens immediately, a
+/// larger one holds the gate shut that many ticks first. Empty for a campaign
+/// with no timed gate → byte-identical.
+fn timed_gate_setup(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    plan.timed_gates
+        .iter()
+        .map(|g| {
+            if g.phase == 0 {
+                format!("function {ns}:tgate_open_{}", g.safe)
+            } else {
+                format!("schedule function {ns}:tgate_open_{} {}t", g.safe, g.phase)
+            }
+        })
+        .collect()
+}
+
+/// The timed-gate clock functions (spec-0016 §4): a two-function ping-pong that
+/// carries its own next hop, so the cycle is one self-sustaining chain with no
+/// per-tick polling and no state to drift.
+///
+/// `tgate_open_<id>` clears the region (the same `fill … replace <block>`
+/// `open-gate` emits) and schedules the close `open_ticks` later;
+/// `tgate_close_<id>` fills it back and schedules the open `closed_ticks` later.
+/// `schedule` is replace-mode in vanilla, so the clock can never double up — the
+/// same property the boundary and night-vision clocks rely on. Both functions are
+/// pure world edits: they name no player, so the server command source they are
+/// re-entered under is irrelevant (§4 "A scheduled bundle has no `@s`").
+fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for g in &plan.timed_gates {
+        let id = &g.safe;
+        let (from, to) = g.gate_region;
+        out.push((
+            format!("tgate_open_{id}"),
+            lines(&[
+                format!(
+                    "fill {} {} {} {} {} {} minecraft:air replace {}",
+                    from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
+                ),
+                format!("schedule function {ns}:tgate_close_{id} {}t", g.open_ticks),
+            ]),
+        ));
+        out.push((
+            format!("tgate_close_{id}"),
+            lines(&[
+                format!(
+                    "fill {} {} {} {} {} {} {}",
+                    from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
+                ),
+                format!("schedule function {ns}:tgate_open_{id} {}t", g.closed_ticks),
+            ]),
+        ));
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -5858,6 +5931,8 @@ fn emit_packtest(
     emit_bonfire_packtests(plan, out);
     // spec-0016 §2: the shortcut really opens, and opens exactly once.
     emit_shortcut_packtest(plan, out);
+    // spec-0016 §4: the clock really alternates the gate region.
+    emit_timed_gate_packtest(plan, out);
 
     // The scheduled-executor contract (AUDIT-P0): a function reached through
     // `schedule` still lands per-player state on real players.
@@ -6591,6 +6666,55 @@ fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
     b.push(format!("scoreboard players set {seated} dw.sys 0"));
     out.insert(
         format!("packtest-datapack/data/{ns}/test/souls_bonfire_reseat.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// spec-0016 §4 timed-gate PackTest: the emitted clock really alternates the gate
+/// region on a live server. A fake player cannot wait out a `schedule` inside a
+/// plain mcfunction, so this drives the two halves of the ping-pong directly —
+/// which IS the clock's body — and asserts the region's state after each. That is
+/// the machine-checkable half of "a deterministic clock over the gate region";
+/// the *timing* half is the compile-time `DW0378` proof, which needs no server.
+/// Emits nothing for a campaign with no timed gate.
+fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some(g) = plan.timed_gates.first() else {
+        return;
+    };
+    let (from, to) = g.gate_region;
+    let probe = from;
+    let mut b = packtest_header(&format!(
+        "{title}: timed gate `{}` alternates its region (spec-0016 §4)",
+        g.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    // Seal first: `setup` may have already run the clock's opening move, and a
+    // sibling template shares this server.
+    b.push(format!(
+        "fill {} {} {} {} {} {} {}",
+        from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
+    ));
+    b.push(format!(
+        "execute store success score #tg_sealed dw.sys if block {} {} {} {}",
+        probe[0], probe[1], probe[2], g.gate_block
+    ));
+    b.push("assert score #tg_sealed dw.sys matches 1".to_string());
+    b.push(format!("function {ns}:tgate_open_{}", g.safe));
+    b.push(format!(
+        "execute store success score #tg_open dw.sys if block {} {} {} minecraft:air",
+        probe[0], probe[1], probe[2]
+    ));
+    b.push("assert score #tg_open dw.sys matches 1".to_string());
+    b.push(format!("function {ns}:tgate_close_{}", g.safe));
+    b.push(format!(
+        "execute store success score #tg_shut dw.sys if block {} {} {} {}",
+        probe[0], probe[1], probe[2], g.gate_block
+    ));
+    b.push("assert score #tg_shut dw.sys matches 1".to_string());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_timed_gate.mcfunction"),
         lines(&b).into_bytes(),
     );
 }

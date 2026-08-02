@@ -29,7 +29,8 @@ pub use envelope::{
 };
 pub use ids::{
     ActorId, AmbushId, AnchorId, AreaId, CampaignId, ClassId, DialogueId, EditBatchId, FlagId,
-    NpcId, ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId, TriggerId, WaveId,
+    NpcId, ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId, TimedGateId, TriggerId,
+    WaveId,
 };
 pub use l10n::{
     ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, MARKER_SIGIL, ScreenNarrate, SoundRef,
@@ -49,7 +50,7 @@ pub use stages::{
     Horizon, KitItem, Lethality, MobAttributes, MobEffect, MobEquipment, NarrateStyle, Npc,
     NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces, PlannedQuest, Prop, Quest,
     QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep, Shortcut,
-    ShotStyle, SkinModel, SoundAt, StealthZone, Trap, TrapDisarm, TrapEffect, TrapReset,
+    ShotStyle, SkinModel, SoundAt, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset,
     TrapTrigger, Trigger, TriggerOn, Wave, WaveMob, WorldContent, WorldTime, WorldWeather,
 };
 pub use stages::{
