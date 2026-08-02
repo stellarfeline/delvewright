@@ -145,6 +145,9 @@ pub struct TrapPlan {
     pub safe: String,
     /// The declared trigger kind (informs the hazard model + PackTest).
     pub trigger: TrapTrigger,
+    /// The `anchor/trap` marker this trap sits on — the key into prefab metadata
+    /// for its hardware declarations (`dispenser`, `trigger_block`).
+    pub at_anchor: String,
     /// The resolved absolute trigger/hazard cell (the trap's `at` anchor cell).
     pub trigger_cell: [i32; 3],
     /// The resolved absolute dispenser socket cell (from the `at` anchor's
@@ -1907,6 +1910,7 @@ fn collect_traps(
             id: t.id.as_str().to_string(),
             safe: safe_local(t.id.as_str()),
             trigger: t.trigger,
+            at_anchor: t.at.as_str().to_string(),
             trigger_cell,
             dispenser,
             payload,

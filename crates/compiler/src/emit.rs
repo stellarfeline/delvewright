@@ -446,6 +446,10 @@ pub fn build_with_warnings(
             }
         }
     }
+    // Trap flag gating (DSL v0.6): resolve the authored trigger hardware for every
+    // gated trap, rejecting a trigger the compiler cannot restore (DW0363).
+    let trap_gates = trap_gate_hardware(plan, prefabs)?;
+
     let functions = emit_functions(
         plan,
         &sentinels,
@@ -457,6 +461,7 @@ pub fn build_with_warnings(
         &edit_replay.as_ref().map_or(Vec::new(), |er| {
             er.batches.iter().filter_map(|b| b.bounds).collect()
         }),
+        &trap_gates,
     );
     for (name, body) in &functions {
         insert_unique(
@@ -920,6 +925,7 @@ fn emit_functions(
     wave_placements: &WavePlacements,
     world_edits: &[String],
     edit_bounds: &[([i32; 3], [i32; 3])],
+    trap_gates: &BTreeMap<String, String>,
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -1276,7 +1282,7 @@ fn emit_functions(
     setup.extend(env_trigger_setup(plan));
     // v0.6: fill each trap dispenser payload and summon disarm affordances
     // (spec-0011). Empty for a campaign with no traps → byte-identical.
-    setup.extend(trap_setup(plan));
+    setup.extend(trap_setup(plan, trap_gates));
     // Forceload lifecycle (map-editor audit finding 6, planner decision). The
     // edit-AABB forceloads exist for ONE reason — letting the one-shot
     // `world_edits` writes land — and `place_verify` above has now proven every
@@ -2034,7 +2040,7 @@ fn emit_functions(
     fns.extend(sequence_fns(plan));
     fns.extend(cutscene_fns(plan, moves, actor_moves));
     fns.extend(env_trigger_fns(plan));
-    fns.extend(trap_fns(plan));
+    fns.extend(trap_fns(plan, trap_gates));
     fns.extend(boundary_fns(plan));
     fns.extend(night_vision_fns(plan));
 
@@ -4239,15 +4245,180 @@ fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
 // v0.6 traps (spec-0011)
 // ---------------------------------------------------------------------------
 
+/// `DW0363`: a trap declares a flag gate (`requires_flags` / `forbids_flags`) but
+/// its trigger hardware cannot be removed and put back exactly as authored, so the
+/// compiler refuses to pretend the gate works.
+pub const DW_TRAP_GATE_UNSUPPORTED: &str = "DW0363";
+
+/// Trap flag-gating hardware: for every trap that declares a flag gate, the
+/// trigger block its `anchor/trap` prefab metadata declares — the thing the gate
+/// physically removes and restores.
+///
+/// The compiler owns world mutation, so "the trap is inactive while a flag is set"
+/// is implemented as exactly that: the plate or tripwire is taken out of the world
+/// and put back on the flag transition. The block comes from prefab metadata for
+/// the same reason a `close-gate`'s fill block does (`DW0343`): the hardware is
+/// baked into the `.nbt` and only the prefab author knows what it is. It is
+/// restored **verbatim, blockstate and all** — stamping a bare id over an authored
+/// state silently changes the block (the `DW0354` lesson).
+///
+/// Only a trigger whose entire state is the block itself can be gated this way. A
+/// `trapped-chest` trigger carries a **block entity with an inventory** that removal
+/// would destroy and the compiler could not restore, so a flag gate on one is
+/// rejected (`DW0363`) rather than shipped as folklore. So is a gated trap whose
+/// prefab declares no `trigger_block` at all: be loud, do not guess.
+fn trap_gate_hardware(
+    plan: &Plan,
+    prefabs: &crate::registry::PrefabRegistry,
+) -> Result<BTreeMap<String, String>, BuildFailure> {
+    let mut out = BTreeMap::new();
+    for t in plan.traps.iter().filter(|t| trap_is_gated(t)) {
+        let declared = prefabs.trap_trigger_block(&t.at_anchor);
+        let gatable = declared
+            .map(|b| b.split('[').next().unwrap_or(b))
+            .is_some_and(crate::assembled::is_passable_trap_trigger);
+        if !gatable {
+            let what = match declared {
+                Some(b) => format!("declares `trigger_block` `{b}`"),
+                None => "declares no `trigger_block`".to_string(),
+            };
+            return Err(BuildFailure::Diagnostic {
+                code: DW_TRAP_GATE_UNSUPPORTED,
+                message: format!(
+                    "trap `{}` declares a flag gate (`requires_flags`/`forbids_flags`), but its \
+                     `anchor/trap` marker `{}` {what}. A flag gate physically removes the \
+                     trigger from the world while the gate is shut and puts it back after, so \
+                     it is only sound for a trigger whose whole state is the block: a pressure \
+                     plate or a tripwire. A `trapped-chest` trigger carries a block entity with \
+                     an inventory that removal would destroy. Declare the plate/tripwire as \
+                     `trigger_block` on the anchor's prefab metadata (with its blockstate, as a \
+                     gate anchor declares its fill `block`), switch the trap to a \
+                     `pressure-plate`/`tripwire` trigger, or drop the flag gate and gate the \
+                     story beat that arms the trap instead.",
+                    t.id, t.at_anchor,
+                ),
+            });
+        }
+        out.insert(t.safe.clone(), declared.unwrap_or_default().to_string());
+    }
+    Ok(out)
+}
+
+/// Whether `t` declares a flag gate at all (an ungated trap emits nothing new, so
+/// every existing campaign stays byte-identical).
+fn trap_is_gated(t: &plan::TrapPlan) -> bool {
+    !t.requires_flags.is_empty() || !t.forbids_flags.is_empty()
+}
+
+/// The `tick` clauses that open and shut every gated trap's hardware.
+///
+/// Edge-triggered on a per-trap sentinel `#trapgate_<safe>` (1 = armed, i.e. the
+/// trigger block is in the world) so the `setblock` fires only on a transition —
+/// a per-tick unconditional write would be both wasteful and wrong (it would also
+/// fight the disarm path).
+///
+/// The gate is **campaign state, not per-player state**: flags are set by whoever
+/// reaches the beat, and a trap does not become live for one player and dead for
+/// another. So the guards use the same any-player form the environment triggers
+/// use — `if entity @a[scores={dw.f_x=1..}]` — rather than `score @s`.
+///
+/// Shutting is one clause per gating flag because "not (all required set and no
+/// forbidden set)" is a disjunction: any single unmet requirement, or any single
+/// forbidden flag, shuts the gate on its own. Each is idempotent behind the
+/// sentinel.
+fn trap_gate_tick(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for t in plan.traps.iter().filter(|t| trap_is_gated(t)) {
+        let id = &t.safe;
+        for f in &t.requires_flags {
+            out.push(format!(
+                "execute if score #trapgate_{id} dw.sys matches 1 unless entity @a[scores={{{}=1..}}] run function {ns}:trap_gate_off_{id}",
+                plan::flag_score(f)
+            ));
+        }
+        for f in &t.forbids_flags {
+            out.push(format!(
+                "execute if score #trapgate_{id} dw.sys matches 1 if entity @a[scores={{{}=1..}}] run function {ns}:trap_gate_off_{id}",
+                plan::flag_score(f)
+            ));
+        }
+        let mut on = format!("execute unless score #trapgate_{id} dw.sys matches 1");
+        for f in &t.requires_flags {
+            on.push_str(&format!(
+                " if entity @a[scores={{{}=1..}}]",
+                plan::flag_score(f)
+            ));
+        }
+        for f in &t.forbids_flags {
+            on.push_str(&format!(
+                " unless entity @a[scores={{{}=1..}}]",
+                plan::flag_score(f)
+            ));
+        }
+        on.push_str(&format!(" run function {ns}:trap_gate_on_{id}"));
+        out.push(on);
+    }
+    out
+}
+
+/// The `trap_gate_on_<safe>` / `trap_gate_off_<safe>` pair per gated trap: flip the
+/// sentinel and write the trigger cell. `on` restores the authored block verbatim
+/// (state and all); `off` clears it to air, which is what the plate/tripwire cell
+/// is when the piece does not carry one.
+fn trap_gate_fns(plan: &Plan, hardware: &BTreeMap<String, String>) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for t in plan.traps.iter().filter(|t| trap_is_gated(t)) {
+        let id = &t.safe;
+        let c = t.trigger_cell;
+        let Some(block) = hardware.get(id) else {
+            continue;
+        };
+        out.push((
+            format!("trap_gate_on_{id}"),
+            lines(&[
+                format!("scoreboard players set #trapgate_{id} dw.sys 1"),
+                format!("setblock {} {} {} {block}", c[0], c[1], c[2]),
+            ]),
+        ));
+        out.push((
+            format!("trap_gate_off_{id}"),
+            lines(&[
+                format!("scoreboard players set #trapgate_{id} dw.sys 0"),
+                format!("setblock {} {} {} minecraft:air", c[0], c[1], c[2]),
+            ]),
+        ));
+    }
+    out
+}
+
 /// `setup_finish` commands for traps (spec-0011): fill each `dispense` trap's
 /// prefab dispenser with its static payload (`item replace block … container.0`,
 /// the same deterministic mechanism as a `collect` chest — no raw NBT), and summon
 /// the disarm affordance's interaction entity. The trap's *harm* needs no command:
 /// the plate/tripwire/trapped-chest → dispenser redstone is already in the prefab.
 /// Empty for a campaign with no traps → byte-identical.
-fn trap_setup(plan: &Plan) -> Vec<String> {
+fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<String> {
     let mut out = Vec::new();
     for t in &plan.traps {
+        // Seed a gated trap's hardware sentinel to match the world it starts in.
+        // Flags are unset at world start, so a `requires_flags` gate is shut and the
+        // authored trigger comes straight back out; a `forbids_flags`-only gate is
+        // open and the prefab's own block stands. Doing this at setup (rather than
+        // letting the tick converge) means there is never a tick in which the trap
+        // is live before its gate has been read.
+        if trap_is_gated(t) && gate_hardware.contains_key(&t.safe) {
+            let armed = t.requires_flags.is_empty();
+            out.push(format!(
+                "scoreboard players set #trapgate_{} dw.sys {}",
+                t.safe,
+                u8::from(armed)
+            ));
+            if !armed {
+                let c = t.trigger_cell;
+                out.push(format!("setblock {} {} {} minecraft:air", c[0], c[1], c[2]));
+            }
+        }
         // Fill the pre-wired dispenser with the declared payload.
         if let (Some(disp), Some((item, count))) = (t.dispenser, &t.payload) {
             out.push(format!(
@@ -4287,6 +4458,7 @@ fn trap_tick(plan: &Plan) -> Vec<String> {
             "execute as @e[tag=dw_trapdis_{id}] run data remove entity @s interaction"
         ));
     }
+    out.extend(trap_gate_tick(plan));
     out
 }
 
@@ -4295,7 +4467,7 @@ fn trap_tick(plan: &Plan) -> Vec<String> {
 /// `requires_flags` reads elsewhere see it) and **empty the dispenser** — the
 /// modeled, global disarm that actually stops a redstone-native dispense trap for
 /// everyone. Empty for a campaign with no disarmable traps.
-fn trap_fns(plan: &Plan) -> Vec<(String, String)> {
+fn trap_fns(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for t in &plan.traps {
         let Some(dis) = &t.disarm else {
@@ -4318,6 +4490,7 @@ fn trap_fns(plan: &Plan) -> Vec<(String, String)> {
         }
         out.push((format!("trap_disarm_{id}"), lines(&body)));
     }
+    out.extend(trap_gate_fns(plan, gate_hardware));
     out
 }
 
@@ -5619,6 +5792,60 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
     }
     out.insert(
         format!("packtest-datapack/data/{ns}/test/v06_trap.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+    emit_trap_gate_packtest(plan, out);
+}
+
+/// v0.6 trap **flag-gate** PackTest (spec-0011): the gate physically removes and
+/// restores the trigger hardware, so the machine-checkable contract is the block
+/// itself — while the gate is shut the trigger cell is air (a player stepping there
+/// touches nothing), and when it opens the authored trigger is back, verbatim.
+///
+/// This is the assertion the feature never had: `requires_flags`/`forbids_flags`
+/// were validated and planned but read by no emission site at all, so the
+/// documented "inactive while the flag is set" behaviour simply did not exist.
+fn emit_trap_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    // The first trap gated by a single forbidding flag, which is the shape that can
+    // be driven from a test: set the flag → shut, clear it → open.
+    let Some(t) = plan
+        .traps
+        .iter()
+        .find(|t| t.requires_flags.is_empty() && t.forbids_flags.len() == 1)
+    else {
+        return;
+    };
+    let flag = plan::flag_score(&t.forbids_flags[0]);
+    let c = t.trigger_cell;
+    let (pin, sel) = pin_dummy("dw_t_tgate");
+    let mut b = packtest_header(&format!(
+        "{title}: trap `{}` is physically disarmed while `{}` is set (spec-0011)",
+        t.id, t.forbids_flags[0]
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(pin);
+    // Start from the armed world the setup leaves behind, then shut the gate by
+    // setting the flag and running the real emitted tick clause path.
+    b.push(format!("function {ns}:trap_gate_on_{}", t.safe));
+    b.push(format!("scoreboard players set {sel} {flag} 1"));
+    b.push(format!("function {ns}:trap_gate_off_{}", t.safe));
+    b.push(format!(
+        "execute store success score #tgate dw.sys if block {} {} {} minecraft:air",
+        c[0], c[1], c[2]
+    ));
+    b.push("assert score #tgate dw.sys matches 1".to_string());
+    // Clear the flag and re-open: the authored trigger must be back in the world.
+    b.push(format!("scoreboard players set {sel} {flag} 0"));
+    b.push(format!("function {ns}:trap_gate_on_{}", t.safe));
+    b.push(format!(
+        "execute store success score #tgate dw.sys if block {} {} {} minecraft:air",
+        c[0], c[1], c[2]
+    ));
+    b.push("assert score #tgate dw.sys matches 0".to_string());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/v06_trap_gate.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
