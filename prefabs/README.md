@@ -36,10 +36,21 @@ byte-identical datapack, with the content SHA recorded in the build manifest.
   30×14×24 cavern, switchback slope on the face). Another sibling with its own
   `[workspace]`; reuses the cave-generator machinery and the `island:socket`
   floor_y=2 datum. See `island-terrain-generator/README.md` and `island-tileset.md`.
+- **`tidal-keep-generator/`** — the deterministic "tidal keep" SOULS tileset
+  generator: the six pieces of the drowned-shore set (barrow field, gatehouse,
+  wall walk, courtyard/chapel, cistern, bell tower). Another sibling with its own
+  `[workspace]`; reuses the cave/island generator machinery and emits the
+  `tk:socket` convention on two datums (shore + keep plinth). See
+  `tidal-keep-generator/README.md` and `tidal-keep-tileset.md`.
 - **`keep-tileset.md`** — the stone-keep connection convention, piece list, and
   live-probed lighting minimums that the generator implements and documents.
 - **`cave-tileset.md`** — the cave/shore piece list, `cave:socket` convention,
   derived lighting, and the render-critique round notes (the probe's evidence).
+- **`tidal-keep-tileset.md`** — the `tk:socket` convention (two floor datums, all
+  vertical gain authored inside a piece), the six-piece spine and its pool, the
+  full anchor inventory the DSL authors against, the wear-gradient /
+  observability / visible-perch design intents, and the generator invariants that
+  keep them true.
 - **`island-tileset.md`** — the island convention (ocean horizon, waterline
   y=2 / walk plane y=3, `island:socket` floor_y=2), the set-piece list, and the
   merged-vs-separate galley decision. The terrain worker's greenfield/mountain
