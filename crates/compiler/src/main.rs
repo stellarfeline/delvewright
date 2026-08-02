@@ -171,6 +171,11 @@ fn validate_stage(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> Result
     match parse_campaign(&loaded.raw) {
         Ok(campaign) => {
             let mut diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+            // Prefab-library load failures (DW0346): a metadata file that did
+            // not parse (e.g. newer schema than this delvec) is a first-class
+            // validation diagnostic, never a silent skip that resurfaces later
+            // as a baffling DW0300 "prefab not found".
+            diags.extend(prefabs.load_diagnostics().iter().cloned());
             // i18n l10n sidecar coverage (DW0180/DW0181) — language-independent,
             // runs on every validate/analyze/build. No-op for English-only campaigns.
             let sidecars = parse_sidecars(&loaded.l10n, &mut diags);

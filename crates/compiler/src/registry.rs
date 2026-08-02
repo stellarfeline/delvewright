@@ -4,8 +4,18 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use delvewright_dsl::{AnchorRegistry, EntityRegistry, ItemRegistry, Lighting, PoolId, PrefabId};
+use delvewright_dsl::{
+    AnchorRegistry, Diagnostic, EntityRegistry, ItemRegistry, Lighting, PoolId, PrefabId,
+};
 use serde::Deserialize;
+
+/// `DW0346`: a prefab metadata `*.json` (or `pools.json`) in the prefabs dir
+/// failed to read or parse as prefab metadata. Silently skipping it made an
+/// older `delvec` meeting newer metadata surface only as a baffling downstream
+/// `DW0300` "prefab not found"; the parse failure itself is the information.
+/// Reported at **validation tier (exit 1)**; loading continues for the other
+/// files (report-all, not fail-fast).
+pub const DW_PREFAB_META_INVALID: &str = "DW0346";
 
 /// The complete 1.21.11 item registry (1505 ids), vendored under `data/`.
 #[derive(Debug, Clone)]
@@ -264,20 +274,31 @@ pub struct PrefabRegistry {
     pools: BTreeSet<String>,
     /// Pool id → its member pieces (weights + roles), consumed by the solver.
     pool_members: BTreeMap<String, Vec<PoolMember>>,
+    /// Per-file load failures (`DW0346`) collected by [`Self::load_dir`] —
+    /// surfaced by the CLI at validation tier, never silently dropped.
+    load_diagnostics: Vec<Diagnostic>,
 }
 
 impl PrefabRegistry {
-    /// Load every `*.json` prefab metadata file in `dir`. Files that do not parse
-    /// as [`PrefabMeta`] are skipped (e.g. unrelated docs). An optional
+    /// Load every `*.json` prefab metadata file in `dir`. An optional
     /// `pools.json` (`{ "pools": { "pool/<name>": { "members": [...] } } }`)
     /// declares prefab pools and their member pieces. Returns the loaded
     /// registry; errors only on an unreadable directory.
+    ///
+    /// A file that fails to read or parse is **not** silently skipped: it
+    /// yields a `DW0346` in [`Self::load_diagnostics`] naming the file and the
+    /// serde error, and loading continues for the other files (report-all, not
+    /// fail-fast). Before this, an older `delvec` meeting newer metadata (an
+    /// unknown field under `deny_unknown_fields`) dropped the prefab on the
+    /// floor and only failed much later as a baffling `DW0300` "prefab not
+    /// found".
     pub fn load_dir(dir: &Path) -> std::io::Result<Self> {
         let mut by_id: BTreeMap<String, PrefabMeta> = BTreeMap::new();
         let mut anchor_names: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         let mut pools: BTreeSet<String> = BTreeSet::new();
         let mut pool_members: BTreeMap<String, Vec<PoolMember>> = BTreeMap::new();
-        // Sort entries for deterministic load order.
+        let mut load_diagnostics: Vec<Diagnostic> = Vec::new();
+        // Sort entries for deterministic load order (and diagnostic order).
         let mut paths: Vec<PathBuf> = Vec::new();
         for entry in std::fs::read_dir(dir)? {
             let path = entry?.path();
@@ -287,22 +308,51 @@ impl PrefabRegistry {
         }
         paths.sort();
         for path in paths {
-            let Ok(raw) = std::fs::read_to_string(&path) else {
-                continue;
+            // The file name only (never an absolute path) — stable across
+            // machines, and the prefabs dir is a single flat directory.
+            let file = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("<non-utf8 filename>")
+                .to_string();
+            let mut fail = |what: String| {
+                load_diagnostics.push(Diagnostic::error(
+                    DW_PREFAB_META_INVALID,
+                    "prefabs",
+                    file.clone(),
+                    format!(
+                        "prefab metadata `{file}` {what} — the library may use a newer metadata \
+                         schema than this delvec understands: upgrade delvec, or fix the field. \
+                         (The file is skipped; every other prefab still loads.)"
+                    ),
+                ));
             };
-            if path.file_name().and_then(|n| n.to_str()) == Some("pools.json") {
-                if let Ok(file) = serde_json::from_str::<PoolsFile>(&raw) {
-                    for (id, def) in file.pools {
-                        pools.insert(id.clone());
-                        pool_members.insert(id, def.members);
+            let raw = match std::fs::read_to_string(&path) {
+                Ok(raw) => raw,
+                Err(e) => {
+                    fail(format!("cannot be read: {e}"));
+                    continue;
+                }
+            };
+            if file == "pools.json" {
+                match serde_json::from_str::<PoolsFile>(&raw) {
+                    Ok(pf) => {
+                        for (id, def) in pf.pools {
+                            pools.insert(id.clone());
+                            pool_members.insert(id, def.members);
+                        }
                     }
+                    Err(e) => fail(format!("does not parse as a pools file: {e}")),
                 }
                 continue;
             }
-            if let Ok(meta) = serde_json::from_str::<PrefabMeta>(&raw) {
-                let names: BTreeSet<String> = meta.anchors.keys().cloned().collect();
-                anchor_names.insert(meta.prefab_id.clone(), names);
-                by_id.insert(meta.prefab_id.clone(), meta);
+            match serde_json::from_str::<PrefabMeta>(&raw) {
+                Ok(meta) => {
+                    let names: BTreeSet<String> = meta.anchors.keys().cloned().collect();
+                    anchor_names.insert(meta.prefab_id.clone(), names);
+                    by_id.insert(meta.prefab_id.clone(), meta);
+                }
+                Err(e) => fail(format!("does not parse as prefab metadata: {e}")),
             }
         }
         Ok(Self {
@@ -310,7 +360,15 @@ impl PrefabRegistry {
             anchor_names,
             pools,
             pool_members,
+            load_diagnostics,
         })
+    }
+
+    /// Per-file load failures (`DW0346`) from [`Self::load_dir`]. The CLI folds
+    /// these into the validation diagnostics (exit 1) on every
+    /// `validate`/`analyze`/`build`.
+    pub fn load_diagnostics(&self) -> &[Diagnostic] {
+        &self.load_diagnostics
     }
 
     /// The metadata for a prefab id (`prefab/<name>`), if loaded.
