@@ -3135,13 +3135,13 @@ fn cutscene_style_checks(
         d: &mut Vec<Diagnostic>,
     ) {
         let (unknown, kind, id) = match sub {
-            CameraSubject::Anchor { .. } => return,
-            CameraSubject::Npc { npc, .. } => {
-                (!npc_ids.contains(npc.as_str()), "npc", npc.as_str())
-            }
-            CameraSubject::Actor { actor, .. } => {
-                (!actor_ids.contains(actor.as_str()), "actor", actor.as_str())
-            }
+            CameraSubject::Anchor(_) => return,
+            CameraSubject::Npc(s) => (!npc_ids.contains(s.npc.as_str()), "npc", s.npc.as_str()),
+            CameraSubject::Actor(s) => (
+                !actor_ids.contains(s.actor.as_str()),
+                "actor",
+                s.actor.as_str(),
+            ),
         };
         if unknown {
             d.push(Diagnostic::error(
@@ -3262,14 +3262,14 @@ fn cutscene_style_checks(
             }
             if style.needs_moving_subject() {
                 let moved = match &shot.subject {
-                    Some(CameraSubject::Npc { npc, .. }) => {
-                        scope.iter().any(|(a, id)| !a && id == npc.as_str())
+                    Some(CameraSubject::Npc(s)) => {
+                        scope.iter().any(|(a, id)| !a && id == s.npc.as_str())
                     }
-                    Some(CameraSubject::Actor { actor, .. }) => {
-                        scope.iter().any(|(a, id)| *a && id == actor.as_str())
+                    Some(CameraSubject::Actor(s)) => {
+                        scope.iter().any(|(a, id)| *a && id == s.actor.as_str())
                     }
                     // An anchor can never move; a missing subject already got DW0348.
-                    Some(CameraSubject::Anchor { .. }) => false,
+                    Some(CameraSubject::Anchor(_)) => false,
                     None => true,
                 };
                 if !moved {

@@ -684,15 +684,15 @@ fn resolve_subject(
     ticks: i32,
 ) -> SubjectGeom {
     let (is_actor, id, offset) = match subject {
-        CameraSubject::Anchor { anchor, offset } => {
+        CameraSubject::Anchor(s) => {
             return SubjectGeom::Static(crate::nav::anchor_offset_point(
                 plan,
-                anchor.as_str(),
-                *offset,
+                s.anchor.as_str(),
+                s.offset,
             ));
         }
-        CameraSubject::Npc { npc, offset } => (false, npc.as_str(), *offset),
-        CameraSubject::Actor { actor, offset } => (true, actor.as_str(), *offset),
+        CameraSubject::Npc(s) => (false, s.npc.as_str(), s.offset),
+        CameraSubject::Actor(s) => (true, s.actor.as_str(), s.offset),
     };
     let lift = [offset[0] as f64, offset[1] as f64 + 1.0, offset[2] as f64];
     // The governing sibling move: smallest non-negative delta (the move most
