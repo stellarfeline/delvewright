@@ -1,4 +1,5 @@
-//! The scheduled-executor invariant (AUDIT-P0).
+//! The scheduled-executor invariant (AUDIT-P0), under party progression
+//! (spec-0018).
 //!
 //! Vanilla's `schedule function …` re-invokes a function with the **server**
 //! command source: no executor, so `@s` resolves to nothing and every
@@ -10,11 +11,21 @@
 //! server (the island's "Get Into the Shadows" soft-lock: two `on_arrive`
 //! bundles set the flags `obj/take-cover` gates on).
 //!
-//! The invariant below is the strongest available form of that lesson: walk the
-//! emitted call graph from every `schedule` site and assert that no function
-//! reachable **only** that way ever names `@s` outside an `as` binding. It is
-//! content-agnostic — a future verb that forgets the seam fails here, in a unit
-//! test, not on the owner's server.
+//! **What spec-0018 changed.** Progression state moved from the acting player to
+//! the `#party` holder, so the classification these bundles are emitted under
+//! changed with it: a `set-flag` is no longer "per-player" but a party-fact write
+//! that names no selector at all, and is therefore immune to the seam *by
+//! construction* — the island soft-lock class cannot recur for flags. What stays
+//! executor-shaped is the genuinely player-facing set (`narrate`, `give-item`,
+//! `play-sound`, `damage-players`), which now addresses `@a`: the party sees the
+//! beat, and `@a` needs no executor either.
+//!
+//! The invariant below is the strongest available form of the lesson, and after
+//! spec-0018 it is nearly vacuous *for the right reason*: walk the emitted call
+//! graph from every `schedule` site and assert that no function reachable **only**
+//! that way ever names `@s` outside an `as` binding. It is content-agnostic — a
+//! future verb that forgets the seam fails here, in a unit test, not on the
+//! owner's server.
 
 mod common;
 
@@ -303,46 +314,52 @@ fn no_schedule_reachable_function_addresses_an_unbound_s() {
     }
 }
 
-/// The multiplicity contract, read off the emitted arrive bundle: per-player
-/// effects re-bind the party (`as @a`, once per player, exactly what a
-/// top-level `as @a` dispatch gives them); global effects stay bare, so they
-/// fire exactly ONCE — a blanket `as @a run function <bundle>` would fire every
-/// `fill` / driver start / `schedule` once per player.
+/// The multiplicity contract, read off the emitted arrive bundle under party
+/// progression (spec-0018): **party-fact** effects name no selector and fire
+/// exactly once; **player-facing** effects address `@a`, so the whole party sees
+/// the beat. Neither form needs an executor — which is precisely why a scheduled
+/// bundle can now carry a `set-flag` at all.
 #[test]
-fn arrive_bundle_splits_player_and_global_effects() {
+fn arrive_bundle_splits_party_fact_and_player_facing_effects() {
     let out = build_scheduled_hello_world();
     let arrive = file(&out, &format!("{FN_DIR}/mv_arrive_keeper_exit.mcfunction"));
     let lines: Vec<&str> = arrive.lines().filter(|l| !l.is_empty()).collect();
 
-    // per-player: each carries its own `as @a`.
-    for needle in [
-        "execute as @a run scoreboard players set @s dw.f_arrived 1",
-        "execute as @a run tellraw @s ",
-        "execute as @a run give @s minecraft:torch 1",
-    ] {
+    // Party fact: one write on the holder, no `as @a` wrapper (which would have
+    // re-run it once per player for no effect).
+    assert!(
+        lines.contains(&"scoreboard players set #party dw.f_arrived 1"),
+        "a scheduled `set-flag` writes the party holder, bare:\n{arrive}"
+    );
+    // Player-facing: addressed to the party, once.
+    for needle in ["tellraw @a ", "give @a minecraft:torch 1"] {
         assert!(
             lines.iter().any(|l| l.starts_with(needle)),
-            "per-player effect must run once per player (`{needle}`):\n{arrive}"
+            "player-facing effect must address the party (`{needle}`):\n{arrive}"
         );
     }
-    // A per-player effect's flag gate keeps the per-player spelling, INSIDE the
-    // `as @a` (the gate asks each player about their own flag).
+    // A player-facing effect's flag gate is a party read placed OUTSIDE the
+    // audience — one question, asked once, for the whole party.
     assert!(
-        lines.iter().any(|l| l
-            == &"execute as @a unless score @s dw.f_late matches 1 run playsound \
-                 minecraft:block.note_block.pling master @s"),
-        "a gated per-player effect keeps `unless score @s …` under `as @a`:\n{arrive}"
+        lines.contains(
+            &"execute unless score #party dw.f_late matches 1 run playsound \
+              minecraft:block.note_block.pling master @a"
+        ),
+        "a gated player-facing effect reads `unless score #party …`:\n{arrive}"
     );
     // global: emitted bare — exactly once.
     assert!(
         lines.iter().any(|l| l.starts_with("fill ")),
         "the global `open-gate` fill must be emitted bare (once):\n{arrive}"
     );
-    // A global effect has no acting player to ask, so its flag gate degrades to
-    // the any-player party predicate the trigger layer already uses.
     assert!(
-        lines.contains(&"execute if entity @a[scores={dw.f_arrived=1..}] run time set day"),
-        "a gated global effect uses the any-player predicate:\n{arrive}"
+        lines.contains(&"execute if score #party dw.f_arrived matches 1 run time set day"),
+        "a gated global effect reads the same party score:\n{arrive}"
+    );
+    // Nothing in a scheduled bundle may name `@s` — the executor is not there.
+    assert!(
+        !arrive.contains("@s"),
+        "a scheduled bundle addresses no `@s`:\n{arrive}"
     );
     // The nested sequence is a global timeline: one call, not one per player.
     let seq_calls: Vec<&&str> = lines
@@ -387,12 +404,12 @@ fn sequence_steps_are_server_source_safe() {
         "no sequence step may address an unbound `@s`:\n{all}"
     );
     assert!(
-        all.contains("execute as @a run title @s title "),
-        "the inline (at_ticks: 0) step's narrate must re-bind the party:\n{all}"
+        all.contains("title @a title "),
+        "the inline (at_ticks: 0) step's narrate addresses the party:\n{all}"
     );
     assert!(
-        all.contains("execute as @a run scoreboard players set @s dw.f_late 1"),
-        "the scheduled (at_ticks: 20) step's set-flag must re-bind the party:\n{all}"
+        all.contains("scoreboard players set #party dw.f_late 1"),
+        "the scheduled (at_ticks: 20) step's set-flag writes the party holder:\n{all}"
     );
     assert!(
         all.lines().any(|l| l == "weather clear"),
@@ -419,7 +436,7 @@ fn scheduled_executor_packtest_is_emitted_for_every_campaign() {
         );
         assert_eq!(
             probe.trim(),
-            "execute as @a run scoreboard players set @s dw.f_pt_sched_probe 1",
+            "scoreboard players set #party dw.f_pt_sched_probe 1",
             "the probe body comes from the real scheduled-bundle emitter"
         );
         let t = file(
@@ -435,13 +452,15 @@ fn scheduled_executor_packtest_is_emitted_for_every_campaign() {
             "never call the probe inline — that supplies the executor the bug removes:\n{t}"
         );
         assert!(
-            t.contains("await score @a[tag=dw_t_sexec,limit=1] dw.f_pt_sched_probe matches 1"),
-            "the test awaits the flag on its OWN dummy (batch model):\n{t}"
+            t.contains("await score #party dw.f_pt_sched_probe matches 1"),
+            "the test awaits the flag on the party holder (spec-0018):\n{t}"
         );
-        // Own init (batch model): the objective exists and this dummy's score is
+        // Own init (batch model): the objective exists and the party score is
         // cleared before the await — "never set" is not 0 on a shared server.
+        // This template owns that objective outright (it is test-only), which is
+        // what makes an `await` on a batch-global holder safe.
         let clear = t
-            .find("scoreboard players set @a[tag=dw_t_sexec,limit=1] dw.f_pt_sched_probe 0")
+            .find("scoreboard players set #party dw.f_pt_sched_probe 0")
             .expect("own init clears the probe score");
         assert!(
             clear < t.find("schedule function").unwrap(),
@@ -469,14 +488,14 @@ fn arrive_flag_packtest_drives_the_real_driver() {
         "never drives the tick function inline — the scheduler must do it:\n{t}"
     );
     assert!(
-        t.contains("await score @a[tag=dw_t_sarr,limit=1] dw.f_arrived matches 1"),
-        "awaits the arrival flag on its own dummy:\n{t}"
+        t.contains("await score #party dw.f_arrived matches 1"),
+        "awaits the arrival flag on the party holder (spec-0018):\n{t}"
     );
     // Own init + a timeout that outlives the real walk.
     assert!(
-        t.contains("scoreboard players set @a[tag=dw_t_sarr,limit=1] dw.f_arrived 0")
+        t.contains("scoreboard players set #party dw.f_arrived 0")
             && t.contains("scoreboard players set #mrun_keeper_exit dw.sys 0"),
-        "clears its own flag and the driver's re-entry latch:\n{t}"
+        "clears the party flag and the driver's re-entry latch:\n{t}"
     );
     let timeout: u32 = t
         .lines()

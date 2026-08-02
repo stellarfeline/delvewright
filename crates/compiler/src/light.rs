@@ -93,41 +93,174 @@ fn base_id(name: &str) -> &str {
     &n[..end]
 }
 
-/// Block-light emission of a block id (0 if not a source). 1.21.11 values,
-/// matching the cave-generator's live-derived table plus the fixture-registry
-/// blocks and the common vanilla sources a prefab might carry.
+/// A block's blockstate property, defaulting when the name carries no state —
+/// the assembled model stores full blockstates (task #78), and a vanilla
+/// structure palette always carries the complete property set, so the default
+/// only applies to the compiler's own bare-id fixture strings.
+fn prop<'a>(name: &'a str, key: &str, default: &'a str) -> &'a str {
+    crate::assembled::state_value(name, key).unwrap_or(default)
+}
+
+/// Block-light emission of a block (0 if not a source), **Minecraft Java
+/// 1.21.11**, evaluated over the block's actual blockstate.
+///
+/// # The never-overestimate contract
+///
+/// This module's whole purpose is to prove no reachable walkable cell ships
+/// darker than its area's `min_light` (`DW0210`/`DW0211`). That proof is only
+/// sound if the model's light is a **lower bound** on the game's: modelling a
+/// block brighter than vanilla lets a genuinely dark area pass the gate and ship
+/// unmitigated — the exact failure the gate exists to prevent.
+///
+/// The pre-#78 table broke that contract in seven places by collapsing
+/// state-dependent blocks onto their *brightest* state (or on plain misremembered
+/// values): `sea_pickle` 15, `redstone_ore` 7, `respawn_anchor` 7,
+/// `amethyst_cluster` 7, `brewing_stand` 3, `brown_mushroom` 3, and
+/// `glow_item_frame` 7 (which is not even a block — it is an entity, and emits no
+/// block light in Java at all). It also carried a `froglight` id that does not
+/// exist. Every entry below is now the verified 1.21.11 value for the state
+/// actually present, cited to its source.
+///
+/// Blocks absent from the table emit 0 — an underestimate, which is the safe
+/// direction.
 pub fn emission(name: &str) -> u8 {
     match base_id(name) {
+        // --- unconditional 15 ---
+        // beacon <https://minecraft.wiki/w/Beacon>;
+        // conduit (active or not) <https://minecraft.wiki/w/Conduit>;
+        // end_gateway <https://minecraft.wiki/w/End_Gateway_(block)>;
+        // end_portal <https://minecraft.wiki/w/End_Portal_(block)>;
+        // fire <https://minecraft.wiki/w/Fire>;
+        // glowstone <https://minecraft.wiki/w/Glowstone>;
+        // jack_o_lantern <https://minecraft.wiki/w/Jack_o%27Lantern>;
+        // lantern <https://minecraft.wiki/w/Lantern>;
+        // lava, incl. flowing <https://minecraft.wiki/w/Lava>;
+        // lava_cauldron <https://minecraft.wiki/w/Cauldron>;
+        // sea_lantern <https://minecraft.wiki/w/Sea_Lantern>;
+        // shroomlight <https://minecraft.wiki/w/Shroomlight>;
+        // the three froglights <https://minecraft.wiki/w/Froglight> — note there
+        // is NO plain `minecraft:froglight` block, only these prefixed ids.
         "beacon"
-        | "campfire"
         | "conduit"
         | "end_gateway"
         | "end_portal"
         | "fire"
-        | "froglight"
-        | "ochre_froglight"
-        | "verdant_froglight"
-        | "pearlescent_froglight"
         | "glowstone"
         | "jack_o_lantern"
         | "lantern"
         | "lava"
         | "lava_cauldron"
         | "sea_lantern"
-        | "sea_pickle"
-        | "shroomlight" => 15,
+        | "shroomlight"
+        | "ochre_froglight"
+        | "verdant_froglight"
+        | "pearlescent_froglight" => 15,
+
+        // --- unconditional 14 ---
+        // torch / wall_torch <https://minecraft.wiki/w/Torch>;
+        // end_rod <https://minecraft.wiki/w/End_Rod>.
         "torch" | "wall_torch" | "end_rod" => 14,
-        "soul_campfire" | "soul_lantern" | "soul_torch" | "soul_wall_torch" | "soul_fire"
-        | "crying_obsidian" => 10,
-        "glow_lichen"
-        | "redstone_torch"
-        | "redstone_wall_torch"
-        | "amethyst_cluster"
-        | "respawn_anchor" => 7,
-        "enchanting_table" | "ender_chest" | "glow_item_frame" | "redstone_ore" => 7,
-        "magma_block" | "brewing_stand" | "brown_mushroom" => 3,
-        "furnace" | "smoker" | "blast_furnace" => 0, // lit-state driven; treat unlit
+
+        // --- unconditional 10 ---
+        // soul_lantern <https://minecraft.wiki/w/Soul_Lantern>;
+        // soul_torch / soul_wall_torch <https://minecraft.wiki/w/Soul_Torch>;
+        // soul_fire <https://minecraft.wiki/w/Soul_Fire>;
+        // crying_obsidian <https://minecraft.wiki/w/Crying_Obsidian>.
+        "soul_lantern" | "soul_torch" | "soul_wall_torch" | "soul_fire" | "crying_obsidian" => 10,
+
+        // --- unconditional 7 ---
+        // glow_lichen <https://minecraft.wiki/w/Glow_Lichen>;
+        // enchanting_table <https://minecraft.wiki/w/Enchanting_Table>;
+        // ender_chest <https://minecraft.wiki/w/Ender_Chest>.
+        "glow_lichen" | "enchanting_table" | "ender_chest" => 7,
+
+        // --- small unconditional sources ---
+        // The amethyst family is 5/4/2/1 by growth stage, NOT a flat 7
+        // <https://minecraft.wiki/w/Amethyst_Cluster>,
+        // <https://minecraft.wiki/w/Amethyst_Bud>.
+        "amethyst_cluster" => 5,
+        "large_amethyst_bud" => 4,
+        "medium_amethyst_bud" => 2,
+        "small_amethyst_bud" => 1,
+        // magma_block 3 <https://minecraft.wiki/w/Magma_Block>.
+        "magma_block" => 3,
+        // brewing_stand 1 <https://minecraft.wiki/w/Brewing_Stand> and
+        // brown_mushroom 1 <https://minecraft.wiki/w/Brown_Mushroom> — both were
+        // modelled at 3.
+        "brewing_stand" | "brown_mushroom" => 1,
+
+        // --- state-dependent ---
+        // campfire / soul_campfire: `lit` defaults to TRUE, so a bare
+        // `/setblock minecraft:campfire` really is a 15-light block (this is what
+        // makes the relight fixture work); an authored `lit=false` campfire is
+        // cold and dark <https://minecraft.wiki/w/Campfire>,
+        // <https://minecraft.wiki/w/Soul_Campfire>.
+        "campfire" => lit(name, "true", 15),
+        "soul_campfire" => lit(name, "true", 10),
+        // redstone_torch / redstone_wall_torch: `lit` defaults to TRUE
+        // <https://minecraft.wiki/w/Redstone_Torch>.
+        "redstone_torch" | "redstone_wall_torch" => lit(name, "true", 7),
+        // redstone_ore / deepslate_redstone_ore: `lit` defaults to FALSE and the
+        // lit value is 9, not 7. Idle ore is DARK — the old flat 7 is the entry
+        // most likely to have hidden a real dark cavern
+        // <https://minecraft.wiki/w/Redstone_Ore>.
+        "redstone_ore" | "deepslate_redstone_ore" => lit(name, "false", 9),
+        // furnace family: `lit` defaults to FALSE; lit value is 13
+        // <https://minecraft.wiki/w/Furnace>, <https://minecraft.wiki/w/Smoker>,
+        // <https://minecraft.wiki/w/Blast_Furnace>.
+        "furnace" | "smoker" | "blast_furnace" => lit(name, "false", 13),
+        // respawn_anchor: 0 / 3 / 7 / 11 / 15 by `charges`, which defaults to 0 —
+        // a placed anchor is dark until charged
+        // <https://minecraft.wiki/w/Respawn_Anchor>.
+        "respawn_anchor" => match prop(name, "charges", "0") {
+            "1" => 3,
+            "2" => 7,
+            "3" => 11,
+            "4" => 15,
+            _ => 0,
+        },
+        // sea_pickle: light ONLY underwater, `3 + 3 * pickles`; `waterlogged`
+        // defaults to true and `pickles` to 1, so a default pickle is 6 — not the
+        // 15 the old table claimed, and 0 the moment it is dry
+        // <https://minecraft.wiki/w/Sea_Pickle>.
+        "sea_pickle" => {
+            if prop(name, "waterlogged", "true") == "true" {
+                let n: u8 = prop(name, "pickles", "1").parse().unwrap_or(1);
+                3 + 3 * n.clamp(1, 4)
+            } else {
+                0
+            }
+        }
+        // cave vines light only while they carry glow berries (`berries` defaults
+        // to false) <https://minecraft.wiki/w/Glow_Berries>.
+        "cave_vines" | "cave_vines_plant" => {
+            if prop(name, "berries", "false") == "true" {
+                14
+            } else {
+                0
+            }
+        }
+        // The technical light block: its `level`, default 15
+        // <https://minecraft.wiki/w/Light_(block)>.
+        "light" => prop(name, "level", "15").parse().unwrap_or(15).min(15),
+
+        // NOT a light source, and not a block at all: `glow_item_frame` is an
+        // ENTITY in Java and emits no block light (the glow is an emissive
+        // texture). The old table's 7 came from the Bedrock-only `Luminous` row
+        // <https://minecraft.wiki/w/Glow_Item_Frame>.
         _ => 0,
+    }
+}
+
+/// The emission of a `lit`-gated block: `bright` when the block's `lit` state is
+/// `true`, else 0. `default_lit` spells out the block's own default `lit` value
+/// (`"true"` for campfires and redstone torches, `"false"` for redstone ore and
+/// the furnace family), so a bare id evaluates to the state vanilla would place.
+fn lit(name: &str, default_lit: &str, bright: u8) -> u8 {
+    if prop(name, "lit", default_lit) == "true" {
+        bright
+    } else {
+        0
     }
 }
 
@@ -965,6 +1098,81 @@ mod tests {
         assert_eq!(emission("minecraft:magma_block"), 3);
         assert_eq!(emission("minecraft:stone"), 0);
         assert_eq!(emission("minecraft:air"), 0);
+    }
+
+    #[test]
+    fn emitter_table_never_overestimates_a_state_dependent_source() {
+        // The seven entries that broke the never-overestimate contract before
+        // task #78, each now evaluated over the block's ACTUAL state. Modelling
+        // any of these brighter than vanilla lets a genuinely dark area slip past
+        // the DW0210/DW0211 gate and ship unmitigated.
+
+        // Sea pickle: light ONLY underwater, 3 + 3*pickles. Was a flat 15.
+        assert_eq!(
+            emission("minecraft:sea_pickle[pickles=1,waterlogged=true]"),
+            6
+        );
+        assert_eq!(
+            emission("minecraft:sea_pickle[pickles=4,waterlogged=true]"),
+            15
+        );
+        assert_eq!(
+            emission("minecraft:sea_pickle[pickles=4,waterlogged=false]"),
+            0,
+            "a dry sea pickle is dark at any count"
+        );
+
+        // Redstone ore: dark until activated, and lit is 9 (not 7). Default unlit.
+        assert_eq!(emission("minecraft:redstone_ore"), 0);
+        assert_eq!(emission("minecraft:redstone_ore[lit=false]"), 0);
+        assert_eq!(emission("minecraft:redstone_ore[lit=true]"), 9);
+        assert_eq!(emission("minecraft:deepslate_redstone_ore"), 0);
+
+        // Respawn anchor: 0 until charged. Was a flat 7.
+        assert_eq!(emission("minecraft:respawn_anchor"), 0);
+        assert_eq!(emission("minecraft:respawn_anchor[charges=0]"), 0);
+        assert_eq!(emission("minecraft:respawn_anchor[charges=2]"), 7);
+        assert_eq!(emission("minecraft:respawn_anchor[charges=4]"), 15);
+
+        // Amethyst is 5/4/2/1 by growth stage, not a flat 7.
+        assert_eq!(emission("minecraft:amethyst_cluster"), 5);
+        assert_eq!(emission("minecraft:large_amethyst_bud"), 4);
+        assert_eq!(emission("minecraft:small_amethyst_bud"), 1);
+
+        // Brewing stand and brown mushroom are 1, not 3.
+        assert_eq!(emission("minecraft:brewing_stand"), 1);
+        assert_eq!(emission("minecraft:brown_mushroom"), 1);
+
+        // Glow item frames emit NO block light in Java (they are entities; the
+        // glow is an emissive texture). The old table's 7 was a Bedrock value.
+        assert_eq!(emission("minecraft:glow_item_frame"), 0);
+
+        // `minecraft:froglight` is not a block id — only the three variants are.
+        assert_eq!(emission("minecraft:froglight"), 0);
+        assert_eq!(emission("minecraft:ochre_froglight"), 15);
+    }
+
+    #[test]
+    fn lit_state_blocks_default_to_the_state_vanilla_places() {
+        // Campfires and redstone torches default to `lit=true`; furnaces and
+        // redstone ore default to `lit=false`. A bare id must evaluate to the
+        // state a `/setblock` with no properties actually produces — this is what
+        // keeps the compiler's own campfire relight fixture worth 15.
+        assert_eq!(emission("minecraft:campfire"), 15);
+        assert_eq!(emission("minecraft:campfire[lit=false]"), 0);
+        assert_eq!(emission("minecraft:soul_campfire"), 10);
+        assert_eq!(emission("minecraft:soul_campfire[lit=false]"), 0);
+        assert_eq!(emission("minecraft:redstone_torch"), 7);
+        assert_eq!(emission("minecraft:redstone_torch[lit=false]"), 0);
+        assert_eq!(emission("minecraft:furnace"), 0);
+        assert_eq!(emission("minecraft:furnace[lit=true]"), 13);
+        assert_eq!(emission("minecraft:blast_furnace[lit=true]"), 13);
+        // Cave vines light only when they carry berries.
+        assert_eq!(emission("minecraft:cave_vines"), 0);
+        assert_eq!(emission("minecraft:cave_vines[age=3,berries=true]"), 14);
+        // The technical light block reports its own level.
+        assert_eq!(emission("minecraft:light"), 15);
+        assert_eq!(emission("minecraft:light[level=4]"), 4);
     }
 
     #[test]

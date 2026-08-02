@@ -329,11 +329,16 @@ fn critical_path_shape_and_commands() {
         "no raw-id sidebar display leaks to players: {setup}"
     );
     // Completion still sets the objective (chat-token marker + PackTest assert).
+    // spec-0018: on the PARTY holder — the delve ends for everyone at once.
     let complete = text(
         &out,
         "datapack/data/hello-world/function/campaign_complete.mcfunction",
     );
-    assert!(complete.contains("scoreboard players set @s dw.campaign 1"));
+    assert!(complete.contains("scoreboard players set #party dw.campaign 1"));
+    assert!(
+        !complete.contains("@s"),
+        "campaign completion addresses the party, never one player: {complete}"
+    );
     assert!(complete.contains("[dw:complete hello-world campaign]"));
 }
 
@@ -389,7 +394,7 @@ fn completion_marker_channel_is_anchored_and_per_objective() {
         // teleport the player or complete the campaign.
         let marker_at = body.find("[dw:complete").expect("marker present");
         let score_at = body
-            .find("scoreboard players set @s dw.o_")
+            .find("scoreboard players set #party dw.o_")
             .expect("score set");
         assert!(
             score_at < marker_at,
@@ -590,8 +595,9 @@ fn packtest_suite_is_a_real_test() {
         "pins its own dummy (batch model: one dummy per test, all coexisting)"
     );
     assert!(
-        test.contains("assert score @a[tag=dw_t_camp,limit=1] dw.campaign matches 1"),
-        "asserts the campaign objective is set on the pinned dummy"
+        test.contains("assert score #party dw.campaign matches 1"),
+        "asserts the campaign objective is set on the PARTY holder (spec-0018): the \
+         pinned dummy DRIVES the chain, the party carries the result"
     );
     // PackTest scans `data/<ns>/test/` only, so nothing that is supposed to RUN
     // may hide under `function/`. The suite datapack may still carry mechanism
@@ -823,7 +829,7 @@ fn creator_overlay_emitted() {
     assert!(stamp.contains("run data get entity @s Pos[0]"));
     assert!(stamp.contains("data modify storage hello-world:note area set value \"area/keep\""));
     assert!(stamp.contains("if entity @s[tag=dw_npc_keeper]"));
-    assert!(stamp.contains("run scoreboard players get @s dw.o_talk"));
+    assert!(stamp.contains("run scoreboard players get #party dw.o_talk"));
     assert!(stamp.contains("function hello-world:creator/emit with storage hello-world:note"));
 
     // The emit line is a single `say` macro (server-log-reachable, unlike a

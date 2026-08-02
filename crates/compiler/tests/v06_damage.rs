@@ -96,21 +96,21 @@ fn build_hw(on_complete: &str) -> BuildOutput {
     build(&c, &prefabs)
 }
 
-/// An unscoped `damage-players` with no `damage_type` lowers to
-/// `damage @s <amount> minecraft:generic` — per-`@s`, default generic — behind
-/// the cutscene guard (a player watching a cinematic is never harmed).
+/// An unscoped `damage-players` on a quest beat lowers to `damage @a[…]
+/// <amount> minecraft:generic` — the hazard is a fact about the delve, so it hits
+/// the whole party (spec-0018) — behind the cutscene guard folded into the
+/// selector (a player watching a cinematic is never harmed).
 #[test]
-fn damage_players_default_emits_generic_at_self() {
+fn damage_players_default_emits_generic_at_the_party() {
     let out = build_hw(
         r#"{ "type": "damage-players", "amount": 6 },
            { "type": "campaign-complete" }"#,
     );
     let all = shipped_functions(&out);
     assert!(
-        all.lines().any(
-            |l| l == "execute if entity @s[tag=!dw_cutscene] run damage @s 6 minecraft:generic"
-        ),
-        "expected the cutscene-guarded `damage @s 6 minecraft:generic`; functions:\n{all}"
+        all.lines()
+            .any(|l| l == "execute as @a[tag=!dw_cutscene] run damage @s 6 minecraft:generic"),
+        "expected the cutscene-guarded party damage; functions:\n{all}"
     );
 }
 
@@ -123,17 +123,16 @@ fn damage_players_explicit_type_maps_to_vanilla_id() {
     );
     let all = shipped_functions(&out);
     assert!(
-        all.lines().any(
-            |l| l == "execute if entity @s[tag=!dw_cutscene] run damage @s 40 minecraft:wither"
-        ),
-        "expected the cutscene-guarded `damage @s 40 minecraft:wither`; functions:\n{all}"
+        all.lines()
+            .any(|l| l == "execute as @a[tag=!dw_cutscene] run damage @s 40 minecraft:wither"),
+        "expected the cutscene-guarded party wither damage; functions:\n{all}"
     );
 }
 
-/// An `in` box filters to acting players inside the anchor-centred AABB, keeping
-/// the per-`@s` target (`execute if entity @s[box] run damage @s …`).
+/// An `in` box filters to party members inside the anchor-centred AABB, folded
+/// into the target selector so each player is judged on their own position.
 #[test]
-fn damage_players_in_box_emits_guarded_self_damage() {
+fn damage_players_in_box_filters_the_party_by_position() {
     let out = build_hw(
         r#"{ "type": "damage-players", "amount": 6,
              "in": { "anchor": "anchor/exit", "extent": [3, 2, 3] } },
@@ -141,16 +140,16 @@ fn damage_players_in_box_emits_guarded_self_damage() {
     );
     let all = shipped_functions(&out);
     let guarded = all.lines().any(|l| {
-        l.starts_with("execute if entity @s[x=")
+        l.starts_with("execute as @a[x=")
             && l.contains("dx=6")
             && l.contains("dy=4")
             && l.contains("dz=6")
             && l.contains("tag=!dw_cutscene")
-            && l.ends_with("run damage @s 6 minecraft:generic")
+            && l.ends_with("] run damage @s 6 minecraft:generic")
     });
     assert!(
         guarded,
-        "expected an `in`-guarded `execute if entity @s[box] run damage @s …`:\n{all}"
+        "expected a box-filtered `execute as @a[box] run damage @s 6 …`:\n{all}"
     );
 }
 
