@@ -1,0 +1,94 @@
+{
+  "dsl_version": "0.6.0",
+  "campaign_id": "souls-td-lanes",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/hold-the-keep",
+        "trigger": {
+          "type": "campaign-start"
+        },
+        "objectives": [
+          {
+            "type": "reach-anchor",
+            "id": "obj/take-post",
+            "anchor": "anchor/keeper-stand",
+            "radius": 3
+          },
+          {
+            "type": "kill",
+            "id": "obj/break-warband",
+            "wave": "wave/warband",
+            "after": [
+              "obj/take-post"
+            ]
+          },
+          {
+            "type": "kill",
+            "id": "obj/break-drowned",
+            "wave": "wave/drowned",
+            "after": [
+              "obj/take-post"
+            ]
+          }
+        ],
+        "on_objective_complete": {
+          "obj/take-post": [
+            {
+              "type": "spawn-wave",
+              "wave": "wave/warband"
+            },
+            {
+              "type": "spawn-wave",
+              "wave": "wave/drowned"
+            }
+          ]
+        },
+        "on_complete": [
+          {
+            "type": "campaign-complete"
+          }
+        ]
+      }
+    ],
+    "waves": [
+      {
+        "id": "wave/warband",
+        "anchor": "anchor/exit",
+        "mobs": [
+          {
+            "entity": "minecraft:pillager",
+            "count": 2
+          },
+          {
+            "entity": "minecraft:vindicator",
+            "count": 1
+          }
+        ],
+        "lane": {
+          "waypoints": [
+            "anchor/keeper-stand",
+            "anchor/chest",
+            "spawn"
+          ],
+          "aggro_radius": 16
+        }
+      },
+      {
+        "id": "wave/drowned",
+        "anchor": "anchor/keeper-stand",
+        "summon": "aggro-edge",
+        "mobs": [
+          {
+            "entity": "minecraft:drowned",
+            "count": 2,
+            "attributes": {
+              "follow_range": 12
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

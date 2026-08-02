@@ -51,7 +51,8 @@ pub use stages::{
     NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces, PlannedQuest, Prop, Quest,
     QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep, Shortcut,
     ShotStyle, SkinModel, SoundAt, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset,
-    TrapTrigger, Trigger, TriggerOn, Wave, WaveMob, WorldContent, WorldTime, WorldWeather,
+    TrapTrigger, Trigger, TriggerOn, Wave, WaveLane, WaveMob, WaveSummon, WorldContent, WorldTime,
+    WorldWeather,
 };
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,

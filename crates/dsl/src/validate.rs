@@ -77,6 +77,7 @@ pub fn validate_campaign_with(
         shortcut_checks(c, anchors, &mut d);
         ambush_checks(c, &mut d);
         timed_gate_checks(c, &mut d);
+        lane_checks(c, anchors, &mut d);
     }
     // DSL v0.6 stage 7 (spec-0017): the map-editor edit script. Structural
     // checks only — frame/region *resolution* happens at build time against the
@@ -1276,6 +1277,13 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     format!("/content/waves/{i}/respawns_on_rest"),
                     "wave `respawns_on_rest`",
                 );
+            }
+            // TD lanes + aggro-edge summoning (spec-0016 §6) are v0.6 too.
+            if w.lane.is_some() {
+                res(d, format!("/content/waves/{i}/lane"), "wave `lane`");
+            }
+            if w.summon.is_some() {
+                res(d, format!("/content/waves/{i}/summon"), "wave `summon`");
             }
         }
     }
@@ -4956,6 +4964,238 @@ fn timed_gate_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 ),
                 d,
             );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// spec-0016 §6 — TD lanes + aggro-edge summoning
+// ---------------------------------------------------------------------------
+
+/// The raider family: the species whose `Patrolling` / `patrol_target` NBT
+/// vanilla actually honours, all live-verified marching a compiler-driven lane on
+/// 1.21.11 (`docs/notes/td-routing-spike.md`). On anything else the keys are
+/// inert — the mob stands where it spawned — which is the silent no-op class
+/// `DW0382` exists to make loud.
+const LANE_RAIDERS: [&str; 5] = ["pillager", "vindicator", "evoker", "ravager", "witch"];
+
+/// Species whose ONLY attack goal is gated on holding a specific weapon: they
+/// acquire a target, find no runnable attack goal, and freeze — while the patrol
+/// goal stays blocked by the very target they cannot hit (`DW0384`). A pillager
+/// is a crossbow mob and nothing else; every other raider melees or casts
+/// bare-handed, so this table has exactly one row on purpose.
+const LANE_WEAPON_GATED: [(&str, &str); 1] = [("pillager", "minecraft:crossbow")];
+
+/// The bare entity id (`minecraft:pillager` → `pillager`).
+fn bare_entity(id: &str) -> &str {
+    id.strip_prefix("minecraft:").unwrap_or(id)
+}
+
+/// Validate the spec-0016 §6 wave `lane` / `summon` surface.
+///
+/// Five rules, five codes, each pinned to a live-verified 1.21.11 failure mode:
+/// * `DW0381` — the declaration does not resolve or contradicts itself;
+/// * `DW0382` — a lane species outside the raider family (the NBT is inert);
+/// * `DW0383` — a lane squad below 2 (a lone patroller self-cancels);
+/// * `DW0384` — a lane pillager without its crossbow (target-acquisition deadlock);
+/// * `DW0385` — an aggro-edge mob with no authored `follow_range` (no ring radius).
+///
+/// Anchor resolution stays lenient for pool areas the compiler resolves later —
+/// the same policy as the trap, trigger and shortcut checks. Waypoint *geometry*
+/// (standable, reachable, spaced > 10) is a build-tier proof over the assembled
+/// world (`DW0386`), not a validation-tier one.
+fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
+    let quests = &c.quests.content;
+    if quests
+        .waves
+        .iter()
+        .all(|w| w.lane.is_none() && w.summon.is_none())
+    {
+        return;
+    }
+    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
+    let mut has_pool_area = false;
+    for a in &c.world.content.areas {
+        if let Some(prefab) = &a.prefab {
+            if let Some(set) = anchors.anchors_for(prefab) {
+                known_anchor.extend(set.iter().map(String::as_str));
+            }
+        } else if a.prefab_pool.is_some() {
+            has_pool_area = true;
+        }
+    }
+    let resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
+
+    for (i, w) in quests.waves.iter().enumerate() {
+        let aggro_edge = w.summon == Some(crate::stages::WaveSummon::AggroEdge);
+        if aggro_edge {
+            if w.lane.is_some() {
+                d.push(Diagnostic::error(
+                    codes::LANE_INVALID,
+                    "quests",
+                    format!("/content/waves/{i}/summon"),
+                    format!(
+                        "wave `{}` declares BOTH a `lane` and `summon: aggro-edge` (spec-0016 §6) \
+                         — a lane IS the routing (march while distant, native AI once aggroed), \
+                         and aggro-edge is its opposite (materialize already at the edge of \
+                         perception, no routing at all). Pick one.",
+                        w.id
+                    ),
+                ));
+            }
+            for (k, m) in w.mobs.iter().enumerate() {
+                if m.attributes.and_then(|a| a.follow_range).is_none() {
+                    d.push(Diagnostic::error(
+                        codes::AGGRO_EDGE_NO_RANGE,
+                        "quests",
+                        format!("/content/waves/{i}/mobs/{k}/attributes"),
+                        format!(
+                            "`summon: aggro-edge` mob `{}` in wave `{}` declares no \
+                             `attributes.follow_range` (spec-0016 §6). That radius IS the summon \
+                             ring — the distance at which this mob perceives the party — so it is \
+                             authored, never guessed: the compiler will not fabricate a vanilla \
+                             default it cannot verify against the pinned server.",
+                            m.entity, w.id
+                        ),
+                    ));
+                }
+            }
+        }
+        let Some(lane) = &w.lane else { continue };
+
+        if lane.waypoints.is_empty() {
+            d.push(Diagnostic::error(
+                codes::LANE_INVALID,
+                "quests",
+                format!("/content/waves/{i}/lane/waypoints"),
+                format!(
+                    "wave `{}` declares a `lane` with no waypoints (spec-0016 §6) — a lane is a \
+                     polyline the squad marches; give it at least one waypoint anchor",
+                    w.id
+                ),
+            ));
+        }
+        for (k, wp) in lane.waypoints.iter().enumerate() {
+            if !resolvable(wp.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::LANE_INVALID,
+                    "quests",
+                    format!("/content/waves/{i}/lane/waypoints/{k}"),
+                    format!(
+                        "lane waypoint anchor `{wp}` is not provided by any area's prefab — use \
+                         an anchor a prefab exposes (anchor names come from prefab metadata; do \
+                         NOT invent one)"
+                    ),
+                ));
+            }
+            if k > 0 && lane.waypoints[k - 1] == *wp {
+                d.push(Diagnostic::error(
+                    codes::LANE_INVALID,
+                    "quests",
+                    format!("/content/waves/{i}/lane/waypoints/{k}"),
+                    format!(
+                        "lane waypoint `{wp}` repeats the one before it — the squad would be told \
+                         to march to where it already stands, and vanilla re-rolls a patrol \
+                         target on arrival. Remove the repeat."
+                    ),
+                ));
+            }
+        }
+        if !(4..=64).contains(&lane.aggro_radius) {
+            d.push(Diagnostic::error(
+                codes::LANE_INVALID,
+                "quests",
+                format!("/content/waves/{i}/lane/aggro_radius"),
+                format!(
+                    "lane `aggro_radius` {} on wave `{}` is outside 4..=64 (spec-0016 §6). It is \
+                     emitted verbatim as the mobs' `follow_range` attribute AND as the release \
+                     radius; below 4 the squad walks into contact before it can see anyone, and \
+                     past 64 it aggroes across the whole delve.",
+                    lane.aggro_radius, w.id
+                ),
+            ));
+        }
+        if w.mobs.iter().map(|m| m.count).sum::<u32>() < 2 {
+            d.push(Diagnostic::error(
+                codes::LANE_SQUAD_TOO_SMALL,
+                "quests",
+                format!("/content/waves/{i}/mobs"),
+                format!(
+                    "lane wave `{}` fields fewer than 2 mobs (spec-0016 §6). A lone patroller \
+                     sets `Patrolling:0b` on ITSELF when it finds no companion within its follow \
+                     range — vanilla behaviour, live-verified — so a one-mob lane cancels its own \
+                     routing and just stands there. Field a squad of at least 2.",
+                    w.id
+                ),
+            ));
+        }
+        for (k, m) in w.mobs.iter().enumerate() {
+            let bare = bare_entity(&m.entity);
+            if !LANE_RAIDERS.contains(&bare) {
+                d.push(Diagnostic::error(
+                    codes::LANE_NOT_RAIDER,
+                    "quests",
+                    format!("/content/waves/{i}/mobs/{k}/entity"),
+                    format!(
+                        "lane wave `{}` fields `{}`, which is not raider-family (spec-0016 §6). \
+                         `Patrolling`/`patrol_target` are Raider NBT: on any other species they \
+                         are simply dropped and the mob stands where it spawned. Lane species: \
+                         {}. For anything else use `summon: aggro-edge`, which needs no patrol AI.",
+                        w.id,
+                        m.entity,
+                        LANE_RAIDERS.join(" / ")
+                    ),
+                ));
+            }
+            if let Some((_, weapon)) = LANE_WEAPON_GATED.iter().find(|(s, _)| *s == bare) {
+                let held = m
+                    .equipment
+                    .as_ref()
+                    .and_then(|e| e.main_hand.as_deref())
+                    .unwrap_or(*weapon);
+                if held != *weapon {
+                    d.push(Diagnostic::error(
+                        codes::LANE_UNARMED,
+                        "quests",
+                        format!("/content/waves/{i}/mobs/{k}/equipment/main_hand"),
+                        format!(
+                            "lane `{bare}` in wave `{}` holds `{held}` instead of `{weapon}` \
+                             (spec-0016 §6). Its ONLY attack goal is the crossbow goal, so on \
+                             acquiring a target it has nothing runnable to do — and the patrol \
+                             goal is meanwhile blocked BY that target. The mob freezes in place \
+                             indefinitely (live-verified deadlock). Give it the crossbow, or drop \
+                             the `main_hand` override and take the compiler's default.",
+                            w.id
+                        ),
+                    ));
+                }
+            }
+        }
+        if let Some(bad) = w.mobs.iter().enumerate().find(|(_, m)| {
+            m.attributes
+                .and_then(|a| a.follow_range)
+                .is_some_and(|r| r != f64::from(lane.aggro_radius))
+        }) {
+            let (k, m) = bad;
+            d.push(Diagnostic::error(
+                codes::LANE_INVALID,
+                "quests",
+                format!("/content/waves/{i}/mobs/{k}/attributes/follow_range"),
+                format!(
+                    "lane mob `{}` in wave `{}` declares `follow_range` {} but the lane's \
+                     `aggro_radius` is {} (spec-0016 §6). They MUST be equal: the release radius \
+                     is where routing hands over to native AI, and a patrolling raider that \
+                     targets a player outside its engagement range HOLDS GROUND instead of \
+                     marching — the squad stalls mid-lane. Drop the override (the compiler sets \
+                     `follow_range` from `aggro_radius`) or make the two agree.",
+                    m.entity,
+                    w.id,
+                    m.attributes
+                        .and_then(|a| a.follow_range)
+                        .unwrap_or_default(),
+                    lane.aggro_radius
+                ),
+            ));
         }
     }
 }

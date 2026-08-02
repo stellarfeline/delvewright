@@ -51,6 +51,16 @@ pub enum BuildFailure {
 /// choice — shrink the wave or use a larger room — not a compiler/geometry defect.
 pub const DW_WAVE_NO_ROOM: &str = "DW0312";
 
+/// `DW0387`: a `summon: aggro-edge` wave (spec-0016 §6) whose perception ring
+/// offers too few valid cells. The ring is the standable, walk-reachable,
+/// line-of-sight cells at a mob's own `follow_range` from the defended anchor;
+/// with fewer of them than the wave has mobs there is nowhere legal to
+/// materialize. This is an error and not a silent short spawn on purpose — the
+/// round-1 lesson was a "kill" objective whose wave never fully appeared, so the
+/// countdown could never reach zero and the delve soft-locked with every other
+/// proof green.
+pub const DW_AGGRO_EDGE_NO_RING: &str = "DW0387";
+
 impl From<crate::nav::NavError> for BuildFailure {
     fn from(e: crate::nav::NavError) -> Self {
         BuildFailure::Diagnostic {
@@ -283,10 +293,12 @@ pub fn build_with_warnings(
     // summon, not a walk, so this needs no occupancy model. DW0325 if one dangles.
     crate::nav::check_actor_placement(plan)?;
     let has_waves = !plan.campaign.quests.content.waves.is_empty();
-    let (moves, actor_moves, wave_placements): (
+    let (moves, actor_moves, wave_placements, wave_rings, lane_routes): (
         Vec<crate::nav::MovePlan>,
         Vec<crate::nav::ActorMovePlan>,
         WavePlacements,
+        WaveRings,
+        crate::nav::LaneRoutes,
     ) = if crate::nav::needs_world(plan) || has_waves {
         {
             let world = match &edit_replay {
@@ -381,12 +393,23 @@ pub fn build_with_warnings(
                 (Vec::new(), Vec::new())
             };
             // Seat each wave mob on a validated standable cell near its anchor, in
-            // room only (DW0312 if the room lacks the footing).
-            let waves = plan_wave_spawns(plan, &world)?;
-            (moves, actor_moves, waves)
+            // room only (DW0312 if the room lacks the footing) — or, for a
+            // `summon: aggro-edge` wave, on its perception ring (DW0387).
+            let (waves, rings) = plan_wave_spawns(plan, &world)?;
+            // spec-0016 §6: resolve and prove each TD lane polyline (DW0386). The
+            // proven cells are what `patrol_target` carries, so the squad is only
+            // ever sent somewhere it can stand and walk to.
+            let lanes = crate::nav::plan_lanes(plan, &world)?;
+            (moves, actor_moves, waves, rings, lanes)
         }
     } else {
-        (Vec::new(), Vec::new(), BTreeMap::new())
+        (
+            Vec::new(),
+            Vec::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+        )
     };
 
     // Every `spawn-wave` effect must resolve a spawn position, or its emitted
@@ -477,6 +500,7 @@ pub fn build_with_warnings(
         &actor_moves,
         &relight.placements,
         &wave_placements,
+        &lane_routes,
         edit_replay.as_ref().map_or(&[][..], |er| &er.commands),
         &edit_replay.as_ref().map_or(Vec::new(), |er| {
             er.batches.iter().filter_map(|b| b.bounds).collect()
@@ -526,7 +550,14 @@ pub fn build_with_warnings(
     }
 
     // ---- packtest datapack ----
-    emit_packtest(plan, &mut out, &moves, &actor_moves);
+    emit_packtest(
+        plan,
+        &mut out,
+        &moves,
+        &actor_moves,
+        &lane_routes,
+        &wave_rings,
+    );
 
     // ---- creator overlay (playtest-only; spec-0006) ----
     // A self-contained module (crate::creator). Its `.mcfunction`s are plain
@@ -799,10 +830,19 @@ fn snbt_text_component(s: &str) -> String {
 /// armed, or `None` for mobs that spawn unarmed. Small static table (documented
 /// in the compiler README); mobs not listed (zombie, drowned — a wild trident is
 /// not a default) get nothing.
+/// The pillager entry is load-bearing beyond looks (spec-0016 §6): a pillager's
+/// only attack goal is the crossbow goal, so an unarmed one that acquires a
+/// target has nothing runnable to do while its patrol goal is blocked by that
+/// same target — it freezes in place indefinitely (live-verified on 1.21.11,
+/// `docs/notes/td-routing-spike.md`). Arming it by default takes that deadlock
+/// off the author's plate entirely; `DW0384` catches the one remaining way in (an
+/// explicit `main_hand` override that takes the crossbow away).
 fn default_mainhand(entity: &str) -> Option<&'static str> {
     match entity.strip_prefix("minecraft:").unwrap_or(entity) {
         "wither_skeleton" => Some("minecraft:stone_sword"),
         "skeleton" | "stray" => Some("minecraft:bow"),
+        "pillager" => Some("minecraft:crossbow"),
+        "vindicator" => Some("minecraft:iron_axe"),
         _ => None,
     }
 }
@@ -944,6 +984,7 @@ fn emit_functions(
     actor_moves: &[crate::nav::ActorMovePlan],
     relight: &[crate::light::Placement],
     wave_placements: &WavePlacements,
+    lane_routes: &crate::nav::LaneRoutes,
     world_edits: &[String],
     edit_bounds: &[([i32; 3], [i32; 3])],
     trap_gates: &BTreeMap<String, String>,
@@ -2043,6 +2084,11 @@ fn emit_functions(
             plan::WAVE_OBJECTIVE,
             plan::wave_total(w)
         ));
+        // spec-0016 §6: a lane wave spawns as a Raider PATROL SQUAD — one leader,
+        // everyone `Patrolling:1b` and pointed at the first proven waypoint. The
+        // squad's own march clock starts with it. Empty for every other wave, so
+        // pre-§6 `spawn_<wave>` output is byte-identical.
+        let lane = w.lane.as_ref().zip(lane_routes.get(w.id.as_str()));
         let mut idx = 0i32;
         for mob in &w.mobs {
             // CustomName as a plain SNBT text component (M2 fix 1). Waves are
@@ -2058,8 +2104,16 @@ fn emit_functions(
                 .map(|e| format!(",{e}"))
                 .unwrap_or_default();
             // v0.4 attribute overrides (spec-0008 §4), emitted as 1.21.11
-            // attribute components in the summon NBT. Empty for a plain mob.
-            let attrs = attributes_snbt(mob.attributes.as_ref());
+            // attribute components in the summon NBT. Empty for a plain mob. A
+            // lane mob's `follow_range` is FORCED to the lane's `aggro_radius`:
+            // release radius and perception radius must be the same number, or a
+            // patrolling raider targets a player it cannot engage and holds
+            // ground mid-lane (`DW0381` rejects a contradicting override).
+            let effective_attrs = match lane {
+                Some((l, _)) => Some(lane_attributes(mob.attributes, l.aggro_radius)),
+                None => mob.attributes,
+            };
+            let attrs = attributes_snbt(effective_attrs.as_ref());
             // v0.4 permanent ambient effects: applied to this stack via a temp tag
             // after summon, so they land on exactly this mob type (not the whole
             // wave). Empty for a plain mob.
@@ -2071,8 +2125,31 @@ fn emit_functions(
                 // left enabled (no NoAI) so the mobs fight.
                 let cell = cells[idx as usize];
                 let c = ent_xyz(cell);
+                // spec-0016 §6 patrol NBT. `patrol_target` is the **snake_case
+                // int-array** form and nothing else: 1.21.11's strict codec
+                // silently DROPS the legacy `PatrolTarget:{X,Y,Z}` compound, and
+                // the squad then patrols to vanilla-rolled random points — the
+                // working-but-drunk failure the spike caught live. `Patrolling`
+                // and `PatrolLeader` keep their camelCase names.
+                let patrol = match lane {
+                    Some((_, wps)) => {
+                        let t = wps[0];
+                        let leader = if idx == 0 { ",PatrolLeader:1b" } else { "" };
+                        format!(
+                            ",Patrolling:1b{leader},patrol_target:[I;{},{},{}]",
+                            t[0], t[1], t[2]
+                        )
+                    }
+                    None => String::new(),
+                };
+                let lead_tag = match lane {
+                    Some(_) if idx == 0 => {
+                        format!(",\"{}\"", lane_leader_tag(w.id.as_str()))
+                    }
+                    _ => String::new(),
+                };
                 body.push(format!(
-                    "summon {} {} {} {} {{Tags:[\"{}\"{tmp}],PersistenceRequired:1b{name}{equip}{attrs}}}",
+                    "summon {} {} {} {} {{Tags:[\"{}\"{lead_tag}{tmp}],PersistenceRequired:1b{name}{equip}{attrs}{patrol}}}",
                     mob.entity,
                     c[0],
                     c[1],
@@ -2091,10 +2168,26 @@ fn emit_functions(
                 body.push("tag @e[tag=dw_tmp] remove dw_tmp".to_string());
             }
         }
+        // spec-0016 §6: the squad marches from waypoint 0 and its clock starts
+        // with it. `schedule … <n>t` is replace-mode, so a re-seat (spec-0016 §1)
+        // can never double the clock up.
+        if let Some((_, _)) = lane {
+            let safe = plan::safe_local(w.id.as_str());
+            body.push(format!(
+                "scoreboard players set {} dw.sys 0",
+                lane_index_holder(w.id.as_str())
+            ));
+            body.push(format!(
+                "schedule function {ns}:lane_tick_{safe} {LANE_PERIOD_TICKS}t"
+            ));
+        }
         fns.push((
             format!("spawn_{}", plan::safe_local(w.id.as_str())),
             lines(&body),
         ));
+        if let Some((l, wps)) = lane {
+            fns.push(lane_tick_fn(ns, w, l, wps));
+        }
         // spec-0016 §1: the re-seat — clear survivors, then re-run the wave's own
         // spawn (same authored composition, same proven cells). Emitted only for a
         // `respawns_on_rest` wave.
@@ -2188,6 +2281,122 @@ fn emit_functions(
 /// summon order (task #41). Only waves whose spawn anchor resolves have an entry.
 type WavePlacements = BTreeMap<String, Vec<[i32; 3]>>;
 
+/// The **defended point** each `summon: aggro-edge` wave's perception ring is
+/// measured from (spec-0016 §6): its `anchor`, snapped to standable footing. The
+/// generated PackTest asserts ring distance against exactly this cell, so the
+/// runtime check and the compile-time placement share one origin.
+type WaveRings = BTreeMap<String, [i32; 3]>;
+
+// --- spec-0016 §6: TD lanes -------------------------------------------------
+
+/// The lane clock period, in ticks. The spike measured 20–40 ticks as the working
+/// band (2 commands per mob per cycle, 0.5–1.0 ms MSPT for a four-mob squad) and
+/// ran 30t (1.5 s) live: fast enough that the re-assert defeats vanilla's
+/// arrival re-roll and the lone-patroller self-cancel, slow enough to cost
+/// nothing.
+const LANE_PERIOD_TICKS: u32 = 30;
+
+/// How close a squad member must get to the current waypoint for the lane to
+/// advance, in blocks. Measured: with the 1.5 s re-assert, an advance radius of 8
+/// produced zero stalls over six waypoints.
+const LANE_ADVANCE_RADIUS: u32 = 8;
+
+/// The tag on a lane squad's `PatrolLeader`. The leader is the wave's first
+/// summoned mob (deterministic), and the tag exists so the runtime — and the
+/// generated PackTest — can address the one mob vanilla treats specially.
+fn lane_leader_tag(wave_id: &str) -> String {
+    format!("dw_lead_{}", plan::safe_local(wave_id))
+}
+
+/// The fake-player holder carrying a lane's current waypoint index on `dw.sys`.
+/// One index for the whole squad: the lane is a thing the warband walks, not a
+/// per-mob itinerary, which is also what keeps the re-assert to one command per
+/// mob per cycle.
+fn lane_index_holder(wave_id: &str) -> String {
+    format!("#lane_{}", plan::safe_local(wave_id))
+}
+
+/// A lane mob's attributes with `follow_range` forced to the lane's
+/// `aggro_radius` (spec-0016 §6). Perception radius and release radius are the
+/// same number by construction: a patrolling raider that targets a player outside
+/// its engagement range holds ground instead of marching, so any daylight between
+/// the two stalls the squad mid-lane. `DW0381` rejects a contradicting authored
+/// override rather than silently overwriting it.
+fn lane_attributes(
+    base: Option<delvewright_dsl::MobAttributes>,
+    aggro_radius: u32,
+) -> delvewright_dsl::MobAttributes {
+    let mut a = base.unwrap_or(delvewright_dsl::MobAttributes {
+        max_health: None,
+        attack_damage: None,
+        movement_speed: None,
+        follow_range: None,
+    });
+    a.follow_range = Some(f64::from(aggro_radius));
+    a
+}
+
+/// The per-wave lane clock (spec-0016 §6), implementing the spike's verdict
+/// verbatim:
+///
+/// 1. **advance** — when any squad member is within [`LANE_ADVANCE_RADIUS`] of
+///    the current waypoint, the shared index steps forward. Emitted in
+///    DESCENDING index order so one cycle can advance at most one waypoint (an
+///    ascending emission would cascade the whole lane in a single tick), and
+///    driven by any squad member rather than the leader alone so a dead leader
+///    cannot strand the warband on a waypoint forever.
+/// 2. **release** — a mob with a player inside `aggro_radius` gets
+///    `Patrolling:0b` and is thereafter a plain native hostile. Vanilla's patrol
+///    goal is hard-gated on having no target, so combat-preempts-routing is
+///    engine semantics; this line just makes the handover explicit and permanent
+///    for as long as the player stays close.
+/// 3. **re-assert** — a mob with no player inside `aggro_radius` is put back on
+///    the lane. This is what defeats vanilla's random re-roll on arrival and the
+///    lone-patroller self-cancel; it is inert during combat because the goal
+///    cannot restart while the mob has a target.
+/// 4. **re-arm** — reschedule while any squad member lives, so the clock stops
+///    on its own when the wave is cleared.
+fn lane_tick_fn(
+    ns: &str,
+    w: &delvewright_dsl::Wave,
+    lane: &delvewright_dsl::WaveLane,
+    wps: &[[i32; 3]],
+) -> (String, String) {
+    let safe = plan::safe_local(w.id.as_str());
+    let tag = plan::wave_tag(w.id.as_str());
+    let idx = lane_index_holder(w.id.as_str());
+    let r = lane.aggro_radius;
+    let adv = LANE_ADVANCE_RADIUS;
+    let mut body: Vec<String> = Vec::new();
+    for i in (0..wps.len().saturating_sub(1)).rev() {
+        let c = ent_xyz(wps[i]);
+        body.push(format!(
+            "execute if score {idx} dw.sys matches {i} positioned {} {} {} if entity \
+             @e[tag={tag},distance=..{adv}] run scoreboard players set {idx} dw.sys {}",
+            c[0],
+            c[1],
+            c[2],
+            i + 1
+        ));
+    }
+    body.push(format!(
+        "execute as @e[tag={tag}] at @s if entity @a[distance=..{r}] run data merge entity @s \
+         {{Patrolling:0b}}"
+    ));
+    for (i, t) in wps.iter().enumerate() {
+        body.push(format!(
+            "execute if score {idx} dw.sys matches {i} as @e[tag={tag}] at @s unless entity \
+             @a[distance=..{r}] run data merge entity @s {{Patrolling:1b,patrol_target:[I;{},{},{}]}}",
+            t[0], t[1], t[2]
+        ));
+    }
+    body.push(format!(
+        "execute if entity @e[tag={tag}] run schedule function {ns}:lane_tick_{safe} \
+         {LANE_PERIOD_TICKS}t"
+    ));
+    (format!("lane_tick_{safe}"), lines(&body))
+}
+
 /// Seat every wave's mobs on compiler-validated standable cells near the wave
 /// anchor, confined to the anchor's own assembled piece so the flock never strings
 /// across a socket seam into a neighbouring room (task #41: the field bug where six
@@ -2200,7 +2409,7 @@ type WavePlacements = BTreeMap<String, Vec<[i32; 3]>>;
 fn plan_wave_spawns(
     plan: &Plan,
     world: &crate::nav::World,
-) -> Result<WavePlacements, BuildFailure> {
+) -> Result<(WavePlacements, WaveRings), BuildFailure> {
     // Wave mobs cannot right-click a fence gate open: seat them on the
     // no-gate-use view, where a closed gate cell is a 1.5-tall barrier — never a
     // seat, and never a doorway the seating flood spills through (task #59).
@@ -2213,6 +2422,7 @@ fn plan_wave_spawns(
     };
     let c = plan.campaign;
     let mut out: WavePlacements = BTreeMap::new();
+    let mut rings: WaveRings = BTreeMap::new();
     for w in &c.quests.content.waves {
         let (Some(anchor), Some(area)) = (
             wave_spawn_pos(plan, w.id.as_str()),
@@ -2221,6 +2431,15 @@ fn plan_wave_spawns(
             continue;
         };
         let need = plan::wave_total(w).max(0) as usize;
+        // spec-0016 §6: an aggro-edge wave is spirit-summoned at the edge of
+        // perception instead of seated around its anchor, so its cells come from
+        // per-mob rings across the whole ARENA rather than the anchor's room.
+        if w.summon == Some(delvewright_dsl::WaveSummon::AggroEdge) {
+            let (cells, centre) = plan_aggro_edge_spawns(plan, world, w, area, anchor)?;
+            out.insert(w.id.as_str().to_string(), cells);
+            rings.insert(w.id.as_str().to_string(), centre);
+            continue;
+        }
         let bounds = wave_piece_bounds(plan, area, anchor);
         let cells = world.confined_standable_cells(anchor, bounds);
         if cells.len() < need {
@@ -2247,7 +2466,83 @@ fn plan_wave_spawns(
             cells.into_iter().take(need).collect(),
         );
     }
-    Ok(out)
+    Ok((out, rings))
+}
+
+/// How far inside `follow_range` the aggro ring may reach, in blocks. A discrete
+/// voxel grid rarely holds a standable cell at *exactly* `follow_range`, so the
+/// ring is an annulus `[follow_range - 1, follow_range]` — one-sided on purpose:
+/// a cell outside the mob's own perception summons a mob that stands there
+/// (see [`crate::nav::World::annulus_standable_cells`]).
+const AGGRO_RING_TOLERANCE: f64 = 1.0;
+
+/// Seat a `summon: aggro-edge` wave (spec-0016 §6) on the boundary of its own
+/// perception: for each mob stack, the standable, reachable, line-of-sight cells
+/// at that stack's `attributes.follow_range` from the defended anchor, nearest
+/// first, no two mobs sharing a cell.
+///
+/// The party is expected at the defended anchor (that is what "defended" means),
+/// so the ring around it IS the aggro boundary of the players — the mobs
+/// materialize at the edge of perception and close under pure native AI. The
+/// radius is per-stack because perception is per-species: a heavier mob that
+/// sees further starts further out, which is exactly the read the owner asked
+/// for ("spirit-summoned at the edge, never on top of the players").
+///
+/// `DW0387` if a stack's ring cannot seat it. `follow_range` is guaranteed
+/// present by `DW0385` at validation time; a stack without one is skipped rather
+/// than guessed.
+fn plan_aggro_edge_spawns(
+    plan: &Plan,
+    world: &crate::nav::World,
+    w: &delvewright_dsl::Wave,
+    area: &str,
+    anchor: [i32; 3],
+) -> Result<(Vec<[i32; 3]>, [i32; 3]), BuildFailure> {
+    let bounds = match plan.areas.iter().find(|a| a.area_id == area) {
+        Some(a) => a.bounds(),
+        None => (anchor, anchor),
+    };
+    let centre = world.ring_centre(anchor, bounds).unwrap_or(anchor);
+    let mut used: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut cells: Vec<[i32; 3]> = Vec::new();
+    for mob in &w.mobs {
+        let Some(radius) = mob.attributes.and_then(|a| a.follow_range) else {
+            continue;
+        };
+        let need = mob.count as usize;
+        let ring = world.annulus_standable_cells(anchor, bounds, radius, AGGRO_RING_TOLERANCE);
+        let picked: Vec<[i32; 3]> = ring
+            .iter()
+            .copied()
+            .filter(|c| !used.contains(c))
+            .take(need)
+            .collect();
+        if picked.len() < need {
+            return Err(BuildFailure::Diagnostic {
+                code: DW_AGGRO_EDGE_NO_RING,
+                message: format!(
+                    "`summon: aggro-edge` wave `{wave}` cannot seat {need} × `{entity}` on its \
+                     perception ring: at `follow_range` {radius} (the band \
+                     [{radius}-{AGGRO_RING_TOLERANCE}, {radius}]) around defended anchor \
+                     `{anchor_name}` ({anchor:?}) in area `{area}`, only {found} \
+                     cell(s) are standable, walk-reachable AND in line of sight of the anchor. \
+                     The mobs must materialize at the EDGE of perception (spec-0016 §6) — the \
+                     compiler will not quietly drop them on the party instead, nor spawn fewer \
+                     than authored (a short wave makes a `kill` countdown that never reaches \
+                     zero). Fix the content: give the arena room at that radius, lower this \
+                     stack's `follow_range` to a ring the arena actually has, or move the \
+                     defended anchor off the wall.",
+                    wave = w.id.as_str(),
+                    entity = mob.entity,
+                    anchor_name = w.anchor.as_str(),
+                    found = ring.iter().filter(|c| !used.contains(*c)).count(),
+                ),
+            });
+        }
+        used.extend(picked.iter().copied());
+        cells.extend(picked);
+    }
+    Ok((cells, centre))
 }
 
 /// The AABB of the assembled piece carrying a wave's spawn anchor — the room the
@@ -5788,6 +6083,8 @@ fn emit_packtest(
     out: &mut BuildOutput,
     moves: &[crate::nav::MovePlan],
     actor_moves: &[crate::nav::ActorMovePlan],
+    lane_routes: &crate::nav::LaneRoutes,
+    wave_rings: &WaveRings,
 ) {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -5941,6 +6238,11 @@ fn emit_packtest(
     emit_shortcut_packtest(plan, out);
     // spec-0016 §4: the clock really alternates the gate region.
     emit_timed_gate_packtest(plan, out);
+    // spec-0016 §6: the patrol NBT survives 1.21.11's strict codec, the lane
+    // advances in march order, the squad is released to native AI at aggro range,
+    // and an aggro-edge wave really materializes on its perception ring. Emits
+    // nothing for a campaign with no lane and no aggro-edge wave.
+    emit_td_lane_packtests(plan, out, lane_routes, wave_rings);
 
     // The scheduled-executor contract (AUDIT-P0): a function reached through
     // `schedule` still lands per-player state on real players.
@@ -6777,6 +7079,211 @@ fn emit_shortcut_packtest(plan: &Plan, out: &mut BuildOutput) {
         format!("packtest-datapack/data/{ns}/test/souls_shortcut.mcfunction"),
         lines(&b).into_bytes(),
     );
+}
+
+/// spec-0016 §6 PackTests: four templates, one per live-verified claim of the TD
+/// lane mechanism. Emits nothing for a campaign with neither a lane nor an
+/// aggro-edge wave.
+///
+/// * `souls_td_patrol_nbt` — **the codec trap, as a test and not a comment.**
+///   1.21.11's strict codec silently DROPS the legacy `PatrolTarget:{X,Y,Z}`
+///   compound; only the snake_case `patrol_target:[I;x,y,z]` int-array survives.
+///   The failure mode is a squad that patrols to vanilla-rolled random points —
+///   working-but-drunk, invisible to every other proof. This asserts the array
+///   reads back off the summoned squad, that exactly one mob is the
+///   `PatrolLeader`, and that the whole squad spawns `Patrolling:1b`.
+/// * `souls_td_lane_march` — the lane advances in **march order**: arriving at
+///   the current waypoint steps the index by exactly one, and standing at a
+///   LATER waypoint while the index still points at an earlier one does not skip
+///   ahead (the lane is walked, not teleported through).
+/// * `souls_td_lane_release` — routing hands over to native AI at aggro range:
+///   with no player inside `aggro_radius` the whole squad is re-asserted onto
+///   the lane; with a player inside it, every mob is `Patrolling:0b`.
+/// * `souls_td_aggro_edge` — a `summon: aggro-edge` wave really materializes on
+///   its perception ring around the defended anchor: full authored count, every
+///   mob at its own `follow_range` from the defended point, measured from the
+///   same snapped centre the compiler placed them around.
+fn emit_td_lane_packtests(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    lane_routes: &crate::nav::LaneRoutes,
+    wave_rings: &WaveRings,
+) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let waves = &plan.campaign.quests.content.waves;
+    let mut write = |name: &str, body: Vec<String>| {
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
+            lines(&body).into_bytes(),
+        );
+    };
+
+    if let Some((w, lane, wps)) = waves.iter().find_map(|w| {
+        let lane = w.lane.as_ref()?;
+        let wps = lane_routes.get(w.id.as_str())?;
+        Some((w, lane, wps))
+    }) {
+        let safe = plan::safe_local(w.id.as_str());
+        let tag = plan::wave_tag(w.id.as_str());
+        let lead = lane_leader_tag(w.id.as_str());
+        let idx = lane_index_holder(w.id.as_str());
+        let total = plan::wave_total(w);
+        let r = lane.aggro_radius;
+        let t0 = wps[0];
+        // A cell 200 blocks above the lane: no player in the batch is anywhere
+        // near it, so `unless entity @a[distance=..R]` is decidable from the
+        // compiler's chair — the re-assert half of the clock can be asserted
+        // without knowing where a sibling template parked its dummy.
+        let high = |c: [i32; 3]| {
+            let p = ent_xyz(c);
+            format!("{} 200.0 {}", p[0], p[2])
+        };
+
+        let mut b = packtest_header(&format!(
+            "{title}: lane `{}` spawns as a patrol squad, snake_case `patrol_target` and all \
+             (spec-0016 §6)",
+            w.id
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("function {ns}:spawn_{safe}"));
+        b.push(format!(
+            "execute store result score #n_tdnbt dw.sys if entity @e[tag={tag}]"
+        ));
+        b.push(format!("assert score #n_tdnbt dw.sys matches {total}"));
+        b.push(format!(
+            "execute store result score #l_tdnbt dw.sys if entity \
+             @e[tag={lead},nbt={{PatrolLeader:1b}}]"
+        ));
+        b.push("assert score #l_tdnbt dw.sys matches 1".to_string());
+        b.push(format!(
+            "execute store result score #p_tdnbt dw.sys if entity @e[tag={tag},nbt={{Patrolling:1b}}]"
+        ));
+        b.push(format!("assert score #p_tdnbt dw.sys matches {total}"));
+        b.push(format!(
+            "execute store result score #t_tdnbt dw.sys if entity \
+             @e[tag={tag},nbt={{patrol_target:[I;{},{},{}]}}]",
+            t0[0], t0[1], t0[2]
+        ));
+        b.push(format!("assert score #t_tdnbt dw.sys matches {total}"));
+        b.push(format!("kill @e[tag={tag}]"));
+        write("souls_td_patrol_nbt", b);
+
+        let mut b = packtest_header(&format!(
+            "{title}: lane `{}` advances in march order, one waypoint at a time (spec-0016 §6)",
+            w.id
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("function {ns}:spawn_{safe}"));
+        b.push(format!("scoreboard players set {idx} dw.sys 0"));
+        if wps.len() > 1 {
+            // Standing at a LATER waypoint does not skip the lane forward: the
+            // index only ever advances off the waypoint it currently names.
+            b.push(format!("tp @e[tag={tag}] {}", high(wps[1])));
+            b.push(format!("function {ns}:lane_tick_{safe}"));
+            b.push(format!("assert score {idx} dw.sys matches 0"));
+        }
+        b.push(format!("tp @e[tag={tag}] {}", ent_xyz(wps[0]).join(" ")));
+        b.push(format!("function {ns}:lane_tick_{safe}"));
+        b.push(format!("assert score {idx} dw.sys matches 1"));
+        if wps.len() > 1 {
+            // …and the squad is really re-pointed at the next waypoint (high
+            // above the lane, so no player is inside the release radius).
+            b.push(format!("tp @e[tag={tag}] {}", high(wps[1])));
+            b.push(format!("function {ns}:lane_tick_{safe}"));
+            b.push(format!(
+                "execute store result score #m_tdmar dw.sys if entity \
+                 @e[tag={tag},nbt={{patrol_target:[I;{},{},{}]}}]",
+                wps[1][0], wps[1][1], wps[1][2]
+            ));
+            b.push(format!("assert score #m_tdmar dw.sys matches {total}"));
+        }
+        b.push(format!("kill @e[tag={tag}]"));
+        write("souls_td_lane_march", b);
+
+        let (pin, sel) = pin_dummy("dw_pt_tdrel");
+        let mut b = packtest_header(&format!(
+            "{title}: lane `{}` marches while distant and is released to native AI at aggro \
+             range (spec-0016 §6)",
+            w.id
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("function {ns}:spawn_{safe}"));
+        b.push(format!("scoreboard players set {idx} dw.sys 0"));
+        b.push(format!("tp @e[tag={tag}] {}", high(wps[0])));
+        b.push(format!("function {ns}:lane_tick_{safe}"));
+        b.push(format!(
+            "execute store result score #d_tdrel dw.sys if entity @e[tag={tag},nbt={{Patrolling:1b}}]"
+        ));
+        b.push(format!("assert score #d_tdrel dw.sys matches {total}"));
+        // Bring the squad onto the pinned dummy rather than moving the player:
+        // the test's own dummy stays exactly where the batch put it, so nothing
+        // it leaves behind can perturb a sibling. `{r}` blocks is the release
+        // radius; 0 is inside it by any measure.
+        b.push(format!("execute at {sel} run tp @e[tag={tag}] ~ ~ ~"));
+        b.push(format!("function {ns}:lane_tick_{safe}"));
+        b.push(format!(
+            "execute store result score #a_tdrel dw.sys if entity @e[tag={tag},nbt={{Patrolling:1b}}]"
+        ));
+        b.push("assert score #a_tdrel dw.sys matches 0".to_string());
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("tag {sel} remove dw_pt_tdrel"));
+        write("souls_td_lane_release", b);
+        let _ = r;
+    }
+
+    if let Some((w, centre)) = waves.iter().find_map(|w| {
+        (w.summon == Some(delvewright_dsl::WaveSummon::AggroEdge))
+            .then(|| wave_rings.get(w.id.as_str()).map(|c| (w, *c)))
+            .flatten()
+    }) {
+        let safe = plan::safe_local(w.id.as_str());
+        let tag = plan::wave_tag(w.id.as_str());
+        let total = plan::wave_total(w);
+        let mut b = packtest_header(&format!(
+            "{title}: aggro-edge wave `{}` materializes on its perception ring, never on the \
+             defended point (spec-0016 §6)",
+            w.id
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("function {ns}:spawn_{safe}"));
+        b.push(format!(
+            "execute store result score #n_tdedg dw.sys if entity @e[tag={tag}]"
+        ));
+        b.push(format!("assert score #n_tdedg dw.sys matches {total}"));
+        // One assertion per (species, follow_range) group: each group's mobs must
+        // ALL sit in its own ring band. The band is the compiler's annulus
+        // tolerance plus 0.1 for the float compare — mobs and the ring centre are
+        // both addressed at cell centres, so no rounding slack is needed.
+        let mut groups: BTreeMap<(String, String), i64> = BTreeMap::new();
+        for m in &w.mobs {
+            let Some(radius) = m.attributes.and_then(|a| a.follow_range) else {
+                continue;
+            };
+            *groups
+                .entry((m.entity.clone(), fmt_f64(radius)))
+                .or_default() += i64::from(m.count);
+        }
+        let c = ent_xyz(centre);
+        for (i, ((entity, radius), count)) in groups.iter().enumerate() {
+            let radius: f64 = radius.parse().unwrap_or_default();
+            let lo = fmt_f64((radius - AGGRO_RING_TOLERANCE - 0.1).max(0.0));
+            let hi = fmt_f64(radius + 0.1);
+            b.push(format!(
+                "execute positioned {} {} {} store result score #r{i}_tdedg dw.sys if entity \
+                 @e[tag={tag},type={entity},distance={lo}..{hi}]",
+                c[0], c[1], c[2]
+            ));
+            b.push(format!("assert score #r{i}_tdedg dw.sys matches {count}"));
+        }
+        b.push(format!("kill @e[tag={tag}]"));
+        write("souls_td_aggro_edge", b);
+    }
 }
 
 /// v0.6 PackTests (spec-0012 checkpoints, spec-0014 stealth). Fake players cannot

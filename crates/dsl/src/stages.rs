@@ -1238,6 +1238,69 @@ pub struct Wave {
     /// (`DW0370`) rather than a silent no-op.
     #[serde(default, skip_serializing_if = "is_false")]
     pub respawns_on_rest: bool,
+    /// Tower-defense lane routing (spec-0016 §6): march this wave along a
+    /// waypoint polyline while distant, hand it to native AI the instant a
+    /// player is inside `aggro_radius`. Absent = today's behaviour (spawn and
+    /// stand), byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lane: Option<WaveLane>,
+    /// Where the wave's mobs materialize (spec-0016 §6). Absent =
+    /// [`WaveSummon::Anchor`], the pre-0.6 behaviour: standable cells around the
+    /// wave `anchor`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summon: Option<WaveSummon>,
+}
+
+/// Where a wave's mobs materialize (spec-0016 §6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum WaveSummon {
+    /// Standable cells around the wave `anchor`, nearest first — the pre-0.6
+    /// behaviour and the default.
+    Anchor,
+    /// **Spirit-summoned at the edge of perception** (owner design 2026-08-02):
+    /// each mob appears on the ring at its own `attributes.follow_range` from
+    /// the wave `anchor`, so it acquires a target the instant it exists and
+    /// closes under pure native AI. Species without patrol AI never march a
+    /// lane; this is what they do instead — never a spawn on top of the party,
+    /// never a mob that brushes past.
+    ///
+    /// With this mode the wave `anchor` is the **defended point** (what the ring
+    /// is drawn around), not the spawn point. Each mob stack must declare its
+    /// own `attributes.follow_range` (`DW0385`) — the ring radius is authored,
+    /// never guessed from a vanilla defaults table the compiler cannot verify.
+    AggroEdge,
+}
+
+/// Tower-defense lane routing for a wave (spec-0016 §6), built on vanilla's
+/// **Raider patrol system** — the intended primitive, live-verified on 1.21.11
+/// (`docs/notes/td-routing-spike.md`).
+///
+/// The squad spawns `Patrolling:1b` with one `PatrolLeader:1b` and a snake_case
+/// `patrol_target` int-array; a compiler-emitted clock walks the shared waypoint
+/// index forward, and per mob a player-proximity check releases `Patrolling:0b`.
+/// From that instant the mob is a plain native hostile. "Combat preempts
+/// routing" is engine semantics — vanilla's patrol goal is hard-gated on having
+/// no target — so the owner's rule (march while distant, fight with NATIVE AI
+/// once aggroed, never brush past) falls out of the primitive unforced.
+///
+/// Lanes are raider-family only (`DW0382`), squad ≥ 2 (`DW0383`), and a lane
+/// pillager must keep its crossbow (`DW0384`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WaveLane {
+    /// The lane polyline, in march order: anchors some area's prefab provides.
+    /// At least one; consecutive legs (counting the wave `anchor` as the origin)
+    /// must be more than 10 blocks apart — vanilla re-rolls a patrol target
+    /// within 10 blocks of arrival, so a tighter lane is a lane the engine
+    /// quietly stops following (`DW0386`).
+    pub waypoints: Vec<AnchorId>,
+    /// The release radius, in blocks: the compiler sets every lane mob's
+    /// `follow_range` attribute to exactly this and releases `Patrolling:0b`
+    /// at the same distance. The two MUST be equal — a patrolling raider that
+    /// targets a player it cannot engage holds ground instead of marching, so a
+    /// per-mob `attributes.follow_range` that disagrees is `DW0381`.
+    pub aggro_radius: u32,
 }
 
 /// One mob stack in a [`Wave`].
