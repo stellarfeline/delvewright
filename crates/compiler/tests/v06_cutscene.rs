@@ -357,6 +357,145 @@ fn cutscene_aim_emission_is_deterministic() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Shot styles (spec-0015): deterministic expansion at emission
+// ---------------------------------------------------------------------------
+
+/// `push-in` expands to a dolly toward its subject: the camera starts at
+/// `dist` and ends at a third of it (min 2), every frame aimed at the subject;
+/// the style's default duration (4 s) shapes the driver timeline.
+#[test]
+fn push_in_expands_toward_subject() {
+    let (plan, out) = build(
+        r#"{ "type": "cutscene", "shots": [
+             { "shot_style": "push-in", "dist": 3.5, "bearing": 90,
+               "subject": { "anchor": "anchor/keeper-stand", "offset": [0, 1, 0] } } ] }"#,
+    );
+    // An anchor subject aims at the block centre exactly (entity subjects lift
+    // one block to torso height; anchors do not).
+    let subject = anchor_point(&plan, "anchor/keeper-stand", [0, 1, 0]);
+    let tick = tick_body(&out);
+    let fr = frames(&tick);
+    let d = |p: &[f64; 3]| {
+        ((p[0] - subject[0]).powi(2) + (p[1] - subject[1]).powi(2) + (p[2] - subject[2]).powi(2))
+            .sqrt()
+    };
+    let (first, last) = (&fr[0], &fr[fr.len() - 1]);
+    assert!(
+        d(&first.1) > d(&last.1) + 1.0,
+        "push-in closes distance: {} -> {}",
+        d(&first.1),
+        d(&last.1)
+    );
+    for (t, pos, yaw, pitch) in &fr {
+        let (ey, ep) = expect_aim(*pos, subject);
+        assert!(
+            close(*yaw, ey) && close(*pitch, ep),
+            "frame {t}: styled aim must track the subject: ({yaw}, {pitch}) != ({ey}, {ep})"
+        );
+    }
+    // Default duration: push-in = 4 s = 80 ticks; restore fires at 81.
+    assert!(
+        tick.contains("matches 81.. run function hello-world:cs_end_"),
+        "style default seconds shape the timeline:\n{tick}"
+    );
+}
+
+/// An explicit `seconds` always overrides the style default.
+#[test]
+fn explicit_seconds_overrides_style_default() {
+    let (_, out) = build(
+        r#"{ "type": "cutscene", "shots": [
+             { "shot_style": "push-in", "dist": 3.5, "bearing": 90, "seconds": 2,
+               "subject": { "anchor": "anchor/keeper-stand", "offset": [0, 1, 0] } } ] }"#,
+    );
+    let tick = tick_body(&out);
+    assert!(
+        tick.contains("matches 41.. run function hello-world:cs_end_"),
+        "explicit 2 s (40 ticks) overrides the 4 s default:\n{tick}"
+    );
+}
+
+/// `orbit-arc` holds a constant radius around its subject for the whole sweep.
+#[test]
+fn orbit_arc_holds_radius() {
+    let (plan, out) = build(
+        r#"{ "type": "cutscene", "shots": [
+             { "shot_style": "orbit-arc", "dist": 2, "degrees": 90, "bearing": 90,
+               "subject": { "anchor": "anchor/keeper-stand", "offset": [0, 0, -1] } } ] }"#,
+    );
+    let subject = anchor_point(&plan, "anchor/keeper-stand", [0, 0, -1]);
+    let fr = frames(&tick_body(&out));
+    assert!(fr.len() > 2, "an orbit is a moving shot");
+    for (t, pos, _, _) in &fr {
+        let horiz = ((pos[0] - subject[0]).powi(2) + (pos[2] - subject[2]).powi(2)).sqrt();
+        assert!(
+            (horiz - 2.0).abs() < 0.05,
+            "frame {t}: orbit radius drifts: {horiz}"
+        );
+    }
+}
+
+/// `two-shot` places a static camera equidistant from both subjects (the
+/// Toric-inspired perpendicular-bisector construction), aimed at their
+/// midpoint.
+#[test]
+fn two_shot_is_equidistant_and_aims_at_midpoint() {
+    let (plan, out) = build(
+        r#"{ "type": "cutscene", "shots": [
+             { "shot_style": "two-shot", "dist": 2, "bearing": 180,
+               "subject": { "anchor": "anchor/keeper-stand", "offset": [0, 1, 0] },
+               "subject_b": { "anchor": "anchor/keeper-stand", "offset": [-3, 1, 0] } } ] }"#,
+    );
+    let a = anchor_point(&plan, "anchor/keeper-stand", [0, 1, 0]);
+    let b = anchor_point(&plan, "anchor/keeper-stand", [-3, 1, 0]);
+    let fr = frames(&tick_body(&out));
+    assert_eq!(fr.len(), 1, "a two-shot is static");
+    let cam = fr[0].1;
+    let da = ((cam[0] - a[0]).powi(2) + (cam[2] - a[2]).powi(2)).sqrt();
+    let db = ((cam[0] - b[0]).powi(2) + (cam[2] - b[2]).powi(2)).sqrt();
+    assert!((da - db).abs() < 0.01, "equidistant: {da} vs {db}");
+    let mid = [
+        (a[0] + b[0]) / 2.0,
+        (a[1] + b[1]) / 2.0,
+        (a[2] + b[2]) / 2.0,
+    ];
+    let (ey, ep) = expect_aim(cam, mid);
+    assert!(
+        close(fr[0].2, ey) && close(fr[0].3, ep),
+        "aims at the midpoint: ({}, {}) != ({ey}, {ep})",
+        fr[0].2,
+        fr[0].3
+    );
+}
+
+/// `side-track` rides the subject's compiler-planned `move-npc` path at a
+/// constant world offset: the camera keyframes actually travel with the move.
+#[test]
+fn side_track_rides_the_move_path() {
+    let (_, out) = build(
+        r#"{ "type": "cutscene", "shots": [
+             { "shot_style": "side-track", "dist": 1, "seconds": 2,
+               "subject": { "npc": "npc/keeper" } } ] },
+           { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }"#,
+    );
+    let fr = frames(&tick_body(&out));
+    assert!(
+        fr.len() > 2,
+        "a side-track of a moving subject is a moving shot: {fr:?}"
+    );
+    let total: f64 = fr
+        .windows(2)
+        .map(|w| {
+            ((w[1].1[0] - w[0].1[0]).powi(2)
+                + (w[1].1[1] - w[0].1[1]).powi(2)
+                + (w[1].1[2] - w[0].1[2]).powi(2))
+            .sqrt()
+        })
+        .sum();
+    assert!(total > 1.0, "the camera actually travels: {total}");
+}
+
 /// Two cutscenes that share a first waypoint, duration and waypoint count but
 /// frame different subjects must not collapse onto one generated function.
 #[test]

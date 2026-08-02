@@ -1796,7 +1796,7 @@ impl V06Collector<'_> {
 fn cutscene_seconds_in<'a>(effects: impl Iterator<Item = &'a QuestEffect>) -> Option<u32> {
     for e in effects {
         if let Some(shots) = e.cutscene_shots() {
-            return Some(shots.iter().map(|s| s.seconds).sum());
+            return Some(shots.iter().map(|s| s.resolved_seconds()).sum());
         }
     }
     None

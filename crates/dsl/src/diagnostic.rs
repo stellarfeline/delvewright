@@ -210,4 +210,19 @@ pub mod codes {
     /// (spec-0011; mirrors `DW0143`). Validation-tier (exit 1). Renumbered off the
     /// spec's stale reserved number (0198 — since taken).
     pub const TRAP_PAYLOAD_UNKNOWN: &str = "DW0341";
+
+    /// (v0.6) A `shot_style` declaration is semantically invalid (spec-0015 shot
+    /// grammar): a styled shot with no `subject`; style-only fields (`subject`,
+    /// `subject_b`, `dist`, `degrees`, `bearing`) on an unstyled shot; a
+    /// `subject_b` on a style other than `two-shot` (or a `two-shot` without
+    /// one); `degrees` off `orbit-arc` or outside `45..=120`; `dist` outside
+    /// `1..=48`; or `bearing` outside `-360..=360`. Validation-tier (exit 1).
+    pub const SHOT_STYLE_INVALID: &str = "DW0348";
+    /// (v0.6) A `side-track` / `low-follow` shot whose subject has no
+    /// compiler-known motion: those styles dolly *with* a moving subject, so the
+    /// subject must be an NPC/actor with a matching `move-npc`/`move-actor` in
+    /// the same effect group or the same `sequence` timeline (an `anchor`
+    /// subject can never move). Validation-tier (exit 1). Use `locked-off` /
+    /// `push-in` for a static subject instead.
+    pub const SHOT_SUBJECT_UNMOVED: &str = "DW0349";
 }
