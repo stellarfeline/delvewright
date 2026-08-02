@@ -240,6 +240,39 @@ fn packtest_checkpoint_and_stealth_tests_emitted() {
             "disarm follows its stealth_begin: {stealth}"
         );
     }
+    // PackTest spawns one dummy PER test and runs the whole suite as one batch
+    // on one shared server (round-5 island red): the template must pin its own
+    // dummy by tag as its first act and never address a player through bare
+    // `@p`/`@a` again — after the template tp's its dummy to campaign
+    // coordinates, `@p` retargets to a neighbor test's dummy.
+    assert!(
+        stealth.contains("tag @p add dw_sttest"),
+        "stealth test pins its dummy: {stealth}"
+    );
+    assert_eq!(
+        stealth.matches("@p").count(),
+        1,
+        "the pin is the only `@p` in the stealth test: {stealth}"
+    );
+    assert!(
+        stealth.contains("assert score @a[tag=dw_sttest,limit=1] dw.st_grace matches 0"),
+        "asserts read the pinned dummy: {stealth}"
+    );
+    // The caught trip runs the campaign's real `on_caught` — arbitrary content,
+    // possibly lethal to the dummy — so it must be the LAST driven action: the
+    // spare (safe-player) section runs first, and after the final trip eval the
+    // only remaining line is its assert.
+    let trip = stealth
+        .match_indices(":stealth_eval_1")
+        .last()
+        .expect("eval driven")
+        .0;
+    let tail = &stealth[trip..];
+    assert_eq!(
+        tail.lines().count(),
+        2,
+        "nothing state-dependent follows the on_caught trip: {tail}"
+    );
 }
 
 /// Determinism (ADR-0006): a double build is byte-identical, including all v0.6

@@ -281,6 +281,45 @@ fn keep_trial_builds_all_verbs_and_is_deterministic() {
         );
     }
 
+    // verb_flag_gate runs on the shared-batch PackTest server (one dummy PER
+    // test, all coexisting — round-5 island red): it must pin its own dummy by
+    // tag, address it exclusively through the tag (no bare `@p`/`@a` writes a
+    // sibling test could satisfy or that could land on a foreign dummy), and
+    // actively CLEAR the withheld flag — a sibling template (`verb_interact`)
+    // legitimately sets the same flag on `@a`, so "never set" is not 0 here.
+    let gate = text(
+        &a,
+        "packtest-datapack/data/keep-trial/test/verb_flag_gate.mcfunction",
+    );
+    assert!(
+        gate.contains("tag @p add dw_flagtest"),
+        "flag-gate test pins its dummy: {gate}"
+    );
+    assert_eq!(
+        gate.matches("@p").count(),
+        1,
+        "the pin is the only `@p` in the flag-gate test: {gate}"
+    );
+    assert!(
+        !gate.contains("@a "),
+        "no bare `@a` writes in the flag-gate test: {gate}"
+    );
+    let clear = gate
+        .lines()
+        .position(|l| {
+            l.starts_with("scoreboard players set @a[tag=dw_flagtest,limit=1] dw.f_")
+                && l.ends_with(" 0")
+        })
+        .expect("withheld flag is actively cleared to 0 on the pinned dummy");
+    let assert0 = gate
+        .lines()
+        .position(|l| l.starts_with("assert score") && l.ends_with("matches 0"))
+        .expect("gate asserts the objective stays 0");
+    assert!(
+        clear < assert0,
+        "flag cleared before the withheld-phase assert: {gate}"
+    );
+
     // Combat difficulty (peaceful would remove summoned wave mobs).
     let props = text(&a, "server/server.properties");
     assert!(

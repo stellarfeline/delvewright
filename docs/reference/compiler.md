@@ -317,7 +317,7 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | relight fixtures (`lighting`) | `setblock` per placed fixture in `setup_finish`, after structure placement + socket seals (spec-0010). Blocks: `torch`/`wall_torch`, `lantern[hanging=…]`, `campfire[lit=true]`, `shroomlight`. |
 | `mitigation: "night-vision"` | `night_vision_tick`: one `effect give @a[x=…,dx=…,y=…,dy=…,z=…,dz=…] minecraft:night_vision 12 0 true` per declaring area (selector = the area's final placed bounds, compile-time literals), then `schedule function <ns>:night_vision_tick 20t` (vanilla replace-mode, so the clock can never double up). `setup_finish` arms it once. A generated `v06_night_vision` PackTest teleports a dummy into the declared bounds, runs one clock tick and asserts it holds the effect — then teleports it 1000 blocks out and asserts it does not. |
 | `set-checkpoint` | Inline: `spawnpoint @a <x y z>` + `data modify storage dw:cp pos set value [x,y,z]` (the readable "last checkpoint" mirror); when any checkpoint has `on_respawn`, also `#cp dw.sys = <index>`. `setup_finish` seeds `dw:cp` to the spawn cell. `on_respawn`: `deathCount` objective (`dw.deaths`) + per-player ack; `tick` runs `cp_respawn_check` (fire on the death-count edge, dispatch `cp_on_respawn_<index>` for the active checkpoint). |
-| `begin-stealth` / `end-stealth` | `begin` → `#stealth dw.sys = <session>` + reset per-player `dw.st_grace`/`dw.st_sneakack`. `tick` runs `stealth_tick_<session>` while active → per-player `stealth_eval_<session>`: safe iff sneaking this tick (`dw.st_sneak`=`sneak_time` stat rose vs. ack) AND in a zone box; grace resets when safe, climbs when exposed, and at `grace_ticks` fires `stealth_caught_<session>` (`on_caught`). `end` → `#stealth dw.sys = 0`. The `v06_stealth` PackTest disarms `#stealth` (sets it 0) after each `stealth_begin` because it drives `stealth_eval` explicitly: an armed session would make the world `tick` loop run a *second* judge pass in the same tick, consuming the sneak edge and mis-accruing grace (this only isolates the test; runtime gameplay has the tick loop as sole caller). |
+| `begin-stealth` / `end-stealth` | `begin` → `#stealth dw.sys = <session>` + reset per-player `dw.st_grace`/`dw.st_sneakack`. `tick` runs `stealth_tick_<session>` while active → per-player `stealth_eval_<session>`: safe iff sneaking this tick (`dw.st_sneak`=`sneak_time` stat rose vs. ack) AND in a zone box; grace resets when safe, climbs when exposed, and at `grace_ticks` fires `stealth_caught_<session>` (`on_caught`). `end` → `#stealth dw.sys = 0`. The `v06_stealth` PackTest disarms `#stealth` (sets it 0) after each `stealth_begin` because it drives `stealth_eval` explicitly: an armed session would make the world `tick` loop run a *second* judge pass in the same tick, consuming the sneak edge and mis-accruing grace (this only isolates the test; runtime gameplay has the tick loop as sole caller). It pins its dummy by tag (see "PackTest batch model" below), runs the spare (safe-player) section first and the `on_caught` trip LAST — the trip executes arbitrary campaign `on_caught` content (possibly lethal), so nothing state-dependent follows it and the closing assert reads the dummy through the tag, which keeps matching even if the trip killed it. |
 | trap `dispense` (spec-0011) | `setup_finish`: `item replace block <disp> container.0 with <item> <count>` fills the prefab's pre-wired dispenser socket (the `anchor/trap` metadata `dispenser` cell) — a static, deterministic payload, the same mechanism as a `collect` chest. **No detection** is emitted for the harm: the plate/tripwire/trapped-chest → dispenser redstone is already in the prefab. Pressure plates and tripwire are modelled **passable** in the assembled occupancy (`crate::assembled::is_passable_trap_trigger`) so nav routes a player ONTO a trigger cell rather than around a "solid" plate. |
 | trap `disarm` (spec-0011) | `setup_finish` summons a `minecraft:interaction` at the disarm `via` cell (tag `dw_trapdis_<trap>`); `tick` fires `trap_disarm_<trap>` once on a right-click (`nbt={interaction:{}}`, reusing the v0.4 `use` primitive). `trap_disarm_<trap>` sets the party-wide `dw.f_<flag>` and empties the dispenser (`data modify block <disp> Items set value []`) — the modeled, global disarm that actually stops a redstone dispense trap. |
 
@@ -365,6 +365,32 @@ they are watching, not playing. Current consumers:
 Any future verb that *demands input* or *deals harm* joins this list. The origin
 is a round-4 island playtest where the stealth clock kept running through a dolly
 and the catch killed the owner mid-shot, desyncing the beat.
+
+### PackTest batch model (one dummy per test, one shared server)
+
+PackTest runs the whole generated suite as **one batch on one shared server**:
+every `# @dummy` test spawns its **own** dummy player, all dummies coexist, and
+all test functions execute over the same server tick(s), sequentially in an
+order the compiler does not control. Two authorship rules for emitted templates
+follow (round-5 island reds; `pin_dummy` in `emit.rs`):
+
+- **`@p` is not "the test's player".** It re-resolves from the test structure
+  origin on every command — the moment a template teleports its dummy to
+  absolute campaign coordinates, `@p` retargets to a *neighbor test's* dummy
+  and later writes/asserts land on the wrong player (`v06_stealth` read a
+  foreign dummy's grace). A template that drives per-player state must tag its
+  dummy on its first post-setup line (`tag @p add dw_<test>` — while its own
+  dummy, inside its own structure, is still the nearest player) and address it
+  exclusively via `@a[tag=…,limit=1]`, which — unlike `@p` — also keeps
+  matching a dummy that campaign content has killed.
+- **`@a` writes leak across tests.** A sibling template's `@a` write hits every
+  dummy, so "this score was never set" is not provable by omission: a template
+  asserting the *absence* of state must actively clear it on its own dummy
+  (`verb_flag_gate`'s withheld flags arrived pre-set via `verb_interact`'s
+  `@a`; `packtest_preamble` with `with_flags: false` now clears them to 0).
+
+The remaining templates still write `@a`-wide and pass by batch-order luck;
+convert them to pinned dummies whenever one is touched.
 
 ### Determinism (ADR-0006)
 
