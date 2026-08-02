@@ -262,6 +262,11 @@ pub fn build(
                 // (spec-0014, DW0327), re-rooting DW0311 reachability at each beat.
                 crate::nav::check_checkpoints(plan, &world)?;
                 crate::nav::check_stealth_zones(plan, &world)?;
+                // …and the onset-survivability proof on top of them (DW0352): a
+                // punishing beat must be escapable in `grace_ticks` from where the
+                // player provably stands when it arms, and from every checkpoint
+                // that can respawn them back into it.
+                crate::nav::check_stealth_onset(plan, &world)?;
                 // v0.6 trap completability proof (spec-0011, DW0342): every lethal
                 // trap on the forced critical path must be avoidable, survivable
                 // (`once`), or disarmable, else the party is provably killed or
