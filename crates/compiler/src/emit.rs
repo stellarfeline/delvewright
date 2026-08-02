@@ -2464,11 +2464,85 @@ fn npc_summon_commands(
             p[0], p[1], p[2], npc.tag, cname_field
         ));
     }
+    // The interaction hitbox also carries the tag of every `strike` trigger
+    // watching this NPC's anchor — see `strike_trigger_tags_at`.
+    let mut tags = vec![npc.tag.clone()];
+    tags.extend(strike_trigger_tags_at(c, anchor));
+    let tag_list = tags
+        .iter()
+        .map(|t| format!("\"{t}\""))
+        .collect::<Vec<_>>()
+        .join(",");
     out.push(format!(
-        "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{}\"]}}",
-        p[0], p[1], p[2], npc.tag
+        "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{tag_list}]}}",
+        p[0], p[1], p[2]
     ));
     out
+}
+
+/// The `dw_trig_<id>` tags of every `strike` trigger whose `at` anchor is
+/// `anchor`, in campaign declaration order (deterministic).
+///
+/// **Why an NPC's hitbox wears a trigger's tag.** A `strike` trigger is detected
+/// by reading the `attack` record off a `minecraft:interaction` entity — the
+/// vanilla primitive for "a player left-clicked this". When the trigger's anchor
+/// is also where an NPC stands, *two* interaction entities occupy the same cell:
+/// the NPC's hitbox and the trigger's own. A left-click hits exactly one of them
+/// — whichever the attack raycast reaches first, which depends on entity
+/// iteration order the compiler does not control and that changes across chunk
+/// reloads. The NPC's body is `Invulnerable`, so nothing else records the hit
+/// either, and the trigger could simply never fire (round-4 island QA:
+/// `wake-the-giant` on the sleeping giant's anchor was dead).
+///
+/// Sharing the tag makes the existing single-selector detection watch *both*
+/// entities at once, so whichever one the raycast picks, the strike is seen and
+/// its record consumed. Empty for an anchor with no co-located strike trigger, so
+/// every campaign without this collision stays byte-identical.
+///
+/// Scope: `strike` only. Right-click (`use`) on an NPC already belongs to the
+/// dialogue advancement, so a co-located `use` trigger is an authoring conflict
+/// rather than a detection bug, and is left alone.
+/// The first `(strike trigger, npc id, npc entity tag)` triple whose trigger
+/// anchor is also an NPC's stand anchor — the collision
+/// [`strike_trigger_tags_at`] resolves. Campaign order (deterministic); `None`
+/// when no campaign NPC shares an anchor with a `strike` trigger.
+fn first_strike_trigger_on_npc<'a>(
+    plan: &'a Plan,
+) -> Option<(&'a delvewright_dsl::EnvTrigger, String, String)> {
+    use delvewright_dsl::TriggerOn;
+    let c = plan.campaign;
+    for t in &c.quests.content.triggers {
+        if !matches!(t.on, TriggerOn::Strike) {
+            continue;
+        }
+        for n in &plan.npcs {
+            let anchor = c
+                .npcs
+                .content
+                .npcs
+                .iter()
+                .find(|d| d.id.as_str() == n.npc_id)
+                .map(|d| d.anchor.as_str());
+            if anchor == Some(t.at.as_str()) {
+                return Some((t, n.npc_id.clone(), n.tag.clone()));
+            }
+        }
+    }
+    None
+}
+
+fn strike_trigger_tags_at(c: &delvewright_dsl::Campaign, anchor: &str) -> Vec<String> {
+    use delvewright_dsl::TriggerOn;
+    if anchor.is_empty() {
+        return Vec::new();
+    }
+    c.quests
+        .content
+        .triggers
+        .iter()
+        .filter(|t| matches!(t.on, TriggerOn::Strike) && t.at.as_str() == anchor)
+        .map(|t| format!("dw_trig_{}", plan::safe_local(t.id.as_str())))
+        .collect()
 }
 
 /// The generated function name for a `spawn-npc` effect (DSL v0.6).
@@ -5121,6 +5195,66 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         ));
         b.push("assert score #after dw.sys matches 0".to_string());
         write("v04_despawn", b);
+    }
+
+    // strike trigger on an NPC's anchor (round-4 island QA): the NPC's own
+    // interaction hitbox is the entity a left-click actually reaches, so it must
+    // carry the trigger's tag and its `attack` record must drive the trigger.
+    // Simulating the record with `/data modify` reproduces exactly what vanilla
+    // writes on a left-click — the primitive under test — without needing a bot
+    // to swing. Emitted only when the collision exists.
+    if let Some((trigger, npc_id, npc_tag)) = first_strike_trigger_on_npc(plan) {
+        let id = plan::safe_local(trigger.id.as_str());
+        let hitbox = format!("@e[type=minecraft:interaction,tag={npc_tag},limit=1]");
+        let mut b = packtest_header(&format!(
+            "{}: striking NPC `{npc_id}` fires trigger `{}` exactly once",
+            c.world.content.title,
+            trigger.id.as_str()
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push("scoreboard players set #placed dw.sys 1".to_string());
+        b.push(format!("function {ns}:setup_finish"));
+        // A `deferred` NPC (DSL v0.6) is deliberately absent after `setup_finish`
+        // — a sleeping giant who only enters on cue is a natural strike target, so
+        // fire its entrance here (mirrors the `v04_despawn` PackTest). No line is
+        // emitted for a non-deferred target.
+        if npc_is_deferred(c, &npc_id) {
+            b.push(format!("function {ns}:{}", spawn_npc_fn(&npc_id)));
+        }
+        // The routing itself: the NPC's hitbox wears the trigger's tag, so the
+        // trigger's single selector reaches it.
+        b.push(format!(
+            "execute store result score #route dw.sys if entity @e[type=minecraft:interaction,tag={npc_tag},tag=dw_trig_{id}]"
+        ));
+        b.push("assert score #route dw.sys matches 1".to_string());
+        if trigger.once {
+            b.push(format!("scoreboard players set #trig_{id} dw.sys 0"));
+        }
+        // Vanilla writes this compound when a player left-clicks an interaction
+        // entity; write it by hand to stand in for the swing.
+        b.push(format!(
+            "data modify entity {hitbox} attack set value {{player:[I;0,0,0,0],timestamp:1L}}"
+        ));
+        b.push(format!(
+            "execute store result score #rec dw.sys if data entity {hitbox} attack"
+        ));
+        b.push("assert score #rec dw.sys matches 1".to_string());
+        b.push(format!("function {ns}:tick"));
+        if trigger.once {
+            b.push(format!("assert score #trig_{id} dw.sys matches 1"));
+        }
+        // Exactly once: the same tick pass consumed the record, so a second pass
+        // over an untouched hitbox cannot re-fire.
+        b.push(format!(
+            "execute store result score #rec dw.sys if data entity {hitbox} attack"
+        ));
+        b.push("assert score #rec dw.sys matches 0".to_string());
+        if trigger.once {
+            b.push(format!("scoreboard players set #trig_{id} dw.sys 0"));
+            b.push(format!("function {ns}:tick"));
+            b.push(format!("assert score #trig_{id} dw.sys matches 0"));
+        }
+        write("v04_strike_npc", b);
     }
 
     // move-npc walks a collision-safe path that ends with the NPC at the target
