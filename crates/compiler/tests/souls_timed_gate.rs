@@ -137,3 +137,56 @@ fn clock_runtime_behaviour_is_packtested() {
         );
     }
 }
+
+/// The validation metadata the RUNTIME rung needs (task #81). The static proof
+/// (`DW0378`) already shows the window is readable; the harness bot could not act on
+/// it, because nothing told it a gate existed — so the portcullis filling mid-approach
+/// aborted the pathfinder and failed the leg as if the geometry were broken. The
+/// waypoints artifact therefore carries the gate table (region + clock) and marks every
+/// leg whose proven route walks through one.
+#[test]
+fn waypoints_artifact_exports_the_gate_table_and_marks_the_crossing_leg() {
+    let out = build_fixture();
+    let raw = out
+        .get("validation/critical-path-waypoints.json")
+        .expect("waypoints artifact emitted (the fixture walks a leg)");
+    let v: serde_json::Value = serde_json::from_slice(raw).expect("valid JSON");
+
+    let gates = v["timed_gates"].as_array().expect("gate table exported");
+    assert_eq!(gates.len(), 1, "one declared timed gate: {gates:#?}");
+    let g = &gates[0];
+    assert_eq!(g["id"], "timed-gate/inner-door");
+    assert_eq!(g["open_ticks"], 60);
+    assert_eq!(g["closed_ticks"], 40);
+    assert_eq!(g["phase"], 0);
+    assert_eq!(g["block"], "minecraft:iron_bars");
+    // Canonical inclusive bbox, min ≤ max componentwise — the harness reads every
+    // cell of it to observe the open/closed edge.
+    let min = g["region"]["min"].as_array().expect("region min");
+    let max = g["region"]["max"].as_array().expect("region max");
+    for axis in 0..3 {
+        assert!(
+            min[axis].as_i64() <= max[axis].as_i64(),
+            "region min must not exceed max on axis {axis}: {g:#?}"
+        );
+    }
+
+    // The fixture's walked leg runs straight through the door column, so it is marked
+    // — and the mark names a gate the table declares.
+    let legs = v["legs"].as_array().expect("legs");
+    let crossing: Vec<&serde_json::Value> = legs
+        .iter()
+        .filter(|l| l.get("timed_gates").is_some())
+        .collect();
+    assert!(
+        !crossing.is_empty(),
+        "the fixture's critical path walks through the timed door: {legs:#?}"
+    );
+    for leg in crossing {
+        assert_eq!(
+            leg["timed_gates"],
+            serde_json::json!(["timed-gate/inner-door"]),
+            "a marked leg names declared gates, in declared order: {leg:#?}"
+        );
+    }
+}

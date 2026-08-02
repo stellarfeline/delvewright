@@ -206,3 +206,113 @@ test("retainStandableWaypoints is identity when every cell is standable", () => 
   const kept = retainStandableWaypoints(leg, () => true);
   assert.deepEqual(kept, leg);
 });
+
+// --- spec-0016 §4 timed gates (task #81) ------------------------------------
+
+/** The-drowned-bell shape: a straight leg whose proven route runs through a
+ * portcullis on a 100/100 clock, plus a gate-free leg beside it. */
+const GATED = {
+  version: "0.6.0",
+  campaign_id: "the-drowned-bell",
+  timed_gates: [
+    {
+      id: "timed-gate/portcullis",
+      region: { min: [22, 63, -10], max: [26, 65, -10] },
+      block: "minecraft:iron_bars",
+      open_ticks: 100,
+      closed_ticks: 100,
+      phase: 0,
+    },
+  ],
+  legs: [
+    {
+      from: [24, 63, 4],
+      to: [24, 63, -14],
+      waypoints: [
+        [24, 63, 4],
+        [24, 63, -14],
+      ],
+      timed_gates: ["timed-gate/portcullis"],
+    },
+    {
+      from: [24, 63, -14],
+      to: [24, 71, -37],
+      waypoints: [
+        [24, 63, -14],
+        [24, 71, -37],
+      ],
+    },
+  ],
+};
+
+test("a leg's timed gates are resolved against the declared table", () => {
+  const wp = parseWaypoints(GATED);
+  assert.equal(wp.timedGates.length, 1);
+  const gate = wp.timedGates[0]!;
+  assert.equal(gate.id, "timed-gate/portcullis");
+  assert.deepEqual(gate.min, [22, 63, -10]);
+  assert.deepEqual(gate.max, [26, 65, -10]);
+  assert.equal(gate.openTicks, 100);
+  assert.equal(gate.closedTicks, 100);
+  assert.equal(gate.phase, 0);
+  // The crossing leg carries the resolved gate; the leg beside it carries none, so
+  // it can never claim the gate's licence to retry.
+  assert.deepEqual(wp.legs[0]!.timedGates, [gate]);
+  assert.deepEqual(wp.legs[1]!.timedGates, []);
+});
+
+test("nextLegWaypoints surfaces the matched leg's gates, and none when unmatched", () => {
+  const wp = parseWaypoints(GATED);
+  const hit = nextLegWaypoints(wp.legs, 0, [24, 63, -14]);
+  assert.equal(hit.timedGates.length, 1);
+  assert.equal(hit.cursor, 1);
+  // A sub-walk that matches no leg gets no gates — an unmatched walk is never
+  // granted the retry licence.
+  const miss = nextLegWaypoints(wp.legs, 0, [99, 63, 0]);
+  assert.deepEqual(miss.timedGates, []);
+  assert.equal(miss.cursor, 0);
+});
+
+test("an artifact with no timed_gates table parses with empty gate sets", () => {
+  const wp = parseWaypoints(VALID);
+  assert.deepEqual(wp.timedGates, []);
+  for (const leg of wp.legs) assert.deepEqual(leg.timedGates, []);
+});
+
+test("a leg naming an undeclared gate is rejected with a pointer", () => {
+  const bad = {
+    ...GATED,
+    legs: [{ ...GATED.legs[0], timed_gates: ["timed-gate/ghost"] }, GATED.legs[1]],
+  };
+  assert.throws(
+    () => parseWaypoints(bad),
+    (err: unknown) =>
+      err instanceof WaypointsParseError && err.pointer === "/legs/0/timed_gates/0",
+  );
+});
+
+test("a gate with a zero half-cycle is rejected (a clock, not a static gate)", () => {
+  const bad = {
+    ...GATED,
+    timed_gates: [{ ...GATED.timed_gates[0], open_ticks: 0 }],
+  };
+  assert.throws(
+    () => parseWaypoints(bad),
+    (err: unknown) =>
+      err instanceof WaypointsParseError && err.pointer === "/timed_gates/0",
+  );
+});
+
+test("a gate region whose min exceeds its max is rejected", () => {
+  const bad = {
+    ...GATED,
+    timed_gates: [
+      { ...GATED.timed_gates[0], region: { min: [26, 63, -10], max: [22, 65, -10] } },
+    ],
+  };
+  assert.throws(
+    () => parseWaypoints(bad),
+    (err: unknown) =>
+      err instanceof WaypointsParseError && err.pointer === "/timed_gates/0/region",
+  );
+});

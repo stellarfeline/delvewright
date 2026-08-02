@@ -19,16 +19,32 @@
 use serde_json::{Value, json};
 
 use crate::nav::LegRoute;
-use crate::plan::Plan;
+use crate::plan::{Plan, TimedGatePlan};
+
+/// The player's standing occupancy in blocks: the feet cell and the cell above it.
+/// A `timed-gate` fill that intersects either one intersects the player's body.
+const PLAYER_OCCUPANCY: i32 = 2;
 
 /// Build the waypoints validation artifact for the campaign's proven walked legs.
 /// Keys/coordinates mirror `critical-path.json` so the harness can match a leg by
 /// its destination anchor.
 pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
+    let gates: Vec<([i32; 3], [i32; 3])> = plan
+        .timed_gates
+        .iter()
+        .map(|g| normalized_region(g.gate_region))
+        .collect();
     let legs: Vec<Value> = routes
         .iter()
         .map(|leg| {
-            let wps: Vec<Value> = thin(&leg.cells, &leg.use_gates)
+            // Force-keep the gate mouth cells alongside the use-gate cells, so the
+            // hop that actually crosses a clocked span is SHORT (see
+            // [`gate_mouth_cells`]).
+            let mut force_keep = leg.use_gates.clone();
+            for region in &gates {
+                force_keep.extend(gate_mouth_cells(&leg.cells, *region));
+            }
+            let wps: Vec<Value> = thin(&leg.cells, &force_keep)
                 .into_iter()
                 .map(|c| json!(c))
                 .collect();
@@ -45,16 +61,132 @@ pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
             if !leg.use_gates.is_empty() {
                 leg_json["use_gates"] = json!(leg.use_gates);
             }
+            // spec-0016 §4 timed gates (task #81): the gates whose clock can
+            // physically interrupt THIS leg, in declared order. See
+            // [`leg_crosses_gate`] for the crossing definition.
+            let crossed: Vec<&str> = plan
+                .timed_gates
+                .iter()
+                .zip(&gates)
+                .filter(|(_, region)| leg_crosses_gate(&leg.cells, **region))
+                .map(|(g, _)| g.id.as_str())
+                .collect();
+            if !crossed.is_empty() {
+                leg_json["timed_gates"] = json!(crossed);
+            }
             leg_json
         })
         .collect();
-    json!({
+    let mut root = json!({
         // Campaign-derived, matching `critical-path.json` (a v0.2 campaign emits a
         // v0.2 artifact, etc.).
         "version": plan.campaign.world.dsl_version,
         "campaign_id": plan.namespace,
         "legs": legs,
+    });
+    // The gate table the per-leg `timed_gates` ids index into: everything the runtime
+    // harness needs to WAIT for a window instead of failing the leg — where the fill
+    // lands and how long each half of the clock runs. Omitted entirely when the
+    // campaign declares no timed gate, so such campaigns stay byte-identical.
+    if !plan.timed_gates.is_empty() {
+        root["timed_gates"] = json!(
+            plan.timed_gates
+                .iter()
+                .zip(&gates)
+                .map(|(g, region)| timed_gate_json(g, *region))
+                .collect::<Vec<Value>>()
+        );
+    }
+    root
+}
+
+/// One exported `timed-gate` (spec-0016 §4): the region its clock fills/clears in
+/// absolute world coordinates, plus the clock itself. `phase` is the ticks after
+/// world init before the first open, so a harness can reason about the schedule
+/// without re-deriving it from the emitted functions.
+fn timed_gate_json(g: &TimedGatePlan, (min, max): ([i32; 3], [i32; 3])) -> Value {
+    json!({
+        "id": g.id,
+        "region": { "min": min, "max": max },
+        "block": g.gate_block,
+        "open_ticks": g.open_ticks,
+        "closed_ticks": g.closed_ticks,
+        "phase": g.phase,
     })
+}
+
+/// Normalize a gate region's inclusive corners to `(min, max)` componentwise, so the
+/// exported contract is a canonical bounding box regardless of which corner the
+/// anchor declared first.
+fn normalized_region((a, b): ([i32; 3], [i32; 3])) -> ([i32; 3], [i32; 3]) {
+    let mut min = [0; 3];
+    let mut max = [0; 3];
+    for i in 0..3 {
+        min[i] = a[i].min(b[i]);
+        max[i] = a[i].max(b[i]);
+    }
+    (min, max)
+}
+
+/// Whether a leg's proven A* route **crosses** a timed gate.
+///
+/// The definition is exact, not proximity-based: the leg crosses the gate iff, at
+/// some cell of the proven route, closing the gate would intersect the PLAYER'S OWN
+/// body — the feet cell or the cell above it ([`PLAYER_OCCUPANCY`]) lies inside the
+/// gate region. That is precisely the physical event the harness must survive (the
+/// fill landing on top of the walk), and it is stated over the full A* cell route
+/// rather than the thinned waypoint polyline, so a straight run that thins to its
+/// endpoints still reports the gate it passes through.
+///
+/// A leg that merely walks *past* a gate is deliberately NOT marked. The mark is
+/// what licenses the harness to retry a failed leg, and a blanket retry on legs the
+/// gate cannot block would mask real navigation regressions — the mark must mean
+/// "this gate can stop this walk", nothing looser.
+fn leg_crosses_gate(cells: &[[i32; 3]], region: ([i32; 3], [i32; 3])) -> bool {
+    cells.iter().any(|c| occupies_gate(*c, region))
+}
+
+/// Whether standing at feet cell `c` puts the player's body inside `region`.
+fn occupies_gate(c: [i32; 3], (min, max): ([i32; 3], [i32; 3])) -> bool {
+    c[0] >= min[0]
+        && c[0] <= max[0]
+        && c[2] >= min[2]
+        && c[2] <= max[2]
+        && c[1] <= max[1]
+        && c[1] + (PLAYER_OCCUPANCY - 1) >= min[1]
+}
+
+/// The route cells at a timed gate's **mouth**: every cell whose occupancy is inside
+/// the region, plus the route cell immediately before and after each of them.
+///
+/// These are force-kept as waypoints for the same reason a use-gate cell is (task
+/// #59) — an interaction point must never be thinned away — but the payoff here is
+/// timing, not interaction. Corner-thinning collapses a straight corridor through a
+/// gate to its two endpoints, which asks the runtime bot to walk the WHOLE straight
+/// run inside one open window; on the-drowned-bell that is an 18-block hop through a
+/// 5-second window, and it loses the race. Pinning the mouth splits it into a long
+/// approach hop that no clock can interrupt plus a one-block crossing that any
+/// readable window admits — matching what `DW0378` actually proves, which is that the
+/// window admits crossing the SPAN, not an arbitrary run-up to it.
+///
+/// Purely additive and deterministic: every kept cell is a proven route cell, and
+/// consecutive kept cells stay a straight constant-delta run, so the polyline can
+/// never leave the proven path.
+fn gate_mouth_cells(cells: &[[i32; 3]], region: ([i32; 3], [i32; 3])) -> Vec<[i32; 3]> {
+    let mut out = Vec::new();
+    for (i, c) in cells.iter().enumerate() {
+        if !occupies_gate(*c, region) {
+            continue;
+        }
+        if i > 0 {
+            out.push(cells[i - 1]);
+        }
+        out.push(*c);
+        if let Some(next) = cells.get(i + 1) {
+            out.push(*next);
+        }
+    }
+    out
 }
 
 /// Thin an A* cell polyline to its **corners**: keep the two endpoints and every
@@ -197,6 +329,87 @@ mod tests {
             thin(&cells, &[[3, 65, 0]]),
             vec![[0, 65, 0], [3, 65, 0], [8, 65, 0]]
         );
+    }
+
+    #[test]
+    fn a_region_is_normalized_to_a_canonical_min_max_box() {
+        assert_eq!(
+            normalized_region(([4, 66, -2], [1, 63, 5])),
+            ([1, 63, -2], [4, 66, 5])
+        );
+        // Already canonical → unchanged.
+        assert_eq!(
+            normalized_region(([1, 63, -2], [4, 66, 5])),
+            ([1, 63, -2], [4, 66, 5])
+        );
+    }
+
+    #[test]
+    fn a_leg_crosses_a_gate_its_route_walks_through() {
+        // A straight west-to-east run at feet y=63 through a 1-wide portcullis
+        // column filling y=63..64 at x=5.
+        let region = ([5, 63, 0], [5, 64, 0]);
+        let cells: Vec<[i32; 3]> = (0..=10).map(|x| [x, 63, 0]).collect();
+        assert!(leg_crosses_gate(&cells, region));
+        // The same run one block to the side never enters the column.
+        let beside: Vec<[i32; 3]> = (0..=10).map(|x| [x, 63, 1]).collect();
+        assert!(
+            !leg_crosses_gate(&beside, region),
+            "walking PAST a gate is not crossing it — the mark must mean the gate \
+             can stop this walk"
+        );
+    }
+
+    #[test]
+    fn the_gate_mouth_is_pinned_so_the_crossing_hop_is_short() {
+        // The-drowned-bell shape: a long straight corridor through a portcullis. Plain
+        // corner-thinning collapses it to its endpoints, asking the bot to walk the
+        // whole run inside one 5-second window. Pinning the mouth splits it.
+        let region = ([22, 63, -10], [26, 65, -10]);
+        let cells: Vec<[i32; 3]> = (-14..=4).rev().map(|z| [24, 63, z]).collect();
+        assert_eq!(cells.first(), Some(&[24, 63, 4]));
+        assert_eq!(thin(&cells, &[]), vec![[24, 63, 4], [24, 63, -14]]);
+        let keep = gate_mouth_cells(&cells, region);
+        assert_eq!(keep, vec![[24, 63, -9], [24, 63, -10], [24, 63, -11]]);
+        assert_eq!(
+            thin(&cells, &keep),
+            vec![
+                [24, 63, 4],
+                [24, 63, -9],
+                [24, 63, -10],
+                [24, 63, -11],
+                [24, 63, -14],
+            ],
+            "a long approach, then a one-block crossing any readable window admits"
+        );
+    }
+
+    #[test]
+    fn a_gate_the_leg_never_enters_pins_nothing() {
+        let region = ([5, 63, 0], [5, 64, 0]);
+        let beside: Vec<[i32; 3]> = (0..=10).map(|x| [x, 63, 1]).collect();
+        assert!(gate_mouth_cells(&beside, region).is_empty());
+        assert_eq!(thin(&beside, &[]), vec![[0, 63, 1], [10, 63, 1]]);
+    }
+
+    #[test]
+    fn a_gate_that_fills_only_head_height_still_crosses() {
+        // A portcullis whose fill covers y=64..65 only: the walker's FEET at y=63 are
+        // never inside the region, but the block at head height is — the fill lands on
+        // the player. Feet-only containment would miss it.
+        let region = ([5, 64, 0], [5, 65, 0]);
+        let cells: Vec<[i32; 3]> = (0..=10).map(|x| [x, 63, 0]).collect();
+        assert!(leg_crosses_gate(&cells, region));
+        // Two blocks of clearance under the fill → the player walks under it untouched.
+        let low: Vec<[i32; 3]> = (0..=10).map(|x| [x, 62, 0]).collect();
+        assert!(!leg_crosses_gate(&low, region));
+    }
+
+    #[test]
+    fn a_gate_the_route_never_reaches_is_not_crossed() {
+        let region = ([5, 63, 0], [5, 64, 0]);
+        let cells: Vec<[i32; 3]> = (0..=3).map(|x| [x, 63, 0]).collect();
+        assert!(!leg_crosses_gate(&cells, region));
     }
 
     #[test]
