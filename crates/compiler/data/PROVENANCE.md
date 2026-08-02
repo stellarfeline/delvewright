@@ -56,6 +56,45 @@ not third-party reconstructions.
   SHA-256 and applies the transform `sorted(set("minecraft:"+i for i in sound_event))`,
   `json.dumps(indent=2, sort_keys=True)`.
 
+## Default-font glyph metrics (measured, not vendored)
+
+`crates/compiler/src/textfit.rs` carries the vanilla default font's glyph **advance
+widths** (`DW0330`'s width model). These are *measured from the client jar*, which is
+EULA-bound and must never be committed — so the numbers live as a Rust constant and
+the measurement is reproducible instead of vendored.
+
+**Reproduce it** (debug doctrine — "automate the pitfall out of existence"):
+
+```sh
+python3 tools/extract-font-metrics.py <minecraft-1.21.11-client.jar>
+```
+
+Stdlib-only (its own PNG decoder — the sheets are 1-bit indexed + `tRNS`). Prints a
+JSON report; `ascii.advances` is the 95-entry table (index = codepoint − 0x20) that
+must equal `ASCII_ADVANCE`, and `bottom_line` carries the full-width advance.
+
+What it establishes, all verified against 1.21.11 client bytecode rather than assumed:
+
+- **Provider order is first-wins.** `minecraft:default` stacks
+  `space → nonlatin_european → accented → ascii → unihex`. (`FontManager` prepends
+  each provider then reverses the list; the two inversions cancel.) Only `ascii.png`
+  serves printable ASCII.
+- **Bitmap advance** = `round(inkColumns * height / cellHeight) + 1`. The ASCII sheet
+  is 8×8 at height 8, so advance = ink + 1. 68 of 95 printable ASCII are 6 px.
+- **Unihex advance** = `(right - left + 1) / 2 + 1`, but `size_overrides` in the font
+  definition pin the CJK blocks to columns 0–15 and win outright over measured ink —
+  so every Han glyph and every full-width punctuation mark is **9**, against a Latin
+  letter's 6. Ratio **9:6 = 1.5**, not the 2× a "CJK counts double" rule assumes.
+- **The trap**: `— – … " " ' ' ·` sit next to the CJK blocks and are common in Chinese
+  copy, but `nonlatin_european.png` is declared *before* `unihex`, so they resolve to
+  bitmap glyphs (9, 7, 8, 5, 5, 3, 3, 2) — **not** full-width. `PUNCT_ADVANCE` pins them.
+- The unihex definition and `unifont.zip` are **not in the jar** (the jar's copy is an
+  empty stub); they come from the downloaded asset store, which the script locates via
+  the launcher's version manifest / asset index.
+- Caveat: with the client's **Force Unicode Font** option the stack becomes
+  `[space, unihex]` and Latin collapses to ~4, making the ratio 9:4. The model budgets
+  against the vanilla default.
+
 | Vendored file | SHA-256 |
 |---|---|
 | `items-1.21.11.json`    | `3965d9d5aabc0a2e6270b9e15c4faed76b67b93663d3136fa6ca6ca6f9371e8c` |

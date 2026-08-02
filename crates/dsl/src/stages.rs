@@ -1555,11 +1555,37 @@ pub enum QuestEffect {
     /// no-op and is never emitted), and restore on completion. The compiler
     /// validates the dolly path passes only through non-solid blocks — cameras
     /// fly but must not clip a solid (`DW0308`).
+    ///
+    /// Camera **aim** (DSL v0.6): with `look_at`, every dolly camera is rotated at
+    /// emission to face that world point from its own position, so the shot keeps
+    /// its subject framed for the whole move; without it, the camera faces along
+    /// the direction of travel (the segment it is currently traversing).
+    ///
+    /// **Shape** — a cutscene is a list of [`CameraShot`]s played back-to-back
+    /// inside one save/restore bracket (hard cut between shots). Two accepted,
+    /// mutually exclusive spellings, both normalized by
+    /// [`QuestEffect::cutscene_shots`]:
+    /// - multi-shot (DSL v0.6): `{"shots": [{path, seconds, look_at?}, …]}`;
+    /// - single-shot (DSL v0.4): `{"path": […], "seconds": n, "look_at"?: …}` —
+    ///   exactly equivalent to a one-entry `shots` list.
+    ///
+    /// Mixing or omitting both is `DW0199`.
     Cutscene {
-        /// Ordered camera waypoints (straight-line lerp between them).
+        /// Multi-shot form (DSL v0.6): the ordered shot list. Mutually exclusive
+        /// with the single-shot `path`/`seconds` fields (`DW0199`).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        shots: Vec<CameraShot>,
+        /// Single-shot form (DSL v0.4): ordered camera waypoints (straight-line
+        /// lerp between them).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         path: Vec<CameraWaypoint>,
-        /// Cutscene duration in seconds.
-        seconds: u32,
+        /// Single-shot form (DSL v0.4): shot duration in seconds.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        seconds: Option<u32>,
+        /// Single-shot form (DSL v0.6): the subject the camera keeps framed.
+        /// Absent = face along the direction of travel.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        look_at: Option<CameraTarget>,
         /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
@@ -1850,6 +1876,39 @@ impl NarrateStyle {
 #[serde(deny_unknown_fields)]
 pub struct CameraWaypoint {
     /// The anchor the waypoint is relative to.
+    pub anchor: AnchorId,
+    /// Integer `[x, y, z]` block offset from the anchor (default `[0, 0, 0]`).
+    #[serde(default, skip_serializing_if = "is_zero3")]
+    pub offset: [i32; 3],
+}
+
+/// One shot of a [`QuestEffect::Cutscene`] (DSL v0.6): a camera dolly with its
+/// own duration and optional subject. A cutscene plays its shots back-to-back —
+/// a hard cut between them — inside a single gamemode/position save-restore
+/// bracket, so a wide establishing move can be followed by an interior close-up
+/// without the players ever leaving the cinematic.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CameraShot {
+    /// Ordered camera waypoints (straight-line lerp between them). A one-waypoint
+    /// path is a static shot.
+    pub path: Vec<CameraWaypoint>,
+    /// This shot's duration in seconds.
+    pub seconds: u32,
+    /// Optional subject the camera keeps framed for this shot. Absent = face
+    /// along the direction of travel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub look_at: Option<CameraTarget>,
+}
+
+/// The subject a [`QuestEffect::Cutscene`] camera keeps framed (DSL v0.6): an
+/// anchor plus an integer block offset from it, giving the world point every
+/// dolly camera is aimed at. Same shape as a [`CameraWaypoint`] — a waypoint says
+/// where the camera *is*, a target says what it *looks at*.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CameraTarget {
+    /// The anchor the look target is relative to.
     pub anchor: AnchorId,
     /// Integer `[x, y, z]` block offset from the anchor (default `[0, 0, 0]`).
     #[serde(default, skip_serializing_if = "is_zero3")]
@@ -2175,6 +2234,50 @@ impl QuestEffect {
         }
     }
 
+    /// The `cutscene` camera subject if this is a single-shot `cutscene` carrying
+    /// the v0.6 `look_at` field (reserved `DW0141` under a pre-0.6 campaign).
+    pub fn cutscene_look_at(&self) -> Option<&CameraTarget> {
+        match self {
+            QuestEffect::Cutscene { look_at, .. } => look_at.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// `true` if this is a `cutscene` written in the v0.6 multi-shot form
+    /// (reserved `DW0141` under a pre-0.6 campaign).
+    pub fn cutscene_multi_shot(&self) -> bool {
+        matches!(self, QuestEffect::Cutscene { shots, .. } if !shots.is_empty())
+    }
+
+    /// The normalized shot list of a `cutscene`, whichever spelling was used: the
+    /// v0.6 `shots` list as-is, or the v0.4 `path`/`seconds`/`look_at` fields as a
+    /// single shot. `None` for a non-cutscene effect; an empty list for a cutscene
+    /// whose shape is invalid (`DW0199` reports that).
+    pub fn cutscene_shots(&self) -> Option<Vec<CameraShot>> {
+        match self {
+            QuestEffect::Cutscene {
+                shots,
+                path,
+                seconds,
+                look_at,
+                ..
+            } => {
+                if !shots.is_empty() {
+                    return Some(shots.clone());
+                }
+                match seconds {
+                    Some(secs) => Some(vec![CameraShot {
+                        path: path.clone(),
+                        seconds: *secs,
+                        look_at: look_at.clone(),
+                    }]),
+                    None => Some(Vec::new()),
+                }
+            }
+            _ => None,
+        }
+    }
+
     /// `true` if this is a `narrate` carrying the v0.6 `art` style (reserved
     /// `DW0141` under a pre-0.6 campaign; glyph-checked `DW0328`).
     pub fn narrate_art(&self) -> bool {
@@ -2195,6 +2298,28 @@ impl QuestEffect {
                 style: Some(NarrateStyle::Art),
                 ..
             } => Some(text.as_str()),
+            _ => None,
+        }
+    }
+
+    /// The `narrate` line's style and text if this is a `narrate` rendered **on
+    /// screen** — `title`, `subtitle` or `art` — rather than in chat. These are the
+    /// styles vanilla draws centred and unwrapped, so their rendered width is
+    /// length-checked against the screen (`DW0330`); `chat` scrolls and wraps, so it
+    /// is exempt.
+    pub fn narrate_on_screen(&self) -> Option<(NarrateStyle, &str)> {
+        match self {
+            QuestEffect::Narrate {
+                text,
+                style: Some(s),
+                ..
+            } if matches!(
+                s,
+                NarrateStyle::Title | NarrateStyle::Subtitle | NarrateStyle::Art
+            ) =>
+            {
+                Some((*s, text.as_str()))
+            }
             _ => None,
         }
     }

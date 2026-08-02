@@ -1,0 +1,32 @@
+# Delvewright workstation config — machine-local knobs for generation-time tooling.
+#
+# NOT a build input: the compiler never reads this file, so nothing here can affect
+# a delve's bytes (ADR-0006 determinism). Pinned versions live in `versions.toml`.
+#
+# This committed file documents the shape and stays inert. Put your actual settings
+# in `delvewright.local.toml` (gitignored, same shape) — its keys override these
+# section by section. Every section is optional: with none present, tooling falls
+# back to its built-in behavior.
+
+# ---------------------------------------------------------------------------
+# [i18n] — translate l10n sidecars with an external OpenAI-compatible LLM API
+# instead of having the /new-delve agent translate in-agent.
+#
+#   consumed by: tools/i18n-translate.py   ·   docs: docs/reference/i18n.md
+#
+# Generation-time only. Shipped delves never call an LLM (CLAUDE.md forbidden
+# zones) — the sidecar is written into the campaign source and baked at build time.
+#
+# NEVER put an API key in this file (or in delvewright.local.toml). `api_key_env`
+# is the NAME of an environment variable; tooling reads the key from it at call
+# time and never stores or logs it.
+#
+# [i18n]
+# provider = "openai-compatible"                # only supported value
+# base_url = "https://api.deepseek.com/v1"      # DeepSeek; Kimi: https://api.moonshot.cn/v1
+# model = "deepseek-chat"                       # Kimi: kimi-k2-0905-preview
+# api_key_env = "DELVEWRIGHT_I18N_API_KEY"
+# temperature = 0.2                             # optional (default 0.2)
+# batch_size = 40                               # optional keys per request (default 40)
+# timeout_seconds = 120                         # optional (default 120)
+# max_retries = 3                               # optional (default 3)

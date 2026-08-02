@@ -1059,6 +1059,15 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
             if eff.narrate_art() {
                 res(d, format!("{path_base}/style"), "narrate `style: art`");
             }
+            // `cutscene.look_at` and the multi-shot `cutscene.shots` list are
+            // additive v0.6 fields on the v0.4 `cutscene` verb — the verb itself
+            // stays v0.4, only the new fields are gated.
+            if eff.cutscene_look_at().is_some() {
+                res(d, format!("{path_base}/look_at"), "cutscene `look_at`");
+            }
+            if eff.cutscene_multi_shot() {
+                res(d, format!("{path_base}/shots"), "cutscene `shots`");
+            }
         };
         for (i, q) in c.quests.content.quests.iter().enumerate() {
             for (oid, effs) in &q.on_objective_complete {
@@ -2703,7 +2712,8 @@ fn v06_trap_checks(
 
 /// Validate a v0.4-relevant [`QuestEffect`]'s refs: `set-block` block id
 /// (`DW0193`), `despawn-npc`/`move-npc` npc ids (`DW0112`), `move-npc` speed
-/// positivity. Item/wave/flag refs are covered by the shared v0.3 checks.
+/// positivity, `cutscene` shape (`DW0199`). Item/wave/flag refs are covered by
+/// the shared v0.3 checks.
 fn check_effect_v04(
     eff: &QuestEffect,
     blocks: &dyn BlockRegistry,
@@ -2712,6 +2722,7 @@ fn check_effect_v04(
     npc_ids: &BTreeSet<&str>,
     d: &mut Vec<Diagnostic>,
 ) {
+    check_cutscene_shape(eff, base_path, d);
     match eff {
         QuestEffect::SetBlock { block, .. } => {
             check_block_field(
@@ -2745,6 +2756,76 @@ fn check_effect_v04(
             ));
         }
         _ => {}
+    }
+}
+
+/// `cutscene` shape (`DW0199`): a cutscene is written either multi-shot
+/// (`shots: [...]`, DSL v0.6) or single-shot (`path` + `seconds`, DSL v0.4) —
+/// never both, never neither — and every resolved shot needs at least one camera
+/// waypoint. The two spellings normalize to the same shot list
+/// ([`QuestEffect::cutscene_shots`]), so this is the one place the shape is
+/// policed; emission may then assume a non-empty, well-formed list.
+fn check_cutscene_shape(eff: &QuestEffect, base_path: &str, d: &mut Vec<Diagnostic>) {
+    let QuestEffect::Cutscene {
+        shots,
+        path,
+        seconds,
+        ..
+    } = eff
+    else {
+        return;
+    };
+    let single = !path.is_empty() || seconds.is_some();
+    let err = |d: &mut Vec<Diagnostic>, field: &str, msg: String| {
+        d.push(Diagnostic::error(
+            codes::CUTSCENE_SHAPE,
+            "quests",
+            format!("{base_path}/{field}"),
+            msg,
+        ));
+    };
+    match (!shots.is_empty(), single) {
+        (true, true) => err(
+            d,
+            "shots",
+            "`cutscene` mixes the multi-shot `shots` list with the single-shot \
+             `path`/`seconds` fields — use one form: move the single-shot fields into a `shots` \
+             entry, or drop `shots`"
+                .to_string(),
+        ),
+        (false, false) => err(
+            d,
+            "shots",
+            "`cutscene` declares no shot — give a `shots` list of \
+             `{path, seconds, look_at?}` (multi-shot), or a single-shot `path` + `seconds`"
+                .to_string(),
+        ),
+        (false, true) if seconds.is_none() => err(
+            d,
+            "seconds",
+            "single-shot `cutscene` is missing `seconds` — every shot needs a duration".to_string(),
+        ),
+        _ => {}
+    }
+    for (i, shot) in shots.iter().enumerate() {
+        if shot.path.is_empty() {
+            err(
+                d,
+                &format!("shots/{i}/path"),
+                "`cutscene` shot has an empty camera `path` — give at least one waypoint (one \
+                 waypoint is a static shot, two or more is a dolly)"
+                    .to_string(),
+            );
+        }
+    }
+    if shots.is_empty() && single && path.is_empty() {
+        err(
+            d,
+            "path",
+            "single-shot `cutscene` has an empty camera `path` — give at least one waypoint (one \
+             waypoint is a static shot, two or more is a dolly)"
+                .to_string(),
+        );
     }
 }
 

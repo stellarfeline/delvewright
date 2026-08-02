@@ -1042,45 +1042,62 @@ fn plan_npc_anchor(plan: &Plan, npc_id: &str) -> String {
 /// air-corridor check validates what actually ships.
 pub fn camera_points(plan: &Plan, path: &[CameraWaypoint]) -> Vec<[f64; 3]> {
     path.iter()
-        .map(|w| {
-            let base = plan
-                .anchors
-                .iter()
-                .find(|((_, name), _)| name == w.anchor.as_str())
-                .map(|(_, r)| match r {
-                    ResolvedAnchor::Point { pos, .. } => *pos,
-                    ResolvedAnchor::Gate { from, .. } => *from,
-                })
-                .unwrap_or([0, crate::plan::BASE_Y, 0]);
-            [
-                (base[0] + w.offset[0]) as f64 + 0.5,
-                (base[1] + w.offset[1]) as f64 + 0.5,
-                (base[2] + w.offset[2]) as f64 + 0.5,
-            ]
-        })
+        .map(|w| anchor_offset_point(plan, w.anchor.as_str(), w.offset))
         .collect()
 }
 
+/// The world point a cutscene's `look_at` subject resolves to (DSL v0.6) — the
+/// same anchor + offset block-centre convention as [`camera_points`], so a
+/// waypoint and a look target at the same anchor/offset name the same point.
+pub fn camera_look_point(plan: &Plan, target: &delvewright_dsl::CameraTarget) -> [f64; 3] {
+    anchor_offset_point(plan, target.anchor.as_str(), target.offset)
+}
+
+/// Resolve `anchor + offset` to a block-centre world point (the shared cutscene
+/// camera convention). An unresolved anchor falls back to the layout origin —
+/// referential validation reports it separately.
+fn anchor_offset_point(plan: &Plan, anchor: &str, offset: [i32; 3]) -> [f64; 3] {
+    let base = plan
+        .anchors
+        .iter()
+        .find(|((_, name), _)| name == anchor)
+        .map(|(_, r)| match r {
+            ResolvedAnchor::Point { pos, .. } => *pos,
+            ResolvedAnchor::Gate { from, .. } => *from,
+        })
+        .unwrap_or([0, crate::plan::BASE_Y, 0]);
+    [
+        (base[0] + offset[0]) as f64 + 0.5,
+        (base[1] + offset[1]) as f64 + 0.5,
+        (base[2] + offset[2]) as f64 + 0.5,
+    ]
+}
+
 /// Validate every cutscene camera dolly path passes only through non-solid blocks
-/// (cameras fly but must not clip a solid). `DW0308` names the offending segment
-/// and the block coordinate that clips.
+/// (cameras fly but must not clip a solid). `DW0308` names the offending shot,
+/// segment and the block coordinate that clips. The check runs **per shot**: a
+/// multi-shot cutscene hard-cuts between shots, so only the within-shot dolly is
+/// a corridor the camera actually flies.
 pub fn check_cutscenes(plan: &Plan, world: &World) -> Result<(), NavError> {
     for eff in all_effects(plan) {
-        let QuestEffect::Cutscene { path, .. } = eff else {
+        let Some(shots) = eff.cutscene_shots() else {
             continue;
         };
-        let pts = camera_points(plan, path.as_slice());
-        if let Some((seg, cell)) = first_clip(world, &pts) {
-            return Err(NavError {
-                code: DW_CUTSCENE_CLIP,
-                message: format!(
-                    "cutscene: camera dolly segment {seg} (from {:?} to {:?}) clips a solid block \
-                     at {cell:?} — cameras must fly through open air; move the segment's \
-                     waypoint `anchor`/`offset` so the whole path clears solid blocks",
-                    round3(pts[seg]),
-                    round3(pts[seg + 1]),
-                ),
-            });
+        for (si, shot) in shots.iter().enumerate() {
+            let pts = camera_points(plan, shot.path.as_slice());
+            if let Some((seg, cell)) = first_clip(world, &pts) {
+                return Err(NavError {
+                    code: DW_CUTSCENE_CLIP,
+                    message: format!(
+                        "cutscene: shot {si} camera dolly segment {seg} (from {:?} to {:?}) clips \
+                         a solid block at {cell:?} — cameras must fly through open air; move the \
+                         segment's waypoint `anchor`/`offset` so the whole path clears solid \
+                         blocks",
+                        round3(pts[seg]),
+                        round3(pts[seg + 1]),
+                    ),
+                });
+            }
         }
     }
     Ok(())

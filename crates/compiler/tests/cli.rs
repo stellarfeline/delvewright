@@ -3,7 +3,7 @@
 
 mod common;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -1388,4 +1388,193 @@ fn missing_entry_anchor_exits_3_with_dw0345_and_entry_is_an_alias_of_spawn() {
     assert_eq!(code(&b), 3, "a campaign with no entry anchor must exit 3");
     let stdout = String::from_utf8_lossy(&b.stdout);
     assert!(stdout.contains("DW0345"), "expected DW0345:\n{stdout}");
+}
+
+// ---------------------------------------------------------------------------
+// `l10n-inventory` (external-translation tooling contract, docs/reference/i18n.md)
+// ---------------------------------------------------------------------------
+
+/// Parse `l10n-inventory` stdout into its JSON document.
+fn inventory_doc(campaign: &Path, lang: &str) -> serde_json::Value {
+    let out = delvec(&["l10n-inventory", campaign.to_str().unwrap(), "--lang", lang]);
+    assert_eq!(
+        code(&out),
+        0,
+        "l10n-inventory: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).expect("l10n-inventory emits one JSON document")
+}
+
+fn inventory_keys(doc: &serde_json::Value) -> BTreeSet<String> {
+    doc["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["key"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// The contract that makes external translation tooling safe: the key set
+/// `l10n-inventory` reports is **exactly** the key set the coverage check
+/// (`DW0180`) demands. Proven against the machinery itself — empty the sidecar,
+/// collect every key `validate` names as missing, and compare sets. If either
+/// side ever grows a key the other lacks, a translated campaign would either fail
+/// validation or ship an untranslated string, and this test fails first.
+#[test]
+fn l10n_inventory_is_exactly_the_dw0180_coverage_set() {
+    let pf = common::prefabs_dir();
+    let camp = tmp("l10n-inventory-coverage");
+    common::materialize_from(&common::keep_trial_dir(), &serde_json::json!({}), &camp);
+    mutate_sidecar(&camp, |c| c.clear());
+
+    let v = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(code(&v), 1, "an empty sidecar must fail coverage");
+    let demanded: BTreeSet<String> = String::from_utf8_lossy(&v.stdout)
+        .lines()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .filter(|d| d["code"] == "DW0180")
+        .filter_map(|d| {
+            let msg = d["message"].as_str()?;
+            let (_, rest) = msg.split_once("inventory key `")?;
+            let (key, _) = rest.split_once('`')?;
+            Some(key.to_string())
+        })
+        .collect();
+    assert!(!demanded.is_empty(), "expected DW0180 keys");
+
+    let reported = inventory_keys(&inventory_doc(&camp, "zh-cn"));
+    assert_eq!(
+        reported, demanded,
+        "l10n-inventory must report exactly the keys DW0180 demands"
+    );
+}
+
+/// Inventory rows carry what a translator needs: canonical English, the NPC whose
+/// dialogue tree the line belongs to (resolving to a declared NPC — the guard
+/// against key-scheme drift), and the translation the current sidecar already has
+/// (so a re-run only fills gaps). For a language with no sidecar, every row is
+/// untranslated.
+#[test]
+fn l10n_inventory_carries_speakers_and_existing_translations() {
+    let kt = common::keep_trial_dir();
+    let doc = inventory_doc(&kt, "zh-cn");
+    assert_eq!(doc["campaign_id"], "keep-trial");
+    assert_eq!(doc["declared"], true);
+    assert_eq!(doc["sidecar_present"], true);
+
+    let npc_ids: BTreeSet<&str> = doc["npcs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n["id"].as_str().unwrap())
+        .collect();
+    assert!(npc_ids.contains("keeper"), "{npc_ids:?}");
+    // Persona context a translator needs is present; plot-only fields are not.
+    let keeper = doc["npcs"].as_array().unwrap()[0].clone();
+    assert!(keeper["speech_style"].is_string());
+    assert!(
+        keeper.get("secret").is_none(),
+        "persona secret must not leak"
+    );
+
+    let mut speakers = 0;
+    for e in doc["entries"].as_array().unwrap() {
+        let key = e["key"].as_str().unwrap();
+        assert!(e["en"].is_string(), "{key} has no English source");
+        assert!(
+            e["existing"].is_string(),
+            "{key}: the full keep-trial sidecar must round-trip"
+        );
+        if let Some(sp) = e["speaker"].as_str() {
+            speakers += 1;
+            assert!(npc_ids.contains(sp), "{key}: unknown speaker `{sp}`");
+        }
+        assert_eq!(
+            key.starts_with("dlg.") || key.starts_with("npc."),
+            e["speaker"].is_string(),
+            "{key}: speaker presence must follow the key scheme"
+        );
+    }
+    assert!(speakers > 0, "keep-trial has dialogue");
+
+    // A language with no sidecar: same keys, nothing translated yet.
+    let fresh = inventory_doc(&kt, "ja");
+    assert_eq!(fresh["sidecar_present"], false);
+    assert_eq!(fresh["declared"], false);
+    assert_eq!(inventory_keys(&fresh), inventory_keys(&doc));
+    for e in fresh["entries"].as_array().unwrap() {
+        assert!(e.get("existing").is_none(), "{}", e["key"]);
+    }
+}
+/// A warning-tier diagnostic (`DW0330`) is **reported but does not fail the run**:
+/// `delvec` exits non-zero only on `Severity::Error`. This exit-code contract is what
+/// makes an advisory rule possible at all — without it a warning would be an error
+/// wearing a different label. Errors are unaffected (see the `DW0180`/`DW0181` test,
+/// which still exits 1).
+#[test]
+fn dw0330_warning_reports_but_does_not_fail_the_build() {
+    let pf = common::prefabs_dir();
+    let dir = tmp("textfit-warning");
+
+    let mut quests: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(common::hello_world_dir().join("quests.json")).unwrap(),
+    )
+    .unwrap();
+    // `narrate` is a v0.4 effect; the hello-world fixture is v0.3.
+    quests["dsl_version"] = serde_json::json!("0.6.0");
+    // An on-screen title far wider than any screen renders.
+    quests["content"]["quests"][0]["on_complete"]
+        .as_array_mut()
+        .unwrap()
+        .insert(
+            0,
+            serde_json::json!({
+                "type": "narrate",
+                "style": "title",
+                "text": "A Title So Long That No Screen Anywhere Could Ever Hope To Show It"
+            }),
+        );
+    common::materialize_from(
+        &common::hello_world_dir(),
+        &serde_json::json!({ "documents": { "quests": quests } }),
+        &dir,
+    );
+
+    let out = delvec(&[
+        "validate",
+        dir.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(s.contains("DW0330"), "expected DW0330 to be reported:\n{s}");
+    assert!(
+        s.contains("warning"),
+        "DW0330 must render at warning severity:\n{s}"
+    );
+    assert_eq!(code(&out), 0, "a warning must not fail validate:\n{s}");
+
+    // …and the same holds through a full build.
+    let built = tmp("textfit-warning-out");
+    let out = delvec(&[
+        "build",
+        dir.to_str().unwrap(),
+        "-o",
+        built.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&out),
+        0,
+        "a warning must not fail build:\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
 }

@@ -91,6 +91,7 @@ delvec validate <dir>                      # stages 1–6 schema + referential
 delvec analyze  <dir>                      # + quest-graph reachability
 delvec build    <dir> -o <out>             # full deterministic build
 delvec schema   --stage <1..6|all>         # export JSON Schema
+delvec l10n-inventory <dir> [--lang <c>]   # l10n key inventory as JSON (translation input)
 delvec --version                           # "delvec 0.1.0, dsl 0.6.0, mc 1.21.11"
 ```
 
@@ -104,8 +105,14 @@ rejection (exit 1). Codes are stable API; the CI fixture matrix asserts them.
 
 **`--json` diagnostic shape**:
 `{ "code":"DW####", "severity":"error|warning", "stage":"<stage>",
-"path":"<json-pointer-ish>", "message":"…" }`. Every v0 code is `error`;
-`warning` exists in the shape for future advisory rules.
+"path":"<json-pointer-ish>", "message":"…" }`.
+
+**Severity is load-bearing.** `delvec` exits non-zero only on `error`. A `warning`
+is printed and emitted in `--json` exactly like an error but never fails
+`validate`/`analyze`/`build`. The tier is reserved for rules whose verdict depends
+on something outside the campaign — currently only `DW0330`, where how much text
+fits depends on the player's window size and GUI scale. Every other code is `error`
+and rejects as before.
 
 ---
 
@@ -188,11 +195,11 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Effect `despawn-npc{npc}` | Removes NPC + hitbox. | 0.4 |
 | Effect `spawn-npc{npc}` | The dual of `despawn-npc` (v0.6): summons a `deferred` stage-2 NPC — body + interaction hitbox + name display — at its declared anchor, via the **same** `npc_summon_commands` authority world init uses. Idempotent (per-entity tag guards), so a re-fire never doubles a body. Also a dialogue effect. World-global staging → no per-effect `requires_flags`. | 0.6 |
 | Effect `move-npc{npc,to_anchor,speed?}` | A*-planned per-tick tp through walkable space; unroutable → `DW0307`. | 0.4 |
-| Effect `cutscene{path[],seconds}` | Two-camera spectator dolly; clip → `DW0308`. | 0.4 |
+| Effect `cutscene{shots[]}` / `cutscene{path[],seconds,look_at?}` | Two-camera spectator dolly; clip → `DW0308` (checked **per shot**). Two mutually exclusive spellings, normalized to one shot list: multi-shot `shots: [{path[],seconds,look_at?}, …]` (v0.6) or the single-shot `path`+`seconds` fields (v0.4) — mixing/omitting both, or a shot with an empty `path`, is `DW0199`. Shots play back-to-back inside ONE save/restore bracket (hard cut). `look_at {anchor,offset?}` aims every dolly camera at that world point; absent = face along the direction of travel. | 0.4 / `look_at`+`shots` 0.6 |
 | Effect `set-time{time}` | Instantaneous dimension-global cut (`time set <kw>`); persists (cycle frozen). | 0.5 |
 | Effect `set-weather{weather}` | Instantaneous dimension-global cut (`weather <kw>`); persists (cycle frozen). | 0.5 |
 | Effect `play-sound{sound,at?,volume?,pitch?}` | Plays a sound event; `sound` validated (`DW0326`); `at` = `{anchor}`\|`players` (default)\|`{actor}` (deferred → `DW0335`); positional or per-player. | 0.6 |
-| Effect `damage-players{amount,in?,damage_type?}` | Deals `amount` half-hearts of damage to the acting player(s) — a real `on_caught`/souls consequence over vanilla `/damage` (`damage @s …`). Per-`@s`: top-level hits every player once, in `on_caught` the caught player. `amount ≥ 40` is lethal through golden apples. `in {anchor,extent}` narrows to acting players inside the anchor-centred box (same box model as a stealth zone; anchor `DW0142`). `damage_type` is a **curated enum** of vanilla types that respect `keepInventory` and do NOT bypass totems (no `out_of_world`/`generic_kill`), default `generic`; an unknown value is `DW0100` (needs no registry). Named `damage_type`, not `type`, since the effect enum is internally tagged on `type`. Per-effect `requires_flags` allowed (per-`@s` verb). | 0.6 |
+| Effect `damage-players{amount,in?,damage_type?}` | Deals `amount` half-hearts of damage to the acting player(s) — a real `on_caught`/souls consequence over vanilla `/damage` (`damage @s …`). Per-`@s`: top-level hits every player once, in `on_caught` the caught player. `amount ≥ 40` is lethal through golden apples. `in {anchor,extent}` narrows to acting players inside the anchor-centred box (same box model as a stealth zone; anchor `DW0142`). `damage_type` is a **curated enum** of vanilla types that respect `keepInventory` and do NOT bypass totems (no `out_of_world`/`generic_kill`), default `generic`; an unknown value is `DW0100` (needs no registry). Named `damage_type`, not `type`, since the effect enum is internally tagged on `type`. Per-effect `requires_flags` allowed (per-`@s` verb). Every form is guarded by `tag=!dw_cutscene` — a player watching a cutscene is never harmed (§4). | 0.6 |
 | Effect `set-checkpoint{anchor,on_respawn?}` | Party-wide respawn point: `spawnpoint @a` at the anchor + `storage dw:cp pos` mirror. Monotonic by quest order. `on_respawn[]` = per-player effects re-run on respawn while active (vanilla `deathCount` detection). Proofs `DW0315`/`DW0316`. Also a dialogue effect. | 0.6 |
 | Effect `begin-stealth{zones[{anchor,extent}],on_caught?,grace_ticks?}` | Per-tick: every player must be inside some zone **and** sneaking (`sneak_time` stat); exposed for `grace_ticks` (default 20) → `on_caught`. Zone standable/reachable proof `DW0327`. | 0.6 |
 | Effect `end-stealth` | Ends the active stealth beat (clears the session marker). | 0.6 |
@@ -253,6 +260,27 @@ arbitrary-depth). Keys are purely position-derived → deterministic + byte-stab
 Coverage is **exact**: missing/absent/inconsistent → `DW0180`; orphan → `DW0181`.
 Excludes authoring context (theme/premise/persona).
 
+**`delvec l10n-inventory <dir> [--lang <code>]`** emits that inventory as one JSON
+document on stdout — the work list a translator (in-agent, human, or an external
+API via `tools/i18n-translate.py`) is handed up front, instead of discovering it by
+writing an empty sidecar and reading the coverage diagnostics back:
+
+```
+{ campaign_id, dsl_version, lang, declared, sidecar_present, world_title,
+  npcs:    [{id, name, archetype, speech_style, demeanor?, motivation}],
+  entries: [{key, en, speaker?, existing?}] }
+```
+
+`entries` is the inventory itself (a CLI test asserts the key set equals what
+`DW0180` demands, so the two cannot drift). `speaker` is the NPC whose dialogue
+tree the key belongs to (`dlg.<npc>.…`, `npc.<npc>.name`; a `.opt.<i>.label` is the
+player's reply *inside* that tree); `existing` is what `l10n/<lang>.json` already
+translates, so a re-run fills only the gaps. Persona rows carry voice, never plot
+(`secret`/`backstory`/`relationships` are excluded). Runs **before** validation
+gating — an incomplete sidecar is the normal state when you ask — and needs no
+prefab library; only an unparseable campaign fails (exit 1). See
+[i18n.md](i18n.md).
+
 ---
 
 ## 3. Verb → emission mapping
@@ -269,6 +297,7 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | `kill` / `spawn-wave` | `spawn-wave` summons mobs (AI on) tag `dw_wave_<id>`, countdown `#<id> dw.wave`; `player_killed_entity` advancement decrements; `kill` completes at 0. Armed species get `equipment` NBT (drop 0): `wither_skeleton→stone_sword`, `skeleton`/`stray→bow`. **Mob placement (task #41):** each mob is seated on a distinct compiler-validated standable cell (2-tall clearance, solid floor) chosen by a deterministic BFS outward from the wave anchor over the assembled occupancy world (`compiler::nav`), ordered by ascending BFS distance with a fixed `(y,z,x)` tie-break. The flood-fill is confined to the anchor's own assembled piece, so a flock never crosses a socket seam into a neighbouring room. A wave needing more footing than its room offers is `DW0312` (never `+x`-strung mobs piling into blocks or spilling toward void). |
 | `collect` | Chest at anchor pre-loaded `count×item`; `inventory_changed` advancement runs guarded completion. |
 | `interact` | `minecraft:interaction` (tag `dw_i_<obj>`) + `player_interacted_with_entity` advancement + `/trigger dw.i_<obj>`; `requires_item` = `execute if items`; glowing lantern `item_display` marker (also tag `dw_i_<obj>`, only when no `prop`), labeled with the objective `title` — untitled → nameless glow, never a raw-id label. `prop{block}` = `setblock` affordance. Completion despawns both entities (`kill @e[tag=dw_i_<obj>]`) so a finished objective is not clickable; the `prop` block persists as scenery. |
+| environment `triggers[]` (v0.4) | `setup_finish` summons one `minecraft:interaction` per `strike`/`use` trigger at its `at` anchor (tag `dw_trig_<id>`); `approach` needs no entity. `tick`: `strike` fires on `nbt={attack:{}}`, `use` on `nbt={interaction:{}}`, then clears the record (`data remove entity @s <field>`); `approach` is a `distance=..<range>` selector. `once` guards on `#trig_<id> dw.sys`. **Strike on an NPC's anchor:** when a `strike` trigger's `at` is also where an NPC stands, the NPC's own interaction hitbox additionally carries `dw_trig_<id>`, so the trigger's single selector watches both entities. Two interaction entities share the cell and a left-click reaches only whichever the attack raycast finds first — an order the compiler does not control and that changes across chunk reloads — while the NPC's body is `Invulnerable`, so the swing could land where nothing was watching and the trigger never fire (round-4 island QA). Scoped to `strike`: right-click on an NPC already belongs to the dialogue advancement, so a co-located `use` trigger is an authoring conflict, not a detection bug, and is left alone. Note the shared tag rides the NPC's hitbox, so a `move-npc`'d NPC carries the strike target with it, and `despawn-npc` removes it (the trigger's own hitbox remains). A generated `v04_strike_npc` PackTest writes the vanilla `attack` compound onto the NPC's hitbox and asserts the trigger fires, once, and that the record is consumed. |
 | `set-flag` / `requires_flags` | `dw.f_<flag>` scoreboard (per-player); required flags AND-ed into objective guards (layered on `after`). **Per-effect** `requires_flags` (v0.6) wraps each of the effect's emitted commands in `execute if score @s dw.f_<flag> matches 1 [… per flag] run <cmd>`; these effect functions already run per-player (`complete_<obj>` / `trig_<id>` are entered `as @a`/`@s`), and an ungated effect is emitted verbatim (byte-identical). |
 | `open-gate` | `/fill … air` over the gate region. |
 | `close-gate` | `/fill <region> <block>` over the gate region with the anchor's declared fill block (no `replace` clause — the dual of `open-gate`). |
@@ -280,7 +309,7 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | `despawn-npc` | Kills body + interaction hitbox. The generated `v04_despawn` PackTest targets the campaign's first `despawn-npc` NPC; when that NPC is **deferred** it runs its `spawn_npc_<id>` entrance right after `setup_finish` (a deferred NPC is deliberately absent from world init, so the presence assertion would otherwise read 0). The assertions themselves — 2 entities present, 0 after the kill — are identical in both cases, and the entrance line is emitted only for a deferred target, so a campaign with no deferred NPC keeps byte-identical PackTest output. |
 | `spawn-npc` | `function <ns>:spawn_npc_<npc>` — the generated entrance function, emitted once per **deferred** NPC. Its two lines are the world-init summons, each independently guarded: body by `unless entity @e[tag=dw_npc,tag=dw_npc_<n>]`, hitbox by `unless entity @e[tag=dw_npc_<n>,tag=!dw_npc]` (both carry the id tag, so a single shared guard would let the body's own summon suppress the hitbox). The `npc_summons` PackTest fires each deferred NPC's entrance after `setup_finish` and asserts exactly one body. |
 | `move-npc` | Per-tick tp along A*-planned walkable waypoints (hitbox in lockstep), at cell **centres** with L-shaped vertical steps — see §4 "Entity placement". |
-| `cutscene` | Per player: save gamemode+pos → spectator → alternate `spectate` between two co-located dolly cameras each tick → restore. |
+| `cutscene` | Per player: save gamemode+pos → spectator → alternate `spectate` between two co-located dolly cameras each tick → restore. Every dolly `tp` carries an explicit `<yaw> <pitch>` — **Minecraft** entity rotation (`yaw = atan2(-dx, dz)`, 0 = +Z south; `pitch = atan2(-dy, hypot(dx,dz))`, + = down), *not* the render-plan/Chunky yaw convention — computed at emission from the camera's own position: at the shot's `look_at` subject if it has one, else along the polyline segment being traversed. Never the summon default (yaw 0 = south). Rounded to 3 decimals, `-0.0` collapsed to `0.0`, so emission is byte-stable. The bracket also arms the `dw_cutscene` state on every player and releases it on restore — see §4 "A cutscene is pure observation". Multi-shot: all shots share one `#t_<bare>` counter — shot *k* owns `[offset_k, offset_k+len_k]` and the next starts at `offset_k+len_k+1` (hard cut); one marker, one `gamemode spectator @a`, one camera pair, one restore. A one-shot cutscene reduces to the pre-multi-shot timeline, so both single-shot spellings are byte-identical. `critical-path.json`'s `cutscene_seconds` is the **total** across shots. Function key = `cs_<first anchor>_<seconds>_<waypoints>`, plus an 8-hex sha256 digest of the whole normalized shot list whenever the cutscene is not a bare single shot without `look_at` (the key must be injective — two shots sharing a first waypoint must never collapse onto one function). |
 | `campaign-complete` | `dw.campaign` = 1 (dummy objective, **never on the sidebar** — a raw internal id must not surface to players); broadcast `[Delvewright] complete dw.campaign 1` (dark-gray bot channel, the harness's completion signal); title fanfare. |
 | objective lifecycle | Activation shows `title`+`hint`+`note_block.pling` once (flag `dw.ann_<obj>`); completion sound `experience_orb.pickup`. **Marker cleanup (task #45):** completion despawns every entity the objective's activation summoned via the objective-scoped tag — `interact` hitbox + wayfinding marker (`dw_i_<obj>`), `reach` marker (`dw_r_<obj>`). Prop/affordance *blocks* (`interact.prop`, `collect` chest) are scenery and persist; `talk-to`/`kill` summon no per-objective marker. Gated on v0.3+ with a resolved activation, so v0.2 stays byte-identical. |
 | `set-time` / `set-weather` | `time set <kw>` / `weather <kw>` (dimension-global, no selector) inline in the effect/dialogue-option function; instantaneous cut, persists (cycle frozen). |
@@ -313,6 +342,28 @@ display name for "night vision", so a renamed water bottle passed `DW0210` while
 nothing in the shipped world granted night vision — a check that passed without the
 feature existing. Player-facing text is also localizable, so keying on it makes a
 verdict language-dependent (ADR-0006).
+
+### A cutscene is pure observation (`dw_cutscene`)
+
+While a cutscene plays, every player carries the entity tag `dw_cutscene` —
+added by the cutscene `start` alongside `gamemode spectator @a`, removed by the
+`end`/restore, so the state has exactly the cinematic's lifetime. **Campaign
+machinery must neither require anything of a tagged player nor punish them:**
+they are watching, not playing. Current consumers:
+
+- the **stealth judge** is skipped for them (`stealth_tick` selects
+  `@a[tag=!dw_cutscene]`). The judge is the only writer of `dw.st_grace`, so
+  skipping it freezes the clock — grace neither accrues nor expires, and
+  `on_caught` cannot fire mid-cinematic. The restore re-acknowledges the vanilla
+  `sneak_time` stat (`dw.st_sneakack = dw.st_sneak`) so the first tick after the
+  cut compares against the current stat, and deliberately leaves `dw.st_grace`
+  alone: the beat resumes exactly where it paused.
+- **`damage-players`** skips them: every form of the verb is guarded by
+  `tag=!dw_cutscene`.
+
+Any future verb that *demands input* or *deals harm* joins this list. The origin
+is a round-4 island playtest where the stealth clock kept running through a dolly
+and the catch killed the owner mid-shot, desyncing the beat.
 
 ### Determinism (ADR-0006)
 
@@ -689,6 +740,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0196` | Area `lighting.min_light` out of range (must be 1..=14). v0.5, spec-0010. |
 | `DW0197` | A stage-2 NPC declares `deferred: true` but **no** `spawn-npc` effect anywhere (quest, trigger, nested timeline, or dialogue) summons it — the NPC never enters the world, so its dialogue tree and any `talk-to` on it are unreachable content. v0.6; the staging dual of `DW0195`. Prescription: add the `spawn-npc` at the entrance beat, or drop `deferred`. (0197/0198 were *reserved* by spec-0011's draft and released when it renumbered to `DW0340`/`DW0341`; no code ever emitted them.) |
 | `DW0198` | A `talk-to` on a `deferred` NPC provably activates before the NPC exists: every `spawn-npc` for it fires in a quest that is a **strict DAG descendant** of the objective's quest. Conservative by construction — a spawn from a trigger, from dialogue, or from the objective's own quest is not DAG-ordered and suppresses the proof rather than risking a false positive (see the gap note below). v0.6. |
+| `DW0199` | A `cutscene` effect's shape is invalid: it mixes the multi-shot `shots` list with the single-shot `path`/`seconds` fields, declares neither, omits `seconds` on a single shot, or gives a shot with an empty camera `path`. The two spellings normalize to one shot list, so this is where the shape is policed and emission may then assume a well-formed, non-empty list. v0.6. |
 | `DW0320` | `horizon:"ocean"` declared without a `boundary` (an infinite swimmable sea with no return rule). v0.6, spec-0013. Numbered in the 032x world/region family but **validation-tier (exit 1)**, not a DW03x build code. |
 | `DW0321` | `boundary.margin` outside `0..=64`. v0.6, spec-0013. Validation-tier (exit 1). |
 | `DW0340` | Trap declaration structurally invalid (v0.6, spec-0011): a malformed/duplicate `trap/<id>`, an `at`/`disarm.via` that no area's prefab provides, or a `disarm.via` that collides with the trap's own trigger anchor. Renumbered off the spec's stale reserved number (0197). |
@@ -723,6 +775,44 @@ identically.
 | `DW0328` | An `art`-styled `narrate` string — the English source **or** any declared-language sidecar translation — uses a character outside the `delve:art` font's glyph inventory (A–Z, 0–9, space, `! " ' ( ) , - . / : ; ?`; lowercase folds to uppercase). Forces per-language art titles to stay ASCII/Latin — a `zh-cn` art translation must be an ASCII rendition. |
 | `DW0335` | A `play-sound` targets `at: {actor: …}`, accepted by the schema but not yet wired — the actors surface (spec-0014 `actors[]`) has not landed. Use `at: {anchor}` or `at: players`. (Graduates when the actors PR wires actor-position resolution.) |
 
+### DW0330 — on-screen text fit (`compiler::textfit`; **warning**; exit 0)
+
+The only **advisory** code in the compiler. Vanilla draws a `title`, a `subtitle`
+and an art title centred, on **one line, with no wrapping and no shrink-to-fit** —
+text wider than the screen just runs off both edges, silently. `DW0330` measures
+each on-screen `narrate` string's **rendered width in font pixels** and compares it
+to the style's budget.
+
+**Why measured, not counted.** `i` and `W` differ by 3× in the vanilla font, and a
+Han glyph is 9 px against a Latin letter's 6 (1.5×, *not* the 2× a "CJK counts
+double" rule assumes). A character count is unfair to whichever script it was not
+tuned for, so the check sums real advances: the ASCII sheet's per-glyph widths, the
+`unihex` full-width advance for CJK, and — for `art` — the `delve:art` font's own
+glyph metrics, derived from the same constants that emit the font.
+
+**Budget.** `Gui.renderTitle` renders a title at pose scale **×4** and a subtitle at
+**×2**; an art title is a title, so it takes ×4 *and* the art font's 4×-scaled
+glyphs (the two multiply — art fits ~4 characters). Against a reference GUI width of
+**426** scaled px (what Minecraft's auto GUI scale yields at 1280×720 and 2560×1440;
+1920×1080 gives 480, and 320 is the auto floor) at **85%** usable width, the budgets
+are **90** font px for `title` and `art` and **181** for `subtitle`. `chat` has no
+budget — it wraps and scrolls.
+
+**Why warning, not error.** The true limit is a property of the player's window and
+GUI scale, which the compiler cannot know; rejecting on it would dress a judgement
+call as a fact, and would hard-block a translation for being honestly longer than its
+English source. It reports, and the author shortens.
+
+**Scope.** The canonical English source **and** every declared-language sidecar
+rendition, walked by the same `each_effect_ref` traversal and l10n keying as
+`DW0326`/`DW0328` — so a sidecar finding is reported at
+`l10n/<lang>.json#/content/<key>`, naming the exact string to shorten. Nested
+effects are covered.
+
+| Code | Meaning |
+|------|---------|
+| `DW0330` | An on-screen `narrate` string (`title` / `subtitle` / `art`) — English source or any declared-language sidecar rendition — renders wider than fits on screen. Advisory (exit 0): shorten the line. Do **not** demote a title to `chat` to silence it, and do not assume a wider monitor fixes it — the overflow scales with GUI scale, not away from it. |
+
 ### DW02xx — analysis (`compiler::analyze` reachability + `compiler::light` lighting; error; exit 2)
 
 `DW0210`/`DW0211` are emitted by the assembled-world light model
@@ -753,7 +843,7 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0305` | A campaign-referenced anchor is defined by >1 placed piece (ambiguous); or a required anchor's only carrier is the `entry` piece. |
 | `DW0306` | Gate-aware reachability deadlock (an anchor reachable only through a gate no earlier objective opens). |
 | `DW0307` | `move-npc` destination unreachable by A* over the solved voxel grid. |
-| `DW0308` | `cutscene` camera dolly clips a solid block. |
+| `DW0308` | `cutscene` camera dolly clips a solid block (checked per shot; the message names the shot and segment). |
 | `DW0309` | Mannequin NPC declares `skin.texture_id` but no `skins/<id>.png` to bake. |
 | `DW0310` | `spawn-wave` references a wave whose spawn anchor resolves in no assembled area (dangling spawn). |
 | `DW0311` | Critical path has a consecutive visited-anchor pair with no walkable A* connection and no inter-area transport (player stranded). |

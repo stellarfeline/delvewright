@@ -58,7 +58,7 @@ use serde::{Deserialize, Serialize};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{Campaign, SUPPORTED_DSL_VERSIONS, is_supported_version};
 use crate::ids::CampaignId;
-use crate::stages::QuestEffect;
+use crate::stages::{NarrateStyle, QuestEffect};
 
 /// Walk the player-visible strings of a single quest effect (DSL v0.4): a
 /// `narrate` line and a named `give-item`'s display name. `keybase` is the
@@ -124,6 +124,14 @@ pub struct L10nDoc {
 /// preserved). `npc/keeper` → `keeper`. Ids without a `/` pass through unchanged.
 fn local(id: &str) -> &str {
     id.split_once('/').map(|(_, r)| r).unwrap_or(id)
+}
+
+/// The local part of a type-prefixed DSL id, exactly as the key scheme derives it
+/// (`npc/keeper` → `keeper`). Public so a consumer that pairs inventory keys back
+/// with their source objects (`delvec l10n-inventory`, matching `dlg.<npc>.…` keys
+/// to the NPC that speaks them) derives the same segment the keys are built from.
+pub fn local_id(id: &str) -> &str {
+    local(id)
 }
 
 /// Walk every player-visible string in `c` in a fixed, deterministic order,
@@ -230,6 +238,24 @@ pub fn inventory(c: &Campaign) -> BTreeMap<String, String> {
     out
 }
 
+/// The NPC an inventory key belongs to (its **local** id), when the key scheme
+/// encodes one: `dlg.<npc>.…` (that NPC's dialogue tree — `.text` is the NPC's own
+/// line, `.opt.<i>.label` the player's reply *within* it) and `npc.<npc>.name`.
+/// Returns `None` for every other key kind.
+///
+/// Lives beside [`each_string`] — the traversal that *defines* the key scheme — so
+/// the two cannot drift silently (a CLI test asserts every speaker derived from a
+/// real campaign's inventory resolves to a declared NPC). Consumed by
+/// `delvec l10n-inventory`, which hands a translator the speaking character's
+/// persona (`speech_style` above all) alongside the English line.
+pub fn key_speaker(key: &str) -> Option<&str> {
+    let (kind, rest) = key.split_once('.')?;
+    match kind {
+        "dlg" | "npc" => rest.split('.').next(),
+        _ => None,
+    }
+}
+
 /// One `narrate` `art` occurrence (DSL v0.6, spec-0014): its stage-doc path (for
 /// diagnostics), its l10n inventory key, and the canonical English text.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -257,6 +283,41 @@ pub fn art_narrates(c: &Campaign) -> Vec<ArtNarrate> {
             out.push(ArtNarrate {
                 path: format!("{path}/text"),
                 key: format!("{keybase}.narrate"),
+                text: text.to_string(),
+            });
+        }
+    });
+    out
+}
+
+/// One on-screen `narrate` occurrence — `title`, `subtitle` or `art` — its stage-doc
+/// path, its l10n inventory key, its style, and the canonical English text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScreenNarrate {
+    /// JSON-pointer-ish path within the `quests` stage doc.
+    pub path: String,
+    /// The l10n inventory key (`fx.…​.narrate`).
+    pub key: String,
+    /// Which on-screen channel vanilla draws it in — this selects the width budget.
+    pub style: NarrateStyle,
+    /// The canonical English text.
+    pub text: String,
+}
+
+/// Every `narrate` effect vanilla draws **on screen** (`title` / `subtitle` / `art`),
+/// in a fixed deterministic order. Like [`art_narrates`], each `key` is derived by the
+/// **same** traversal/keying as [`inventory`]/[`each_string`], so the compiler's
+/// text-fit check (`DW0330`) can look every string up in each declared-language
+/// sidecar and report it under the offending locale and key. `chat` narrates are
+/// excluded: chat wraps and scrolls, so it has no width budget.
+pub fn on_screen_narrates(c: &Campaign) -> Vec<ScreenNarrate> {
+    let mut out = Vec::new();
+    each_effect_ref(c, &mut |path, keybase, eff| {
+        if let Some((style, text)) = eff.narrate_on_screen() {
+            out.push(ScreenNarrate {
+                path: format!("{path}/text"),
+                key: format!("{keybase}.narrate"),
+                style,
                 text: text.to_string(),
             });
         }

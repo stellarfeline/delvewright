@@ -85,6 +85,23 @@ jobs:
       - name: pytest (composition determinism + model-required contract)
         run: PYTHONPATH=. python -m pytest -q
 
+  i18n-tool:
+    name: i18n translation tool (pytest)
+    # docs/reference/i18n.md: tools/i18n-translate.py drives an external
+    # OpenAI-compatible LLM API at generation time. The suite proves the request it
+    # would build, config resolution incl. the not-configured fallback, and that the
+    # API key never leaves the named env var — with the network blocked at
+    # `urlopen` (tools/tests/conftest.py), so no test can reach a real provider.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Stdlib-only tool (tomllib needs >=3.11); pytest is the only test dep.
+      - run: pip install pytest
+      - run: python -m pytest -q tools/tests
+
   mecha-crosscheck:
     name: mecha cross-check (PR only)
     # ADR-0011: mecha independently re-validates every emitted .mcfunction
