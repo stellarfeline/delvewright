@@ -68,7 +68,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 5 | Analyze (branch-coherent quest/dialogue reachability + critical-path replay) | `compiler::analyze` over `compiler::flow` | `DW02xx` (exit 2) |
 | 6 | Solve jigsaw layout (per `prefab_pool` area, from seed) | `compiler::solver` | `DW030x` (exit 3) |
 | 7 | Assemble world model (placed pieces → voxel grid; ocean sea-level datum check) | `compiler::plan` | `DW030x`/`DW0344` (exit 3) |
-| 8 | Replay the stage-7 edit script over the assembled model (spec-0017; per-batch invariant re-proofs — gravity, relight, walkability, boundary safety). Skipped entirely for a campaign without one (byte-identical). | `compiler::edit` | `DW0322`/`DW0323` + reused invariant codes, batch-attributed (tier per code) |
+| 8 | Replay the stage-7 edit script over the assembled model (spec-0017; per-batch invariant re-proofs — trap-hardware integrity, gravity, relight, walkability, boundary safety, block support; plus the advisory gate-region check). Skipped entirely for a campaign without one (byte-identical). | `compiler::edit` | `DW0322`/`DW0323`/`DW0352`/`DW0354` + reused invariant codes, batch-attributed (tier per code); advisory `DW0353`/`DW0354` |
 | 9 | Assembled-light + relight (measure, place fixtures; over the **edited** model when a script exists) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
 | 10 | Nav checks (A* `move-npc`/`move-actor` (footprint-aware), cutscene clip (authored polyline + rendered keyframe chords) + angular budget, critical-path walkability — incl. relight fixtures + water flood; talk-to endpoint snap; waypoint self-check; POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone + trap completability proofs) — all over the **edited** model when a script exists | `compiler::nav` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0325`/`DW0327`/`DW0342`/`DW0347`/`DW0724` (exit 3; `DW0342` → exit 2) |
 | 11 | Emit (datapack incl. the `world_edits` function, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
@@ -274,11 +274,11 @@ from l10n (no stage-7 string is player-visible).
 | `morph` | Surface reshape per region column: `raise{by,recipe}`, `lower{by}`, `smooth{passes,recipe}` (±1/pass relaxation toward the cardinal-neighbour mean). The region gives the footprint + where the surface is read; `raise`/`smooth` may add cells above the region top. |
 | `scatter` (PR 2) | Seeded dressing over a region's **standable** cells (air over an occupied cell): weighted `items[]` (blockstate suffixes allowed), per-candidate white-noise `density` gate in `(0, 1]` (dressing wants speckle, not the fill verbs' clustered patches), keep-clear `avoid[]` region envelopes (matched by `(x, z)` column), optional both-axes `spacing` rule and `limit` cap taken in descending noise order — the greenfield generator's spread idiom, ported. |
 | `plant` (PR 2) | Structural flora via the #121 **lean-or-grow** canopy rules (ported from the island terrain generator): up to `count` trees on the region's highest-noise standable cells (both-axes `spacing`, default 4; trunks never on `avoid[]` columns). A canopy that would cover an `avoid` column leans one block directly away; if that still covers it, the tree grows tall instead — its whole ball arched 3 above the trunk's floor. **No leaf is ever sliced**; leaves write only into air, so near walls/ceilings the ball may extend past them — review via the batch snapshot. `tree: oak` (per-species rule sets, extensible). |
-| `fragment` (PR 2) | Stamp a **library prefab**'s non-air cells at a frame-resolved `at` (+ optional quarter-turn `rotation`) — semantically a `/place template` whose bytes the compiler models (non-air overwrites; authored air never erases). Only admitted library prefabs can be stamped, so provenance/license ride the prefab's own metadata (ADR-0013); an id outside the library is `DW0323`. |
+| `fragment` (PR 2) | Stamp a **library prefab**'s non-air cells at a frame-resolved `at` (+ optional quarter-turn `rotation`) — semantically a `/place template` whose bytes the compiler models (non-air overwrites; authored air never erases). Only admitted library prefabs can be stamped, so provenance/license ride the prefab's own metadata (ADR-0013); an id outside the library is `DW0323`. Stamped cells keep their **full blockstate** (`assembled::structure_cells_stateful`; properties in sorted key order): the stamp's writes ARE the runtime `setblock` lines, and reading bare ids turned an authored `lantern[hanging=true]` into a floor lantern in mid-air (found by `DW0354`). **`rotation` turns POSITIONS only, and the compiler REFUSES rather than warns.** There is no rotate-aware blockstate rewriter, so a quarter-turned stamp would keep every `facing`/`axis`/`shape`/connection value unrotated and ship visibly deformed geometry — the silently-deformed-map class. A `rotation` other than `none` on a prefab carrying any **yaw-dependent** property (`facing` except `up`/`down`, `axis` except `y`, `shape`, `rotation`, `orientation`, `hinge`, `north`/`south`/`east`/`west`) is a build error (`DW0323`) naming the block, its prefab-local cell and the offending property; the prescription is to stamp unrotated or admit a pre-rotated prefab variant, never to hand-fix facings downstream. It is a **collision test, not a blanket ban**: prefabs whose every state is yaw-invariant (`hanging`, `half`, `waterlogged`, `open`, `lit`, `type`, `level`, `thickness`, `vertical_direction`, `axis=y`, `facing=up|down`) rotate correctly and stay allowed — `hello-room`, whose only property is `lantern[hanging=true]`, stamps fine at every quarter-turn. |
 | `relight` (PR 2) | Run the spec-0010 fixture-placement pass over ONE region and **bake** the fixtures into the edit script's writes — authorial control of where fixtures land (the whole-area relight still re-proves after every batch). Fixture/target default to the area's declared `lighting`; `fixture` + `min_light` (1..=14) override, and are **required** when the area declares none (`DW0162`). An unlightable region is the area pass's own `DW0211`, batch-attributed; a region with no reachable walkable cell is `DW0323`. |
 | L2 massing verbs (PR 3) | `swap-piece` (replace a piece with a library prefab that re-mates every mated socket at its exact world pose, any rotation, overlap-checked), `insert-piece` (attach at a specific **unmated** socket — the targeted form of the solver's frontier attach), `remove-piece` (a **leaf** only — exactly one mated socket, never the entry; the neighbour's socket unmates and re-seals), `rewire-socket` (`sealed` **unmates the doorway pair** — a graph operation: both planes wall up and the DW0306 connectivity proof loses the edge; `open` clears an unmated socket's fill — deliberately without granting the proof an edge, conservative), `reseed-piece` (seeded weighted re-pick among the area pool's compatible members, current excluded — a reseed always changes the piece or errors). All carry the `piece` index + `prefab` drift guard. Applied at **plan** time (`compiler::massing`, inside `Plan::build` right after `solve_area`): seals are regenerated from the massaged mated flags (`seal_layout`), and anchors, gate reachability, waterline, assembly, relight, nav and the L3 replay all run over the massaged layout — the full assembly validation re-runs by construction. Massing verbs live in **massing-only** batches ordered before every detailing batch (`DW0162`); an inapplicable verb is `DW0324`. `resize-piece` from the spec's initial list is **excluded**: the library has no size-parameterized piece primitive to express it through (no-hack doctrine); `swap-piece` covers the different-sized-variant case. |
 | Seeding | Every seeded verb streams from `stream_seed(campaign_seed, "edits/<batch-id>/<edit-index>")` — renaming a batch (or moving an edit) deliberately reseeds it; nothing else does (ADR-0006). |
-| Emission | The replay lowers to a `world_edits` function (x-run-coalesced `fill`/`setblock`), called from `setup_finish` after the socket seals and before the relight fixtures — the exact model order. `setup` additionally forceloads every batch's write AABB (an edit may write outside the piece bboxes — a leaning canopy, a stamped fragment — and a `setblock` on an unloaded chunk silently fails). `world-edits.json` is hashed into `manifest.json` inputs. |
+| Emission | The replay lowers to a `world_edits` function (x-run-coalesced `fill`/`setblock`), called from `setup_finish` after the socket seals and before the relight fixtures — the exact model order, and the reason `DW0352` exists (`trap_setup` runs later). `setup` additionally forceloads every batch's write AABB (an edit may write outside the piece bboxes — a leaning canopy, a stamped fragment — and a `setblock` on an unloaded chunk silently fails); those chunks then follow the **forceload lifecycle** below. `world-edits.json` is hashed into `manifest.json` inputs. |
 
 ### l10n sidecars (`l10n/<code>.json`)
 
@@ -988,6 +988,32 @@ world. Invariants:
   the guarantee the greenfield berm provided physically, made checkable so an
   edit script may reshape a boundary into natural landform. Reused codes keep
   their tiers; failures are prefixed `after world-edits batch `<id>``.
+- **Trap-hardware integrity (`DW0352`).** No batch write may land on a trap's
+  trigger/hazard cell, dispenser socket or disarm-affordance cell. `setup_finish`
+  runs `world_edits` **before** `trap_setup`, so a colliding edit lands first and
+  the trap is then wired into a block that is gone — vanilla's `item replace
+  block … container.0` on a non-container fails with **no output**, shipping a
+  dead trap while every geometry proof stays green (`DW0342` proves the *planned*
+  hazard, not the surviving hardware). Structural, so it is checked first, before
+  the geometry re-proofs.
+- **Support validity (`DW0354`).** Every support-dependent block the script has
+  placed (torch/lantern/campfire/rail family; flora) is re-checked at each batch
+  close against the current world: a later batch that carved its support away, or
+  a `scatter` that dropped flowers onto a non-soil block, leaves a block vanilla
+  pops off as an item on the first chunk tick — the edit silently undone while
+  every snapshot still shows it. **Advisory** for decoration (aggregated per
+  reason + block, with a count and one example cell); **error** when the popped
+  block is a fixture the script's own `relight` verb placed, since that is a
+  declared `min_light` guarantee the `DW0211` proof accepted. Conservative by
+  construction: a block whose support is sideways or above (`wall_torch`, a
+  `hanging=true` lantern) is classified as needing none, and "support removed"
+  means removed to **air** — the check never guesses about a block it cannot
+  classify.
+- **Gate-region collision (`DW0353`, advisory).** A write inside a `close-gate`
+  region is filled solid when the gate closes and cleared to **air** when it
+  opens, so one cycle erases it. The proofs stay sound (the occupancy model
+  already treats the region as gate-controlled), and dressing the *sealed* state
+  is a legitimate intent — hence a warning, one per colliding gate region.
 - **Determinism (ADR-0006).** Edit noise is position-addressed value noise
   (the island/cave generators' primitive family, ported into `crate::edit`)
   seeded per script position; the double-build gate covers the edited fixture
@@ -997,10 +1023,32 @@ world. Invariants:
   viewable; only region-resolution failures (`DW0323`) stop a view.
 - **The loop** (`delvec edit apply|preview`, §7): full validation → replay
   with invariants → one labelled snapshot + manifest per batch (framing the
-  batch's edited AABB over the final edited world). `apply --batch` appends a
-  candidate batch and persists `world-edits.json` (canonical form) only when
-  the whole replay is green; `preview` never writes to the campaign dir. A
-  red candidate can never leave a broken script behind.
+  batch's edited AABB over the final edited world) → **the whole build-tier
+  proof set**. `apply --batch` appends a candidate batch and persists
+  `world-edits.json` (canonical form) only when all of that is green; `preview`
+  never writes to the campaign dir. A red candidate can never leave a broken
+  script behind.
+- **One proof tier, not two.** The per-batch invariants are a *subset* of what
+  `build` proves — they miss cutscene clipping (`DW0308`), stealth zones
+  (`DW0327`), trap completability (`DW0342`), wave seating (`DW0312`),
+  `move-npc`/`move-actor` routability, and the exported-route/POV self-checks.
+  `edit` therefore runs `analyze` + `emit::build` (output discarded) before
+  persisting, so a script `apply` accepts is a script `build` accepts. Measured
+  cost: ~0.3 s on the largest content campaign, against ~0.34 s for the snapshot
+  render the same command already does — a cheaper tier has no reason to exist.
+- **Atomic persist.** `world-edits.json` is written to a sibling `.tmp` and
+  renamed into place: the artifact of record (ADR-0006) is never left truncated
+  by a crash or a full disk.
+- **Forceload lifecycle.** `setup` forceloads every piece bbox *and* every edit
+  AABB. Each edit chunk that no piece bbox covers gets its own convergence
+  sentinel in `place_verify` (`execute if loaded <cell>` folded into `#placeok`),
+  so `setup_finish` — and therefore the one-shot `world_edits` — cannot run into
+  a still-loading chunk and lose those writes forever; the tick retry loop
+  converges on them exactly as it does on piece placement. Those same chunks are
+  then released (`forceload remove`) at the very **end** of `setup_finish`, after
+  every other write in the function. **Piece forceloads are never released** —
+  the gameplay tick machinery (gate fills, wave spawns, checkpoint and trap block
+  reads) keeps addressing those chunks for the whole session.
 
 ---
 
@@ -1232,6 +1280,7 @@ cover); the author decides.
 | Code | Meaning |
 |------|---------|
 | `DW0351` | An NPC materializes (`spawn-npc`) or vanishes (`despawn-npc`) at a location discontinuous with its last staged location, with no movement in between. Advisory (exit 0): stage the move, re-anchor, or accept with narrative cover. |
+| `DW0353` | A world-edits batch writes inside a `close-gate` region (v0.6, spec-0017). The gameplay seal fills that region solid and `open-gate` clears it to **air**, so one close/open cycle erases the edit — the dressing `delvec snapshot` shows is not what players see after the beat fires. Advisory (exit 0), `compiler::edit`, one finding per colliding gate region: dressing the *sealed* state is a legitimate authorial intent, so this reports rather than rejects. |
 
 ### DW02xx — analysis (`compiler::analyze` reachability + `compiler::light` lighting; error; exit 2)
 
@@ -1333,7 +1382,9 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0316` | A `set-checkpoint` anchor has no standable footing within snap range on the final assembled model (a trap-trigger / hazard / mid-air cell) — the party would respawn into void or a wall (spec-0012). Because the relight pass already proves every reachable walkable cell meets the area's `min_light`, a checkpoint that clears this and DW0315 provably meets `min_light` too. |
 | `DW0324` | An L2 massing verb cannot apply to the solved layout (v0.6, spec-0017 PR 3): the target area binds a single `prefab` (no jigsaw layout to mass), a `piece` index / `prefab` guard mismatches the placement (layout drift), a `swap-piece`/`reseed-piece` candidate cannot re-mate every mated socket without overlap (or the pool has no compatible variant), an `insert-piece` socket is already mated or nothing attaches without overlap, a `remove-piece` targets the entry piece or a non-leaf, or a `rewire-socket` names an out-of-range connector / seals an already-sealed (opens an already-open) socket. `compiler::massing`, build-tier (exit 3); every message names the batch and prescribes re-inspecting the layout with `delvec snapshot` — never deleting the drift guard or the sockets. |
 | `DW0322` | Post-edit boundary safety (v0.6, spec-0017 invariant 4): after a world-edits batch, a reachable walkable cell borders a **void drop** — a horizontally adjacent column the player can step (or open a gate) into with no fall-arrest of any kind below (no solid, no fence/wall/gate top, no water); one step off the proven ground falls out of the world. `nav::verify_boundary_safety`, run after every edit batch (never on the no-edit path, whose worlds provide the guarantee physically); the message names the walkable cell, the drop cell and the batch. Build-tier (exit 3). Numbered in the 032x world/region family beside the spec-0013 boundary pair (`DW0320`/`DW0321` are validation-tier; this one is build-tier — it needs the edited geometry). Prescription: extend the terrain under the exposed edge (fill/morph a slope or outcrop) or reinstate a barrier shape — never weaken the check or reroute the path around it. |
-| `DW0323` | A stage-7 edit fails to **resolve** against the solved layout (v0.6, spec-0017): a piece-local frame's `piece` index is out of range or its `prefab` guard mismatches the placed piece (layout drift — the loud alternative to a silently misplaced edit), an `anchor-relative` frame names an anchor the batch's area does not resolve, or a verb's target region resolves to **zero cells** (a silent no-op is always a defect: the select drifted off the content it targeted). `compiler::edit`, build-tier (exit 3); the message names the batch and prescribes re-inspecting the layout with `delvec snapshot` — never deleting the prefab guard or leaving a dead edit. |
+| `DW0323` | A stage-7 edit fails to **resolve** against the solved layout (v0.6, spec-0017): a piece-local frame's `piece` index is out of range or its `prefab` guard mismatches the placed piece (layout drift — the loud alternative to a silently misplaced edit), an `anchor-relative` frame names an anchor the batch's area does not resolve, or a verb's target region resolves to **zero cells** (a silent no-op is always a defect: the select drifted off the content it targeted). Also the `fragment` verb's own resolution failures: a prefab outside the admitted library, one decoding to zero non-air cells, and a `rotation` other than `none` on a prefab carrying yaw-dependent blockstate — rotate-aware stamping is not implemented, so the compiler refuses the stamp instead of shipping unrotated facings (see the stage-7 `fragment` row). `compiler::edit`, build-tier (exit 3); the message names the batch and prescribes re-inspecting the layout with `delvec snapshot` — never deleting the prefab guard or leaving a dead edit. |
+| `DW0352` | A world-edits batch writes into a cell a trap's hardware occupies (v0.6, spec-0017 + spec-0011): its trigger/hazard cell, its dispenser socket, or its disarm-affordance cell. `setup_finish` runs `world_edits` **before** `trap_setup`, so the edit lands first and the trap is loaded into a block that is no longer there — vanilla's `item replace block … container.0` on a non-container fails with **no output**, so the delve ships a dead trap with every proof green (`DW0342` proves the *planned* hazard, not the surviving hardware; no geometry proof models "is this still a dispenser"). `compiler::edit`, checked first in the per-batch invariants, build-tier (exit 3). The message names the batch, the cell, the trap and which role the cell plays; prescription is to move the region off the trap's cells or re-anchor the trap — never to assume the edit leaves the redstone intact. |
+| `DW0354` | A support-dependent block the edit script placed has no valid support in the post-batch world (v0.6, spec-0017): a torch/lantern/campfire/rail-family block with **nothing below it** after a later batch carved its support away, or flora rooted in a block flowers cannot stand on (a `scatter` over bare stone). Vanilla pops such a block off as an item on the first chunk tick, so the write silently vanishes from the delivered world while every snapshot still shows it. **Two tiers, one code**: advisory (exit 0) for decoration, aggregated per reason + block with a count and one example cell; **error (exit 3)** when the popped block is a fixture the script's own `relight` verb placed — that is a declared `min_light` guarantee the `DW0211` proof accepted, and losing it re-darkens the region. `compiler::edit`, evaluated at every batch close over the cumulative placement set. Deliberately conservative: blocks supported sideways or from above (`wall_torch`, `hanging=true` lanterns) are classified as needing no support, and "support removed" means removed to **air** — the check never guesses about a block it cannot classify. |
 | `DW0325` | A `move-actor` destination is unreachable over the assembled geometry for the **actor's footprint** (per-entity dims table; warden 0.9×2.9 needs 3 cells of headroom, so it can be stranded where a player fits), or an actor spawn/destination anchor resolves to no world position (spec-0014). Build-tier (exit 3), `compiler::nav`; the message names the actor, the leg, and a best-effort first blocked cell. |
 | `DW0327` | A `begin-stealth` (spec-0014) zone is unstandable, or unreachable from the player's position at the beat that activates the stealth check — a guaranteed-unwinnable stealth beat. The message names the zone and prescribes placing it over reachable floor / within walkable reach of the activating beat. |
 | `DW0329` | A `sequence` effect is nested inside another `sequence` (directly, or reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse (spec-0014). Validation-tier (exit 1), `dsl::validate`. Flatten the inner steps into the outer timeline (shift their `at_ticks`). |
@@ -1414,6 +1465,7 @@ this doc is current behavior).
 | Traps: stage-5 `traps[]`, `anchor/trap` dispenser fill + disarm emission, `tnt_explodes` seal, passable plate/tripwire model, `DW0340`/`DW0341`/`DW0342` (all v0.6) | spec-0011 (landed) |
 | Visual authoring loop: `delvec snapshot` + `delvec blocking-chart`, the voxel raycaster, scene manifest and cutaway floor plans (§7) | spec-0015 (P1+P2 landed) |
 | The map editor: stage-7 `world-edits.json`, the full L3 verb set (`select`/`fill`/`replace`/`carve`/`morph`/`scatter`/`plant`/`fragment`/`relight`), the L2 massing verbs (`swap`/`insert`/`remove`/`rewire-socket`/`reseed`; `resize` excluded — no size primitive), per-batch invariant re-proofs, `DW0162`/`DW0322`/`DW0323`/`DW0324`, `delvec edit apply|preview` (all v0.6) | spec-0017 (PRs 1–3) |
+| Map-editor audit fixes: trap-hardware integrity `DW0352`, gate-region + block-support advisories `DW0353`/`DW0354`, out-of-bbox edit-chunk load convergence + forceload release, `edit` running the full build-tier proof set, blockstate-preserving `fragment` stamps | map-editor audit (post-#145/#146/#149) |
 | Asset-pipeline tooling `DW07xx` (schem/render/admit) | spec-0007 |
 | Determinism invariants | ADR-0006 |
 
@@ -1674,15 +1726,24 @@ air like `--at` (so an interior edit is viewed from inside its room). File
 names are the batch's kebab (`batch/dress-floor` → `dress-floor.png` +
 `dress-floor.manifest.json`).
 
+After the snapshots, both subcommands run the **entire build-tier proof set** —
+the DW02xx reachability analysis and `emit::build` itself, output discarded. The
+per-batch invariants are only a subset (they miss `DW0308` cutscene clipping,
+`DW0327` stealth zones, `DW0342` trap completability, `DW0312` wave seating,
+`move-npc`/`move-actor` routability and the exported-route/POV self-checks), and
+persisting on a subset let `apply` write a script the very next `build` rejects.
+There is one proof tier: what `apply` accepts, `build` accepts.
+
 `--batch <file>` appends one candidate `EditBatch` object (the `delvec schema
 --stage 7` shape's batch element) to the script in memory. `apply` persists
 the augmented script to `world-edits.json` (canonical 2-space form, trailing
-newline) **only after the whole replay is green** — a red candidate exits with
-its diagnostic and writes nothing, so a session can never leave a broken
-script behind. `preview` is byte-for-byte the same run but never writes to
-the campaign directory. `apply` without `--batch` replays + re-renders only.
-Exit codes: 0 green · 1 validation · 2/3 replay failure by the failing code's
-tier (same mapping as `build`).
+newline) **only after the replay AND the build-tier proofs are green** — a red
+candidate exits with its diagnostic and writes nothing, so a session can never
+leave a broken script behind. The write is tmp + rename, so a crash mid-write
+cannot truncate the artifact of record. `preview` is byte-for-byte the same run
+but never writes to the campaign directory. `apply` without `--batch` replays +
+re-renders only. Exit codes: 0 green · 1 validation · 2/3 replay or build-proof
+failure by the failing code's tier (same mapping as `build`).
 
 ### PNG writing
 
