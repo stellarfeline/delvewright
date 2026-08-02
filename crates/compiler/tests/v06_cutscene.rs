@@ -247,10 +247,28 @@ fn multi_shot_chains_two_dollies_in_one_bracket() {
     );
     let tick = tick_body(&out);
     let fr = frames(&tick);
-    // 2 s = 40 ticks → frames 0..=40; the next shot starts at 41; 1 s = 20 ticks
-    // → frames 41..=61. One contiguous counter, no gaps, no repeats.
+    // Keyframe cadence (task #64): shot 1 (2 s = 40 ticks, a straight dolly →
+    // widest cadence 10) emits the tick-0 snap + keyframes at 1, 11, 21, 31,
+    // with the client tweening between them via `teleport_duration:10`. Shot 2
+    // is a single-waypoint static shot: just its snap at 41 (the hard cut).
     let ticks: Vec<i64> = fr.iter().map(|f| f.0).collect();
-    assert_eq!(ticks, (0..=61).collect::<Vec<_>>(), "chained timeline");
+    assert_eq!(ticks, vec![0, 1, 11, 21, 31, 41], "keyframe timeline");
+    // Shot 1 arms its cadence on its first tick (the snap still lands
+    // instantly: position syncs flush before metadata within a tick) and
+    // re-arms the hard cut by resetting the tween on its last owned tick.
+    assert!(
+        tick.contains("matches 0 as @e[tag=dw_cam_") && tick.contains("{teleport_duration:10}"),
+        "shot 1 arms teleport_duration:10 at its first tick:\n{tick}"
+    );
+    assert!(
+        tick.contains("matches 40 as @e[tag=dw_cam_") && tick.contains("{teleport_duration:0}"),
+        "the tween resets one tick before the next shot's snap:\n{tick}"
+    );
+    // A static shot never arms a tween of its own.
+    assert!(
+        !tick.contains("matches 41 as @e[tag=dw_cam_"),
+        "static shot 2 needs no teleport_duration:\n{tick}"
+    );
     // The hard cut: frame 41 is the second shot's (static) first waypoint.
     let close_up = anchor_point(&plan, "anchor/keeper-stand", [0, 2, 1]);
     let cut = fr.iter().find(|f| f.0 == 41).unwrap();

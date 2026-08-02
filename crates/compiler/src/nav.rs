@@ -9,9 +9,12 @@
 //!   passable cells and stand on solid ground — no wall-clipping (owner playtest
 //!   finding). An unroutable move is [`DW_MOVE_UNROUTABLE`] (`DW0307`), a compile
 //!   error, not a runtime glitch.
-//! - **`cutscene`** camera dolly paths are validated to pass only through
-//!   non-solid blocks. Cameras fly (exempt from walkability) but must not clip a
-//!   solid; a violation is [`DW_CUTSCENE_CLIP`] (`DW0308`).
+//! - **`cutscene`** camera dollies are validated to pass only through non-solid
+//!   blocks — both the authored waypoint polyline and the client-rendered
+//!   keyframe chords ([`crate::camera`]). Cameras fly (exempt from walkability)
+//!   but must not clip a solid; a violation is [`DW_CUTSCENE_CLIP`] (`DW0308`).
+//!   Shots are also held to the angular-rate budget ([`DW_CAMERA_SPIN`],
+//!   `DW0347`).
 //!
 //! **Gate cells are passable.** A `ResolvedAnchor::Gate` region is a
 //! compiler-managed openable threshold (an `open-gate` effect fills it with air),
@@ -35,6 +38,12 @@ use crate::plan::{GateEvent, Plan, ResolvedAnchor, Step, TrapPlan};
 pub const DW_MOVE_UNROUTABLE: &str = "DW0307";
 /// `DW0308`: a `cutscene` camera dolly path that passes through a solid block.
 pub const DW_CUTSCENE_CLIP: &str = "DW0308";
+/// `DW0347`: a `cutscene` shot whose aim sweeps faster than the angular budget
+/// ([`crate::camera::MAX_AIM_DEG_PER_TICK`], 6 °/tick = 120 °/s) — a pan that
+/// fast at 20 Hz is nausea-tier and provably bad *before* it ships. Typical
+/// cause: a `look_at` subject too close to a fast dolly. See the camera dossier
+/// (`docs/notes/camera-dossier.md` §1) for the budget's derivation.
+pub const DW_CAMERA_SPIN: &str = "DW0347";
 /// `DW0311`: a consecutive pair of player-visited critical-path anchors that no
 /// walkable path connects over the assembled geometry (with no inter-area
 /// transport between them) — the player would be stranded. Turns the whole
@@ -1164,11 +1173,23 @@ fn anchor_offset_point(plan: &Plan, anchor: &str, offset: [i32; 3]) -> [f64; 3] 
     ]
 }
 
-/// Validate every cutscene camera dolly path passes only through non-solid blocks
-/// (cameras fly but must not clip a solid). `DW0308` names the offending shot,
-/// segment and the block coordinate that clips. The check runs **per shot**: a
-/// multi-shot cutscene hard-cuts between shots, so only the within-shot dolly is
-/// a corridor the camera actually flies.
+/// Validate every cutscene camera dolly (per shot: a multi-shot cutscene
+/// hard-cuts between shots, so only the within-shot dolly is a corridor the
+/// camera actually flies):
+///
+/// - **`DW0308` (authored polyline)**: the waypoint polyline passes only
+///   through non-solid blocks (cameras fly but must not clip a solid). Names
+///   the offending shot, segment and clipping block.
+/// - **`DW0308` (rendered chords)**: the client draws straight chords between
+///   the emitted keyframes ([`crate::camera::plan_shot`] — the tween is
+///   client-side and linear, spike-measured), which can cut a corner of the
+///   authored polyline by up to [`crate::camera::CHORD_POS_TOLERANCE`]. The
+///   chord polyline is what actually ships, so it is ray-checked too.
+/// - **`DW0347` (angular budget)**: the shot's peak aim rate must stay within
+///   [`crate::camera::MAX_AIM_DEG_PER_TICK`]. An over-budget pan is a
+///   provably nauseating shot — an error, not a warning: the fix (more camera
+///   distance, a longer shot, or a hard cut between two shots) is always
+///   available, and a red check is information (CLAUDE.md debug doctrine).
 pub fn check_cutscenes(plan: &Plan, world: &World) -> Result<(), NavError> {
     for eff in all_effects(plan) {
         let Some(shots) = eff.cutscene_shots() else {
@@ -1186,6 +1207,38 @@ pub fn check_cutscenes(plan: &Plan, world: &World) -> Result<(), NavError> {
                          blocks",
                         round3(pts[seg]),
                         round3(pts[seg + 1]),
+                    ),
+                });
+            }
+            let ticks = crate::camera::shot_ticks(shot.seconds);
+            let subject = shot.look_at.as_ref().map(|t| camera_look_point(plan, t));
+            let frames = crate::camera::plan_shot(&pts, subject, ticks);
+            let chord: Vec<[f64; 3]> = frames.frames.iter().map(|f| f.pos).collect();
+            if let Some((seg, cell)) = first_clip(world, &chord) {
+                return Err(NavError {
+                    code: DW_CUTSCENE_CLIP,
+                    message: format!(
+                        "cutscene: shot {si} client-rendered dolly chord {seg} (keyframe {:?} to \
+                         {:?}) clips a solid block at {cell:?} — the client tweens straight \
+                         between keyframes, cutting inside the authored waypoint corner; move the \
+                         nearby waypoint `anchor`/`offset` a block outward so the smoothed path \
+                         also clears",
+                        round3(chord[seg]),
+                        round3(chord[seg + 1]),
+                    ),
+                });
+            }
+            let rate = crate::camera::max_aim_deg_per_tick(&pts, subject, ticks);
+            if rate > crate::camera::MAX_AIM_DEG_PER_TICK {
+                return Err(NavError {
+                    code: DW_CAMERA_SPIN,
+                    message: format!(
+                        "cutscene: shot {si} pans at {rate} deg/tick, over the {} deg/tick \
+                         (120 deg/s) budget — at 20 Hz that reads as a spin, not a shot \
+                         (comfortable is <= 2 deg/tick). Move the camera path farther from its \
+                         `look_at` subject, lengthen `seconds`, or split the move into two shots \
+                         (the hard cut between shots is the idiomatic fast reframe)",
+                        crate::camera::MAX_AIM_DEG_PER_TICK,
                     ),
                 });
             }

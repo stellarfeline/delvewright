@@ -880,6 +880,44 @@ fn cutscene_clip_exits_3_with_dw0308() {
     assert!(stdout.contains("DW0308"), "expected DW0308:\n{stdout}");
 }
 
+/// A cutscene whose aim sweeps faster than the 6°/tick angular budget fails the
+/// build with exit 3 and `DW0347` (task #64): the showcase's known-air dolly is
+/// sped up to 1 s and aimed at a `look_at` subject passing 1 block abeam —
+/// ~8.6°/tick at closest approach, a spin, not a shot.
+#[test]
+fn cutscene_over_angular_budget_exits_3_with_dw0347() {
+    let pf = common::prefabs_dir();
+    let camp = tmp("cs-spin");
+    copy_dir(&common::compiler_fixtures_dir().join("v04-showcase"), &camp);
+    let qp = camp.join("quests.json");
+    let q = std::fs::read_to_string(&qp)
+        .unwrap()
+        // `look_at` is v0.6 surface.
+        .replace("\"dsl_version\": \"0.4.0\"", "\"dsl_version\": \"0.6.0\"")
+        .replace(
+            "\"seconds\": 2, \"path\": [ { \"anchor\": \"anchor/objective\", \"offset\": [0, 2, 2] }, \
+             { \"anchor\": \"anchor/objective\", \"offset\": [0, 2, 0] } ]",
+            "\"seconds\": 1, \"path\": [ { \"anchor\": \"anchor/objective\", \"offset\": [0, 2, 2] }, \
+             { \"anchor\": \"anchor/objective\", \"offset\": [0, 2, 0] } ], \
+             \"look_at\": { \"anchor\": \"anchor/objective\", \"offset\": [1, 2, 1] }",
+        );
+    assert!(q.contains("look_at"), "cutscene patch applied");
+    std::fs::write(&qp, q).unwrap();
+    let out = tmp("cs-spin-out");
+    let b = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(code(&b), 3, "over-budget pan should exit 3");
+    let stdout = String::from_utf8_lossy(&b.stdout);
+    assert!(stdout.contains("DW0347"), "expected DW0347:\n{stdout}");
+}
+
 /// Wave-capacity guard (task #41): a `spawn-wave` whose mob count exceeds the
 /// standable footing of its own room fails the build with `DW0312` and exit 2
 /// (analysis-tier — a content-design capacity mistake, like reachability `DW02xx`,
