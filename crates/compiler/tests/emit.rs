@@ -250,6 +250,39 @@ fn render_plan_shape_and_expect_vocabulary() {
 
     // The spawn shot is first (deterministic ordering).
     assert_eq!(shots[0]["kind"], "spawn");
+
+    // Player-POV tier: first-person cameras along the walked critical path.
+    let pov: Vec<&serde_json::Value> = shots.iter().filter(|s| s["kind"] == "pov").collect();
+    assert!(
+        !pov.is_empty(),
+        "hello-world has a walked leg, so it emits player-POV shots: {kinds:?}"
+    );
+    for s in &pov {
+        let cam = &s["camera"];
+        // Eye is at 1.62 above the standing cell floor (feet cell Y + 1.62).
+        let y = cam["pos"][1].as_f64().unwrap();
+        let cell_y = s["standing_cell"][1].as_f64().unwrap();
+        assert!(
+            (y - (cell_y + 1.62)).abs() < 1e-6,
+            "POV eye at cell_y+1.62: eye_y={y} cell_y={cell_y}"
+        );
+        // POV shots carry the first-person FOV and a leg/objective.
+        assert_eq!(cam["fov"].as_f64().unwrap(), 70.0);
+        assert!(s["leg"].is_number());
+        assert!(s["objective"].is_string(), "POV names the served objective");
+        // The first expect entry is the one-sentence first-person description.
+        let line = s["expect"][0].as_str().unwrap();
+        assert!(
+            line.starts_with("First-person view"),
+            "POV expect leads with the description: {line}"
+        );
+    }
+    // POV shots sort after the overhead/orbit kinds (deterministic suffix).
+    let first_pov = shots.iter().position(|s| s["kind"] == "pov").unwrap();
+    assert!(
+        shots[first_pov..].iter().all(|s| s["kind"] == "pov"),
+        "POV shots form the trailing block"
+    );
 }
 
 #[test]
@@ -286,9 +319,22 @@ fn critical_path_shape_and_commands() {
         }
     }
 
-    // The completion objective is displayed in the sidebar for the bot to read.
+    // The completion objective exists but is NOT put on the sidebar: a raw
+    // internal id (`dw.campaign`) must never surface to players (task #54
+    // addendum). The bot observes completion via the chat token, not the sidebar.
     let setup = text(&out, "datapack/data/hello-world/function/setup.mcfunction");
-    assert!(setup.contains("scoreboard objectives setdisplay sidebar dw.campaign"));
+    assert!(setup.contains("scoreboard objectives add dw.campaign dummy"));
+    assert!(
+        !setup.contains("setdisplay sidebar"),
+        "no raw-id sidebar display leaks to players: {setup}"
+    );
+    // Completion still sets the objective (chat-token marker + PackTest assert).
+    let complete = text(
+        &out,
+        "datapack/data/hello-world/function/campaign_complete.mcfunction",
+    );
+    assert!(complete.contains("scoreboard players set @s dw.campaign 1"));
+    assert!(complete.contains("[Delvewright] complete dw.campaign 1"));
 }
 
 /// task #38: the compiler exports the DW0311-proven critical-path routes as a
@@ -497,6 +543,7 @@ fn environment_sealing_emitted() {
         "gamerule advance_weather false",              // was doWeatherCycle
         "gamerule fire_spread_radius_around_player 0", // was doFireTick (now an int radius)
         "gamerule mob_griefing false",                 // was mobGriefing
+        "gamerule respawn_radius 0",                   // was spawnRadius (spawn scatter off)
         "time set noon",                               // fixed authored time (v0 default)
     ];
     for cmd in expected {
@@ -514,6 +561,7 @@ fn environment_sealing_emitted() {
         "doWeatherCycle",
         "doFireTick",
         "mobGriefing",
+        "spawnRadius",
     ] {
         assert!(
             !setup.contains(legacy),
@@ -540,6 +588,63 @@ fn environment_sealing_emitted() {
         assert!(
             tree.validate_line(cmd).is_ok(),
             "sealing command fails the 1.21.11 command-tree validator: `{cmd}`"
+        );
+    }
+}
+
+/// Datapack-owned FIRST-JOIN placement (singleplayer parity). The integrated
+/// (singleplayer) server does not reliably honour the emitted level.dat spawn and
+/// drops the first join at the superflat floor — inside stone. No rung of the
+/// validation ladder runs an integrated server, so this is asserted statically:
+/// the tick function must drive a once-per-player `join_place`, and `join_place`
+/// must teleport to the campaign entry point (the same cell `class_apply_*` uses)
+/// and then mark the player, so a relog never re-teleports.
+#[test]
+fn first_join_placement_emitted() {
+    let out = build_hello_world();
+    let tick = text(&out, "datapack/data/hello-world/function/tick.mcfunction");
+    let join = text(
+        &out,
+        "datapack/data/hello-world/function/join_place.mcfunction",
+    );
+
+    // Driver: gated on placement being verified (so the teleport lands on real
+    // geometry) and on the absence of the per-player tag (so it fires once).
+    let driver = "execute if score #placed dw.sys matches 1 as @a[tag=!dw_joined] \
+                  run function hello-world:join_place";
+    assert!(
+        tick.lines().any(|l| l.trim() == driver),
+        "tick must drive first-join placement: `{driver}`\ntick:\n{tick}"
+    );
+
+    // The teleport target is the campaign entry point — identical to the cell the
+    // class-apply handler teleports to.
+    let tp = join
+        .lines()
+        .find(|l| l.starts_with("teleport @s "))
+        .expect("join_place teleports the player");
+    let class_apply_path = out
+        .keys()
+        .find(|p| p.contains("/function/class_apply_"))
+        .expect("a class-apply handler is emitted")
+        .clone();
+    let class_apply = text(&out, &class_apply_path);
+    assert!(
+        class_apply.lines().any(|l| l.trim() == tp),
+        "first-join placement must use the campaign entry point (`{tp}`)\n\
+         {class_apply_path}:\n{class_apply}"
+    );
+    assert!(
+        join.lines().any(|l| l.trim() == "tag @s add dw_joined"),
+        "join_place must mark the player so a relog never re-teleports\n{join}"
+    );
+
+    // Both lines are real 1.21.11 commands.
+    let tree = CommandTree::v1_21_11();
+    for line in join.lines().filter(|l| !l.trim().is_empty()) {
+        assert!(
+            tree.validate_line(line).is_ok(),
+            "join_place line fails the 1.21.11 command-tree validator: `{line}`"
         );
     }
 }
@@ -769,4 +874,75 @@ mod gravity_despawn {
             "a substrate-supported sand floor must pass"
         );
     }
+}
+
+/// Singleplayer pause-freeze parity: a dialogue handler must RE-ARM the trigger it
+/// consumes, in the same function. `scoreboard players reset` re-locks a trigger;
+/// the per-tick `scoreboard players enable @a` cannot close the window, because the
+/// handler's last act is to show the next dialog node and the integrated
+/// (singleplayer) server freezes ticking while a screen is open — the player's next
+/// click is then executed before the tick ever runs again and vanilla rejects it.
+/// A dedicated server never pauses, so the validation ladder cannot see this.
+#[test]
+fn dialogue_handler_rearms_its_own_trigger() {
+    let out = build_hello_world();
+    let handlers: Vec<String> = out
+        .keys()
+        .filter(|p| p.contains("/function/dlg_"))
+        .cloned()
+        .collect();
+    assert!(!handlers.is_empty(), "hello-world emits dialogue handlers");
+
+    for path in &handlers {
+        let body = text(&out, path);
+        let lines: Vec<&str> = body.lines().map(str::trim).collect();
+        let reset = lines
+            .iter()
+            .position(|l| l.starts_with("scoreboard players reset @s dw.dlg_"))
+            .unwrap_or_else(|| panic!("{path} must consume its trigger:\n{body}"));
+        let obj = lines[reset]
+            .rsplit(' ')
+            .next()
+            .expect("reset names an objective");
+        // Immediately after the reset — before any `return fail` gate can
+        // short-circuit the rest of the handler, and before any `dialog show`.
+        assert_eq!(
+            lines.get(reset + 1).copied(),
+            Some(format!("scoreboard players enable @s {obj}").as_str()),
+            "{path} must re-arm `{obj}` immediately after resetting it:\n{body}"
+        );
+    }
+
+    // Belt-and-braces: the per-tick re-enable is still there.
+    let tick = text(&out, "datapack/data/hello-world/function/tick.mcfunction");
+    assert!(
+        tick.lines()
+            .any(|l| l.trim().starts_with("scoreboard players enable @a dw.dlg_")),
+        "the per-tick re-enable stays as belt-and-braces:\n{tick}"
+    );
+
+    // The emitted PackTest drives the real freeze scenario: use the trigger, run
+    // the handler, use it again — with the tick function never running.
+    let pt = text(
+        &out,
+        "packtest-datapack/data/hello-world/test/dialogue_trigger_rearm.mcfunction",
+    );
+    assert!(
+        !pt.contains("hello-world:tick"),
+        "the re-arm PackTest must NOT run the tick function (that is the freeze):\n{pt}"
+    );
+    assert_eq!(
+        pt.lines()
+            .filter(|l| l.trim().starts_with("execute as @p run trigger "))
+            .count(),
+        2,
+        "the re-arm PackTest uses the trigger twice:\n{pt}"
+    );
+    assert_eq!(
+        pt.lines()
+            .filter(|l| l.trim().starts_with("assert score @p "))
+            .count(),
+        2,
+        "both uses are asserted:\n{pt}"
+    );
 }

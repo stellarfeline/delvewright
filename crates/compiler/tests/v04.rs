@@ -114,6 +114,26 @@ fn resource_pack_and_sha1_emitted() {
         manifest.contains("\"resource_pack_sha1\""),
         "manifest records resource_pack_sha1"
     );
+
+    // The shipped pack must carry the 1.21.11 metadata shape. A bare
+    // `pack_format` above the resource-pack threshold (64) is rejected by the
+    // client with "missing mandatory fields min_format and max_format", and the
+    // pack — every NPC skin in it — silently never loads. Client-side only: no
+    // server ever parses a resource pack, so nothing in the validation ladder
+    // (dedicated server + PackTest + bot) can observe it.
+    let zip = String::from_utf8_lossy(&out["resourcepack.zip"]).to_string();
+    assert!(
+        zip.contains("\"min_format\"") && zip.contains("\"max_format\""),
+        "pack.mcmeta must declare min_format/max_format"
+    );
+    assert!(
+        !zip.contains("\"pack_format\""),
+        "a bare `pack_format` must not be emitted alongside min/max"
+    );
+    assert!(
+        zip.contains("75"),
+        "the 1.21.11 resource-pack format is 75.0"
+    );
 }
 
 /// The critical path carries the harness contract fields: version `0.4.0`,
@@ -195,22 +215,123 @@ fn every_v04_verb_emitted() {
     );
 }
 
-/// Flag-gated dialogue: the gated option is absent in the pre-flag variant and
-/// present in the post-flag variant (spec-0008 §1).
+/// Display gating combines two axes into one per-node availability mask
+/// (`dw.dmask`), bit `i` = the node's i-th gated option is displayable (task #54).
+/// `dlg/greet` has three options: an ungated one ("Who are you?"), a completing
+/// option ("I'll clear the keep." → obj/talk, bit 0, objective-state axis), and a
+/// flag-gated one ("What lies past the door?" → flag/summoned, bit 1, flag axis).
+/// So variant `__m<mask>` shows the ungated option always, the completing option
+/// iff bit 0, the flag option iff bit 1.
 #[test]
-fn flag_gated_dialogue_variants() {
+fn dialogue_display_gating_variants() {
     let out = build_showcase();
-    let m0 = std::str::from_utf8(&out["datapack/data/v04-showcase/dialog/keeper_greet__m0.json"])
-        .unwrap();
-    let m1 = std::str::from_utf8(&out["datapack/data/v04-showcase/dialog/keeper_greet__m1.json"])
-        .unwrap();
+    let variant = |mask: u32| -> String {
+        std::str::from_utf8(
+            &out[&format!("datapack/data/v04-showcase/dialog/keeper_greet__m{mask}.json")],
+        )
+        .unwrap()
+        .to_string()
+    };
+    let ungated = "Who are you?";
+    let completing = "I'll clear the keep.";
+    let flag_gated = "What lies past the door?";
+
+    // The ungated option is present in every variant.
+    for mask in 0..4 {
+        assert!(
+            variant(mask).contains(ungated),
+            "ungated option always shown"
+        );
+    }
+    // m0: nothing displayable → only the ungated option.
+    assert!(!variant(0).contains(completing) && !variant(0).contains(flag_gated));
+    // m1 (bit 0): completing option visible, flag option still hidden.
+    assert!(variant(1).contains(completing) && !variant(1).contains(flag_gated));
+    // m2 (bit 1): flag option visible, completing option hidden.
+    assert!(variant(2).contains(flag_gated) && !variant(2).contains(completing));
+    // m3: both.
+    assert!(variant(3).contains(completing) && variant(3).contains(flag_gated));
+
+    // The mask function mirrors the click-handler guard: bit 0 (the completing
+    // option) is set iff obj/talk's quest is active AND the objective is not yet
+    // complete; bit 1 iff the flag is set.
+    let dmask = fn_body(&out, "dmask_keeper_greet");
     assert!(
-        !m0.contains("What lies past the door?"),
-        "gated option absent before flag"
+        dmask.contains(
+            "execute if score @s dw.qa_greet matches 1 unless score @s dw.o_talk matches 1 \
+             run scoreboard players add @s dw.dmask 1"
+        ),
+        "completing option's availability bit mirrors the click guard: {dmask}"
     );
     assert!(
-        m1.contains("What lies past the door?"),
-        "gated option present after flag"
+        dmask.contains(
+            "execute if score @s dw.f_summoned matches 1 run scoreboard players add @s dw.dmask 2"
+        ),
+        "flag option's availability bit is the flag score: {dmask}"
+    );
+    // The chooser computes the mask, then shows the matching variant.
+    let show = fn_body(&out, "show_keeper_greet");
+    assert!(show.contains("function v04-showcase:dmask_keeper_greet"));
+    assert!(show.contains("dialog show @s v04-showcase:keeper_greet__m3"));
+}
+
+/// The generated PackTest drives the availability mask through the objective-state
+/// axis transitions (hidden before the quest activates, shown while active, hidden
+/// again after completion) plus the flag axis in isolation (task #54). It asserts
+/// the option-under-test's *isolated* bit, never the whole mask: sibling gated
+/// options in the same node can share a quest-active score, so a whole-mask compare
+/// would read a sibling's bit as this option's and mis-assert.
+#[test]
+fn dialogue_visibility_packtest_covers_both_axes() {
+    let out = build_showcase();
+    let pt = std::str::from_utf8(
+        &out["packtest-datapack/data/v04-showcase/test/v04_dialogue_visibility.mcfunction"],
+    )
+    .unwrap();
+    // Quest inactive → the completing option (bit 0) is hidden.
+    assert!(pt.contains("scoreboard players set @a dw.qa_greet 0"));
+    // Quest active, objective incomplete → the completing option appears.
+    assert!(pt.contains("scoreboard players set @a dw.qa_greet 1"));
+    // Objective complete → hidden again.
+    assert!(pt.contains("scoreboard players set @a dw.o_talk 1"));
+    // Flag axis in isolation → the flag option (bit 1) appears.
+    assert!(pt.contains("scoreboard players set @a dw.f_summoned 1"));
+    // Every phase runs the emitted mask function (no re-implementation).
+    assert!(pt.contains("execute as @a run function v04-showcase:dmask_keeper_greet"));
+    // Bit isolation `(dmask >> bit) & 1`: bit 0 via `%= 2` then `/= 1`; bit 1
+    // (the flag option) via `%= 4` then `/= 2`. Both axes assert 0/1, never 2.
+    assert!(pt.contains("scoreboard players set #dmhi dw.sys 2"));
+    assert!(pt.contains("scoreboard players set #dmlo dw.sys 1"));
+    assert!(pt.contains("scoreboard players set #dmhi dw.sys 4"));
+    assert!(pt.contains("scoreboard players set #dmlo dw.sys 2"));
+    assert!(pt.contains("scoreboard players operation #dm dw.sys %= #dmhi dw.sys"));
+    assert!(pt.contains("scoreboard players operation #dm dw.sys /= #dmlo dw.sys"));
+    // Isolated asserts are always 0 (hidden) or 1 (shown) — the whole-mask value
+    // (e.g. 2 for a lit high bit) must never appear.
+    assert!(
+        !pt.contains("assert score #dm dw.sys matches 2"),
+        "isolated-bit asserts must be 0/1, never a raw mask value: {pt}"
+    );
+    assert_eq!(
+        pt.matches("assert score #dm dw.sys matches 0").count(),
+        2,
+        "hidden asserted before activation and after completion"
+    );
+    assert_eq!(
+        pt.matches("assert score #dm dw.sys matches 1").count(),
+        2,
+        "shown asserted while active (objective axis) and for the flag axis"
+    );
+    // The mask read must be single-entity: `scoreboard players get`/`operation`
+    // reject a multi-entity selector, so a bare `@a` read is a load-time command
+    // error (caught live by PackTest). Read via `as @a … = @s`.
+    assert!(
+        !pt.contains("get @a dw.dmask"),
+        "the dmask read must not use a multi-entity `@a` selector: {pt}"
+    );
+    assert!(
+        pt.contains("execute as @a run scoreboard players operation #dm dw.sys = @s dw.dmask"),
+        "the dmask read copies @s (single) into the assert scratch: {pt}"
     );
 }
 
@@ -358,13 +479,18 @@ fn wave_mobs_land_on_distinct_standable_in_room_cells() {
     }
 }
 
-/// The `[x, y, z]` cell of every `summon` line in a spawn-function body.
+/// The `[x, y, z]` **cell** of every `summon` line in a spawn-function body.
+///
+/// Entities are summoned at the horizontal centre of their cell (`x+0.5`/`z+0.5`,
+/// `nav::cell_center`) — a body positioned on the bare integer coordinate would
+/// straddle four columns — so the emitted position floors back to the cell.
 fn summon_cells(body: &str) -> Vec<[i32; 3]> {
+    let cell = |t: &str| t.parse::<f64>().ok().map(|v| v.floor() as i32);
     body.lines()
         .filter_map(|l| {
             let t: Vec<&str> = l.split_whitespace().collect();
             if t.first() == Some(&"summon") && t.len() >= 5 {
-                Some([t[2].parse().ok()?, t[3].parse().ok()?, t[4].parse().ok()?])
+                Some([cell(t[2])?, cell(t[3])?, cell(t[4])?])
             } else {
                 None
             }

@@ -1,0 +1,29 @@
+{
+  "version": "0.4.0",
+  "campaign_id": "hello-world",
+  "layout_aabb": { "min": [0, 63, 0], "max": [11, 69, 13] },
+  "camera_convention": "yaw/pitch degrees; yaw=atan2(-dz,dx) (0=+X,90=-Z); pitch=atan2(-dy,horiz) (+down)",
+  "shots": [
+    {
+      "id": "spawn",
+      "kind": "spawn",
+      "area": "area/keep",
+      "camera": { "pos": [5.5, 69.0, 13.5], "yaw": 90.0, "pitch": 15.945, "look_at": [5.5, 67.0, 6.5] },
+      "expect": ["spawn point clear — player can stand"]
+    },
+    {
+      "id": "pov/leg0/wp0",
+      "kind": "pov",
+      "area": "area/keep",
+      "leg": 0,
+      "waypoint": 0,
+      "objective": "obj/exit",
+      "standing_cell": [5, 65, 4],
+      "camera": { "pos": [5.5, 66.62, 4.5], "yaw": -90.0, "pitch": -0.0, "look_at": [5.5, 66.62, 8.5], "fov": 70.0 },
+      "expect": [
+        "First-person view walking south in The Keep toward the exit — the path ahead should be open.",
+        "camera at standing eye height (1.62) — a first-person view, not overhead or orbit"
+      ]
+    }
+  ]
+}

@@ -70,6 +70,40 @@ impl EntityRegistry for FullEntityRegistry {
     }
 }
 
+/// The complete 1.21.11 `sound_event` registry (1838 ids), vendored under `data/`
+/// from the same `misode/mcmeta` summary as the item/entity registries (see
+/// `data/PROVENANCE.md`; regenerate with `tools/extract-sound-registry.py`).
+/// Validates v0.6 `play-sound` / v0.4 `narrate.sound` ids (`DW0326`, spec-0014).
+#[derive(Debug, Clone)]
+pub struct FullSoundRegistry {
+    ids: BTreeSet<String>,
+}
+
+impl FullSoundRegistry {
+    /// Load the vendored 1.21.11 sound-event registry (embedded at compile time).
+    pub fn v1_21_11() -> Self {
+        let raw = include_str!("../data/sounds-1.21.11.json");
+        let ids: Vec<String> =
+            serde_json::from_str(raw).expect("vendored sound registry is valid JSON");
+        Self {
+            ids: ids.into_iter().collect(),
+        }
+    }
+
+    /// True if `sound_id` is a known sound event in the pinned MC version. An
+    /// un-namespaced id is resolved under the default `minecraft:` namespace, as
+    /// the `playsound` command accepts.
+    pub fn contains(&self, sound_id: &str) -> bool {
+        if self.ids.contains(sound_id) {
+            return true;
+        }
+        if !sound_id.contains(':') {
+            return self.ids.contains(&format!("minecraft:{sound_id}"));
+        }
+        false
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Prefab metadata (`prefabs/<name>.json`)
 // ---------------------------------------------------------------------------
@@ -84,6 +118,15 @@ pub struct PrefabMeta {
     pub structure: StructureMeta,
     /// Named anchors, keyed by DSL anchor name (`spawn`, `anchor/…`).
     pub anchors: BTreeMap<String, AnchorMeta>,
+    /// The local y of this piece's **top authored water block** — its waterline —
+    /// for open-air island pieces built to the `prefabs/island-tileset.md`
+    /// convention (waterline local y=2, walk plane local y=3). Consumed by the
+    /// ocean-horizon placement invariant (`DW0344`, `plan::check_ocean_waterline`):
+    /// in a `horizon: ocean` world the declared waterline must land at world sea
+    /// level. Absent for pieces that author no sea (interiors, keep/cave tilesets),
+    /// which are then not checked.
+    #[serde(default)]
+    pub waterline_y: Option<i32>,
     /// keep-socket-v1 connectors (jigsaw sockets). Empty for single-piece prefabs
     /// (e.g. `hello-room`); the layout solver (`crate::solver`) mates these when
     /// assembling a `prefab_pool` area (M2 task #9). Optional so single-piece
@@ -191,6 +234,13 @@ pub struct AnchorMeta {
     /// The block filling a gate region (e.g. `minecraft:iron_bars`).
     #[serde(default)]
     pub block: Option<String>,
+    /// The pre-wired dispenser socket cell (local coords) for an `anchor/trap`
+    /// marker (DSL v0.6, spec-0011). `pos` is the trap's trigger/hazard cell (the
+    /// plate/tripwire/chest the compiler models as a hazard); `dispenser` is the
+    /// separate cell holding the empty dispenser whose payload the compiler fills.
+    /// Absent for every non-trap anchor (byte-identical for existing metadata).
+    #[serde(default)]
+    pub dispenser: Option<[i32; 3]>,
 }
 
 /// An inclusive local block region (two corners).
@@ -271,6 +321,37 @@ impl PrefabRegistry {
     /// The member pieces of a prefab pool (`pool/<name>`), if declared.
     pub fn pool(&self, pool_id: &str) -> Option<&[PoolMember]> {
         self.pool_members.get(pool_id).map(|v| v.as_slice())
+    }
+
+    /// Classify how the loaded prefabs provide a gate anchor for the `close-gate`
+    /// block-declared check (`DW0343`). `close-gate` fills the region with the block
+    /// the anchor declares, so a blockless (or non-region) anchor cannot be sealed:
+    ///
+    /// - `None` — no loaded prefab declares `anchor_name` as a **gate region**
+    ///   (it is a point anchor, a trap anchor, or unknown): nothing to seal.
+    /// - `Some(false)` — at least one region-provider declares the anchor but omits
+    ///   `block`: the compiler cannot know what to fill with (and the solver may
+    ///   place that blockless member).
+    /// - `Some(true)` — every prefab that declares this anchor as a gate region also
+    ///   declares a fill `block`.
+    ///
+    /// Gate anchors resolve globally (like `open-gate`), so the scan is over every
+    /// prefab — the conservative "all region-providers must declare a block" rule
+    /// guarantees whichever member the solver places can be sealed.
+    pub fn gate_anchor_block(&self, anchor_name: &str) -> Option<bool> {
+        let mut any_region = false;
+        let mut all_have_block = true;
+        for meta in self.by_id.values() {
+            if let Some(am) = meta.anchors.get(anchor_name)
+                && am.region.is_some()
+            {
+                any_region = true;
+                if am.block.is_none() {
+                    all_have_block = false;
+                }
+            }
+        }
+        any_region.then_some(all_have_block)
     }
 
     /// The prefab ids in `pool_id` that declare `anchor_name` in their metadata.

@@ -3,9 +3,12 @@
 //!
 //! ## Coordinate scheme (deterministic)
 //!
-//! Each stage-1 area is placed at origin `[index * AREA_SPACING, BASE_Y, 0]`
-//! (M1 has one area → `[0, 64, 0]`). A prefab's local anchor position resolves to
-//! `origin + local`. All coordinates are integers; no randomness is used in v0.
+//! Each stage-1 area is placed at origin `[index * AREA_SPACING, base_y, 0]`
+//! (M1 has one area → `[0, 64, 0]`). The origin Y is fixed per **horizon**
+//! (spec-0013): `void` → [`BASE_Y`] (64), `ocean` → [`OCEAN_BASE_Y`] (60), which is
+//! `sea_level - island waterline` so authored island water meets the world ocean.
+//! A prefab's local anchor position resolves to `origin + local`. All coordinates
+//! are integers; no randomness is used in v0.
 //!
 //! ## Naming scheme (scoreboard/function-safe)
 //!
@@ -19,7 +22,8 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_dsl::{
-    Campaign, DialogueEffect, DialogueId, Npc, NpcDialogue, Objective, Quest, QuestEffect, Trigger,
+    Campaign, DialogueEffect, DialogueId, Lethality, Npc, NpcDialogue, Objective, Quest,
+    QuestEffect, TrapReset, TrapTrigger, Trigger,
 };
 
 use crate::registry::{AnchorMeta, PrefabRegistry};
@@ -27,8 +31,133 @@ use crate::solver::{self, Facing, Rotation, SealFill, Splitmix64};
 
 /// World-space distance between successive area origins.
 pub const AREA_SPACING: i32 = 256;
-/// The Y of every area origin (structures carry their own floor at local y=0).
+/// The Y of every area origin under `horizon: void` (structures carry their own
+/// floor at local y=0). Also the fallback Y for an unresolvable position.
 pub const BASE_Y: i32 = 64;
+/// Sea level of the `ocean` horizon superflat (spec-0013): the pinned
+/// bedrock/stone/water layer stack (1 + 118 + 8 from the -64 build floor) tops the
+/// water at y=62. Emission pins the same stack in `generator-settings`.
+pub const SEA_LEVEL: i32 = 62;
+/// The island tileset's authored waterline (`prefabs/island-tileset.md`): every
+/// island piece puts its top water block at **local y=2**, with the walkable land
+/// plane one block above it at local y=3.
+///
+/// Assumption (documented in `docs/reference/compiler.md`): the tileset convention
+/// is a *library* constant, not a per-piece one — prefab metadata may *declare* its
+/// waterline (`waterline_y`), which [`check_ocean_waterline`] then verifies against
+/// sea level, but placement itself uses this single convention height so that every
+/// area of an ocean world sits on one deterministic datum.
+pub const ISLAND_WATERLINE_Y: i32 = 2;
+/// The Y of every area origin under `horizon: ocean`: the piece base sits at
+/// `SEA_LEVEL - ISLAND_WATERLINE_Y` (= 60) so the authored waterline (local y=2)
+/// meets the world ocean (y=62) and the walk plane (local y=3) is the vanilla-normal
+/// one block above the sea. Placing ocean areas at [`BASE_Y`] instead floats the
+/// island ~4 blocks above the sea: a player who falls into open water cannot climb
+/// ashore.
+pub const OCEAN_BASE_Y: i32 = SEA_LEVEL - ISLAND_WATERLINE_Y;
+
+/// The area-origin Y for a campaign's horizon (spec-0013). `void` (default/absent)
+/// keeps [`BASE_Y`], so every pre-0.6 / void campaign stays byte-identical; `ocean`
+/// uses [`OCEAN_BASE_Y`] so the island waterline convention holds.
+pub fn base_y(campaign: &Campaign) -> i32 {
+    match campaign.world.content.horizon {
+        Some(delvewright_dsl::Horizon::Ocean) => OCEAN_BASE_Y,
+        _ => BASE_Y,
+    }
+}
+
+/// A resolved `set-checkpoint` effect (DSL v0.6, spec-0012), collected in
+/// deterministic content order so its `index` is a stable, byte-identical id used
+/// both for the active-checkpoint marker (`#cp dw.sys`) and its `on_respawn`
+/// dispatch function.
+#[derive(Clone, Debug)]
+pub struct CheckpointPlan {
+    /// Stable content-ordered id (0-based).
+    pub index: usize,
+    /// The checkpoint anchor name.
+    pub anchor: String,
+    /// The resolved absolute anchor cell.
+    pub pos: [i32; 3],
+    /// Per-player `on_respawn` effects (may be empty).
+    pub on_respawn: Vec<QuestEffect>,
+    /// `critical_path` step index at which this checkpoint fires (roots DW0315).
+    pub fire_step: usize,
+}
+
+/// A resolved `begin-stealth` beat (DSL v0.6, spec-0014), collected in
+/// deterministic content order; its `index` (1-based) is the active-session id
+/// written to `#stealth dw.sys` (0 = inactive).
+#[derive(Clone, Debug)]
+pub struct StealthBeat {
+    /// Stable content-ordered session id (1-based).
+    pub index: usize,
+    /// Zones: `(anchor name, resolved centre cell, half-extents)`.
+    pub zones: Vec<(String, [i32; 3], [u32; 3])>,
+    /// Per-player `on_caught` effects (may be empty).
+    pub on_caught: Vec<QuestEffect>,
+    /// Ticks of exposure tolerated before `on_caught` fires.
+    pub grace_ticks: u32,
+    /// `critical_path` step index that activates the beat (roots DW0327).
+    pub fire_step: usize,
+}
+
+/// A resolved trap (DSL v0.6, spec-0011), collected in deterministic content
+/// order. Carries everything the nav proof (`DW0342`), the payload/disarm
+/// emission, and the PackTest need.
+#[derive(Clone, Debug)]
+pub struct TrapPlan {
+    /// The raw trap id (`trap/<name>`).
+    pub id: String,
+    /// Sanitized local name (`dart_hall`) for emitted function/tag names.
+    pub safe: String,
+    /// The declared trigger kind (informs the hazard model + PackTest).
+    pub trigger: TrapTrigger,
+    /// The resolved absolute trigger/hazard cell (the trap's `at` anchor cell).
+    pub trigger_cell: [i32; 3],
+    /// The resolved absolute dispenser socket cell (from the `at` anchor's
+    /// `dispenser` metadata), or `None` if the prefab exposes none.
+    pub dispenser: Option<[i32; 3]>,
+    /// The dispense payload `(item, count)` this trap loads, if any.
+    pub payload: Option<(String, u32)>,
+    /// How dangerous the trap is.
+    pub lethality: Lethality,
+    /// Whether the trap re-arms after firing.
+    pub reset: TrapReset,
+    /// The resolved disarm affordance, if declared.
+    pub disarm: Option<TrapDisarmPlan>,
+    /// Flags that gate the trap being active.
+    pub requires_flags: Vec<String>,
+}
+
+/// A gate open/close firing (DSL v0.6), collected in deterministic content order.
+/// `close-gate` seals the gate region (fills it with the anchor's declared block)
+/// from its firing beat; `open-gate` clears it back to air. The occupancy model
+/// (`crate::assembled`) otherwise treats every gate cell as always passable — the
+/// conservative "assume the gate the player needs is opened" stance DW0306 checks.
+/// `close-gate` is the physical dual: the critical-path / checkpoint reachability
+/// proofs treat the region as **solid** on any walked leg reached *after* the
+/// latest firing at or before it is a close (and not reopened by a later
+/// `open-gate`), so a path that must cross a sealed gate fails `DW0311`/`DW0315`.
+#[derive(Clone, Debug)]
+pub struct GateEvent {
+    /// The gate region's inclusive corners (absolute world coords).
+    pub region: ([i32; 3], [i32; 3]),
+    /// `true` for `close-gate` (seals the region), `false` for `open-gate` (clears).
+    pub closes: bool,
+    /// The `critical_path` step index at which this firing happens.
+    pub fire_step: usize,
+}
+
+/// A resolved trap disarm affordance (DSL v0.6, spec-0011).
+#[derive(Clone, Debug)]
+pub struct TrapDisarmPlan {
+    /// The disarm anchor name (`anchor/…`).
+    pub via_anchor: String,
+    /// The resolved absolute cell of the disarm affordance.
+    pub via_cell: [i32; 3],
+    /// The flag the disarm sets.
+    pub sets_flag: String,
+}
 
 /// The compiled model.
 pub struct Plan<'a> {
@@ -68,6 +197,29 @@ pub struct Plan<'a> {
     /// `Some(seconds)` when completing that step's objective triggers a
     /// `QuestEffect::Cutscene` → emitted as `cutscene_seconds`.
     pub critical_path_cutscene: Vec<Option<u32>>,
+    /// Resolved `set-checkpoint` effects (DSL v0.6, spec-0012), content-ordered.
+    pub checkpoints: Vec<CheckpointPlan>,
+    /// Resolved `begin-stealth` beats (DSL v0.6, spec-0014), content-ordered.
+    pub stealth_beats: Vec<StealthBeat>,
+    /// Objective id → its `critical_path` step index. The inverse of a step's
+    /// serving objective — used by the visual-tier POV shot planner
+    /// (`crate::render_plan`) to name the objective each player-POV leg walks
+    /// toward, and by the v0.6 checkpoint / stealth proofs to root a beat.
+    pub objective_steps: BTreeMap<String, usize>,
+    /// Resolved traps (DSL v0.6, spec-0011), content-ordered.
+    pub traps: Vec<TrapPlan>,
+    /// Resolved gate open/close firings (DSL v0.6), content-ordered — drives the
+    /// `close-gate` completability model in `crate::nav`. Empty when the campaign
+    /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
+    pub gate_events: Vec<GateEvent>,
+    /// For each objective's `critical_path` step, the set of steps of its **strict
+    /// DAG ancestors** — objectives guaranteed to complete before it in *every* valid
+    /// play order (transitive `after` within its quest ∪ every objective of a
+    /// transitive `depends_on`-ancestor quest). The `close-gate` seal model
+    /// (`crate::nav`) uses this so a gate only seals a leg whose objective is a true
+    /// causal descendant of the gate's firing objective — not a parallel branch the
+    /// lineariser merely interleaved ahead of it.
+    pub strict_ancestor_steps: BTreeMap<usize, BTreeSet<usize>>,
 }
 
 /// A placed area: one or more pieces plus their socket seals.
@@ -188,6 +340,11 @@ pub struct OptionPlan {
     pub sets_time: Vec<delvewright_dsl::WorldTime>,
     /// Weather cuts this option fires (DSL v0.5 dialogue `set-weather`), in order.
     pub sets_weather: Vec<delvewright_dsl::WorldWeather>,
+    /// Checkpoints this option sets (DSL v0.6 dialogue `set-checkpoint`), each
+    /// `(anchor, on_respawn)`, in order.
+    pub sets_checkpoints: Vec<(String, Vec<QuestEffect>)>,
+    /// Deferred NPCs this option summons (DSL v0.6 dialogue `spawn-npc`), in order.
+    pub spawns_npcs: Vec<String>,
 }
 
 /// A critical-path step (mirrors the amended `critical-path.json` shape).
@@ -412,6 +569,98 @@ pub const DW_BUILD: &str = "DW0300";
 /// a key chest sealed behind the very gate its key opens.
 pub const DW_GATE_DEADLOCK: &str = "DW0306";
 
+/// `DW0344`: an ocean-horizon world places a piece whose declared waterline does not
+/// land at sea level — the piece floats above the sea or is drowned by it.
+pub const DW_OCEAN_WATERLINE: &str = "DW0344";
+
+/// `DW0345`: the assembled world resolves **no entry anchor** — the compiler has
+/// no cell to call the campaign's start, so it cannot `setworldspawn`, cannot place
+/// a first-joining player, and cannot teleport a player who picks a class. The
+/// world then falls back to the vanilla spawn search, which a dedicated server
+/// resolves to the surface but the integrated (singleplayer) server resolves to
+/// the build floor — inside solid stone. Silent before; a hard build error now.
+pub const DW_NO_ENTRY_ANCHOR: &str = "DW0345";
+
+/// The prefab-metadata anchor names that mark a campaign's **entry point**, in
+/// resolution order. One concept, two spellings in the shipped tileset library:
+/// the keep/cave/test tilesets name it `spawn`, the island tileset names it
+/// `entry`. The compiler owns the resolution (CLAUDE.md: never leave a layer
+/// boundary to downstream folklore) — every consumer goes through
+/// [`Plan::entry_point`] / `emit::campaign_spawn`, and a campaign that resolves
+/// none of these names fails the build with [`DW_NO_ENTRY_ANCHOR`].
+pub const ENTRY_ANCHOR_NAMES: [&str; 2] = ["spawn", "entry"];
+
+/// Ocean-horizon waterline invariant (DW0344). In a `horizon: ocean` world every
+/// placed piece that **declares** a waterline (`waterline_y` in its prefab metadata,
+/// local y of its top authored water block) must land with that waterline at world
+/// [`SEA_LEVEL`] — `piece.pos.y + waterline_y == 62`.
+///
+/// Why this is a hard invariant rather than a style rule: the island convention
+/// (`prefabs/island-tileset.md`) puts the walkable land plane one block above the
+/// waterline, which is the vanilla-normal beach relationship — a player swimming in
+/// open sea can climb ashore, and the authored water reads as one body with the
+/// world ocean. Off by a few blocks and the whole island floats above the sea: the
+/// shore becomes an unclimbable cliff and the authored water pocket hangs in the
+/// air. Nothing downstream (nav, boundary, POV, PackTest) can see this, because
+/// every one of them derives from the very placement that is wrong.
+///
+/// Pieces that declare no `waterline_y` (interior keep/cave pieces, `hello-room`)
+/// are not island pieces and are not checked.
+fn check_ocean_waterline(
+    campaign: &Campaign,
+    areas: &[AreaPlacement],
+    prefabs: &PrefabRegistry,
+) -> Result<(), PlanError> {
+    if !matches!(
+        campaign.world.content.horizon,
+        Some(delvewright_dsl::Horizon::Ocean)
+    ) {
+        return Ok(());
+    }
+    for area in areas {
+        for piece in &area.pieces {
+            let Some(meta) = prefabs.get(&piece.prefab_id) else {
+                continue; // missing metadata is already DW0300 upstream
+            };
+            let Some(w) = meta.waterline_y else {
+                continue;
+            };
+            let placed = piece.pos[1] + w;
+            if placed != SEA_LEVEL {
+                let delta = placed - SEA_LEVEL;
+                let (dir, verb) = if delta > 0 {
+                    (
+                        "above",
+                        "floats above the sea — its shore is an unclimbable cliff",
+                    )
+                } else {
+                    ("below", "is drowned — the walk plane sits under the sea")
+                };
+                return Err(PlanError::new(
+                    DW_OCEAN_WATERLINE,
+                    format!(
+                        "area `{}` places prefab `{}` at y={} with a declared waterline of local \
+                         y={w}, putting its waterline at world y={placed} — {} blocks {dir} the \
+                         ocean sea level (y={SEA_LEVEL}). The piece {verb}. Prefab metadata and \
+                         placement disagree about the island datum: either declare the waterline \
+                         the piece really authors (`waterline_y` in `{}.json`, the local y of its \
+                         top water block — the island tileset convention is {ISLAND_WATERLINE_Y}), \
+                         or rebuild the piece against that convention. Ocean areas are placed at \
+                         y={OCEAN_BASE_Y} (= sea level - {ISLAND_WATERLINE_Y}); a piece with a \
+                         different waterline cannot share that datum",
+                        area.area_id,
+                        piece.prefab_id,
+                        piece.pos[1],
+                        delta.abs(),
+                        meta.structure.id,
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Inter-area transport map: objective id → absolute teleport target (see
 /// [`Plan::transport`]).
 pub type TransportMap = BTreeMap<String, [i32; 3]>;
@@ -425,9 +674,16 @@ impl<'a> Plan<'a> {
         // ---- placements + anchors ----
         let mut areas = Vec::new();
         let mut anchors: BTreeMap<(String, String), ResolvedAnchor> = BTreeMap::new();
+        // v0.6 (spec-0011): the absolute dispenser socket cell for each `anchor/trap`
+        // marker that declares one, keyed like `anchors`. Empty for a campaign with no
+        // trap hardware.
+        let mut dispenser_cells: BTreeMap<(String, String), [i32; 3]> = BTreeMap::new();
+        // Origin Y is a per-horizon datum (spec-0013): void keeps 64, ocean drops to
+        // sea_level-2 so the island waterline convention holds.
+        let base_y = base_y(campaign);
         for (i, area) in campaign.world.content.areas.iter().enumerate() {
             let area_id = area.id.as_str().to_string();
-            let origin = [i as i32 * AREA_SPACING, BASE_Y, 0];
+            let origin = [i as i32 * AREA_SPACING, base_y, 0];
 
             let placement = if let Some(prefab) = &area.prefab {
                 // Single-prefab area (the M1 degenerate assembly): one piece at
@@ -446,6 +702,12 @@ impl<'a> Plan<'a> {
                 })?;
                 for (name, am) in &meta.anchors {
                     anchors.insert((area_id.clone(), name.clone()), resolve_anchor(origin, am));
+                    if let Some(dp) = am.dispenser {
+                        dispenser_cells.insert(
+                            (area_id.clone(), name.clone()),
+                            [origin[0] + dp[0], origin[1] + dp[1], origin[2] + dp[2]],
+                        );
+                    }
                 }
                 AreaPlacement {
                     area_id: area_id.clone(),
@@ -500,6 +762,11 @@ impl<'a> Plan<'a> {
                         anchors
                             .entry((area_id.clone(), name.clone()))
                             .or_insert_with(|| resolve_piece_anchor(placed, am));
+                        if let Some(dp) = am.dispenser {
+                            dispenser_cells
+                                .entry((area_id.clone(), name.clone()))
+                                .or_insert_with(|| solver::transform_point(placed, dp));
+                        }
                     }
                     pieces.push(PiecePlacement {
                         prefab_id: placed.prefab_id.clone(),
@@ -537,6 +804,9 @@ impl<'a> Plan<'a> {
             check_gate_reachability(campaign, &area.area_id, &area.pieces, prefabs)?;
         }
 
+        // ---- ocean waterline invariant (DW0344) ----
+        check_ocean_waterline(campaign, &areas, prefabs)?;
+
         // ---- classes ----
         let classes = campaign
             .classes
@@ -572,6 +842,17 @@ impl<'a> Plan<'a> {
         // ---- critical path + inter-area transport ----
         let cp = build_critical_path(campaign, &anchors, &npcs)?;
 
+        // ---- v0.6 checkpoints + stealth beats (spec-0012 / spec-0014) ----
+        let (checkpoints, stealth_beats) = collect_v06_effects(campaign, &anchors, &cp.obj_step);
+        let objective_steps = cp.obj_step;
+
+        // ---- v0.6 traps (spec-0011) ----
+        let traps = collect_traps(campaign, &anchors, &dispenser_cells);
+
+        // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
+        let gate_events = collect_gate_events(campaign, &anchors, &objective_steps);
+        let strict_ancestor_steps = compute_strict_ancestor_steps(campaign, &objective_steps);
+
         Ok(Self {
             campaign,
             namespace,
@@ -585,7 +866,27 @@ impl<'a> Plan<'a> {
             critical_path_transport: cp.transport_by_step,
             critical_path_sneak: cp.sneak_by_step,
             critical_path_cutscene: cp.cutscene_by_step,
+            checkpoints,
+            stealth_beats,
+            objective_steps,
+            traps,
+            gate_events,
+            strict_ancestor_steps,
         })
+    }
+
+    /// Whether a gate firing at critical-path step `g` is guaranteed to have fired
+    /// before a walked leg arriving at step `s` — i.e. `g`'s objective is a strict
+    /// DAG ancestor of `s`'s objective (see [`Self::strict_ancestor_steps`]). Step
+    /// `0` (class-select / an environment trigger's conservative fire step) is
+    /// treated as always-preceding. Drives the `close-gate` seal model in
+    /// `crate::nav`.
+    pub fn gate_fired_before(&self, g: usize, s: usize) -> bool {
+        g == 0
+            || self
+                .strict_ancestor_steps
+                .get(&s)
+                .is_some_and(|anc| anc.contains(&g))
     }
 
     /// The area an NPC or quest belongs to.
@@ -616,6 +917,42 @@ impl<'a> Plan<'a> {
             Some(ResolvedAnchor::Point { pos, .. }) => Some(*pos),
             _ => None,
         }
+    }
+
+    /// Whether any collected checkpoint carries an `on_respawn` hook — gates the
+    /// vanilla respawn-detection machinery so checkpoint-free / hook-free campaigns
+    /// stay byte-identical (DSL v0.6, spec-0012).
+    pub fn any_checkpoint_on_respawn(&self) -> bool {
+        self.checkpoints.iter().any(|c| !c.on_respawn.is_empty())
+    }
+
+    /// The collected checkpoint matching a `set-checkpoint` effect (by anchor +
+    /// `on_respawn` list), giving the emitter its stable content-ordered index.
+    pub fn checkpoint_for(
+        &self,
+        anchor: &str,
+        on_respawn: &[QuestEffect],
+    ) -> Option<&CheckpointPlan> {
+        self.checkpoints
+            .iter()
+            .find(|c| c.anchor == anchor && c.on_respawn.as_slice() == on_respawn)
+    }
+
+    /// The collected stealth beat matching a `begin-stealth` effect (by zone
+    /// anchors + `grace_ticks`), giving the emitter its 1-based session id.
+    pub fn stealth_for(
+        &self,
+        zones: &[delvewright_dsl::StealthZone],
+        grace: u32,
+    ) -> Option<&StealthBeat> {
+        self.stealth_beats.iter().find(|b| {
+            b.grace_ticks == grace
+                && b.zones.len() == zones.len()
+                && b.zones
+                    .iter()
+                    .zip(zones)
+                    .all(|((a, _, e), z)| a.as_str() == z.anchor.as_str() && *e == z.extent)
+        })
     }
 }
 
@@ -698,15 +1035,25 @@ fn collect_effect_anchors(e: &QuestEffect, set: &mut BTreeSet<String>) {
     if let Some(a) = e.open_gate_anchor() {
         set.insert(a.as_str().to_string());
     }
+    if let Some(a) = e.close_gate_anchor() {
+        set.insert(a.as_str().to_string());
+    }
     if let Some((a, _)) = e.set_block() {
         set.insert(a.as_str().to_string());
     }
     if let Some((_, a)) = e.move_npc() {
         set.insert(a.as_str().to_string());
     }
-    if let QuestEffect::Cutscene { path, .. } = e {
-        for w in path {
-            set.insert(w.anchor.as_str().to_string());
+    // Every shot's waypoints, plus each shot's `look_at` subject — the camera is
+    // aimed at that world point, so the area's assembly must provide its anchor.
+    if let Some(shots) = e.cutscene_shots() {
+        for shot in &shots {
+            for w in &shot.path {
+                set.insert(w.anchor.as_str().to_string());
+            }
+            if let Some(t) = &shot.look_at {
+                set.insert(t.anchor.as_str().to_string());
+            }
         }
     }
 }
@@ -761,6 +1108,8 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
             let mut sets_flags = Vec::new();
             let mut sets_time = Vec::new();
             let mut sets_weather = Vec::new();
+            let mut sets_checkpoints = Vec::new();
+            let mut spawns_npcs = Vec::new();
             for e in &opt.effects {
                 match e {
                     DialogueEffect::CompleteObjective { objective } => {
@@ -771,6 +1120,12 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
                     }
                     DialogueEffect::SetTime { time } => sets_time.push(*time),
                     DialogueEffect::SetWeather { weather } => sets_weather.push(*weather),
+                    DialogueEffect::SetCheckpoint { anchor, on_respawn } => {
+                        sets_checkpoints.push((anchor.as_str().to_string(), on_respawn.clone()));
+                    }
+                    DialogueEffect::SpawnNpc { npc } => {
+                        spawns_npcs.push(npc.as_str().to_string());
+                    }
                 }
             }
             options.push(OptionPlan {
@@ -790,6 +1145,8 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
                     .collect(),
                 sets_time,
                 sets_weather,
+                sets_checkpoints,
+                spawns_npcs,
             });
         }
     }
@@ -810,6 +1167,10 @@ struct CriticalPath {
     transport_by_step: Vec<Option<[i32; 3]>>,
     sneak_by_step: Vec<bool>,
     cutscene_by_step: Vec<Option<u32>>,
+    /// Objective id → its `critical_path` step index (v0.6): roots the checkpoint
+    /// no-stranding proof (DW0315) and the stealth-zone reachability proof
+    /// (DW0327) at the beat that fires the effect.
+    obj_step: BTreeMap<String, usize>,
 }
 
 /// Build the critical path: select first class, then each critical objective in
@@ -1028,20 +1389,414 @@ fn build_critical_path(
         }
     }
 
+    let obj_step: BTreeMap<String, usize> = obj_areas
+        .iter()
+        .map(|(id, _, idx)| (id.clone(), *idx))
+        .collect();
+
     Ok(CriticalPath {
         steps,
         transport,
         transport_by_step,
         sneak_by_step,
         cutscene_by_step,
+        obj_step,
     })
 }
 
-/// The `seconds` of the first `Cutscene` effect in `effects`, if any.
+/// Resolve an anchor name to a point cell by scanning every area's resolved
+/// anchors (first match), mirroring the emitter's `anchor_point_any`.
+fn point_any(anchors: &BTreeMap<(String, String), ResolvedAnchor>, name: &str) -> Option<[i32; 3]> {
+    for ((_, n), resolved) in anchors {
+        if n == name {
+            return match resolved {
+                ResolvedAnchor::Point { pos, .. } => Some(*pos),
+                ResolvedAnchor::Gate { from, .. } => Some(*from),
+            };
+        }
+    }
+    None
+}
+
+/// The `critical_path` step index at which a quest's `on_complete` fires: its
+/// last objective's step (max over the quest's objectives). `0` if the quest has
+/// no positioned objective (degenerate; conservative — proves the whole path).
+fn quest_complete_step(quest: &Quest, obj_step: &BTreeMap<String, usize>) -> usize {
+    quest
+        .objectives
+        .iter()
+        .filter_map(|o| obj_step.get(o.id().as_str()).copied())
+        .max()
+        .unwrap_or(0)
+}
+
+/// The `critical_path` step index of the `talk-to` objective that a dialogue tree
+/// belongs to (its NPC's completing beat), rooting a dialogue-hosted
+/// `set-checkpoint`. `0` if none is found (degenerate).
+fn dialogue_fire_step(
+    campaign: &Campaign,
+    npc_id: &str,
+    obj_step: &BTreeMap<String, usize>,
+) -> usize {
+    campaign
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| q.objectives.iter())
+        .filter_map(|o| match o {
+            Objective::TalkTo { id, npc, .. } if npc.as_str() == npc_id => {
+                obj_step.get(id.as_str()).copied()
+            }
+            _ => None,
+        })
+        .min()
+        .unwrap_or(0)
+}
+
+/// Collect every `set-checkpoint` and `begin-stealth` effect (DSL v0.6) in a
+/// deterministic content order, resolving each anchor to a cell and rooting it at
+/// its firing step. An effect whose anchor does not resolve to a point is skipped
+/// here (validation guarantees the anchor exists; a pool anchor that fails to
+/// resolve at plan time simply carries no proof/emission).
+fn collect_v06_effects(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    obj_step: &BTreeMap<String, usize>,
+) -> (Vec<CheckpointPlan>, Vec<StealthBeat>) {
+    let mut c = V06Collector {
+        anchors,
+        checkpoints: Vec::new(),
+        stealth: Vec::new(),
+    };
+
+    // Stage 5 — quest effects (on_objective_complete, then on_complete).
+    for q in &campaign.quests.content.quests {
+        for (obj_id, effs) in &q.on_objective_complete {
+            let step = obj_step.get(obj_id.as_str()).copied().unwrap_or(0);
+            for eff in effs {
+                c.handle(eff, step);
+            }
+        }
+        let done_step = quest_complete_step(q, obj_step);
+        for eff in &q.on_complete {
+            c.handle(eff, done_step);
+        }
+    }
+
+    // Stage 5 — environment triggers (conservative fire step 0: a trigger fires on
+    // an environmental condition, not a critical beat, so require the checkpoint to
+    // re-reach the whole remaining path).
+    for t in &campaign.quests.content.triggers {
+        for eff in &t.effects {
+            c.handle(eff, 0);
+        }
+    }
+
+    // Stage 6 — dialogue `set-checkpoint` (rooted at the NPC's talk-to beat).
+    for tree in &campaign.dialogue.content.dialogues {
+        let step = dialogue_fire_step(campaign, tree.npc.as_str(), obj_step);
+        for node in &tree.nodes {
+            for opt in &node.options {
+                for eff in &opt.effects {
+                    if let Some((anchor, on_respawn)) = eff.set_checkpoint() {
+                        c.push_checkpoint(anchor.as_str(), on_respawn, step);
+                    }
+                }
+            }
+        }
+    }
+
+    (c.checkpoints, c.stealth)
+}
+
+/// The absolute gate region `(from, to)` a gate anchor resolves to (globally, like
+/// `open-gate`/`close-gate` resolution). `None` if the anchor is not a gate.
+fn gate_region_any(
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    name: &str,
+) -> Option<([i32; 3], [i32; 3])> {
+    for ((_, n), resolved) in anchors {
+        if n == name
+            && let ResolvedAnchor::Gate { from, to, .. } = resolved
+        {
+            return Some((*from, *to));
+        }
+    }
+    None
+}
+
+/// Collect every `open-gate` / `close-gate` firing (DSL v0.6) in deterministic
+/// content order — quest `on_objective_complete`, then `on_complete`, then
+/// environment triggers (conservative fire step 0, like `collect_v06_effects`),
+/// then dialogue options — resolving each anchor to its gate region and rooting it
+/// at its firing step. Descends every nested effect list so a gate effect inside a
+/// `sequence` step / lifecycle bundle is registered at the same firing step. An
+/// effect whose anchor is not a resolvable gate is skipped (a point anchor / bad
+/// close-gate is a validation concern, `DW0142`/`DW0343`). Feeds the `close-gate`
+/// completability model in `crate::nav`. Gates are a quest/trigger-effect surface
+/// only (the `DialogueEffect` enum carries no gate verb), so dialogue is not
+/// scanned.
+fn collect_gate_events(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    obj_step: &BTreeMap<String, usize>,
+) -> Vec<GateEvent> {
+    let mut out = Vec::new();
+    let handle = |eff: &QuestEffect, fire_step: usize, out: &mut Vec<GateEvent>| {
+        eff.visit_deep(&mut |e| {
+            let gate = e
+                .open_gate_anchor()
+                .map(|a| (a, false))
+                .or_else(|| e.close_gate_anchor().map(|a| (a, true)));
+            if let Some((anchor, closes)) = gate
+                && let Some(region) = gate_region_any(anchors, anchor.as_str())
+            {
+                out.push(GateEvent {
+                    region,
+                    closes,
+                    fire_step,
+                });
+            }
+        });
+    };
+    for q in &campaign.quests.content.quests {
+        for (obj_id, effs) in &q.on_objective_complete {
+            let step = obj_step.get(obj_id.as_str()).copied().unwrap_or(0);
+            for eff in effs {
+                handle(eff, step, &mut out);
+            }
+        }
+        let done_step = quest_complete_step(q, obj_step);
+        for eff in &q.on_complete {
+            handle(eff, done_step, &mut out);
+        }
+    }
+    for t in &campaign.quests.content.triggers {
+        for eff in &t.effects {
+            handle(eff, 0, &mut out);
+        }
+    }
+    out
+}
+
+/// Compute, for each objective's `critical_path` step, the set of steps of its
+/// **strict DAG ancestors** (see [`Plan::strict_ancestor_steps`]): the transitive
+/// `after`-closure within its own quest, plus every objective of every transitive
+/// `depends_on`-ancestor quest (a quest completes — all its objectives — before any
+/// dependent quest starts). Pure DAG structure, so it is deterministic and
+/// independent of the lineariser's choice among valid orders.
+/// Transitive-reachability closure over a `node → direct successors` adjacency,
+/// seeded by `start` (exclusive of the seeds' own membership only insofar as they
+/// re-enter via the graph). Shared by the quest-`depends_on` and objective-`after`
+/// ancestor computations.
+fn transitive_closure<'a>(
+    start: &[&'a str],
+    next: &BTreeMap<&'a str, Vec<&'a str>>,
+) -> BTreeSet<&'a str> {
+    let mut seen: BTreeSet<&'a str> = BTreeSet::new();
+    let mut stack: Vec<&'a str> = start.to_vec();
+    while let Some(x) = stack.pop() {
+        if seen.insert(x)
+            && let Some(nx) = next.get(x)
+        {
+            stack.extend(nx.iter().copied());
+        }
+    }
+    seen
+}
+
+fn compute_strict_ancestor_steps(
+    campaign: &Campaign,
+    obj_step: &BTreeMap<String, usize>,
+) -> BTreeMap<usize, BTreeSet<usize>> {
+    // Quest direct `depends_on`, then its transitive-ancestor closure.
+    let quest_deps: BTreeMap<&str, Vec<&str>> = campaign
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .map(|q| {
+            (
+                q.id.as_str(),
+                q.depends_on.iter().map(|d| d.as_str()).collect(),
+            )
+        })
+        .collect();
+    let quest_anc: BTreeMap<&str, BTreeSet<&str>> = quest_deps
+        .iter()
+        .map(|(q, deps)| (*q, transitive_closure(deps, &quest_deps)))
+        .collect();
+
+    // Objective structure from stage 5: quest→objectives, objective→quest, `after`.
+    let mut quest_objs: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    let mut obj_quest: BTreeMap<&str, &str> = BTreeMap::new();
+    let mut obj_after: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for q in &campaign.quests.content.quests {
+        let qid = q.id.as_str();
+        for o in &q.objectives {
+            let oid = o.id().as_str();
+            quest_objs.entry(qid).or_default().push(oid);
+            obj_quest.insert(oid, qid);
+            obj_after.insert(oid, o.after().iter().map(|a| a.as_str()).collect());
+        }
+    }
+    let after_closure: BTreeMap<&str, BTreeSet<&str>> = obj_after
+        .iter()
+        .map(|(o, a)| (*o, transitive_closure(a, &obj_after)))
+        .collect();
+
+    // Assemble the step-level ancestor sets.
+    let mut out: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
+    for (&oid, &qid) in &obj_quest {
+        let Some(&s) = obj_step.get(oid) else {
+            continue;
+        };
+        let mut anc: BTreeSet<usize> = BTreeSet::new();
+        let add = |name: &str, anc: &mut BTreeSet<usize>| {
+            if let Some(&st) = obj_step.get(name) {
+                anc.insert(st);
+            }
+        };
+        if let Some(cl) = after_closure.get(oid) {
+            for a in cl {
+                add(a, &mut anc);
+            }
+        }
+        if let Some(aq) = quest_anc.get(qid) {
+            for q2 in aq {
+                if let Some(objs) = quest_objs.get(*q2) {
+                    for a in objs {
+                        add(a, &mut anc);
+                    }
+                }
+            }
+        }
+        out.insert(s, anc);
+    }
+    out
+}
+
+/// Resolve every stage-5 trap (DSL v0.6, spec-0011) in content order into a
+/// [`TrapPlan`]: the trigger/hazard cell (the trap's `at` anchor), the dispenser
+/// socket cell (from the `at` anchor's metadata), the dispense payload, and the
+/// disarm affordance. A trap whose `at` anchor does not resolve to a point is
+/// skipped (validation guarantees the anchor exists; an unresolved pool anchor
+/// simply carries no proof/emission — the same policy as `collect_v06_effects`).
+fn collect_traps(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    dispenser_cells: &BTreeMap<(String, String), [i32; 3]>,
+) -> Vec<TrapPlan> {
+    let mut out = Vec::new();
+    for t in &campaign.quests.content.traps {
+        let Some(trigger_cell) = point_any(anchors, t.at.as_str()) else {
+            continue;
+        };
+        let dispenser = dispenser_cells
+            .iter()
+            .find(|((_, name), _)| name == t.at.as_str())
+            .map(|(_, cell)| *cell);
+        let payload = t.dispense().map(|(item, count)| (item.to_string(), count));
+        let disarm = t.disarm.as_ref().and_then(|dis| {
+            point_any(anchors, dis.via.as_str()).map(|via_cell| TrapDisarmPlan {
+                via_anchor: dis.via.as_str().to_string(),
+                via_cell,
+                sets_flag: dis.sets_flag.as_str().to_string(),
+            })
+        });
+        out.push(TrapPlan {
+            id: t.id.as_str().to_string(),
+            safe: safe_local(t.id.as_str()),
+            trigger: t.trigger,
+            trigger_cell,
+            dispenser,
+            payload,
+            lethality: t.lethality,
+            reset: t.reset,
+            disarm,
+            requires_flags: t
+                .requires_flags
+                .iter()
+                .map(|f| f.as_str().to_string())
+                .collect(),
+        });
+    }
+    out
+}
+
+/// Accumulates v0.6 checkpoints / stealth beats in content order while resolving
+/// their anchors (a struct so the collection borrows stay simple).
+struct V06Collector<'a> {
+    anchors: &'a BTreeMap<(String, String), ResolvedAnchor>,
+    checkpoints: Vec<CheckpointPlan>,
+    stealth: Vec<StealthBeat>,
+}
+
+impl V06Collector<'_> {
+    fn push_checkpoint(&mut self, anchor: &str, on_respawn: &[QuestEffect], fire_step: usize) {
+        if let Some(pos) = point_any(self.anchors, anchor) {
+            self.checkpoints.push(CheckpointPlan {
+                index: self.checkpoints.len(),
+                anchor: anchor.to_string(),
+                pos,
+                on_respawn: on_respawn.to_vec(),
+                fire_step,
+            });
+        }
+    }
+
+    fn push_stealth(
+        &mut self,
+        zones: &[delvewright_dsl::StealthZone],
+        on_caught: &[QuestEffect],
+        grace_ticks: u32,
+        fire_step: usize,
+    ) {
+        let resolved: Vec<(String, [i32; 3], [u32; 3])> = zones
+            .iter()
+            .filter_map(|z| {
+                point_any(self.anchors, z.anchor.as_str())
+                    .map(|p| (z.anchor.as_str().to_string(), p, z.extent))
+            })
+            .collect();
+        if resolved.len() == zones.len() {
+            self.stealth.push(StealthBeat {
+                index: self.stealth.len() + 1,
+                zones: resolved,
+                on_caught: on_caught.to_vec(),
+                grace_ticks,
+                fire_step,
+            });
+        }
+    }
+
+    fn handle(&mut self, eff: &QuestEffect, fire_step: usize) {
+        if let Some((anchor, on_respawn)) = eff.set_checkpoint() {
+            self.push_checkpoint(anchor.as_str(), on_respawn, fire_step);
+        } else if let Some((zones, on_caught, grace)) = eff.begin_stealth() {
+            self.push_stealth(zones, on_caught, grace, fire_step);
+        }
+        // Descend into every nested effect list (`sequence` steps, `on_respawn`,
+        // `on_caught`, `on_arrive`): a `set-checkpoint`/`begin-stealth` nested in a
+        // `sequence` step is a real checkpoint/beat, fired at the same critical-path
+        // step, and must be collected — else its content-ordered index is never
+        // registered and `emit_set_checkpoint` silently mis-binds `#cp` to 0.
+        for list in eff.nested_effect_lists() {
+            for inner in list {
+                self.handle(inner, fire_step);
+            }
+        }
+    }
+}
+
+/// The total duration of the first `Cutscene` effect in `effects`, if any — the
+/// sum over its shots, which is how long the harness must wait out the whole
+/// cinematic (a multi-shot cutscene plays back-to-back in one bracket).
 fn cutscene_seconds_in<'a>(effects: impl Iterator<Item = &'a QuestEffect>) -> Option<u32> {
     for e in effects {
-        if let QuestEffect::Cutscene { seconds, .. } = e {
-            return Some(*seconds);
+        if let Some(shots) = e.cutscene_shots() {
+            return Some(shots.iter().map(|s| s.seconds).sum());
         }
     }
     None
@@ -1274,8 +2029,14 @@ fn check_gate_reachability(
     let sockets = world_sockets(pieces, registry);
     let adj = build_adjacency(&sockets, pieces, registry, &gates);
 
-    let Some(spawn) = anchor_node(pieces, registry, "spawn", &gates) else {
-        return Ok(()); // no spawn anchor resolved → cannot reason; leave to other checks
+    // The entry piece, resolved through the same alias list every other consumer
+    // uses (`spawn`, then `entry`) — the gate-deadlock proof must start where the
+    // player actually starts, and the island tileset spells that anchor `entry`.
+    let Some(spawn) = ENTRY_ANCHOR_NAMES
+        .iter()
+        .find_map(|name| anchor_node(pieces, registry, name, &gates))
+    else {
+        return Ok(()); // no entry anchor in this area → DW0345 reports it at build
     };
 
     for (i, step) in order.iter().enumerate() {

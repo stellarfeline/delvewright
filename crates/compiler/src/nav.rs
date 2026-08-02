@@ -26,9 +26,9 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
-use delvewright_dsl::{CameraWaypoint, QuestEffect};
+use delvewright_dsl::{CameraWaypoint, Lethality, QuestEffect, TrapReset};
 
-use crate::plan::{Plan, ResolvedAnchor, Step};
+use crate::plan::{GateEvent, Plan, ResolvedAnchor, Step, TrapPlan};
 
 /// `DW0307`: a `move-npc` destination unreachable by any walkable path from the
 /// NPC's position over the assembled geometry.
@@ -42,10 +42,106 @@ pub const DW_CUTSCENE_CLIP: &str = "DW0308";
 /// doorway shut / opened a void gap and only a runtime bot caught it) into a
 /// compile error.
 pub const DW_CRITICAL_UNROUTABLE: &str = "DW0311";
+/// `DW0315`: a `set-checkpoint` (spec-0012) that would strand the party — from the
+/// checkpoint cell, a remaining required critical-path anchor is no longer
+/// walkable (a checkpoint behind a one-way drop). Re-roots the DW0311 reachability
+/// at the checkpoint.
+pub const DW_CHECKPOINT_STRANDED: &str = "DW0315";
+/// `DW0316`: a `set-checkpoint` anchor with no standable footing on the final
+/// assembled model (a trap-trigger / hazard / mid-air cell), so the party would
+/// respawn into the void or a wall.
+pub const DW_CHECKPOINT_UNSTANDABLE: &str = "DW0316";
+/// `DW0327`: a `begin-stealth` (spec-0014) zone that is unstandable, or unreachable
+/// from the player's position at the beat that activates the stealth check.
+pub const DW_STEALTH_ZONE: &str = "DW0327";
+/// `DW0342`: a **lethal** trap (spec-0011) whose trigger cell lies on the forced
+/// critical path with no discharge — not avoidable (the trigger cell is a required
+/// path cell), not survivable (`rearm`, so a respawn walk-back re-triggers it →
+/// soft-loop), and not disarmable (no disarm affordance reachable before it). The
+/// player is provably killed or soft-looped. Analysis-tier (exit 2) like `DW0312`:
+/// a content-design mistake, not a geometry defect. (Renumbered from the spec's
+/// stale `DW0314`.)
+pub const DW_TRAP_LETHAL_UNAVOIDABLE: &str = "DW0342";
+
+/// A resolved stealth zone `(anchor name, centre cell, half-extents)`.
+type ZoneCell = (String, [i32; 3], [u32; 3]);
+/// A stealth beat probe for [`verify_stealth`]: `(zones, firing step)`.
+type StealthProbe = (Vec<ZoneCell>, usize);
+
+/// `DW0325`: a `move-actor` destination unreachable by the actor's footprint over
+/// the assembled geometry, or an actor spawn/destination anchor that does not
+/// resolve to a placeable cell (spec-0014). Names the actor, the leg, and the
+/// first blocked cell.
+pub const DW_ACTOR_UNROUTABLE: &str = "DW0325";
 
 /// Default NPC walking speed in blocks/tick (spec-0008 §5; owner spike). Used when
 /// a `move-npc` effect omits `speed`.
 pub const DEFAULT_SPEED: f64 = 0.15;
+
+/// An entity's collision footprint over the voxel grid: the set of column offsets
+/// it occupies horizontally and the number of vertical cells it needs clear
+/// (`ceil(height)`). Standing feet-centred on a cell, an entity of `width <= 1`
+/// occupies a single column; a taller entity needs more headroom (the warden, 2.9
+/// tall, needs 3 cells vs a player's 2 — so it cannot walk a 2-high gap a player
+/// fits). Drives footprint-aware standability + A* so a `move-actor` path is
+/// walkable for the ACTUAL puppet, not a generic 1×2 humanoid (spec-0014, task #46).
+#[derive(Debug, Clone)]
+pub struct Footprint {
+    /// Horizontal column offsets `[dx, dz]` the body occupies (feet cell = `[0, 0]`).
+    cols: Vec<[i32; 2]>,
+    /// Vertical cells of clearance the body needs (`ceil(height)`, min 1).
+    height: i32,
+}
+
+impl Footprint {
+    /// The footprint for the given hitbox `width` × `height` in blocks. Feet-centred
+    /// on a cell: columns are the unit cells the width-wide AABB overlaps; height is
+    /// `ceil(height)` (min 1).
+    pub fn for_dims(width: f64, height: f64) -> Footprint {
+        let half = width / 2.0;
+        let lo = (0.5 - half).floor() as i32;
+        let hi = (0.5 + half - 1e-9).floor() as i32;
+        let mut cols = Vec::new();
+        for dx in lo..=hi {
+            for dz in lo..=hi {
+                cols.push([dx, dz]);
+            }
+        }
+        if cols.is_empty() {
+            cols.push([0, 0]);
+        }
+        let h = (height.ceil() as i32).max(1);
+        Footprint { cols, height: h }
+    }
+
+    /// The default humanoid footprint (player / villager / mannequin: 0.6 × 1.8 →
+    /// single column, 2 cells tall). Byte-identical to the pre-spec-0014 walkability
+    /// model, so `move-npc` and critical-path routing are unchanged.
+    pub fn player() -> Footprint {
+        Footprint::for_dims(0.6, 1.8)
+    }
+}
+
+/// The hitbox footprint for a vanilla entity id (spec-0014 per-entity dims table).
+/// Standing hitboxes for the 1.21.11 mobs an actor is likely to puppet; anything
+/// unlisted falls back to the humanoid default (0.6 × 1.95). Width only matters
+/// past 1.0 (sub-block mobs are single-column); height gates vertical clearance.
+pub fn entity_footprint(entity: &str) -> Footprint {
+    let (w, h) = match entity.strip_prefix("minecraft:").unwrap_or(entity) {
+        "warden" => (0.9, 2.9),
+        "iron_golem" => (1.4, 2.7),
+        "ravager" => (1.95, 2.2),
+        "hoglin" | "zoglin" => (1.4, 1.4),
+        "sheep" | "goat" | "pig" | "cow" | "mooshroom" | "wolf" | "fox" | "panda" => (0.9, 1.4),
+        "villager" | "zombie" | "husk" | "zombie_villager" => (0.6, 1.95),
+        "skeleton" | "stray" | "wither_skeleton" => (0.6, 1.99),
+        "creeper" | "enderman" => (0.6, 1.9),
+        "allay" | "vex" => (0.35, 0.6),
+        "armor_stand" | "player" | "mannequin" => (0.6, 1.8),
+        _ => (0.6, 1.95),
+    };
+    Footprint::for_dims(w, h)
+}
 
 /// How far to search for a standable floor cell when a `move-npc` endpoint anchor
 /// is a solid affordance (altar / gate bars / wall marker) the NPC must stop in
@@ -134,6 +230,19 @@ impl World {
         self.is_solid(c)
     }
 
+    /// A copy of this world with `extra` cells forced solid — a `close-gate`'s
+    /// sealed region for the completability proof (DSL v0.6). The base occupancy
+    /// model treats every gate cell as passable; sealing a gate for the legs that
+    /// occur after it closes makes a path that must re-cross it fail routing.
+    fn with_sealed(&self, extra: &BTreeSet<[i32; 3]>) -> World {
+        let mut solid = self.solid.clone();
+        solid.extend(extra.iter().copied());
+        World {
+            solid,
+            flooded: self.flooded.clone(),
+        }
+    }
+
     /// Build a [`World`] directly from a set of solid cells, with no water (test /
     /// synthetic entry point; the relight unit tests build a world without a full
     /// [`Plan`]).
@@ -155,6 +264,13 @@ impl World {
     /// relight pass (spec-0010) can collect reachable walkable cells.
     pub fn is_standable(&self, c: [i32; 3]) -> bool {
         self.standable(c)
+    }
+
+    /// Whether a cell is unoccupied — neither a solid block nor water-flooded, so a
+    /// camera eye placed in it sees open air rather than the inside of a block.
+    /// Public wrapper for the visual-tier POV camera self-check ([`verify_pov_cameras`]).
+    pub fn is_clear(&self, c: [i32; 3]) -> bool {
+        !self.is_occupied(c)
     }
 
     /// The nearest standable cell to `c` within `radius` (itself if already
@@ -332,9 +448,18 @@ impl World {
     /// floor — a water surface is not standable, so the floor must be solid, not
     /// merely occupied; task #45).
     fn standable(&self, c: [i32; 3]) -> bool {
-        !self.is_occupied(c)
-            && !self.is_occupied([c[0], c[1] + 1, c[2]])
-            && self.is_solid([c[0], c[1] - 1, c[2]])
+        self.standable_fp(c, &Footprint::player())
+    }
+
+    /// Footprint-aware standability (spec-0014): every occupied column has its
+    /// `height` feet+body cells passable with solid floor directly below. For the
+    /// player footprint (single column, 2 tall) this is exactly the pre-0.6 rule.
+    fn standable_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
+        fp.cols.iter().all(|&[dx, dz]| {
+            let base = [c[0] + dx, c[1], c[2] + dz];
+            self.is_solid([base[0], base[1] - 1, base[2]])
+                && (0..fp.height).all(|dy| !self.is_occupied([base[0], base[1] + dy, base[2]]))
+        })
     }
 
     /// The nearest standable cell to `c` (itself if already standable), searched
@@ -346,7 +471,13 @@ impl World {
     /// (owner's "lands inside a wall" finding). Snapping resolves the walk to the
     /// floor cell in front of such an anchor.
     fn snap_standable(&self, c: [i32; 3], radius: i32) -> Option<[i32; 3]> {
-        if self.standable(c) {
+        self.snap_standable_fp(c, radius, &Footprint::player())
+    }
+
+    /// Footprint-aware nearest-standable snap (spec-0014), used by `move-actor`
+    /// endpoint resolution so a wide/tall puppet snaps to a cell IT can stand on.
+    fn snap_standable_fp(&self, c: [i32; 3], radius: i32, fp: &Footprint) -> Option<[i32; 3]> {
+        if self.standable_fp(c, fp) {
             return Some(c);
         }
         let mut best: Option<(i32, [i32; 3])> = None;
@@ -354,7 +485,7 @@ impl World {
             for dz in -radius..=radius {
                 for dx in -radius..=radius {
                     let n = [c[0] + dx, c[1] + dy, c[2] + dz];
-                    if !self.standable(n) {
+                    if !self.standable_fp(n, fp) {
                         continue;
                     }
                     let d2 = dx * dx + dy * dy + dz * dz;
@@ -380,8 +511,18 @@ impl World {
     /// error instead of a runtime strand on geometry the compiler wrongly "proved"
     /// connected (task #38). Steps level or down need no such clearance.
     fn neighbors(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
+        self.neighbors_fp(c, &Footprint::player())
+    }
+
+    /// Footprint-aware standable neighbours (spec-0014). A step **up** is a jump:
+    /// every occupied column's cell `height` above the feet (the swept head cell)
+    /// must be clear, generalising the player's single `c+2` head-bonk check.
+    fn neighbors_fp(&self, c: [i32; 3], fp: &Footprint) -> Vec<[i32; 3]> {
         const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
-        let head_clear_to_jump = !self.is_occupied([c[0], c[1] + 2, c[2]]);
+        let head_clear_to_jump = fp
+            .cols
+            .iter()
+            .all(|&[dx, dz]| !self.is_occupied([c[0] + dx, c[1] + fp.height, c[2] + dz]));
         let mut out = Vec::new();
         for (dx, dz) in HORIZ {
             for dy in [0i32, -1, 1] {
@@ -389,7 +530,7 @@ impl World {
                     continue; // no room to jump up from here
                 }
                 let n = [c[0] + dx, c[1] + dy, c[2] + dz];
-                if self.standable(n) {
+                if self.standable_fp(n, fp) {
                     out.push(n);
                 }
             }
@@ -402,10 +543,23 @@ impl World {
     /// frontier is ordered by `(f, g, cell)` and neighbours expand in a fixed
     /// order.
     fn find_path(&self, start: [i32; 3], goal: [i32; 3]) -> Option<Vec<[i32; 3]>> {
+        self.find_path_fp(start, goal, &Footprint::player())
+    }
+
+    /// Footprint-aware A* (spec-0014). Identical to the pre-0.6 A* for the player
+    /// footprint (so `move-npc` and critical-path routing stay byte-identical); a
+    /// wider/taller footprint prunes cells the puppet cannot occupy. Deterministic:
+    /// frontier ordered by `(f, g, cell)`, fixed neighbour order.
+    fn find_path_fp(
+        &self,
+        start: [i32; 3],
+        goal: [i32; 3],
+        fp: &Footprint,
+    ) -> Option<Vec<[i32; 3]>> {
         if start == goal {
-            return self.standable(start).then(|| vec![start]);
+            return self.standable_fp(start, fp).then(|| vec![start]);
         }
-        if !self.standable(start) || !self.standable(goal) {
+        if !self.standable_fp(start, fp) || !self.standable_fp(goal, fp) {
             return None;
         }
         let h = |c: [i32; 3]| ((c[0] - goal[0]).abs() + (c[2] - goal[2]).abs()) as u32;
@@ -429,7 +583,7 @@ impl World {
             if g > *g_score.get(&cur).unwrap_or(&u32::MAX) {
                 continue;
             }
-            for n in self.neighbors(cur) {
+            for n in self.neighbors_fp(cur, fp) {
                 let tentative = g + 1;
                 if tentative < *g_score.get(&n).unwrap_or(&u32::MAX) {
                     came_from.insert(n, cur);
@@ -442,14 +596,53 @@ impl World {
     }
 }
 
+/// The world position an entity standing in cell `c` occupies: the **horizontal
+/// centre** of the cell, on its floor.
+///
+/// A Minecraft block cell `(x, y, z)` spans `[x, x+1)` on each horizontal axis, and
+/// an entity's position is the centre of its AABB. Emitting the bare integer cell
+/// coordinate therefore parks the body on the *corner* where four columns meet: a
+/// 0.6-wide villager at `x = 7.0` spans `[6.7, 7.3]`, i.e. 70 % of it sits inside
+/// column 6 — inside the wall, whenever the proven-walkable cell is 7. That is the
+/// owner's "the NPC visibly passes through blocks" defect (island QA: 234 of 385
+/// waypoints on the beach→cave walk had the body AABB inside a solid). The `+0.5`
+/// is the whole fix: on a cardinal path through cell centres the AABB stays inside
+/// the proven-walkable columns.
+///
+/// This is the single conversion for **every entity the compiler places or moves**;
+/// block-targeting commands (`setblock`/`fill`/`place`/`spawnpoint`) keep integer
+/// cell coordinates, which is what they take.
+pub fn cell_center(c: [i32; 3]) -> [f64; 3] {
+    [c[0] as f64 + 0.5, c[1] as f64, c[2] as f64 + 0.5]
+}
+
 /// Resample a cell path into per-tick waypoints at `speed` blocks/tick along the
-/// polyline through the integer cell centres. Guarantees the final waypoint is
-/// exactly the goal cell and at least one step exists.
+/// polyline through the cell centres ([`cell_center`]). Guarantees the final
+/// waypoint is exactly the goal cell's centre and at least one step exists.
+///
+/// **Vertical steps are L-shaped, not diagonal.** A one-block step up inserts an
+/// intermediate vertex directly above the source cell (rise in place, then cross at
+/// the new height); a step down crosses at the source height, then drops. A straight
+/// lerp between the two cell centres would sweep the body through the *corner* of
+/// the step block — the same "inside the geometry" artifact at a stair that the
+/// centring fixes along a wall. Both legs of the L stay inside cells the neighbour
+/// rule already proved clear (`standable_fp` + the jump head-clearance check).
 fn resample(cells: &[[i32; 3]], speed: f64) -> Vec<[f64; 3]> {
-    let pts: Vec<[f64; 3]> = cells
-        .iter()
-        .map(|c| [c[0] as f64, c[1] as f64, c[2] as f64])
-        .collect();
+    let mut pts: Vec<[f64; 3]> = Vec::with_capacity(cells.len() * 2);
+    for (i, c) in cells.iter().enumerate() {
+        let p = cell_center(*c);
+        if i > 0 {
+            let prev = cells[i - 1];
+            match c[1] - prev[1] {
+                // step up: rise over the source column first, then cross.
+                1 => pts.push([prev[0] as f64 + 0.5, c[1] as f64, prev[2] as f64 + 0.5]),
+                // step down: cross at the source height first, then drop.
+                -1 => pts.push([p[0], prev[1] as f64, p[2]]),
+                _ => {}
+            }
+        }
+        pts.push(p);
+    }
     if pts.len() == 1 {
         return vec![pts[0]];
     }
@@ -550,6 +743,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
             npc,
             to_anchor,
             speed,
+            ..
         } = eff
         else {
             continue;
@@ -614,6 +808,223 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
     Ok(out)
 }
 
+/// A planned `move-actor` (spec-0014): resolved endpoints, the per-tick waypoint
+/// polyline the emitter teleports the puppet along, and a yaw per waypoint tangent
+/// to the path (a wrong yaw moonwalks — task #46). `ticks() + 1` entries.
+#[derive(Debug, Clone)]
+pub struct ActorMovePlan {
+    /// The moving actor id (`actor/…`).
+    pub actor: String,
+    /// The destination anchor id (`anchor/…`).
+    pub to_anchor: String,
+    /// The integer target cell (feet), for the arrival assertion.
+    pub target: [i32; 3],
+    /// Per-tick world positions along the walked path.
+    pub waypoints: Vec<[f64; 3]>,
+    /// Per-waypoint yaw (degrees), tangent to the path (facing the next step).
+    pub yaws: Vec<i32>,
+}
+
+impl ActorMovePlan {
+    /// The final tick index (`waypoints.len() - 1`).
+    pub fn ticks(&self) -> usize {
+        self.waypoints.len().saturating_sub(1)
+    }
+}
+
+/// The stage-5 actor with this id, if declared.
+fn actor_of<'a>(plan: &'a Plan, actor_id: &str) -> Option<&'a delvewright_dsl::Actor> {
+    plan.campaign
+        .quests
+        .content
+        .actors
+        .iter()
+        .find(|a| a.id.as_str() == actor_id)
+}
+
+/// Resolve an anchor name to a world point by scanning every area (first match) —
+/// actors carry no area, so their anchors resolve globally like `open-gate`.
+fn actor_anchor_pos(plan: &Plan, anchor: &str) -> Option<[i32; 3]> {
+    for ((_, name), resolved) in &plan.anchors {
+        if name == anchor {
+            return Some(match resolved {
+                ResolvedAnchor::Point { pos, .. } => *pos,
+                ResolvedAnchor::Gate { from, .. } => *from,
+            });
+        }
+    }
+    None
+}
+
+/// The MC yaw (degrees, 0 = +z/south) for a horizontal movement delta, or `None`
+/// for no horizontal motion. `yaw = atan2(-dx, dz)`.
+fn yaw_of(dx: f64, dz: f64) -> Option<i32> {
+    if dx.abs() < 1e-6 && dz.abs() < 1e-6 {
+        return None;
+    }
+    let deg = (-dx).atan2(dz).to_degrees();
+    let mut y = deg.round() as i32 % 360;
+    if y < 0 {
+        y += 360;
+    }
+    Some(y)
+}
+
+/// A yaw per waypoint, each tangent to the path (facing the next distinct
+/// waypoint); the last reuses the previous. A puppet tp'd without a matching yaw
+/// moonwalks (task #46 packet evidence).
+fn yaws_along(waypoints: &[[f64; 3]]) -> Vec<i32> {
+    let n = waypoints.len();
+    let mut yaws = vec![0i32; n];
+    // Forward pass: each waypoint faces its NEXT step; the final waypoint reuses the
+    // last motion direction (so arrival keeps the walk facing, not a snap to south).
+    let mut last = 0i32;
+    for i in 0..n {
+        if i + 1 < n {
+            let a = waypoints[i];
+            let b = waypoints[i + 1];
+            if let Some(y) = yaw_of(b[0] - a[0], b[2] - a[2]) {
+                last = y;
+            }
+        }
+        yaws[i] = last;
+    }
+    yaws
+}
+
+/// The first cell along the straight start→target line the actor's footprint cannot
+/// stand on — a best-effort "first blocked cell" for the `DW0325` message.
+fn first_blocked_fp(world: &World, start: [i32; 3], target: [i32; 3], fp: &Footprint) -> [i32; 3] {
+    let d = [
+        target[0] - start[0],
+        target[1] - start[1],
+        target[2] - start[2],
+    ];
+    let steps = d[0].abs().max(d[1].abs()).max(d[2].abs()).max(1);
+    for s in 0..=steps {
+        let cell = [
+            start[0] + d[0] * s / steps,
+            start[1] + d[1] * s / steps,
+            start[2] + d[2] * s / steps,
+        ];
+        if !world.standable_fp(cell, fp) {
+            return cell;
+        }
+    }
+    target
+}
+
+/// Plan every `move-actor` into a walked-path [`ActorMovePlan`] over the actor's
+/// footprint, deduped by `(actor, to_anchor)` in first-seen order. `DW0325` when a
+/// move is unroutable (names actor, leg, first blocked cell).
+pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>, NavError> {
+    let mut out = Vec::new();
+    let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
+    for eff in all_effects(plan) {
+        let QuestEffect::MoveActor {
+            actor,
+            to_anchor,
+            speed,
+            ..
+        } = eff
+        else {
+            continue;
+        };
+        let key = (actor.as_str().to_string(), to_anchor.as_str().to_string());
+        if !seen.insert(key) {
+            continue;
+        }
+        let a = actor_of(plan, actor.as_str()).ok_or_else(|| NavError {
+            code: DW_ACTOR_UNROUTABLE,
+            message: format!(
+                "move-actor: unknown actor `{}` — declare it in the stage-5 `actors` list",
+                actor.as_str()
+            ),
+        })?;
+        let fp = entity_footprint(&a.entity);
+        let start_anchor = actor_anchor_pos(plan, a.anchor.as_str()).ok_or_else(|| NavError {
+            code: DW_ACTOR_UNROUTABLE,
+            message: format!(
+                "move-actor: actor `{}` spawn anchor `{}` did not resolve to a world position — \
+                 use a spawn `anchor` some area's prefab provides",
+                actor.as_str(),
+                a.anchor.as_str()
+            ),
+        })?;
+        let dest = actor_anchor_pos(plan, to_anchor.as_str()).ok_or_else(|| NavError {
+            code: DW_ACTOR_UNROUTABLE,
+            message: format!(
+                "move-actor: destination anchor `{}` for actor `{}` did not resolve to a world \
+                 position — use a `to_anchor` some area's prefab provides",
+                to_anchor.as_str(),
+                actor.as_str()
+            ),
+        })?;
+        let start = world
+            .snap_standable_fp(start_anchor, SNAP_RADIUS, &fp)
+            .unwrap_or(start_anchor);
+        let target = world
+            .snap_standable_fp(dest, SNAP_RADIUS, &fp)
+            .ok_or_else(|| NavError {
+                code: DW_ACTOR_UNROUTABLE,
+                message: format!(
+                    "move-actor: no cell the `{}` footprint can stand on near destination anchor \
+                     `{}` {dest:?} for actor `{}` — the anchor is walled in, too low a ceiling for \
+                     this mob, or over void",
+                    a.entity,
+                    to_anchor.as_str(),
+                    actor.as_str()
+                ),
+            })?;
+        let cells = world.find_path_fp(start, target, &fp).ok_or_else(|| {
+            let blocked = first_blocked_fp(world, start, target, &fp);
+            NavError {
+                code: DW_ACTOR_UNROUTABLE,
+                message: format!(
+                    "move-actor: actor `{}` ({}) cannot walk the leg `{}` {start:?} → `{}` {target:?} \
+                     — no collision-free path for its footprint over the assembled geometry (first \
+                     blocked cell ~{blocked:?}). Route the move within one connected area, widen the \
+                     corridor/ceiling for this mob, or split it into shorter reachable hops",
+                    actor.as_str(),
+                    a.entity,
+                    a.anchor.as_str(),
+                    to_anchor.as_str(),
+                ),
+            }
+        })?;
+        let waypoints = resample(&cells, speed.unwrap_or(DEFAULT_SPEED));
+        let yaws = yaws_along(&waypoints);
+        out.push(ActorMovePlan {
+            actor: actor.as_str().to_string(),
+            to_anchor: to_anchor.as_str().to_string(),
+            target,
+            waypoints,
+            yaws,
+        });
+    }
+    Ok(out)
+}
+
+/// Verify every declared actor's spawn anchor resolves to a world position (the
+/// puppet has somewhere to spawn). `DW0325` when it does not. Needs no `World` (a
+/// spawn is a summon, not a walk), so it runs even for spawn-only campaigns.
+pub fn check_actor_placement(plan: &Plan) -> Result<(), NavError> {
+    for a in &plan.campaign.quests.content.actors {
+        if actor_anchor_pos(plan, a.anchor.as_str()).is_none() {
+            return Err(NavError {
+                code: DW_ACTOR_UNROUTABLE,
+                message: format!(
+                    "actor `{}` spawn anchor `{}` did not resolve to a world position — use an \
+                     `anchor` some area's prefab provides",
+                    a.id.as_str(),
+                    a.anchor.as_str()
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
 /// The home-anchor id of an NPC, for diagnostics (or `?` if unknown).
 fn plan_npc_anchor(plan: &Plan, npc_id: &str) -> String {
     plan.campaign
@@ -631,45 +1042,62 @@ fn plan_npc_anchor(plan: &Plan, npc_id: &str) -> String {
 /// air-corridor check validates what actually ships.
 pub fn camera_points(plan: &Plan, path: &[CameraWaypoint]) -> Vec<[f64; 3]> {
     path.iter()
-        .map(|w| {
-            let base = plan
-                .anchors
-                .iter()
-                .find(|((_, name), _)| name == w.anchor.as_str())
-                .map(|(_, r)| match r {
-                    ResolvedAnchor::Point { pos, .. } => *pos,
-                    ResolvedAnchor::Gate { from, .. } => *from,
-                })
-                .unwrap_or([0, crate::plan::BASE_Y, 0]);
-            [
-                (base[0] + w.offset[0]) as f64 + 0.5,
-                (base[1] + w.offset[1]) as f64 + 0.5,
-                (base[2] + w.offset[2]) as f64 + 0.5,
-            ]
-        })
+        .map(|w| anchor_offset_point(plan, w.anchor.as_str(), w.offset))
         .collect()
 }
 
+/// The world point a cutscene's `look_at` subject resolves to (DSL v0.6) — the
+/// same anchor + offset block-centre convention as [`camera_points`], so a
+/// waypoint and a look target at the same anchor/offset name the same point.
+pub fn camera_look_point(plan: &Plan, target: &delvewright_dsl::CameraTarget) -> [f64; 3] {
+    anchor_offset_point(plan, target.anchor.as_str(), target.offset)
+}
+
+/// Resolve `anchor + offset` to a block-centre world point (the shared cutscene
+/// camera convention). An unresolved anchor falls back to the layout origin —
+/// referential validation reports it separately.
+fn anchor_offset_point(plan: &Plan, anchor: &str, offset: [i32; 3]) -> [f64; 3] {
+    let base = plan
+        .anchors
+        .iter()
+        .find(|((_, name), _)| name == anchor)
+        .map(|(_, r)| match r {
+            ResolvedAnchor::Point { pos, .. } => *pos,
+            ResolvedAnchor::Gate { from, .. } => *from,
+        })
+        .unwrap_or([0, crate::plan::BASE_Y, 0]);
+    [
+        (base[0] + offset[0]) as f64 + 0.5,
+        (base[1] + offset[1]) as f64 + 0.5,
+        (base[2] + offset[2]) as f64 + 0.5,
+    ]
+}
+
 /// Validate every cutscene camera dolly path passes only through non-solid blocks
-/// (cameras fly but must not clip a solid). `DW0308` names the offending segment
-/// and the block coordinate that clips.
+/// (cameras fly but must not clip a solid). `DW0308` names the offending shot,
+/// segment and the block coordinate that clips. The check runs **per shot**: a
+/// multi-shot cutscene hard-cuts between shots, so only the within-shot dolly is
+/// a corridor the camera actually flies.
 pub fn check_cutscenes(plan: &Plan, world: &World) -> Result<(), NavError> {
     for eff in all_effects(plan) {
-        let QuestEffect::Cutscene { path, .. } = eff else {
+        let Some(shots) = eff.cutscene_shots() else {
             continue;
         };
-        let pts = camera_points(plan, path.as_slice());
-        if let Some((seg, cell)) = first_clip(world, &pts) {
-            return Err(NavError {
-                code: DW_CUTSCENE_CLIP,
-                message: format!(
-                    "cutscene: camera dolly segment {seg} (from {:?} to {:?}) clips a solid block \
-                     at {cell:?} — cameras must fly through open air; move the segment's \
-                     waypoint `anchor`/`offset` so the whole path clears solid blocks",
-                    round3(pts[seg]),
-                    round3(pts[seg + 1]),
-                ),
-            });
+        for (si, shot) in shots.iter().enumerate() {
+            let pts = camera_points(plan, shot.path.as_slice());
+            if let Some((seg, cell)) = first_clip(world, &pts) {
+                return Err(NavError {
+                    code: DW_CUTSCENE_CLIP,
+                    message: format!(
+                        "cutscene: shot {si} camera dolly segment {seg} (from {:?} to {:?}) clips \
+                         a solid block at {cell:?} — cameras must fly through open air; move the \
+                         segment's waypoint `anchor`/`offset` so the whole path clears solid \
+                         blocks",
+                        round3(pts[seg]),
+                        round3(pts[seg + 1]),
+                    ),
+                });
+            }
         }
     }
     Ok(())
@@ -717,15 +1145,38 @@ fn all_effects<'a>(plan: &'a Plan) -> Vec<&'a QuestEffect> {
             .flatten()
             .chain(&q.on_complete)
         {
-            out.push(e);
+            push_deep(e, &mut out);
         }
     }
     for t in &plan.campaign.quests.content.triggers {
         for e in &t.effects {
-            out.push(e);
+            push_deep(e, &mut out);
         }
     }
     out
+}
+
+/// Push `e` and, recursively, every effect nested in a `sequence` step or a
+/// `move-actor` `on_arrive` (spec-0014), so nav planning sees moves/cutscenes
+/// wherever they appear. Pre-0.6 campaigns have no nesting, so the flattened list
+/// equals the shallow one — output stays byte-identical.
+fn push_deep<'a>(e: &'a QuestEffect, out: &mut Vec<&'a QuestEffect>) {
+    out.push(e);
+    match e {
+        QuestEffect::Sequence { steps } => {
+            for s in steps {
+                for inner in &s.effects {
+                    push_deep(inner, out);
+                }
+            }
+        }
+        QuestEffect::MoveActor { on_arrive, .. } => {
+            for inner in on_arrive {
+                push_deep(inner, out);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Whether the campaign uses any verb that needs the voxel `World` (`move-npc` or
@@ -735,11 +1186,16 @@ pub fn needs_world(plan: &Plan) -> bool {
     all_effects(plan).iter().any(|e| {
         matches!(
             e,
-            QuestEffect::MoveNpc { .. } | QuestEffect::Cutscene { .. }
+            QuestEffect::MoveNpc { .. } | QuestEffect::Cutscene { .. } | QuestEffect::MoveActor { .. }
         )
     })
     // The critical-path walkability check (DW0311) also needs the occupancy model.
         || has_walkable_critical_leg(plan)
+    // The checkpoint (DW0315/DW0316) and stealth-zone (DW0327) proofs, v0.6, need
+    // the assembled occupancy model too, as does the trap proof (DW0342, spec-0011).
+        || !plan.checkpoints.is_empty()
+        || !plan.stealth_beats.is_empty()
+        || !plan.traps.is_empty()
 }
 
 /// The player-visited critical-path positions in order, each tagged with whether
@@ -760,6 +1216,9 @@ struct VisitedPos {
     /// range beside* the NPC, never on the mannequin-occupied anchor cell, so the
     /// goal snap must exclude that cell (task #45).
     talk_to: bool,
+    /// The originating `critical_path` step index (v0.6): lets the checkpoint /
+    /// stealth proofs select the positions at or after a firing step.
+    src_step: usize,
 }
 
 fn critical_positions(plan: &Plan) -> Vec<VisitedPos> {
@@ -779,6 +1238,7 @@ fn critical_positions(plan: &Plan) -> Vec<VisitedPos> {
                 pos,
                 transport_before: transport_pending,
                 talk_to: matches!(step, Step::TalkTo { .. }),
+                src_step: i,
             });
             transport_pending = false;
         }
@@ -817,20 +1277,93 @@ fn has_walkable_critical_leg(plan: &Plan) -> bool {
 /// a solid affordance — an altar, a wave marker, an NPC stand — the player walks up
 /// to, not into), exactly as `move-npc` planning does.
 pub fn check_critical_path(plan: &Plan, world: &World) -> Result<(), NavError> {
-    route_visited(world, &critical_positions(plan))
+    route_visited(
+        world,
+        &critical_positions(plan),
+        &plan.gate_events,
+        &|g, s| plan.gate_fired_before(g, s),
+    )
+}
+
+/// The gate-region cells sealed on a walked leg arriving at the objective at
+/// critical-path step `arrival` (DSL v0.6 close-gate completability). A gate event
+/// counts only if its firing objective is a **causal (DAG) ancestor** of the leg's
+/// objective — `ancestor(ev.fire_step, arrival)` — i.e. it is guaranteed to have
+/// fired before this leg in *every* valid play order. That excludes a gate on a
+/// parallel quest branch that the lineariser merely happens to interleave ahead of
+/// this leg (which would falsely seal it). Among the causally-preceding events on a
+/// region, the **latest** (max `fire_step`, respecting the DAG linearisation) wins;
+/// the region is sealed iff that latest firing is a `close-gate` (a later
+/// `open-gate` reopens it). Regions with no qualifying close contribute nothing, so
+/// an open-gate-only campaign yields an empty set and routes byte-identically to the
+/// base world.
+fn sealed_gate_cells(
+    gate_events: &[GateEvent],
+    arrival: usize,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+) -> BTreeSet<[i32; 3]> {
+    // Per region, the causally-latest closed-state among firings that precede this
+    // leg (ancestor of the arrival objective); higher `fire_step` overrides.
+    let mut state: BTreeMap<([i32; 3], [i32; 3]), (usize, bool)> = BTreeMap::new();
+    for ev in gate_events {
+        if ancestor(ev.fire_step, arrival) {
+            let e = state.entry(ev.region).or_insert((ev.fire_step, ev.closes));
+            if ev.fire_step >= e.0 {
+                *e = (ev.fire_step, ev.closes);
+            }
+        }
+    }
+    let mut sealed = BTreeSet::new();
+    for (region, (_, closed)) in state {
+        if closed {
+            for cell in crate::assembled::region_cells(region.0, region.1) {
+                sealed.insert(cell);
+            }
+        }
+    }
+    sealed
 }
 
 /// Route every walked leg between consecutive visited positions (the pure core of
 /// [`check_critical_path`], split out so it is unit-testable without a full
-/// [`Plan`]). A `transport_before` leg is a teleport ride and is skipped.
-fn route_visited(world: &World, positions: &[VisitedPos]) -> Result<(), NavError> {
+/// [`Plan`]). A `transport_before` leg is a teleport ride and is skipped. Each leg
+/// is routed over the world with any gate sealed by an earlier `close-gate`
+/// ([`sealed_gate_cells`]) forced solid, so a forced path that must re-cross a
+/// sealed gate fails [`DW_CRITICAL_UNROUTABLE`].
+fn route_visited(
+    world: &World,
+    positions: &[VisitedPos],
+    gate_events: &[GateEvent],
+    ancestor: &dyn Fn(usize, usize) -> bool,
+) -> Result<(), NavError> {
     for pair in positions.windows(2) {
         let from = pair[0].pos;
         let to = pair[1].pos;
         if pair[1].transport_before {
             continue; // an inter-area teleport hop: the player is moved, not walking
         }
-        let start = world.snap_endpoint(from, false).ok_or_else(|| NavError {
+        // Only apply the close-gate seal to a **causal** leg — one whose start
+        // objective is a DAG ancestor of the arrival objective, i.e. a step the
+        // player is genuinely forced to walk to reach `to`. The lineariser
+        // concatenates parallel quest branches, producing artifact "legs" between
+        // objectives with no causal order (e.g. a `take-the-cheese` beat followed by
+        // a `nobody` beat on a sibling branch); the player never actually walks that
+        // pairing under the arrival's gate state, so sealing it would falsely fail. A
+        // genuinely-forced re-crossing (start IS a causal ancestor) is still sealed,
+        // preserving the proof. Base DW0311 (open world) already checked every leg.
+        let sealed = if ancestor(pair[0].src_step, pair[1].src_step) {
+            sealed_gate_cells(gate_events, pair[1].src_step, ancestor)
+        } else {
+            BTreeSet::new()
+        };
+        let leg_world_owned;
+        let leg_world: &World = if sealed.is_empty() {
+            world
+        } else {
+            leg_world_owned = world.with_sealed(&sealed);
+            &leg_world_owned
+        };
+        let start = leg_world.snap_endpoint(from, false).ok_or_else(|| NavError {
             code: DW_CRITICAL_UNROUTABLE,
             message: format!(
                 "critical path: no standable floor within {SNAP_RADIUS} blocks of visited anchor \
@@ -840,30 +1373,328 @@ fn route_visited(world: &World, positions: &[VisitedPos]) -> Result<(), NavError
                  wall"
             ),
         })?;
-        let goal = world.snap_endpoint(to, pair[1].talk_to).ok_or_else(|| NavError {
-            code: DW_CRITICAL_UNROUTABLE,
-            message: format!(
-                "critical path: no standable floor within {SNAP_RADIUS} blocks of visited anchor \
-                 {to:?} — a player-visited anchor sits walled in or over void (a talk-to NPC needs \
-                 a dry standable cell beside it, within interaction range and clear of water). Fix \
-                 the prefab so this anchor sits on/next to reachable floor; if the prefab looks \
-                 correct, this is an assembly/toolchain defect — escalate rather than move it into \
-                 a wall"
-            ),
-        })?;
-        if world.find_path(start, goal).is_none() {
+        let goal = leg_world
+            .snap_endpoint(to, pair[1].talk_to)
+            .ok_or_else(|| NavError {
+                code: DW_CRITICAL_UNROUTABLE,
+                message: format!(
+                    "critical path: no standable floor within {SNAP_RADIUS} blocks of visited \
+                     anchor {to:?} — a player-visited anchor sits walled in or over void (a \
+                     talk-to NPC needs a dry standable cell beside it, within interaction range \
+                     and clear of water). Fix the prefab so this anchor sits on/next to reachable \
+                     floor; if the prefab looks correct, this is an assembly/toolchain defect — \
+                     escalate rather than move it into a wall"
+                ),
+            })?;
+        if leg_world.find_path(start, goal).is_none() {
+            let gate_hint = if sealed.is_empty() {
+                "this is a wedged doorway seam or a void gap in the assembled layout (or, if the \
+                 jump is intended, a missing inter-area transport)."
+            } else {
+                "a `close-gate` has sealed a gate region on/before this leg (a point of no \
+                 return), and the forced path must re-cross it. Reopen it with `open-gate` \
+                 before this leg, route the forced path so it does not re-cross the sealed gate, \
+                 or fire the `close-gate` later — do NOT delete the proof."
+            };
             return Err(NavError {
                 code: DW_CRITICAL_UNROUTABLE,
                 message: format!(
-                    "critical path: the player cannot walk from {from:?} (floor {start:?}) to {to:?} \
-                     (floor {goal:?}) over the assembled geometry — no collision-free path. A same-area \
-                     leg must be walkable end to end; this is a wedged doorway seam or a void gap in the \
-                     assembled layout (or, if the jump is intended, a missing inter-area transport)."
+                    "critical path: the player cannot walk from {from:?} (floor {start:?}) to \
+                     {to:?} (floor {goal:?}) over the assembled geometry — no collision-free \
+                     path. A same-area leg must be walkable end to end; {gate_hint}"
                 ),
             });
         }
     }
     Ok(())
+}
+
+/// Prove no `set-checkpoint` strands the party (DSL v0.6, spec-0012). Two
+/// obligations, per checkpoint:
+///
+/// 1. **Placement** ([`DW_CHECKPOINT_UNSTANDABLE`], `DW0316`): the checkpoint
+///    anchor must have a standable floor cell within [`SNAP_RADIUS`] on the final
+///    assembled model, or the party respawns into void / a wall. (Because the
+///    relight pass — which runs before nav — proves every reachable walkable cell
+///    meets the area's `min_light`, a standable, reachable checkpoint cell
+///    provably meets `min_light` too; no separate light probe is needed.)
+/// 2. **No stranding** ([`DW_CHECKPOINT_STRANDED`], `DW0315`, the core proof):
+///    the DW0311 reachability, re-rooted at the checkpoint cell, must still reach
+///    the remaining critical path. Since consecutive walked legs are already
+///    proven forward-walkable, it suffices to reach the FIRST walked critical
+///    position that fires after the checkpoint — reconnecting the whole forward
+///    path. The message names the checkpoint and that first unreachable anchor,
+///    and prescribes moving the checkpoint or adding a return route (never
+///    deleting the checkpoint to silence the proof; #73 rubric).
+pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), NavError> {
+    let cps: Vec<(String, [i32; 3], usize)> = plan
+        .checkpoints
+        .iter()
+        .map(|c| (c.anchor.clone(), c.pos, c.fire_step))
+        .collect();
+    verify_checkpoints(
+        world,
+        &cps,
+        &critical_positions(plan),
+        &plan.gate_events,
+        &|g, s| plan.gate_fired_before(g, s),
+    )
+}
+
+/// The pure core of [`check_checkpoints`] (split out so it is unit-testable
+/// against a synthetic [`World`] without a full [`Plan`]). Each checkpoint is
+/// `(anchor, cell, fire_step)`.
+fn verify_checkpoints(
+    world: &World,
+    checkpoints: &[(String, [i32; 3], usize)],
+    positions: &[VisitedPos],
+    gate_events: &[GateEvent],
+    ancestor: &dyn Fn(usize, usize) -> bool,
+) -> Result<(), NavError> {
+    for (anchor, pos, fire_step) in checkpoints {
+        let Some(cell) = world.snap_standable(*pos, SNAP_RADIUS) else {
+            return Err(NavError {
+                code: DW_CHECKPOINT_UNSTANDABLE,
+                message: format!(
+                    "checkpoint anchor `{anchor}` at {pos:?} has no standable floor within \
+                     {SNAP_RADIUS} blocks on the assembled model — the party would respawn into \
+                     void or a wall. Move the checkpoint onto reachable floor (not a trap-trigger, \
+                     hazard, or mid-air cell); if the prefab looks correct, this is an \
+                     assembly/toolchain defect — escalate rather than hide it."
+                ),
+            });
+        };
+        // The first walked critical position strictly after the checkpoint fires.
+        let Some(target) = positions
+            .iter()
+            .filter(|p| p.src_step > *fire_step && !p.transport_before)
+            .min_by_key(|p| p.src_step)
+        else {
+            continue; // nothing left to walk to (checkpoint at/near the finale)
+        };
+        // Seal any gate closed by the time the party reaches the target (the same
+        // per-leg gate state DW0311 routes under), so a checkpoint whose forward
+        // path is walled off by a `close-gate` strands the party (DSL v0.6).
+        let sealed = sealed_gate_cells(gate_events, target.src_step, ancestor);
+        let leg_world_owned;
+        let leg_world: &World = if sealed.is_empty() {
+            world
+        } else {
+            leg_world_owned = world.with_sealed(&sealed);
+            &leg_world_owned
+        };
+        let Some(goal) = leg_world.snap_endpoint(target.pos, target.talk_to) else {
+            continue; // the target itself is unsnappable → a DW0311 concern, not ours
+        };
+        if leg_world.find_path(cell, goal).is_none() {
+            return Err(NavError {
+                code: DW_CHECKPOINT_STRANDED,
+                message: format!(
+                    "checkpoint `{anchor}` (cell {cell:?}) strands the party: the next required \
+                     anchor {:?} is not walkable from it over the assembled geometry (a checkpoint \
+                     behind a one-way drop the forward path can't re-cross after respawn). Move the \
+                     checkpoint to a cell that keeps the remaining path reachable, or add a return \
+                     route back up — do NOT delete the checkpoint to silence this proof.",
+                    target.pos
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Prove every `begin-stealth` zone is standable and reachable from the beat that
+/// activates it (DSL v0.6, spec-0014) — [`DW_STEALTH_ZONE`] (`DW0327`). A zone the
+/// player can never legally occupy (walled/void) or can never walk to from the
+/// activating position is a guaranteed unwinnable stealth beat.
+pub fn check_stealth_zones(plan: &Plan, world: &World) -> Result<(), NavError> {
+    let beats: Vec<StealthProbe> = plan
+        .stealth_beats
+        .iter()
+        .map(|b| (b.zones.clone(), b.fire_step))
+        .collect();
+    verify_stealth(world, &beats, &critical_positions(plan))
+}
+
+/// The pure core of [`check_stealth_zones`] (unit-testable against a synthetic
+/// [`World`]). Each beat is `(zones, fire_step)`; each zone `(name, centre,
+/// half-extents)`.
+fn verify_stealth(
+    world: &World,
+    beats: &[StealthProbe],
+    positions: &[VisitedPos],
+) -> Result<(), NavError> {
+    for (zones, fire_step) in beats {
+        // The player's position at the activating beat: the visited position at the
+        // firing step, else the nearest earlier one, else the first position.
+        let player_pos = positions
+            .iter()
+            .filter(|p| p.src_step <= *fire_step)
+            .max_by_key(|p| p.src_step)
+            .or_else(|| positions.first())
+            .map(|p| p.pos);
+        for (name, pos, extent) in zones {
+            let lo = [
+                pos[0] - extent[0] as i32,
+                pos[1] - extent[1] as i32,
+                pos[2] - extent[2] as i32,
+            ];
+            let hi = [
+                pos[0] + extent[0] as i32,
+                pos[1] + extent[1] as i32,
+                pos[2] + extent[2] as i32,
+            ];
+            let in_box = |c: [i32; 3]| (0..3).all(|k| lo[k] <= c[k] && c[k] <= hi[k]);
+            let radius = extent.iter().copied().max().unwrap_or(0) as i32;
+            let Some(stand) = world.snap_in_bounds(*pos, radius, &in_box) else {
+                return Err(NavError {
+                    code: DW_STEALTH_ZONE,
+                    message: format!(
+                        "stealth zone `{name}` (box {lo:?}..{hi:?}) has no standable cell — a \
+                         player can never legally hide there, so the beat is unwinnable. Place the \
+                         zone over reachable floor, or widen its `extent` to include a standable \
+                         cell."
+                    ),
+                });
+            };
+            let start = player_pos.and_then(|p| world.snap_standable(p, SNAP_RADIUS));
+            if let Some(start) = start
+                && world.find_path(start, stand).is_none()
+            {
+                return Err(NavError {
+                    code: DW_STEALTH_ZONE,
+                    message: format!(
+                        "stealth zone `{name}` (cell {stand:?}) is not reachable from the player's \
+                         position {:?} when the stealth beat begins — the player would be caught \
+                         before ever reaching cover. Route the zone within walkable reach of the \
+                         activating beat, or move where the beat starts.",
+                        player_pos.unwrap()
+                    ),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Prove every **lethal** trap on the forced critical path is discharged (DSL
+/// v0.6, spec-0011) — [`DW_TRAP_LETHAL_UNAVOIDABLE`] (`DW0342`). Death is
+/// recoverable but costly (`keep_inventory true`, respawn at the entrance or last
+/// checkpoint), so an unavoidable lethal trap deep in the delve can soft-loop the
+/// party. For every trap whose lethality is `lethal` and whose trigger cell is a
+/// required critical-path cell, exactly one discharge must hold:
+///
+/// - **Avoidable** — the trigger cell is not a forced-path cell (the exported
+///   waypoints already steer clear). No obligation; the preferred outcome.
+/// - **Survivable** — the trap is `reset: once`: it fires, is spent, and the
+///   respawn walk-back never re-triggers it, so there is no soft-loop.
+/// - **Disarmable** — a disarm affordance is reachable from the spawn **without
+///   crossing the trap cell**, so the party can turn the trap off before being
+///   forced onto it.
+///
+/// A forced lethal `rearm` trap with no reachable disarm provably soft-loops the
+/// party → `DW0342`. Non-critical-path (branch/optional) lethal traps carry no
+/// obligation here (existing `DW0306` gate-reachability covers not sealing off a
+/// mandatory anchor).
+pub fn check_traps(plan: &Plan, world: &World, moves: &[MovePlan]) -> Result<(), NavError> {
+    if plan.traps.is_empty() {
+        return Ok(());
+    }
+    let required = world.required_path_cells(plan, moves);
+    let spawn_starts: Vec<[i32; 3]> = plan
+        .anchors
+        .iter()
+        .filter(|((_, name), _)| name == "spawn")
+        .filter_map(|(_, a)| match a {
+            ResolvedAnchor::Point { pos, .. } => Some(*pos),
+            ResolvedAnchor::Gate { .. } => None,
+        })
+        .collect();
+    verify_traps(world, &plan.traps, &required, &spawn_starts)
+}
+
+/// The pure core of [`check_traps`] (unit-testable against a synthetic [`World`]).
+/// `required` is the forced critical-path cell set; `spawn_starts` are the spawn
+/// cells the disarm-reachability search roots at.
+fn verify_traps(
+    world: &World,
+    traps: &[TrapPlan],
+    required: &BTreeSet<[i32; 3]>,
+    spawn_starts: &[[i32; 3]],
+) -> Result<(), NavError> {
+    for t in traps {
+        if !matches!(t.lethality, Lethality::Lethal) {
+            continue; // only lethal traps carry the obligation
+        }
+        let tc = t.trigger_cell;
+        // (a) Avoidable: the trigger cell is never a forced critical-path cell.
+        if !required.contains(&tc) {
+            continue;
+        }
+        // (b) Survivable: a single-shot trap fires once and is spent; the respawn
+        // walk-back (keep_inventory) never re-triggers it → no soft-loop.
+        if matches!(t.reset, TrapReset::Once) {
+            continue;
+        }
+        // (c) Disarmable: a disarm affordance reachable before the trap is forced.
+        if let Some(dis) = &t.disarm
+            && disarm_reachable_before(world, spawn_starts, dis.via_cell, tc)
+        {
+            continue;
+        }
+        return Err(NavError {
+            code: DW_TRAP_LETHAL_UNAVOIDABLE,
+            message: format!(
+                "lethal trap `{}` sits on the forced critical path at {tc:?} with no discharge — \
+                 it is not avoidable (its trigger cell is a required path cell), not survivable (it \
+                 `rearm`s, so a respawn walk-back re-triggers it → soft-loop), and not disarmable \
+                 (no disarm affordance is reachable before it). Move the trap off the critical \
+                 path, set `reset: once`, or add a `disarm` whose `via` anchor is reachable before \
+                 the trap cell — do NOT weaken this check to get green.",
+                t.id
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Whether the disarm affordance at `via` is reachable from any spawn start over
+/// the walkable world **without ever stepping on the trap cell** — i.e. the party
+/// can reach and use the disarm before being forced onto the trap. A BFS over
+/// standable cells with `trap_cell` removed from the walkable set.
+fn disarm_reachable_before(
+    world: &World,
+    starts: &[[i32; 3]],
+    via: [i32; 3],
+    trap_cell: [i32; 3],
+) -> bool {
+    let Some(goal) = world.snap_standable(via, SNAP_RADIUS) else {
+        return false;
+    };
+    if goal == trap_cell {
+        return false;
+    }
+    let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut queue: std::collections::VecDeque<[i32; 3]> = std::collections::VecDeque::new();
+    for s in starts {
+        if let Some(start) = world.snap_standable(*s, SNAP_RADIUS)
+            && start != trap_cell
+            && seen.insert(start)
+        {
+            queue.push_back(start);
+        }
+    }
+    while let Some(cur) = queue.pop_front() {
+        if cur == goal {
+            return true;
+        }
+        for n in world.neighbors(cur) {
+            if n != trap_cell && seen.insert(n) {
+                queue.push_back(n);
+            }
+        }
+    }
+    seen.contains(&goal)
 }
 
 /// A walked critical-path leg with the full A* cell route the compiler proved
@@ -878,6 +1709,11 @@ pub struct LegRoute {
     pub from: [i32; 3],
     /// The raw visited anchor the leg walks TO (this critical position).
     pub to: [i32; 3],
+    /// The `critical_path` step index of the destination position — the objective
+    /// this leg walks toward. Lets the visual-tier POV planner
+    /// (`crate::render_plan`) name the served objective without re-deriving the
+    /// leg selection.
+    pub to_step: usize,
     /// The standable-cell A* path from the snapped `from` floor to the snapped `to`
     /// floor, inclusive of both endpoints.
     pub cells: Vec<[i32; 3]>,
@@ -905,7 +1741,12 @@ pub fn critical_path_routes(plan: &Plan, world: &World) -> Vec<LegRoute> {
             continue;
         };
         if let Some(cells) = world.find_path(start, goal) {
-            out.push(LegRoute { from, to, cells });
+            out.push(LegRoute {
+                from,
+                to,
+                to_step: pair[1].src_step,
+                cells,
+            });
         }
     }
     out
@@ -949,6 +1790,42 @@ pub fn verify_exported_routes(world: &World, routes: &[LegRoute]) -> Result<(), 
     Ok(())
 }
 
+/// `DW0724`: a visual-tier player-POV camera eye cell is occupied (a solid block
+/// or water) in the FINAL assembled world — the frame would render the inside of a
+/// block instead of the scene the player sees. A self-check on the POV camera
+/// derivation (`crate::render_plan`), mirroring the DW0314 waypoint self-check:
+/// every POV camera stands at the eye-height of a DW0314-proven-standable waypoint,
+/// so this cannot fire unless the eye-height derivation changes to place the eye in
+/// a ceiling/wall (or a later pass mutates the cell). It makes "the camera clips a
+/// wall" — the owner's exact visual-review failure mode — a build error to fix at
+/// its source (the camera derivation), never a shot to nudge or a data value to
+/// change.
+pub const DW_POV_CAMERA_OCCLUDED: &str = "DW0724";
+
+/// Assert every player-POV camera eye cell is clear (unoccupied) in `world` — the
+/// final assembled model. Each entry is `(shot_id, eye_cell)` where `eye_cell` is
+/// the integer block the camera eye sits in (`floor` of the eye position). Returns
+/// [`DW_POV_CAMERA_OCCLUDED`] (`DW0724`) naming the first offending shot on
+/// violation. The structural guard behind the visual tier: it is impossible to ship
+/// a render plan whose first-person camera looks out from inside geometry.
+pub fn verify_pov_cameras(world: &World, cameras: &[(String, [i32; 3])]) -> Result<(), NavError> {
+    for (id, eye) in cameras {
+        if !world.is_clear(*eye) {
+            return Err(NavError {
+                code: DW_POV_CAMERA_OCCLUDED,
+                message: format!(
+                    "player-POV shot `{id}`: the camera eye cell {eye:?} is occupied (a solid \
+                     block or water) in the assembled world — the frame would render the inside \
+                     of a block, not the player's view. The eye sits at 1.62 above a proven \
+                     standable waypoint, so fix the POV camera derivation (eye height / standing \
+                     cell) — do NOT move the waypoint or the geometry."
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -969,13 +1846,179 @@ mod tests {
         World::from_solid_cells(solid)
     }
 
+    /// The linear "every earlier step is an ancestor" gate-ordering used by the
+    /// synthetic gate tests (no parallel branches). Production routing uses the
+    /// campaign's real DAG-causal predicate (`Plan::gate_fired_before`).
+    fn linear(g: usize, s: usize) -> bool {
+        g < s
+    }
+
     /// A non-talk-to visited position (test convenience for `route_visited`).
     fn vp(pos: [i32; 3], transport_before: bool) -> VisitedPos {
         VisitedPos {
             pos,
             transport_before,
             talk_to: false,
+            src_step: 0,
         }
+    }
+
+    /// Whether an entity of `width` standing (feet) at `p` has any part of its AABB
+    /// inside a solid cell. Height 1.95 (the player/villager box).
+    fn aabb_clips(world: &World, p: [f64; 3], width: f64) -> bool {
+        let span = |c: f64| {
+            (
+                (c - width / 2.0).floor() as i32,
+                (c + width / 2.0 - 1e-9).floor() as i32,
+            )
+        };
+        let (x0, x1) = span(p[0]);
+        let (z0, z1) = span(p[2]);
+        let (y0, y1) = (p[1].floor() as i32, (p[1] + 1.95 - 1e-9).floor() as i32);
+        (x0..=x1).any(|x| (z0..=z1).any(|z| (y0..=y1).any(|y| world.solid_at([x, y, z]))))
+    }
+
+    /// The full walked path for `cells`, as the emitter would teleport it.
+    fn walked(cells: &[[i32; 3]]) -> Vec<[f64; 3]> {
+        resample(cells, DEFAULT_SPEED)
+    }
+
+    /// **Regression (owner, island QA): "the NPC visibly passes through blocks".**
+    ///
+    /// A 1-wide corridor with solid walls on both sides. Every planned waypoint must
+    /// keep the mover's whole AABB out of the walls. The bare integer cell
+    /// coordinate — what the emitter used before `cell_center` — puts 70 % of a
+    /// 0.6-wide body inside the neighbouring column, i.e. inside the wall, for the
+    /// entire walk; the second half of this test asserts exactly that, so the defect
+    /// cannot silently come back.
+    #[test]
+    fn walked_path_keeps_the_body_out_of_corridor_walls() {
+        let y = 65;
+        let mut walls = Vec::new();
+        for z in 0..8 {
+            for dy in 0..2 {
+                walls.push([0, y + dy, z]); // west wall
+                walls.push([2, y + dy, z]); // east wall
+            }
+        }
+        let world = floored(3, 8, y, &walls);
+        let cells: Vec<[i32; 3]> = (0..8).map(|z| [1, y, z]).collect();
+        let path = world
+            .find_path(cells[0], *cells.last().unwrap())
+            .expect("the corridor is walkable");
+        assert_eq!(path, cells, "a 1-wide corridor has exactly one route");
+
+        for w in walked(&path) {
+            assert!(
+                !aabb_clips(&world, w, 0.6),
+                "waypoint {w:?} puts the body inside a corridor wall"
+            );
+        }
+        // The pre-fix emission (bare cell coordinates) DID clip — the defect this
+        // test guards. Keep as the counter-example, never as the behaviour.
+        assert!(
+            aabb_clips(&world, [1.0, y as f64, 3.0], 0.6),
+            "a body at the bare integer cell straddles the wall columns"
+        );
+    }
+
+    /// An L-shaped corridor whose inside corner is solid. A* is strictly cardinal
+    /// (`neighbors_fp` offers 4 horizontal moves, never a diagonal), so no path can
+    /// cut the corner; this pins that property *and* proves the interpolated body
+    /// never enters the corner block on the turn.
+    #[test]
+    fn corner_turn_routes_around_the_corner_block_not_through_it() {
+        let y = 65;
+        // Open cells: the column z=1..=4 at x=1, then x=1..=4 at z=4. Everything
+        // else at head height is solid, including the inside corner [2, y, 1].
+        let open: BTreeSet<[i32; 3]> = (1..=4)
+            .map(|z| [1, y, z])
+            .chain((1..=4).map(|x| [x, y, 4]))
+            .collect();
+        let mut walls = Vec::new();
+        for x in 0..6 {
+            for z in 0..6 {
+                for dy in 0..2 {
+                    if !open.contains(&[x, y, z]) {
+                        walls.push([x, y + dy, z]);
+                    }
+                }
+            }
+        }
+        let world = floored(6, 6, y, &walls);
+        let path = world
+            .find_path([1, y, 1], [4, y, 4])
+            .expect("the L-corridor is walkable");
+        assert!(
+            path.iter().all(|c| open.contains(c)),
+            "the route must stay in the open cells: {path:?}"
+        );
+        for w in walked(&path) {
+            assert!(
+                !aabb_clips(&world, w, 0.6),
+                "waypoint {w:?} clips the corner block"
+            );
+        }
+    }
+
+    /// A one-block step up is interpolated as an **L** (rise over the source column,
+    /// then cross), not a diagonal lerp: a straight line between the two cell centres
+    /// drags the body through the corner of the step block. Both legs stay inside
+    /// cells the neighbour rule already proved clear (`standable_fp` + the jump
+    /// head-clearance check), so the AABB never enters the step.
+    #[test]
+    fn vertical_step_is_l_shaped_and_never_clips_the_step_block() {
+        let y = 65;
+        let mut solid = BTreeSet::new();
+        for x in 0..4 {
+            for z in 0..3 {
+                solid.insert([x, y - 1, z]); // lower floor
+                solid.insert([x, y + 4, z]); // ceiling, clear of both levels
+            }
+        }
+        // A raised ledge at x∈{2,3}: its top face is the upper walking surface.
+        for x in [2, 3] {
+            for z in 0..3 {
+                solid.insert([x, y, z]);
+            }
+        }
+        let world = World::from_solid_cells(solid);
+        let path = world
+            .find_path([1, y, 1], [3, y + 1, 1])
+            .expect("a one-block step up is walkable");
+        assert_eq!(path, vec![[1, y, 1], [2, y + 1, 1], [3, y + 1, 1]]);
+
+        let pts = walked(&path);
+        // The rise happens over the SOURCE column: some waypoint sits at the source
+        // cell's centre already at the upper height.
+        let src = cell_center([1, y, 1]);
+        assert!(
+            pts.iter()
+                .any(|w| w[0] == src[0] && w[2] == src[2] && w[1] > y as f64),
+            "the step up must rise in place before crossing: {pts:?}"
+        );
+        for w in &pts {
+            assert!(
+                !aabb_clips(&world, *w, 0.6),
+                "waypoint {w:?} clips the step block"
+            );
+        }
+    }
+
+    #[test]
+    fn pov_camera_in_open_air_passes_but_inside_a_block_is_dw0724() {
+        // A flat floor at y=64 with headroom; the eye of a standing player is at
+        // y=65..66 (clear). A camera eye in a clear cell passes; one placed inside
+        // the floor block is DW0724.
+        let world = floored(5, 5, 65, &[]);
+        assert!(world.is_clear([2, 65, 2]), "standing eye cell is clear");
+        // Clear eye → ok.
+        verify_pov_cameras(&world, &[("pov/leg0/wp0".into(), [2, 65, 2])]).expect("clear eye ok");
+        // Eye buried in the solid floor → DW0724.
+        let err = verify_pov_cameras(&world, &[("pov/leg0/wp1".into(), [2, 64, 2])])
+            .expect_err("occupied eye must fail");
+        assert_eq!(err.code, DW_POV_CAMERA_OCCLUDED);
+        assert!(err.message.contains("pov/leg0/wp1"), "names the shot");
     }
 
     #[test]
@@ -1066,10 +2109,10 @@ mod tests {
         let b = [4, 65, 1];
         assert!(world.standable(a) && world.standable(b));
         // Walked leg → unroutable → DW0311.
-        let err = route_visited(&world, &[vp(a, false), vp(b, false)]).unwrap_err();
+        let err = route_visited(&world, &[vp(a, false), vp(b, false)], &[], &linear).unwrap_err();
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
         // Same leg ridden by an inter-area transport → skipped, ok.
-        assert!(route_visited(&world, &[vp(a, false), vp(b, true)]).is_ok());
+        assert!(route_visited(&world, &[vp(a, false), vp(b, true)], &[], &linear).is_ok());
     }
 
     #[test]
@@ -1121,6 +2164,7 @@ mod tests {
         let routes = vec![LegRoute {
             from: [0, 65, 0],
             to: [3, 65, 0],
+            to_step: 1,
             cells: vec![[0, 65, 0], [1, 65, 0], [2, 65, 0], [3, 65, 0]],
         }];
         let err = verify_exported_routes(&world, &routes).unwrap_err();
@@ -1134,6 +2178,7 @@ mod tests {
         let dry = vec![LegRoute {
             from: [0, 65, 0],
             to: [1, 65, 0],
+            to_step: 1,
             cells: vec![[0, 65, 0], [1, 65, 0]],
         }];
         assert!(verify_exported_routes(&world, &dry).is_ok());
@@ -1143,7 +2188,15 @@ mod tests {
     fn critical_path_routable_leg_passes() {
         // A flat connected floor: consecutive visited cells are walkable → ok.
         let world = floored(6, 3, 65, &[]);
-        assert!(route_visited(&world, &[vp([0, 65, 1], false), vp([5, 65, 1], false)]).is_ok());
+        assert!(
+            route_visited(
+                &world,
+                &[vp([0, 65, 1], false), vp([5, 65, 1], false)],
+                &[],
+                &linear
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -1254,8 +2307,367 @@ mod tests {
         let fast = resample(&cells, 1.0);
         // Slower speed → more per-tick waypoints for the same distance.
         assert!(slow.len() > fast.len());
-        // The final waypoint is exactly the integer target cell.
-        assert_eq!(*slow.last().unwrap(), [10.0, 65.0, 0.0]);
-        assert_eq!(slow[0], [0.0, 65.0, 0.0]);
+        // Endpoints are the CENTRES of the start/goal cells, not their corners:
+        // a body positioned on the integer cell coordinate straddles four columns.
+        assert_eq!(*slow.last().unwrap(), cell_center([10, 65, 0]));
+        assert_eq!(slow[0], cell_center([0, 65, 0]));
+    }
+
+    // --- v0.6 checkpoint / stealth proofs (spec-0012 / spec-0014) ---
+
+    /// Two floor patches (x∈{0,1} and x∈{3,4}) with a void gap at x=2.
+    fn split_world(y: i32) -> World {
+        let mut solid = BTreeSet::new();
+        for x in [0, 1, 3, 4] {
+            for z in 0..3 {
+                solid.insert([x, y - 1, z]); // floor
+                solid.insert([x, y + 2, z]); // ceiling
+            }
+        }
+        World::from_solid_cells(solid)
+    }
+
+    fn at_step(pos: [i32; 3], src_step: usize) -> VisitedPos {
+        VisitedPos {
+            pos,
+            transport_before: false,
+            talk_to: false,
+            src_step,
+        }
+    }
+
+    // --- close-gate completability (DSL v0.6) --------------------------------
+
+    /// A `close-gate` firing before a forced walked leg seals the gate region, so a
+    /// critical path that must re-cross it fails DW0311; a later `open-gate` before
+    /// the same leg reopens it and the route passes again.
+    #[test]
+    fn close_gate_seals_a_forced_leg_is_dw0311() {
+        // A 1-wide corridor along x, y=65; the pass-through cell [2,65,0] is the sole
+        // connection between the two ends. Base world (gate open) routes end to end.
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        assert!(
+            route_visited(&world, &[a, b], &[], &linear).is_ok(),
+            "the open corridor must route with no gate events"
+        );
+        // A close-gate seals the pass-through before the leg to `b` (fire_step 0 < 2).
+        let close = GateEvent {
+            region: ([2, 65, 0], [2, 65, 0]),
+            closes: true,
+            fire_step: 0,
+        };
+        let err =
+            route_visited(&world, &[a, b], std::slice::from_ref(&close), &linear).unwrap_err();
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE); // DW0311
+        assert!(
+            err.message.contains("close-gate"),
+            "the message must name the sealed gate: {}",
+            err.message
+        );
+        // Reopening the gate before the leg (open-gate at a later fire_step) restores it.
+        let open = GateEvent {
+            region: ([2, 65, 0], [2, 65, 0]),
+            closes: false,
+            fire_step: 1,
+        };
+        assert!(
+            route_visited(&world, &[a, b], &[close, open], &linear).is_ok(),
+            "a gate reopened by open-gate before the leg must route again"
+        );
+    }
+
+    /// The seal is **DAG-causal**, not linear: a `close-gate` fired on a parallel
+    /// quest branch (not a causal ancestor of the leg) must NOT seal it, even though
+    /// its `fire_step` is numerically earlier — the fix for the lineariser
+    /// interleaving a sibling branch ahead of a sealed leg (island `take-the-cheese`
+    /// vs `hide`). A genuinely-forced causal re-crossing is still sealed.
+    #[test]
+    fn close_gate_seal_is_dag_causal_not_linear() {
+        let world = floored(5, 1, 65, &[]);
+        let close = GateEvent {
+            region: ([2, 65, 0], [2, 65, 0]),
+            closes: true,
+            fire_step: 8,
+        };
+        let a = at_step([0, 65, 0], 9);
+        let b = at_step([4, 65, 0], 10);
+        // Parallel: neither the close (step 8) nor the prior position (step 9) is a
+        // causal ancestor of the arrival (step 10) — a cross-branch artifact leg.
+        let parallel = |g: usize, s: usize| !((g == 8 || g == 9) && s == 10) && g < s;
+        assert!(
+            route_visited(&world, &[a, b], std::slice::from_ref(&close), &parallel).is_ok(),
+            "a close on a parallel branch must not seal a non-causal leg"
+        );
+        // Causal: step 8 (close) and step 9 are ancestors of step 10 (a forced
+        // re-crossing with no reopen) → sealed → DW0311 (proof preserved).
+        let err = route_visited(&world, &[a, b], std::slice::from_ref(&close), &linear)
+            .expect_err("a forced causal re-crossing of a sealed gate must fail");
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
+    }
+
+    /// A `close-gate` that walls off the forward path from a checkpoint strands the
+    /// party (DW0315) — the checkpoint gate proof routes under the same per-leg seal.
+    #[test]
+    fn close_gate_walls_off_checkpoint_forward_path_is_dw0315() {
+        let world = floored(5, 1, 65, &[]);
+        // Checkpoint at the near end (fire_step 0); the next required anchor is past
+        // the gate cell [2,65,0].
+        let cps = vec![("cp/rest".to_string(), [0, 65, 0], 0usize)];
+        let positions = vec![at_step([4, 65, 0], 1)];
+        // Open gate → reachable.
+        assert!(verify_checkpoints(&world, &cps, &positions, &[], &linear).is_ok());
+        // Sealed before the party reaches the target (fire_step 0 < 1) → stranded.
+        let close = GateEvent {
+            region: ([2, 65, 0], [2, 65, 0]),
+            closes: true,
+            fire_step: 0,
+        };
+        let err = verify_checkpoints(
+            &world,
+            &cps,
+            &positions,
+            std::slice::from_ref(&close),
+            &linear,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, DW_CHECKPOINT_STRANDED); // DW0315
+    }
+
+    #[test]
+    fn checkpoint_behind_a_one_way_drop_is_dw0315() {
+        // Checkpoint on the near patch; the next required anchor is on the far,
+        // disconnected patch → not walkable from the checkpoint → DW0315.
+        let world = split_world(65);
+        let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
+        let positions = vec![at_step([4, 65, 1], 1)];
+        let err = verify_checkpoints(&world, &cps, &positions, &[], &linear).unwrap_err();
+        assert_eq!(err.code, DW_CHECKPOINT_STRANDED); // DW0315
+    }
+
+    #[test]
+    fn checkpoint_with_reachable_remaining_path_passes() {
+        // Both the checkpoint and the next anchor sit on the same connected floor.
+        let world = floored(5, 3, 65, &[]);
+        let cps = vec![("cp/rest".to_string(), [0, 65, 1], 0usize)];
+        let positions = vec![at_step([4, 65, 1], 1)];
+        assert!(verify_checkpoints(&world, &cps, &positions, &[], &linear).is_ok());
+    }
+
+    #[test]
+    fn checkpoint_over_void_is_dw0316() {
+        // The checkpoint cell has no standable floor within snap radius.
+        let world = floored(5, 3, 65, &[]);
+        let cps = vec![("cp/rest".to_string(), [20, 65, 20], 0usize)];
+        let err = verify_checkpoints(&world, &cps, &[], &[], &linear).unwrap_err();
+        assert_eq!(err.code, DW_CHECKPOINT_UNSTANDABLE); // DW0316
+    }
+
+    #[test]
+    fn stealth_zone_over_void_is_dw0327() {
+        // A zero-extent zone centred on a void cell → no standable cell → DW0327.
+        let world = floored(5, 3, 65, &[]);
+        let beats = vec![(
+            vec![("zone/shadow".to_string(), [20, 65, 20], [0, 0, 0])],
+            0usize,
+        )];
+        let err = verify_stealth(&world, &beats, &[at_step([2, 65, 1], 0)]).unwrap_err();
+        assert_eq!(err.code, DW_STEALTH_ZONE); // DW0327
+    }
+
+    #[test]
+    fn stealth_zone_unreachable_from_beat_is_dw0327() {
+        // The zone is standable on the far patch, but the activating beat sits on
+        // the near patch across a void gap → unreachable → DW0327.
+        let world = split_world(65);
+        let beats = vec![(
+            vec![("zone/shadow".to_string(), [4, 65, 1], [1, 1, 1])],
+            0usize,
+        )];
+        let err = verify_stealth(&world, &beats, &[at_step([0, 65, 1], 0)]).unwrap_err();
+        assert_eq!(err.code, DW_STEALTH_ZONE); // DW0327
+    }
+
+    #[test]
+    fn stealth_zone_standable_and_reachable_passes() {
+        let world = floored(6, 3, 65, &[]);
+        let beats = vec![(
+            vec![("zone/shadow".to_string(), [4, 65, 1], [1, 1, 1])],
+            0usize,
+        )];
+        assert!(verify_stealth(&world, &beats, &[at_step([0, 65, 1], 0)]).is_ok());
+    }
+
+    #[test]
+    fn player_footprint_matches_pre_0_6_walkability() {
+        // find_path (the delegating wrapper) must equal find_path_fp(player) — the
+        // byte-identity guarantee for move-npc / critical-path.
+        let world = floored(6, 3, 65, &[[3, 65, 1]]);
+        let fp = Footprint::player();
+        let a = [0, 65, 1];
+        let b = [5, 65, 1];
+        assert_eq!(world.find_path(a, b), world.find_path_fp(a, b, &fp));
+        // Player footprint is one column, two cells tall.
+        assert_eq!(fp.cols, vec![[0, 0]]);
+        assert_eq!(fp.height, 2);
+    }
+
+    #[test]
+    fn tall_footprint_cannot_walk_a_two_high_gap_a_player_fits() {
+        // `floored` gives a floor at y-1 and a ceiling at y+2 → two clear cells (y,
+        // y+1): a player (2 tall) fits; a warden (2.9 → 3 tall) head-bonks the
+        // ceiling, so its footprint has no walkable path (the DW0325 condition).
+        let world = floored(6, 3, 65, &[]);
+        let a = [0, 65, 1];
+        let b = [5, 65, 1];
+        let player = Footprint::player();
+        let warden = entity_footprint("minecraft:warden");
+        assert_eq!(warden.height, 3, "warden is 2.9 tall → 3 cells");
+        assert!(
+            world.find_path_fp(a, b, &player).is_some(),
+            "a player fits the 2-high corridor"
+        );
+        assert!(
+            !world.standable_fp(a, &warden),
+            "a warden cannot stand under a 2-high ceiling"
+        );
+        assert!(
+            world.find_path_fp(a, b, &warden).is_none(),
+            "a warden cannot walk the 2-high corridor → unroutable"
+        );
+        // The best-effort blocked-cell reporter names a non-standable cell on the leg.
+        let blocked = first_blocked_fp(&world, a, b, &warden);
+        assert!(!world.standable_fp(blocked, &warden));
+    }
+
+    #[test]
+    fn dims_table_and_default_fallback() {
+        // Sub-block-wide mobs are single-column; the default fallback is humanoid.
+        assert_eq!(entity_footprint("minecraft:sheep").cols, vec![[0, 0]]);
+        assert_eq!(entity_footprint("minecraft:sheep").height, 2); // 1.3 → 2
+        assert_eq!(entity_footprint("minecraft:iron_golem").height, 3); // 2.7 → 3
+        let unknown = entity_footprint("minecraft:some_new_mob");
+        assert_eq!(unknown.cols, vec![[0, 0]]);
+        assert_eq!(unknown.height, 2);
+    }
+
+    #[test]
+    fn yaw_follows_the_movement_tangent() {
+        // MC yaw: 0 = +z (south), 90 = -x (west), 180 = -z (north), 270 = +x (east).
+        assert_eq!(yaw_of(0.0, 1.0), Some(0));
+        assert_eq!(yaw_of(-1.0, 0.0), Some(90));
+        assert_eq!(yaw_of(0.0, -1.0), Some(180));
+        assert_eq!(yaw_of(1.0, 0.0), Some(270));
+        assert_eq!(yaw_of(0.0, 0.0), None);
+        // A straight +x path yaws every waypoint east (270), including the last.
+        let wps = vec![[0.0, 65.0, 0.0], [1.0, 65.0, 0.0], [2.0, 65.0, 0.0]];
+        assert_eq!(yaws_along(&wps), vec![270, 270, 270]);
+    }
+
+    // --- v0.6 trap completability proof (spec-0011, DW0342) ---
+
+    use crate::plan::TrapDisarmPlan;
+    use delvewright_dsl::{Lethality, TrapReset, TrapTrigger};
+
+    /// A 1-wide walkable corridor along z=1: a floor strip at `[0..len, y-1, 1]`.
+    /// `[x, y, 1]` are the only standable cells, so the corridor has no bypass — a
+    /// cell on it is a genuine chokepoint the player cannot walk around.
+    fn corridor(len: i32, y: i32) -> World {
+        let mut solid = BTreeSet::new();
+        for x in 0..len {
+            solid.insert([x, y - 1, 1]);
+        }
+        World::from_solid_cells(solid)
+    }
+
+    /// A minimal lethal trap for the proof tests.
+    fn lethal_trap(cell: [i32; 3], reset: TrapReset, disarm: Option<TrapDisarmPlan>) -> TrapPlan {
+        TrapPlan {
+            id: "trap/darts".to_string(),
+            safe: "darts".to_string(),
+            trigger: TrapTrigger::PressurePlate,
+            trigger_cell: cell,
+            dispenser: None,
+            payload: None,
+            lethality: Lethality::Lethal,
+            reset,
+            disarm,
+            requires_flags: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn forced_lethal_rearm_trap_with_no_discharge_is_dw0342() {
+        // A rearming lethal trap on a required chokepoint, no disarm → soft-loop.
+        let world = corridor(6, 65);
+        let tc = [3, 65, 1];
+        let required: BTreeSet<[i32; 3]> = (0..6).map(|x| [x, 65, 1]).collect();
+        let traps = [lethal_trap(tc, TrapReset::Rearm, None)];
+        let err = verify_traps(&world, &traps, &required, &[[0, 65, 1]]).unwrap_err();
+        assert_eq!(err.code, DW_TRAP_LETHAL_UNAVOIDABLE);
+    }
+
+    #[test]
+    fn forced_lethal_once_trap_is_survivable() {
+        // The same forced trap set to `once` fires and is spent — no soft-loop.
+        let world = corridor(6, 65);
+        let tc = [3, 65, 1];
+        let required: BTreeSet<[i32; 3]> = (0..6).map(|x| [x, 65, 1]).collect();
+        let traps = [lethal_trap(tc, TrapReset::Once, None)];
+        assert!(verify_traps(&world, &traps, &required, &[[0, 65, 1]]).is_ok());
+    }
+
+    #[test]
+    fn off_path_lethal_trap_is_avoidable() {
+        // A rearming lethal trap whose trigger cell is NOT a required path cell.
+        let world = corridor(6, 65);
+        let tc = [3, 65, 1];
+        let required: BTreeSet<[i32; 3]> = BTreeSet::new(); // path avoids the trap
+        let traps = [lethal_trap(tc, TrapReset::Rearm, None)];
+        assert!(verify_traps(&world, &traps, &required, &[[0, 65, 1]]).is_ok());
+    }
+
+    #[test]
+    fn forced_lethal_trap_with_reachable_disarm_is_discharged() {
+        // Disarm affordance BEFORE the trap on the corridor (reachable from spawn
+        // without crossing the trap cell) → disarmable.
+        let world = corridor(6, 65);
+        let tc = [4, 65, 1];
+        let required: BTreeSet<[i32; 3]> = (0..6).map(|x| [x, 65, 1]).collect();
+        let disarm = TrapDisarmPlan {
+            via_anchor: "anchor/lever".to_string(),
+            via_cell: [1, 65, 1],
+            sets_flag: "flag/darts-off".to_string(),
+        };
+        let traps = [lethal_trap(tc, TrapReset::Rearm, Some(disarm))];
+        assert!(verify_traps(&world, &traps, &required, &[[0, 65, 1]]).is_ok());
+    }
+
+    #[test]
+    fn forced_lethal_trap_with_disarm_behind_the_trap_is_dw0342() {
+        // The only route to the disarm crosses the trap chokepoint, so the disarm
+        // cannot be reached first → still a soft-loop → DW0342.
+        let world = corridor(6, 65);
+        let tc = [3, 65, 1];
+        let required: BTreeSet<[i32; 3]> = (0..6).map(|x| [x, 65, 1]).collect();
+        let disarm = TrapDisarmPlan {
+            via_anchor: "anchor/lever".to_string(),
+            via_cell: [5, 65, 1],
+            sets_flag: "flag/darts-off".to_string(),
+        };
+        let traps = [lethal_trap(tc, TrapReset::Rearm, Some(disarm))];
+        let err = verify_traps(&world, &traps, &required, &[[0, 65, 1]]).unwrap_err();
+        assert_eq!(err.code, DW_TRAP_LETHAL_UNAVOIDABLE);
+    }
+
+    #[test]
+    fn non_lethal_forced_trap_carries_no_obligation() {
+        // A harmful (non-lethal) trap on the forced path is fine — no DW0342.
+        let world = corridor(6, 65);
+        let mut t = lethal_trap([3, 65, 1], TrapReset::Rearm, None);
+        t.lethality = Lethality::Harmful;
+        let required: BTreeSet<[i32; 3]> = (0..6).map(|x| [x, 65, 1]).collect();
+        assert!(verify_traps(&world, &[t], &required, &[[0, 65, 1]]).is_ok());
     }
 }

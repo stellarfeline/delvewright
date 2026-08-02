@@ -25,6 +25,11 @@ content-repo/
 __pycache__/
 *.pyc
 
+# Machine-local override of delvewright.toml (endpoints, model choices). Never
+# committed; it must never hold an API key either — configs name the env var that
+# does (docs/reference/i18n.md).
+delvewright.local.toml
+
 # Owner-private working notes — never committed (stays local even when the
 # repo goes public).
 docs/notes/private/

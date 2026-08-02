@@ -17,9 +17,11 @@
 
 pub mod analyze;
 pub mod assembled;
+pub mod atmos;
 pub mod commands;
 pub mod creator;
 pub mod emit;
+pub mod gates;
 pub mod light;
 pub mod load;
 pub mod nav;
@@ -28,6 +30,7 @@ pub mod registry;
 pub mod render_plan;
 pub mod resourcepack;
 pub mod solver;
+pub mod textfit;
 pub mod waypoints;
 
 /// This compiler's version (reported by `--version`, stamped in `manifest.json`).

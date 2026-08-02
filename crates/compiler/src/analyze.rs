@@ -35,7 +35,22 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use delvewright_dsl::{AnchorRegistry, Campaign, Diagnostic, Objective, Trigger};
+use delvewright_dsl::{AnchorRegistry, Campaign, Diagnostic, Objective, QuestEffect, Trigger};
+
+/// Every flag produced by a `set-flag` effect in `effs`, descending into every
+/// nested effect list ([`QuestEffect::nested_effect_lists`]) so a `set-flag` nested
+/// in a `sequence` step / lifecycle bundle counts as a producer.
+fn deep_set_flags(effs: &[QuestEffect]) -> Vec<&str> {
+    let mut fs = Vec::new();
+    for e in effs {
+        e.visit_deep(&mut |x| {
+            if let Some(f) = x.set_flag() {
+                fs.push(f.as_str());
+            }
+        });
+    }
+    fs
+}
 
 /// Stable analysis codes.
 pub mod codes {
@@ -69,21 +84,19 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
     // producible once the objective/quest that sets it is itself completable.
     let mut obj_setflags: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     let mut quest_setflags: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    // A `set-flag` produces its flag from anywhere it can fire, including nested in a
+    // `sequence` step or an `on_respawn`/`on_caught`/`on_arrive` bundle, so the
+    // completability scan descends the whole effect tree (`deep_set_flags`) — a
+    // shallow scan would treat a nested-only flag as never-produced and wrongly mark
+    // a flag-gated objective unreachable.
     for q in quests {
         for (oid, effs) in &q.on_objective_complete {
-            let flags: Vec<&str> = effs
-                .iter()
-                .filter_map(|e| e.set_flag().map(|f| f.as_str()))
-                .collect();
+            let flags = deep_set_flags(effs);
             if !flags.is_empty() {
                 obj_setflags.insert(oid.as_str(), flags);
             }
         }
-        let cflags: Vec<&str> = q
-            .on_complete
-            .iter()
-            .filter_map(|e| e.set_flag().map(|f| f.as_str()))
-            .collect();
+        let cflags = deep_set_flags(&q.on_complete);
         if !cflags.is_empty() {
             quest_setflags.insert(q.id.as_str(), cflags);
         }

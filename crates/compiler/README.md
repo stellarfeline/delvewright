@@ -40,7 +40,7 @@ content repo checked out at `campaigns/` (spec-0007 Step 0). Integration tests:
 | `analyze.rs` | Deep quest/objective/dialogue reachability + dark-light mitigation (`DW02xx`, exit 2). |
 | `solver.rs` | Jigsaw layout solver — grows a socket-graph layout from the seed, emits `/place template` per piece (`DW030x`). |
 | `plan.rs` | Resolve a validated campaign → placement + naming model; assembled voxel grid. |
-| `nav.rs` | Compile-time A* over the voxel grid: `move-npc` routing, cutscene clip, critical-path walkability (`DW0307`/`DW0308`/`DW0311`). |
+| `nav.rs` | Compile-time A* over the voxel grid: `move-npc`/`move-actor` (footprint-aware) routing, cutscene clip, critical-path walkability (`DW0307`/`DW0308`/`DW0311`/`DW0325`); per-entity dims table + `Footprint`. |
 | `emit.rs` | Deterministic emission of the whole `<out>/` tree. |
 | `commands.rs` | Vendored Brigadier command-tree validator (see below). |
 | `render_plan.rs` | `render-plan.json` (visual tier, spec-0003/0007). |
@@ -89,7 +89,9 @@ behavior contract lives in the reference. Keep these in mind when touching emiss
   `place`/`summon`/`fill` silently no-op at `#minecraft:load`).
 - Bot observation is the broadcast marker channel
   (`[Delvewright] complete dw.campaign 1`) — mineflayer 4.37.x cannot read
-  1.21.11 scoreboard scores (the sidebar objective is still displayed for humans).
+  1.21.11 scoreboard scores. The completion objective is NOT put on the sidebar
+  (a raw internal id must never surface to players); the chat token is the sole
+  observation channel.
 - Wave mobs must use component-era `equipment` NBT with zero `drop_chances` —
   legacy `HandItems`/`HandDropChances` are silently ignored on `/summon`.
 - PackTest tests emit to `data/<ns>/test/…` (misode/packtest 2.4.0); PackTest

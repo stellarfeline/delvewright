@@ -1,9 +1,9 @@
 //! The per-delve NPC-skin resource pack (spec-0009 "bake").
 //!
 //! A campaign with skinned (mannequin) NPCs ships an original PNG per skin in a
-//! server resource pack: `pack.mcmeta` (bare `pack_format` 75 for 1.21.11) plus
-//! `assets/delvewright/textures/npc/<id>.png` for each skin. The mannequin's
-//! `profile.texture` resolves to `delvewright:npc/<id>`.
+//! server resource pack: `pack.mcmeta` (`min_format`/`max_format` = 75.0 for
+//! 1.21.11) plus `assets/delvewright/textures/npc/<id>.png` for each skin. The
+//! mannequin's `profile.texture` resolves to `delvewright:npc/<id>`.
 //!
 //! The zip is **byte-deterministic** (ADR-0006): entries are sorted, timestamps
 //! are pinned to zero, and the STORE method is used (no compressor state). Its
@@ -15,21 +15,34 @@ use std::collections::BTreeMap;
 
 use serde_json::json;
 
-/// The resource-pack `pack_format` for 1.21.11 (spec-0009: a bare field; the ≥81
-/// `min_format`/`max_format` rule applies to datapacks, not resource packs).
-pub const RESOURCE_PACK_FORMAT: u32 = 75;
+/// The MC 1.21.11 **resource**-pack format as `[major, minor]` = 75.0, read from
+/// the pinned client's `version.json` (`resource_major: 75, resource_minor: 0`) —
+/// the same file whose `data_major`/`data_minor` give [`crate::PACK_FORMAT`].
+///
+/// spec-0009 recorded a bare `pack_format: 75` on the belief that the
+/// `min_format`/`max_format` requirement was datapack-only. It is not: resource
+/// packs and data packs share one `pack.mcmeta` codec, only the threshold differs
+/// (**64** for resource packs, 81 for data packs). A pack declaring a format above
+/// its threshold with no `min_format`/`max_format` is rejected outright — observed
+/// on the owner's 1.21.11 client as
+/// `Couldn't load file/<pack>.zip pack metadata: Pack declares support for version
+/// newer than 64, but is missing mandatory fields min_format and max_format`, i.e.
+/// every NPC skin silently never loaded. Emitted as `[major, minor]` arrays, the
+/// shape already proven live for the datapack at 94.1.
+pub const RESOURCE_PACK_FORMAT: [u32; 2] = [75, 0];
 
-/// Build the deterministic resource-pack zip for `skins` (texture id → PNG
-/// bytes). Returns the zip bytes. `skins` must be non-empty (callers only build a
-/// pack when a campaign has skinned NPCs).
-pub fn build_pack(skins: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
-    // Assemble the entries: sorted by archive name for determinism. `assets/…`
-    // sorts before `pack.mcmeta`, and `skins` is a BTreeMap (sorted ids).
+/// Build the deterministic resource-pack zip carrying `skins` (texture id → PNG
+/// bytes, → `assets/delvewright/textures/npc/<id>.png`) plus any `extra` assets
+/// (archive path → bytes, e.g. the `delve:art` title font, spec-0014). Returns the
+/// zip bytes. Callers build a pack only when there is at least one skin or extra
+/// asset. Entries are sorted by archive name for determinism (ADR-0006).
+pub fn build_pack(skins: &BTreeMap<String, Vec<u8>>, extra: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
     let mcmeta = {
         let mut b = serde_json::to_vec_pretty(&json!({
             "pack": {
-                "pack_format": RESOURCE_PACK_FORMAT,
-                "description": "Delvewright NPC skins"
+                "description": "Delvewright resource pack",
+                "min_format": RESOURCE_PACK_FORMAT,
+                "max_format": RESOURCE_PACK_FORMAT
             }
         }))
         .expect("json serializes");
@@ -42,6 +55,9 @@ pub fn build_pack(skins: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
             format!("assets/delvewright/textures/npc/{id}.png"),
             png.clone(),
         ));
+    }
+    for (path, bytes) in extra {
+        entries.push((path.clone(), bytes.clone()));
     }
     entries.push(("pack.mcmeta".to_string(), mcmeta));
     entries.sort_by(|a, b| a.0.cmp(&b.0));
@@ -190,12 +206,44 @@ mod tests {
         );
     }
 
+    /// The `pack.mcmeta` shape 1.21.11 actually accepts. Resource packs and data
+    /// packs share one metadata codec; a pack declaring a format above the
+    /// resource-pack threshold (64) with no `min_format`/`max_format` is rejected
+    /// with "Pack declares support for version newer than 64, but is missing
+    /// mandatory fields min_format and max_format" — and then every NPC skin
+    /// silently never loads. A bare `pack_format` must not be emitted at all: the
+    /// codec cross-checks it against `max_format` and errors on a mismatch.
+    #[test]
+    fn pack_mcmeta_declares_min_and_max_format() {
+        let mut skins = BTreeMap::new();
+        skins.insert("a".to_string(), vec![1u8, 2, 3]);
+        let zip = build_pack(&skins, &BTreeMap::new());
+        // STORE method: the mcmeta bytes appear verbatim in the archive.
+        let text = String::from_utf8_lossy(&zip).to_string();
+        let start = text.find("{\n  \"pack\"").expect("pack.mcmeta in the zip");
+        let end = start + text[start..].find("\n}\n").expect("mcmeta ends") + 3;
+        let meta: serde_json::Value = serde_json::from_str(&text[start..end]).unwrap();
+
+        assert_eq!(meta["pack"]["min_format"], json!(RESOURCE_PACK_FORMAT));
+        assert_eq!(meta["pack"]["max_format"], json!(RESOURCE_PACK_FORMAT));
+        assert!(
+            meta["pack"].get("pack_format").is_none(),
+            "a bare `pack_format` must not be emitted alongside min/max: {meta}"
+        );
+        assert_eq!(
+            RESOURCE_PACK_FORMAT,
+            [75, 0],
+            "1.21.11 client version.json: resource_major 75, resource_minor 0"
+        );
+    }
+
     #[test]
     fn zip_is_deterministic_and_has_local_signature() {
         let mut skins = BTreeMap::new();
         skins.insert("a".to_string(), vec![1u8, 2, 3]);
-        let z1 = build_pack(&skins);
-        let z2 = build_pack(&skins);
+        let extra = BTreeMap::new();
+        let z1 = build_pack(&skins, &extra);
+        let z2 = build_pack(&skins, &extra);
         assert_eq!(z1, z2, "same input → byte-identical zip");
         assert_eq!(&z1[0..4], &0x0403_4b50u32.to_le_bytes());
     }

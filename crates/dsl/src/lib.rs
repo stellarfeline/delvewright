@@ -25,15 +25,16 @@ pub use canonical::to_canonical_string;
 pub use diagnostic::{Diagnostic, Severity, codes};
 pub use envelope::{
     Campaign, Envelope, RawCampaign, SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage,
-    check_campaign, is_supported_version, is_v03, is_v04, is_v05, parse_campaign,
+    check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, parse_campaign,
 };
 pub use ids::{
-    AnchorId, AreaId, CampaignId, ClassId, DialogueId, FlagId, NpcId, ObjectiveId, PoolId,
+    ActorId, AnchorId, AreaId, CampaignId, ClassId, DialogueId, FlagId, NpcId, ObjectiveId, PoolId,
     PrefabId, QuestId, TriggerId, WaveId,
 };
 pub use l10n::{
-    CANONICAL_LANG, L10nDoc, L10nKind, each_string, inventory as l10n_inventory, localize,
-    validate_l10n,
+    ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, ScreenNarrate, SoundRef, art_narrates,
+    each_string, inventory as l10n_inventory, key_speaker, local_id, localize, on_screen_narrates,
+    play_sound_actor_refs, sound_refs, validate_l10n,
 };
 pub use registry::{
     AnchorRegistry, BlockRegistry, EffectRegistry, EntityRegistry, ItemBackedBlockRegistry,
@@ -42,10 +43,12 @@ pub use registry::{
 };
 pub use schema::stage_schema;
 pub use stages::{
-    Area, AreaLighting, CameraWaypoint, Class, ClassesContent, DialogueContent, DialogueEffect,
-    DialogueNode, DialogueOption, EnvTrigger, Fixture, KitItem, MobAttributes, MobEffect,
-    NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces, PlannedQuest,
-    Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SkinModel,
-    Trigger, TriggerOn, Wave, WaveMob, WorldContent, WorldTime, WorldWeather,
+    Actor, Area, AreaLighting, AreaMitigation, Boundary, CameraShot, CameraTarget, CameraWaypoint,
+    Class, ClassesContent, DamageKind, DespawnStyle, DialogueContent, DialogueEffect, DialogueNode,
+    DialogueOption, EnvTrigger, Facing, Fixture, Horizon, KitItem, Lethality, MobAttributes,
+    MobEffect, NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces,
+    PlannedQuest, Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role,
+    SequenceStep, SkinModel, SoundAt, StealthZone, Trap, TrapDisarm, TrapEffect, TrapReset,
+    TrapTrigger, Trigger, TriggerOn, Wave, WaveMob, WorldContent, WorldTime, WorldWeather,
 };
 pub use validate::{validate_campaign, validate_campaign_with};

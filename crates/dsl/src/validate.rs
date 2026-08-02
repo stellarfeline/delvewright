@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
-    Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, is_v03, is_v04, is_v05,
+    Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06,
 };
 use crate::ids::is_kebab;
 use crate::registry::{
@@ -62,6 +62,15 @@ pub fn validate_campaign_with(
         let blocks = ItemBackedBlockRegistry::new(items);
         let effects_reg = VendoredEffectRegistry::v1_21_11();
         v04_checks(c, anchors, &blocks, &effects_reg, &mut d);
+    }
+    // DSL v0.6: scripted actors + staging effects (spec-0014) and traps (spec-0011).
+    // Actor entity ids validate against the injected entity registry and anchors
+    // against single-prefab area metadata; traps bind `anchor/trap` markers and
+    // validate their dispense payload against the item registry (pool areas deferred
+    // to the compiler). Gated on the quests stage version.
+    if is_v06(c.quests.dsl_version.as_str()) {
+        v06_checks(c, anchors, entities, &mut d);
+        v06_trap_checks(c, items, anchors, &mut d);
     }
 
     d
@@ -203,6 +212,9 @@ fn syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
             );
         }
     }
+    for (i, a) in c.quests.content.actors.iter().enumerate() {
+        chk!(a.id, "quests", format!("/content/actors/{i}/id"));
+    }
     for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
         for (j, node) in tree.nodes.iter().enumerate() {
             chk!(
@@ -311,6 +323,18 @@ fn uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
             }),
         "quests",
         "objective",
+        d,
+    );
+    // Scripted-actor ids: unique within the stage-5 actors namespace (DSL v0.6).
+    dup_check(
+        c.quests
+            .content
+            .actors
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (a.id.as_str(), format!("/content/actors/{i}/id"))),
+        "quests",
+        "actor",
         d,
     );
     // Dialogue trees: at most one per NPC (a duplicate tree is a duplicate npc
@@ -868,6 +892,252 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
 
     reserved_v04(c, d);
     reserved_v05(c, d);
+    reserved_v06(c, d);
+}
+
+/// DSL v0.6 reserved-feature gating + validation. Several independent,
+/// stage-gated feature groups land under `dsl_version 0.6.0`, each rejected with
+/// `DW0141` in a pre-0.6 campaign (all fields default to absent/empty, so a
+/// v0.5-or-earlier campaign that uses none is byte-identical):
+/// - **spec-0013 (stage 1)**: `horizon` + `boundary`. Under a v0.6 world,
+///   `horizon: "ocean"` requires a `boundary` (`DW0320`) and `boundary.margin`
+///   must lie in `0..=64` (`DW0321`).
+/// - **spec-0012 / spec-0014 (stages 5/6)**: the `set-checkpoint` effect, the
+///   `begin-stealth`/`end-stealth` verbs, the `play-sound` effect and the
+///   `narrate` `art` style. (Sound-id `DW0326` and art-glyph `DW0328` are
+///   compiler-side checks.)
+/// - **spec-0014 (stage 5)**: scripted `actors` + the staging effects
+///   (`spawn-actor`/`despawn-actor`/`move-actor`/`unleash-actor`, `sequence`).
+/// - **task #55 (stage 5)**: the per-effect `requires_flags` flag gate on
+///   quest/trigger effects (see [`reserved_v06_effect_flags`]).
+fn reserved_v06(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    reserved_v06_world(c, d);
+    reserved_v06_effect_flags(c, d);
+}
+
+/// Per-effect `requires_flags` (task #55) is a v0.6 quests-stage surface: any
+/// quest effect (`on_objective_complete` / `on_complete`) or environment-trigger
+/// effect that carries a non-empty `requires_flags` under a pre-0.6 quests stage
+/// is reserved (`DW0141`). `campaign-complete` cannot carry the field at all.
+fn reserved_v06_effect_flags(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    if is_v06(c.quests.dsl_version.as_str()) {
+        return;
+    }
+    let msg = "effect `requires_flags` (per-effect flag gating) requires dsl_version 0.6.0 — raise \
+               this stage's `dsl_version` to 0.6.0, or remove the field";
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        for_each_effect(q, |path, eff| {
+            if !eff.requires_flags().is_empty() {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("/content/quests/{i}/{path}/requires_flags"),
+                    msg.to_string(),
+                ));
+            }
+        });
+    }
+    for (i, t) in c.quests.content.triggers.iter().enumerate() {
+        for (m, eff) in t.effects.iter().enumerate() {
+            if !eff.requires_flags().is_empty() {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("/content/triggers/{i}/effects/{m}/requires_flags"),
+                    msg.to_string(),
+                ));
+            }
+        }
+    }
+}
+
+/// Stage-1 `horizon`/`boundary` gating + validation (spec-0013), plus the
+/// stage-5 v0.6 gating of `actors` and the effect verbs (spec-0012/0014:
+/// `set-checkpoint`, `begin-stealth`/`end-stealth`, `play-sound`, `narrate art`,
+/// and the actor staging verbs; gated on the quests stage). The per-effect
+/// `requires_flags` gate is handled separately in [`reserved_v06_effect_flags`].
+fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    use crate::stages::Horizon;
+
+    // --- Stage 1: horizon / boundary (spec-0013), gated on the world stage ---
+    if !is_v06(c.world.dsl_version.as_str()) {
+        if c.world.content.horizon.is_some() {
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "world",
+                "/content/horizon".to_string(),
+                "world `horizon` requires dsl_version 0.6.0 — raise this stage's `dsl_version` to \
+                 0.6.0, or remove the construct"
+                    .to_string(),
+            ));
+        }
+        if c.world.content.boundary.is_some() {
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "world",
+                "/content/boundary".to_string(),
+                "world `boundary` requires dsl_version 0.6.0 — raise this stage's `dsl_version` to \
+                 0.6.0, or remove the construct"
+                    .to_string(),
+            ));
+        }
+        for (i, a) in c.world.content.areas.iter().enumerate() {
+            if a.mitigation.is_some() {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "world",
+                    format!("/content/areas/{i}/mitigation"),
+                    "area `mitigation` requires dsl_version 0.6.0 — raise this stage's \
+                     `dsl_version` to 0.6.0, or remove the construct"
+                        .to_string(),
+                ));
+            }
+        }
+    } else {
+        // `horizon: "ocean"` without a return rule strands wanderers in an infinite sea.
+        if matches!(c.world.content.horizon, Some(Horizon::Ocean))
+            && c.world.content.boundary.is_none()
+        {
+            d.push(Diagnostic::error(
+                codes::OCEAN_NO_BOUNDARY,
+                "world",
+                "/content/horizon".to_string(),
+                "`horizon: \"ocean\"` needs a `boundary` — an infinite swimmable sea with no \
+                 return rule lets players wander off the map. Add a `boundary` (a bare `{}` uses \
+                 the default margin), or set `horizon` to `void`"
+                    .to_string(),
+            ));
+        }
+        // `margin` range check (0..=64).
+        if let Some(b) = &c.world.content.boundary
+            && !(0..=64).contains(&b.margin)
+        {
+            d.push(Diagnostic::error(
+                codes::BOUNDARY_MARGIN,
+                "world",
+                "/content/boundary/margin".to_string(),
+                format!(
+                    "`boundary.margin` = {} is out of range — set it to a value in 0..=64 (16 is \
+                     the default)",
+                    b.margin
+                ),
+            ));
+        }
+    }
+
+    // --- Stage 5: scripted actors + quest / trigger effects (spec-0012 /
+    //     spec-0014), gated on the quests stage. `check` covers every v0.6 effect
+    //     verb (`set-checkpoint`, `begin-stealth`/`end-stealth`, `play-sound`,
+    //     `spawn-actor`/`despawn-actor`/`move-actor`/`unleash-actor`, `sequence`
+    //     — via `v06_effect`) and the `narrate` `art` style. ---
+    if !is_v06(c.quests.dsl_version.as_str()) {
+        if !c.quests.content.actors.is_empty() {
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "quests",
+                "/content/actors".to_string(),
+                "stage-5 `actors` require dsl_version 0.6.0 — raise this stage's `dsl_version` to \
+                 0.6.0, or remove the actors"
+                    .to_string(),
+            ));
+        }
+        let res = |d: &mut Vec<Diagnostic>, path: String, what: &str| {
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "quests",
+                path,
+                format!(
+                    "{what} requires dsl_version 0.6.0 — raise the quests stage's `dsl_version` \
+                     to 0.6.0, or remove the construct"
+                ),
+            ));
+        };
+        let check = |d: &mut Vec<Diagnostic>, path_base: &str, eff: &QuestEffect| {
+            if let Some(name) = eff.v06_effect() {
+                res(d, format!("{path_base}/type"), &format!("effect `{name}`"));
+            }
+            if eff.narrate_art() {
+                res(d, format!("{path_base}/style"), "narrate `style: art`");
+            }
+            // `cutscene.look_at` and the multi-shot `cutscene.shots` list are
+            // additive v0.6 fields on the v0.4 `cutscene` verb — the verb itself
+            // stays v0.4, only the new fields are gated.
+            if eff.cutscene_look_at().is_some() {
+                res(d, format!("{path_base}/look_at"), "cutscene `look_at`");
+            }
+            if eff.cutscene_multi_shot() {
+                res(d, format!("{path_base}/shots"), "cutscene `shots`");
+            }
+        };
+        for (i, q) in c.quests.content.quests.iter().enumerate() {
+            for (oid, effs) in &q.on_objective_complete {
+                for (m, eff) in effs.iter().enumerate() {
+                    check(
+                        d,
+                        &format!(
+                            "/content/quests/{i}/on_objective_complete/{}/{m}",
+                            oid.as_str()
+                        ),
+                        eff,
+                    );
+                }
+            }
+            for (m, eff) in q.on_complete.iter().enumerate() {
+                check(d, &format!("/content/quests/{i}/on_complete/{m}"), eff);
+            }
+        }
+        for (i, t) in c.quests.content.triggers.iter().enumerate() {
+            for (m, eff) in t.effects.iter().enumerate() {
+                check(d, &format!("/content/triggers/{i}/effects/{m}"), eff);
+            }
+        }
+        // Traps (spec-0011) are a v0.6 stage-5 surface: reserved before 0.6.0.
+        if !c.quests.content.traps.is_empty() {
+            res(d, "/content/traps".to_string(), "the `traps` section");
+        }
+    }
+
+    // --- Stage 2: `deferred` NPC entrance, gated on the npcs stage. ---
+    if !is_v06(c.npcs.dsl_version.as_str()) {
+        for (i, n) in c.npcs.content.npcs.iter().enumerate() {
+            if n.deferred {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "npcs",
+                    format!("/content/npcs/{i}/deferred"),
+                    "npc `deferred` requires dsl_version 0.6.0 — raise this stage's \
+                     `dsl_version` to 0.6.0, or remove the field"
+                        .to_string(),
+                ));
+            }
+        }
+    }
+
+    // --- Stage 6: dialogue effects (spec-0012 `set-checkpoint`; play-sound / art
+    //     are quest/trigger-only), gated on the dialogue stage. ---
+    if !is_v06(c.dialogue.dsl_version.as_str()) {
+        for (i, t) in c.dialogue.content.dialogues.iter().enumerate() {
+            for (j, node) in t.nodes.iter().enumerate() {
+                for (k, opt) in node.options.iter().enumerate() {
+                    for (m, eff) in opt.effects.iter().enumerate() {
+                        if let Some(name) = eff.v06_effect() {
+                            d.push(Diagnostic::error(
+                                codes::RESERVED,
+                                "dialogue",
+                                format!(
+                                    "/content/dialogues/{i}/nodes/{j}/options/{k}/effects/{m}/type"
+                                ),
+                                format!(
+                                    "dialogue effect `{name}` requires dsl_version 0.6.0 — raise \
+                                     this stage's `dsl_version` to 0.6.0, or remove the construct"
+                                ),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// DSL v0.5 reserved-feature gating (spec-0010): declared world `time`/`weather`
@@ -1118,6 +1388,252 @@ fn for_each_effect(q: &crate::stages::Quest, mut f: impl FnMut(String, &QuestEff
     }
 }
 
+/// Visit every quest effect **and every transitively-nested effect** (a `sequence`
+/// step, an `on_respawn`/`on_caught`/`on_arrive` bundle) with its relative path
+/// fragment, threading the JSON-pointer path through
+/// [`QuestEffect::nested_effect_lists_labeled`] (`steps/<step>/effects`,
+/// `on_respawn`, …). The deep counterpart of [`for_each_effect`] — the effect-ref
+/// consumer checks (unknown wave / item / block / npc references) use this so a bad
+/// ref nested in a timeline is caught, not shipped unvalidated (mirroring how the
+/// flag/wave *producer* scans and emission already descend). Top-level paths are
+/// unchanged, so a nesting-free campaign is validated identically.
+fn for_each_effect_deep(q: &crate::stages::Quest, mut f: impl FnMut(String, &QuestEffect)) {
+    fn descend(path: String, eff: &QuestEffect, f: &mut dyn FnMut(String, &QuestEffect)) {
+        f(path.clone(), eff);
+        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            for (j, inner) in list.iter().enumerate() {
+                descend(format!("{path}/{pseg}/{j}"), inner, f);
+            }
+        }
+    }
+    for (key, effs) in &q.on_objective_complete {
+        for (m, eff) in effs.iter().enumerate() {
+            descend(format!("on_objective_complete/{key}/{m}"), eff, &mut f);
+        }
+    }
+    for (m, eff) in q.on_complete.iter().enumerate() {
+        descend(format!("on_complete/{m}"), eff, &mut f);
+    }
+}
+
+/// Visit an environment trigger's effects **and every transitively-nested effect**
+/// with a relative path fragment (`effects/<m>`, then nested segments) — the
+/// trigger analogue of [`for_each_effect_deep`].
+fn for_each_trigger_effect_deep(
+    t: &crate::stages::EnvTrigger,
+    mut f: impl FnMut(String, &QuestEffect),
+) {
+    fn descend(path: String, eff: &QuestEffect, f: &mut dyn FnMut(String, &QuestEffect)) {
+        f(path.clone(), eff);
+        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            for (j, inner) in list.iter().enumerate() {
+                descend(format!("{path}/{pseg}/{j}"), inner, f);
+            }
+        }
+    }
+    for (m, eff) in t.effects.iter().enumerate() {
+        descend(format!("effects/{m}"), eff, &mut f);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DSL v0.6 — scripted actors + staging effects (spec-0014)
+// ---------------------------------------------------------------------------
+
+/// Recursively visit every effect in `effs`, descending into every nested effect
+/// list ([`QuestEffect::nested_effect_lists`]: `sequence` steps, `set-checkpoint`
+/// `on_respawn`, `begin-stealth` `on_caught`, `move-actor` `on_arrive`).
+fn walk_effects_deep(effs: &[QuestEffect], f: &mut dyn FnMut(&QuestEffect)) {
+    for e in effs {
+        e.visit_deep(f);
+    }
+}
+
+/// True if `e` is (or transitively reaches, via a `move-actor` `on_arrive`) a
+/// `sequence` — the recursion `DW0329` forbids inside another sequence's steps.
+fn reaches_sequence(e: &QuestEffect) -> bool {
+    match e {
+        QuestEffect::Sequence { .. } => true,
+        QuestEffect::MoveActor { on_arrive, .. } => on_arrive.iter().any(reaches_sequence),
+        _ => false,
+    }
+}
+
+/// Reject a `sequence` nested inside another `sequence` (`DW0329`). Recurses into a
+/// `move-actor` `on_arrive` (a sequence there is legal — not yet inside a sequence)
+/// but not into an already-flagged sequence's steps (avoids double-reporting).
+fn check_no_nested_sequence(effs: &[QuestEffect], path: &str, d: &mut Vec<Diagnostic>) {
+    for e in effs {
+        match e {
+            QuestEffect::Sequence { steps } => {
+                for s in steps {
+                    for inner in &s.effects {
+                        if reaches_sequence(inner) {
+                            d.push(Diagnostic::error(
+                                codes::NESTED_SEQUENCE,
+                                "quests",
+                                path.to_string(),
+                                "a `sequence` effect is nested inside another `sequence` — \
+                                 timelines do not recurse (spec-0014). Flatten the inner steps \
+                                 into the outer timeline (shift their `at_ticks` by the inner \
+                                 sequence's start), or drive the second beat from a flag/objective"
+                                    .to_string(),
+                            ));
+                        }
+                    }
+                }
+            }
+            QuestEffect::MoveActor { on_arrive, .. } => {
+                check_no_nested_sequence(on_arrive, path, d);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// DSL v0.6 checks (spec-0014): actor entity ids, skins, anchor resolution, actor
+/// references from staging effects, and the no-nested-`sequence` rule. Gated on the
+/// quests stage version by the caller.
+fn v06_checks(
+    c: &Campaign,
+    anchors: &dyn AnchorRegistry,
+    entities: &dyn EntityRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let quests = &c.quests.content;
+    let declared: BTreeSet<&str> = quests.actors.iter().map(|a| a.id.as_str()).collect();
+
+    // Anchor names provided by single-prefab areas (pool areas resolve anchors in
+    // the compiler, so their presence defers the check — mirroring `DW0142`'s
+    // single-prefab-only scope; never a false positive).
+    let mut anchor_union: BTreeSet<&str> = BTreeSet::new();
+    for a in &c.world.content.areas {
+        if let Some(prefab) = &a.prefab
+            && let Some(set) = anchors.anchors_for(prefab)
+        {
+            for name in set {
+                anchor_union.insert(name.as_str());
+            }
+        }
+    }
+    let defer_anchors = c
+        .world
+        .content
+        .areas
+        .iter()
+        .any(|a| a.prefab_pool.is_some());
+    let anchor_known = |name: &str| defer_anchors || anchor_union.contains(name);
+
+    // Actor declarations: entity id, skin, spawn anchor.
+    let mut seen_skins: BTreeSet<&str> = BTreeSet::new();
+    for (i, a) in quests.actors.iter().enumerate() {
+        if !entities.contains(&a.entity) {
+            d.push(Diagnostic::error(
+                codes::ENTITY_UNKNOWN,
+                "quests",
+                format!("/content/actors/{i}/entity"),
+                format!(
+                    "actor entity `{}` is not a known 1.21.11 entity id — use a valid namespaced \
+                     entity id (e.g. `minecraft:warden`)",
+                    a.entity
+                ),
+            ));
+        }
+        if let Some(skin) = &a.skin {
+            if !is_kebab(&skin.texture_id) {
+                d.push(Diagnostic::error(
+                    codes::SKIN_INVALID,
+                    "quests",
+                    format!("/content/actors/{i}/skin/texture_id"),
+                    format!(
+                        "actor skin `texture_id` `{}` is malformed — it must be a bare kebab token \
+                         (e.g. `giant-idle`), matching the `skins/<texture_id>.png` filename",
+                        skin.texture_id
+                    ),
+                ));
+            } else if !seen_skins.insert(skin.texture_id.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::SKIN_INVALID,
+                    "quests",
+                    format!("/content/actors/{i}/skin/texture_id"),
+                    format!(
+                        "duplicate actor skin `texture_id` `{}` — each mannequin needs a distinct \
+                         texture; rename one (and its `skins/<id>.png`)",
+                        skin.texture_id
+                    ),
+                ));
+            }
+        }
+        if !anchor_known(a.anchor.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ANCHOR_UNRESOLVED,
+                "quests",
+                format!("/content/actors/{i}/anchor"),
+                format!(
+                    "actor anchor `{}` is not provided by any area's prefab — use an anchor a \
+                     prefab exposes, or bind a prefab/pool that carries it",
+                    a.anchor
+                ),
+            ));
+        }
+    }
+
+    // Effect-level: actor references (DW0112), move-actor destination anchors
+    // (DW0142), and the no-nested-sequence rule (DW0329). Deep-walk so effects
+    // nested in a `sequence` / `move-actor` `on_arrive` are covered.
+    let mut groups: Vec<(String, &[QuestEffect])> = Vec::new();
+    for (i, q) in quests.quests.iter().enumerate() {
+        for (key, effs) in &q.on_objective_complete {
+            groups.push((
+                format!("/content/quests/{i}/on_objective_complete/{key}"),
+                effs.as_slice(),
+            ));
+        }
+        groups.push((
+            format!("/content/quests/{i}/on_complete"),
+            q.on_complete.as_slice(),
+        ));
+    }
+    for (i, t) in quests.triggers.iter().enumerate() {
+        groups.push((
+            format!("/content/triggers/{i}/effects"),
+            t.effects.as_slice(),
+        ));
+    }
+    for (path, effs) in &groups {
+        let mut visit = |e: &QuestEffect| {
+            if let Some(actor) = e.actor_ref()
+                && !declared.contains(actor.as_str())
+            {
+                d.push(Diagnostic::error(
+                    codes::DANGLING_REF,
+                    "quests",
+                    path.clone(),
+                    format!(
+                        "actor staging effect references unknown actor `{actor}` — declare it in \
+                         the stage-5 `actors` list, or fix the reference"
+                    ),
+                ));
+            }
+            if let QuestEffect::MoveActor { to_anchor, .. } = e
+                && !anchor_known(to_anchor.as_str())
+            {
+                d.push(Diagnostic::error(
+                    codes::ANCHOR_UNRESOLVED,
+                    "quests",
+                    path.clone(),
+                    format!(
+                        "move-actor destination anchor `{to_anchor}` is not provided by any area's \
+                         prefab — use an anchor a prefab exposes"
+                    ),
+                ));
+            }
+        };
+        walk_effects_deep(effs, &mut visit);
+        check_no_nested_sequence(effs, path, d);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Rule group 5 — anchors and items
 // ---------------------------------------------------------------------------
@@ -1203,6 +1719,71 @@ fn anchors_and_items(
                          come from prefab metadata; do NOT invent one)"
                     ),
                 ));
+            }
+            // v0.6 `close-gate` anchor (mirrors `open-gate`; the fill-block
+            // declaration is checked in the compiler, DW0343).
+            if let Some(anchor) = eff.close_gate_anchor()
+                && !set.contains(anchor.as_str())
+            {
+                d.push(Diagnostic::error(
+                    codes::ANCHOR_UNRESOLVED,
+                    "quests",
+                    format!("/content/quests/{i}/{path}/anchor"),
+                    format!(
+                        "`close-gate` anchor `{anchor}` is not provided by the prefab bound to \
+                         this quest's area — use a gate anchor the prefab exposes (anchor names \
+                         come from prefab metadata; do NOT invent one)"
+                    ),
+                ));
+            }
+            // v0.6 `set-checkpoint` anchor (spec-0012).
+            if let Some((anchor, _)) = eff.set_checkpoint()
+                && !set.contains(anchor.as_str())
+            {
+                d.push(Diagnostic::error(
+                    codes::ANCHOR_UNRESOLVED,
+                    "quests",
+                    format!("/content/quests/{i}/{path}/anchor"),
+                    format!(
+                        "`set-checkpoint` anchor `{anchor}` is not provided by the prefab bound \
+                         to this quest's area — use a checkpoint anchor the prefab exposes (anchor \
+                         names come from prefab metadata; do NOT invent one)"
+                    ),
+                ));
+            }
+            // v0.6 `damage-players` `in` filter-zone anchor (spec-0014).
+            if let Some(zone) = eff.damage_within()
+                && !set.contains(zone.anchor.as_str())
+            {
+                d.push(Diagnostic::error(
+                    codes::ANCHOR_UNRESOLVED,
+                    "quests",
+                    format!("/content/quests/{i}/{path}/in/anchor"),
+                    format!(
+                        "`damage-players` `in` anchor `{}` is not provided by the prefab bound to \
+                         this quest's area — use an anchor the prefab exposes (anchor names come \
+                         from prefab metadata; do NOT invent one)",
+                        zone.anchor
+                    ),
+                ));
+            }
+            // v0.6 `begin-stealth` zone anchors (spec-0014).
+            if let Some((zones, _, _)) = eff.begin_stealth() {
+                for (z, zone) in zones.iter().enumerate() {
+                    if !set.contains(zone.anchor.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::ANCHOR_UNRESOLVED,
+                            "quests",
+                            format!("/content/quests/{i}/{path}/zones/{z}/anchor"),
+                            format!(
+                                "`begin-stealth` zone anchor `{}` is not provided by the prefab \
+                                 bound to this quest's area — use an anchor the prefab exposes \
+                                 (anchor names come from prefab metadata; do NOT invent one)",
+                                zone.anchor
+                            ),
+                        ));
+                    }
+                }
             }
         });
     }
@@ -1435,24 +2016,32 @@ fn v03_checks(
     // needed before the reference checks below).
     let mut declared_flags: BTreeSet<&str> = BTreeSet::new();
     let mut spawned_waves: BTreeSet<&str> = BTreeSet::new();
+    // A `set-flag`/`spawn-wave` produces its flag/wave from anywhere it can fire —
+    // including nested in a `sequence` step or an `on_respawn`/`on_caught`/
+    // `on_arrive` bundle — so the producer scan descends the whole effect tree
+    // (`visit_deep`). A shallow scan spuriously reported a nested `set-flag`'s flag
+    // as never-produced (`DW0172`).
     for q in &quests.quests {
         let effs = q
             .on_objective_complete
             .values()
             .flatten()
-            .chain(q.on_complete.iter());
+            .chain(&q.on_complete);
         for eff in effs {
-            if let Some(f) = eff.set_flag() {
-                declared_flags.insert(f.as_str());
-            }
-            if let Some(w) = eff.spawn_wave() {
-                spawned_waves.insert(w.as_str());
-            }
+            eff.visit_deep(&mut |e| {
+                if let Some(f) = e.set_flag() {
+                    declared_flags.insert(f.as_str());
+                }
+                if let Some(w) = e.spawn_wave() {
+                    spawned_waves.insert(w.as_str());
+                }
+            });
         }
     }
     // v0.4: flags/waves may also come from dialogue `set-flag` effects and
     // environment-trigger effects. Empty for v0.2/v0.3 campaigns (no such
-    // constructs), so their flag resolution is unchanged.
+    // constructs), so their flag resolution is unchanged. Dialogue effects are a
+    // flat list (no nesting), so a direct scan suffices there.
     for tree in &c.dialogue.content.dialogues {
         for node in &tree.nodes {
             for opt in &node.options {
@@ -1466,12 +2055,14 @@ fn v03_checks(
     }
     for t in &quests.triggers {
         for eff in &t.effects {
-            if let Some(f) = eff.set_flag() {
-                declared_flags.insert(f.as_str());
-            }
-            if let Some(w) = eff.spawn_wave() {
-                spawned_waves.insert(w.as_str());
-            }
+            eff.visit_deep(&mut |e| {
+                if let Some(f) = e.set_flag() {
+                    declared_flags.insert(f.as_str());
+                }
+                if let Some(w) = e.spawn_wave() {
+                    spawned_waves.insert(w.as_str());
+                }
+            });
         }
     }
 
@@ -1580,7 +2171,7 @@ fn v03_checks(
             }
         }
 
-        for_each_effect(q, |path, eff| {
+        for_each_effect_deep(q, |path, eff| {
             if let Some(w) = eff.spawn_wave()
                 && !declared_waves.contains(w.as_str())
             {
@@ -1606,6 +2197,42 @@ fn v03_checks(
                          a valid namespaced item id (e.g. `minecraft:golden_apple`)"
                     ),
                 ));
+            }
+            // v0.6: per-effect `requires_flags` must resolve to a produced flag,
+            // mirroring the objective/trigger `requires_flags` check (DW0172).
+            for (n, f) in eff.requires_flags().iter().enumerate() {
+                if !declared_flags.contains(f.as_str()) {
+                    d.push(Diagnostic::error(
+                        codes::FLAG_UNKNOWN,
+                        "quests",
+                        format!("/content/quests/{i}/{path}/requires_flags/{n}"),
+                        format!(
+                            "effect `requires_flags` references flag `{f}`, which no `set-flag` \
+                             effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
+                             earlier, or correct the flag name"
+                        ),
+                    ));
+                }
+            }
+        });
+    }
+
+    // v0.6: environment-trigger effect `requires_flags` resolution (DW0172).
+    for (i, t) in quests.triggers.iter().enumerate() {
+        for_each_trigger_effect_deep(t, |path, eff| {
+            for (n, f) in eff.requires_flags().iter().enumerate() {
+                if !declared_flags.contains(f.as_str()) {
+                    d.push(Diagnostic::error(
+                        codes::FLAG_UNKNOWN,
+                        "quests",
+                        format!("/content/triggers/{i}/{path}/requires_flags/{n}"),
+                        format!(
+                            "effect `requires_flags` references flag `{f}`, which no `set-flag` \
+                             effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
+                             earlier, or correct the flag name"
+                        ),
+                    ));
+                }
             }
         });
     }
@@ -1658,38 +2285,10 @@ fn v04_checks(
     // area AND there are no pool areas (which the compiler resolves later).
     let anchor_resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
 
-    // Declared flags across quest / dialogue / trigger `set-flag` effects.
-    let mut flags: BTreeSet<&str> = BTreeSet::new();
-    for q in &quests.quests {
-        for e in q
-            .on_objective_complete
-            .values()
-            .flatten()
-            .chain(&q.on_complete)
-        {
-            if let Some(f) = e.set_flag() {
-                flags.insert(f.as_str());
-            }
-        }
-    }
-    for t in &quests.triggers {
-        for e in &t.effects {
-            if let Some(f) = e.set_flag() {
-                flags.insert(f.as_str());
-            }
-        }
-    }
-    for tree in &c.dialogue.content.dialogues {
-        for node in &tree.nodes {
-            for opt in &node.options {
-                for e in &opt.effects {
-                    if let Some(f) = e.set_flag() {
-                        flags.insert(f.as_str());
-                    }
-                }
-            }
-        }
-    }
+    // Declared flags across quest / dialogue / trigger `set-flag` effects and v0.6
+    // trap disarms (a disarm's `sets_flag` is a first-class declared flag other
+    // objectives/triggers may gate on).
+    let flags = collect_declared_flags(c);
     let declared_waves: BTreeSet<&str> = quests.waves.iter().map(|w| w.id.as_str()).collect();
 
     // --- skins (spec-0009) ---
@@ -1746,22 +2345,18 @@ fn v04_checks(
     // --- block ids: interact props + set-block effects (quest + trigger) ---
     for (i, q) in quests.quests.iter().enumerate() {
         for (j, o) in q.objectives.iter().enumerate() {
-            if let Some(prop) = o.prop()
-                && !blocks.contains(&prop.block)
-            {
-                d.push(Diagnostic::error(
-                    codes::BLOCK_UNKNOWN,
-                    "quests",
+            if let Some(prop) = o.prop() {
+                check_block_field(
+                    blocks,
+                    &prop.block,
                     format!("/content/quests/{i}/objectives/{j}/prop/block"),
-                    format!(
-                        "`interact.prop` block `{}` is not a known 1.21.11 block id — use a valid \
-                         namespaced block id (e.g. `minecraft:lever`)",
-                        prop.block
-                    ),
-                ));
+                    "interact.prop",
+                    "minecraft:lever",
+                    d,
+                );
             }
         }
-        for_each_effect(q, |path, eff| {
+        for_each_effect_deep(q, |path, eff| {
             check_effect_v04(
                 eff,
                 blocks,
@@ -1837,16 +2432,16 @@ fn v04_checks(
                 ));
             }
         }
-        for (m, eff) in t.effects.iter().enumerate() {
+        for_each_trigger_effect_deep(t, |path, eff| {
             check_effect_v04(
                 eff,
                 blocks,
                 &declared_waves,
-                &format!("/content/triggers/{i}/effects/{m}"),
+                &format!("/content/triggers/{i}/{path}"),
                 &npc_ids,
                 d,
             );
-        }
+        });
     }
 
     // --- dialogue requires_flags resolution + flag-deadlock guard ---
@@ -1854,11 +2449,271 @@ fn v04_checks(
 
     // --- despawned-npc references (DW0195) ---
     despawned_ref_check(c, &npc_ids, d);
+    deferred_npc_checks(c, &npc_ids, d);
+}
+
+/// Split a block field into its base id and (optional) blockstate suffix,
+/// validating the suffix's syntax (DSL v0.6, task #55). Returns the base id to
+/// check against the block registry; `Err(reason)` when a `[...]` suffix is
+/// present but malformed (unbalanced brackets, empty, or a token that is not a
+/// lowercase `key=value`). A well-formed state string is passed through verbatim
+/// to `setblock` — vanilla validates the property names/values against the
+/// block's own state definition, so the compiler only guards the surface syntax.
+fn split_blockstate(block: &str) -> Result<&str, String> {
+    let Some(open) = block.find('[') else {
+        return Ok(block);
+    };
+    let rest = &block[open..];
+    if !rest.ends_with(']') {
+        return Err(format!(
+            "malformed blockstate in `{block}` — the `[...]` suffix must close with `]` \
+             (e.g. `minecraft:grindstone[face=floor]`)"
+        ));
+    }
+    let inner = &rest[1..rest.len() - 1];
+    if inner.trim().is_empty() {
+        return Err(format!(
+            "malformed blockstate in `{block}` — the `[...]` suffix is empty; drop the brackets or \
+             add a `key=value` property"
+        ));
+    }
+    let is_token = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_')
+    };
+    for prop in inner.split(',') {
+        let mut kv = prop.splitn(2, '=');
+        let key = kv.next().unwrap_or("").trim();
+        match kv.next().map(str::trim) {
+            Some(val) if is_token(key) && is_token(val) => {}
+            _ => {
+                return Err(format!(
+                    "malformed blockstate in `{block}` — each property must be `key=value` with \
+                     lowercase `[a-z0-9_]` tokens (e.g. `face=floor`)"
+                ));
+            }
+        }
+    }
+    Ok(&block[..open])
+}
+
+/// Validate a block field (interact prop / set-block) allowing an optional
+/// verbatim blockstate suffix (DSL v0.6). The base id must be in the block
+/// registry (`DW0193`); a malformed `[...]` suffix reuses `DW0193` with a clear
+/// message. Always a quests-stage diagnostic.
+fn check_block_field(
+    blocks: &dyn BlockRegistry,
+    block: &str,
+    path: String,
+    kind: &str,
+    example: &str,
+    d: &mut Vec<Diagnostic>,
+) {
+    match split_blockstate(block) {
+        Ok(base) => {
+            if !blocks.contains(base) {
+                d.push(Diagnostic::error(
+                    codes::BLOCK_UNKNOWN,
+                    "quests",
+                    path,
+                    format!(
+                        "`{kind}` block `{block}` is not a known 1.21.11 block id — use a valid \
+                         namespaced block id (e.g. `{example}`)"
+                    ),
+                ));
+            }
+        }
+        Err(reason) => {
+            d.push(Diagnostic::error(
+                codes::BLOCK_UNKNOWN,
+                "quests",
+                path,
+                reason,
+            ));
+        }
+    }
+}
+
+/// Every flag id declared anywhere in the campaign — the union of `set-flag`
+/// effects (quest / dialogue / trigger) and v0.6 trap disarm `sets_flag`
+/// (spec-0011). The authoritative declared-flag set every `requires_flags`
+/// resolves against.
+fn collect_declared_flags(c: &Campaign) -> BTreeSet<&str> {
+    let mut flags: BTreeSet<&str> = BTreeSet::new();
+    for q in &c.quests.content.quests {
+        for e in q
+            .on_objective_complete
+            .values()
+            .flatten()
+            .chain(&q.on_complete)
+        {
+            if let Some(f) = e.set_flag() {
+                flags.insert(f.as_str());
+            }
+        }
+    }
+    for t in &c.quests.content.triggers {
+        for e in &t.effects {
+            if let Some(f) = e.set_flag() {
+                flags.insert(f.as_str());
+            }
+        }
+    }
+    for t in &c.quests.content.traps {
+        if let Some(dis) = &t.disarm {
+            flags.insert(dis.sets_flag.as_str());
+        }
+    }
+    for tree in &c.dialogue.content.dialogues {
+        for node in &tree.nodes {
+            for opt in &node.options {
+                for e in &opt.effects {
+                    if let Some(f) = e.set_flag() {
+                        flags.insert(f.as_str());
+                    }
+                }
+            }
+        }
+    }
+    flags
+}
+
+/// DSL v0.6 trap validation (spec-0011). Each trap binds to an `anchor/trap`
+/// marker and gives the mute prefab hardware meaning. Structural failures are
+/// `DW0340` (a malformed/duplicate id, an `at`/`disarm.via` no area's prefab
+/// provides, or a `disarm.via` colliding with the trap's own trigger anchor); a
+/// dispense payload item unknown to the pinned registry is `DW0341`. A trap's
+/// `requires_flags` resolves against the declared-flag set like a trigger's
+/// (`DW0172`). The completability obligation for a *lethal* trap is discharged
+/// later by the compiler nav proof (`DW0342`).
+fn v06_trap_checks(
+    c: &Campaign,
+    items: &dyn ItemRegistry,
+    anchors: &dyn AnchorRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let quests = &c.quests.content;
+    if quests.traps.is_empty() {
+        return;
+    }
+
+    // Area anchor sets (single-prefab areas) + whether any pool area exists, so
+    // resolution stays lenient for pool areas the compiler resolves later — the
+    // same policy as the v0.4 trigger check.
+    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
+    let mut has_pool_area = false;
+    for a in &c.world.content.areas {
+        if let Some(prefab) = &a.prefab {
+            if let Some(set) = anchors.anchors_for(prefab) {
+                known_anchor.extend(set.iter().map(String::as_str));
+            }
+        } else if a.prefab_pool.is_some() {
+            has_pool_area = true;
+        }
+    }
+    let anchor_resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
+
+    let flags = collect_declared_flags(c);
+
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for (i, t) in quests.traps.iter().enumerate() {
+        if !t.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::TRAP_INVALID,
+                "quests",
+                format!("/content/traps/{i}/id"),
+                format!(
+                    "malformed trap id `{}` — trap ids must be lowercase kebab-case with the \
+                     `trap/` prefix (e.g. `trap/dart-hall`)",
+                    t.id
+                ),
+            ));
+        }
+        if !seen.insert(t.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::TRAP_INVALID,
+                "quests",
+                format!("/content/traps/{i}/id"),
+                format!(
+                    "duplicate trap id `{}` — rename one so every trap id is unique",
+                    t.id
+                ),
+            ));
+        }
+        if !anchor_resolvable(t.at.as_str()) {
+            d.push(Diagnostic::error(
+                codes::TRAP_INVALID,
+                "quests",
+                format!("/content/traps/{i}/at"),
+                format!(
+                    "trap `at` anchor `{}` is not provided by any area's prefab — bind the trap to \
+                     an `anchor/trap` marker some area's prefab exposes (anchor names come from \
+                     prefab metadata; do NOT invent one)",
+                    t.at
+                ),
+            ));
+        }
+        if let Some(dis) = &t.disarm {
+            if !anchor_resolvable(dis.via.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::TRAP_INVALID,
+                    "quests",
+                    format!("/content/traps/{i}/disarm/via"),
+                    format!(
+                        "trap `disarm.via` anchor `{}` is not provided by any area's prefab — use \
+                         an anchor some area's prefab exposes for the disarm affordance",
+                        dis.via
+                    ),
+                ));
+            }
+            if dis.via == t.at {
+                d.push(Diagnostic::error(
+                    codes::TRAP_INVALID,
+                    "quests",
+                    format!("/content/traps/{i}/disarm/via"),
+                    format!(
+                        "trap `disarm.via` anchor `{}` is the trap's own trigger anchor — the \
+                         disarm must be a distinct, separately-reachable affordance, not the trap \
+                         cell itself",
+                        dis.via
+                    ),
+                ));
+            }
+        }
+        if let Some((item, _)) = t.dispense()
+            && !items.contains(item)
+        {
+            d.push(Diagnostic::error(
+                codes::TRAP_PAYLOAD_UNKNOWN,
+                "quests",
+                format!("/content/traps/{i}/effect/dispense/item"),
+                format!(
+                    "trap dispense payload item `{item}` is not in the pinned 1.21.11 item \
+                     registry — use a valid namespaced item id (e.g. `minecraft:arrow`)"
+                ),
+            ));
+        }
+        for (m, f) in t.requires_flags.iter().enumerate() {
+            if !flags.contains(f.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::FLAG_UNKNOWN,
+                    "quests",
+                    format!("/content/traps/{i}/requires_flags/{m}"),
+                    format!(
+                        "trap `requires_flags` references flag `{f}`, which no `set-flag` effect or \
+                         trap disarm ever produces — add a producer or correct the flag name"
+                    ),
+                ));
+            }
+        }
+    }
 }
 
 /// Validate a v0.4-relevant [`QuestEffect`]'s refs: `set-block` block id
 /// (`DW0193`), `despawn-npc`/`move-npc` npc ids (`DW0112`), `move-npc` speed
-/// positivity. Item/wave/flag refs are covered by the shared v0.3 checks.
+/// positivity, `cutscene` shape (`DW0199`). Item/wave/flag refs are covered by
+/// the shared v0.3 checks.
 fn check_effect_v04(
     eff: &QuestEffect,
     blocks: &dyn BlockRegistry,
@@ -1867,24 +2722,29 @@ fn check_effect_v04(
     npc_ids: &BTreeSet<&str>,
     d: &mut Vec<Diagnostic>,
 ) {
+    check_cutscene_shape(eff, base_path, d);
     match eff {
         QuestEffect::SetBlock { block, .. } => {
-            if !blocks.contains(block) {
-                d.push(Diagnostic::error(
-                    codes::BLOCK_UNKNOWN,
-                    "quests",
-                    format!("{base_path}/block"),
-                    format!(
-                        "`set-block` block `{block}` is not a known 1.21.11 block id — use a \
-                         valid namespaced block id (e.g. `minecraft:air`)"
-                    ),
-                ));
-            }
+            check_block_field(
+                blocks,
+                block,
+                format!("{base_path}/block"),
+                "set-block",
+                "minecraft:air",
+                d,
+            );
         }
-        QuestEffect::DespawnNpc { npc } | QuestEffect::MoveNpc { npc, .. }
+        // NPC-lifecycle refs. `spawn-npc` (v0.6) joins the v0.4 `despawn-npc`/
+        // `move-npc` family: an unknown npc id is the same `DW0112` dangling ref.
+        QuestEffect::DespawnNpc { npc, .. }
+        | QuestEffect::MoveNpc { npc, .. }
+        | QuestEffect::SpawnNpc { npc }
             if !npc_ids.contains(npc.as_str()) =>
         {
-            let verb = eff.v04_effect().unwrap_or("lifecycle");
+            let verb = eff
+                .v04_effect()
+                .or_else(|| eff.v06_effect())
+                .unwrap_or("lifecycle");
             d.push(Diagnostic::error(
                 codes::DANGLING_REF,
                 "quests",
@@ -1896,6 +2756,76 @@ fn check_effect_v04(
             ));
         }
         _ => {}
+    }
+}
+
+/// `cutscene` shape (`DW0199`): a cutscene is written either multi-shot
+/// (`shots: [...]`, DSL v0.6) or single-shot (`path` + `seconds`, DSL v0.4) —
+/// never both, never neither — and every resolved shot needs at least one camera
+/// waypoint. The two spellings normalize to the same shot list
+/// ([`QuestEffect::cutscene_shots`]), so this is the one place the shape is
+/// policed; emission may then assume a non-empty, well-formed list.
+fn check_cutscene_shape(eff: &QuestEffect, base_path: &str, d: &mut Vec<Diagnostic>) {
+    let QuestEffect::Cutscene {
+        shots,
+        path,
+        seconds,
+        ..
+    } = eff
+    else {
+        return;
+    };
+    let single = !path.is_empty() || seconds.is_some();
+    let err = |d: &mut Vec<Diagnostic>, field: &str, msg: String| {
+        d.push(Diagnostic::error(
+            codes::CUTSCENE_SHAPE,
+            "quests",
+            format!("{base_path}/{field}"),
+            msg,
+        ));
+    };
+    match (!shots.is_empty(), single) {
+        (true, true) => err(
+            d,
+            "shots",
+            "`cutscene` mixes the multi-shot `shots` list with the single-shot \
+             `path`/`seconds` fields — use one form: move the single-shot fields into a `shots` \
+             entry, or drop `shots`"
+                .to_string(),
+        ),
+        (false, false) => err(
+            d,
+            "shots",
+            "`cutscene` declares no shot — give a `shots` list of \
+             `{path, seconds, look_at?}` (multi-shot), or a single-shot `path` + `seconds`"
+                .to_string(),
+        ),
+        (false, true) if seconds.is_none() => err(
+            d,
+            "seconds",
+            "single-shot `cutscene` is missing `seconds` — every shot needs a duration".to_string(),
+        ),
+        _ => {}
+    }
+    for (i, shot) in shots.iter().enumerate() {
+        if shot.path.is_empty() {
+            err(
+                d,
+                &format!("shots/{i}/path"),
+                "`cutscene` shot has an empty camera `path` — give at least one waypoint (one \
+                 waypoint is a static shot, two or more is a dolly)"
+                    .to_string(),
+            );
+        }
+    }
+    if shots.is_empty() && single && path.is_empty() {
+        err(
+            d,
+            "path",
+            "single-shot `cutscene` has an empty camera `path` — give at least one waypoint (one \
+             waypoint is a static shot, two or more is a dolly)"
+                .to_string(),
+        );
     }
 }
 
@@ -2044,6 +2974,174 @@ fn despawned_ref_check(c: &Campaign, _npc_ids: &BTreeSet<&str>, d: &mut Vec<Diag
                     ),
                 ));
             }
+        }
+    }
+}
+
+/// Transitive stage-4 quest ancestors: `q -> {every quest that must complete before
+/// q starts}` (the `depends_on` closure). Acyclicity is guaranteed by `DW0130`.
+fn quest_ancestors(c: &Campaign) -> BTreeMap<&str, BTreeSet<&str>> {
+    let deps: BTreeMap<&str, &Vec<crate::ids::QuestId>> = c
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .map(|q| (q.id.as_str(), &q.depends_on))
+        .collect();
+    let mut out = BTreeMap::new();
+    for q in c.quest_plan.content.quests.iter() {
+        let mut anc: BTreeSet<&str> = BTreeSet::new();
+        let mut stack = vec![q.id.as_str()];
+        while let Some(cur) = stack.pop() {
+            if let Some(ds) = deps.get(cur) {
+                for dep in ds.iter() {
+                    if anc.insert(dep.as_str()) {
+                        stack.push(dep.as_str());
+                    }
+                }
+            }
+        }
+        out.insert(q.id.as_str(), anc);
+    }
+    out
+}
+
+/// `deferred` NPC staging proofs (DSL v0.6), the dual of `despawned_ref_check`:
+///
+/// * `DW0112` — a dialogue `spawn-npc` naming an unknown NPC (the quest-effect form
+///   is covered by `check_effect_v04`).
+/// * `DW0197` — a `deferred: true` NPC that **no** `spawn-npc` anywhere summons: it
+///   never enters the world, so its tree and any `talk-to` on it are dead content.
+/// * `DW0198` — a `talk-to` on a deferred NPC that provably activates before the
+///   NPC exists: every `spawn-npc` for it lives in a quest that is a strict DAG
+///   *descendant* of the objective's quest. Conservative by construction — a spawn
+///   from a trigger, from dialogue, or from the objective's own quest is not
+///   DAG-ordered, so it suppresses the proof rather than risking a false positive.
+fn deferred_npc_checks(c: &Campaign, npc_ids: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
+    use crate::stages::DialogueEffect;
+    let deferred: BTreeSet<&str> = c
+        .npcs
+        .content
+        .npcs
+        .iter()
+        .filter(|n| n.deferred)
+        .map(|n| n.id.as_str())
+        .collect();
+
+    // Spawn sites. `quest_spawns`: npc -> quests whose effects spawn it (DAG-ordered).
+    // `loose_spawns`: npcs spawned from a trigger or a dialogue option — sources with
+    // no position on the quest DAG.
+    let mut quest_spawns: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut loose_spawns: BTreeSet<String> = BTreeSet::new();
+    for q in &c.quests.content.quests {
+        let qid = q.id.as_str().to_string();
+        for_each_effect_deep(q, |_path, eff| {
+            if let Some(npc) = eff.spawn_npc() {
+                quest_spawns
+                    .entry(npc.as_str().to_string())
+                    .or_default()
+                    .insert(qid.clone());
+            }
+        });
+    }
+    for t in &c.quests.content.triggers {
+        for_each_trigger_effect_deep(t, |_path, eff| {
+            if let Some(npc) = eff.spawn_npc() {
+                loose_spawns.insert(npc.as_str().to_string());
+            }
+        });
+    }
+    for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
+        for (j, node) in tree.nodes.iter().enumerate() {
+            for (k, opt) in node.options.iter().enumerate() {
+                for (m, eff) in opt.effects.iter().enumerate() {
+                    let DialogueEffect::SpawnNpc { npc } = eff else {
+                        continue;
+                    };
+                    if !npc_ids.contains(npc.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::DANGLING_REF,
+                            "dialogue",
+                            format!("/content/dialogues/{i}/nodes/{j}/options/{k}/effects/{m}/npc"),
+                            format!(
+                                "dialogue `spawn-npc` references unknown npc `{npc}` — declare it \
+                                 in stage 2 or correct the reference"
+                            ),
+                        ));
+                        continue;
+                    }
+                    loose_spawns.insert(npc.as_str().to_string());
+                }
+            }
+        }
+    }
+
+    // DW0197: deferred but never spawned anywhere.
+    for (i, n) in c.npcs.content.npcs.iter().enumerate() {
+        if !n.deferred {
+            continue;
+        }
+        let id = n.id.as_str();
+        if quest_spawns.contains_key(id) || loose_spawns.contains(id) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            codes::NPC_NEVER_SPAWNED,
+            "npcs",
+            format!("/content/npcs/{i}/deferred"),
+            format!(
+                "npc `{id}` is `deferred: true` but no `spawn-npc` effect anywhere in the \
+                 campaign summons it — it never enters the world, so its dialogue tree (and any \
+                 `talk-to` on it) is unreachable content. Add a `spawn-npc {{ npc: \"{id}\" }}` \
+                 effect at the beat where the character should walk in, or drop `deferred` so it \
+                 stands at its anchor from world init. Do NOT delete the dialogue tree to silence \
+                 this — every stage-2 npc needs one (`DW0152`)"
+            ),
+        ));
+    }
+    if deferred.is_empty() {
+        return;
+    }
+
+    // DW0198: a `talk-to` on a deferred npc whose every spawn site is a strict DAG
+    // descendant of the objective's quest.
+    let ancestors = quest_ancestors(c);
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oi, o) in q.objectives.iter().enumerate() {
+            let Objective::TalkTo { npc, .. } = o else {
+                continue;
+            };
+            let npc = npc.as_str();
+            if !deferred.contains(npc) || loose_spawns.contains(npc) {
+                continue;
+            }
+            let Some(sqs) = quest_spawns.get(npc) else {
+                continue; // never spawned at all — already DW0197
+            };
+            let all_later = sqs.iter().all(|sq| {
+                sq.as_str() != q.id.as_str()
+                    && ancestors
+                        .get(sq.as_str())
+                        .is_some_and(|anc| anc.contains(q.id.as_str()))
+            });
+            if !all_later {
+                continue;
+            }
+            let names: Vec<&str> = sqs.iter().map(|s| s.as_str()).collect();
+            d.push(Diagnostic::error(
+                codes::NPC_SPAWNED_LATE,
+                "quests",
+                format!("/content/quests/{qi}/objectives/{oi}/npc"),
+                format!(
+                    "`talk-to` targets deferred npc `{npc}`, but every `spawn-npc` for it fires \
+                     in a quest that depends on this one (`{}`) — the objective activates on an \
+                     empty anchor and can never complete. Move the `spawn-npc` to this quest or \
+                     one of its prerequisites, or move the `talk-to` after the entrance. Do NOT \
+                     drop `deferred` just to pass this — that puts the character back on stage \
+                     from minute one",
+                    names.join("`, `")
+                ),
+            ));
         }
     }
 }

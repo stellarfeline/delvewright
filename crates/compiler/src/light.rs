@@ -27,7 +27,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use delvewright_dsl::{AreaLighting, Campaign, Fixture, WorldTime, WorldWeather};
+use delvewright_dsl::{AreaLighting, AreaMitigation, Campaign, Fixture, WorldTime, WorldWeather};
 
 use crate::nav::World;
 use crate::plan::{Plan, ResolvedAnchor};
@@ -463,23 +463,24 @@ pub fn darkest_effective_sky(c: &Campaign) -> u8 {
 }
 
 // ---------------------------------------------------------------------------
-// Night-vision mitigation (retained heuristic, owner decision 2026-07-31)
+// Night-vision mitigation (DSL v0.6 declaration)
 // ---------------------------------------------------------------------------
 
-/// Whether some class kit grants a night-vision mitigation (spec-0001 v0.2
-/// heuristic, retained by spec-0010): a kit item whose id or display name contains
-/// `night_vision` / `night vision` (case-insensitive). This is a static policy
-/// gate ("you declared darkness, so declare a light source or hand out night
-/// vision"), not a runtime guarantee.
-pub fn has_night_vision(c: &Campaign) -> bool {
-    c.classes.content.classes.iter().any(|class| {
-        class.kit.iter().any(|item| {
-            let id = item.item.to_ascii_lowercase();
-            let name = item.name.as_deref().unwrap_or("").to_ascii_lowercase();
-            let is_nv = |s: &str| s.contains("night_vision") || s.contains("night vision");
-            is_nv(&id) || is_nv(&name)
-        })
-    })
+/// Whether an area declares the `night-vision` darkness mitigation (DSL v0.6).
+///
+/// This is the **whole** night-vision signal. The pre-0.6 heuristic read a class
+/// kit item's id or display *name* for `night_vision` / `night vision`, which
+/// accepted a bare `minecraft:potion` renamed "Potion of Night Vision" — a water
+/// bottle. `DW0210` passed while nothing in the shipped world granted night vision
+/// (owner, island QA). The declaration is now both the gate's input and the thing
+/// the compiler emits (`emit::night_vision_fns`), so the check cannot pass without
+/// the feature existing.
+///
+/// It is also language-independent by construction: a declaration is not a
+/// player-facing string, so `--lang` can never move the `DW0210` verdict (ADR-0006)
+/// and no verdict has to be threaded around the localization pass any more.
+pub fn area_night_vision(area: &delvewright_dsl::Area) -> bool {
+    matches!(area.mitigation, Some(AreaMitigation::NightVision))
 }
 
 // ---------------------------------------------------------------------------
@@ -494,10 +495,14 @@ pub fn has_night_vision(c: &Campaign) -> bool {
 /// measured darkness (`DW0210` unless a reachable cell is ≥ 3 or night-vision
 /// mitigates). Never mutates the caller's inputs; returns placements + the
 /// colliding-fixture cells for post-relight nav verification.
+///
+/// The night-vision mitigation is read **per area** from its `mitigation`
+/// declaration ([`area_night_vision`]) — a schema field, never a player-facing
+/// string — so the `DW0210` verdict is identical in every build language by
+/// construction, with nothing to thread past the localization pass (ADR-0006).
 pub fn relight(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Relight {
     let c = plan.campaign;
     let sky = darkest_effective_sky(c);
-    let night_vision = has_night_vision(c);
 
     // The base assembled geometry (nav) and required-path cells fixtures must avoid.
     let nav = World::from_plan(plan, structures);
@@ -562,6 +567,7 @@ pub fn relight(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Relight {
             }
             None => {
                 // Measured-darkness gate over the assembled reachable walkable cells.
+                let night_vision = dsl_area.is_some_and(area_night_vision);
                 if let Some(diag) =
                     measure_undeclared(&model, &reachable, sky, night_vision, &area.area_id)
                 {
@@ -684,11 +690,14 @@ fn measure_undeclared(
             message: format!(
                 "area `{area_id}` has a reachable walkable cell at {cell:?} measured at light {l} \
                  (< {DARK_THRESHOLD}) under the darkest reachable (time, weather) sky (effective \
-                 {sky}), with no `lighting` declaration and no night-vision class kit. Mitigate \
+                 {sky}), with no `lighting` and no `mitigation` declaration. Mitigate \
                  one of three ways: declare `world.areas[].lighting` (a relight `fixture` + \
-                 `min_light`) for this area, brighten the scene (`world.time`/`weather`), or give \
-                 a class a night-vision kit item. Do NOT lower `DARK_THRESHOLD` or trim the \
-                 reachable set — the darkness is real (spec-0010 DW0210)"
+                 `min_light`) for this area, brighten the scene (`world.time`/`weather`), or \
+                 declare `world.areas[].mitigation: \"night-vision\"` on this area (the compiler \
+                 then emits a clocked `effect give … night_vision` over its bounds). A renamed \
+                 potion in a class kit is NOT a mitigation — it grants nothing. Do NOT lower \
+                 `DARK_THRESHOLD` or trim the reachable set — the darkness is real (spec-0010 \
+                 DW0210)"
             ),
         })
     } else {

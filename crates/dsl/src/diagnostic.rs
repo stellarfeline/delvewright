@@ -8,7 +8,11 @@ use serde::Serialize;
 pub enum Severity {
     /// A hard rejection.
     Error,
-    /// Advisory only (unused in v0, reserved for future rules).
+    /// Advisory. Reported and rendered like an error, but does **not** fail the
+    /// run — `delvec` exits non-zero only on [`Severity::Error`]. Reserved for
+    /// rules whose verdict depends on something the compiler cannot fully know
+    /// (e.g. `DW0330`: how much text fits depends on the player's window size and
+    /// GUI scale), where a hard rejection would be a guess dressed as a fact.
     Warning,
 }
 
@@ -40,6 +44,22 @@ impl Diagnostic {
         Diagnostic {
             code: code.to_string(),
             severity: Severity::Error,
+            stage: stage.into(),
+            path: path.into(),
+            message: message.into(),
+        }
+    }
+
+    /// Build a warning (advisory) diagnostic. Reported, but does not fail the run.
+    pub fn warning(
+        code: &str,
+        stage: impl Into<String>,
+        path: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Diagnostic {
+            code: code.to_string(),
+            severity: Severity::Warning,
             stage: stage.into(),
             path: path.into(),
             message: message.into(),
@@ -147,4 +167,47 @@ pub mod codes {
     pub const NPC_DESPAWNED_REF: &str = "DW0195";
     /// (v0.5) An area `lighting.min_light` is out of the 1..=14 range (spec-0010).
     pub const LIGHTING_RANGE: &str = "DW0196";
+    /// (v0.6) A stage-2 NPC declares `deferred: true` but **no** `spawn-npc` effect
+    /// anywhere in the campaign ever summons it — the NPC never enters the world,
+    /// so its dialogue tree and any `talk-to` on it are unreachable content. The
+    /// NPC-lifecycle dual of [`NPC_DESPAWNED_REF`] / `DW0195`.
+    ///
+    /// (0197/0198 were *reserved* by spec-0011's draft and released when that spec
+    /// renumbered to `DW0340`/`DW0341`; they were never emitted by any code.)
+    pub const NPC_NEVER_SPAWNED: &str = "DW0197";
+    /// (v0.6) A `talk-to` on a `deferred` NPC activates before the NPC can exist:
+    /// every `spawn-npc` for it sits in a quest that is a strict *descendant* of the
+    /// objective's quest on the stage-4 DAG (and none fires from a trigger or
+    /// dialogue), so the objective provably activates on an empty anchor.
+    pub const NPC_SPAWNED_LATE: &str = "DW0198";
+    /// (v0.6) A `cutscene` effect's shape is invalid: it mixes the multi-shot
+    /// `shots` list with the single-shot `path`/`seconds` fields, gives neither,
+    /// or declares a shot with an empty camera `path`. A cutscene must resolve to
+    /// at least one shot, and every shot to at least one camera position.
+    pub const CUTSCENE_SHAPE: &str = "DW0199";
+
+    /// (v0.6) `horizon: "ocean"` declared without a `boundary` (spec-0013):
+    /// validation-tier (exit 1). An infinite swimmable sea with no return rule is
+    /// an authoring error. Grouped in the DW032x world/region family by domain;
+    /// unlike the compiler-tier DW030x geometry codes it is raised at DSL
+    /// validation, so it exits 1.
+    pub const OCEAN_NO_BOUNDARY: &str = "DW0320";
+    /// (v0.6) `boundary.margin` outside the `0..=64` range (spec-0013):
+    /// validation-tier (exit 1).
+    pub const BOUNDARY_MARGIN: &str = "DW0321";
+    /// (v0.6) A `sequence` effect is nested inside another `sequence` (directly, or
+    /// reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse
+    /// (spec-0014). Flatten the inner steps into the outer timeline.
+    pub const NESTED_SEQUENCE: &str = "DW0329";
+
+    /// (v0.6) Trap declaration structurally invalid (spec-0011): a malformed or
+    /// duplicated `trap/<id>`, an `at`/`disarm.via` that no area's prefab provides,
+    /// or a trap whose `disarm.via` collides with its own trigger anchor.
+    /// Validation-tier (exit 1). Renumbered off the spec's stale reserved number
+    /// (0197 — since taken).
+    pub const TRAP_INVALID: &str = "DW0340";
+    /// (v0.6) A trap dispense-payload item id is not in the pinned 1.21.11 registry
+    /// (spec-0011; mirrors `DW0143`). Validation-tier (exit 1). Renumbered off the
+    /// spec's stale reserved number (0198 — since taken).
+    pub const TRAP_PAYLOAD_UNKNOWN: &str = "DW0341";
 }

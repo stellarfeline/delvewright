@@ -30,6 +30,22 @@ server_jar_size = 56327581
 # Consumed by: the compiler's emitted pack.mcmeta (crates/compiler/src/emit.rs).
 pack_format = [94, 1]
 
+[resourcepack]
+# RESOURCE-pack format for 1.21.11 (min_format = max_format = [75, 0]).
+# Consumed by: crates/compiler/src/resourcepack.rs (RESOURCE_PACK_FORMAT), the
+# NPC-skin / art-font pack's pack.mcmeta.
+#
+# Provenance: the pinned 1.21.11 client jar's version.json reports
+# `resource_major: 75, resource_minor: 0` (and `data_major: 94, data_minor: 1`,
+# the [datapack] pin above). Resource packs and data packs share ONE pack.mcmeta
+# codec; only the "must declare min_format/max_format" threshold differs — 64 for
+# resource packs, 81 for data packs. Declaring a bare `pack_format` above the
+# threshold makes the client refuse the whole pack ("Pack declares support for
+# version newer than 64, but is missing mandatory fields min_format and
+# max_format"), which is client-side only and therefore invisible to every server
+# rung of the validation ladder.
+pack_format = [75, 0]
+
 [images.base]
 # ghcr.io/stellarfeline/delvewright-base — a TRUE mirror (buildx imagetools create,
 # see spec-0005 open question resolution below) of itzg/minecraft-server at the pin.

@@ -10,11 +10,25 @@
 //! ## Camera convention
 //!
 //! `render-plan.json` gives each camera as `pos` + `yaw`/`pitch` **degrees**
-//! (yaw = atan2(-dz,dx): 0→+X, 90→−Z; pitch = atan2(-dy,horiz): +down). The spike
-//! verified Chunky's scene camera uses the same axes in **radians** (yaw ≈ π/2
-//! faces −Z, positive pitch = down), so orientation is a straight
-//! degrees→radians conversion. See `spike-render-fidelity` evidence
-//! (`spike-output/chunky_keep_*.png`).
+//! (yaw = atan2(-dz,dx): 0→+X, 90→−Z; pitch = atan2(-dy,horiz): +down).
+//!
+//! Chunky's scene camera orientation is **not** a straight degrees→radians copy —
+//! its camera basis differs, verified directly against the pinned
+//! `chunky-core-2.5.0-SNAPSHOT.474` bytecode: `Camera.updateTransform` builds
+//! `rotY(π/2 + yaw) · rotX(π/2 − pitch) · rotZ(roll)`, the pinhole projector's
+//! centre ray is local `+Z`, and screen-`y` points down. Composing these, the
+//! world view direction for stored `(yaw, pitch)` is
+//! `(cos yaw·sin pitch, −cos pitch, −sin yaw·sin pitch)`, upright iff
+//! `pitch ∈ (−π, 0)`. Inverting for our degree inputs gives:
+//!
+//! * `yaw_chunky   = yaw_deg·π/180 + π`   (MC 0°→+X stays +X east)
+//! * `pitch_chunky = pitch_deg·π/180 − π/2` (level 0° → −π/2, upright; +down stays down)
+//! * `roll = 0`
+//!
+//! The earlier "straight deg→rad" emission pointed every POV camera at the ground
+//! (level shots looked straight down; downward shots rendered upside-down); the
+//! offsets above were reverse-engineered and confirmed by rendering
+//! nobodys-cave-island POV shots (worker session 2026-08-01).
 
 use serde::{Deserialize, Serialize};
 
@@ -80,7 +94,14 @@ struct Cam {
     pitch: f64,
     #[allow(dead_code)]
     look_at: [f64; 3],
+    /// Per-shot field of view (degrees). Player-POV shots declare the first-person
+    /// FOV (~70°); other kinds omit it and take the scene default.
+    #[serde(default)]
+    fov: Option<f64>,
 }
+
+/// Default field of view (degrees) for shots that do not declare one.
+const DEFAULT_FOV_DEG: f64 = 70.0;
 
 // ---- Chunky scene (output) ----------------------------------------------------
 // Field names + order follow Chunky's scene description format (`sdfVersion`).
@@ -214,12 +235,14 @@ pub fn scenes_from_plan(
                 },
                 orientation: Orientation {
                     roll: 0.0,
-                    // render-plan degrees → Chunky radians (same axes; see header).
-                    pitch: shot.camera.pitch.to_radians(),
-                    yaw: shot.camera.yaw.to_radians(),
+                    // render-plan (MC) degrees → Chunky camera radians. NOT a
+                    // straight deg→rad: Chunky's basis needs a −π/2 pitch and +π
+                    // yaw offset (see module header for the derivation).
+                    pitch: shot.camera.pitch.to_radians() - std::f64::consts::FRAC_PI_2,
+                    yaw: shot.camera.yaw.to_radians() + std::f64::consts::PI,
                 },
                 projection_mode: "PINHOLE",
-                fov: 70.0,
+                fov: shot.camera.fov.unwrap_or(DEFAULT_FOV_DEG),
             },
             chunk_list: chunks.clone(),
         };
@@ -262,13 +285,43 @@ mod tests {
     }
 
     #[test]
-    fn yaw_pitch_convert_to_radians() {
+    fn camera_degrees_map_to_chunky_orientation() {
+        use std::f64::consts::{FRAC_PI_2, PI};
         let scenes = scenes_from_plan(FIXTURE, &SceneOptions::default()).unwrap();
         let (_, bytes) = scenes.iter().find(|(n, _)| n == "spawn.json").unwrap();
         let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
-        // Fixture spawn shot yaw = -90 deg → -π/2 rad.
-        let yaw = v["camera"]["orientation"]["yaw"].as_f64().unwrap();
-        assert!((yaw - (-90f64).to_radians()).abs() < 1e-9, "yaw={yaw}");
+        let o = &v["camera"]["orientation"];
+        // Spawn shot: MC yaw −90°, pitch 15.945°. Chunky = yaw_deg+π, pitch_deg−π/2.
+        let yaw = o["yaw"].as_f64().unwrap();
+        let pitch = o["pitch"].as_f64().unwrap();
+        assert!(
+            (yaw - ((-90f64).to_radians() + PI)).abs() < 1e-9,
+            "yaw={yaw}"
+        );
+        assert!(
+            (pitch - (15.945f64.to_radians() - FRAC_PI_2)).abs() < 1e-9,
+            "pitch={pitch}"
+        );
+        assert_eq!(o["roll"].as_f64().unwrap(), 0.0);
+    }
+
+    #[test]
+    fn level_forward_pov_is_upright_and_horizontal() {
+        // Regression for the camera-orientation bug (worker session 2026-08-01):
+        // a first-person POV walking east — MC (yaw 0°, pitch 0°), the exact
+        // nobodys-cave-island `pov/leg0/wp1` camera — rendered straight DOWN at
+        // the sand because emission used a naive deg→rad. The verified mapping
+        // (yaw+π, pitch−π/2) puts it level (pitch −π/2, upright) and facing +X.
+        let plan = br#"{"campaign_id":"c","layout_aabb":{"min":[0,64,0],"max":[1,65,1]},
+          "shots":[{"id":"pov/leg0/wp1","kind":"pov","camera":{"pos":[7.5,68.62,10.5],
+          "yaw":0.0,"pitch":0.0,"look_at":[8.5,68.62,10.5]}}]}"#;
+        let scenes = scenes_from_plan(plan, &SceneOptions::default()).unwrap();
+        let (_, bytes) = &scenes[0];
+        let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        let o = &v["camera"]["orientation"];
+        assert_eq!(o["roll"].as_f64().unwrap(), 0.0);
+        assert!((o["yaw"].as_f64().unwrap() - std::f64::consts::PI).abs() < 1e-12);
+        assert!((o["pitch"].as_f64().unwrap() + std::f64::consts::FRAC_PI_2).abs() < 1e-12);
     }
 
     #[test]

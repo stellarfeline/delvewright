@@ -21,7 +21,7 @@ use crate::plan::{
 };
 use crate::{DELVEC_VERSION, MC_VERSION, PACK_FORMAT};
 
-use delvewright_dsl::{Objective, QuestEffect, Trigger, is_v03};
+use delvewright_dsl::{Objective, QuestEffect, Trigger, is_v03, is_v04, is_v06};
 
 /// The emitted build tree: relative path → file bytes.
 pub type BuildOutput = BTreeMap<String, Vec<u8>>;
@@ -207,15 +207,42 @@ pub fn build(
     // either needs it. Includes any colliding relight fixtures (campfire / floor
     // lantern) so a fixture can never wedge a required path shut *nor* be stood on
     // by a spawned mob (spec-0010: verification re-runs after placement).
+    // Visual-tier player-POV shots (spec-0003): first-person cameras along the
+    // proven critical-path routes. Filled inside the world block below (they need
+    // the routes + the assembled occupancy for the DW0724 clear-eye self-check);
+    // empty for a campaign with no walked leg, so its render plan stays byte-identical.
+    let mut pov_shots: Vec<crate::render_plan::PovShot> = Vec::new();
+
+    // Actor spawn anchors must resolve to a world position (spec-0014); a spawn is a
+    // summon, not a walk, so this needs no occupancy model. DW0325 if one dangles.
+    crate::nav::check_actor_placement(plan)?;
     let has_waves = !plan.campaign.quests.content.waves.is_empty();
-    let (moves, wave_placements): (Vec<crate::nav::MovePlan>, WavePlacements) =
-        if crate::nav::needs_world(plan) || has_waves {
+    let (moves, actor_moves, wave_placements): (
+        Vec<crate::nav::MovePlan>,
+        Vec<crate::nav::ActorMovePlan>,
+        WavePlacements,
+    ) = if crate::nav::needs_world(plan) || has_waves {
+        {
             let world =
                 crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid);
-            let moves = if crate::nav::needs_world(plan) {
+            let (moves, actor_moves) = if crate::nav::needs_world(plan) {
                 let m = crate::nav::plan_moves(plan, &world)?;
+                // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
+                // unroutable. Planned alongside move-npc from the same occupancy model.
+                let am = crate::nav::plan_actor_moves(plan, &world)?;
                 crate::nav::check_cutscenes(plan, &world)?;
                 crate::nav::check_critical_path(plan, &world)?;
+                // v0.6 checkpoint no-stranding + placement proofs (spec-0012,
+                // DW0315/DW0316) and stealth-zone standable/reachable proofs
+                // (spec-0014, DW0327), re-rooting DW0311 reachability at each beat.
+                crate::nav::check_checkpoints(plan, &world)?;
+                crate::nav::check_stealth_zones(plan, &world)?;
+                // v0.6 trap completability proof (spec-0011, DW0342): every lethal
+                // trap on the forced critical path must be avoidable, survivable
+                // (`once`), or disarmable, else the party is provably killed or
+                // soft-looped. Uses the move-npc waypoints (`m`) for the forced-path
+                // cell set.
+                crate::nav::check_traps(plan, &world, &m)?;
                 // Export the DW0311-proven critical-path routes as validation
                 // metadata (task #38): thinned per-leg waypoint polylines the harness
                 // replays as successive nearby goals, so no single giant mineflayer A*
@@ -238,23 +265,57 @@ pub fn build(
                         &crate::waypoints::waypoints_json(plan, &routes),
                     );
                 }
-                m
+                // Visual-tier POV cameras (spec-0003): one first-person shot per
+                // corner-thinned waypoint. Self-check every eye cell is clear in
+                // the FINAL assembled world (DW0724) — makes a camera looking out
+                // from inside a wall a build error, the owner's exact visual-review
+                // failure mode, caught at its source (the derivation).
+                pov_shots = crate::render_plan::pov_shots(plan, &routes);
+                let eyes: Vec<(String, [i32; 3])> = pov_shots
+                    .iter()
+                    .map(|s| (s.id.clone(), s.eye_cell()))
+                    .collect();
+                crate::nav::verify_pov_cameras(&world, &eyes)?;
+                (m, am)
             } else {
-                Vec::new()
+                (Vec::new(), Vec::new())
             };
             // Seat each wave mob on a validated standable cell near its anchor, in
             // room only (DW0312 if the room lacks the footing).
             let waves = plan_wave_spawns(plan, &world)?;
-            (moves, waves)
-        } else {
-            (Vec::new(), BTreeMap::new())
-        };
+            (moves, actor_moves, waves)
+        }
+    } else {
+        (Vec::new(), Vec::new(), BTreeMap::new())
+    };
 
     // Every `spawn-wave` effect must resolve a spawn position, or its emitted
     // `function <ns>:spawn_<wave>` call would dangle to a never-emitted function and
     // the wave would silently never spawn (DW0310). Guards against the class of bug
     // where the spawn position was resolvable only via a `kill` objective.
     check_wave_spawns(plan)?;
+
+    // Every campaign must resolve an ENTRY POINT (DW0345). Without one the world
+    // gets no `setworldspawn`, a class-picking player is never teleported, and a
+    // joining player is left to the vanilla spawn search — which a dedicated server
+    // resolves to the surface but the integrated (singleplayer) server resolves to
+    // the build floor, i.e. inside solid stone. This used to fail silently: an area
+    // whose tileset spells the anchor `entry` instead of `spawn` compiled clean and
+    // shipped a delve with no start.
+    if campaign_spawn(plan).is_none() {
+        return Err(BuildFailure::Diagnostic {
+            code: plan::DW_NO_ENTRY_ANCHOR,
+            message: format!(
+                "the assembled world resolves no entry anchor — no area places a \
+                 piece declaring any of {names:?} in its prefab metadata. The \
+                 compiler then has no cell to call the campaign's start: no \
+                 `setworldspawn`, no class-apply teleport, no first-join placement. \
+                 Give the pool's entry-role prefab an entry anchor (its metadata \
+                 `anchors`), or bind the area to a prefab that has one.",
+                names = plan::ENTRY_ANCHOR_NAMES,
+            ),
+        });
+    }
 
     // ---- datapack ----
     put_json(
@@ -309,6 +370,7 @@ pub fn build(
         plan,
         &sentinels,
         &moves,
+        &actor_moves,
         &relight.placements,
         &wave_placements,
     );
@@ -338,7 +400,7 @@ pub fn build(
     }
 
     // ---- packtest datapack ----
-    emit_packtest(plan, &mut out, &moves);
+    emit_packtest(plan, &mut out, &moves, &actor_moves);
 
     // ---- creator overlay (playtest-only; spec-0006) ----
     // A self-contained module (crate::creator). Its `.mcfunction`s are plain
@@ -360,7 +422,7 @@ pub fn build(
     put_json(
         &mut out,
         "render-plan.json",
-        &crate::render_plan::render_plan(plan, prefabs),
+        &crate::render_plan::render_plan(plan, prefabs, &pov_shots),
     );
 
     // ---- validate every emitted vanilla mcfunction ----
@@ -381,15 +443,24 @@ pub fn build(
     // zip; its SHA-1 is what a client verifies against the itzg RESOURCE_PACK_SHA1
     // env. The serving/env plumbing is the packaging task's; here we emit the zip,
     // its sha1 (in the manifest), and a SKINS.md note listing the env to set.
-    let resource_pack_sha1 = if skins.is_empty() {
+    // The pack also carries the `delve:art` title font (spec-0014) when the
+    // campaign uses the `narrate` `art` style — baked only when needed, so a
+    // non-art campaign's pack is byte-identical.
+    let art = crate::atmos::uses_art(plan.campaign);
+    let extra_assets = if art {
+        crate::atmos::art_font_assets()
+    } else {
+        BTreeMap::new()
+    };
+    let resource_pack_sha1 = if skins.is_empty() && extra_assets.is_empty() {
         None
     } else {
-        let zip = crate::resourcepack::build_pack(skins);
+        let zip = crate::resourcepack::build_pack(skins, &extra_assets);
         let sha1 = crate::resourcepack::sha1_hex(&zip);
         out.insert("resourcepack.zip".to_string(), zip);
         out.insert(
             "SKINS.md".to_string(),
-            skins_note(&sha1, skins).into_bytes(),
+            pack_note(&sha1, skins, art).into_bytes(),
         );
         Some(sha1)
     };
@@ -409,23 +480,36 @@ pub fn build(
 }
 
 /// The `SKINS.md` build-output note: how the packaging task wires the emitted
-/// resource pack into the delve image (itzg env), plus the pack SHA-1.
-fn skins_note(sha1: &str, skins: &BTreeMap<String, Vec<u8>>) -> String {
+/// resource pack into the delve image (itzg env), plus the pack SHA-1. The pack
+/// carries the mannequin NPC skins (spec-0009) and/or the `delve:art` title font
+/// (spec-0014), depending on what the campaign uses.
+fn pack_note(sha1: &str, skins: &BTreeMap<String, Vec<u8>>, art: bool) -> String {
     let mut s = String::new();
-    s.push_str("# NPC skin resource pack\n\n");
+    s.push_str("# Delve resource pack\n\n");
     s.push_str(
-        "This delve ships a server resource pack (`resourcepack.zip`) carrying the\n\
-         mannequin NPC skins (spec-0009). The packaging task serves it and sets the\n\
-         itzg env so vanilla clients receive it:\n\n",
+        "This delve ships a server resource pack (`resourcepack.zip`). The packaging\n\
+         task serves it and sets the itzg env so vanilla clients receive it:\n\n",
     );
     s.push_str(&format!(
         "- `RESOURCE_PACK` = the URL the delve serves `resourcepack.zip` at\n\
          - `RESOURCE_PACK_SHA1` = `{sha1}`\n\
          - `RESOURCE_PACK_PROMPT` = a JSON text component (not a bare string)\n\n",
     ));
-    s.push_str("Baked skins (`skins/<id>.png` → `assets/delvewright/textures/npc/<id>.png`):\n\n");
-    for id in skins.keys() {
-        s.push_str(&format!("- `{id}`\n"));
+    if !skins.is_empty() {
+        s.push_str(
+            "Baked skins (`skins/<id>.png` → `assets/delvewright/textures/npc/<id>.png`):\n\n",
+        );
+        for id in skins.keys() {
+            s.push_str(&format!("- `{id}`\n"));
+        }
+        s.push('\n');
+    }
+    if art {
+        s.push_str(
+            "Art-title font (spec-0014): `delve:art` — an original large-glyph bitmap\n\
+             font at `assets/delve/font/art.json` (+ `assets/delve/textures/font/art.png`),\n\
+             used by `narrate` `style: art`.\n",
+        );
     }
     s
 }
@@ -471,6 +555,7 @@ fn is_vanilla_function(path: &str) -> bool {
 /// | `doWeatherCycle`     | `advance_weather`                       |
 /// | `doFireTick`         | `fire_spread_radius_around_player` (int)|
 /// | `mobGriefing`        | `mob_griefing`                          |
+/// | `spawnRadius`        | `respawn_radius` (spawn scatter, int)   |
 ///
 /// `doFireTick` has **no boolean successor**; 1.21.11 models fire spread as an
 /// integer radius around players, so `0` disables it (the sealing intent: no
@@ -486,6 +571,7 @@ fn is_vanilla_function(path: &str) -> bool {
 fn sealing_commands(
     time: delvewright_dsl::WorldTime,
     weather: Option<delvewright_dsl::WorldWeather>,
+    v06: bool,
 ) -> Vec<String> {
     let mut cmds = vec![
         "gamerule spawn_mobs false".to_string(),
@@ -493,11 +579,29 @@ fn sealing_commands(
         "gamerule advance_weather false".to_string(),
         "gamerule fire_spread_radius_around_player 0".to_string(),
         "gamerule mob_griefing false".to_string(),
+        // Spawn scatter OFF. Vanilla scatters a first join / spawnpoint-less
+        // respawn uniformly in a square of this radius around world spawn; in a box
+        // garden every scattered cell is solid prefab (or void), so the only
+        // correct radius is 0 — the exact anchor the compiler chose. 1.21.11
+        // renamed the legacy `spawnRadius` to `respawn_radius` (the legacy spelling
+        // is rejected outright); verified against the vendored 1.21.11 command tree
+        // (`data/commands-1.21.11.json`, which is what the compiler's own command
+        // validator checks every emitted line against).
+        "gamerule respawn_radius 0".to_string(),
         // Box-garden death policy: dying must never cost quest items (a dropped
         // trial key despawns in 5 minutes = softlock for a human player).
         "gamerule keep_inventory true".to_string(),
         format!("time set {}", time.token()),
     ];
+    // Traps (DSL v0.6, spec-0011) exclude TNT as a payload — no gamerule separates
+    // explosion *block* damage from *entity* damage, so a TNT trap would deform the
+    // sealed jigsaw world and poison every downstream proof. `tnt_explodes false` is
+    // the defense-in-depth seal against a stray primed-TNT source (e.g. a dispenser
+    // loaded with TNT the schema forbids anyway). Gated on the v0.6 world stage so
+    // pre-0.6 fixtures stay byte-identical.
+    if v06 {
+        cmds.push("gamerule tnt_explodes false".to_string());
+    }
     // Weather is emitted only when explicitly declared (spec-0010): clear is the
     // vanilla default, so a campaign that declares no weather emits no `weather`
     // command and stays byte-identical to pre-v0.5 output.
@@ -526,6 +630,13 @@ fn campaign_is_v03(plan: &Plan) -> bool {
     is_v03(plan.campaign.quests.dsl_version.as_str())
 }
 
+/// True for DSL v0.4+ campaigns. Gates the dialogue objective-state display axis
+/// (a `completes` option is hidden until its objective is active) so pre-v0.4
+/// campaigns stay byte-identical.
+fn campaign_is_v04(plan: &Plan) -> bool {
+    is_v04(plan.campaign.quests.dsl_version.as_str())
+}
+
 /// Escape a player-facing string as a double-quoted SNBT string. On 1.21.11
 /// `CustomName` is a **text component**, so a bare quoted SNBT string is read as
 /// literal text (the JSON-string form `'{"text":"…"}'` renders verbatim, incl. in
@@ -533,6 +644,19 @@ fn campaign_is_v03(plan: &Plan) -> bool {
 fn snbt_string(s: &str) -> String {
     let esc = s.replace('\\', "\\\\").replace('"', "\\\"");
     format!("\"{esc}\"")
+}
+
+/// The `CustomName:…,CustomNameVisible:1b,` NBT fragment (trailing comma) that
+/// labels a floating objective marker with its objective `title`. When the
+/// objective has no title, the marker carries NO name — an empty fragment — so it
+/// still glows and is findable but never surfaces the raw objective id (e.g.
+/// `obj/door`) as player-visible floating text (presentation hygiene, task #54
+/// addendum). Titled markers are unchanged (byte-identical).
+fn marker_name_fields(title: Option<&str>) -> String {
+    match title {
+        Some(t) => format!("CustomName:{},CustomNameVisible:1b,", snbt_string(t)),
+        None => String::new(),
+    }
 }
 
 /// A text-component SNBT **compound** for a player-visible string:
@@ -614,10 +738,29 @@ fn fmt_f64(x: f64) -> String {
     }
 }
 
+/// The world position an entity is summoned at, formatted per axis: the horizontal
+/// **centre** of the cell, on its floor ([`crate::nav::cell_center`]).
+///
+/// A block cell `(x, y, z)` spans `[x, x+1)`, and an entity's position is the centre
+/// of its AABB — so summoning at the bare integer cell parks the body on the corner
+/// where four columns meet, with most of it inside the neighbouring columns (a
+/// 0.6-wide villager at `x = 7.0` occupies `[6.7, 7.3]`). Against a wall that reads
+/// as an NPC standing inside the wall; along a walked path it is the owner's
+/// "visibly passes through blocks" defect. Every entity the compiler places or
+/// moves goes through this conversion.
+///
+/// Block-targeting commands (`setblock`, `fill`, `place`, `spawnpoint`) keep the
+/// integer cell — that is the coordinate space they take.
+fn ent_xyz(c: [i32; 3]) -> [String; 3] {
+    let p = crate::nav::cell_center(c);
+    [fmt_f64(p[0]), fmt_f64(p[1]), fmt_f64(p[2])]
+}
+
 fn emit_functions(
     plan: &Plan,
     sentinels: &Sentinels,
     moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
     relight: &[crate::light::Placement],
     wave_placements: &WavePlacements,
 ) -> Vec<(String, String)> {
@@ -647,6 +790,7 @@ fn emit_functions(
     setup.extend(sealing_commands(
         c.world.content.time.unwrap_or_default(),
         c.world.content.weather,
+        is_v06(c.world.dsl_version.as_str()),
     ));
     setup.push("scoreboard objectives add dw.class trigger".to_string());
     setup.push("scoreboard objectives add dw.classed dummy".to_string());
@@ -675,8 +819,12 @@ fn emit_functions(
             quest_score(q.id.as_str())
         ));
     }
+    // The completion objective. It is NOT put on the sidebar: a `setdisplay
+    // sidebar dw.campaign` slot would show players a permanent raw internal id
+    // (`dw.campaign`), and it serves no purpose — the validation bot observes
+    // completion via the `[Delvewright] complete …` chat token (executor.ts),
+    // never the sidebar (mineflayer 4.37.x cannot decode 1.21.11 score packets).
     setup.push("scoreboard objectives add dw.campaign dummy".to_string());
-    setup.push("scoreboard objectives setdisplay sidebar dw.campaign".to_string());
     // v0.3: the shared wave countdown, per-flag scores, and interact triggers.
     // Each loop is empty for a v0.2 campaign, so hello-world / keep-crawl setup is
     // byte-identical.
@@ -692,8 +840,9 @@ fn emit_functions(
             plan::flag_score(&flag)
         ));
     }
-    // v0.4: the per-player scratch bitmask used by flag-gated dialogue choosers.
-    // Declared only when a gated option exists, so v0.2/v0.3 setup is unchanged.
+    // v0.4: the per-player scratch bitmask used by display-gated dialogue choosers
+    // (flag axis and/or objective-state axis). Declared only when a gated option
+    // exists, so v0.2/v0.3 setup is unchanged.
     if has_gated_dialogue(c) {
         setup.push("scoreboard objectives add dw.dmask dummy".to_string());
     }
@@ -724,6 +873,28 @@ fn emit_functions(
     // a v0.2 campaign (and any v0.3 campaign without collect) stays byte-identical.
     if v03 && has_collect_objective(c) {
         setup.push(format!("scoreboard objectives add {COLLECT_HOLD} dummy"));
+    }
+    // v0.6 checkpoints (spec-0012): the active-checkpoint marker + the vanilla
+    // `deathCount` respawn-detection scores. Emitted only when a checkpoint carries
+    // an `on_respawn` hook (the only consumer of the marker), so pre-0.6 campaigns —
+    // and checkpoint campaigns without hooks — stay byte-identical here.
+    if plan.any_checkpoint_on_respawn() {
+        setup.push("scoreboard players set #cp dw.sys -1".to_string());
+        setup.push("scoreboard objectives add dw.deaths deathCount".to_string());
+        setup.push("scoreboard objectives add dw.death_ack dummy".to_string());
+    }
+    // v0.6 stealth beats (spec-0014): the active-session marker + per-player sneak
+    // (vanilla `sneak_time` custom stat) / grace scores. Declared only when the
+    // campaign uses `begin-stealth`.
+    if !plan.stealth_beats.is_empty() {
+        setup.push("scoreboard players set #stealth dw.sys 0".to_string());
+        setup.push(
+            "scoreboard objectives add dw.st_sneak minecraft.custom:minecraft.sneak_time"
+                .to_string(),
+        );
+        setup.push("scoreboard objectives add dw.st_sneakack dummy".to_string());
+        setup.push("scoreboard objectives add dw.st_grace dummy".to_string());
+        setup.push("scoreboard objectives add dw.st_safe dummy".to_string());
     }
     // Force-load the chunks covering each prefab. `forceload add` only MARKS
     // chunks; freshly-generated far chunks (found live: a fifth-level piece
@@ -823,69 +994,16 @@ fn emit_functions(
             p.pos[0], p.pos[1], p.pos[2], p.block
         ));
     }
-    // summon NPCs (villager body + interaction hitbox)
+    // Summon NPCs (body + interaction hitbox) at world init. A `deferred: true`
+    // stage-2 NPC (DSL v0.6) is skipped here — it enters the world only when a
+    // `spawn-npc` effect fires `spawn_npc_<id>`, which runs the very same commands
+    // (`npc_summon_commands`), so a staged character is not a statue standing at
+    // its mark from minute one.
     for npc in &plan.npcs {
-        let area = plan.npc_area(&npc.npc_id).unwrap_or("");
-        let anchor = c
-            .npcs
-            .content
-            .npcs
-            .iter()
-            .find(|n| n.id.as_str() == npc.npc_id)
-            .map(|n| n.anchor.as_str())
-            .unwrap_or("");
-        let (pos, facing) = match plan.anchors.get(&(area.to_string(), anchor.to_string())) {
-            Some(ResolvedAnchor::Point { pos, facing }) => (*pos, facing.as_deref()),
-            _ => ([0, plan::BASE_Y, 0], None),
-        };
-        let dsl_npc = c
-            .npcs
-            .content
-            .npcs
-            .iter()
-            .find(|n| n.id.as_str() == npc.npc_id);
-        let name = dsl_npc.map(|n| n.name.as_str()).unwrap_or("NPC");
-        let base = dsl_npc
-            .map(|n| n.base_entity.as_str())
-            .unwrap_or("minecraft:villager");
-        let yaw = facing_yaw(facing);
-        if let Some(skin) = dsl_npc.and_then(|n| n.skin.as_ref()) {
-            // DSL v0.4 mannequin NPC (spec-0008 §6 / spec-0009). The label is
-            // emitted as `description`, a **text-component SNBT compound**
-            // (`{text:"…"}`) — NOT a stringified-JSON text component
-            // (`'{"text":…}'`), which renders as literal raw JSON above the head on
-            // 1.21.11 (owner-verified). NoAI/PersistenceRequired/VillagerData are
-            // dropped (silently ignored on a mannequin); the interaction hitbox is
-            // unchanged.
-            // `pose:"standing"` is emitted explicitly: a mannequin summoned without
-            // it serializes its pose as `DYING` (a gametest save-teardown warning),
-            // wrong data for a standing NPC. Valid 1.21.11 mannequin poses: standing,
-            // crouching, swimming, fall_flying, sleeping (spec-0009 template).
-            setup.push(format!(
-                "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,pose:\"standing\",Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},Tags:[\"dw_npc\",\"{}\"]}}",
-                pos[0], pos[1], pos[2], skin.texture_id, skin.model.token(),
-                snbt_text_component(name), npc.tag
-            ));
-        } else {
-            // CustomName is a 1.21.11 text component. v0.3+ emits a plain SNBT
-            // string (renders correctly, incl. death messages — M2 fix 1); v0.2
-            // keeps the legacy `'{"text":…}'` form so hello-world / keep-crawl stay
-            // byte-identical.
-            let cname_field = if v03 {
-                snbt_string(name)
-            } else {
-                let cname = json!({ "text": name }).to_string().replace('\'', "\\'");
-                format!("'{cname}'")
-            };
-            setup.push(format!(
-                "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"],CustomName:{},CustomNameVisible:1b,VillagerData:{{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}}}}",
-                pos[0], pos[1], pos[2], npc.tag, cname_field
-            ));
+        if npc_is_deferred(c, &npc.npc_id) {
+            continue;
         }
-        setup.push(format!(
-            "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{}\"]}}",
-            pos[0], pos[1], pos[2], npc.tag
-        ));
+        setup.extend(npc_summon_commands(c, plan, npc, v03));
     }
     // v0.3 collect chests, interact hitboxes/markers and reach markers are NOT
     // placed here. They are placed/summoned when their objective ACTIVATES (see the
@@ -899,10 +1017,42 @@ fn emit_functions(
     // selection teleports them.
     if let Some(pos) = campaign_spawn(plan) {
         setup.push(format!("setworldspawn {} {} {}", pos[0], pos[1], pos[2]));
+        // Initialize the `dw:cp` last-checkpoint storage mirror to the spawn cell.
+        // Shared contract with spec-0012 checkpoints (its `set-checkpoint` updates
+        // the same `dw:cp pos`); spec-0013's boundary return reads it. The write is
+        // idempotent (`set value`), and `needs_cp_init` is the single gate so the
+        // two features land in either merge order without double-emitting.
+        if needs_cp_init(plan) {
+            setup.push(format!(
+                "data modify storage dw:cp pos set value [{}, {}, {}]",
+                pos[0], pos[1], pos[2]
+            ));
+        }
+    }
+    // v0.6 boundary (spec-0013): write the readable region mirror (`dw:region`,
+    // analogous to `dw:cp`) and start the per-second return clock. Both lines are
+    // deterministic (bounds derived from the final layout); empty for a campaign
+    // with no `boundary`, so non-boundary output stays byte-identical.
+    if let Some(region) = playable_region(plan) {
+        setup.push(format!(
+            "data modify storage dw:region bounds set value {}",
+            region.bounds_snbt()
+        ));
+        setup.push(format!("schedule function {ns}:boundary_tick 20t"));
+    }
+    // v0.6 night-vision mitigation: start the per-second `effect give` clock for the
+    // areas that declare it. Empty otherwise → byte-identical.
+    if has_night_vision_areas(plan) {
+        setup.push(format!(
+            "schedule function {ns}:night_vision_tick {NIGHT_VISION_PERIOD_TICKS}t"
+        ));
     }
     // v0.4: summon the interaction entities strike/use environment triggers watch
     // (empty for a campaign with no triggers → byte-identical).
     setup.extend(env_trigger_setup(plan));
+    // v0.6: fill each trap dispenser payload and summon disarm affordances
+    // (spec-0011). Empty for a campaign with no traps → byte-identical.
+    setup.extend(trap_setup(plan));
     setup.push("scoreboard players set #placed dw.sys 1".to_string());
     fns.push(("setup_finish".to_string(), lines(&setup)));
 
@@ -917,6 +1067,23 @@ fn emit_functions(
     tick.push(format!(
         "execute if score #init dw.sys matches 1 unless score #placed dw.sys matches 1 run function {ns}:place_verify"
     ));
+    // Datapack-owned FIRST-JOIN placement (singleplayer parity). A joining player
+    // is placed by the datapack, never by the server's interpretation of the
+    // level.dat spawn: the integrated (singleplayer) server does not reliably
+    // honour the emitted spawn state and drops the first join at the superflat
+    // floor (x/z of world spawn, y = build-floor) — inside stone, unescapable
+    // except by dying. A dedicated server places the same world correctly, so no
+    // rung of the validation ladder can ever observe this. Gated on `#placed` so
+    // the teleport lands on real geometry (the structures are placed over the
+    // first ticks), and on the per-player `dw_joined` tag so it fires exactly once
+    // per player — a relog keeps the tag and therefore the player's position, and
+    // RESPAWN is untouched (that is `spawnpoint @a` + the checkpoint machinery).
+    // Empty for a campaign with no `spawn` anchor → byte-identical.
+    if campaign_spawn(plan).is_some() {
+        tick.push(format!(
+            "execute if score #placed dw.sys matches 1 as @a[tag=!dw_joined] run function {ns}:join_place"
+        ));
+    }
     tick.push("scoreboard players enable @a dw.class".to_string());
     for npc in &plan.npcs {
         tick.push(format!(
@@ -1093,7 +1260,48 @@ fn emit_functions(
     // v0.4: environment-trigger per-tick checks (empty for a campaign with no
     // triggers → byte-identical).
     tick.extend(env_trigger_tick(plan));
+    // v0.6: trap disarm-affordance detection (spec-0011). Empty for a campaign with
+    // no disarmable traps → byte-identical.
+    tick.extend(trap_tick(plan));
+    // v0.6 checkpoints (spec-0012): per-player respawn detection via the vanilla
+    // `deathCount` criterion, dispatching the active checkpoint's `on_respawn`.
+    // Only when a checkpoint carries an `on_respawn` hook.
+    if plan.any_checkpoint_on_respawn() {
+        tick.push(format!("execute as @a run function {ns}:cp_respawn_check"));
+    }
+    // v0.6 stealth (spec-0014): while a beat is active, run its per-tick judge.
+    for beat in &plan.stealth_beats {
+        tick.push(format!(
+            "execute if score #stealth dw.sys matches {} run function {ns}:stealth_tick_{}",
+            beat.index, beat.index
+        ));
+    }
     fns.push(("tick".to_string(), lines(&tick)));
+
+    // --- v0.6 checkpoint respawn dispatch (spec-0012) ---
+    fns.extend(emit_checkpoint_functions(plan));
+    // --- v0.6 stealth-beat functions (spec-0014) ---
+    fns.extend(emit_stealth_functions(plan));
+
+    // --- join_place: first-join placement (see the `tick` driver above) ---
+    //
+    // The target is the campaign ENTRY POINT (the first area's `spawn` anchor),
+    // not the live `dw:cp` checkpoint. `dw:cp` is *seeded* to this very cell at
+    // setup, so the two agree at world start; they diverge only after a checkpoint
+    // fires, and at that point a first-joining player is a player who has not
+    // played yet — the entry point is where the campaign begins, and it is exactly
+    // where `class_apply_*` teleports every player when they pick a class. Reading
+    // `dw:cp` would also need a macro function (the mirror is a `[x, y, z]` list,
+    // not tp-shaped arguments) for no behavioural gain.
+    if let Some(pos) = campaign_spawn(plan) {
+        fns.push((
+            "join_place".to_string(),
+            lines(&[
+                format!("teleport @s {} {} {}", pos[0], pos[1], pos[2]),
+                "tag @s add dw_joined".to_string(),
+            ]),
+        ));
+    }
 
     // --- show_class ---
     fns.push((
@@ -1139,6 +1347,35 @@ fn emit_functions(
                 "scoreboard players reset @s {}",
                 npc.trigger_objective
             ));
+            // Re-arm the trigger IN THIS FUNCTION, immediately after consuming it.
+            //
+            // `reset` both clears the score and re-locks the trigger, and the only
+            // other re-enable is the per-tick `scoreboard players enable @a` at the
+            // top of `tick`. On a dedicated server that is invisible: the handler
+            // runs inside tick N, the next tick re-enables, and the player's next
+            // click lands in tick N+1 or later. On the **integrated (singleplayer)
+            // server** it is a real hole — 1.21.9+ freezes the integrated server
+            // while a screen is open, and the last thing this handler does is show
+            // the next dialog node. So: tick N re-enables, dispatches here, we lock
+            // the trigger, we open the next screen, ticking STOPS. The player's
+            // click is queued and executed the instant ticking resumes — before the
+            // tick function's re-enable — and vanilla rejects it ("You can't
+            // trigger this objective yet"), silently swallowing one dialogue
+            // choice. A dedicated server never pauses, so no rung of the validation
+            // ladder can reproduce it.
+            //
+            // Placed here rather than at the end of the body on purpose: the
+            // flag-gate below can `return fail`, and an end-of-body re-enable would
+            // be skipped on exactly the path that consumed the trigger without
+            // doing anything. Nothing below re-locks it, so this position strictly
+            // dominates. `enable` on an unset score initialises it to 0, which
+            // matches no dispatch guard (option values are 1-based).
+            //
+            // The per-tick `enable @a` stays as belt-and-braces.
+            body.push(format!(
+                "scoreboard players enable @s {}",
+                npc.trigger_objective
+            ));
             // v0.4: a flag-gated option is inert until its flags are set — so a
             // direct `/trigger` (the bot's path, which bypasses the UI variant
             // hiding) cannot fire it early. `return fail` short-circuits the rest.
@@ -1162,6 +1399,16 @@ fn emit_functions(
             }
             for w in &opt.sets_weather {
                 body.push(format!("weather {}", w.token()));
+            }
+            // v0.6: party-wide respawn checkpoints this option sets (dialogue
+            // `set-checkpoint`, spec-0012).
+            for (anchor, on_respawn) in &opt.sets_checkpoints {
+                emit_set_checkpoint(plan, anchor, on_respawn, &mut body);
+            }
+            // v0.6: deferred NPCs this option brings into the world (dialogue
+            // `spawn-npc`) — a character walking in mid-conversation.
+            for n in &opt.spawns_npcs {
+                body.push(format!("function {ns}:{}", spawn_npc_fn(n)));
             }
             for obj in &opt.completes {
                 if let Some((qid, _)) = objective_quest(c, obj) {
@@ -1267,7 +1514,7 @@ fn emit_functions(
                 body.extend(completion_cleanup(o));
             }
             for eff in objective_effects(c, oid) {
-                emit_quest_effect(plan, eff, &mut body);
+                emit_gated_effect(plan, eff, &mut body);
             }
             // Inter-area transport: if completing this objective moves the player
             // into a different area on the critical path, teleport them to that
@@ -1310,7 +1557,7 @@ fn emit_functions(
             quest_score(q.id.as_str())
         ));
         for eff in &q.on_complete {
-            emit_quest_effect(plan, eff, &mut done);
+            emit_gated_effect(plan, eff, &mut done);
         }
         // activate quests triggered by this quest's completion
         for dep in &c.quests.content.quests {
@@ -1413,12 +1660,13 @@ fn emit_functions(
                 // distance from the anchor); `cells` has exactly one per mob. AI is
                 // left enabled (no NoAI) so the mobs fight.
                 let cell = cells[idx as usize];
+                let c = ent_xyz(cell);
                 body.push(format!(
                     "summon {} {} {} {} {{Tags:[\"{}\"{tmp}],PersistenceRequired:1b{name}{equip}{attrs}}}",
                     mob.entity,
-                    cell[0],
-                    cell[1],
-                    cell[2],
+                    c[0],
+                    c[1],
+                    c[2],
                     plan::wave_tag(w.id.as_str())
                 ));
                 idx += 1;
@@ -1499,9 +1747,15 @@ fn emit_functions(
 
     // v0.4 generated functions: NPC moves, cutscene drivers, trigger effects.
     // Each is empty for a campaign that uses none (byte-identical v0.2/v0.3).
+    fns.extend(spawn_npc_fns(plan));
     fns.extend(movenpc_fns(plan, moves));
+    fns.extend(actor_fns(plan, actor_moves));
+    fns.extend(sequence_fns(plan));
     fns.extend(cutscene_fns(plan));
     fns.extend(env_trigger_fns(plan));
+    fns.extend(trap_fns(plan));
+    fns.extend(boundary_fns(plan));
+    fns.extend(night_vision_fns(plan));
 
     fns.sort_by(|a, b| a.0.cmp(&b.0));
     fns
@@ -1634,11 +1888,35 @@ fn check_wave_spawns(plan: &Plan) -> Result<(), BuildFailure> {
     Ok(())
 }
 
+/// Emit a quest effect, wrapping every command it produces in a per-player flag
+/// guard when the effect declares `requires_flags` (DSL v0.6). The guard is
+/// `execute if score @s dw.f_<flag> matches 1 [… per flag] run <command>`. These
+/// effects already run in per-player context (`complete_<obj>` and `trig_<id>`
+/// are entered `as @a`/`@s`), so `@s` resolves to the acting player. An ungated
+/// effect (empty `requires_flags`) is emitted verbatim — byte-identical to the
+/// pre-0.6 output, preserving determinism for every existing campaign.
+fn emit_gated_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
+    let flags = eff.requires_flags();
+    if flags.is_empty() {
+        emit_quest_effect(plan, eff, body);
+        return;
+    }
+    let mut inner: Vec<String> = Vec::new();
+    emit_quest_effect(plan, eff, &mut inner);
+    let guard: String = flags
+        .iter()
+        .map(|f| format!("if score @s {} matches 1 ", plan::flag_score(f.as_str())))
+        .collect();
+    for line in inner {
+        body.push(format!("execute {guard}run {line}"));
+    }
+}
+
 /// Emit a quest effect's commands into `body`.
 fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
     let ns = &plan.namespace;
     match eff {
-        QuestEffect::OpenGate { anchor } => {
+        QuestEffect::OpenGate { anchor, .. } => {
             // Find the gate anchor across areas (first match).
             for ((_, name), resolved) in &plan.anchors {
                 if name == anchor.as_str()
@@ -1652,38 +1930,59 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
                 }
             }
         }
+        QuestEffect::CloseGate { anchor, .. } => {
+            // The physical dual of `open-gate`: fill the gate region with the block
+            // the anchor declares (basalt boulder, iron bars, …), sealing it back
+            // into a wall. A blockless gate anchor is rejected at validate-time
+            // (`DW0343`), so the resolved `block` is the real fill here.
+            for ((_, name), resolved) in &plan.anchors {
+                if name == anchor.as_str()
+                    && let ResolvedAnchor::Gate { from, to, block } = resolved
+                {
+                    body.push(format!(
+                        "fill {} {} {} {} {} {} {}",
+                        from[0], from[1], from[2], to[0], to[1], to[2], block
+                    ));
+                    return;
+                }
+            }
+        }
         QuestEffect::CampaignComplete => {
             body.push(format!("function {ns}:campaign_complete"));
         }
-        QuestEffect::GiveItem { item, count, name } => {
+        QuestEffect::GiveItem {
+            item, count, name, ..
+        } => {
             let comp = match name {
                 Some(n) => format!("[custom_name={}]", json!({ "text": n, "italic": false })),
                 None => String::new(),
             };
             body.push(format!("give @s {item}{comp} {count}"));
         }
-        QuestEffect::SetFlag { flag } => {
+        QuestEffect::SetFlag { flag, .. } => {
             body.push(format!(
                 "scoreboard players set @s {} 1",
                 plan::flag_score(flag.as_str())
             ));
         }
-        QuestEffect::SpawnWave { wave } => {
+        QuestEffect::SpawnWave { wave, .. } => {
             body.push(format!(
                 "function {ns}:spawn_{}",
                 plan::safe_local(wave.as_str())
             ));
         }
         // --- DSL v0.4 effects ---
-        QuestEffect::Narrate { text, style, sound } => {
+        QuestEffect::Narrate {
+            text, style, sound, ..
+        } => {
             emit_narrate(text, *style, sound.as_deref(), body);
         }
-        QuestEffect::SetBlock { anchor, block } => {
+        QuestEffect::SetBlock { anchor, block, .. } => {
             if let Some(pos) = anchor_point_any(plan, anchor.as_str()) {
                 body.push(format!("setblock {} {} {} {block}", pos[0], pos[1], pos[2]));
             }
         }
-        QuestEffect::DespawnNpc { npc } => {
+        QuestEffect::DespawnNpc { npc, .. } => {
             // Removes both the body and the interaction hitbox — both carry the
             // per-npc id tag (spec-0008 §5).
             body.push(format!(
@@ -1697,21 +1996,348 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
                 movenpc_fn(npc.as_str(), to_anchor.as_str())
             ));
         }
-        QuestEffect::Cutscene { path, seconds } => {
-            body.push(format!("function {ns}:{}", cutscene_fn(path, *seconds)));
+        QuestEffect::Cutscene { .. } => {
+            // Shape is policed at validation (`DW0199`); an unshaped cutscene
+            // resolves to no shots and emits no call rather than a dangling one.
+            if let Some(shots) = eff.cutscene_shots().filter(|s| !s.is_empty()) {
+                body.push(format!("function {ns}:{}", cutscene_fn(&shots)));
+            }
         }
         // --- DSL v0.5 effects (spec-0010) ---
         // Dimension-global instant cuts. The daylight/weather cycles are frozen by
         // environment sealing (`advance_time`/`advance_weather false`), so the set
         // state persists until the next cut. No selector: `/time set` and
         // `/weather` act on the whole dimension.
-        QuestEffect::SetTime { time } => {
+        QuestEffect::SetTime { time, .. } => {
             body.push(format!("time set {}", time.token()));
         }
-        QuestEffect::SetWeather { weather } => {
+        QuestEffect::SetWeather { weather, .. } => {
             body.push(format!("weather {}", weather.token()));
         }
+        // --- DSL v0.6 effects (spec-0012 checkpoints, spec-0014 stealth + sound) ---
+        QuestEffect::PlaySound {
+            sound,
+            at,
+            volume,
+            pitch,
+            ..
+        } => {
+            emit_play_sound(plan, sound, at.as_ref(), *volume, *pitch, body);
+        }
+        QuestEffect::DamagePlayers {
+            amount,
+            within,
+            damage_type,
+            ..
+        } => {
+            emit_damage_players(plan, *amount, within.as_ref(), *damage_type, body);
+        }
+        QuestEffect::SetCheckpoint { anchor, on_respawn } => {
+            emit_set_checkpoint(plan, anchor.as_str(), on_respawn, body);
+        }
+        QuestEffect::BeginStealth {
+            zones, grace_ticks, ..
+        } => {
+            if let Some(beat) = plan.stealth_for(zones, *grace_ticks) {
+                body.push(format!("function {ns}:stealth_begin_{}", beat.index));
+            }
+        }
+        QuestEffect::EndStealth => {
+            body.push("scoreboard players set #stealth dw.sys 0".to_string());
+        }
+        // --- DSL v0.6 actor staging effects (spec-0014) ---
+        QuestEffect::SpawnActor { actor } => {
+            body.push(format!(
+                "function {ns}:spawn_actor_{}",
+                plan::safe_local(actor.as_str())
+            ));
+        }
+        QuestEffect::DespawnActor { actor, style } => {
+            emit_despawn_actor(actor.as_str(), *style, body);
+        }
+        QuestEffect::MoveActor {
+            actor, to_anchor, ..
+        } => {
+            body.push(format!(
+                "function {ns}:{}",
+                moveactor_fn(actor.as_str(), to_anchor.as_str())
+            ));
+        }
+        QuestEffect::UnleashActor { actor } => {
+            body.push(format!(
+                "function {ns}:unleash_{}",
+                plan::safe_local(actor.as_str())
+            ));
+        }
+        QuestEffect::Sequence { steps } => {
+            body.push(format!("function {ns}:{}", sequence_fn(steps)));
+        }
+        QuestEffect::SpawnNpc { npc } => {
+            body.push(format!("function {ns}:{}", spawn_npc_fn(npc.as_str())));
+        }
     }
+}
+
+/// Emit a `despawn-actor` inline (spec-0014). Both styles target the actor body tag
+/// `dw_actor_<id>` (so a puppet **or** an unleashed twin is removed — re-caging is
+/// despawn + spawn). `kill` plays the vanilla death animation in place; `vanish`
+/// relocates the (Silent) body far below the floor first, so the death sequence
+/// plays entirely out of the players' view — a silent removal from two intended
+/// primitives (tp + kill).
+fn emit_despawn_actor(actor: &str, style: delvewright_dsl::DespawnStyle, body: &mut Vec<String>) {
+    use delvewright_dsl::DespawnStyle;
+    let safe = plan::safe_local(actor);
+    match style {
+        DespawnStyle::Kill => body.push(format!("kill @e[tag=dw_actor_{safe}]")),
+        DespawnStyle::Vanish => {
+            body.push(format!("tp @e[tag=dw_actor_{safe}] ~ -128 ~"));
+            body.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        }
+    }
+}
+
+/// Emit a `play-sound` effect (DSL v0.6). Effects run in an `as @a` context, so
+/// `@s` is each player: an anchor sound plays once per player positioned at the
+/// resolved anchor (all hear it there); the default `players` target plays at each
+/// player's own position (`~ ~ ~`). `at: actor` never reaches emission — it is
+/// rejected at validate-time (`DW0335`) until the actors surface lands.
+fn emit_play_sound(
+    plan: &Plan,
+    sound: &str,
+    at: Option<&delvewright_dsl::SoundAt>,
+    volume: Option<f64>,
+    pitch: Option<f64>,
+    body: &mut Vec<String>,
+) {
+    use delvewright_dsl::SoundAt;
+    // Canonicalize a bare id to the default namespace so the emitted command is
+    // explicit (`playsound` accepts either form).
+    let sound = if sound.contains(':') {
+        sound.to_string()
+    } else {
+        format!("minecraft:{sound}")
+    };
+    let pos = match at {
+        Some(SoundAt::Anchor { anchor }) => match anchor_point_any(plan, anchor.as_str()) {
+            Some(p) => Some(format!("{} {} {}", p[0], p[1], p[2])),
+            None => return, // unresolved anchor (referential validation reports it)
+        },
+        Some(SoundAt::Actor { .. }) => return, // deferred: DW0335 at validate-time
+        _ => None,                             // `players` (default): player-relative
+    };
+    let mut cmd = format!("playsound {sound} master @s");
+    if pos.is_some() || volume.is_some() || pitch.is_some() {
+        let p = pos.unwrap_or_else(|| "~ ~ ~".to_string());
+        cmd.push_str(&format!(" {p}"));
+        if volume.is_some() || pitch.is_some() {
+            cmd.push_str(&format!(" {}", volume.unwrap_or(1.0)));
+            if let Some(pt) = pitch {
+                cmd.push_str(&format!(" {pt}"));
+            }
+        }
+    }
+    body.push(cmd);
+}
+
+/// Emit a `damage-players` effect (DSL v0.6). Effects run in an `as @a` / `as @s`
+/// context, so `@s` is each acting player: `damage @s <amount> <type>` damages
+/// every acting player once (in a stealth `on_caught`, the single caught player).
+/// `amount` is in half-hearts (1 HP each); the type is a curated vanilla damage
+/// type (default `minecraft:generic`). A `within` box narrows to acting players
+/// standing inside the anchor-centred AABB — the same `@s[x=…,dx=…]` box model the
+/// stealth zone check uses — preserving the per-`@s` semantics (no double-hit).
+///
+/// Every form is guarded by `tag=!dw_cutscene`: a player watching a cutscene is
+/// never harmed by campaign machinery (see [`CUTSCENE_TAG`]).
+fn emit_damage_players(
+    plan: &Plan,
+    amount: u32,
+    within: Option<&delvewright_dsl::StealthZone>,
+    damage_type: Option<delvewright_dsl::DamageKind>,
+    body: &mut Vec<String>,
+) {
+    use delvewright_dsl::DamageKind;
+    let kind = damage_type.unwrap_or(DamageKind::Generic).id();
+    let cmd = format!("damage @s {amount} {kind}");
+    match within {
+        Some(zone) => {
+            // A blank box when the anchor is unresolved (referential validation
+            // reports that, DW0142) — emit nothing rather than an invalid selector.
+            if let Some(pos) = anchor_point_any(plan, zone.anchor.as_str()) {
+                let lo = [
+                    pos[0] - zone.extent[0] as i32,
+                    pos[1] - zone.extent[1] as i32,
+                    pos[2] - zone.extent[2] as i32,
+                ];
+                let size = [
+                    2 * zone.extent[0] as i32,
+                    2 * zone.extent[1] as i32,
+                    2 * zone.extent[2] as i32,
+                ];
+                body.push(format!(
+                    "execute if entity @s[x={},dx={},y={},dy={},z={},dz={},tag=!{CUTSCENE_TAG}] run {cmd}",
+                    lo[0], size[0], lo[1], size[1], lo[2], size[2]
+                ));
+            }
+        }
+        // The bare form still needs the cutscene guard, so it becomes a guarded
+        // `execute` too (see CUTSCENE_TAG: a cutscene is pure observation —
+        // campaign machinery never harms a player who is only watching).
+        None => body.push(format!(
+            "execute if entity @s[tag=!{CUTSCENE_TAG}] run {cmd}"
+        )),
+    }
+}
+
+/// Emit a `set-checkpoint` (DSL v0.6, spec-0012): the party-wide vanilla
+/// `spawnpoint @a`, the `storage dw:cp pos` mirror other features read
+/// (spec-0013 boundary return), and — when any checkpoint carries an
+/// `on_respawn` hook — the active-checkpoint marker `#cp dw.sys` the respawn
+/// dispatcher keys on. Party-wide via the explicit `@a`, regardless of the
+/// caller's `@s` context.
+fn emit_set_checkpoint(
+    plan: &Plan,
+    anchor: &str,
+    on_respawn: &[QuestEffect],
+    body: &mut Vec<String>,
+) {
+    if let Some(pos) = anchor_point_any(plan, anchor) {
+        body.push(format!("spawnpoint @a {} {} {}", pos[0], pos[1], pos[2]));
+        body.push(format!(
+            "data modify storage dw:cp pos set value [{}, {}, {}]",
+            pos[0], pos[1], pos[2]
+        ));
+        if plan.any_checkpoint_on_respawn() {
+            let idx = plan
+                .checkpoint_for(anchor, on_respawn)
+                .map(|c| c.index)
+                .unwrap_or(0);
+            body.push(format!("scoreboard players set #cp dw.sys {idx}"));
+        }
+    }
+}
+
+/// Generate the checkpoint respawn-dispatch functions (DSL v0.6, spec-0012).
+/// Empty unless some checkpoint carries an `on_respawn` hook. Respawn is detected
+/// via the vanilla `deathCount` criterion: a player whose death total exceeds the
+/// acknowledged total respawned since last tick; the active checkpoint (`#cp`)
+/// selects which per-player `on_respawn` list runs. Effects are emitted in
+/// declared (deterministic) order and are expected to be idempotent (spec-0012).
+fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut fns: Vec<(String, String)> = Vec::new();
+    if !plan.any_checkpoint_on_respawn() {
+        return fns;
+    }
+    // cp_respawn_check (as @s): fire on the death-count edge, then acknowledge.
+    fns.push((
+        "cp_respawn_check".to_string(),
+        lines(&[
+            format!(
+                "execute if score @s dw.deaths > @s dw.death_ack run function {ns}:cp_respawn_fire"
+            ),
+            "scoreboard players operation @s dw.death_ack = @s dw.deaths".to_string(),
+        ]),
+    ));
+    // cp_respawn_fire (as @s): dispatch on the active checkpoint.
+    let mut fire: Vec<String> = Vec::new();
+    for c in &plan.checkpoints {
+        if c.on_respawn.is_empty() {
+            continue;
+        }
+        fire.push(format!(
+            "execute if score #cp dw.sys matches {} run function {ns}:cp_on_respawn_{}",
+            c.index, c.index
+        ));
+    }
+    fns.push(("cp_respawn_fire".to_string(), lines(&fire)));
+    // cp_on_respawn_<idx> (as @s): the per-player scene-reset effects.
+    for c in &plan.checkpoints {
+        if c.on_respawn.is_empty() {
+            continue;
+        }
+        let mut body: Vec<String> = Vec::new();
+        for eff in &c.on_respawn {
+            emit_quest_effect(plan, eff, &mut body);
+        }
+        fns.push((format!("cp_on_respawn_{}", c.index), lines(&body)));
+    }
+    fns
+}
+
+/// Generate the stealth-beat functions (DSL v0.6, spec-0014). For each beat: an
+/// `arm` that activates the session and resets per-player grace/sneak state; a
+/// per-tick judge that, per player, tests "sneaking this tick (the vanilla
+/// `sneak_time` stat rose) AND inside some zone box", tracks a grace counter, and
+/// fires `on_caught` after `grace_ticks` of exposure. Zone membership is a pure
+/// position selector, so the whole check is deterministic and provable.
+fn emit_stealth_functions(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut fns: Vec<(String, String)> = Vec::new();
+    for beat in &plan.stealth_beats {
+        let i = beat.index;
+        // stealth_begin_<i>: activate + reset grace, snapshot the sneak stat.
+        fns.push((
+            format!("stealth_begin_{i}"),
+            lines(&[
+                format!("scoreboard players set #stealth dw.sys {i}"),
+                "execute as @a run scoreboard players set @s dw.st_grace 0".to_string(),
+                "execute as @a run scoreboard players operation @s dw.st_sneakack = @s dw.st_sneak"
+                    .to_string(),
+            ]),
+        ));
+        // stealth_tick_<i>: judge every player who is actually playing. A player
+        // in the cutscene state is skipped entirely (CUTSCENE_TAG): the judge is
+        // the only writer of `dw.st_grace`, so skipping it freezes the clock —
+        // grace neither accrues nor expires, and `on_caught` cannot fire at a
+        // player who is watching a cinematic in spectator mode.
+        fns.push((
+            format!("stealth_tick_{i}"),
+            lines(&[format!(
+                "execute as @a[tag=!{CUTSCENE_TAG}] run function {ns}:stealth_eval_{i}"
+            )]),
+        ));
+        // stealth_eval_<i> (as @s): compute safe flag, update grace, fire caught.
+        let mut eval: Vec<String> = vec!["scoreboard players set @s dw.st_safe 0".to_string()];
+        for (_, pos, extent) in &beat.zones {
+            let lo = [
+                pos[0] - extent[0] as i32,
+                pos[1] - extent[1] as i32,
+                pos[2] - extent[2] as i32,
+            ];
+            let size = [
+                2 * extent[0] as i32,
+                2 * extent[1] as i32,
+                2 * extent[2] as i32,
+            ];
+            eval.push(format!(
+                "execute if score @s dw.st_sneak > @s dw.st_sneakack if entity \
+                 @s[x={},dx={},y={},dy={},z={},dz={}] run scoreboard players set @s dw.st_safe 1",
+                lo[0], size[0], lo[1], size[1], lo[2], size[2]
+            ));
+        }
+        eval.push("scoreboard players operation @s dw.st_sneakack = @s dw.st_sneak".to_string());
+        eval.push(
+            "execute if score @s dw.st_safe matches 1 run scoreboard players set @s dw.st_grace 0"
+                .to_string(),
+        );
+        eval.push(
+            "execute if score @s dw.st_safe matches 0 run scoreboard players add @s dw.st_grace 1"
+                .to_string(),
+        );
+        eval.push(format!(
+            "execute if score @s dw.st_grace matches {}.. run function {ns}:stealth_caught_{i}",
+            beat.grace_ticks
+        ));
+        fns.push((format!("stealth_eval_{i}"), lines(&eval)));
+        // stealth_caught_<i> (as @s): reset grace, run on_caught.
+        let mut caught: Vec<String> = vec!["scoreboard players set @s dw.st_grace 0".to_string()];
+        for eff in &beat.on_caught {
+            emit_quest_effect(plan, eff, &mut caught);
+        }
+        fns.push((format!("stealth_caught_{i}"), lines(&caught)));
+    }
+    fns
 }
 
 /// Emit a `narrate` line in its channel (DSL v0.4). `chat` = `tellraw`; `title`
@@ -1731,6 +2357,13 @@ fn emit_narrate(
         NarrateStyle::Subtitle => {
             body.push(format!("title @s title {}", json!({ "text": " " })));
             body.push(format!("title @s subtitle {comp}"));
+        }
+        // Large-glyph "art" title through the delve's custom resource-pack font
+        // (`delve:art`, DSL v0.6). The font is uppercase-only (glyph coverage is
+        // checked at compile time, DW0328), so render uppercase.
+        NarrateStyle::Art => {
+            let art = json!({ "text": text.to_ascii_uppercase(), "font": "delve:art" });
+            body.push(format!("title @s title {art}"));
         }
     }
     if let Some(s) = sound {
@@ -1752,6 +2385,206 @@ fn anchor_point_any(plan: &Plan, anchor: &str) -> Option<[i32; 3]> {
     None
 }
 
+/// Whether a stage-2 NPC declares `deferred: true` (DSL v0.6) — it is not summoned
+/// at world init and enters only via a `spawn-npc` effect.
+fn npc_is_deferred(c: &delvewright_dsl::Campaign, npc_id: &str) -> bool {
+    c.npcs
+        .content
+        .npcs
+        .iter()
+        .find(|n| n.id.as_str() == npc_id)
+        .map(|n| n.deferred)
+        .unwrap_or(false)
+}
+
+/// The one authority for an NPC's world presence: the `/summon` commands that place
+/// its body (villager re-dress or mannequin) **and** its co-located interaction
+/// hitbox at its declared anchor, with its name display.
+///
+/// Called from exactly two places — the world-init `setup_finish` block (a normal
+/// NPC) and the generated `spawn_npc_<id>` function (a `deferred` NPC, DSL v0.6) —
+/// so a scripted entrance produces byte-for-byte the same entity as an init-time
+/// one. Extracted for that duality; the command text is unchanged from pre-0.6, so
+/// a campaign with no deferred NPC is byte-identical.
+fn npc_summon_commands(
+    c: &delvewright_dsl::Campaign,
+    plan: &Plan,
+    npc: &plan::NpcPlan,
+    v03: bool,
+) -> Vec<String> {
+    let area = plan.npc_area(&npc.npc_id).unwrap_or("");
+    let dsl_npc = c
+        .npcs
+        .content
+        .npcs
+        .iter()
+        .find(|n| n.id.as_str() == npc.npc_id);
+    let anchor = dsl_npc.map(|n| n.anchor.as_str()).unwrap_or("");
+    let (pos, facing) = match plan.anchors.get(&(area.to_string(), anchor.to_string())) {
+        Some(ResolvedAnchor::Point { pos, facing }) => (*pos, facing.as_deref()),
+        _ => ([0, plan::BASE_Y, 0], None),
+    };
+    let name = dsl_npc.map(|n| n.name.as_str()).unwrap_or("NPC");
+    let base = dsl_npc
+        .map(|n| n.base_entity.as_str())
+        .unwrap_or("minecraft:villager");
+    let yaw = facing_yaw(facing);
+    let p = ent_xyz(pos);
+    let mut out = Vec::new();
+    if let Some(skin) = dsl_npc.and_then(|n| n.skin.as_ref()) {
+        // DSL v0.4 mannequin NPC (spec-0008 §6 / spec-0009). The label is
+        // emitted as `description`, a **text-component SNBT compound**
+        // (`{text:"…"}`) — NOT a stringified-JSON text component
+        // (`'{"text":…}'`), which renders as literal raw JSON above the head on
+        // 1.21.11 (owner-verified). NoAI/PersistenceRequired/VillagerData are
+        // dropped (silently ignored on a mannequin); the interaction hitbox is
+        // unchanged.
+        // `pose:"standing"` is emitted explicitly: a mannequin summoned without
+        // it serializes its pose as `DYING` (a gametest save-teardown warning),
+        // wrong data for a standing NPC. Valid 1.21.11 mannequin poses: standing,
+        // crouching, swimming, fall_flying, sleeping (spec-0009 template).
+        out.push(format!(
+            "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,pose:\"standing\",Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},Tags:[\"dw_npc\",\"{}\"]}}",
+            p[0], p[1], p[2], skin.texture_id, skin.model.token(),
+            snbt_text_component(name), npc.tag
+        ));
+    } else {
+        // CustomName is a 1.21.11 text component. v0.3+ emits a plain SNBT
+        // string (renders correctly, incl. death messages — M2 fix 1); v0.2
+        // keeps the legacy `'{"text":…}'` form so hello-world / keep-crawl stay
+        // byte-identical.
+        let cname_field = if v03 {
+            snbt_string(name)
+        } else {
+            let cname = json!({ "text": name }).to_string().replace('\'', "\\'");
+            format!("'{cname}'")
+        };
+        out.push(format!(
+            "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"],CustomName:{},CustomNameVisible:1b,VillagerData:{{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}}}}",
+            p[0], p[1], p[2], npc.tag, cname_field
+        ));
+    }
+    // The interaction hitbox also carries the tag of every `strike` trigger
+    // watching this NPC's anchor — see `strike_trigger_tags_at`.
+    let mut tags = vec![npc.tag.clone()];
+    tags.extend(strike_trigger_tags_at(c, anchor));
+    let tag_list = tags
+        .iter()
+        .map(|t| format!("\"{t}\""))
+        .collect::<Vec<_>>()
+        .join(",");
+    out.push(format!(
+        "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{tag_list}]}}",
+        p[0], p[1], p[2]
+    ));
+    out
+}
+
+/// The `dw_trig_<id>` tags of every `strike` trigger whose `at` anchor is
+/// `anchor`, in campaign declaration order (deterministic).
+///
+/// **Why an NPC's hitbox wears a trigger's tag.** A `strike` trigger is detected
+/// by reading the `attack` record off a `minecraft:interaction` entity — the
+/// vanilla primitive for "a player left-clicked this". When the trigger's anchor
+/// is also where an NPC stands, *two* interaction entities occupy the same cell:
+/// the NPC's hitbox and the trigger's own. A left-click hits exactly one of them
+/// — whichever the attack raycast reaches first, which depends on entity
+/// iteration order the compiler does not control and that changes across chunk
+/// reloads. The NPC's body is `Invulnerable`, so nothing else records the hit
+/// either, and the trigger could simply never fire (round-4 island QA:
+/// `wake-the-giant` on the sleeping giant's anchor was dead).
+///
+/// Sharing the tag makes the existing single-selector detection watch *both*
+/// entities at once, so whichever one the raycast picks, the strike is seen and
+/// its record consumed. Empty for an anchor with no co-located strike trigger, so
+/// every campaign without this collision stays byte-identical.
+///
+/// Scope: `strike` only. Right-click (`use`) on an NPC already belongs to the
+/// dialogue advancement, so a co-located `use` trigger is an authoring conflict
+/// rather than a detection bug, and is left alone.
+/// The first `(strike trigger, npc id, npc entity tag)` triple whose trigger
+/// anchor is also an NPC's stand anchor — the collision
+/// [`strike_trigger_tags_at`] resolves. Campaign order (deterministic); `None`
+/// when no campaign NPC shares an anchor with a `strike` trigger.
+fn first_strike_trigger_on_npc<'a>(
+    plan: &'a Plan,
+) -> Option<(&'a delvewright_dsl::EnvTrigger, String, String)> {
+    use delvewright_dsl::TriggerOn;
+    let c = plan.campaign;
+    for t in &c.quests.content.triggers {
+        if !matches!(t.on, TriggerOn::Strike) {
+            continue;
+        }
+        for n in &plan.npcs {
+            let anchor = c
+                .npcs
+                .content
+                .npcs
+                .iter()
+                .find(|d| d.id.as_str() == n.npc_id)
+                .map(|d| d.anchor.as_str());
+            if anchor == Some(t.at.as_str()) {
+                return Some((t, n.npc_id.clone(), n.tag.clone()));
+            }
+        }
+    }
+    None
+}
+
+fn strike_trigger_tags_at(c: &delvewright_dsl::Campaign, anchor: &str) -> Vec<String> {
+    use delvewright_dsl::TriggerOn;
+    if anchor.is_empty() {
+        return Vec::new();
+    }
+    c.quests
+        .content
+        .triggers
+        .iter()
+        .filter(|t| matches!(t.on, TriggerOn::Strike) && t.at.as_str() == anchor)
+        .map(|t| format!("dw_trig_{}", plan::safe_local(t.id.as_str())))
+        .collect()
+}
+
+/// The generated function name for a `spawn-npc` effect (DSL v0.6).
+fn spawn_npc_fn(npc: &str) -> String {
+    format!("spawn_npc_{}", plan::safe_local(npc))
+}
+
+/// `spawn_npc_<id>` functions (DSL v0.6): one per **deferred** stage-2 NPC, the
+/// scripted-entrance dual of `despawn-npc`. Emitted only for deferred NPCs, so a
+/// campaign that declares none is byte-identical to pre-0.6.
+///
+/// Each of the two summons is **independently** idempotent, so a re-fired
+/// `spawn-npc` never doubles an entity. Body and hitbox share the per-NPC id tag,
+/// so the guards discriminate on the body-only `dw_npc` tag: the body is guarded by
+/// `[tag=dw_npc,tag=<id>]`, the hitbox by its negation `[tag=<id>,tag=!dw_npc]` — a
+/// single `unless entity @e[tag=<id>]` guard on both lines would let the body's own
+/// summon suppress the hitbox.
+fn spawn_npc_fns(plan: &Plan) -> Vec<(String, String)> {
+    let c = plan.campaign;
+    let v03 = campaign_is_v03(plan);
+    let mut out = Vec::new();
+    for npc in &plan.npcs {
+        if !npc_is_deferred(c, &npc.npc_id) {
+            continue;
+        }
+        let cmds = npc_summon_commands(c, plan, npc, v03);
+        let body: Vec<String> = cmds
+            .iter()
+            .map(|cmd| {
+                let guard = if cmd.starts_with("summon minecraft:interaction ") {
+                    format!("@e[tag={},tag=!dw_npc]", npc.tag)
+                } else {
+                    format!("@e[tag=dw_npc,tag={}]", npc.tag)
+                };
+                format!("execute unless entity {guard} run {cmd}")
+            })
+            .collect();
+        out.push((spawn_npc_fn(&npc.npc_id), lines(&body)));
+    }
+    out
+}
+
 /// The generated function name for a `move-npc` effect (content-derived key, so
 /// the start-caller and the generator agree without threading an index).
 fn movenpc_fn(npc: &str, to_anchor: &str) -> String {
@@ -1762,13 +2595,58 @@ fn movenpc_fn(npc: &str, to_anchor: &str) -> String {
     )
 }
 
-/// The generated function name for a `cutscene` effect (content-derived key).
-fn cutscene_fn(path: &[delvewright_dsl::CameraWaypoint], seconds: u32) -> String {
-    let first = path
+/// The generated function name for a `cutscene` effect, derived from its
+/// **normalized shot list** — so the v0.4 single-shot spelling and a one-entry
+/// `shots` list name the same function (byte-identical output).
+///
+/// Shape: `cs_<first anchor>_<first shot seconds>_<first shot waypoints>` — the
+/// pre-multi-shot name — plus a `_<digest>` suffix over the whole shot list
+/// (anchors, offsets, durations, subjects) whenever the cutscene is not a bare
+/// single shot without `look_at`. The readable prefix keeps generated functions
+/// greppable; the digest makes the key injective, so two cutscenes that share a
+/// first waypoint but differ anywhere later can never collapse onto one function.
+fn cutscene_fn(shots: &[delvewright_dsl::CameraShot]) -> String {
+    let head = &shots[0];
+    let first = head
+        .path
         .first()
         .map(|w| plan::safe_local(w.anchor.as_str()))
         .unwrap_or_else(|| "none".to_string());
-    format!("cs_{first}_{seconds}_{}", path.len())
+    let base = format!("cs_{first}_{}_{}", head.seconds, head.path.len());
+    if shots.len() == 1 && head.look_at.is_none() {
+        return base;
+    }
+    format!("{base}_{}", cutscene_digest(shots))
+}
+
+/// A short, stable content digest of a normalized cutscene shot list: the first
+/// 8 hex chars of the sha256 of a canonical textual rendering. Deterministic
+/// (fixed algorithm, fixed field order, no hash-order iteration, ADR-0006).
+fn cutscene_digest(shots: &[delvewright_dsl::CameraShot]) -> String {
+    let mut canon = String::new();
+    for shot in shots {
+        canon.push_str(&format!("s={};", shot.seconds));
+        for w in &shot.path {
+            canon.push_str(&format!(
+                "p={}@{},{},{};",
+                w.anchor.as_str(),
+                w.offset[0],
+                w.offset[1],
+                w.offset[2]
+            ));
+        }
+        if let Some(t) = &shot.look_at {
+            canon.push_str(&format!(
+                "l={}@{},{},{};",
+                t.anchor.as_str(),
+                t.offset[0],
+                t.offset[1],
+                t.offset[2]
+            ));
+        }
+        canon.push('|');
+    }
+    sha256_hex(canon.as_bytes())[..8].to_string()
 }
 
 /// A `[scores={dw.f_a=1..,…}]` selector fragment for a flag list, or `""`.
@@ -1785,7 +2663,9 @@ fn flag_scores_selector(flags: &[delvewright_dsl::FlagId]) -> String {
 }
 
 /// Every quest effect in the campaign (objective-complete, quest-complete, and
-/// trigger effects), for collecting v0.4 lifecycle/cutscene targets.
+/// trigger effects), flattened through `sequence` steps and `move-actor` `on_arrive`
+/// (spec-0014) so nested lifecycle/cutscene/actor targets are collected. Pre-0.6
+/// campaigns have no nesting, so this equals the shallow list (byte-identical).
 fn all_campaign_effects(c: &delvewright_dsl::Campaign) -> Vec<&QuestEffect> {
     let mut out = Vec::new();
     for q in &c.quests.content.quests {
@@ -1795,15 +2675,30 @@ fn all_campaign_effects(c: &delvewright_dsl::Campaign) -> Vec<&QuestEffect> {
             .flatten()
             .chain(&q.on_complete)
         {
-            out.push(e);
+            push_effect_deep(e, &mut out);
         }
     }
     for t in &c.quests.content.triggers {
         for e in &t.effects {
-            out.push(e);
+            push_effect_deep(e, &mut out);
         }
     }
     out
+}
+
+/// Push `e` and every transitively nested effect, descending through every nested
+/// effect list ([`QuestEffect::nested_effect_lists`]: `sequence` steps,
+/// `set-checkpoint` `on_respawn`, `begin-stealth` `on_caught`, `move-actor`
+/// `on_arrive`). Completeness matters: e.g. a `sequence` nested in an `on_respawn`
+/// must be reached here so `sequence_fns` generates its `seq_…` function — the
+/// `emit_quest_effect` for the nested effect emits a `function` call to it.
+fn push_effect_deep<'a>(e: &'a QuestEffect, out: &mut Vec<&'a QuestEffect>) {
+    out.push(e);
+    for list in e.nested_effect_lists() {
+        for inner in list {
+            push_effect_deep(inner, out);
+        }
+    }
 }
 
 /// The scoreboard-safe suffix shared by a move's driver functions/sentinels.
@@ -1864,6 +2759,263 @@ fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, Stri
     out
 }
 
+/// The spawn yaw for an actor from its `facing` (default south = 0).
+fn actor_facing_yaw(a: &delvewright_dsl::Actor) -> i32 {
+    a.facing.map(|f| facing_yaw(Some(f.token()))).unwrap_or(0)
+}
+
+/// The `/summon` command for an actor's caged puppet (spec-0014). NoAI/Silent/
+/// no-loot (`DeathLootTable` empty), tag `dw_actor` + `dw_actor_<id>` + a
+/// puppet-only `dw_pup_<id>` marker (so `unleash`/`move` target the puppet without
+/// touching a real-AI twin). `Invulnerable` unless `vulnerable`; a vulnerable puppet
+/// stays knockback-immune (`knockback_resistance` 1.0) — the tower-defense creep. A
+/// `skin` re-dresses it as a `minecraft:mannequin`, exactly as a stage-2 NPC.
+fn actor_puppet_summon(a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> String {
+    let safe = plan::safe_local(a.id.as_str());
+    let p = ent_xyz(pos);
+    let tags = format!("Tags:[\"dw_actor\",\"dw_actor_{safe}\",\"dw_pup_{safe}\"]");
+    if let Some(skin) = &a.skin {
+        let desc = a
+            .name
+            .as_deref()
+            .unwrap_or_else(|| a.id.as_str().rsplit('/').next().unwrap_or("actor"));
+        format!(
+            "summon minecraft:mannequin {} {} {} {{profile:{{texture:\"delvewright:npc/{}\",model:\"{}\"}},immovable:1b,pose:\"standing\",Invulnerable:1b,Silent:1b,Rotation:[{yaw}f,0f],description:{},{tags}}}",
+            p[0],
+            p[1],
+            p[2],
+            skin.texture_id,
+            skin.model.token(),
+            snbt_text_component(desc)
+        )
+    } else {
+        let inv = if a.vulnerable { 0 } else { 1 };
+        let name = a
+            .name
+            .as_deref()
+            .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)))
+            .unwrap_or_default();
+        let attrs = if a.vulnerable {
+            ",attributes:[{id:\"minecraft:knockback_resistance\",base:1.0}]"
+        } else {
+            ""
+        };
+        format!(
+            "summon {} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Invulnerable:{inv}b,DeathLootTable:\"minecraft:empty\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}}}",
+            a.entity, p[0], p[1], p[2]
+        )
+    }
+}
+
+/// The `/summon` command (relative coords, run `execute at` the puppet) for an
+/// actor's real-AI twin (spec-0014 `unleash`): the real `entity` with AI enabled,
+/// same name and body tag (`dw_actor` + `dw_actor_<id>`), but **no** `dw_pup_<id>`
+/// marker — so killing the puppet by its marker leaves the twin fighting.
+fn actor_twin_summon(a: &delvewright_dsl::Actor) -> String {
+    let safe = plan::safe_local(a.id.as_str());
+    let name = a
+        .name
+        .as_deref()
+        .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)))
+        .unwrap_or_default();
+    format!(
+        "summon {} ~ ~ ~ {{PersistenceRequired:1b,DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}}}",
+        a.entity
+    )
+}
+
+/// The generated start-function name for a `move-actor` (content key).
+fn moveactor_fn(actor: &str, to_anchor: &str) -> String {
+    format!(
+        "ma_{}_{}",
+        plan::safe_local(actor),
+        plan::safe_local(to_anchor)
+    )
+}
+
+/// The scoreboard-safe suffix shared by a move-actor's driver functions/sentinels.
+fn moveactor_bare(actor: &str, to_anchor: &str) -> String {
+    moveactor_fn(actor, to_anchor)
+        .strip_prefix("ma_")
+        .unwrap_or("move")
+        .to_string()
+}
+
+/// A deterministic content key for a `sequence` (spec-0014) — FNV-1a over the steps'
+/// stable `Debug` rendering, so identical timelines share one function and different
+/// ones do not collide. No wall-clock / hash-order input (ADR-0006).
+fn sequence_key(steps: &[delvewright_dsl::SequenceStep]) -> String {
+    let s = format!("{steps:?}");
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in s.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
+/// The generated start-function name for a `sequence` effect (content key).
+fn sequence_fn(steps: &[delvewright_dsl::SequenceStep]) -> String {
+    format!("seq_{}", sequence_key(steps))
+}
+
+/// Actor staging functions (spec-0014): a `spawn_actor_<id>` (idempotent summon) and
+/// `unleash_<id>` (puppet → real-AI twin) per declared actor, plus a per-tick
+/// teleport driver (with tangent yaw and an `on_arrive` bundle) per planned
+/// `move-actor`. Empty for a campaign with no actors (pre-0.6 byte-identical).
+fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for a in &plan.campaign.quests.content.actors {
+        let safe = plan::safe_local(a.id.as_str());
+        let Some(pos) = anchor_point_any(plan, a.anchor.as_str()) else {
+            continue; // resolution guaranteed by check_actor_placement (DW0325)
+        };
+        let yaw = actor_facing_yaw(a);
+        out.push((
+            format!("spawn_actor_{safe}"),
+            lines(&[format!(
+                "execute unless entity @e[tag=dw_actor_{safe}] run {}",
+                actor_puppet_summon(a, pos, yaw)
+            )]),
+        ));
+        out.push((
+            format!("unleash_{safe}"),
+            lines(&[
+                format!(
+                    "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
+                    actor_twin_summon(a)
+                ),
+                format!("kill @e[tag=dw_pup_{safe}]"),
+            ]),
+        ));
+    }
+    // move-actor per-tick drivers.
+    for m in actor_moves {
+        let safe = plan::safe_local(&m.actor);
+        let bare = moveactor_bare(&m.actor, &m.to_anchor);
+        let total = m.ticks();
+        // The on_arrive bundle for this (actor, to_anchor) — the first-seen effect,
+        // matching the planner's dedup order.
+        let on_arrive: &[QuestEffect] = all_campaign_effects(plan.campaign)
+            .into_iter()
+            .find_map(|e| match e {
+                QuestEffect::MoveActor {
+                    actor,
+                    to_anchor,
+                    on_arrive,
+                    ..
+                } if actor.as_str() == m.actor && to_anchor.as_str() == m.to_anchor => {
+                    Some(on_arrive.as_slice())
+                }
+                _ => None,
+            })
+            .unwrap_or(&[]);
+
+        let start = vec![
+            format!("execute if score #arun_{bare} dw.sys matches 1 run return fail"),
+            format!("scoreboard players set #arun_{bare} dw.sys 1"),
+            format!("scoreboard players set #at_{bare} dw.sys 0"),
+            format!("schedule function {ns}:ma_tick_{bare} 1t"),
+        ];
+        out.push((moveactor_fn(&m.actor, &m.to_anchor), lines(&start)));
+
+        let mut tick: Vec<String> = Vec::new();
+        for (t, (w, y)) in m.waypoints.iter().zip(m.yaws.iter()).enumerate() {
+            tick.push(format!(
+                "execute if score #at_{bare} dw.sys matches {t} run tp @e[tag=dw_pup_{safe}] {} {} {} {y} 0",
+                fmt_f64(w[0]),
+                fmt_f64(w[1]),
+                fmt_f64(w[2])
+            ));
+        }
+        if !on_arrive.is_empty() {
+            tick.push(format!(
+                "execute if score #at_{bare} dw.sys matches {total} run function {ns}:ma_arrive_{bare}"
+            ));
+        }
+        tick.push(format!("scoreboard players add #at_{bare} dw.sys 1"));
+        tick.push(format!(
+            "execute if score #at_{bare} dw.sys matches {}.. run scoreboard players set #arun_{bare} dw.sys 0",
+            total + 1
+        ));
+        tick.push(format!(
+            "execute unless score #at_{bare} dw.sys matches {}.. run schedule function {ns}:ma_tick_{bare} 1t",
+            total + 1
+        ));
+        out.push((format!("ma_tick_{bare}"), lines(&tick)));
+
+        if !on_arrive.is_empty() {
+            let mut arrive: Vec<String> = Vec::new();
+            for e in on_arrive {
+                emit_quest_effect(plan, e, &mut arrive);
+            }
+            out.push((format!("ma_arrive_{bare}"), lines(&arrive)));
+        }
+    }
+    out
+}
+
+/// `sequence` timeline functions (spec-0014): one start function that schedules each
+/// step's effect-group at its exact `at_ticks` offset, plus one function per step.
+/// Deduped by content key. Empty for a campaign with no sequences (byte-identical).
+fn sequence_fns(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for eff in all_campaign_effects(plan.campaign) {
+        let QuestEffect::Sequence { steps } = eff else {
+            continue;
+        };
+        let key = sequence_key(steps);
+        if !seen.insert(key.clone()) {
+            continue;
+        }
+        let base = format!("seq_{key}");
+        let mut start: Vec<String> = Vec::new();
+        for (i, step) in steps.iter().enumerate() {
+            if step.at_ticks == 0 {
+                start.push(format!("function {ns}:{base}_{i}"));
+            } else {
+                start.push(format!(
+                    "schedule function {ns}:{base}_{i} {}t",
+                    step.at_ticks
+                ));
+            }
+        }
+        out.push((base.clone(), lines(&start)));
+        for (i, step) in steps.iter().enumerate() {
+            let mut b: Vec<String> = Vec::new();
+            for e in &step.effects {
+                emit_quest_effect(plan, e, &mut b);
+            }
+            out.push((format!("{base}_{i}"), lines(&b)));
+        }
+    }
+    out
+}
+
+/// The entity tag every player carries for the duration of a cutscene.
+///
+/// **Staging invariant — a cutscene is pure observation.** While a player is in
+/// the cutscene state, campaign machinery must not require anything of them and
+/// must not punish them: the stealth judge is suspended for that player (grace
+/// neither accrues nor expires, `on_caught` cannot fire) and `damage-players`
+/// skips them. Any future verb that *demands* input or *deals harm* joins this
+/// list — the player is watching, not playing.
+///
+/// Added by the cutscene `start` alongside `gamemode spectator`, removed by the
+/// `end`/restore, so the state has exactly the cinematic's lifetime.
+const CUTSCENE_TAG: &str = "dw_cutscene";
+
+/// One cutscene shot with its geometry resolved to world coordinates: the dolly
+/// polyline, the optional `look_at` subject point, and the shot's length in ticks.
+struct ResolvedShot {
+    pts: Vec<[f64; 3]>,
+    subject: Option<[f64; 3]>,
+    ticks: i32,
+}
+
 /// Cutscene functions (spec-0008 addendum): the two-camera bounce. Per cutscene
 /// (deduped by content key) emits a start function, a self-scheduling per-tick
 /// dolly/`spectate` driver, and an end/restore function.
@@ -1873,17 +3025,35 @@ fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, Stri
 /// along the lerped waypoint polyline and alternate `spectate` between them
 /// (the naive same-entity re-`spectate` is a server no-op — never emitted). On
 /// completion, restore adventure mode + teleport players back to the marker.
+///
+/// **Aim** (DSL v0.6): every dolly `tp` carries an explicit `<yaw> <pitch>`, so a
+/// spectating player looks where the shot means them to look instead of at the
+/// summon default (yaw 0 = south). With `look_at`, the rotation is computed per
+/// tick from the camera's own position toward the subject point (the framing
+/// holds through the whole move); without it, the camera faces along the segment
+/// of the polyline it is currently traversing — for the common two-waypoint dolly
+/// that is exactly `path[0] → path[1]`. Pure `atan2` on plan coordinates, rounded
+/// to 3 decimals: deterministic, no RNG, no wall clock.
+///
+/// **Multi-shot** (DSL v0.6): a cutscene is a list of shots played back-to-back
+/// inside ONE save/restore bracket — one marker, one `gamemode spectator`, one
+/// camera pair, one restore. The shots share the single `#t_<bare>` tick counter:
+/// shot `k` owns the half-open-on-the-right window `[offset_k, offset_k + len_k]`
+/// and the next shot starts at `offset_k + len_k + 1`, so the transition is a hard
+/// cut (the next tick teleports the camera pair to the new shot's first waypoint
+/// with its own aim). A one-shot cutscene reduces to exactly the pre-multi-shot
+/// timeline, so the single-shot spelling is byte-identical either way.
 fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
     let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for eff in all_campaign_effects(plan.campaign) {
-        let QuestEffect::Cutscene { path, seconds } = eff else {
+        let Some(shots) = eff.cutscene_shots().filter(|s| !s.is_empty()) else {
             continue;
         };
         // `start` = the function emit_quest_effect calls (`cs_<bare>`); `bare` is
         // the shared suffix for the tick/end functions and per-cutscene sentinels.
-        let start_name = cutscene_fn(path, *seconds);
+        let start_name = cutscene_fn(&shots);
         if !seen.insert(start_name.clone()) {
             continue;
         }
@@ -1891,14 +3061,25 @@ fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
             .strip_prefix("cs_")
             .unwrap_or(&start_name)
             .to_string();
-        // Resolve waypoint world positions (anchor + offset, block centres). The
-        // air-corridor check (crate::nav, DW0308) validates this exact polyline.
-        let pts: Vec<[f64; 3]> = crate::nav::camera_points(plan, path);
-        let first = pts
+        // Resolve each shot's waypoint world positions (anchor + offset, block
+        // centres) and its subject. The air-corridor check (crate::nav, DW0308)
+        // validates these exact polylines, per shot.
+        let resolved: Vec<ResolvedShot> = shots
+            .iter()
+            .map(|shot| ResolvedShot {
+                pts: crate::nav::camera_points(plan, &shot.path),
+                subject: shot
+                    .look_at
+                    .as_ref()
+                    .map(|t| crate::nav::camera_look_point(plan, t)),
+                ticks: ((shot.seconds as i32) * 20).clamp(1, 400),
+            })
+            .collect();
+        let first = resolved[0]
+            .pts
             .first()
             .copied()
             .unwrap_or([0.0, plan::BASE_Y as f64, 0.0]);
-        let total: i32 = ((*seconds as i32) * 20).clamp(1, 400);
 
         // start
         let mut start: Vec<String> = Vec::new();
@@ -1911,6 +3092,11 @@ fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
         start.push(format!(
             "execute at @p run summon minecraft:marker ~ ~ ~ {{Tags:[\"dw_csmark_{bare}\"]}}"
         ));
+        // The cutscene state marker. `gamemode spectator` already takes the
+        // players' bodies out of the world; the tag is what campaign machinery
+        // reads so it does not keep asking anything of a player who is only
+        // watching (see CUTSCENE_TAG).
+        start.push(format!("tag @a add {CUTSCENE_TAG}"));
         start.push("gamemode spectator @a".to_string());
         for cam in ["a", "b"] {
             start.push(format!(
@@ -1921,15 +3107,29 @@ fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
         start.push(format!("schedule function {ns}:cs_tick_{bare} 1t"));
         out.push((start_name.clone(), lines(&start)));
 
-        // per-tick driver
+        // per-tick driver: every shot's frames laid end-to-end on one counter.
         let mut tick: Vec<String> = Vec::new();
-        for t in 0..=total {
-            let p = lerp_polyline(&pts, t as f64 / total as f64);
-            tick.push(format!(
-                "execute if score #t_{bare} dw.sys matches {t} run tp @e[tag=dw_cam_{bare}] {} {} {}",
-                fmt_f64(p[0]), fmt_f64(p[1]), fmt_f64(p[2])
-            ));
+        let mut offset: i32 = 0;
+        for shot in &resolved {
+            for k in 0..=shot.ticks {
+                let s = k as f64 / shot.ticks as f64;
+                let p = lerp_polyline(&shot.pts, s);
+                // Aim: at the subject when `look_at` is set, otherwise along the
+                // segment being traversed (the direction of travel).
+                let (yaw, pitch) = match shot.subject {
+                    Some(target) => mc_aim(p, target),
+                    None => mc_aim_along(&shot.pts, s),
+                };
+                tick.push(format!(
+                    "execute if score #t_{bare} dw.sys matches {} run tp @e[tag=dw_cam_{bare}] {} {} {} {} {}",
+                    offset + k,
+                    fmt_f64(p[0]), fmt_f64(p[1]), fmt_f64(p[2]), fmt_f64(yaw), fmt_f64(pitch)
+                ));
+            }
+            offset += shot.ticks + 1;
         }
+        // The last frame emitted sits at `offset - 1`; the driver ends one tick later.
+        let total: i32 = offset - 1;
         // alternate `spectate` between the two co-located cameras (the bounce):
         // parity 1 → camera a, parity 2 → camera b, flipped each tick.
         tick.push(format!(
@@ -1958,16 +3158,92 @@ fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
         // end / restore: leaving spectator returns each player to their
         // pre-spectator position; the explicit tp to the saved marker makes the
         // restore robust (spec addendum: restore gamemode + position).
-        let end: Vec<String> = vec![
+        let mut end: Vec<String> = vec![
             "gamemode adventure @a".to_string(),
             format!("tp @a @e[tag=dw_csmark_{bare},limit=1]"),
             format!("kill @e[tag=dw_cam_{bare}]"),
             format!("kill @e[tag=dw_csmark_{bare}]"),
-            format!("scoreboard players set #run_{bare} dw.sys 0"),
         ];
+        // Resume: drop the cutscene marker, then re-acknowledge the vanilla
+        // `sneak_time` stat so the first stealth judge tick after the restore
+        // compares against the players' *current* stat rather than the one frozen
+        // when the cinematic began. Grace is deliberately NOT reset — it neither
+        // accrued nor expired during the cutscene, so the beat picks up exactly
+        // where it paused. Emitted only for a campaign with stealth beats, so a
+        // cutscene-only campaign stays byte-identical.
+        end.push(format!("tag @a remove {CUTSCENE_TAG}"));
+        if !plan.stealth_beats.is_empty() {
+            end.push(
+                "execute as @a run scoreboard players operation @s dw.st_sneakack = @s dw.st_sneak"
+                    .to_string(),
+            );
+        }
+        end.push(format!("scoreboard players set #run_{bare} dw.sys 0"));
         out.push((format!("cs_end_{bare}"), lines(&end)));
     }
     out
+}
+
+/// Aim an entity at `target` from `pos`; returns `(yaw, pitch)` in **Minecraft
+/// entity rotation degrees** — the convention the `tp <targets> <pos> <rot>`
+/// command and the `Rotation` NBT use:
+///
+/// - `yaw = atan2(-dx, dz)`: `0` faces +Z (south), `90` faces −X (west), `180`
+///   faces −Z (north), `-90` faces +X (east).
+/// - `pitch = atan2(-dy, hypot(dx, dz))`: positive looks **down**, `0` is level.
+///
+/// Note this is *not* the render-plan / Chunky convention
+/// ([`crate::render_plan`], `yaw = atan2(-dz, dx)`, `0` = +X): pitch agrees, yaw
+/// does not. Rotations are rounded to 3 decimals so emission is byte-stable
+/// across platforms (the ADR-0006 gate compares bytes; repeatable rounding avoids
+/// libm ulp drift).
+fn mc_aim(pos: [f64; 3], target: [f64; 3]) -> (f64, f64) {
+    let d = [target[0] - pos[0], target[1] - pos[1], target[2] - pos[2]];
+    mc_aim_dir(d)
+}
+
+/// [`mc_aim`] from a direction vector. A zero-length direction yields the vanilla
+/// summon default (yaw 0 = south, level) — reached only when a cutscene's whole
+/// dolly path collapses to one point, which has no direction of travel.
+fn mc_aim_dir(d: [f64; 3]) -> (f64, f64) {
+    let horiz = (d[0] * d[0] + d[2] * d[2]).sqrt();
+    if horiz == 0.0 && d[1] == 0.0 {
+        return (0.0, 0.0);
+    }
+    let yaw = (-d[0]).atan2(d[2]).to_degrees();
+    let pitch = (-d[1]).atan2(horiz).to_degrees();
+    (round3(yaw), round3(pitch))
+}
+
+/// The default cutscene aim: face along the direction of travel at parameter `s`
+/// — the polyline segment the camera is currently traversing. For a two-waypoint
+/// dolly that is `path[0] → path[1]` for the whole shot. A degenerate (zero-
+/// length) segment falls back to the overall first → last direction so a repeated
+/// waypoint does not snap the camera back to south.
+fn mc_aim_along(pts: &[[f64; 3]], s: f64) -> (f64, f64) {
+    if pts.len() < 2 {
+        return (0.0, 0.0);
+    }
+    let segs = (pts.len() - 1) as f64;
+    let u = (s.clamp(0.0, 1.0) * segs).min(segs);
+    let i = (u.floor() as usize).min(pts.len() - 2);
+    let (a, b) = (pts[i], pts[i + 1]);
+    let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    if d == [0.0, 0.0, 0.0] {
+        let last = pts[pts.len() - 1];
+        let f = pts[0];
+        return mc_aim_dir([last[0] - f[0], last[1] - f[1], last[2] - f[2]]);
+    }
+    mc_aim_dir(d)
+}
+
+/// Round to 3 decimals so float formatting is stable across platforms, and
+/// collapse negative zero (`atan2` yields `-0.0` for an exactly-south / exactly-
+/// level aim; `-0.0` in a `tp` rotation is correct but reads as noise and would
+/// bake a sign artifact into the emitted bytes).
+fn round3(v: f64) -> f64 {
+    let r = (v * 1000.0).round() / 1000.0;
+    if r == 0.0 { 0.0 } else { r }
 }
 
 /// Linear interpolation along a polyline of points at parameter `s` in `[0,1]`.
@@ -2002,9 +3278,10 @@ fn env_trigger_setup(plan: &Plan) -> Vec<String> {
             continue;
         }
         if let Some(p) = anchor_point_any(plan, t.at.as_str()) {
+            let q = ent_xyz(p);
             out.push(format!(
                 "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_trig_{}\"]}}",
-                p[0], p[1], p[2], plan::safe_local(t.id.as_str())
+                q[0], q[1], q[2], plan::safe_local(t.id.as_str())
             ));
         }
     }
@@ -2081,7 +3358,7 @@ fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
         }
         let mut effs: Vec<String> = Vec::new();
         for e in &t.effects {
-            emit_quest_effect(plan, e, &mut effs);
+            emit_gated_effect(plan, e, &mut effs);
         }
         let sel = flag_scores_selector(&t.requires_flags);
         for line in effs {
@@ -2092,17 +3369,319 @@ fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
     out
 }
 
-/// The first area's `spawn` anchor absolute position.
+// ---------------------------------------------------------------------------
+// v0.6 traps (spec-0011)
+// ---------------------------------------------------------------------------
+
+/// `setup_finish` commands for traps (spec-0011): fill each `dispense` trap's
+/// prefab dispenser with its static payload (`item replace block … container.0`,
+/// the same deterministic mechanism as a `collect` chest — no raw NBT), and summon
+/// the disarm affordance's interaction entity. The trap's *harm* needs no command:
+/// the plate/tripwire/trapped-chest → dispenser redstone is already in the prefab.
+/// Empty for a campaign with no traps → byte-identical.
+fn trap_setup(plan: &Plan) -> Vec<String> {
+    let mut out = Vec::new();
+    for t in &plan.traps {
+        // Fill the pre-wired dispenser with the declared payload.
+        if let (Some(disp), Some((item, count))) = (t.dispenser, &t.payload) {
+            out.push(format!(
+                "item replace block {} {} {} container.0 with {item} {count}",
+                disp[0], disp[1], disp[2]
+            ));
+        }
+        // Summon the disarm interaction affordance (a right-click target). The
+        // physical lever may also be in the prefab; this entity is the modeled,
+        // provable disarm the compiler owns.
+        if let Some(dis) = &t.disarm {
+            let v = ent_xyz(dis.via_cell);
+            out.push(format!(
+                "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_trapdis_{}\"]}}",
+                v[0], v[1], v[2], t.safe
+            ));
+        }
+    }
+    out
+}
+
+/// Per-tick disarm detection for disarmable traps (spec-0011), reusing the v0.4
+/// interaction-entity `use` primitive: when a player right-clicks the disarm
+/// affordance, fire the disarm once. Empty for a campaign with no disarmable traps.
+fn trap_tick(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for t in &plan.traps {
+        if t.disarm.is_none() {
+            continue;
+        }
+        let id = &t.safe;
+        out.push(format!(
+            "execute unless score #trapdis_{id} dw.sys matches 1 if entity @e[tag=dw_trapdis_{id},nbt={{interaction:{{}}}}] run function {ns}:trap_disarm_{id}"
+        ));
+        out.push(format!(
+            "execute as @e[tag=dw_trapdis_{id}] run data remove entity @s interaction"
+        ));
+    }
+    out
+}
+
+/// Disarm functions (`trap_disarm_<id>`) for disarmable traps (spec-0011). Firing
+/// once (`#trapdis_<id>` sentinel): set the disarm flag party-wide (so
+/// `requires_flags` reads elsewhere see it) and **empty the dispenser** — the
+/// modeled, global disarm that actually stops a redstone-native dispense trap for
+/// everyone. Empty for a campaign with no disarmable traps.
+fn trap_fns(plan: &Plan) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for t in &plan.traps {
+        let Some(dis) = &t.disarm else {
+            continue;
+        };
+        let id = &t.safe;
+        let mut body: Vec<String> = Vec::new();
+        body.push(format!("scoreboard players set #trapdis_{id} dw.sys 1"));
+        body.push(format!(
+            "scoreboard players set @a {} 1",
+            plan::flag_score(&dis.sets_flag)
+        ));
+        if let Some(disp) = t.dispenser {
+            // Empty the dispenser to an empty stack list — the modeled, global disarm
+            // that actually stops a redstone-native dispense trap (no ammo → no fire).
+            body.push(format!(
+                "data modify block {} {} {} Items set value []",
+                disp[0], disp[1], disp[2]
+            ));
+        }
+        out.push((format!("trap_disarm_{id}"), lines(&body)));
+    }
+    out
+}
+
+/// The campaign's **entry point**: the absolute position of the first area's
+/// entry anchor, resolved through [`plan::ENTRY_ANCHOR_NAMES`] (`spawn`, then
+/// `entry` — one concept, two spellings in the shipped tileset library). This one
+/// cell is `setworldspawn`, the class-apply teleport, the first-join placement,
+/// and the `dw:cp` seed. `None` is a hard build error (`DW0345`).
 fn campaign_spawn(plan: &Plan) -> Option<[i32; 3]> {
     for area in &plan.areas {
-        if let Some(ResolvedAnchor::Point { pos, .. }) = plan
-            .anchors
-            .get(&(area.area_id.clone(), "spawn".to_string()))
-        {
-            return Some(*pos);
+        for name in plan::ENTRY_ANCHOR_NAMES {
+            if let Some(ResolvedAnchor::Point { pos, .. }) =
+                plan.anchors.get(&(area.area_id.clone(), name.to_string()))
+            {
+                return Some(*pos);
+            }
         }
     }
     None
+}
+
+// ---------------------------------------------------------------------------
+// v0.6 playable-region boundary (spec-0013)
+// ---------------------------------------------------------------------------
+
+/// The effective "unbounded up" ceiling for a playable region. Well above the
+/// 1.21.11 build limit (y=319); no reachable adventure-mode position in a box
+/// garden exceeds it, so the vertical selector is unbounded in practice.
+const REGION_CEIL_Y: i32 = 1024;
+
+/// The compiler's default boundary return message (English-first, CLAUDE.md
+/// language policy). Overridable via `boundary.message`, which is then l10n
+/// inventoried under `world.boundary.message`.
+const BOUNDARY_DEFAULT_MESSAGE: &str = "The tide turns you back — the delve lies behind you.";
+
+/// A soft, non-alarming cue played on a boundary return.
+const BOUNDARY_SOUND: &str = "minecraft:block.amethyst_block.chime";
+
+/// The derived playable region (spec-0013): the union of every placed-piece AABB,
+/// inflated horizontally by `boundary.margin`, floored at the lowest placed block
+/// − 8, unbounded upward (capped at [`REGION_CEIL_Y`] for the selector). Every
+/// bound is derived from the final layout, so "every anchor is inside" is
+/// structural.
+struct PlayableRegion {
+    /// Inclusive min corner `[x, y_floor, z]`.
+    min: [i32; 3],
+    /// Max corner `[x, REGION_CEIL_Y, z]`.
+    max: [i32; 3],
+}
+
+impl PlayableRegion {
+    /// The `@s[…]` volume-selector fragment matching a player INSIDE the region.
+    /// Biased inclusive (dx/dz span the far block fully) so an edge-standing player
+    /// is never falsely ejected — the safe direction, further buffered by `margin`.
+    fn inside_selector(&self) -> String {
+        format!(
+            "[x={},dx={},y={},dy={},z={},dz={}]",
+            self.min[0],
+            self.max[0] - self.min[0] + 1,
+            self.min[1],
+            self.max[1] - self.min[1],
+            self.min[2],
+            self.max[2] - self.min[2] + 1,
+        )
+    }
+
+    /// The SNBT compound written to `dw:region bounds` — the readable region
+    /// contract (mirrors `dw:cp`'s readable last-checkpoint contract).
+    fn bounds_snbt(&self) -> String {
+        format!(
+            "{{min:[{},{},{}],max:[{},{},{}]}}",
+            self.min[0], self.min[1], self.min[2], self.max[0], self.max[1], self.max[2]
+        )
+    }
+}
+
+/// Derive the playable region, or `None` when no `boundary` is declared (the whole
+/// feature is then off and output stays byte-identical).
+fn playable_region(plan: &Plan) -> Option<PlayableRegion> {
+    let b = plan.campaign.world.content.boundary.as_ref()?;
+    let margin = i32::from(b.margin);
+    let mut min = [i32::MAX; 3];
+    let mut max = [i32::MIN; 3];
+    for area in &plan.areas {
+        let (amin, amax) = area.bounds();
+        for a in 0..3 {
+            min[a] = min[a].min(amin[a]);
+            max[a] = max[a].max(amax[a]);
+        }
+    }
+    // A validated campaign always has >=1 placed area; guard defensively.
+    if min[0] == i32::MAX {
+        return None;
+    }
+    Some(PlayableRegion {
+        min: [min[0] - margin, min[1] - 8, min[2] - margin],
+        max: [max[0] + margin, REGION_CEIL_Y, max[2] + margin],
+    })
+}
+
+/// The effective boundary return message (authored or the English default).
+fn boundary_message(plan: &Plan) -> String {
+    plan.campaign
+        .world
+        .content
+        .boundary
+        .as_ref()
+        .and_then(|b| b.message.as_deref())
+        .unwrap_or(BOUNDARY_DEFAULT_MESSAGE)
+        .to_string()
+}
+
+/// Whether the emitted setup must initialize the `dw:cp` last-checkpoint storage
+/// mirror to the spawn cell. Single shared gate so the (idempotent) init line is
+/// emitted exactly once regardless of merge order: a campaign needs it when it
+/// declares a `set-checkpoint` (spec-0012 — the mirror must read before the first
+/// checkpoint fires) OR a `boundary` (spec-0013 — its return clock reads the
+/// mirror). Absent both, non-v0.6 output stays byte-identical.
+fn needs_cp_init(plan: &Plan) -> bool {
+    !plan.checkpoints.is_empty() || plan.campaign.world.content.boundary.is_some()
+}
+
+/// Re-application period of the night-vision clock, in ticks (1 s).
+const NIGHT_VISION_PERIOD_TICKS: u32 = 20;
+/// Duration handed to each `effect give`, in **seconds**. Must stay comfortably
+/// above vanilla's 10 s night-vision wind-down: `GameRenderer` ramps the night-
+/// vision brightness down (the flicker) once the remaining duration drops to
+/// 200 ticks, so with a 1 s clock the remaining duration never falls below
+/// `12 s − 1 s = 11 s` (220 ticks) and the effect never blinks. A player who walks
+/// out of a mitigated area keeps it for at most this long — deliberate: shortening
+/// it below ~11 s would re-introduce the flicker, and no vanilla primitive removes
+/// an effect on a region exit without also stripping effects the campaign granted
+/// for other reasons.
+const NIGHT_VISION_SECONDS: u32 = 12;
+
+/// The v0.6 night-vision mitigation clock: for every area declaring
+/// `mitigation: "night-vision"`, a self-rescheduling 1 s function that gives
+/// `minecraft:night_vision` to the players inside **that area's placed bounds**.
+///
+/// This is the mechanism the `DW0210` gate now keys on (`light::area_night_vision`).
+/// Before v0.6 the gate keyed on a class-kit item's display *name*, which a renamed
+/// water bottle satisfied — the check passed while nothing granted night vision
+/// (owner, island QA). Declaration and emission are now the same fact.
+///
+/// The selector box is the area's final placed bounds — compile-time literals, no
+/// runtime search — so emission is deterministic. Empty for a campaign that declares
+/// no mitigation, keeping pre-0.6 output byte-identical.
+fn night_vision_fns(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut gives: Vec<String> = Vec::new();
+    for area in &plan.areas {
+        let declared = plan
+            .campaign
+            .world
+            .content
+            .areas
+            .iter()
+            .find(|a| a.id.as_str() == area.area_id)
+            .is_some_and(crate::light::area_night_vision);
+        if !declared {
+            continue;
+        }
+        let (min, max) = area.bounds();
+        gives.push(format!(
+            "effect give @a[x={},dx={},y={},dy={},z={},dz={}] minecraft:night_vision {NIGHT_VISION_SECONDS} 0 true",
+            min[0],
+            max[0] - min[0] + 1,
+            min[1],
+            max[1] - min[1] + 1,
+            min[2],
+            max[2] - min[2] + 1,
+        ));
+    }
+    if gives.is_empty() {
+        return Vec::new();
+    }
+    // `schedule … <n>t` uses vanilla replace-mode, so the clock can never double up.
+    gives.push(format!(
+        "schedule function {ns}:night_vision_tick {NIGHT_VISION_PERIOD_TICKS}t"
+    ));
+    vec![("night_vision_tick".to_string(), lines(&gives))]
+}
+
+/// Whether the campaign declares the night-vision mitigation on any area.
+fn has_night_vision_areas(plan: &Plan) -> bool {
+    plan.campaign
+        .world
+        .content
+        .areas
+        .iter()
+        .any(crate::light::area_night_vision)
+}
+
+/// The v0.6 boundary clock (spec-0013): a self-rescheduling 1s (20t) region check
+/// plus a per-player macro return. Empty for a campaign with no `boundary`. The
+/// return teleports via `dw:cp` (the last checkpoint), so wanderers always land on
+/// the current respawn anchor rather than a fixed point.
+fn boundary_fns(plan: &Plan) -> Vec<(String, String)> {
+    let Some(region) = playable_region(plan) else {
+        return Vec::new();
+    };
+    let ns = &plan.namespace;
+    let sel = region.inside_selector();
+    let msg = json!({ "text": boundary_message(plan) });
+
+    // boundary_tick: snapshot the live checkpoint into a scratch compound, eject
+    // every player outside the region to it, re-arm the clock. `schedule … 20t`
+    // uses vanilla replace-mode, so the clock can never double up.
+    let tick = vec![
+        "data modify storage dw:region cp.x set from storage dw:cp pos[0]".to_string(),
+        "data modify storage dw:region cp.y set from storage dw:cp pos[1]".to_string(),
+        "data modify storage dw:region cp.z set from storage dw:cp pos[2]".to_string(),
+        format!(
+            "execute as @a unless entity @s{sel} run function {ns}:boundary_return with storage dw:region cp"
+        ),
+        format!("schedule function {ns}:boundary_tick 20t"),
+    ];
+
+    // boundary_return: a macro run per offending player (`@s`). Teleport to the
+    // checkpoint, show the message on the actionbar, play a soft cue. No damage.
+    let ret = vec![
+        "$tp @s $(x) $(y) $(z)".to_string(),
+        format!("title @s actionbar {msg}"),
+        format!("playsound {BOUNDARY_SOUND} player @s ~ ~ ~ 0.6 1"),
+    ];
+
+    vec![
+        ("boundary_tick".to_string(), lines(&tick)),
+        ("boundary_return".to_string(), lines(&ret)),
+    ]
 }
 
 /// Objective id → function-name-safe token (`obj/talk` → `o_talk`).
@@ -2175,9 +3754,10 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
         }
         Objective::Interact { id, anchor, .. } => {
             if let Some(pos) = plan.point(area, anchor.as_str()) {
+                let e = ent_xyz(pos);
                 cmds.push(format!(
                     "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{}\"]}}",
-                    pos[0], pos[1], pos[2], interact_entity_tag(id.as_str())
+                    e[0], e[1], e[2], interact_entity_tag(id.as_str())
                 ));
                 if let Some(prop) = o.prop() {
                     // v0.4: the prop block IS the affordance (spec-0008 §2) — place
@@ -2190,11 +3770,12 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
                     // Visible, glowing, adventure-safe marker so a human can find the
                     // interact target (M2 fix 3): an `item_display` has no collision,
                     // so it obstructs neither movement nor the interaction hitbox.
-                    // Its name derives from the objective `title` (fallback: id).
-                    let marker_name = snbt_string(o.title().unwrap_or(id.as_str()));
+                    // Named from the objective `title`; an untitled objective gets a
+                    // nameless (but still glowing) marker rather than a raw-id label.
+                    let name_fields = marker_name_fields(o.title());
                     cmds.push(format!(
-                        "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],CustomName:{},CustomNameVisible:1b,billboard:\"center\",item:{{id:\"minecraft:lantern\",count:1}}}}",
-                        pos[0], pos[1], pos[2], interact_entity_tag(id.as_str()), marker_name
+                        "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],{}billboard:\"center\",item:{{id:\"minecraft:lantern\",count:1}}}}",
+                        e[0], e[1], e[2], interact_entity_tag(id.as_str()), name_fields
                     ));
                 }
             }
@@ -2209,11 +3790,13 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
                 None => return cmds,
             };
             // A distinct, thematically neutral `end_rod` (vs. the interact lantern)
-            // so a beacon-like light marks a reach destination.
-            let marker_name = snbt_string(o.title().unwrap_or(id.as_str()));
+            // so a beacon-like light marks a reach destination. Named from the
+            // objective `title`; untitled → nameless glow, never a raw-id label.
+            let name_fields = marker_name_fields(o.title());
+            let e = ent_xyz(pos);
             cmds.push(format!(
-                "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],CustomName:{},CustomNameVisible:1b,billboard:\"center\",item:{{id:\"minecraft:end_rod\",count:1}}}}",
-                pos[0], pos[1], pos[2], reach_marker_tag(id.as_str()), marker_name
+                "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],{}billboard:\"center\",item:{{id:\"minecraft:end_rod\",count:1}}}}",
+                e[0], e[1], e[2], reach_marker_tag(id.as_str()), name_fields
             ));
         }
         Objective::TalkTo { .. } | Objective::Kill { .. } => {}
@@ -2250,23 +3833,36 @@ fn completion_cleanup(o: &Objective) -> Vec<String> {
 /// Empty extra sources for v0.2/v0.3, keeping their scoreboard setup identical.
 fn declared_flags(c: &delvewright_dsl::Campaign) -> std::collections::BTreeSet<String> {
     let mut out = std::collections::BTreeSet::new();
+    // Descend the whole effect tree: a `set-flag` nested in a `sequence` step (or an
+    // `on_respawn`/`on_caught`/`on_arrive` bundle) still emits a `dw.f_<flag>` write,
+    // so its scoreboard objective must be initialized here — else the nested
+    // `set-flag` writes to an uninitialized objective at runtime.
+    let note = |eff: &QuestEffect, out: &mut std::collections::BTreeSet<String>| {
+        eff.visit_deep(&mut |e| {
+            if let Some(f) = e.set_flag() {
+                out.insert(f.as_str().to_string());
+            }
+        });
+    };
     for q in &c.quests.content.quests {
-        let effs = q
+        for eff in q
             .on_objective_complete
             .values()
             .flatten()
-            .chain(q.on_complete.iter());
-        for eff in effs {
-            if let Some(f) = eff.set_flag() {
-                out.insert(f.as_str().to_string());
-            }
+            .chain(&q.on_complete)
+        {
+            note(eff, &mut out);
         }
     }
     for t in &c.quests.content.triggers {
         for eff in &t.effects {
-            if let Some(f) = eff.set_flag() {
-                out.insert(f.as_str().to_string());
-            }
+            note(eff, &mut out);
+        }
+    }
+    // v0.6 traps (spec-0011): a disarm's `sets_flag` needs its own scoreboard.
+    for t in &c.quests.content.traps {
+        if let Some(dis) = &t.disarm {
+            out.insert(dis.sets_flag.as_str().to_string());
         }
     }
     for tree in &c.dialogue.content.dialogues {
@@ -2324,82 +3920,136 @@ fn pending_guard(o: &Objective, quest_active: &str) -> String {
 // dialogs / advancements
 // ---------------------------------------------------------------------------
 
-/// The sorted, distinct flags gating any option of `node_id` (DSL v0.4). Empty
-/// for a node with no flag-gated options (v0.2/v0.3 nodes → byte-identical).
-fn node_gated_flags(npc: &plan::NpcPlan, node_id: &str) -> Vec<String> {
-    let mut set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for opt in &npc.options {
-        if opt.node_id == node_id {
-            for f in &opt.requires_flags {
-                set.insert(f.clone());
-            }
+/// Whether an option's display is gated (DSL v0.4+): it either requires flags
+/// (flag axis) or completes an objective (objective-state axis — visible only
+/// while that objective is active). Below v0.4 nothing is display-gated, so
+/// v0.2/v0.3 nodes stay byte-identical. `requires_flags` is itself a v0.4 verb,
+/// so the whole predicate collapses to `false` pre-v0.4.
+fn option_display_gated(opt: &plan::OptionPlan, v04: bool) -> bool {
+    v04 && (!opt.requires_flags.is_empty() || !opt.completes.is_empty())
+}
+
+/// The display-gated options of `node_id`, in declared order — the bit order of
+/// the node's per-player availability mask (`dw.dmask`). Empty for an ungated
+/// node (v0.2/v0.3, or a v0.4 node whose every option is unconditional).
+fn node_gated_options<'a>(
+    npc: &'a plan::NpcPlan,
+    node_id: &str,
+    v04: bool,
+) -> Vec<&'a plan::OptionPlan> {
+    npc.options
+        .iter()
+        .filter(|o| o.node_id == node_id && option_display_gated(o, v04))
+        .collect()
+}
+
+/// The ` if …`/` unless …` execute fragment (leading space) that is satisfied
+/// exactly when `opt` should be DISPLAYED: every `requires_flags` flag set (flag
+/// axis), and — v0.4+ — every completed objective's quest active and the
+/// objective itself not yet complete (objective-state axis). Mirrors the
+/// click-handler guard (emit.rs ~1166) so an option is shown iff clicking it
+/// would fire.
+fn option_display_conditions(c: &delvewright_dsl::Campaign, opt: &plan::OptionPlan) -> String {
+    let mut cond = String::new();
+    for f in &opt.requires_flags {
+        cond.push_str(&format!(" if score @s {} matches 1", plan::flag_score(f)));
+    }
+    for obj in &opt.completes {
+        if let Some((qid, _)) = objective_quest(c, obj) {
+            cond.push_str(&format!(
+                " if score @s {} matches 1 unless score @s {} matches 1",
+                quest_active_score(qid),
+                obj_score(obj)
+            ));
         }
     }
-    set.into_iter().collect()
+    cond
 }
 
 /// The command that displays `node_id`: a direct `dialog show` for an ungated
-/// node, or the flag-gate chooser function for a gated one (which shows the
-/// variant matching the player's flags).
+/// node, or the availability chooser function for a gated one (which shows the
+/// variant matching the player's satisfied flags + active objectives).
 fn show_node_cmd(plan: &Plan, npc: &plan::NpcPlan, node_id: &str) -> String {
     let ns = &plan.namespace;
+    let v04 = campaign_is_v04(plan);
     let node_safe = plan::safe_local(node_id);
-    if node_gated_flags(npc, node_id).is_empty() {
+    if node_gated_options(npc, node_id, v04).is_empty() {
         format!("dialog show @s {ns}:{}_{}", npc.safe, node_safe)
     } else {
         format!("function {ns}:show_{}_{}", npc.safe, node_safe)
     }
 }
 
-/// Flag-gate chooser functions (`show_<npc>_<node>`) for this NPC's gated nodes:
-/// compute a per-player bitmask of satisfied gating flags into `dw.dmask`, then
-/// `dialog show` the variant (`<npc>_<node>__m<mask>`) whose options are all
-/// available. One chooser per gated node.
+/// Availability chooser + mask functions for this NPC's display-gated nodes. Per
+/// gated node, two functions:
+///
+/// * `dmask_<npc>_<node>` computes the per-player availability bitmask into
+///   `dw.dmask` — bit `i` set iff the node's `i`-th gated option is currently
+///   displayable (flags satisfied and every completed objective active + not yet
+///   complete). Pure scoreboard math, so a PackTest can drive it and assert the
+///   mask without opening a dialog.
+/// * `show_<npc>_<node>` runs the mask function, then `dialog show`s the variant
+///   (`<npc>_<node>__m<mask>`) whose visible options match.
 fn gated_node_choosers(plan: &Plan, npc: &plan::NpcPlan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
+    let c = plan.campaign;
+    let v04 = campaign_is_v04(plan);
     let mut out = Vec::new();
     let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
     for opt in &npc.options {
         if !seen.insert(opt.node_id.as_str()) {
             continue;
         }
-        let flags = node_gated_flags(npc, &opt.node_id);
-        if flags.is_empty() {
+        let gated = node_gated_options(npc, &opt.node_id, v04);
+        if gated.is_empty() {
             continue;
         }
         let node_safe = plan::safe_local(&opt.node_id);
-        let mut body = vec!["scoreboard players set @s dw.dmask 0".to_string()];
-        for (i, f) in flags.iter().enumerate() {
-            body.push(format!(
-                "execute if score @s {} matches 1 run scoreboard players add @s dw.dmask {}",
-                plan::flag_score(f),
+
+        let mut dmask = vec!["scoreboard players set @s dw.dmask 0".to_string()];
+        for (i, g) in gated.iter().enumerate() {
+            dmask.push(format!(
+                "execute{} run scoreboard players add @s dw.dmask {}",
+                option_display_conditions(c, g),
                 1u32 << i
             ));
         }
-        for mask in 0..(1u32 << flags.len()) {
-            body.push(format!(
+        out.push((format!("dmask_{}_{}", npc.safe, node_safe), lines(&dmask)));
+
+        let mut show = vec![format!("function {ns}:dmask_{}_{}", npc.safe, node_safe)];
+        for mask in 0..(1u32 << gated.len()) {
+            show.push(format!(
                 "execute if score @s dw.dmask matches {mask} run dialog show @s {ns}:{}_{}__m{mask}",
                 npc.safe, node_safe
             ));
         }
-        out.push((format!("show_{}_{}", npc.safe, node_safe), lines(&body)));
+        out.push((format!("show_{}_{}", npc.safe, node_safe), lines(&show)));
     }
     out
 }
 
-/// Whether any dialogue option is flag-gated (gates the `dw.dmask` declaration).
+/// Whether any dialogue option is display-gated (gates the `dw.dmask`
+/// declaration): a v0.4+ option that requires flags or completes an objective.
 fn has_gated_dialogue(c: &delvewright_dsl::Campaign) -> bool {
-    c.dialogue
-        .content
-        .dialogues
-        .iter()
-        .flat_map(|t| &t.nodes)
-        .flat_map(|n| &n.options)
-        .any(|o| !o.requires_flags.is_empty())
+    use delvewright_dsl::DialogueEffect;
+    is_v04(c.quests.dsl_version.as_str())
+        && c.dialogue
+            .content
+            .dialogues
+            .iter()
+            .flat_map(|t| &t.nodes)
+            .flat_map(|n| &n.options)
+            .any(|o| {
+                !o.requires_flags.is_empty()
+                    || o.effects
+                        .iter()
+                        .any(|e| matches!(e, DialogueEffect::CompleteObjective { .. }))
+            })
 }
 
 fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
     let c = plan.campaign;
+    let v04 = campaign_is_v04(plan);
     let mut dialogs = Vec::new();
 
     // class selection
@@ -2447,9 +4097,10 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
                 .filter(|o| o.node_id == node.id.as_str())
                 .collect();
             let node_safe = plan::safe_local(node.id.as_str());
-            let flags = node_gated_flags(npc, node.id.as_str());
-            if flags.is_empty() {
-                // Ungated node → a single dialog (byte-identical to v0.2/v0.3).
+            let gated = node_gated_options(npc, node.id.as_str(), v04);
+            if gated.is_empty() {
+                // Ungated node → a single dialog (byte-identical to v0.2/v0.3, or a
+                // v0.4 node whose every option is unconditional).
                 dialogs.push((
                     format!("{}_{node_safe}", npc.safe),
                     build_node_dialog(
@@ -2460,24 +4111,26 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
                     ),
                 ));
             } else {
-                // v0.4 flag-gated node → one variant per satisfied-flag bitmask.
-                // The chooser function (`show_<npc>_<node>`) shows the variant
-                // matching the player's flags, so a gated option is genuinely
-                // absent until every flag it needs is set (spec-0008 §1).
-                for mask in 0..(1u32 << flags.len()) {
-                    let satisfied: std::collections::BTreeSet<&str> = flags
-                        .iter()
-                        .enumerate()
-                        .filter(|(i, _)| mask & (1u32 << i) != 0)
-                        .map(|(_, f)| f.as_str())
-                        .collect();
+                // v0.4 display-gated node → one variant per availability bitmask.
+                // Bit `i` (declared order among gated options) means "the i-th gated
+                // option is displayable now": every flag it needs is set (flag axis)
+                // and every objective it completes is active (objective-state axis).
+                // The chooser function (`show_<npc>_<node>`) computes the live mask
+                // and shows the matching variant, so a gated option is genuinely
+                // absent until it is displayable (spec-0008 §1).
+                for mask in 0..(1u32 << gated.len()) {
+                    let mut gi = 0u32;
                     let visible: Vec<&plan::OptionPlan> = node_opts
                         .iter()
                         .copied()
                         .filter(|o| {
-                            o.requires_flags
-                                .iter()
-                                .all(|f| satisfied.contains(f.as_str()))
+                            if option_display_gated(o, v04) {
+                                let bit = gi;
+                                gi += 1;
+                                mask & (1u32 << bit) != 0
+                            } else {
+                                true
+                            }
                         })
                         .collect();
                     dialogs.push((
@@ -2662,7 +4315,12 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
 /// with `-Dpacktest.auto` (exit code = failed tests). These functions use
 /// PackTest-only commands and run on the modded validation server, so they are
 /// exempt from the vanilla command-tree validator (see `is_vanilla_function`).
-fn emit_packtest(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::MovePlan]) {
+fn emit_packtest(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+) {
     let ns = &plan.namespace;
     let c = plan.campaign;
     put_json(
@@ -2768,9 +4426,629 @@ fn emit_packtest(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::MovePl
     // the objective scoreboard. Emits nothing for a v0.2 campaign.
     emit_verb_packtests(plan, out);
 
+    // The dialogue trigger must survive a second use with NO tick in between —
+    // the singleplayer pause-freeze contract. Emits nothing for a campaign with no
+    // terminal dialogue option.
+    emit_dialogue_trigger_packtest(plan, out);
+
     // v0.4: prop-on-activation, despawn removes body+hitbox, move arrives at
     // target. Emits nothing when the campaign uses none of them.
     emit_v04_packtests(plan, out, moves);
+
+    // v0.6: boundary return / never-move-inside (spec-0013). Emits nothing without
+    // a boundary.
+    emit_boundary_packtest(plan, out);
+    emit_night_vision_packtest(plan, out);
+
+    // v0.6: checkpoint respawn contract + stealth kill/spare judge (spec-0012 /
+    // spec-0014). Emits nothing when the campaign uses neither.
+    emit_v06_packtests(plan, out);
+
+    // v0.6 (spec-0014): actor spawn/despawn (kill vs vanish), move-actor arrival,
+    // unleash swap. Emits nothing for a campaign with no actors.
+    emit_v06_actor_packtests(plan, out, actor_moves);
+    // v0.6: trap payload loads into the dispenser; a disarm empties it (spec-0011).
+    // Emits nothing when the campaign declares no traps.
+    emit_trap_packtests(plan, out);
+}
+
+/// The dialogue-trigger re-arm PackTest: a player consumes a dialogue trigger and
+/// must be able to use it again **with the tick function never running in
+/// between**. Suppressing the tick function is how a plain mcfunction emulates the
+/// integrated (singleplayer) server's pause-menu tick freeze (1.21.9+), which is
+/// the only condition under which the old per-tick-only re-enable lost a dialogue
+/// choice — and which a dedicated server, and therefore every rung of the
+/// validation ladder, can never enter.
+///
+/// Drives a **terminal** option (no `next`, no flag gate) so the handler contains
+/// no `dialog show` — a PackTest dummy player has no client to show a screen to.
+/// The re-arm is emitted immediately after the trigger reset, so it is reached on
+/// every path through the handler regardless. Emits nothing when the campaign has
+/// no terminal option (nothing to drive).
+fn emit_dialogue_trigger_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some((npc, opt)) = plan.npcs.iter().find_map(|npc| {
+        npc.options
+            .iter()
+            .find(|o| o.next.is_none() && o.requires_flags.is_empty())
+            .map(|o| (npc, o))
+    }) else {
+        return;
+    };
+    let trig = &npc.trigger_objective;
+    let n = opt.n;
+
+    let mut b = packtest_header(&format!(
+        "{title}: dialogue trigger re-arms without a tick (singleplayer pause parity)"
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push("# The per-tick re-enable, run ONCE. Nothing below runs the tick".to_string());
+    b.push("# function again: that suppression IS the integrated server's".to_string());
+    b.push("# pause-menu tick freeze, which a dedicated server never enters.".to_string());
+    b.push(format!("scoreboard players enable @a {trig}"));
+    b.push(format!("execute as @p run trigger {trig} set {n}"));
+    b.push(format!("assert score @p {trig} matches {n}"));
+    b.push("# The tick's dispatch, hand-run: the handler consumes (and locks) the".to_string());
+    b.push("# trigger, then must re-arm it itself.".to_string());
+    b.push(format!(
+        "execute as @p run function {ns}:dlg_{}_{n}",
+        npc.safe
+    ));
+    b.push("# Second use, still with no tick in between. If the handler did not".to_string());
+    b.push("# re-arm, vanilla rejects this and the score stays unset.".to_string());
+    b.push(format!("execute as @p run trigger {trig} set {n}"));
+    b.push(format!("assert score @p {trig} matches {n}"));
+
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/dialogue_trigger_rearm.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// v0.6 trap PackTests (spec-0011). A fake player in a 0-player void does not tick
+/// entities (the primed-TNT fuse and falling-sand freeze — see the spec's Findings),
+/// so a plate → dispenser fire cannot be simulated headlessly; runtime firing
+/// coverage is a GameTest concern. What is deterministically checkable in a plain
+/// mcfunction — and what these assert — is the compiler's own contract: after
+/// `setup`, the trap dispenser holds exactly the declared payload; after the disarm
+/// function runs, the payload is gone (the modeled global disarm) and the disarm
+/// flag is set. This is the machine-checkable half of acceptance criteria 3 & 4;
+/// the plate-fires-and-hits half is the PackTest/GameTest layer the spec records as
+/// entity-tick-limited.
+fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+
+    // Pick the first trap that has both a dispenser payload and a disarm — it
+    // exercises both the fill and the empty in one test. Else the first payload trap.
+    let dispense_trap = plan
+        .traps
+        .iter()
+        .find(|t| t.dispenser.is_some() && t.payload.is_some());
+    let Some(t) = dispense_trap else {
+        return;
+    };
+    let disp = t.dispenser.expect("filtered on Some");
+    let (item, count) = t.payload.as_ref().expect("filtered on Some");
+    let dis = t.disarm.as_ref();
+
+    let mut b = packtest_header(&format!(
+        "{title}: trap `{}` loads its dispenser payload; disarm empties it (spec-0011)",
+        t.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    // A 0-player void does not tick entities, so a plate→dispenser fire cannot be
+    // simulated here (spec-0011 Findings). Instead place the dispenser and load it
+    // with the exact payload the compiler fills, then assert slot 0 is occupied —
+    // the machine-checkable "payload lands" contract.
+    b.push(format!(
+        "setblock {} {} {} minecraft:dispenser",
+        disp[0], disp[1], disp[2]
+    ));
+    b.push(format!(
+        "item replace block {} {} {} container.0 with {item} {count}",
+        disp[0], disp[1], disp[2]
+    ));
+    b.push(format!(
+        "execute store success score #tload dw.sys if data block {} {} {} Items[0]",
+        disp[0], disp[1], disp[2]
+    ));
+    b.push("assert score #tload dw.sys matches 1".to_string());
+    if let Some(dis) = dis {
+        // Run the REAL emitted disarm and assert the dispenser is now empty (no ammo
+        // → cannot fire) and the disarm flag is set — the trap is provably off.
+        b.push(format!("function {ns}:trap_disarm_{}", t.safe));
+        b.push(format!(
+            "execute store success score #tempty dw.sys if data block {} {} {} Items[0]",
+            disp[0], disp[1], disp[2]
+        ));
+        b.push("assert score #tempty dw.sys matches 0".to_string());
+        b.push(format!(
+            "assert score @p {} matches 1",
+            plan::flag_score(&dis.sets_flag)
+        ));
+    }
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/v06_trap.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// v0.6 night-vision PackTest: a dummy standing inside a `mitigation:
+/// "night-vision"` area actually holds `minecraft:night_vision` after one clock
+/// tick, and a dummy far outside the area does not.
+///
+/// This is the gametest that makes the mitigation un-fakeable end-to-end: the
+/// `DW0210` gate keys on the declaration, and this asserts the declaration really
+/// puts the effect on a player in the world. Emits nothing for a campaign that
+/// declares no mitigation.
+fn emit_night_vision_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let Some(area) = plan.areas.iter().find(|a| {
+        plan.campaign
+            .world
+            .content
+            .areas
+            .iter()
+            .find(|d| d.id.as_str() == a.area_id)
+            .is_some_and(crate::light::area_night_vision)
+    }) else {
+        return;
+    };
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let (min, max) = area.bounds();
+    let mid = [
+        (min[0] + max[0]) / 2,
+        (min[1] + max[1]) / 2,
+        (min[2] + max[2]) / 2,
+    ];
+    let mut b = packtest_header(&format!(
+        "{title}: the declared night-vision mitigation really reaches a player in the area"
+    ));
+    b.push("effect clear @s minecraft:night_vision".to_string());
+    // Inside the declared bounds: one tick of the real clock must grant the effect.
+    b.push(format!("tp @s {} {} {}", mid[0], mid[1], mid[2]));
+    b.push(format!("function {ns}:night_vision_tick"));
+    b.push(
+        "execute store success score #nv dw.sys run effect clear @s minecraft:night_vision"
+            .to_string(),
+    );
+    b.push("assert score #nv dw.sys matches 1".to_string());
+    // Far outside: the same clock tick must NOT grant it (the selector is scoped).
+    b.push(format!("tp @s {} {} {}", max[0] + 1000, mid[1], mid[2]));
+    b.push(format!("function {ns}:night_vision_tick"));
+    b.push(
+        "execute store success score #nv dw.sys run effect clear @s minecraft:night_vision"
+            .to_string(),
+    );
+    b.push("assert score #nv dw.sys matches 0".to_string());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/v06_night_vision.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// v0.6 boundary PackTests (spec-0013): a player outside the region is returned to
+/// the last checkpoint; a player inside is never moved. Drives the real
+/// `boundary_tick` on a dummy — its direct call IS the 1s clock's body, so no
+/// schedule wait is needed (well under the 2s acceptance bound). Uses only
+/// `assert score` (PackTest-known-good on the validation server): the player's
+/// block-x, captured via `data get … Pos[0]`, discriminates the checkpoint from
+/// the interior cell, and is robust to teleport centering (both sides floor the
+/// same way). Emits nothing when the campaign declares no `boundary`.
+fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let Some(region) = playable_region(plan) else {
+        return;
+    };
+    let Some(spawn) = campaign_spawn(plan) else {
+        return;
+    };
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    // setup_finish (which writes `dw:cp`) is placement-gated and cannot run in a
+    // bare PackTest, so seed the same spawn-cell value the real init would write.
+    let seed_cp = format!(
+        "data modify storage dw:cp pos set value [{}, {}, {}]",
+        spawn[0], spawn[1], spawn[2]
+    );
+
+    // Return: a dummy far outside the region (x well past the inflated max) is
+    // teleported back to the checkpoint's x within one clock tick.
+    let out_x = region.max[0] + 1000;
+    let mut b = packtest_header(&format!(
+        "{title}: a player outside the playable region returns to the last checkpoint"
+    ));
+    b.push(seed_cp.clone());
+    b.push(format!("tp @s {out_x} {} {}", spawn[1], spawn[2]));
+    b.push(format!("function {ns}:boundary_tick"));
+    b.push("execute store result score #bx dw.sys run data get entity @s Pos[0] 1".to_string());
+    b.push(format!("assert score #bx dw.sys matches {}", spawn[0]));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/v06_boundary_return.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+
+    // Inside: a dummy at an interior cell distinct from the checkpoint is untouched.
+    let in_x = spawn[0] + 5;
+    let mut b = packtest_header(&format!(
+        "{title}: a player inside the playable region is never moved"
+    ));
+    b.push(seed_cp);
+    b.push(format!("tp @s {in_x} {} {}", spawn[1], spawn[2]));
+    // Precondition: the interior cell really is inside the region (else the geometry
+    // is too small — fail informatively rather than silently pass).
+    b.push("execute store result score #px dw.sys run data get entity @s Pos[0] 1".to_string());
+    b.push(format!(
+        "assert score #px dw.sys matches {}..{}",
+        region.min[0], region.max[0]
+    ));
+    b.push(format!("function {ns}:boundary_tick"));
+    b.push("execute store result score #bx dw.sys run data get entity @s Pos[0] 1".to_string());
+    b.push(format!("assert score #bx dw.sys matches {in_x}"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/v06_boundary_inside.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// v0.6 PackTests (spec-0012 checkpoints, spec-0014 stealth). Fake players cannot
+/// accrue the vanilla `sneak_time` stat nor respawn synchronously within a plain
+/// mcfunction test, so these drive the compiler-generated mechanics directly and
+/// assert their deterministic effects:
+///
+/// * **checkpoint**: applying the checkpoint's `spawnpoint @a` + `dw:cp pos`
+///   mirror makes `storage dw:cp pos` read back the checkpoint cell — the
+///   machine-checkable "last checkpoint" contract other features consume.
+/// * **stealth**: the generated `stealth_eval_<i>` judge catches an exposed
+///   (not-sneaking, out-of-zone) player after `grace_ticks` and spares a
+///   sneaking, in-zone one — driven via the `sneak`/zone scores that stand in for
+///   the stat/position a real player would carry.
+fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+
+    if let Some(cp) = plan.checkpoints.first() {
+        let [x, y, z] = cp.pos;
+        let mut t = packtest_header(&format!(
+            "{title}: checkpoint mirrors its cell into dw:cp (spec-0012)"
+        ));
+        t.push(format!("function {ns}:setup"));
+        // Apply the exact commands a `set-checkpoint` emits, then read the mirror
+        // back per-axis (rock-solid vs. an NBT compound match).
+        t.push(format!("spawnpoint @a {x} {y} {z}"));
+        t.push(format!(
+            "data modify storage dw:cp pos set value [{x}, {y}, {z}]"
+        ));
+        t.push(
+            "execute store result score #cx dw.sys run data get storage dw:cp pos[0]".to_string(),
+        );
+        t.push(
+            "execute store result score #cy dw.sys run data get storage dw:cp pos[1]".to_string(),
+        );
+        t.push(
+            "execute store result score #cz dw.sys run data get storage dw:cp pos[2]".to_string(),
+        );
+        t.push(format!("assert score #cx dw.sys matches {x}"));
+        t.push(format!("assert score #cy dw.sys matches {y}"));
+        t.push(format!("assert score #cz dw.sys matches {z}"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/v06_checkpoint_respawn.mcfunction"),
+            lines(&t).into_bytes(),
+        );
+    }
+
+    if let Some(beat) = plan.stealth_beats.first() {
+        let i = beat.index;
+        let grace = beat.grace_ticks;
+        let (_, zpos, zext) = &beat.zones[0];
+        let inside = *zpos;
+        let outside = [zpos[0] + zext[0] as i32 + 10, zpos[1], zpos[2]];
+        let mut t = packtest_header(&format!(
+            "{title}: stealth catches the exposed, spares the hidden (spec-0014)"
+        ));
+        t.push(format!("function {ns}:setup"));
+        // --- caught: an exposed (not sneaking, out of every zone) player accrues
+        //     grace and is caught on the grace_ticks-th judge tick (on_caught
+        //     resets grace to 0). ---
+        t.push(format!("function {ns}:stealth_begin_{i}"));
+        // Disarm the live session marker `stealth_begin` just set: this test drives
+        // `stealth_eval` explicitly, so the world `tick` loop (which runs
+        // `stealth_eval` on every player while `#stealth` is armed) must NOT also
+        // fire — a second judge pass in the same tick would consume the sneak edge
+        // (`sneak > ack` false once ack catches up) and mis-accrue grace, corrupting
+        // the controlled state the asserts read. Runtime gameplay is unaffected
+        // (there the tick loop is the sole caller); this only isolates the test.
+        t.push("scoreboard players set #stealth dw.sys 0".to_string());
+        t.push("scoreboard players set @p dw.st_sneak 0".to_string());
+        t.push("scoreboard players set @p dw.st_sneakack 0".to_string());
+        t.push(format!(
+            "tp @p {} {} {}",
+            outside[0], outside[1], outside[2]
+        ));
+        // grace_ticks-1 judge ticks: grace climbs but has not yet tripped.
+        for _ in 0..grace.saturating_sub(1) {
+            t.push(format!("execute as @p run function {ns}:stealth_eval_{i}"));
+        }
+        t.push(format!(
+            "assert score @p dw.st_grace matches {}",
+            grace.saturating_sub(1)
+        ));
+        // One more tick trips on_caught, which resets grace to 0.
+        t.push(format!("execute as @p run function {ns}:stealth_eval_{i}"));
+        t.push("assert score @p dw.st_grace matches 0".to_string());
+        // --- spare: a sneaking (sneak > ack), in-zone player never accrues grace;
+        //     an accrued grace is reset the moment they are safe. ---
+        t.push(format!("function {ns}:stealth_begin_{i}"));
+        // Disarm again (this second `begin` re-armed `#stealth`); see note above.
+        t.push("scoreboard players set #stealth dw.sys 0".to_string());
+        t.push("scoreboard players set @p dw.st_grace 5".to_string());
+        t.push("scoreboard players set @p dw.st_sneakack 0".to_string());
+        t.push("scoreboard players set @p dw.st_sneak 1".to_string());
+        t.push(format!("tp @p {} {} {}", inside[0], inside[1], inside[2]));
+        t.push(format!("execute as @p run function {ns}:stealth_eval_{i}"));
+        t.push("assert score @p dw.st_grace matches 0".to_string());
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/v06_stealth.mcfunction"),
+            lines(&t).into_bytes(),
+        );
+
+        // --- cutscene freeze (the staging invariant, see CUTSCENE_TAG): a player
+        //     in the cutscene state is exposed — outside every zone, not sneaking
+        //     — and must still NOT accrue grace while the marker is on, then must
+        //     resume accruing the moment it comes off. Driven through the real
+        //     `stealth_tick` gate (not `stealth_eval`), because the gate is what
+        //     the freeze lives in.
+        let mut f = packtest_header(&format!(
+            "{title}: a cutscene freezes the stealth clock, and it resumes after"
+        ));
+        f.push(format!("function {ns}:setup"));
+        f.push(format!("function {ns}:stealth_begin_{i}"));
+        // Disarm the live session marker so the world `tick` loop does not judge
+        // in the same tick; this test drives `stealth_tick` explicitly.
+        f.push("scoreboard players set #stealth dw.sys 0".to_string());
+        f.push("scoreboard players set @a dw.st_grace 0".to_string());
+        f.push("scoreboard players set @a dw.st_sneak 0".to_string());
+        f.push("scoreboard players set @a dw.st_sneakack 0".to_string());
+        f.push(format!(
+            "tp @a {} {} {}",
+            outside[0], outside[1], outside[2]
+        ));
+        f.push(format!("tag @a add {CUTSCENE_TAG}"));
+        // Well past `grace_ticks` of exposure: frozen, so grace stays 0.
+        for _ in 0..grace + 2 {
+            f.push(format!("function {ns}:stealth_tick_{i}"));
+        }
+        f.push("assert score @p dw.st_grace matches 0".to_string());
+        // Restore drops the marker; the clock resumes from where it paused.
+        f.push(format!("tag @a remove {CUTSCENE_TAG}"));
+        for _ in 0..grace.saturating_sub(1) {
+            f.push(format!("function {ns}:stealth_tick_{i}"));
+        }
+        f.push(format!(
+            "assert score @p dw.st_grace matches {}",
+            grace.saturating_sub(1)
+        ));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/v06_cutscene_freeze.mcfunction"),
+            lines(&f).into_bytes(),
+        );
+    }
+
+    // damage-players: the `/damage` primitive the effect emits actually subtracts
+    // health. A 0-player void does not tick a real player, so the test drives the
+    // damage on a summoned dummy (NoAI/Silent zombie, full 20 HP) with the exact
+    // amount + type the first declared `damage-players` uses, then asserts its
+    // Health dropped by that amount. Emitted only when the campaign uses the verb.
+    if let Some((amount, kind)) = first_damage_players(plan.campaign) {
+        let type_id = kind.id();
+        let mut t = packtest_header(&format!(
+            "{title}: damage-players subtracts {amount} half-hearts ({type_id}) (spec-0014)"
+        ));
+        t.push(format!("function {ns}:setup"));
+        // A dummy at a fixed cell near origin: NoAI so it never moves, Silent, full
+        // health. `damage` applies synchronously, so a 0-player void still shows it.
+        t.push(
+            "summon minecraft:zombie 0 -60 0 {Tags:[\"dw_dmgtest\"],NoAI:1b,Silent:1b,\
+             PersistenceRequired:1b,Health:20f}"
+                .to_string(),
+        );
+        t.push(
+            "execute store result score #hp0 dw.sys run data get entity \
+             @e[tag=dw_dmgtest,limit=1] Health 100"
+                .to_string(),
+        );
+        t.push(format!(
+            "damage @e[tag=dw_dmgtest,limit=1] {amount} {type_id}"
+        ));
+        t.push(
+            "execute store result score #hp1 dw.sys run data get entity \
+             @e[tag=dw_dmgtest,limit=1] Health 100"
+                .to_string(),
+        );
+        // The dummy's Health (×100) must have dropped: drop = hp0 - hp1 ≥ 1. Asserting
+        // "strictly decreased" rather than an exact amount keeps the test robust across
+        // damage types (armor-respecting types reduce the number, but the hit still
+        // lands); the exact `damage @s <amount> <type>` string is asserted by a
+        // compiler unit test.
+        t.push("scoreboard players operation #drop dw.sys = #hp0 dw.sys".to_string());
+        t.push("scoreboard players operation #drop dw.sys -= #hp1 dw.sys".to_string());
+        t.push("assert score #drop dw.sys matches 1..".to_string());
+        t.push("kill @e[tag=dw_dmgtest]".to_string());
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/v06_damage.mcfunction"),
+            lines(&t).into_bytes(),
+        );
+    }
+}
+
+/// The `(amount, damage_type)` of the first `damage-players` effect declared in the
+/// campaign (deep-walked through nested effect lists), in quest-then-trigger order.
+/// `None` when the campaign uses no `damage-players`. Drives the damage PackTest.
+fn first_damage_players(
+    c: &delvewright_dsl::Campaign,
+) -> Option<(u32, delvewright_dsl::DamageKind)> {
+    use delvewright_dsl::DamageKind;
+    let mut found: Option<(u32, DamageKind)> = None;
+    let mut scan = |eff: &QuestEffect| {
+        if found.is_none() {
+            eff.visit_deep(&mut |e| {
+                if found.is_none()
+                    && let QuestEffect::DamagePlayers {
+                        amount,
+                        damage_type,
+                        ..
+                    } = e
+                {
+                    found = Some((*amount, damage_type.unwrap_or(DamageKind::Generic)));
+                }
+            });
+        }
+    };
+    for q in &c.quests.content.quests {
+        for effs in q.on_objective_complete.values() {
+            for eff in effs {
+                scan(eff);
+            }
+        }
+        for eff in &q.on_complete {
+            scan(eff);
+        }
+    }
+    for t in &c.quests.content.triggers {
+        for eff in &t.effects {
+            scan(eff);
+        }
+    }
+    found
+}
+
+/// v0.6 PackTests (spec-0014): a `spawn-actor` puppet appears and both despawn
+/// styles remove it; a `move-actor` walks its puppet to the destination cell (its
+/// `on_arrive` bundle runs on the same final tick); `unleash-actor` swaps the NoAI
+/// puppet for a real-AI twin. Single-tick assertable; sequence-exact-tick timing and
+/// per-tick yaw/NBT are covered by compiler unit tests (they assert the emitted
+/// commands directly — stronger and faster than a timing gametest). Emits nothing
+/// when the campaign declares no actors.
+fn emit_v06_actor_packtests(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    actor_moves: &[crate::nav::ActorMovePlan],
+) {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let actors = &c.quests.content.actors;
+    if actors.is_empty() {
+        return;
+    }
+    let mut write = |name: &str, body: Vec<String>| {
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
+            lines(&body).into_bytes(),
+        );
+    };
+
+    // spawn-actor + despawn kill/vanish: the puppet appears, and either style
+    // removes it. The visible difference (kill = in-place death animation, vanish =
+    // silent relocate-then-kill out of view) is a client-eyes distinction; CI
+    // asserts both leave zero entities under the actor tag.
+    if let Some(a) = actors.first() {
+        let safe = plan::safe_local(a.id.as_str());
+        let mut b = packtest_header(&format!(
+            "{}: spawn-actor appears; despawn kill & vanish both remove it",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!(
+            "execute store result score #sp dw.sys if entity @e[tag=dw_actor_{safe}]"
+        ));
+        b.push("assert score #sp dw.sys matches 1..".to_string());
+        // kill style removes it.
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        b.push(format!(
+            "execute store result score #k dw.sys if entity @e[tag=dw_actor_{safe}]"
+        ));
+        b.push("assert score #k dw.sys matches 0".to_string());
+        // re-spawn (idempotent), then vanish style also removes it.
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!("tp @e[tag=dw_actor_{safe}] ~ -128 ~"));
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        b.push(format!(
+            "execute store result score #v dw.sys if entity @e[tag=dw_actor_{safe}]"
+        ));
+        b.push("assert score #v dw.sys matches 0".to_string());
+        write("v06_spawn_despawn", b);
+    }
+
+    // spawn-actor is idempotent (re-caging after unleash): two spawns yield exactly
+    // one puppet, not two.
+    if let Some(a) = actors.first() {
+        let safe = plan::safe_local(a.id.as_str());
+        let mut b = packtest_header(&format!(
+            "{}: spawn-actor is idempotent (one puppet, not two)",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!(
+            "execute store result score #n dw.sys if entity @e[tag=dw_pup_{safe}]"
+        ));
+        b.push("assert score #n dw.sys matches 1".to_string());
+        write("v06_spawn_idempotent", b);
+    }
+
+    // unleash-actor: the NoAI puppet (dw_pup) is replaced by a real-AI twin (same
+    // body tag, real entity type, no puppet marker).
+    if let Some(a) = actors.first() {
+        let safe = plan::safe_local(a.id.as_str());
+        let mut b = packtest_header(&format!(
+            "{}: unleash-actor swaps the puppet for a real-AI twin",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!(
+            "execute store result score #pup dw.sys if entity @e[tag=dw_pup_{safe}]"
+        ));
+        b.push("assert score #pup dw.sys matches 1".to_string());
+        b.push(format!("function {ns}:unleash_{safe}"));
+        // puppet marker gone, one twin of the real entity type remains.
+        b.push(format!(
+            "execute store result score #pup2 dw.sys if entity @e[tag=dw_pup_{safe}]"
+        ));
+        b.push("assert score #pup2 dw.sys matches 0".to_string());
+        b.push(format!(
+            "execute store result score #twin dw.sys if entity @e[type={},tag=dw_actor_{safe}]",
+            a.entity
+        ));
+        b.push("assert score #twin dw.sys matches 1".to_string());
+        write("v06_unleash", b);
+    }
+
+    // move-actor: fast-forward the driver to its final waypoint (running on_arrive on
+    // that same tick) and assert the puppet is at the destination cell.
+    if let Some(m) = actor_moves.first() {
+        let safe = plan::safe_local(&m.actor);
+        let bare = moveactor_bare(&m.actor, &m.to_anchor);
+        let total = m.ticks();
+        let p = m.target;
+        let mut b = packtest_header(&format!(
+            "{}: move-actor walks its puppet to the destination cell",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!("scoreboard players set #at_{bare} dw.sys {total}"));
+        b.push(format!("function {ns}:ma_tick_{bare}"));
+        b.push(format!(
+            "execute store result score #arr dw.sys if entity @e[tag=dw_pup_{safe},x={},dx=0,y={},dy=0,z={},dz=0]",
+            p[0], p[1], p[2]
+        ));
+        b.push("assert score #arr dw.sys matches 1..".to_string());
+        write("v06_move_actor", b);
+    }
 }
 
 /// v0.4 PackTests (spec-0008): a prop appears only once its objective activates;
@@ -2891,6 +5169,21 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         b.push("scoreboard players set #placed dw.sys 1".to_string());
         b.push(format!("kill @e[tag=dw_npc_{safe}]"));
         b.push(format!("function {ns}:setup_finish"));
+        // A `deferred` NPC (DSL v0.6) is deliberately absent after `setup_finish` —
+        // it enters via `spawn-npc`. Fire its entrance here so the despawn path is
+        // exercised against the same body+hitbox pair a scripted entrance places
+        // (the presence assertion below is unchanged, and stays a real assertion).
+        // No line is emitted for a non-deferred target → byte-identical output for
+        // campaigns that declare no deferred NPC.
+        // The guard mirrors `spawn_npc_fns` exactly (planned NPC + `deferred`), so
+        // the test never calls an entrance function that was not emitted.
+        if plan
+            .npcs
+            .iter()
+            .any(|n| n.npc_id == npc.as_str() && npc_is_deferred(c, &n.npc_id))
+        {
+            b.push(format!("function {ns}:{}", spawn_npc_fn(npc.as_str())));
+        }
         // body + interaction hitbox both carry `dw_npc_<npc>` → two entities.
         b.push(format!(
             "execute store result score #before dw.sys if entity @e[tag=dw_npc_{safe}]"
@@ -2902,6 +5195,66 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         ));
         b.push("assert score #after dw.sys matches 0".to_string());
         write("v04_despawn", b);
+    }
+
+    // strike trigger on an NPC's anchor (round-4 island QA): the NPC's own
+    // interaction hitbox is the entity a left-click actually reaches, so it must
+    // carry the trigger's tag and its `attack` record must drive the trigger.
+    // Simulating the record with `/data modify` reproduces exactly what vanilla
+    // writes on a left-click — the primitive under test — without needing a bot
+    // to swing. Emitted only when the collision exists.
+    if let Some((trigger, npc_id, npc_tag)) = first_strike_trigger_on_npc(plan) {
+        let id = plan::safe_local(trigger.id.as_str());
+        let hitbox = format!("@e[type=minecraft:interaction,tag={npc_tag},limit=1]");
+        let mut b = packtest_header(&format!(
+            "{}: striking NPC `{npc_id}` fires trigger `{}` exactly once",
+            c.world.content.title,
+            trigger.id.as_str()
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push("scoreboard players set #placed dw.sys 1".to_string());
+        b.push(format!("function {ns}:setup_finish"));
+        // A `deferred` NPC (DSL v0.6) is deliberately absent after `setup_finish`
+        // — a sleeping giant who only enters on cue is a natural strike target, so
+        // fire its entrance here (mirrors the `v04_despawn` PackTest). No line is
+        // emitted for a non-deferred target.
+        if npc_is_deferred(c, &npc_id) {
+            b.push(format!("function {ns}:{}", spawn_npc_fn(&npc_id)));
+        }
+        // The routing itself: the NPC's hitbox wears the trigger's tag, so the
+        // trigger's single selector reaches it.
+        b.push(format!(
+            "execute store result score #route dw.sys if entity @e[type=minecraft:interaction,tag={npc_tag},tag=dw_trig_{id}]"
+        ));
+        b.push("assert score #route dw.sys matches 1".to_string());
+        if trigger.once {
+            b.push(format!("scoreboard players set #trig_{id} dw.sys 0"));
+        }
+        // Vanilla writes this compound when a player left-clicks an interaction
+        // entity; write it by hand to stand in for the swing.
+        b.push(format!(
+            "data modify entity {hitbox} attack set value {{player:[I;0,0,0,0],timestamp:1L}}"
+        ));
+        b.push(format!(
+            "execute store result score #rec dw.sys if data entity {hitbox} attack"
+        ));
+        b.push("assert score #rec dw.sys matches 1".to_string());
+        b.push(format!("function {ns}:tick"));
+        if trigger.once {
+            b.push(format!("assert score #trig_{id} dw.sys matches 1"));
+        }
+        // Exactly once: the same tick pass consumed the record, so a second pass
+        // over an untouched hitbox cannot re-fire.
+        b.push(format!(
+            "execute store result score #rec dw.sys if data entity {hitbox} attack"
+        ));
+        b.push("assert score #rec dw.sys matches 0".to_string());
+        if trigger.once {
+            b.push(format!("scoreboard players set #trig_{id} dw.sys 0"));
+            b.push(format!("function {ns}:tick"));
+            b.push(format!("assert score #trig_{id} dw.sys matches 0"));
+        }
+        write("v04_strike_npc", b);
     }
 
     // move-npc walks a collision-safe path that ends with the NPC at the target
@@ -2986,6 +5339,130 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                     break 'killless;
                 }
             }
+        }
+    }
+
+    // Dialogue display gating (task #54): a `completes` option is DISPLAYED iff
+    // its objective is active — its quest active and the objective not yet
+    // complete — mirroring the click-handler guard. The chooser's `dmask_<npc>_<node>`
+    // computes the per-player availability bitmask (bit `i` = the node's i-th
+    // gated option is displayable); the variant it shows is `__m<mask>`. This test
+    // drives that mask for the first gated completing option and asserts *that
+    // option's isolated bit* (not the whole mask — sibling options in the node can
+    // share a quest-active score) is 0 before the quest activates, 1 while active,
+    // and 0 again after the objective completes. If the node also has a flag-gated
+    // option, a final phase sets that flag in isolation and asserts its bit flips —
+    // proving the flag axis is unchanged and independent of the objective-state axis.
+    let v04 = campaign_is_v04(plan);
+    'dlg: for npc in &plan.npcs {
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        for probe in &npc.options {
+            if !seen.insert(probe.node_id.as_str()) {
+                continue;
+            }
+            let gated = node_gated_options(npc, &probe.node_id, v04);
+            // The option under test: the first gated option that completes an
+            // objective with a resolvable quest (the objective-state axis).
+            let Some((b, under_test, qid, obj)) = gated.iter().enumerate().find_map(|(i, o)| {
+                o.completes
+                    .iter()
+                    .find_map(|obj| objective_quest(c, obj).map(|(q, _)| (q, obj)))
+                    .map(|(q, obj)| (i, *o, q, obj.as_str()))
+            }) else {
+                continue;
+            };
+            let node_safe = plan::safe_local(&probe.node_id);
+            let dmask = format!("{ns}:dmask_{}_{}", npc.safe, node_safe);
+            let qa = quest_active_score(qid);
+            let os = obj_score(obj);
+
+            // Every score any of this node's gated options reads — zeroed so the
+            // mask isolates the bit under test (campaign-start quests would else
+            // leave sibling bits set).
+            let mut reset: BTreeSet<String> = BTreeSet::new();
+            for g in &gated {
+                for f in &g.requires_flags {
+                    reset.insert(plan::flag_score(f));
+                }
+                for o in &g.completes {
+                    if let Some((q, _)) = objective_quest(c, o) {
+                        reset.insert(quest_active_score(q));
+                        reset.insert(obj_score(o));
+                    }
+                }
+            }
+
+            let mut bt = packtest_header(&format!(
+                "{}: dialogue option `{}` is displayed only while its objective `{obj}` is active",
+                c.world.content.title, under_test.label
+            ));
+            bt.push(format!("function {ns}:setup"));
+            let clear = |bt: &mut Vec<String>| {
+                for s in &reset {
+                    bt.push(format!("scoreboard players set @a {s} 0"));
+                }
+            };
+            // Run the mask, then ISOLATE the option-under-test's bit before the
+            // assert: `(dw.dmask >> bit) & 1` via `%= 2^(bit+1)` then `/= 2^bit`. A
+            // node's other gated options can share a quest-active score (e.g. two
+            // options completing objectives of the same quest), so activating that
+            // quest lights several bits at once — comparing the *whole* `dw.dmask`
+            // would then read a sibling's bit as this option's and mis-assert.
+            let assert_bit = |bt: &mut Vec<String>, bit: usize, present: bool| {
+                bt.push(format!("execute as @a run function {dmask}"));
+                // Copy the player's mask into a fake player. `as @a` keeps the read
+                // single-entity (`= @s …`): `scoreboard players get`/`operation`
+                // reject a multi-entity selector like a bare `@a`.
+                bt.push(
+                    "execute as @a run scoreboard players operation #dm dw.sys = @s dw.dmask"
+                        .to_string(),
+                );
+                bt.push(format!(
+                    "scoreboard players set #dmhi dw.sys {}",
+                    1u32 << (bit + 1)
+                ));
+                bt.push("scoreboard players operation #dm dw.sys %= #dmhi dw.sys".to_string());
+                bt.push(format!(
+                    "scoreboard players set #dmlo dw.sys {}",
+                    1u32 << bit
+                ));
+                bt.push("scoreboard players operation #dm dw.sys /= #dmlo dw.sys".to_string());
+                bt.push(format!(
+                    "assert score #dm dw.sys matches {}",
+                    u32::from(present)
+                ));
+            };
+
+            // Phase A — quest inactive: the option is hidden (its bit is 0).
+            clear(&mut bt);
+            assert_bit(&mut bt, b, false);
+            // Phase B — quest active, objective incomplete: the option appears.
+            clear(&mut bt);
+            bt.push(format!("scoreboard players set @a {qa} 1"));
+            assert_bit(&mut bt, b, true);
+            // Phase C — objective complete: the option disappears again.
+            bt.push(format!("scoreboard players set @a {os} 1"));
+            assert_bit(&mut bt, b, false);
+
+            // Flag axis: a flag-only gated option's bit flips with its flag alone,
+            // independent of the objective-state axis.
+            if let Some((bf, flag_opt)) = gated
+                .iter()
+                .enumerate()
+                .find(|(_, o)| !o.requires_flags.is_empty() && o.completes.is_empty())
+            {
+                clear(&mut bt);
+                for f in &flag_opt.requires_flags {
+                    bt.push(format!(
+                        "scoreboard players set @a {} 1",
+                        plan::flag_score(f)
+                    ));
+                }
+                assert_bit(&mut bt, bf, true);
+            }
+
+            write("v04_dialogue_visibility", bt);
+            break 'dlg;
         }
     }
 }
@@ -3247,6 +5724,14 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             b.push(format!("kill @e[tag={}]", npc.tag));
         }
         b.push(format!("function {ns}:setup_finish"));
+        // A `deferred` NPC (DSL v0.6) is deliberately absent after `setup_finish` —
+        // it enters via `spawn-npc`. Fire its entrance here, so this test proves the
+        // deferred path summons exactly the same one body + one hitbox.
+        for npc in &plan.npcs {
+            if npc_is_deferred(c, &npc.npc_id) {
+                b.push(format!("function {ns}:{}", spawn_npc_fn(&npc.npc_id)));
+            }
+        }
         for npc in &plan.npcs {
             // The NPC body carries BOTH `dw_npc` and its unique id tag; the separate
             // interaction hitbox carries only the id tag — so `dw_npc` + id tag
@@ -3321,6 +5806,22 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     } else {
         "easy"
     };
+    // Horizon (DSL v0.6, spec-0013). `void` (default/absent) keeps the empty-layer
+    // superflat + `the_void` biome, byte-identical to v0.5. `ocean` swaps in a
+    // pinned bedrock/stone/water superflat: from the -64 build floor, 1+118+8
+    // layers top the water at y=62 (= sea level); areas are placed on that datum
+    // (`plan::OCEAN_BASE_Y` = 60) so island pieces read as land ringed by the sea. No structures (generate-structures=false) or mobs (gamerule
+    // spawn_mobs false); the sea is pure backdrop. The string is a fixed literal,
+    // so both horizons stay deterministic (ADR-0006).
+    let ocean = matches!(
+        plan.campaign.world.content.horizon,
+        Some(delvewright_dsl::Horizon::Ocean)
+    );
+    let generator_settings = if ocean {
+        "{\"biome\":\"minecraft:ocean\",\"layers\":[{\"block\":\"minecraft:bedrock\",\"height\":1},{\"block\":\"minecraft:stone\",\"height\":118},{\"block\":\"minecraft:water\",\"height\":8}]}"
+    } else {
+        "{\"biome\":\"minecraft:the_void\",\"layers\":[]}"
+    };
     // server.properties (keys sorted for determinism).
     let props: BTreeMap<&str, String> = BTreeMap::from([
         ("allow-nether", "false".to_string()),
@@ -3328,10 +5829,7 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
         ("force-gamemode", "true".to_string()),
         ("gamemode", "adventure".to_string()),
         ("generate-structures", "false".to_string()),
-        (
-            "generator-settings",
-            "{\"biome\":\"minecraft:the_void\",\"layers\":[]}".to_string(),
-        ),
+        ("generator-settings", generator_settings.to_string()),
         ("level-name", "world".to_string()),
         ("level-seed", plan.seed.to_string()),
         ("level-type", "minecraft:flat".to_string()),
@@ -3345,7 +5843,13 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
         "# Generated by delvec for campaign {} (spec-0002 world strategy).\n",
         plan.namespace
     ));
-    text.push_str("# Void/superflat + fixed seed; the world is created on first boot.\n");
+    if ocean {
+        text.push_str(
+            "# Ocean superflat (spec-0013 backdrop) + fixed seed; created on first boot.\n",
+        );
+    } else {
+        text.push_str("# Void/superflat + fixed seed; the world is created on first boot.\n");
+    }
     for (k, v) in &props {
         text.push_str(&format!("{k}={v}\n"));
     }
@@ -3359,20 +5863,25 @@ The server jar is NOT shipped (ADR-0010); it is fetched by version at run time.\
             .to_vec(),
     );
 
+    let horizon_bullet = if ocean {
+        "- `level-type=minecraft:flat` + a pinned bedrock/stone/water `generator-settings`\n\
+  (sea level y=62, `minecraft:ocean` biome) ⇒ an island backdrop (spec-0013).\n"
+    } else {
+        "- `level-type=minecraft:flat` + `generator-settings` with an empty layer list and\n\
+  the `minecraft:the_void` biome ⇒ a void world.\n"
+    };
     out.insert(
         "server/README.md".to_string(),
         format!(
             "# server/\n\n\
 Level config for campaign `{}`. The world is generated on first server boot\n\
 from `server.properties` (no region files shipped, spec-0002):\n\n\
-- `level-type=minecraft:flat` + `generator-settings` with an empty layer list and\n\
-  the `minecraft:the_void` biome ⇒ a void world.\n\
-- `level-seed={}` pins world generation (ADR-0006); v0 uses no other randomness.\n\
+{}- `level-seed={}` pins world generation (ADR-0006); v0 uses no other randomness.\n\
 - `gamemode=adventure`, `difficulty=peaceful`, no structures/monsters.\n\n\
 The compiler-emitted `#minecraft:load` bootstrap (`datapack/`) places each area's\n\
 prefab with `/place template` and summons NPCs; nothing is baked into region\n\
 bytes, so byte-identity (ADR-0006) covers the whole `<out>/` tree.\n",
-            plan.namespace, plan.seed
+            plan.namespace, horizon_bullet, plan.seed
         )
         .into_bytes(),
     );
@@ -3559,6 +6068,18 @@ mod tests {
     }
 
     #[test]
+    fn marker_name_fields_never_leak_a_raw_id() {
+        // A titled marker carries its title (byte-identical to the old behavior).
+        assert_eq!(
+            marker_name_fields(Some("Unbar the Inner Door")),
+            "CustomName:\"Unbar the Inner Door\",CustomNameVisible:1b,"
+        );
+        // An untitled objective yields NO name fields — the marker still glows but
+        // never surfaces its raw objective id (e.g. `obj/door`) to players.
+        assert_eq!(marker_name_fields(None), "");
+    }
+
+    #[test]
     fn default_equipment_arms_only_naturally_armed_mobs() {
         // wither_skeleton → stone sword via the component-era `equipment` NBT
         // with a zero `drop_chances` (1.21.11 ignores legacy `HandItems`).
@@ -3582,5 +6103,126 @@ mod tests {
         // zombie stays unarmed; drowned's trident is not a default.
         assert!(default_equipment("minecraft:zombie").is_none());
         assert!(default_equipment("minecraft:drowned").is_none());
+    }
+
+    // --- DSL v0.6 actor emission (spec-0014) ---
+
+    fn mk_actor(id: &str, entity: &str, vulnerable: bool) -> delvewright_dsl::Actor {
+        delvewright_dsl::Actor {
+            id: delvewright_dsl::ActorId(id.to_string()),
+            entity: entity.to_string(),
+            name: Some("Boss".to_string()),
+            skin: None,
+            anchor: delvewright_dsl::AnchorId("anchor/stage".to_string()),
+            facing: Some(delvewright_dsl::Facing::West),
+            vulnerable,
+        }
+    }
+
+    #[test]
+    fn puppet_summon_is_noai_no_loot_and_tagged() {
+        let a = mk_actor("actor/giant", "minecraft:warden", false);
+        let s = actor_puppet_summon(&a, [10, 65, 20], facing_yaw(Some("west")));
+        assert!(
+            s.starts_with("summon minecraft:warden 10.5 65.0 20.5 "),
+            "puppet stands at the CENTRE of its cell, not the four-column corner: {s}"
+        );
+        assert!(s.contains("NoAI:1b") && s.contains("Silent:1b") && s.contains("NoGravity:1b"));
+        assert!(s.contains("Invulnerable:1b"));
+        assert!(s.contains("DeathLootTable:\"minecraft:empty\""));
+        assert!(s.contains("dw_actor_giant") && s.contains("dw_pup_giant"));
+        assert!(s.contains("Rotation:[90f,0f]"));
+        assert!(
+            !s.contains("knockback_resistance"),
+            "invulnerable puppet has no kb attr"
+        );
+    }
+
+    #[test]
+    fn vulnerable_puppet_is_damageable_but_knockback_immune() {
+        let a = mk_actor("actor/creep", "minecraft:zombie", true);
+        let s = actor_puppet_summon(&a, [0, 64, 0], 0);
+        assert!(
+            s.contains("Invulnerable:0b"),
+            "vulnerable puppet takes damage"
+        );
+        assert!(
+            s.contains("knockback_resistance") && s.contains("base:1.0"),
+            "vulnerable puppet stays knockback-immune: {s}"
+        );
+    }
+
+    #[test]
+    fn skinned_puppet_is_a_mannequin() {
+        let mut a = mk_actor("actor/keeper", "minecraft:warden", false);
+        a.skin = Some(delvewright_dsl::NpcSkin {
+            texture_id: "giant-idle".to_string(),
+            model: delvewright_dsl::SkinModel::Wide,
+        });
+        let s = actor_puppet_summon(&a, [1, 2, 3], 180);
+        assert!(
+            s.starts_with("summon minecraft:mannequin 1.5 2.0 3.5 "),
+            "mannequin stands at the centre of its cell: {s}"
+        );
+        assert!(s.contains("profile:{texture:\"delvewright:npc/giant-idle\",model:\"wide\"}"));
+        assert!(s.contains("dw_pup_keeper"));
+    }
+
+    #[test]
+    fn twin_summon_has_ai_and_no_puppet_marker() {
+        let a = mk_actor("actor/giant", "minecraft:warden", false);
+        let s = actor_twin_summon(&a);
+        assert!(s.starts_with("summon minecraft:warden ~ ~ ~ "));
+        assert!(!s.contains("NoAI"), "the twin has real AI");
+        assert!(s.contains("dw_actor_giant") && !s.contains("dw_pup"));
+        assert!(s.contains("PersistenceRequired:1b"));
+    }
+
+    #[test]
+    fn despawn_styles_differ() {
+        let mut kill = Vec::new();
+        emit_despawn_actor(
+            "actor/giant",
+            delvewright_dsl::DespawnStyle::Kill,
+            &mut kill,
+        );
+        assert_eq!(kill, vec!["kill @e[tag=dw_actor_giant]".to_string()]);
+        let mut vanish = Vec::new();
+        emit_despawn_actor(
+            "actor/giant",
+            delvewright_dsl::DespawnStyle::Vanish,
+            &mut vanish,
+        );
+        assert_eq!(
+            vanish,
+            vec![
+                "tp @e[tag=dw_actor_giant] ~ -128 ~".to_string(),
+                "kill @e[tag=dw_actor_giant]".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn sequence_key_is_deterministic_and_content_addressed() {
+        let step = |t: u32| delvewright_dsl::SequenceStep {
+            at_ticks: t,
+            effects: vec![delvewright_dsl::QuestEffect::UnleashActor {
+                actor: delvewright_dsl::ActorId("actor/giant".to_string()),
+            }],
+        };
+        let a = vec![step(0), step(40)];
+        let b = vec![step(0), step(40)];
+        let c = vec![step(0), step(41)];
+        assert_eq!(
+            sequence_key(&a),
+            sequence_key(&b),
+            "same content → same key"
+        );
+        assert_ne!(
+            sequence_key(&a),
+            sequence_key(&c),
+            "different content → different key"
+        );
+        assert_eq!(sequence_fn(&a), format!("seq_{}", sequence_key(&a)));
     }
 }

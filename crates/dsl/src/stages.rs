@@ -10,8 +10,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{
-    AnchorId, AreaId, ClassId, DialogueId, FlagId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId,
-    TriggerId, WaveId,
+    ActorId, AnchorId, AreaId, ClassId, DialogueId, FlagId, NpcId, ObjectiveId, PoolId, PrefabId,
+    QuestId, TrapId, TriggerId, WaveId,
 };
 
 /// serde default helper: `true` (used by DSL v0.4 `trigger.once`).
@@ -63,6 +63,19 @@ pub struct WorldContent {
     /// thunder attenuate effective sky brightness in the assembled-light model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weather: Option<WorldWeather>,
+    /// Scenic horizon (DSL v0.6, spec-0013). Absent or `void` = the void world
+    /// (byte-identical to v0.5). `ocean` swaps the world generator for a
+    /// deterministic superflat sea (bedrock/stone/water, sea level y=62) and drops
+    /// the area datum to y=60 (`sea_level-2`) so island pieces meet the sea at their
+    /// authored waterline. No structures or mobs either way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub horizon: Option<Horizon>,
+    /// Playable-region boundary (DSL v0.6, spec-0013). When present, the compiler
+    /// derives a region from the placed geometry and a per-second clock returns any
+    /// player who leaves it to the last checkpoint. Required when `horizon` is
+    /// `ocean` (an infinite swimmable sea with no return rule is `DW0320`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boundary: Option<Boundary>,
 }
 
 /// A declared world time state (DSL v0.5, spec-0010). Values are the vanilla
@@ -132,6 +145,50 @@ impl WorldWeather {
     }
 }
 
+/// A scenic horizon (DSL v0.6, spec-0013). `void` is the default and is
+/// byte-identical to v0.5 (empty-layer superflat, `minecraft:the_void` biome);
+/// `ocean` selects a pinned bedrock/stone/water superflat with sea level y=62,
+/// pure backdrop with no structures or mobs. The compiler owns the exact
+/// generator-settings; this enum only picks which one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Horizon {
+    /// The void world (default) — no sky-filling geometry.
+    #[default]
+    Void,
+    /// A superflat sea backdrop; areas are placed on the sea-level datum (y=60) so
+    /// island pieces read as land ringed by the ocean.
+    Ocean,
+}
+
+/// The default boundary `margin` (blocks of horizontal breathing room added
+/// around the derived region). Separate function so `serde(default = …)` and the
+/// documented literal cannot drift.
+fn default_margin() -> u16 {
+    16
+}
+
+/// A playable-region boundary declaration (DSL v0.6, spec-0013). The region
+/// itself is **derived** by the compiler (union of the final placed-piece AABBs,
+/// inflated horizontally by `margin`, unbounded upward, floored at the lowest
+/// placed block − 8) — never authored — so "every anchor is inside" is structural.
+/// Enforcement is a per-second clock that returns any player outside the region to
+/// the last checkpoint (`dw:cp`) with an actionbar message and a soft sound; no
+/// damage, no items lost.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Boundary {
+    /// Horizontal breathing room in blocks added around the derived region on
+    /// every side (default 16). Range-checked to `0..=64` (`DW0321`).
+    #[serde(default = "default_margin")]
+    pub margin: u16,
+    /// Actionbar message shown on return. Absent = the compiler's English default.
+    /// When set, it is inventoried under l10n key `world.boundary.message` and is
+    /// translated like every other player-facing string.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
 /// A supplemental-lighting fixture the relight pass may place (DSL v0.5,
 /// spec-0010 fixture registry v1). The theme choice stays in the DSL layer; the
 /// compiler owns the placement rule and block-light emission.
@@ -181,6 +238,25 @@ fn default_min_light() -> u8 {
     7
 }
 
+/// A per-area **darkness mitigation** declaration (DSL v0.6).
+///
+/// The first-class answer to "this area is meant to be dark, and the players are
+/// equipped for it". Declaring it is what makes the compiler *emit* the mitigation
+/// (a clocked `effect give … night_vision` scoped to the area's placed bounds) and
+/// what satisfies the `DW0210` darkness gate — one declaration, one mechanism, no
+/// gap between the check and the feature.
+///
+/// It replaces the pre-0.6 heuristic that read a class kit item's display *name*
+/// for `night vision`: that accepted a renamed water bottle, so the gate passed
+/// while nothing in the world granted night vision (owner, island QA).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum AreaMitigation {
+    /// Every player inside the area's placed bounds is kept under
+    /// `minecraft:night_vision` by a compiler-emitted 1 s clock.
+    NightVision,
+}
+
 /// One area of the world, bound to a single prefab or a jigsaw prefab pool.
 ///
 /// An area binds **exactly one of** `prefab` (single piece) or `prefab_pool`
@@ -212,6 +288,13 @@ pub struct Area {
     /// with `DW0210` if a reachable walkable cell is dark and unmitigated).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lighting: Option<AreaLighting>,
+    /// Optional darkness-mitigation declaration (DSL v0.6). `night-vision` makes
+    /// the compiler emit a clocked `effect give` over this area's placed bounds and
+    /// is the (only) declaration that satisfies `DW0210` without `lighting`.
+    /// Independent of `lighting`: an area may declare both (fixtures *and* the
+    /// effect), either, or neither.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mitigation: Option<AreaMitigation>,
 }
 
 /// Inclusive piece-count bounds for a jigsaw `prefab_pool` area.
@@ -263,6 +346,15 @@ pub struct Npc {
     /// Non-skinned NPCs are byte-identical to v0.3.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skin: Option<NpcSkin>,
+    /// Deferred entrance (DSL v0.6): when `true` the NPC is **not** summoned at
+    /// world init — its body and interaction hitbox only appear when a
+    /// [`QuestEffect::SpawnNpc`] fires, at this same `anchor`. The dual of
+    /// `despawn-npc`: a character with a scripted entrance must not stand at its
+    /// mark as a statue from minute one. A deferred NPC that no `spawn-npc` ever
+    /// spawns is unreachable content (`DW0197`). Default `false` = summoned at
+    /// init, byte-identical to pre-0.6.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub deferred: bool,
 }
 
 /// A mannequin NPC's player-model skin (DSL v0.4). The skin PNG ships in the
@@ -453,6 +545,22 @@ pub enum DialogueEffect {
         /// The weather state to cut to.
         weather: WorldWeather,
     },
+    /// Sets the party-wide respawn checkpoint (DSL v0.6, spec-0012), mirroring
+    /// [`QuestEffect::SetCheckpoint`] — usable from a dialogue outcome.
+    SetCheckpoint {
+        /// The prefab checkpoint anchor the party respawns at.
+        anchor: AnchorId,
+        /// Per-player effects re-run on respawn while this checkpoint is active
+        /// (scene reset). Empty = no hook.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        on_respawn: Vec<QuestEffect>,
+    },
+    /// Summons a `deferred` stage-2 NPC (DSL v0.6), mirroring
+    /// [`QuestEffect::SpawnNpc`] — a character who walks in mid-conversation.
+    SpawnNpc {
+        /// The NPC (stage-2 ref) to summon.
+        npc: NpcId,
+    },
 }
 
 impl DialogueEffect {
@@ -462,6 +570,35 @@ impl DialogueEffect {
         match self {
             DialogueEffect::SetTime { .. } => Some("set-time"),
             DialogueEffect::SetWeather { .. } => Some("set-weather"),
+            _ => None,
+        }
+    }
+
+    /// The v0.6 effect name if this dialogue effect is one introduced in DSL v0.6
+    /// (`set-checkpoint`, spec-0012; `spawn-npc`). Reserved (`DW0141`) in an
+    /// earlier campaign.
+    pub fn v06_effect(&self) -> Option<&'static str> {
+        match self {
+            DialogueEffect::SetCheckpoint { .. } => Some("set-checkpoint"),
+            DialogueEffect::SpawnNpc { .. } => Some("spawn-npc"),
+            _ => None,
+        }
+    }
+
+    /// The NPC id if this is a v0.6 `spawn-npc` dialogue effect.
+    pub fn spawn_npc(&self) -> Option<&NpcId> {
+        match self {
+            DialogueEffect::SpawnNpc { npc } => Some(npc),
+            _ => None,
+        }
+    }
+
+    /// `(anchor, on_respawn)` if this is a v0.6 `set-checkpoint` dialogue effect.
+    pub fn set_checkpoint(&self) -> Option<(&AnchorId, &[QuestEffect])> {
+        match self {
+            DialogueEffect::SetCheckpoint { anchor, on_respawn } => {
+                Some((anchor, on_respawn.as_slice()))
+            }
             _ => None,
         }
     }
@@ -598,6 +735,169 @@ pub struct QuestsContent {
     /// of [`QuestEffect`]s. Empty/absent in v0.2/v0.3 campaigns.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub triggers: Vec<EnvTrigger>,
+    /// Scripted actors (DSL v0.6, spec-0014): NoAI/Silent/no-loot puppets moved by
+    /// compiler-emitted per-tick teleport (task #46). Distinct from stage-2 NPCs
+    /// (no dialogue, any mob type). Summoned/removed/moved/unleashed by the actor
+    /// staging effects. Empty/absent before v0.6.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actors: Vec<Actor>,
+    /// Traps (DSL v0.6, spec-0011): redstone-native environmental hazards bound to
+    /// `anchor/trap` prefab markers. Each gives mute trap hardware meaning — its
+    /// trigger, dispenser payload, lethality, disarm, and reset. Empty/absent in
+    /// pre-0.6 campaigns (reserved `DW0141`), so a v0.5-or-earlier campaign that
+    /// declares none stays byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub traps: Vec<Trap>,
+}
+
+/// A stage-5 trap (DSL v0.6, spec-0011): a redstone-native environmental hazard.
+/// The trap *mechanism* — the trigger (pressure plate / tripwire / trapped chest)
+/// wired to a pre-placed empty dispenser — lives in the `.nbt` prefab at an
+/// `anchor/trap` marker; this declaration gives the mute hardware meaning. The
+/// compiler fills the dispenser payload, models the trigger cell as a hazard for
+/// the completability proofs (`DW0342`), and — for a disarmable trap — emits the
+/// disarm affordance. No detection is emitted for the harm itself: the redstone
+/// fires it ("harm is redstone-native", spec-0011). Player-vs-mob distinguishing
+/// matters in a sealed box-garden with controlled mobs, so `trapped-chest` (opened
+/// by a player) is called out as the only player-distinct trigger.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Trap {
+    /// Unique trap id (`trap/<kebab>`).
+    pub id: TrapId,
+    /// The `anchor/trap` marker this trap binds to. Its cell is the trigger/hazard
+    /// cell the compiler models; the anchor also carries the dispenser socket the
+    /// payload fills.
+    pub at: AnchorId,
+    /// What springs the trap (all redstone-native).
+    pub trigger: TrapTrigger,
+    /// What the trap does when sprung.
+    pub effect: TrapEffect,
+    /// How dangerous the trap is. A `lethal` trap on the forced critical path
+    /// carries the completability obligation (`DW0342`); `harmful`/`nonlethal`
+    /// carry none. Defaults to `harmful`.
+    #[serde(default)]
+    pub lethality: Lethality,
+    /// Optional disarm affordance (quest-coupling): an anchor the player acts on to
+    /// turn the trap off — setting a flag and emptying the dispenser — before the
+    /// trap cell is forced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disarm: Option<TrapDisarm>,
+    /// Whether the trap re-arms after firing. `once` = single-shot (fires, then
+    /// spent — the survivability path); `rearm` = re-fires each trigger (default).
+    #[serde(default)]
+    pub reset: TrapReset,
+    /// Flags that must be set before the trap is considered active (mirrors
+    /// [`EnvTrigger::requires_flags`]). Default empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires_flags: Vec<FlagId>,
+}
+
+impl Trap {
+    /// `(item, count)` if this trap's effect is a `dispense` payload.
+    pub fn dispense(&self) -> Option<(&str, u32)> {
+        match &self.effect {
+            TrapEffect::Dispense { item, count } => Some((item.as_str(), *count)),
+        }
+    }
+
+    /// Whether this trap is `lethal` (carries the `DW0342` obligation on the
+    /// forced critical path).
+    pub fn is_lethal(&self) -> bool {
+        matches!(self.lethality, Lethality::Lethal)
+    }
+}
+
+/// The mechanism that springs a [`Trap`] (DSL v0.6, spec-0011). All three are
+/// redstone-native — the hardware fires without any command — so the compiler
+/// emits no detection for them; it only models the trigger cell as a hazard and
+/// fills the dispenser payload. (`approach`, the compiler-detected v0.4 primitive,
+/// is deliberately *not* a trap trigger: it is already fully expressible as an
+/// [`EnvTrigger`], so admitting it here would only duplicate that surface.)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum TrapTrigger {
+    /// A pressure plate: any entity stepping on the cell. Auto-rearms on step-off.
+    PressurePlate,
+    /// A tripwire line: any entity crossing it. Auto-rearms.
+    Tripwire,
+    /// A trapped chest: a *player opening it* (comparator pulse). The only
+    /// player-distinct trigger — a controlled mob cannot spring it.
+    TrappedChest,
+}
+
+impl TrapTrigger {
+    /// The kebab tag (`pressure-plate` / `tripwire` / `trapped-chest`).
+    pub fn kind(&self) -> &'static str {
+        match self {
+            TrapTrigger::PressurePlate => "pressure-plate",
+            TrapTrigger::Tripwire => "tripwire",
+            TrapTrigger::TrappedChest => "trapped-chest",
+        }
+    }
+}
+
+/// What a [`Trap`] does when sprung (DSL v0.6, spec-0011). Externally tagged so a
+/// future effect adds a variant; a non-`dispense` key (e.g. `tnt`,
+/// `release-falling-block`, `crusher`) is an unknown variant → `DW0100`, keeping
+/// block-destroying and unmodeled effects out of the schema by construction
+/// (spec-0011 non-goals — no hardware the compiler cannot model reaches a world).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum TrapEffect {
+    /// Load the prefab's pre-wired dispenser with `count` of `item` (arrows, tipped
+    /// arrows, splash potions). The redstone fires it; terrain is untouched
+    /// (spec-0011 "primary lethal"). The item is round-tripped into the dispenser
+    /// `Items` NBT — a deterministic, static payload.
+    Dispense {
+        /// Vanilla item id (validated against the pinned 1.21.11 registry, `DW0341`).
+        item: String,
+        /// How many to load into the dispenser stack.
+        count: u32,
+    },
+}
+
+/// How dangerous a [`Trap`] is (DSL v0.6, spec-0011). Only `lethal` carries the
+/// forced-critical-path completability obligation (`DW0342`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Lethality {
+    /// Can kill a full-health player — carries the `DW0342` obligation on the path.
+    Lethal,
+    /// Hurts but is not designed to kill (the default).
+    #[default]
+    Harmful,
+    /// Cosmetic / trivial (a stumble, a scare).
+    Nonlethal,
+}
+
+/// Whether a [`Trap`] re-arms after firing (DSL v0.6, spec-0011).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum TrapReset {
+    /// Fires once, then is spent — the survivability path for a forced lethal trap
+    /// (respawn-safe with `keep_inventory`, non-re-triggering on the walk back; no
+    /// soft-loop).
+    Once,
+    /// Re-fires every time the trigger is met (default). A forced lethal `rearm`
+    /// trap must be avoidable or disarmable, else `DW0342`.
+    #[default]
+    Rearm,
+}
+
+/// A [`Trap`]'s disarm affordance (DSL v0.6, spec-0011): the player acts on the
+/// `via` anchor (an interaction the compiler emits, reusing the v0.4 interaction
+/// entity) to turn the trap off — setting `sets_flag` and emptying the dispenser —
+/// before the trap cell is forced. Discharges the `DW0342` obligation when the
+/// affordance is reachable ahead of the trap without crossing it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TrapDisarm {
+    /// The anchor the player interacts with to disarm.
+    pub via: AnchorId,
+    /// The flag set when the trap is disarmed (a new flag this trap produces; other
+    /// objectives/triggers may read it via `requires_flags`).
+    pub sets_flag: FlagId,
 }
 
 /// A stage-5 environment trigger (DSL v0.4). Emission uses vanilla-intended
@@ -912,6 +1212,104 @@ pub struct Prop {
     pub block: String,
 }
 
+// ---------------------------------------------------------------------------
+// Stage 5 — scripted actors (DSL v0.6, spec-0014)
+// ---------------------------------------------------------------------------
+
+/// A scripted stage actor (DSL v0.6, spec-0014): a NoAI/Silent/no-loot puppet,
+/// distinct from a stage-2 [`Npc`] (no dialogue, any mob type). Emitted with tag
+/// `dw_actor_<id>`, `Invulnerable` unless `vulnerable` (a damageable puppet stays
+/// knockback-immune — the tower-defense creep). `skin` re-dresses it as a
+/// `minecraft:mannequin`, exactly as a stage-2 NPC skin. The puppet is summoned by
+/// a `spawn-actor` effect (not at load), moved by `move-actor`, and can be replaced
+/// by a real-AI twin with `unleash-actor`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Actor {
+    /// Unique actor id (`actor/<kebab>`).
+    pub id: ActorId,
+    /// The vanilla entity to puppet, e.g. `minecraft:warden`. Validated against the
+    /// pinned 1.21.11 entity registry (`DW0173`).
+    pub entity: String,
+    /// Optional custom name shown above the puppet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Optional player-model skin (mannequin), as a stage-2 NPC (`DW0190`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skin: Option<NpcSkin>,
+    /// The anchor the puppet is summoned on (resolved across areas, like an
+    /// `open-gate` / `move-npc` destination).
+    pub anchor: AnchorId,
+    /// Initial facing (default `south`). The puppet spawns yawed this way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub facing: Option<Facing>,
+    /// If `true`, the puppet is damageable (a tower-defense creep) but stays
+    /// knockback-immune; default `false` (fully `Invulnerable`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub vulnerable: bool,
+}
+
+/// A cardinal facing keyword (DSL v0.6). Emitted as the puppet's spawn yaw
+/// (MC: yaw 0 = +z/south).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Facing {
+    /// Facing +z (yaw 0) — the default.
+    South,
+    /// Facing -z (yaw 180).
+    North,
+    /// Facing -x (yaw 90).
+    West,
+    /// Facing +x (yaw 270).
+    East,
+}
+
+impl Facing {
+    /// The kebab token (`south` / `north` / `west` / `east`).
+    pub fn token(self) -> &'static str {
+        match self {
+            Facing::South => "south",
+            Facing::North => "north",
+            Facing::West => "west",
+            Facing::East => "east",
+        }
+    }
+}
+
+/// How a `despawn-actor` removes its puppet (DSL v0.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum DespawnStyle {
+    /// Silent removal (`kill @e` with no death animation is not possible; the
+    /// compiler removes the entity via `/kill` on an `Invulnerable` puppet, or a
+    /// data-driven removal — see the emitter — so no death particles/sound show).
+    Vanish,
+    /// Plays the vanilla death animation (a cutscene death).
+    Kill,
+}
+
+impl DespawnStyle {
+    /// The kebab token (`vanish` / `kill`).
+    pub fn token(self) -> &'static str {
+        match self {
+            DespawnStyle::Vanish => "vanish",
+            DespawnStyle::Kill => "kill",
+        }
+    }
+}
+
+/// One step of a [`QuestEffect::Sequence`] (DSL v0.6): a group of effects fired at
+/// an exact tick offset from the sequence's start.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SequenceStep {
+    /// Tick offset from the sequence start at which `effects` fire.
+    pub at_ticks: u32,
+    /// The effects fired at `at_ticks`. Any stage-5 effect except a nested
+    /// `sequence` (rejected with `DW0329`).
+    pub effects: Vec<QuestEffect>,
+}
+
 impl Objective {
     /// This objective's id.
     pub fn id(&self) -> &ObjectiveId {
@@ -1045,8 +1443,28 @@ pub enum QuestEffect {
     OpenGate {
         /// The gate anchor to open.
         anchor: AnchorId,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
-    /// Marks the campaign complete (final advancement + credits).
+    /// Seals a prefab-declared gate — the physical dual of `open-gate` (DSL v0.6):
+    /// fills the gate anchor's region with the block the anchor declares (e.g. the
+    /// boulder's `minecraft:basalt`), turning an opened threshold back into a wall.
+    /// The declared fill block is prefab metadata; a gate anchor with no `block` is
+    /// rejected (`DW0343`). The completability model treats the region as **solid**
+    /// from the point in the quest DAG where this fires (mirroring how `open-gate`'s
+    /// clearing is modelled) — a critical path that must cross a gate after it seals
+    /// fails the DW0311 reachability proof.
+    CloseGate {
+        /// The gate anchor to seal.
+        anchor: AnchorId,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
+    },
+    /// Marks the campaign complete (final advancement + credits). Terminal — not
+    /// flag-gatable (gating the campaign's own completion is a deadlock footgun),
+    /// so this variant carries no `requires_flags`.
     CampaignComplete,
     /// Gives the player an item (v0.3).
     GiveItem {
@@ -1057,16 +1475,25 @@ pub enum QuestEffect {
         /// Optional display name (DSL v0.4), matching [`KitItem::name`].
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Sets a campaign flag, enabling flag-gated objectives (v0.3).
     SetFlag {
         /// The flag to set.
         flag: FlagId,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Spawns a stage-5 wave's mobs at its anchor (v0.3).
     SpawnWave {
         /// The wave (stage-5 `waves` ref) to spawn.
         wave: WaveId,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Narrates a player-visible line (DSL v0.4, spec-0008 §3). `text` enters the
     /// l10n key inventory like any player-visible string.
@@ -1079,19 +1506,30 @@ pub enum QuestEffect {
         /// Optional sound id played alongside the line.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sound: Option<String>,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Sets a block at an anchor (DSL v0.4, spec-0008 §2). General form of a prop
-    /// placement. Block id validated against the pinned 1.21.11 block registry.
+    /// placement. Block id validated against the pinned 1.21.11 block registry;
+    /// a vanilla blockstate suffix (`minecraft:grindstone[face=floor]`) is
+    /// accepted and passed through verbatim (DSL v0.6).
     SetBlock {
         /// The anchor to place the block at.
         anchor: AnchorId,
         /// Vanilla block id to place.
         block: String,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Despawns an NPC and its interaction hitbox (DSL v0.4, spec-0008 §5).
     DespawnNpc {
         /// The NPC (stage-2 ref) to remove.
         npc: NpcId,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Moves an NPC (and its interaction hitbox in lockstep) to an anchor (DSL
     /// v0.4, spec-0008 §5 + addendum). The compiler plans a **collision-safe walked
@@ -1106,6 +1544,9 @@ pub enum QuestEffect {
         /// Optional travel speed in blocks/tick (defaults to ~0.15).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         speed: Option<f64>,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Plays a scripted camera cutscene (DSL v0.4 addendum). Per player: save
     /// gamemode+position, spectator, then dolly two co-located cameras along a
@@ -1114,11 +1555,40 @@ pub enum QuestEffect {
     /// no-op and is never emitted), and restore on completion. The compiler
     /// validates the dolly path passes only through non-solid blocks — cameras
     /// fly but must not clip a solid (`DW0308`).
+    ///
+    /// Camera **aim** (DSL v0.6): with `look_at`, every dolly camera is rotated at
+    /// emission to face that world point from its own position, so the shot keeps
+    /// its subject framed for the whole move; without it, the camera faces along
+    /// the direction of travel (the segment it is currently traversing).
+    ///
+    /// **Shape** — a cutscene is a list of [`CameraShot`]s played back-to-back
+    /// inside one save/restore bracket (hard cut between shots). Two accepted,
+    /// mutually exclusive spellings, both normalized by
+    /// [`QuestEffect::cutscene_shots`]:
+    /// - multi-shot (DSL v0.6): `{"shots": [{path, seconds, look_at?}, …]}`;
+    /// - single-shot (DSL v0.4): `{"path": […], "seconds": n, "look_at"?: …}` —
+    ///   exactly equivalent to a one-entry `shots` list.
+    ///
+    /// Mixing or omitting both is `DW0199`.
     Cutscene {
-        /// Ordered camera waypoints (straight-line lerp between them).
+        /// Multi-shot form (DSL v0.6): the ordered shot list. Mutually exclusive
+        /// with the single-shot `path`/`seconds` fields (`DW0199`).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        shots: Vec<CameraShot>,
+        /// Single-shot form (DSL v0.4): ordered camera waypoints (straight-line
+        /// lerp between them).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         path: Vec<CameraWaypoint>,
-        /// Cutscene duration in seconds.
-        seconds: u32,
+        /// Single-shot form (DSL v0.4): shot duration in seconds.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        seconds: Option<u32>,
+        /// Single-shot form (DSL v0.6): the subject the camera keeps framed.
+        /// Absent = face along the direction of travel.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        look_at: Option<CameraTarget>,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Cuts the dimension-global world time to a new state (DSL v0.5, spec-0010).
     /// Instantaneous (vanilla has no gradual transition); the state persists
@@ -1126,13 +1596,249 @@ pub enum QuestEffect {
     SetTime {
         /// The time state to cut to.
         time: WorldTime,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
     /// Cuts the dimension-global weather to a new state (DSL v0.5, spec-0010).
     /// Instantaneous; persists because the weather cycle is frozen by sealing.
     SetWeather {
         /// The weather state to cut to.
         weather: WorldWeather,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
     },
+    /// Plays a vanilla sound event, positionally or per-player (DSL v0.6,
+    /// spec-0014). `sound` is validated against the vendored pinned-1.21.11
+    /// sound-event registry (`DW0326` unknown). `at` selects where the sound
+    /// originates (default: each player's own position); `volume`/`pitch` map to
+    /// the `playsound` command's trailing args (pitch clamps to 0.0..=2.0 in
+    /// vanilla).
+    PlaySound {
+        /// The vanilla sound-event id (`minecraft:` prefix optional).
+        sound: String,
+        /// Where the sound plays from (default: `players`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<SoundAt>,
+        /// Playback volume (vanilla default 1.0; > 1.0 only extends audible range).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        volume: Option<f64>,
+        /// Playback pitch (vanilla 0.0..=2.0; default 1.0).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pitch: Option<f64>,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
+    },
+    /// Deals damage to the acting player(s) (DSL v0.6): the real consequence a
+    /// stealth `on_caught` or a souls-style beat needs — vanilla's `/damage`
+    /// primitive. Runs in the effect's `as @a` / `as @s` context, so `@s` is each
+    /// acting player: at top level it damages every player once; inside a stealth
+    /// `on_caught` it damages the caught player (the "caught → death → respawn at
+    /// checkpoint" beat). `amount` is in **half-hearts** (1 HP each); an amount ≥ 40
+    /// is lethal through golden apples / absorption. `within` (JSON `in`) narrows to
+    /// acting players standing inside an anchor-centred box (the same box model as a
+    /// stealth zone), keeping the per-`@s` semantics. `damage_type` is the damage
+    /// type — a curated set of vanilla types that all respect `keepInventory` and do
+    /// **not** bypass totems (no `out_of_world`/`generic_kill`); default `generic`.
+    /// (The field is `damage_type`, not `type`, because the effect enum is
+    /// internally tagged on `type`.)
+    DamagePlayers {
+        /// Damage dealt, in half-hearts (1 = 1 HP; ≥ 40 is effectively lethal).
+        amount: u32,
+        /// Optional spatial filter: only damage an acting player inside this
+        /// anchor-centred box (`anchor ± extent`). Absent = every acting player.
+        #[serde(default, rename = "in", skip_serializing_if = "Option::is_none")]
+        within: Option<StealthZone>,
+        /// The damage type (default [`DamageKind::Generic`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        damage_type: Option<DamageKind>,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
+    },
+    /// Sets the party-wide respawn checkpoint (DSL v0.6, spec-0012). Emits
+    /// `spawnpoint @a` at the anchor cell and mirrors the coords into
+    /// `storage dw:cp pos`. Party-wide and monotonic by quest order (a later
+    /// `set-checkpoint` always replaces an earlier one). The compiler proves the
+    /// cell is standable (`DW0316`) and that the remaining critical path stays
+    /// reachable from it (`DW0315`).
+    SetCheckpoint {
+        /// The prefab checkpoint anchor the party respawns at.
+        anchor: AnchorId,
+        /// Per-player effects re-run each time a player respawns while this
+        /// checkpoint is the active one — scene reset (e.g. re-caging an
+        /// unleashed actor). Emitted idempotently in declared order; empty = no
+        /// hook. Respawn is detected via the vanilla `deathCount` criterion.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        on_respawn: Vec<QuestEffect>,
+    },
+    /// Begins a stealth beat (DSL v0.6, spec-0014). While active, every player
+    /// must be inside some `zone` **and** sneaking each tick; a player failing
+    /// both for `grace_ticks` fires `on_caught` (typically a kill → checkpoint
+    /// respawn). Sneaking is read from the vanilla `sneak_time` custom stat; zone
+    /// membership from the player's position. The compiler proves each zone is
+    /// standable and reachable from the activating beat (`DW0327`).
+    BeginStealth {
+        /// The "shadow" regions, each an anchor-centred box (see [`StealthZone`]).
+        zones: Vec<StealthZone>,
+        /// Per-player effects fired when a player is caught (out of every zone or
+        /// standing, for `grace_ticks`). Empty = no consequence.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        on_caught: Vec<QuestEffect>,
+        /// Ticks a player may be exposed before `on_caught` fires (default 20).
+        #[serde(default = "default_grace_ticks")]
+        grace_ticks: u32,
+    },
+    /// Ends the active stealth beat (DSL v0.6, spec-0014). No-op if none active.
+    EndStealth,
+    /// Summons a `deferred` stage-2 NPC (body + interaction hitbox + name display)
+    /// at its declared anchor (DSL v0.6) — the dual of `despawn-npc`, and the
+    /// scripted entrance a staged character needs. Idempotent: spawning an NPC
+    /// already in the world is a no-op. Only meaningful for an NPC declared
+    /// `deferred: true`; a non-deferred NPC is already in the world from init.
+    SpawnNpc {
+        /// The NPC (stage-2 ref) to summon.
+        npc: NpcId,
+    },
+    // --- DSL v0.6 actor staging effects (spec-0014) ---
+    /// Summons a stage-5 actor's puppet at its anchor (DSL v0.6). Idempotent: a
+    /// spawn of an already-present actor is a no-op (re-caging after `unleash`).
+    SpawnActor {
+        /// The actor (stage-5 `actors` ref) to summon.
+        actor: ActorId,
+    },
+    /// Removes an actor's puppet (DSL v0.6). `kill` plays the vanilla death
+    /// animation (cutscene deaths); `vanish` is silent removal.
+    DespawnActor {
+        /// The actor (stage-5 `actors` ref) to remove.
+        actor: ActorId,
+        /// How the puppet is removed.
+        style: DespawnStyle,
+    },
+    /// Walks an actor's puppet to an anchor by A*-planned per-tick teleport over
+    /// the assembled model, using the actor's hitbox footprint, yawed along the
+    /// path tangent (DSL v0.6, task #46). Concurrent movers are allowed (a herded
+    /// flock is N synchronized `move-actor`s). Unroutable → `DW0325`. `on_arrive`
+    /// effects fire once the puppet reaches the destination cell.
+    MoveActor {
+        /// The actor (stage-5 `actors` ref) to move.
+        actor: ActorId,
+        /// The destination anchor.
+        to_anchor: AnchorId,
+        /// Optional travel speed in blocks/tick (defaults to ~0.15).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        speed: Option<f64>,
+        /// Effects fired once the puppet arrives at the destination cell.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        on_arrive: Vec<QuestEffect>,
+    },
+    /// Replaces an actor's puppet with a real-AI twin of the same type / position /
+    /// name / attributes / tag (DSL v0.6) — the "attack the idle giant → real
+    /// fight" beat. Re-caging is `despawn-actor` + `spawn-actor` (idempotent), not a
+    /// special verb.
+    UnleashActor {
+        /// The actor (stage-5 `actors` ref) to unleash.
+        actor: ActorId,
+    },
+    /// A deterministic timeline (DSL v0.6): one schedule chain firing effect groups
+    /// at exact tick offsets. Effects are any in the stage-5 set except a nested
+    /// `sequence` (rejected with `DW0329`).
+    Sequence {
+        /// Timeline steps; each fires its `effects` at `at_ticks` from the start.
+        steps: Vec<SequenceStep>,
+    },
+}
+
+/// Default `grace_ticks` for [`QuestEffect::BeginStealth`] (spec-0014).
+fn default_grace_ticks() -> u32 {
+    20
+}
+
+/// A stealth "shadow" region (DSL v0.6, spec-0014): an axis-aligned box centred
+/// on `anchor`, extending `extent` blocks along each axis (so the box spans
+/// `anchor ± extent`). Presented in-world via dark cells but judged purely by
+/// region membership, so the check is deterministic and provable.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StealthZone {
+    /// The prefab anchor at the centre of the zone box.
+    pub anchor: AnchorId,
+    /// Half-extents `[x, y, z]` in blocks from the anchor (each component ≥ 0);
+    /// the zone AABB is `[anchor - extent, anchor + extent]`.
+    pub extent: [u32; 3],
+}
+
+/// Where a [`QuestEffect::PlaySound`] originates (DSL v0.6, spec-0014). The
+/// `actor` variant is accepted by the schema but not yet wired — it is rejected
+/// with `DW0335` until the actors surface (spec-0014 `actors[]`) lands, at which
+/// point it resolves to the actor's position like `move-actor` does.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "at", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum SoundAt {
+    /// Play the sound positioned at a resolved anchor, audible to all players.
+    Anchor {
+        /// The anchor the sound plays from.
+        anchor: AnchorId,
+    },
+    /// Play the sound at each player's own position (the default).
+    Players,
+    /// Play the sound at a scripted actor's position (deferred — `DW0335` until
+    /// the actors surface lands).
+    Actor {
+        /// The actor id (stage-5 `actors[]`; not yet resolvable).
+        actor: String,
+    },
+}
+
+/// The damage type of a [`QuestEffect::DamagePlayers`] effect (DSL v0.6). A
+/// **curated** subset of the vanilla 1.21.11 damage-type registry: every variant
+/// respects the `keepInventory` death flow (a gamerule, so all deaths do) and does
+/// **not** bypass a totem of undying — the totem-bypassing `out_of_world` /
+/// `generic_kill` types are deliberately excluded, so a scripted consequence can
+/// never silently void a player's held totem. Modelled as an enum (not a free
+/// string) so an unknown type is a schema rejection (`DW0100`) and needs no separate
+/// registry / diagnostic. `generic` is the default: command damage that respects
+/// totems + absorption but ignores armor, so a scripted hit lands regardless of gear.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum DamageKind {
+    /// `minecraft:generic` — armor-ignoring command damage (default).
+    Generic,
+    /// `minecraft:magic` — magical damage.
+    Magic,
+    /// `minecraft:wither` — the wither/withering effect's damage type.
+    Wither,
+    /// `minecraft:on_fire` — burning damage.
+    Fire,
+    /// `minecraft:drown` — drowning damage.
+    Drown,
+    /// `minecraft:freeze` — powder-snow freezing damage.
+    Freeze,
+    /// `minecraft:fall` — fall damage.
+    Fall,
+    /// `minecraft:lightning_bolt` — a lightning strike's damage type.
+    LightningBolt,
+    /// `minecraft:explosion` — a (non-player) explosion's damage type.
+    Explosion,
+}
+
+impl DamageKind {
+    /// The vanilla `minecraft:` damage-type id emitted to `/damage`.
+    pub fn id(self) -> &'static str {
+        match self {
+            DamageKind::Generic => "minecraft:generic",
+            DamageKind::Magic => "minecraft:magic",
+            DamageKind::Wither => "minecraft:wither",
+            DamageKind::Fire => "minecraft:on_fire",
+            DamageKind::Drown => "minecraft:drown",
+            DamageKind::Freeze => "minecraft:freeze",
+            DamageKind::Fall => "minecraft:fall",
+            DamageKind::LightningBolt => "minecraft:lightning_bolt",
+            DamageKind::Explosion => "minecraft:explosion",
+        }
+    }
 }
 
 /// The presentation channel for a [`QuestEffect::Narrate`] (DSL v0.4).
@@ -1145,15 +1851,21 @@ pub enum NarrateStyle {
     Title,
     /// An on-screen subtitle.
     Subtitle,
+    /// A large-glyph "art" title rendered through the delve's custom resource-pack
+    /// font (`delve:art`) so endings can flash big art text (DSL v0.6, spec-0014).
+    /// Text is checked at compile time against the font's glyph inventory
+    /// (`DW0328`); characters outside it (e.g. non-Latin script) are rejected.
+    Art,
 }
 
 impl NarrateStyle {
-    /// The kebab tag (`chat` / `title` / `subtitle`).
+    /// The kebab tag (`chat` / `title` / `subtitle` / `art`).
     pub fn token(self) -> &'static str {
         match self {
             NarrateStyle::Chat => "chat",
             NarrateStyle::Title => "title",
             NarrateStyle::Subtitle => "subtitle",
+            NarrateStyle::Art => "art",
         }
     }
 }
@@ -1170,6 +1882,39 @@ pub struct CameraWaypoint {
     pub offset: [i32; 3],
 }
 
+/// One shot of a [`QuestEffect::Cutscene`] (DSL v0.6): a camera dolly with its
+/// own duration and optional subject. A cutscene plays its shots back-to-back —
+/// a hard cut between them — inside a single gamemode/position save-restore
+/// bracket, so a wide establishing move can be followed by an interior close-up
+/// without the players ever leaving the cinematic.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CameraShot {
+    /// Ordered camera waypoints (straight-line lerp between them). A one-waypoint
+    /// path is a static shot.
+    pub path: Vec<CameraWaypoint>,
+    /// This shot's duration in seconds.
+    pub seconds: u32,
+    /// Optional subject the camera keeps framed for this shot. Absent = face
+    /// along the direction of travel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub look_at: Option<CameraTarget>,
+}
+
+/// The subject a [`QuestEffect::Cutscene`] camera keeps framed (DSL v0.6): an
+/// anchor plus an integer block offset from it, giving the world point every
+/// dolly camera is aimed at. Same shape as a [`CameraWaypoint`] — a waypoint says
+/// where the camera *is*, a target says what it *looks at*.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CameraTarget {
+    /// The anchor the look target is relative to.
+    pub anchor: AnchorId,
+    /// Integer `[x, y, z]` block offset from the anchor (default `[0, 0, 0]`).
+    #[serde(default, skip_serializing_if = "is_zero3")]
+    pub offset: [i32; 3],
+}
+
 /// serde `skip_serializing_if` helper: skip a `[0, 0, 0]` offset.
 fn is_zero3(v: &[i32; 3]) -> bool {
     *v == [0, 0, 0]
@@ -1179,7 +1924,15 @@ impl QuestEffect {
     /// The gate anchor if this is `open-gate`.
     pub fn open_gate_anchor(&self) -> Option<&AnchorId> {
         match self {
-            QuestEffect::OpenGate { anchor } => Some(anchor),
+            QuestEffect::OpenGate { anchor, .. } => Some(anchor),
+            _ => None,
+        }
+    }
+
+    /// The gate anchor if this is `close-gate` (DSL v0.6).
+    pub fn close_gate_anchor(&self) -> Option<&AnchorId> {
+        match self {
+            QuestEffect::CloseGate { anchor, .. } => Some(anchor),
             _ => None,
         }
     }
@@ -1187,7 +1940,7 @@ impl QuestEffect {
     /// The wave id if this is `spawn-wave` (v0.3).
     pub fn spawn_wave(&self) -> Option<&WaveId> {
         match self {
-            QuestEffect::SpawnWave { wave } => Some(wave),
+            QuestEffect::SpawnWave { wave, .. } => Some(wave),
             _ => None,
         }
     }
@@ -1195,7 +1948,7 @@ impl QuestEffect {
     /// The flag id if this is `set-flag` (v0.3).
     pub fn set_flag(&self) -> Option<&FlagId> {
         match self {
-            QuestEffect::SetFlag { flag } => Some(flag),
+            QuestEffect::SetFlag { flag, .. } => Some(flag),
             _ => None,
         }
     }
@@ -1216,7 +1969,7 @@ impl QuestEffect {
     /// The `set-block` block id if this is a v0.4 `set-block` effect.
     pub fn set_block(&self) -> Option<(&AnchorId, &str)> {
         match self {
-            QuestEffect::SetBlock { anchor, block } => Some((anchor, block.as_str())),
+            QuestEffect::SetBlock { anchor, block, .. } => Some((anchor, block.as_str())),
             _ => None,
         }
     }
@@ -1224,7 +1977,7 @@ impl QuestEffect {
     /// The NPC id if this is a v0.4 `despawn-npc` effect.
     pub fn despawn_npc(&self) -> Option<&NpcId> {
         match self {
-            QuestEffect::DespawnNpc { npc } => Some(npc),
+            QuestEffect::DespawnNpc { npc, .. } => Some(npc),
             _ => None,
         }
     }
@@ -1245,7 +1998,9 @@ impl QuestEffect {
             QuestEffect::GiveItem { .. } => Some("give-item"),
             QuestEffect::SetFlag { .. } => Some("set-flag"),
             QuestEffect::SpawnWave { .. } => Some("spawn-wave"),
-            QuestEffect::OpenGate { .. } | QuestEffect::CampaignComplete => None,
+            QuestEffect::OpenGate { .. }
+            | QuestEffect::CloseGate { .. }
+            | QuestEffect::CampaignComplete => None,
             // v0.4 effects report via `v04_effect`; v0.5 via `v05_effect`; they
             // are not v0.3 verbs.
             QuestEffect::Narrate { .. }
@@ -1254,7 +2009,18 @@ impl QuestEffect {
             | QuestEffect::MoveNpc { .. }
             | QuestEffect::Cutscene { .. }
             | QuestEffect::SetTime { .. }
-            | QuestEffect::SetWeather { .. } => None,
+            | QuestEffect::SetWeather { .. }
+            | QuestEffect::PlaySound { .. }
+            | QuestEffect::DamagePlayers { .. }
+            | QuestEffect::SetCheckpoint { .. }
+            | QuestEffect::BeginStealth { .. }
+            | QuestEffect::EndStealth
+            | QuestEffect::SpawnActor { .. }
+            | QuestEffect::DespawnActor { .. }
+            | QuestEffect::MoveActor { .. }
+            | QuestEffect::UnleashActor { .. }
+            | QuestEffect::SpawnNpc { .. }
+            | QuestEffect::Sequence { .. } => None,
         }
     }
 
@@ -1283,10 +2049,76 @@ impl QuestEffect {
         }
     }
 
+    /// The v0.6 effect name if this effect is one introduced in DSL v0.6
+    /// (`set-checkpoint`, spec-0012; `begin-stealth`/`end-stealth`, spec-0014;
+    /// `play-sound`, spec-0014; the scripted-actor staging verbs
+    /// `spawn-actor`/`despawn-actor`/`move-actor`/`unleash-actor`/`sequence`,
+    /// spec-0014). These validate in v0.6 campaigns and are reserved (`DW0141`)
+    /// earlier. (The `narrate` `art` style is a v0.6 addition to an existing verb
+    /// — see [`QuestEffect::narrate_art`] — not a new effect.)
+    pub fn v06_effect(&self) -> Option<&'static str> {
+        match self {
+            QuestEffect::CloseGate { .. } => Some("close-gate"),
+            QuestEffect::SetCheckpoint { .. } => Some("set-checkpoint"),
+            QuestEffect::BeginStealth { .. } => Some("begin-stealth"),
+            QuestEffect::EndStealth => Some("end-stealth"),
+            QuestEffect::PlaySound { .. } => Some("play-sound"),
+            QuestEffect::DamagePlayers { .. } => Some("damage-players"),
+            QuestEffect::SpawnActor { .. } => Some("spawn-actor"),
+            QuestEffect::DespawnActor { .. } => Some("despawn-actor"),
+            QuestEffect::MoveActor { .. } => Some("move-actor"),
+            QuestEffect::UnleashActor { .. } => Some("unleash-actor"),
+            QuestEffect::Sequence { .. } => Some("sequence"),
+            QuestEffect::SpawnNpc { .. } => Some("spawn-npc"),
+            _ => None,
+        }
+    }
+
+    /// The NPC id if this is a v0.6 `spawn-npc` effect (the dual of
+    /// [`QuestEffect::despawn_npc`]).
+    pub fn spawn_npc(&self) -> Option<&NpcId> {
+        match self {
+            QuestEffect::SpawnNpc { npc } => Some(npc),
+            _ => None,
+        }
+    }
+
+    /// `(anchor, on_respawn)` if this is a v0.6 `set-checkpoint` effect.
+    pub fn set_checkpoint(&self) -> Option<(&AnchorId, &[QuestEffect])> {
+        match self {
+            QuestEffect::SetCheckpoint { anchor, on_respawn } => {
+                Some((anchor, on_respawn.as_slice()))
+            }
+            _ => None,
+        }
+    }
+
+    /// The `within` filter zone if this is a v0.6 `damage-players` effect that
+    /// declares one (the `in` spatial scope). `None` for an unscoped
+    /// `damage-players` and for every other effect.
+    pub fn damage_within(&self) -> Option<&StealthZone> {
+        match self {
+            QuestEffect::DamagePlayers { within, .. } => within.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// `(zones, on_caught, grace_ticks)` if this is a v0.6 `begin-stealth` effect.
+    pub fn begin_stealth(&self) -> Option<(&[StealthZone], &[QuestEffect], u32)> {
+        match self {
+            QuestEffect::BeginStealth {
+                zones,
+                on_caught,
+                grace_ticks,
+            } => Some((zones.as_slice(), on_caught.as_slice(), *grace_ticks)),
+            _ => None,
+        }
+    }
+
     /// The target time if this is a v0.5 `set-time` effect.
     pub fn set_time(&self) -> Option<WorldTime> {
         match self {
-            QuestEffect::SetTime { time } => Some(*time),
+            QuestEffect::SetTime { time, .. } => Some(*time),
             _ => None,
         }
     }
@@ -1294,7 +2126,280 @@ impl QuestEffect {
     /// The target weather if this is a v0.5 `set-weather` effect.
     pub fn set_weather(&self) -> Option<WorldWeather> {
         match self {
-            QuestEffect::SetWeather { weather } => Some(*weather),
+            QuestEffect::SetWeather { weather, .. } => Some(*weather),
+            _ => None,
+        }
+    }
+
+    /// The effect lists nested one level inside this effect (DSL v0.6): a
+    /// `sequence`'s per-step effects (in step order), a `set-checkpoint`'s
+    /// `on_respawn`, a `begin-stealth`'s `on_caught`, and a `move-actor`'s
+    /// `on_arrive`. Empty for a leaf effect.
+    ///
+    /// This is the **single authority** on effect nesting. Every deep traversal —
+    /// the flag/wave producer scans, the checkpoint/stealth collector, the l10n
+    /// string inventory, and emission — walks the tree through it (see
+    /// [`Self::visit_deep`]), so a new nesting site is picked up everywhere at
+    /// once and no walker can silently miss a list (the class of bug where a
+    /// `set-flag`/`set-checkpoint` nested in a `sequence` was skipped).
+    pub fn nested_effect_lists(&self) -> Vec<&[QuestEffect]> {
+        match self {
+            QuestEffect::Sequence { steps } => steps.iter().map(|s| s.effects.as_slice()).collect(),
+            QuestEffect::SetCheckpoint { on_respawn, .. } => vec![on_respawn.as_slice()],
+            QuestEffect::BeginStealth { on_caught, .. } => vec![on_caught.as_slice()],
+            QuestEffect::MoveActor { on_arrive, .. } => vec![on_arrive.as_slice()],
+            _ => Vec::new(),
+        }
+    }
+
+    /// Visit `self` and every transitively nested effect (depth-first, pre-order),
+    /// descending through [`Self::nested_effect_lists`].
+    pub fn visit_deep<'a>(&'a self, f: &mut dyn FnMut(&'a QuestEffect)) {
+        f(self);
+        for list in self.nested_effect_lists() {
+            for e in list {
+                e.visit_deep(f);
+            }
+        }
+    }
+
+    /// Each nested effect list ([`Self::nested_effect_lists`]) paired with the
+    /// **stable key segment** used to derive child l10n keys / diagnostic paths, and
+    /// exposed mutably so the localization pass can rewrite nested player-visible
+    /// strings in place. Segments: `seq.<step>` for each sequence step (step index),
+    /// `respawn` for `set-checkpoint.on_respawn`, `caught` for
+    /// `begin-stealth.on_caught`, `arrive` for `move-actor.on_arrive`. Kept in
+    /// lockstep with `nested_effect_lists` (same lists, same order) — the position-
+    /// derived segments make every derived key deterministic and stable across
+    /// builds (ADR-0006 byte-identity).
+    pub fn nested_effect_lists_keyed_mut(&mut self) -> Vec<(String, &mut [QuestEffect])> {
+        match self {
+            QuestEffect::Sequence { steps } => steps
+                .iter_mut()
+                .enumerate()
+                .map(|(s, st)| (format!("seq.{s}"), st.effects.as_mut_slice()))
+                .collect(),
+            QuestEffect::SetCheckpoint { on_respawn, .. } => {
+                vec![("respawn".to_string(), on_respawn.as_mut_slice())]
+            }
+            QuestEffect::BeginStealth { on_caught, .. } => {
+                vec![("caught".to_string(), on_caught.as_mut_slice())]
+            }
+            QuestEffect::MoveActor { on_arrive, .. } => {
+                vec![("arrive".to_string(), on_arrive.as_mut_slice())]
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Immutable sibling of [`Self::nested_effect_lists_keyed_mut`] that additionally
+    /// exposes the **JSON-pointer path segment** for each nested list, so a deep
+    /// consumer scan (sound/art/give/wave refs) can report a precise diagnostic path
+    /// *and* the matching l10n key. Each entry is `(path_seg, key_seg, list)`; the
+    /// caller appends the per-effect index — `/{j}` to the path, `.{j}` to the key.
+    /// Kept in lockstep with `nested_effect_lists` / `nested_effect_lists_keyed_mut`
+    /// (same lists, same order): the l10n key segments match
+    /// `nested_effect_lists_keyed_mut` exactly (`seq.<step>`/`respawn`/`caught`/
+    /// `arrive`), and the path segments name the real fields
+    /// (`steps/<step>/effects`, `on_respawn`, `on_caught`, `on_arrive`).
+    pub fn nested_effect_lists_labeled(&self) -> Vec<(String, String, &[QuestEffect])> {
+        match self {
+            QuestEffect::Sequence { steps } => steps
+                .iter()
+                .enumerate()
+                .map(|(s, st)| {
+                    (
+                        format!("steps/{s}/effects"),
+                        format!("seq.{s}"),
+                        st.effects.as_slice(),
+                    )
+                })
+                .collect(),
+            QuestEffect::SetCheckpoint { on_respawn, .. } => vec![(
+                "on_respawn".to_string(),
+                "respawn".to_string(),
+                on_respawn.as_slice(),
+            )],
+            QuestEffect::BeginStealth { on_caught, .. } => vec![(
+                "on_caught".to_string(),
+                "caught".to_string(),
+                on_caught.as_slice(),
+            )],
+            QuestEffect::MoveActor { on_arrive, .. } => vec![(
+                "on_arrive".to_string(),
+                "arrive".to_string(),
+                on_arrive.as_slice(),
+            )],
+            _ => Vec::new(),
+        }
+    }
+
+    /// The `cutscene` camera subject if this is a single-shot `cutscene` carrying
+    /// the v0.6 `look_at` field (reserved `DW0141` under a pre-0.6 campaign).
+    pub fn cutscene_look_at(&self) -> Option<&CameraTarget> {
+        match self {
+            QuestEffect::Cutscene { look_at, .. } => look_at.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// `true` if this is a `cutscene` written in the v0.6 multi-shot form
+    /// (reserved `DW0141` under a pre-0.6 campaign).
+    pub fn cutscene_multi_shot(&self) -> bool {
+        matches!(self, QuestEffect::Cutscene { shots, .. } if !shots.is_empty())
+    }
+
+    /// The normalized shot list of a `cutscene`, whichever spelling was used: the
+    /// v0.6 `shots` list as-is, or the v0.4 `path`/`seconds`/`look_at` fields as a
+    /// single shot. `None` for a non-cutscene effect; an empty list for a cutscene
+    /// whose shape is invalid (`DW0199` reports that).
+    pub fn cutscene_shots(&self) -> Option<Vec<CameraShot>> {
+        match self {
+            QuestEffect::Cutscene {
+                shots,
+                path,
+                seconds,
+                look_at,
+                ..
+            } => {
+                if !shots.is_empty() {
+                    return Some(shots.clone());
+                }
+                match seconds {
+                    Some(secs) => Some(vec![CameraShot {
+                        path: path.clone(),
+                        seconds: *secs,
+                        look_at: look_at.clone(),
+                    }]),
+                    None => Some(Vec::new()),
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// `true` if this is a `narrate` carrying the v0.6 `art` style (reserved
+    /// `DW0141` under a pre-0.6 campaign; glyph-checked `DW0328`).
+    pub fn narrate_art(&self) -> bool {
+        matches!(
+            self,
+            QuestEffect::Narrate {
+                style: Some(NarrateStyle::Art),
+                ..
+            }
+        )
+    }
+
+    /// The `narrate` line's text if this is a `narrate` with the `art` style.
+    pub fn narrate_art_text(&self) -> Option<&str> {
+        match self {
+            QuestEffect::Narrate {
+                text,
+                style: Some(NarrateStyle::Art),
+                ..
+            } => Some(text.as_str()),
+            _ => None,
+        }
+    }
+
+    /// The `narrate` line's style and text if this is a `narrate` rendered **on
+    /// screen** — `title`, `subtitle` or `art` — rather than in chat. These are the
+    /// styles vanilla draws centred and unwrapped, so their rendered width is
+    /// length-checked against the screen (`DW0330`); `chat` scrolls and wraps, so it
+    /// is exempt.
+    pub fn narrate_on_screen(&self) -> Option<(NarrateStyle, &str)> {
+        match self {
+            QuestEffect::Narrate {
+                text,
+                style: Some(s),
+                ..
+            } if matches!(
+                s,
+                NarrateStyle::Title | NarrateStyle::Subtitle | NarrateStyle::Art
+            ) =>
+            {
+                Some((*s, text.as_str()))
+            }
+            _ => None,
+        }
+    }
+
+    /// Every vanilla sound-event id this effect references, for registry
+    /// validation (`DW0326`): a `play-sound`'s `sound`, and a `narrate`'s optional
+    /// `sound`. Returns `(subpath, id)` pairs where `subpath` locates the field
+    /// within the effect (e.g. `sound`).
+    pub fn sound_refs(&self) -> Vec<(&'static str, &str)> {
+        match self {
+            QuestEffect::PlaySound { sound, .. } => vec![("sound", sound.as_str())],
+            QuestEffect::Narrate { sound: Some(s), .. } => vec![("sound", s.as_str())],
+            _ => Vec::new(),
+        }
+    }
+
+    /// The deferred `play-sound` `at: actor` id, if this effect is a `play-sound`
+    /// targeting an actor (rejected `DW0335` until the actors surface lands).
+    pub fn play_sound_actor(&self) -> Option<&str> {
+        match self {
+            QuestEffect::PlaySound {
+                at: Some(SoundAt::Actor { actor }),
+                ..
+            } => Some(actor.as_str()),
+            _ => None,
+        }
+    }
+
+    /// The per-effect flag gate (DSL v0.6, task #55): flags that must ALL be set
+    /// (per player) for this effect to fire. Empty for an ungated effect and for
+    /// the verbs that are not per-effect gatable — terminal `campaign-complete`
+    /// and the party/session-global `set-checkpoint` / `begin-stealth` /
+    /// `end-stealth`. Emission wraps a gated effect's commands in a per-player
+    /// `execute if score @s dw.f_<flag> matches 1` guard; a pre-0.6 campaign that
+    /// gates any effect is rejected (`DW0141`).
+    pub fn requires_flags(&self) -> &[FlagId] {
+        match self {
+            QuestEffect::OpenGate { requires_flags, .. }
+            | QuestEffect::CloseGate { requires_flags, .. }
+            | QuestEffect::GiveItem { requires_flags, .. }
+            | QuestEffect::SetFlag { requires_flags, .. }
+            | QuestEffect::SpawnWave { requires_flags, .. }
+            | QuestEffect::Narrate { requires_flags, .. }
+            | QuestEffect::SetBlock { requires_flags, .. }
+            | QuestEffect::DespawnNpc { requires_flags, .. }
+            | QuestEffect::MoveNpc { requires_flags, .. }
+            | QuestEffect::Cutscene { requires_flags, .. }
+            | QuestEffect::SetTime { requires_flags, .. }
+            | QuestEffect::SetWeather { requires_flags, .. }
+            | QuestEffect::PlaySound { requires_flags, .. }
+            | QuestEffect::DamagePlayers { requires_flags, .. } => requires_flags,
+            // Terminal / party- or session-global verbs are not per-effect
+            // gatable: `campaign-complete` is terminal; `set-checkpoint`
+            // (`spawnpoint @a`) / `begin-stealth` / `end-stealth` are party-wide
+            // session state; and the actor staging verbs (`spawn-actor` /
+            // `despawn-actor` / `move-actor` / `unleash-actor` / `sequence`) and
+            // `spawn-npc` are world-global staging — none are per-player `@s`
+            // effects. Gate these at the objective / dialogue-option level instead.
+            QuestEffect::CampaignComplete
+            | QuestEffect::SpawnNpc { .. }
+            | QuestEffect::SetCheckpoint { .. }
+            | QuestEffect::BeginStealth { .. }
+            | QuestEffect::EndStealth
+            | QuestEffect::SpawnActor { .. }
+            | QuestEffect::DespawnActor { .. }
+            | QuestEffect::MoveActor { .. }
+            | QuestEffect::UnleashActor { .. }
+            | QuestEffect::Sequence { .. } => &[],
+        }
+    }
+
+    /// The actor id this effect targets, if it is one of the actor staging effects
+    /// (`spawn-actor`/`despawn-actor`/`move-actor`/`unleash-actor`). `sequence` has
+    /// no single actor (its nested effects each carry their own).
+    pub fn actor_ref(&self) -> Option<&ActorId> {
+        match self {
+            QuestEffect::SpawnActor { actor }
+            | QuestEffect::DespawnActor { actor, .. }
+            | QuestEffect::MoveActor { actor, .. }
+            | QuestEffect::UnleashActor { actor } => Some(actor),
             _ => None,
         }
     }

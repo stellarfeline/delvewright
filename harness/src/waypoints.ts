@@ -208,6 +208,30 @@ export function nextLegWaypoints(
 }
 
 /**
+ * Drop proven waypoints the bot's own physical model cannot stand on. A waypoint is
+ * a FEET cell the compiler proved standable under its full-solid occupancy model —
+ * every non-air block is a 1×1×1 cube, so the compiler can prove a leg by standing
+ * the player ON TOP of a fence (a legal +1 step in that model). Vanilla physics
+ * makes a fence 1.5 blocks tall, and mineflayer-pathfinder marks any block whose
+ * collision shape is taller than 1 (fence/wall/closed fence-gate) NON-physical
+ * (`Movements.fences`): it will never solve a subgoal standing atop one, so replaying
+ * that waypoint as a hard hop wedges the leg. `supportStandable(cell)` reports
+ * whether the block directly below a feet cell is one the bot can actually stand on;
+ * a waypoint that fails it is dropped. Endpoints are not special-cased — the leg's
+ * TRUE destination is appended by {@link walkGoals} regardless — so the compiler's
+ * actual proof (end-to-end connectivity) is preserved; the pathfinder simply bridges
+ * the neighbouring proven cells with a real-shape route (through the adjacent gate,
+ * opening it as a player must). Pure (predicate injected) so it is unit-testable
+ * without a bot.
+ */
+export function retainStandableWaypoints(
+  waypoints: readonly Vec3Tuple[],
+  supportStandable: (cell: Vec3Tuple) => boolean,
+): readonly Vec3Tuple[] {
+  return waypoints.filter((w) => supportStandable(w));
+}
+
+/**
  * The ordered pathfinder goals for a walk to `pos` at `finalRange`: the given proven
  * waypoint hops (each at {@link WAYPOINT_RANGE}) followed by the final destination
  * goal. When `legWaypoints` is `undefined` (no leg matched), just the single

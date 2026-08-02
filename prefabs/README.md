@@ -26,7 +26,21 @@ byte-identical datapack, with the content SHA recorded in the build manifest.
   generator (prefab-ceiling probe), a sibling of `generator/` with its own
   `[workspace]`; keep output is untouched. Emits `pool/cave-shore`, a structural
   drop-in for `pool/stone-keep`. See `cave-generator/README.md`.
+- **`island-generator/`** — the deterministic "nobodys-cave island" SET-PIECE
+  generator (spec-0013 remake): the sea-level beach camp + the ancient-Greek
+  galley. Another sibling with its own `[workspace]`; reuses the cave-generator
+  NBT/socket/substrate machinery. Emits the `island:socket` convention. See
+  `island-generator/README.md` and `island-tileset.md`.
+- **`island-terrain-generator/`** — the deterministic "nobodys-cave island"
+  TERRAIN generator: the greenfield connectors + the mountain terminal (shell +
+  30×14×24 cavern, switchback slope on the face). Another sibling with its own
+  `[workspace]`; reuses the cave-generator machinery and the `island:socket`
+  floor_y=2 datum. See `island-terrain-generator/README.md` and `island-tileset.md`.
 - **`keep-tileset.md`** — the stone-keep connection convention, piece list, and
   live-probed lighting minimums that the generator implements and documents.
 - **`cave-tileset.md`** — the cave/shore piece list, `cave:socket` convention,
   derived lighting, and the render-critique round notes (the probe's evidence).
+- **`island-tileset.md`** — the island convention (ocean horizon, waterline
+  y=2 / walk plane y=3, `island:socket` floor_y=2), the set-piece list, and the
+  merged-vs-separate galley decision. The terrain worker's greenfield/mountain
+  pieces must align to it.

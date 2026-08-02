@@ -3,7 +3,7 @@
 
 mod common;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -30,7 +30,7 @@ fn version_line() {
     assert_eq!(code(&out), 0);
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.contains("delvec 0.1.0"), "{s}");
-    assert!(s.contains("dsl 0.5.0"), "{s}");
+    assert!(s.contains("dsl 0.6.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 
@@ -810,6 +810,50 @@ fn move_unroutable_exits_3_with_dw0307() {
     assert!(stdout.contains("DW0307"), "expected DW0307:\n{stdout}");
 }
 
+/// A `move-actor` whose destination cannot be reached over the assembled geometry
+/// for the actor's footprint fails the build with exit 3 and `DW0325` (spec-0014).
+/// Reuses keep-crawl's cross-void geometry: an actor spawned in the gatehouse is
+/// walked to `anchor/objective` in the keep — two areas across the inter-area void.
+#[test]
+fn move_actor_unroutable_exits_3_with_dw0325() {
+    let pf = common::prefabs_dir();
+    let camp = tmp("ma-cross-void");
+    copy_dir(&common::keep_crawl_dir(), &camp);
+    let qp = camp.join("quests.json");
+    let q = std::fs::read_to_string(&qp)
+        .unwrap()
+        .replace("\"dsl_version\": \"0.2.0\"", "\"dsl_version\": \"0.6.0\"")
+        .replace(
+            "{ \"type\": \"open-gate\", \"anchor\": \"anchor/gate\" }",
+            "{ \"type\": \"open-gate\", \"anchor\": \"anchor/gate\" },\n            \
+             { \"type\": \"move-actor\", \"actor\": \"actor/beast\", \"to_anchor\": \"anchor/objective\" }",
+        )
+        .replace(
+            "    ]\n  }\n}",
+            "    ],\n    \"actors\": [\n      { \"id\": \"actor/beast\", \"entity\": \
+             \"minecraft:zombie\", \"anchor\": \"anchor/keeper-stand\" }\n    ]\n  }\n}",
+        );
+    std::fs::write(&qp, q).unwrap();
+    let out = tmp("ma-cross-void-out");
+    let b = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(
+        code(&b),
+        3,
+        "unroutable move-actor should exit 3: {}",
+        String::from_utf8_lossy(&b.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&b.stdout);
+    assert!(stdout.contains("DW0325"), "expected DW0325:\n{stdout}");
+}
+
 /// A cutscene whose camera dolly clips a solid block fails the build with exit 3
 /// and `DW0308` (spec-0008 addendum). Here the first camera waypoint is lifted
 /// into the shrine ceiling.
@@ -897,4 +941,640 @@ fn read_tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
     }
     walk(root, root, &mut map);
     map
+}
+
+/// spec-0013: a v0.6 ocean + boundary campaign builds, is byte-identical across a
+/// double build (determinism gate over the new generator-settings + boundary
+/// emission), ships the ocean superflat generator-settings, wires the boundary
+/// clock (`dw:cp` init, `dw:region` mirror, scheduled tick + macro return), and
+/// emits the boundary PackTests. Only the stage-1 world doc is v0.6 (per-stage
+/// versions; the v0.6 gate keys off `world`).
+#[test]
+fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
+    let pf = common::prefabs_dir();
+    let camp = tmp("v06-ocean");
+    copy_dir(&common::hello_world_dir(), &camp);
+    let world = r#"{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "world",
+  "content": {
+    "title": "The Keeper's Door",
+    "theme": "A lonely keep at the edge of the moor.",
+    "premise": "One locked door stands between you and the road home.",
+    "seed": 20260729,
+    "target_minutes": 5,
+    "horizon": "ocean",
+    "boundary": { "margin": 20 },
+    "areas": [
+      { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
+    ]
+  }
+}"#;
+    std::fs::write(camp.join("world.json"), world).unwrap();
+
+    let out_a = tmp("v06-ocean-a");
+    let out_b = tmp("v06-ocean-b");
+    for out in [&out_a, &out_b] {
+        let r = delvec(&[
+            "build",
+            camp.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--prefabs",
+            pf.to_str().unwrap(),
+        ]);
+        assert_eq!(
+            code(&r),
+            0,
+            "ocean build: {}",
+            String::from_utf8_lossy(&r.stderr)
+        );
+    }
+    let a = read_tree(&out_a);
+    let b = read_tree(&out_b);
+    assert_eq!(a.keys().collect::<Vec<_>>(), b.keys().collect::<Vec<_>>());
+    for (path, bytes) in &a {
+        assert_eq!(bytes, &b[path], "ocean byte mismatch in {path}");
+    }
+
+    // Ocean superflat generator-settings shipped (bedrock/stone/water).
+    let props = String::from_utf8(a["server/server.properties"].clone()).unwrap();
+    assert!(
+        props.contains("generator-settings={\"biome\":\"minecraft:ocean\""),
+        "expected ocean generator-settings, got:\n{props}"
+    );
+    assert!(
+        props.contains("minecraft:water"),
+        "ocean must layer water: {props}"
+    );
+
+    // Boundary clock wired in setup: dw:cp init + dw:region mirror + scheduled tick.
+    let setup =
+        String::from_utf8(a["datapack/data/hello-world/function/setup_finish.mcfunction"].clone())
+            .unwrap();
+    assert!(
+        setup.contains("data modify storage dw:cp pos set value"),
+        "dw:cp init missing: {setup}"
+    );
+    assert!(
+        setup.contains("data modify storage dw:region bounds set value"),
+        "dw:region mirror missing: {setup}"
+    );
+    assert!(
+        setup.contains("schedule function hello-world:boundary_tick 20t"),
+        "boundary clock not started: {setup}"
+    );
+
+    // The macro return teleports to the last checkpoint and shows the message.
+    let ret = String::from_utf8(
+        a["datapack/data/hello-world/function/boundary_return.mcfunction"].clone(),
+    )
+    .unwrap();
+    assert!(
+        ret.contains("$tp @s $(x) $(y) $(z)"),
+        "macro tp missing: {ret}"
+    );
+    assert!(
+        ret.contains("title @s actionbar"),
+        "actionbar message missing: {ret}"
+    );
+
+    // Boundary PackTests emitted.
+    assert!(
+        a.contains_key("packtest-datapack/data/hello-world/test/v06_boundary_return.mcfunction"),
+        "boundary return packtest missing"
+    );
+    assert!(
+        a.contains_key("packtest-datapack/data/hello-world/test/v06_boundary_inside.mcfunction"),
+        "boundary inside packtest missing"
+    );
+}
+
+/// spec-0013: absent `horizon`/`boundary` keeps a v0.5 campaign byte-identical to
+/// its pre-v0.6 output — the void generator-settings is unchanged and no boundary
+/// wiring leaks in. Guards the additive-superset promise.
+#[test]
+fn v06_absent_fields_keep_void_output_unchanged() {
+    let pf = common::prefabs_dir();
+    let out = tmp("v06-void");
+    let r = delvec(&[
+        "build",
+        common::hello_world_dir().to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&r),
+        0,
+        "void build: {}",
+        String::from_utf8_lossy(&r.stderr)
+    );
+    let tree = read_tree(&out);
+    let props = String::from_utf8(tree["server/server.properties"].clone()).unwrap();
+    assert!(
+        props.contains("generator-settings={\"biome\":\"minecraft:the_void\",\"layers\":[]}"),
+        "void generator-settings must be unchanged: {props}"
+    );
+    assert!(
+        !tree.contains_key("datapack/data/hello-world/function/boundary_tick.mcfunction"),
+        "no boundary function without a declared boundary"
+    );
+}
+
+/// A routable v0.6 campaign (patched hello-world) builds cleanly and the emitted
+/// datapack carries the actor mechanics: a NoAI/no-loot puppet summon, a per-tick
+/// move-actor tp, a `sequence` scheduling its second step at the exact tick, an
+/// `unleash` that swaps the puppet for a real-AI twin, and the on-arrive vanish
+/// (relocate-then-kill). Asserted against the concatenated function bodies.
+#[test]
+fn v06_actor_datapack_emits_the_mechanics() {
+    let search = r#"            {
+              "type": "open-gate",
+              "anchor": "anchor/door"
+            }"#;
+    let replace = r#"            { "type": "open-gate", "anchor": "anchor/door" },
+            { "type": "spawn-actor", "actor": "actor/giant" },
+            { "type": "move-actor", "actor": "actor/giant", "to_anchor": "anchor/exit",
+              "on_arrive": [ { "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" } ] },
+            { "type": "unleash-actor", "actor": "actor/giant" },
+            { "type": "sequence", "steps": [
+              { "at_ticks": 0, "effects": [ { "type": "spawn-actor", "actor": "actor/giant" } ] },
+              { "at_ticks": 40, "effects": [ { "type": "despawn-actor", "actor": "actor/giant", "style": "kill" } ] }
+            ] }"#;
+    let actors = "    ],\n    \"actors\": [\n      { \"id\": \"actor/giant\", \"entity\": \"minecraft:zombie\", \"name\": \"The Sleeper\", \"anchor\": \"anchor/keeper-stand\", \"facing\": \"east\" }\n    ]\n  }\n}";
+
+    let pf = common::prefabs_dir();
+    let camp = tmp("v06-actors");
+    copy_dir(&common::hello_world_dir(), &camp);
+    let qp = camp.join("quests.json");
+    let q = std::fs::read_to_string(&qp)
+        .unwrap()
+        .replace("\"dsl_version\": \"0.2.0\"", "\"dsl_version\": \"0.6.0\"")
+        .replace(search, replace)
+        .replace("    ]\n  }\n}", actors);
+    std::fs::write(&qp, q).unwrap();
+    let out = tmp("v06-actors-out");
+    let b = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(
+        code(&b),
+        0,
+        "v0.6 actor campaign should build: {}",
+        String::from_utf8_lossy(&b.stdout)
+    );
+
+    let fn_dir = out.join("datapack/data/hello-world/function");
+    let mut all = String::new();
+    for e in std::fs::read_dir(&fn_dir).unwrap() {
+        let p = e.unwrap().path();
+        if p.extension().and_then(|s| s.to_str()) == Some("mcfunction") {
+            all.push_str(&std::fs::read_to_string(&p).unwrap());
+            all.push('\n');
+        }
+    }
+
+    assert!(
+        all.contains("summon minecraft:zombie") && all.contains("NoAI:1b"),
+        "puppet is a NoAI zombie"
+    );
+    assert!(
+        all.contains("DeathLootTable:\"minecraft:empty\""),
+        "puppet drops no loot"
+    );
+    assert!(
+        all.contains("dw_pup_giant"),
+        "puppet carries its marker tag"
+    );
+    assert!(
+        all.contains("execute unless entity @e[tag=dw_actor_giant] run summon minecraft:zombie"),
+        "spawn-actor is idempotent"
+    );
+    assert!(
+        all.contains("tp @e[tag=dw_pup_giant]"),
+        "move-actor teleports the puppet"
+    );
+    assert!(
+        all.contains("tp @e[tag=dw_actor_giant] ~ -128 ~"),
+        "on-arrive vanish relocates before killing"
+    );
+    assert!(
+        all.contains(" 40t"),
+        "sequence schedules its second step at tick 40"
+    );
+    assert!(
+        all.contains("execute at @e[tag=dw_pup_giant,limit=1] run summon minecraft:zombie")
+            && all.contains("kill @e[tag=dw_pup_giant]"),
+        "unleash summons a twin at the puppet then removes the puppet"
+    );
+}
+
+/// spec-0013 sea-level datum: an `ocean` world places its areas at
+/// `sea_level - island waterline` (y=60) so the island tileset's authored
+/// waterline (local y=2) meets the world ocean (y=62) and its walk plane (local
+/// y=3) is the vanilla-normal one block above the sea. A `void` world is
+/// unchanged at y=64 — the byte-identity guarantee for every existing campaign.
+#[test]
+fn ocean_areas_sit_on_the_sea_level_datum_void_unchanged() {
+    let pf = common::prefabs_dir();
+
+    let place_line = |horizon: Option<&str>, name: &str| -> String {
+        let camp = tmp(name);
+        copy_dir(&common::hello_world_dir(), &camp);
+        let mut world: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap())
+                .unwrap();
+        if let Some(h) = horizon {
+            world["dsl_version"] = serde_json::json!("0.6.0");
+            let content = world["content"].as_object_mut().unwrap();
+            content.insert("horizon".into(), serde_json::json!(h));
+            content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
+        }
+        std::fs::write(
+            camp.join("world.json"),
+            serde_json::to_string_pretty(&world).unwrap(),
+        )
+        .unwrap();
+        let out = tmp(&format!("{name}-out"));
+        let r = delvec(&[
+            "build",
+            camp.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--prefabs",
+            pf.to_str().unwrap(),
+        ]);
+        assert_eq!(code(&r), 0, "build: {}", String::from_utf8_lossy(&r.stderr));
+        std::fs::read_to_string(out.join("datapack/data/hello-world/function/place_all.mcfunction"))
+            .unwrap()
+    };
+
+    let ocean = place_line(Some("ocean"), "datum-ocean");
+    assert!(
+        ocean.contains("place template hello-world:hello-room 0 60 0"),
+        "ocean areas must sit at sea_level-2 (y=60):\n{ocean}"
+    );
+    let void = place_line(None, "datum-void");
+    assert!(
+        void.contains("place template hello-world:hello-room 0 64 0"),
+        "void areas must stay at y=64 (byte-identity):\n{void}"
+    );
+}
+
+/// `DW0344`: in an `ocean` world, a placed piece whose metadata declares a
+/// waterline that does not land at sea level (y=62) is a build error — the piece
+/// would float above the sea (an unclimbable shore) or drown under it. Nothing
+/// downstream can catch this: nav, boundary, POV and PackTest all derive from the
+/// very placement that is wrong. Uses a private copy of the real prefabs dir.
+#[test]
+fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
+    let prefabs_copy = tmp("dw0344-prefabs");
+    common::copy_dir_all(&common::prefabs_dir(), &prefabs_copy);
+    // hello-room is not an island piece; declaring a waterline one block off the
+    // convention is exactly the mis-authored-datum case the check exists for.
+    let meta_path = prefabs_copy.join("hello-room.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
+    meta["waterline_y"] = serde_json::json!(3);
+    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+
+    let camp = tmp("dw0344-camp");
+    copy_dir(&common::hello_world_dir(), &camp);
+    let mut world: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
+    world["dsl_version"] = serde_json::json!("0.6.0");
+    let content = world["content"].as_object_mut().unwrap();
+    content.insert("horizon".into(), serde_json::json!("ocean"));
+    content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
+    std::fs::write(
+        camp.join("world.json"),
+        serde_json::to_string_pretty(&world).unwrap(),
+    )
+    .unwrap();
+
+    let out = tmp("dw0344-out");
+    let b = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        prefabs_copy.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(code(&b), 3, "off-level waterline should exit 3");
+    let stdout = String::from_utf8_lossy(&b.stdout);
+    assert!(stdout.contains("DW0344"), "expected DW0344:\n{stdout}");
+
+    // The same piece declaring the island convention (local y=2) lands its
+    // waterline exactly at sea level and builds clean.
+    meta["waterline_y"] = serde_json::json!(2);
+    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+    let out_ok = tmp("dw0344-out-ok");
+    let ok = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out_ok.to_str().unwrap(),
+        "--prefabs",
+        prefabs_copy.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&ok),
+        0,
+        "convention waterline must build: {}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+
+    // A `void` world is not an ocean, so the same metadata is not checked there.
+    let void_camp = tmp("dw0344-void-camp");
+    copy_dir(&common::hello_world_dir(), &void_camp);
+    let mut m2: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
+    m2["waterline_y"] = serde_json::json!(3);
+    std::fs::write(&meta_path, serde_json::to_string_pretty(&m2).unwrap()).unwrap();
+    let out_void = tmp("dw0344-void-out");
+    let v = delvec(&[
+        "build",
+        void_camp.to_str().unwrap(),
+        "-o",
+        out_void.to_str().unwrap(),
+        "--prefabs",
+        prefabs_copy.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&v),
+        0,
+        "void world must ignore waterline metadata: {}",
+        String::from_utf8_lossy(&v.stderr)
+    );
+}
+
+/// `DW0345` + the entry-anchor alias. Every campaign must resolve an ENTRY POINT —
+/// the one cell that is `setworldspawn`, the class-apply teleport, the first-join
+/// placement and the `dw:cp` seed. The shipped tileset library spells that anchor
+/// two ways (`spawn` in the keep/cave/test tilesets, `entry` in the island one),
+/// so the compiler owns the resolution; resolving NEITHER used to compile clean
+/// and ship a delve with no start, which a dedicated server papers over (vanilla
+/// spawn search finds the surface) and the integrated singleplayer server does
+/// not (it drops the join at the build floor, inside stone).
+#[test]
+fn missing_entry_anchor_exits_3_with_dw0345_and_entry_is_an_alias_of_spawn() {
+    let prefabs_copy = tmp("dw0345-prefabs");
+    common::copy_dir_all(&common::prefabs_dir(), &prefabs_copy);
+    let meta_path = prefabs_copy.join("hello-room.json");
+    let read_meta = || -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap()
+    };
+    // Rename the entry anchor to the island tileset's spelling: still resolves.
+    let rename_entry_anchor_to = |name: &str| {
+        let mut meta = read_meta();
+        let anchors = meta["anchors"].as_object_mut().unwrap();
+        let v = anchors
+            .remove("spawn")
+            .or_else(|| anchors.remove("entry"))
+            .or_else(|| anchors.remove("lobby"))
+            .expect("hello-room declares an entry anchor");
+        anchors.insert(name.into(), v);
+        std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+    };
+
+    rename_entry_anchor_to("entry");
+    let out_alias = tmp("dw0345-out-alias");
+    let alias = delvec(&[
+        "build",
+        common::hello_world_dir().to_str().unwrap(),
+        "-o",
+        out_alias.to_str().unwrap(),
+        "--prefabs",
+        prefabs_copy.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&alias),
+        0,
+        "`entry` must resolve exactly like `spawn`: {}",
+        String::from_utf8_lossy(&alias.stderr)
+    );
+    let setup_finish = std::fs::read_to_string(
+        out_alias.join("datapack/data/hello-world/function/setup_finish.mcfunction"),
+    )
+    .unwrap();
+    assert!(
+        setup_finish.contains("setworldspawn "),
+        "the alias must still drive setworldspawn:\n{setup_finish}"
+    );
+
+    // Neither spelling → hard build error, not a silently start-less delve.
+    rename_entry_anchor_to("lobby");
+    let out = tmp("dw0345-out");
+    let b = delvec(&[
+        "build",
+        common::hello_world_dir().to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        prefabs_copy.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(code(&b), 3, "a campaign with no entry anchor must exit 3");
+    let stdout = String::from_utf8_lossy(&b.stdout);
+    assert!(stdout.contains("DW0345"), "expected DW0345:\n{stdout}");
+}
+
+// ---------------------------------------------------------------------------
+// `l10n-inventory` (external-translation tooling contract, docs/reference/i18n.md)
+// ---------------------------------------------------------------------------
+
+/// Parse `l10n-inventory` stdout into its JSON document.
+fn inventory_doc(campaign: &Path, lang: &str) -> serde_json::Value {
+    let out = delvec(&["l10n-inventory", campaign.to_str().unwrap(), "--lang", lang]);
+    assert_eq!(
+        code(&out),
+        0,
+        "l10n-inventory: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).expect("l10n-inventory emits one JSON document")
+}
+
+fn inventory_keys(doc: &serde_json::Value) -> BTreeSet<String> {
+    doc["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["key"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// The contract that makes external translation tooling safe: the key set
+/// `l10n-inventory` reports is **exactly** the key set the coverage check
+/// (`DW0180`) demands. Proven against the machinery itself — empty the sidecar,
+/// collect every key `validate` names as missing, and compare sets. If either
+/// side ever grows a key the other lacks, a translated campaign would either fail
+/// validation or ship an untranslated string, and this test fails first.
+#[test]
+fn l10n_inventory_is_exactly_the_dw0180_coverage_set() {
+    let pf = common::prefabs_dir();
+    let camp = tmp("l10n-inventory-coverage");
+    common::materialize_from(&common::keep_trial_dir(), &serde_json::json!({}), &camp);
+    mutate_sidecar(&camp, |c| c.clear());
+
+    let v = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(code(&v), 1, "an empty sidecar must fail coverage");
+    let demanded: BTreeSet<String> = String::from_utf8_lossy(&v.stdout)
+        .lines()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .filter(|d| d["code"] == "DW0180")
+        .filter_map(|d| {
+            let msg = d["message"].as_str()?;
+            let (_, rest) = msg.split_once("inventory key `")?;
+            let (key, _) = rest.split_once('`')?;
+            Some(key.to_string())
+        })
+        .collect();
+    assert!(!demanded.is_empty(), "expected DW0180 keys");
+
+    let reported = inventory_keys(&inventory_doc(&camp, "zh-cn"));
+    assert_eq!(
+        reported, demanded,
+        "l10n-inventory must report exactly the keys DW0180 demands"
+    );
+}
+
+/// Inventory rows carry what a translator needs: canonical English, the NPC whose
+/// dialogue tree the line belongs to (resolving to a declared NPC — the guard
+/// against key-scheme drift), and the translation the current sidecar already has
+/// (so a re-run only fills gaps). For a language with no sidecar, every row is
+/// untranslated.
+#[test]
+fn l10n_inventory_carries_speakers_and_existing_translations() {
+    let kt = common::keep_trial_dir();
+    let doc = inventory_doc(&kt, "zh-cn");
+    assert_eq!(doc["campaign_id"], "keep-trial");
+    assert_eq!(doc["declared"], true);
+    assert_eq!(doc["sidecar_present"], true);
+
+    let npc_ids: BTreeSet<&str> = doc["npcs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n["id"].as_str().unwrap())
+        .collect();
+    assert!(npc_ids.contains("keeper"), "{npc_ids:?}");
+    // Persona context a translator needs is present; plot-only fields are not.
+    let keeper = doc["npcs"].as_array().unwrap()[0].clone();
+    assert!(keeper["speech_style"].is_string());
+    assert!(
+        keeper.get("secret").is_none(),
+        "persona secret must not leak"
+    );
+
+    let mut speakers = 0;
+    for e in doc["entries"].as_array().unwrap() {
+        let key = e["key"].as_str().unwrap();
+        assert!(e["en"].is_string(), "{key} has no English source");
+        assert!(
+            e["existing"].is_string(),
+            "{key}: the full keep-trial sidecar must round-trip"
+        );
+        if let Some(sp) = e["speaker"].as_str() {
+            speakers += 1;
+            assert!(npc_ids.contains(sp), "{key}: unknown speaker `{sp}`");
+        }
+        assert_eq!(
+            key.starts_with("dlg.") || key.starts_with("npc."),
+            e["speaker"].is_string(),
+            "{key}: speaker presence must follow the key scheme"
+        );
+    }
+    assert!(speakers > 0, "keep-trial has dialogue");
+
+    // A language with no sidecar: same keys, nothing translated yet.
+    let fresh = inventory_doc(&kt, "ja");
+    assert_eq!(fresh["sidecar_present"], false);
+    assert_eq!(fresh["declared"], false);
+    assert_eq!(inventory_keys(&fresh), inventory_keys(&doc));
+    for e in fresh["entries"].as_array().unwrap() {
+        assert!(e.get("existing").is_none(), "{}", e["key"]);
+    }
+}
+/// A warning-tier diagnostic (`DW0330`) is **reported but does not fail the run**:
+/// `delvec` exits non-zero only on `Severity::Error`. This exit-code contract is what
+/// makes an advisory rule possible at all — without it a warning would be an error
+/// wearing a different label. Errors are unaffected (see the `DW0180`/`DW0181` test,
+/// which still exits 1).
+#[test]
+fn dw0330_warning_reports_but_does_not_fail_the_build() {
+    let pf = common::prefabs_dir();
+    let dir = tmp("textfit-warning");
+
+    let mut quests: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(common::hello_world_dir().join("quests.json")).unwrap(),
+    )
+    .unwrap();
+    // `narrate` is a v0.4 effect; the hello-world fixture is v0.3.
+    quests["dsl_version"] = serde_json::json!("0.6.0");
+    // An on-screen title far wider than any screen renders.
+    quests["content"]["quests"][0]["on_complete"]
+        .as_array_mut()
+        .unwrap()
+        .insert(
+            0,
+            serde_json::json!({
+                "type": "narrate",
+                "style": "title",
+                "text": "A Title So Long That No Screen Anywhere Could Ever Hope To Show It"
+            }),
+        );
+    common::materialize_from(
+        &common::hello_world_dir(),
+        &serde_json::json!({ "documents": { "quests": quests } }),
+        &dir,
+    );
+
+    let out = delvec(&[
+        "validate",
+        dir.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(s.contains("DW0330"), "expected DW0330 to be reported:\n{s}");
+    assert!(
+        s.contains("warning"),
+        "DW0330 must render at warning severity:\n{s}"
+    );
+    assert_eq!(code(&out), 0, "a warning must not fail validate:\n{s}");
+
+    // …and the same holds through a full build.
+    let built = tmp("textfit-warning-out");
+    let out = delvec(&[
+        "build",
+        dir.to_str().unwrap(),
+        "-o",
+        built.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&out),
+        0,
+        "a warning must not fail build:\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
 }

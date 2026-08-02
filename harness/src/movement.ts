@@ -12,11 +12,14 @@ export interface ControlBot {
 /**
  * The subset of a mineflayer-pathfinder `Movements` this helper tunes. `canDig`
  * and `allow1by1towers` are always locked off (adventure mode: never break or
- * pillar); `allowSprinting` is turned off only for a sneak leg.
+ * pillar); `canOpenDoors` is turned ON (opening a door/fence-gate is a use
+ * interaction vanilla permits in adventure mode — see {@link configureLeg});
+ * `allowSprinting` is turned off only for a sneak leg.
  */
 export interface LegMovements {
   canDig: boolean;
   allow1by1towers: boolean;
+  canOpenDoors: boolean;
   allowSprinting: boolean;
 }
 
@@ -68,6 +71,14 @@ export function allowNonCollidingEntities(movements: PassableMovements): void {
  * restore function that clears the sneak control state again; the caller MUST invoke
  * it (in a `finally`) so a later non-sneak leg is not left crouched. A non-sneak leg
  * returns a no-op restore.
+ *
+ * `canOpenDoors` is enabled: some delve areas are entered only through a closed
+ * door or fence gate (the ram pen's only opening is its oak_fence_gate). Opening one
+ * is a right-click USE interaction — not a block break or place — which vanilla
+ * permits in adventure mode, so it is the same action a human player must perform,
+ * not a world mutation. mineflayer-pathfinder defaults it off (flaky on some
+ * servers); the delve genuinely requires it, so the leg turns it on and the run
+ * proves it works on the pinned server.
  */
 export function configureLeg(
   bot: ControlBot,
@@ -76,6 +87,7 @@ export function configureLeg(
 ): () => void {
   movements.canDig = false; // adventure mode: never break blocks
   movements.allow1by1towers = false;
+  movements.canOpenDoors = true; // open doors/fence-gates (adventure-legal use, not a mutation)
   if (!sneak) {
     return () => {};
   }

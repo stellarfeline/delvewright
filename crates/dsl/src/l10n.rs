@@ -31,6 +31,20 @@
 //! | `dlg.<npc>.<node>.text` | each stage-6 dialogue node `text` |
 //! | `dlg.<npc>.<node>.opt.<i>.label` | each dialogue option `label` |
 //! | `wave.<wave>.mob.<i>.name` | a wave mob's custom `name` (only if set) |
+//! | `fx.…​.narrate` / `fx.…​.give` | a `narrate` line / named `give-item` in an effect list |
+//!
+//! ## Nested effects (DSL v0.6)
+//!
+//! Effect strings nested inside a `sequence` step or a lifecycle bundle
+//! (`on_respawn`/`on_caught`/`on_arrive`) are player-visible too, so they are
+//! inventoried under **position-derived** child keys: the parent effect's `fx.…`
+//! key, then a stable segment ([`crate::stages::QuestEffect::nested_effect_lists_keyed_mut`])
+//! — `seq.<step>` for a sequence step, `respawn`/`caught`/`arrive` for the bundles —
+//! then the effect's index in that list, then the leaf (`.narrate`/`.give`).
+//! Example: a narrate in sequence step 1, effect 0 of `on_objective_complete`
+//! effect 0 → `fx.<quest>.oc.<obj>.0.seq.1.0.narrate`. Nesting is arbitrary-depth
+//! (a `move-actor.on_arrive` inside a `sequence` step nests both segments). Keys are
+//! purely position-derived → deterministic and stable across builds (ADR-0006).
 //!
 //! Player-visible strings only. Deliberately **excluded** (authoring context the
 //! player never sees, so translating them is pointless and out of scope): world
@@ -44,7 +58,7 @@ use serde::{Deserialize, Serialize};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{Campaign, SUPPORTED_DSL_VERSIONS, is_supported_version};
 use crate::ids::CampaignId;
-use crate::stages::QuestEffect;
+use crate::stages::{NarrateStyle, QuestEffect};
 
 /// Walk the player-visible strings of a single quest effect (DSL v0.4): a
 /// `narrate` line and a named `give-item`'s display name. `keybase` is the
@@ -54,6 +68,23 @@ fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, 
         QuestEffect::Narrate { text, .. } => f(&format!("{keybase}.narrate"), text),
         QuestEffect::GiveItem { name: Some(n), .. } => f(&format!("{keybase}.give"), n),
         _ => {}
+    }
+}
+
+/// Walk the player-visible strings of `eff` **and every effect nested inside it**
+/// (DSL v0.6): a `narrate`/`give-item` inside a `sequence` step or an
+/// `on_respawn`/`on_caught`/`on_arrive` bundle is player-visible and must enter the
+/// inventory (and be localized on the emission path), else it ships English-only in
+/// a translated build. Child keys extend `keybase` with the effect's stable key
+/// segment ([`QuestEffect::nested_effect_lists_keyed_mut`]) and the effect's index
+/// within that list, e.g. `<keybase>.seq.<step>.<j>.narrate` for a narrate in
+/// sequence step `<step>`, effect `<j>`. Deterministic and stable across builds.
+fn effect_strings_deep(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, &mut String)) {
+    effect_strings(eff, keybase, f);
+    for (seg, list) in eff.nested_effect_lists_keyed_mut() {
+        for (j, inner) in list.iter_mut().enumerate() {
+            effect_strings_deep(inner, &format!("{keybase}.{seg}.{j}"), f);
+        }
     }
 }
 
@@ -95,6 +126,14 @@ fn local(id: &str) -> &str {
     id.split_once('/').map(|(_, r)| r).unwrap_or(id)
 }
 
+/// The local part of a type-prefixed DSL id, exactly as the key scheme derives it
+/// (`npc/keeper` → `keeper`). Public so a consumer that pairs inventory keys back
+/// with their source objects (`delvec l10n-inventory`, matching `dlg.<npc>.…` keys
+/// to the NPC that speaks them) derives the same segment the keys are built from.
+pub fn local_id(id: &str) -> &str {
+    local(id)
+}
+
 /// Walk every player-visible string in `c` in a fixed, deterministic order,
 /// invoking `f(key, &mut value)` for each. The single traversal shared by
 /// [`inventory`] and [`localize`] — they cannot drift.
@@ -104,6 +143,14 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
     for area in &mut c.world.content.areas {
         let key = format!("area.{}.name", local(area.id.as_str()));
         f(&key, &mut area.name);
+    }
+    // Stage 1 — boundary return message (v0.6, only when authored). The compiler's
+    // default English is baked at emit time, so it is not inventoried; an authored
+    // message is translated like every other player-facing string.
+    if let Some(b) = c.world.content.boundary.as_mut()
+        && let Some(msg) = b.message.as_mut()
+    {
+        f("world.boundary.message", msg);
     }
     // Stage 3 — class names/blurbs + optional kit item display names.
     for class in &mut c.classes.content.classes {
@@ -144,18 +191,18 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
         for (oid, effs) in &mut q.on_objective_complete {
             let ol = local(oid.as_str()).to_string();
             for (i, eff) in effs.iter_mut().enumerate() {
-                effect_strings(eff, &format!("fx.{ql}.oc.{ol}.{i}"), f);
+                effect_strings_deep(eff, &format!("fx.{ql}.oc.{ol}.{i}"), f);
             }
         }
         for (i, eff) in q.on_complete.iter_mut().enumerate() {
-            effect_strings(eff, &format!("fx.{ql}.done.{i}"), f);
+            effect_strings_deep(eff, &format!("fx.{ql}.done.{i}"), f);
         }
     }
     // Stage 5 — v0.4 environment-trigger effect strings.
     for t in &mut c.quests.content.triggers {
         let tl = local(t.id.as_str()).to_string();
         for (i, eff) in t.effects.iter_mut().enumerate() {
-            effect_strings(eff, &format!("fx.trig.{tl}.{i}"), f);
+            effect_strings_deep(eff, &format!("fx.trig.{tl}.{i}"), f);
         }
     }
     // Stage 6 — dialogue node text + option labels.
@@ -187,6 +234,210 @@ pub fn inventory(c: &Campaign) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     each_string(&mut c2, &mut |key, value| {
         out.insert(key.to_string(), value.clone());
+    });
+    out
+}
+
+/// The NPC an inventory key belongs to (its **local** id), when the key scheme
+/// encodes one: `dlg.<npc>.…` (that NPC's dialogue tree — `.text` is the NPC's own
+/// line, `.opt.<i>.label` the player's reply *within* it) and `npc.<npc>.name`.
+/// Returns `None` for every other key kind.
+///
+/// Lives beside [`each_string`] — the traversal that *defines* the key scheme — so
+/// the two cannot drift silently (a CLI test asserts every speaker derived from a
+/// real campaign's inventory resolves to a declared NPC). Consumed by
+/// `delvec l10n-inventory`, which hands a translator the speaking character's
+/// persona (`speech_style` above all) alongside the English line.
+pub fn key_speaker(key: &str) -> Option<&str> {
+    let (kind, rest) = key.split_once('.')?;
+    match kind {
+        "dlg" | "npc" => rest.split('.').next(),
+        _ => None,
+    }
+}
+
+/// One `narrate` `art` occurrence (DSL v0.6, spec-0014): its stage-doc path (for
+/// diagnostics), its l10n inventory key, and the canonical English text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArtNarrate {
+    /// JSON-pointer-ish path within the `quests` stage doc.
+    pub path: String,
+    /// The l10n inventory key (`fx.…​.narrate`) — always present, since every
+    /// `narrate` lives in an inventoried effect position.
+    pub key: String,
+    /// The canonical English text.
+    pub text: String,
+}
+
+/// Every `narrate` effect using the v0.6 `art` style, in a fixed deterministic
+/// order. Its l10n `key` is derived by the **same** traversal/keying as
+/// [`inventory`]/[`each_string`], so the compiler's art-font glyph check
+/// (`DW0328`) can look each art string up in every declared-language sidecar.
+/// Every art narrate lives in a quest `on_objective_complete`/`on_complete` or an
+/// environment trigger — all inventoried — so each `key` is guaranteed present in
+/// a fully-covered sidecar.
+pub fn art_narrates(c: &Campaign) -> Vec<ArtNarrate> {
+    let mut out = Vec::new();
+    each_effect_ref(c, &mut |path, keybase, eff| {
+        if let Some(text) = eff.narrate_art_text() {
+            out.push(ArtNarrate {
+                path: format!("{path}/text"),
+                key: format!("{keybase}.narrate"),
+                text: text.to_string(),
+            });
+        }
+    });
+    out
+}
+
+/// One on-screen `narrate` occurrence — `title`, `subtitle` or `art` — its stage-doc
+/// path, its l10n inventory key, its style, and the canonical English text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScreenNarrate {
+    /// JSON-pointer-ish path within the `quests` stage doc.
+    pub path: String,
+    /// The l10n inventory key (`fx.…​.narrate`).
+    pub key: String,
+    /// Which on-screen channel vanilla draws it in — this selects the width budget.
+    pub style: NarrateStyle,
+    /// The canonical English text.
+    pub text: String,
+}
+
+/// Every `narrate` effect vanilla draws **on screen** (`title` / `subtitle` / `art`),
+/// in a fixed deterministic order. Like [`art_narrates`], each `key` is derived by the
+/// **same** traversal/keying as [`inventory`]/[`each_string`], so the compiler's
+/// text-fit check (`DW0330`) can look every string up in each declared-language
+/// sidecar and report it under the offending locale and key. `chat` narrates are
+/// excluded: chat wraps and scrolls, so it has no width budget.
+pub fn on_screen_narrates(c: &Campaign) -> Vec<ScreenNarrate> {
+    let mut out = Vec::new();
+    each_effect_ref(c, &mut |path, keybase, eff| {
+        if let Some((style, text)) = eff.narrate_on_screen() {
+            out.push(ScreenNarrate {
+                path: format!("{path}/text"),
+                key: format!("{keybase}.narrate"),
+                style,
+                text: text.to_string(),
+            });
+        }
+    });
+    out
+}
+
+/// Visit every quest/trigger effect — **top-level and every transitively-nested**
+/// one (a `sequence` step, an `on_respawn`/`on_caught`/`on_arrive` bundle) — in the
+/// fixed inventory order, invoking `f(path, keybase, effect)`. `path` is the
+/// effect's JSON-pointer within the `quests` stage doc (for diagnostics); `keybase`
+/// is its l10n key prefix, derived by the **same** position-keying as
+/// [`each_string`]/[`effect_strings_deep`] (so an art narrate's key matches its
+/// inventory key, and a nested `play-sound`/`give-item` ref is reported at a precise
+/// path). Shared by [`art_narrates`], [`sound_refs`] and [`play_sound_actor_refs`]
+/// so the consumer checks (`DW0326`/`DW0328`/`DW0335`) descend nested effects
+/// exactly as emission and the l10n inventory already do (task: nested-effect
+/// consumer recursion). Top-level positions keep their prior path/key, so a
+/// nesting-free campaign is unaffected; nested refs are additive.
+fn each_effect_ref<'a>(c: &'a Campaign, f: &mut dyn FnMut(&str, &str, &'a QuestEffect)) {
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        let ql = local(q.id.as_str());
+        for (oid, effs) in &q.on_objective_complete {
+            let ol = local(oid.as_str());
+            for (i, eff) in effs.iter().enumerate() {
+                effect_deep(
+                    eff,
+                    &format!(
+                        "/content/quests/{qi}/on_objective_complete/{}/{i}",
+                        oid.as_str()
+                    ),
+                    &format!("fx.{ql}.oc.{ol}.{i}"),
+                    f,
+                );
+            }
+        }
+        for (i, eff) in q.on_complete.iter().enumerate() {
+            effect_deep(
+                eff,
+                &format!("/content/quests/{qi}/on_complete/{i}"),
+                &format!("fx.{ql}.done.{i}"),
+                f,
+            );
+        }
+    }
+    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
+        let tl = local(t.id.as_str());
+        for (i, eff) in t.effects.iter().enumerate() {
+            effect_deep(
+                eff,
+                &format!("/content/triggers/{ti}/effects/{i}"),
+                &format!("fx.trig.{tl}.{i}"),
+                f,
+            );
+        }
+    }
+}
+
+/// Visit `eff` and every transitively-nested effect (depth-first, pre-order),
+/// threading the JSON-pointer `path` and l10n `keybase` through each nested list via
+/// [`QuestEffect::nested_effect_lists_labeled`] (path segment + key segment + the
+/// per-effect index). The key segments match [`effect_strings_deep`] exactly.
+fn effect_deep<'a>(
+    eff: &'a QuestEffect,
+    path: &str,
+    keybase: &str,
+    f: &mut dyn FnMut(&str, &str, &'a QuestEffect),
+) {
+    f(path, keybase, eff);
+    for (pseg, kseg, list) in eff.nested_effect_lists_labeled() {
+        for (j, inner) in list.iter().enumerate() {
+            effect_deep(
+                inner,
+                &format!("{path}/{pseg}/{j}"),
+                &format!("{keybase}.{kseg}.{j}"),
+                f,
+            );
+        }
+    }
+}
+
+/// One vanilla sound-event reference (DSL v0.6/v0.4): its stage-doc path and the
+/// referenced id, for registry validation (`DW0326`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SoundRef {
+    /// JSON-pointer-ish path within the `quests` stage doc.
+    pub path: String,
+    /// The referenced sound-event id (`minecraft:` prefix optional).
+    pub sound: String,
+}
+
+/// Every vanilla sound-event id referenced by a quest/trigger effect — a
+/// `play-sound`'s `sound` (v0.6) and a `narrate`'s optional `sound` (v0.4) — in a
+/// fixed deterministic order, for `DW0326` validation.
+pub fn sound_refs(c: &Campaign) -> Vec<SoundRef> {
+    let mut out = Vec::new();
+    each_effect_ref(c, &mut |path, _key, eff| {
+        for (sub, sound) in eff.sound_refs() {
+            out.push(SoundRef {
+                path: format!("{path}/{sub}"),
+                sound: sound.to_string(),
+            });
+        }
+    });
+    out
+}
+
+/// Every `play-sound` effect using the deferred `at: actor` target, in a fixed
+/// order, as `(path, actor-id)` pairs. The actor variant is accepted by the
+/// schema but rejected (`DW0335`) until the actors surface (spec-0014 `actors[]`)
+/// lands; the compiler applies that check. `SoundRef::sound` carries the actor id.
+pub fn play_sound_actor_refs(c: &Campaign) -> Vec<SoundRef> {
+    let mut out = Vec::new();
+    each_effect_ref(c, &mut |path, _key, eff| {
+        if let Some(actor) = eff.play_sound_actor() {
+            out.push(SoundRef {
+                path: format!("{path}/at/actor"),
+                sound: actor.to_string(),
+            });
+        }
     });
     out
 }
