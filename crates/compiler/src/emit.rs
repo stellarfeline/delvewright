@@ -1639,9 +1639,13 @@ fn emit_functions(
             if v03 && !activation_commands(plan, q_area, o).is_empty() {
                 body.extend(completion_cleanup(o));
             }
-            for eff in objective_effects(c, oid) {
-                emit_gated_effect(plan, eff, &mut body);
-            }
+            // `complete_<obj>` is dispatched `as @a` from `tick`, so this bundle
+            // runs with the acting player as `@s` (see `Executor::Player`).
+            body.extend(emit_effect_bundle(
+                plan,
+                objective_effects(c, oid),
+                Executor::Player,
+            ));
             // Inter-area transport: if completing this objective moves the player
             // into a different area on the critical path, teleport them to that
             // area's entry spawn (areas are AREA_SPACING apart across void). Runs
@@ -1682,9 +1686,7 @@ fn emit_functions(
             "scoreboard players set @s {} 1",
             quest_score(q.id.as_str())
         ));
-        for eff in &q.on_complete {
-            emit_gated_effect(plan, eff, &mut done);
-        }
+        done.extend(emit_effect_bundle(plan, &q.on_complete, Executor::Player));
         // activate quests triggered by this quest's completion
         for dep in &c.quests.content.quests {
             if let Trigger::QuestComplete { quest } = &dep.trigger
@@ -2061,6 +2063,156 @@ fn emit_gated_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
     for line in inner {
         body.push(format!("execute {guard}run {line}"));
     }
+}
+
+// ---------------------------------------------------------------------------
+// Effect bundles and their command source (task: scheduled-executor fix)
+// ---------------------------------------------------------------------------
+
+/// The command source a generated effect bundle is entered under.
+///
+/// **The bug this models (AUDIT-P0).** Vanilla's `schedule function …` re-invokes
+/// a function with the **server** command source: no executor, so `@s` resolves
+/// to nothing and every `@s`-addressed command silently fails (a scheduled
+/// `scoreboard players set @s dw.f_hidden 1` sets nobody's flag, and the
+/// objective it gates never unlocks — the island's "Get Into the Shadows"
+/// soft-lock). Three generated bundles are only ever reached that way: a
+/// `move-npc`/`move-actor` `on_arrive` (fired from the scheduled walk driver)
+/// and every `sequence` step function (fired from the scheduled timeline). They
+/// are emitted with [`Executor::Server`]; every other bundle keeps
+/// [`Executor::Player`] and stays byte-identical.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Executor {
+    /// Entered from a per-player dispatch (`complete_<obj>` / `trig_<id>` /
+    /// `cp_on_respawn_<i>` / `stealth_caught_<i>` are all entered `as @a`/`as
+    /// @s`), so `@s` is the acting player and effects are emitted verbatim.
+    Player,
+    /// Entered from the scheduler (`schedule function …`) — the server command
+    /// source, with no `@s`. Per-player effects must re-establish the party
+    /// executor themselves; global effects must NOT (they would multi-fire).
+    Server,
+}
+
+/// Does this effect's emitted commands address the **acting player** (`@s`)?
+///
+/// This is the multiplicity contract of the scheduled-executor fix: a
+/// player-scoped effect runs once per player (`execute as @a … run`, exactly
+/// what a top-level bundle gets from its `as @a` dispatch, at the same —
+/// unmoved — command position); a global effect runs exactly once, because a
+/// blanket `as @a` around a whole bundle would fire every `fill`, `summon`,
+/// `schedule` and driver start once per player.
+///
+/// Deliberately an exhaustive match with no wildcard arm: a new effect verb must
+/// state its executor scope here or the compiler refuses to build.
+fn effect_is_player_scoped(eff: &QuestEffect) -> bool {
+    match eff {
+        // Per-player: every emitted command names `@s`, or calls a function
+        // whose body does (`campaign_complete`).
+        QuestEffect::CampaignComplete
+        | QuestEffect::GiveItem { .. }
+        | QuestEffect::SetFlag { .. }
+        | QuestEffect::Narrate { .. }
+        | QuestEffect::PlaySound { .. }
+        | QuestEffect::DamagePlayers { .. } => true,
+        // Global: world edits, entity commands, dimension-wide cuts, and calls
+        // into generated functions that are themselves party-wide or
+        // server-safe (`spawn_<wave>`, `spawn_actor_<id>`, `spawn_npc_<id>`,
+        // `unleash_<id>`, the `mv_`/`ma_` driver starts, `cs_<key>`,
+        // `stealth_begin_<i>`, and `seq_<key>` — whose step functions are
+        // themselves emitted server-source-safe).
+        QuestEffect::OpenGate { .. }
+        | QuestEffect::CloseGate { .. }
+        | QuestEffect::SpawnWave { .. }
+        | QuestEffect::SetBlock { .. }
+        | QuestEffect::DespawnNpc { .. }
+        | QuestEffect::MoveNpc { .. }
+        | QuestEffect::Cutscene { .. }
+        | QuestEffect::SetTime { .. }
+        | QuestEffect::SetWeather { .. }
+        | QuestEffect::SetCheckpoint { .. }
+        | QuestEffect::BeginStealth { .. }
+        | QuestEffect::EndStealth
+        | QuestEffect::SpawnActor { .. }
+        | QuestEffect::DespawnActor { .. }
+        | QuestEffect::MoveActor { .. }
+        | QuestEffect::UnleashActor { .. }
+        | QuestEffect::Sequence { .. }
+        | QuestEffect::SpawnNpc { .. } => false,
+    }
+}
+
+/// Splice an `execute` prefix (already space-terminated, e.g. `as @a if score @s
+/// dw.f_x matches 1 `) onto one emitted command, folding into a leading
+/// `execute` when there is one rather than nesting a second `execute … run
+/// execute …`.
+fn with_execute_prefix(prefix: &str, line: String) -> String {
+    if prefix.is_empty() {
+        return line;
+    }
+    match line.strip_prefix("execute ") {
+        Some(rest) => format!("execute {prefix}{rest}"),
+        None => format!("execute {prefix}run {line}"),
+    }
+}
+
+/// Emit one effect of a bundle entered with the **server** command source.
+///
+/// Per-player effects are re-bound to the party (`as @a`) so each player is the
+/// `@s` of the effect's own commands — the same executor and the same (unmoved)
+/// command position a top-level `execute as @a … run function complete_<obj>`
+/// gives them. Global effects are emitted bare, so they fire exactly once.
+///
+/// The per-effect flag gate (v0.6) follows the executor: under `as @a` it keeps
+/// its per-player spelling (`if score @s dw.f_<flag> matches 1`); on a global
+/// effect there is no player to ask, so it degrades to the party predicate the
+/// trigger layer already uses — `if entity @a[scores={dw.f_<flag>=1..}]` ("any
+/// player holds it") and `unless entity @a[scores={…}]` ("no player holds it").
+/// Note that these bundles previously dropped the gate entirely (they called
+/// `emit_quest_effect`, not `emit_gated_effect`), so a gated effect inside an
+/// `on_arrive`/`sequence` step fired unconditionally.
+fn emit_gated_effect_server(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
+    let per_player = effect_is_player_scoped(eff);
+    let mut inner: Vec<String> = Vec::new();
+    emit_quest_effect(plan, eff, &mut inner);
+    let mut prefix = String::new();
+    if per_player {
+        prefix.push_str("as @a ");
+    }
+    for f in eff.requires_flags() {
+        let score = plan::flag_score(f.as_str());
+        prefix.push_str(&if per_player {
+            format!("if score @s {score} matches 1 ")
+        } else {
+            format!("if entity @a[scores={{{score}=1..}}] ")
+        });
+    }
+    for f in eff.forbids_flags() {
+        let score = plan::flag_score(f.as_str());
+        prefix.push_str(&if per_player {
+            format!("unless score @s {score} matches 1 ")
+        } else {
+            format!("unless entity @a[scores={{{score}=1..}}] ")
+        });
+    }
+    for line in inner {
+        body.push(with_execute_prefix(&prefix, line));
+    }
+}
+
+/// Emit a whole effect bundle under `exec` (see [`Executor`]).
+fn emit_effect_bundle<'a>(
+    plan: &Plan,
+    effects: impl IntoIterator<Item = &'a QuestEffect>,
+    exec: Executor,
+) -> Vec<String> {
+    let mut body: Vec<String> = Vec::new();
+    for e in effects {
+        match exec {
+            Executor::Player => emit_gated_effect(plan, e, &mut body),
+            Executor::Server => emit_gated_effect_server(plan, e, &mut body),
+        }
+    }
+    body
 }
 
 /// Emit a quest effect's commands into `body`.
@@ -2988,10 +3140,9 @@ fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, Stri
         out.push((format!("mv_tick_{bare}"), lines(&tick)));
 
         if !on_arrive.is_empty() {
-            let mut arrive: Vec<String> = Vec::new();
-            for e in on_arrive {
-                emit_quest_effect(plan, e, &mut arrive);
-            }
+            // Server command source: the driver that calls this reached us from
+            // `schedule`, so there is no `@s` (see `Executor`).
+            let arrive = emit_effect_bundle(plan, on_arrive, Executor::Server);
             out.push((format!("mv_arrive_{bare}"), lines(&arrive)));
         }
     }
@@ -3185,10 +3336,9 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
         out.push((format!("ma_tick_{bare}"), lines(&tick)));
 
         if !on_arrive.is_empty() {
-            let mut arrive: Vec<String> = Vec::new();
-            for e in on_arrive {
-                emit_quest_effect(plan, e, &mut arrive);
-            }
+            // Server command source (see `Executor`): `ma_tick_<bare>` runs from
+            // the scheduler, so `@s` is unbound in everything it calls.
+            let arrive = emit_effect_bundle(plan, on_arrive, Executor::Server);
             out.push((format!("ma_arrive_{bare}"), lines(&arrive)));
         }
     }
@@ -3224,10 +3374,14 @@ fn sequence_fns(plan: &Plan) -> Vec<(String, String)> {
         }
         out.push((base.clone(), lines(&start)));
         for (i, step) in steps.iter().enumerate() {
-            let mut b: Vec<String> = Vec::new();
-            for e in &step.effects {
-                emit_quest_effect(plan, e, &mut b);
-            }
+            // EVERY step is emitted server-source-safe, not just the scheduled
+            // ones: a timeline whose `at_ticks: 0` step behaved differently from
+            // its `at_ticks: 20` step would be a trap, and the start function is
+            // itself reachable from a scheduled bundle (a `sequence` nested in an
+            // `on_arrive`). Uniformity is what makes `seq_<key>` a *global*
+            // effect everywhere (see `effect_is_player_scoped`): its per-player
+            // beats address the party, never one acting player.
+            let b = emit_effect_bundle(plan, &step.effects, Executor::Server);
             out.push((format!("{base}_{i}"), lines(&b)));
         }
     }
@@ -4731,6 +4885,137 @@ fn emit_packtest(
     // v0.6: trap payload loads into the dispenser; a disarm empties it (spec-0011).
     // Emits nothing when the campaign declares no traps.
     emit_trap_packtests(plan, out);
+
+    // The scheduled-executor contract (AUDIT-P0): a function reached through
+    // `schedule` still lands per-player state on real players.
+    emit_scheduled_executor_packtests(plan, out, moves);
+}
+
+/// The flag a [`SCHEDULED_PROBE`] `set-flag` sets. Test-only: it exists solely in
+/// the PackTest datapack, never in the shipped delve.
+const SCHEDULED_PROBE_FLAG: &str = "flag/pt-sched-probe";
+
+/// The PackTest-datapack function the scheduled-executor probe schedules.
+const SCHEDULED_PROBE: &str = "pt_sched_probe";
+
+/// PackTests for the scheduled-executor contract (AUDIT-P0).
+///
+/// `schedule function …` re-invokes a function with the **server** command
+/// source — no executor, so every `@s`-addressed command in it silently does
+/// nothing. Two templates, because one alone would not have caught the bug:
+///
+/// 1. `sched_executor` — **unconditional**, so every campaign (hello-world in
+///    CI tier 2 included) proves the seam live on a real server. A probe
+///    function in the PackTest datapack, emitted by the *real* scheduled-bundle
+///    emitter ([`emit_effect_bundle`] with [`Executor::Server`]) over a
+///    `set-flag`, is handed to the vanilla scheduler; the test then awaits the
+///    flag on its own dummy's score. Pre-fix output emits `scoreboard players
+///    set @s …` here and the await times out.
+/// 2. `sched_arrive_flag` — the content path, for the first `move-npc` whose
+///    `on_arrive` sets a flag (the island's stealth beat). It runs the REAL
+///    start function and lets the driver walk itself to the end through the
+///    scheduler. The pre-existing arrive templates all call `mv_tick`/`ma_tick`
+///    *inline as the dummy*, which supplies exactly the player executor the
+///    scheduler does not — that is how this bug survived a green suite.
+fn emit_scheduled_executor_packtests(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    moves: &[crate::nav::MovePlan],
+) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let probe_score = plan::flag_score(SCHEDULED_PROBE_FLAG);
+
+    // --- 1. the unconditional probe -------------------------------------
+    // The probe body goes through the real emitter, so it carries whatever the
+    // scheduled-bundle seam currently produces — this template is a live test
+    // OF that seam, not a restatement of it.
+    let probe = emit_effect_bundle(
+        plan,
+        &[delvewright_dsl::QuestEffect::SetFlag {
+            flag: delvewright_dsl::FlagId(SCHEDULED_PROBE_FLAG.to_string()),
+            requires_flags: Vec::new(),
+            forbids_flags: Vec::new(),
+        }],
+        Executor::Server,
+    );
+    out.insert(
+        format!("packtest-datapack/data/{ns}/function/{SCHEDULED_PROBE}.mcfunction"),
+        lines(&probe).into_bytes(),
+    );
+    let (pin, sel) = pin_dummy("dw_t_sexec");
+    let mut t = packtest_header(&format!(
+        "{title}: a SCHEDULED function still reaches players (scheduled-executor contract)"
+    ));
+    t.push(format!("function {ns}:setup"));
+    t.push(pin);
+    // Own init: the probe objective is test-only, so this template creates it and
+    // clears its own dummy (never assume 0 on the shared batch server).
+    t.push(format!("scoreboard objectives add {probe_score} dummy"));
+    t.push(format!("scoreboard players set {sel} {probe_score} 0"));
+    // The real scheduler, the real emitted bundle. Not an inline call: an inline
+    // call would run as this test's dummy and pass even with the bug present.
+    t.push(format!("schedule function {ns}:{SCHEDULED_PROBE} 2t"));
+    t.push(format!("await score {sel} {probe_score} matches 1"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/sched_executor.mcfunction"),
+        lines(&t).into_bytes(),
+    );
+
+    // --- 2. the content path: a move-npc arrival that sets a flag --------
+    let arrival = moves.iter().find_map(|m| {
+        all_campaign_effects(plan.campaign)
+            .into_iter()
+            .find_map(|e| match e {
+                QuestEffect::MoveNpc {
+                    npc,
+                    to_anchor,
+                    on_arrive,
+                    ..
+                } if npc.as_str() == m.npc && to_anchor.as_str() == m.to_anchor => on_arrive
+                    .iter()
+                    .find_map(|a| match a {
+                        QuestEffect::SetFlag { flag, .. } => Some(flag.as_str().to_string()),
+                        _ => None,
+                    })
+                    .map(|flag| (m, flag)),
+                _ => None,
+            })
+    });
+    let Some((m, flag)) = arrival else { return };
+    let bare = movenpc_bare(&m.npc, &m.to_anchor);
+    let score = plan::flag_score(&flag);
+    let (pin, sel) = pin_dummy("dw_t_sarr");
+    // The walk is real, so the test must outlive it: the driver reschedules
+    // itself once per waypoint tick.
+    let mut t = vec![
+        format!(
+            "#> {title}: move-npc `{}` arrival sets `{flag}` through its SCHEDULED driver",
+            m.npc
+        ),
+        "# @dummy".to_string(),
+        format!("# @timeout {}", m.ticks() + 100),
+        String::new(),
+    ];
+    t.push(format!("function {ns}:setup"));
+    t.push(pin);
+    // Own init: clear the flag on this test's dummy, and release the driver's
+    // re-entry latch (a sibling template may have left it armed).
+    t.push(format!("scoreboard players set {sel} {score} 0"));
+    t.push(format!("scoreboard players set #mrun_{bare} dw.sys 0"));
+    // The REAL start function: it schedules `mv_tick_<bare>`, which walks itself
+    // to the final waypoint and fires `mv_arrive_<bare>` — every hop through the
+    // scheduler, with the server command source the bug hid behind. The dummy
+    // stands still throughout; nothing here supplies it as an executor.
+    t.push(format!(
+        "function {ns}:{}",
+        movenpc_fn(&m.npc, &m.to_anchor)
+    ));
+    t.push(format!("await score {sel} {score} matches 1"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/sched_arrive_flag.mcfunction"),
+        lines(&t).into_bytes(),
+    );
 }
 
 /// The dialogue-trigger re-arm PackTest: a player consumes a dialogue trigger and

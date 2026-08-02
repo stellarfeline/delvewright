@@ -593,13 +593,35 @@ fn packtest_suite_is_a_real_test() {
         test.contains("assert score @a[tag=dw_t_camp,limit=1] dw.campaign matches 1"),
         "asserts the campaign objective is set on the pinned dummy"
     );
-    // The old provisional path under function/ must be gone — PackTest would not
-    // discover a test there.
-    assert!(
-        out.keys()
-            .all(|p| !p.contains("packtest-datapack") || !p.contains("/function/")),
-        "no packtest function under /function/ (PackTest scans /test/)"
-    );
+    // PackTest scans `data/<ns>/test/` only, so nothing that is supposed to RUN
+    // may hide under `function/`. The suite datapack may still carry mechanism
+    // functions there (the scheduled-executor probe: a template hands it to the
+    // vanilla scheduler, which is the whole point of that test) — so the rule is
+    // reachability, not absence: every `function/` file must be named by some
+    // template under `test/`. An orphan there is a test PackTest never runs.
+    let templates: String = out
+        .iter()
+        .filter(|(p, _)| p.starts_with("packtest-datapack/") && p.contains("/test/"))
+        .map(|(_, b)| String::from_utf8(b.clone()).unwrap())
+        .collect();
+    for path in out.keys() {
+        if !path.starts_with("packtest-datapack/")
+            || !path.contains("/function/")
+            || !path.ends_with(".mcfunction")
+        {
+            continue;
+        }
+        let name = path
+            .rsplit('/')
+            .next()
+            .unwrap()
+            .trim_end_matches(".mcfunction");
+        assert!(
+            templates.contains(&format!("hello-world:{name}")),
+            "packtest mechanism function `{path}` is not driven by any template — \
+             PackTest scans /test/ and would never run it"
+        );
+    }
 }
 
 /// Environment sealing (spec-0002 "Environment sealing"): the bootstrap seals the
