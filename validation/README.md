@@ -14,6 +14,19 @@ Docker-compose entrypoint for running Delvewright the same way CI and prod do
   **creator overlay** mounted as an extra datapack (`/trigger dw.note` marks a spot
   in the server log). See "Creator playtest loop" below.
 
+## World fidelity (all profiles)
+
+Every server here boots the world the **compiler** declared: `world-settings-
+entrypoint.sh` reads `difficulty`, `level-seed`, `level-type` and
+`generator-settings` out of the build's `server/server.properties` and exports them
+before itzg starts. `Dockerfile.delve` bakes that script into the shipped image; the
+`packtest` service mounts the same file. No profile may hardcode those four —
+`validation/check-world-settings.sh` (CI tier 1) fails on drift or on a re-hardcoded
+value. This exists because hardcoding has twice made a server run a world the
+campaign never declared: the shipped image booting a `horizon: ocean` delve as a
+void, and the PackTest runner testing a void superflat while the delve shipped an
+ocean one.
+
 ## One command (owner)
 
 EULA acceptance is **your** action and is never hardcoded in this repo. Pass it in

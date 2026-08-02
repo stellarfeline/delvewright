@@ -28,6 +28,13 @@ jobs:
       # ubuntu-latest ships python3 (>=3.11, has stdlib tomllib) and bash.
       - name: consumers agree with versions.toml
         run: bash validation/check-versions.sh
+      # Same class of gate for the WORLD: every server that boots a build output
+      # (shipped delve image + PackTest runner) must derive difficulty/seed/
+      # level-type/generator-settings from the compiler's server.properties, via the
+      # one shared entrypoint. Hardcoding them has twice made a server boot a world
+      # the campaign never declared (tasks #103, #84).
+      - name: every server derives its world from the build
+        run: bash validation/check-world-settings.sh
 
   rust:
     name: rust (fmt, clippy, test)
