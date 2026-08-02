@@ -43,7 +43,7 @@ services:
     image: delvewright/delve:local
     container_name: delvewright-server
     environment:
-      # Never TRUE in this file — the owner must set EULA=TRUE in her environment.
+      # Never TRUE in this file — the owner must set EULA=TRUE in their environment.
       EULA: ${EULA:?set EULA=TRUE in your environment to accept Mojang's EULA (https://aka.ms/MinecraftEULA)}
       # Offline for frictionless local play/CI; override ONLINE_MODE=TRUE to join
       # with a real Microsoft account (spec-0003 auth-mode note).
@@ -89,7 +89,7 @@ services:
       # profile uses). `/delve/datapack` is baked; `/delve/creator-overlay` is the
       # runtime-only mount below.
       DATAPACKS: "/delve/datapack,/delve/creator-overlay"
-      # Op the creator so she can /tp and inspect. Empty (no op) if CREATOR_NAME is
+      # Op the creator so they can /tp and inspect. Empty (no op) if CREATOR_NAME is
       # unset — `/trigger dw.note` itself needs no op (the overlay enables it each
       # tick), so the note flow works opped or not.
       OPS: ${CREATOR_NAME:-}

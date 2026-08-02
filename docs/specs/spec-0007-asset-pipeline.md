@@ -70,10 +70,10 @@ job is to fill them. The vision model is the generation-time agent
    - **Gallery-fetchable sites**: the agent fetches the listing renders and
      rules style-fit pre-download.
    - **Anti-bot sites**: the launcher pattern runs FIRST — the agent hands the
-     owner URL + target path, she clicks download, nothing more. The pipeline
+     owner URL + target path, the owner clicks download, nothing more. The pipeline
      then converts the file and **renders it locally** (see Rendering infra
      below); the agent rules from its own renders. Judgment never falls to the
-     human; her only cost is the click.
+     human; the only human cost is the click.
    Catalog card fields: `description` (2–3 sentences of prose), `tags`
    (structured: theme, era/style, palette, condition intact/ruined, scale
    class, offered piece types, interior/exterior, biome fit), `style_fit`

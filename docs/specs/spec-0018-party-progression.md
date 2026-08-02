@@ -1,6 +1,7 @@
 # spec-0018 — Party-shared progression (co-op division of labor)
 
-- **Status**: Draft (owner ruling 2026-08-02: "多人任务一定是要能分工完成的";
+- **Status**: Draft (owner ruling 2026-08-02: a multiplayer quest must always
+  be completable through division of labor among the party;
   triggered by the 2026-08-02 audit finding that per-player progression
   state + globally-consumed affordances soft-lock any party that splits
   objectives)

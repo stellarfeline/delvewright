@@ -17,8 +17,9 @@ Ask 2–3 clarifying questions ONLY if the prompt is too thin to pick a theme an
 target length; otherwise proceed.
 
 Mode: default **interactive** (pause after each stage for the user to review a
-short summary — not the raw JSON — and confirm/adjust). If the user says "e2e" /
-"一口气" / "don't stop", run straight through.
+short summary — not the raw JSON — and confirm/adjust). Switch to **e2e** and run
+straight through whenever the user asks for an uninterrupted end-to-end run — in
+English ("e2e", "don't stop") or in the equivalent Chinese shorthand.
 
 ### Showcase mode (thin prompts)
 
@@ -208,8 +209,8 @@ Then:
 - Every player-visible string in the **stage docs stays English** — always. Other
   languages are delivered as `l10n/<code>.json` sidecars (the Localization stage
   above), never by writing non-English into the stage docs. Owner prompts in
-  Chinese still yield English stage docs; add a `zh-cn` sidecar only when she asks
-  for localized in-game text (中文文本).
+  Chinese still yield English stage docs; add a `zh-cn` sidecar only when the user
+  asks for localized in-game text (中文文本).
 - Homages: original text only, cultural reference never asset ingestion
   (ADR-0007).
 - If a mechanic the prompt wants has no DSL verb, do NOT fake it with adjacent
