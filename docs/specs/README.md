@@ -21,3 +21,6 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0010](spec-0010-assembled-relight.md) | Assembled-world lighting, deterministic relight, declared time & weather | Implemented |
 | [spec-0011](spec-0011-traps.md) | Traps — lethal & non-lethal environmental hazards | Approved |
 | [spec-0012](spec-0012-checkpoints.md) | Checkpoints (respawn anchors) | Proposed |
+| [spec-0013](spec-0013-playable-region.md) | Playable region & ocean horizon (pseudo-open-world) | Approved |
+| [spec-0014](spec-0014-actors-staging.md) | Scripted actors & staging verbs (v0.6) | Approved |
+| [spec-0015](spec-0015-visual-authoring-loop.md) | The visual authoring loop (agentic viewport) | Approved |

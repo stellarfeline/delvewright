@@ -41,3 +41,27 @@ Status as of 2026-07-29 (late session). Resolved items kept for the record.
   crates.io/npm only at first publish.
 - **Language policy** (2026-07-29): English-first for all repo artifacts; i18n, if
   ever, translates from English. Recorded in CLAUDE.md.
+
+## Bedrock backend? (owner question, 2026-08-01)
+
+Bedrock add-ons are genuinely stronger at staging expressiveness (data-driven
+custom entities/AI, Molang animation, native `/camera`, native NPC dialogue UI,
+JS scripting API) — several of our hardest v0.6 workarounds are first-class
+there. Java wins where our thesis lives: headless machine validation
+(bot/PackTest/NBT/render tooling), byte-deterministic builds, open worldgen,
+and native ARM server hosting (the prod Raspberry Pi; BDS is x86_64-only).
+Quantified against this cycle's ledger: ~60% of the engine PRs were the
+"Java staging tax" (puppets, per-tick tp, spectator dolly, tellraw dialogue
+machinery, art font, effect clocks) — Bedrock-native features; the other ~40%
+(reachability/flood/sea-level/l10n/determinism/jigsaw correctness) is
+edition-independent and was the dominant pain source. Switching re-levies a
+"proof tax" Java has already paid: a Bedrock critical-path bot and
+byte-deterministic LevelDB worlds are research-grade gaps, while GameTest ≈
+PackTest. Verdict: for a "provably completable" thesis Java is right; its
+staging ceiling is "well-lit puppet theater + radio drama" (sound, timing,
+light, geometry, text — all first-class), and M4 should invest exactly there,
+not in chasing animation. GeyserMC (Bedrock clients joining a Java server) can
+deliver the cross-platform distribution win without a stack switch — M5
+research item. Decision: finish the Java line and find its ceiling first. The
+DSL is the edition-agnostic asset — a Bedrock emitter backend remains a
+plausible post-v1 compiler target with campaigns unchanged.
