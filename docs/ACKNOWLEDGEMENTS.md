@@ -78,6 +78,24 @@ upstream code was ingested. Attribution recorded here and in each prefab's metad
 - SpatialGrammar — [arXiv:2604.27555](https://arxiv.org/abs/2604.27555) (DSL-driven 3D scenes with render-feedback refinement).
 - BLOCK character-to-skin generation — [arXiv:2603.03964](https://arxiv.org/abs/2603.03964) (CC BY 4.0).
 
+### Souls design-language dossier (`docs/notes/souls-design-language.md`, M4)
+
+Design study only — no text ported, no asset used, no game content
+reproduced. FromSoftware titles are referenced as published works for
+analysis and criticism. Per-claim licensing is recorded inline in the
+dossier; the tiers are:
+
+| Source class | Examples leaned on | License verdict | Use |
+|---|---|---|---|
+| Developer primary (interviews) | Miyazaki, [PlayStation Blog 2022-01-28](https://blog.playstation.com/2022/01/28/an-interview-with-fromsoftwares-hidetaka-miyazki/); Miyazaki on poison swamps, [Game Informer 2022-01-28](https://gameinformer.com/2022/01/28/hidetaka-miyazaki-rediscovered-his-love-of-creating-poison-swamps-in-elden-ring); art designer Masanori Waragai on Sen's Fortress trap signposting, [PCGamesN](https://www.pcgamesn.com/dark-souls-remastered/sens-fortress-trap-house) | Publisher ARR | Short attributed quotes only |
+| Academic | [Andriano, *Enjoying the Uncertainty*, Games and Culture 2025](https://journals.sagepub.com/doi/abs/10.1177/15554120241226837) | SAGE, paywalled | Cited from abstract; paraphrase only |
+| Trade-press design analysis | Patrick Klepek, [Vice, illusory walls](https://www.vice.com/en/article/be-wary-of-liar-the-weird-history-behind-elden-rings-illusory-walls/); [TheGamer, runback timings](https://www.thegamer.com/longest-annoying-soulsborne-boss-runbacks/); [GameRant, soulslikes without a stamina bar](https://gamerant.com/best-soulslike-games-no-stamina-bar/) | ARR | Short attributed quotes; facts/counts paraphrased |
+| Level-design analysis | [The Level Design Book — Undead Burg](https://book.leveldesignbook.com/studies/sp/undead-burg) (the teach/test/twist ambush reading, load-bearing for §4.4); James Roha, [*World Design lessons from FromSoftware*](https://medium.com/@Jamesroha/world-design-lessons-from-fromsoftware-78cadc8982df); Matthewmatosis and Joseph Anderson (video essays, via secondary summaries) | ARR | **Ideas-only** — paraphrase + attribute, never transcribe |
+| Wikis (permissive) | Fandom souls wikis, Wikipedia | CC BY-SA | Quotable with attribution |
+| **Wikis (restrictive)** | **Fextralife** souls wikis | **NOT CC BY-SA** — [ToU](https://fextralife.com/terms-of-use/) grants only personal, non-commercial, non-transferable use | **Ideas-only.** Verified 2026-08-02; do not assume Fandom-style licensing |
+| Forums | ResetEra, Steam, NeoGAF, GameFAQs | ARR per poster | Ideas-only, never quoted |
+| Minecraft prior art | [SoulsCraft](https://modrinth.com/datapack/soulscraft), [SoulCamps Enhanced](https://www.planetminecraft.com/data-pack/soulcamps-enhanced-1-0/), [Lordran](https://www.planetminecraft.com/project/lordran-dark-souls-v-06/) | per-listing, unverified | Ideas-only; surveyed, nothing adopted |
+
 ## Minecraft
 
 Minecraft is a trademark of Mojang Synergies AB. Delvewright is an independent
