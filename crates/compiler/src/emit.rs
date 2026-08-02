@@ -21,7 +21,7 @@ use crate::plan::{
 };
 use crate::{DELVEC_VERSION, MC_VERSION, PACK_FORMAT};
 
-use delvewright_dsl::{Objective, QuestEffect, Trigger, is_v03, is_v04, is_v06};
+use delvewright_dsl::{MobEquipment, Objective, QuestEffect, Trigger, is_v03, is_v04, is_v06};
 
 /// The emitted build tree: relative path → file bytes.
 pub type BuildOutput = BTreeMap<String, Vec<u8>>;
@@ -847,6 +847,22 @@ fn default_mainhand(entity: &str) -> Option<&'static str> {
     }
 }
 
+/// The main-hand item a wave mob **actually spawns holding**: the v0.6
+/// `equipment.main_hand` override when the author gave one, else the
+/// armed-mob default table ([`default_mainhand`]).
+///
+/// This is the single source of truth for "what is in this mob's hand" and
+/// must be used by anything that *describes* the emitted summon — notably the
+/// generated `verb_kill` PackTest arming assertion. Reading the default table
+/// there instead produced a self-contradicting datapack: the summon gave the
+/// override (the-drowned-bell's vindicators carry `minecraft:stone_axe`) while
+/// the generated test asserted the default (`minecraft:iron_axe`), so the suite
+/// failed on a real server for a campaign that was in fact correct.
+fn effective_mainhand<'a>(entity: &str, eq: Option<&'a MobEquipment>) -> Option<&'a str> {
+    eq.and_then(|e| e.main_hand.as_deref())
+        .or_else(|| default_mainhand(entity))
+}
+
 /// Default hand equipment for a summoned mob whose natural spawns are armed
 /// (M2 fix 5). `/summon` gives no equipment, so a wither-skeleton boss spawned
 /// unarmed was trivial. Returns an SNBT fragment (no leading comma) setting the
@@ -878,11 +894,11 @@ fn default_equipment(entity: &str) -> Option<String> {
 /// form only — see [`default_equipment`] for why legacy `ArmorItems`/
 /// `HandItems` are silently ignored by 1.21.11 `/summon`. Slot order is fixed
 /// (mainhand, offhand, head, chest, legs, feet) for ADR-0006 determinism.
-fn wave_equipment(entity: &str, eq: Option<&delvewright_dsl::MobEquipment>) -> Option<String> {
+fn wave_equipment(entity: &str, eq: Option<&MobEquipment>) -> Option<String> {
+    let mainhand = effective_mainhand(entity, eq);
     let Some(eq) = eq else {
         return default_equipment(entity);
     };
-    let mainhand = eq.main_hand.as_deref().or_else(|| default_mainhand(entity));
     let slots: [(&str, Option<&str>); 6] = [
         ("mainhand", mainhand),
         ("offhand", eq.off_hand.as_deref()),
@@ -8463,7 +8479,9 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
                     }
                     if first_armed_kill.is_none()
                         && plan::wave_of(c, wave.as_str()).is_some_and(|w| {
-                            w.mobs.iter().any(|m| default_mainhand(&m.entity).is_some())
+                            w.mobs.iter().any(|m| {
+                                effective_mainhand(&m.entity, m.equipment.as_ref()).is_some()
+                            })
                         })
                     {
                         first_armed_kill = Some((qid, o));
@@ -8531,12 +8549,15 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         // condition (1.21.11 `minecraft:item_slots` + `minecraft:item_predicate`)
         // and bridges the result to `assert score` — using only PackTest commands
         // known-good on the validation server, not a newer `assert items`.
-        if let Some(mob) = w
+        // The asserted item is the mob's *effective* main hand — an author's
+        // `equipment.main_hand` override when present, the default table
+        // otherwise — so the assertion always describes the summon this same
+        // compiler emitted (see `effective_mainhand`).
+        if let Some((mob, item)) = w
             .mobs
             .iter()
-            .find(|m| default_mainhand(&m.entity).is_some())
+            .find_map(|m| effective_mainhand(&m.entity, m.equipment.as_ref()).map(|it| (m, it)))
         {
-            let item = default_mainhand(&mob.entity).expect("filtered to armed mobs");
             b.push("scoreboard players set #armed_vkil dw.sys 0".to_string());
             b.push(format!(
                 "execute if items entity @e[tag={},type={},limit=1] weapon.mainhand {item} \

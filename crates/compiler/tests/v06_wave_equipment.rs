@@ -190,3 +190,85 @@ fn no_equipment_is_byte_identical_default_and_deterministic() {
     let again = build_hw(mob);
     assert_eq!(out, again, "same DSL must build byte-identical output");
 }
+
+fn verb_kill_fn(out: &BuildOutput) -> &str {
+    let path = "packtest-datapack/data/hello-world/test/verb_kill.mcfunction";
+    std::str::from_utf8(out.get(path).expect("verb_kill test emitted")).unwrap()
+}
+
+/// The item id the generated `verb_kill` arming assertion checks for, i.e. the
+/// `<item>` in `execute if items entity … weapon.mainhand <item> run …`.
+fn asserted_mainhand(out: &BuildOutput) -> String {
+    let body = verb_kill_fn(out);
+    let line = body
+        .lines()
+        .find(|l| l.contains("weapon.mainhand"))
+        .unwrap_or_else(|| panic!("verb_kill must carry an arming assertion; got:\n{body}"));
+    line.split("weapon.mainhand ")
+        .nth(1)
+        .and_then(|rest| rest.split_whitespace().next())
+        .expect("arming assertion names an item")
+        .to_string()
+}
+
+/// The generated PackTest arming assertion must describe the summon the SAME
+/// compiler emitted: a mob with an `equipment.main_hand` override is asserted
+/// on the override, never on the armed-mob default table. Reading the default
+/// there shipped a self-contradicting delve — the datapack summoned a
+/// `stone_axe` vindicator while the generated test demanded an `iron_axe`, so a
+/// correct campaign failed on a real server.
+#[test]
+fn packtest_arming_assert_follows_main_hand_override() {
+    let out = build_hw(
+        r#"{ "entity": "minecraft:vindicator", "count": 1,
+             "equipment": { "main_hand": "minecraft:stone_axe" } }"#,
+    );
+    assert_eq!(
+        asserted_mainhand(&out),
+        "minecraft:stone_axe",
+        "the arming assertion must follow the override, not the default table"
+    );
+    // ... and the assertion agrees with the summon it describes.
+    let item = asserted_mainhand(&out);
+    assert!(
+        spawn_fn(&out).contains(&format!("mainhand:{{id:\"{item}\",count:1}}")),
+        "assertion and summon must name the same item; spawn:\n{}",
+        spawn_fn(&out)
+    );
+}
+
+/// The default-table path stays covered: no `equipment` field at all still
+/// asserts the armed-mob default, and it still matches the summon.
+#[test]
+fn packtest_arming_assert_covers_default_mainhand() {
+    let out = build_hw(r#"{ "entity": "minecraft:wither_skeleton", "count": 1 }"#);
+    let item = asserted_mainhand(&out);
+    assert_eq!(item, "minecraft:stone_sword", "default table must be used");
+    assert!(
+        spawn_fn(&out).contains(&format!("mainhand:{{id:\"{item}\",count:1}}")),
+        "assertion and summon must name the same item; spawn:\n{}",
+        spawn_fn(&out)
+    );
+}
+
+/// A mob that the default table calls unarmed but the author armed explicitly
+/// is still an armed mob: the arming assertion is emitted for it and names the
+/// author's item.
+#[test]
+fn packtest_arming_assert_covers_override_on_unarmed_entity() {
+    let out = build_hw(
+        r#"{ "entity": "minecraft:zombie", "count": 1,
+             "equipment": { "main_hand": "minecraft:iron_sword" } }"#,
+    );
+    let item = asserted_mainhand(&out);
+    assert_eq!(item, "minecraft:iron_sword");
+    assert!(
+        verb_kill_fn(&out).contains("type=minecraft:zombie"),
+        "the assertion must select the armed mob's own entity type"
+    );
+    assert!(
+        spawn_fn(&out).contains(&format!("mainhand:{{id:\"{item}\",count:1}}")),
+        "assertion and summon must name the same item; spawn:\n{}",
+        spawn_fn(&out)
+    );
+}
