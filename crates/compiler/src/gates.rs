@@ -21,7 +21,9 @@ pub const DW_GATE_NO_BLOCK: &str = "DW0343";
 /// in) and a stage-5 `shortcut` (spec-0016 §2, whose unlock clears the region
 /// `replace <block>` and whose gate is sealed from world-load by that very
 /// block). Descends every nested effect list (`sequence` steps / lifecycle
-/// bundles) so a `close-gate` buried in a timeline is checked too.
+/// bundles) so a `close-gate` buried in a timeline is checked too, and a
+/// `timed-gate` (spec-0016 §4), whose clock fills and clears the region with that
+/// block twice a cycle.
 pub fn check_close_gates(c: &Campaign, prefabs: &PrefabRegistry) -> Vec<Diagnostic> {
     let mut d = Vec::new();
     let diag = |anchor: &str, path: String| -> Option<Diagnostic> {
@@ -78,6 +80,13 @@ pub fn check_close_gates(c: &Campaign, prefabs: &PrefabRegistry) -> Vec<Diagnost
     // fill-block obligation as `close-gate`.
     for (si, sc) in c.quests.content.shortcuts.iter().enumerate() {
         if let Some(diagnostic) = diag(sc.gate.as_str(), format!("/content/shortcuts/{si}/gate")) {
+            d.push(diagnostic);
+        }
+    }
+    // spec-0016 §4: a timed gate's clock fills and clears the region with exactly
+    // that block, twice a cycle — the same obligation, third verb.
+    for (gi, g) in c.quests.content.timed_gates.iter().enumerate() {
+        if let Some(diagnostic) = diag(g.gate.as_str(), format!("/content/timed_gates/{gi}/gate")) {
             d.push(diagnostic);
         }
     }

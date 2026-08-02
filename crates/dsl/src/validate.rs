@@ -75,6 +75,8 @@ pub fn validate_campaign_with(
         v06_checks(c, items, anchors, entities, &mut d);
         v06_trap_checks(c, items, anchors, &mut d);
         shortcut_checks(c, anchors, &mut d);
+        ambush_checks(c, &mut d);
+        timed_gate_checks(c, &mut d);
     }
     // DSL v0.6 stage 7 (spec-0017): the map-editor edit script. Structural
     // checks only — frame/region *resolution* happens at build time against the
@@ -1240,6 +1242,18 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 d,
                 "/content/shortcuts".to_string(),
                 "the `shortcuts` section",
+            );
+        }
+        // Ambushes (spec-0016 §3) likewise.
+        if !c.quests.content.ambushes.is_empty() {
+            res(d, "/content/ambushes".to_string(), "the `ambushes` section");
+        }
+        // Timed gates (spec-0016 §4) likewise.
+        if !c.quests.content.timed_gates.is_empty() {
+            res(
+                d,
+                "/content/timed_gates".to_string(),
+                "the `timed_gates` section",
             );
         }
         // Wave-mob `equipment` (task #65) is a v0.6 stage-5 surface: reserved
@@ -4760,5 +4774,188 @@ fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
                 );
             }
         });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// spec-0016 §3 — ambushes
+// ---------------------------------------------------------------------------
+
+/// Validate the stage-5 `ambushes` section (spec-0016 §3), `DW0375`.
+///
+/// An ambush desugars to an ordinary environment trigger at parse time, so it
+/// inherits every trigger diagnostic already in the compiler — id/range checks
+/// (`DW0194`), anchor resolution, unknown actor refs, the `use`-on-an-NPC rule
+/// (`DW0350`). This function only owns what the sugar itself can get wrong:
+/// its own id, and an actor list that does not actually stage an ambush.
+///
+/// It deliberately does **not** require a `telegraph`. The un-telegraphed
+/// ambush is core souls vocabulary (owner ruling 2026-08-02) — 初见杀 is how a
+/// level teaches. What the engine owes the player is counterplay on the retry,
+/// which is a geometric question and is proven in `compiler::nav` (`DW0376`).
+fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for (i, a) in c.quests.content.ambushes.iter().enumerate() {
+        if !a.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::AMBUSH_INVALID,
+                "quests",
+                format!("/content/ambushes/{i}/id"),
+                format!(
+                    "malformed ambush id `{}` — ambush ids must be lowercase kebab-case with the \
+                     `ambush/` prefix (e.g. `ambush/stair-turn`)",
+                    a.id
+                ),
+            ));
+        }
+        if !seen.insert(a.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::AMBUSH_INVALID,
+                "quests",
+                format!("/content/ambushes/{i}/id"),
+                format!(
+                    "duplicate ambush id `{}` — rename one so every ambush id is unique (each \
+                     desugars to a trigger named after it)",
+                    a.id
+                ),
+            ));
+        }
+        if a.actors.is_empty() {
+            d.push(Diagnostic::error(
+                codes::AMBUSH_INVALID,
+                "quests",
+                format!("/content/ambushes/{i}/actors"),
+                format!(
+                    "ambush `{}` lists no actors — it would spring nothing. List the actors that \
+                     ambush the player, or delete the declaration; a beat that fires and does \
+                     nothing is never what was meant.",
+                    a.id
+                ),
+            ));
+        }
+        let mut dup: BTreeSet<&str> = BTreeSet::new();
+        for (j, actor) in a.actors.iter().enumerate() {
+            if !dup.insert(actor.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::AMBUSH_INVALID,
+                    "quests",
+                    format!("/content/ambushes/{i}/actors/{j}"),
+                    format!(
+                        "ambush `{}` lists actor `{actor}` twice — `spawn-actor` is idempotent, so \
+                         the second one is a silent no-op and the ambush is half the size it \
+                         reads as. Declare a second actor instead.",
+                        a.id
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// spec-0016 §4 — timed gates
+// ---------------------------------------------------------------------------
+
+/// Validate the stage-5 `timed_gates` section (spec-0016 §4), `DW0377`.
+///
+/// The structural half only: ids, a cycle that actually cycles, a phase inside
+/// the cycle, and one owner per gate region. The *design* half — that the gate is
+/// a timing read and not a coin flip — needs the nav model's crossing time and
+/// lives in `compiler::nav` (`DW0378`). The fill-block requirement is `DW0343`,
+/// the same rule `close-gate` and `shortcut` obey.
+fn timed_gate_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let quests = &c.quests.content;
+    if quests.timed_gates.is_empty() {
+        return;
+    }
+    let shortcut_gates: BTreeSet<&str> = quests.shortcuts.iter().map(|s| s.gate.as_str()).collect();
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    let mut driven: BTreeSet<&str> = BTreeSet::new();
+    for (i, g) in quests.timed_gates.iter().enumerate() {
+        let err = |path: String, msg: String, d: &mut Vec<Diagnostic>| {
+            d.push(Diagnostic::error(
+                codes::TIMED_GATE_INVALID,
+                "quests",
+                path,
+                msg,
+            ));
+        };
+        if !g.id.is_valid_syntax() {
+            err(
+                format!("/content/timed_gates/{i}/id"),
+                format!(
+                    "malformed timed-gate id `{}` — ids must be lowercase kebab-case with the \
+                     `timed-gate/` prefix (e.g. `timed-gate/piston-hall`)",
+                    g.id
+                ),
+                d,
+            );
+        }
+        if !seen.insert(g.id.as_str()) {
+            err(
+                format!("/content/timed_gates/{i}/id"),
+                format!("duplicate timed-gate id `{}` — rename one", g.id),
+                d,
+            );
+        }
+        for (field, ticks) in [
+            ("open_ticks", g.open_ticks),
+            ("closed_ticks", g.closed_ticks),
+        ] {
+            if ticks == 0 {
+                err(
+                    format!("/content/timed_gates/{i}/{field}"),
+                    format!(
+                        "timed gate `{}` declares `{field}: 0` — a gate that never {} is not a \
+                         timing gate. Use `open-gate`/`close-gate` for a one-way state change, or \
+                         give both halves of the cycle a real duration.",
+                        g.id,
+                        if field == "open_ticks" {
+                            "opens"
+                        } else {
+                            "closes"
+                        }
+                    ),
+                    d,
+                );
+            }
+        }
+        let cycle = g.open_ticks.saturating_add(g.closed_ticks);
+        if cycle > 0 && g.phase >= cycle {
+            err(
+                format!("/content/timed_gates/{i}/phase"),
+                format!(
+                    "timed gate `{}` declares `phase: {}` at or beyond its own {cycle}-tick cycle \
+                     — a phase is an offset INTO the cycle, so it must be less than it (use \
+                     `phase % cycle`).",
+                    g.id, g.phase
+                ),
+                d,
+            );
+        }
+        if !driven.insert(g.gate.as_str()) {
+            err(
+                format!("/content/timed_gates/{i}/gate"),
+                format!(
+                    "gate `{}` is driven by two timed gates — two clocks filling and clearing the \
+                     same region race every tick and the region's state becomes emission order, \
+                     not design. One clock per gate.",
+                    g.gate
+                ),
+                d,
+            );
+        }
+        if shortcut_gates.contains(g.gate.as_str()) {
+            err(
+                format!("/content/timed_gates/{i}/gate"),
+                format!(
+                    "gate `{}` is both a `shortcut` gate and a `timed-gate` — a shortcut opens \
+                     PERMANENTLY (spec-0016 §2) and a clock would re-seal it every cycle, which \
+                     is exactly the re-seal `DW0358` exists to forbid. Use two different gates.",
+                    g.gate
+                ),
+                d,
+            );
+        }
     }
 }

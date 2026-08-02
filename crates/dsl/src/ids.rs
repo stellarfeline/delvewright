@@ -107,6 +107,15 @@ prefixed_id!(
     /// Unique within the stage-5 traps namespace.
     TrapId, "trap");
 prefixed_id!(
+    /// Timed-gate id: `timed-gate/<kebab>` (stage-5 `timed_gates` section,
+    /// spec-0016 §4). Unique within the stage-5 timed-gate namespace.
+    TimedGateId, "timed-gate");
+prefixed_id!(
+    /// Ambush id: `ambush/<kebab>` (stage-5 `ambushes` section, spec-0016 §3).
+    /// Unique within the stage-5 ambushes namespace; the derived environment
+    /// trigger is named `trigger/<kebab>` from the same local id.
+    AmbushId, "ambush");
+prefixed_id!(
     /// Shortcut id: `shortcut/<kebab>` (stage-5 `shortcuts` section, spec-0016 §2).
     /// Unique within the stage-5 shortcuts namespace.
     ShortcutId, "shortcut");

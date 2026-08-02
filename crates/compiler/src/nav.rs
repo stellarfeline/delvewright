@@ -61,6 +61,26 @@ pub const DW_CHECKPOINT_STRANDED: &str = "DW0315";
 /// assembled model (a trap-trigger / hazard / mid-air cell), so the party would
 /// respawn into the void or a wall.
 pub const DW_CHECKPOINT_UNSTANDABLE: &str = "DW0316";
+/// `DW0378`: a `timed-gate` (spec-0016 §4) that is a coin flip rather than a
+/// timing read — the set of entry phases from which a walking player clears the
+/// span before the gate shuts covers **less than 20% of the cycle** (owner ruling
+/// 2026-08-02). All-phase passability is explicitly NOT the requirement: a gate
+/// that punishes bad timing is the point. A gate that punishes *every* timing is
+/// not a skill check, it is a slot machine, and no amount of learning the level
+/// makes it fair.
+pub const DW_TIMED_GATE_COIN_FLIP: &str = "DW0378";
+/// `DW0376`: an `ambush` (spec-0016 §3) with no counterplay — with every
+/// ambusher standing where it will stand, no rest point (a checkpoint, a bonfire,
+/// or the campaign entry) is walkable from the trigger cell any more. The player
+/// is sealed in a pocket with the ambush and can only trade blows blind.
+///
+/// This is deliberately NOT a telegraph requirement. The un-telegraphed ambush is
+/// core souls vocabulary (owner ruling 2026-08-02): dying uninformed once is how
+/// the level teaches, and determinism guarantees the second attempt meets the same
+/// ambushers in the same cells. What the engine owes the informed player is a
+/// *play* — a retreat, luring ground, a positioning line — and that is what this
+/// proves exists.
+pub const DW_AMBUSH_NO_COUNTERPLAY: &str = "DW0376";
 /// `DW0373`: a `shortcut` (spec-0016 §2) whose far-side `unlock` affordance is
 /// not reachable while the gate is still sealed — the LONG route does not exist,
 /// so the mechanism that opens the shortcut can never be pulled and the gate is
@@ -2079,6 +2099,185 @@ fn verify_checkpoints(
                      checkpoint to a cell that keeps the remaining path reachable, or add a return \
                      route back up — do NOT delete the checkpoint to silence this proof.",
                     target.pos
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The minimum share of a `timed-gate` cycle that must admit a crossing
+/// (spec-0016 §4, owner ruling 2026-08-02). Below this the gate stops being a
+/// timing read and becomes a coin flip. Expressed as a percentage so the
+/// arithmetic below stays in integers — no float rounding in a proof (ADR-0006).
+const TIMED_GATE_MIN_ADMIT_PERCENT: u32 = 20;
+
+/// Prove every `timed-gate` is readable — [`DW_TIMED_GATE_COIN_FLIP`] (`DW0378`).
+///
+/// The requirement is deliberately **not** all-phase passability: spec-0016 §4 is
+/// explicit that a gate which punishes bad timing is the entire point. What must
+/// hold is that the gate can be *read*: over one full cycle, the entry phases from
+/// which a walking player clears the span before it shuts must cover at least
+/// [`TIMED_GATE_MIN_ADMIT_PERCENT`] of the cycle.
+///
+/// The crossing cost comes from the same nav model every other proof uses: the A*
+/// step count from the footing on one side of the gate region to the footing on
+/// the other with the gate open, charged at [`SPRINT_TICKS_PER_BLOCK`]. A player
+/// who starts the crossing `p` ticks into the open window arrives in time iff
+/// `p + cross <= open_ticks`, so the admitting window is
+/// `max(0, open_ticks - cross + 1)` ticks out of `open_ticks + closed_ticks`.
+///
+/// A gate whose two sides have no walkable footing, or that no route connects even
+/// while open, is left to the geometry proofs that own it (`DW0311`) rather than
+/// double-reported here.
+pub fn check_timed_gates(plan: &Plan, world: &World) -> Result<(), NavError> {
+    verify_timed_gates(world, &plan.timed_gates)
+}
+
+/// The pure core of [`check_timed_gates`] (unit-testable against a synthetic
+/// [`World`]).
+fn verify_timed_gates(world: &World, gates: &[crate::plan::TimedGatePlan]) -> Result<(), NavError> {
+    for g in gates {
+        let cells: BTreeSet<[i32; 3]> =
+            crate::assembled::region_cells(g.gate_region.0, g.gate_region.1).collect();
+        let Some((near, far)) = gate_crossing_footings(world, g.gate_region, &cells) else {
+            continue; // no footing on both sides — a geometry concern, not a timing one
+        };
+        let Some(path) = world.find_path(near, far) else {
+            continue; // the open gate connects nothing — DW0311's business
+        };
+        // `path` includes both endpoints; the crossing is the moves between them.
+        let cross_ticks = (path.len().saturating_sub(1) as u32) * SPRINT_TICKS_PER_BLOCK;
+        let cycle = g.open_ticks + g.closed_ticks;
+        let admits =
+            g.open_ticks.saturating_sub(cross_ticks) + u32::from(cross_ticks <= g.open_ticks);
+        // Integer percentage, rounded DOWN — the proof never credits the gate with
+        // a share it does not have.
+        let percent = admits.saturating_mul(100) / cycle.max(1);
+        if percent < TIMED_GATE_MIN_ADMIT_PERCENT {
+            return Err(NavError {
+                code: DW_TIMED_GATE_COIN_FLIP,
+                message: format!(
+                    "timed gate `{}` is a coin flip, not a timing read: crossing its span takes \
+                     {cross_ticks} ticks ({} blocks at {SPRINT_TICKS_PER_BLOCK} t/block), so only \
+                     {admits} of its {cycle}-tick cycle ({percent}%) admit a player who starts \
+                     walking then — under the {TIMED_GATE_MIN_ADMIT_PERCENT}% floor (spec-0016 §4, \
+                     owner ruling 2026-08-02). Punishing bad timing is the point; punishing EVERY \
+                     timing is a slot machine. Lengthen `open_ticks`, shorten `closed_ticks`, or \
+                     narrow the span — never lower the floor.",
+                    g.id,
+                    path.len().saturating_sub(1)
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The standable footings immediately on either side of a gate region, over the
+/// world with the region SEALED so neither endpoint can land inside it or snap
+/// through. The crossing axis is whichever horizontal axis actually has footing on
+/// both sides — trying x then z rather than guessing from the region's extents is
+/// both deterministic and correct for a square 1×1 gate column, where the extents
+/// tie and a guess would pick the wall's own plane.
+fn gate_crossing_footings(
+    world: &World,
+    region: ([i32; 3], [i32; 3]),
+    cells: &BTreeSet<[i32; 3]>,
+) -> Option<([i32; 3], [i32; 3])> {
+    let sealed = world.with_sealed(cells);
+    let (from, to) = region;
+    for axis in [0usize, 2] {
+        let mut near = None;
+        let mut far = None;
+        for cell in crate::assembled::region_cells(from, to) {
+            for (slot, delta) in [(&mut near, -1), (&mut far, 1)] {
+                if slot.is_some() {
+                    continue;
+                }
+                let mut c = cell;
+                c[axis] += delta;
+                if !cells.contains(&c) && sealed.standable(c) {
+                    *slot = Some(c);
+                }
+            }
+            if near.is_some() && far.is_some() {
+                break;
+            }
+        }
+        if let (Some(n), Some(f)) = (near, far) {
+            return Some((n, f));
+        }
+    }
+    None
+}
+
+/// Prove every `ambush` (spec-0016 §3) leaves the player a play —
+/// [`DW_AMBUSH_NO_COUNTERPLAY`] (`DW0376`).
+///
+/// The obligation is *not* "warn the player". Spec-0016 is explicit that the
+/// un-telegraphed ambush — 初见杀, the shove off the cliff you could not have
+/// known about — is legitimate and essential: you die uninformed once, and the
+/// SECOND attempt is where the design pays off. Determinism already guarantees
+/// that second attempt meets the same ambushers in the same cells.
+///
+/// What the compiler adds is the half determinism cannot supply: that there is
+/// something to *do* about them. Generalizing the trap-avoidability machinery
+/// (`DW0342`'s "reachable with the hazard cell blocked"), this stands every
+/// ambusher on the cell it will occupy and re-asks whether the trigger cell still
+/// connects to any rest point — a checkpoint, a bonfire, or the campaign entry.
+/// If it does, a retreat exists: luring ground, a positioning line, an exit. If it
+/// does not, the player is sealed in a pocket with the ambush and the beat has no
+/// second attempt to reward — that is a broken beat, not a hard one.
+pub fn check_ambushes(plan: &Plan, world: &World, entry: Option<[i32; 3]>) -> Result<(), NavError> {
+    let mut rests: Vec<[i32; 3]> = plan.checkpoints.iter().map(|c| c.pos).collect();
+    rests.extend(entry);
+    verify_ambushes(world, &plan.ambushes, &rests)
+}
+
+/// The pure core of [`check_ambushes`] (unit-testable against a synthetic
+/// [`World`]). `rests` are the cells that count as safety — every checkpoint and
+/// bonfire cell plus the campaign entry.
+fn verify_ambushes(
+    world: &World,
+    ambushes: &[crate::plan::AmbushPlan],
+    rests: &[[i32; 3]],
+) -> Result<(), NavError> {
+    if ambushes.is_empty() || rests.is_empty() {
+        return Ok(());
+    }
+    for amb in ambushes {
+        let blocked: BTreeSet<[i32; 3]> = amb
+            .actor_cells
+            .iter()
+            .copied()
+            .filter(|c| *c != amb.at)
+            .collect();
+        if blocked.is_empty() {
+            continue; // nothing stands in the player's way
+        }
+        let occupied = world.with_sealed(&blocked);
+        let Some(from) = occupied.snap_standable(amb.at, SNAP_RADIUS) else {
+            continue; // an unstandable trigger cell is another proof's concern
+        };
+        let escapes = rests.iter().any(|r| {
+            occupied
+                .snap_standable(*r, SNAP_RADIUS)
+                .is_some_and(|goal| occupied.find_path(from, goal).is_some())
+        });
+        if !escapes {
+            return Err(NavError {
+                code: DW_AMBUSH_NO_COUNTERPLAY,
+                message: format!(
+                    "ambush `{}` at {:?} leaves no counterplay: with its ambushers standing on \
+                     {:?}, no checkpoint, bonfire or campaign entry is walkable from the trigger \
+                     cell any more — the party is sealed in a pocket with the ambush and can only \
+                     trade blows blind. An un-telegraphed ambush is fine (spec-0016 §3: dying \
+                     uninformed once is how the level teaches); an ambush with no retreat, no \
+                     luring ground and no exit is not, because the second attempt has nothing to \
+                     reward. Widen the room, move an ambusher off the only way out, or add a rest \
+                     point behind the player — do NOT delete the proof.",
+                    amb.id, amb.at, amb.actor_cells
                 ),
             });
         }
@@ -4799,6 +4998,123 @@ mod tests {
             solid.insert([x, y - 1, 1]);
         }
         World::from_solid_cells(solid)
+    }
+
+    /// A 1-wide, ceilinged corridor along x at z=1 (walls at z=0 and z=2, floor
+    /// at y=64, ceiling at y=67). A body standing in it cannot be climbed over —
+    /// the headroom above a blocked cell is the ceiling.
+    fn walled_corridor() -> World {
+        let mut walls = Vec::new();
+        for x in 0..9 {
+            for y in [65, 66] {
+                walls.push([x, y, 0]);
+                walls.push([x, y, 2]);
+            }
+        }
+        floored(9, 3, 65, &walls)
+    }
+
+    fn timed_gate(
+        region: ([i32; 3], [i32; 3]),
+        open_ticks: u32,
+        closed_ticks: u32,
+    ) -> crate::plan::TimedGatePlan {
+        crate::plan::TimedGatePlan {
+            id: "timed-gate/piston-hall".to_string(),
+            safe: "piston_hall".to_string(),
+            gate_anchor: "anchor/gate".to_string(),
+            gate_region: region,
+            gate_block: "minecraft:iron_bars".to_string(),
+            open_ticks,
+            closed_ticks,
+            phase: 0,
+        }
+    }
+
+    /// A generous window: crossing a 1-cell doorway costs a handful of ticks and
+    /// the gate stands open for 60 of every 100, so most of the cycle is a legal
+    /// entry. A readable gate.
+    #[test]
+    fn timed_gate_with_a_generous_window_is_readable() {
+        let world = shortcut_world(12, 9, 65, 4, 1, None);
+        let g = timed_gate(([1, 65, 4], [1, 66, 4]), 60, 40);
+        verify_timed_gates(&world, &[g]).expect("60 open of a 100-tick cycle is a timing read");
+    }
+
+    /// The same span with an open window barely longer than the crossing itself:
+    /// almost every entry phase is a death, so the gate is a coin flip. `DW0378`.
+    #[test]
+    fn timed_gate_whose_window_barely_admits_a_crossing_is_dw0378() {
+        let world = shortcut_world(12, 9, 65, 4, 1, None);
+        // Crossing the doorway is 2 moves = 8 ticks; a 10-tick open window inside
+        // a 200-tick cycle admits 3 of 200 phases = 1%.
+        let g = timed_gate(([1, 65, 4], [1, 66, 4]), 10, 190);
+        let err = verify_timed_gates(&world, &[g])
+            .expect_err("a window that admits ~1% of the cycle is a slot machine");
+        assert_eq!(err.code, DW_TIMED_GATE_COIN_FLIP); // DW0378
+        assert!(
+            err.message.contains("coin flip"),
+            "the message must name the failure: {}",
+            err.message
+        );
+    }
+
+    /// An open window SHORTER than the crossing admits nothing at all — the
+    /// degenerate end of the same rule, and the one a player can never learn.
+    #[test]
+    fn timed_gate_no_one_can_ever_cross_is_dw0378() {
+        let world = shortcut_world(12, 9, 65, 4, 1, None);
+        let g = timed_gate(([1, 65, 4], [1, 66, 4]), 2, 20);
+        let err = verify_timed_gates(&world, &[g])
+            .expect_err("a window shorter than the crossing admits no phase at all");
+        assert_eq!(err.code, DW_TIMED_GATE_COIN_FLIP); // DW0378
+    }
+
+    fn ambush(at: [i32; 3], actor_cells: Vec<[i32; 3]>) -> crate::plan::AmbushPlan {
+        crate::plan::AmbushPlan {
+            id: "ambush/stair-turn".to_string(),
+            at,
+            actor_cells,
+        }
+    }
+
+    /// An ambush in an open room: the ambusher stands beside the player, so a
+    /// retreat to the entry is still walkable. Un-telegraphed and lethal is fine
+    /// — there is a play on the retry, which is all the engine owes.
+    #[test]
+    fn ambush_in_open_ground_has_counterplay() {
+        let world = floored(9, 9, 65, &[]);
+        let amb = ambush([4, 65, 4], vec![[5, 65, 4]]);
+        verify_ambushes(&world, &[amb], &[[0, 65, 0]])
+            .expect("an ambusher in open ground never seals the room");
+    }
+
+    /// A 1-wide corridor with the ambusher between the player and everything
+    /// behind them: no retreat, no luring ground, no exit. `DW0376`.
+    #[test]
+    fn ambush_that_seals_the_only_way_out_is_dw0376() {
+        let world = walled_corridor();
+        // Player at the dead end (x=8); the ambusher spawns at x=7, behind them.
+        let amb = ambush([8, 65, 1], vec![[7, 65, 1]]);
+        let err = verify_ambushes(&world, &[amb], &[[0, 65, 1]])
+            .expect_err("an ambush that corks the only corridor has no counterplay");
+        assert_eq!(err.code, DW_AMBUSH_NO_COUNTERPLAY); // DW0376
+        assert!(
+            err.message.contains("no counterplay"),
+            "the message must name the missing play: {}",
+            err.message
+        );
+    }
+
+    /// The same corridor, but a bonfire sits at the dead end WITH the player:
+    /// dying is now cheap and the retry is a real second attempt, so the beat
+    /// carries no obligation.
+    #[test]
+    fn ambush_with_a_rest_point_on_the_players_side_has_counterplay() {
+        let world = walled_corridor();
+        let amb = ambush([8, 65, 1], vec![[7, 65, 1]]);
+        verify_ambushes(&world, &[amb], &[[0, 65, 1], [8, 65, 1]])
+            .expect("a rest point on the player's own side is a play");
     }
 
     /// A synthetic shortcut-door world (spec-0016 §2): a room `w × d` split by a
