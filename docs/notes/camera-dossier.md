@@ -186,10 +186,10 @@ the cinematic camera exists publicly; shot durations and cut triggers are
 undocumented (independently re-verified 2026-08-01: searches for the cut
 interval return only "it frequently changes"). Load-bearing sources: Obbe
 Vermeij's dev-history account of the cinematic cam's origin, relayed by
-TheGamer and GamesRadar+ (primary-source dev, high credibility — GTA III's
+TheGamer (fetched and quote-verified; primary-source dev — GTA III's
 train ride was boring, so he made the camera "switch between random viewpoints
 near the track", then added a wheel cam and a chasing-car view for vehicles);
-GTA Wiki's *Cinematic Camera* page for community shot names (folklore tier,
+GTAForums player threads for community shot names (folklore tier,
 suggestive only — it confirms San Andreas introduced selectable angles
 "helicopter, pedestrian, etc." but names no timings); and the invisible
 truck-cab camera rig in *Father/Son*, reported by PCGamesN and torn down on
