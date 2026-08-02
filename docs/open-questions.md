@@ -65,3 +65,82 @@ deliver the cross-platform distribution win without a stack switch — M5
 research item. Decision: finish the Java line and find its ceiling first. The
 DSL is the edition-agnostic asset — a Bedrock emitter backend remains a
 plausible post-v1 compiler target with campaigns unchanged.
+
+Data point (owner, 2026-08-01): "Better on Bedrock" — the owner played it and
+its content richness (new items, mobs, bosses) registered as datapack-grade.
+It is a vanilla-legal Bedrock **Add-On** (behavior pack JSON entities/AI +
+resource pack Molang models/animations + the `@minecraft/server` Script API),
+auto-distributed to unmodified clients on join. Java has no vanilla path to
+that tier — new entity models/AI/client scripting require mods. Confirms both
+halves of the verdict above: the Bedrock staging ceiling is real, and the M6
+modpack line is Java's route to the same tier (with a client install as the
+distribution tax Bedrock doesn't pay).
+
+Revisited (owner challenge, 2026-08-01: "should have picked Bedrock if
+self-made assets are the core; Java's edge only shows at M6"). Corrections
+and the standing verdict:
+- Concession: Bedrock GameTest ships an official **SimulatedPlayer** API
+  (move/jump/interact/attack), so the machine-validation gap is narrower
+  than the earlier "research-grade bot gap" claim. Still unproven there:
+  whole-map critical-path traversal and byte-deterministic LevelDB worlds.
+- Reversal of the owner's framing: Java's advantage is exercised EVERY
+  round (bot/PackTest/determinism/render loop — all riding Java's open
+  ecosystem), not deferred to M6; what IS deferred to M6 is closing the
+  CONTENT ceiling. And the M6 bet itself is Java-exclusive: the modpack
+  production line curates an existing mod ecosystem Bedrock simply lacks —
+  Bedrock wins on native ceiling, Java wins on a removable one.
+- The ~60% staging tax is largely SUNK (camera/dialogue/puppets/checkpoints
+  built, marginal cost now low); switching re-levies the proof tax on the
+  edition-independent 40% that caused the real QA pain.
+- Priced action — SHELVED (owner decision, 2026-08-02): no Bedrock client
+  exists for macOS, the project's only dev/playtest platform, so Bedrock
+  output cannot be owner-verified. The M4-end spike idea stays recorded
+  here but is not scheduled; revisit only if a Bedrock-testable
+  environment appears. Prod constraint stands regardless: BDS is
+  x86_64-only (no Raspberry Pi).
+
+## M6 strategy: modpack production line, not mod production (owner + planner, 2026-08-01)
+
+Owner's thesis, planner-endorsed: the M6 bet is an LLM-driven production line
+for [curated modpack + adventure-designed open world] — the YouTube
+survival-challenge genre where designed story pockets are 大号箱庭 embedded in
+free natural terrain (no effort spent where no story lives). Market gap: the
+industry's "dungeons" are chest+spawner+boss structures; nobody can produce
+directed adventure-mode content at pack scale (DawnCraft's manual success
+proves the scarcity). Our moat = machine-proven completability + area-scoped
+rule enforcement. Key mechanic answering gear-trivialization: TRIAL GATES —
+entering a story pocket stashes the survival loadout and issues the pocket's
+designed kit (Zelda-shrine model), so stealth stays stealth at any progression
+stage. Self-produced mods demote to an internal capability (thin glue where
+vanilla + library mods can't express). De-risking spikes before commitment:
+(1) proofs over real region files (assembled model reads chunks, not only
+prefabs); (2) Carpet fake-player validation ladder (mineflayer breaks under
+content mods; Carpet is already tooling-whitelisted); (3) packwiz-as-code
+pipeline with ADR-0013 license vetting. Sequenced after M5 polish.
+
+## The LLM world editor — layered editing (owner, 2026-08-01)
+
+The unifying frame for the visual loop + solver + generators: an LLM-native
+world editor with three editing layers. L1 SITING (M6): terrain-feature query
+over real region files ("lake islands ≥N", "flat-top hills") returning
+snapshot+coordinate candidates — the LLM picks sites like a player choosing a
+build spot, vs traditional mods' undesigned algorithmic scatter. L2 MASSING
+(M5-polish): declarative jigsaw layout constraints (pin positions/orientations,
+adjacency wishes) — composing, not seed-rolling. L3 DETAILING (M5-polish, new
+subsystem): a deterministic geometry edit-verb language where edit scripts are
+the source artifact and NBT is build output — block-level interiors/lighting
+authorship without breaking ADR-0006; the snapshot loop provides sub-second
+feedback. spec-0015 is the editor's eyes; L2/L3 are its hands.
+
+## Macro-terrain composition, not site search (owner, 2026-08-01)
+
+L1 revised: the owner rejects filler between story areas — the macro-journey
+is authored (village tutorial → river ride → colossi strait → grassland →
+lone mountain, white city at its foot). Architecture = the delve pipeline one
+scale up: landform-scale terrain prefabs + a journey-graph layout solver +
+seamless blending (gradient-domain/Poisson, Laplacian pyramids, graph-cut
+seams, example-based synthesis, unifying erosion pass) + rivers CARVED along
+the narrative path rather than found. Site search demotes to garnish. Key MC
+fact to exploit: 1.18+ worldgen is data-driven (density functions in datapack
+JSON) — a possibly mod-free route for macro-terrain; ceiling to be measured
+vs offline heightfield baking. Research task filed.

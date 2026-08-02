@@ -2,8 +2,9 @@
 
 - **Status**: Approved (task #43, owner-initiated 2026-07-31; open decisions
   resolved by owner in conversation, 2026-07-31)
-- **Owner framing**: "我们的DSL要给陷阱留出空间…这些应该作为预制件还是应该
-  有其他的实现方式?" — should traps be prefabs or something else?
+- **Owner framing** (paraphrased): the DSL must make room for traps — and
+  the open question was whether they live as prefabs or need another
+  implementation layer.
 - **Answer (this spec)**: a **three-layer hybrid**, mirroring the existing
   wave-anchor split. ADRs: 0003 (vanilla-first), 0004 (prefab/jigsaw), 0006
   (determinism). Precedent: spec-0008 §7 environment triggers, spec-0010

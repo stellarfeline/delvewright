@@ -131,6 +131,12 @@ validation/          # docker compose: headless server + bot, same image as CI &
 - Specs: numbered `spec-NNNN-<slug>.md`, each with an explicit "Acceptance criteria"
   section phrased as machine-checkable assertions.
 - Commits/PRs: conventional, small, one concern each.
+- **Privacy in repo artifacts** (owner, 2026-08-02): repo content never
+  includes the owner's personal information or verbatim personal speech.
+  Record decisions impersonally in English ("owner decision, date,
+  rationale"); quotes and personal context stay in local agent memory or
+  `docs/notes/private/` (gitignored). Applies to every repo, including
+  campaign GENERATION logs in the content repo.
 - **Attribution ledger** (owner, 2026-07-31): any PR that adopts a third-party
   library, ports an algorithm, or leans on a paper adds its entry (with verified
   license) to `docs/ACKNOWLEDGEMENTS.md` in the same PR. Unlicensed sources are
