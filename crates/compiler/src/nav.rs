@@ -74,6 +74,14 @@ pub const DW_SHORTCUT_NO_LONG_ROUTE: &str = "DW0373";
 /// design — never happens. The classic form is an `unlock` placed on the NEAR
 /// side of its own gate.
 pub const DW_SHORTCUT_NO_GAIN: &str = "DW0374";
+/// `DW0386`: a TD `lane` (spec-0016 §6) whose polyline does not survive contact
+/// with the assembled world — a waypoint anchor that resolves nowhere, a
+/// waypoint with no standable footing, a leg the squad cannot walk, or a leg
+/// **10 blocks or shorter**. The spacing rule is not taste: vanilla re-rolls a
+/// patrol target to a random point once the patroller is within 10 blocks of it,
+/// so a tighter lane is a lane the engine quietly stops following — the squad
+/// wanders, and it reads as working-but-drunk rather than as a bug.
+pub const DW_LANE_GEOMETRY: &str = "DW0386";
 /// `DW0327`: a `begin-stealth` (spec-0014) zone that is unstandable, or unreachable
 /// from the player's position at the beat that activates the stealth check.
 pub const DW_STEALTH_ZONE: &str = "DW0327";
@@ -647,6 +655,85 @@ impl World {
         let mut cells: Vec<[i32; 3]> = dist.keys().copied().collect();
         cells.sort_by_key(|c| (dist[c], c[1], c[2], c[0]));
         cells
+    }
+
+    /// The **aggro ring**: standable cells inside `bounds`, walk-reachable from
+    /// `anchor`, at a straight-line distance in `[radius - tolerance, radius]`
+    /// from the anchor's snapped cell — and able to see it.
+    ///
+    /// This is the placement model for `summon: aggro-edge` (spec-0016 §6): a
+    /// non-raider wave materializes at the boundary of its own perception, so it
+    /// acquires a target the instant it exists and closes under pure native AI.
+    ///
+    /// The band is deliberately one-sided — **at or just inside `radius`, never
+    /// beyond it**. A cell one block outside the mob's own `follow_range` looks
+    /// identical on a map and is a different mechanic entirely: the mob spawns,
+    /// perceives nobody, and stands there until a player walks closer. The
+    /// spec's "±tolerance" reading admits that cell; this does not, and stricter
+    /// is the only safe direction for a rule whose failure is silent.
+    ///
+    /// Reachability is inherited from [`World::confined_standable_cells`] — a mob
+    /// summoned into a sealed pocket at the right distance would never arrive —
+    /// and line-of-sight is what makes the ring an *aggro* ring rather than a
+    /// circle of coordinates: vanilla's nearest-attackable-target goal is
+    /// sight-gated, so a cell that cannot see the defended point summons a mob
+    /// that stands there.
+    ///
+    /// Deterministic (ADR-0006): integer squared distances throughout, ordered
+    /// **outermost first** — the edge of perception is where the fiction puts
+    /// them — with a fixed `(-d², y, z, x)` tie-break. `Vec` order is the summon
+    /// order.
+    pub fn annulus_standable_cells(
+        &self,
+        anchor: [i32; 3],
+        bounds: ([i32; 3], [i32; 3]),
+        radius: f64,
+        tolerance: f64,
+    ) -> Vec<[i32; 3]> {
+        let Some(centre) = self.ring_centre(anchor, bounds) else {
+            return Vec::new();
+        };
+        let lo_d = (radius - tolerance).max(0.0);
+        let (lo2, hi2) = (lo_d * lo_d, radius * radius);
+        let mut ring: Vec<(i64, [i32; 3])> = self
+            .confined_standable_cells(anchor, bounds)
+            .into_iter()
+            .filter_map(|c| {
+                let d2: i64 = (0..3)
+                    .map(|i| i64::from(c[i] - centre[i]).pow(2))
+                    .sum::<i64>();
+                let d2f = d2 as f64;
+                (d2f >= lo2 && d2f <= hi2 && self.has_line_of_sight(c, centre)).then_some((d2, c))
+            })
+            .collect();
+        ring.sort_by_key(|(d2, c)| (-*d2, c[1], c[2], c[0]));
+        ring.into_iter().map(|(_, c)| c).collect()
+    }
+
+    /// The cell an aggro ring is measured from: the defended anchor snapped to
+    /// standable footing inside `bounds`. A defended point is usually an
+    /// affordance the party stands *around* (a fire, a totem, a heart), so the
+    /// raw anchor cell is routinely solid. Public because the generated PackTest
+    /// asserts ring distance against exactly this centre — the runtime assertion
+    /// and the compile-time placement must measure from the same origin or the
+    /// test proves nothing about the mechanic.
+    pub fn ring_centre(&self, anchor: [i32; 3], bounds: ([i32; 3], [i32; 3])) -> Option<[i32; 3]> {
+        let (lo, hi) = bounds;
+        let in_bounds = |c: [i32; 3]| (0..3).all(|i| lo[i] <= c[i] && c[i] <= hi[i]);
+        self.snap_in_bounds(anchor, SNAP_RADIUS, &in_bounds)
+    }
+
+    /// Whether a standing entity at cell `a` can see one at cell `b`: the segment
+    /// between their eye points (1.5 blocks above each cell's floor, the vanilla
+    /// mob eye height) crosses no camera-blocking geometry. Reuses the cutscene
+    /// clip traversal, so "can this be seen through" has exactly one definition in
+    /// the compiler.
+    fn has_line_of_sight(&self, a: [i32; 3], b: [i32; 3]) -> bool {
+        let eye = |c: [i32; 3]| {
+            let p = cell_center(c);
+            [p[0], p[1] + 1.5, p[2]]
+        };
+        walk_cells(eye(a), eye(b), |c| self.blocks_camera(c)).is_none()
     }
 
     /// Nearest standable cell to `c` within `radius` that also satisfies `accept`,
@@ -2094,6 +2181,121 @@ pub fn check_shortcuts(
     entry: Option<[i32; 3]>,
 ) -> Result<(), NavError> {
     verify_shortcuts(world, &plan.shortcuts, entry)
+}
+
+/// The proven lane polyline of every wave that declares one (spec-0016 §6): wave
+/// id → the snapped, walk-connected waypoint cells in march order. These cells —
+/// not the raw anchor positions — are what the compiler writes into
+/// `patrol_target`, so the squad is always sent somewhere it can actually stand.
+pub type LaneRoutes = BTreeMap<String, Vec<[i32; 3]>>;
+
+/// The minimum legal distance between consecutive lane waypoints, in blocks
+/// (`DW0386`). Vanilla re-rolls a patrol target to a random point once the
+/// patroller gets within 10 blocks of it, so a leg of 10 or less is a leg the
+/// engine stops following; the spike's measured working default is 12.
+const LANE_MIN_LEG: f64 = 10.0;
+
+/// Resolve and prove every TD lane (spec-0016 §6), raising `DW0386` on the first
+/// failure.
+///
+/// Four obligations per lane, in the order an author hits them:
+/// 1. every waypoint anchor resolves in the wave's area;
+/// 2. every waypoint has standable footing within [`SNAP_RADIUS`];
+/// 3. every leg — including the one from the spawn anchor to the first waypoint —
+///    is genuinely walkable by the squad;
+/// 4. every leg is longer than [`LANE_MIN_LEG`].
+///
+/// Routed over the **no-gate-use** view, exactly like wave seating: lane mobs
+/// cannot right-click a fence gate open, so a lane that "works" only by walking
+/// through one does not work.
+pub fn plan_lanes(plan: &Plan, world: &World) -> Result<LaneRoutes, NavError> {
+    let entity_world_owned;
+    let world: &World = if world.has_use_gates() {
+        entity_world_owned = world.without_gate_use();
+        &entity_world_owned
+    } else {
+        world
+    };
+    let c = plan.campaign;
+    let mut out: LaneRoutes = BTreeMap::new();
+    for w in &c.quests.content.waves {
+        let Some(lane) = &w.lane else { continue };
+        let area = crate::plan::wave_area(c, w.id.as_str());
+        let anchor = area.and_then(|a| plan.point(a, w.anchor.as_str()));
+        let (Some(area), Some(anchor)) = (area, anchor) else {
+            // An unresolvable spawn anchor is DW0310's concern (the dangling
+            // `spawn-wave`); do not double-report it here.
+            continue;
+        };
+        let fail = |message: String| NavError {
+            code: DW_LANE_GEOMETRY,
+            message,
+        };
+        let mut cells: Vec<[i32; 3]> = Vec::new();
+        let mut prev = world.snap_standable(anchor, SNAP_RADIUS).ok_or_else(|| {
+            fail(format!(
+                "lane wave `{}`: its spawn anchor `{}` ({anchor:?}) has no standable footing \
+                 within {SNAP_RADIUS} blocks, so the squad has nowhere to form up before the \
+                 march (spec-0016 §6)",
+                w.id,
+                w.anchor.as_str()
+            ))
+        })?;
+        let mut prev_name = w.anchor.as_str().to_string();
+        for wp in &lane.waypoints {
+            let Some(pos) = plan.point(area, wp.as_str()) else {
+                return Err(fail(format!(
+                    "lane wave `{}`: waypoint anchor `{}` resolves to no position in area `{area}` \
+                     (spec-0016 §6). A lane is a polyline of REAL places; use an anchor the area's \
+                     assembled prefabs actually expose.",
+                    w.id,
+                    wp.as_str()
+                )));
+            };
+            let cell = world.snap_standable(pos, SNAP_RADIUS).ok_or_else(|| {
+                fail(format!(
+                    "lane wave `{}`: waypoint `{}` ({pos:?}) has no standable footing within \
+                     {SNAP_RADIUS} blocks (spec-0016 §6) — a patrol target the squad cannot stand \
+                     on is a target it never arrives at, so the lane stalls there forever",
+                    w.id,
+                    wp.as_str()
+                ))
+            })?;
+            if world.find_path(prev, cell).is_none() {
+                return Err(fail(format!(
+                    "lane wave `{}`: the leg `{prev_name}` ({prev:?}) → `{}` ({cell:?}) is not \
+                     walkable (spec-0016 §6). The squad marches this polyline on foot with native \
+                     pathfinding; a leg the compiler cannot walk is a leg the mobs cannot walk. \
+                     Note lane mobs cannot open fence gates — the proof runs on the same \
+                     no-gate-use view wave seating uses.",
+                    w.id,
+                    wp.as_str()
+                )));
+            }
+            let leg = (0..3)
+                .map(|i| f64::from(cell[i] - prev[i]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            if leg <= LANE_MIN_LEG {
+                return Err(fail(format!(
+                    "lane wave `{}`: the leg `{prev_name}` ({prev:?}) → `{}` ({cell:?}) is {leg:.1} \
+                     blocks, which is not more than {LANE_MIN_LEG:.0} (spec-0016 §6). Vanilla \
+                     re-rolls a patrol target to a RANDOM point once the patroller is within 10 \
+                     blocks of it, so a leg this short is one the engine quietly stops following \
+                     and the squad wanders off-lane — it reads as working-but-drunk, not as a bug. \
+                     Space lane waypoints at least 12 blocks apart (the spike's measured default), \
+                     or drop this waypoint.",
+                    w.id,
+                    wp.as_str()
+                )));
+            }
+            cells.push(cell);
+            prev = cell;
+            prev_name = wp.as_str().to_string();
+        }
+        out.insert(w.id.as_str().to_string(), cells);
+    }
+    Ok(out)
 }
 
 /// The pure core of [`check_shortcuts`] (split out so it is unit-testable against
@@ -3795,6 +3997,109 @@ mod tests {
         // Sanity: the floor genuinely connects across the seam (an unconfined flood
         // would reach the right room), so confinement — not a wall — is what holds.
         assert!(world.find_path([1, 65, 1], [5, 65, 1]).is_some());
+    }
+
+    // --- spec-0016 §6: the aggro ring -----------------------------------
+
+    #[test]
+    fn aggro_ring_cells_sit_at_or_just_inside_the_radius() {
+        // A 25×25 floored hall; the ring is drawn around its centre at radius 10.
+        let world = floored(25, 25, 65, &[]);
+        let bounds = ([0, 64, 0], [24, 66, 24]);
+        let centre = [12, 65, 12];
+        let ring = world.annulus_standable_cells(centre, bounds, 10.0, 1.0);
+        assert!(!ring.is_empty(), "an open hall has a ring at radius 10");
+        for c in &ring {
+            assert!(world.standable(*c), "ring cell {c:?} is standable");
+            let d = ((0..3)
+                .map(|i| f64::from(c[i] - centre[i]).powi(2))
+                .sum::<f64>())
+            .sqrt();
+            // One-sided on purpose: a cell OUTSIDE follow_range summons a mob
+            // that perceives nobody and stands there.
+            assert!(
+                (9.0..=10.0).contains(&d),
+                "ring cell {c:?} at distance {d} is outside [radius-1, radius]"
+            );
+        }
+        // Ordered outermost-first — the edge of perception is where the fiction
+        // (and the mechanic) puts them.
+        let dist = |c: &[i32; 3]| {
+            ((0..3)
+                .map(|i| f64::from(c[i] - centre[i]).powi(2))
+                .sum::<f64>())
+            .sqrt()
+        };
+        assert!(
+            dist(&ring[0]) >= dist(ring.last().unwrap()),
+            "the ring is ordered outermost-first: {ring:?}"
+        );
+        // Deterministic (ADR-0006).
+        assert_eq!(
+            ring,
+            world.annulus_standable_cells(centre, bounds, 10.0, 1.0)
+        );
+    }
+
+    #[test]
+    fn aggro_ring_excludes_cells_that_cannot_see_the_defended_point() {
+        // A hall with a full-height wall at x=12 splitting it in two, pierced by
+        // nothing: cells on the far side are at ring distance but blind, so a mob
+        // summoned there would acquire no target — the mechanic's whole point.
+        let mut solid = BTreeSet::new();
+        for x in 0..25 {
+            for z in 0..9 {
+                solid.insert([x, 64, z]);
+                solid.insert([x, 68, z]);
+            }
+        }
+        for z in 0..9 {
+            for y in 65..=67 {
+                solid.insert([18, y, z]);
+            }
+        }
+        // Leave a floor-level gap so the far side stays walk-REACHABLE (this is a
+        // sight test, not a reachability test).
+        solid.remove(&[18, 65, 4]);
+        solid.remove(&[18, 66, 4]);
+        let world = World::from_solid_cells(solid);
+        let bounds = ([0, 64, 0], [24, 67, 8]);
+        let centre = [8, 65, 4];
+        let ring = world.annulus_standable_cells(centre, bounds, 10.0, 1.0);
+        assert!(!ring.is_empty(), "the near side offers ring cells");
+        for c in &ring {
+            assert!(
+                world.has_line_of_sight(*c, centre),
+                "ring cell {c:?} must see the defended point"
+            );
+        }
+        // A far-side cell at exactly ring distance is excluded despite standing
+        // and being reachable through the gap.
+        let blind = [18 + 1, 65, 0];
+        if world.standable(blind) {
+            let d = ((0..3)
+                .map(|i| f64::from(blind[i] - centre[i]).powi(2))
+                .sum::<f64>())
+            .sqrt();
+            if (9.0..=10.0).contains(&d) {
+                assert!(
+                    !ring.contains(&blind),
+                    "a blind cell at ring distance must be excluded"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn aggro_ring_is_empty_when_the_room_is_smaller_than_the_radius() {
+        // The DW0387 shape: a 5×5 room has no cell 20 blocks from its centre.
+        let world = floored(5, 5, 65, &[]);
+        let bounds = ([0, 64, 0], [4, 66, 4]);
+        assert!(
+            world
+                .annulus_standable_cells([2, 65, 2], bounds, 20.0, 1.0)
+                .is_empty()
+        );
     }
 
     #[test]

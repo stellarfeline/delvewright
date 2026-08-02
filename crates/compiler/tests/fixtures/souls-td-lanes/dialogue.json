@@ -1,0 +1,8 @@
+{
+  "dsl_version": "0.2.0",
+  "campaign_id": "souls-td-lanes",
+  "stage": "dialogue",
+  "content": {
+    "dialogues": []
+  }
+}

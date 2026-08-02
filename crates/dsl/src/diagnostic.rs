@@ -236,6 +236,35 @@ pub mod codes {
     /// permanence is structural: there is no verb that can put it back. Use a
     /// different gate for the point-of-no-return beat.
     pub const SHORTCUT_RESEALED: &str = "DW0372";
+    /// (spec-0016 §6) A wave's TD `lane` / `summon` declaration is structurally
+    /// invalid or internally contradictory: an empty `waypoints` list, a
+    /// waypoint anchor no area's prefab provides, a repeated consecutive
+    /// waypoint, an `aggro_radius` outside `4..=64`, a mob whose
+    /// `attributes.follow_range` disagrees with `aggro_radius` (they MUST be
+    /// equal — a patrolling raider holds ground against a target it cannot
+    /// engage), or `lane` together with `summon: aggro-edge` (a lane IS the
+    /// routing; aggro-edge is its opposite).
+    pub const LANE_INVALID: &str = "DW0381";
+    /// (spec-0016 §6) A lane wave contains a non-raider species. `Patrolling` /
+    /// `patrol_target` are Raider NBT: on anything else they are dropped and the
+    /// mob simply stands where it spawned. Live-verified marching: pillager,
+    /// vindicator, evoker, ravager, witch. Non-raiders use
+    /// `summon: aggro-edge` instead.
+    pub const LANE_NOT_RAIDER: &str = "DW0382";
+    /// (spec-0016 §6) A lane wave fields fewer than 2 mobs. A lone patroller
+    /// sets `Patrolling:0b` on itself when it finds no companion within its
+    /// follow range (vanilla), so a one-mob lane cancels itself.
+    pub const LANE_SQUAD_TOO_SMALL: &str = "DW0383";
+    /// (spec-0016 §6) A lane `pillager` is not holding a crossbow. Its only
+    /// attack goal is the crossbow goal, so a pillager that acquires a target it
+    /// has no runnable attack for freezes in place indefinitely — patrol blocked
+    /// by the target, nothing to run instead (live-verified deadlock).
+    pub const LANE_UNARMED: &str = "DW0384";
+    /// (spec-0016 §6) A `summon: aggro-edge` wave mob declares no
+    /// `attributes.follow_range`. That radius IS the summon ring — the distance
+    /// at which the mob perceives the party — so it is authored, never guessed
+    /// from a vanilla defaults table the compiler cannot verify.
+    pub const AGGRO_EDGE_NO_RANGE: &str = "DW0385";
     /// (v0.6) A trap dispense-payload item id is not in the pinned 1.21.11 registry
     /// (spec-0011; mirrors `DW0143`). Validation-tier (exit 1). Renumbered off the
     /// spec's stale reserved number (0198 — since taken).

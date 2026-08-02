@@ -215,6 +215,10 @@ fn is_runtime_holder(h: &str) -> bool {
         || h.starts_with("#mt_")
         || h.starts_with("#at_")
         || h.starts_with("#arun_")
+        // spec-0016 §6: a lane's shared waypoint index is real runtime state the
+        // TD templates drive (like the move drivers above); each initializes it
+        // explicitly on entry.
+        || h.starts_with("#lane_")
 }
 
 /// Root cause of the round-6 island flake (`v06_spawn_idempotent` expected 1,
@@ -289,6 +293,11 @@ fn suites() -> Vec<(&'static str, BuildOutput)> {
         (
             "and-join",
             build_dir(&common::compiler_fixtures_dir().join("and-join")),
+        ),
+        // spec-0016 §6: the TD lane + aggro-edge templates.
+        (
+            "souls-td-lanes",
+            build_dir(&common::compiler_fixtures_dir().join("souls-td-lanes")),
         ),
         ("hello-world+actors", build_actor_hello_world()),
         ("hello-world+handoff", build_handoff_hello_world()),
