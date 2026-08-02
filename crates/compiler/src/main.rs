@@ -345,6 +345,12 @@ fn validate_loaded(
             // runs on every validate/analyze/build. No-op for English-only campaigns.
             let sidecars = parse_sidecars(&loaded.l10n, &mut diags);
             diags.extend(delvewright_dsl::validate_l10n(&campaign, &sidecars));
+            // The machine completion-marker channel is reserved (DW0182): no
+            // authored or translated player-visible line may carry `[dw:complete`,
+            // the bot's completion oracle. Runs for English-only campaigns too.
+            diags.extend(delvewright_dsl::validate_marker_channel(
+                &campaign, &sidecars,
+            ));
             // v0.6 sound + art-title surface (spec-0014): sound-event ids
             // (DW0326), the deferred `play-sound at: actor` gate (DW0335), and
             // art-title glyph coverage against the `delve:art` font over the source

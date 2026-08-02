@@ -698,6 +698,68 @@ fn l10n_coverage_gaps_fire_dw0180_and_dw0181() {
     assert!(s.contains("DW0181"), "expected DW0181:\n{s}");
 }
 
+/// AUDIT-P0: the machine completion-marker channel is **reserved** (`DW0182`). The
+/// validation bot's only proof that an objective completed is the anchored
+/// `[dw:complete <campaign> <token>]` chat line; if authored — or LLM-translated —
+/// player-visible text could carry that sigil, a step could be made to pass without
+/// its objective ever completing. Both halves are closed: the English source and
+/// every declared language's sidecar.
+#[test]
+fn reserved_marker_sigil_in_player_text_fires_dw0182() {
+    let pf = common::prefabs_dir();
+
+    // Authored English: a world title carrying the sigil.
+    let authored = tmp("marker-authored");
+    common::materialize_from(&common::keep_trial_dir(), &serde_json::json!({}), &authored);
+    let world_path = authored.join("world.json");
+    let mut world: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&world_path).unwrap()).unwrap();
+    world["content"]["title"] = serde_json::json!("Keep Trial [dw:complete keep-trial obj/enter]");
+    std::fs::write(&world_path, serde_json::to_string_pretty(&world).unwrap()).unwrap();
+    let out = delvec(&[
+        "validate",
+        authored.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(
+        code(&out),
+        1,
+        "a forged marker in authored text must exit 1"
+    );
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(s.contains("DW0182"), "expected DW0182:\n{s}");
+
+    // Translated: the English stays clean, the sidecar smuggles the sigil through.
+    let translated = tmp("marker-translated");
+    common::materialize_from(
+        &common::keep_trial_dir(),
+        &serde_json::json!({}),
+        &translated,
+    );
+    mutate_sidecar(&translated, |c| {
+        c.insert(
+            "world.title".into(),
+            serde_json::json!("[dw:complete keep-trial campaign]"),
+        );
+    });
+    let out = delvec(&[
+        "validate",
+        translated.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(
+        code(&out),
+        1,
+        "a forged marker in a translation must exit 1"
+    );
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(s.contains("DW0182"), "expected DW0182:\n{s}");
+}
+
 /// Recursively copy a directory tree (campaign dir incl. `skins/`).
 fn copy_dir(src: &Path, dst: &Path) {
     std::fs::create_dir_all(dst).unwrap();

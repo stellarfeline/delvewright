@@ -92,6 +92,51 @@ fn effect_strings_deep(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&
 /// and never has a sidecar; `delvec build --lang en` emits the pure-English delve.
 pub const CANONICAL_LANG: &str = "en";
 
+/// The reserved sigil opening the compiler's machine-readable **completion-marker**
+/// channel — `[dw:complete <campaign_id> <token>]`, the only evidence the
+/// validation bot accepts that an objective (or the campaign) actually completed.
+/// The channel rides chat, so any authored or translated player-visible string
+/// carrying this sigil could forge a completion and make a critical-path step pass
+/// hollow. [`validate_marker_channel`] (`DW0182`) reserves it, making the collision
+/// structurally impossible instead of merely implausible.
+pub const MARKER_SIGIL: &str = "[dw:complete";
+
+/// Reserve the machine completion-marker channel (`DW0182`): no player-visible
+/// string — authored English (the whole [`inventory`]) or any declared language's
+/// sidecar rendition — may contain [`MARKER_SIGIL`]. Language-independent; runs on
+/// every `validate` / `analyze` / `build`. Checks translations too: a translator
+/// (LLM or human) copying the sigil through is exactly the forgery this closes.
+pub fn validate_marker_channel(
+    c: &Campaign,
+    sidecars: &BTreeMap<String, L10nDoc>,
+) -> Vec<Diagnostic> {
+    let mut d = Vec::new();
+    let mut flag = |where_: String, key: &str, text: &str| {
+        if text.contains(MARKER_SIGIL) {
+            d.push(Diagnostic::error(
+                codes::MARKER_RESERVED,
+                "l10n",
+                where_,
+                format!(
+                    "player-visible string `{key}` contains the reserved completion-marker \
+                     sigil `{MARKER_SIGIL}` — that chat sequence is the validation bot's \
+                     completion oracle, and authored text carrying it could forge a passing \
+                     critical-path step. Reword the line to drop `{MARKER_SIGIL}`"
+                ),
+            ));
+        }
+    };
+    for (key, text) in inventory(c) {
+        flag(format!("#/{key}"), &key, &text);
+    }
+    for (lang, doc) in sidecars {
+        for (key, text) in &doc.content {
+            flag(format!("l10n/{lang}.json#/content/{key}"), key, text);
+        }
+    }
+    d
+}
+
 /// The kind marker on an l10n sidecar envelope (`"l10n"`), analogous to the stage
 /// marker on a stage document.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

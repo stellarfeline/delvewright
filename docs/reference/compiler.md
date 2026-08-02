@@ -64,7 +64,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 1 | Load campaign dir (6 stage docs + optional `world-edits.json` + `l10n/` sidecars) | `compiler::load` | internal (≥10) on unreadable dir |
 | 2 | Parse (serde, `deny_unknown_fields`) | `dsl::parse_campaign` | `DW0100` (exit 1) |
 | 3 | Validate stages 1–7 (schema + referential, full injected registries) | `dsl::validate_campaign_with` | `DW01xx` (exit 1) |
-| 4 | l10n sidecar coverage | `dsl::validate_l10n` | `DW0180`/`DW0181` (exit 1) |
+| 4 | l10n sidecar coverage + reserved marker channel | `dsl::validate_l10n`, `dsl::validate_marker_channel` | `DW0180`/`DW0181`/`DW0182` (exit 1) |
 | 5 | Analyze (deep quest/dialogue reachability) | `compiler::analyze` | `DW02xx` (exit 2) |
 | 6 | Solve jigsaw layout (per `prefab_pool` area, from seed) | `compiler::solver` | `DW030x` (exit 3) |
 | 7 | Assemble world model (placed pieces → voxel grid; ocean sea-level datum check) | `compiler::plan` | `DW030x`/`DW0344` (exit 3) |
@@ -346,8 +346,8 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | `spawn-npc` | `function <ns>:spawn_npc_<npc>` — the generated entrance function, emitted once per **deferred** NPC. Its two lines are the world-init summons, each independently guarded: body by `unless entity @e[tag=dw_npc,tag=dw_npc_<n>]`, hitbox by `unless entity @e[tag=dw_npc_<n>,tag=!dw_npc]` (both carry the id tag, so a single shared guard would let the body's own summon suppress the hitbox). The `npc_summons` PackTest fires each deferred NPC's entrance after `setup_finish` and asserts exactly one body. |
 | `move-npc` | Per-tick tp along A*-planned walkable waypoints (hitbox in lockstep), at cell **centres** with L-shaped vertical steps — see §4 "Entity placement". `on_arrive` (v0.6): the driver's final-waypoint tick additionally runs `mv_arrive_<key>` (the bundle's effects), mirroring `ma_tick`/`ma_arrive_<key>` exactly; a bare move emits no hook (byte-identical). |
 | `cutscene` | Per player: save gamemode+pos → spectator → alternate `spectate` between two co-located dolly cameras each tick (skipping any player actively holding sneak — `predicate=!<ns>:sneak_held`, see §4 "The `spectate` bounce is sneak-gated") → restore. **Keyframe dolly (task #64, `compiler::camera`)**: each shot's waypoint polyline is arc-length parameterized (equal distance per time, not equal segments) with baked smoothstep ease-in/ease-out, then emitted as a tick-0 snap + a `tp` every *N* ticks with display-entity `teleport_duration:N` armed via `data merge` — the **client** tweens position and rotation linearly between keyframes (spike-measured: one position-sync packet per keyframe, rotation interpolates, the `spectate` bounce cannot reset an in-flight tween, and a same-tick merge+`tp` applies the OLD duration because position syncs flush before metadata — which is exactly why the snap and its cadence merge may share a tick). Cadence *N* = the widest of {10, 5, 4, 2, 1} whose rendered chords stay within 0.25 blocks (perpendicular) and 2° (aim) of the exact eased path; a single-waypoint or 1-tick shot is a static snap (cadence 0, no merge). Each shot with a successor resets `teleport_duration:0` on its last owned tick so the next snap is a hard cut, not a glide. Every keyframe `tp` carries an explicit `<yaw> <pitch>` — **Minecraft** entity rotation (`yaw = atan2(-dx, dz)`, 0 = +Z south; `pitch = atan2(-dy, hypot(dx,dz))`, + = down), *not* the render-plan/Chunky yaw convention — computed at emission from the camera's own position: at the shot's `look_at` subject if it has one, else along the eased path's direction of travel. Never the summon default (yaw 0 = south). Positions and rotations rounded to 3 decimals, `-0.0` collapsed to `0.0`, so emission is byte-stable. The bracket also arms the `dw_cutscene` state on every player and releases it on restore — see §4 "A cutscene is pure observation". Multi-shot: all shots share one `#t_<bare>` counter — shot *k* owns `[offset_k, offset_k+len_k]` and the next starts at `offset_k+len_k+1` (hard cut); one marker, one `gamemode spectator @a`, one camera pair, one restore. Both single-shot spellings emit identical bytes. `critical-path.json`'s `cutscene_seconds` is the **total** across shots. Function key = `cs_<first anchor>_<seconds>_<waypoints>` (a pathless styled shot keys `cs_<style>_<subject>_…`), plus an 8-hex sha256 digest of the whole normalized shot list whenever the cutscene is not a bare single shot without `look_at`/`shot_style` (the key must be injective — two shots sharing a first waypoint must never collapse onto one function). Styled shots are expanded (`compiler::camera::expand_shot`) before keyframe planning; a moving subject's per-tick track comes from its sibling move's A* plan, aligned by effect-group/sequence timing. Deduplication stays DSL-content-keyed, so two byte-identical styled cutscenes in *different* move contexts plan from the first occurrence (documented limitation; give the shots distinguishing content to split them). |
-| `campaign-complete` | `dw.campaign` = 1 (dummy objective, **never on the sidebar** — a raw internal id must not surface to players); broadcast `[Delvewright] complete dw.campaign 1` (dark-gray bot channel, the harness's completion signal); title fanfare. |
-| objective lifecycle | Activation shows `title`+`hint`+`note_block.pling` once (flag `dw.ann_<obj>`); completion sound `experience_orb.pickup`. **Marker cleanup (task #45):** completion despawns every entity the objective's activation summoned via the objective-scoped tag — `interact` hitbox + wayfinding marker (`dw_i_<obj>`), `reach` marker (`dw_r_<obj>`). Prop/affordance *blocks* (`interact.prop`, `collect` chest) are scenery and persist; `talk-to`/`kill` summon no per-objective marker. Gated on v0.3+ with a resolved activation, so v0.2 stays byte-identical. |
+| `campaign-complete` | `dw.campaign` = 1 (dummy objective, **never on the sidebar** — a raw internal id must not surface to players); broadcast `[dw:complete <campaign_id> campaign]` (dark-gray bot channel, the harness's completion signal — §4 "The completion-marker channel"); title fanfare. |
+| objective lifecycle | Activation shows `title`+`hint`+`note_block.pling` once (flag `dw.ann_<obj>`); completion sets `dw.o_<obj>` = 1, immediately broadcasts the anchored marker `[dw:complete <campaign_id> obj/<id>]` (§4 "The completion-marker channel"), then plays `experience_orb.pickup`. The marker precedes the objective's effects deliberately: it timestamps *completion*, not the aftermath. **Marker cleanup (task #45):** completion despawns every entity the objective's activation summoned via the objective-scoped tag — `interact` hitbox + wayfinding marker (`dw_i_<obj>`), `reach` marker (`dw_r_<obj>`). Prop/affordance *blocks* (`interact.prop`, `collect` chest) are scenery and persist; `talk-to`/`kill` summon no per-objective marker. Gated on v0.3+ with a resolved activation, so v0.2 stays byte-identical. |
 | `set-time` / `set-weather` | `time set <kw>` / `weather <kw>` (dimension-global, no selector) inline in the effect/dialogue-option function; instantaneous cut, persists (cycle frozen). |
 | relight fixtures (`lighting`) | `setblock` per placed fixture in `setup_finish`, after structure placement + socket seals (spec-0010). Blocks: `torch`/`wall_torch`, `lantern[hanging=…]`, `campfire[lit=true]`, `shroomlight`. |
 | `mitigation: "night-vision"` | `night_vision_tick`: one `effect give @a[x=…,dx=…,y=…,dy=…,z=…,dz=…] minecraft:night_vision 12 0 true` per declaring area (selector = the area's final placed bounds, compile-time literals), then `schedule function <ns>:night_vision_tick 20t` (vanilla replace-mode, so the clock can never double up). `setup_finish` arms it once. A generated `v06_night_vision` PackTest teleports a dummy into the declared bounds, runs one clock tick and asserts it holds the effect — then teleports it 1000 blocks out and asserts it does not. |
@@ -379,6 +379,41 @@ display name for "night vision", so a renamed water bottle passed `DW0210` while
 nothing in the shipped world granted night vision — a check that passed without the
 feature existing. Player-facing text is also localizable, so keying on it makes a
 verdict language-dependent (ADR-0006).
+
+### The completion-marker channel (the bot's oracle)
+
+The critical-path bot's ONLY evidence that something completed is a chat line of
+the anchored form
+
+```
+[dw:complete <campaign_id> <token>]
+```
+
+`<token>` is `campaign` (the whole delve, from `campaign-complete`) or the
+completing objective's own `obj/<kebab>` id (broadcast by `complete_o_<obj>`, as
+the score flips, before that objective's effects run). Both are `tellraw @a`,
+dark-gray. The harness matches the **whole line**, exactly (`harness/src/markers.ts`
+mirrors `plan::marker_line`) — never a substring of a longer line.
+
+Why this shape. Before it, the harness tested every chat line for the *substring*
+`[Delvewright] complete <objective> <value>`, emitted only for the campaign. Two
+holes, both observed live: nothing stopped authored or translated content from
+containing that substring, and a `reach`/`interact`/`talk-to` step passed on
+arrival/on the dialogue opening while its own objective never completed — a 22/22
+green island run whose campaign had in fact completed at step 12, the last ten
+steps hollow. Three properties now make a forged completion impossible rather than
+merely unlikely:
+
+1. player chat reaches a client as `<name> …`, so no player utterance can begin
+   with the sigil;
+2. the campaign id is part of the match, so a marker from other content cannot
+   satisfy this campaign's step;
+3. `DW0182` reserves the sigil in every player-visible string — authored English
+   and every sidecar translation alike.
+
+The harness side of the contract (`critical-path.json` `format_version` 2, the
+per-step `objective` id, and the endgame rule that campaign completion belongs to
+the last objective step) is described under "World / build output" below.
 
 ### A cutscene is pure observation (`dw_cutscene`)
 
@@ -611,6 +646,18 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   build adds `language` + hashes the sidecar), `datapack/`, `packtest-datapack/`,
   `server/`, `critical-path.json`, plus `resourcepack.zip`+`SKINS.md`
   (`resource_pack_sha1` in manifest) for a skinned campaign.
+- `<out>/critical-path.json`: the bot contract. `version` is the **campaign's DSL
+  version**; `format_version` is the **contract's own** version, currently `2`
+  (`plan::CRITICAL_PATH_FORMAT_VERSION`) — bumped when what the harness is told
+  about proving the path changes, independently of the DSL. At format 2 every
+  objective-bearing step (`talk-to`/`reach`/`kill`/`collect`/`interact`) carries
+  `objective`: the `obj/<id>` that step must prove, and the harness passes the step
+  only when **that** objective's anchored completion marker arrives (position
+  arrival, an opened dialogue and an emptied chest are means, never proof). The
+  harness rejects any other `format_version` outright rather than running a path it
+  cannot verify. Endgame rule: campaign completion is due at the LAST objective step;
+  the campaign marker arriving earlier fails the run on the spot, because every
+  remaining step is then provably hollow.
 - `<out>/validation/critical-path-waypoints.json`: the DW0311-proven per-leg route
   thinned to sparse waypoints (`from`/`to` = the `critical-path.json` step
   positions; a waypoint at each corner/floor-height change **and the corridor commit
@@ -940,6 +987,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0173` | Wave-mob `entity` is not a known vanilla entity id. |
 | `DW0180` | l10n sidecar absent / inconsistent envelope / under-covers inventory (also if `en` is declared). Compiler-level. |
 | `DW0181` | l10n sidecar has an orphan key (over-coverage). Compiler-level. |
+| `DW0182` | A player-visible string — authored English (the whole l10n inventory) or any sidecar translation — contains the reserved completion-marker sigil `[dw:complete`. That chat sequence is the validation bot's completion oracle (§4 "The completion-marker channel"); content carrying it could forge a passing critical-path step, so the sigil is **reserved**, not merely discouraged. Reword the line. |
 | `DW0190` | Mannequin `skin.texture_id` malformed or duplicated. |
 | `DW0191` | A `talk-to` has no **ungated** completing option (all `requires_flags`-gated → deadlock risk). |
 | `DW0192` | Wave-mob `effects[].effect` not a known 1.21.11 status-effect id. |

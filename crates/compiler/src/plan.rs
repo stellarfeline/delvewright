@@ -352,6 +352,14 @@ pub struct OptionPlan {
 }
 
 /// A critical-path step (mirrors the amended `critical-path.json` shape).
+///
+/// Every step that stands for a DSL objective carries that objective's id
+/// (`objective_id`, exported as the step's `objective` field). It is the step's
+/// **proof obligation**: the harness passes the step only when the anchored
+/// completion marker for exactly this objective arrives ([`marker_line`]). Without
+/// it a step could only be checked positionally — arriving somewhere is not
+/// completing anything — which is how a run once passed 22/22 on a path whose
+/// campaign had in fact completed at step 12.
 pub enum Step {
     /// Select a class by chatting `command`.
     SelectClass {
@@ -362,6 +370,8 @@ pub enum Step {
     },
     /// Talk to an NPC; `command` fires the objective-completing option.
     TalkTo {
+        /// The `obj/<id>` this step proves complete.
+        objective_id: String,
         /// NPC id.
         npc_id: String,
         /// Absolute NPC position.
@@ -371,6 +381,8 @@ pub enum Step {
     },
     /// Walk to within `radius` of `pos`.
     Reach {
+        /// The `obj/<id>` this step proves complete.
+        objective_id: String,
         /// Anchor id.
         anchor_id: String,
         /// Absolute anchor position.
@@ -381,6 +393,8 @@ pub enum Step {
     /// Slay a wave: goto `pos` (the wave anchor), attack entities tagged `tag`
     /// until the marker channel reports completion (v0.3).
     Kill {
+        /// The `obj/<id>` this step proves complete.
+        objective_id: String,
         /// Wave id (`wave/…`).
         wave_id: String,
         /// Absolute wave-anchor position.
@@ -392,6 +406,8 @@ pub enum Step {
     },
     /// Collect `count` of `item` from a chest at `pos` (v0.3).
     Collect {
+        /// The `obj/<id>` this step proves complete.
+        objective_id: String,
         /// Vanilla item id.
         item: String,
         /// Required count.
@@ -402,6 +418,8 @@ pub enum Step {
     /// Interact at `pos`: goto, then chat `command` (the same `/trigger` the
     /// interaction advancement fires). `requires_item` gates completion (v0.3).
     Interact {
+        /// The `obj/<id>` this step proves complete.
+        objective_id: String,
         /// Interact anchor id.
         anchor_id: String,
         /// Absolute interact-anchor position.
@@ -424,6 +442,43 @@ pub enum Step {
 pub fn safe_local(id: &str) -> String {
     let local = id.split_once('/').map(|(_, r)| r).unwrap_or(id);
     local.replace(['-', '/', '.'], "_")
+}
+
+/// Version of the `critical-path.json` **contract** (its `format_version` field),
+/// independent of the campaign's DSL version: the DSL describes the delve, this
+/// describes what the harness is told about proving it.
+///
+/// * `1` — the pre-oracle shape (never written; a file with no `format_version`).
+///   Steps carried no objective id, so the harness could only check position and a
+///   single unanchored campaign-completion substring — a step could pass without
+///   its objective completing.
+/// * `2` — every objective-bearing step carries `objective`, and completion is
+///   proved by the anchored per-objective marker channel ([`marker_line`]).
+///
+/// The harness **requires** the current version: an older `critical-path.json`
+/// (which it cannot verify) is rejected rather than run hollow.
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 2;
+
+/// The machine completion-marker token for campaign completion. An objective's
+/// token is simply its own id (`obj/<kebab>`).
+pub const MARKER_TOKEN_CAMPAIGN: &str = "campaign";
+
+/// One line of the machine completion-marker channel:
+/// `[dw:complete <campaign_id> <token>]`.
+///
+/// The format is **anchored and exact**: the harness matches the whole chat line
+/// against this grammar (campaign id = the running campaign's, token = `campaign`
+/// or an `obj/<kebab>` id), never a substring anywhere in chat. Three properties
+/// make it a real oracle:
+/// * player chat reaches the client as `<name> …`, so no player can utter a line
+///   that starts with the sigil;
+/// * the campaign id is part of the match, so a marker from other content cannot
+///   satisfy this campaign's step;
+/// * the sigil is reserved in every player-visible string by `DW0182`
+///   ([`delvewright_dsl::validate_marker_channel`]), so authored — or
+///   LLM-translated — text cannot forge one.
+pub fn marker_line(campaign_id: &str, token: &str) -> String {
+    format!("[dw:complete {campaign_id} {token}]")
 }
 
 /// Scoreboard objective for a DSL objective id.
@@ -1276,6 +1331,7 @@ fn build_critical_path(
                         .unwrap_or(area);
                     let pos = point_of(anchors, npc_area, npc_anchor)?;
                     steps.push(Step::TalkTo {
+                        objective_id: id.as_str().to_string(),
                         npc_id: npc.as_str().to_string(),
                         pos,
                         command: format!("/trigger {} set {}", npc_plan.trigger_objective, opt.n),
@@ -1291,6 +1347,7 @@ fn build_critical_path(
                 } => {
                     let pos = point_of(anchors, area, anchor.as_str())?;
                     steps.push(Step::Reach {
+                        objective_id: id.as_str().to_string(),
                         anchor_id: anchor.as_str().to_string(),
                         pos,
                         radius: *radius,
@@ -1311,6 +1368,7 @@ fn build_critical_path(
                     })?;
                     let pos = point_of(anchors, area, w.anchor.as_str())?;
                     steps.push(Step::Kill {
+                        objective_id: id.as_str().to_string(),
                         wave_id: wave.as_str().to_string(),
                         pos,
                         tag: wave_tag(wave.as_str()),
@@ -1327,6 +1385,7 @@ fn build_critical_path(
                 } => {
                     let pos = point_of(anchors, area, anchor.as_str())?;
                     steps.push(Step::Collect {
+                        objective_id: id.as_str().to_string(),
                         item: item.clone(),
                         count: *count as i32,
                         pos,
@@ -1341,6 +1400,7 @@ fn build_critical_path(
                 } => {
                     let pos = point_of(anchors, area, anchor.as_str())?;
                     steps.push(Step::Interact {
+                        objective_id: id.as_str().to_string(),
                         anchor_id: anchor.as_str().to_string(),
                         pos,
                         command: format!("/trigger {} set 1", interact_trigger(id.as_str())),

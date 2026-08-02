@@ -380,3 +380,120 @@ test("isWaveMob excludes NPCs, displays, drops, and the bot itself", () => {
   assert.equal(isWaveMob(ent(undefined), SELF), false, "an unnamed entity is not a target");
   assert.equal(isWaveMob(ent("item", 0.25), SELF), false, "a short dropped entity is excluded");
 });
+
+// --- completion oracle (AUDIT-P0) ---------------------------------------------
+
+const COMPLETE: AssertCompleteStep = {
+  action: "assert-complete",
+  objective: "dw.campaign",
+  value: 1,
+};
+
+test("assert-complete passes only on the anchored campaign marker for THIS campaign", async () => {
+  const bot = new FakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("hello-world");
+  bot.emit("messagestr", "[dw:complete hello-world campaign]");
+  await executor.assertComplete(COMPLETE); // resolves
+});
+
+test("assert-complete ignores a lookalike line and another campaign's marker", async () => {
+  const bot = new FakeBot();
+  const executor = attach(bot, {});
+  executor.useCampaign("hello-world");
+  // Everything a hollow run used to accept.
+  bot.emit("messagestr", "[Delvewright] complete dw.campaign 1");
+  bot.emit("messagestr", "<player> [dw:complete hello-world campaign]");
+  bot.emit("messagestr", "[dw:complete other-delve campaign]");
+  bot.emit("messagestr", "[dw:complete hello-world obj/greet]");
+  // The bot dies so the (otherwise 15s) settle wait ends promptly; the point is that
+  // none of the lines above satisfied the assertion.
+  bot.emit("messagestr", "delve-bot fell out of the world");
+  bot.emit("death");
+  await assert.rejects(
+    () => executor.assertComplete(COMPLETE),
+    (err: unknown) => err instanceof BotDeathError,
+  );
+});
+
+test("assertEndgameNotReached passes while the campaign is unfinished", () => {
+  const bot = new FakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("hello-world");
+  executor.beginStep(3);
+  bot.emit("messagestr", "[dw:complete hello-world obj/greet]");
+  assert.doesNotThrow(() => executor.assertEndgameNotReached(3, 9));
+});
+
+test("assertEndgameNotReached throws, naming the step the campaign completed at", () => {
+  const bot = new FakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("nobodys-cave-island");
+  // The real island shape: `complete_o_board_flee` (step index 11 of a 22-step path)
+  // calls `campaign_complete`, while the path's last objective step is 20 — so nine
+  // steps ran after the delve was already over.
+  executor.beginStep(11);
+  bot.emit("messagestr", "[dw:complete nobodys-cave-island campaign]");
+  assert.throws(
+    () => executor.assertEndgameNotReached(11, 20),
+    (err: unknown) =>
+      err instanceof Error &&
+      /campaign completed at step 11/.test(err.message) &&
+      /through step 20/.test(err.message),
+  );
+});
+
+test("markers arriving before useCampaign or for another campaign are not counted", () => {
+  const bot = new FakeBot();
+  const executor = attach(bot);
+  // No campaign adopted yet: an early marker cannot be attributed and is dropped.
+  bot.emit("messagestr", "[dw:complete hello-world campaign]");
+  executor.useCampaign("hello-world");
+  bot.emit("messagestr", "[dw:complete other-delve campaign]");
+  executor.beginStep(2);
+  assert.doesNotThrow(() => executor.assertEndgameNotReached(2, 5));
+});
+
+test("requireObjective resolves on that objective's own marker, not another's", async () => {
+  const bot = new FakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("hello-world");
+  executor.beginStep(2);
+  setTimeout(() => {
+    // Noise first: a neighbouring objective, another campaign, a human-readable line
+    // that talks about the very same objective.
+    bot.emit("messagestr", "[dw:complete hello-world obj/greet]");
+    bot.emit("messagestr", "[dw:complete other-delve obj/exit]");
+    bot.emit("messagestr", "Objective complete: Leave the hall");
+    bot.emit("messagestr", "[dw:complete hello-world obj/exit]");
+  }, 50);
+  await executor.requireObjective("obj/exit", "reach anchor/exit");
+});
+
+test("requireObjective fails the step when its objective never completes", async () => {
+  const bot = new FakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("hello-world");
+  executor.beginStep(2);
+  // Arriving at the anchor is not completing: only the marker is. A death ends the
+  // (otherwise 30s) wait promptly and proves the wait was still running.
+  bot.emit("messagestr", "delve-bot fell out of the world");
+  bot.emit("death");
+  await assert.rejects(
+    () => executor.requireObjective("obj/exit", "reach anchor/exit"),
+    (err: unknown) => err instanceof BotDeathError,
+  );
+});
+
+test("requireObjective accepts a marker that arrived before the step started", async () => {
+  const bot = new FakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("hello-world");
+  // An overlapping trigger zone can complete a later objective early. The objective
+  // DID complete, so the step passes — the incoherence that matters (the campaign
+  // finishing early) is caught by assertEndgameNotReached, not here.
+  executor.beginStep(1);
+  bot.emit("messagestr", "[dw:complete hello-world obj/exit]");
+  executor.beginStep(2);
+  await executor.requireObjective("obj/exit", "reach anchor/exit");
+});

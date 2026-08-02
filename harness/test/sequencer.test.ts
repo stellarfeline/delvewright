@@ -67,18 +67,21 @@ const selectClass: SelectClassStep = {
 };
 const talkTo: TalkToStep = {
   action: "talk-to",
+  objective: "obj/greet",
   npc: "npc/keeper",
   pos: [8, 65, 12],
   command: "/trigger dw.dlg_keeper set 2",
 };
 const reach: ReachStep = {
   action: "reach",
+  objective: "obj/exit",
   anchor: "anchor/exit",
   pos: [8, 65, 24],
   radius: 2,
 };
 const kill: KillStep = {
   action: "kill",
+  objective: "obj/guards",
   wave: "wave/guards",
   pos: [22, 65, 12],
   tag: "dw_wave_guards",
@@ -86,12 +89,14 @@ const kill: KillStep = {
 };
 const collect: CollectStep = {
   action: "collect",
+  objective: "obj/hook",
   item: "minecraft:tripwire_hook",
   count: 1,
   pos: [44, 65, 20],
 };
 const interact: InteractStep = {
   action: "interact",
+  objective: "obj/door",
   anchor: "anchor/door",
   pos: [2, 65, 12],
   command: "/trigger dw.i_door set 1",
@@ -104,7 +109,7 @@ const assertComplete: AssertCompleteStep = {
 };
 
 function path(steps: Step[]): CriticalPath {
-  return { version: "0.2.0", campaignId: "hello-world", steps };
+  return { version: "0.2.0", formatVersion: 2, campaignId: "hello-world", steps };
 }
 
 test("validateStepOrder accepts the canonical order", () => {
@@ -214,6 +219,7 @@ test("runSequence awaits transport after a transport-marked step (gap 8)", async
   // awaitTransport with its destination after dispatching the step.
   const reachWithTransport: ReachStep = {
     action: "reach",
+    objective: "obj/exit",
     anchor: "anchor/exit",
     pos: [8, 65, 24],
     radius: 2,
@@ -248,6 +254,7 @@ test("runSequence does not await transport for a plain step", async () => {
 test("runSequence awaits a cutscene after a cutscene-marked step (gap 7)", async () => {
   const reachWithCutscene: ReachStep = {
     action: "reach",
+    objective: "obj/altar",
     anchor: "anchor/altar",
     pos: [8, 65, 24],
     radius: 2,
@@ -344,4 +351,57 @@ test("retryOnDeath retries at most once — a second death fails the run", async
   );
   // Recovery ran exactly once (the single allowed retry), then the second death failed.
   assert.equal(executor.calls.filter((c) => c === "recover").length, 1);
+});
+
+// --- endgame discipline (AUDIT-P0) --------------------------------------------
+
+test("runSequence checks the endgame after every step that still has objectives ahead", async () => {
+  // The check must not fire on the last objective step (campaign completion is DUE
+  // there) nor on assert-complete, but must fire on every earlier step.
+  const checked: Array<[number, number]> = [];
+  const executor = new (class extends RecordingExecutor {
+    assertEndgameNotReached(stepIndex: number, finalObjectiveIndex: number): void {
+      checked.push([stepIndex, finalObjectiveIndex]);
+    }
+  })();
+  // steps: 0 select-class, 1 talk-to, 2 kill, 3 reach (last objective), 4 assert
+  await runSequence(
+    path([selectClass, talkTo, kill, reach, assertComplete]),
+    executor,
+  );
+  assert.deepEqual(checked, [
+    [0, 3],
+    [1, 3],
+    [2, 3],
+  ]);
+});
+
+test("an endgame violation fails the run at the step that revealed it", async () => {
+  const executor = new (class extends RecordingExecutor {
+    assertEndgameNotReached(stepIndex: number): void {
+      if (stepIndex === 1) {
+        throw new Error("campaign completed at step 1, but objective steps remain");
+      }
+    }
+  })();
+  await assert.rejects(
+    () => runSequence(path([selectClass, talkTo, kill, reach, assertComplete]), executor),
+    (err: unknown) =>
+      err instanceof StepExecutionError &&
+      err.index === 1 &&
+      /campaign completed at step 1/.test(err.message),
+  );
+  // The run stops there: the hollow tail is never executed.
+  assert.deepEqual(executor.calls, ["select-class", "talk-to"]);
+});
+
+test("runSequence announces each step index to the executor before dispatching it", async () => {
+  const begun: number[] = [];
+  const executor = new (class extends RecordingExecutor {
+    beginStep(index: number): void {
+      begun.push(index);
+    }
+  })();
+  await runSequence(path([selectClass, talkTo, reach, assertComplete]), executor);
+  assert.deepEqual(begun, [0, 1, 2, 3]);
 });

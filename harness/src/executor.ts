@@ -29,6 +29,7 @@ import type {
 } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError, likelyDeathCause } from "./death.ts";
+import { CAMPAIGN_TOKEN, markerLine, parseCompletionMarker } from "./markers.ts";
 import { allowNonCollidingEntities, configureLeg } from "./movement.ts";
 import {
   nextLegWaypoints,
@@ -240,6 +241,24 @@ const WAVE_KILL_NEAR = 16;
  */
 const SCORE_SETTLE_MS = 15_000;
 const SCORE_POLL_MS = 250;
+/**
+ * How long (ms) to wait for a step's OWN objective-completion marker after the bot
+ * has done the thing the step asks for (AUDIT-P0). The datapack completes an
+ * objective on the tick its condition holds and broadcasts the marker in the same
+ * function, so the honest wait is a tick or two; the window is wide enough that a
+ * loaded CI server, a lagging advancement or a wave countdown settling can never
+ * flake, and short enough that a genuinely uncompletable objective fails the run
+ * well inside the wall-clock budget. NOT a tolerance: on expiry the step FAILS.
+ */
+const OBJECTIVE_TIMEOUT_MS = 30_000;
+/**
+ * Settle (ms) after an objective's marker before the next step runs, so effects the
+ * objective fires (open a gate, give an item, move an NPC) have landed. The marker
+ * is broadcast as the score flips — deliberately, so completion timing is exact —
+ * which means the effects that follow it in the same function may not have applied
+ * yet.
+ */
+const EFFECT_SETTLE_MS = 1_000;
 /** Settle time (ms) after class selection (teleport + kit give) before moving on. */
 const CLASS_SETTLE_MS = 3_000;
 /**
@@ -311,23 +330,32 @@ function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<
  * A mineflayer-backed executor. Construct, `await connect()`, then hand it to
  * `runSequence`. `close()` disconnects the bot. Not reusable across servers.
  */
-/**
- * Stable completion marker the compiler broadcasts on campaign completion:
- * `[Delvewright] complete <objective> <value>`. The bot observes THIS (chat is
- * reliably parsed by mineflayer) rather than the sidebar score, because mineflayer
- * 4.37.x cannot decode 1.21.11 scoreboard score packets. The datapack deliberately
- * does NOT put the objective on the sidebar — a raw internal id must never surface
- * to players (task #54 addendum) — so this chat token is the sole observation
- * channel; it can move to a live sidebar/score read once mineflayer gains 1.21.11
- * score support.
- */
-const COMPLETION_MARKER = /\[Delvewright\] complete (\S+) (-?\d+)/;
-
 export class MineflayerExecutor implements StepExecutor {
   private readonly config: BotConfig;
   private bot: Bot | undefined;
-  /** Latest value seen per objective from broadcast completion markers. */
-  private readonly markerScores = new Map<string, number>();
+  /**
+   * The campaign whose markers this run accepts (from `critical-path.json`).
+   * Markers naming any other campaign are ignored — a completion belonging to other
+   * content can never satisfy this run's steps.
+   */
+  private campaignId: string | undefined;
+  /**
+   * Objective ids whose anchored completion marker has arrived, and the 0-based
+   * step index that was executing when it did. Buffered from connect, because an
+   * objective often completes DURING its step's walk (before the executor gets to
+   * wait for it) and campaign completion lands during the last objective step.
+   */
+  private readonly completedObjectives = new Map<string, number>();
+  /**
+   * The step index at which the campaign-completion marker arrived, if it has.
+   * Endgame discipline: campaign completion belongs to the LAST objective step; its
+   * arrival any earlier means the path is incoherent (a branch completed the
+   * campaign while steps remained) and the run is failed on the spot rather than
+   * marching through hollow remaining steps.
+   */
+  private campaignCompleteAtStep: number | undefined;
+  /** The step index currently executing, for marker attribution. */
+  private currentStep = -1;
   /**
    * gap 7 (death): set once when the bot dies; long waits race against it so a death
    * fails FAST with a diagnostic instead of respawning and pathfinding across the void.
@@ -434,15 +462,13 @@ export class MineflayerExecutor implements StepExecutor {
    * death handler. Called from {@link connect} and from {@link attachBot} (tests).
    */
   private installHandlers(bot: Bot): void {
-    // Capture completion markers from the moment we connect: the marker is
-    // broadcast when the campaign completes, which happens DURING the final reach
-    // step (before assertComplete runs), so it must be buffered as it arrives. The
-    // same stream feeds the recent-chat ring the death diagnostic mines for a cause.
+    // Capture completion markers from the moment we connect: an objective's marker
+    // is broadcast the instant its score flips — usually DURING the step's walk,
+    // before the executor gets to wait for it — and the campaign marker lands during
+    // the last objective step, so both must be buffered as they arrive. The same
+    // stream feeds the recent-chat ring the death diagnostic mines for a cause.
     bot.on("messagestr", (message: string) => {
-      const match = COMPLETION_MARKER.exec(message);
-      if (match) {
-        this.markerScores.set(match[1]!, Number.parseInt(match[2]!, 10));
-      }
+      this.observeMarker(message);
       this.recentChat.push(message);
       if (this.recentChat.length > CHAT_BUFFER) {
         this.recentChat.shift();
@@ -477,6 +503,93 @@ export class MineflayerExecutor implements StepExecutor {
         // best effort — resetting the path must never mask the relocation
       }
     }
+  }
+
+  /**
+   * Record an anchored completion marker (AUDIT-P0). Exact whole-line parse, scoped
+   * to this run's campaign; everything else on the chat stream is ignored, including
+   * lines that merely mention completion. First arrival wins — a re-broadcast must
+   * not relabel when an objective actually completed.
+   */
+  private observeMarker(message: string): void {
+    const marker = parseCompletionMarker(message);
+    if (!marker || marker.campaignId !== this.campaignId) return;
+    if (marker.token === CAMPAIGN_TOKEN) {
+      this.campaignCompleteAtStep ??= this.currentStep;
+      return;
+    }
+    if (!this.completedObjectives.has(marker.token)) {
+      this.completedObjectives.set(marker.token, this.currentStep);
+    }
+  }
+
+  /**
+   * Wait until `objectiveId`'s own anchored completion marker has arrived — the
+   * ONLY evidence that a step's objective completed. Arriving somewhere, opening a
+   * dialogue or emptying a chest are means, never proof; a step whose marker never
+   * comes fails loudly with the bot's position and what the delve did broadcast.
+   * Death-aware and bounded.
+   *
+   * Public so it is directly unit-testable: it is the executor's whole success
+   * criterion for a step, and testing it through `reach`/`collect` would need a live
+   * pathfinder and a real chest.
+   */
+  async requireObjective(objectiveId: string, label: string): Promise<void> {
+    const alreadyDone = this.completedObjectives.get(objectiveId);
+    if (alreadyDone !== undefined && alreadyDone < this.currentStep) {
+      // Not a failure — the objective did complete — but the path claims THIS step
+      // proves it, so the ordering is worth surfacing in the run log.
+      process.stderr.write(
+        `[oracle] ${objectiveId} completed during step ${alreadyDone}, before its own ` +
+          `step ${this.currentStep} (${label})\n`,
+      );
+      return;
+    }
+    const arrived = await this.waitFor(
+      () => this.completedObjectives.has(objectiveId),
+      OBJECTIVE_TIMEOUT_MS,
+      SCORE_POLL_MS,
+    );
+    if (arrived) return;
+    const seen = [...this.completedObjectives.keys()];
+    throw new Error(
+      `${label}: objective ${objectiveId} did not complete within ` +
+        `${OBJECTIVE_TIMEOUT_MS}ms — no \`${markerLine(this.campaignId ?? "?", objectiveId)}\` ` +
+        `marker arrived; bot at ${fmt(this.requireBot().entity.position)}; objectives ` +
+        `completed so far: ${seen.join(", ") || "none"}`,
+    );
+  }
+
+  /**
+   * Adopt the critical path's campaign id and step count. Markers are scoped to this
+   * campaign, so a marker from other content can never satisfy a step. Called by the
+   * entrypoint before the run starts.
+   */
+  useCampaign(campaignId: string): void {
+    this.campaignId = campaignId;
+  }
+
+  /** Sequencer hook: the run has moved on to step `index`. Attribution only. */
+  beginStep(index: number): void {
+    this.currentStep = index;
+  }
+
+  /**
+   * Endgame discipline (AUDIT-P0). Called by the sequencer after every step that
+   * still has an objective step ahead of it: campaign completion belongs to the LAST
+   * objective step, so its marker arriving any earlier proves the path is incoherent
+   * — the remaining steps cannot be doing anything the campaign still needs. Fail
+   * here, at the step that revealed it, rather than reporting a green run whose tail
+   * was hollow.
+   */
+  assertEndgameNotReached(stepIndex: number, finalObjectiveIndex: number): void {
+    if (this.campaignCompleteAtStep === undefined) return;
+    throw new Error(
+      `campaign completed at step ${this.campaignCompleteAtStep}, but the critical path ` +
+        `runs objective steps through step ${finalObjectiveIndex} (detected after step ` +
+        `${stepIndex}) — every later step is hollow. The path and the delve's completion ` +
+        `condition disagree; fix the campaign or the path, never the check`,
+    );
   }
 
   /**
@@ -637,8 +750,10 @@ export class MineflayerExecutor implements StepExecutor {
     // chat the dialog-option `/trigger` command the button would have run.
     await this.walkTo(step.pos, 3, `npc ${step.npc}`, step.sneak);
     bot.chat(step.command);
-    // Give the datapack time to apply the dialog effect (e.g. open the gate).
-    await delay(2_000);
+    // A dialogue that OPENED proves nothing: the option must actually complete the
+    // objective this step stands for. Wait for that objective's own marker.
+    await this.requireObjective(step.objective, `talk-to ${step.npc}`);
+    await delay(EFFECT_SETTLE_MS);
   }
 
   /**
@@ -650,6 +765,11 @@ export class MineflayerExecutor implements StepExecutor {
    */
   async reach(step: ReachStep): Promise<void> {
     await this.walkTo(step.pos, Math.max(1, step.radius - 1), `anchor ${step.anchor}`, step.sneak);
+    // Standing at the anchor is NOT success (AUDIT-P0): the objective's own
+    // completion marker is. A reach step whose zone check never fires — wrong cell,
+    // an inactive objective, a gate the path assumed open — now fails here instead
+    // of silently marching the run forward.
+    await this.requireObjective(step.objective, `reach ${step.anchor}`);
   }
 
   /**
@@ -1023,8 +1143,9 @@ export class MineflayerExecutor implements StepExecutor {
     } finally {
       chest.close();
     }
-    // Let the inventory_changed advancement fire the completion.
-    await delay(SCORE_POLL_MS * 4);
+    // Holding the items is not the objective; the inventory_changed advancement
+    // completing it is. Wait for that objective's own marker.
+    await this.requireObjective(step.objective, `collect ${step.item}`);
   }
 
   /** Interact at the anchor: go there, then chat the emitted `/trigger` command. */
@@ -1034,7 +1155,8 @@ export class MineflayerExecutor implements StepExecutor {
     // The interaction advancement and this chat command both feed the same
     // per-tick handler; the datapack applies the requires_item + flag guards.
     bot.chat(step.command);
-    await delay(2_000);
+    await this.requireObjective(step.objective, `interact ${step.anchor}`);
+    await delay(EFFECT_SETTLE_MS);
   }
 
   /**
@@ -1174,16 +1296,18 @@ export class MineflayerExecutor implements StepExecutor {
   async assertComplete(step: AssertCompleteStep): Promise<void> {
     const bot = this.requireBot();
     // Completion is observed two ways, whichever surfaces first:
-    //   1. The broadcast completion marker (the working path on 1.21.11 — see
-    //      COMPLETION_MARKER), buffered since connect.
+    //   1. The anchored campaign-completion marker (the working path on 1.21.11 —
+    //      see markers.ts), buffered since connect.
     //   2. The sidebar score via mineflayer (future-proof: works if/when mineflayer
     //      gains 1.21.11 score-packet support; currently always unset).
-    // The score is set on a server tick after the final reach, so poll until it
-    // settles or the budget runs out.
+    // The campaign completes during the LAST objective step; the sequencer has
+    // already failed the run if the marker arrived any earlier than that
+    // (assertEndgameNotReached), so reaching here means it is either due now or due
+    // within a tick or two of the last objective.
     const deadline = Date.now() + SCORE_SETTLE_MS;
     while (Date.now() < deadline) {
       if (this.death) throw this.death;
-      if (this.markerScores.get(step.objective) === step.value) {
+      if (this.campaignCompleteAtStep !== undefined) {
         return;
       }
       const board = bot.scoreboards[step.objective];
@@ -1192,14 +1316,14 @@ export class MineflayerExecutor implements StepExecutor {
       }
       await delay(SCORE_POLL_MS);
     }
-    const marker = this.markerScores.has(step.objective)
-      ? `${this.markerScores.get(step.objective)}`
-      : "no marker received";
     const board = bot.scoreboards[step.objective];
     const sidebar = board?.itemsMap[bot.username]?.value ?? "unset";
+    const done = [...this.completedObjectives.keys()];
     throw new Error(
-      `campaign not complete after ${SCORE_SETTLE_MS}ms: objective ${step.objective} ` +
-        `expected ${step.value}; completion marker: ${marker}; sidebar: ${sidebar}`,
+      `campaign not complete after ${SCORE_SETTLE_MS}ms: no ` +
+        `\`${markerLine(this.campaignId ?? "?", CAMPAIGN_TOKEN)}\` marker arrived ` +
+        `(objective ${step.objective} expected ${step.value}; sidebar: ${sidebar}); ` +
+        `objectives completed: ${done.join(", ") || "none"}`,
     );
   }
 }
