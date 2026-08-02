@@ -2,7 +2,7 @@
 
 - **Status**: Draft (planner-personal, 2026-08-01; owner's souls direction
   from spec-0011/0012 closing notes; consumes the jump-arc spike
-  (docs/notes/jump-arc-model.md) and the TD-routing spike (pending))
+  (docs/notes/jump-arc-model.md) and the TD-routing spike (docs/notes/td-routing-spike.md, PR #147))
 - **Vision**: death is a legitimate teacher. Delves may be punishing when the
   punishment is legible, retry is fast, and every kill the world scores on
   the player was telegraphed. The engine's job is to make "fair" provable.
@@ -52,9 +52,32 @@ self-check). Fall-damage routes death to the bonfire; checkpoint-density
 rule: ≤ 45 s of traversal between a lethal jump sequence and its bonfire.
 
 ### 6. TD lanes (routed-then-feral)
-(Pending the W4 spike verdict — mechanism, parameters, DSL surface land
-here; owner rule fixed in advance: mobs march the lane while distant and
-fight with NATIVE AI once aggroed, never brushing past.)
+Mechanism (spike-proven live on 1.21.11, dossier
+`docs/notes/td-routing-spike.md`): vanilla's **Raider patrol system** is
+the intended primitive. Lane mobs spawn as a patrol squad
+(`Patrolling:1b`, one leader, snake_case int-array `patrol_target`); a
+compiler tick clock advances them through lane waypoints, and per mob a
+player-proximity check releases `Patrolling:0b` — from that instant the
+mob is a plain native hostile. Combat-preempts-routing is engine
+semantics (the vanilla patrol goal is hard-gated on having no target):
+the owner's rule — march while distant, fight with NATIVE AI once
+aggroed, never brush past — falls out of the primitive, unforced.
+
+DSL surface: **`wave.lane { waypoints[], aggro_radius }`**.
+`aggro_radius` = release radius = the wave's `follow_range` attribute
+(they MUST be equal: patrolling raiders hold ground against targets they
+cannot engage). Compiler parameters (measured): waypoint spacing 12
+(> the 10-block vanilla arrival re-roll), advance radius 8, re-assert
+every 20–40 ticks (~1 ms MSPT for a squad), march ~1.8 blocks/s.
+
+Diagnostics (error tier): lane species must be raider-family (pillager /
+vindicator / evoker / ravager / witch — all verified marching); squad
+size ≥ 2 (a lone patroller self-cancels); lane mobs must be armed
+(unarmed pillagers deadlock on target acquisition — the wave `equipment`
+field is mandatory for lanes); waypoints standable (existing cell
+proofs) and spaced > 10. Emission trap pinned by the spike: the legacy
+`PatrolTarget` compound key is silently dropped by 1.21.11 — only the
+snake_case form routes.
 
 ### 7. Death-as-learning pacing rules (design contract, linted)
 Retry cost: bonfire → point of failure ≤ 60 s traversal on the proven path.
