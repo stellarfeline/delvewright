@@ -28,7 +28,8 @@ pub use envelope::{
     check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, parse_campaign,
 };
 pub use ids::{
-    ActorId, AnchorId, AreaId, CampaignId, ClassId, DialogueId, EditBatchId, FlagId, NpcId,
+    ActorId, AmbushId, AnchorId, AreaId, CampaignId, ClassId, DialogueId, EditBatchId, FlagId,
+    NpcId,
     ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId, TriggerId, WaveId,
 };
 pub use l10n::{
@@ -43,7 +44,7 @@ pub use registry::{
 };
 pub use schema::stage_schema;
 pub use stages::{
-    Actor, Area, AreaLighting, AreaMitigation, Boundary, CameraShot, CameraSubject, CameraTarget,
+    Actor, Ambush, Area, AreaLighting, AreaMitigation, Boundary, CameraShot, CameraSubject, CameraTarget,
     CameraWaypoint, Class, ClassesContent, DamageKind, DespawnStyle, DialogueContent,
     DialogueEffect, DialogueNode, DialogueOption, EnvTrigger, Facing, Fixture, Horizon, KitItem,
     Lethality, MobAttributes, MobEffect, MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin,

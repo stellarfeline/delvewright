@@ -236,6 +236,13 @@ pub mod codes {
     /// permanence is structural: there is no verb that can put it back. Use a
     /// different gate for the point-of-no-return beat.
     pub const SHORTCUT_RESEALED: &str = "DW0358";
+    /// (spec-0016 §3) An `ambush` declaration is structurally invalid: a
+    /// malformed or duplicate `ambush/<id>`, an empty `actors` list (an ambush
+    /// that ambushes nobody), or the same actor listed twice (the second
+    /// `spawn-actor` is a guarded no-op, so the author's intent silently halves).
+    /// The telegraph is deliberately NOT required — an un-telegraphed ambush is
+    /// core souls vocabulary (owner ruling 2026-08-02).
+    pub const AMBUSH_INVALID: &str = "DW0361";
     /// (v0.6) A trap dispense-payload item id is not in the pinned 1.21.11 registry
     /// (spec-0011; mirrors `DW0143`). Validation-tier (exit 1). Renumbered off the
     /// spec's stale reserved number (0198 — since taken).
