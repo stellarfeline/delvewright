@@ -1996,8 +1996,12 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
                 movenpc_fn(npc.as_str(), to_anchor.as_str())
             ));
         }
-        QuestEffect::Cutscene { path, seconds, .. } => {
-            body.push(format!("function {ns}:{}", cutscene_fn(path, *seconds)));
+        QuestEffect::Cutscene { .. } => {
+            // Shape is policed at validation (`DW0199`); an unshaped cutscene
+            // resolves to no shots and emits no call rather than a dangling one.
+            if let Some(shots) = eff.cutscene_shots().filter(|s| !s.is_empty()) {
+                body.push(format!("function {ns}:{}", cutscene_fn(&shots)));
+            }
         }
         // --- DSL v0.5 effects (spec-0010) ---
         // Dimension-global instant cuts. The daylight/weather cycles are frozen by
@@ -2503,13 +2507,58 @@ fn movenpc_fn(npc: &str, to_anchor: &str) -> String {
     )
 }
 
-/// The generated function name for a `cutscene` effect (content-derived key).
-fn cutscene_fn(path: &[delvewright_dsl::CameraWaypoint], seconds: u32) -> String {
-    let first = path
+/// The generated function name for a `cutscene` effect, derived from its
+/// **normalized shot list** — so the v0.4 single-shot spelling and a one-entry
+/// `shots` list name the same function (byte-identical output).
+///
+/// Shape: `cs_<first anchor>_<first shot seconds>_<first shot waypoints>` — the
+/// pre-multi-shot name — plus a `_<digest>` suffix over the whole shot list
+/// (anchors, offsets, durations, subjects) whenever the cutscene is not a bare
+/// single shot without `look_at`. The readable prefix keeps generated functions
+/// greppable; the digest makes the key injective, so two cutscenes that share a
+/// first waypoint but differ anywhere later can never collapse onto one function.
+fn cutscene_fn(shots: &[delvewright_dsl::CameraShot]) -> String {
+    let head = &shots[0];
+    let first = head
+        .path
         .first()
         .map(|w| plan::safe_local(w.anchor.as_str()))
         .unwrap_or_else(|| "none".to_string());
-    format!("cs_{first}_{seconds}_{}", path.len())
+    let base = format!("cs_{first}_{}_{}", head.seconds, head.path.len());
+    if shots.len() == 1 && head.look_at.is_none() {
+        return base;
+    }
+    format!("{base}_{}", cutscene_digest(shots))
+}
+
+/// A short, stable content digest of a normalized cutscene shot list: the first
+/// 8 hex chars of the sha256 of a canonical textual rendering. Deterministic
+/// (fixed algorithm, fixed field order, no hash-order iteration, ADR-0006).
+fn cutscene_digest(shots: &[delvewright_dsl::CameraShot]) -> String {
+    let mut canon = String::new();
+    for shot in shots {
+        canon.push_str(&format!("s={};", shot.seconds));
+        for w in &shot.path {
+            canon.push_str(&format!(
+                "p={}@{},{},{};",
+                w.anchor.as_str(),
+                w.offset[0],
+                w.offset[1],
+                w.offset[2]
+            ));
+        }
+        if let Some(t) = &shot.look_at {
+            canon.push_str(&format!(
+                "l={}@{},{},{};",
+                t.anchor.as_str(),
+                t.offset[0],
+                t.offset[1],
+                t.offset[2]
+            ));
+        }
+        canon.push('|');
+    }
+    sha256_hex(canon.as_bytes())[..8].to_string()
 }
 
 /// A `[scores={dw.f_a=1..,…}]` selector fragment for a flag list, or `""`.
@@ -2858,6 +2907,14 @@ fn sequence_fns(plan: &Plan) -> Vec<(String, String)> {
     out
 }
 
+/// One cutscene shot with its geometry resolved to world coordinates: the dolly
+/// polyline, the optional `look_at` subject point, and the shot's length in ticks.
+struct ResolvedShot {
+    pts: Vec<[f64; 3]>,
+    subject: Option<[f64; 3]>,
+    ticks: i32,
+}
+
 /// Cutscene functions (spec-0008 addendum): the two-camera bounce. Per cutscene
 /// (deduped by content key) emits a start function, a self-scheduling per-tick
 /// dolly/`spectate` driver, and an end/restore function.
@@ -2867,17 +2924,35 @@ fn sequence_fns(plan: &Plan) -> Vec<(String, String)> {
 /// along the lerped waypoint polyline and alternate `spectate` between them
 /// (the naive same-entity re-`spectate` is a server no-op — never emitted). On
 /// completion, restore adventure mode + teleport players back to the marker.
+///
+/// **Aim** (DSL v0.6): every dolly `tp` carries an explicit `<yaw> <pitch>`, so a
+/// spectating player looks where the shot means them to look instead of at the
+/// summon default (yaw 0 = south). With `look_at`, the rotation is computed per
+/// tick from the camera's own position toward the subject point (the framing
+/// holds through the whole move); without it, the camera faces along the segment
+/// of the polyline it is currently traversing — for the common two-waypoint dolly
+/// that is exactly `path[0] → path[1]`. Pure `atan2` on plan coordinates, rounded
+/// to 3 decimals: deterministic, no RNG, no wall clock.
+///
+/// **Multi-shot** (DSL v0.6): a cutscene is a list of shots played back-to-back
+/// inside ONE save/restore bracket — one marker, one `gamemode spectator`, one
+/// camera pair, one restore. The shots share the single `#t_<bare>` tick counter:
+/// shot `k` owns the half-open-on-the-right window `[offset_k, offset_k + len_k]`
+/// and the next shot starts at `offset_k + len_k + 1`, so the transition is a hard
+/// cut (the next tick teleports the camera pair to the new shot's first waypoint
+/// with its own aim). A one-shot cutscene reduces to exactly the pre-multi-shot
+/// timeline, so the single-shot spelling is byte-identical either way.
 fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
     let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for eff in all_campaign_effects(plan.campaign) {
-        let QuestEffect::Cutscene { path, seconds, .. } = eff else {
+        let Some(shots) = eff.cutscene_shots().filter(|s| !s.is_empty()) else {
             continue;
         };
         // `start` = the function emit_quest_effect calls (`cs_<bare>`); `bare` is
         // the shared suffix for the tick/end functions and per-cutscene sentinels.
-        let start_name = cutscene_fn(path, *seconds);
+        let start_name = cutscene_fn(&shots);
         if !seen.insert(start_name.clone()) {
             continue;
         }
@@ -2885,14 +2960,25 @@ fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
             .strip_prefix("cs_")
             .unwrap_or(&start_name)
             .to_string();
-        // Resolve waypoint world positions (anchor + offset, block centres). The
-        // air-corridor check (crate::nav, DW0308) validates this exact polyline.
-        let pts: Vec<[f64; 3]> = crate::nav::camera_points(plan, path);
-        let first = pts
+        // Resolve each shot's waypoint world positions (anchor + offset, block
+        // centres) and its subject. The air-corridor check (crate::nav, DW0308)
+        // validates these exact polylines, per shot.
+        let resolved: Vec<ResolvedShot> = shots
+            .iter()
+            .map(|shot| ResolvedShot {
+                pts: crate::nav::camera_points(plan, &shot.path),
+                subject: shot
+                    .look_at
+                    .as_ref()
+                    .map(|t| crate::nav::camera_look_point(plan, t)),
+                ticks: ((shot.seconds as i32) * 20).clamp(1, 400),
+            })
+            .collect();
+        let first = resolved[0]
+            .pts
             .first()
             .copied()
             .unwrap_or([0.0, plan::BASE_Y as f64, 0.0]);
-        let total: i32 = ((*seconds as i32) * 20).clamp(1, 400);
 
         // start
         let mut start: Vec<String> = Vec::new();
@@ -2915,15 +3001,29 @@ fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
         start.push(format!("schedule function {ns}:cs_tick_{bare} 1t"));
         out.push((start_name.clone(), lines(&start)));
 
-        // per-tick driver
+        // per-tick driver: every shot's frames laid end-to-end on one counter.
         let mut tick: Vec<String> = Vec::new();
-        for t in 0..=total {
-            let p = lerp_polyline(&pts, t as f64 / total as f64);
-            tick.push(format!(
-                "execute if score #t_{bare} dw.sys matches {t} run tp @e[tag=dw_cam_{bare}] {} {} {}",
-                fmt_f64(p[0]), fmt_f64(p[1]), fmt_f64(p[2])
-            ));
+        let mut offset: i32 = 0;
+        for shot in &resolved {
+            for k in 0..=shot.ticks {
+                let s = k as f64 / shot.ticks as f64;
+                let p = lerp_polyline(&shot.pts, s);
+                // Aim: at the subject when `look_at` is set, otherwise along the
+                // segment being traversed (the direction of travel).
+                let (yaw, pitch) = match shot.subject {
+                    Some(target) => mc_aim(p, target),
+                    None => mc_aim_along(&shot.pts, s),
+                };
+                tick.push(format!(
+                    "execute if score #t_{bare} dw.sys matches {} run tp @e[tag=dw_cam_{bare}] {} {} {} {} {}",
+                    offset + k,
+                    fmt_f64(p[0]), fmt_f64(p[1]), fmt_f64(p[2]), fmt_f64(yaw), fmt_f64(pitch)
+                ));
+            }
+            offset += shot.ticks + 1;
         }
+        // The last frame emitted sits at `offset - 1`; the driver ends one tick later.
+        let total: i32 = offset - 1;
         // alternate `spectate` between the two co-located cameras (the bounce):
         // parity 1 → camera a, parity 2 → camera b, flipped each tick.
         tick.push(format!(
@@ -2962,6 +3062,68 @@ fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
         out.push((format!("cs_end_{bare}"), lines(&end)));
     }
     out
+}
+
+/// Aim an entity at `target` from `pos`; returns `(yaw, pitch)` in **Minecraft
+/// entity rotation degrees** — the convention the `tp <targets> <pos> <rot>`
+/// command and the `Rotation` NBT use:
+///
+/// - `yaw = atan2(-dx, dz)`: `0` faces +Z (south), `90` faces −X (west), `180`
+///   faces −Z (north), `-90` faces +X (east).
+/// - `pitch = atan2(-dy, hypot(dx, dz))`: positive looks **down**, `0` is level.
+///
+/// Note this is *not* the render-plan / Chunky convention
+/// ([`crate::render_plan`], `yaw = atan2(-dz, dx)`, `0` = +X): pitch agrees, yaw
+/// does not. Rotations are rounded to 3 decimals so emission is byte-stable
+/// across platforms (the ADR-0006 gate compares bytes; repeatable rounding avoids
+/// libm ulp drift).
+fn mc_aim(pos: [f64; 3], target: [f64; 3]) -> (f64, f64) {
+    let d = [target[0] - pos[0], target[1] - pos[1], target[2] - pos[2]];
+    mc_aim_dir(d)
+}
+
+/// [`mc_aim`] from a direction vector. A zero-length direction yields the vanilla
+/// summon default (yaw 0 = south, level) — reached only when a cutscene's whole
+/// dolly path collapses to one point, which has no direction of travel.
+fn mc_aim_dir(d: [f64; 3]) -> (f64, f64) {
+    let horiz = (d[0] * d[0] + d[2] * d[2]).sqrt();
+    if horiz == 0.0 && d[1] == 0.0 {
+        return (0.0, 0.0);
+    }
+    let yaw = (-d[0]).atan2(d[2]).to_degrees();
+    let pitch = (-d[1]).atan2(horiz).to_degrees();
+    (round3(yaw), round3(pitch))
+}
+
+/// The default cutscene aim: face along the direction of travel at parameter `s`
+/// — the polyline segment the camera is currently traversing. For a two-waypoint
+/// dolly that is `path[0] → path[1]` for the whole shot. A degenerate (zero-
+/// length) segment falls back to the overall first → last direction so a repeated
+/// waypoint does not snap the camera back to south.
+fn mc_aim_along(pts: &[[f64; 3]], s: f64) -> (f64, f64) {
+    if pts.len() < 2 {
+        return (0.0, 0.0);
+    }
+    let segs = (pts.len() - 1) as f64;
+    let u = (s.clamp(0.0, 1.0) * segs).min(segs);
+    let i = (u.floor() as usize).min(pts.len() - 2);
+    let (a, b) = (pts[i], pts[i + 1]);
+    let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    if d == [0.0, 0.0, 0.0] {
+        let last = pts[pts.len() - 1];
+        let f = pts[0];
+        return mc_aim_dir([last[0] - f[0], last[1] - f[1], last[2] - f[2]]);
+    }
+    mc_aim_dir(d)
+}
+
+/// Round to 3 decimals so float formatting is stable across platforms, and
+/// collapse negative zero (`atan2` yields `-0.0` for an exactly-south / exactly-
+/// level aim; `-0.0` in a `tp` rotation is correct but reads as noise and would
+/// bake a sign artifact into the emitted bytes).
+fn round3(v: f64) -> f64 {
+    let r = (v * 1000.0).round() / 1000.0;
+    if r == 0.0 { 0.0 } else { r }
 }
 
 /// Linear interpolation along a polyline of points at parameter `s` in `[0,1]`.
