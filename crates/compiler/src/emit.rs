@@ -399,6 +399,16 @@ pub fn build(
         );
     }
 
+    // predicates — currently only the cutscene bounce's sneak-held gate (see
+    // SNEAK_HELD_PREDICATE); a cutscene-less campaign emits none.
+    if campaign_has_cutscene(plan.campaign) {
+        put_json(
+            &mut out,
+            &format!("datapack/data/{ns}/predicate/{SNEAK_HELD_PREDICATE}.json"),
+            &sneak_held_predicate(),
+        );
+    }
+
     // ---- packtest datapack ----
     emit_packtest(plan, &mut out, &moves, &actor_moves);
 
@@ -924,16 +934,12 @@ fn emit_functions(
         setup.push("scoreboard objectives add dw.deaths deathCount".to_string());
         setup.push("scoreboard objectives add dw.death_ack dummy".to_string());
     }
-    // v0.6 stealth beats (spec-0014): the active-session marker + per-player sneak
-    // (vanilla `sneak_time` custom stat) / grace scores. Declared only when the
+    // v0.6 stealth beats (spec-0014; sneak requirement removed by owner ruling
+    // 2026-08-01): the active-session marker + per-player grace scores. Hidden =
+    // inside a declared zone — no sneak stat is tracked. Declared only when the
     // campaign uses `begin-stealth`.
     if !plan.stealth_beats.is_empty() {
         setup.push("scoreboard players set #stealth dw.sys 0".to_string());
-        setup.push(
-            "scoreboard objectives add dw.st_sneak minecraft.custom:minecraft.sneak_time"
-                .to_string(),
-        );
-        setup.push("scoreboard objectives add dw.st_sneakack dummy".to_string());
         setup.push("scoreboard objectives add dw.st_grace dummy".to_string());
         setup.push("scoreboard objectives add dw.st_safe dummy".to_string());
     }
@@ -2316,25 +2322,25 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     fns
 }
 
-/// Generate the stealth-beat functions (DSL v0.6, spec-0014). For each beat: an
-/// `arm` that activates the session and resets per-player grace/sneak state; a
-/// per-tick judge that, per player, tests "sneaking this tick (the vanilla
-/// `sneak_time` stat rose) AND inside some zone box", tracks a grace counter, and
-/// fires `on_caught` after `grace_ticks` of exposure. Zone membership is a pure
-/// position selector, so the whole check is deterministic and provable.
+/// Generate the stealth-beat functions (DSL v0.6, spec-0014; sneak requirement
+/// removed by owner ruling 2026-08-01 — holding sneak collided with the
+/// spectator cutscene camera). For each beat: an `arm` that activates the
+/// session and resets per-player grace; a per-tick judge that, per player,
+/// tests "inside some zone box" (zone presence alone = hidden), tracks a grace
+/// counter, and fires `on_caught` after `grace_ticks` of exposure. Zone
+/// membership is a pure position selector, so the whole check is deterministic
+/// and provable.
 fn emit_stealth_functions(plan: &Plan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut fns: Vec<(String, String)> = Vec::new();
     for beat in &plan.stealth_beats {
         let i = beat.index;
-        // stealth_begin_<i>: activate + reset grace, snapshot the sneak stat.
+        // stealth_begin_<i>: activate + reset grace.
         fns.push((
             format!("stealth_begin_{i}"),
             lines(&[
                 format!("scoreboard players set #stealth dw.sys {i}"),
                 "execute as @a run scoreboard players set @s dw.st_grace 0".to_string(),
-                "execute as @a run scoreboard players operation @s dw.st_sneakack = @s dw.st_sneak"
-                    .to_string(),
             ]),
         ));
         // stealth_tick_<i>: judge every player who is actually playing. A player
@@ -2362,12 +2368,11 @@ fn emit_stealth_functions(plan: &Plan) -> Vec<(String, String)> {
                 2 * extent[2] as i32,
             ];
             eval.push(format!(
-                "execute if score @s dw.st_sneak > @s dw.st_sneakack if entity \
-                 @s[x={},dx={},y={},dy={},z={},dz={}] run scoreboard players set @s dw.st_safe 1",
+                "execute if entity @s[x={},dx={},y={},dy={},z={},dz={}] run \
+                 scoreboard players set @s dw.st_safe 1",
                 lo[0], size[0], lo[1], size[1], lo[2], size[2]
             ));
         }
-        eval.push("scoreboard players operation @s dw.st_sneakack = @s dw.st_sneak".to_string());
         eval.push(
             "execute if score @s dw.st_safe matches 1 run scoreboard players set @s dw.st_grace 0"
                 .to_string(),
@@ -3096,6 +3101,38 @@ fn sequence_fns(plan: &Plan) -> Vec<(String, String)> {
 /// `end`/restore, so the state has exactly the cinematic's lifetime.
 const CUTSCENE_TAG: &str = "dw_cutscene";
 
+/// Datapack predicate id (under the campaign namespace) matching a player whose
+/// sneak key is HELD this tick — the vanilla `minecraft:player` `input`
+/// sub-predicate (1.21.2+), which reads the client's raw input packet and so
+/// works in every gamemode, spectator included. Sole consumer: the cutscene
+/// `spectate` bounce, which must not re-attach a player whose held sneak would
+/// immediately dismount them again (the round-6 camera-flicker root cause).
+/// Emitted only for a campaign with at least one cutscene, so everything else
+/// stays byte-identical.
+const SNEAK_HELD_PREDICATE: &str = "sneak_held";
+
+/// The `<ns>:sneak_held` predicate body (see [`SNEAK_HELD_PREDICATE`]).
+fn sneak_held_predicate() -> Value {
+    json!({
+        "condition": "minecraft:entity_properties",
+        "entity": "this",
+        "predicate": {
+            "type_specific": {
+                "type": "minecraft:player",
+                "input": { "sneak": true }
+            }
+        }
+    })
+}
+
+/// Does the campaign play at least one real cutscene (a non-empty shot list)?
+/// Gates the [`SNEAK_HELD_PREDICATE`] emission.
+fn campaign_has_cutscene(campaign: &delvewright_dsl::Campaign) -> bool {
+    crate::camera::cutscene_units(campaign)
+        .iter()
+        .any(|(eff, _)| eff.cutscene_shots().is_some_and(|s| !s.is_empty()))
+}
+
 /// Cutscene functions (spec-0008 addendum; keyframe dolly per task #64): the
 /// two-camera bounce. Per cutscene (deduped by content key) emits a start
 /// function, a self-scheduling keyframe/`spectate` driver, and an end/restore
@@ -3108,8 +3145,10 @@ const CUTSCENE_TAG: &str = "dw_cutscene";
 /// rotation between keyframes ([`crate::camera`], spike-measured) — while
 /// alternating `spectate` between the pair each tick (the naive same-entity
 /// re-`spectate` is a server no-op — never emitted; the bounce cannot reset an
-/// in-flight tween, measurement 4). On completion, restore adventure mode +
-/// teleport players back to the marker.
+/// in-flight tween, measurement 4). The bounce skips any player actively
+/// holding sneak (`predicate=!<ns>:sneak_held`, see [`SNEAK_HELD_PREDICATE`]):
+/// sneak dismounts a spectator, so re-attaching against a held key strobes.
+/// On completion, restore adventure mode + teleport players back to the marker.
 ///
 /// **Path timing** (task #64): the dolly is arc-length parameterized (equal
 /// distance per time, not equal segments per time) with baked smoothstep
@@ -3250,12 +3289,20 @@ fn cutscene_fns(
         // The last frame emitted sits at `offset - 1`; the driver ends one tick later.
         let total: i32 = offset - 1;
         // alternate `spectate` between the two co-located cameras (the bounce):
-        // parity 1 → camera a, parity 2 → camera b, flipped each tick.
+        // parity 1 → camera a, parity 2 → camera b, flipped each tick — but
+        // NEVER at a player actively holding sneak. In spectator mode the sneak
+        // key dismounts the spectated entity, so an unconditional per-tick
+        // re-attach strobes (attach → client dismount → attach …) for as long
+        // as the key is held (round-6 owner report). The vanilla `input` player
+        // predicate ([`SNEAK_HELD_PREDICATE`], 1.21.2+) reads the raw key
+        // state — including in spectator — so a held sneak yields a stable
+        // detached spectator (frozen, staring at the world) and release
+        // re-attaches on the next bounce tick, resuming the shot.
         tick.push(format!(
-            "execute if score #p_{bare} dw.sys matches 1 as @a run spectate @n[type=minecraft:item_display,tag=dw_cama_{bare}] @s"
+            "execute if score #p_{bare} dw.sys matches 1 as @a[predicate=!{ns}:{SNEAK_HELD_PREDICATE}] run spectate @n[type=minecraft:item_display,tag=dw_cama_{bare}] @s"
         ));
         tick.push(format!(
-            "execute if score #p_{bare} dw.sys matches 2 as @a run spectate @n[type=minecraft:item_display,tag=dw_camb_{bare}] @s"
+            "execute if score #p_{bare} dw.sys matches 2 as @a[predicate=!{ns}:{SNEAK_HELD_PREDICATE}] run spectate @n[type=minecraft:item_display,tag=dw_camb_{bare}] @s"
         ));
         tick.push(format!(
             "execute if score #p_{bare} dw.sys matches 2 run scoreboard players set #p_{bare} dw.sys 1"
@@ -3283,20 +3330,11 @@ fn cutscene_fns(
             format!("kill @e[tag=dw_cam_{bare}]"),
             format!("kill @e[tag=dw_csmark_{bare}]"),
         ];
-        // Resume: drop the cutscene marker, then re-acknowledge the vanilla
-        // `sneak_time` stat so the first stealth judge tick after the restore
-        // compares against the players' *current* stat rather than the one frozen
-        // when the cinematic began. Grace is deliberately NOT reset — it neither
-        // accrued nor expired during the cutscene, so the beat picks up exactly
-        // where it paused. Emitted only for a campaign with stealth beats, so a
-        // cutscene-only campaign stays byte-identical.
+        // Resume: drop the cutscene marker. The stealth judge (zone-presence
+        // only — no sneak stat since the 2026-08-01 ruling) needs no re-sync;
+        // grace is deliberately NOT reset — it neither accrued nor expired
+        // during the cutscene, so the beat picks up exactly where it paused.
         end.push(format!("tag @a remove {CUTSCENE_TAG}"));
-        if !plan.stealth_beats.is_empty() {
-            end.push(
-                "execute as @a run scoreboard players operation @s dw.st_sneakack = @s dw.st_sneak"
-                    .to_string(),
-            );
-        }
         end.push(format!("scoreboard players set #run_{bare} dw.sys 0"));
         out.push((format!("cs_end_{bare}"), lines(&end)));
     }
@@ -4759,17 +4797,16 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
 }
 
 /// v0.6 PackTests (spec-0012 checkpoints, spec-0014 stealth). Fake players cannot
-/// accrue the vanilla `sneak_time` stat nor respawn synchronously within a plain
-/// mcfunction test, so these drive the compiler-generated mechanics directly and
-/// assert their deterministic effects:
+/// respawn synchronously within a plain mcfunction test, so these drive the
+/// compiler-generated mechanics directly and assert their deterministic effects:
 ///
 /// * **checkpoint**: applying the checkpoint's `spawnpoint @a` + `dw:cp pos`
 ///   mirror makes `storage dw:cp pos` read back the checkpoint cell — the
 ///   machine-checkable "last checkpoint" contract other features consume.
-/// * **stealth**: the generated `stealth_eval_<i>` judge catches an exposed
-///   (not-sneaking, out-of-zone) player after `grace_ticks` and spares a
-///   sneaking, in-zone one — driven via the `sneak`/zone scores that stand in for
-///   the stat/position a real player would carry.
+/// * **stealth** (zone-presence model, owner ruling 2026-08-01 — no sneak
+///   requirement): the generated `stealth_eval_<i>` judge catches an exposed
+///   (out-of-zone) player after `grace_ticks` and spares an in-zone one —
+///   driven by teleporting the dummy in and out of the declared zone box.
 fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = &plan.campaign.world.content.title;
@@ -4829,20 +4866,18 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
         // to a neighbor test's dummy and the controlled state below would land
         // on — and be asserted against — the wrong player.
         t.push(pin);
-        // --- spare: a sneaking (sneak > ack), in-zone player never accrues grace;
-        //     an accrued grace is reset the moment they are safe. ---
+        // --- spare: an in-zone player (zone presence alone = hidden) never
+        //     accrues grace; an accrued grace is reset the moment they are safe. ---
         t.push(format!("function {ns}:stealth_begin_{i}"));
         // Disarm the live session marker `stealth_begin` just set: this test drives
         // `stealth_eval` explicitly, so the world `tick` loop (which runs
         // `stealth_eval` on every player while `#stealth` is armed) must NOT also
-        // fire — a second judge pass in the same tick would consume the sneak edge
-        // (`sneak > ack` false once ack catches up) and mis-accrue grace, corrupting
-        // the controlled state the asserts read. Runtime gameplay is unaffected
-        // (there the tick loop is the sole caller); this only isolates the test.
+        // fire — a second judge pass in the same tick would double-count the
+        // exposure (an extra grace increment per tick), corrupting the controlled
+        // counts the asserts read. Runtime gameplay is unaffected (there the tick
+        // loop is the sole caller); this only isolates the test.
         t.push("scoreboard players set #stealth dw.sys 0".to_string());
         t.push(format!("scoreboard players set {sel} dw.st_grace 5"));
-        t.push(format!("scoreboard players set {sel} dw.st_sneakack 0"));
-        t.push(format!("scoreboard players set {sel} dw.st_sneak 1"));
         t.push(format!(
             "tp {sel} {} {} {}",
             inside[0], inside[1], inside[2]
@@ -4851,18 +4886,16 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
             "execute as {sel} run function {ns}:stealth_eval_{i}"
         ));
         t.push(format!("assert score {sel} dw.st_grace matches 0"));
-        // --- caught: an exposed (not sneaking, out of every zone) player accrues
-        //     grace and is caught on the grace_ticks-th judge tick (on_caught
-        //     resets grace to 0). This section runs LAST: the trip executes the
-        //     campaign's real `on_caught`, whose effects are arbitrary content
-        //     (the island's deals lethal damage) — nothing state-dependent may
-        //     follow it, and the closing assert reads the dummy through the tag,
-        //     which keeps matching even if `on_caught` killed it. ---
+        // --- caught: an exposed (out of every zone) player accrues grace and is
+        //     caught on the grace_ticks-th judge tick (on_caught resets grace to
+        //     0). This section runs LAST: the trip executes the campaign's real
+        //     `on_caught`, whose effects are arbitrary content (the island's
+        //     deals lethal damage) — nothing state-dependent may follow it, and
+        //     the closing assert reads the dummy through the tag, which keeps
+        //     matching even if `on_caught` killed it. ---
         t.push(format!("function {ns}:stealth_begin_{i}"));
         // Disarm again (this second `begin` re-armed `#stealth`); see note above.
         t.push("scoreboard players set #stealth dw.sys 0".to_string());
-        t.push(format!("scoreboard players set {sel} dw.st_sneak 0"));
-        t.push(format!("scoreboard players set {sel} dw.st_sneakack 0"));
         t.push(format!(
             "tp {sel} {} {} {}",
             outside[0], outside[1], outside[2]
@@ -4888,9 +4921,9 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
         );
 
         // --- cutscene freeze (the staging invariant, see CUTSCENE_TAG): a player
-        //     in the cutscene state is exposed — outside every zone, not sneaking
-        //     — and must still NOT accrue grace while the marker is on, then must
-        //     resume accruing the moment it comes off. Driven through the real
+        //     in the cutscene state is exposed — outside every zone — and must
+        //     still NOT accrue grace while the marker is on, then must resume
+        //     accruing the moment it comes off. Driven through the real
         //     `stealth_tick` gate (not `stealth_eval`), because the gate is what
         //     the freeze lives in.
         let (fpin, fsel) = pin_dummy("dw_t_cfrz");
@@ -4908,8 +4941,6 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
         // in the same tick; this test drives `stealth_tick` explicitly.
         f.push("scoreboard players set #stealth dw.sys 0".to_string());
         f.push(format!("scoreboard players set {fsel} dw.st_grace 0"));
-        f.push(format!("scoreboard players set {fsel} dw.st_sneak 0"));
-        f.push(format!("scoreboard players set {fsel} dw.st_sneakack 0"));
         f.push(format!(
             "tp {fsel} {} {} {}",
             outside[0], outside[1], outside[2]

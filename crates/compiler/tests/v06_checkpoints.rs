@@ -122,10 +122,14 @@ fn setup_initialises_checkpoint_and_stealth_scores() {
         "deathCount respawn detector declared"
     );
     assert!(
-        setup.contains(
-            "scoreboard objectives add dw.st_sneak minecraft.custom:minecraft.sneak_time"
-        ),
-        "sneak_time stat objective declared"
+        setup.contains("scoreboard objectives add dw.st_grace dummy"),
+        "stealth grace objective declared"
+    );
+    // Owner ruling 2026-08-01: zone presence alone = hidden. No sneak stat is
+    // tracked anywhere in the pack — the objectives must be gone, not just unused.
+    assert!(
+        !setup.contains("dw.st_sneak"),
+        "no sneak stat objective survives the zone-presence stealth model:\n{setup}"
     );
     assert!(
         setup.contains("scoreboard players set #stealth dw.sys 0"),
@@ -165,8 +169,9 @@ fn on_respawn_dispatch_is_emitted() {
     );
 }
 
-/// `begin-stealth` arms a per-tick judge that requires sneaking (the `sneak_time`
-/// stat rose) AND zone membership, tracks grace, and fires `on_caught`.
+/// `begin-stealth` arms a per-tick judge that requires zone membership alone
+/// (owner ruling 2026-08-01: no sneak requirement — holding sneak collided with
+/// the spectator cutscene camera), tracks grace, and fires `on_caught`.
 #[test]
 fn stealth_beat_emits_per_tick_judge() {
     let out = build_fixture();
@@ -184,8 +189,12 @@ fn stealth_beat_emits_per_tick_judge() {
     );
     let eval = fn_body(&out, "stealth_eval_1");
     assert!(
-        eval.contains("if score @s dw.st_sneak > @s dw.st_sneakack if entity @s[x="),
-        "judge requires sneaking-this-tick AND zone membership"
+        eval.contains("execute if entity @s[x="),
+        "judge tests zone membership (a pure position selector)"
+    );
+    assert!(
+        !eval.contains("dw.st_sneak"),
+        "the judge must not read any sneak state — zone presence alone = hidden:\n{eval}"
     );
     assert!(
         eval.contains(&format!(
@@ -222,7 +231,7 @@ fn packtest_checkpoint_and_stealth_tests_emitted() {
     .unwrap();
     // The test drives `stealth_eval` explicitly, so it must DISARM the live session
     // marker after each `stealth_begin` — otherwise the world `tick` loop fires a
-    // second judge pass in the same tick, consuming the sneak edge and corrupting
+    // second judge pass in the same tick, double-counting exposure and corrupting
     // the grace the asserts read (the failure that surfaced on the first live run).
     assert_eq!(
         stealth

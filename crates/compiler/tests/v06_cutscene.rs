@@ -526,3 +526,75 @@ fn shots_with_different_subjects_get_distinct_functions() {
         "a different look_at is a different cutscene"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Sneak-gated spectate bounce (round-6 camera-flicker fix)
+// ---------------------------------------------------------------------------
+
+/// The per-tick `spectate` bounce must never target a player actively holding
+/// sneak: in spectator mode the sneak key dismounts the spectated entity, so an
+/// unconditional re-attach strobes (attach → client dismount → attach …) for as
+/// long as the key is held. Every bounce line is gated on the negated
+/// `<ns>:sneak_held` input predicate — a held sneak yields a stable detached
+/// spectator, and release resumes the shot on the next bounce tick.
+#[test]
+fn spectate_bounce_is_sneak_gated() {
+    let (_, out) = build(
+        r#"{ "type": "cutscene", "seconds": 2,
+             "path": [ { "anchor": "anchor/exit", "offset": [-2, 2, 0] },
+                       { "anchor": "anchor/exit", "offset": [2, 2, 0] } ] }"#,
+    );
+    let tick = tick_body(&out);
+    let gated = format!("as @a[predicate=!{NS}:sneak_held] run spectate ");
+    assert_eq!(
+        tick.matches(&gated).count(),
+        2,
+        "both bounce parities re-attach only non-sneaking players:\n{tick}"
+    );
+    assert!(
+        !tick.contains("as @a run spectate"),
+        "no unguarded re-attach may survive — it is the flicker loop:\n{tick}"
+    );
+}
+
+/// A campaign with a cutscene ships the `sneak_held` predicate: the vanilla
+/// `minecraft:player` `input` sub-predicate reading the raw sneak key (which is
+/// reported in every gamemode, spectator included).
+#[test]
+fn cutscene_campaign_emits_the_sneak_held_predicate() {
+    let (_, out) = build(
+        r#"{ "type": "cutscene", "seconds": 2,
+             "path": [ { "anchor": "anchor/exit", "offset": [-2, 2, 0] },
+                       { "anchor": "anchor/exit", "offset": [2, 2, 0] } ] }"#,
+    );
+    let path = format!("datapack/data/{NS}/predicate/sneak_held.json");
+    let body = std::str::from_utf8(out.get(&path).expect("predicate emitted")).unwrap();
+    let json: serde_json::Value = serde_json::from_str(body).expect("predicate is JSON");
+    assert_eq!(
+        json["condition"], "minecraft:entity_properties",
+        "entity_properties condition"
+    );
+    assert_eq!(
+        json["predicate"]["type_specific"]["type"], "minecraft:player",
+        "player sub-predicate"
+    );
+    assert_eq!(
+        json["predicate"]["type_specific"]["input"]["sneak"], true,
+        "matches the held sneak key"
+    );
+}
+
+/// A campaign without any cutscene emits no predicate at all — the gate's only
+/// consumer is the bounce, so everything else stays byte-identical.
+#[test]
+fn cutscene_less_campaign_emits_no_predicate() {
+    let prefabs: &'static PrefabRegistry = Box::leak(Box::new(
+        PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap(),
+    ));
+    let campaign: &'static Campaign = Box::leak(Box::new(parse_hw(&read_hw("quests.json"))));
+    let (_, out) = build_plan(campaign, prefabs);
+    assert!(
+        !out.keys().any(|k| k.contains("/predicate/")),
+        "no predicate directory for a cutscene-less campaign"
+    );
+}
