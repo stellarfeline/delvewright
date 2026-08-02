@@ -494,3 +494,97 @@ fn snapshot_renders_the_edited_world() {
         "edited world carries the recipe palettes: {kinds}"
     );
 }
+
+/// PR 2 verbs materialize through the same `world_edits` function: the
+/// scatter's dressing, the planted oak (logs + persistent leaves), the
+/// stamped fragment and the baked relight torch all lower to `fill`/`setblock`
+/// lines — and `setup` forceloads every batch's write AABB so a write that
+/// leaves the piece bboxes (a leaning canopy) cannot silently fail on an
+/// unloaded chunk.
+#[test]
+fn pr2_verbs_materialize_and_their_bounds_are_forceloaded() {
+    let dir = edits_fixture_dir();
+    let out = tmp("edits-pr2-emit");
+    let r = delvec(&[
+        "build",
+        dir.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        &prefabs_arg(),
+    ]);
+    assert!(
+        r.status.success(),
+        "build failed:\n{}{}",
+        String::from_utf8_lossy(&r.stdout),
+        String::from_utf8_lossy(&r.stderr)
+    );
+    let body = std::fs::read_to_string(
+        out.join("datapack/data/hello-world/function/world_edits.mcfunction"),
+    )
+    .expect("world_edits.mcfunction emitted");
+    assert!(body.contains("minecraft:oak_log[axis=y]"), "plant: trunk");
+    assert!(
+        body.contains("minecraft:oak_leaves[persistent=true]"),
+        "plant: persistent leaves"
+    );
+    assert!(body.contains("minecraft:torch"), "relight: baked fixture");
+    assert!(
+        body.contains("minecraft:poppy") || body.contains("minecraft:oxeye_daisy"),
+        "scatter: dressing"
+    );
+    // The fragment stamp (a full hello-room copy 7 blocks down) contributes
+    // its iron-bars door row at y = 64 - 7 + 1..3.
+    assert!(
+        body.contains("minecraft:iron_bars"),
+        "fragment: stamped annex content"
+    );
+    let setup =
+        std::fs::read_to_string(out.join("datapack/data/hello-world/function/setup.mcfunction"))
+            .expect("setup emitted");
+    let forceloads = setup.matches("forceload add").count();
+    assert!(
+        forceloads > 1,
+        "edit-write AABBs are forceloaded beside the piece bboxes ({forceloads})"
+    );
+}
+
+/// A `fragment` naming a prefab outside the admitted library is a loud
+/// `DW0323` — only library prefabs (with ADR-0013 provenance/license
+/// metadata) can be stamped.
+#[test]
+fn fragment_outside_the_library_is_dw0323() {
+    let dir = edits_copy("edits-frag-unknown");
+    set_batches(
+        &dir,
+        serde_json::json!([{
+            "id": "batch/bad-stamp",
+            "area": "area/keep",
+            "edits": [
+                { "verb": "fragment", "prefab": "prefab/not-in-library",
+                  "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                  "at": [0, -7, 0] }
+            ]
+        }]),
+    );
+    let out = tmp("edits-frag-unknown-out");
+    let r = delvec(&[
+        "build",
+        dir.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        &prefabs_arg(),
+    ]);
+    assert_eq!(r.status.code(), Some(3));
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&r.stdout),
+        String::from_utf8_lossy(&r.stderr)
+    );
+    assert!(all.contains("DW0323"), "expected DW0323:\n{all}");
+    assert!(
+        all.contains("prefab/not-in-library"),
+        "names the prefab:\n{all}"
+    );
+}

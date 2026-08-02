@@ -186,7 +186,7 @@ pub fn build(
     // batch). `None` for a campaign without an edit script — every downstream
     // pass then takes its exact pre-stage-7 path, byte-identically.
     let edit_replay =
-        crate::edit::replay(plan, structures).map_err(|e| BuildFailure::Diagnostic {
+        crate::edit::replay(plan, prefabs, structures).map_err(|e| BuildFailure::Diagnostic {
             code: e.code,
             message: e.message,
         })?;
@@ -399,6 +399,9 @@ pub fn build(
         &relight.placements,
         &wave_placements,
         edit_replay.as_ref().map_or(&[][..], |er| &er.commands),
+        &edit_replay.as_ref().map_or(Vec::new(), |er| {
+            er.batches.iter().filter_map(|b| b.bounds).collect()
+        }),
     );
     for (name, body) in &functions {
         out.insert(
@@ -842,6 +845,7 @@ fn emit_functions(
     relight: &[crate::light::Placement],
     wave_placements: &WavePlacements,
     world_edits: &[String],
+    edit_bounds: &[([i32; 3], [i32; 3])],
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -986,6 +990,17 @@ fn emit_functions(
                 min[0], min[2], max[0], max[2]
             ));
         }
+    }
+    // Stage-7 edit writes may land outside the piece bboxes (a leaning canopy,
+    // a fragment stamped beside a piece) — forceload each batch's write AABB
+    // too, or the `world_edits` setblocks would silently fail on unloaded
+    // chunks (the same pitfall the piece forceloads exist for). Empty for a
+    // campaign without an edit script → setup byte-identical.
+    for (min, max) in edit_bounds {
+        setup.push(format!(
+            "forceload add {} {} {} {}",
+            min[0], min[2], max[0], max[2]
+        ));
     }
     setup.push("scoreboard players set #placed dw.sys 0".to_string());
 

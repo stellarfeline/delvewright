@@ -600,7 +600,7 @@ pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Rel
 /// place the declared fixture at the best valid site near it, re-flood, and repeat
 /// until no deficient cell remains or no site is available (`DW0211`).
 #[allow(clippy::too_many_arguments)]
-fn relight_area(
+pub(crate) fn relight_area(
     model: &mut LightModel,
     nav: &World,
     reachable: &BTreeSet<[i32; 3]>,
@@ -874,7 +874,7 @@ fn candidate(
 // helpers
 // ---------------------------------------------------------------------------
 
-fn in_bounds(c: [i32; 3], min: [i32; 3], max: [i32; 3]) -> bool {
+pub(crate) fn in_bounds(c: [i32; 3], min: [i32; 3], max: [i32; 3]) -> bool {
     (min[0]..=max[0]).contains(&c[0])
         && (min[1]..=max[1]).contains(&c[1])
         && (min[2]..=max[2]).contains(&c[2])

@@ -53,7 +53,7 @@ pub use stages::{
     Wave, WaveMob, WorldContent, WorldTime, WorldWeather,
 };
 pub use stages::{
-    EditBatch, EditFrame, MorphOp, PaletteBlock, PaletteRecipe, RegionShape, WorldEdit,
-    WorldEditsContent,
+    EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,
+    TreeKind, WorldEdit, WorldEditsContent,
 };
 pub use validate::{validate_campaign, validate_campaign_with};

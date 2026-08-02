@@ -3217,6 +3217,114 @@ pub enum WorldEdit {
         /// The surface operation.
         op: MorphOp,
     },
+    /// Seeded dressing scatter (spec-0017 PR 2): drop weighted single-block
+    /// dressing (flora, rocks, props) onto standable cells of a region —
+    /// air cells with an occupied cell directly below — honoring keep-clear
+    /// envelopes (`avoid`). Per-cell white-noise density gate (dressing wants
+    /// speckle, not the fill verbs' clustered patches), deterministic from the
+    /// campaign seed + script position.
+    Scatter {
+        /// The region (an earlier `select` in this batch) to dress.
+        region: RegionId,
+        /// Weighted dressing blocks (blockstate suffixes allowed).
+        items: Vec<PaletteBlock>,
+        /// Per-candidate placement probability in `(0, 1]`.
+        density: f64,
+        /// Keep-clear envelopes: earlier regions whose cells (and columns —
+        /// matched by `(x, z)`) never receive dressing.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        avoid: Vec<RegionId>,
+        /// Optional minimum spacing: when set, candidates are taken in
+        /// descending noise order and one is rejected while another accepted
+        /// candidate is closer than this on **both** horizontal axes (the
+        /// generators' spread rule).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        spacing: Option<u32>,
+        /// Optional cap on how many items are placed (highest-noise first).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<u32>,
+    },
+    /// Structural flora (spec-0017 PR 2): plant hand-shaped trees via the
+    /// lean-or-grow canopy rules (#121) — a canopy that would reach a
+    /// keep-clear (`avoid`) column first leans one block away from it; if that
+    /// still covers the corridor the tree grows tall instead, arching its
+    /// whole canopy 3 blocks above the trunk's floor. No leaf is ever sliced.
+    Plant {
+        /// The region (an earlier `select` in this batch) to plant in. Trunk
+        /// cells are standable region cells (air over an occupied cell).
+        region: RegionId,
+        /// The tree species (canopy shape rules are per-species).
+        tree: TreeKind,
+        /// How many trees to plant (≥ 1; highest-noise candidates first).
+        count: u32,
+        /// Keep-clear envelopes: trunks never stand in these columns and
+        /// canopies lean/grow to clear them.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        avoid: Vec<RegionId>,
+        /// Minimum trunk spacing (reject when closer on BOTH axes; default 4).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        spacing: Option<u32>,
+    },
+    /// Stamp a prefab fragment (spec-0017 PR 2): copy a library prefab's
+    /// non-air cells into the world at a frame-resolved position. The fragment
+    /// is a first-class library prefab — its provenance/license metadata is
+    /// recorded and validated exactly like any placed prefab (ADR-0013);
+    /// nothing outside the library can be stamped.
+    Fragment {
+        /// The library prefab to stamp.
+        prefab: PrefabId,
+        /// The frame `at` resolves in.
+        frame: EditFrame,
+        /// Where the fragment's local `(0, 0, 0)` lands (frame coordinates).
+        at: [i32; 3],
+        /// Placement rotation (default `none`), the same quarter-turn set as
+        /// `/place template`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rotation: Option<FragmentRotation>,
+    },
+    /// Explicit region relight (spec-0017 PR 2, spec-0010 machinery): run the
+    /// deterministic fixture-placement pass over ONE region and bake the
+    /// resulting fixtures into the edit script's writes — authorial control of
+    /// where fixtures land, instead of the whole-area pass's greedy siting.
+    /// (The whole-area relight still re-proves after every batch either way.)
+    Relight {
+        /// The region (an earlier `select` in this batch) to relight: its
+        /// reachable walkable cells are brought to `min_light`.
+        region: RegionId,
+        /// Fixture override; default = the area's declared `lighting.fixture`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fixture: Option<Fixture>,
+        /// Target light override (1..=14); default = the area's declared
+        /// `lighting.min_light`. Required (with `fixture`) when the area
+        /// declares no `lighting`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        min_light: Option<u8>,
+    },
+}
+
+/// A tree species for the `plant` verb (spec-0017 PR 2). One species per
+/// canopy-rule implementation; the shipped rule set is the #121 oak.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum TreeKind {
+    /// Small hand-shaped oak (3–4 logs, 5-wide leaf ball) with the
+    /// lean-or-grow corridor rules.
+    Oak,
+}
+
+/// A `fragment` stamp rotation (spec-0017 PR 2) — the `/place template`
+/// quarter-turn set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum FragmentRotation {
+    /// No rotation.
+    None,
+    /// 90° clockwise.
+    Clockwise90,
+    /// 180°.
+    Clockwise180,
+    /// 90° counterclockwise.
+    Counterclockwise90,
 }
 
 /// A `select` verb's shape (spec-0017): primitive shapes resolve in a declared

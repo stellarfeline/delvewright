@@ -4178,6 +4178,178 @@ fn world_edits_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mut Vec<Diag
                         }
                     }
                 }
+                WorldEdit::Scatter {
+                    region,
+                    items,
+                    density,
+                    avoid,
+                    spacing: _,
+                    limit,
+                } => {
+                    check_region_ref(d, stage, &regions, format!("{epath}/region"), region);
+                    for (i, r) in avoid.iter().enumerate() {
+                        check_region_ref(d, stage, &regions, format!("{epath}/avoid/{i}"), r);
+                    }
+                    if items.is_empty() {
+                        d.push(Diagnostic::error(
+                            codes::EDIT_INVALID,
+                            stage,
+                            format!("{epath}/items"),
+                            "scatter has no items — give it at least one weighted dressing \
+                             block"
+                                .to_string(),
+                        ));
+                    }
+                    for (i, b) in items.iter().enumerate() {
+                        if !(b.weight.is_finite() && b.weight > 0.0) {
+                            d.push(Diagnostic::error(
+                                codes::EDIT_INVALID,
+                                stage,
+                                format!("{epath}/items/{i}/weight"),
+                                format!(
+                                    "scatter item weight `{}` for `{}` must be a finite \
+                                     number > 0",
+                                    b.weight, b.block
+                                ),
+                            ));
+                        }
+                        check_edit_block(
+                            d,
+                            stage,
+                            blocks,
+                            format!("{epath}/items/{i}/block"),
+                            &b.block,
+                        );
+                    }
+                    if !(density.is_finite() && *density > 0.0 && *density <= 1.0) {
+                        d.push(Diagnostic::error(
+                            codes::EDIT_INVALID,
+                            stage,
+                            format!("{epath}/density"),
+                            format!(
+                                "scatter `density` `{density}` must be in (0, 1] — it is the \
+                                 per-candidate placement probability"
+                            ),
+                        ));
+                    }
+                    if let Some(limit) = limit
+                        && *limit == 0
+                    {
+                        d.push(Diagnostic::error(
+                            codes::EDIT_INVALID,
+                            stage,
+                            format!("{epath}/limit"),
+                            "scatter `limit` is 0 — a zero-item scatter is a no-op; give a \
+                             positive cap (or drop the field for no cap)"
+                                .to_string(),
+                        ));
+                    }
+                }
+                WorldEdit::Plant {
+                    region,
+                    tree: _,
+                    count,
+                    avoid,
+                    spacing: _,
+                } => {
+                    check_region_ref(d, stage, &regions, format!("{epath}/region"), region);
+                    for (i, r) in avoid.iter().enumerate() {
+                        check_region_ref(d, stage, &regions, format!("{epath}/avoid/{i}"), r);
+                    }
+                    if *count == 0 {
+                        d.push(Diagnostic::error(
+                            codes::EDIT_INVALID,
+                            stage,
+                            format!("{epath}/count"),
+                            "plant `count` is 0 — a zero-tree plant is a no-op; give a \
+                             positive count (or drop the edit)"
+                                .to_string(),
+                        ));
+                    }
+                }
+                WorldEdit::Fragment {
+                    prefab,
+                    frame,
+                    at: _,
+                    rotation: _,
+                } => {
+                    if !prefab.is_valid_syntax() {
+                        bad_syntax(
+                            d,
+                            stage,
+                            format!("{epath}/prefab"),
+                            "prefab",
+                            prefab.as_str(),
+                        );
+                    }
+                    match frame {
+                        EditFrame::PieceLocal { prefab, .. } => {
+                            if !prefab.is_valid_syntax() {
+                                bad_syntax(
+                                    d,
+                                    stage,
+                                    format!("{epath}/frame/prefab"),
+                                    "prefab",
+                                    prefab.as_str(),
+                                );
+                            }
+                        }
+                        EditFrame::AnchorRelative { anchor } => {
+                            if !anchor.is_valid_syntax() {
+                                bad_syntax(
+                                    d,
+                                    stage,
+                                    format!("{epath}/frame/anchor"),
+                                    "anchor",
+                                    anchor.as_str(),
+                                );
+                            }
+                        }
+                    }
+                }
+                WorldEdit::Relight {
+                    region,
+                    fixture,
+                    min_light,
+                } => {
+                    check_region_ref(d, stage, &regions, format!("{epath}/region"), region);
+                    if let Some(ml) = min_light
+                        && !(1..=14).contains(ml)
+                    {
+                        d.push(Diagnostic::error(
+                            codes::EDIT_INVALID,
+                            stage,
+                            format!("{epath}/min_light"),
+                            format!(
+                                "relight `min_light` {ml} out of range — vanilla block light \
+                                 is 1..=14 (15 is only at the emitter itself)"
+                            ),
+                        ));
+                    }
+                    // Without an area `lighting` declaration the verb has no
+                    // fixture/target to fall back on — both overrides required.
+                    let area_lighting = c
+                        .world
+                        .content
+                        .areas
+                        .iter()
+                        .find(|a| a.id.as_str() == batch.area.as_str())
+                        .and_then(|a| a.lighting);
+                    if area_lighting.is_none() && (fixture.is_none() || min_light.is_none()) {
+                        d.push(Diagnostic::error(
+                            codes::EDIT_INVALID,
+                            stage,
+                            epath.to_string(),
+                            format!(
+                                "relight in batch `{}`: area `{}` declares no `lighting`, so \
+                                 the verb must carry BOTH `fixture` and `min_light` (there is \
+                                 nothing to default to). Declare area lighting or add the \
+                                 overrides",
+                                batch.id, batch.area
+                            ),
+                        ));
+                    }
+                }
             }
         }
     }

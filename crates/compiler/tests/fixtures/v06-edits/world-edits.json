@@ -14,9 +14,21 @@
             "name": "region/interior",
             "shape": {
               "kind": "box",
-              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
-              "min": [1, 0, 1],
-              "max": [9, 0, 9]
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/hello-room"
+              },
+              "min": [
+                1,
+                0,
+                1
+              ],
+              "max": [
+                9,
+                0,
+                9
+              ]
             }
           },
           {
@@ -25,18 +37,31 @@
             "shape": {
               "kind": "palette-match",
               "within": "region/interior",
-              "blocks": ["minecraft:stone"]
+              "blocks": [
+                "minecraft:stone"
+              ]
             }
           },
           {
             "verb": "replace",
             "region": "region/floor-stone",
-            "matching": ["minecraft:stone"],
+            "matching": [
+              "minecraft:stone"
+            ],
             "recipe": {
               "blocks": [
-                { "block": "minecraft:stone", "weight": 3.0 },
-                { "block": "minecraft:cobblestone", "weight": 1.5 },
-                { "block": "minecraft:mossy_cobblestone", "weight": 0.5 }
+                {
+                  "block": "minecraft:stone",
+                  "weight": 3.0
+                },
+                {
+                  "block": "minecraft:cobblestone",
+                  "weight": 1.5
+                },
+                {
+                  "block": "minecraft:mossy_cobblestone",
+                  "weight": 0.5
+                }
               ],
               "scale": 0.35
             }
@@ -53,9 +78,21 @@
             "name": "region/nook",
             "shape": {
               "kind": "box",
-              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
-              "min": [7, 1, 6],
-              "max": [8, 2, 6]
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/hello-room"
+              },
+              "min": [
+                7,
+                1,
+                6
+              ],
+              "max": [
+                8,
+                2,
+                6
+              ]
             }
           },
           {
@@ -67,9 +104,20 @@
             "name": "region/exit-pad",
             "shape": {
               "kind": "box",
-              "frame": { "kind": "anchor-relative", "anchor": "anchor/exit" },
-              "min": [-1, -1, -1],
-              "max": [1, -1, 1]
+              "frame": {
+                "kind": "anchor-relative",
+                "anchor": "anchor/exit"
+              },
+              "min": [
+                -1,
+                -1,
+                -1
+              ],
+              "max": [
+                1,
+                -1,
+                1
+              ]
             }
           },
           {
@@ -87,8 +135,14 @@
             "region": "region/pad-surface",
             "recipe": {
               "blocks": [
-                { "block": "minecraft:polished_andesite", "weight": 2.0 },
-                { "block": "minecraft:andesite", "weight": 1.0 }
+                {
+                  "block": "minecraft:polished_andesite",
+                  "weight": 2.0
+                },
+                {
+                  "block": "minecraft:andesite",
+                  "weight": 1.0
+                }
               ],
               "scale": 0.5
             }
@@ -105,9 +159,21 @@
             "name": "region/outer-corner",
             "shape": {
               "kind": "box",
-              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
-              "min": [1, 0, 1],
-              "max": [2, 0, 2]
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/hello-room"
+              },
+              "min": [
+                1,
+                0,
+                1
+              ],
+              "max": [
+                2,
+                0,
+                2
+              ]
             }
           },
           {
@@ -115,9 +181,21 @@
             "name": "region/inner-corner",
             "shape": {
               "kind": "box",
-              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
-              "min": [8, 0, 8],
-              "max": [9, 0, 9]
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/hello-room"
+              },
+              "min": [
+                8,
+                0,
+                8
+              ],
+              "max": [
+                9,
+                0,
+                9
+              ]
             }
           },
           {
@@ -125,7 +203,10 @@
             "name": "region/corners",
             "shape": {
               "kind": "union",
-              "of": ["region/outer-corner", "region/inner-corner"]
+              "of": [
+                "region/outer-corner",
+                "region/inner-corner"
+              ]
             }
           },
           {
@@ -136,11 +217,251 @@
               "by": 1,
               "recipe": {
                 "blocks": [
-                  { "block": "minecraft:stone_bricks", "weight": 2.0 },
-                  { "block": "minecraft:mossy_stone_bricks", "weight": 1.0 }
+                  {
+                    "block": "minecraft:stone_bricks",
+                    "weight": 2.0
+                  },
+                  {
+                    "block": "minecraft:mossy_stone_bricks",
+                    "weight": 1.0
+                  }
                 ]
               }
             }
+          }
+        ]
+      },
+      {
+        "id": "batch/garden",
+        "area": "area/keep",
+        "note": "Green the outer chamber and scatter wildflowers off the walk lane (fixture: scatter + avoid envelope).",
+        "edits": [
+          {
+            "verb": "select",
+            "name": "region/garden-floor",
+            "shape": {
+              "kind": "box",
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/hello-room"
+              },
+              "min": [
+                1,
+                0,
+                1
+              ],
+              "max": [
+                9,
+                0,
+                5
+              ]
+            }
+          },
+          {
+            "verb": "select",
+            "name": "region/walk-lane",
+            "shape": {
+              "kind": "box",
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/hello-room"
+              },
+              "min": [
+                4,
+                0,
+                1
+              ],
+              "max": [
+                6,
+                0,
+                9
+              ]
+            }
+          },
+          {
+            "verb": "replace",
+            "region": "region/garden-floor",
+            "matching": [
+              "minecraft:stone",
+              "minecraft:cobblestone",
+              "minecraft:mossy_cobblestone"
+            ],
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:grass_block",
+                  "weight": 5.0
+                },
+                {
+                  "block": "minecraft:moss_block",
+                  "weight": 1.0
+                }
+              ],
+              "scale": 0.4
+            }
+          },
+          {
+            "verb": "select",
+            "name": "region/garden-air",
+            "shape": {
+              "kind": "surface-band",
+              "over": "region/garden-floor",
+              "from": 1,
+              "to": 1
+            }
+          },
+          {
+            "verb": "scatter",
+            "region": "region/garden-air",
+            "items": [
+              {
+                "block": "minecraft:poppy",
+                "weight": 2.0
+              },
+              {
+                "block": "minecraft:oxeye_daisy",
+                "weight": 2.0
+              },
+              {
+                "block": "minecraft:cornflower",
+                "weight": 1.0
+              },
+              {
+                "block": "minecraft:short_grass",
+                "weight": 3.0
+              }
+            ],
+            "density": 0.3,
+            "avoid": [
+              "region/walk-lane"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "batch/orchard",
+        "area": "area/keep",
+        "note": "One lean-or-grow oak in the inner chamber, clear of the exit lane (fixture: plant, #121 canopy rules).",
+        "edits": [
+          {
+            "verb": "select",
+            "name": "region/inner-floor",
+            "shape": {
+              "kind": "box",
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/hello-room"
+              },
+              "min": [
+                1,
+                0,
+                7
+              ],
+              "max": [
+                9,
+                0,
+                9
+              ]
+            }
+          },
+          {
+            "verb": "select",
+            "name": "region/exit-lane",
+            "shape": {
+              "kind": "box",
+              "frame": {
+                "kind": "anchor-relative",
+                "anchor": "anchor/exit"
+              },
+              "min": [
+                -1,
+                -1,
+                -2
+              ],
+              "max": [
+                1,
+                -1,
+                2
+              ]
+            }
+          },
+          {
+            "verb": "select",
+            "name": "region/inner-air",
+            "shape": {
+              "kind": "surface-band",
+              "over": "region/inner-floor",
+              "from": 1,
+              "to": 1
+            }
+          },
+          {
+            "verb": "plant",
+            "region": "region/inner-air",
+            "tree": "oak",
+            "count": 1,
+            "avoid": [
+              "region/exit-lane"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "batch/annex",
+        "area": "area/keep",
+        "note": "Stamp a detached basement annex below the room (fixture: fragment, library provenance).",
+        "edits": [
+          {
+            "verb": "fragment",
+            "prefab": "prefab/hello-room",
+            "frame": {
+              "kind": "piece-local",
+              "piece": 0,
+              "prefab": "prefab/hello-room"
+            },
+            "at": [
+              0,
+              -7,
+              0
+            ]
+          }
+        ]
+      },
+      {
+        "id": "batch/lamplight",
+        "area": "area/keep",
+        "note": "Bake a torch into the carved nook (fixture: explicit region relight with overrides).",
+        "edits": [
+          {
+            "verb": "select",
+            "name": "region/nook-r",
+            "shape": {
+              "kind": "box",
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/hello-room"
+              },
+              "min": [
+                7,
+                1,
+                6
+              ],
+              "max": [
+                8,
+                2,
+                6
+              ]
+            }
+          },
+          {
+            "verb": "relight",
+            "region": "region/nook-r",
+            "fixture": "torch",
+            "min_light": 12
           }
         ]
       }

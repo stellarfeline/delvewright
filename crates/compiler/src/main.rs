@@ -588,13 +588,13 @@ fn run_snapshot(
             return ExitCode::from(3);
         }
     };
-    let structures = match read_structures(&plan, prefabs_dir, json) {
+    let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
     };
 
     let started = std::time::Instant::now();
-    let blocks = match edited_assembled(&plan, &structures, json) {
+    let blocks = match edited_assembled(&plan, &prefabs, &structures, json) {
         Ok(a) => a.blocks,
         Err(code) => return ExitCode::from(code),
     };
@@ -705,10 +705,11 @@ fn manifest_path_for(out: &Path) -> PathBuf {
 /// A region-resolution failure (`DW0323`) has no world state to show → exit 3.
 fn edited_assembled(
     plan: &Plan,
+    prefabs: &PrefabRegistry,
     structures: &BTreeMap<String, Vec<u8>>,
     json: bool,
 ) -> Result<delvewright_compiler::assembled::Assembled, u8> {
-    match delvewright_compiler::edit::replay_view(plan, structures) {
+    match delvewright_compiler::edit::replay_view(plan, prefabs, structures) {
         Ok(Some(er)) => Ok(er.assembled),
         Ok(None) => Ok(delvewright_compiler::assembled::assemble(plan, structures)),
         Err(e) => {
@@ -743,19 +744,32 @@ fn load_for_view(
 /// and the spec-0015 view commands so all three see the same world.
 fn read_structures(
     plan: &Plan,
+    prefabs: &PrefabRegistry,
     prefabs_dir: &Path,
     json: bool,
 ) -> Result<BTreeMap<String, Vec<u8>>, u8> {
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    // Placed pieces, plus any structure a stage-7 `fragment` verb stamps that
+    // no piece placed (spec-0017 PR 2) — the replay needs those bytes too.
+    let mut files: Vec<String> = Vec::new();
     for area in &plan.areas {
         for piece in &area.pieces {
-            if structures.contains_key(&piece.structure_file) {
+            files.push(piece.structure_file.clone());
+        }
+    }
+    files.extend(delvewright_compiler::edit::fragment_structure_files(
+        plan.campaign,
+        prefabs,
+    ));
+    for file in files {
+        {
+            if structures.contains_key(&file) {
                 continue;
             }
-            let path = prefabs_dir.join(&piece.structure_file);
+            let path = prefabs_dir.join(&file);
             match std::fs::read(&path) {
                 Ok(bytes) => {
-                    structures.insert(piece.structure_file.clone(), bytes);
+                    structures.insert(file.clone(), bytes);
                 }
                 Err(e) => {
                     print_build_error(
@@ -1040,13 +1054,13 @@ fn run_blocking_chart(
             return ExitCode::from(3);
         }
     };
-    let structures = match read_structures(&plan, prefabs_dir, json) {
+    let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
     };
 
     let started = std::time::Instant::now();
-    let assembled = match edited_assembled(&plan, &structures, json) {
+    let assembled = match edited_assembled(&plan, &prefabs, &structures, json) {
         Ok(a) => a,
         Err(code) => return ExitCode::from(code),
     };
@@ -1189,7 +1203,7 @@ fn run_build(
     };
 
     // read the structure .nbt bytes referenced by placements
-    let structures = match read_structures(&plan, prefabs_dir, json) {
+    let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
     };
@@ -1400,12 +1414,12 @@ fn run_edit(
             return ExitCode::from(3);
         }
     };
-    let structures = match read_structures(&plan, prefabs_dir, json) {
+    let structures = match read_structures(&plan, &v.prefabs, prefabs_dir, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
     };
 
-    let replay = match delvewright_compiler::edit::replay(&plan, &structures) {
+    let replay = match delvewright_compiler::edit::replay(&plan, &v.prefabs, &structures) {
         Ok(r) => r,
         Err(e) => {
             print_build_error(e.code, &e.message, json);
