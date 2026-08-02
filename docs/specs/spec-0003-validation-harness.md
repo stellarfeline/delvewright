@@ -59,6 +59,55 @@ the same delve image CI and prod use.
   gains 1.21.11 score support the harness can switch to the live sidebar read (it
   already tries both). **Flag for owner:** this is a harness-observation deviation
   from the spec-0002 assumption; the *datapack* contract is unchanged.
+- **Self-defense + eating (added 2026-08-02, souls ladder)** *(built)*: the bot used to
+  attack only mobs belonging to the CURRENT kill objective's wave, and never ate. A
+  souls `ambush` (spec-0016 §3) desugars to spawn + unleash with no kill objective, so a
+  bypassed ambusher belongs to no wave: on the-drowned-bell it stalked the bot across
+  the map and free-hit it through the next fight, which the bot never answered
+  (`[kill wave/gate-assault] nearby(8): … husk(hostile), vindicator, vindicator` →
+  `bot died … slain by Hollow Gate-Warder`). The harness now plays those two moves a
+  player has:
+  - **Attribution** — mineflayer re-emits the 1.20+ `damage_event` packet as
+    `entityHurt(entity, source)` with the server-named `sourceCauseId`; that is the
+    primary channel. A health drop with no named source falls back to the nearest
+    hostile within 4.5 blocks, and to **nobody** if none is that close, so a trap or a
+    fall never makes the bot swing at a bystander. NPC mannequins/displays are excluded
+    by the same classifier the kill loop uses.
+  - **Retaliation** — during a kill objective the target set is the wave's mobs PLUS
+    any hostile that damaged the bot in the last 5s and is within 4 blocks (attackers
+    first). A retaliation kill never counts toward the wave's confirmed-kill total, so
+    it can never end a wave early.
+  - **Fight-or-flight** — on a navigation leg, a hostile that has hit the bot ≥2× in 5s
+    and stays within 3 blocks stops the leg; the bot kills it (12s budget) and resumes.
+    Anything that outlasts the budget is reported, written off for the run, and the leg
+    continues — bounded, so self-defense can never convert content difficulty into a
+    navigation failure.
+  - **Eating** — below 60% health with no hostile within 4 blocks, the bot eats the most
+    nourishing food in its kit (registry-driven, not a hardcoded item list) and
+    re-equips its weapon. Full hunger is reported distinctly (vanilla forbids eating
+    then; natural regeneration is running).
+  - **A `sneak` leg is exempt from both** — no fighting, no eating. `sneak: true` is the
+    delve declaring stealth, not combat, is the mechanic, and stealth runs on a clock:
+    nobodys-cave-island's `begin-stealth` allows 90 ticks outside a safe zone and
+    answers a miss with `damage-players 40` (an instant kill). Stopping to swing at the
+    Invulnerable warden the section wants the player to creep past spent that grace and
+    killed the bot on a leg that had always been green — and because datapack-applied
+    stealth damage carries no source entity, it was attributed to the nearest hostile
+    (the warden), so the bot "retaliated" against the thing punishing it. On a sneak leg,
+    fight-or-flight is flight.
+- **mineflayer-pathfinder `stop()` must always be paired with `setGoal(null)`**
+  *(root-caused 2026-08-02)*: `stop()` only raises an internal `stopPathing` flag, which
+  is cleared when a walking bot reaches its next path node or by a goal/movements reset.
+  Stopping a bot that is NOT mid-path leaves it raised; the next `goto` sets its goal,
+  the reset fires `path_stop` synchronously, and the brand-new goto rejects instantly
+  with "Path was stopped before it could be completed!" — whereupon the failure handler
+  stops the pathfinder again and re-arms the flag. Every later hop then fails without
+  the bot attempting to walk. The executor now clears the flag itself at every stop
+  site (`stopPathfinding()`); a unit test pins the pairing. Removing this landmine also
+  removed the stall-recovery/unstick storm the-drowned-bell's timed-gate crossing used
+  to need.
+  None of this weakens an assertion: a death still fails the run, waves still require
+  every mob dead, and every action is logged (`[threat]`/`[defend]`/`[eat]`).
 - Multi-player: Carpet fake players fill seats for 2–4-player scenarios *(open, M3)*;
   the mineflayer bot remains the actor. The marker is `@a` so a seat-filling bot in a
   future multiplayer delve still observes it.

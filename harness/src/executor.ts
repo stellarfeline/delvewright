@@ -48,6 +48,19 @@ import {
   gateWindowWaitMs,
   needsStandoff,
 } from "./timed-gate.ts";
+import type { Item } from "prismarine-item";
+import {
+  ATTRIBUTION_RANGE,
+  RETALIATION_RANGE,
+  STALKER_RANGE,
+  THREAT_WINDOW_MS,
+  ThreatTracker,
+  attributeBotDamage,
+  pickRetaliationTarget,
+  pickStalker,
+  type ThreatCandidate,
+} from "./threat.ts";
+import { EAT_COOLDOWN_MS, EAT_SAFE_RANGE, eatDecision, pickFood } from "./sustain.ts";
 
 /** Bounded number of physics-unstick bursts before a wedged hop fails loudly. */
 const UNSTICK_ATTEMPTS = 3;
@@ -465,6 +478,48 @@ const CUTSCENE_POLL_MS = 250;
 const RESPAWN_TIMEOUT_MS = 15_000;
 /** Recent chat lines retained for death-cause diagnosis. */
 const CHAT_BUFFER = 16;
+/**
+ * Self-defense (souls ladder, the-drowned-bell): how long (ms) the bot may spend
+ * killing a stalker that interrupted a NAVIGATION leg before it gives up, reports, and
+ * resumes walking. A delve mob dies in a handful of swings; this window is many times
+ * that, so it only ever expires on something the bot genuinely cannot kill (an
+ * Invulnerable actor, a mob it cannot reach) — and even then the leg continues, so the
+ * budget can never turn a content problem into a navigation failure.
+ */
+const DEFEND_BUDGET_MS = 12_000;
+/**
+ * How many times a single hop may be interrupted for self-defense before it is walked
+ * regardless. Bounded so a pack of mobs cannot livelock a leg; the wave-fight path
+ * (which has its own 90s budget) is where a real fight belongs.
+ */
+const DEFENSE_ROUNDS_PER_HOP = 3;
+/**
+ * How often (ms) a walking leg re-checks whether a stalker has latched onto the bot.
+ * A backstop only: the check also runs on the damage event itself, so a mob that hits
+ * the bot is reacted to on the packet rather than up to a poll later. It matters — a
+ * Hollow Gate-Warder swinging an iron axe takes ~7 of the bot's 20 hit points per hit
+ * on `easy`, so three hits is the whole margin.
+ */
+const THREAT_POLL_MS = 200;
+/**
+ * How long (ms) to let an interrupted `goto` settle before swinging. The pathfinder
+ * halts at the next path node, so a moment's grace stops it dragging the bot out of
+ * melee mid-fight — bounded tightly, because the bot is being hit while it waits.
+ */
+const WALK_SETTLE_MS = 300;
+/**
+ * How long (ms) after a damage packet with a named source the health-drop fallback
+ * stays quiet. mineflayer emits `entityHurt` (from `damage_event`) and the health
+ * update from the same server tick batch; this grace stops one hit being counted twice
+ * — once attributed, once guessed.
+ */
+const HEALTH_ATTRIBUTION_GRACE_MS = 500;
+/**
+ * Vanilla player maxima on 1.21.11. A delve's class kit changes gear, never these
+ * attributes, so they are constants rather than a per-run read.
+ */
+const PLAYER_MAX_HEALTH = 20;
+const PLAYER_MAX_FOOD = 20;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -542,6 +597,30 @@ export class MineflayerExecutor implements StepExecutor {
    * — e.g. the cave entry the player returns to — never grabs the wrong leg's route.
    */
   private legCursor = 0;
+  /**
+   * Who has been hitting the bot lately (see threat.ts). Feeds two behaviours a player
+   * has and the bot did not: hitting back at whatever is drawing blood during a wave
+   * fight, and stopping a navigation leg for a mob that has latched on.
+   */
+  private readonly threats = new ThreatTracker();
+  /** Timestamp (ms) of the last damage attributed from a packet-named source. */
+  private lastAttributionAt = 0;
+  /** Last observed bot health, for the health-drop attribution fallback. */
+  private lastHealth: number | undefined;
+  /**
+   * Entities a full self-defense budget failed to kill. They stay threats (the bot
+   * still knows they hit it) but never interrupt another navigation leg — otherwise an
+   * unkillable stalker would stop every hop forever. Reported when first written off.
+   */
+  private readonly defenseExempt = new Set<number>();
+  /** Timestamp (ms) of the last eat attempt, throttling both the action and its log. */
+  private lastEatAt = 0;
+  /**
+   * Armed fight-or-flight watchers (see {@link armStalkerTrip}). Fired from the damage
+   * handler so the bot reacts on the hit that qualifies a stalker, not up to a poll
+   * later; the poll remains as a backstop for a mob that closes without hitting again.
+   */
+  private readonly stalkerWaiters = new Set<(id: number) => void>();
 
   constructor(config: BotConfig, env: Record<string, string | undefined> = process.env) {
     this.config = config;
@@ -628,6 +707,20 @@ export class MineflayerExecutor implements StepExecutor {
       }
     });
     bot.on("death", () => this.onDeath());
+    // Self-defense attribution (souls ladder). PRIMARY channel: mineflayer 4.37 turns
+    // the 1.20+ `damage_event` packet into `entityHurt(entity, source)`, where `source`
+    // is the entity the server names as responsible (`sourceCauseId`). When the hurt
+    // entity is the bot, that source IS the attacker — no guessing needed.
+    bot.on("entityHurt", (entity: Entity, source?: Entity) => {
+      if (!entity || entity.id !== bot.entity?.id) return;
+      this.onBotDamaged(source?.id);
+    });
+    // FALLBACK: `sourceCauseId` is 0 when the server names no responsible entity (and
+    // the lookup misses if that entity is not tracked client-side), so a hit can arrive
+    // with no source. A health DROP with no fresh attribution is then blamed on the
+    // nearest hostile in melee reach — and on nothing at all if none is close, so a
+    // trap or a fall never makes the bot swing at a bystander.
+    bot.on("health", () => this.onHealthUpdate());
     // gap 8 (task #32): mineflayer applies a server position packet to
     // `bot.entity.position` and THEN emits `forcedMove` (lib/plugins/physics.js).
     // A large horizontal jump is the compiler's cross-area `teleport` landing; stop
@@ -650,12 +743,408 @@ export class MineflayerExecutor implements StepExecutor {
     const prev = this.lastForcedPos;
     this.lastForcedPos = now;
     if (prev && Math.hypot(now.x - prev.x, now.z - prev.z) >= TRANSPORT_JUMP_BLOCKS) {
-      try {
-        bot.pathfinder.stop();
-      } catch {
-        // best effort — resetting the path must never mask the relocation
-      }
+      this.stopPathfinding();
     }
+  }
+
+  /**
+   * Abandon whatever the pathfinder is doing, leaving it in a state the NEXT `goto`
+   * can actually use.
+   *
+   * mineflayer-pathfinder's `stop()` only raises an internal `stopPathing` flag; the
+   * flag is cleared when the walking bot next reaches a path node, or by a
+   * `setGoal`/`setMovements` reset — so calling `stop()` on a bot that is NOT mid-path
+   * leaves it raised. The next `goto` then sets its goal, the reset sees the raised
+   * flag, fires `path_stop` synchronously, and the brand-new goto rejects instantly
+   * with "Path was stopped before it could be completed!" — while `runGoto`'s own
+   * failure handler stops the pathfinder again, re-arming the flag. The result is a
+   * self-sustaining loop where every later hop fails without the bot ever attempting to
+   * walk (observed on the-drowned-bell: after the bot stopped to fight an ambusher,
+   * every subsequent hop and every recovery re-path failed that way, and the run died
+   * on a leg it had walked fine the run before).
+   *
+   * `setGoal(null)` immediately after performs that reset ourselves: the flag is
+   * consumed here, once, instead of poisoning the next caller. Used everywhere the
+   * executor stops the pathfinder.
+   */
+  private stopPathfinding(): void {
+    const bot = this.bot;
+    if (!bot) return;
+    try {
+      bot.pathfinder.stop();
+      bot.pathfinder.setGoal(null);
+    } catch {
+      // best effort — clearing the pathfinder must never mask the reason we stopped
+    }
+  }
+
+  /**
+   * Every hostile the bot can currently see, as {@link ThreatCandidate}s plus a lookup
+   * back to the live entities. "Hostile" is exactly {@link isWaveMob} — the same
+   * classifier the kill loop uses, so NPC mannequins, displays and dropped items can
+   * never be recorded as attackers or become defense targets.
+   */
+  private visibleHostiles(): {
+    candidates: ThreatCandidate[];
+    byId: Map<number, Entity>;
+  } {
+    const bot = this.bot;
+    const candidates: ThreatCandidate[] = [];
+    const byId = new Map<number, Entity>();
+    if (!bot?.entity) return { candidates, byId };
+    const here = bot.entity.position;
+    for (const entity of Object.values(bot.entities)) {
+      if (!entity?.position || !isWaveMob(entity, bot.entity)) continue;
+      candidates.push({ id: entity.id, distance: here.distanceTo(entity.position) });
+      byId.set(entity.id, entity);
+    }
+    return { candidates, byId };
+  }
+
+  /**
+   * The bot took a hit; remember who dealt it. `sourceId` is the entity the server
+   * named as responsible (`damage_event.sourceCauseId`, resolved by mineflayer), or
+   * `undefined` when it named none — see {@link attributeBotDamage} for what happens
+   * then. Recording only; the decision to swing back belongs to the kill loop and the
+   * navigation trip.
+   */
+  private onBotDamaged(sourceId: number | undefined): void {
+    const { candidates, byId } = this.visibleHostiles();
+    const attacker = attributeBotDamage(sourceId, candidates);
+    if (attacker === undefined) return;
+    if (sourceId !== undefined && attacker === sourceId) {
+      this.lastAttributionAt = Date.now();
+    }
+    this.threats.record(attacker);
+    const name = byId.get(attacker)?.name ?? "?";
+    const how = attacker === sourceId ? "server-named source" : "nearest hostile in reach";
+    process.stderr.write(
+      `[threat] hit by ${name}#${attacker} (${how}); ` +
+        `${this.threats.hitsWithin(attacker)} hit(s) in the last ` +
+        `${(THREAT_WINDOW_MS / 1_000).toFixed(0)}s\n`,
+    );
+    this.notifyStalker();
+  }
+
+  /**
+   * Wake any armed fight-or-flight watcher if a stalker now qualifies. Called from the
+   * damage handlers so the reaction happens on the hit, not on the next poll.
+   */
+  private notifyStalker(): void {
+    if (this.stalkerWaiters.size === 0) return;
+    const id = this.currentStalker();
+    if (id === undefined) return;
+    for (const waiter of [...this.stalkerWaiters]) {
+      waiter(id);
+    }
+  }
+
+  /**
+   * Health-drop fallback attribution: a drop with no packet-named source in the last
+   * {@link HEALTH_ATTRIBUTION_GRACE_MS} is blamed on the nearest hostile within
+   * {@link ATTRIBUTION_RANGE}. If nothing is that close, nothing is blamed — a fall, a
+   * trap or drowning must never make the bot attack a bystander.
+   */
+  private onHealthUpdate(): void {
+    const bot = this.bot;
+    if (!bot) return;
+    const previous = this.lastHealth;
+    this.lastHealth = bot.health;
+    if (previous === undefined || bot.health >= previous) return;
+    if (Date.now() - this.lastAttributionAt < HEALTH_ATTRIBUTION_GRACE_MS) return;
+    const { candidates, byId } = this.visibleHostiles();
+    const attacker = attributeBotDamage(undefined, candidates, ATTRIBUTION_RANGE);
+    if (attacker === undefined) return;
+    this.threats.record(attacker);
+    process.stderr.write(
+      `[threat] lost ${(previous - bot.health).toFixed(1)} health with no named source; ` +
+        `attributing to the nearest hostile in reach: ` +
+        `${byId.get(attacker)?.name ?? "?"}#${attacker} ` +
+        `(${this.threats.hitsWithin(attacker)} hit(s) in the last ` +
+        `${(THREAT_WINDOW_MS / 1_000).toFixed(0)}s)\n`,
+    );
+    this.notifyStalker();
+  }
+
+  /**
+   * Who has hit the bot inside the threat window, most recent first. Diagnostic
+   * accessor (as {@link deathDiagnostic}); also what lets tests assert the damage
+   * attribution without a live server.
+   */
+  recentAttackers(): ReturnType<ThreatTracker["active"]> {
+    return this.threats.active();
+  }
+
+  /** Distance (blocks) to the nearest hostile, or `undefined` if none is visible. */
+  private nearestHostileDistance(): number | undefined {
+    const { candidates } = this.visibleHostiles();
+    let best: number | undefined;
+    for (const c of candidates) {
+      if (best === undefined || c.distance < best) best = c.distance;
+    }
+    return best;
+  }
+
+  /** Every edible item currently in the inventory, with its hunger value. */
+  private foodInInventory(): Array<{ item: Item; name: string; foodPoints: number }> {
+    const bot = this.requireBot();
+    // The pinned minecraft-data registry is the single source of truth for what counts
+    // as food — no hardcoded item list to drift from the class kits.
+    const foods = (bot.registry as unknown as { foods?: Record<number, { foodPoints?: number }> })
+      .foods;
+    if (!foods) return [];
+    const out: Array<{ item: Item; name: string; foodPoints: number }> = [];
+    for (const item of bot.inventory.items()) {
+      const food = foods[item.type];
+      if (!food) continue;
+      out.push({ item, name: item.name, foodPoints: food.foodPoints ?? 0 });
+    }
+    return out;
+  }
+
+  /**
+   * Eat, the way a player does, when the bot is hurt and nothing is in its face.
+   *
+   * The class kits hand every class food (the-drowned-bell gives each one rabbit stew);
+   * before this the bot carried it through the whole delve untouched, so damage taken
+   * in one fight was still missing at the start of the next. Bounded and throttled by
+   * {@link EAT_COOLDOWN_MS}; every outcome — including the reasons NOT to eat — is
+   * logged, so a run's log says whether the bot was healing or just hurt.
+   *
+   * Asserts nothing and hides nothing: a bot that dies still fails the run.
+   */
+  async maybeEat(label: string): Promise<void> {
+    const bot = this.bot;
+    if (!bot?.entity) return;
+    if (Date.now() - this.lastEatAt < EAT_COOLDOWN_MS) return;
+    const foods = this.foodInInventory();
+    const decision = eatDecision({
+      health: bot.health,
+      maxHealth: PLAYER_MAX_HEALTH,
+      food: bot.food,
+      maxFood: PLAYER_MAX_FOOD,
+      nearestHostileDistance: this.nearestHostileDistance(),
+      hasFood: foods.length > 0,
+    });
+    if (decision === "healthy") return;
+    this.lastEatAt = Date.now();
+    const state =
+      `health ${bot.health.toFixed(1)}/${PLAYER_MAX_HEALTH}, hunger ${bot.food}/${PLAYER_MAX_FOOD}`;
+    if (decision !== "eat") {
+      const why = {
+        "no-food": "no edible item in the kit",
+        "hostile-near": `a hostile is within ${EAT_SAFE_RANGE} blocks — eating would donate free hits`,
+        "hunger-full": "hunger is full, so vanilla forbids eating; natural regeneration is running",
+      }[decision];
+      process.stderr.write(`[eat] ${label}: not eating (${state}) — ${why}\n`);
+      return;
+    }
+    const choice = pickFood(foods);
+    if (!choice) return; // unreachable (hasFood was true) — defensive
+    const before = bot.health;
+    try {
+      await bot.equip(choice.item, "hand");
+      await bot.consume();
+      process.stderr.write(
+        `[eat] ${label}: ate ${choice.name} at ${state} → health ` +
+          `${bot.health.toFixed(1)}/${PLAYER_MAX_HEALTH}, hunger ${bot.food}/${PLAYER_MAX_FOOD} ` +
+          `(was ${before.toFixed(1)})\n`,
+      );
+    } catch (err) {
+      // Eating is opportunistic: a failed bite is reported and the run carries on.
+      process.stderr.write(
+        `[eat] ${label}: could not eat ${choice.name} (${state}): ` +
+          `${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    } finally {
+      // Back to the sword — never leave the bot walking into a fight holding a bowl.
+      await this.equipLoadout();
+    }
+  }
+
+  /**
+   * The hostile currently worth interrupting a walking leg for, if any: a mob that has
+   * hit the bot {@link STALKER_HITS}+ times inside the threat window and is still
+   * within {@link STALKER_RANGE}. Entities a defense budget already failed to kill are
+   * excluded, so an unkillable stalker cannot stop every hop of a leg.
+   */
+  private currentStalker(): number | undefined {
+    const { candidates } = this.visibleHostiles();
+    return pickStalker(
+      candidates.filter((c) => !this.defenseExempt.has(c.id)),
+      this.threats,
+    );
+  }
+
+  /**
+   * Arm a watch that resolves the moment a stalker qualifies (see
+   * {@link currentStalker}). Two channels: the damage handler wakes it on the hit that
+   * qualifies (near-zero latency, which is the difference between fighting back and
+   * dying with a full stew in the pack), and a slow poll backstops the case where a mob
+   * that already hit the bot merely closes the distance. `cancel()` disarms both; the
+   * promise then simply never settles, which is what `Promise.race` wants.
+   */
+  private armStalkerTrip(): {
+    promise: Promise<{ kind: "stalker"; id: number }>;
+    cancel: () => void;
+  } {
+    let cancelled = false;
+    let waiter: ((id: number) => void) | undefined;
+    const promise = new Promise<{ kind: "stalker"; id: number }>((resolve) => {
+      const fire = (id: number): void => {
+        if (cancelled) return;
+        cancelled = true;
+        if (waiter) this.stalkerWaiters.delete(waiter);
+        resolve({ kind: "stalker", id });
+      };
+      waiter = fire;
+      this.stalkerWaiters.add(fire);
+      const poll = async (): Promise<void> => {
+        while (!cancelled) {
+          await delay(THREAT_POLL_MS);
+          if (cancelled) return;
+          const id = this.currentStalker();
+          if (id !== undefined) {
+            fire(id);
+            return;
+          }
+        }
+      };
+      void poll();
+    });
+    return {
+      promise,
+      cancel: () => {
+        cancelled = true;
+        if (waiter) this.stalkerWaiters.delete(waiter);
+      },
+    };
+  }
+
+  /**
+   * Stand and fight a mob that latched onto the bot mid-leg, then resume walking.
+   *
+   * Bounded by {@link DEFEND_BUDGET_MS}: a delve mob dies in a few swings, and anything
+   * that outlasts the budget is written off (added to `defenseExempt`, reported) and the
+   * leg continues — so this can never convert a content problem into a navigation
+   * failure. The bot does NOT chase: a mob that breaks off is let go, because the job is
+   * the route, not the kill.
+   */
+  private async defendAgainst(id: number, label: string): Promise<void> {
+    const bot = this.requireBot();
+    const name = bot.entities[id]?.name ?? "?";
+    process.stderr.write(
+      `[defend] ${label}: ${name}#${id} has hit the bot ${this.threats.hitsWithin(id)}× in the ` +
+        `last ${(THREAT_WINDOW_MS / 1_000).toFixed(0)}s and is still within ${STALKER_RANGE} ` +
+        `blocks — stopping to fight it (budget ${(DEFEND_BUDGET_MS / 1_000).toFixed(0)}s)\n`,
+    );
+    // Stop walking, but NOT sneaking: `bot.clearControlStates()` would drop the crouch
+    // a sneak leg turned on, standing the bot up inside whatever the crouch was hiding
+    // it from.
+    for (const control of ["forward", "back", "left", "right", "jump", "sprint"] as const) {
+      bot.setControlState(control, false);
+    }
+    const deadline = Date.now() + DEFEND_BUDGET_MS;
+    while (Date.now() < deadline) {
+      if (this.death) throw this.death;
+      const mob = bot.entities[id];
+      if (!mob?.position) {
+        process.stderr.write(`[defend] ${name}#${id} is down; resuming ${label}\n`);
+        this.threats.forget(id);
+        return;
+      }
+      const dist = bot.entity.position.distanceTo(mob.position);
+      if (dist > RETALIATION_RANGE + 2) {
+        process.stderr.write(
+          `[defend] ${name}#${id} broke off (${dist.toFixed(1)} blocks away); resuming ${label}\n`,
+        );
+        return;
+      }
+      if (dist > RETALIATION_RANGE) {
+        // Out of the bot's own reach but still on it — let it close rather than chase.
+        await delay(REACH_POLL_MS);
+        continue;
+      }
+      try {
+        await bot.lookAt(mob.position.offset(0, (mob.height ?? 1) * 0.5, 0), true);
+      } catch {
+        // best effort — a failed look must not abort the defense
+      }
+      bot.attack(mob);
+      await delay(ATTACK_INTERVAL_MS);
+    }
+    this.defenseExempt.add(id);
+    process.stderr.write(
+      `[defend] could not put ${name}#${id} down within ` +
+        `${(DEFEND_BUDGET_MS / 1_000).toFixed(0)}s — resuming ${label} and ignoring it for the ` +
+        `rest of the run (unreachable, or an Invulnerable actor)\n`,
+    );
+  }
+
+  /**
+   * One hop, with fight-or-flight. Runs {@link runGoto}, but races it against a
+   * stalker watch: if a mob latches onto the bot mid-walk the path is stopped, the mob
+   * is fought (bounded), and the hop is retried. Bounded by
+   * {@link DEFENSE_ROUNDS_PER_HOP}, after which the hop is walked with no further
+   * interruption and fails exactly as loudly as it did before this existed.
+   *
+   * A hop that FAILS while a stalker is on the bot gets the same treatment once (a mob
+   * body is a pathfinder obstacle), then rethrows.
+   *
+   * **A `sneak` leg is exempt from all of it** — no fighting, no eating. `sneak: true`
+   * is the delve declaring that stealth, not combat, is the mechanic on this leg, and
+   * a stealth section runs on a clock: nobodys-cave-island's `begin-stealth` gives
+   * 90 ticks of grace outside a safe zone and answers a miss with `damage-players 40`
+   * — an instant kill. Stopping to swing at the (Invulnerable) warden it wants the
+   * player to creep past spent that grace and killed the bot on a leg that had always
+   * been green. Worse, the stealth damage itself carries NO source entity, so it is
+   * attributed to the nearest hostile — the warden — and the bot "retaliates" against
+   * the very thing punishing it. On a sneak leg, fight-or-flight is flight.
+   */
+  private async gotoDefended(spec: GoalSpec, label: string, sneak = false): Promise<void> {
+    if (sneak) {
+      // Walk it, crouched, and do not stop for anything. Unchanged pre-self-defense
+      // behaviour, which is exactly what a stealth leg wants.
+      await this.runGoto(spec, label);
+      return;
+    }
+    for (let round = 0; round < DEFENSE_ROUNDS_PER_HOP; round++) {
+      await this.maybeEat(label);
+      const trip = this.armStalkerTrip();
+      // Observe the walk's outcome exactly once: the trip can win the race while the
+      // walk is still in flight, and an unobserved rejection would crash the process.
+      const walk = this.runGoto(spec, label).then(
+        () => ({ kind: "walk" as const, err: undefined as unknown }),
+        (err: unknown) => ({ kind: "walk" as const, err: err as unknown }),
+      );
+      const winner = await Promise.race([walk, trip.promise]);
+      trip.cancel();
+      if (winner.kind === "walk") {
+        if (winner.err === undefined) return;
+        if (winner.err instanceof BotDeathError) throw winner.err;
+        const stalker = this.currentStalker();
+        if (stalker === undefined) throw winner.err;
+        process.stderr.write(
+          `[defend] ${label} failed with a mob on the bot; dealing with it and retrying the hop\n`,
+        );
+        await this.defendAgainst(stalker, label);
+        continue;
+      }
+      // A stalker latched on mid-walk: stop, fight it, then resume the leg. The settle
+      // is capped (the pathfinder only halts at its next node, and every millisecond
+      // spent waiting is another swing taken), and the walk wrapper never rejects, so
+      // it can be collected after the fight.
+      this.stopPathfinding();
+      await Promise.race([walk, delay(WALK_SETTLE_MS)]);
+      await this.defendAgainst(winner.id, label);
+      const walked = await walk;
+      if (walked.err instanceof BotDeathError) throw walked.err;
+      // Clear the stop flag the settled goto may have re-raised, so the retry below
+      // actually walks (see stopPathfinding).
+      this.stopPathfinding();
+    }
+    // Defense rounds spent — walk it out. Still the original, unweakened hop.
+    await this.runGoto(spec, label);
   }
 
   /**
@@ -771,11 +1260,7 @@ export class MineflayerExecutor implements StepExecutor {
     const cause = likelyDeathCause(this.recentChat, bot?.username ?? "");
     const err = new BotDeathError(position, cause);
     this.death = err;
-    try {
-      bot?.pathfinder.stop();
-    } catch {
-      // best effort — stopping the pathfinder must never mask the death
-    }
+    this.stopPathfinding();
     for (const waiter of this.deathWaiters) {
       waiter(err);
     }
@@ -849,6 +1334,11 @@ export class MineflayerExecutor implements StepExecutor {
       process.stderr.write(`[death] ${detail}; resuming anyway\n`);
     }
     this.death = undefined;
+    // A respawn starts a new life: old grudges (and old write-offs) do not carry into
+    // it, and the entities they name are usually gone anyway.
+    this.threats.clear();
+    this.defenseExempt.clear();
+    this.lastHealth = undefined;
   }
 
   /** Disconnect the bot, if connected. Safe to call more than once. */
@@ -1016,7 +1506,11 @@ export class MineflayerExecutor implements StepExecutor {
       await replayLegWithRecovery(
         goalsList,
         label,
-        (spec, glabel) => this.runGoto(spec, glabel),
+        // Fight-or-flight: every hop of a walked leg is defended (see gotoDefended) —
+        // a mob that has latched onto the bot is dealt with and the leg resumes,
+        // instead of the bot walking on while a stalker from an earlier ambush chews
+        // through the health it needs for the next fight.
+        (spec, glabel) => this.gotoDefended(spec, glabel, sneak),
         (target) => this.unstickToward(target),
         legGates.length > 0
           ? {
@@ -1214,11 +1708,10 @@ export class MineflayerExecutor implements StepExecutor {
         // A death is terminal for this run — never retry a path across the void.
         if (err instanceof BotDeathError) throw err;
         lastErr = err;
-        try {
-          bot.pathfinder.stop();
-        } catch {
-          // ignore
-        }
+        // Clear the pathfinder for the retry — including the internal stop flag, which
+        // would otherwise make the retry (and every later hop) reject instantly without
+        // walking a step. See {@link stopPathfinding}.
+        this.stopPathfinding();
       }
     }
     const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
@@ -1311,7 +1804,21 @@ export class MineflayerExecutor implements StepExecutor {
         if (this.death) throw this.death;
         // The whole wave is confirmed down — done, wherever the bot happens to stand.
         if (killed >= step.count) return;
-        const mob = bot.nearestEntity((e) => isWaveMob(e, bot.entity) && !blacklist.has(e.id));
+        // Eat between exchanges when hurt and nothing is in reach (no-op otherwise).
+        await this.maybeEat(`wave ${step.wave}`);
+        const wave = bot.nearestEntity((e) => isWaveMob(e, bot.entity) && !blacklist.has(e.id));
+        // RETALIATION (souls ladder): the wave is the objective, but anything currently
+        // drawing the bot's blood in melee outranks it — a souls `ambush` desugars to
+        // spawn + unleash with no kill objective, so a bypassed ambusher belongs to no
+        // wave, follows the bot across the map and free-hits it through the next fight.
+        // A player would turn around. The bot now does too.
+        const { candidates, byId } = this.visibleHostiles();
+        const retaliateId = pickRetaliationTarget(
+          candidates.filter((c) => !blacklist.has(c.id)),
+          this.threats,
+        );
+        const retaliation = retaliateId !== undefined && retaliateId !== wave?.id;
+        const mob = (retaliation ? byId.get(retaliateId!) : undefined) ?? wave;
         if (!mob) {
           // No eligible wave mob remains (every real mob dead; any unkillable actor
           // blacklisted) → wave cleared.
@@ -1321,6 +1828,23 @@ export class MineflayerExecutor implements StepExecutor {
         }
         emptyStreak = 0;
         const dist = bot.entity.position.distanceTo(mob.position);
+        if (retaliation) {
+          if (engagedId !== mob.id) {
+            process.stderr.write(
+              `[defend] wave ${step.wave}: hitting back at ${mob.name ?? "?"}#${mob.id} ` +
+                `(${this.threats.hitsWithin(mob.id)} hit(s) in the last ` +
+                `${(THREAT_WINDOW_MS / 1_000).toFixed(0)}s, ${dist.toFixed(1)} blocks) before ` +
+                `resuming the wave\n`,
+            );
+          }
+          if (dist > 3) {
+            // Never chase a retaliation target away from the wave anchor: it is on the
+            // bot, so it closes by itself. The wave stays the job.
+            engagedId = undefined;
+            await delay(REACH_POLL_MS);
+            continue;
+          }
+        }
         if (dist > 3) {
           engagedId = undefined; // moving; re-establish the melee timer on arrival
           try {
@@ -1342,7 +1866,14 @@ export class MineflayerExecutor implements StepExecutor {
             engagedId = mob.id;
             engagedSince = Date.now();
           }
-          attacked.add(mob.id);
+          // Only a mob targeted AS a wave mob counts toward `killed`. A retaliation
+          // target is something else beating on the bot (a stalker from an earlier
+          // ambush): killing it must never be miscounted as wave progress and end the
+          // objective early. Undercounting is safe — the loop's other exit ("no eligible
+          // wave mob remains") still clears a genuinely finished wave.
+          if (!retaliation) {
+            attacked.add(mob.id);
+          }
           await bot.lookAt(mob.position.offset(0, (mob.height ?? 1) * 0.5, 0), true);
           bot.attack(mob);
           await delay(ATTACK_INTERVAL_MS);
@@ -1438,11 +1969,7 @@ export class MineflayerExecutor implements StepExecutor {
     );
     // Drop any path/goal still referencing the old area (the forcedMove handler has
     // usually done this already; idempotent).
-    try {
-      bot.pathfinder.stop();
-    } catch {
-      // best effort
-    }
+    this.stopPathfinding();
     if (!arrived) {
       process.stderr.write(
         `[transport] did not observe the jump to [${x}, ${y}, ${z}] within ` +
