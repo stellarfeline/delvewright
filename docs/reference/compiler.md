@@ -1586,6 +1586,40 @@ reports 13 when `lit`. Blocks whose `lit`/`charges`/`berries` state has a *brigh
 default (campfire, soul campfire, redstone torch) still evaluate bright from a
 bare id, so the compiler's own relight fixtures are unaffected.
 
+**The opacity table is coupled to nav passability
+(`crate::light::passes_light`).** The opacity side defaults the other way — an
+unlisted block is **opaque**, which under-measures light and is the safe direction
+for a block a walker cannot enter anyway. It is *not* safe for a block
+`assembled::occupancy_of` deliberately leaves **passable**: then a cell the player
+really stands in is measured at light 0 while the game lights it normally, and the
+gate manufactures a `DW0210` no amount of relighting can clear. The invariant is
+therefore:
+
+> every block class whose cell `occupancy_of` leaves player-occupiable must be
+> light-passing in `passes_light`.
+
+Three classes are player-occupiable by construction — trap triggers
+(`is_passable_trap_trigger`: `*_pressure_plate`, `tripwire`, `tripwire_hook`, kept
+walkable *on purpose* so `DW0342` can reason about a player stepping onto a
+critical-path trap), thin decoration (`is_thin_decoration`: every `*_carpet`, and
+`snow` at 1–4 layers), and fence gates (`*_fence_gate`: open = a passable
+threshold, closed = passable-with-use). All of them are `filterLight = 0` in
+vanilla 1.21.11 and all of them now pass light; before this fix only
+`oak_fence_gate` did, so any roofed prefab carrying a plate, a tripwire, a carpet
+or a non-oak gate failed `DW0210` on cells that are in fact lit. Verified against
+the pinned `minecraft-data` block table (`.../pc/1.21.9/blocks.json`):
+`filterLight = 0` for all 16 pressure plates, `tripwire`, `tripwire_hook`, all 20
+carpets, `snow`, and all 12 fence gates; `filterLight = 15` for the control cubes
+`stone`/`dirt`/`oak_planks`/`cobblestone`/`deepslate`/`sand`/`gravel`/`obsidian`
+and for `snow_block` (a full cube — deliberately still opaque). Blocks vanilla also
+calls transparent but that `occupancy_of` classifies **solid or tall** (fences,
+walls, buttons, levers, rails, slabs, stairs, doors, trapdoors, chests, signs)
+stay opaque here: their cells are never player-occupiable, so their opacity can
+only make the gate stricter, never manufacture a false pass. The invariant is
+CI-pinned by `light::tests::every_nav_passable_block_passes_light`, which drives
+the real classifier — a future passability change that forgets the light table
+fails there rather than in a campaign.
+
 | Code | Meaning |
 |------|---------|
 | `DW0201` | Finale quest can never complete (unreachable finale). |
