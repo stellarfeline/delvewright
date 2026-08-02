@@ -146,9 +146,15 @@ fn cutscene_freeze_packtest_asserts_both_halves() {
     let out = build_fixture();
     let path = format!("packtest-datapack/data/{NS}/test/v06_cutscene_freeze.mcfunction");
     let body = std::str::from_utf8(out.get(&path).expect("freeze packtest emitted")).unwrap();
+    const SEL: &str = "@a[tag=dw_t_cfrz,limit=1]";
     assert!(
-        body.contains("tag @a add dw_cutscene") && body.contains("tag @a remove dw_cutscene"),
-        "packtest must drive both halves of the state:\n{body}"
+        body.contains("tag @p add dw_t_cfrz"),
+        "packtest pins its own dummy (batch model):\n{body}"
+    );
+    assert!(
+        body.contains(&format!("tag {SEL} add dw_cutscene"))
+            && body.contains(&format!("tag {SEL} remove dw_cutscene")),
+        "packtest must drive both halves of the state, on its pinned dummy only:\n{body}"
     );
     assert!(
         body.contains(&format!("function {NS}:stealth_tick_")),
@@ -156,16 +162,28 @@ fn cutscene_freeze_packtest_asserts_both_halves() {
     );
     // Frozen half asserts grace stayed 0; resumed half asserts it climbed again.
     let (frozen, resumed) = body
-        .split_once("tag @a remove dw_cutscene")
+        .split_once(&format!("tag {SEL} remove dw_cutscene"))
         .expect("both halves present");
     assert!(
-        frozen.contains("assert score @p dw.st_grace matches 0"),
+        frozen.contains(&format!("assert score {SEL} dw.st_grace matches 0")),
         "frozen half must assert no accrual:\n{frozen}"
     );
     assert!(
-        resumed
-            .lines()
-            .any(|l| l.starts_with("assert score @p dw.st_grace matches") && !l.ends_with(" 0")),
+        resumed.lines().any(|l| {
+            l.starts_with(&format!("assert score {SEL} dw.st_grace matches")) && !l.ends_with(" 0")
+        }),
         "resumed half must assert the clock restarted:\n{resumed}"
+    );
+    // The pin is the only `@p`, and no bare `@a` write survives — after the tp to
+    // campaign coordinates `@p` would resolve to a neighbor test's dummy, and an
+    // `@a` write (state, tp, or the cutscene tag itself) would hit every dummy.
+    assert_eq!(
+        body.matches("@p").count(),
+        1,
+        "the pin is the only `@p` in the freeze test:\n{body}"
+    );
+    assert!(
+        !body.contains("@a "),
+        "no bare `@a` writes in the freeze test:\n{body}"
     );
 }

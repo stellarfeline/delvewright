@@ -398,26 +398,42 @@ before `offset`; `anchor` subjects use the block centre exactly.
 PackTest runs the whole generated suite as **one batch on one shared server**:
 every `# @dummy` test spawns its **own** dummy player, all dummies coexist, and
 all test functions execute over the same server tick(s), sequentially in an
-order the compiler does not control. Two authorship rules for emitted templates
-follow (round-5 island reds; `pin_dummy` in `emit.rs`):
+order the compiler does not control. The conversion is **total** and the rule is
+hard: **every generated test is interleaving-independent — own dummy, own
+scores, own init** (round-5 + round-6 island reds; `pin_dummy` in `emit.rs`;
+CI-enforced over every fixture family by `tests/packtest_batch.rs`):
 
-- **`@p` is not "the test's player".** It re-resolves from the test structure
-  origin on every command — the moment a template teleports its dummy to
-  absolute campaign coordinates, `@p` retargets to a *neighbor test's* dummy
+- **Own dummy — `@p` is not "the test's player".** It re-resolves from the test
+  structure origin on every command — the moment a template teleports its dummy
+  to absolute campaign coordinates, `@p` retargets to a *neighbor test's* dummy
   and later writes/asserts land on the wrong player (`v06_stealth` read a
-  foreign dummy's grace). A template that drives per-player state must tag its
-  dummy on its first post-setup line (`tag @p add dw_<test>` — while its own
-  dummy, inside its own structure, is still the nearest player) and address it
-  exclusively via `@a[tag=…,limit=1]`, which — unlike `@p` — also keeps
-  matching a dummy that campaign content has killed.
-- **`@a` writes leak across tests.** A sibling template's `@a` write hits every
-  dummy, so "this score was never set" is not provable by omission: a template
-  asserting the *absence* of state must actively clear it on its own dummy
-  (`verb_flag_gate`'s withheld flags arrived pre-set via `verb_interact`'s
-  `@a`; `packtest_preamble` with `with_flags: false` now clears them to 0).
-
-The remaining templates still write `@a`-wide and pass by batch-order luck;
-convert them to pinned dummies whenever one is touched.
+  foreign dummy's grace). A template that drives per-player state tags its
+  dummy on its first post-setup line (`tag @p add dw_t_<test>` — while its own
+  dummy, inside its own structure, is still the nearest player) and addresses
+  it exclusively via `@a[tag=…,limit=1]`, which — unlike `@p` — also keeps
+  matching a dummy that campaign content has killed. `@s` (the executing dummy)
+  is equally safe — the binding survives teleports. Bare `@a` writes are
+  forbidden: they hit every coexisting dummy (`verb_flag_gate`'s withheld flag
+  arrived via `verb_interact`'s old `@a` preamble).
+- **Own scores.** Fake-player scratch holders on `dw.sys` are batch-global, so
+  every template suffixes its own (`#n_sidm`, `#bx_bret`, `#dm_dvis`, …); no
+  two templates share a holder. Real runtime scores (`#stealth`, `#placed`,
+  `#trig_<id>`, the `#mt_`/`#at_`/`#arun_` move drivers) are deliberately
+  shared — tests drive them and initialize them explicitly.
+- **Own init.** "Never set" is not 0 and "fresh world" does not exist here:
+  every score a template asserts on is actively initialized by that template
+  (`packtest_preamble` with `with_flags: false` clears withheld flags to 0),
+  and every entity tag it counts on is cleared on entry. Sibling residue is
+  real: `v06_unleash`'s leftover real-AI twin carried `dw_actor_<id>` with no
+  puppet marker, so `v06_spawn_idempotent`'s guarded spawns
+  (`unless entity @e[tag=dw_actor_<id>]`) no-op'd and it counted 0 puppets —
+  a pass/fail decided purely by batch order on byte-identical packs. Templates
+  also leave no residue of their own (actor tests kill the actor tag on exit),
+  and templates that re-run the unguarded `setup_finish` clear every planned
+  NPC tag first (its summons would otherwise duplicate bodies + hitboxes).
+  Each template is a single mcfunction and therefore atomic — nothing can
+  interleave *within* it; these rules make the boundaries between templates
+  order-free.
 
 ### Determinism (ADR-0006)
 
