@@ -128,6 +128,17 @@ impl CommandTree {
         }
         // 2) any argument branch.
         for child in kids.values().filter(|n| n.node_type == "argument") {
+            // Single-entity arity (round-7, live-server proven): a
+            // `minecraft:entity` argument whose tree properties say
+            // `amount: "single"` REJECTS a multi-entity selector. `/damage @a[…]
+            // 40 minecraft:generic` is structurally well-formed but the server
+            // refuses to load the whole function ("Only one entity is allowed,
+            // but the provided selector allows more than one") — silently
+            // deleting every beat in it. The tree carries the fact, so the
+            // compiler enforces it rather than leaving it to folklore.
+            if single_entity_violation(child, tok) {
+                continue;
+            }
             match arity(child) {
                 Arity::Greedy => {
                     // Consumes the rest of the line.
@@ -172,6 +183,26 @@ impl CommandTree {
         }
         node
     }
+}
+
+/// Does `tok` violate a `minecraft:entity` argument's declared single-entity
+/// arity? `@p`/`@r`/`@s` and a bare player name select one by definition; `@a`
+/// and `@e` select many unless the selector body pins `limit=1`.
+fn single_entity_violation(node: &Node, tok: &str) -> bool {
+    if node.parser.as_deref() != Some("minecraft:entity") {
+        return false;
+    }
+    let single = node
+        .properties
+        .as_ref()
+        .and_then(|p| p.get("amount"))
+        .and_then(|a| a.as_str())
+        == Some("single");
+    if !single {
+        return false;
+    }
+    let multi = tok.starts_with("@a") || tok.starts_with("@e");
+    multi && !tok.contains("limit=1")
 }
 
 /// Token arity of an argument parser.
@@ -305,6 +336,47 @@ mod tests {
             "place template hello-world:hello-room 0 64", // block_pos short a token
         ] {
             assert!(t.validate_line(line).is_err(), "should reject: {line}");
+        }
+    }
+
+    /// A `minecraft:entity` argument declared `amount: "single"` rejects a
+    /// multi-entity selector (round-7, spec-0018 live-server finding).
+    ///
+    /// `/damage @a[…] 40 minecraft:generic` parses as a perfectly ordinary
+    /// command shape, and the pre-check compiler emitted it happily — but
+    /// 1.21.11 refuses to LOAD any function containing it ("Only one entity is
+    /// allowed, but the provided selector allows more than one"), which silently
+    /// kills every other beat in that function too. The vendored tree carries
+    /// the arity, so the compiler enforces it instead of leaving it to folklore.
+    #[test]
+    fn rejects_a_multi_entity_selector_where_the_tree_demands_one() {
+        let t = tree();
+        for line in [
+            "damage @a[tag=!dw_cutscene] 40 minecraft:generic",
+            "damage @e[type=zombie] 4 minecraft:generic",
+            "damage @a 6 minecraft:generic",
+        ] {
+            assert!(
+                t.validate_line(line).is_err(),
+                "`/damage` takes ONE entity; should reject: {line}"
+            );
+        }
+        // The legal spellings: rebind to a single player, or pin the selector.
+        for line in [
+            "execute as @a[tag=!dw_cutscene] run damage @s 40 minecraft:generic",
+            "damage @s[tag=!dw_cutscene] 40 minecraft:generic",
+            "damage @a[tag=dw_t_dmg,limit=1] 6 minecraft:generic",
+            "damage @p 6 minecraft:generic",
+        ] {
+            assert!(t.validate_line(line).is_ok(), "should accept: {line}");
+        }
+        // Multi-entity arguments elsewhere are untouched.
+        for line in [
+            "kill @e[tag=dw_actor_giant]",
+            "effect give @a[tag=x] minecraft:night_vision 12 0 true",
+            "tag @e[tag=dw_tmp] remove dw_tmp",
+        ] {
+            assert!(t.validate_line(line).is_ok(), "should accept: {line}");
         }
     }
 

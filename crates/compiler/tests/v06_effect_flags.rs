@@ -65,23 +65,25 @@ fn fn_body<'a>(out: &'a BuildOutput, name: &str) -> &'a str {
     .unwrap()
 }
 
-/// A gated effect's command is wrapped in a per-player flag guard; the ungated
-/// `set-flag`/`open-gate` on the same objective are NOT wrapped.
+/// A gated effect's command is wrapped in a **party** flag guard (spec-0018:
+/// story flags are one holder, so the gate asks the party, not a player); the
+/// ungated `set-flag`/`open-gate` on the same objective are NOT wrapped.
 #[test]
-fn gated_effect_is_wrapped_in_per_player_flag_guard() {
+fn gated_effect_is_wrapped_in_party_flag_guard() {
     let out = build_v06();
     let talk = fn_body(&out, "complete_o_talk");
-    // The gated narrate fires only for a player who holds the flag.
+    // The gated narrate fires only once the party holds the flag — and then it
+    // reaches every member.
     assert!(
         talk.contains(
-            "execute if score @s dw.f_opened matches 1 run tellraw @s \
+            "execute if score #party dw.f_opened matches 1 run tellraw @a \
              {\"text\":\"Only the hand that opened it hears the hinge give.\"}"
         ),
-        "gated narrate must be wrapped in `execute if score @s dw.f_opened matches 1 run …`:\n{talk}"
+        "gated narrate must be wrapped in `execute if score #party dw.f_opened matches 1 run …`:\n{talk}"
     );
     // The ungated set-flag on the same objective stays a bare command.
     assert!(
-        talk.contains("scoreboard players set @s dw.f_opened 1"),
+        talk.contains("scoreboard players set #party dw.f_opened 1"),
         "ungated set-flag must remain unwrapped:\n{talk}"
     );
 }

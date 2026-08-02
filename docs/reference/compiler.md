@@ -82,6 +82,13 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 - Every emitted `.mcfunction` line is checked against the vendored 1.21.11
   Brigadier tree (`compiler::commands`; structure-only — arity/paths, not arg
   values). mecha re-validates in CI (ADR-0011); disagreement fails CI.
+  **Single-entity arity** (round-7 live finding, spec-0018): an entity argument
+  the tree marks `amount: "single"` rejects `@a`/`@e` without `limit=1`.
+  `damage @a[…] 40 minecraft:generic` is a well-shaped command that 1.21.11
+  refuses to *load* ("Only one entity is allowed…") — taking the whole enclosing
+  function down with it, silently. The tree already carries the fact, so the
+  compiler enforces it rather than leaving it to folklore; the party form of
+  `damage-players` is `execute as @a[…] run damage @s …`.
 - Determinism (ADR-0006): all map/set iteration is `BTreeMap`/sorted; the only
   randomness is stage-1 `seed` → a named splitmix64 per-area stream.
 
@@ -144,6 +151,7 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 | `time` (opt) | `day`/`noon`/`night`/`midnight` (default `noon`). Dimension-global initial state, emitted in the sealing baseline (`time set <kw>`). | 0.5 |
 | `weather` (opt) | `clear`/`rain`/`thunder` (default `clear`; `clear` emits nothing — byte-identical to pre-0.5). Dimension-global, emitted after sealing (`weather <kw>`). Rain/thunder attenuate the assembled-light sky term. | 0.5 |
 | `horizon` (opt) | spec-0013: `void` (default/absent, byte-identical to v0.5) or `ocean` — a pinned bedrock/stone/water superflat (sea level y=62), no structures/mobs. Drives `generator-settings` **and the area-origin datum**: ocean areas are placed at y=60 = `sea_level − 2`, so an island piece's authored waterline (local y=2) meets the world ocean and its walk plane (local y=3) is the vanilla-normal one block above the sea. Enforced by `DW0344`. | 0.6 |
+| `min_players` (opt, 1..=4) | spec-0018: the party size the delve **requires**. Absent = 1 (a party of one is always legal; every pre-0.6 campaign reads as 1). `>= 2` emits the **lobby gate**: `tick` recomputes the live count into `#lobby dw.sys`, the class-selection dialog driver is prefixed `if score #lobby dw.sys matches <n>..` (so the delve cannot START short-handed), and unclassed players get a self-updating `x / n` actionbar (`{"score":{"name":"#lobby","objective":"dw.sys"}}` — one emitted line, no per-count strings; a compiler default, not an l10n key). Out of range = `DW0356`; a mandatory-n declaration with no n-way division of labour = `DW0358`. `min_players: 1` emits **nothing** (byte-identical). | 0.6 |
 | `boundary {margin?,message?}` (opt) | spec-0013: declares a **derived** playable region (union of final placed-piece AABBs, inflated horizontally by `margin` (`0..=64`, default 16; else `DW0321`), unbounded up, floor = lowest placed block − 8). A 1s clock returns any player outside it to the last checkpoint (`dw:cp`) with an actionbar `message` (l10n `world.boundary.message`, English default when absent) + a soft sound; no damage, no item loss. `horizon:"ocean"` without a `boundary` = `DW0320`. | 0.6 |
 
 ### Stage 2 — `npcs` (casting sheets, stationary)
@@ -159,7 +167,11 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 ### Stage 3 — `classes`
 
 1..4 classes. `kit[]` = vanilla item id + count + optional display `name`
-(→ l10n `class.<c>.kit.<i>.name`). `name`/`blurb` player-visible. Reserved kit
+(→ l10n `class.<c>.kit.<i>.name`) + optional `carrier` (v0.6, spec-0018:
+`all` (default) or `one`). A kit is per-player gear by construction; `carrier:
+"one"` marks a **party-unique** kit item — `class_apply_<c>` guards that one
+`give` behind a `#kit_<class>_<i> dw.sys` latch, so exactly one copy enters the
+party (the first player to take the class) while the rest of the kit is unchanged. `name`/`blurb` player-visible. Reserved kit
 fields `lore`/`enchantments`/`attributes` are **not defined** → unknown-field
 `DW0100`. Kit items carry **no semantics**: a night-vision potion in a kit is
 flavor. The `DW0210` dark mitigation is the stage-1 `areas[].mitigation`
@@ -206,7 +218,7 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Effect `set-time{time}` | Instantaneous dimension-global cut (`time set <kw>`); persists (cycle frozen). | 0.5 |
 | Effect `set-weather{weather}` | Instantaneous dimension-global cut (`weather <kw>`); persists (cycle frozen). | 0.5 |
 | Effect `play-sound{sound,at?,volume?,pitch?}` | Plays a sound event; `sound` validated (`DW0326`); `at` = `{anchor}`\|`players` (default)\|`{actor}` (deferred → `DW0335`); positional or per-player. | 0.6 |
-| Effect `damage-players{amount,in?,damage_type?}` | Deals `amount` half-hearts of damage to the acting player(s) — a real `on_caught`/souls consequence over vanilla `/damage` (`damage @s …`). Per-`@s`: top-level hits every player once, in `on_caught` the caught player. `amount ≥ 40` is lethal through golden apples. `in {anchor,extent}` narrows to acting players inside the anchor-centred box (same box model as a stealth zone; anchor `DW0142`). `damage_type` is a **curated enum** of vanilla types that respect `keepInventory` and do NOT bypass totems (no `out_of_world`/`generic_kill`), default `generic`; an unknown value is `DW0100` (needs no registry). Named `damage_type`, not `type`, since the effect enum is internally tagged on `type`. Per-effect `requires_flags` allowed (per-`@s` verb). Every form is guarded by `tag=!dw_cutscene` — a player watching a cutscene is never harmed (§4). | 0.6 |
+| Effect `damage-players{amount,in?,damage_type?}` | Deals `amount` half-hearts of damage over vanilla `/damage` — a real `on_caught`/souls consequence. **Audience (spec-0018)**: on a quest beat / trigger the hazard is a fact about the delve, so it hits the whole party (`execute as @a[…] run damage @s …` — `/damage` takes ONE entity, see §1); inside a solo `on_caught`/`on_respawn` bundle it hits exactly that player (`execute if entity @s[…] run damage @s …`). `amount ≥ 40` is lethal through golden apples. `in {anchor,extent}` narrows to acting players inside the anchor-centred box (same box model as a stealth zone; anchor `DW0142`). `damage_type` is a **curated enum** of vanilla types that respect `keepInventory` and do NOT bypass totems (no `out_of_world`/`generic_kill`), default `generic`; an unknown value is `DW0100` (needs no registry). Named `damage_type`, not `type`, since the effect enum is internally tagged on `type`. Per-effect `requires_flags` allowed (per-`@s` verb). Every form is guarded by `tag=!dw_cutscene` — a player watching a cutscene is never harmed (§4). | 0.6 |
 | Effect `set-checkpoint{anchor,on_respawn?}` | Party-wide respawn point: `spawnpoint @a` at the anchor + `storage dw:cp pos` mirror. Monotonic by quest order. `on_respawn[]` = per-player effects re-run on respawn while active (vanilla `deathCount` detection). Proofs `DW0315`/`DW0316`. Also a dialogue effect. | 0.6 |
 | Effect `begin-stealth{zones[{anchor,extent}],on_caught?,grace_ticks?}` | Per-tick: every player must be inside some zone — zone presence alone = hidden (owner ruling 2026-08-01; no sneak requirement, which collided with the spectator cutscene camera); exposed for `grace_ticks` (default 20) → `on_caught`. Zone standable/reachable proof `DW0327`; onset-survivability proof `DW0355` (a beat whose `on_caught` punishes must be escapable inside `grace_ticks` from where the player provably stands when it arms, and from every checkpoint that can respawn them into it). | 0.6 |
 | Effect `end-stealth` | Ends the active stealth beat (clears the session marker). | 0.6 |
@@ -342,7 +354,7 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | `give-item` | Grants item to player (`name` → SNBT text component). |
 | `narrate` | chat / `title` / `subtitle` (+ optional sound); `art` = `title` with a `{"font":"delve:art"}` text component, rendered uppercase in the pixel-banner font (6 font px/glyph → ~15 glyphs fit; see [The `delve:art` font](#the-delveart-font)). |
 | `play-sound` | `playsound <sound> master @s [<pos>] [<vol> [<pitch>]]` — effects run `as @a`, so `@s` is each player: `anchor` uses the resolved anchor pos (all hear it there), `players` uses `~ ~ ~`. |
-| `damage-players` | `damage @s <amount> <type>` (per-`@s`; default `minecraft:generic`). With `in`: `execute if entity @s[x=…,dx=2·ext,…] run damage @s …` (the stealth-zone box model, so it stays per-`@s` — no double-hit). A generated `v06_damage` PackTest summons a tagged dummy, applies the declared amount+type, and asserts its `Health` strictly dropped. |
+| `damage-players` | `execute as <audience>[tag=!dw_cutscene] run damage @s <amount> <type>` for a party beat (`@a`), `execute if entity @s[…] run damage @s …` inside a solo `on_caught`/`on_respawn` (default type `minecraft:generic`). With `in`, the stealth-zone box (`x=…,dx=2·ext,…`) joins the same selector, so each player is judged on their own position — no double-hit. `/damage` takes a single entity, so the party form re-binds rather than widening the target (§1, single-entity arity). A generated `v06_damage` PackTest summons a tagged dummy, applies the declared amount+type, and asserts its `Health` strictly dropped. |
 | `set-block` | `setblock` at resolved anchor. |
 | `despawn-npc` | Kills body + interaction hitbox. The generated `v04_despawn` PackTest targets the campaign's first `despawn-npc` NPC; when that NPC is **deferred** it runs its `spawn_npc_<id>` entrance right after `setup_finish` (a deferred NPC is deliberately absent from world init, so the presence assertion would otherwise read 0). The assertions themselves — 2 entities present, 0 after the kill — are identical in both cases, and the entrance line is emitted only for a deferred target, so a campaign with no deferred NPC keeps byte-identical PackTest output. |
 | `spawn-npc` | `function <ns>:spawn_npc_<npc>` — the generated entrance function, emitted once per **deferred** NPC. Its two lines are the world-init summons, each independently guarded: body by `unless entity @e[tag=dw_npc,tag=dw_npc_<n>]`, hitbox by `unless entity @e[tag=dw_npc_<n>,tag=!dw_npc]` (both carry the id tag, so a single shared guard would let the body's own summon suppress the hitbox). The `npc_summons` PackTest fires each deferred NPC's entrance after `setup_finish` and asserts exactly one body. |
@@ -355,9 +367,43 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | `mitigation: "night-vision"` | `night_vision_tick`: one `effect give @a[x=…,dx=…,y=…,dy=…,z=…,dz=…] minecraft:night_vision 12 0 true` per declaring area (selector = the area's final placed bounds, compile-time literals), then `schedule function <ns>:night_vision_tick 20t` (vanilla replace-mode, so the clock can never double up). `setup_finish` arms it once. A generated `v06_night_vision` PackTest teleports a dummy into the declared bounds, runs one clock tick and asserts it holds the effect — then teleports it 1000 blocks out and asserts it does not. |
 | `set-checkpoint` | Inline: `spawnpoint @a <x y z>` + `data modify storage dw:cp pos set value [x,y,z]` (the readable "last checkpoint" mirror); when any checkpoint has `on_respawn`, also `#cp dw.sys = <index>`. `setup_finish` seeds `dw:cp` to the spawn cell. `on_respawn`: `deathCount` objective (`dw.deaths`) + per-player ack; `tick` runs `cp_respawn_check` (fire on the death-count edge, dispatch `cp_on_respawn_<index>` for the active checkpoint). |
 | `begin-stealth` / `end-stealth` | `begin` → `#stealth dw.sys = <session>` + reset per-player `dw.st_grace`. `tick` runs `stealth_tick_<session>` while active → per-player `stealth_eval_<session>`: safe iff inside some zone box (a pure position selector — **zone presence alone = hidden**, owner ruling 2026-08-01; the earlier sneak-edge requirement is gone, it collided with the spectator cutscene camera); grace resets when safe, climbs when exposed, and at `grace_ticks` fires `stealth_caught_<session>` (`on_caught`). `end` → `#stealth dw.sys = 0`. The `v06_stealth` PackTest disarms `#stealth` (sets it 0) after each `stealth_begin` because it drives `stealth_eval` explicitly: an armed session would make the world `tick` loop run a *second* judge pass in the same tick, double-counting exposure and mis-accruing grace (this only isolates the test; runtime gameplay has the tick loop as sole caller). It pins its dummy by tag (see "PackTest batch model" below), drives hidden/exposed purely by teleporting the dummy in/out of the zone box, runs the spare (safe-player) section first and the `on_caught` trip LAST — the trip executes arbitrary campaign `on_caught` content (possibly lethal), so nothing state-dependent follows it and the closing assert reads the dummy through the tag, which keeps matching even if the trip killed it. |
+| `give-item` `carrier` (v0.6, spec-0018) | Absent/`all` → `give @a <item> <count>`: a quest beat arms the whole party. `one` → `give @s …`, the single quest prop handed to the player whose action fired the effect, for the party to pass around physically. `one` inside a scheduler-only bundle has no acting player and is rejected at validate time (`DW0357`). |
 | trap `dispense` (spec-0011) | `setup_finish`: `item replace block <disp> container.0 with <item> <count>` fills the prefab's pre-wired dispenser socket (the `anchor/trap` metadata `dispenser` cell) — a static, deterministic payload, the same mechanism as a `collect` chest. **No detection** is emitted for the harm: the plate/tripwire/trapped-chest → dispenser redstone is already in the prefab. Pressure plates and tripwire are modelled **passable** in the assembled occupancy (`crate::assembled::is_passable_trap_trigger`) so nav routes a player ONTO a trigger cell rather than around a "solid" plate. |
 | trap `requires_flags` / `forbids_flags` (spec-0011) | A **physical** gate, because the compiler owns world mutation: `trap_gate_on_<trap>` restores the trigger block declared by the `anchor/trap` metadata's `trigger_block` (verbatim, blockstate and all) and `trap_gate_off_<trap>` clears the cell to air, so a shut gate means a player stepping on the trigger steps on nothing. Edge-triggered on a `#trapgate_<trap>` sentinel, so the `setblock` fires on a flag transition rather than every tick. The gate is **campaign state, not per-player state** — flags are set by whoever reaches the beat — so the `tick` guards use the any-player form (`if entity @a[scores={dw.f_<flag>=1..}]`), one shutting clause per gating flag ("not (all required and no forbidden)" is a disjunction) and one opening clause carrying the full conjunction. `setup_finish` seeds the sentinel to the world the campaign starts in: a `requires_flags` gate starts shut (no flag is set yet) and clears the cell immediately, a `forbids_flags`-only gate starts open on the prefab's own block. An **ungated** trap emits none of this (byte-identical). Only sound for a trigger whose whole state is the block — `DW0363` rejects the rest rather than shipping folklore. PackTest `v06_trap_gate`: flag set → the trigger cell is air; flag cleared → the authored trigger is back. |
 | trap `disarm` (spec-0011) | `setup_finish` summons a `minecraft:interaction` at the disarm `via` cell (tag `dw_trapdis_<trap>`); `tick` fires `trap_disarm_<trap>` once on a right-click (`nbt={interaction:{}}`, reusing the v0.4 `use` primitive). `trap_disarm_<trap>` sets the party-wide `dw.f_<flag>` and empties the dispenser (`data modify block <disp> Items set value []`) — the modeled, global disarm that actually stops a redstone dispense trap. |
+
+**The party holder (`#party`, spec-0018).** Progress is a fact about the party,
+not about a player. Every progression score — `dw.o_<obj>`, `dw.q_<quest>`,
+`dw.qa_<quest>`, `dw.f_<flag>`, `dw.ann_<obj>` and `dw.campaign` — is read and
+written on the single fake player `#party`, so any member's completing action
+advances everyone, and `after: [obj/a, obj/b]` becomes a **division of labour**:
+A clears one arm in one room, B the other in another, and the successor's guard
+(every term a `#party` read) opens for both. A fake player needs no entity and
+survives every join/leave, which is exactly the lifetime party state needs.
+
+Consequences, all mechanical:
+
+- the `announce_<obj>` / `activate_<obj>` tick drivers need no player context at
+  all (their whole predicate is party state) and therefore fire **once for the
+  party**; the completion drivers keep `as @a` because they still test a real
+  player (proximity, held items, a fired trigger). Those stay single-fire because
+  vanilla evaluates `execute as @a … if … run` per selected player *in turn*: the
+  first player's `run` sets the party score and every later player's `unless score
+  #party …` fails in the same tick;
+- objective/quest/campaign UI addresses `@a` (`tellraw @a`, `title @a`,
+  `playsound … @a`, `advancement grant @a`), so the party is told together;
+- what stays **per-player** is exactly what belongs to a body: `dw.class` /
+  `dw.classed` / `dw.dlg_shown`, `dw.dlg_<npc>` / `dw.i_<obj>` triggers,
+  `dw.dmask` (this player's dialog screen — its *conditions* read `#party`),
+  `dw.hold`, `dw.deaths` / `dw.death_ack`, `dw.st_grace` / `dw.st_safe`,
+  inventory, position, and cinematic attach/restore.
+
+CI-enforced by `tests/party.rs::no_per_player_progression_scoreboard_remains`, a
+sweep over every emitted pack of every fixture family: a progression score may
+appear only after the `#party` holder token (or in its `scoreboard objectives
+add` declaration), and no selector may filter players by one. A *partial*
+migration — player A's objective set, player B's guard still shut — is the
+soft-lock that no single-player test can see.
 
 Naming: `dw.o_<obj>`, `dw.q_<quest>`, `dw.qa_<quest>` (active), `dw.dlg_<npc>`,
 `dw.f_<flag>`, tags `dw_npc_<npc>`/`dw_wave_<id>`/`dw_i_<obj>`/`dw_r_<obj>`.
@@ -389,29 +435,48 @@ The cost (round-6 island, AUDIT-P0): two `on_arrive` bundles set the flags
 `obj/take-cover` gates on, so the party soft-locked at "Get Into the Shadows" —
 and the whole seal cinematic's `title`/`tellraw`/`playsound` beats were dead.
 
-**The rule.** A bundle is emitted under an explicit executor
-(`emit::Executor::{Player, Server}`), and under `Server` **each effect is
-classified, never the bundle as a whole** (`effect_is_player_scoped`, an
-exhaustive match — a new effect verb must state its scope or the compiler refuses
-to build):
+**The rule.** A bundle is emitted for an explicit **audience**
+(`emit::Audience::{Party, Scheduled, Solo}`), and each effect is classified
+individually, never the bundle as a whole (`emit_quest_effect` takes the audience
+selector; the executor match is exhaustive — a new effect verb must state its
+scope or the compiler refuses to build):
 
-- **per-player** (`set-flag`, `narrate`, `give-item`, `play-sound`,
-  `damage-players`, `campaign-complete`) → each emitted command gets `as @a`
-  spliced into its `execute`, so it runs **once per player**, with the same
-  executor and the same (unmoved) command position a top-level bundle gets from
-  its `execute as @a … run function complete_<obj>` dispatch;
-- **global** (gates, `set-block`, `spawn-wave`, `spawn`/`despawn`/`move`/
-  `unleash-actor`, `spawn`/`despawn`/`move-npc`, `cutscene`, `set-time`/
-  `set-weather`, `set-checkpoint` (already `@a`-wide), `begin`/`end-stealth`,
-  `sequence`) → emitted **bare**, so it fires **exactly once**. A blanket
-  `execute as @a run function <bundle>` — the obvious fix — is wrong: it would
-  fire every `fill`, `summon`, driver start and `schedule` once per player.
+- `Party` — a party event entered as one player (`complete_<obj>`,
+  `complete_q_<quest>`, `trig_<id>`): `@s` exists and is the completing player;
+- `Scheduled` — the three bundles above: **no `@s` at all**;
+- `Solo` — a checkpoint `on_respawn` / a stealth `on_caught`: the bundle belongs
+  to the one player it fired for, and stays `@s` throughout (re-broadcasting one
+  player's death would re-gift and re-narrate at every survivor).
 
-Per-effect flag gates follow the executor: under `as @a` they keep the per-player
-spelling (`if score @s dw.f_<flag> matches 1`); on a **global** effect there is no
-acting player to ask, so the gate degrades to the any-player party predicate the
-trigger layer already uses (`if entity @a[scores={dw.f_<flag>=1..}]` /
-`unless entity @a[scores={…}]`). These bundles previously dropped the gate
+Under `Party`/`Scheduled`:
+
+- **player-facing** (`narrate`, `give-item`, `play-sound`, `damage-players`) →
+  the command names `@a` directly (`tellraw @a`, `give @a`, `damage @a[…]`,
+  `playsound … @a`), so the whole party sees the beat **once**. The one
+  listener-relative form (a `players` sound with an explicit volume/pitch, which
+  forces a `~ ~ ~`) is wrapped `execute as @a at @s run …` so `~ ~ ~` resolves at
+  each listener rather than at the command's own position;
+- **party-fact** (`set-flag` — now a `#party` write, gates, `set-block`,
+  `spawn-wave`, `spawn`/`despawn`/`move`/`unleash-actor`,
+  `spawn`/`despawn`/`move-npc`, `cutscene`, `set-time`/`set-weather`,
+  `set-checkpoint`, `begin`/`end-stealth`, `sequence`, `campaign-complete`) →
+  emitted **bare**, so it fires exactly once. A blanket `execute as @a run
+  function <bundle>` — the obvious fix — is wrong: it would fire every `fill`,
+  `summon`, driver start and `schedule` once per player.
+
+**spec-0018 narrowed this seam to nearly nothing, and that is the point.**
+Progression moved to the `#party` holder, so a scheduled `set-flag` writes
+`scoreboard players set #party dw.f_<flag> 1` and names no executor — the exact
+soft-lock the AUDIT-P0 fix was written for **cannot recur for flags**. Every
+player-facing effect addresses `@a`, which needs no executor either. Exactly one
+construct is still executor-shaped: a `carrier: "one"` `give-item`, which needs
+the acting player, and is therefore rejected at validate time inside a
+scheduler-only bundle (`DW0357`).
+
+Per-effect flag gates have **one spelling** everywhere now (`if score #party
+dw.f_<flag> matches 1` / `unless score #party …`, unset-safe): flags are party
+state, so there is no per-player variant to diverge and no "does some player hold
+it" selector to approximate it with. These bundles previously dropped the gate
 entirely (they called the ungated emitter), so a gated effect inside an
 `on_arrive`/`sequence` step fired unconditionally.
 
@@ -428,7 +493,9 @@ player, wherever the timeline is started from.
    `schedule` site — following `function` calls that do *not* re-bind the
    executor — and asserts no function in that closure names `@s` outside an `as`
    clause (`positioned as`/`rotated as` do not bind). Fails on pre-fix output
-   with the exact dead commands listed.
+   with the exact dead commands listed. Post-spec-0018 it passes because nothing
+   in those bundles addresses a player at all — which is the strongest form the
+   lesson can take.
 2. Two generated PackTests drive the **real scheduler** (never an inline
    `function` call — running the driver inline *as the dummy* supplies exactly
    the executor the scheduler withholds, which is how a green suite hid this bug
@@ -438,6 +505,8 @@ player, wherever the timeline is started from.
    `sched_arrive_flag` (the content path: the first `move-npc` whose `on_arrive`
    sets a flag; runs the real start function and lets the driver walk itself to
    the end). Both verified to go red on pre-fix emission on a live 1.21.11 server.
+   Both now `await` the flag on `#party` and are the **sole owner** of the score
+   they await (`tests/packtest_batch.rs::party_state_across_ticks_is_owned`).
 3. The suite datapack may therefore carry `data/<ns>/function/` mechanism
    functions beside `data/<ns>/test/`. PackTest only discovers `test/`, so
    `tests/emit.rs` requires every `function/` file to be **named by some
@@ -613,6 +682,21 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
   two templates share a holder. Real runtime scores (`#stealth`, `#placed`,
   `#trig_<id>`, the `#mt_`/`#at_`/`#arun_` move drivers) are deliberately
   shared — tests drive them and initialize them explicitly.
+- **Own scores, extended to party state (spec-0018).** Progression now lives on
+  the batch-global `#party` holder rather than on each test's dummy, so a
+  template's baseline writes are visible to every sibling. Inside a template that
+  is harmless — a template is one atomic mcfunction, so its baseline, its drive
+  and its assert land in one tick with nothing in between. It stops being
+  harmless the moment a template spans ticks: `party_state_across_ticks_is_owned`
+  requires that any template containing an `await`/`schedule` be the **sole**
+  template touching each `#party` score it uses (`sched_executor`'s probe flag is
+  test-only for exactly this reason).
+- **Own members (spec-0018).** A division-of-labour template needs more than one
+  player, and `# @dummy` gives exactly one. It spawns the rest itself
+  (`/dummy <name> spawn`, PackTest's own command), addresses them by
+  `@a[name=…,limit=1]` — as exclusive as a tag, and admitted alongside it by rule
+  2 — and removes every one it spawned (`spawned_members_are_uniquely_named_and_removed`
+  also checks the ≤16-char player-name limit and cross-template name uniqueness).
 - **Own init.** "Never set" is not 0 and "fresh world" does not exist here:
   every score a template asserts on is actively initialized by that template
   (`packtest_preamble` with `with_flags: false` clears withheld flags to 0),
@@ -627,6 +711,16 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
   Each template is a single mcfunction and therefore atomic — nothing can
   interleave *within* it; these rules make the boundaries between templates
   order-free.
+- **Division of labour is not simulable with one dummy.** A single-dummy test of
+  an AND-join proves only that one player can do both arms in sequence — which
+  was already true before the party holder existed. The generated
+  `party_join_<obj>` template therefore drives **n different players**, one arm
+  each, and asserts the join's REAL emitted `pending_guard` (materialized into
+  `#pj_<obj> dw.sys`) in three phases: shut with no arm, **still shut after only
+  one** (the negative half that makes it an AND, not an OR), open after all of
+  them — and then has the LAST member, never the one who cleared the first arm,
+  complete the successor. n = the join's arm count, raised to `world.min_players`
+  and capped at 4 (the party maximum); arms are handed out round-robin.
 - **Drive the real mechanism, not a convenient stand-in.** A template that calls
   a *scheduled* driver inline (`function <ns>:mv_tick_<key>`) runs it **as its own
   dummy** — supplying exactly the executor the vanilla scheduler withholds, so the
@@ -1288,6 +1382,8 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0343` | A `close-gate` (v0.6) targets a gate anchor whose prefab metadata declares no fill `block` (or is not a gate region at all), so the compiler cannot seal it — `close-gate` fills the region with the anchor's declared block. Compiler-side (needs prefab metadata the DSL anchor registry does not carry), reported at **validation tier (exit 1)** like the atmos `DW032x` checks; scan is over every prefab (gate anchors resolve globally like `open-gate`), and **all** region-providers of the anchor must declare a `block`. Prescription: declare `block` on the gate anchor, or remove the `close-gate`. |
 | `DW0348` | A `shot_style` declaration is semantically invalid (v0.6, spec-0015): a styled shot with no `subject`; style params (`subject`/`subject_b`/`dist`/`degrees`/`bearing`) on an unstyled shot; `subject_b` off `two-shot` (or a `two-shot` without one); `degrees` off `orbit-arc` or outside `45..=120`; `dist` outside `1..=48`; `bearing` outside `-360..=360`. Validation-tier (exit 1), `dsl::validate`. |
 | `DW0349` | A `side-track`/`low-follow` shot whose subject provably cannot move: those styles dolly *with* a moving subject, so the subject must be an npc/actor with a matching `move-npc`/`move-actor` in the same effect group or the same `sequence` timeline (an `anchor` subject can never move; reaction lists `on_arrive`/`on_caught`/`on_respawn` start a fresh scope — their firing time is statically unknowable). Validation-tier (exit 1), `dsl::validate`. Prescription: add the move alongside the cutscene, or use a static style (`locked-off`, `push-in`). |
+| `DW0356` | `world.min_players` outside `1..=4` (v0.6, spec-0018). A delve is played by ONE party of 1–4 (the product definition), so a declared mandatory size can never sit outside it. Absent = 1. Validation-tier (exit 1), `dsl::validate`. |
+| `DW0357` | A `carrier: "one"` `give-item` sits in a bundle only the scheduler ever runs — a `sequence` step, or a `move-npc`/`move-actor` `on_arrive` (v0.6, spec-0018). Those run with the server command source and have no acting player, so the single prop would reach nobody. The walk **stops** at `set-checkpoint.on_respawn` / `begin-stealth.on_caught`: those are dispatched per player and do have an `@s`. Validation-tier (exit 1), `dsl::validate`. Prescription: drop `carrier` (arm the whole party), or move the hand-off onto the beat a player completes. |
 | `DW0350` | A `use` trigger anchored where an NPC stands (round-6 island QA). Right-click on an NPC already belongs to its dialogue advancement; a second interaction hitbox in the same cell makes the client's entity ray-pick ambiguous, and whichever entity loses the tie is silently dead — the soft-lock class that starved the giant's dialogue of every right-click. `strike` triggers are exempt (a left-click has no dialogue meaning): they ride the NPC's own hitbox instead of summoning a second one. Validation-tier (exit 1), `dsl::validate`. Prescription: move the trigger to its own anchor, or express the interaction as a dialogue option. |
 
 ### DW032x/033x — sound & art-title validation (`compiler::atmos`; error; exit 1)
@@ -1467,6 +1563,7 @@ bare id, so the compiler's own relight fixtures are unaffected.
 | `DW0201` | Finale quest can never complete (unreachable finale). |
 | `DW0202` | Quest can never be triggered (dead quest — its trigger source never completes). |
 | `DW0203` | Objective can never be completed **in any branch** (deadlock: unsatisfiable `after` chain, an unproducible `requires_flags` gate, or a `talk-to` completing option unreachable through the trigger/`after`/dialogue graph). |
+| `DW0358` | A declared `min_players: n` (n ≥ 2) has **no n-agent division of labour** (v0.6, spec-0018). Completability is proven with `min_players` agents: n = 1 is the unchanged single-agent proof, and n ≥ 2 additionally requires the proven playthrough to contain an AND-join with n arms that are *independently reachable at the join's frontier* — the replay state just before its earliest arm — with no arm waiting on a sibling, a flag a sibling sets, or a quest that is not active yet (`flow::Flow::divide`). Names the widest join and how many arms it actually offers, or says the campaign has no AND-join at all. Reported on `world`/`/content/min_players`, exit 2. Prescription: split one beat into n `after`-arms completable from the same frontier, or lower `min_players`. |
 | `DW0204` | The exported critical path is not a playthrough any player can walk: some step is not activatable/completable at its position, or `campaign-complete` fires before the final step (the signature of two mutually exclusive endings sharing one path). Names the first incoherent step. |
 | `DW0210` | **Measured** (spec-0010): a reachable walkable cell of an area is below light 3, under the darkest reachable (time, weather) sky, with no `lighting` declaration and no `mitigation` declaration. Judged over the assembled world (per-seam, sealed-cavity aware — unreachable cavities are never counted). Admission `LightingProfile` is no longer a gating input. **v0.6:** keys on the stage-1 `areas[].mitigation` declaration; the display-name heuristic is deleted, so a renamed water bottle in a class kit no longer passes the gate. |
 | `DW0211` | An area's declared relight `fixture` cannot raise every reachable walkable cell to `min_light` — no valid placement site remains (spec-0010). |
@@ -1645,6 +1742,7 @@ this doc is current behavior).
 | Visual authoring loop: `delvec snapshot` + `delvec blocking-chart`, the voxel raycaster, scene manifest and cutaway floor plans (§7) | spec-0015 (P1+P2 landed) |
 | The map editor: stage-7 `world-edits.json`, the full L3 verb set (`select`/`fill`/`replace`/`carve`/`morph`/`scatter`/`plant`/`fragment`/`relight`), the L2 massing verbs (`swap`/`insert`/`remove`/`rewire-socket`/`reseed`; `resize` excluded — no size primitive), per-batch invariant re-proofs, `DW0162`/`DW0322`/`DW0323`/`DW0324`, `delvec edit apply|preview` (all v0.6) | spec-0017 (PRs 1–3) |
 | Map-editor audit fixes: trap-hardware integrity `DW0352`, gate-region + block-support advisories `DW0353`/`DW0354`, out-of-bbox edit-chunk load convergence + forceload release, `edit` running the full build-tier proof set, blockstate-preserving `fragment` stamps | map-editor audit (post-#145/#146/#149) |
+| Party-shared progression: the `#party` holder, party-addressed UI, `world.min_players` + lobby gate, `give-item`/kit `carrier`, the n-agent division proof and the n-dummy `party_join_<obj>` PackTests, `DW0356`/`DW0357`/`DW0358` (all v0.6) | spec-0018 (landed) |
 | Asset-pipeline tooling `DW07xx` (schem/render/admit) | spec-0007 |
 | Determinism invariants | ADR-0006 |
 
@@ -1656,6 +1754,15 @@ this doc is current behavior).
 - **`gamerule keep_inventory true`** is emitted by the sealing baseline but is
   **not** in spec-0002's environment-sealing list (added as box-garden death
   policy; recorded here).
+- **spec-0018 runtime tier, partial by design.** The static half is complete
+  (completability is proven with `min_players` agents; `DW0358`) and the runtime
+  half is complete for AND-joins (the generated n-dummy `party_join_<obj>`
+  templates). The **critical-path bot** is still single-bot: `critical-path.json`
+  and its replay describe one abstract playthrough of party state, which is
+  exactly right for `min_players: 1` and remains a *sound* (if not maximal) proof
+  for a bigger party — one agent can always walk what n can divide. Running
+  `min_players` bots is harness work, tracked as a follow-up, not a gap in this
+  layer's contract.
 - **Sky attenuation constants** (`crate::light::effective_sky`, spec-0010): the
   stored sky-light baseline (15 at a sky-open cell) and the `time`/`weather` set
   commands are live-verified (1.21.11 itzg VANILLA); the per-state *effective*

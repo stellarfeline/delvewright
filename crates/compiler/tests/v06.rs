@@ -250,12 +250,14 @@ fn play_sound_and_art_emitted() {
         .map(|(_, b)| String::from_utf8_lossy(b).into_owned())
         .collect::<Vec<_>>()
         .join("\n");
+    // spec-0018: a quest beat's sound reaches the whole party. An `at: anchor`
+    // sound carries absolute coordinates, so `@a` hears it in one place.
     assert!(
-        all.contains("playsound minecraft:ui.toast.challenge_complete master @s"),
+        all.contains("playsound minecraft:ui.toast.challenge_complete master @a"),
         "anchor play-sound emitted with positioned targets"
     );
     assert!(
-        all.contains("playsound minecraft:entity.experience_orb.pickup master @s"),
+        all.contains("playsound minecraft:entity.experience_orb.pickup master @a"),
         "players play-sound emitted"
     );
     assert!(

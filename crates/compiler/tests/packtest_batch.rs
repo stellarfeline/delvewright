@@ -10,11 +10,34 @@
 //! mechanically over every fixture family so a new template cannot regress to
 //! bare `@p`/`@a` player addressing (round-5 island reds: `v06_stealth`,
 //! `verb_flag_gate`) or a cross-template scratch holder.
+//!
+//! **spec-0018 extends this in two ways.** A division-of-labour template needs
+//! more than one player, so it spawns its own extra members with `/dummy <name>
+//! spawn` and addresses them by that name — `@a[name=…,limit=1]` is as exclusive
+//! as a tag and is admitted alongside it. And progression state now lives on the
+//! batch-global `#party` holder rather than on each test's dummy: safe inside a
+//! template, which is one atomic mcfunction, but NOT across ticks — so any
+//! template that `await`s must be the sole owner of every party score it touches
+//! (`party_state_across_ticks_is_owned`).
 
 mod common;
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// A per-call suffix for the materialized scratch campaigns below: three tests
+/// now build the same fixture families, and cargo runs them in parallel — a
+/// process-id-only directory name let two of them scribble over each other
+/// mid-copy (a half-written `dialogue.json` is a `DW0100`).
+fn scratch_dir(kind: &str) -> std::path::PathBuf {
+    static N: AtomicUsize = AtomicUsize::new(0);
+    std::env::temp_dir().join(format!(
+        "dw-packtest-batch-{kind}-{}-{}",
+        std::process::id(),
+        N.fetch_add(1, Ordering::Relaxed)
+    ))
+}
 
 use delvewright_compiler::commands::CommandTree;
 use delvewright_compiler::emit::{self, BuildOutput};
@@ -65,7 +88,7 @@ fn build_dir(dir: &Path) -> BuildOutput {
 /// `v06_spawn_*`/`v06_unleash`/`v06_move_actor` templates are covered too.
 fn build_actor_hello_world() -> BuildOutput {
     let src = common::hello_world_dir();
-    let dst = std::env::temp_dir().join(format!("dw-packtest-batch-actors-{}", std::process::id()));
+    let dst = scratch_dir("actors");
     let _ = std::fs::remove_dir_all(&dst);
     std::fs::create_dir_all(&dst).unwrap();
     for f in common::STAGE_FILES {
@@ -101,8 +124,7 @@ fn build_actor_hello_world() -> BuildOutput {
 /// emitted and swept by the batch-model rules below.
 fn build_handoff_hello_world() -> BuildOutput {
     let src = common::hello_world_dir();
-    let dst =
-        std::env::temp_dir().join(format!("dw-packtest-batch-handoff-{}", std::process::id()));
+    let dst = scratch_dir("handoff");
     let _ = std::fs::remove_dir_all(&dst);
     std::fs::create_dir_all(&dst).unwrap();
     for f in common::STAGE_FILES {
@@ -250,9 +272,9 @@ fn actor_templates_clear_on_entry_and_leave_no_residue() {
     );
 }
 
-#[test]
-fn packtest_templates_are_interleaving_independent() {
-    let suites: Vec<(&str, BuildOutput)> = vec![
+/// The fixture families every batch-model rule is swept over.
+fn suites() -> Vec<(&'static str, BuildOutput)> {
+    vec![
         ("hello-world", build_dir(&common::hello_world_dir())),
         ("keep-trial", build_dir(&common::keep_trial_dir())),
         (
@@ -263,9 +285,98 @@ fn packtest_templates_are_interleaving_independent() {
             "v06-checkpoints",
             build_dir(&common::compiler_fixtures_dir().join("v06-checkpoints")),
         ),
+        // spec-0018: the AND-join family, whose templates spawn extra members.
+        (
+            "and-join",
+            build_dir(&common::compiler_fixtures_dir().join("and-join")),
+        ),
         ("hello-world+actors", build_actor_hello_world()),
         ("hello-world+handoff", build_handoff_hello_world()),
-    ];
+    ]
+}
+
+/// Own members (spec-0018): a template that spawns extra dummies names them
+/// under a prefix no other template uses, and removes every one it spawned —
+/// a leaked member is a foreign player in every sibling's `@a` for the rest of
+/// the run.
+#[test]
+fn spawned_members_are_uniquely_named_and_removed() {
+    for (suite, out) in suites() {
+        let mut owner: BTreeMap<String, String> = BTreeMap::new();
+        for (file, body) in templates(&out) {
+            let spawned: Vec<String> = body
+                .lines()
+                .filter_map(|l| l.trim().strip_prefix("dummy "))
+                .filter_map(|r| r.strip_suffix(" spawn"))
+                .map(str::to_string)
+                .collect();
+            for name in &spawned {
+                assert!(
+                    name.len() <= 16,
+                    "{suite}/{file}: `{name}` is not a legal player name (>16 chars)"
+                );
+                if let Some(prev) = owner.insert(name.clone(), file.clone()) {
+                    panic!("{suite}: member `{name}` is spawned by both {prev} and {file}");
+                }
+                assert!(
+                    body.contains(&format!("dummy {name} leave")),
+                    "{suite}/{file}: spawned member `{name}` is never removed:\n{body}"
+                );
+            }
+        }
+    }
+}
+
+/// Own scores, extended to party state (spec-0018): the `#party` holder is
+/// batch-global. Inside one template that is harmless — a template is a single
+/// atomic mcfunction, so its baseline, drive and assert all land in one tick
+/// with no sibling in between. A template that `await`s spans ticks, and must
+/// therefore be the ONLY template touching each party score it uses.
+#[test]
+fn party_state_across_ticks_is_owned() {
+    for (suite, out) in suites() {
+        let tpls = templates(&out);
+        // score -> templates touching it, and which of those span ticks.
+        let mut users: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let mut waiters: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (file, body) in &tpls {
+            let spans_ticks = body
+                .lines()
+                .any(|l| l.trim_start().starts_with("await ") || l.contains("schedule function"));
+            for line in body.lines() {
+                for w in line.split_whitespace().collect::<Vec<_>>().windows(2) {
+                    if w[0] != "#party" {
+                        continue;
+                    }
+                    let e = users.entry(w[1].to_string()).or_default();
+                    if !e.contains(file) {
+                        e.push(file.clone());
+                    }
+                    if spans_ticks {
+                        let e = waiters.entry(w[1].to_string()).or_default();
+                        if !e.contains(file) {
+                            e.push(file.clone());
+                        }
+                    }
+                }
+            }
+        }
+        for (score, waiting) in &waiters {
+            let all = &users[score];
+            assert_eq!(
+                all.len(),
+                1,
+                "{suite}: `#party {score}` is awaited across ticks by {waiting:?} but also \
+                 touched by {all:?} — a sibling's baseline write in a later tick would \
+                 make the await's verdict depend on batch order"
+            );
+        }
+    }
+}
+
+#[test]
+fn packtest_templates_are_interleaving_independent() {
+    let suites: Vec<(&str, BuildOutput)> = suites();
 
     // The round-6 handoff/strike-talk family must really be in scope.
     for t in ["v06_arrive_handoff", "v04_strike_talk", "v04_strike_npc"] {
@@ -331,14 +442,17 @@ fn packtest_templates_are_interleaving_independent() {
                         "{suite}/{file}: more than one pin line:\n{body}"
                     );
                 }
-                // Rule 2 — own dummy: every `@a` is tag-scoped. A bare `@a`
-                // write hits every coexisting dummy in the batch.
+                // Rule 2 — own dummy: every `@a` is scoped to a tag this test
+                // set, or to the NAME of a member it spawned itself (spec-0018
+                // division-of-labour templates). A bare `@a` write hits every
+                // coexisting dummy in the batch.
                 let mut rest = line;
                 while let Some(i) = rest.find("@a") {
                     let after = &rest[i + 2..];
                     assert!(
-                        after.starts_with("[tag="),
-                        "{suite}/{file}: bare `@a` (must be `@a[tag=…,limit=1]`):\n{line}"
+                        after.starts_with("[tag=") || after.starts_with("[name="),
+                        "{suite}/{file}: bare `@a` (must be `@a[tag=…,limit=1]` or \
+                         `@a[name=…,limit=1]`):\n{line}"
                     );
                     rest = after;
                 }
