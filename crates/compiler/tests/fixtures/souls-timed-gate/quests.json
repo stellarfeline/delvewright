@@ -1,0 +1,47 @@
+{
+  "dsl_version": "0.6.0",
+  "campaign_id": "souls-timed-gate",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": {
+          "type": "campaign-start"
+        },
+        "objectives": [
+          {
+            "type": "talk-to",
+            "id": "obj/talk",
+            "npc": "npc/keeper"
+          },
+          {
+            "type": "reach-anchor",
+            "id": "obj/exit",
+            "anchor": "anchor/exit",
+            "radius": 2,
+            "after": [
+              "obj/talk"
+            ]
+          }
+        ],
+        "on_objective_complete": {
+          "obj/talk": []
+        },
+        "on_complete": [
+          {
+            "type": "campaign-complete"
+          }
+        ]
+      }
+    ],
+    "timed_gates": [
+      {
+        "id": "timed-gate/inner-door",
+        "gate": "anchor/door",
+        "open_ticks": 60,
+        "closed_ticks": 40
+      }
+    ]
+  }
+}

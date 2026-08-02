@@ -107,7 +107,7 @@ pub struct CheckpointPlan {
 /// A resolved stage-5 `shortcut` (spec-0016 §2), collected in deterministic
 /// content order. A shortcut whose `gate` is not a resolvable gate region, or
 /// whose `unlock` anchor does not resolve to a point, carries no plan entry (and
-/// so no emission and no proof) — `DW0357` rejects those at validation.
+/// so no emission and no proof) — `DW0371` rejects those at validation.
 #[derive(Clone, Debug)]
 pub struct ShortcutPlan {
     /// The full shortcut id (`shortcut/<kebab>`).
@@ -126,6 +126,41 @@ pub struct ShortcutPlan {
     pub unlock: [i32; 3],
     /// Effects fired once, when the shortcut opens.
     pub on_unlock: Vec<QuestEffect>,
+}
+
+/// A resolved stage-5 `timed-gate` (spec-0016 §4), in declared order.
+#[derive(Clone, Debug)]
+pub struct TimedGatePlan {
+    /// The full timed-gate id.
+    pub id: String,
+    /// The function/tag-safe local id.
+    pub safe: String,
+    /// The gate anchor name.
+    pub gate_anchor: String,
+    /// The gate region's inclusive corners (absolute world coords).
+    pub gate_region: ([i32; 3], [i32; 3]),
+    /// The block the region is filled with while closed.
+    pub gate_block: String,
+    /// Ticks open per cycle.
+    pub open_ticks: u32,
+    /// Ticks closed per cycle.
+    pub closed_ticks: u32,
+    /// Ticks after world init before the first open window.
+    pub phase: u32,
+}
+
+/// A resolved stage-5 `ambush` (spec-0016 §3), collected in declared order —
+/// the trigger cell and the cell each ambusher will stand on. An ambush whose
+/// anchors do not resolve carries no entry (and so no proof); the desugared
+/// trigger's own anchor checks report that.
+#[derive(Clone, Debug)]
+pub struct AmbushPlan {
+    /// The full ambush id (`ambush/<kebab>`).
+    pub id: String,
+    /// The resolved trigger cell — where the player is standing when it springs.
+    pub at: [i32; 3],
+    /// One resolved spawn cell per ambusher, in declared order.
+    pub actor_cells: Vec<[i32; 3]>,
 }
 
 /// A resolved `begin-stealth` beat (DSL v0.6, spec-0014), collected in
@@ -291,6 +326,10 @@ pub struct Plan<'a> {
     pub traps: Vec<TrapPlan>,
     /// Resolved shortcut doors (spec-0016 §2), content-ordered.
     pub shortcuts: Vec<ShortcutPlan>,
+    /// Resolved ambushes (spec-0016 §3), declaration-ordered.
+    pub ambushes: Vec<AmbushPlan>,
+    /// Resolved timed gates (spec-0016 §4), declaration-ordered.
+    pub timed_gates: Vec<TimedGatePlan>,
     /// Resolved gate open/close firings (DSL v0.6), content-ordered — drives the
     /// `close-gate` completability model in `crate::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
@@ -1055,6 +1094,30 @@ impl<'a> Plan<'a> {
         // ---- shortcut doors (spec-0016 §2) ----
         let shortcuts = collect_shortcuts(campaign, &anchors);
 
+        // ---- ambushes (spec-0016 §3) ----
+        let ambushes = collect_ambushes(campaign, &anchors);
+
+        // ---- timed gates (spec-0016 §4) ----
+        let timed_gates: Vec<TimedGatePlan> = campaign
+            .quests
+            .content
+            .timed_gates
+            .iter()
+            .filter_map(|g| {
+                let (from, to, block) = gate_region_block_any(&anchors, g.gate.as_str())?;
+                Some(TimedGatePlan {
+                    id: g.id.as_str().to_string(),
+                    safe: safe_local(g.id.as_str()),
+                    gate_anchor: g.gate.as_str().to_string(),
+                    gate_region: (from, to),
+                    gate_block: block,
+                    open_ticks: g.open_ticks,
+                    closed_ticks: g.closed_ticks,
+                    phase: g.phase,
+                })
+            })
+            .collect();
+
         // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
         let mut gate_events = collect_gate_events(campaign, &anchors, &objective_steps);
         // A shortcut gate is sealed from world-load and is opened only by an
@@ -1090,6 +1153,8 @@ impl<'a> Plan<'a> {
             objective_steps,
             traps,
             shortcuts,
+            ambushes,
+            timed_gates,
             gate_events,
             strict_ancestor_steps,
             massing_bounds,
@@ -1705,7 +1770,10 @@ fn build_critical_path(
 
 /// Resolve an anchor name to a point cell by scanning every area's resolved
 /// anchors (first match), mirroring the emitter's `anchor_point_any`.
-fn point_any(anchors: &BTreeMap<(String, String), ResolvedAnchor>, name: &str) -> Option<[i32; 3]> {
+pub(crate) fn point_any(
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    name: &str,
+) -> Option<[i32; 3]> {
     for ((_, n), resolved) in anchors {
         if n == name {
             return match resolved {
@@ -1831,7 +1899,7 @@ fn close_stealth_windows(beats: &mut [StealthBeat], ends: &[usize]) {
 
 /// Collect every stage-5 `shortcut` (spec-0016 §2) in declared order, resolving
 /// its gate region and far-side unlock cell. A shortcut whose anchors do not
-/// resolve is skipped here (validation owns that, `DW0357`).
+/// resolve is skipped here (validation owns that, `DW0371`).
 fn collect_shortcuts(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
@@ -1853,6 +1921,41 @@ fn collect_shortcuts(
             unlock_anchor: sc.unlock.as_str().to_string(),
             unlock,
             on_unlock: sc.on_unlock.clone(),
+        });
+    }
+    out
+}
+
+/// Collect every stage-5 `ambush` (spec-0016 §3) in declared order, resolving the
+/// trigger cell and each ambusher's spawn cell. An ambush whose trigger anchor or
+/// whose every actor cell fails to resolve is skipped (the desugared trigger's own
+/// anchor checks own that failure).
+fn collect_ambushes(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+) -> Vec<AmbushPlan> {
+    let by_id: BTreeMap<&str, &delvewright_dsl::Actor> = campaign
+        .quests
+        .content
+        .actors
+        .iter()
+        .map(|a| (a.id.as_str(), a))
+        .collect();
+    let mut out = Vec::new();
+    for amb in &campaign.quests.content.ambushes {
+        let Some(at) = point_any(anchors, amb.at.as_str()) else {
+            continue;
+        };
+        let actor_cells: Vec<[i32; 3]> = amb
+            .actors
+            .iter()
+            .filter_map(|id| by_id.get(id.as_str()))
+            .filter_map(|a| point_any(anchors, a.anchor.as_str()))
+            .collect();
+        out.push(AmbushPlan {
+            id: amb.id.as_str().to_string(),
+            at,
+            actor_cells,
         });
     }
     out
