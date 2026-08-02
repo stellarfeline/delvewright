@@ -3300,6 +3300,82 @@ pub enum WorldEdit {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         min_light: Option<u8>,
     },
+    /// L2 massing (spec-0017 PR 3): replace a placed piece with another
+    /// library prefab that re-mates every currently-mated socket at its exact
+    /// world pose (any rotation; overlap-checked). Applied at **plan** time —
+    /// the whole downstream ladder (anchors, gate reachability, assembly,
+    /// relight, nav, L3 detailing) re-runs over the massaged layout. Massing
+    /// verbs live in massing-only batches, ordered before every detailing
+    /// batch.
+    SwapPiece {
+        /// The piece's placement index in its area's solved layout (0-based,
+        /// entry first).
+        piece: u32,
+        /// The prefab the indexed piece must currently be (drift guard).
+        prefab: PrefabId,
+        /// The library prefab to swap in.
+        with: PrefabId,
+    },
+    /// L2 massing (spec-0017 PR 3): attach a new piece at a specific **open**
+    /// (unmated) socket of an existing piece — the targeted form of the
+    /// solver's frontier attach. The socket opens (its seal becomes a
+    /// passage); the new piece's other sockets seal.
+    InsertPiece {
+        /// The host piece's placement index.
+        at_piece: u32,
+        /// The prefab the host piece must currently be (drift guard).
+        prefab: PrefabId,
+        /// The host's connector index (prefab metadata `connectors` order).
+        socket: u32,
+        /// The library prefab to attach.
+        insert: PrefabId,
+    },
+    /// L2 massing (spec-0017 PR 3): remove a **leaf** piece (exactly one
+    /// mated socket; never the entry piece). The neighbour's socket unmates
+    /// and re-seals. Removal shifts later placement indices — order removals
+    /// before other index-referencing massing verbs.
+    RemovePiece {
+        /// The piece's placement index.
+        piece: u32,
+        /// The prefab the indexed piece must currently be (drift guard).
+        prefab: PrefabId,
+    },
+    /// L2 massing (spec-0017 PR 3): override one socket's seal — `open`
+    /// clears the opening to a passage, `sealed` walls it up — independent of
+    /// its mated state (sealing a mated doorway makes a wall between joined
+    /// pieces; opening an unmated exterior socket exposes the outside, which
+    /// the boundary-safety proof then judges).
+    RewireSocket {
+        /// The piece's placement index.
+        piece: u32,
+        /// The prefab the indexed piece must currently be (drift guard).
+        prefab: PrefabId,
+        /// The connector index (prefab metadata `connectors` order).
+        socket: u32,
+        /// The socket's new state.
+        state: SocketState,
+    },
+    /// L2 massing (spec-0017 PR 3): re-pick this piece from its area pool's
+    /// compatible members (weighted, seeded from the campaign seed + this
+    /// verb's script position — moving the verb deliberately re-rolls). The
+    /// current prefab is excluded, so a reseed always changes the piece or
+    /// errors loudly.
+    ReseedPiece {
+        /// The piece's placement index.
+        piece: u32,
+        /// The prefab the indexed piece must currently be (drift guard).
+        prefab: PrefabId,
+    },
+}
+
+/// A socket seal state for `rewire-socket` (spec-0017 PR 3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum SocketState {
+    /// The opening is cleared to a passage.
+    Open,
+    /// The opening is walled up.
+    Sealed,
 }
 
 /// A tree species for the `plant` verb (spec-0017 PR 2). One species per

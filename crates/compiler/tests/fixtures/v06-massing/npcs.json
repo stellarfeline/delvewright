@@ -1,0 +1,25 @@
+{
+  "dsl_version": "0.2.0",
+  "campaign_id": "keep-crawl",
+  "stage": "npcs",
+  "content": {
+    "npcs": [
+      {
+        "id": "npc/keeper",
+        "name": "The Keeper",
+        "role": "quest-giver",
+        "area": "area/gatehouse",
+        "anchor": "anchor/keeper-stand",
+        "base_entity": "minecraft:villager",
+        "persona": {
+          "archetype": "stoic gatekeeper",
+          "speech_style": "Terse, formal, archaic; clipped declarations and no contractions.",
+          "demeanor": "Wary and unmoving at first; yields only to a traveler who asks rather than demands.",
+          "motivation": "Keep the keep sealed until someone proves they truly mean to enter it.",
+          "secret": "He has not walked the keep's long hall since the shrine within went dark.",
+          "backstory": "Once a warden of the keep, he now guards only its gatehouse, the great door barred behind him."
+        }
+      }
+    ]
+  }
+}

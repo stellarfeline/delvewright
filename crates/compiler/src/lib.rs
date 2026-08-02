@@ -39,6 +39,7 @@ pub mod emit;
 pub mod gates;
 pub mod light;
 pub mod load;
+pub mod massing;
 pub mod nav;
 pub mod plan;
 pub mod png;
