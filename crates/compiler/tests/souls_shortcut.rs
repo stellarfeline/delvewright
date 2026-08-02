@@ -3,7 +3,7 @@
 //! objective reward into a `shortcut`, plus a stage-7 `carve` that opens the LONG
 //! way round through the same wall. That carve is what makes the fixture a real
 //! souls loop rather than a locked door — and a clean build is exactly the
-//! DW0359 (long route exists) + DW0360 (opening it pays) proof.
+//! DW0359 (long route exists) + DW0364 (opening it pays) proof.
 
 mod common;
 
@@ -51,7 +51,7 @@ fn build_fixture() -> BuildOutput {
         "unpinned",
         &BTreeMap::new(),
     )
-    .expect("every emitted command validates (DW0359/DW0360 hold on the fixture)")
+    .expect("every emitted command validates (DW0359/DW0364 hold on the fixture)")
 }
 
 fn fn_body<'a>(out: &'a BuildOutput, name: &str) -> &'a str {

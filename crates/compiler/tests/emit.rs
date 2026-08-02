@@ -962,8 +962,13 @@ mod gravity_despawn {
             }
         }
 
+        assert_eq!(
+            delvewright_compiler::assembled::DW_GRAVITY_DESPAWN,
+            "DW0313",
+            "the gravity-despawn diagnostic's code is part of its contract"
+        );
         let msg = delvewright_compiler::assembled::gravity_despawn_error(&plan, &bad)
-            .expect("unsupported sand floor must raise DW0313");
+            .expect("an unsupported sand floor must raise the gravity-despawn error");
         assert!(msg.contains("despawn") && msg.contains("substrate"));
         assert!(msg.contains("Do NOT swap the floor palette"));
 

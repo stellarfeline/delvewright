@@ -76,6 +76,14 @@ pub struct WorldContent {
     /// `ocean` (an infinite swimmable sea with no return rule is `DW0320`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub boundary: Option<Boundary>,
+    /// The closing line on the campaign-completion advancement — the last
+    /// player-visible sentence of the delve (DSL v0.6). Player-visible, so it is
+    /// l10n-inventoried as `world.outro` and sidecars translate it. Absent = the
+    /// finale quest's `goal`, which is already both campaign-derived and
+    /// inventoried; the description was previously the hardcoded English
+    /// "You left the keep." on *every* delve, whatever its theme or language.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outro: Option<String>,
 }
 
 /// A declared world time state (DSL v0.5, spec-0010). Values are the vanilla
@@ -2666,6 +2674,38 @@ fn is_zero3(v: &[i32; 3]) -> bool {
 }
 
 impl QuestEffect {
+    /// The kebab-case `type` tag this effect serializes as — the verb a
+    /// diagnostic should name so the author can find it in the JSON.
+    pub fn verb(&self) -> &'static str {
+        match self {
+            QuestEffect::OpenGate { .. } => "open-gate",
+            QuestEffect::CloseGate { .. } => "close-gate",
+            QuestEffect::CampaignComplete => "campaign-complete",
+            QuestEffect::GiveItem { .. } => "give-item",
+            QuestEffect::SetFlag { .. } => "set-flag",
+            QuestEffect::SpawnWave { .. } => "spawn-wave",
+            QuestEffect::Narrate { .. } => "narrate",
+            QuestEffect::SetBlock { .. } => "set-block",
+            QuestEffect::DespawnNpc { .. } => "despawn-npc",
+            QuestEffect::MoveNpc { .. } => "move-npc",
+            QuestEffect::Cutscene { .. } => "cutscene",
+            QuestEffect::SetTime { .. } => "set-time",
+            QuestEffect::SetWeather { .. } => "set-weather",
+            QuestEffect::PlaySound { .. } => "play-sound",
+            QuestEffect::DamagePlayers { .. } => "damage-players",
+            QuestEffect::SetCheckpoint { .. } => "set-checkpoint",
+            QuestEffect::Bonfire { .. } => "bonfire",
+            QuestEffect::BeginStealth { .. } => "begin-stealth",
+            QuestEffect::EndStealth => "end-stealth",
+            QuestEffect::SpawnNpc { .. } => "spawn-npc",
+            QuestEffect::SpawnActor { .. } => "spawn-actor",
+            QuestEffect::DespawnActor { .. } => "despawn-actor",
+            QuestEffect::MoveActor { .. } => "move-actor",
+            QuestEffect::UnleashActor { .. } => "unleash-actor",
+            QuestEffect::Sequence { .. } => "sequence",
+        }
+    }
+
     /// The gate anchor if this is `open-gate`.
     pub fn open_gate_anchor(&self) -> Option<&AnchorId> {
         match self {
@@ -2997,6 +3037,89 @@ impl QuestEffect {
                     "arrive".to_string(),
                     on_arrive.as_slice(),
                 )]
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Every world anchor this effect names **at this node** — the single
+    /// authority on the anchor-bearing effect surface, the referential sibling of
+    /// [`Self::nested_effect_lists`]. Each entry is `(json_path_suffix, anchor)`,
+    /// where the suffix is appended to the effect's own JSON pointer
+    /// (`anchor`, `to_anchor`, `in/anchor`, `zones/<i>/anchor`, `at/anchor`,
+    /// `shots/<i>/path/<j>/anchor`, …).
+    ///
+    /// Not recursive: pair it with [`Self::visit_deep`] to sweep a whole effect
+    /// tree. Every consumer that must resolve an anchor — the DSL's `DW0142`
+    /// reference scan, the compiler's build-time resolution seal (`DW0355`) —
+    /// goes through here, so a new anchor-bearing variant (or a new anchor field
+    /// on an existing one) is picked up by all of them at once. That closes the
+    /// silent-drop class of bug: an anchor-bearing effect whose anchor is typo'd
+    /// used to emit *nothing* (the emitter's `for … if name == anchor` loop simply
+    /// found no match) while every shallow validator looked straight past it.
+    pub fn anchor_refs(&self) -> Vec<(String, &AnchorId)> {
+        /// `(suffix, anchor)` for a shot's own anchor-bearing fields, under `base`.
+        fn shot_refs<'a>(base: &str, shot: &'a CameraShot) -> Vec<(String, &'a AnchorId)> {
+            let mut out: Vec<(String, &AnchorId)> = shot
+                .path
+                .iter()
+                .enumerate()
+                .map(|(j, w)| (format!("{base}path/{j}/anchor"), &w.anchor))
+                .collect();
+            if let Some(t) = &shot.look_at {
+                out.push((format!("{base}look_at/anchor"), &t.anchor));
+            }
+            for (field, subject) in [("subject", &shot.subject), ("subject_b", &shot.subject_b)] {
+                if let Some(CameraSubject::Anchor { anchor, .. }) = subject {
+                    out.push((format!("{base}{field}/anchor"), anchor));
+                }
+            }
+            out
+        }
+        match self {
+            QuestEffect::OpenGate { anchor, .. }
+            | QuestEffect::CloseGate { anchor, .. }
+            | QuestEffect::SetBlock { anchor, .. }
+            | QuestEffect::SetCheckpoint { anchor, .. }
+            | QuestEffect::Bonfire { anchor, .. } => vec![("anchor".to_string(), anchor)],
+            QuestEffect::MoveNpc { to_anchor, .. } | QuestEffect::MoveActor { to_anchor, .. } => {
+                vec![("to_anchor".to_string(), to_anchor)]
+            }
+            QuestEffect::DamagePlayers {
+                within: Some(zone), ..
+            } => vec![("in/anchor".to_string(), &zone.anchor)],
+            QuestEffect::BeginStealth { zones, .. } => zones
+                .iter()
+                .enumerate()
+                .map(|(i, z)| (format!("zones/{i}/anchor"), &z.anchor))
+                .collect(),
+            QuestEffect::PlaySound {
+                at: Some(SoundAt::Anchor { anchor }),
+                ..
+            } => vec![("at/anchor".to_string(), anchor)],
+            // Both cutscene spellings (`DW0199` polices mixing them): the v0.6
+            // multi-shot list, or the v0.4 single-shot fields flattened at the
+            // effect's own level.
+            QuestEffect::Cutscene {
+                shots,
+                path,
+                look_at,
+                ..
+            } => {
+                let mut out: Vec<(String, &AnchorId)> = shots
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(i, s)| shot_refs(&format!("shots/{i}/"), s))
+                    .collect();
+                out.extend(
+                    path.iter()
+                        .enumerate()
+                        .map(|(j, w)| (format!("path/{j}/anchor"), &w.anchor)),
+                );
+                if let Some(t) = look_at {
+                    out.push(("look_at/anchor".to_string(), &t.anchor));
+                }
+                out
             }
             _ => Vec::new(),
         }

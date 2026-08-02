@@ -257,6 +257,115 @@ fn edit_breaching_the_outer_wall_is_dw0322() {
     );
 }
 
+/// Rewrite the copy's stage-1 world doc to declare `horizon: ocean` (spec-0013),
+/// leaving everything else in the fixture alone.
+fn set_ocean_horizon(dir: &Path) {
+    let path = dir.join("world.json");
+    let mut doc: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    doc["dsl_version"] = serde_json::json!("0.6.0");
+    doc["content"]["horizon"] = serde_json::json!("ocean");
+    // `DW0320`: an ocean horizon needs a return rule; the default margin is fine.
+    doc["content"]["boundary"] = serde_json::json!({});
+    std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+}
+
+/// Boundary safety on an **ocean** horizon (`DW0322`), the false-premise fix:
+/// the pinned bedrock/stone/water superflat puts ground under every column, so
+/// nothing in an ocean world can fall out of it and the void-drop premise is
+/// vacuous. A zero-write `select` — the map editor's probe batch, which used to
+/// trip `DW0322` on every coastline of `nobodys-cave-island` — must build clean.
+#[test]
+fn edit_select_only_batch_on_an_ocean_horizon_is_green() {
+    let dir = edits_copy("edits-ocean-select");
+    set_ocean_horizon(&dir);
+    set_batches(
+        &dir,
+        serde_json::json!([{
+            "id": "batch/probe",
+            "area": "area/keep",
+            "edits": [
+                { "verb": "select", "name": "region/probe", "shape": {
+                    "kind": "box",
+                    "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                    "min": [4, 1, 4], "max": [5, 2, 5]
+                }}
+            ]
+        }]),
+    );
+    let out = tmp("edits-ocean-select-out");
+    let r = delvec(&[
+        "build",
+        dir.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        &prefabs_arg(),
+    ]);
+    let stdout = format!(
+        "{}{}",
+        String::from_utf8_lossy(&r.stdout),
+        String::from_utf8_lossy(&r.stderr)
+    );
+    assert_eq!(r.status.code(), Some(0), "ocean probe batch:\n{stdout}");
+    assert!(!stdout.contains("DW0322"), "no boundary error:\n{stdout}");
+}
+
+/// The ocean horizon's *replacement* invariant (`DW0322`): the same wall breach
+/// that is a void drop under `horizon: void` is a **stranding** hazard under
+/// `horizon: ocean` — the room's floor sits below sea level, so a player who
+/// walks out of the breach is in open water with no shoreline at the waterline
+/// to climb back onto. The code is the same, the premise and the prescription
+/// are the horizon's.
+#[test]
+fn edit_ocean_breach_strands_the_player_dw0322() {
+    let dir = edits_copy("edits-ocean-breach");
+    set_ocean_horizon(&dir);
+    set_batches(
+        &dir,
+        serde_json::json!([{
+            "id": "batch/breach-wall",
+            "area": "area/keep",
+            "edits": [
+                { "verb": "select", "name": "region/breach", "shape": {
+                    "kind": "box",
+                    "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                    "min": [4, 1, 0], "max": [6, 2, 0]
+                }},
+                { "verb": "carve", "region": "region/breach" }
+            ]
+        }]),
+    );
+    let out = tmp("edits-ocean-breach-out");
+    let r = delvec(&[
+        "build",
+        dir.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        &prefabs_arg(),
+    ]);
+    assert_eq!(r.status.code(), Some(3), "build-tier failure");
+    let stdout = format!(
+        "{}{}",
+        String::from_utf8_lossy(&r.stdout),
+        String::from_utf8_lossy(&r.stderr)
+    );
+    assert!(stdout.contains("DW0322"), "expected DW0322:\n{stdout}");
+    assert!(
+        stdout.contains("batch/breach-wall"),
+        "names the batch:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("NO way back ashore"),
+        "the ocean horizon reports stranding, not a void drop:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("void drop"),
+        "the void premise must not be asserted in an ocean world:\n{stdout}"
+    );
+}
+
 /// Frame drift (`DW0323`): a piece-local frame whose declared prefab no longer
 /// matches the solved layout is a loud resolution error, never a silently
 /// misplaced edit.
@@ -338,6 +447,88 @@ fn edit_with_empty_region_is_dw0323() {
     );
     assert!(stdout.contains("DW0323"), "expected DW0323:\n{stdout}");
     assert!(stdout.contains("zero cells"), "names the defect:\n{stdout}");
+}
+
+/// The editor's per-batch manifest carries the **layout** (`pieces`), and that
+/// listing is by itself sufficient to author a `piece-local` frame: this test
+/// reads `index`, `prefab` and `size` straight out of a rendered manifest, builds
+/// a frame from nothing else, and the replay resolves it. Nothing here is
+/// back-solved from the geometry — which is what an editor had to do before the
+/// listing existed (the manifest carried anchors and area bounds only).
+#[test]
+fn the_batch_manifest_pieces_listing_resolves_a_piece_local_frame() {
+    let dir = edits_copy("edits-pieces");
+    let shots = tmp("edits-pieces-shots");
+    let r = delvec(&[
+        "edit",
+        "preview",
+        dir.to_str().unwrap(),
+        "-o",
+        shots.to_str().unwrap(),
+        "--prefabs",
+        &prefabs_arg(),
+    ]);
+    assert!(
+        r.status.success(),
+        "baseline preview failed:\n{}{}",
+        String::from_utf8_lossy(&r.stdout),
+        String::from_utf8_lossy(&r.stderr)
+    );
+    let manifest: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(shots.join("dress-floor.manifest.json")).expect("batch manifest"),
+    )
+    .expect("manifest is JSON");
+    let piece = manifest["pieces"]
+        .as_array()
+        .expect("pieces listing")
+        .iter()
+        .find(|p| p["area"] == "area/keep")
+        .expect("the keep's piece is listed")
+        .clone();
+    let index = piece["index"].as_u64().expect("index");
+    let prefab = piece["prefab"].as_str().expect("prefab").to_string();
+    let size = piece["size"].as_array().expect("size");
+    let hi: Vec<i64> = size.iter().map(|v| v.as_i64().unwrap() - 1).collect();
+
+    // A frame authored purely from the listing: the piece's whole local box.
+    let batch_file = tmp("edits-pieces-batch").with_extension("json");
+    std::fs::write(
+        &batch_file,
+        serde_json::to_string_pretty(&serde_json::json!({
+            "id": "batch/from-manifest",
+            "area": "area/keep",
+            "edits": [
+                { "verb": "select", "name": "region/whole-piece", "shape": {
+                    "kind": "box",
+                    "frame": { "kind": "piece-local", "piece": index, "prefab": prefab },
+                    "min": [0, 0, 0], "max": [hi[0], hi[1], hi[2]]
+                }}
+            ]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let r = delvec(&[
+        "edit",
+        "preview",
+        dir.to_str().unwrap(),
+        "--batch",
+        batch_file.to_str().unwrap(),
+        "-o",
+        shots.to_str().unwrap(),
+        "--prefabs",
+        &prefabs_arg(),
+    ]);
+    let stdout = format!(
+        "{}{}",
+        String::from_utf8_lossy(&r.stdout),
+        String::from_utf8_lossy(&r.stderr)
+    );
+    assert!(
+        r.status.success(),
+        "a frame built only from the manifest listing must resolve:\n{stdout}"
+    );
+    assert!(!stdout.contains("DW0323"), "no frame drift:\n{stdout}");
 }
 
 /// The `edit preview` / `edit apply` loop contract: preview renders a green
