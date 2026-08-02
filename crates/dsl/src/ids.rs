@@ -107,6 +107,10 @@ prefixed_id!(
     /// Unique within the stage-5 traps namespace.
     TrapId, "trap");
 prefixed_id!(
+    /// Shortcut id: `shortcut/<kebab>` (stage-5 `shortcuts` section, spec-0016 §2).
+    /// Unique within the stage-5 shortcuts namespace.
+    ShortcutId, "shortcut");
+prefixed_id!(
     /// Edit-batch id: `batch/<kebab>` (stage-7 `world-edits` batches, DSL v0.6,
     /// spec-0017). Unique within the edit script; also the batch's snapshot name
     /// and its seed-stream label, so renaming a batch deliberately reseeds it.

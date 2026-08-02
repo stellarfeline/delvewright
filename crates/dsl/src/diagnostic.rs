@@ -226,6 +226,16 @@ pub mod codes {
     /// Validation-tier (exit 1). Renumbered off the spec's stale reserved number
     /// (0197 — since taken).
     pub const TRAP_INVALID: &str = "DW0340";
+    /// (spec-0016 §2) A `shortcut` declaration is structurally invalid: a
+    /// malformed or duplicate `shortcut/<id>`, a `gate`/`unlock` anchor no area's
+    /// prefab provides, or a `gate` that IS the `unlock` (the mechanism must sit
+    /// on the far side, not in the doorway).
+    pub const SHORTCUT_INVALID: &str = "DW0357";
+    /// (spec-0016 §2) A `close-gate` effect targets a gate a `shortcut` owns.
+    /// A shortcut opens **permanently** — that is the whole pattern — so its
+    /// permanence is structural: there is no verb that can put it back. Use a
+    /// different gate for the point-of-no-return beat.
+    pub const SHORTCUT_RESEALED: &str = "DW0358";
     /// (v0.6) A trap dispense-payload item id is not in the pinned 1.21.11 registry
     /// (spec-0011; mirrors `DW0143`). Validation-tier (exit 1). Renumbered off the
     /// spec's stale reserved number (0198 — since taken).

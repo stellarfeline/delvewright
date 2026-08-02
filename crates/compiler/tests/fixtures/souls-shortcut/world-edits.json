@@ -1,0 +1,42 @@
+{
+  "dsl_version": "0.6.0",
+  "campaign_id": "souls-shortcut",
+  "stage": "world-edits",
+  "content": {
+    "batches": [
+      {
+        "id": "batch/long-way-round",
+        "area": "area/keep",
+        "note": "Carve the LONG route: a side passage through the inner wall at x=8, so the barred door at x=4..5 is a genuine shortcut and not the only way through (spec-0016 \u00a72).",
+        "edits": [
+          {
+            "verb": "select",
+            "name": "region/bypass",
+            "shape": {
+              "kind": "box",
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/hello-room"
+              },
+              "min": [
+                8,
+                1,
+                6
+              ],
+              "max": [
+                8,
+                2,
+                6
+              ]
+            }
+          },
+          {
+            "verb": "carve",
+            "region": "region/bypass"
+          }
+        ]
+      }
+    ]
+  }
+}
