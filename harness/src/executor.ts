@@ -61,6 +61,14 @@ import {
   type ThreatCandidate,
 } from "./threat.ts";
 import { EAT_COOLDOWN_MS, EAT_SAFE_RANGE, eatDecision, pickFood } from "./sustain.ts";
+import {
+  WAVE_CLEAR_STREAK,
+  WAVE_ENGAGE_NEAR,
+  beginWave,
+  creditsWaveKill,
+  waveEngagementCleared,
+  type WaveEngagement,
+} from "./wave.ts";
 
 /** Bounded number of physics-unstick bursts before a wedged hop fails loudly. */
 const UNSTICK_ATTEMPTS = 3;
@@ -391,15 +399,8 @@ const ATTACK_INTERVAL_MS = 400;
  * the kill objective — the wave still requires every real mob dead.
  */
 const WAVE_UNKILLABLE_MS = 6_000;
-/**
- * How near the wave anchor (blocks) an entity's last-known position must be, when it
- * winks out, to count as a bot-inflicted wave kill rather than a chunk unload or a far
- * despawn. Wave mobs are fought at the anchor and die in melee beside the bot; a mob
- * vanishing well away from the anchor is not a confirmed kill. Comfortably larger than
- * the melee envelope, tighter than the cross-area gaps (~64+ blocks) that separate the
- * wave from Invulnerable actors elsewhere in the delve.
- */
-const WAVE_KILL_NEAR = 16;
+// (the wave-kill proximity rule and its constant now live in wave.ts, shared with the
+// self-defense path — see the import above.)
 /**
  * How long (ms) to wait for a scoreboard value to reach its target after a chat
  * command. The datapack acts on the trigger on the next server tick(s); give it a
@@ -621,6 +622,13 @@ export class MineflayerExecutor implements StepExecutor {
    * later; the poll remains as a backstop for a mob that closes without hitting again.
    */
   private readonly stalkerWaiters = new Set<(id: number) => void>();
+  /**
+   * Kill accounting for the kill step in progress, armed for the WHOLE step — the walk
+   * to the anchor included — so a wave mob killed in self-defense on the way in is
+   * credited exactly as one killed at the anchor. `undefined` outside a kill step, which
+   * is what keeps ordinary navigation defense kills uncounted.
+   */
+  private activeWave: WaveEngagement | undefined;
 
   constructor(config: BotConfig, env: Record<string, string | undefined> = process.env) {
     this.config = config;
@@ -1038,6 +1046,12 @@ export class MineflayerExecutor implements StepExecutor {
         `last ${(THREAT_WINDOW_MS / 1_000).toFixed(0)}s and is still within ${STALKER_RANGE} ` +
         `blocks — stopping to fight it (budget ${(DEFEND_BUDGET_MS / 1_000).toFixed(0)}s)\n`,
     );
+    // If a kill objective is in progress, this mob is being fought AS PART OF IT — the
+    // approach leg is inside the step. Record the engagement so that, if it dies near
+    // the wave anchor, it is credited exactly as a kill-loop kill would be. Without
+    // this, a wave mob that ambushes the bot on the way in dies uncounted and the step
+    // can never reach `step.count` (ladder run 13).
+    this.activeWave?.engaged.add(id);
     // Stop walking, but NOT sneaking: `bot.clearControlStates()` would drop the crouch
     // a sneak leg turned on, standing the bot up inside whatever the crouch was hiding
     // it from.
@@ -1767,43 +1781,53 @@ export class MineflayerExecutor implements StepExecutor {
    */
   async kill(step: KillStep): Promise<void> {
     const bot = this.requireBot();
-    await this.equipLoadout();
-    await this.walkTo(step.pos, 3, `wave ${step.wave}`, step.sneak);
-    // Give AI-enabled mobs a moment to path toward the bot after we arrive.
-    await delay(1_000);
-    // Diagnostic: what does the bot see near the wave anchor?
-    const near = Object.values(bot.entities)
-      .filter((e) => e && e !== bot.entity && bot.entity.position.distanceTo(e.position) < 48)
-      .map((e) => `${e.name ?? "?"}(t=${e.type},k=${(e as { kind?: string }).kind ?? "?"},h=${e.height ?? "?"})`);
-    process.stderr.write(`[kill ${step.wave}] nearby(${near.length}): ${near.join(", ") || "none"}\n`);
-
-    // Confirmed kills: a mob the bot has attacked in melee that then vanishes near the
-    // wave anchor. Counting these (rather than "no mob-shaped entity remains") is what
-    // lets the step end at `step.count` without walking to a far Invulnerable actor.
-    const anchor = { x: step.pos[0] + 0.5, y: step.pos[1], z: step.pos[2] + 0.5 };
-    const attacked = new Set<number>();
-    let killed = 0;
+    // Confirmed kills: a mob the bot has attacked that then vanishes near the wave
+    // anchor (see wave.ts). Counting these (rather than "no mob-shaped entity remains")
+    // is what lets the step end at `step.count` without walking to a far Invulnerable
+    // actor. Armed BEFORE the approach walk: self-defense (#173) can kill a wave mob
+    // that ambushes the bot on the way in, and that kill is wave progress like any other
+    // — crediting it only from the kill loop deadlocked the objective (ladder run 13).
+    const engagement = beginWave(step.wave, step.pos);
     const onGone = (e: Entity): void => {
-      if (!attacked.has(e.id)) return;
-      attacked.delete(e.id);
-      const p = e.position;
-      if (p && Math.hypot(p.x - anchor.x, p.y - anchor.y, p.z - anchor.z) <= WAVE_KILL_NEAR) {
-        killed += 1;
-      }
+      if (!creditsWaveKill(engagement, e.id, e.position)) return;
+      engagement.credited.add(e.id);
+      engagement.killed += 1;
+      process.stderr.write(
+        `[kill ${step.wave}] confirmed kill: ${e.name ?? "?"}#${e.id} ` +
+          `(${engagement.killed}/${step.count})\n`,
+      );
     };
     bot.on("entityGone", onGone);
+    this.activeWave = engagement;
     // Entities the bot has proven it can neither kill nor reach — never re-targeted.
     const blacklist = new Set<number>();
     try {
+      await this.equipLoadout();
+      await this.walkTo(step.pos, 3, `wave ${step.wave}`, step.sneak);
+      // Give AI-enabled mobs a moment to path toward the bot after we arrive.
+      await delay(1_000);
+      // Diagnostic: what does the bot see near the wave anchor?
+      const near = Object.values(bot.entities)
+        .filter((e) => e && e !== bot.entity && bot.entity.position.distanceTo(e.position) < 48)
+        .map(
+          (e) =>
+            `${e.name ?? "?"}(t=${e.type},k=${(e as { kind?: string }).kind ?? "?"},h=${e.height ?? "?"})`,
+        );
+      process.stderr.write(
+        `[kill ${step.wave}] nearby(${near.length}): ${near.join(", ") || "none"}` +
+          `${engagement.killed > 0 ? ` — ${engagement.killed} already down on the approach` : ""}\n`,
+      );
+
       const deadline = Date.now() + KILL_TIMEOUT_MS;
       let emptyStreak = 0;
+      let clearedStreak = 0;
       let engagedId: number | undefined;
       let engagedSince = 0;
       while (Date.now() < deadline) {
         // Fail fast if a mob killed the bot mid-fight (gap 7) rather than looping.
         if (this.death) throw this.death;
         // The whole wave is confirmed down — done, wherever the bot happens to stand.
-        if (killed >= step.count) return;
+        if (engagement.killed >= step.count) return;
         // Eat between exchanges when hurt and nothing is in reach (no-op otherwise).
         await this.maybeEat(`wave ${step.wave}`);
         const wave = bot.nearestEntity((e) => isWaveMob(e, bot.entity) && !blacklist.has(e.id));
@@ -1819,10 +1843,42 @@ export class MineflayerExecutor implements StepExecutor {
         );
         const retaliation = retaliateId !== undefined && retaliateId !== wave?.id;
         const mob = (retaliation ? byId.get(retaliateId!) : undefined) ?? wave;
+        // Second terminal condition, judged by the LIVE mobs rather than the wave's
+        // declared size: every mob this fight engaged is down and nothing hostile is
+        // near enough to still be part of it. `killed >= step.count` cannot see this
+        // case, because `count` is the wave's ORIGINAL size — if a member died in a way
+        // the proximity rule could not attribute (killed well off the anchor, or by a
+        // trap), the counter can never get there and the step would burn its whole
+        // budget on a wave the bot has already beaten (ladder run 13).
+        const nearestEligible = candidates
+          .filter((c) => !blacklist.has(c.id))
+          .reduce<number | undefined>(
+            (best, c) => (best === undefined || c.distance < best ? c.distance : best),
+            undefined,
+          );
+        if (
+          waveEngagementCleared({
+            engagedIds: [...engagement.engaged],
+            isDown: (id) => !bot.entities[id] || blacklist.has(id),
+            nearestEligibleDistance: nearestEligible,
+          })
+        ) {
+          if (++clearedStreak >= WAVE_CLEAR_STREAK) {
+            process.stderr.write(
+              `[kill ${step.wave}] every mob this fight engaged is down ` +
+                `(${engagement.killed} confirmed near the anchor) and no hostile is within ` +
+                `${WAVE_ENGAGE_NEAR} blocks — wave cleared\n`,
+            );
+            return;
+          }
+          await delay(REACH_POLL_MS);
+          continue;
+        }
+        clearedStreak = 0;
         if (!mob) {
           // No eligible wave mob remains (every real mob dead; any unkillable actor
           // blacklisted) → wave cleared.
-          if (++emptyStreak >= 8) return;
+          if (++emptyStreak >= WAVE_CLEAR_STREAK) return;
           await delay(REACH_POLL_MS);
           continue;
         }
@@ -1866,14 +1922,14 @@ export class MineflayerExecutor implements StepExecutor {
             engagedId = mob.id;
             engagedSince = Date.now();
           }
-          // Only a mob targeted AS a wave mob counts toward `killed`. A retaliation
-          // target is something else beating on the bot (a stalker from an earlier
-          // ambush): killing it must never be miscounted as wave progress and end the
-          // objective early. Undercounting is safe — the loop's other exit ("no eligible
-          // wave mob remains") still clears a genuinely finished wave.
-          if (!retaliation) {
-            attacked.add(mob.id);
-          }
+          // Every mob the bot melees during this step is recorded, retaliation target or
+          // not. #173 excluded retaliation targets to stop a non-wave stalker inflating
+          // the count; that was over-broad — a WAVE mob that attacks the bot is picked by
+          // the retaliation rule too, and refusing to credit it makes the objective
+          // impossible to finish (ladder run 13). The proximity rule in
+          // {@link creditsWaveKill} is the arbiter, exactly as it was before self-defense
+          // existed.
+          engagement.engaged.add(mob.id);
           await bot.lookAt(mob.position.offset(0, (mob.height ?? 1) * 0.5, 0), true);
           bot.attack(mob);
           await delay(ATTACK_INTERVAL_MS);
@@ -1887,10 +1943,12 @@ export class MineflayerExecutor implements StepExecutor {
       }
     } finally {
       bot.removeListener("entityGone", onGone);
+      this.activeWave = undefined;
     }
     throw new Error(
       `kill timed out after ${KILL_TIMEOUT_MS}ms: wave ${step.wave} ` +
-        `(${step.count} mobs) not cleared`,
+        `(${engagement.killed}/${step.count} confirmed dead; ` +
+        `${engagement.engaged.size} mob(s) engaged) not cleared`,
     );
   }
 

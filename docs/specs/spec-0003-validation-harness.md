@@ -75,8 +75,26 @@ the same delve image CI and prod use.
     by the same classifier the kill loop uses.
   - **Retaliation** — during a kill objective the target set is the wave's mobs PLUS
     any hostile that damaged the bot in the last 5s and is within 4 blocks (attackers
-    first). A retaliation kill never counts toward the wave's confirmed-kill total, so
-    it can never end a wave early.
+    first).
+  - **Wave kill accounting** *(corrected 2026-08-02, ladder run 13)* — kill credit is a
+    proximity rule, not a targeting one: a mob the bot **attacked while the kill step was
+    in progress** that then vanishes within 16 blocks of the wave anchor is a confirmed
+    kill, whoever chose it. The accounting is armed for the whole step, the **approach
+    walk included**, so a wave mob killed in self-defense on the way in counts. The first
+    cut excluded self-defense kills entirely (to stop a non-wave stalker inflating the
+    count); that was over-broad — a wave mob that attacks the bot is picked by the
+    retaliation rule too, so its death was uncounted, `killed` could never reach
+    `step.count`, and the objective burned its 90s budget on a wave the bot had beaten.
+    mineflayer on 1.21.11 cannot read the entity tags that would give a true identity
+    check (`KillStep.tag` is informational), so proximity is the standard — the same one
+    the kill loop has always used.
+  - **Second terminal condition** *(added same date)* — the wave also ends when every mob
+    the fight **engaged** is down and no hostile is within 32 blocks, sustained over 8
+    polls. `killed >= step.count` compares against the wave's ORIGINAL size and so cannot
+    see a member that died in a way the proximity rule could not attribute; this reads
+    the live mobs instead. Conservative by construction: it cannot fire before the bot has
+    fought something, nor while anything hostile is still near enough to be part of the
+    fight. Rules live in `harness/src/wave.ts`, unit-tested.
   - **Fight-or-flight** — on a navigation leg, a hostile that has hit the bot ≥2× in 5s
     and stays within 3 blocks stops the leg; the bot kills it (12s budget) and resumes.
     Anything that outlasts the budget is reported, written off for the run, and the leg
