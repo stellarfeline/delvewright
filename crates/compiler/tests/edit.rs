@@ -340,6 +340,88 @@ fn edit_with_empty_region_is_dw0323() {
     assert!(stdout.contains("zero cells"), "names the defect:\n{stdout}");
 }
 
+/// The editor's per-batch manifest carries the **layout** (`pieces`), and that
+/// listing is by itself sufficient to author a `piece-local` frame: this test
+/// reads `index`, `prefab` and `size` straight out of a rendered manifest, builds
+/// a frame from nothing else, and the replay resolves it. Nothing here is
+/// back-solved from the geometry — which is what an editor had to do before the
+/// listing existed (the manifest carried anchors and area bounds only).
+#[test]
+fn the_batch_manifest_pieces_listing_resolves_a_piece_local_frame() {
+    let dir = edits_copy("edits-pieces");
+    let shots = tmp("edits-pieces-shots");
+    let r = delvec(&[
+        "edit",
+        "preview",
+        dir.to_str().unwrap(),
+        "-o",
+        shots.to_str().unwrap(),
+        "--prefabs",
+        &prefabs_arg(),
+    ]);
+    assert!(
+        r.status.success(),
+        "baseline preview failed:\n{}{}",
+        String::from_utf8_lossy(&r.stdout),
+        String::from_utf8_lossy(&r.stderr)
+    );
+    let manifest: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(shots.join("dress-floor.manifest.json")).expect("batch manifest"),
+    )
+    .expect("manifest is JSON");
+    let piece = manifest["pieces"]
+        .as_array()
+        .expect("pieces listing")
+        .iter()
+        .find(|p| p["area"] == "area/keep")
+        .expect("the keep's piece is listed")
+        .clone();
+    let index = piece["index"].as_u64().expect("index");
+    let prefab = piece["prefab"].as_str().expect("prefab").to_string();
+    let size = piece["size"].as_array().expect("size");
+    let hi: Vec<i64> = size.iter().map(|v| v.as_i64().unwrap() - 1).collect();
+
+    // A frame authored purely from the listing: the piece's whole local box.
+    let batch_file = tmp("edits-pieces-batch").with_extension("json");
+    std::fs::write(
+        &batch_file,
+        serde_json::to_string_pretty(&serde_json::json!({
+            "id": "batch/from-manifest",
+            "area": "area/keep",
+            "edits": [
+                { "verb": "select", "name": "region/whole-piece", "shape": {
+                    "kind": "box",
+                    "frame": { "kind": "piece-local", "piece": index, "prefab": prefab },
+                    "min": [0, 0, 0], "max": [hi[0], hi[1], hi[2]]
+                }}
+            ]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let r = delvec(&[
+        "edit",
+        "preview",
+        dir.to_str().unwrap(),
+        "--batch",
+        batch_file.to_str().unwrap(),
+        "-o",
+        shots.to_str().unwrap(),
+        "--prefabs",
+        &prefabs_arg(),
+    ]);
+    let stdout = format!(
+        "{}{}",
+        String::from_utf8_lossy(&r.stdout),
+        String::from_utf8_lossy(&r.stderr)
+    );
+    assert!(
+        r.status.success(),
+        "a frame built only from the manifest listing must resolve:\n{stdout}"
+    );
+    assert!(!stdout.contains("DW0323"), "no frame drift:\n{stdout}");
+}
+
 /// The `edit preview` / `edit apply` loop contract: preview renders a green
 /// candidate batch without touching the campaign dir; apply persists it into
 /// `world-edits.json` (canonical form) and the persisted script then replays
