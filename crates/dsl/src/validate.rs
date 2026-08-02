@@ -2464,6 +2464,30 @@ fn v04_checks(
                     .to_string(),
             ));
         }
+        if matches!(t.on, TriggerOn::Use)
+            && let Some(npc) = c
+                .npcs
+                .content
+                .npcs
+                .iter()
+                .find(|n| n.anchor.as_str() == t.at.as_str())
+        {
+            d.push(Diagnostic::error(
+                codes::USE_TRIGGER_ON_NPC,
+                "quests",
+                format!("/content/triggers/{i}/at"),
+                format!(
+                    "`use` trigger `{}` is anchored at `{}`, where NPC `{}` stands — a \
+                     right-click there already belongs to the NPC's dialogue, and two \
+                     interaction hitboxes in one cell race for the same click (the loser is \
+                     silently dead, which can soft-lock the delve). Move the trigger to its \
+                     own anchor, or express the interaction as a dialogue option on the NPC. \
+                     (`strike` triggers may share an NPC's anchor: a left-click has no \
+                     dialogue meaning, so the NPC's hitbox carries the trigger.)",
+                    t.id, t.at, npc.id
+                ),
+            ));
+        }
         for (m, f) in t.requires_flags.iter().enumerate() {
             if !flags.contains(f.as_str()) {
                 d.push(Diagnostic::error(

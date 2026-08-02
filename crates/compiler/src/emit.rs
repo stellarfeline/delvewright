@@ -2542,22 +2542,24 @@ fn npc_summon_commands(
 /// **Why an NPC's hitbox wears a trigger's tag.** A `strike` trigger is detected
 /// by reading the `attack` record off a `minecraft:interaction` entity — the
 /// vanilla primitive for "a player left-clicked this". When the trigger's anchor
-/// is also where an NPC stands, *two* interaction entities occupy the same cell:
-/// the NPC's hitbox and the trigger's own. A left-click hits exactly one of them
-/// — whichever the attack raycast reaches first, which depends on entity
-/// iteration order the compiler does not control and that changes across chunk
-/// reloads. The NPC's body is `Invulnerable`, so nothing else records the hit
-/// either, and the trigger could simply never fire (round-4 island QA:
+/// is also where an NPC stands, the NPC's hitbox is the entity a click actually
+/// reaches, and the NPC's body is `Invulnerable`, so a trigger listening on an
+/// entity of its own could simply never fire (round-4 island QA:
 /// `wake-the-giant` on the sleeping giant's anchor was dead).
 ///
-/// Sharing the tag makes the existing single-selector detection watch *both*
-/// entities at once, so whichever one the raycast picks, the strike is seen and
-/// its record consumed. Empty for an anchor with no co-located strike trigger, so
-/// every campaign without this collision stays byte-identical.
+/// The NPC hitbox is the trigger's **sole** carrier: `env_trigger_setup`
+/// suppresses the trigger's own summon for this collision. Round-4 shared the
+/// tag but kept both entities; the two exactly co-located hitboxes then made
+/// the *right*-click pick ambiguous, and when the standalone won, the dialogue
+/// advancement (keyed on `Tags:["dw_npc_<n>"]`) never fired — the round-6
+/// island soft-lock (Polyphemus untalkable after the boulder seal). One cell,
+/// one hitbox ends both failure modes. Empty for an anchor with no co-located
+/// strike trigger, so every campaign without this collision stays
+/// byte-identical.
 ///
 /// Scope: `strike` only. Right-click (`use`) on an NPC already belongs to the
-/// dialogue advancement, so a co-located `use` trigger is an authoring conflict
-/// rather than a detection bug, and is left alone.
+/// dialogue advancement, so a co-located `use` trigger is an authoring
+/// conflict, rejected at validate time (`DW0350`).
 /// The first `(strike trigger, npc id, npc entity tag)` triple whose trigger
 /// anchor is also an NPC's stand anchor — the collision
 /// [`strike_trigger_tags_at`] resolves. Campaign order (deterministic); `None`
@@ -2585,6 +2587,22 @@ fn first_strike_trigger_on_npc<'a>(
         }
     }
     None
+}
+
+/// True when `anchor` is a planned NPC's stand anchor — the cell where that
+/// NPC's interaction hitbox lives, whether summoned at world init or by the
+/// NPC's `spawn-npc` entrance (`deferred`). The suppression dual of
+/// [`strike_trigger_tags_at`]: a strike trigger rides exactly the hitboxes this
+/// predicate says exist.
+fn npc_stands_at(plan: &Plan, anchor: &str) -> bool {
+    plan.npcs.iter().any(|n| {
+        plan.campaign
+            .npcs
+            .content
+            .npcs
+            .iter()
+            .any(|d| d.id.as_str() == n.npc_id && d.anchor.as_str() == anchor)
+    })
 }
 
 fn strike_trigger_tags_at(c: &delvewright_dsl::Campaign, anchor: &str) -> Vec<String> {
@@ -3344,11 +3362,26 @@ fn cutscene_fns(
 /// Environment-trigger interaction-entity summons (strike/use) for
 /// `setup_finish`. Approach triggers need no entity. Empty for a campaign with no
 /// triggers (byte-identical v0.2/v0.3).
+///
+/// A `strike` trigger on an NPC's stand anchor gets **no entity of its own**:
+/// the NPC's interaction hitbox is the trigger's sole carrier
+/// ([`strike_trigger_tags_at`]). Emitting a second, exactly co-located hitbox
+/// here made the vanilla client's entity ray-pick ambiguous — an exact tie
+/// resolves to whichever entity the pick iterates first, in practice this
+/// world-init summon — so every right-click landed on an entity without the
+/// `dw_npc_<n>` tag and the `player_interacted_with_entity` dialogue
+/// advancement never fired (round-6 island QA: after the boulder seal,
+/// Polyphemus could not be talked to at all). One cell, one hitbox. The
+/// trigger's lifecycle therefore follows the NPC's presence — which is also
+/// its meaning: the thing being struck is the NPC.
 fn env_trigger_setup(plan: &Plan) -> Vec<String> {
     use delvewright_dsl::TriggerOn;
     let mut out = Vec::new();
     for t in &plan.campaign.quests.content.triggers {
         if matches!(t.on, TriggerOn::Approach { .. }) {
+            continue;
+        }
+        if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, t.at.as_str()) {
             continue;
         }
         if let Some(p) = anchor_point_any(plan, t.at.as_str()) {
@@ -5206,6 +5239,102 @@ fn emit_v06_actor_packtests(
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         write("v06_move_actor", b);
     }
+
+    // Walker→NPC handoff (round-6 island QA): the first move-actor whose
+    // on_arrive fires a `spawn-npc` is a scene handoff — a scripted puppet
+    // walks in, vanishes, and the real (dialogue-bearing) NPC takes its place.
+    // The delve soft-locks if the handoff leaves the puppet standing or the NPC
+    // short an entity, so pin it end to end: drive the arrival tick and assert
+    // puppet gone, NPC body present, and exactly one interaction hitbox. Every
+    // campaign gate is sealed first (its `close-gate` fill): the island beat
+    // fires this handoff with the boulder down, and arrival must be immune to
+    // sealed terrain — the driver is a tp chain, not pathfinding. Gates are
+    // re-opened afterwards (fill air replace <block>), so the template leaves
+    // no block residue for a sibling (batch model, #140).
+    let handoff = actor_moves.iter().find_map(|m| {
+        all_campaign_effects(c).into_iter().find_map(|e| match e {
+            QuestEffect::MoveActor {
+                actor,
+                to_anchor,
+                on_arrive,
+                ..
+            } if actor.as_str() == m.actor && to_anchor.as_str() == m.to_anchor => on_arrive
+                .iter()
+                .find_map(|a| match a {
+                    QuestEffect::SpawnNpc { npc, .. } => Some(npc.as_str().to_string()),
+                    _ => None,
+                })
+                .map(|npc| (m, npc)),
+            _ => None,
+        })
+    });
+    if let Some((m, npc_id)) = handoff
+        && let Some(npc_tag) = plan
+            .npcs
+            .iter()
+            .find(|n| n.npc_id == npc_id)
+            .map(|n| n.tag.clone())
+    {
+        let safe = plan::safe_local(&m.actor);
+        let bare = moveactor_bare(&m.actor, &m.to_anchor);
+        let total = m.ticks();
+        // Every distinct gate a `close-gate` effect seals, in first-appearance
+        // order (deterministic).
+        let mut sealed: Vec<(&[i32; 3], &[i32; 3], &String)> = Vec::new();
+        let mut seen: Vec<&str> = Vec::new();
+        for e in all_campaign_effects(c) {
+            if let QuestEffect::CloseGate { anchor, .. } = e
+                && !seen.contains(&anchor.as_str())
+            {
+                seen.push(anchor.as_str());
+                for ((_, name), resolved) in &plan.anchors {
+                    if name == anchor.as_str()
+                        && let ResolvedAnchor::Gate { from, to, block } = resolved
+                    {
+                        sealed.push((from, to, block));
+                    }
+                }
+            }
+        }
+        let mut b = packtest_header(&format!(
+            "{}: move-actor arrival hands off to NPC `{npc_id}` with every gate sealed",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        b.push(format!("kill @e[tag={npc_tag}]"));
+        for (from, to, block) in &sealed {
+            b.push(format!(
+                "fill {} {} {} {} {} {} {}",
+                from[0], from[1], from[2], to[0], to[1], to[2], block
+            ));
+        }
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!("scoreboard players set #at_{bare} dw.sys {total}"));
+        b.push(format!("function {ns}:ma_tick_{bare}"));
+        b.push(format!(
+            "execute store result score #pup_ahof dw.sys if entity @e[tag=dw_actor_{safe}]"
+        ));
+        b.push("assert score #pup_ahof dw.sys matches 0".to_string());
+        b.push(format!(
+            "execute store result score #npc_ahof dw.sys if entity @e[tag=dw_npc,tag={npc_tag}]"
+        ));
+        b.push("assert score #npc_ahof dw.sys matches 1".to_string());
+        b.push(format!(
+            "execute store result score #box_ahof dw.sys if entity @e[type=minecraft:interaction,tag={npc_tag}]"
+        ));
+        b.push("assert score #box_ahof dw.sys matches 1".to_string());
+        // No residue: NPC out, actor tag out, gates back open.
+        b.push(format!("kill @e[tag={npc_tag}]"));
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        for (from, to, block) in &sealed {
+            b.push(format!(
+                "fill {} {} {} {} {} {} minecraft:air replace {}",
+                from[0], from[1], from[2], to[0], to[1], to[2], block
+            ));
+        }
+        write("v06_arrive_handoff", b);
+    }
 }
 
 /// v0.4 PackTests (spec-0008): a prop appears only once its objective activates;
@@ -5430,6 +5559,63 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
             b.push(format!("assert score #trig_{id} dw.sys matches 0"));
         }
         write("v04_strike_npc", b);
+
+        // Round-6 island QA regression: the owner attacked the giant, then could
+        // never open its dialogue. Root cause was not the attack — it was a
+        // second, exactly co-located interaction entity (the trigger's own
+        // world-init summon), which the client's ray-pick tie-break preferred,
+        // so right-clicks landed on an entity without the `dw_npc_<n>` tag and
+        // the dialogue advancement never fired. The invariant that ends the
+        // ambiguity — and the thing this test pins — is *one cell, one hitbox*:
+        // the NPC's hitbox is the only interaction entity wearing the trigger's
+        // tag, before AND after an attack record lands and is consumed, so any
+        // click (left or right) can only ever reach the dialogue-bearing entity.
+        let mut b = packtest_header(&format!(
+            "{}: attack-then-talk — NPC `{npc_id}`'s hitbox is the only click target at its anchor",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push("scoreboard players set #placed dw.sys 1".to_string());
+        for n in &plan.npcs {
+            b.push(format!("kill @e[tag={}]", n.tag));
+        }
+        b.push(format!("function {ns}:setup_finish"));
+        if npc_is_deferred(c, &npc_id) {
+            b.push(format!("function {ns}:{}", spawn_npc_fn(&npc_id)));
+        }
+        // One hitbox wears the trigger tag, and none wears it without also being
+        // the NPC's — the standalone summon of the pre-fix emission trips this.
+        b.push(format!(
+            "execute store result score #one_stlk dw.sys if entity @e[type=minecraft:interaction,tag=dw_trig_{id}]"
+        ));
+        b.push("assert score #one_stlk dw.sys matches 1".to_string());
+        b.push(format!(
+            "execute store result score #orph_stlk dw.sys if entity @e[type=minecraft:interaction,tag=dw_trig_{id},tag=!{npc_tag}]"
+        ));
+        b.push("assert score #orph_stlk dw.sys matches 0".to_string());
+        // The owner's sequence: a left-click record lands on the shared hitbox…
+        // (The record is consumed by hand rather than via `tick`: a sibling
+        // template's dummy may legitimately hold this trigger's gate flag, and a
+        // real tick could then fire the trigger's content effects mid-test —
+        // batch templates must be interleaving-independent. Consumption itself
+        // is v04_strike_npc's assertion.)
+        b.push(format!(
+            "data modify entity {hitbox} attack set value {{player:[I;0,0,0,0],timestamp:1L}}"
+        ));
+        // …and the dialogue hitbox is still the one and only click target.
+        b.push(format!(
+            "execute store result score #one2_stlk dw.sys if entity @e[type=minecraft:interaction,tag={npc_tag}]"
+        ));
+        b.push("assert score #one2_stlk dw.sys matches 1".to_string());
+        b.push(format!(
+            "execute store result score #orph2_stlk dw.sys if entity @e[type=minecraft:interaction,tag=dw_trig_{id},tag=!{npc_tag}]"
+        ));
+        b.push("assert score #orph2_stlk dw.sys matches 0".to_string());
+        // No residue: clear the hand-written record (the runtime consume line).
+        b.push(format!(
+            "execute as @e[type=minecraft:interaction,tag={npc_tag}] run data remove entity @s attack"
+        ));
+        write("v04_strike_talk", b);
     }
 
     // move-npc walks a collision-safe path that ends with the NPC at the target

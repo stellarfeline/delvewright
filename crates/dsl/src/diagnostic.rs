@@ -225,4 +225,15 @@ pub mod codes {
     /// subject can never move). Validation-tier (exit 1). Use `locked-off` /
     /// `push-in` for a static subject instead.
     pub const SHOT_SUBJECT_UNMOVED: &str = "DW0349";
+
+    /// (v0.4, added round-6) A `use` trigger anchored where an NPC stands.
+    /// Right-click on an NPC already belongs to its dialogue advancement; a
+    /// second interaction hitbox in the same cell makes the client's entity
+    /// ray-pick ambiguous, and whichever entity loses the tie is silently dead
+    /// — the round-6 island soft-lock class (an exactly co-located hitbox
+    /// starved the giant's dialogue of every right-click). `strike` triggers
+    /// are exempt: a left-click has no dialogue meaning, so the compiler rides
+    /// the trigger's tag on the NPC's own hitbox instead of summoning a second
+    /// one. Validation-tier (exit 1).
+    pub const USE_TRIGGER_ON_NPC: &str = "DW0350";
 }
