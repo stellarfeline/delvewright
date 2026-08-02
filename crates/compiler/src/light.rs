@@ -269,6 +269,50 @@ fn lit(name: &str, default_lit: &str, bright: u8) -> u8 {
 /// pass it. An id absent from the world's block map is air → passes. Unknown
 /// blocks are treated as opaque (conservative — never overestimates light),
 /// matching the cave-generator's estimator.
+///
+/// ## The occupancy-coupling invariant (task: trap-trigger false dark)
+///
+/// The conservative-opaque default is safe for a block **nav also treats as
+/// impassable**: over-blocking light can only make `DW0210`/`DW0211` stricter.
+/// It is *not* safe for a block [`crate::assembled::occupancy_of`] deliberately
+/// leaves **passable**, because then a cell a player really stands in is measured
+/// at light 0 while the game lights it normally — a manufactured `DW0210` that no
+/// amount of relighting can clear. Hence the invariant, asserted by
+/// `every_nav_passable_block_passes_light`:
+///
+/// > **every block class whose cell `occupancy_of` leaves player-occupiable must
+/// > be light-passing here.**
+///
+/// The classes that are player-occupiable by construction are pressure plates /
+/// tripwire / tripwire hooks ([`crate::assembled::is_passable_trap_trigger`] —
+/// load-bearing for the `DW0342` trap-avoidability proof, which needs nav to route
+/// a player *onto* the trigger), thin decoration ([`crate::assembled::is_thin_decoration`]
+/// — carpets and 1–4-layer snow), and fence gates (open = a passable threshold,
+/// closed = passable-with-use). All of them are listed below.
+///
+/// ## Vanilla evidence (Minecraft Java 1.21.11)
+///
+/// A block's light opacity is its `lightBlock` / "filter light" value: 15 for a
+/// full solid-render cube, 0 for anything that is neither solid-render nor a full
+/// collision cube. Verified against the pinned `minecraft-data` block table
+/// (`harness/node_modules/minecraft-data/.../pc/1.21.9/blocks.json`, the newest
+/// vendored dump; block light opacity is unchanged across 1.21.x):
+/// `filterLight = 0` for all 16 `*_pressure_plate`, `tripwire`, `tripwire_hook`,
+/// all 20 carpets, `snow` (the layer block), and all 12 `*_fence_gate` — against
+/// `filterLight = 15` for the control set `stone` / `dirt` / `oak_planks` /
+/// `cobblestone` / `deepslate` / `sand` / `gravel` / `obsidian` / `snow_block`.
+///
+/// ## Deliberately still opaque
+///
+/// Vanilla also reports `filterLight = 0` for fences, walls, buttons, levers,
+/// rails, slabs, stairs, doors, trapdoors, chests, signs and banners — but
+/// `occupancy_of` classifies every one of them **solid or tall**, i.e. impassable
+/// and never a player-occupiable cell. Their opacity can therefore only make the
+/// light gate stricter, never manufacture a false *pass*, so correcting them is a
+/// gate-loosening accuracy change that belongs in its own reviewed PR rather than
+/// riding along with this false-failure fix. (`oak_fence` predates this rule and
+/// is left as-is for the same reason: removing it would tighten the gate, adding
+/// its siblings would loosen it — neither is this PR's concern.)
 pub fn passes_light(name: &str) -> bool {
     let id = base_id(name);
     matches!(
@@ -293,7 +337,6 @@ pub fn passes_light(name: &str) -> bool {
             | "redstone_torch"
             | "end_rod"
             | "oak_fence"
-            | "oak_fence_gate"
             | "glow_lichen"
             | "vine"
             | "ladder"
@@ -310,9 +353,21 @@ pub fn passes_light(name: &str) -> bool {
             | "cobweb"
             | "sugar_cane"
             | "lily_pad"
+            // --- nav-passable classes (the occupancy-coupling invariant) ---
+            // Trap triggers: thin, non-collidable, `filterLight = 0`.
+            | "tripwire"
+            | "tripwire_hook"
+            // Thin decoration: the snow *layer* block (`snow_block` is a full
+            // opaque cube and is deliberately NOT here). Every carpet — dyed,
+            // `moss_carpet`, `pale_moss_carpet` — is caught by the `_carpet`
+            // suffix below.
+            | "snow"
     ) || id.ends_with("_stained_glass")
         || id.ends_with("_stained_glass_pane")
         || id == "glass_pane"
+        || id.ends_with("_pressure_plate")
+        || id.ends_with("_carpet")
+        || id.ends_with("_fence_gate")
 }
 
 // ---------------------------------------------------------------------------
@@ -1073,6 +1128,23 @@ mod tests {
         (min, max)
     }
 
+    /// A nav world built through the **real** collision classifier
+    /// ([`crate::assembled::occupancy_of`]), so nav-passable blocks (pressure
+    /// plates, tripwire, carpets, fence gates) keep their cells walkable exactly
+    /// as the shipped model does — unlike [`nav_of`], which force-solids every
+    /// non-air cell.
+    fn nav_occ_of(map: &BTreeMap<[i32; 3], String>) -> World {
+        World::from_occupancy(crate::assembled::occupancy_of(
+            map.clone(),
+            &BTreeSet::new(),
+        ))
+    }
+
+    /// [`reachable_of`] over the real collision classifier, seeded at `start`.
+    fn reachable_occ_of(map: &BTreeMap<[i32; 3], String>, start: [i32; 3]) -> BTreeSet<[i32; 3]> {
+        nav_occ_of(map).reachable_walkable(&[start])
+    }
+
     fn min_reachable_light(model: &LightModel, reachable: &BTreeSet<[i32; 3]>, sky: u8) -> u8 {
         let light = model.flood(sky);
         reachable
@@ -1508,5 +1580,245 @@ mod tests {
             build(),
             "relight placements must be byte-identical"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Occupancy-coupling invariant: nav-passable ⇒ light-passing
+    // -----------------------------------------------------------------------
+
+    /// The opacity table agrees with vanilla 1.21.11 for every block class the nav
+    /// model leaves passable, and still calls a full solid cube opaque.
+    ///
+    /// Evidence: `filterLight` in the pinned `minecraft-data` 1.21.9 block dump
+    /// (`harness/node_modules/minecraft-data/.../pc/1.21.9/blocks.json`) — 0 for
+    /// all 16 pressure plates, `tripwire`, `tripwire_hook`, all 20 carpets, `snow`
+    /// (the layer block) and all 12 fence gates; 15 for the control cubes below.
+    #[test]
+    fn passes_light_matches_vanilla_filter_light() {
+        // Trap triggers — the reported false-dark class (DW0342 needs these cells
+        // walkable, so the light model must not call them opaque).
+        for id in [
+            "minecraft:oak_pressure_plate",
+            "minecraft:oak_pressure_plate[powered=false]",
+            "minecraft:stone_pressure_plate[powered=true]",
+            "minecraft:polished_blackstone_pressure_plate",
+            "minecraft:heavy_weighted_pressure_plate",
+            "minecraft:light_weighted_pressure_plate",
+            "minecraft:tripwire",
+            "minecraft:tripwire[attached=true,powered=false]",
+            "minecraft:tripwire_hook[facing=north]",
+        ] {
+            assert!(passes_light(id), "{id} is filterLight=0 in vanilla");
+        }
+        // Thin decoration (`is_thin_decoration`): carpets + shallow snow layers.
+        for id in [
+            "minecraft:white_carpet",
+            "minecraft:black_carpet",
+            "minecraft:moss_carpet",
+            "minecraft:pale_moss_carpet[bottom=true]",
+            "minecraft:snow",
+            "minecraft:snow[layers=1]",
+            "minecraft:snow[layers=8]",
+        ] {
+            assert!(passes_light(id), "{id} is filterLight=0 in vanilla");
+        }
+        // Fence gates — open = a passable threshold, closed = passable-with-use.
+        // Previously only `oak_fence_gate` passed light; every wood does now.
+        for id in [
+            "minecraft:oak_fence_gate",
+            "minecraft:spruce_fence_gate[open=true]",
+            "minecraft:dark_oak_fence_gate[facing=east,open=false]",
+            "minecraft:warped_fence_gate",
+        ] {
+            assert!(passes_light(id), "{id} is filterLight=0 in vanilla");
+        }
+        // Control: full solid-render cubes stay opaque (filterLight=15). Note
+        // `snow_block` is a full cube and must NOT be caught by the `snow` entry.
+        for id in [
+            "minecraft:stone",
+            "minecraft:dirt",
+            "minecraft:oak_planks",
+            "minecraft:cobblestone",
+            "minecraft:deepslate",
+            "minecraft:sand",
+            "minecraft:gravel",
+            "minecraft:obsidian",
+            "minecraft:snow_block",
+        ] {
+            assert!(!passes_light(id), "{id} is filterLight=15 in vanilla");
+        }
+    }
+
+    /// **The invariant** (see [`passes_light`]): if
+    /// [`crate::assembled::occupancy_of`] leaves a block's cell player-occupiable
+    /// — absent from `solid`/`tall`/`flooded`, i.e. free air or a passable-with-use
+    /// fence gate — then that block MUST pass light, or the gate measures a cell
+    /// the player really stands in at light 0 and manufactures a `DW0210`.
+    ///
+    /// Driven through the real classifier over a one-cell world, so a future
+    /// passability change (a new thin-decoration class, say) that forgets the light
+    /// table fails here instead of in a campaign.
+    #[test]
+    fn every_nav_passable_block_passes_light() {
+        let candidates = [
+            // trap triggers
+            "minecraft:oak_pressure_plate[powered=false]",
+            "minecraft:stone_pressure_plate",
+            "minecraft:polished_blackstone_pressure_plate",
+            "minecraft:heavy_weighted_pressure_plate",
+            "minecraft:tripwire",
+            "minecraft:tripwire_hook",
+            // thin decoration
+            "minecraft:white_carpet",
+            "minecraft:moss_carpet",
+            "minecraft:pale_moss_carpet",
+            "minecraft:snow[layers=1]",
+            "minecraft:snow[layers=4]",
+            // fence gates (closed = use-gate, open = free threshold)
+            "minecraft:oak_fence_gate",
+            "minecraft:spruce_fence_gate",
+            "minecraft:crimson_fence_gate",
+            // controls that must stay impassable AND may stay opaque
+            "minecraft:stone",
+            "minecraft:oak_slab",
+            "minecraft:snow_block",
+            "minecraft:cobblestone_wall",
+            "minecraft:oak_fence",
+        ];
+        let cell = [0, 0, 0];
+        for id in candidates {
+            let mut map = BTreeMap::new();
+            map.insert(cell, id.to_string());
+            let occ = crate::assembled::occupancy_of(map, &BTreeSet::new());
+            // Player-occupiable: nothing a walker is blocked by lives here. A
+            // closed fence gate is in `use_gates`, which the player walks through.
+            let blocked = occ.solid.contains(&cell)
+                || occ.tall.contains(&cell)
+                || occ.flooded.contains(&cell);
+            if !blocked {
+                assert!(
+                    passes_light(id),
+                    "occupancy leaves `{id}` player-occupiable, so the light model \
+                     must not call it opaque — a player standing there would be \
+                     measured at light 0 and trip a false DW0210"
+                );
+            }
+        }
+    }
+
+    /// Red-before / green-after: a **roofed, lit** room whose floor carries a
+    /// pressure-plate trap trigger. The trigger cell is a reachable walkable cell
+    /// (nav keeps it passable on purpose, for the `DW0342` avoidability proof), so
+    /// with the pre-fix table it measured light 0 and the whole area failed
+    /// `DW0210` — a lighting failure invented by the model. After the fix the cell
+    /// measures exactly what the same cell measures with plain air in it.
+    #[test]
+    fn trap_trigger_cell_measures_real_light_not_zero() {
+        let plate = [2, 1, 2];
+        let mut map = room(9, 5, 9, false); // roofed → no sky light
+        map.insert([4, 3, 4], "minecraft:glowstone".to_string()); // the room's lamp
+        let mut with_plate = map.clone();
+        with_plate.insert(
+            plate,
+            "minecraft:oak_pressure_plate[powered=false]".to_string(),
+        );
+
+        // The trigger cell really is a reachable walkable cell under the shipped
+        // collision model (this is what makes the false DW0210 reachable at all).
+        let reachable = reachable_occ_of(&with_plate, [4, 1, 4]);
+        assert!(
+            reachable.contains(&plate),
+            "the plate cell must stay walkable (DW0342 premise)"
+        );
+
+        // It measures the same light as the identical cell with air in it.
+        let bare = LightModel::from_blocks(map).flood(0);
+        let lit = LightModel::from_blocks(with_plate).flood(0);
+        let expect = bare.get(&plate).copied().unwrap_or(0);
+        assert!(expect >= DARK_THRESHOLD, "fixture must be genuinely lit");
+        assert_eq!(
+            lit.get(&plate).copied().unwrap_or(0),
+            expect,
+            "a pressure plate is transparent in vanilla (filterLight=0); its cell \
+             must measure the room's real light, not 0"
+        );
+
+        // …and the area is clean.
+        let model = LightModel::from_blocks({
+            let mut m = room(9, 5, 9, false);
+            m.insert([4, 3, 4], "minecraft:glowstone".to_string());
+            m.insert(
+                plate,
+                "minecraft:oak_pressure_plate[powered=false]".to_string(),
+            );
+            m
+        });
+        assert!(
+            measure_undeclared(&model, &reachable, 0, false, "area/keep").is_none(),
+            "a lit roofed room with a trap trigger must not trip DW0210"
+        );
+    }
+
+    /// No over-correction: the same roofed room **without** a lamp is genuinely
+    /// dark, and the transparent trap trigger does not launder that away —
+    /// `DW0210` still fires, by code.
+    #[test]
+    fn dark_roofed_room_with_a_trap_trigger_still_fails_dw0210() {
+        let plate = [2, 1, 2];
+        let mut map = room(9, 5, 9, false); // roofed, unlit
+        map.insert(
+            plate,
+            "minecraft:oak_pressure_plate[powered=false]".to_string(),
+        );
+        let reachable = reachable_occ_of(&map, [4, 1, 4]);
+        assert!(reachable.contains(&plate));
+        let model = LightModel::from_blocks(map);
+        let diag = measure_undeclared(&model, &reachable, 0, false, "area/crypt")
+            .expect("a genuinely dark roofed room must still fail");
+        assert_eq!(diag.code, DW_DARK_UNMITIGATED);
+    }
+
+    /// The same fix for the other two nav-passable classes: a carpet and a closed
+    /// fence gate on the critical path measure the room's real light too.
+    #[test]
+    fn carpet_and_fence_gate_cells_measure_real_light() {
+        for block in [
+            "minecraft:white_carpet",
+            "minecraft:oak_fence_gate[open=false]",
+            "minecraft:spruce_fence_gate[open=false]",
+        ] {
+            let cell = [2, 1, 2];
+            let mut map = room(9, 5, 9, false);
+            map.insert([4, 3, 4], "minecraft:glowstone".to_string());
+            let bare = LightModel::from_blocks(map.clone()).flood(0);
+            map.insert(cell, block.to_string());
+            let got = LightModel::from_blocks(map).flood(0);
+            assert_eq!(
+                got.get(&cell).copied().unwrap_or(0),
+                bare.get(&cell).copied().unwrap_or(0),
+                "{block} is filterLight=0 in vanilla; its cell must measure real light"
+            );
+        }
+    }
+
+    /// The corrected opacity table does not disturb determinism: the same input
+    /// still yields byte-identical light everywhere, including the new classes.
+    #[test]
+    fn corrected_opacity_is_deterministic() {
+        let build = || {
+            let mut map = room(11, 5, 11, false);
+            map.insert([5, 3, 5], "minecraft:glowstone".to_string());
+            map.insert(
+                [2, 1, 2],
+                "minecraft:oak_pressure_plate[powered=false]".to_string(),
+            );
+            map.insert([8, 1, 8], "minecraft:white_carpet".to_string());
+            map.insert(
+                [2, 1, 8],
+                "minecraft:spruce_fence_gate[open=true]".to_string(),
+            );
+            LightModel::from_blocks(map).flood(0)
+        };
+        assert_eq!(build(), build());
     }
 }
