@@ -4795,13 +4795,18 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
         let (_, zpos, zext) = &beat.zones[0];
         let inside = *zpos;
         let outside = [zpos[0] + zext[0] as i32 + 10, zpos[1], zpos[2]];
+        let (pin, sel) = pin_dummy("dw_sttest");
         let mut t = packtest_header(&format!(
             "{title}: stealth catches the exposed, spares the hidden (spec-0014)"
         ));
         t.push(format!("function {ns}:setup"));
-        // --- caught: an exposed (not sneaking, out of every zone) player accrues
-        //     grace and is caught on the grace_ticks-th judge tick (on_caught
-        //     resets grace to 0). ---
+        // Pin this test's own dummy (see `pin_dummy`): the template teleports
+        // it to absolute campaign coordinates, after which `@p` would resolve
+        // to a neighbor test's dummy and the controlled state below would land
+        // on — and be asserted against — the wrong player.
+        t.push(pin);
+        // --- spare: a sneaking (sneak > ack), in-zone player never accrues grace;
+        //     an accrued grace is reset the moment they are safe. ---
         t.push(format!("function {ns}:stealth_begin_{i}"));
         // Disarm the live session marker `stealth_begin` just set: this test drives
         // `stealth_eval` explicitly, so the world `tick` loop (which runs
@@ -4811,34 +4816,48 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
         // the controlled state the asserts read. Runtime gameplay is unaffected
         // (there the tick loop is the sole caller); this only isolates the test.
         t.push("scoreboard players set #stealth dw.sys 0".to_string());
-        t.push("scoreboard players set @p dw.st_sneak 0".to_string());
-        t.push("scoreboard players set @p dw.st_sneakack 0".to_string());
+        t.push(format!("scoreboard players set {sel} dw.st_grace 5"));
+        t.push(format!("scoreboard players set {sel} dw.st_sneakack 0"));
+        t.push(format!("scoreboard players set {sel} dw.st_sneak 1"));
         t.push(format!(
-            "tp @p {} {} {}",
+            "tp {sel} {} {} {}",
+            inside[0], inside[1], inside[2]
+        ));
+        t.push(format!(
+            "execute as {sel} run function {ns}:stealth_eval_{i}"
+        ));
+        t.push(format!("assert score {sel} dw.st_grace matches 0"));
+        // --- caught: an exposed (not sneaking, out of every zone) player accrues
+        //     grace and is caught on the grace_ticks-th judge tick (on_caught
+        //     resets grace to 0). This section runs LAST: the trip executes the
+        //     campaign's real `on_caught`, whose effects are arbitrary content
+        //     (the island's deals lethal damage) — nothing state-dependent may
+        //     follow it, and the closing assert reads the dummy through the tag,
+        //     which keeps matching even if `on_caught` killed it. ---
+        t.push(format!("function {ns}:stealth_begin_{i}"));
+        // Disarm again (this second `begin` re-armed `#stealth`); see note above.
+        t.push("scoreboard players set #stealth dw.sys 0".to_string());
+        t.push(format!("scoreboard players set {sel} dw.st_sneak 0"));
+        t.push(format!("scoreboard players set {sel} dw.st_sneakack 0"));
+        t.push(format!(
+            "tp {sel} {} {} {}",
             outside[0], outside[1], outside[2]
         ));
         // grace_ticks-1 judge ticks: grace climbs but has not yet tripped.
         for _ in 0..grace.saturating_sub(1) {
-            t.push(format!("execute as @p run function {ns}:stealth_eval_{i}"));
+            t.push(format!(
+                "execute as {sel} run function {ns}:stealth_eval_{i}"
+            ));
         }
         t.push(format!(
-            "assert score @p dw.st_grace matches {}",
+            "assert score {sel} dw.st_grace matches {}",
             grace.saturating_sub(1)
         ));
         // One more tick trips on_caught, which resets grace to 0.
-        t.push(format!("execute as @p run function {ns}:stealth_eval_{i}"));
-        t.push("assert score @p dw.st_grace matches 0".to_string());
-        // --- spare: a sneaking (sneak > ack), in-zone player never accrues grace;
-        //     an accrued grace is reset the moment they are safe. ---
-        t.push(format!("function {ns}:stealth_begin_{i}"));
-        // Disarm again (this second `begin` re-armed `#stealth`); see note above.
-        t.push("scoreboard players set #stealth dw.sys 0".to_string());
-        t.push("scoreboard players set @p dw.st_grace 5".to_string());
-        t.push("scoreboard players set @p dw.st_sneakack 0".to_string());
-        t.push("scoreboard players set @p dw.st_sneak 1".to_string());
-        t.push(format!("tp @p {} {} {}", inside[0], inside[1], inside[2]));
-        t.push(format!("execute as @p run function {ns}:stealth_eval_{i}"));
-        t.push("assert score @p dw.st_grace matches 0".to_string());
+        t.push(format!(
+            "execute as {sel} run function {ns}:stealth_eval_{i}"
+        ));
+        t.push(format!("assert score {sel} dw.st_grace matches 0"));
         out.insert(
             format!("packtest-datapack/data/{ns}/test/v06_stealth.mcfunction"),
             lines(&t).into_bytes(),
@@ -5528,37 +5547,64 @@ fn packtest_header(title: &str) -> Vec<String> {
     ]
 }
 
-/// Lines that satisfy an objective's activation guard on `@a` (quest active, all
+/// Pin a PackTest template's own dummy player: the pin line (`tag @p add …`)
+/// plus the selector that addresses that dummy — and only it — thereafter.
+///
+/// PackTest runs the whole generated suite as ONE batch on one shared server:
+/// each `# @dummy` test spawns its OWN dummy, all dummies coexist, and every
+/// test function executes over the same server tick(s). Two consequences for
+/// template authorship: (1) `@p` re-resolves from the test structure origin on
+/// every command — the moment a template teleports its dummy to absolute
+/// campaign coordinates, `@p` retargets to a NEIGHBOR test's dummy and all
+/// later writes/asserts land on the wrong player (round-5 island red:
+/// `v06_stealth` read a foreign dummy's grace); (2) a `@a` write hits every
+/// test's dummy, so a sibling template can pre-set state this test believes it
+/// controls (round-5 island red: `verb_flag_gate`'s "withheld" flag arrived
+/// via `verb_interact`'s `@a`). A template that drives per-player state must
+/// therefore tag its dummy on the first post-setup line — while its own dummy,
+/// inside its own structure, is still the nearest player — and address it
+/// exclusively through the tag (which, unlike `@p`, also keeps matching a
+/// dummy that content effects have killed).
+fn pin_dummy(tag: &str) -> (String, String) {
+    (
+        format!("tag @p add {tag}"),
+        format!("@a[tag={tag},limit=1]"),
+    )
+}
+
+/// Lines that satisfy an objective's activation guard on `sel` (quest active, all
 /// `after` prerequisites set, all `requires_flags` set, and any required item
-/// given). Optionally omit the flags to test the gate.
-fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool) -> Vec<String> {
+/// given). With `with_flags: false` the flags are not merely omitted but actively
+/// cleared: PackTest runs the whole suite as one batch on one shared server —
+/// sibling templates legitimately set the same flag score on `@a` (every dummy),
+/// so on this server "never set" does not mean 0.
+fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool, sel: &str) -> Vec<String> {
     let mut p = vec![format!(
-        "scoreboard players set @a {} 1",
+        "scoreboard players set {sel} {} 1",
         quest_active_score(quest_id)
     )];
     for a in o.after() {
         p.push(format!(
-            "scoreboard players set @a {} 1",
+            "scoreboard players set {sel} {} 1",
             obj_score(a.as_str())
         ));
     }
-    if with_flags {
-        for f in o.requires_flags() {
-            p.push(format!(
-                "scoreboard players set @a {} 1",
-                plan::flag_score(f.as_str())
-            ));
-        }
+    for f in o.requires_flags() {
+        p.push(format!(
+            "scoreboard players set {sel} {} {}",
+            plan::flag_score(f.as_str()),
+            if with_flags { 1 } else { 0 }
+        ));
     }
     match o {
         Objective::Collect { item, count, .. } => {
-            p.push(format!("give @a {item} {count}"));
+            p.push(format!("give {sel} {item} {count}"));
         }
         Objective::Interact {
             requires_item: Some(it),
             ..
         } => {
-            p.push(format!("give @a {it} 1"));
+            p.push(format!("give {sel} {it} 1"));
         }
         _ => {}
     }
@@ -5635,7 +5681,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             c.world.content.title
         ));
         b.push(format!("function {ns}:setup"));
-        b.extend(packtest_preamble(qid, o, true));
+        b.extend(packtest_preamble(qid, o, true, "@a"));
         b.push(format!("function {ns}:spawn_{ws}"));
         b.push(format!(
             "assert score {} {} matches {total}",
@@ -5684,7 +5730,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             c.world.content.title
         ));
         b.push(format!("function {ns}:setup"));
-        b.extend(packtest_preamble(qid, o, true));
+        b.extend(packtest_preamble(qid, o, true, "@a"));
         b.push(format!(
             "execute as @a run function {ns}:c_reward_{}",
             plan::safe_local(id.as_str())
@@ -5705,7 +5751,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             c.world.content.title
         ));
         b.push(format!("function {ns}:setup"));
-        b.extend(packtest_preamble(qid, o, true));
+        b.extend(packtest_preamble(qid, o, true, "@a"));
         b.push(format!(
             "scoreboard players set @a {} 1",
             plan::interact_trigger(id.as_str())
@@ -5718,17 +5764,23 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         write("verb_interact", b);
     }
 
-    // flag gate: without the flag the objective must NOT complete; with it, it does.
+    // flag gate: without the flag the objective must NOT complete; with it, it
+    // does. The dummy is pinned and the withheld flags actively cleared (see
+    // `pin_dummy` / `packtest_preamble`): a sibling template that satisfies the
+    // same gated objective (`verb_interact`) sets the flag on `@a` — every
+    // dummy in the batch — so this test must establish "flag absent" itself,
+    // on its own dummy, rather than assume a fresh player.
     if let Some((qid, o)) = first_flag_gated {
         let id = o.id().as_str();
+        let (pin, sel) = pin_dummy("dw_flagtest");
         let driver = |b: &mut Vec<String>| match o {
             Objective::Collect { .. } => b.push(format!(
-                "execute as @a run function {ns}:c_reward_{}",
+                "execute as {sel} run function {ns}:c_reward_{}",
                 plan::safe_local(id)
             )),
             Objective::Interact { .. } => {
                 b.push(format!(
-                    "scoreboard players set @a {} 1",
+                    "scoreboard players set {sel} {} 1",
                     plan::interact_trigger(id)
                 ));
                 b.push(format!("function {ns}:tick"));
@@ -5740,18 +5792,19 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             c.world.content.title
         ));
         b.push(format!("function {ns}:setup"));
-        b.push(format!("scoreboard players set @a {} 0", obj_score(id)));
-        b.extend(packtest_preamble(qid, o, false)); // flags withheld
+        b.push(pin.clone());
+        b.push(format!("scoreboard players set {sel} {} 0", obj_score(id)));
+        b.extend(packtest_preamble(qid, o, false, &sel)); // flags withheld (cleared)
         driver(&mut b);
-        b.push(format!("assert score @p {} matches 0", obj_score(id)));
+        b.push(format!("assert score {sel} {} matches 0", obj_score(id)));
         for f in o.requires_flags() {
             b.push(format!(
-                "scoreboard players set @a {} 1",
+                "scoreboard players set {sel} {} 1",
                 plan::flag_score(f.as_str())
             ));
         }
         driver(&mut b);
-        b.push(format!("assert score @p {} matches 1", obj_score(id)));
+        b.push(format!("assert score {sel} {} matches 1", obj_score(id)));
         write("verb_flag_gate", b);
     }
 
