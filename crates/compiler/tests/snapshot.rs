@@ -75,7 +75,7 @@ fn default_snapshot_writes_a_png_and_its_manifest_sidecar() {
     // The sidecar is the image path with its extension replaced.
     assert!(dir.join("frame.manifest.json").is_file());
     let m = manifest_of(&png);
-    assert_eq!(m["manifest_version"], 1);
+    assert_eq!(m["manifest_version"], 2);
     assert_eq!(m["image"]["width"], 192);
     assert_eq!(m["image"]["height"], 108);
     assert_eq!(m["image"]["path"], "frame.png");
@@ -87,6 +87,78 @@ fn default_snapshot_writes_a_png_and_its_manifest_sidecar() {
             .contains("yaw 0 = south"),
         "the manifest must carry its own camera convention"
     );
+}
+
+/// The manifest's **layout** half (`manifest_version: 2`): every placed piece,
+/// with the exact inputs a `piece-local` edit frame resolves against — the
+/// per-area index, the prefab guard, and the placement transform
+/// (`origin` + `rotation`) plus the resulting AABB. Before this listing the
+/// manifest carried area bounds and anchors only, so those had to be back-solved
+/// from the rendered geometry by hand.
+#[test]
+fn manifest_lists_every_placed_piece_with_its_frame_inputs() {
+    let dir = tmp("snap-pieces");
+    let png = dir.join("frame.png");
+    assert_eq!(code(&snap(&png, &[])), 0);
+    let m = manifest_of(&png);
+    let pieces = m["pieces"].as_array().expect("pieces array");
+    assert!(
+        pieces.len() > 1,
+        "keep-vertical is a multi-piece layout: {pieces:?}"
+    );
+
+    // Indices are 0-based and contiguous *within each area* — that is exactly
+    // the `piece` field of a piece-local frame (entry piece is 0).
+    let mut next: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for p in pieces {
+        let area = p["area"].as_str().expect("area id").to_string();
+        let index = p["index"].as_u64().expect("index") as usize;
+        let want = next.entry(area.clone()).or_insert(0);
+        assert_eq!(index, *want, "area `{area}` piece indices are contiguous");
+        *want += 1;
+
+        assert!(
+            p["prefab"]
+                .as_str()
+                .is_some_and(|s| s.starts_with("prefab/")),
+            "the prefab guard value: {p}"
+        );
+        let arr = |v: &serde_json::Value| -> [i64; 3] {
+            let a = v.as_array().expect("cell");
+            [
+                a[0].as_i64().unwrap(),
+                a[1].as_i64().unwrap(),
+                a[2].as_i64().unwrap(),
+            ]
+        };
+        let origin = arr(&p["origin"]);
+        let size = arr(&p["size"]);
+        let min = arr(&p["box"]["min"]);
+        let max = arr(&p["box"]["max"]);
+        for a in 0..3 {
+            assert!(min[a] <= max[a], "inclusive AABB: {p}");
+            assert!(
+                min[a] <= origin[a] && origin[a] <= max[a],
+                "the /place template origin is inside the placed box: {p}"
+            );
+        }
+        // y is never rotated; x/z swap under a quarter turn, so the box extent
+        // is the size (possibly axis-swapped) in every case.
+        assert_eq!(max[1] - min[1] + 1, size[1], "unrotated y extent: {p}");
+        let (ex, ez) = (max[0] - min[0] + 1, max[2] - min[2] + 1);
+        assert!(
+            (ex, ez) == (size[0], size[2]) || (ex, ez) == (size[2], size[0]),
+            "the placed extent is the prefab size, quarter-turned at most: {p}"
+        );
+        let rot = p["rotation"].as_str().expect("rotation token");
+        assert!(
+            ["none", "clockwise_90", "180", "counterclockwise_90"].contains(&rot),
+            "the /place template rotation vocabulary: {p}"
+        );
+        if rot == "none" {
+            assert_eq!(min, origin, "an unrotated piece starts at its origin: {p}");
+        }
+    }
 }
 
 #[test]

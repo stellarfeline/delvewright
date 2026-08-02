@@ -1651,11 +1651,11 @@ and never the manifest.
 **Output** — the PNG at `-o` (default `snapshot.png`) and a manifest sidecar at
 the same path with its extension replaced: `shot.png` → `shot.manifest.json`.
 
-### Scene manifest (`manifest_version: 1`)
+### Scene manifest (`manifest_version: 2`)
 
 ```json
 {
-  "manifest_version": 1,
+  "manifest_version": 2,
   "campaign_id": "nobodys-cave-island",
   "delvec": "0.1.0",
   "image":  { "path": "shot.png", "width": 960, "height": 540 },
@@ -1664,6 +1664,11 @@ the same path with its extension replaced: `shot.png` → `shot.manifest.json`.
   "world":  { "block_kinds": 48,
               "bounds": { "min": [x,y,z], "max": [x,y,z] },
               "sea_plane": 62 },
+  "pieces": [
+    { "area": "area/island", "index": 1, "prefab": "prefab/island-greenfield",
+      "origin": [0, 60, -30], "size": [16, 12, 16], "rotation": "none",
+      "box": { "min": [0, 60, -30], "max": [15, 71, -15] } }
+  ],
   "targets": [
     { "id": "anchor/fire-pit", "kind": "anchor", "area": "area/island",
       "pos": [9, 69, -56],
@@ -1675,6 +1680,16 @@ the same path with its extension replaced: `shot.png` → `shot.manifest.json`.
 }
 ```
 
+- **`pieces`** is the **layout** half of the scene, beside the point/region
+  targets: every placed structure piece of the whole plan (not just the ones in
+  frame), in plan order — areas as the plan holds them, pieces entry-first
+  within each area. It carries exactly the inputs a `piece-local` edit frame
+  resolves against (`edit::resolve_frame_point`: `origin + rotation(local)`
+  against `area.pieces[index]`): the per-area `index` (the frame's `piece`
+  field), the `prefab` guard value, the `/place template` `origin` + `rotation`
+  token, the unrotated `size`, and the resulting inclusive `box`. Without it an
+  editor authoring a piece-local frame had to back-solve the index and the
+  transform from the rendered geometry by hand.
 - **Kinds**: `anchor` · `gate` · `npc-post` · `actor-post` · `interact` ·
   `stealth-zone` · `trigger`. A point target carries `pos` (an inclusive cell);
   a region target carries `box: {min,max}` (inclusive cells) — never both.
