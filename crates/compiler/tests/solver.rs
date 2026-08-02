@@ -863,3 +863,48 @@ fn vertical_pool_spans_multiple_levels() {
         assert_eq!(pa.rotation, pb.rotation);
     }
 }
+
+/// `DW0304` — layout infeasible for this pool. The branch-piece case: a pool with
+/// no ≥3-socket member cannot fork a trunk, so it can never host two dead-end
+/// terminals on distinct pieces. This is a **structural** (seed-independent)
+/// failure, which is exactly why rerolling the seed is not a fix (ADR-0006).
+///
+/// The pool is synthesized in a private prefab copy — the shipped library's
+/// `pool/stone-keep` deliberately carries a tee and a cross, so nothing in the real
+/// content can reach this branch.
+#[test]
+fn a_pool_with_no_branch_piece_is_dw0304() {
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("solver-no-brancher");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    common::copy_dir_all(&common::prefabs_dir(), &dir);
+    let pools_path = dir.join("pools.json");
+    let mut pools: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&pools_path).unwrap()).unwrap();
+    pools["pools"]["pool/no-brancher"] = serde_json::json!({
+        "members": [
+            { "prefab": "prefab/keep-spawn-hall", "weight": 1, "role": "entry" },
+            { "prefab": "prefab/keep-corridor-straight", "weight": 4, "role": "connector" },
+            { "prefab": "prefab/keep-corridor-corner", "weight": 1, "role": "connector" },
+            { "prefab": "prefab/keep-room-small-a", "weight": 1, "role": "room" },
+            { "prefab": "prefab/keep-boss-hall", "weight": 1, "role": "terminal" }
+        ]
+    });
+    std::fs::write(&pools_path, serde_json::to_string_pretty(&pools).unwrap()).unwrap();
+
+    let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
+    let mut stream = Splitmix64::new(solver::stream_seed(20260730, "area/keep"));
+    let err = solver::solve_area(
+        &prefabs,
+        "pool/no-brancher",
+        // Two dead-end terminals on distinct pieces need a fork the pool cannot build.
+        &["anchor/chest".to_string(), "anchor/boss".to_string()],
+        7,
+        10,
+        [0, 64, 0],
+        &mut stream,
+    )
+    .expect_err("a branchless pool cannot host two dead-end terminals");
+    assert_eq!(err.code, solver::DW_INFEASIBLE);
+    assert_eq!(solver::DW_INFEASIBLE, "DW0304");
+}

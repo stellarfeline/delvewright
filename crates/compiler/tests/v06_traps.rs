@@ -33,7 +33,7 @@ fn tmp(name: &str) -> PathBuf {
 /// A private prefab copy whose `hello-room.json` gains an `anchor/trap` (trigger
 /// cell [5,1,6] on the spawn→exit path, dispenser socket at [4,1,6]) and an
 /// `anchor/lever` disarm affordance at [3,1,6].
-fn patched_prefabs(name: &str) -> PathBuf {
+fn patched_prefabs(name: &str, trigger_block: Option<&str>) -> PathBuf {
     let dir = tmp(name);
     common::copy_dir_all(&common::prefabs_dir(), &dir);
     let path = dir.join("hello-room.json");
@@ -43,10 +43,14 @@ fn patched_prefabs(name: &str) -> PathBuf {
         .get_mut("anchors")
         .and_then(|a| a.as_object_mut())
         .unwrap();
-    anchors.insert(
-        "anchor/trap".to_string(),
-        serde_json::json!({ "pos": [5, 1, 6], "dispenser": [4, 1, 6] }),
-    );
+    let mut trap_anchor = serde_json::json!({ "pos": [5, 1, 6], "dispenser": [4, 1, 6] });
+    // The trigger hardware the prefab wired onto the trap cell, declared with its
+    // blockstate exactly as a gate anchor declares its fill `block`. Only a
+    // flag-gated trap needs it (`DW0363`), so it stays optional here.
+    if let Some(tb) = trigger_block {
+        trap_anchor["trigger_block"] = tb.into();
+    }
+    anchors.insert("anchor/trap".to_string(), trap_anchor);
     anchors.insert(
         "anchor/lever".to_string(),
         serde_json::json!({ "pos": [3, 1, 6] }),
@@ -94,12 +98,26 @@ fn quests_v06(trap: serde_json::Value) -> serde_json::Value {
 
 /// Build a hello-world variant with one trap against the patched prefabs.
 fn build_with_trap(name: &str, trap: serde_json::Value) -> Result<BuildOutput, BuildFailure> {
+    build_with_trap_hw(
+        name,
+        trap,
+        Some("minecraft:oak_pressure_plate[powered=false]"),
+    )
+}
+
+/// As [`build_with_trap`], with explicit control over the `trigger_block` the
+/// prefab metadata declares (`None` = the anchor declares none).
+fn build_with_trap_hw(
+    name: &str,
+    trap: serde_json::Value,
+    trigger_block: Option<&str>,
+) -> Result<BuildOutput, BuildFailure> {
     let camp_dir = tmp(&format!("{name}-camp"));
     let patch = serde_json::json!({
         "documents": { "world": world_v06(), "quests": quests_v06(trap) }
     });
     common::materialize_from(&common::hello_world_dir(), &patch, &camp_dir);
-    let prefabs_dir = patched_prefabs(&format!("{name}-prefabs"));
+    let prefabs_dir = patched_prefabs(&format!("{name}-prefabs"), trigger_block);
 
     let loaded = load_campaign_dir(&camp_dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("campaign parses");
@@ -247,4 +265,178 @@ fn lethal_forced_once_trap_builds() {
         build_with_trap("trap-once", trap).is_ok(),
         "a once-shot lethal trap is survivable and must build"
     );
+}
+
+// --- flag gating: the trap is physically off while the gate is shut -----------
+
+/// A trap gated by `forbids_flags`. The disarm produces the flag, so the flag has
+/// a declared producer (`DW0172`) and the gate is drivable end-to-end.
+fn gated_trap() -> serde_json::Value {
+    serde_json::json!({
+        "id": "trap/dart-hall",
+        "at": "anchor/trap",
+        "trigger": "pressure-plate",
+        "effect": { "dispense": { "item": "minecraft:arrow", "count": 8 } },
+        "lethality": "harmful",
+        "disarm": { "via": "anchor/lever", "sets_flag": "flag/darts-off" },
+        "forbids_flags": ["flag/darts-off"]
+    })
+}
+
+/// `requires_flags`/`forbids_flags` on a trap were populated in the plan and
+/// checked by `DW0172`, and then read by **no emission site at all** — the
+/// documented "inactive while the flag is set" behaviour did not exist. It is now
+/// a physical gate: the trigger block leaves the world and comes back.
+#[test]
+fn a_flag_gated_trap_removes_and_restores_its_trigger() {
+    let out = build_with_trap("trap-gated", gated_trap()).expect("a gated trap builds");
+
+    // The trigger cell is [5,65,6] (local [5,1,6] at base y=64).
+    let on = text(
+        &out,
+        &format!("datapack/data/{NS}/function/trap_gate_on_dart_hall.mcfunction"),
+    );
+    assert!(
+        on.contains("setblock 5 65 6 minecraft:oak_pressure_plate[powered=false]"),
+        "opening the gate must restore the AUTHORED trigger, blockstate and all:\n{on}"
+    );
+    assert!(
+        on.contains("scoreboard players set #trapgate_dart_hall dw.sys 1"),
+        "opening must flip the hardware sentinel:\n{on}"
+    );
+    let off = text(
+        &out,
+        &format!("datapack/data/{NS}/function/trap_gate_off_dart_hall.mcfunction"),
+    );
+    assert!(
+        off.contains("setblock 5 65 6 minecraft:air"),
+        "shutting the gate must take the trigger out of the world:\n{off}"
+    );
+
+    // The tick drives both directions, keyed on the sentinel so the `setblock`
+    // fires on a transition rather than every tick.
+    let tick = text(
+        &out,
+        &format!("datapack/data/{NS}/function/tick.mcfunction"),
+    );
+    let shut = "execute if score #trapgate_dart_hall dw.sys matches 1 \
+                if entity @a[scores={dw.f_darts_off=1..}] \
+                run function hello-world:trap_gate_off_dart_hall";
+    let open = "execute unless score #trapgate_dart_hall dw.sys matches 1 \
+                unless entity @a[scores={dw.f_darts_off=1..}] \
+                run function hello-world:trap_gate_on_dart_hall";
+    for expected in [shut, open] {
+        assert!(
+            tick.lines().any(|l| l.trim() == expected),
+            "the tick must carry `{expected}`:\n{tick}"
+        );
+    }
+
+    // A `forbids_flags`-only gate starts OPEN (no flag is set at world start), so
+    // setup arms the sentinel and leaves the prefab's own block alone.
+    let setup_finish = text(
+        &out,
+        &format!("datapack/data/{NS}/function/setup_finish.mcfunction"),
+    );
+    assert!(
+        setup_finish.contains("scoreboard players set #trapgate_dart_hall dw.sys 1"),
+        "setup must seed the gate sentinel to the world it starts in:\n{setup_finish}"
+    );
+
+    // And the behaviour is asserted in-game, not just in the emitted text.
+    assert!(
+        out.contains_key(&format!(
+            "packtest-datapack/data/{NS}/test/v06_trap_gate.mcfunction"
+        )),
+        "the trap flag-gate PackTest must be emitted"
+    );
+
+    let errors = emit::validate_emitted(&out, &CommandTree::v1_21_11());
+    assert!(
+        errors.is_empty(),
+        "emitted trap-gate commands must validate: {errors:#?}"
+    );
+}
+
+/// A `requires_flags` gate starts SHUT — no flag is set at world start — so setup
+/// takes the trigger straight back out rather than leaving a live trap for the
+/// tick to notice.
+#[test]
+fn a_requires_flags_gate_starts_shut() {
+    let mut trap = gated_trap();
+    trap["forbids_flags"] = serde_json::json!([]);
+    trap["requires_flags"] = serde_json::json!(["flag/darts-off"]);
+    let out = build_with_trap("trap-gated-req", trap).expect("a gated trap builds");
+    let setup_finish = text(
+        &out,
+        &format!("datapack/data/{NS}/function/setup_finish.mcfunction"),
+    );
+    assert!(
+        setup_finish.contains("scoreboard players set #trapgate_dart_hall dw.sys 0"),
+        "a requires-gate starts shut:\n{setup_finish}"
+    );
+    assert!(
+        setup_finish.contains("setblock 5 65 6 minecraft:air"),
+        "a requires-gate must clear the trigger at setup:\n{setup_finish}"
+    );
+}
+
+/// An **ungated** trap emits none of the gate machinery, so every campaign that
+/// existed before this feature stays byte-identical (ADR-0006).
+#[test]
+fn an_ungated_trap_emits_no_gate_machinery() {
+    let mut trap = gated_trap();
+    trap["forbids_flags"] = serde_json::json!([]);
+    let out = build_with_trap("trap-ungated", trap).expect("an ungated trap builds");
+    let tick = text(
+        &out,
+        &format!("datapack/data/{NS}/function/tick.mcfunction"),
+    );
+    assert!(
+        !tick.contains("trapgate_"),
+        "an ungated trap must not gain a gate clause:\n{tick}"
+    );
+    assert!(
+        !out.keys().any(|k| k.contains("trap_gate_")),
+        "an ungated trap must emit no gate functions"
+    );
+}
+
+/// A flag gate on a trap whose prefab declares no `trigger_block` is `DW0363`:
+/// the compiler will not pretend to gate hardware it cannot name.
+#[test]
+fn a_gated_trap_without_declared_hardware_is_dw0363() {
+    match build_with_trap_hw("trap-gated-nohw", gated_trap(), None) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0363", "message was: {message}");
+            assert!(
+                message.contains("trigger_block"),
+                "the diagnostic must name the missing declaration: {message}"
+            );
+        }
+        other => panic!("expected DW0363, got {other:?}"),
+    }
+}
+
+/// A flag gate on a **trapped-chest** trigger is `DW0363` rather than folklore:
+/// the chest is a block entity with an inventory, so removing it destroys state
+/// the compiler never authored and cannot put back.
+#[test]
+fn a_gated_trapped_chest_is_dw0363() {
+    let mut trap = gated_trap();
+    trap["trigger"] = "trapped-chest".into();
+    match build_with_trap_hw(
+        "trap-gated-chest",
+        trap,
+        Some("minecraft:trapped_chest[facing=north]"),
+    ) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0363", "message was: {message}");
+            assert!(
+                message.contains("block entity"),
+                "the diagnostic must explain why the chest cannot be gated: {message}"
+            );
+        }
+        other => panic!("expected DW0363, got {other:?}"),
+    }
 }

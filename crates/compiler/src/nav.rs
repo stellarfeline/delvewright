@@ -3458,6 +3458,7 @@ mod tests {
             id: "trap/darts".to_string(),
             safe: "darts".to_string(),
             trigger: TrapTrigger::PressurePlate,
+            at_anchor: "anchor/trap".to_string(),
             trigger_cell: cell,
             dispenser: None,
             payload: None,

@@ -145,6 +145,9 @@ pub struct TrapPlan {
     pub safe: String,
     /// The declared trigger kind (informs the hazard model + PackTest).
     pub trigger: TrapTrigger,
+    /// The `anchor/trap` marker this trap sits on — the key into prefab metadata
+    /// for its hardware declarations (`dispenser`, `trigger_block`).
+    pub at_anchor: String,
     /// The resolved absolute trigger/hazard cell (the trap's `at` anchor cell).
     pub trigger_cell: [i32; 3],
     /// The resolved absolute dispenser socket cell (from the `at` anchor's
@@ -1907,6 +1910,7 @@ fn collect_traps(
             id: t.id.as_str().to_string(),
             safe: safe_local(t.id.as_str()),
             trigger: t.trigger,
+            at_anchor: t.at.as_str().to_string(),
             trigger_cell,
             dispenser,
             payload,
@@ -2277,21 +2281,34 @@ fn objective_target(
     }
 }
 
-/// Every anchor named by an `open-gate` effect anywhere in the campaign.
+/// Every anchor named by an `open-gate` effect anywhere in the campaign — quest
+/// effects **and** environment triggers, descending every nested effect list
+/// ([`QuestEffect::visit_deep`]). A gate opened from inside a `sequence` step or an
+/// `on_arrive` bundle is a real gate: missing it here dropped the gate out of the
+/// deadlock proof's model entirely, so `DW0306` silently proved reachability
+/// against a world with one fewer door than the delve ships.
 fn collect_open_gate_anchors(campaign: &Campaign) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
+    let mut note = |e: &QuestEffect| {
+        e.visit_deep(&mut |inner| {
+            if let Some(a) = inner.open_gate_anchor() {
+                out.insert(a.as_str().to_string());
+            }
+        });
+    };
     for q in &campaign.quests.content.quests {
         for effs in q.on_objective_complete.values() {
             for e in effs {
-                if let Some(a) = e.open_gate_anchor() {
-                    out.insert(a.as_str().to_string());
-                }
+                note(e);
             }
         }
         for e in &q.on_complete {
-            if let Some(a) = e.open_gate_anchor() {
-                out.insert(a.as_str().to_string());
-            }
+            note(e);
+        }
+    }
+    for t in &campaign.quests.content.triggers {
+        for e in &t.effects {
+            note(e);
         }
     }
     out
@@ -2327,22 +2344,37 @@ fn gate_open_indices(
                 .or_insert(idx);
         }
     };
+    // Deep + trigger-aware, mirroring `collect_open_gate_anchors`: a gate opened
+    // from a `sequence` step opens at the step that fires the sequence, and a
+    // trigger-fired gate is conservatively treated as open from step 0 (a trigger
+    // has no place in the objective DAG — the same conservative rooting
+    // `collect_gate_events` uses). Treating either as "never opened" is what made
+    // the deadlock proof reject a perfectly playable delve.
+    let deep = |e: &QuestEffect, idx: usize, out: &mut BTreeMap<String, usize>| {
+        e.visit_deep(&mut |inner| {
+            if let Some(a) = inner.open_gate_anchor() {
+                note(a.as_str(), idx, out);
+            }
+        });
+    };
     for q in &campaign.quests.content.quests {
         for (oid, effs) in &q.on_objective_complete {
+            let Some(&idx) = index_of.get(oid.as_str()) else {
+                continue;
+            };
             for e in effs {
-                if let Some(a) = e.open_gate_anchor()
-                    && let Some(&idx) = index_of.get(oid.as_str())
-                {
-                    note(a.as_str(), idx, &mut out);
-                }
+                deep(e, idx, &mut out);
             }
         }
-        for e in &q.on_complete {
-            if let Some(a) = e.open_gate_anchor()
-                && let Some(&idx) = last_obj_index.get(q.id.as_str())
-            {
-                note(a.as_str(), idx, &mut out);
+        if let Some(&idx) = last_obj_index.get(q.id.as_str()) {
+            for e in &q.on_complete {
+                deep(e, idx, &mut out);
             }
+        }
+    }
+    for t in &campaign.quests.content.triggers {
+        for e in &t.effects {
+            deep(e, 0, &mut out);
         }
     }
     out

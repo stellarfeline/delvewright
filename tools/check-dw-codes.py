@@ -33,14 +33,35 @@ trap-hardware integrity check (#155).
 
 ## Test-coverage gate
 
-Every documented, landed (non-PENDING) DW code must be referenced by at least
-one test: either the literal code string, or a symbolic diagnostic-code
-constant (e.g. `pub const DW_STRIP: &str = "DW0700";`) that resolves to it,
-appearing in `crates/<crate>/tests/**/*.rs` or inside a `#[cfg(test)]` module
-in `crates/<crate>/src/**/*.rs`. Symbol resolution is scoped per-crate: two
-crates may (and do) reuse the same constant name for different codes (e.g.
-`DW_INPUT` names `DW0710` in `delve-schem` and `DW0732` in `delve-admit`), so a
-name is only resolved against the crate it is defined in.
+Every documented, landed (non-PENDING) DW code must be **asserted** by at least
+one test in `crates/<crate>/tests/**/*.rs` or inside a `#[cfg(test)]` module in
+`crates/<crate>/src/**/*.rs`. Two shapes count:
+
+- a **bare** `"DWxxxx"` string literal — the code standing alone as a value, so
+  it is something a test compares, searches for, or tabulates
+  (`assert_eq!(d.code, "DW0142")`, `.any(|d| d.code == "DW0311")`,
+  `stderr.contains("DW0322")`, an array/tuple table a loop asserts over);
+- a **symbolic** diagnostic-code constant (e.g. `pub const DW_STRIP: &str =
+  "DW0700";`) referenced somewhere other than a `use` line. Symbol resolution is
+  scoped per-crate: two crates may (and do) reuse a constant name for different
+  codes (`DW_INPUT` names `DW0710` in `delve-schem` and `DW0732` in
+  `delve-admit`), so a name resolves only against the crate that defines it.
+
+What deliberately does **not** count, and why the matcher is shaped this way:
+
+- **comments.** A code named in a `//` / `///` / `//!` / `/* */` comment is
+  documentation, not proof. This was the loophole: a `///` doc-comment
+  *mentioning* `DW0304` in a test that never touches it read as full coverage,
+  and the gate reported green for a rule nothing exercised.
+- **prose inside a longer string.** `.expect("must raise DW0313")` names the
+  code in a failure *message* while the assertion itself looks at something
+  else entirely — the test passes whatever code is raised.
+- **`use` lines.** An import is not a use; every real consumer follows it with a
+  comparison anyway.
+
+Comment stripping is Rust-string-aware (normal, raw and `r#"…"#` literals are
+preserved intact), because test fixtures are full of `//` inside JSON and path
+strings.
 
 A code with no reachable test may be declared in ALLOWLIST below, but every
 entry needs a one-line justification — keep this list minimal; prefer writing
@@ -90,8 +111,88 @@ ALLOWLIST: dict[str, str] = {
 }
 
 
+# A DW code standing alone as a string literal — the assertion-shaped form.
+BARE_CODE_LITERAL_RE = re.compile(r'"(DW[0-9]{4})"')
+USE_LINE_RE = re.compile(r"^\s*use\s[^;]*;", re.MULTILINE)
+
+
 def codes_in(text: str) -> set[str]:
     return set(CODE_RE.findall(text))
+
+
+def strip_comments(text: str) -> str:
+    """Rust source with every `//`, `///`, `//!` and `/* */` comment removed.
+
+    String-aware: normal (`"…"`, with backslash escapes), raw (`r"…"`) and hashed
+    raw (`r#"…"#`, any hash count) literals pass through untouched, so a `//` in a
+    JSON fixture or a path string is never mistaken for a comment. Block comments
+    nest, as they do in Rust. Comment bodies are replaced by nothing; everything
+    else keeps its bytes, so the result is still greppable.
+    """
+    out: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        # raw string: r, r#, r##, … followed by a quote
+        if c == "r":
+            j = i + 1
+            while j < n and text[j] == "#":
+                j += 1
+            if j < n and text[j] == '"':
+                hashes = "#" * (j - i - 1)
+                close = '"' + hashes
+                end = text.find(close, j + 1)
+                end = n if end == -1 else end + len(close)
+                out.append(text[i:end])
+                i = end
+                continue
+        if c == '"':
+            j = i + 1
+            while j < n:
+                if text[j] == "\\":
+                    j += 2
+                    continue
+                if text[j] == '"':
+                    j += 1
+                    break
+                j += 1
+            out.append(text[i:j])
+            i = j
+            continue
+        if c == "'":
+            # char literal or a lifetime; only a real char literal can hide a `//`,
+            # and it is at most 4 chars — copy it verbatim when it closes.
+            j = text.find("'", i + 1)
+            if j != -1 and j - i <= 5:
+                out.append(text[i : j + 1])
+                i = j + 1
+                continue
+        if text.startswith("//", i):
+            j = text.find("\n", i)
+            i = n if j == -1 else j
+            continue
+        if text.startswith("/*", i):
+            depth, j = 1, i + 2
+            while j < n and depth:
+                if text.startswith("/*", j):
+                    depth += 1
+                    j += 2
+                elif text.startswith("*/", j):
+                    depth -= 1
+                    j += 2
+                else:
+                    j += 1
+            i = j
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def assertable_text(text: str) -> str:
+    """Test source reduced to what may count as an assertion: comments gone, and
+    `use …;` lines dropped so a bare import cannot credit a symbol."""
+    return USE_LINE_RE.sub("", strip_comments(text))
 
 
 def source_codes() -> set[str]:
@@ -191,8 +292,10 @@ def crate_test_scope_texts(crate: str) -> list[str]:
 
 
 def tested_codes() -> set[str]:
-    """Every DW code referenced by test code, resolving per-crate symbolic
-    diagnostic-code constants as well as literal code strings."""
+    """Every DW code **asserted** by test code: a bare `"DWxxxx"` string literal,
+    or a per-crate symbolic diagnostic-code constant, in comment-stripped test
+    source with `use` lines removed. See the module docstring for what does not
+    count and why."""
     found: set[str] = set()
     if not CRATES_DIR.is_dir():
         return found
@@ -200,8 +303,9 @@ def tested_codes() -> set[str]:
         crate = crate_dir.name
         symbols = crate_symbol_table(crate)
         name_res = {name: re.compile(r"\b" + re.escape(name) + r"\b") for name in symbols}
-        for text in crate_test_scope_texts(crate):
-            found |= codes_in(text)
+        for raw in crate_test_scope_texts(crate):
+            text = assertable_text(raw)
+            found |= set(BARE_CODE_LITERAL_RE.findall(text))
             for name, pattern in name_res.items():
                 if pattern.search(text):
                     found.add(symbols[name])
