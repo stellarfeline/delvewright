@@ -334,7 +334,79 @@ fn critical_path_shape_and_commands() {
         "datapack/data/hello-world/function/campaign_complete.mcfunction",
     );
     assert!(complete.contains("scoreboard players set @s dw.campaign 1"));
-    assert!(complete.contains("[Delvewright] complete dw.campaign 1"));
+    assert!(complete.contains("[dw:complete hello-world campaign]"));
+}
+
+/// The bot-completion oracle (AUDIT-P0). Two halves that must agree:
+///   * `critical-path.json` names, on every objective-bearing step, the `obj/<id>`
+///     that step must prove — and declares `format_version` so a pre-oracle path
+///     (position-only, unverifiable) can never be run;
+///   * the datapack broadcasts exactly one anchored marker line per objective, on
+///     the objective's own completion, plus the `campaign` token at the end.
+///
+/// Pinned literally: this string IS the wire format the harness parses, so any
+/// drift in it must break here rather than silently in a live run.
+#[test]
+fn completion_marker_channel_is_anchored_and_per_objective() {
+    let out = build_hello_world();
+    let cp: serde_json::Value =
+        serde_json::from_slice(out.get("critical-path.json").unwrap()).unwrap();
+
+    // The contract version is explicit and independent of the DSL version.
+    assert_eq!(cp["format_version"], 2);
+    assert_eq!(cp["version"], "0.2.0");
+
+    let steps = cp["steps"].as_array().unwrap();
+    // Every objective-bearing step names its objective; the framing steps do not.
+    assert_eq!(steps[1]["objective"], "obj/talk");
+    assert_eq!(steps[2]["objective"], "obj/exit");
+    assert!(
+        steps[0]["objective"].is_null(),
+        "select-class proves no objective"
+    );
+    assert!(
+        steps[3]["objective"].is_null(),
+        "assert-complete is proved by the campaign token, not an objective"
+    );
+
+    // Each named objective's completion function broadcasts exactly its own
+    // anchored marker — campaign id included, whole line, no other objective's.
+    for (obj, func) in [
+        ("obj/talk", "complete_o_talk"),
+        ("obj/exit", "complete_o_exit"),
+    ] {
+        let body = text(
+            &out,
+            &format!("datapack/data/hello-world/function/{func}.mcfunction"),
+        );
+        assert!(
+            body.contains(&format!(
+                r#"tellraw @a {{"color":"dark_gray","text":"[dw:complete hello-world {obj}]"}}"#
+            )),
+            "{func} must broadcast the anchored marker for {obj}: {body}"
+        );
+        // The marker fires as the score flips, before any effect that could
+        // teleport the player or complete the campaign.
+        let marker_at = body.find("[dw:complete").expect("marker present");
+        let score_at = body
+            .find("scoreboard players set @s dw.o_")
+            .expect("score set");
+        assert!(
+            score_at < marker_at,
+            "marker follows its own score set: {body}"
+        );
+    }
+
+    // The unanchored legacy token is gone: it was matchable as a substring of any
+    // chat line, which is exactly what made a step passable without completing.
+    let all: String = out
+        .values()
+        .filter_map(|v| String::from_utf8(v.clone()).ok())
+        .collect();
+    assert!(
+        !all.contains("[Delvewright] complete"),
+        "the unanchored completion token must not survive anywhere in the build"
+    );
 }
 
 /// task #38: the compiler exports the DW0311-proven critical-path routes as a
@@ -484,7 +556,7 @@ fn live_load_shakeout_fixes() {
         "datapack/data/hello-world/function/campaign_complete.mcfunction",
     );
     assert!(
-        complete.contains("[Delvewright] complete dw.campaign 1"),
+        complete.contains("[dw:complete hello-world campaign]"),
         "completion marker must be broadcast for the bot"
     );
 }

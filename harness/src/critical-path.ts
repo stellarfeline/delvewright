@@ -9,6 +9,13 @@
 // cannot click 1.21.11 server-driven dialog buttons, so the bot drives dialog
 // outcomes by chatting the same `/trigger` command each button runs.
 // `assert-complete` carries a `scoreboard: { objective, value }` object.
+//
+// Contract format 2 (AUDIT-P0): the file carries `format_version`, and every
+// objective-bearing step (`talk-to`/`reach`/`kill`/`collect`/`interact`) names the
+// `obj/<id>` it proves. That id is the step's success criterion — the executor
+// passes the step only on that objective's own anchored completion marker
+// (`markers.ts`). The harness never infers an objective; it only compares the id the
+// compiler put here (CLAUDE.md: assertions and navigation, no game logic).
 
 /**
  * The critical-path format is versioned with the DSL (spec-0002). Each DSL
@@ -27,6 +34,24 @@ export const SUPPORTED_DSL_VERSIONS = [
   "0.5.0",
   "0.6.0",
 ] as const;
+
+/**
+ * The version of the critical-path **contract** itself, independent of the DSL
+ * version above (the DSL describes the delve; this describes what the harness is
+ * told about proving it).
+ *
+ * * `1` — the pre-oracle shape: steps carried no objective id, so a step could only
+ *   be checked positionally and completion was a single unanchored chat substring.
+ *   A path of this shape is unverifiable, and the harness has no way to tell a real
+ *   pass from a hollow one — so it is REJECTED, not accepted with reduced checks
+ *   (a run that cannot prove completion must not report success).
+ * * `2` — every objective-bearing step names the `obj/<id>` it proves, and
+ *   completion is proved by the anchored per-objective marker channel
+ *   (`markers.ts`).
+ *
+ * Rebuild the delve with a current `delvec` to produce a supported path.
+ */
+export const CRITICAL_PATH_FORMAT_VERSION = 2;
 
 /** The closed set of critical-path step actions (spec-0002 / spec-0001 enum). */
 export const STEP_ACTIONS = [
@@ -77,6 +102,8 @@ export interface PresentationMarkers {
 /** Talk to an NPC at `pos`, then chat the compiler-assigned dialog `/trigger`. */
 export interface TalkToStep extends PresentationMarkers {
   readonly action: "talk-to";
+  /** The `obj/<id>` this step must prove complete (format 2). */
+  readonly objective: string;
   readonly npc: string;
   readonly pos: Vec3Tuple;
   /** The exact chat command the bot sends (`bot.chat(command)`). */
@@ -88,6 +115,8 @@ export interface TalkToStep extends PresentationMarkers {
 /** Reach an anchor: get within `radius` blocks of the absolute position `pos`. */
 export interface ReachStep extends PresentationMarkers {
   readonly action: "reach";
+  /** The `obj/<id>` this step must prove complete (format 2). */
+  readonly objective: string;
   readonly anchor: string;
   readonly pos: Vec3Tuple;
   readonly radius: number;
@@ -98,6 +127,8 @@ export interface ReachStep extends PresentationMarkers {
 /** Slay a wave: go to `pos`, attack the wave's mobs until the wave is cleared (v0.3). */
 export interface KillStep extends PresentationMarkers {
   readonly action: "kill";
+  /** The `obj/<id>` this step must prove complete (format 2). */
+  readonly objective: string;
   readonly wave: string;
   readonly pos: Vec3Tuple;
   /** Entity tag on the wave's mobs (informational; mineflayer cannot read tags). */
@@ -111,6 +142,8 @@ export interface KillStep extends PresentationMarkers {
 /** Collect `count` of `item` from a chest at `pos` (v0.3). */
 export interface CollectStep extends PresentationMarkers {
   readonly action: "collect";
+  /** The `obj/<id>` this step must prove complete (format 2). */
+  readonly objective: string;
   readonly item: string;
   readonly count: number;
   readonly pos: Vec3Tuple;
@@ -121,6 +154,8 @@ export interface CollectStep extends PresentationMarkers {
 /** Interact at `pos`, then chat `command`; `requires_item` may gate it (v0.3). */
 export interface InteractStep extends PresentationMarkers {
   readonly action: "interact";
+  /** The `obj/<id>` this step must prove complete (format 2). */
+  readonly objective: string;
   readonly anchor: string;
   readonly pos: Vec3Tuple;
   /** The exact chat command the bot sends (`bot.chat(command)`). */
@@ -150,6 +185,8 @@ export type Step =
 
 export interface CriticalPath {
   readonly version: string;
+  /** Contract version; see {@link CRITICAL_PATH_FORMAT_VERSION}. */
+  readonly formatVersion: number;
   readonly campaignId: string;
   readonly steps: readonly Step[];
 }
@@ -298,6 +335,27 @@ function presentationFields(
   return out;
 }
 
+/**
+ * The `objective` field an objective-bearing step carries (format 2): the
+ * `obj/<kebab>` id whose anchored completion marker proves this step. Validated
+ * against the DSL id syntax so a malformed id fails at parse time rather than as an
+ * unexplained marker timeout mid-run — the harness only ever compares it, never
+ * derives anything from it.
+ */
+function requireObjectiveId(
+  obj: Record<string, unknown>,
+  pointer: string,
+): string {
+  const value = requireString(obj, "objective", pointer);
+  if (!/^obj\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)) {
+    fail(
+      `${pointer}/objective`,
+      `must be an \`obj/<kebab>\` objective id, got ${JSON.stringify(value)}`,
+    );
+  }
+  return value;
+}
+
 /** The `scoreboard: { objective, value }` object on assert-complete. */
 function requireScoreboard(
   obj: Record<string, unknown>,
@@ -341,11 +399,12 @@ function parseStep(value: unknown, pointer: string): Step {
     case "talk-to": {
       rejectUnknownKeys(
         obj,
-        ["action", "npc", "pos", "command", "transport", "sneak", "cutscene_seconds"],
+        ["action", "objective", "npc", "pos", "command", "transport", "sneak", "cutscene_seconds"],
         pointer,
       );
       return {
         action: "talk-to",
+        objective: requireObjectiveId(obj, pointer),
         npc: requireString(obj, "npc", pointer),
         pos: requirePos(obj, pointer),
         command: requireString(obj, "command", pointer),
@@ -356,7 +415,7 @@ function parseStep(value: unknown, pointer: string): Step {
     case "reach": {
       rejectUnknownKeys(
         obj,
-        ["action", "anchor", "pos", "radius", "transport", "sneak", "cutscene_seconds"],
+        ["action", "objective", "anchor", "pos", "radius", "transport", "sneak", "cutscene_seconds"],
         pointer,
       );
       const radius = obj["radius"];
@@ -368,6 +427,7 @@ function parseStep(value: unknown, pointer: string): Step {
       }
       return {
         action: "reach",
+        objective: requireObjectiveId(obj, pointer),
         anchor: requireString(obj, "anchor", pointer),
         pos: requirePos(obj, pointer),
         radius,
@@ -378,11 +438,12 @@ function parseStep(value: unknown, pointer: string): Step {
     case "kill": {
       rejectUnknownKeys(
         obj,
-        ["action", "wave", "pos", "tag", "count", "transport", "sneak", "cutscene_seconds"],
+        ["action", "objective", "wave", "pos", "tag", "count", "transport", "sneak", "cutscene_seconds"],
         pointer,
       );
       return {
         action: "kill",
+        objective: requireObjectiveId(obj, pointer),
         wave: requireString(obj, "wave", pointer),
         pos: requirePos(obj, pointer),
         tag: requireString(obj, "tag", pointer),
@@ -394,11 +455,12 @@ function parseStep(value: unknown, pointer: string): Step {
     case "collect": {
       rejectUnknownKeys(
         obj,
-        ["action", "item", "count", "pos", "transport", "sneak", "cutscene_seconds"],
+        ["action", "objective", "item", "count", "pos", "transport", "sneak", "cutscene_seconds"],
         pointer,
       );
       return {
         action: "collect",
+        objective: requireObjectiveId(obj, pointer),
         item: requireString(obj, "item", pointer),
         count: requireInteger(obj, "count", pointer),
         pos: requirePos(obj, pointer),
@@ -411,6 +473,7 @@ function parseStep(value: unknown, pointer: string): Step {
         obj,
         [
           "action",
+          "objective",
           "anchor",
           "pos",
           "command",
@@ -427,6 +490,7 @@ function parseStep(value: unknown, pointer: string): Step {
       }
       return {
         action: "interact",
+        objective: requireObjectiveId(obj, pointer),
         anchor: requireString(obj, "anchor", pointer),
         pos: requirePos(obj, pointer),
         command: requireString(obj, "command", pointer),
@@ -459,7 +523,20 @@ function parseStep(value: unknown, pointer: string): Step {
  */
 export function parseCriticalPath(raw: unknown): CriticalPath {
   const root = requireObject(raw, "");
-  rejectUnknownKeys(root, ["version", "campaign_id", "steps"], "");
+  rejectUnknownKeys(root, ["version", "format_version", "campaign_id", "steps"], "");
+
+  // The contract version gates everything below: a path the harness cannot verify
+  // is refused outright rather than run with weaker checks.
+  const formatVersion = root["format_version"];
+  if (formatVersion !== CRITICAL_PATH_FORMAT_VERSION) {
+    fail(
+      "/format_version",
+      `must be ${CRITICAL_PATH_FORMAT_VERSION}, got ${describe(formatVersion)}` +
+        `${formatVersion === undefined ? " (absent)" : ` (${JSON.stringify(formatVersion)})`}` +
+        " — this critical path predates the per-objective completion oracle and " +
+        "cannot be verified; rebuild the delve with a current delvec",
+    );
+  }
 
   const version = requireString(root, "version", "");
   if (!(SUPPORTED_DSL_VERSIONS as readonly string[]).includes(version)) {
@@ -480,7 +557,7 @@ export function parseCriticalPath(raw: unknown): CriticalPath {
   }
   const steps = stepsValue.map((entry, i) => parseStep(entry, `/steps/${i}`));
 
-  return { version, campaignId, steps };
+  return { version, formatVersion: CRITICAL_PATH_FORMAT_VERSION, campaignId, steps };
 }
 
 /** Parse `critical-path.json` text: JSON.parse then structural validation. */

@@ -89,6 +89,9 @@ async function main(): Promise<number> {
   );
 
   const executor = new MineflayerExecutor(config);
+  // Scope the completion oracle to this campaign: only markers naming it count
+  // (AUDIT-P0). Comes from the contract, never inferred.
+  executor.useCampaign(criticalPath.campaignId);
   if (waypoints) {
     executor.useWaypoints(waypoints);
     process.stderr.write(

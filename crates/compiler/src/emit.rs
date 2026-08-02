@@ -905,7 +905,7 @@ fn emit_functions(
     // The completion objective. It is NOT put on the sidebar: a `setdisplay
     // sidebar dw.campaign` slot would show players a permanent raw internal id
     // (`dw.campaign`), and it serves no purpose — the validation bot observes
-    // completion via the `[Delvewright] complete …` chat token (executor.ts),
+    // completion via the anchored `[dw:complete …]` chat channel (markers.ts),
     // never the sidebar (mineflayer 4.37.x cannot decode 1.21.11 score packets).
     setup.push("scoreboard objectives add dw.campaign dummy".to_string());
     // v0.3: the shared wave countdown, per-flag scores, and interact triggers.
@@ -1595,6 +1595,23 @@ fn emit_functions(
 
             let mut body: Vec<String> = Vec::new();
             body.push(format!("scoreboard players set @s {} 1", obj_score(oid)));
+            // Machine completion-marker for the validation bot, broadcast the
+            // instant this objective's score flips — BEFORE any effect that may
+            // teleport, open a cutscene or complete the campaign, so the harness
+            // observes each objective's own completion in path order. The critical
+            // path names the objective a step must prove; this is the only evidence
+            // the bot accepts for it (see `plan::marker_line`). Player chat can
+            // never start with the sigil and `DW0182` reserves it in authored /
+            // translated text, so it cannot be forged. `@a` for the same reason the
+            // campaign marker uses it: a bot filling a seat in a multiplayer delve
+            // must still see it.
+            body.push(format!(
+                "tellraw @a {}",
+                json!({
+                    "text": plan::marker_line(ns, oid),
+                    "color": "dark_gray"
+                })
+            ));
             // v0.3 objective-completion feedback (M2 fix 4): a confirmation line +
             // sound so progress is legible. Titled objectives only; v0.2 unchanged.
             if v03 && let Some(title) = o.title() {
@@ -1716,13 +1733,17 @@ fn emit_functions(
     // `dw.campaign` from the sidebar per the amended contract, BUT mineflayer
     // 4.37.x cannot parse 1.21.11 scoreboard score packets (verified live: no
     // score updates ever surface). Broadcasting a stable token in chat — which
-    // mineflayer DOES parse reliably — lets the bot observe completion.
-    // `<objective> <value>` mirror the assert-complete step so the harness stays
-    // campaign-agnostic. `@a` so a bot filling a seat in a future multiplayer
-    // delve still sees it.
+    // mineflayer DOES parse reliably — lets the bot observe completion. Same
+    // anchored grammar as the per-objective markers, with the `campaign` token;
+    // the harness treats its arrival anywhere before the final step as a hard
+    // error (branch incoherence: the campaign completed while steps remained).
+    // `@a` so a bot filling a seat in a future multiplayer delve still sees it.
     cc.push(format!(
         "tellraw @a {}",
-        json!({ "text": format!("[Delvewright] complete dw.campaign 1"), "color": "dark_gray" })
+        json!({
+            "text": plan::marker_line(ns, plan::MARKER_TOKEN_CAMPAIGN),
+            "color": "dark_gray"
+        })
     ));
     fns.push(("campaign_complete".to_string(), lines(&cc)));
 
@@ -6575,21 +6596,25 @@ fn emit_critical_path(plan: &Plan) -> Value {
                 Step::SelectClass { class_id, command } => json!({
                     "action": "select-class", "class": class_id, "command": command
                 }),
-                Step::TalkTo { npc_id, pos, command } => json!({
-                    "action": "talk-to", "npc": npc_id, "pos": pos, "command": command
+                Step::TalkTo { objective_id, npc_id, pos, command } => json!({
+                    "action": "talk-to", "objective": objective_id, "npc": npc_id,
+                    "pos": pos, "command": command
                 }),
-                Step::Reach { anchor_id, pos, radius } => json!({
-                    "action": "reach", "anchor": anchor_id, "pos": pos, "radius": radius
+                Step::Reach { objective_id, anchor_id, pos, radius } => json!({
+                    "action": "reach", "objective": objective_id, "anchor": anchor_id,
+                    "pos": pos, "radius": radius
                 }),
-                Step::Kill { wave_id, pos, tag, count } => json!({
-                    "action": "kill", "wave": wave_id, "pos": pos, "tag": tag, "count": count
+                Step::Kill { objective_id, wave_id, pos, tag, count } => json!({
+                    "action": "kill", "objective": objective_id, "wave": wave_id,
+                    "pos": pos, "tag": tag, "count": count
                 }),
-                Step::Collect { item, count, pos } => json!({
-                    "action": "collect", "item": item, "count": count, "pos": pos
+                Step::Collect { objective_id, item, count, pos } => json!({
+                    "action": "collect", "objective": objective_id, "item": item,
+                    "count": count, "pos": pos
                 }),
-                Step::Interact { anchor_id, pos, command, requires_item } => json!({
-                    "action": "interact", "anchor": anchor_id, "pos": pos,
-                    "command": command, "requires_item": requires_item
+                Step::Interact { objective_id, anchor_id, pos, command, requires_item } => json!({
+                    "action": "interact", "objective": objective_id, "anchor": anchor_id,
+                    "pos": pos, "command": command, "requires_item": requires_item
                 }),
                 Step::AssertComplete { objective, value } => json!({
                     "action": "assert-complete", "scoreboard": { "objective": objective, "value": value }
@@ -6622,6 +6647,10 @@ fn emit_critical_path(plan: &Plan) -> Value {
         // Campaign-derived (not the compiler's max supported version): a v0.2
         // campaign emits a v0.2 critical path, a v0.3 campaign a v0.3 one.
         "version": plan.campaign.world.dsl_version,
+        // The bot-contract version, independent of the DSL version: `2` = every
+        // objective-bearing step names the objective it proves, and completion is
+        // proved by the anchored marker channel. The harness refuses anything else.
+        "format_version": plan::CRITICAL_PATH_FORMAT_VERSION,
         "campaign_id": plan.namespace,
         "steps": steps
     })

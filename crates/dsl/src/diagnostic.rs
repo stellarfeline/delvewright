@@ -154,6 +154,12 @@ pub mod codes {
     /// (i18n) An l10n sidecar carries an **orphan** key that is not in the
     /// authoritative string inventory derived from the stage docs (over-coverage).
     pub const L10N_ORPHAN: &str = "DW0181";
+    /// (i18n / harness oracle) A player-visible string — authored English or any
+    /// sidecar translation — contains the reserved completion-marker sigil
+    /// `[dw:complete`. That chat sequence is the validation bot's per-objective
+    /// completion oracle; content carrying it could forge a passing critical-path
+    /// step. The channel is reserved, not merely conventional.
+    pub const MARKER_RESERVED: &str = "DW0182";
     /// (v0.4) A mannequin NPC `skin.texture_id` is malformed (not a bare kebab
     /// token) or duplicated across NPCs (spec-0009). A missing `model` is a
     /// schema error (`DW0100`); a missing PNG is a build error (`DW0309`).

@@ -51,6 +51,19 @@ export interface StepExecutor {
    * sequencer re-runs `select-class` afterwards.
    */
   recoverFromDeath?(): Promise<void>;
+  /**
+   * Optional (AUDIT-P0): the run is about to execute step `index`. Attribution only
+   * — the executor uses it to record which step a completion marker arrived during.
+   */
+  beginStep?(index: number): void;
+  /**
+   * Optional (AUDIT-P0): assert the campaign has NOT completed yet. Called after
+   * every step that still has an objective step ahead of it. Campaign completion
+   * belongs to the last objective step; arriving earlier means the remaining steps
+   * are hollow, so the executor throws and the run fails at the step that revealed
+   * it. Executors without a completion channel (test fakes) may omit it.
+   */
+  assertEndgameNotReached?(stepIndex: number, finalObjectiveIndex: number): void;
 }
 
 /** Options controlling how {@link runSequence} handles failures. */
@@ -164,13 +177,25 @@ export async function runSequence(
     (s): s is SelectClassStep => s.action === "select-class",
   )!;
   let deathRetryUsed = false;
+  // The last step that stands for an objective — `assert-complete` is terminal and
+  // proves nothing itself, so it is the step before it (validateStepOrder has
+  // already guaranteed exactly one assert-complete, last). Campaign completion is
+  // due at this step and nowhere earlier.
+  const finalObjectiveIndex = path.steps.length - 2;
 
   for (let i = 0; i < path.steps.length; i++) {
     const step = path.steps[i]!;
+    executor.beginStep?.(i);
     // Retry loop: at most one re-attempt, and only after a bot death when opted in.
     for (;;) {
       try {
         await dispatch(executor, step);
+        // Endgame discipline (AUDIT-P0): the campaign must not already be complete
+        // while objective steps remain. Checked before the transport/cutscene waits
+        // so an incoherent path fails at the step that revealed it, not later.
+        if (i < finalObjectiveIndex) {
+          executor.assertEndgameNotReached?.(i, finalObjectiveIndex);
+        }
         // gap 8: if completing this step teleports the player across areas, wait for
         // the jump to land before the next step starts pathfinding. Attributed to
         // this step so a failed settle surfaces here, not as a next-step path error.

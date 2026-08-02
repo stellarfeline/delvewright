@@ -32,9 +32,9 @@ pub use ids::{
     ObjectiveId, PoolId, PrefabId, QuestId, RegionId, TriggerId, WaveId,
 };
 pub use l10n::{
-    ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, ScreenNarrate, SoundRef, art_narrates,
-    each_string, inventory as l10n_inventory, key_speaker, local_id, localize, on_screen_narrates,
-    play_sound_actor_refs, sound_refs, validate_l10n,
+    ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, MARKER_SIGIL, ScreenNarrate, SoundRef,
+    art_narrates, each_string, inventory as l10n_inventory, key_speaker, local_id, localize,
+    on_screen_narrates, play_sound_actor_refs, sound_refs, validate_l10n, validate_marker_channel,
 };
 pub use registry::{
     AnchorRegistry, BlockRegistry, EffectRegistry, EntityRegistry, ItemBackedBlockRegistry,

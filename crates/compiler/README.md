@@ -87,11 +87,14 @@ behavior contract lives in the reference. Keep these in mind when touching emiss
   sub-predicate object** form, not a loot-condition list.
 - `setup` must `forceload add` prefab chunks before `place template` (else
   `place`/`summon`/`fill` silently no-op at `#minecraft:load`).
-- Bot observation is the broadcast marker channel
-  (`[Delvewright] complete dw.campaign 1`) — mineflayer 4.37.x cannot read
-  1.21.11 scoreboard scores. The completion objective is NOT put on the sidebar
-  (a raw internal id must never surface to players); the chat token is the sole
-  observation channel.
+- Bot observation is the anchored marker channel — one whole chat line,
+  `[dw:complete <campaign_id> <token>]`, broadcast per objective
+  (`obj/<id>`) and once for the campaign (`campaign`). mineflayer 4.37.x cannot
+  read 1.21.11 scoreboard scores, and the completion objective is NOT put on the
+  sidebar (a raw internal id must never surface to players), so this is the sole
+  observation channel. It is matched exactly, never as a substring, and `DW0182`
+  reserves the sigil in all player-visible text — see docs/reference/compiler.md
+  §4 "The completion-marker channel".
 - Wave mobs must use component-era `equipment` NBT with zero `drop_chances` —
   legacy `HandItems`/`HandDropChances` are silently ignored on `/summon`.
 - PackTest tests emit to `data/<ns>/test/…` (misode/packtest 2.4.0); PackTest

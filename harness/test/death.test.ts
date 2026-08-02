@@ -5,7 +5,7 @@ import { BotDeathError, likelyDeathCause } from "../src/death.ts";
 test("likelyDeathCause picks the most recent line starting with the username", () => {
   const chat = [
     "delve-bot joined the game",
-    "[Delvewright] complete dw.campaign 0",
+    "[dw:complete hello-world obj/greet]",
     "delve-bot was slain by Zombie",
   ];
   assert.equal(likelyDeathCause(chat, "delve-bot"), "delve-bot was slain by Zombie");
