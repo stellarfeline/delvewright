@@ -5,15 +5,15 @@
   "content": {
     "quests": [
       {
-        "id": "quest/hold-the-camp",
-        "goal": "Break the warband marching the sand, and the drowned they summon.",
-        "area": "area/landing",
+        "id": "quest/hold-the-keep",
+        "goal": "Break the warband walking the hall, and the drowned they summon.",
+        "area": "area/keep",
         "npcs": [],
         "depends_on": [],
         "mandatory": true,
         "act": 1
       }
     ],
-    "finale": "quest/hold-the-camp"
+    "finale": "quest/hold-the-keep"
   }
 }

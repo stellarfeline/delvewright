@@ -1330,6 +1330,15 @@ fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> Vec<String> 
     for w in &campaign.quests.content.waves {
         if wave_area(campaign, w.id.as_str()) == Some(area_id) {
             set.insert(w.anchor.as_str().to_string());
+            // spec-0016 §6: a TD lane's waypoints are places the squad has to
+            // reach, so the solver must guarantee a piece providing each one —
+            // exactly like the wave's own spawn anchor. Without this a pool area
+            // simply may not draw the piece carrying a waypoint, and the lane
+            // fails DW0386 ("resolves nowhere") for a reason the author cannot
+            // act on: the anchor IS in the pool, the layout just did not use it.
+            if let Some(lane) = &w.lane {
+                set.extend(lane.waypoints.iter().map(|a| a.as_str().to_string()));
+            }
         }
     }
     // Environment triggers (v0.4) are global. When the campaign has a single area,

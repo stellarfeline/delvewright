@@ -1,8 +1,13 @@
 //! spec-0016 §6 (TD raider lanes + aggro-edge summoning) end-to-end tests,
-//! driven by the `souls-td-lanes` fixture: a beach camp where an illager warband
-//! marches a three-waypoint lane up the sand and onto the wreck, while the
-//! drowned are spirit-summoned at the edge of their own perception around the
-//! camp fire.
+//! driven by the `souls-td-lanes` fixture: a ruined keep where an illager
+//! warband walks a three-waypoint circuit of the halls, while the drowned are
+//! spirit-summoned at the edge of their own perception around the post the
+//! party holds.
+//!
+//! The fixture area is a **prefab-pool draw**, not a single prefab, on purpose:
+//! that is the layout the lane surface is hardest on (the solver has to be told
+//! the waypoints are required, or it simply may not draw the pieces carrying
+//! them), and it is the layout real campaigns use.
 //!
 //! A clean build is itself the DW0386 proof (every lane leg resolves, stands,
 //! walks and is longer than 10 blocks) and the DW0387 proof (both drowned find
@@ -356,6 +361,40 @@ fn a_plain_wave_campaign_emits_no_lane_machinery() {
     }
 }
 
+/// A lane in a **pool** area only works if the layout solver knows the waypoints
+/// are required: otherwise it may simply not draw the piece carrying one, and the
+/// lane fails `DW0386` ("resolves nowhere") for a reason the author cannot act on
+/// — the anchor IS in the pool, the layout just did not use it. The fixture's area
+/// is a `pool/stone-keep` draw, so a clean build is that registration's proof;
+/// this pins it by name.
+#[test]
+fn lane_waypoints_are_required_anchors_in_a_pool_area() {
+    let dir = fixture_dir();
+    let loaded = load_campaign_dir(&dir).unwrap();
+    let campaign = parse_campaign(&loaded.raw).unwrap();
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let area = plan
+        .areas
+        .iter()
+        .find(|a| a.area_id == "area/keep")
+        .expect("the keep area");
+    assert!(
+        area.pieces.len() > 1,
+        "the fixture area really is a multi-piece pool draw"
+    );
+    let lane = campaign.quests.content.waves[0]
+        .lane
+        .as_ref()
+        .expect("the fixture's first wave has a lane");
+    for wp in &lane.waypoints {
+        assert!(
+            plan.point("area/keep", wp.as_str()).is_some(),
+            "the solver placed a piece providing lane waypoint `{wp}`"
+        );
+    }
+}
+
 // --- geometry proofs -------------------------------------------------------
 
 /// `DW0386`: a lane leg of 10 blocks or less. Vanilla re-rolls a patrol target to
@@ -363,9 +402,23 @@ fn a_plain_wave_campaign_emits_no_lane_machinery() {
 /// is one the engine quietly stops following.
 #[test]
 fn a_short_lane_leg_is_dw0386() {
-    let err = build_patched("shortleg", "\"anchor/gangplank\"", "\"anchor/surf-wave\"")
-        .expect_err("a short leg must fail the build");
+    // Point the FIRST waypoint at the squad's own spawn anchor's neighbour four
+    // blocks away: every other leg still passes, so the diagnostic is the spacing
+    // rule and nothing else.
+    let err = build_patched(
+        "shortleg",
+        "\"waypoints\": [\n            \"anchor/keeper-stand\",",
+        "\"waypoints\": [\n            \"spawn\",",
+    )
+    .expect_err("a short leg must fail the build");
     assert_eq!(code_of(&err), "DW0386", "{err:?}");
+    match &err {
+        BuildFailure::Diagnostic { message, .. } => assert!(
+            message.contains("4.0 blocks") && message.contains("not more than 10"),
+            "the message names the measured leg: {message}"
+        ),
+        other => panic!("expected a diagnostic, got {other:?}"),
+    }
 }
 
 /// `DW0387`: an aggro-edge wave whose perception ring holds no valid cell. A ring

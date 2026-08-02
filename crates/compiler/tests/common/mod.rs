@@ -100,6 +100,16 @@ pub fn copy_l10n_dir(base: &Path, dst: &Path) {
 /// (`delvewright-campaigns`), reached at `campaigns/prefabs` — the `campaigns/`
 /// symlink locally, and a content-repo checkout at that path in CI (spec-0007
 /// Step 0). Mirrors the compiler's default `--prefabs campaigns/prefabs`.
+///
+/// **A fixture may only bind prefabs that exist at the PINNED content SHA**
+/// (`versions.toml` `[content].sha`, which `.github/actions/checkout-content`
+/// checks out). The local `campaigns/` symlink usually points at a working
+/// checkout that is far AHEAD of the pin, so a fixture written against a newer
+/// prefab passes locally and fails CI with `DW0300` ("no matching prefab
+/// metadata") — the classic works-on-my-machine shape, and the reason this note
+/// exists. To reproduce CI exactly, point the symlink at a clone checked out at
+/// the pinned SHA. Bumping the pin to make a fixture build is a content-repo
+/// decision, never a fix for a test.
 pub fn prefabs_dir() -> PathBuf {
     repo_root().join("campaigns/prefabs")
 }

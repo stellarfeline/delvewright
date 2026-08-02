@@ -5,7 +5,7 @@
   "content": {
     "quests": [
       {
-        "id": "quest/hold-the-camp",
+        "id": "quest/hold-the-keep",
         "trigger": {
           "type": "campaign-start"
         },
@@ -13,7 +13,7 @@
           {
             "type": "reach-anchor",
             "id": "obj/take-post",
-            "anchor": "anchor/camp-fire",
+            "anchor": "anchor/keeper-stand",
             "radius": 3
           },
           {
@@ -55,7 +55,7 @@
     "waves": [
       {
         "id": "wave/warband",
-        "anchor": "anchor/crew-a",
+        "anchor": "anchor/exit",
         "mobs": [
           {
             "entity": "minecraft:pillager",
@@ -68,16 +68,16 @@
         ],
         "lane": {
           "waypoints": [
-            "anchor/gangplank",
-            "anchor/prow",
-            "anchor/camp-fire"
+            "anchor/keeper-stand",
+            "anchor/chest",
+            "spawn"
           ],
           "aggro_radius": 16
         }
       },
       {
         "id": "wave/drowned",
-        "anchor": "anchor/camp-fire",
+        "anchor": "anchor/keeper-stand",
         "summon": "aggro-edge",
         "mobs": [
           {
