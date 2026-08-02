@@ -205,9 +205,21 @@ fn strike_packtest_drives_the_record_and_asserts_one_fire() {
         "packtest must assert the trigger fired:\n{body}"
     );
     assert!(
-        body.contains("assert score #rec dw.sys matches 0")
+        body.contains("assert score #rec_stnp dw.sys matches 0")
             && body.contains("assert score #trig_wake dw.sys matches 0"),
         "packtest must assert the record was consumed and cannot re-fire:\n{body}"
+    );
+    // Batch model: `setup_finish` summons are unguarded and the world init has
+    // already run them, so the test must clear every planned NPC tag before its
+    // own `setup_finish` — else duplicated hitboxes break the exact-count
+    // routing assert.
+    let clear = body
+        .find("kill @e[tag=dw_npc_keeper]")
+        .expect("clears the NPC tag before re-running setup_finish");
+    let finish = body.find(":setup_finish").expect("runs setup_finish");
+    assert!(
+        clear < finish,
+        "the NPC-tag clear must precede setup_finish:\n{body}"
     );
 }
 

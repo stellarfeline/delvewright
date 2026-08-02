@@ -4388,6 +4388,7 @@ fn emit_packtest(
     // proves the compiler's objective -> quest -> campaign chain end to end
     // without needing dialog-UI clicks or bot movement (verified live: passes on
     // Fabric + PackTest 2.4.0).
+    let (pin, sel) = pin_dummy("dw_t_camp");
     let mut body: Vec<String> = Vec::new();
     body.push(format!(
         "#> {}: objective completions set {comp_obj} (Delvewright mechanism test)",
@@ -4397,22 +4398,30 @@ fn emit_packtest(
     body.push("# @timeout 100".to_string());
     body.push(String::new());
     body.push(format!("function {ns}:setup"));
+    // Pin this test's own dummy and drive the whole chain on it alone (see
+    // `pin_dummy`): `@a`-wide quest/objective writes would land on every
+    // sibling test's dummy in the batch, and the closing `@p` assert could read
+    // a foreign one.
+    body.push(pin);
+    // Actively establish the asserted baseline — on the shared-batch server
+    // "never set" is not 0.
+    body.push(format!("scoreboard players set {sel} {comp_obj} 0"));
     for qid in campaign_start_quests(c) {
         body.push(format!(
-            "scoreboard players set @a {} 1",
+            "scoreboard players set {sel} {} 1",
             quest_active_score(qid)
         ));
     }
     for q in &c.quests.content.quests {
         for o in &q.objectives {
             body.push(format!(
-                "execute as @a run function {ns}:complete_{}",
+                "execute as {sel} run function {ns}:complete_{}",
                 safe_obj_fn(o.id().as_str())
             ));
         }
     }
-    // `assert score` requires a single-entity selector (@p = the dummy player).
-    body.push(format!("assert score @p {comp_obj} matches {comp_val}"));
+    // `assert score` requires a single-entity selector (the pinned dummy).
+    body.push(format!("assert score {sel} {comp_obj} matches {comp_val}"));
 
     out.insert(
         format!("packtest-datapack/data/{ns}/test/campaign.mcfunction"),
@@ -4446,9 +4455,11 @@ fn emit_packtest(
         sealed_time.token()
     ));
     sealed.push("# vanilla read-back path; gamerules are asserted at compile time).".to_string());
-    sealed.push("execute store result score #sealtime dw.sys run time query daytime".to_string());
+    sealed.push(
+        "execute store result score #sealtime_sealed dw.sys run time query daytime".to_string(),
+    );
     sealed.push(format!(
-        "assert score #sealtime dw.sys matches {sealed_ticks}"
+        "assert score #sealtime_sealed dw.sys matches {sealed_ticks}"
     ));
 
     out.insert(
@@ -4515,26 +4526,29 @@ fn emit_dialogue_trigger_packtest(plan: &Plan, out: &mut BuildOutput) {
     let trig = &npc.trigger_objective;
     let n = opt.n;
 
+    let (pin, sel) = pin_dummy("dw_t_rearm");
     let mut b = packtest_header(&format!(
         "{title}: dialogue trigger re-arms without a tick (singleplayer pause parity)"
     ));
     b.push(format!("function {ns}:setup"));
+    // Pin this test's own dummy (see `pin_dummy`) and drive/assert on it alone.
+    b.push(pin);
     b.push("# The per-tick re-enable, run ONCE. Nothing below runs the tick".to_string());
     b.push("# function again: that suppression IS the integrated server's".to_string());
     b.push("# pause-menu tick freeze, which a dedicated server never enters.".to_string());
-    b.push(format!("scoreboard players enable @a {trig}"));
-    b.push(format!("execute as @p run trigger {trig} set {n}"));
-    b.push(format!("assert score @p {trig} matches {n}"));
+    b.push(format!("scoreboard players enable {sel} {trig}"));
+    b.push(format!("execute as {sel} run trigger {trig} set {n}"));
+    b.push(format!("assert score {sel} {trig} matches {n}"));
     b.push("# The tick's dispatch, hand-run: the handler consumes (and locks) the".to_string());
     b.push("# trigger, then must re-arm it itself.".to_string());
     b.push(format!(
-        "execute as @p run function {ns}:dlg_{}_{n}",
+        "execute as {sel} run function {ns}:dlg_{}_{n}",
         npc.safe
     ));
     b.push("# Second use, still with no tick in between. If the handler did not".to_string());
     b.push("# re-arm, vanilla rejects this and the score stays unset.".to_string());
-    b.push(format!("execute as @p run trigger {trig} set {n}"));
-    b.push(format!("assert score @p {trig} matches {n}"));
+    b.push(format!("execute as {sel} run trigger {trig} set {n}"));
+    b.push(format!("assert score {sel} {trig} matches {n}"));
 
     out.insert(
         format!("packtest-datapack/data/{ns}/test/dialogue_trigger_rearm.mcfunction"),
@@ -4569,11 +4583,15 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
     let (item, count) = t.payload.as_ref().expect("filtered on Some");
     let dis = t.disarm.as_ref();
 
+    let (pin, sel) = pin_dummy("dw_t_trap");
     let mut b = packtest_header(&format!(
         "{title}: trap `{}` loads its dispenser payload; disarm empties it (spec-0011)",
         t.id
     ));
     b.push(format!("function {ns}:setup"));
+    // Pin this test's own dummy (see `pin_dummy`): the disarm flag is asserted
+    // per-player, and it must be read off the player this test controls.
+    b.push(pin);
     // A 0-player void does not tick entities, so a plate→dispenser fire cannot be
     // simulated here (spec-0011 Findings). Instead place the dispenser and load it
     // with the exact payload the compiler fills, then assert slot 0 is occupied —
@@ -4587,21 +4605,27 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
         disp[0], disp[1], disp[2]
     ));
     b.push(format!(
-        "execute store success score #tload dw.sys if data block {} {} {} Items[0]",
+        "execute store success score #tload_trap dw.sys if data block {} {} {} Items[0]",
         disp[0], disp[1], disp[2]
     ));
-    b.push("assert score #tload dw.sys matches 1".to_string());
+    b.push("assert score #tload_trap dw.sys matches 1".to_string());
     if let Some(dis) = dis {
         // Run the REAL emitted disarm and assert the dispenser is now empty (no ammo
-        // → cannot fire) and the disarm flag is set — the trap is provably off.
+        // → cannot fire) and the disarm flag is set — the trap is provably off. The
+        // flag is actively cleared first: a sibling's `@a`-wide write could have
+        // pre-set it, and "never set" is not 0 on the shared-batch server.
+        b.push(format!(
+            "scoreboard players set {sel} {} 0",
+            plan::flag_score(&dis.sets_flag)
+        ));
         b.push(format!("function {ns}:trap_disarm_{}", t.safe));
         b.push(format!(
-            "execute store success score #tempty dw.sys if data block {} {} {} Items[0]",
+            "execute store success score #tempty_trap dw.sys if data block {} {} {} Items[0]",
             disp[0], disp[1], disp[2]
         ));
-        b.push("assert score #tempty dw.sys matches 0".to_string());
+        b.push("assert score #tempty_trap dw.sys matches 0".to_string());
         b.push(format!(
-            "assert score @p {} matches 1",
+            "assert score {sel} {} matches 1",
             plan::flag_score(&dis.sets_flag)
         ));
     }
@@ -4647,18 +4671,18 @@ fn emit_night_vision_packtest(plan: &Plan, out: &mut BuildOutput) {
     b.push(format!("tp @s {} {} {}", mid[0], mid[1], mid[2]));
     b.push(format!("function {ns}:night_vision_tick"));
     b.push(
-        "execute store success score #nv dw.sys run effect clear @s minecraft:night_vision"
+        "execute store success score #nv_nvis dw.sys run effect clear @s minecraft:night_vision"
             .to_string(),
     );
-    b.push("assert score #nv dw.sys matches 1".to_string());
+    b.push("assert score #nv_nvis dw.sys matches 1".to_string());
     // Far outside: the same clock tick must NOT grant it (the selector is scoped).
     b.push(format!("tp @s {} {} {}", max[0] + 1000, mid[1], mid[2]));
     b.push(format!("function {ns}:night_vision_tick"));
     b.push(
-        "execute store success score #nv dw.sys run effect clear @s minecraft:night_vision"
+        "execute store success score #nv_nvis dw.sys run effect clear @s minecraft:night_vision"
             .to_string(),
     );
-    b.push("assert score #nv dw.sys matches 0".to_string());
+    b.push("assert score #nv_nvis dw.sys matches 0".to_string());
     out.insert(
         format!("packtest-datapack/data/{ns}/test/v06_night_vision.mcfunction"),
         lines(&b).into_bytes(),
@@ -4698,8 +4722,10 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
     b.push(seed_cp.clone());
     b.push(format!("tp @s {out_x} {} {}", spawn[1], spawn[2]));
     b.push(format!("function {ns}:boundary_tick"));
-    b.push("execute store result score #bx dw.sys run data get entity @s Pos[0] 1".to_string());
-    b.push(format!("assert score #bx dw.sys matches {}", spawn[0]));
+    b.push(
+        "execute store result score #bx_bret dw.sys run data get entity @s Pos[0] 1".to_string(),
+    );
+    b.push(format!("assert score #bx_bret dw.sys matches {}", spawn[0]));
     out.insert(
         format!("packtest-datapack/data/{ns}/test/v06_boundary_return.mcfunction"),
         lines(&b).into_bytes(),
@@ -4714,14 +4740,18 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
     b.push(format!("tp @s {in_x} {} {}", spawn[1], spawn[2]));
     // Precondition: the interior cell really is inside the region (else the geometry
     // is too small — fail informatively rather than silently pass).
-    b.push("execute store result score #px dw.sys run data get entity @s Pos[0] 1".to_string());
+    b.push(
+        "execute store result score #px_bins dw.sys run data get entity @s Pos[0] 1".to_string(),
+    );
     b.push(format!(
-        "assert score #px dw.sys matches {}..{}",
+        "assert score #px_bins dw.sys matches {}..{}",
         region.min[0], region.max[0]
     ));
     b.push(format!("function {ns}:boundary_tick"));
-    b.push("execute store result score #bx dw.sys run data get entity @s Pos[0] 1".to_string());
-    b.push(format!("assert score #bx dw.sys matches {in_x}"));
+    b.push(
+        "execute store result score #bx_bins dw.sys run data get entity @s Pos[0] 1".to_string(),
+    );
+    b.push(format!("assert score #bx_bins dw.sys matches {in_x}"));
     out.insert(
         format!("packtest-datapack/data/{ns}/test/v06_boundary_inside.mcfunction"),
         lines(&b).into_bytes(),
@@ -4746,28 +4776,37 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
 
     if let Some(cp) = plan.checkpoints.first() {
         let [x, y, z] = cp.pos;
+        let (pin, sel) = pin_dummy("dw_t_cpr");
         let mut t = packtest_header(&format!(
             "{title}: checkpoint mirrors its cell into dw:cp (spec-0012)"
         ));
         t.push(format!("function {ns}:setup"));
+        // Pin this test's own dummy (see `pin_dummy`): the spawnpoint write is
+        // per-player, so it goes to this test's dummy, not every dummy in the
+        // batch. The `dw:cp` mirror write + read-back stay within this single
+        // (atomic) function, so the shared storage cannot be interleaved.
+        t.push(pin);
         // Apply the exact commands a `set-checkpoint` emits, then read the mirror
         // back per-axis (rock-solid vs. an NBT compound match).
-        t.push(format!("spawnpoint @a {x} {y} {z}"));
+        t.push(format!("spawnpoint {sel} {x} {y} {z}"));
         t.push(format!(
             "data modify storage dw:cp pos set value [{x}, {y}, {z}]"
         ));
         t.push(
-            "execute store result score #cx dw.sys run data get storage dw:cp pos[0]".to_string(),
+            "execute store result score #cx_cpr dw.sys run data get storage dw:cp pos[0]"
+                .to_string(),
         );
         t.push(
-            "execute store result score #cy dw.sys run data get storage dw:cp pos[1]".to_string(),
+            "execute store result score #cy_cpr dw.sys run data get storage dw:cp pos[1]"
+                .to_string(),
         );
         t.push(
-            "execute store result score #cz dw.sys run data get storage dw:cp pos[2]".to_string(),
+            "execute store result score #cz_cpr dw.sys run data get storage dw:cp pos[2]"
+                .to_string(),
         );
-        t.push(format!("assert score #cx dw.sys matches {x}"));
-        t.push(format!("assert score #cy dw.sys matches {y}"));
-        t.push(format!("assert score #cz dw.sys matches {z}"));
+        t.push(format!("assert score #cx_cpr dw.sys matches {x}"));
+        t.push(format!("assert score #cy_cpr dw.sys matches {y}"));
+        t.push(format!("assert score #cz_cpr dw.sys matches {z}"));
         out.insert(
             format!("packtest-datapack/data/{ns}/test/v06_checkpoint_respawn.mcfunction"),
             lines(&t).into_bytes(),
@@ -4854,34 +4893,40 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
         //     resume accruing the moment it comes off. Driven through the real
         //     `stealth_tick` gate (not `stealth_eval`), because the gate is what
         //     the freeze lives in.
+        let (fpin, fsel) = pin_dummy("dw_t_cfrz");
         let mut f = packtest_header(&format!(
             "{title}: a cutscene freezes the stealth clock, and it resumes after"
         ));
         f.push(format!("function {ns}:setup"));
+        // Pin this test's own dummy (see `pin_dummy`): the template tp's it to
+        // absolute campaign coordinates, after which a bare `@p` would resolve
+        // to a neighbor test's dummy — and an `@a` write (state, tp, or the
+        // cutscene tag itself) would land on every dummy in the batch.
+        f.push(fpin);
         f.push(format!("function {ns}:stealth_begin_{i}"));
         // Disarm the live session marker so the world `tick` loop does not judge
         // in the same tick; this test drives `stealth_tick` explicitly.
         f.push("scoreboard players set #stealth dw.sys 0".to_string());
-        f.push("scoreboard players set @a dw.st_grace 0".to_string());
-        f.push("scoreboard players set @a dw.st_sneak 0".to_string());
-        f.push("scoreboard players set @a dw.st_sneakack 0".to_string());
+        f.push(format!("scoreboard players set {fsel} dw.st_grace 0"));
+        f.push(format!("scoreboard players set {fsel} dw.st_sneak 0"));
+        f.push(format!("scoreboard players set {fsel} dw.st_sneakack 0"));
         f.push(format!(
-            "tp @a {} {} {}",
+            "tp {fsel} {} {} {}",
             outside[0], outside[1], outside[2]
         ));
-        f.push(format!("tag @a add {CUTSCENE_TAG}"));
+        f.push(format!("tag {fsel} add {CUTSCENE_TAG}"));
         // Well past `grace_ticks` of exposure: frozen, so grace stays 0.
         for _ in 0..grace + 2 {
             f.push(format!("function {ns}:stealth_tick_{i}"));
         }
-        f.push("assert score @p dw.st_grace matches 0".to_string());
+        f.push(format!("assert score {fsel} dw.st_grace matches 0"));
         // Restore drops the marker; the clock resumes from where it paused.
-        f.push(format!("tag @a remove {CUTSCENE_TAG}"));
+        f.push(format!("tag {fsel} remove {CUTSCENE_TAG}"));
         for _ in 0..grace.saturating_sub(1) {
             f.push(format!("function {ns}:stealth_tick_{i}"));
         }
         f.push(format!(
-            "assert score @p dw.st_grace matches {}",
+            "assert score {fsel} dw.st_grace matches {}",
             grace.saturating_sub(1)
         ));
         out.insert(
@@ -4903,13 +4948,16 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
         t.push(format!("function {ns}:setup"));
         // A dummy at a fixed cell near origin: NoAI so it never moves, Silent, full
         // health. `damage` applies synchronously, so a 0-player void still shows it.
+        // Pre-clear the tag first — never assume a fresh world on the shared-batch
+        // server — and kill again on the way out.
+        t.push("kill @e[tag=dw_dmgtest]".to_string());
         t.push(
             "summon minecraft:zombie 0 -60 0 {Tags:[\"dw_dmgtest\"],NoAI:1b,Silent:1b,\
              PersistenceRequired:1b,Health:20f}"
                 .to_string(),
         );
         t.push(
-            "execute store result score #hp0 dw.sys run data get entity \
+            "execute store result score #hp0_dmg dw.sys run data get entity \
              @e[tag=dw_dmgtest,limit=1] Health 100"
                 .to_string(),
         );
@@ -4917,7 +4965,7 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
             "damage @e[tag=dw_dmgtest,limit=1] {amount} {type_id}"
         ));
         t.push(
-            "execute store result score #hp1 dw.sys run data get entity \
+            "execute store result score #hp1_dmg dw.sys run data get entity \
              @e[tag=dw_dmgtest,limit=1] Health 100"
                 .to_string(),
         );
@@ -4926,9 +4974,9 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
         // damage types (armor-respecting types reduce the number, but the hit still
         // lands); the exact `damage @s <amount> <type>` string is asserted by a
         // compiler unit test.
-        t.push("scoreboard players operation #drop dw.sys = #hp0 dw.sys".to_string());
-        t.push("scoreboard players operation #drop dw.sys -= #hp1 dw.sys".to_string());
-        t.push("assert score #drop dw.sys matches 1..".to_string());
+        t.push("scoreboard players operation #drop_dmg dw.sys = #hp0_dmg dw.sys".to_string());
+        t.push("scoreboard players operation #drop_dmg dw.sys -= #hp1_dmg dw.sys".to_string());
+        t.push("assert score #drop_dmg dw.sys matches 1..".to_string());
         t.push("kill @e[tag=dw_dmgtest]".to_string());
         out.insert(
             format!("packtest-datapack/data/{ns}/test/v06_damage.mcfunction"),
@@ -5003,6 +5051,18 @@ fn emit_v06_actor_packtests(
         );
     };
 
+    // The four actor tests all drive the SAME first actor through its real (and
+    // therefore shared) entity tags — `spawn_actor_<id>`'s idempotence guard is
+    // `unless entity @e[tag=dw_actor_<id>]`, a tag the unleashed twin also
+    // carries. On the shared-batch server a sibling's leftover (e.g. the twin
+    // `v06_unleash` produced) therefore no-ops a later test's spawn while
+    // matching none of its puppet asserts (the round-6 island flake:
+    // `v06_spawn_idempotent` counted 0 puppets). Every actor test must
+    // establish its own world: clear the actor tag on entry (never assume a
+    // fresh world) and clear it again on exit (leave no poison for a sibling).
+    // Each template is a single atomic function, so within it the entity state
+    // cannot be interleaved.
+
     // spawn-actor + despawn kill/vanish: the puppet appears, and either style
     // removes it. The visible difference (kill = in-place death animation, vanish =
     // silent relocate-then-kill out of view) is a client-eyes distinction; CI
@@ -5014,25 +5074,27 @@ fn emit_v06_actor_packtests(
             c.world.content.title
         ));
         b.push(format!("function {ns}:setup"));
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         b.push(format!("function {ns}:spawn_actor_{safe}"));
         b.push(format!(
-            "execute store result score #sp dw.sys if entity @e[tag=dw_actor_{safe}]"
+            "execute store result score #sp_sdsp dw.sys if entity @e[tag=dw_actor_{safe}]"
         ));
-        b.push("assert score #sp dw.sys matches 1..".to_string());
+        b.push("assert score #sp_sdsp dw.sys matches 1..".to_string());
         // kill style removes it.
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         b.push(format!(
-            "execute store result score #k dw.sys if entity @e[tag=dw_actor_{safe}]"
+            "execute store result score #k_sdsp dw.sys if entity @e[tag=dw_actor_{safe}]"
         ));
-        b.push("assert score #k dw.sys matches 0".to_string());
-        // re-spawn (idempotent), then vanish style also removes it.
+        b.push("assert score #k_sdsp dw.sys matches 0".to_string());
+        // re-spawn (idempotent), then vanish style also removes it — which also
+        // leaves the world actor-free for the next test.
         b.push(format!("function {ns}:spawn_actor_{safe}"));
         b.push(format!("tp @e[tag=dw_actor_{safe}] ~ -128 ~"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         b.push(format!(
-            "execute store result score #v dw.sys if entity @e[tag=dw_actor_{safe}]"
+            "execute store result score #v_sdsp dw.sys if entity @e[tag=dw_actor_{safe}]"
         ));
-        b.push("assert score #v dw.sys matches 0".to_string());
+        b.push("assert score #v_sdsp dw.sys matches 0".to_string());
         write("v06_spawn_despawn", b);
     }
 
@@ -5045,12 +5107,14 @@ fn emit_v06_actor_packtests(
             c.world.content.title
         ));
         b.push(format!("function {ns}:setup"));
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         b.push(format!("function {ns}:spawn_actor_{safe}"));
         b.push(format!("function {ns}:spawn_actor_{safe}"));
         b.push(format!(
-            "execute store result score #n dw.sys if entity @e[tag=dw_pup_{safe}]"
+            "execute store result score #n_sidm dw.sys if entity @e[tag=dw_pup_{safe}]"
         ));
-        b.push("assert score #n dw.sys matches 1".to_string());
+        b.push("assert score #n_sidm dw.sys matches 1".to_string());
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         write("v06_spawn_idempotent", b);
     }
 
@@ -5063,22 +5127,27 @@ fn emit_v06_actor_packtests(
             c.world.content.title
         ));
         b.push(format!("function {ns}:setup"));
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         b.push(format!("function {ns}:spawn_actor_{safe}"));
         b.push(format!(
-            "execute store result score #pup dw.sys if entity @e[tag=dw_pup_{safe}]"
+            "execute store result score #pup_unl dw.sys if entity @e[tag=dw_pup_{safe}]"
         ));
-        b.push("assert score #pup dw.sys matches 1".to_string());
+        b.push("assert score #pup_unl dw.sys matches 1".to_string());
         b.push(format!("function {ns}:unleash_{safe}"));
         // puppet marker gone, one twin of the real entity type remains.
         b.push(format!(
-            "execute store result score #pup2 dw.sys if entity @e[tag=dw_pup_{safe}]"
+            "execute store result score #pup2_unl dw.sys if entity @e[tag=dw_pup_{safe}]"
         ));
-        b.push("assert score #pup2 dw.sys matches 0".to_string());
+        b.push("assert score #pup2_unl dw.sys matches 0".to_string());
         b.push(format!(
-            "execute store result score #twin dw.sys if entity @e[type={},tag=dw_actor_{safe}]",
+            "execute store result score #twin_unl dw.sys if entity @e[type={},tag=dw_actor_{safe}]",
             a.entity
         ));
-        b.push("assert score #twin dw.sys matches 1".to_string());
+        b.push("assert score #twin_unl dw.sys matches 1".to_string());
+        // The twin is this test's residue — without this kill it survives the
+        // test, and any later spawn no-ops against its body tag while owning no
+        // puppet marker (the exact v06_spawn_idempotent red).
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         write("v06_unleash", b);
     }
 
@@ -5094,14 +5163,16 @@ fn emit_v06_actor_packtests(
             c.world.content.title
         ));
         b.push(format!("function {ns}:setup"));
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         b.push(format!("function {ns}:spawn_actor_{safe}"));
         b.push(format!("scoreboard players set #at_{bare} dw.sys {total}"));
         b.push(format!("function {ns}:ma_tick_{bare}"));
         b.push(format!(
-            "execute store result score #arr dw.sys if entity @e[tag=dw_pup_{safe},x={},dx=0,y={},dy=0,z={},dz=0]",
+            "execute store result score #arr_mvac dw.sys if entity @e[tag=dw_pup_{safe},x={},dx=0,y={},dy=0,z={},dz=0]",
             p[0], p[1], p[2]
         ));
-        b.push("assert score #arr dw.sys matches 1..".to_string());
+        b.push("assert score #arr_mvac dw.sys matches 1..".to_string());
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         write("v06_move_actor", b);
     }
 }
@@ -5173,27 +5244,32 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                 && plan.point(area, anchor.as_str()).is_some()
             {
                 let tag = interact_entity_tag(id.as_str());
+                let (pin, sel) = pin_dummy("dw_t_iclr");
                 let mut b = packtest_header(&format!(
                     "{}: completing interact `{id}` removes its interaction hitbox",
                     c.world.content.title
                 ));
                 b.push(format!("function {ns}:setup"));
+                // Pin this test's own dummy (see `pin_dummy`): the completion runs
+                // as it alone — an `@a`-wide completion would also complete the
+                // objective on every sibling test's dummy.
+                b.push(pin);
                 b.push(format!(
                     "function {ns}:activate_{}",
                     safe_obj_fn(id.as_str())
                 ));
                 b.push(format!(
-                    "execute store result score #before dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
+                    "execute store result score #before_iclr dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
                 ));
-                b.push("assert score #before dw.sys matches 1..".to_string());
+                b.push("assert score #before_iclr dw.sys matches 1..".to_string());
                 b.push(format!(
-                    "execute as @a run function {ns}:complete_{}",
+                    "execute as {sel} run function {ns}:complete_{}",
                     safe_obj_fn(id.as_str())
                 ));
                 b.push(format!(
-                    "execute store result score #after dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
+                    "execute store result score #after_iclr dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
                 ));
-                b.push("assert score #after dw.sys matches 0".to_string());
+                b.push("assert score #after_iclr dw.sys matches 0".to_string());
                 write("v04_interact_cleanup", b);
                 break 'cleanup;
             }
@@ -5222,7 +5298,13 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         ));
         b.push(format!("function {ns}:setup"));
         b.push("scoreboard players set #placed dw.sys 1".to_string());
-        b.push(format!("kill @e[tag=dw_npc_{safe}]"));
+        // Clear EVERY planned NPC tag, not just the target's: `setup_finish`'s
+        // summons are unguarded, and on the shared-batch server the world init
+        // (and any sibling test) has already run it — re-running it over live
+        // NPCs would duplicate every body + hitbox (mirrors `npc_summons`).
+        for npc in &plan.npcs {
+            b.push(format!("kill @e[tag={}]", npc.tag));
+        }
         b.push(format!("function {ns}:setup_finish"));
         // A `deferred` NPC (DSL v0.6) is deliberately absent after `setup_finish` —
         // it enters via `spawn-npc`. Fire its entrance here so the despawn path is
@@ -5241,14 +5323,14 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         }
         // body + interaction hitbox both carry `dw_npc_<npc>` → two entities.
         b.push(format!(
-            "execute store result score #before dw.sys if entity @e[tag=dw_npc_{safe}]"
+            "execute store result score #before_ndsp dw.sys if entity @e[tag=dw_npc_{safe}]"
         ));
-        b.push("assert score #before dw.sys matches 2".to_string());
+        b.push("assert score #before_ndsp dw.sys matches 2".to_string());
         b.push(format!("kill @e[tag=dw_npc_{safe}]"));
         b.push(format!(
-            "execute store result score #after dw.sys if entity @e[tag=dw_npc_{safe}]"
+            "execute store result score #after_ndsp dw.sys if entity @e[tag=dw_npc_{safe}]"
         ));
-        b.push("assert score #after dw.sys matches 0".to_string());
+        b.push("assert score #after_ndsp dw.sys matches 0".to_string());
         write("v04_despawn", b);
     }
 
@@ -5268,6 +5350,13 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         ));
         b.push(format!("function {ns}:setup"));
         b.push("scoreboard players set #placed dw.sys 1".to_string());
+        // Clear EVERY planned NPC tag before re-running `setup_finish`: its
+        // summons are unguarded, and the world init (and any sibling test) has
+        // already run it on the shared-batch server — duplicated hitboxes would
+        // break the exact-count routing assert below (mirrors `npc_summons`).
+        for n in &plan.npcs {
+            b.push(format!("kill @e[tag={}]", n.tag));
+        }
         b.push(format!("function {ns}:setup_finish"));
         // A `deferred` NPC (DSL v0.6) is deliberately absent after `setup_finish`
         // — a sleeping giant who only enters on cue is a natural strike target, so
@@ -5279,9 +5368,9 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         // The routing itself: the NPC's hitbox wears the trigger's tag, so the
         // trigger's single selector reaches it.
         b.push(format!(
-            "execute store result score #route dw.sys if entity @e[type=minecraft:interaction,tag={npc_tag},tag=dw_trig_{id}]"
+            "execute store result score #route_stnp dw.sys if entity @e[type=minecraft:interaction,tag={npc_tag},tag=dw_trig_{id}]"
         ));
-        b.push("assert score #route dw.sys matches 1".to_string());
+        b.push("assert score #route_stnp dw.sys matches 1".to_string());
         if trigger.once {
             b.push(format!("scoreboard players set #trig_{id} dw.sys 0"));
         }
@@ -5291,9 +5380,9 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
             "data modify entity {hitbox} attack set value {{player:[I;0,0,0,0],timestamp:1L}}"
         ));
         b.push(format!(
-            "execute store result score #rec dw.sys if data entity {hitbox} attack"
+            "execute store result score #rec_stnp dw.sys if data entity {hitbox} attack"
         ));
-        b.push("assert score #rec dw.sys matches 1".to_string());
+        b.push("assert score #rec_stnp dw.sys matches 1".to_string());
         b.push(format!("function {ns}:tick"));
         if trigger.once {
             b.push(format!("assert score #trig_{id} dw.sys matches 1"));
@@ -5301,9 +5390,9 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         // Exactly once: the same tick pass consumed the record, so a second pass
         // over an untouched hitbox cannot re-fire.
         b.push(format!(
-            "execute store result score #rec dw.sys if data entity {hitbox} attack"
+            "execute store result score #rec_stnp dw.sys if data entity {hitbox} attack"
         ));
-        b.push("assert score #rec dw.sys matches 0".to_string());
+        b.push("assert score #rec_stnp dw.sys matches 0".to_string());
         if trigger.once {
             b.push(format!("scoreboard players set #trig_{id} dw.sys 0"));
             b.push(format!("function {ns}:tick"));
@@ -5329,15 +5418,21 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         ));
         b.push(format!("function {ns}:setup"));
         b.push("scoreboard players set #placed dw.sys 1".to_string());
+        // Clear EVERY planned NPC tag before re-running the unguarded
+        // `setup_finish` (see `v04_despawn`/`npc_summons`): a duplicated walker
+        // would leave a stray body behind at the start cell.
+        for n in &plan.npcs {
+            b.push(format!("kill @e[tag={}]", n.tag));
+        }
         b.push(format!("function {ns}:setup_finish"));
         // Jump the driver to its last tick, then execute the final waypoint tp.
         b.push(format!("scoreboard players set #mt_{bare} dw.sys {total}"));
         b.push(format!("function {ns}:mv_tick_{bare}"));
         b.push(format!(
-            "execute store result score #at dw.sys if entity @e[tag=dw_npc_{safe},x={},dx=0,y={},dy=0,z={},dz=0]",
+            "execute store result score #npos_nmov dw.sys if entity @e[tag=dw_npc_{safe},x={},dx=0,y={},dy=0,z={},dz=0]",
             p[0], p[1], p[2]
         ));
-        b.push("assert score #at dw.sys matches 1..".to_string());
+        b.push("assert score #npos_nmov dw.sys matches 1..".to_string());
         write("v04_move", b);
     }
 
@@ -5383,13 +5478,18 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                         c.world.content.title
                     ));
                     b.push(format!("function {ns}:setup"));
+                    // Clear the wave tag first — a sibling test (`campaign` drives
+                    // every objective completion, which can fire this very
+                    // spawn-wave effect) may have already spawned it, and the
+                    // exact-count assert needs a known-empty tag.
+                    b.push(format!("kill @e[tag={}]", plan::wave_tag(wave.as_str())));
                     // No wave is live yet; the effect's driver spawns it.
                     b.push(format!("function {ns}:spawn_{ws}"));
                     b.push(format!(
-                        "execute store result score #kw dw.sys if entity @e[tag={}]",
+                        "execute store result score #kw_klwv dw.sys if entity @e[tag={}]",
                         plan::wave_tag(wave.as_str())
                     ));
-                    b.push(format!("assert score #kw dw.sys matches {total}"));
+                    b.push(format!("assert score #kw_klwv dw.sys matches {total}"));
                     write("v04_killless_wave", b);
                     break 'killless;
                 }
@@ -5447,14 +5547,19 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                 }
             }
 
+            let (pin, sel) = pin_dummy("dw_t_dvis");
             let mut bt = packtest_header(&format!(
                 "{}: dialogue option `{}` is displayed only while its objective `{obj}` is active",
                 c.world.content.title, under_test.label
             ));
             bt.push(format!("function {ns}:setup"));
+            // Pin this test's own dummy (see `pin_dummy`): with one dummy PER
+            // test coexisting on the batch server, an `as @a` mask run + copy
+            // would read the LAST dummy the selector visits — a foreign one.
+            bt.push(pin);
             let clear = |bt: &mut Vec<String>| {
                 for s in &reset {
-                    bt.push(format!("scoreboard players set @a {s} 0"));
+                    bt.push(format!("scoreboard players set {sel} {s} 0"));
                 }
             };
             // Run the mask, then ISOLATE the option-under-test's bit before the
@@ -5464,26 +5569,29 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
             // quest lights several bits at once — comparing the *whole* `dw.dmask`
             // would then read a sibling's bit as this option's and mis-assert.
             let assert_bit = |bt: &mut Vec<String>, bit: usize, present: bool| {
-                bt.push(format!("execute as @a run function {dmask}"));
-                // Copy the player's mask into a fake player. `as @a` keeps the read
-                // single-entity (`= @s …`): `scoreboard players get`/`operation`
-                // reject a multi-entity selector like a bare `@a`.
-                bt.push(
-                    "execute as @a run scoreboard players operation #dm dw.sys = @s dw.dmask"
-                        .to_string(),
-                );
+                bt.push(format!("execute as {sel} run function {dmask}"));
+                // Copy the pinned dummy's mask into a fake player. `as {sel}` keeps
+                // the read single-entity (`= @s …`): `scoreboard players
+                // get`/`operation` reject a multi-entity selector.
                 bt.push(format!(
-                    "scoreboard players set #dmhi dw.sys {}",
+                    "execute as {sel} run scoreboard players operation #dm_dvis dw.sys = @s dw.dmask"
+                ));
+                bt.push(format!(
+                    "scoreboard players set #dmhi_dvis dw.sys {}",
                     1u32 << (bit + 1)
                 ));
-                bt.push("scoreboard players operation #dm dw.sys %= #dmhi dw.sys".to_string());
+                bt.push(
+                    "scoreboard players operation #dm_dvis dw.sys %= #dmhi_dvis dw.sys".to_string(),
+                );
                 bt.push(format!(
-                    "scoreboard players set #dmlo dw.sys {}",
+                    "scoreboard players set #dmlo_dvis dw.sys {}",
                     1u32 << bit
                 ));
-                bt.push("scoreboard players operation #dm dw.sys /= #dmlo dw.sys".to_string());
+                bt.push(
+                    "scoreboard players operation #dm_dvis dw.sys /= #dmlo_dvis dw.sys".to_string(),
+                );
                 bt.push(format!(
-                    "assert score #dm dw.sys matches {}",
+                    "assert score #dm_dvis dw.sys matches {}",
                     u32::from(present)
                 ));
             };
@@ -5493,10 +5601,10 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
             assert_bit(&mut bt, b, false);
             // Phase B — quest active, objective incomplete: the option appears.
             clear(&mut bt);
-            bt.push(format!("scoreboard players set @a {qa} 1"));
+            bt.push(format!("scoreboard players set {sel} {qa} 1"));
             assert_bit(&mut bt, b, true);
             // Phase C — objective complete: the option disappears again.
-            bt.push(format!("scoreboard players set @a {os} 1"));
+            bt.push(format!("scoreboard players set {sel} {os} 1"));
             assert_bit(&mut bt, b, false);
 
             // Flag axis: a flag-only gated option's bit flips with its flag alone,
@@ -5509,7 +5617,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                 clear(&mut bt);
                 for f in &flag_opt.requires_flags {
                     bt.push(format!(
-                        "scoreboard players set @a {} 1",
+                        "scoreboard players set {sel} {} 1",
                         plan::flag_score(f)
                     ));
                 }
@@ -5537,19 +5645,39 @@ fn packtest_header(title: &str) -> Vec<String> {
 ///
 /// PackTest runs the whole generated suite as ONE batch on one shared server:
 /// each `# @dummy` test spawns its OWN dummy, all dummies coexist, and every
-/// test function executes over the same server tick(s). Two consequences for
-/// template authorship: (1) `@p` re-resolves from the test structure origin on
-/// every command — the moment a template teleports its dummy to absolute
-/// campaign coordinates, `@p` retargets to a NEIGHBOR test's dummy and all
-/// later writes/asserts land on the wrong player (round-5 island red:
-/// `v06_stealth` read a foreign dummy's grace); (2) a `@a` write hits every
-/// test's dummy, so a sibling template can pre-set state this test believes it
-/// controls (round-5 island red: `verb_flag_gate`'s "withheld" flag arrived
-/// via `verb_interact`'s `@a`). A template that drives per-player state must
-/// therefore tag its dummy on the first post-setup line — while its own dummy,
-/// inside its own structure, is still the nearest player — and address it
-/// exclusively through the tag (which, unlike `@p`, also keeps matching a
-/// dummy that content effects have killed).
+/// test function executes over the same server tick(s), in an order the
+/// compiler does not control. Consequences for template authorship — the hard
+/// rule is **every generated test is interleaving-independent: own dummy, own
+/// scores, own init**:
+///
+/// 1. `@p` re-resolves from the test structure origin on every command — the
+///    moment a template teleports its dummy to absolute campaign coordinates,
+///    `@p` retargets to a NEIGHBOR test's dummy and all later writes/asserts
+///    land on the wrong player (round-5 island red: `v06_stealth` read a
+///    foreign dummy's grace). A template that drives per-player state must tag
+///    its dummy on the first post-setup line — while its own dummy, inside its
+///    own structure, is still the nearest player — and address it exclusively
+///    through the tag (which, unlike `@p`, also keeps matching a dummy that
+///    content effects have killed). A template PackTest executes AS its dummy
+///    may use `@s` instead — the binding survives teleports.
+/// 2. An `@a` write hits every test's dummy, so a sibling template can pre-set
+///    state this test believes it controls (round-5 island red:
+///    `verb_flag_gate`'s "withheld" flag arrived via `verb_interact`'s `@a`).
+///    Templates never write `@a`-wide, and every score a template asserts on
+///    is actively initialized by that template ("never set" is not 0 here).
+/// 3. Fake-player scratch holders on `dw.sys` are batch-global: every template
+///    suffixes its own (`#n_sidm`, `#bx_bret`, …) so no two templates share a
+///    holder. Real runtime scores (`#stealth`, `#placed`, `#trig_<id>`, move
+///    drivers) are deliberately shared — tests drive them and must initialize
+///    them explicitly.
+/// 4. Entity state is batch-global too: a sibling's residue can defeat a
+///    guarded summon (round-6 island red: `v06_unleash`'s leftover twin
+///    carried `dw_actor_<id>` with no puppet marker, so
+///    `v06_spawn_idempotent`'s guarded spawns no-op'd and it counted 0
+///    puppets), and re-running the unguarded `setup_finish` over live NPCs
+///    duplicates them. A template clears every entity tag it counts on at
+///    entry and leaves none of its own residue behind; each template is a
+///    single atomic function, so within it nothing can be interleaved.
 fn pin_dummy(tag: &str) -> (String, String) {
     (
         format!("tag @p add {tag}"),
@@ -5661,12 +5789,23 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     {
         let total = plan::wave_total(w);
         let ws = plan::safe_local(wave.as_str());
+        let (pin, sel) = pin_dummy("dw_t_vkil");
         let mut b = packtest_header(&format!(
             "{}: kill wave `{wave}` -> countdown -> complete",
             c.world.content.title
         ));
         b.push(format!("function {ns}:setup"));
-        b.extend(packtest_preamble(qid, o, true, "@a"));
+        // Pin this test's own dummy (see `pin_dummy`) and drive the whole chain
+        // on it alone; actively zero the asserted objective first.
+        b.push(pin);
+        b.push(format!(
+            "scoreboard players set {sel} {} 0",
+            obj_score(id.as_str())
+        ));
+        b.extend(packtest_preamble(qid, o, true, &sel));
+        // Clear the wave tag before the fresh spawn — a sibling test may have
+        // already fired this spawn-wave (`spawn_<wave>` is unguarded).
+        b.push(format!("kill @e[tag={}]", plan::wave_tag(wave.as_str())));
         b.push(format!("function {ns}:spawn_{ws}"));
         b.push(format!(
             "assert score {} {} matches {total}",
@@ -5685,22 +5824,22 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             .find(|m| default_mainhand(&m.entity).is_some())
         {
             let item = default_mainhand(&mob.entity).expect("filtered to armed mobs");
-            b.push("scoreboard players set #armed dw.sys 0".to_string());
+            b.push("scoreboard players set #armed_vkil dw.sys 0".to_string());
             b.push(format!(
                 "execute if items entity @e[tag={},type={},limit=1] weapon.mainhand {item} \
-                 run scoreboard players set #armed dw.sys 1",
+                 run scoreboard players set #armed_vkil dw.sys 1",
                 plan::wave_tag(wave.as_str()),
                 mob.entity,
             ));
-            b.push("assert score #armed dw.sys matches 1".to_string());
+            b.push("assert score #armed_vkil dw.sys matches 1".to_string());
         }
         b.push(format!("kill @e[tag={}]", plan::wave_tag(wave.as_str())));
         for _ in 0..total {
-            b.push(format!("execute as @a run function {ns}:k_reward_{ws}"));
+            b.push(format!("execute as {sel} run function {ns}:k_reward_{ws}"));
         }
         b.push(format!("function {ns}:tick"));
         b.push(format!(
-            "assert score @p {} matches 1",
+            "assert score {sel} {} matches 1",
             obj_score(id.as_str())
         ));
         write("verb_kill", b);
@@ -5710,18 +5849,26 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     if let Some((qid, o)) = first_collect
         && let Objective::Collect { id, .. } = o
     {
+        let (pin, sel) = pin_dummy("dw_t_vcol");
         let mut b = packtest_header(&format!(
             "{}: collect -> reward completes objective",
             c.world.content.title
         ));
         b.push(format!("function {ns}:setup"));
-        b.extend(packtest_preamble(qid, o, true, "@a"));
+        // Pin this test's own dummy (see `pin_dummy`) and drive/assert on it
+        // alone; actively zero the asserted objective first.
+        b.push(pin);
         b.push(format!(
-            "execute as @a run function {ns}:c_reward_{}",
+            "scoreboard players set {sel} {} 0",
+            obj_score(id.as_str())
+        ));
+        b.extend(packtest_preamble(qid, o, true, &sel));
+        b.push(format!(
+            "execute as {sel} run function {ns}:c_reward_{}",
             plan::safe_local(id.as_str())
         ));
         b.push(format!(
-            "assert score @p {} matches 1",
+            "assert score {sel} {} matches 1",
             obj_score(id.as_str())
         ));
         write("verb_collect", b);
@@ -5731,19 +5878,28 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     if let Some((qid, o)) = first_interact
         && let Objective::Interact { id, .. } = o
     {
+        let (pin, sel) = pin_dummy("dw_t_vint");
         let mut b = packtest_header(&format!(
             "{}: interact trigger + item -> complete",
             c.world.content.title
         ));
         b.push(format!("function {ns}:setup"));
-        b.extend(packtest_preamble(qid, o, true, "@a"));
+        // Pin this test's own dummy (see `pin_dummy`) and drive/assert on it
+        // alone — the old `@a`-wide preamble was the round-5 flag leak that
+        // poisoned `verb_flag_gate`'s withheld phase.
+        b.push(pin);
         b.push(format!(
-            "scoreboard players set @a {} 1",
+            "scoreboard players set {sel} {} 0",
+            obj_score(id.as_str())
+        ));
+        b.extend(packtest_preamble(qid, o, true, &sel));
+        b.push(format!(
+            "scoreboard players set {sel} {} 1",
             plan::interact_trigger(id.as_str())
         ));
         b.push(format!("function {ns}:tick"));
         b.push(format!(
-            "assert score @p {} matches 1",
+            "assert score {sel} {} matches 1",
             obj_score(id.as_str())
         ));
         write("verb_interact", b);
@@ -5844,40 +6000,43 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             id, item, count, ..
         } = o
     {
+        let (pin, sel) = pin_dummy("dw_t_cpre");
         let mut b = packtest_header(&format!(
             "{}: collect completes for an item held before activation",
             c.world.content.title
         ));
         b.push(format!("function {ns}:setup"));
+        // Pin this test's own dummy (see `pin_dummy`) and drive/assert on it alone.
+        b.push(pin);
         b.push(format!(
-            "scoreboard players set @a {} 0",
+            "scoreboard players set {sel} {} 0",
             obj_score(id.as_str())
         ));
         // Take the item while the objective is INACTIVE (the pre-activation pickup).
-        b.push(format!("give @a {item} {count}"));
+        b.push(format!("give {sel} {item} {count}"));
         // Activate WITHOUT re-giving (packtest_preamble would re-give the item, which
         // would mask the bug by producing a fresh inventory_changed): set the quest
         // active + every `after` prerequisite + every required flag by hand.
         b.push(format!(
-            "scoreboard players set @a {} 1",
+            "scoreboard players set {sel} {} 1",
             quest_active_score(qid)
         ));
         for a in o.after() {
             b.push(format!(
-                "scoreboard players set @a {} 1",
+                "scoreboard players set {sel} {} 1",
                 obj_score(a.as_str())
             ));
         }
         for f in o.requires_flags() {
             b.push(format!(
-                "scoreboard players set @a {} 1",
+                "scoreboard players set {sel} {} 1",
                 plan::flag_score(f.as_str())
             ));
         }
         // One tick's held check completes it — no inventory_changed event occurs.
         b.push(format!("function {ns}:tick"));
         b.push(format!(
-            "assert score @p {} matches 1",
+            "assert score {sel} {} matches 1",
             obj_score(id.as_str())
         ));
         write("collect_preheld", b);

@@ -172,7 +172,13 @@ fn damage_players_emits_packtest_asserting_damage() {
         "packtest must apply the declared amount + type to the dummy:\n{body}"
     );
     assert!(
-        body.contains("assert score #drop dw.sys matches 1.."),
+        body.contains("assert score #drop_dmg dw.sys matches 1.."),
         "packtest must assert the dummy's health dropped:\n{body}"
+    );
+    // Batch model: the tag is cleared on entry (never assume a fresh world) and
+    // again on exit (no residue for a sibling).
+    assert!(
+        body.matches("kill @e[tag=dw_dmgtest]").count() >= 2,
+        "packtest clears its dummy tag on entry and exit:\n{body}"
     );
 }

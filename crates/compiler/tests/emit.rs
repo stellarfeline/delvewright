@@ -514,8 +514,12 @@ fn packtest_suite_is_a_real_test() {
         "drives the reach objective completion"
     );
     assert!(
-        test.contains("assert score @p dw.campaign matches 1"),
-        "asserts the campaign objective is set"
+        test.contains("tag @p add dw_t_camp"),
+        "pins its own dummy (batch model: one dummy per test, all coexisting)"
+    );
+    assert!(
+        test.contains("assert score @a[tag=dw_t_camp,limit=1] dw.campaign matches 1"),
+        "asserts the campaign objective is set on the pinned dummy"
     );
     // The old provisional path under function/ must be gone — PackTest would not
     // discover a test there.
@@ -668,8 +672,8 @@ fn packtest_sealed_state_test_emitted() {
         "queries the world time"
     );
     assert!(
-        test.contains("assert score #sealtime dw.sys matches 6000"),
-        "asserts time is noon (daytime 6000)"
+        test.contains("assert score #sealtime_sealed dw.sys matches 6000"),
+        "asserts time is noon (daytime 6000) via the test-unique holder"
     );
 }
 
@@ -933,16 +937,20 @@ fn dialogue_handler_rearms_its_own_trigger() {
     );
     assert_eq!(
         pt.lines()
-            .filter(|l| l.trim().starts_with("execute as @p run trigger "))
+            .filter(|l| l
+                .trim()
+                .starts_with("execute as @a[tag=dw_t_rearm,limit=1] run trigger "))
             .count(),
         2,
-        "the re-arm PackTest uses the trigger twice:\n{pt}"
+        "the re-arm PackTest uses the trigger twice, on its pinned dummy:\n{pt}"
     );
     assert_eq!(
         pt.lines()
-            .filter(|l| l.trim().starts_with("assert score @p "))
+            .filter(|l| l
+                .trim()
+                .starts_with("assert score @a[tag=dw_t_rearm,limit=1] "))
             .count(),
         2,
-        "both uses are asserted:\n{pt}"
+        "both uses are asserted on the pinned dummy:\n{pt}"
     );
 }

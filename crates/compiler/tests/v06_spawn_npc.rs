@@ -217,14 +217,14 @@ fn despawn_packtest_spawns_a_deferred_target_first() {
         .find("function hello-world:spawn_npc_keeper")
         .unwrap_or_else(|| panic!("the deferred target's entrance must run in the test:\n{t}"));
     let before = t
-        .find("assert score #before dw.sys matches 2")
+        .find("assert score #before_ndsp dw.sys matches 2")
         .unwrap_or_else(|| panic!("the presence assertion must survive:\n{t}"));
     assert!(
         entrance < before,
         "the entrance must run BEFORE the presence assertion:\n{t}"
     );
     assert!(
-        t.contains("assert score #after dw.sys matches 0"),
+        t.contains("assert score #after_ndsp dw.sys matches 0"),
         "the removal assertion must survive:\n{t}"
     );
 }
@@ -244,8 +244,8 @@ fn despawn_packtest_unchanged_for_a_non_deferred_target() {
         "no entrance call belongs in the test when the target is not deferred:\n{t}"
     );
     assert!(
-        t.contains("assert score #before dw.sys matches 2")
-            && t.contains("assert score #after dw.sys matches 0"),
+        t.contains("assert score #before_ndsp dw.sys matches 2")
+            && t.contains("assert score #after_ndsp dw.sys matches 0"),
         "both assertions stay:\n{t}"
     );
 }

@@ -288,37 +288,42 @@ fn dialogue_visibility_packtest_covers_both_axes() {
         &out["packtest-datapack/data/v04-showcase/test/v04_dialogue_visibility.mcfunction"],
     )
     .unwrap();
+    // The test pins its own dummy (batch model) and drives every phase on it.
+    const SEL: &str = "@a[tag=dw_t_dvis,limit=1]";
+    assert!(pt.contains("tag @p add dw_t_dvis"));
     // Quest inactive → the completing option (bit 0) is hidden.
-    assert!(pt.contains("scoreboard players set @a dw.qa_greet 0"));
+    assert!(pt.contains(&format!("scoreboard players set {SEL} dw.qa_greet 0")));
     // Quest active, objective incomplete → the completing option appears.
-    assert!(pt.contains("scoreboard players set @a dw.qa_greet 1"));
+    assert!(pt.contains(&format!("scoreboard players set {SEL} dw.qa_greet 1")));
     // Objective complete → hidden again.
-    assert!(pt.contains("scoreboard players set @a dw.o_talk 1"));
+    assert!(pt.contains(&format!("scoreboard players set {SEL} dw.o_talk 1")));
     // Flag axis in isolation → the flag option (bit 1) appears.
-    assert!(pt.contains("scoreboard players set @a dw.f_summoned 1"));
+    assert!(pt.contains(&format!("scoreboard players set {SEL} dw.f_summoned 1")));
     // Every phase runs the emitted mask function (no re-implementation).
-    assert!(pt.contains("execute as @a run function v04-showcase:dmask_keeper_greet"));
+    assert!(pt.contains(&format!(
+        "execute as {SEL} run function v04-showcase:dmask_keeper_greet"
+    )));
     // Bit isolation `(dmask >> bit) & 1`: bit 0 via `%= 2` then `/= 1`; bit 1
     // (the flag option) via `%= 4` then `/= 2`. Both axes assert 0/1, never 2.
-    assert!(pt.contains("scoreboard players set #dmhi dw.sys 2"));
-    assert!(pt.contains("scoreboard players set #dmlo dw.sys 1"));
-    assert!(pt.contains("scoreboard players set #dmhi dw.sys 4"));
-    assert!(pt.contains("scoreboard players set #dmlo dw.sys 2"));
-    assert!(pt.contains("scoreboard players operation #dm dw.sys %= #dmhi dw.sys"));
-    assert!(pt.contains("scoreboard players operation #dm dw.sys /= #dmlo dw.sys"));
+    assert!(pt.contains("scoreboard players set #dmhi_dvis dw.sys 2"));
+    assert!(pt.contains("scoreboard players set #dmlo_dvis dw.sys 1"));
+    assert!(pt.contains("scoreboard players set #dmhi_dvis dw.sys 4"));
+    assert!(pt.contains("scoreboard players set #dmlo_dvis dw.sys 2"));
+    assert!(pt.contains("scoreboard players operation #dm_dvis dw.sys %= #dmhi_dvis dw.sys"));
+    assert!(pt.contains("scoreboard players operation #dm_dvis dw.sys /= #dmlo_dvis dw.sys"));
     // Isolated asserts are always 0 (hidden) or 1 (shown) — the whole-mask value
     // (e.g. 2 for a lit high bit) must never appear.
     assert!(
-        !pt.contains("assert score #dm dw.sys matches 2"),
+        !pt.contains("assert score #dm_dvis dw.sys matches 2"),
         "isolated-bit asserts must be 0/1, never a raw mask value: {pt}"
     );
     assert_eq!(
-        pt.matches("assert score #dm dw.sys matches 0").count(),
+        pt.matches("assert score #dm_dvis dw.sys matches 0").count(),
         2,
         "hidden asserted before activation and after completion"
     );
     assert_eq!(
-        pt.matches("assert score #dm dw.sys matches 1").count(),
+        pt.matches("assert score #dm_dvis dw.sys matches 1").count(),
         2,
         "shown asserted while active (objective axis) and for the flag axis"
     );
@@ -330,7 +335,9 @@ fn dialogue_visibility_packtest_covers_both_axes() {
         "the dmask read must not use a multi-entity `@a` selector: {pt}"
     );
     assert!(
-        pt.contains("execute as @a run scoreboard players operation #dm dw.sys = @s dw.dmask"),
+        pt.contains(&format!(
+            "execute as {SEL} run scoreboard players operation #dm_dvis dw.sys = @s dw.dmask"
+        )),
         "the dmask read copies @s (single) into the assert scratch: {pt}"
     );
 }
@@ -368,7 +375,7 @@ fn killless_spawn_wave_emits_function_and_packtest() {
     assert!(
         pt.contains("function v04-showcase:spawn_ambush")
             && pt.contains("if entity @e[tag=dw_wave_ambush]")
-            && pt.contains("assert score #kw dw.sys matches 2"),
+            && pt.contains("assert score #kw_klwv dw.sys matches 2"),
         "kill-less wave PackTest spawns then asserts the mob count: {pt}"
     );
 }
@@ -414,9 +421,11 @@ fn completed_objectives_despawn_their_summoned_markers() {
     )
     .unwrap();
     assert!(
-        pt.contains("assert score #before dw.sys matches 1..")
-            && pt.contains("function v04-showcase:complete_o_door")
-            && pt.contains("assert score #after dw.sys matches 0"),
+        pt.contains("assert score #before_iclr dw.sys matches 1..")
+            && pt.contains(
+                "execute as @a[tag=dw_t_iclr,limit=1] run function v04-showcase:complete_o_door"
+            )
+            && pt.contains("assert score #after_iclr dw.sys matches 0"),
         "interact-cleanup PackTest asserts hitbox exists then is gone: {pt}"
     );
 }
