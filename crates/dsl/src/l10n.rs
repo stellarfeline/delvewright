@@ -126,6 +126,14 @@ fn local(id: &str) -> &str {
     id.split_once('/').map(|(_, r)| r).unwrap_or(id)
 }
 
+/// The local part of a type-prefixed DSL id, exactly as the key scheme derives it
+/// (`npc/keeper` → `keeper`). Public so a consumer that pairs inventory keys back
+/// with their source objects (`delvec l10n-inventory`, matching `dlg.<npc>.…` keys
+/// to the NPC that speaks them) derives the same segment the keys are built from.
+pub fn local_id(id: &str) -> &str {
+    local(id)
+}
+
 /// Walk every player-visible string in `c` in a fixed, deterministic order,
 /// invoking `f(key, &mut value)` for each. The single traversal shared by
 /// [`inventory`] and [`localize`] — they cannot drift.
@@ -228,6 +236,24 @@ pub fn inventory(c: &Campaign) -> BTreeMap<String, String> {
         out.insert(key.to_string(), value.clone());
     });
     out
+}
+
+/// The NPC an inventory key belongs to (its **local** id), when the key scheme
+/// encodes one: `dlg.<npc>.…` (that NPC's dialogue tree — `.text` is the NPC's own
+/// line, `.opt.<i>.label` the player's reply *within* it) and `npc.<npc>.name`.
+/// Returns `None` for every other key kind.
+///
+/// Lives beside [`each_string`] — the traversal that *defines* the key scheme — so
+/// the two cannot drift silently (a CLI test asserts every speaker derived from a
+/// real campaign's inventory resolves to a declared NPC). Consumed by
+/// `delvec l10n-inventory`, which hands a translator the speaking character's
+/// persona (`speech_style` above all) alongside the English line.
+pub fn key_speaker(key: &str) -> Option<&str> {
+    let (kind, rest) = key.split_once('.')?;
+    match kind {
+        "dlg" | "npc" => rest.split('.').next(),
+        _ => None,
+    }
 }
 
 /// One `narrate` `art` occurrence (DSL v0.6, spec-0014): its stage-doc path (for

@@ -91,6 +91,7 @@ delvec validate <dir>                      # stages 1–6 schema + referential
 delvec analyze  <dir>                      # + quest-graph reachability
 delvec build    <dir> -o <out>             # full deterministic build
 delvec schema   --stage <1..6|all>         # export JSON Schema
+delvec l10n-inventory <dir> [--lang <c>]   # l10n key inventory as JSON (translation input)
 delvec --version                           # "delvec 0.1.0, dsl 0.6.0, mc 1.21.11"
 ```
 
@@ -252,6 +253,27 @@ the effect's list index + leaf, e.g. `fx.<q>.oc.<o>.0.seq.1.0.narrate` (nesting 
 arbitrary-depth). Keys are purely position-derived → deterministic + byte-stable.
 Coverage is **exact**: missing/absent/inconsistent → `DW0180`; orphan → `DW0181`.
 Excludes authoring context (theme/premise/persona).
+
+**`delvec l10n-inventory <dir> [--lang <code>]`** emits that inventory as one JSON
+document on stdout — the work list a translator (in-agent, human, or an external
+API via `tools/i18n-translate.py`) is handed up front, instead of discovering it by
+writing an empty sidecar and reading the coverage diagnostics back:
+
+```
+{ campaign_id, dsl_version, lang, declared, sidecar_present, world_title,
+  npcs:    [{id, name, archetype, speech_style, demeanor?, motivation}],
+  entries: [{key, en, speaker?, existing?}] }
+```
+
+`entries` is the inventory itself (a CLI test asserts the key set equals what
+`DW0180` demands, so the two cannot drift). `speaker` is the NPC whose dialogue
+tree the key belongs to (`dlg.<npc>.…`, `npc.<npc>.name`; a `.opt.<i>.label` is the
+player's reply *inside* that tree); `existing` is what `l10n/<lang>.json` already
+translates, so a re-run fills only the gaps. Persona rows carry voice, never plot
+(`secret`/`backstory`/`relationships` are excluded). Runs **before** validation
+gating — an incomplete sidecar is the normal state when you ask — and needs no
+prefab library; only an unparseable campaign fails (exit 1). See
+[i18n.md](i18n.md).
 
 ---
 
