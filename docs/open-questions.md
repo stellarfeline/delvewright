@@ -66,8 +66,9 @@ research item. Decision: finish the Java line and find its ceiling first. The
 DSL is the edition-agnostic asset — a Bedrock emitter backend remains a
 plausible post-v1 compiler target with campaigns unchanged.
 
-Data point (owner, 2026-08-01): "Better on Bedrock" — the owner played it and
-its content richness (new items, mobs, bosses) registered as datapack-grade.
+Data point (owner, 2026-08-01): a hands-on comparison rated the Bedrock
+experience better; its content richness (new items, mobs, bosses) registered
+as datapack-grade.
 It is a vanilla-legal Bedrock **Add-On** (behavior pack JSON entities/AI +
 resource pack Molang models/animations + the `@minecraft/server` Script API),
 auto-distributed to unmodified clients on join. Java has no vanilla path to
@@ -76,9 +77,9 @@ halves of the verdict above: the Bedrock staging ceiling is real, and the M6
 modpack line is Java's route to the same tier (with a client install as the
 distribution tax Bedrock doesn't pay).
 
-Revisited (owner challenge, 2026-08-01: "should have picked Bedrock if
-self-made assets are the core; Java's edge only shows at M6"). Corrections
-and the standing verdict:
+Revisited (owner challenge, 2026-08-01: if self-made assets are the core of
+the product, Bedrock was the right platform, and Java's edge only shows at
+M6). Corrections and the standing verdict:
 - Concession: Bedrock GameTest ships an official **SimulatedPlayer** API
   (move/jump/interact/attack), so the machine-validation gap is narrower
   than the earlier "research-grade bot gap" claim. Still unproven there:

@@ -3,7 +3,7 @@
 # it is the 1st or the 2nd /place jigsaw in the world? If yes => layout is a pure
 # function of (world seed, position), the strongest determinism guarantee.
 set -u
-SP=/private/tmp/claude-501/-Users-steve235lab-Documents-projects-Delvewright/68f4f0ec-20bc-47f8-a70e-808d8fbe50cc/scratchpad
+SP="${SP:-$(mktemp -d)}"
 OUT=$SP/exp/results; mkdir -p $OUT
 SEED=20260729
 P="0 -59 0"        # first cluster (origin)

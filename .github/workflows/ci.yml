@@ -163,9 +163,11 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     env:
-      # Accepting Mojang's EULA is the repo owner's standing action for her own
-      # CI pipeline (ADR-0010); the itzg base fetches the jar at run time and it
-      # is never baked into or published from CI.
+      # Accepting Mojang's EULA (https://aka.ms/MinecraftEULA) is the standing
+      # action of whoever operates this repository, for their own CI pipeline
+      # (ADR-0010). Anyone who runs this workflow — including in a fork — thereby
+      # accepts the Minecraft EULA for that run. The itzg base fetches the server
+      # jar at run time; it is never baked into or published from CI.
       EULA: "TRUE"
     steps:
       - uses: actions/checkout@v4

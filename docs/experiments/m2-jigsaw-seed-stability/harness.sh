@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Seed-stability experiment harness. Each run = fresh container = fresh world.
 set -u
-SP=/private/tmp/claude-501/-Users-steve235lab-Documents-projects-Delvewright/68f4f0ec-20bc-47f8-a70e-808d8fbe50cc/scratchpad
+SP="${SP:-$(mktemp -d)}"
 OUT=$SP/exp/results
 mkdir -p $OUT
 

@@ -30,7 +30,7 @@ delve image** (same exclusion guarantee as PackTest, CI-checked).
 ### 2. Compose `playtest` profile *(M2 core)*
 
 Same delve image as `play`, plus: the creator overlay mounted into the world's
-datapacks, and the creator opped (name via env) so she can `/tp` and inspect.
+datapacks, and the creator opped (name via env) so they can `/tp` and inspect.
 One command, localhost only, offline by default — mirrors `play` in every other way.
 
 ### 3. Harvester → `playtest-report.json` *(M2 core)*

@@ -31,7 +31,7 @@ stage end-to-end:
    world.
 7. **Owner playtest path**: one command (the `validation/` compose `play` profile,
    see spec-0003) starts the current delve server on the workstation; the owner joins
-   from her vanilla Minecraft client at `localhost` to see the result first-hand.
+   from their vanilla Minecraft client at `localhost` to see the result first-hand.
    This stays the standing verify-progress entrypoint for every later milestone.
 
 **Exit**: a single CI workflow run shows steps 1–6 green, and the owner has joined
@@ -63,7 +63,7 @@ sealing (spec-0002) added as an M2 emission requirement.
 1. **Dress rehearsal**: the planning agent itself generates a *relatively complex*
    delve via `/new-delve` (multiple areas/quests/NPCs), takes it through the full
    validation ladder green, and the owner **plays it** to judge the result.
-2. **Acceptance**: after the rehearsal passes her play-check, the owner opens a
+2. **Acceptance**: after the rehearsal passes that play-check, the owner opens a
    **fresh session** and produces a complete, playable delve end-to-end via
    `/new-delve` — no hand edits to compiler output, joinable via the play profile.
 
@@ -72,7 +72,7 @@ sealing (spec-0002) added as an M2 emission requirement.
 - Compiler features for actual play: classes/gear provisioning, NPC dialogue,
   multi-quest campaigns, boss/finale mechanics, completion → credits.
 - Multi-player validation via Carpet fake players.
-- Owner QA hour on a release candidate; her findings become specs/issues.
+- Owner QA hour on a release candidate; the findings become specs/issues.
 
 **Exit**: the owner and friends play a generated delve for 2–3 hours and finish it.
 

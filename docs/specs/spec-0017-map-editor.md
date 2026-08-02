@@ -1,9 +1,9 @@
 # spec-0017 — The map editor (LLM world editing, layers 2+3)
 
-- **Status**: Draft (planner, 2026-08-01; owner's 3-layer frame ruling and
-  "L2/L3 polished in M5" mandate, pulled forward on her 2026-08-01 request;
+- **Status**: Draft (planner, 2026-08-01; owner's 3-layer frame ruling and the
+  mandate to polish L2/L3 in M5, pulled forward on owner request 2026-08-01;
   consumes spec-0015's read half — snapshot / blocking-chart / manifest)
-- **Name**: the owner has named this component **the map editor** (地图编辑器).
+- **Name**: the component's official name is **the map editor** (地图编辑器).
 - **Vision**: the designing LLM edits worlds the way it already inspects
   them — a closed loop of edit verb → deterministic replay → snapshot —
   instead of every visual fix being a Rust generator change.

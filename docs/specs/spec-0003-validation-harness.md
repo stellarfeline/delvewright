@@ -140,7 +140,7 @@ All three profiles are driven by one compiler build output at
 
 - **`play`** (owner request 2026-07-29; permanent): `docker compose --profile play
   up` starts *only* the shipped delve image with `127.0.0.1:25565` mapped, so the
-  owner joins from her vanilla client to hand-check at any time. No tooling mods.
+  owner joins from their vanilla client to hand-check at any time. No tooling mods.
 - **`validate`**: `server` (the shipped delve image) + `bot`, healthcheck-gated;
   `--abort-on-container-exit --exit-code-from bot` propagates the playthrough result.
 - **`packtest`**: the Fabric + PackTest tooling runner; `--exit-code-from packtest`.

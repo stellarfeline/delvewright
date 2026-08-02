@@ -6,7 +6,7 @@ adventure "delves" on demand** for a fixed group of 1–4 players (owner decisio
 (10h ceiling), story-driven, box-garden (箱庭) adventure map: adventure mode, class
 selection with pre-provided gear, zero grind. It ships as a versioned OCI image — one
 `docker run` = a joinable dungeon — and must be **provably completable by machine**
-before the owner spends her one QA hour on it.
+before the owner spends their one QA hour on it.
 
 Founding decisions live in `docs/adr/` and originate from the kickoff handoff
 (`docs/handoff-2026-07-29.md`). Read the ADR index before proposing architecture.

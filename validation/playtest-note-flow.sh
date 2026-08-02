@@ -17,7 +17,7 @@ cd "$(dirname "$0")/.."
 # CREATOR_NAME is intentionally left UNSET here (so compose's OPS is empty): the
 # note flow needs no op — `/trigger dw.note` is enabled for everyone each tick — and
 # itzg's OPS resolves the name via PlayerDB, which fails for a fake offline bot name.
-# The owner sets CREATOR_NAME to her real (resolvable) MC name for hands-on playtests.
+# The owner sets CREATOR_NAME to their real (resolvable) MC name for hands-on playtests.
 unset CREATOR_NAME
 
 COMPOSE="docker compose -f validation/compose.yaml --profile playtest"
