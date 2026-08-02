@@ -5,7 +5,7 @@ Docker-compose entrypoint for running Delvewright the same way CI and prod do
 "this compose profile passes". Two profiles:
 
 - **`play`** (available now) — a bare, pinned vanilla **1.21.11** server the owner
-  can join by hand from her own client to check a delve at any time.
+  can join by hand from their own client to check a delve at any time.
 - **`validate`** (stub, comments in `compose.yaml`) — the full two-layer dynamic
   validation stack (server + PackTest runner + mineflayer bot, exit codes
   propagated to CI). Arrives with the rest of spec-0003 once the compiler emits a

@@ -46,7 +46,7 @@ every output byte.
 - M1 is slower: emission and validation are built, not imported. Accepted cost.
 - Determinism (ADR-0006) is enforced in first-party code; no upstream serialization
   drift can break byte-identity.
-- Single-language `crates/` workspace; owner reviews in her strongest language.
+- Single-language `crates/` workspace; owner reviews in their strongest language.
 - The vendored command tree is part of the version pin: it changes only if ADR-0009's
   revisit triggers fire.
 

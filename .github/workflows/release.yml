@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Accepting Mojang's EULA is the repo owner's standing action for her own
+  # Accepting Mojang's EULA is the repo owner's standing action for their own
   # release pipeline (ADR-0010). The server jar is fetched at run time by the
   # itzg base and is NEVER baked into or published from this image (only the
   # datapack + config — bytes we authored — ship in layers).
