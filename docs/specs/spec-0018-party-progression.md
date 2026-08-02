@@ -44,18 +44,27 @@ this spec — a later souls/co-op addition once a vanilla-first primitive
 is settled (candidate: pressure-plate trap hardware + a conjunction
 window). Nothing here blocks it.
 
+## Declared party size
+
+`world.json` gains **`min_players`** (default 1, max 4). A campaign
+designed to REQUIRE n players declares it; the lobby refuses to start
+below the declared size (owner amendment 2026-08-02: mandatory-n designs
+are first-class, not merely tolerated).
+
 ## Validation (two-layer, extended)
 
-1. **Static**: unchanged single-agent completability remains the base
-   proof — every campaign must be completable by ONE player (a party of
-   one is legal). AND-join branches add a proof that each parallel arm is
-   independently reachable from the join's frontier.
-2. **Runtime**: a generated **two-dummy PackTest** for every AND-join:
-   dummy A completes arm A only, dummy B completes arm B only, assert the
-   join objective activates and both dummies see the successor state
-   (division-of-labor proven on a real server, batch-model compliant).
-   The critical-path bot stays single-bot (valid by the party-of-one
-   rule).
+1. **Static**: completability is proven with **min_players agents** —
+   for min_players 1 that is the unchanged single-agent proof (a party
+   of one is legal); for mandatory-n designs the analyzer proves an
+   n-agent division exists (each parallel arm assigned to an agent, all
+   arms reachable from the join's frontier).
+2. **Runtime**: a generated **n-dummy PackTest** for every AND-join,
+   where n = the join's arm count (2 dummies for a 2-arm join, and for
+   mandatory-n designs n dummies per the declaration): each dummy
+   completes exactly one arm, assert the join activates and every dummy
+   sees the successor state (division-of-labor proven on a real server,
+   batch-model compliant). The critical-path bot runs min_players bots
+   (single-bot when min_players = 1, unchanged).
 
 ## Migration
 
