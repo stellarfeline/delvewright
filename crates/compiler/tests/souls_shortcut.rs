@@ -177,3 +177,148 @@ fn shortcut_runtime_behaviour_is_packtested() {
         "sealed-before / open-after / still-open asserts all present: {t}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// DW0306 vs a shortcut-owned gate (the half-split heuristic)
+// ---------------------------------------------------------------------------
+//
+// `DW0306` (gate-aware reachability, `plan::check_gate_reachability`) models a
+// sealed gate by splitting its carrying piece into two halves along the gate
+// plane and connecting them only by the gate cut-edge. That is deliberately
+// coarse: an in-piece bypass AROUND the gate is invisible to it, so a far-side
+// objective behind a gate no earlier objective opens always reads as a deadlock.
+//
+// A souls shortcut is exactly that shape — the unlock sits on the FAR side, so a
+// plain `open-gate` reward would be self-deadlocking by construction. Shortcuts
+// are exempt from the heuristic **by construction**, not by a special case:
+// `collect_open_gate_anchors` builds the heuristic's gate set from `open-gate`
+// effect anchors only, and a `shortcut` gate has no `open-gate` effect. Its
+// deadlock obligation is discharged by a strictly stronger proof instead —
+// `Plan::build` seals every shortcut gate at step 0, so the cell-level critical
+// path proof (`DW0311`) has to find the long route over real geometry.
+//
+// The three tests below pin all three halves of that argument: the shortcut is
+// green, the same geometry as a plain gate is still red, and the exemption is not
+// a hole.
+
+/// A stage-document mutation: the stage file's stem and the edit to apply to it.
+type StagePatch = (&'static str, fn(&mut serde_json::Value));
+
+/// Materialize the `souls-shortcut` fixture into a fresh temp dir, applying each
+/// [`StagePatch`] to its stage document.
+fn fixture_variant(name: &str, patch: &[StagePatch]) -> std::path::PathBuf {
+    let src = common::compiler_fixtures_dir().join(NS);
+    let dst = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+    let _ = std::fs::remove_dir_all(&dst);
+    std::fs::create_dir_all(&dst).unwrap();
+    for entry in std::fs::read_dir(&src).unwrap() {
+        let path = entry.unwrap().path();
+        std::fs::copy(&path, dst.join(path.file_name().unwrap())).unwrap();
+    }
+    for (stage, mutate) in patch {
+        let file = dst.join(format!("{stage}.json"));
+        let mut doc: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        mutate(&mut doc);
+        std::fs::write(&file, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+    }
+    dst
+}
+
+/// Plan a campaign directory, returning the `DW03xx` plan error if there is one.
+fn plan_code(dir: &std::path::Path) -> Result<(), &'static str> {
+    let loaded = load_campaign_dir(dir).unwrap();
+    let campaign = parse_campaign(&loaded.raw).expect("variant parses");
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    Plan::build(&campaign, &prefabs)
+        .map(|_| ())
+        .map_err(|e| e.code)
+}
+
+/// **Green**: the fixture is a single piece with an internal gate (`anchor/door`)
+/// and a `reach-anchor` objective on the FAR side (`anchor/exit`) — the exact
+/// shape the `DW0306` half-split heuristic reports as a deadlock — declared as a
+/// `shortcut` with a real in-piece long route (the stage-7 `carve` at x=8). It
+/// plans and builds clean: no `DW0306`, and `DW0373`/`DW0374` satisfied (the full
+/// `emit::build` in `build_fixture` is where those two run).
+#[test]
+fn a_shortcut_owned_gate_is_not_a_dw0306_deadlock() {
+    let dir = common::compiler_fixtures_dir().join(NS);
+    assert_eq!(
+        plan_code(&dir),
+        Ok(()),
+        "a shortcut-owned gate must not be reported as a gate deadlock — the \
+         shortcut runs its own (stronger) proofs"
+    );
+    // The whole pipeline, including the DW0373 long-route / DW0374 payoff proofs.
+    let _ = build_fixture();
+}
+
+/// **Red, unchanged**: the identical geometry with the shortcut replaced by a
+/// plain `open-gate` reward on the far-side objective is still `DW0306`. This is
+/// what makes the test above non-vacuous — the gate really is in the shape the
+/// heuristic rejects — and it proves `DW0306` is not weakened for ordinary gates
+/// (see also `cli::gate_deadlock_exits_3_with_dw0305`, untouched).
+#[test]
+fn the_same_gate_as_a_plain_open_gate_is_still_dw0306() {
+    let dir = fixture_variant(
+        "shortcut-as-plain-gate",
+        &[("quests", |doc| {
+            let c = doc.get_mut("content").unwrap().as_object_mut().unwrap();
+            c.remove("shortcuts");
+            c["quests"][0]["on_objective_complete"] = serde_json::json!({
+                "obj/exit": [{ "type": "open-gate", "anchor": "anchor/door" }]
+            });
+        })],
+    );
+    assert_eq!(
+        plan_code(&dir),
+        Err(delvewright_compiler::plan::DW_GATE_DEADLOCK),
+        "an ORDINARY gate whose only opener is the far-side objective itself must \
+         still be a DW0306 deadlock"
+    );
+}
+
+/// **The exemption is not a hole**: delete the long route (empty the stage-7 edit
+/// batches) and the shortcut fixture fails again — at `DW0311`, the cell-level
+/// critical-path walkability proof, because `Plan::build` seals every shortcut
+/// gate at step 0. A shortcut gate is therefore proven MORE strictly than the
+/// piece-graph heuristic would manage, not less.
+#[test]
+fn a_shortcut_with_no_long_route_is_rejected_by_the_critical_path_proof() {
+    let dir = fixture_variant(
+        "shortcut-without-long-route",
+        &[("world-edits", |doc| {
+            doc["content"]["batches"] = serde_json::json!([]);
+        })],
+    );
+    let loaded = load_campaign_dir(&dir).unwrap();
+    let campaign = parse_campaign(&loaded.raw).expect("variant parses");
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).expect("planning still succeeds");
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
+            structures.insert(piece.structure_file.clone(), bytes);
+        }
+    }
+    let err = emit::build(
+        &plan,
+        &loaded.inputs,
+        &structures,
+        &CommandTree::v1_21_11(),
+        &prefabs,
+        None,
+        "unpinned",
+        &BTreeMap::new(),
+    )
+    .expect_err("with the bypass carved away the gate is the ONLY route — must fail");
+    let emit::BuildFailure::Diagnostic { code, message } = err else {
+        panic!("expected a coded build diagnostic, got a command-validation failure");
+    };
+    assert_eq!(
+        code, "DW0311",
+        "the sealed shortcut gate must break the critical path: {message}"
+    );
+}
