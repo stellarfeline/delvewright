@@ -425,6 +425,18 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   player who has not played, and the entry point is where the campaign begins.
 - `datapack/pack.mcmeta`: `min_format`/`max_format` = `[94, 1]` (a bare
   `pack_format` is rejected for formats > 81).
+- `resourcepack.zip` → `pack.mcmeta`: `min_format`/`max_format` = `[75, 0]`, and
+  **no** bare `pack_format`. Resource packs and data packs share one
+  `pack.mcmeta` codec; only the "must declare `min_format`/`max_format`"
+  threshold differs — **64** for resource packs, 81 for data packs — and the
+  codec cross-checks a bare `pack_format` against `max_format`, so emitting both
+  risks a declaration-mismatch error. Formats are pinned in `versions.toml`
+  (`[resourcepack] pack_format`) from the 1.21.11 client's `version.json`
+  (`resource_major: 75, resource_minor: 0`). Getting this wrong is **client-side
+  only**: the pack is refused whole ("Pack declares support for version newer
+  than 64, but is missing mandatory fields min_format and max_format") and every
+  NPC skin silently never loads, while no server — and therefore no rung of the
+  validation ladder — parses a resource pack at all.
 - `<out>/`: `manifest.json` (SHA-256 of the 6 inputs + every output; non-`en`
   build adds `language` + hashes the sidecar), `datapack/`, `packtest-datapack/`,
   `server/`, `critical-path.json`, plus `resourcepack.zip`+`SKINS.md`
