@@ -156,6 +156,123 @@ fn single_shot_without_seconds_is_dw0199() {
     );
 }
 
+// --------------------------------------------------------------------------
+// Shot styles (spec-0015): DW0348 / DW0349 / subject refs
+// --------------------------------------------------------------------------
+
+/// A well-formed styled shot — orbit around an anchor subject — validates
+/// clean under 0.6.0 with no `path`/`seconds` (the style supplies both).
+#[test]
+fn styled_shot_validates_clean() {
+    let d = diags(
+        "0.6.0",
+        r#"{ "type": "cutscene", "shots": [
+             { "shot_style": "orbit-arc", "degrees": 90, "dist": 10,
+               "subject": { "anchor": "anchor/exit", "offset": [0, 1, 0] } } ] }"#,
+    );
+    assert!(d.is_empty(), "styled shot must validate clean: {d:#?}");
+}
+
+/// Style-shape violations are `DW0348`: a style without `subject`, style params
+/// on an unstyled shot, `subject_b` off `two-shot`, a `two-shot` without
+/// `subject_b`, and `degrees` off `orbit-arc` / out of range.
+#[test]
+fn style_shape_violations_are_dw0348() {
+    let cases = [
+        // style, no subject
+        r#"{ "type": "cutscene", "shots": [ { "shot_style": "insert" } ] }"#,
+        // style params without a style
+        r#"{ "type": "cutscene", "shots": [ { "seconds": 2, "dist": 8,
+             "path": [ { "anchor": "anchor/exit", "offset": [0, 2, 0] } ] } ] }"#,
+        // subject_b on a non-two-shot style
+        r#"{ "type": "cutscene", "shots": [ { "shot_style": "insert",
+             "subject": { "anchor": "anchor/exit" },
+             "subject_b": { "anchor": "anchor/door" } } ] }"#,
+        // two-shot without subject_b
+        r#"{ "type": "cutscene", "shots": [ { "shot_style": "two-shot",
+             "subject": { "anchor": "anchor/exit" } } ] }"#,
+        // degrees off orbit-arc
+        r#"{ "type": "cutscene", "shots": [ { "shot_style": "insert", "degrees": 90,
+             "subject": { "anchor": "anchor/exit" } } ] }"#,
+        // orbit sweep out of the dossier's 45..=120 range
+        r#"{ "type": "cutscene", "shots": [ { "shot_style": "orbit-arc", "degrees": 361,
+             "subject": { "anchor": "anchor/exit" } } ] }"#,
+    ];
+    for body in cases {
+        let d = diags("0.6.0", body);
+        assert!(
+            d.iter().any(|x| x.code == "DW0348"),
+            "expected DW0348 for {body}: {d:#?}"
+        );
+    }
+}
+
+/// `side-track`/`low-follow` need a subject that provably moves: an `anchor`
+/// subject, or an npc with no sibling `move-npc`, is `DW0349`.
+#[test]
+fn follow_styles_without_motion_are_dw0349() {
+    for body in [
+        r#"{ "type": "cutscene", "shots": [ { "shot_style": "side-track",
+             "subject": { "anchor": "anchor/exit" } } ] }"#,
+        r#"{ "type": "cutscene", "shots": [ { "shot_style": "low-follow",
+             "subject": { "npc": "npc/keeper" } } ] }"#,
+    ] {
+        let d = diags("0.6.0", body);
+        assert!(
+            d.iter().any(|x| x.code == "DW0349"),
+            "expected DW0349 for {body}: {d:#?}"
+        );
+    }
+}
+
+/// The same follow shot with the subject's `move-npc` in the same effect list
+/// is clean — the sibling move is the compiler-known motion.
+#[test]
+fn follow_style_with_sibling_move_is_clean() {
+    let d = diags(
+        "0.6.0",
+        r#"{ "type": "cutscene", "shots": [ { "shot_style": "side-track",
+             "subject": { "npc": "npc/keeper" } } ] },
+           { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/exit" }"#,
+    );
+    assert!(
+        !d.iter().any(|x| x.code == "DW0349"),
+        "a sibling move-npc satisfies the moving-subject rule: {d:#?}"
+    );
+}
+
+/// A subject naming an unknown npc is the standard dangling ref (`DW0112`).
+#[test]
+fn unknown_subject_npc_is_dangling_ref() {
+    let d = diags(
+        "0.6.0",
+        r#"{ "type": "cutscene", "shots": [ { "shot_style": "insert",
+             "subject": { "npc": "npc/nobody" } } ] }"#,
+    );
+    assert!(
+        d.iter().any(|x| x.code == "DW0112"),
+        "unknown subject npc must be DW0112: {d:#?}"
+    );
+}
+
+/// `CameraShot`'s hand-written `Debug` is a stable content-key rendering: a
+/// pre-style shot renders **byte-identically** to the pre-style derived struct
+/// (the compiler's `sequence_key` hashes `{steps:?}`, so any drift would churn
+/// every `seq_<hash>` function name in shipped campaigns).
+#[test]
+fn pre_style_shot_debug_rendering_is_stable() {
+    let shot: delvewright_dsl::CameraShot = serde_json::from_str(
+        r#"{ "seconds": 4,
+             "path": [ { "anchor": "anchor/exit", "offset": [0, 2, 0] } ] }"#,
+    )
+    .unwrap();
+    assert_eq!(
+        format!("{shot:?}"),
+        "CameraShot { path: [CameraWaypoint { anchor: AnchorId(\"anchor/exit\"), \
+         offset: [0, 2, 0] }], seconds: 4, look_at: None }"
+    );
+}
+
 /// An unknown field inside a shot is a schema rejection (`deny_unknown_fields`).
 #[test]
 fn unknown_shot_field_is_dw0100() {

@@ -230,7 +230,7 @@ pub fn build(
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
                 // unroutable. Planned alongside move-npc from the same occupancy model.
                 let am = crate::nav::plan_actor_moves(plan, &world)?;
-                crate::nav::check_cutscenes(plan, &world)?;
+                crate::nav::check_cutscenes(plan, &world, &m, &am)?;
                 crate::nav::check_critical_path(plan, &world)?;
                 // v0.6 checkpoint no-stranding + placement proofs (spec-0012,
                 // DW0315/DW0316) and stealth-zone standable/reachable proofs
@@ -1792,7 +1792,7 @@ fn emit_functions(
     fns.extend(movenpc_fns(plan, moves));
     fns.extend(actor_fns(plan, actor_moves));
     fns.extend(sequence_fns(plan));
-    fns.extend(cutscene_fns(plan));
+    fns.extend(cutscene_fns(plan, moves, actor_moves));
     fns.extend(env_trigger_fns(plan));
     fns.extend(trap_fns(plan));
     fns.extend(boundary_fns(plan));
@@ -2662,9 +2662,26 @@ fn cutscene_fn(shots: &[delvewright_dsl::CameraShot]) -> String {
         .path
         .first()
         .map(|w| plan::safe_local(w.anchor.as_str()))
+        .or_else(|| {
+            // A styled shot may have no explicit path: key on the style + the
+            // subject's id instead, so the function name stays greppable.
+            head.shot_style.map(|style| {
+                let subj = match &head.subject {
+                    Some(delvewright_dsl::CameraSubject::Anchor { anchor, .. }) => anchor.as_str(),
+                    Some(delvewright_dsl::CameraSubject::Npc { npc, .. }) => npc.as_str(),
+                    Some(delvewright_dsl::CameraSubject::Actor { actor, .. }) => actor.as_str(),
+                    None => "none",
+                };
+                format!(
+                    "{}_{}",
+                    plan::safe_local(style.token()),
+                    plan::safe_local(subj)
+                )
+            })
+        })
         .unwrap_or_else(|| "none".to_string());
-    let base = format!("cs_{first}_{}_{}", head.seconds, head.path.len());
-    if shots.len() == 1 && head.look_at.is_none() {
+    let base = format!("cs_{first}_{}_{}", head.resolved_seconds(), head.path.len());
+    if shots.len() == 1 && head.look_at.is_none() && head.shot_style.is_none() {
         return base;
     }
     format!("{base}_{}", cutscene_digest(shots))
@@ -2676,7 +2693,7 @@ fn cutscene_fn(shots: &[delvewright_dsl::CameraShot]) -> String {
 fn cutscene_digest(shots: &[delvewright_dsl::CameraShot]) -> String {
     let mut canon = String::new();
     for shot in shots {
-        canon.push_str(&format!("s={};", shot.seconds));
+        canon.push_str(&format!("s={};", shot.resolved_seconds()));
         for w in &shot.path {
             canon.push_str(&format!(
                 "p={}@{},{},{};",
@@ -2694,6 +2711,26 @@ fn cutscene_digest(shots: &[delvewright_dsl::CameraShot]) -> String {
                 t.offset[1],
                 t.offset[2]
             ));
+        }
+        // Styled-shot fields (v0.6, spec-0015) — appended only when present, so
+        // every pre-existing shot list keeps its digest byte-for-byte.
+        if let Some(style) = shot.shot_style {
+            canon.push_str(&format!("y={};", style.token()));
+        }
+        if let Some(sub) = &shot.subject {
+            canon.push_str(&format!("u={};", sub.canon()));
+        }
+        if let Some(sub) = &shot.subject_b {
+            canon.push_str(&format!("v={};", sub.canon()));
+        }
+        if let Some(d) = shot.dist {
+            canon.push_str(&format!("d={d:?};"));
+        }
+        if let Some(g) = shot.degrees {
+            canon.push_str(&format!("g={g:?};"));
+        }
+        if let Some(b) = shot.bearing {
+            canon.push_str(&format!("b={b:?};"));
         }
         canon.push('|');
     }
@@ -3059,14 +3096,6 @@ fn sequence_fns(plan: &Plan) -> Vec<(String, String)> {
 /// `end`/restore, so the state has exactly the cinematic's lifetime.
 const CUTSCENE_TAG: &str = "dw_cutscene";
 
-/// One cutscene shot with its geometry resolved to world coordinates: the dolly
-/// polyline, the optional `look_at` subject point, and the shot's length in ticks.
-struct ResolvedShot {
-    pts: Vec<[f64; 3]>,
-    subject: Option<[f64; 3]>,
-    ticks: i32,
-}
-
 /// Cutscene functions (spec-0008 addendum; keyframe dolly per task #64): the
 /// two-camera bounce. Per cutscene (deduped by content key) emits a start
 /// function, a self-scheduling keyframe/`spectate` driver, and an end/restore
@@ -3103,16 +3132,25 @@ struct ResolvedShot {
 /// cut (the next tick teleports the camera pair to the new shot's first waypoint
 /// with its own aim). A one-shot cutscene reduces to exactly the pre-multi-shot
 /// timeline, so the single-shot spelling is byte-identical either way.
-fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
+fn cutscene_fns(
+    plan: &Plan,
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
     let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for eff in all_campaign_effects(plan.campaign) {
+    for (eff, ctx) in crate::camera::cutscene_units(plan.campaign) {
         let Some(shots) = eff.cutscene_shots().filter(|s| !s.is_empty()) else {
             continue;
         };
         // `start` = the function emit_quest_effect calls (`cs_<bare>`); `bare` is
         // the shared suffix for the tick/end functions and per-cutscene sentinels.
+        // Dedup is by DSL content: two byte-identical cutscene effects share one
+        // generated function, planned from the FIRST occurrence's move context
+        // (deterministic — the traversal order is fixed). An author who wants a
+        // styled moving-subject cutscene to differ per context gives the shots
+        // distinguishing content (e.g. an explicit `seconds`).
         let start_name = cutscene_fn(&shots);
         if !seen.insert(start_name.clone()) {
             continue;
@@ -3121,25 +3159,26 @@ fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
             .strip_prefix("cs_")
             .unwrap_or(&start_name)
             .to_string();
-        // Resolve each shot's waypoint world positions (anchor + offset, block
-        // centres) and its subject. The air-corridor check (crate::nav, DW0308)
-        // validates these exact polylines, per shot.
-        let resolved: Vec<ResolvedShot> = shots
-            .iter()
-            .map(|shot| ResolvedShot {
-                pts: crate::nav::camera_points(plan, &shot.path),
-                subject: shot
-                    .look_at
-                    .as_ref()
-                    .map(|t| crate::nav::camera_look_point(plan, t)),
-                ticks: crate::camera::shot_ticks(shot.seconds),
-            })
-            .collect();
-        let first = resolved[0]
-            .pts
-            .first()
-            .copied()
-            .unwrap_or([0.0, plan::BASE_Y as f64, 0.0]);
+        // Expand every shot (explicit path, or `shot_style` construction) to
+        // its resolved geometry + aim. The air-corridor / chord / angular
+        // checks (crate::nav, DW0308/DW0347) validate these exact expansions.
+        let resolved: Vec<crate::camera::ExpandedShot> = {
+            let mut off: i32 = 0;
+            shots
+                .iter()
+                .map(|shot| {
+                    let ex = crate::camera::expand_shot(plan, moves, actor_moves, shot, &ctx, off);
+                    off += ex.ticks + 1;
+                    ex
+                })
+                .collect()
+        };
+        let first =
+            resolved[0]
+                .clip_polyline()
+                .first()
+                .copied()
+                .unwrap_or([0.0, plan::BASE_Y as f64, 0.0]);
 
         // start
         let mut start: Vec<String> = Vec::new();
@@ -3176,7 +3215,7 @@ fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
         let mut tick: Vec<String> = Vec::new();
         let mut offset: i32 = 0;
         for (si, shot) in resolved.iter().enumerate() {
-            let sf = crate::camera::plan_shot(&shot.pts, shot.subject, shot.ticks);
+            let sf = shot.frames();
             // Cadence merge + snap share the shot's first tick: the position
             // sync is flushed before entity metadata within a tick (spike
             // measurement 5), so the snap `tp` lands instantly under the OLD

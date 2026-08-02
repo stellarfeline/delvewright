@@ -1156,7 +1156,7 @@ pub fn camera_look_point(plan: &Plan, target: &delvewright_dsl::CameraTarget) ->
 /// Resolve `anchor + offset` to a block-centre world point (the shared cutscene
 /// camera convention). An unresolved anchor falls back to the layout origin —
 /// referential validation reports it separately.
-fn anchor_offset_point(plan: &Plan, anchor: &str, offset: [i32; 3]) -> [f64; 3] {
+pub(crate) fn anchor_offset_point(plan: &Plan, anchor: &str, offset: [i32; 3]) -> [f64; 3] {
     let base = plan
         .anchors
         .iter()
@@ -1190,29 +1190,35 @@ fn anchor_offset_point(plan: &Plan, anchor: &str, offset: [i32; 3]) -> [f64; 3] 
 ///   provably nauseating shot — an error, not a warning: the fix (more camera
 ///   distance, a longer shot, or a hard cut between two shots) is always
 ///   available, and a red check is information (CLAUDE.md debug doctrine).
-pub fn check_cutscenes(plan: &Plan, world: &World) -> Result<(), NavError> {
-    for eff in all_effects(plan) {
+pub fn check_cutscenes(
+    plan: &Plan,
+    world: &World,
+    moves: &[MovePlan],
+    actor_moves: &[ActorMovePlan],
+) -> Result<(), NavError> {
+    for (eff, ctx) in crate::camera::cutscene_units(plan.campaign) {
         let Some(shots) = eff.cutscene_shots() else {
             continue;
         };
+        let mut offset: i32 = 0;
         for (si, shot) in shots.iter().enumerate() {
-            let pts = camera_points(plan, shot.path.as_slice());
-            if let Some((seg, cell)) = first_clip(world, &pts) {
+            let ex = crate::camera::expand_shot(plan, moves, actor_moves, shot, &ctx, offset);
+            offset += ex.ticks + 1;
+            let pts = ex.clip_polyline();
+            if let Some((seg, cell)) = first_clip(world, pts) {
                 return Err(NavError {
                     code: DW_CUTSCENE_CLIP,
                     message: format!(
                         "cutscene: shot {si} camera dolly segment {seg} (from {:?} to {:?}) clips \
                          a solid block at {cell:?} — cameras must fly through open air; move the \
-                         segment's waypoint `anchor`/`offset` so the whole path clears solid \
-                         blocks",
+                         segment's waypoint `anchor`/`offset` (or the shot's `bearing`/`dist` for \
+                         a styled shot) so the whole path clears solid blocks",
                         round3(pts[seg]),
                         round3(pts[seg + 1]),
                     ),
                 });
             }
-            let ticks = crate::camera::shot_ticks(shot.seconds);
-            let subject = shot.look_at.as_ref().map(|t| camera_look_point(plan, t));
-            let frames = crate::camera::plan_shot(&pts, subject, ticks);
+            let frames = ex.frames();
             let chord: Vec<[f64; 3]> = frames.frames.iter().map(|f| f.pos).collect();
             if let Some((seg, cell)) = first_clip(world, &chord) {
                 return Err(NavError {
@@ -1228,7 +1234,7 @@ pub fn check_cutscenes(plan: &Plan, world: &World) -> Result<(), NavError> {
                     ),
                 });
             }
-            let rate = crate::camera::max_aim_deg_per_tick(&pts, subject, ticks);
+            let rate = ex.max_aim_deg_per_tick();
             if rate > crate::camera::MAX_AIM_DEG_PER_TICK {
                 return Err(NavError {
                     code: DW_CAMERA_SPIN,
