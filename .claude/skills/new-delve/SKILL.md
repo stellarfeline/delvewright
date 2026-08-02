@@ -215,3 +215,34 @@ Then:
 - If a mechanic the prompt wants has no DSL verb, do NOT fake it with adjacent
   verbs silently — tell the user what's missing and offer the closest authorable
   alternative (spec change requests go to the planning session, not this skill).
+
+## Authoring pitfalls (learned on the nobodys-cave-island run, 2026-08-01)
+
+- **`delvec validate` is whole-campaign**: it hard-errors unless all six stage
+  files exist. When authoring stages incrementally, stub the later stages
+  (clearly marked) so validate can run — and remember every stage-2 NPC needs a
+  stage-6 tree (DW0152), and a declared language needs a covering sidecar
+  (DW0180) even at the stub phase.
+- **l10n `fx.` keys are POSITION-derived** (`fx.<quest>.oc.<obj>.<index>…`).
+  Inserting an effect into a list SHIFTS every sibling's key and silently
+  re-attaches old translations to the wrong lines. When editing effect lists on
+  a localized campaign, APPEND rather than insert where order allows, and after
+  any structural edit re-check every shifted key's translation against its new
+  English source — exact-key coverage (DW0180/0181) cannot see a stale value.
+- **Wave tuning**: `follow_range` below ~16 means distant wave mobs never
+  engage; a kill objective whose mobs idle is unfinishable-in-practice even
+  though machine-valid. Undead waves burn in daylight — the RIGHT fix (owner
+  ruling) is a helmet on the mob (wave `equipment` field, pending task #65);
+  until that field exists, a `set-time` ordered BEFORE `spawn-wave` in the
+  same effect list is the interim. Never route wave mobs like actors: waves
+  are native AI; if a future beat needs lane-then-fight movement, that is the
+  routed-then-feral primitive (M4, task #66), not a follow_range trick.
+- **Player-POV review is live**: the build's `render-plan.json` POV shots
+  render through Chunky (see `validation/render-shots.sh`, delve-render scene
+  emission, camera mapping fixed in #111). Review the corrected set against
+  each shot's `expect` before handing the delve over. Declared-dark interiors
+  render faithfully dark — review those in-game (night-vision mitigation);
+  do not brighten scenes to pass review.
+- **Anchor ambiguity**: if the jigsaw can place a pool piece twice, its anchors
+  are DW0305-ambiguous — don't hang objectives on connector-piece anchors
+  unless the pool guarantees uniqueness; use them as hint landmarks instead.
