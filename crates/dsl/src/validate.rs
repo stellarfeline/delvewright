@@ -3914,9 +3914,57 @@ fn world_edits_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mut Vec<Diag
         }
     }
 
+    // A verb's phase: L2 massing (applied at plan time, over the jigsaw
+    // layout) vs L3 detailing (applied at replay time, over the assembled
+    // blocks). A batch never mixes phases, and every massing batch precedes
+    // every detailing batch — the replay applies all massing first by
+    // construction, so an interleaved script would misrepresent its own order.
+    fn is_massing(edit: &WorldEdit) -> bool {
+        matches!(
+            edit,
+            WorldEdit::SwapPiece { .. }
+                | WorldEdit::InsertPiece { .. }
+                | WorldEdit::RemovePiece { .. }
+                | WorldEdit::RewireSocket { .. }
+                | WorldEdit::ReseedPiece { .. }
+        )
+    }
+
     let mut batch_ids: BTreeSet<&str> = BTreeSet::new();
+    let mut seen_detailing = false;
     for (bi, batch) in env.content.batches.iter().enumerate() {
         let bpath = format!("/batches/{bi}");
+        let massing_count = batch.edits.iter().filter(|e| is_massing(e)).count();
+        if massing_count > 0 && massing_count < batch.edits.len() {
+            d.push(Diagnostic::error(
+                codes::EDIT_INVALID,
+                stage,
+                format!("{bpath}/edits"),
+                format!(
+                    "batch `{}` mixes L2 massing and L3 detailing verbs — massing applies at \
+                     plan time (before assembly), detailing at replay time, so a mixed batch \
+                     cannot execute in its written order. Split it into a massing batch and a \
+                     detailing batch",
+                    batch.id
+                ),
+            ));
+        }
+        if massing_count > 0 && seen_detailing {
+            d.push(Diagnostic::error(
+                codes::EDIT_INVALID,
+                stage,
+                bpath.to_string(),
+                format!(
+                    "massing batch `{}` follows a detailing batch — every massing batch must \
+                     precede every detailing batch (massing reshapes the layout the detailing \
+                     verbs' frames resolve against). Move it up the script",
+                    batch.id
+                ),
+            ));
+        }
+        if massing_count == 0 && !batch.edits.is_empty() {
+            seen_detailing = true;
+        }
         if !batch.id.is_valid_syntax() {
             bad_syntax(d, stage, format!("{bpath}/id"), "batch", batch.id.as_str());
         } else if !batch_ids.insert(batch.id.as_str()) {
@@ -4348,6 +4396,42 @@ fn world_edits_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mut Vec<Diag
                                 batch.id, batch.area
                             ),
                         ));
+                    }
+                }
+                WorldEdit::SwapPiece {
+                    piece: _,
+                    prefab,
+                    with,
+                } => {
+                    for (what, id) in [("prefab", prefab.as_str()), ("prefab", with.as_str())] {
+                        if !crate::ids::is_prefixed(id, "prefab") {
+                            bad_syntax(d, stage, epath.to_string(), what, id);
+                        }
+                    }
+                }
+                WorldEdit::InsertPiece {
+                    at_piece: _,
+                    prefab,
+                    socket: _,
+                    insert,
+                } => {
+                    for id in [prefab.as_str(), insert.as_str()] {
+                        if !crate::ids::is_prefixed(id, "prefab") {
+                            bad_syntax(d, stage, epath.to_string(), "prefab", id);
+                        }
+                    }
+                }
+                WorldEdit::RemovePiece { piece: _, prefab }
+                | WorldEdit::ReseedPiece { piece: _, prefab }
+                | WorldEdit::RewireSocket { prefab, .. } => {
+                    if !prefab.is_valid_syntax() {
+                        bad_syntax(
+                            d,
+                            stage,
+                            format!("{epath}/prefab"),
+                            "prefab",
+                            prefab.as_str(),
+                        );
                     }
                 }
             }

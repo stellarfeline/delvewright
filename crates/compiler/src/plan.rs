@@ -214,6 +214,10 @@ pub struct Plan<'a> {
     /// `close-gate` completability model in `crate::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
     pub gate_events: Vec<GateEvent>,
+    /// Per-batch affected world AABBs from the stage-7 L2 massing verbs
+    /// (spec-0017 PR 3), keyed by batch id — the editor's per-batch snapshot
+    /// framing for massing batches. Empty for a campaign without massing.
+    pub massing_bounds: BTreeMap<String, ([i32; 3], [i32; 3])>,
     /// For each objective's `critical_path` step, the set of steps of its **strict
     /// DAG ancestors** — objectives guaranteed to complete before it in *every* valid
     /// play order (transitive `after` within its quest ∪ every objective of a
@@ -682,6 +686,12 @@ impl<'a> Plan<'a> {
         // marker that declares one, keyed like `anchors`. Empty for a campaign with no
         // trap hardware.
         let mut dispenser_cells: BTreeMap<(String, String), [i32; 3]> = BTreeMap::new();
+        // Per-batch affected AABBs from L2 massing (spec-0017 PR 3), for the
+        // editor's per-batch snapshots. Empty without massing verbs.
+        let mut massing_bounds: BTreeMap<String, ([i32; 3], [i32; 3])> = BTreeMap::new();
+        // Socket doorways severed by `rewire-socket sealed`, per area — the
+        // DW0306 connectivity graph must not count those edges.
+        let mut severed: BTreeMap<String, BTreeSet<[i32; 3]>> = BTreeMap::new();
         // Origin Y is a per-horizon datum (spec-0013): void keeps 64, ocean drops to
         // sea_level-2 so the island waterline convention holds.
         let base_y = base_y(campaign);
@@ -704,6 +714,17 @@ impl<'a> Plan<'a> {
                         ),
                     )
                 })?;
+                if crate::massing::targets_area(campaign, &area_id) {
+                    return Err(PlanError::new(
+                        crate::massing::DW_MASSING,
+                        format!(
+                            "world-edits massing verbs target area `{area_id}`, which binds a \
+                             single `prefab` — there is no jigsaw layout to mass. Massing \
+                             applies only to `prefab_pool` areas; use the L3 detailing verbs \
+                             (carve/fill/fragment/…) on a single-prefab area instead"
+                        ),
+                    ));
+                }
                 for (name, am) in &meta.anchors {
                     anchors.insert((area_id.clone(), name.clone()), resolve_anchor(origin, am));
                     if let Some(dp) = am.dispenser {
@@ -734,7 +755,7 @@ impl<'a> Plan<'a> {
                 let (pmin, pmax) = area.pieces.map(|p| (p.min, p.max)).unwrap_or((1, 1));
                 let required = required_anchors_for_area(campaign, &area_id);
                 let mut stream = Splitmix64::new(solver::stream_seed(seed, &area_id));
-                let layout = solver::solve_area(
+                let mut layout = solver::solve_area(
                     prefabs,
                     &pool_id,
                     &required,
@@ -744,6 +765,20 @@ impl<'a> Plan<'a> {
                     &mut stream,
                 )
                 .map_err(|e| PlanError::new(e.code, e.message))?;
+                // Stage-7 L2 massing (spec-0017 PR 3): apply the edit script's
+                // massing batches for this area over the solved layout, so
+                // everything downstream — anchor resolution just below, the
+                // gate/waterline checks, assembly, relight, nav, the L3
+                // detailing replay — sees the massaged layout. No-op (layout
+                // and seals byte-identical) for a campaign without massing
+                // verbs targeting this area.
+                let massing_out =
+                    crate::massing::apply(campaign, &area_id, &mut layout, prefabs, seed)
+                        .map_err(|e| PlanError::new(e.code, e.message))?;
+                massing_bounds.extend(massing_out.bounds);
+                if !massing_out.severed.is_empty() {
+                    severed.insert(area_id.clone(), massing_out.severed);
+                }
 
                 let mut pieces = Vec::new();
                 for placed in &layout.pieces {
@@ -805,7 +840,13 @@ impl<'a> Plan<'a> {
         // gate that only a later objective opens (an unwinnable deadlock the anchor
         // resolver alone cannot see).
         for area in &areas {
-            check_gate_reachability(campaign, &area.area_id, &area.pieces, prefabs)?;
+            check_gate_reachability(
+                campaign,
+                &area.area_id,
+                &area.pieces,
+                prefabs,
+                severed.get(&area.area_id),
+            )?;
         }
 
         // ---- ocean waterline invariant (DW0344) ----
@@ -876,6 +917,7 @@ impl<'a> Plan<'a> {
             traps,
             gate_events,
             strict_ancestor_steps,
+            massing_bounds,
         })
     }
 
@@ -2012,6 +2054,7 @@ fn check_gate_reachability(
     area_id: &str,
     pieces: &[PiecePlacement],
     registry: &PrefabRegistry,
+    severed: Option<&BTreeSet<[i32; 3]>>,
 ) -> Result<(), PlanError> {
     // Gates carried by a piece in this area.
     let mut gates: BTreeMap<String, GateInfo> = BTreeMap::new();
@@ -2041,7 +2084,7 @@ fn check_gate_reachability(
 
     // Static (gate-independent) adjacency: mated sockets between pieces.
     let sockets = world_sockets(pieces, registry);
-    let adj = build_adjacency(&sockets, pieces, registry, &gates);
+    let adj = build_adjacency(&sockets, pieces, registry, &gates, severed);
 
     // The entry piece, resolved through the same alias list every other consumer
     // uses (`spawn`, then `entry`) — the gate-deadlock proof must start where the
@@ -2078,6 +2121,16 @@ fn check_gate_reachability(
                 .map(|(name, _)| name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
+            // A `rewire-socket sealed` (spec-0017 PR 3) cuts doorway edges out
+            // of this graph, so the blockage may be a massed-away passage, not
+            // a quest-order mistake — say so.
+            let severed_note = if severed.is_some_and(|s| !s.is_empty()) {
+                " NOTE: this area's world-edits script seals doorway socket(s) via \
+                 `rewire-socket` — those passages are cut from this proof; if the blockage \
+                 is one of them, reopen it or leave another route"
+            } else {
+                ""
+            };
             return Err(PlanError::new(
                 DW_GATE_DEADLOCK,
                 format!(
@@ -2086,7 +2139,7 @@ fn check_gate_reachability(
                      so the delve deadlocks. Fix the quest order: add an earlier objective whose \
                      `open-gate` effect opens {culprit} before this objective, or move `{tname}` \
                      to the near side of the gate. Do NOT delete the gate to dodge the check — \
-                     that removes intended progression",
+                     that removes intended progression.{severed_note}",
                     step.obj.id()
                 ),
             ));
@@ -2322,6 +2375,7 @@ fn build_adjacency(
     pieces: &[PiecePlacement],
     registry: &PrefabRegistry,
     gates: &BTreeMap<String, GateInfo>,
+    severed: Option<&BTreeSet<[i32; 3]>>,
 ) -> BTreeMap<Node, BTreeSet<Node>> {
     // Local pos of a socket (for gate-side classification).
     let local_pos = |s: &WorldSocket| -> [i32; 3] {
@@ -2343,6 +2397,11 @@ fn build_adjacency(
                 continue;
             }
             if b.world == a_next && b.facing == a.facing.opposite() {
+                // A doorway severed by `rewire-socket sealed` (spec-0017 PR 3)
+                // is walled on both planes — no edge.
+                if severed.is_some_and(|s| s.contains(&a.world) || s.contains(&b.world)) {
+                    continue;
+                }
                 let na = (a.piece, side_of(a.piece, local_pos(a), gates));
                 let nb = (b.piece, side_of(b.piece, local_pos(b), gates));
                 adj.entry(na).or_default().insert(nb);

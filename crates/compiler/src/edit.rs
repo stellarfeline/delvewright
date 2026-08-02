@@ -284,6 +284,15 @@ fn replay_with(
                         *min_light,
                     )?;
                 }
+                // L2 massing verbs (spec-0017 PR 3) were applied at PLAN time
+                // (`crate::massing`, inside `Plan::build`) — the assembly this
+                // replay started from already reflects them. Their batch
+                // bounds come from `plan.massing_bounds` below.
+                WorldEdit::SwapPiece { .. }
+                | WorldEdit::InsertPiece { .. }
+                | WorldEdit::RemovePiece { .. }
+                | WorldEdit::RewireSocket { .. }
+                | WorldEdit::ReseedPiece { .. } => {}
             }
         }
 
@@ -316,7 +325,8 @@ fn replay_with(
         commands.extend(coalesce_commands(&batch_writes));
         batches.push(BatchOutcome {
             id: bid.to_string(),
-            bounds: bounds_of(batch_writes.keys()),
+            bounds: bounds_of(batch_writes.keys())
+                .or_else(|| plan.massing_bounds.get(bid).copied()),
         });
     }
 

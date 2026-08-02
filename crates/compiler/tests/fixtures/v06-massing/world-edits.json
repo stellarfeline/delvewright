@@ -1,0 +1,87 @@
+{
+  "dsl_version": "0.6.0",
+  "campaign_id": "keep-crawl",
+  "stage": "world-edits",
+  "content": {
+    "batches": [
+      {
+        "id": "batch/reshape-keep",
+        "area": "area/keep",
+        "note": "Net-identity massing tour (fixture): remove + re-insert the shrine leaf, reseed the gate room to its only compatible variant and swap it back. Exercises swap/insert/remove/reseed; the final layout is byte-identical to the unmassaged solve. (rewire-socket is covered by the red-path tests: sealing is a graph operation and is not invertible.)",
+        "edits": [
+          {
+            "verb": "remove-piece",
+            "piece": 4,
+            "prefab": "prefab/keep-shrine"
+          },
+          {
+            "verb": "insert-piece",
+            "at_piece": 3,
+            "prefab": "prefab/keep-corridor-straight",
+            "socket": 1,
+            "insert": "prefab/keep-shrine"
+          },
+          {
+            "verb": "reseed-piece",
+            "piece": 2,
+            "prefab": "prefab/keep-gate-room"
+          },
+          {
+            "verb": "swap-piece",
+            "piece": 2,
+            "prefab": "prefab/keep-room-small-b",
+            "with": "prefab/keep-gate-room"
+          }
+        ]
+      },
+      {
+        "id": "batch/dress-gatehouse",
+        "area": "area/gatehouse",
+        "note": "A detailing batch after the massing batch (fixture: phase ordering \u2014 massing first, then detailing over the massaged assembly).",
+        "edits": [
+          {
+            "verb": "select",
+            "name": "region/floor",
+            "shape": {
+              "kind": "box",
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/hello-room"
+              },
+              "min": [
+                1,
+                0,
+                1
+              ],
+              "max": [
+                9,
+                0,
+                9
+              ]
+            }
+          },
+          {
+            "verb": "replace",
+            "region": "region/floor",
+            "matching": [
+              "minecraft:stone"
+            ],
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:stone",
+                  "weight": 3.0
+                },
+                {
+                  "block": "minecraft:cobblestone",
+                  "weight": 1.0
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
