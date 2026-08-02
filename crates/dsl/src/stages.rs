@@ -986,6 +986,57 @@ pub struct WaveMob {
     /// Optional permanent, ambient status effects (DSL v0.4).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<MobEffect>,
+    /// Optional worn/held equipment (DSL v0.6, task #65). A helmet is the
+    /// sanctioned fix for daylight-burning undead (owner ruling) — never
+    /// `set-time`. Item ids validate against the pinned 1.21.11 item registry
+    /// (`DW0143`, the give-item family); every emitted slot carries drop
+    /// chance 0 so players can never farm wave gear (no-grind constitution).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub equipment: Option<MobEquipment>,
+}
+
+/// Worn/held equipment for a wave mob (DSL v0.6). Each field is a vanilla item
+/// id for the matching vanilla equipment slot; an unset slot stays empty —
+/// except `main_hand`, where the compiler's armed-mob default (skeleton bow,
+/// wither-skeleton sword) still applies unless overridden. Emitted as the
+/// component-era `equipment`/`drop_chances` summon NBT (1.21.11 silently
+/// ignores legacy `ArmorItems`/`HandItems` on `/summon`), all drop chances 0.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MobEquipment {
+    /// Head slot item id (e.g. `minecraft:iron_helmet`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub head: Option<String>,
+    /// Chest slot item id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chest: Option<String>,
+    /// Legs slot item id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legs: Option<String>,
+    /// Feet slot item id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feet: Option<String>,
+    /// Main-hand item id. Overrides the compiler's armed-mob default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main_hand: Option<String>,
+    /// Off-hand item id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub off_hand: Option<String>,
+}
+
+impl MobEquipment {
+    /// Every slot as `(dsl_field_name, item)`, in the fixed schema order —
+    /// the single iteration source for validation paths and emission.
+    pub fn slots(&self) -> [(&'static str, Option<&str>); 6] {
+        [
+            ("head", self.head.as_deref()),
+            ("chest", self.chest.as_deref()),
+            ("legs", self.legs.as_deref()),
+            ("feet", self.feet.as_deref()),
+            ("main_hand", self.main_hand.as_deref()),
+            ("off_hand", self.off_hand.as_deref()),
+        ]
+    }
 }
 
 /// Attribute overrides for a wave mob (DSL v0.4). Each field maps to a 1.21.11
