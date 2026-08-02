@@ -92,6 +92,7 @@ delvec analyze  <dir>                      # + quest-graph reachability
 delvec build    <dir> -o <out>             # full deterministic build
 delvec schema   --stage <1..6|all>         # export JSON Schema
 delvec l10n-inventory <dir> [--lang <c>]   # l10n key inventory as JSON (translation input)
+delvec snapshot <dir> [framing] [-o f.png] # draft frame + scene manifest (§7)
 delvec --version                           # "delvec 0.1.0, dsl 0.6.0, mc 1.21.11"
 ```
 
@@ -989,6 +990,7 @@ this doc is current behavior).
 | Stage-1 `horizon` (ocean superflat), `boundary` (derived playable region + 1s return clock), `dw:region`/`dw:cp` mirrors, `DW0320`/`DW0321` (all v0.6) | spec-0013 (landed) |
 | Sound + art-title surface (`play-sound`, `narrate` `art`, `delve:art` font, `DW0326`/`DW0328`/`DW0335`) | spec-0014 (v0.6) |
 | Traps: stage-5 `traps[]`, `anchor/trap` dispenser fill + disarm emission, `tnt_explodes` seal, passable plate/tripwire model, `DW0340`/`DW0341`/`DW0342` (all v0.6) | spec-0011 (landed) |
+| Visual authoring loop: `delvec snapshot`, the voxel raycaster + scene manifest (§7) | spec-0015 (P1 landed) |
 | Asset-pipeline tooling `DW07xx` (schem/render/admit) | spec-0007 |
 | Determinism invariants | ADR-0006 |
 
@@ -1007,3 +1009,162 @@ this doc is current behavior).
   (noon/day 15, night/midnight 4, rain −3, thunder −8 by day) applied
   conservatively — the effective (time-attenuated) value is not directly
   command-readable, so it is not a live measurement. Noted for maintainers.
+
+---
+
+## 7. Visual authoring loop (spec-0015)
+
+A **view-only** tier of `delvec`: draft renders of the assembled world plus a
+structured description of the same frame, so an authoring agent can look at its
+own build mid-authoring instead of waiting on a full build + Chunky pass. It adds
+no DW diagnostics, changes no emission (build output is byte-identical), and
+never writes a datapack.
+
+### `delvec snapshot`
+
+```
+delvec snapshot <campaign-dir>
+    [--camera x,y,z,yaw,pitch[,fov]]      # explicit eye
+    [--at <anchor> [--orbit <deg>] [--dist <n>]]   # frame a subject
+    [--shot <render-plan id>]             # reuse a planned camera
+    [-o out.png] [--labels]
+    [--width 960] [--height 540] [--timing] [--json]
+```
+
+Framing precedence (the first three are mutually exclusive, enforced by clap):
+`--camera` → `--at` → `--shot` → a default dollhouse overview of the whole
+layout. Details:
+
+- **`--camera`** — `x,y,z` is the eye in world coordinates; `yaw`/`pitch` are
+  **Minecraft** degrees (`0` = south/+Z, `90` = west/−X, `180` north, `270`
+  east; pitch positive looks **down**), the same convention the v0.6 cutscene aim
+  uses. `fov` is optional (vertical, default `70`).
+- **`--at <anchor>`** — accepts a bare anchor name (`anchor/fire-pit`, matched in
+  the first declaring area) or `area:anchor` (`area/island:anchor/pen`) to
+  disambiguate; a gate anchor resolves to its region centre. `--orbit` is a
+  compass bearing in the same yaw sense (`0` = the camera stands due south of the
+  subject looking north, `90` due west looking east); `--dist` is blocks (default
+  `14`), with the eye raised `0.45 × dist`. **The eye is then pulled along its own
+  sight line until it stands in open air**, so `--at` frames an interior (a
+  cavern fire pit, an alcove) instead of rendering the inside of the mountain.
+- **`--shot <id>`** — reuses a `render-plan.json` camera by id (`interior/…`,
+  `npc/…`, `interact/…`, `gate/…`, `seam/…`, `pov/leg{L}/wp{W}`). The render plan
+  states cameras in its own Chunky yaw convention, so the bridge reads only its
+  `pos`/`look_at` world points and re-derives Minecraft yaw/pitch. `pov/…` ids
+  additionally compute the DW0311 critical-path routes; other ids do not.
+  An unknown id lists the available ones.
+
+**Pipeline stages required** — parse → `Plan::build` (placement) → read the
+placed `.nbt` → `assembled::assembled_blocks`. That is all: no relight, no nav
+proofs, no emission. Validation diagnostics are printed but **never gate** the
+render (only an unparseable campaign, exit 1, or a placement failure, exit 3,
+stops it), because the loop exists precisely to look at builds that are not
+finished yet.
+
+**Renderer** — a voxel DDA raycaster (`compiler::snapshot`) over a chunked
+flattening of the assembled block map. Shading is flat block-palette colour ×
+face brightness (top brightest, bottom darkest, the two horizontal axes
+distinct — the "ambient occlusion by face orientation") × a block-edge relief
+darkening, then a distance fade toward the horizon. Background is a sky
+gradient; for an `ocean`-horizon campaign the world generator's sea plane is
+drawn analytically at `SEA_LEVEL` (a world-generation backdrop, never part of
+the voxel model, never occluding a manifest target).
+
+Three properties worth stating explicitly:
+
+- **There is no lighting model.** The raycaster sees geometry regardless of block
+  light, so a pitch-black cavern renders as legibly as a noon meadow — which is
+  exactly what makes this the right tier for reviewing dark areas. A frame that
+  looks fine here and black in Chunky has a *lighting* defect, not a geometry
+  one, and the two tiers now separate that. Emissive blocks (glowstone, lantern,
+  campfire, torch, …) still render at full brightness so a fire pit reads as one.
+- **Only blocks exist.** Entities (NPC mannequins, scripted actors, item
+  displays) are not in the assembled model and are not drawn; their *posts* are
+  in the manifest and, with `--labels`, stamped on the frame.
+- **Unknown blocks render magenta** (`255,0,255`, the same missing-texture key
+  `delve-render`'s fidelity gate scans for). The palette resolves exact vanilla
+  ids first, then material-family substrings (`_planks`, `_wool`, `stone`, …); a
+  unit test asserts every block the shipped prefab library places has a real
+  colour, so magenta in a frame means "a prefab introduced a block the palette
+  has never seen" — extend the palette.
+
+**`--labels`** burns in: a coordinate lattice tinted onto every visible **top**
+face on a 16-block X/Z line (so it follows the terrain rather than an invented
+flat plane), `x,z` readouts at the ten nearest visible lattice intersections, an
+outline per in-frustum target (dim when occluded), and the target's name. Names
+are placed **visible-first** and nudged down to avoid overlap; an occluded name is
+stamped only where it lands clear on the first try. `--labels` changes the frame
+and never the manifest.
+
+**Output** — the PNG at `-o` (default `snapshot.png`) and a manifest sidecar at
+the same path with its extension replaced: `shot.png` → `shot.manifest.json`.
+
+### Scene manifest (`manifest_version: 1`)
+
+```json
+{
+  "manifest_version": 1,
+  "campaign_id": "nobodys-cave-island",
+  "delvec": "0.1.0",
+  "image":  { "path": "shot.png", "width": 960, "height": 540 },
+  "camera": { "pos": [x,y,z], "yaw": 0.0, "pitch": 25.7, "fov": 70.0,
+              "convention": "minecraft degrees: yaw 0 = south (+Z) …" },
+  "world":  { "block_kinds": 48,
+              "bounds": { "min": [x,y,z], "max": [x,y,z] },
+              "sea_plane": 62 },
+  "targets": [
+    { "id": "anchor/fire-pit", "kind": "anchor", "area": "area/island",
+      "pos": [9, 69, -56],
+      "screen_bbox": { "x": 466, "y": 264, "w": 28, "h": 36 },
+      "occluded": false, "distance": 14.724 }
+  ],
+  "out_of_frame": [ { "id": "anchor/pen", "kind": "anchor", "area": "…",
+                      "pos": [x,y,z] } ]
+}
+```
+
+- **Kinds**: `anchor` · `gate` · `npc-post` · `actor-post` · `interact` ·
+  `stealth-zone` · `trigger`. A point target carries `pos` (an inclusive cell);
+  a region target carries `box: {min,max}` (inclusive cells) — never both.
+  `gate` is the gate region, `stealth-zone` a `begin-stealth` zone box
+  (`stealth-<beat>/<anchor>`), `trigger` an `EnvTrigger` — a box of its `range`
+  for `approach`, the single interaction cell for `strike`/`use`.
+- **Deliberate duplication**: an `interact` objective's marker and the `anchor`
+  it binds to are the same cell under two ids. They are different *things* —
+  "the interact is occluded" and "the anchor is occluded" are different findings
+  — so no deduplication is applied.
+- **`screen_bbox`** is the projected inclusive cell box, clipped to the frame,
+  in whole pixels with the origin top-left. This is the vocabulary spec-0015
+  pillar 2 asks for: review feedback and edits address ids and boxes.
+- **`occluded`** = every one of nine sight lines (the box centre plus the corners
+  of a slightly inset box) meets a block that is **not part of the target**. Both
+  refinements matter: a marker often *is* a block (`anchor/fire-pit` names the
+  campfire), and a single centre ray grazing the rim of a platform would call the
+  thing standing on it hidden.
+- **`out_of_frame`** carries the same world-space fields, with no screen box, for
+  every known target outside the frustum. It is what makes "the subject is absent
+  entirely" machine-visible instead of something a reviewer has to notice.
+- **Ordering** is `(kind, area, id)`; floats are rounded to 3 decimals.
+
+**Determinism (ADR-0006)** — no RNG, clock, parallelism or hash-order iteration:
+the voxel palette comes from a `BTreeMap` walk, targets are sorted, and the PNG
+encoder (`compiler::png`) pins its DEFLATE level. Two runs on one input produce
+byte-identical PNG **and** manifest; `crates/compiler/tests/snapshot.rs` asserts
+both.
+
+**Performance** (measured, `nobodys-cave-island`, release build, macOS/M-series,
+single-threaded): assemble + voxel-grid flattening ≈ **30 ms**, a 960×540 frame
+with `--labels` + manifest ≈ **190 ms**. `--timing` prints both to stderr (never
+to the output, so it cannot affect byte-identity).
+
+### PNG writing
+
+`compiler::png` is a hand-rolled 8-bit RGBA writer shared by two callers, for the
+same reason `compiler::resourcepack`'s ZIP/SHA-1 is hand-rolled — byte-stability
+must be a function of this repo:
+
+- `encode_rgba_stored` (uncompressed) — the `delve:art` font atlas, whose bytes
+  are hashed into a shipped resource pack. Moved here verbatim from
+  `compiler::atmos`; resource-pack bytes are unchanged.
+- `encode_rgba` (DEFLATE at a pinned level, via the existing `flate2` dep) — the
+  snapshot renders, which are megapixel review artifacts.

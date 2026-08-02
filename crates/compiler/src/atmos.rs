@@ -271,83 +271,21 @@ fn atlas_png() -> Vec<u8> {
             }
         }
     }
-    encode_png_rgba(width as u32, height as u32, &px)
+    crate::png::encode_rgba_stored(width as u32, height as u32, &px)
 }
 
-/// Minimal deterministic RGBA PNG encoder (8-bit, color type 6). Uses stored
-/// (uncompressed) DEFLATE so no compressor is needed — hand-rolled to stay
-/// dependency-free and byte-stable, matching `resourcepack`'s hand-rolled ZIP/SHA-1.
-fn encode_png_rgba(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
-    let mut out: Vec<u8> = vec![137, 80, 78, 71, 13, 10, 26, 10];
-
-    // IHDR
-    let mut ihdr = Vec::with_capacity(13);
-    ihdr.extend_from_slice(&width.to_be_bytes());
-    ihdr.extend_from_slice(&height.to_be_bytes());
-    ihdr.push(8); // bit depth
-    ihdr.push(6); // color type: RGBA
-    ihdr.push(0); // compression
-    ihdr.push(0); // filter
-    ihdr.push(0); // interlace
-    write_chunk(&mut out, b"IHDR", &ihdr);
-
-    // Raw image data: each scanline is a filter byte (0) followed by its pixels.
-    let stride = (width as usize) * 4;
-    let mut raw = Vec::with_capacity((stride + 1) * height as usize);
-    for y in 0..height as usize {
-        raw.push(0); // filter type 0 (none)
-        raw.extend_from_slice(&rgba[y * stride..(y + 1) * stride]);
-    }
-
-    write_chunk(&mut out, b"IDAT", &zlib_store(&raw));
-    write_chunk(&mut out, b"IEND", &[]);
-    out
-}
-
-/// Write one PNG chunk: length, type, data, CRC-32 over (type ++ data).
-fn write_chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
-    out.extend_from_slice(&(data.len() as u32).to_be_bytes());
-    out.extend_from_slice(kind);
-    out.extend_from_slice(data);
-    let mut crc_input = Vec::with_capacity(4 + data.len());
-    crc_input.extend_from_slice(kind);
-    crc_input.extend_from_slice(data);
-    out.extend_from_slice(&crc32fast::hash(&crc_input).to_be_bytes());
-}
-
-/// Wrap `data` as a zlib stream using stored (BTYPE=00) DEFLATE blocks.
-fn zlib_store(data: &[u8]) -> Vec<u8> {
-    let mut out = vec![0x78u8, 0x01]; // zlib header (CMF=0x78, FLG=0x01; %31 == 0)
-    let mut i = 0;
-    let n = data.len();
-    loop {
-        let end = (i + 0xFFFF).min(n);
-        let block = &data[i..end];
-        let len = block.len() as u16;
-        let final_block = end == n;
-        out.push(if final_block { 1 } else { 0 }); // BFINAL, BTYPE=00
-        out.extend_from_slice(&len.to_le_bytes());
-        out.extend_from_slice(&(!len).to_le_bytes());
-        out.extend_from_slice(block);
-        i = end;
-        if final_block {
-            break;
-        }
-    }
-    out.extend_from_slice(&adler32(data).to_be_bytes());
-    out
-}
-
-/// Adler-32 checksum (RFC 1950).
-fn adler32(data: &[u8]) -> u32 {
-    const MOD: u32 = 65521;
-    let mut a = 1u32;
-    let mut b = 0u32;
-    for &byte in data {
-        a = (a + byte as u32) % MOD;
-        b = (b + a) % MOD;
-    }
-    (b << 16) | a
+/// The [`GW`]×7 pixel rows of one art glyph, or `None` if the font does not cover
+/// `ch`. Lower-case input is folded to upper case (the font is caps-only), so a
+/// caller may pass raw ids straight in.
+///
+/// Exposed for the visual-authoring-loop label stamper
+/// ([`crate::snapshot`]/[`crate::blocking`]), which burns the *same* original
+/// bitmap font into draft renders that the shipped `delve:art` atlas uses. One
+/// glyph table, two consumers — a second hand-drawn font would be a second thing
+/// to keep in sync for no gain.
+pub fn glyph(ch: char) -> Option<&'static [&'static str; 7]> {
+    let up = ch.to_ascii_uppercase();
+    ART_GLYPHS.iter().find(|(c, _)| *c == up).map(|(_, g)| g)
 }
 
 /// The original 5×7 uppercase pixel font (48 glyphs). Order defines the atlas

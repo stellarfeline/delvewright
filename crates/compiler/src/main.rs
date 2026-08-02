@@ -85,6 +85,49 @@ enum Command {
         #[arg(long)]
         stage: String,
     },
+    /// Draft-render one frame of the assembled world + a scene manifest
+    /// (spec-0015: the visual authoring loop). Stops after placement +
+    /// assembly — it never emits a datapack.
+    Snapshot {
+        /// Campaign directory.
+        campaign_dir: PathBuf,
+        /// Explicit camera: `x,y,z,yaw,pitch[,fov]` in Minecraft degrees
+        /// (yaw 0 = south/+Z, 90 = west/−X; pitch positive looks down).
+        #[arg(long, conflicts_with_all = ["at", "shot"])]
+        camera: Option<String>,
+        /// Frame an anchor (e.g. `anchor/fire-pit`, or `area/island:anchor/pen`
+        /// to disambiguate) from `--dist` blocks away.
+        #[arg(long, conflicts_with = "shot")]
+        at: Option<String>,
+        /// Compass bearing (degrees) the `--at` camera stands on: 0 = due south
+        /// of the subject looking north, 90 = due west looking east.
+        #[arg(long, requires = "at", default_value_t = 0.0)]
+        orbit: f64,
+        /// Distance in blocks from the `--at` subject.
+        #[arg(long, requires = "at")]
+        dist: Option<f64>,
+        /// Reuse the camera of a `render-plan.json` shot id (e.g. `spawn`,
+        /// `npc/perimedes`, `pov/leg0/wp0`).
+        #[arg(long)]
+        shot: Option<String>,
+        /// Output PNG path (the manifest is written beside it — see `--help`
+        /// of the reference doc; default `snapshot.png`).
+        #[arg(short, long, default_value = "snapshot.png")]
+        out: PathBuf,
+        /// Burn in anchor/NPC/actor/interact labels and the ground coordinate grid.
+        #[arg(long)]
+        labels: bool,
+        /// Frame width in pixels.
+        #[arg(long, default_value_t = delvewright_compiler::snapshot::DEFAULT_WIDTH)]
+        width: u32,
+        /// Frame height in pixels.
+        #[arg(long, default_value_t = delvewright_compiler::snapshot::DEFAULT_HEIGHT)]
+        height: u32,
+        /// Print the render wall-clock time to stderr (profiling aid; never
+        /// enters the output, so determinism is unaffected).
+        #[arg(long)]
+        timing: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -110,6 +153,35 @@ fn main() -> ExitCode {
             run_l10n_inventory(campaign_dir, &cli.lang, cli.json)
         }
         Command::Schema { stage } => run_schema(stage),
+        Command::Snapshot {
+            campaign_dir,
+            camera,
+            at,
+            orbit,
+            dist,
+            shot,
+            out,
+            labels,
+            width,
+            height,
+            timing,
+        } => run_snapshot(
+            campaign_dir,
+            &cli.prefabs,
+            SnapshotArgs {
+                camera: camera.as_deref(),
+                at: at.as_deref(),
+                orbit: *orbit,
+                dist: *dist,
+                shot: shot.as_deref(),
+                out,
+                labels: *labels,
+                width: *width,
+                height: *height,
+                timing: *timing,
+            },
+            cli.json,
+        ),
     }
 }
 
@@ -364,6 +436,458 @@ fn run_l10n_inventory(campaign_dir: &Path, lang: &str, json: bool) -> ExitCode {
     }
 }
 
+// ---------------------------------------------------------------------------
+// `snapshot` (spec-0015: the visual authoring loop)
+// ---------------------------------------------------------------------------
+
+/// The `snapshot` subcommand's arguments, bundled so the dispatcher stays legible.
+struct SnapshotArgs<'a> {
+    camera: Option<&'a str>,
+    at: Option<&'a str>,
+    orbit: f64,
+    dist: Option<f64>,
+    shot: Option<&'a str>,
+    out: &'a Path,
+    labels: bool,
+    width: u32,
+    height: u32,
+    timing: bool,
+}
+
+/// `delvec snapshot <campaign-dir> …` — draft-render one frame of the assembled
+/// world plus its scene manifest.
+///
+/// ## Which pipeline stages this needs
+///
+/// Exactly three, and no more (spec-0015: "works on a partial build"): parse the
+/// campaign → [`Plan::build`] (placement) → read the placed `.nbt` structures →
+/// [`assembled::assembled_blocks`]. **No emission**: no command tree, no
+/// datapack, no relight, no nav proofs — so a campaign that fails `DW03xx`
+/// geometry checks, or one whose quests are half-written, still renders. That is
+/// the point: the loop exists to look at builds that are not finished.
+///
+/// Validation diagnostics are printed but never gate the render. Only an
+/// unparseable campaign (exit 1) or a placement failure (exit 3) stops it — in
+/// both cases there is no world to look at.
+fn run_snapshot(
+    campaign_dir: &Path,
+    prefabs_dir: &Path,
+    args: SnapshotArgs<'_>,
+    json: bool,
+) -> ExitCode {
+    use delvewright_compiler::snapshot;
+
+    let (campaign, prefabs) = match load_for_view(campaign_dir, prefabs_dir, json) {
+        Ok(v) => v,
+        Err(code) => return ExitCode::from(code),
+    };
+    let plan = match Plan::build(&campaign, &prefabs) {
+        Ok(p) => p,
+        Err(e) => {
+            print_build_error(e.code, &e.message, json);
+            return ExitCode::from(3);
+        }
+    };
+    let structures = match read_structures(&plan, prefabs_dir, json) {
+        Ok(s) => s,
+        Err(code) => return ExitCode::from(code),
+    };
+
+    let started = std::time::Instant::now();
+    let blocks = delvewright_compiler::assembled::assembled_blocks(&plan, &structures);
+    let grid = snapshot::VoxelGrid::build(&blocks);
+    let assembled_ms = started.elapsed().as_secs_f64() * 1000.0;
+
+    let cam = match resolve_camera(&plan, &prefabs, &structures, &grid, &args) {
+        Ok(c) => c,
+        Err(msg) => {
+            eprintln!("error: {msg}");
+            return ExitCode::from(1);
+        }
+    };
+    let opts = snapshot::FrameOpts {
+        width: args.width,
+        height: args.height,
+        sea_level: sea_level_of(&campaign),
+        labels: args.labels,
+    };
+
+    let render_started = std::time::Instant::now();
+    let mut frame = snapshot::render_frame(&grid, &cam, &opts);
+    let targets = snapshot::collect_targets(&plan);
+    let (inside, outside) = snapshot::resolve_targets(&grid, &cam, &opts, &targets);
+    if args.labels {
+        snapshot::draw_labels(&mut frame, &grid, &cam, &inside);
+    }
+    let png = delvewright_compiler::png::encode_rgba(frame.width, frame.height, &frame.rgba);
+    let render_ms = render_started.elapsed().as_secs_f64() * 1000.0;
+
+    let image_name = args
+        .out
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "snapshot.png".to_string());
+    let doc = snapshot::manifest(
+        campaign.world.campaign_id.as_str(),
+        &image_name,
+        &cam,
+        &opts,
+        &grid,
+        &inside,
+        &outside,
+    );
+    let manifest_path = manifest_path_for(args.out);
+    let mut manifest_bytes = match serde_json::to_vec_pretty(&doc) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("internal error: cannot serialize manifest: {e}");
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    };
+    manifest_bytes.push(b'\n');
+    if let Err(e) =
+        write_file(args.out, &png).and_then(|()| write_file(&manifest_path, &manifest_bytes))
+    {
+        eprintln!("internal error: cannot write snapshot: {e}");
+        return ExitCode::from(EXIT_INTERNAL);
+    }
+
+    if args.timing {
+        eprintln!(
+            "snapshot timing: assemble+grid {assembled_ms:.0} ms, render+manifest {render_ms:.0} ms \
+             ({}×{}, {} block kinds)",
+            args.width,
+            args.height,
+            grid.block_kinds()
+        );
+    }
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "png": args.out.display().to_string(),
+                "manifest": manifest_path.display().to_string(),
+                "in_frame": inside.len(),
+                "out_of_frame": outside.len(),
+            })
+        );
+    } else {
+        println!(
+            "{} ({}×{}) + {} — {} target(s) in frame, {} out",
+            args.out.display(),
+            args.width,
+            args.height,
+            manifest_path.display(),
+            inside.len(),
+            outside.len()
+        );
+    }
+    ExitCode::SUCCESS
+}
+
+/// The manifest sidecar path for an output image: the image path with its
+/// extension replaced by `manifest.json` (`shot.png` → `shot.manifest.json`).
+/// A path with no extension simply gains one.
+fn manifest_path_for(out: &Path) -> PathBuf {
+    out.with_extension("manifest.json")
+}
+
+/// The `ocean`-horizon sea level to draw as a background plane, or `None` for a
+/// `void`-horizon campaign (see `snapshot::SEA_PLANE_NOTE`).
+fn sea_level_of(campaign: &delvewright_dsl::Campaign) -> Option<i32> {
+    match campaign.world.content.horizon {
+        Some(delvewright_dsl::Horizon::Ocean) => Some(delvewright_compiler::plan::SEA_LEVEL),
+        _ => None,
+    }
+}
+
+/// Parse + validate a campaign for a **view-only** command: diagnostics are
+/// printed, but only a parse failure stops the run (exit 1). See
+/// [`run_snapshot`] for why a view command must not gate on validation.
+fn load_for_view(
+    campaign_dir: &Path,
+    prefabs_dir: &Path,
+    json: bool,
+) -> Result<(delvewright_dsl::Campaign, PrefabRegistry), u8> {
+    let v = validate_stage(campaign_dir, prefabs_dir, json)?;
+    Ok((v.campaign, v.prefabs))
+}
+
+/// Read the `.nbt` bytes of every structure the plan places. Shared by `build`
+/// and the spec-0015 view commands so all three see the same world.
+fn read_structures(
+    plan: &Plan,
+    prefabs_dir: &Path,
+    json: bool,
+) -> Result<BTreeMap<String, Vec<u8>>, u8> {
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            if structures.contains_key(&piece.structure_file) {
+                continue;
+            }
+            let path = prefabs_dir.join(&piece.structure_file);
+            match std::fs::read(&path) {
+                Ok(bytes) => {
+                    structures.insert(piece.structure_file.clone(), bytes);
+                }
+                Err(e) => {
+                    print_build_error(
+                        "DW0300",
+                        &format!(
+                            "cannot read prefab structure file `{}`: {e} — the prefab metadata \
+                             points at an `.nbt` that is missing or unreadable in the prefabs dir. \
+                             Restore the file or fix the metadata path (prefab-library issue)",
+                            path.display()
+                        ),
+                        json,
+                    );
+                    return Err(3);
+                }
+            }
+        }
+    }
+    Ok(structures)
+}
+
+/// Decide the snapshot camera from the mutually-exclusive framing flags.
+///
+/// Precedence: `--camera` (explicit) → `--at` (subject framing) → `--shot`
+/// (reuse a render-plan camera) → the default layout overview. Clap already
+/// rejects combining the first three.
+fn resolve_camera(
+    plan: &Plan,
+    prefabs: &PrefabRegistry,
+    structures: &BTreeMap<String, Vec<u8>>,
+    grid: &delvewright_compiler::snapshot::VoxelGrid,
+    args: &SnapshotArgs<'_>,
+) -> Result<delvewright_compiler::snapshot::Camera, String> {
+    use delvewright_compiler::snapshot::{Camera, DEFAULT_FOV, DEFAULT_ORBIT_DIST};
+
+    if let Some(spec) = args.camera {
+        let parts: Vec<&str> = spec.split(',').map(str::trim).collect();
+        if parts.len() < 5 || parts.len() > 6 {
+            return Err(format!(
+                "--camera wants `x,y,z,yaw,pitch[,fov]` (got {} field(s) in `{spec}`)",
+                parts.len()
+            ));
+        }
+        let mut n = [0f64; 6];
+        n[5] = DEFAULT_FOV;
+        for (i, p) in parts.iter().enumerate() {
+            n[i] = p
+                .parse()
+                .map_err(|_| format!("--camera field {} (`{p}`) is not a number", i + 1))?;
+        }
+        return Ok(Camera {
+            pos: [n[0], n[1], n[2]],
+            yaw: n[3],
+            pitch: n[4],
+            fov: n[5],
+        });
+    }
+
+    if let Some(subject) = args.at {
+        let pos = resolve_subject(plan, subject)?;
+        let dist = args.dist.unwrap_or(DEFAULT_ORBIT_DIST);
+        let b = args.orbit.to_radians();
+        // The camera stands at compass bearing `orbit` from the subject (0 = due
+        // south of it, in Minecraft's yaw sense) and looks back at it, raised so
+        // the subject sits below the horizon line rather than against the sky.
+        let eye = [
+            pos[0] as f64 + 0.5 - b.sin() * dist,
+            pos[1] as f64 + 1.5 + dist * 0.45,
+            pos[2] as f64 + 0.5 + b.cos() * dist,
+        ];
+        let look = [
+            pos[0] as f64 + 0.5,
+            pos[1] as f64 + 1.0,
+            pos[2] as f64 + 0.5,
+        ];
+        // An interior subject (a cavern fire pit, an alcove) would otherwise put
+        // the orbit eye inside the mountain and render the inside of the rock.
+        // Pull the eye along its own sight line until it stands in open air, so
+        // `--at` frames an interior without the author having to guess a distance.
+        return Ok(Camera::looking_at(
+            pull_into_open_air(grid, look, eye),
+            look,
+            DEFAULT_FOV,
+        ));
+    }
+
+    if let Some(id) = args.shot {
+        return camera_from_shot(plan, prefabs, structures, id);
+    }
+
+    // Default: a dollhouse overview of the whole layout from the south-east,
+    // high enough that the full AABB fits the vertical FOV.
+    let (lo, hi) = grid
+        .bounds()
+        .ok_or_else(|| "the assembled world is empty — nothing to snapshot".to_string())?;
+    let centre = [
+        (lo[0] + hi[0]) as f64 / 2.0,
+        (lo[1] + hi[1]) as f64 / 2.0,
+        (lo[2] + hi[2]) as f64 / 2.0,
+    ];
+    let span = ((hi[0] - lo[0]).max(hi[1] - lo[1]).max(hi[2] - lo[2])) as f64;
+    let d = (span * 0.9).max(16.0);
+    let eye = [
+        centre[0] + d * 0.75,
+        centre[1] + d * 0.65,
+        centre[2] + d * 0.75,
+    ];
+    Ok(Camera::looking_at(eye, centre, DEFAULT_FOV))
+}
+
+/// The farthest point on the segment `subject → eye` that stands in open air with
+/// an unobstructed line back to `subject`, sampled every [`PULL_STEP`] blocks.
+///
+/// This is what makes `--at` usable on interiors: a fire pit 14 blocks inside a
+/// mountain has no exterior vantage, so the requested distance is honoured only
+/// as far as the rock allows and the camera then sits in the room with its
+/// subject. Falls back to `eye` when even the subject's own cell is solid (a
+/// marker embedded in a wall — worth seeing as such).
+fn pull_into_open_air(
+    grid: &delvewright_compiler::snapshot::VoxelGrid,
+    subject: [f64; 3],
+    eye: [f64; 3],
+) -> [f64; 3] {
+    /// Sampling step, in blocks, for the pull-in walk.
+    const PULL_STEP: f64 = 0.5;
+    let d = [
+        eye[0] - subject[0],
+        eye[1] - subject[1],
+        eye[2] - subject[2],
+    ];
+    let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+    if len < 1e-6 {
+        return eye;
+    }
+    let dir = [d[0] / len, d[1] / len, d[2] / len];
+    let cell_of = |p: [f64; 3]| {
+        [
+            p[0].floor() as i32,
+            p[1].floor() as i32,
+            p[2].floor() as i32,
+        ]
+    };
+    let mut best = eye;
+    let mut found = false;
+    let mut t = 0.0;
+    while t <= len + 1e-9 {
+        let p = [
+            subject[0] + dir[0] * t,
+            subject[1] + dir[1] * t,
+            subject[2] + dir[2] * t,
+        ];
+        if grid.solid(cell_of(p)) {
+            break; // the rock starts here; keep the last open sample
+        }
+        best = p;
+        found = true;
+        t += PULL_STEP;
+    }
+    if found { best } else { eye }
+}
+
+/// Resolve an `--at` subject to a world cell. Accepts a bare anchor name
+/// (`anchor/fire-pit`, matched in the first declaring area, `BTreeMap` order) or
+/// an `area:anchor` pair (`area/island:anchor/pen`) to disambiguate.
+fn resolve_subject(plan: &Plan, subject: &str) -> Result<[i32; 3], String> {
+    use delvewright_compiler::plan::ResolvedAnchor;
+    let (area, anchor) = match subject.split_once(':') {
+        Some((a, n)) => (Some(a), n),
+        None => (None, subject),
+    };
+    let hit = plan
+        .anchors
+        .iter()
+        .find(|((a, n), _)| n == anchor && area.is_none_or(|want| a == want));
+    match hit {
+        Some((_, ResolvedAnchor::Point { pos, .. })) => Ok(*pos),
+        Some((_, ResolvedAnchor::Gate { from, to, .. })) => Ok([
+            (from[0] + to[0]) / 2,
+            (from[1] + to[1]) / 2,
+            (from[2] + to[2]) / 2,
+        ]),
+        None => {
+            let mut known: Vec<String> = plan
+                .anchors
+                .keys()
+                .map(|(a, n)| format!("{a}:{n}"))
+                .collect();
+            known.sort();
+            known.dedup();
+            Err(format!(
+                "--at `{subject}` matches no anchor. Known anchors: {}",
+                known.join(", ")
+            ))
+        }
+    }
+}
+
+/// Reuse a `render-plan.json` shot's camera by id.
+///
+/// The render plan states cameras as `pos` + `look_at` world coordinates (its own
+/// yaw convention differs from Minecraft's — see `snapshot`'s module note), so
+/// the bridge reads those two points and re-derives Minecraft yaw/pitch. `pov/…`
+/// ids additionally need the DW0311 critical-path routes, so those are computed
+/// only when a POV shot is actually asked for.
+fn camera_from_shot(
+    plan: &Plan,
+    prefabs: &PrefabRegistry,
+    structures: &BTreeMap<String, Vec<u8>>,
+    id: &str,
+) -> Result<delvewright_compiler::snapshot::Camera, String> {
+    use delvewright_compiler::render_plan;
+    use delvewright_compiler::snapshot::{Camera, DEFAULT_FOV};
+
+    let pov = if id.starts_with("pov/") {
+        let world = delvewright_compiler::nav::World::from_plan(plan, structures);
+        let routes = delvewright_compiler::nav::critical_path_routes(plan, &world);
+        render_plan::pov_shots(plan, &routes)
+    } else {
+        Vec::new()
+    };
+    let doc = render_plan::render_plan(plan, prefabs, &pov);
+    let shots = doc["shots"].as_array().cloned().unwrap_or_default();
+    let Some(shot) = shots.iter().find(|s| s["id"].as_str() == Some(id)) else {
+        let mut ids: Vec<&str> = shots.iter().filter_map(|s| s["id"].as_str()).collect();
+        ids.sort_unstable();
+        return Err(format!(
+            "--shot `{id}` is not in this campaign's render plan. Available: {}{}",
+            ids.iter().take(24).copied().collect::<Vec<_>>().join(", "),
+            if ids.len() > 24 { ", …" } else { "" }
+        ));
+    };
+    let read3 = |v: &serde_json::Value| -> Option<[f64; 3]> {
+        let a = v.as_array()?;
+        Some([
+            a.first()?.as_f64()?,
+            a.get(1)?.as_f64()?,
+            a.get(2)?.as_f64()?,
+        ])
+    };
+    let cam = &shot["camera"];
+    let (Some(pos), Some(look)) = (read3(&cam["pos"]), read3(&cam["look_at"])) else {
+        return Err(format!(
+            "--shot `{id}` has no usable camera in the render plan"
+        ));
+    };
+    let fov = cam["fov"].as_f64().unwrap_or(DEFAULT_FOV);
+    Ok(Camera::looking_at(pos, look, fov))
+}
+
+/// Write `bytes` to `path`, creating parent directories.
+fn write_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, bytes)
+}
+
 fn run_build(
     campaign_dir: &Path,
     out: &Path,
@@ -430,33 +954,10 @@ fn run_build(
     };
 
     // read the structure .nbt bytes referenced by placements
-    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for area in &plan.areas {
-        for piece in &area.pieces {
-            if structures.contains_key(&piece.structure_file) {
-                continue;
-            }
-            let path = prefabs_dir.join(&piece.structure_file);
-            match std::fs::read(&path) {
-                Ok(bytes) => {
-                    structures.insert(piece.structure_file.clone(), bytes);
-                }
-                Err(e) => {
-                    print_build_error(
-                        "DW0300",
-                        &format!(
-                            "cannot read prefab structure file `{}`: {e} — the prefab metadata \
-                             points at an `.nbt` that is missing or unreadable in the prefabs dir. \
-                             Restore the file or fix the metadata path (prefab-library issue)",
-                            path.display()
-                        ),
-                        json,
-                    );
-                    return ExitCode::from(3);
-                }
-            }
-        }
-    }
+    let structures = match read_structures(&plan, prefabs_dir, json) {
+        Ok(s) => s,
+        Err(code) => return ExitCode::from(code),
+    };
 
     // read the NPC-skin PNGs referenced by mannequin NPCs (spec-0009 bake). The
     // PNG lives in the campaign dir at `skins/<texture_id>.png`; a missing one is
