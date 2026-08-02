@@ -3067,24 +3067,33 @@ struct ResolvedShot {
     ticks: i32,
 }
 
-/// Cutscene functions (spec-0008 addendum): the two-camera bounce. Per cutscene
-/// (deduped by content key) emits a start function, a self-scheduling per-tick
-/// dolly/`spectate` driver, and an end/restore function.
+/// Cutscene functions (spec-0008 addendum; keyframe dolly per task #64): the
+/// two-camera bounce. Per cutscene (deduped by content key) emits a start
+/// function, a self-scheduling keyframe/`spectate` driver, and an end/restore
+/// function.
 ///
 /// Mechanic: save each player's return point (a marker at a representative
-/// player), spectator, then each tick dolly two co-located invisible cameras
-/// along the lerped waypoint polyline and alternate `spectate` between them
-/// (the naive same-entity re-`spectate` is a server no-op — never emitted). On
-/// completion, restore adventure mode + teleport players back to the marker.
+/// player), spectator, then dolly two co-located invisible cameras along the
+/// shot's keyframe schedule — a `tp` every `cadence` ticks with display-entity
+/// `teleport_duration` set to the cadence, so the *client* tweens position and
+/// rotation between keyframes ([`crate::camera`], spike-measured) — while
+/// alternating `spectate` between the pair each tick (the naive same-entity
+/// re-`spectate` is a server no-op — never emitted; the bounce cannot reset an
+/// in-flight tween, measurement 4). On completion, restore adventure mode +
+/// teleport players back to the marker.
+///
+/// **Path timing** (task #64): the dolly is arc-length parameterized (equal
+/// distance per time, not equal segments per time) with baked smoothstep
+/// ease-in/ease-out — both fixes live in [`crate::camera::plan_shot`].
 ///
 /// **Aim** (DSL v0.6): every dolly `tp` carries an explicit `<yaw> <pitch>`, so a
 /// spectating player looks where the shot means them to look instead of at the
 /// summon default (yaw 0 = south). With `look_at`, the rotation is computed per
-/// tick from the camera's own position toward the subject point (the framing
-/// holds through the whole move); without it, the camera faces along the segment
-/// of the polyline it is currently traversing — for the common two-waypoint dolly
-/// that is exactly `path[0] → path[1]`. Pure `atan2` on plan coordinates, rounded
-/// to 3 decimals: deterministic, no RNG, no wall clock.
+/// keyframe from the camera's own position toward the subject point (the framing
+/// holds through the whole move, with the client tweening rotation between
+/// keyframes); without it, the camera faces along the eased path's direction of
+/// travel. Pure `atan2` on plan coordinates, rounded to 3 decimals:
+/// deterministic, no RNG, no wall clock.
 ///
 /// **Multi-shot** (DSL v0.6): a cutscene is a list of shots played back-to-back
 /// inside ONE save/restore bracket — one marker, one `gamemode spectator`, one
@@ -3123,7 +3132,7 @@ fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
                     .look_at
                     .as_ref()
                     .map(|t| crate::nav::camera_look_point(plan, t)),
-                ticks: ((shot.seconds as i32) * 20).clamp(1, 400),
+                ticks: crate::camera::shot_ticks(shot.seconds),
             })
             .collect();
         let first = resolved[0]
@@ -3158,23 +3167,43 @@ fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
         start.push(format!("schedule function {ns}:cs_tick_{bare} 1t"));
         out.push((start_name.clone(), lines(&start)));
 
-        // per-tick driver: every shot's frames laid end-to-end on one counter.
+        // Keyframe driver (task #64): every shot's keyframes laid end-to-end on
+        // one counter. Each shot plans an arc-length-parameterized, eased
+        // keyframe schedule (`crate::camera::plan_shot`); the client draws the
+        // in-between frames via display-entity `teleport_duration` (= the
+        // shot's cadence), tweening position AND rotation — see the spike
+        // measurements in `crate::camera`'s module docs.
         let mut tick: Vec<String> = Vec::new();
         let mut offset: i32 = 0;
-        for shot in &resolved {
-            for k in 0..=shot.ticks {
-                let s = k as f64 / shot.ticks as f64;
-                let p = lerp_polyline(&shot.pts, s);
-                // Aim: at the subject when `look_at` is set, otherwise along the
-                // segment being traversed (the direction of travel).
-                let (yaw, pitch) = match shot.subject {
-                    Some(target) => mc_aim(p, target),
-                    None => mc_aim_along(&shot.pts, s),
-                };
+        for (si, shot) in resolved.iter().enumerate() {
+            let sf = crate::camera::plan_shot(&shot.pts, shot.subject, shot.ticks);
+            // Cadence merge + snap share the shot's first tick: the position
+            // sync is flushed before entity metadata within a tick (spike
+            // measurement 5), so the snap `tp` lands instantly under the OLD
+            // duration (0 — the summon default, or the previous shot's reset)
+            // and the new cadence governs only the keyframes that follow.
+            if sf.cadence > 0 {
+                tick.push(format!(
+                    "execute if score #t_{bare} dw.sys matches {offset} as @e[tag=dw_cam_{bare}] run data merge entity @s {{teleport_duration:{}}}",
+                    sf.cadence
+                ));
+            }
+            for f in &sf.frames {
                 tick.push(format!(
                     "execute if score #t_{bare} dw.sys matches {} run tp @e[tag=dw_cam_{bare}] {} {} {} {} {}",
-                    offset + k,
-                    fmt_f64(p[0]), fmt_f64(p[1]), fmt_f64(p[2]), fmt_f64(yaw), fmt_f64(pitch)
+                    offset + f.tick,
+                    fmt_f64(f.pos[0]), fmt_f64(f.pos[1]), fmt_f64(f.pos[2]),
+                    fmt_f64(f.yaw), fmt_f64(f.pitch)
+                ));
+            }
+            // Re-arm the hard cut: reset `teleport_duration` on the shot's last
+            // owned tick — no keyframe is issued then, and a metadata change
+            // does not disturb an in-flight tween (measurement 4/5) — so the
+            // NEXT shot's snap is instant, not a glide.
+            if sf.cadence > 0 && si + 1 < resolved.len() {
+                tick.push(format!(
+                    "execute if score #t_{bare} dw.sys matches {} as @e[tag=dw_cam_{bare}] run data merge entity @s {{teleport_duration:0}}",
+                    offset + shot.ticks
                 ));
             }
             offset += shot.ticks + 1;
@@ -3233,89 +3262,6 @@ fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
         out.push((format!("cs_end_{bare}"), lines(&end)));
     }
     out
-}
-
-/// Aim an entity at `target` from `pos`; returns `(yaw, pitch)` in **Minecraft
-/// entity rotation degrees** — the convention the `tp <targets> <pos> <rot>`
-/// command and the `Rotation` NBT use:
-///
-/// - `yaw = atan2(-dx, dz)`: `0` faces +Z (south), `90` faces −X (west), `180`
-///   faces −Z (north), `-90` faces +X (east).
-/// - `pitch = atan2(-dy, hypot(dx, dz))`: positive looks **down**, `0` is level.
-///
-/// Note this is *not* the render-plan / Chunky convention
-/// ([`crate::render_plan`], `yaw = atan2(-dz, dx)`, `0` = +X): pitch agrees, yaw
-/// does not. Rotations are rounded to 3 decimals so emission is byte-stable
-/// across platforms (the ADR-0006 gate compares bytes; repeatable rounding avoids
-/// libm ulp drift).
-fn mc_aim(pos: [f64; 3], target: [f64; 3]) -> (f64, f64) {
-    let d = [target[0] - pos[0], target[1] - pos[1], target[2] - pos[2]];
-    mc_aim_dir(d)
-}
-
-/// [`mc_aim`] from a direction vector. A zero-length direction yields the vanilla
-/// summon default (yaw 0 = south, level) — reached only when a cutscene's whole
-/// dolly path collapses to one point, which has no direction of travel.
-fn mc_aim_dir(d: [f64; 3]) -> (f64, f64) {
-    let horiz = (d[0] * d[0] + d[2] * d[2]).sqrt();
-    if horiz == 0.0 && d[1] == 0.0 {
-        return (0.0, 0.0);
-    }
-    let yaw = (-d[0]).atan2(d[2]).to_degrees();
-    let pitch = (-d[1]).atan2(horiz).to_degrees();
-    (round3(yaw), round3(pitch))
-}
-
-/// The default cutscene aim: face along the direction of travel at parameter `s`
-/// — the polyline segment the camera is currently traversing. For a two-waypoint
-/// dolly that is `path[0] → path[1]` for the whole shot. A degenerate (zero-
-/// length) segment falls back to the overall first → last direction so a repeated
-/// waypoint does not snap the camera back to south.
-fn mc_aim_along(pts: &[[f64; 3]], s: f64) -> (f64, f64) {
-    if pts.len() < 2 {
-        return (0.0, 0.0);
-    }
-    let segs = (pts.len() - 1) as f64;
-    let u = (s.clamp(0.0, 1.0) * segs).min(segs);
-    let i = (u.floor() as usize).min(pts.len() - 2);
-    let (a, b) = (pts[i], pts[i + 1]);
-    let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-    if d == [0.0, 0.0, 0.0] {
-        let last = pts[pts.len() - 1];
-        let f = pts[0];
-        return mc_aim_dir([last[0] - f[0], last[1] - f[1], last[2] - f[2]]);
-    }
-    mc_aim_dir(d)
-}
-
-/// Round to 3 decimals so float formatting is stable across platforms, and
-/// collapse negative zero (`atan2` yields `-0.0` for an exactly-south / exactly-
-/// level aim; `-0.0` in a `tp` rotation is correct but reads as noise and would
-/// bake a sign artifact into the emitted bytes).
-fn round3(v: f64) -> f64 {
-    let r = (v * 1000.0).round() / 1000.0;
-    if r == 0.0 { 0.0 } else { r }
-}
-
-/// Linear interpolation along a polyline of points at parameter `s` in `[0,1]`.
-fn lerp_polyline(pts: &[[f64; 3]], s: f64) -> [f64; 3] {
-    if pts.is_empty() {
-        return [0.0, plan::BASE_Y as f64, 0.0];
-    }
-    if pts.len() == 1 {
-        return pts[0];
-    }
-    let segs = (pts.len() - 1) as f64;
-    let u = (s.clamp(0.0, 1.0) * segs).min(segs);
-    let i = (u.floor() as usize).min(pts.len() - 2);
-    let f = u - i as f64;
-    let a = pts[i];
-    let b = pts[i + 1];
-    [
-        a[0] + (b[0] - a[0]) * f,
-        a[1] + (b[1] - a[1]) * f,
-        a[2] + (b[2] - a[2]) * f,
-    ]
 }
 
 /// Environment-trigger interaction-entity summons (strike/use) for
