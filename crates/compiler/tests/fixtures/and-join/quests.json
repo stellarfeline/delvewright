@@ -1,0 +1,40 @@
+{
+  "dsl_version": "0.6.0",
+  "campaign_id": "and-join",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/greet",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/warden" }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [
+            { "type": "open-gate", "anchor": "anchor/gate" },
+            { "type": "give-item", "item": "minecraft:torch", "count": 1, "name": "Ward Taper" }
+          ]
+        },
+        "on_complete": []
+      },
+      {
+        "id": "quest/wards",
+        "trigger": { "type": "quest-complete", "quest": "quest/greet" },
+        "objectives": [
+          { "type": "interact", "id": "obj/ward-north", "title": "Draw the North Ward", "hint": "A lever in the room off the hall.", "anchor": "anchor/door", "prop": { "block": "minecraft:lever" } },
+          { "type": "interact", "id": "obj/ward-south", "title": "Draw the South Ward", "hint": "Its twin, a room away.", "anchor": "anchor/chest", "prop": { "block": "minecraft:lever" } },
+          { "type": "reach-anchor", "id": "obj/shrine", "title": "Enter the Shrine", "hint": "Both wards drawn — the shrine opens.", "anchor": "anchor/objective", "radius": 2, "after": ["obj/ward-north", "obj/ward-south"] }
+        ],
+        "on_objective_complete": {
+          "obj/ward-north": [ { "type": "set-flag", "flag": "flag/north-drawn" } ],
+          "obj/ward-south": [ { "type": "set-flag", "flag": "flag/south-drawn" } ]
+        },
+        "on_complete": [
+          { "type": "narrate", "text": "The wards fall together.", "style": "chat" },
+          { "type": "campaign-complete" }
+        ]
+      }
+    ]
+  }
+}

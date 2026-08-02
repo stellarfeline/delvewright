@@ -206,8 +206,9 @@ fn trap_dispense_and_disarm_emit_end_to_end() {
         "disarm must empty the dispenser:\n{disarm}"
     );
     assert!(
-        disarm.contains("scoreboard players set @a dw.f_darts_off 1"),
-        "disarm must set the flag party-wide:\n{disarm}"
+        disarm.contains("scoreboard players set #party dw.f_darts_off 1"),
+        "disarm must set the flag on the party holder (spec-0018) — one lever, \
+         everyone's trap off, and it survives a relog:\n{disarm}"
     );
 
     // The trap PackTest is emitted.

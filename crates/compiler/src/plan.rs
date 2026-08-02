@@ -488,6 +488,28 @@ pub enum Step {
     },
 }
 
+/// The **party holder** (spec-0018): the single fake player that carries every
+/// shared progression score.
+///
+/// Progress is a fact about the party, not about a player. Objective completion,
+/// quest activation/completion, story flags, the announce-once latches and
+/// campaign completion all live on `#party` — so any player's completing action
+/// advances everyone, and two players clearing two arms of an `after` AND-join in
+/// two different rooms unlock the successor together.
+///
+/// A fake player needs no entity and survives every join/leave, which is exactly
+/// the lifetime party state needs. Everything that is genuinely per-player —
+/// class + kit, `dw.dlg_shown`, the interact/dialogue triggers, `dw.dmask`, the
+/// `deathCount` respawn edge, the stealth grace clocks, `dw.hold` — stays on the
+/// player and is deliberately NOT routed here.
+pub const PARTY: &str = "#party";
+
+/// The declared mandatory party size (spec-0018 `world.min_players`), defaulting
+/// to 1 — a party of one is always legal, and every pre-0.6 campaign reads as 1.
+pub fn min_players(campaign: &Campaign) -> u8 {
+    campaign.world.content.min_players.unwrap_or(1)
+}
+
 /// Sanitize an id's local part (after its `/`) to `[a-z0-9_]`.
 pub fn safe_local(id: &str) -> String {
     let local = id.split_once('/').map(|(_, r)| r).unwrap_or(id);

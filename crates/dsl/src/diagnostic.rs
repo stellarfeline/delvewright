@@ -251,4 +251,17 @@ pub mod codes {
     /// the trigger's tag on the NPC's own hitbox instead of summoning a second
     /// one. Validation-tier (exit 1).
     pub const USE_TRIGGER_ON_NPC: &str = "DW0350";
+
+    /// (v0.6, spec-0018) `world.min_players` outside the `1..=4` range. A delve is
+    /// played by ONE party of 1–4 (ADR/CLAUDE.md product definition), so a declared
+    /// mandatory party size can never sit outside it. Validation-tier (exit 1).
+    pub const PARTY_SIZE: &str = "DW0356";
+    /// (v0.6, spec-0018) A `carrier: "one"` `give-item` sits in a bundle that is
+    /// only ever reached from the **scheduler** (`move-npc`/`move-actor`
+    /// `on_arrive`, a `sequence` step). `carrier: "one"` means "hand this single
+    /// quest prop to the player whose action earned it"; a scheduled bundle runs
+    /// with the server command source and has no acting player, so there is no
+    /// defensible recipient. Give it to the whole party (drop `carrier`), or move
+    /// the hand-off onto the beat that a player completes. Validation-tier (exit 1).
+    pub const PARTY_CARRIER_SCHEDULED: &str = "DW0357";
 }

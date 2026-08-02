@@ -84,6 +84,36 @@ pub struct WorldContent {
     /// "You left the keep." on *every* delve, whatever its theme or language.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outro: Option<String>,
+    /// The party size this delve **requires** (DSL v0.6, spec-0018). Absent = 1: a
+    /// party of one is always legal and every pre-0.6 campaign keeps that reading.
+    /// A design whose beats genuinely need `n` players — two rooms whose switches
+    /// are two arms of one AND-join — declares `min_players: n` (max 4), and the
+    /// lobby then refuses to start below it: the class-selection dialog stays shut
+    /// and the waiting players get a party-count actionbar instead.
+    ///
+    /// Progression is party state either way (spec-0018), so this is a *declaration
+    /// of intent*, not a mechanism: it makes a mandatory-n design first-class
+    /// (owner amendment 2026-08-02) and turns on the analyzer's n-agent division
+    /// proof. Out of `1..=4` is `DW0356`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_players: Option<u8>,
+}
+
+/// Who a granted item goes to (DSL v0.6, spec-0018).
+///
+/// Progression is a fact about the party, so the default for every `give-item` and
+/// every class-kit entry is **all**: a quest beat that arms the party arms all of
+/// it. `one` is the deliberate exception for a single quest prop (the wine-skin,
+/// the stake): exactly one copy enters the party, handed to the player whose action
+/// earned it, and the party passes it around physically.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Carrier {
+    /// Every party member receives the item (the default).
+    #[default]
+    All,
+    /// Exactly one copy, to the player whose action fired the effect.
+    One,
 }
 
 /// A declared world time state (DSL v0.5, spec-0010). Values are the vanilla
@@ -695,6 +725,12 @@ pub struct KitItem {
     /// Optional display name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Who gets it (DSL v0.6, spec-0018). Absent = [`Carrier::All`]. A class kit is
+    /// per-player gear by construction — every player who picks the class gets the
+    /// kit — so `carrier` here marks a **party-unique** kit item: exactly one copy
+    /// enters the party, given to the first player to pick this class.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub carrier: Option<Carrier>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1596,7 +1632,7 @@ pub enum QuestEffect {
     /// flag-gatable (gating the campaign's own completion is a deadlock footgun),
     /// so this variant carries no `requires_flags`.
     CampaignComplete,
-    /// Gives the player an item (v0.3).
+    /// Gives the party an item (v0.3; party-wide since v0.6/spec-0018).
     GiveItem {
         /// Vanilla item id to give (validated against the registry).
         item: String,
@@ -1605,6 +1641,12 @@ pub enum QuestEffect {
         /// Optional display name (DSL v0.4), matching [`KitItem::name`].
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
+        /// Who receives it (DSL v0.6, spec-0018). Absent = [`Carrier::All`] — every
+        /// party member. `one` hands a single copy to the player whose action fired
+        /// the effect; it is rejected in a scheduler-only bundle (`DW0357`), which
+        /// has no acting player.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        carrier: Option<Carrier>,
         /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
@@ -1991,6 +2033,7 @@ impl std::fmt::Debug for QuestEffect {
                 item,
                 count,
                 name,
+                carrier,
                 requires_flags,
                 forbids_flags,
             } => ff(
@@ -1998,6 +2041,7 @@ impl std::fmt::Debug for QuestEffect {
                     .field("item", item)
                     .field("count", count)
                     .field("name", name)
+                    .field("carrier", carrier)
                     .field("requires_flags", requires_flags),
                 forbids_flags,
             )
@@ -2690,6 +2734,23 @@ impl QuestEffect {
     /// `true` if this is a `give-item` carrying a v0.4 display `name`.
     pub fn give_item_named(&self) -> bool {
         matches!(self, QuestEffect::GiveItem { name: Some(_), .. })
+    }
+
+    /// The declared `carrier` if this is a `give-item` that states one (v0.6,
+    /// spec-0018). `None` for any other effect **and** for a `give-item` that
+    /// leaves it absent — absent reads as [`Carrier::All`], and the distinction
+    /// matters only for the pre-0.6 reserved-field gate.
+    pub fn give_carrier(&self) -> Option<Carrier> {
+        match self {
+            QuestEffect::GiveItem { carrier, .. } => *carrier,
+            _ => None,
+        }
+    }
+
+    /// Does this `give-item` hand a single copy to the acting player (v0.6,
+    /// spec-0018)? `false` for every other effect and for the party-wide default.
+    pub fn gives_to_one(&self) -> bool {
+        matches!(self.give_carrier(), Some(Carrier::One))
     }
 
     /// The `set-block` block id if this is a v0.4 `set-block` effect.
