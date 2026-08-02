@@ -257,6 +257,115 @@ fn edit_breaching_the_outer_wall_is_dw0322() {
     );
 }
 
+/// Rewrite the copy's stage-1 world doc to declare `horizon: ocean` (spec-0013),
+/// leaving everything else in the fixture alone.
+fn set_ocean_horizon(dir: &Path) {
+    let path = dir.join("world.json");
+    let mut doc: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    doc["dsl_version"] = serde_json::json!("0.6.0");
+    doc["content"]["horizon"] = serde_json::json!("ocean");
+    // `DW0320`: an ocean horizon needs a return rule; the default margin is fine.
+    doc["content"]["boundary"] = serde_json::json!({});
+    std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+}
+
+/// Boundary safety on an **ocean** horizon (`DW0322`), the false-premise fix:
+/// the pinned bedrock/stone/water superflat puts ground under every column, so
+/// nothing in an ocean world can fall out of it and the void-drop premise is
+/// vacuous. A zero-write `select` — the map editor's probe batch, which used to
+/// trip `DW0322` on every coastline of `nobodys-cave-island` — must build clean.
+#[test]
+fn edit_select_only_batch_on_an_ocean_horizon_is_green() {
+    let dir = edits_copy("edits-ocean-select");
+    set_ocean_horizon(&dir);
+    set_batches(
+        &dir,
+        serde_json::json!([{
+            "id": "batch/probe",
+            "area": "area/keep",
+            "edits": [
+                { "verb": "select", "name": "region/probe", "shape": {
+                    "kind": "box",
+                    "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                    "min": [4, 1, 4], "max": [5, 2, 5]
+                }}
+            ]
+        }]),
+    );
+    let out = tmp("edits-ocean-select-out");
+    let r = delvec(&[
+        "build",
+        dir.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        &prefabs_arg(),
+    ]);
+    let stdout = format!(
+        "{}{}",
+        String::from_utf8_lossy(&r.stdout),
+        String::from_utf8_lossy(&r.stderr)
+    );
+    assert_eq!(r.status.code(), Some(0), "ocean probe batch:\n{stdout}");
+    assert!(!stdout.contains("DW0322"), "no boundary error:\n{stdout}");
+}
+
+/// The ocean horizon's *replacement* invariant (`DW0322`): the same wall breach
+/// that is a void drop under `horizon: void` is a **stranding** hazard under
+/// `horizon: ocean` — the room's floor sits below sea level, so a player who
+/// walks out of the breach is in open water with no shoreline at the waterline
+/// to climb back onto. The code is the same, the premise and the prescription
+/// are the horizon's.
+#[test]
+fn edit_ocean_breach_strands_the_player_dw0322() {
+    let dir = edits_copy("edits-ocean-breach");
+    set_ocean_horizon(&dir);
+    set_batches(
+        &dir,
+        serde_json::json!([{
+            "id": "batch/breach-wall",
+            "area": "area/keep",
+            "edits": [
+                { "verb": "select", "name": "region/breach", "shape": {
+                    "kind": "box",
+                    "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                    "min": [4, 1, 0], "max": [6, 2, 0]
+                }},
+                { "verb": "carve", "region": "region/breach" }
+            ]
+        }]),
+    );
+    let out = tmp("edits-ocean-breach-out");
+    let r = delvec(&[
+        "build",
+        dir.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        &prefabs_arg(),
+    ]);
+    assert_eq!(r.status.code(), Some(3), "build-tier failure");
+    let stdout = format!(
+        "{}{}",
+        String::from_utf8_lossy(&r.stdout),
+        String::from_utf8_lossy(&r.stderr)
+    );
+    assert!(stdout.contains("DW0322"), "expected DW0322:\n{stdout}");
+    assert!(
+        stdout.contains("batch/breach-wall"),
+        "names the batch:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("NO way back ashore"),
+        "the ocean horizon reports stranding, not a void drop:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("void drop"),
+        "the void premise must not be asserted in an ocean world:\n{stdout}"
+    );
+}
+
 /// Frame drift (`DW0323`): a piece-local frame whose declared prefab no longer
 /// matches the solved layout is a loud resolution error, never a silently
 /// misplaced edit.

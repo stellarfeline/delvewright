@@ -980,14 +980,13 @@ world. Invariants:
   (`DW0313` on a despawn, batch-attributed), re-runs the spec-0010 relight
   (`DW0210`/`DW0211`), re-proves critical-path + checkpoint walkability
   (`DW0311`/`DW0315`/`DW0316`, with the relight fixtures solid), and runs the
-  **boundary-safety** check (`DW0322`, `nav::verify_boundary_safety`): no
-  reachable walkable cell may border a **void drop** — a neighbouring column
-  the player can step (or open a gate) into with nothing anywhere below to
-  arrest the fall (solid, fence/wall top, gate, or water all count as arrest;
-  a deep drop onto real geometry is falling, not leaving the world). This is
-  the guarantee the greenfield berm provided physically, made checkable so an
-  edit script may reshape a boundary into natural landform. Reused codes keep
-  their tiers; failures are prefixed `after world-edits batch `<id>``.
+  **boundary-safety** check (`DW0322`, `nav::verify_boundary_safety`, stated
+  per **horizon** — see the `DW0322` catalog row and *Boundary safety and the
+  world-generator ambient* below). This is the guarantee the greenfield berm
+  provided physically, made checkable so an edit script may reshape a boundary
+  into natural landform. Reused codes keep their tiers; failures are prefixed
+  `after world-edits batch `<id>``, and every violation of a run is aggregated
+  into one report (bounded listing + total), never just the first.
 - **Trap-hardware integrity (`DW0352`).** No batch write may land on a trap's
   trigger/hazard cell, dispenser socket or disarm-affordance cell. `setup_finish`
   runs `world_edits` **before** `trap_setup`, so a colliding edit lands first and
@@ -1009,6 +1008,49 @@ world. Invariants:
   `hanging=true` lantern) is classified as needing none, and "support removed"
   means removed to **air** — the check never guesses about a block it cannot
   classify.
+- **Boundary safety and the world-generator ambient (`DW0322`).** The check's
+  premise is what a column the compiler modelled *nothing* into actually holds in
+  the delivered world — a property of the level generator (`nav::Ambient`,
+  spec-0013 `horizon`), not of the content. It rides on `nav::World`
+  (`World::with_ambient`, set from the plan by `World::from_plan` and by the edit
+  replay) and is read **only** by this proof: it never feeds the walkability
+  sets, so routing, standability and every other proof stay byte-identical.
+  - **`Ambient::Void`** (`horizon: void`, the default and every pre-0.6 campaign)
+    — unchanged: bottomless columns are the hazard, exactly as before.
+  - **`Ambient::Ocean`** (`horizon: ocean`) — the ambient is the pinned superflat
+    (`plan::SEA_LEVEL` = 62 water top, `plan::SEA_FLOOR_TOP_Y` = 54 sea floor,
+    bedrock below), present in every column **except** inside a placed piece's
+    AABB (`/place template` writes the whole box, air included; the water *under*
+    an island base is still ambient). Bedrock everywhere ⇒ the void premise is
+    vacuous, and the real hazard is **stranding**, modelled as:
+    1. **Entering.** A reachable walkable cell puts the player in the sea when a
+       horizontally adjacent column is enterable at its level (feet + head clear
+       of solids and 1.5-tall barriers — water does *not* block walking in) and
+       that column is open, between that level and the sea surface, all the way
+       to ambient water. Walking in, wading in and falling off a cliff are the
+       same outcome: vanilla buoyancy leaves the player afloat at `sea_level`.
+    2. **The sea.** A cell at `y == sea_level` is swimmable when it is neither
+       solid nor tall and is either ambient water or *authored* water (a lagoon
+       at sea level is physically the same plane). Swimmable cells 4-connect into
+       **bodies**; a body reaching the edge of the search window (the placed
+       geometry inflated by `nav::OPEN_SEA_MARGIN`) is the open sea, and all such
+       bodies are one, since the ring beyond the window is untouched ambient
+       water in every direction. Connectivity is taken on the surface plane only
+       — a diver might swim under a land bridge into another body, which the
+       model deliberately does not count on.
+    3. **Climbing out.** A body is escapable when one of its surface cells is
+       horizontally adjacent to a **proven reachable walkable** cell whose feet
+       are at `sea_level` (a rim one block under the waterline: wade out of the
+       shallows) or `sea_level + 1` (the canonical beach — land flush with the
+       surface; this is the island tileset's own convention, waterline local y=2
+       / walk plane local y=3). A lip two blocks above the surface is a wall to a
+       swimmer, and adventure mode has neither boat nor blocks.
+
+    A body the player can enter and cannot climb out of is the violation. The
+    granularity is **per body**: an island with a perfect outer beach still fails
+    on an inner pool with 2-high walls, which a global "is there a climb-out
+    anywhere" test would pass. Requiring the climb-out cell to be in the
+    *reachable* walk region is what makes it a return, not just a landing.
 - **Gate-region collision (`DW0353`, advisory).** A write inside a `close-gate`
   region is filled solid when the gate closes and cleared to **air** when it
   opens, so one cycle erases it. The proofs stay sound (the occupancy model
@@ -1381,7 +1423,7 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0315` | A `set-checkpoint` (spec-0012) strands the party: re-rooting the DW0311 reachability at the checkpoint cell, the first remaining required critical-path anchor is no longer walkable from it (a checkpoint behind a one-way drop the forward path can't re-cross after respawn). The message names the checkpoint and the first unreachable anchor and prescribes moving the checkpoint or adding a return route — never deleting the checkpoint to silence the proof. |
 | `DW0316` | A `set-checkpoint` anchor has no standable footing within snap range on the final assembled model (a trap-trigger / hazard / mid-air cell) — the party would respawn into void or a wall (spec-0012). Because the relight pass already proves every reachable walkable cell meets the area's `min_light`, a checkpoint that clears this and DW0315 provably meets `min_light` too. |
 | `DW0324` | An L2 massing verb cannot apply to the solved layout (v0.6, spec-0017 PR 3): the target area binds a single `prefab` (no jigsaw layout to mass), a `piece` index / `prefab` guard mismatches the placement (layout drift), a `swap-piece`/`reseed-piece` candidate cannot re-mate every mated socket without overlap (or the pool has no compatible variant), an `insert-piece` socket is already mated or nothing attaches without overlap, a `remove-piece` targets the entry piece or a non-leaf, or a `rewire-socket` names an out-of-range connector / seals an already-sealed (opens an already-open) socket. `compiler::massing`, build-tier (exit 3); every message names the batch and prescribes re-inspecting the layout with `delvec snapshot` — never deleting the drift guard or the sockets. |
-| `DW0322` | Post-edit boundary safety (v0.6, spec-0017 invariant 4): after a world-edits batch, a reachable walkable cell borders a **void drop** — a horizontally adjacent column the player can step (or open a gate) into with no fall-arrest of any kind below (no solid, no fence/wall/gate top, no water); one step off the proven ground falls out of the world. `nav::verify_boundary_safety`, run after every edit batch (never on the no-edit path, whose worlds provide the guarantee physically); the message names the walkable cell, the drop cell and the batch. Build-tier (exit 3). Numbered in the 032x world/region family beside the spec-0013 boundary pair (`DW0320`/`DW0321` are validation-tier; this one is build-tier — it needs the edited geometry). Prescription: extend the terrain under the exposed edge (fill/morph a slope or outcrop) or reinstate a barrier shape — never weaken the check or reroute the path around it. |
+| `DW0322` | Post-edit boundary safety (v0.6, spec-0017 invariant 4): after a world-edits batch, the reachable walk region fails "one step off the proven ground is survivable **and recoverable**". `nav::verify_boundary_safety`, run after every edit batch (never on the no-edit path, whose worlds provide the guarantee physically). One code, one rule — *stated against the world-generator ambient* (`nav::Ambient`, spec-0013 `horizon`), because what an unmodelled column contains is the generator's property, not the content's. **`horizon: void`**: a reachable walkable cell borders a **void drop** — a horizontally adjacent column the player can step (or open a gate) into with no fall-arrest of any kind below (no solid, no fence/wall/gate top, no water); one step off the proven ground falls out of the world. Prescription: extend the terrain under the exposed edge (fill/morph a slope or outcrop) or reinstate a barrier shape. **`horizon: ocean`**: the pinned bedrock/stone/water superflat puts ground under *every* column, so nothing can fall out of an ocean world and the void premise is vacuous — the rule is the **stranding** invariant instead (the hazard `plan::OCEAN_BASE_Y` already names): a reachable walkable cell lets the player into a body of water with no climb-out back into the reachable walk region. Prescription: give the shoreline a step at the waterline (a beach or a bank), or wall the edge so the water cannot be entered there. Both branches **aggregate**: one report per run listing up to 6 violations plus a total, so the scale of a breach (one cell vs. the whole coastline) is visible without re-probing. Build-tier (exit 3); the message names the batch. Numbered in the 032x world/region family beside the spec-0013 boundary pair (`DW0320`/`DW0321` are validation-tier; this one is build-tier — it needs the edited geometry). Never weaken the check or reroute the path around it. |
 | `DW0323` | A stage-7 edit fails to **resolve** against the solved layout (v0.6, spec-0017): a piece-local frame's `piece` index is out of range or its `prefab` guard mismatches the placed piece (layout drift — the loud alternative to a silently misplaced edit), an `anchor-relative` frame names an anchor the batch's area does not resolve, or a verb's target region resolves to **zero cells** (a silent no-op is always a defect: the select drifted off the content it targeted). Also the `fragment` verb's own resolution failures: a prefab outside the admitted library, one decoding to zero non-air cells, and a `rotation` other than `none` on a prefab carrying yaw-dependent blockstate — rotate-aware stamping is not implemented, so the compiler refuses the stamp instead of shipping unrotated facings (see the stage-7 `fragment` row). `compiler::edit`, build-tier (exit 3); the message names the batch and prescribes re-inspecting the layout with `delvec snapshot` — never deleting the prefab guard or leaving a dead edit. |
 | `DW0352` | A world-edits batch writes into a cell a trap's hardware occupies (v0.6, spec-0017 + spec-0011): its trigger/hazard cell, its dispenser socket, or its disarm-affordance cell. `setup_finish` runs `world_edits` **before** `trap_setup`, so the edit lands first and the trap is loaded into a block that is no longer there — vanilla's `item replace block … container.0` on a non-container fails with **no output**, so the delve ships a dead trap with every proof green (`DW0342` proves the *planned* hazard, not the surviving hardware; no geometry proof models "is this still a dispenser"). `compiler::edit`, checked first in the per-batch invariants, build-tier (exit 3). The message names the batch, the cell, the trap and which role the cell plays; prescription is to move the region off the trap's cells or re-anchor the trap — never to assume the edit leaves the redstone intact. |
 | `DW0354` | A support-dependent block the edit script placed has no valid support in the post-batch world (v0.6, spec-0017): a torch/lantern/campfire/rail-family block with **nothing below it** after a later batch carved its support away, or flora rooted in a block flowers cannot stand on (a `scatter` over bare stone). Vanilla pops such a block off as an item on the first chunk tick, so the write silently vanishes from the delivered world while every snapshot still shows it. **Two tiers, one code**: advisory (exit 0) for decoration, aggregated per reason + block with a count and one example cell; **error (exit 3)** when the popped block is a fixture the script's own `relight` verb placed — that is a declared `min_light` guarantee the `DW0211` proof accepted, and losing it re-darkens the region. `compiler::edit`, evaluated at every batch close over the cumulative placement set. Deliberately conservative: blocks supported sideways or from above (`wall_torch`, `hanging=true` lanterns) are classified as needing no support, and "support removed" means removed to **air** — the check never guesses about a block it cannot classify. |
