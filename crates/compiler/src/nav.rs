@@ -821,6 +821,11 @@ fn move_target(plan: &Plan, npc_id: &str, to_anchor: &str) -> Option<[i32; 3]> {
 
 /// Plan every `move-npc` in the campaign into a walked-path [`MovePlan`], deduped
 /// by `(npc, to_anchor)` in first-seen order. `DW0307` when a move is unroutable.
+/// Each NPC's successive moves **chain**: the first leg starts at the stage-2
+/// anchor, every later leg at the previous leg's target (round-6; see
+/// [`plan_actor_moves`]). Two moves sharing `(npc, to_anchor)` still share one
+/// content-keyed driver, planned from the first occurrence's origin (documented
+/// limitation of the content key).
 ///
 /// **Use-gate cells are walkable edges here** (task #59): a scripted walk is a
 /// compiler-emitted, supervised tp polyline fired by a campaign beat, and the
@@ -833,6 +838,13 @@ fn move_target(plan: &Plan, npc_id: &str, to_anchor: &str) -> Option<[i32; 3]> {
 pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError> {
     let mut out = Vec::new();
     let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
+    // Chained origins (round-6): each NPC's next walk starts from its LAST staged
+    // location — the previous move's (snapped) target — not its declared anchor.
+    // Planning every leg from the declared anchor made a second consecutive
+    // `move-npc` on the same NPC degenerate (worst case start == target → a
+    // single-waypoint instant teleport instead of a walk). Keyed by npc id, in
+    // campaign effect order (the same deterministic order the dedup uses).
+    let mut chained_start: BTreeMap<String, [i32; 3]> = BTreeMap::new();
     for eff in all_effects(plan) {
         let QuestEffect::MoveNpc {
             npc,
@@ -843,18 +855,6 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
         else {
             continue;
         };
-        let key = (npc.as_str().to_string(), to_anchor.as_str().to_string());
-        if !seen.insert(key) {
-            continue;
-        }
-        let start = npc_start(plan, npc.as_str()).ok_or_else(|| NavError {
-            code: DW_MOVE_UNROUTABLE,
-            message: format!(
-                "move-npc: NPC `{}` has no resolved home anchor to walk from — give the npc a \
-                 stage-2 `anchor` that its area's prefab provides, so the walk has a start",
-                npc.as_str()
-            ),
-        })?;
         let anchor_pos =
             move_target(plan, npc.as_str(), to_anchor.as_str()).ok_or_else(|| NavError {
                 code: DW_MOVE_UNROUTABLE,
@@ -865,9 +865,6 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
                     npc.as_str()
                 ),
             })?;
-        // The NPC walks up to a solid affordance, not into it: snap both endpoints
-        // to the floor cell nearest the anchor.
-        let start = world.snap_standable(start, SNAP_RADIUS).unwrap_or(start);
         let target = world
             .snap_standable(anchor_pos, SNAP_RADIUS)
             .ok_or_else(|| NavError {
@@ -881,18 +878,44 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
                     to_anchor.as_str(),
                 ),
             })?;
+        let key = (npc.as_str().to_string(), to_anchor.as_str().to_string());
+        if !seen.insert(key) {
+            // Deduped (same content-keyed driver) — but the walk still ends here,
+            // so the NPC's next leg chains from this target.
+            chained_start.insert(npc.as_str().to_string(), target);
+            continue;
+        }
+        let start = match chained_start.get(npc.as_str()) {
+            Some(pos) => *pos,
+            None => {
+                let home = npc_start(plan, npc.as_str()).ok_or_else(|| NavError {
+                    code: DW_MOVE_UNROUTABLE,
+                    message: format!(
+                        "move-npc: NPC `{}` has no resolved home anchor to walk from — give the \
+                         npc a stage-2 `anchor` that its area's prefab provides, so the walk has \
+                         a start",
+                        npc.as_str()
+                    ),
+                })?;
+                // The NPC walks up to a solid affordance, not into it: snap the
+                // home endpoint to the floor cell nearest the anchor.
+                world.snap_standable(home, SNAP_RADIUS).unwrap_or(home)
+            }
+        };
         let cells = world.find_path(start, target).ok_or_else(|| NavError {
             code: DW_MOVE_UNROUTABLE,
             message: format!(
-                "move-npc: NPC `{}` cannot walk from `{}` {start:?} to `{}` {anchor_pos:?} (floor \
-                 {target:?}) — no collision-free path over the solved geometry. Route the move \
-                 within one connected area (a wall/void/closed gate separates start and \
-                 destination), or split it into shorter reachable hops",
+                "move-npc: NPC `{}` cannot walk from its last staged location {start:?} (home \
+                 anchor `{}`) to `{}` {anchor_pos:?} (floor {target:?}) — no collision-free path \
+                 over the solved geometry. Route the move within one connected area (a \
+                 wall/void/closed gate separates start and destination), or split it into shorter \
+                 reachable hops",
                 npc.as_str(),
                 plan_npc_anchor(plan, npc.as_str()),
                 to_anchor.as_str(),
             ),
         })?;
+        chained_start.insert(npc.as_str().to_string(), target);
         out.push(MovePlan {
             npc: npc.as_str().to_string(),
             to_anchor: to_anchor.as_str().to_string(),
@@ -1011,7 +1034,11 @@ fn first_blocked_fp(world: &World, start: [i32; 3], target: [i32; 3], fp: &Footp
 
 /// Plan every `move-actor` into a walked-path [`ActorMovePlan`] over the actor's
 /// footprint, deduped by `(actor, to_anchor)` in first-seen order. `DW0325` when a
-/// move is unroutable (names actor, leg, first blocked cell).
+/// move is unroutable (names actor, leg, first blocked cell). Each actor's
+/// successive moves **chain** — first leg from the declared spawn anchor, every
+/// later leg from the previous leg's target (round-6 fix; see the loop comment).
+/// Two moves sharing `(actor, to_anchor)` still share one content-keyed driver,
+/// planned from the first occurrence's origin (documented limitation).
 ///
 /// Use-gate cells are walkable edges for a scripted puppet walk, exactly as for
 /// `move-npc` (see [`plan_moves`]): the island ram's pen→mouth leg crosses the pen
@@ -1020,6 +1047,15 @@ fn first_blocked_fp(world: &World, start: [i32; 3], target: [i32; 3], fp: &Footp
 pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>, NavError> {
     let mut out = Vec::new();
     let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
+    // Chained origins (round-6, live-server proven): a SECOND consecutive
+    // `move-actor` on the same actor must start from the actor's CURRENT staged
+    // location — the previous move's (snapped) target — not its declared spawn
+    // anchor. Planning every leg from the declared anchor degenerated the
+    // island's t=260 mouth→fire-pit walk into a single-waypoint instant teleport
+    // (start == declared anchor == target), so the giant snapped instead of
+    // walking on camera. Keyed by actor id, in campaign effect order (the same
+    // deterministic order the dedup uses).
+    let mut chained_start: BTreeMap<String, [i32; 3]> = BTreeMap::new();
     for eff in all_effects(plan) {
         let QuestEffect::MoveActor {
             actor,
@@ -1030,10 +1066,6 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         else {
             continue;
         };
-        let key = (actor.as_str().to_string(), to_anchor.as_str().to_string());
-        if !seen.insert(key) {
-            continue;
-        }
         let a = actor_of(plan, actor.as_str()).ok_or_else(|| NavError {
             code: DW_ACTOR_UNROUTABLE,
             message: format!(
@@ -1042,15 +1074,6 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
             ),
         })?;
         let fp = entity_footprint(&a.entity);
-        let start_anchor = actor_anchor_pos(plan, a.anchor.as_str()).ok_or_else(|| NavError {
-            code: DW_ACTOR_UNROUTABLE,
-            message: format!(
-                "move-actor: actor `{}` spawn anchor `{}` did not resolve to a world position — \
-                 use a spawn `anchor` some area's prefab provides",
-                actor.as_str(),
-                a.anchor.as_str()
-            ),
-        })?;
         let dest = actor_anchor_pos(plan, to_anchor.as_str()).ok_or_else(|| NavError {
             code: DW_ACTOR_UNROUTABLE,
             message: format!(
@@ -1060,9 +1083,6 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                 actor.as_str()
             ),
         })?;
-        let start = world
-            .snap_standable_fp(start_anchor, SNAP_RADIUS, &fp)
-            .unwrap_or(start_anchor);
         let target = world
             .snap_standable_fp(dest, SNAP_RADIUS, &fp)
             .ok_or_else(|| NavError {
@@ -1076,15 +1096,41 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                     actor.as_str()
                 ),
             })?;
+        let key = (actor.as_str().to_string(), to_anchor.as_str().to_string());
+        if !seen.insert(key) {
+            // Deduped (same content-keyed driver) — but the walk still ends here,
+            // so the actor's next leg chains from this target.
+            chained_start.insert(actor.as_str().to_string(), target);
+            continue;
+        }
+        let start = match chained_start.get(actor.as_str()) {
+            Some(pos) => *pos,
+            None => {
+                let start_anchor =
+                    actor_anchor_pos(plan, a.anchor.as_str()).ok_or_else(|| NavError {
+                        code: DW_ACTOR_UNROUTABLE,
+                        message: format!(
+                            "move-actor: actor `{}` spawn anchor `{}` did not resolve to a world \
+                             position — use a spawn `anchor` some area's prefab provides",
+                            actor.as_str(),
+                            a.anchor.as_str()
+                        ),
+                    })?;
+                world
+                    .snap_standable_fp(start_anchor, SNAP_RADIUS, &fp)
+                    .unwrap_or(start_anchor)
+            }
+        };
         let cells = world.find_path_fp(start, target, &fp).ok_or_else(|| {
             let blocked = first_blocked_fp(world, start, target, &fp);
             NavError {
                 code: DW_ACTOR_UNROUTABLE,
                 message: format!(
-                    "move-actor: actor `{}` ({}) cannot walk the leg `{}` {start:?} → `{}` {target:?} \
-                     — no collision-free path for its footprint over the assembled geometry (first \
-                     blocked cell ~{blocked:?}). Route the move within one connected area, widen the \
-                     corridor/ceiling for this mob, or split it into shorter reachable hops",
+                    "move-actor: actor `{}` ({}) cannot walk the leg {start:?} (last staged \
+                     location; spawn anchor `{}`) → `{}` {target:?} — no collision-free path for \
+                     its footprint over the assembled geometry (first blocked cell ~{blocked:?}). \
+                     Route the move within one connected area, widen the corridor/ceiling for \
+                     this mob, or split it into shorter reachable hops",
                     actor.as_str(),
                     a.entity,
                     a.anchor.as_str(),
@@ -1092,6 +1138,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                 ),
             }
         })?;
+        chained_start.insert(actor.as_str().to_string(), target);
         let waypoints = resample(&cells, speed.unwrap_or(DEFAULT_SPEED));
         let yaws = yaws_along(&waypoints);
         out.push(ActorMovePlan {
@@ -1307,9 +1354,9 @@ fn all_effects<'a>(plan: &'a Plan) -> Vec<&'a QuestEffect> {
 }
 
 /// Push `e` and, recursively, every effect nested in a `sequence` step or a
-/// `move-actor` `on_arrive` (spec-0014), so nav planning sees moves/cutscenes
-/// wherever they appear. Pre-0.6 campaigns have no nesting, so the flattened list
-/// equals the shallow one — output stays byte-identical.
+/// `move-actor` / `move-npc` `on_arrive` (spec-0014), so nav planning sees
+/// moves/cutscenes wherever they appear. Pre-0.6 campaigns have no nesting, so
+/// the flattened list equals the shallow one — output stays byte-identical.
 fn push_deep<'a>(e: &'a QuestEffect, out: &mut Vec<&'a QuestEffect>) {
     out.push(e);
     match e {
@@ -1320,7 +1367,7 @@ fn push_deep<'a>(e: &'a QuestEffect, out: &mut Vec<&'a QuestEffect>) {
                 }
             }
         }
-        QuestEffect::MoveActor { on_arrive, .. } => {
+        QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
             for inner in on_arrive {
                 push_deep(inner, out);
             }
@@ -2916,6 +2963,7 @@ mod tests {
             reset,
             disarm,
             requires_flags: Vec::new(),
+            forbids_flags: Vec::new(),
         }
     }
 

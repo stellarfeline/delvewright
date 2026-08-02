@@ -137,3 +137,21 @@ fn v06_trap_tnt_effect_is_rejected() {
         "a non-dispense trap effect (tnt) must be rejected as an unknown variant (DW0100): {diags:#?}"
     );
 }
+
+/// v0.6 negative gate: an unknown flag in a trap's `forbids_flags` is `DW0172`
+/// (same treatment as `requires_flags` — round-6 staging primitives).
+#[test]
+fn v06_trap_unknown_forbids_flag_is_dw0172() {
+    let trap = VALID_TRAP.replacen(
+        "\"lethality\": \"harmful\"",
+        "\"lethality\": \"harmful\",\n  \"forbids_flags\": [\"flag/never-produced\"]",
+        1,
+    );
+    let diags = check_campaign(&campaign_with_traps("0.6.0", &trap));
+    assert!(
+        diags
+            .iter()
+            .any(|d| d.code == "DW0172" && d.path.contains("/traps/0/forbids_flags")),
+        "unknown flag in trap forbids_flags must be DW0172: {diags:#?}"
+    );
+}
