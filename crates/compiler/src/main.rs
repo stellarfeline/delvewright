@@ -646,8 +646,11 @@ fn run_snapshot(
         &cam,
         &opts,
         &grid,
-        &inside,
-        &outside,
+        snapshot::Scene {
+            pieces: &snapshot::collect_pieces(&plan),
+            inside: &inside,
+            outside: &outside,
+        },
     );
     let manifest_path = manifest_path_for(args.out);
     let mut manifest_bytes = match serde_json::to_vec_pretty(&doc) {
@@ -1476,6 +1479,9 @@ fn run_edit(
     // edited world (a dollhouse view pulled into open air, like `--at`).
     let grid = snapshot::VoxelGrid::build(&replay.assembled.blocks);
     let targets = snapshot::collect_targets(&plan);
+    // The solved layout, hoisted out of the per-batch loop: it is a property of
+    // the plan, identical in every batch's manifest.
+    let pieces = snapshot::collect_pieces(&plan);
     let opts = snapshot::FrameOpts {
         width: DEFAULT_WIDTH,
         height: DEFAULT_HEIGHT,
@@ -1516,8 +1522,11 @@ fn run_edit(
             &cam,
             &opts,
             &grid,
-            &inside,
-            &outside,
+            snapshot::Scene {
+                pieces: &pieces,
+                inside: &inside,
+                outside: &outside,
+            },
         );
         let mut manifest_bytes = match serde_json::to_vec_pretty(&doc) {
             Ok(b) => b,
