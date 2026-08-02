@@ -32,6 +32,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use delvewright_dsl::{CameraWaypoint, Lethality, QuestEffect, TrapReset};
 
 use crate::plan::{GateEvent, Plan, ResolvedAnchor, Step, TrapPlan};
+use delvewright_dsl::Diagnostic;
 
 /// `DW0307`: a `move-npc` destination unreachable by any walkable path from the
 /// NPC's position over the assembled geometry.
@@ -60,6 +61,23 @@ pub const DW_CHECKPOINT_STRANDED: &str = "DW0315";
 /// assembled model (a trap-trigger / hazard / mid-air cell), so the party would
 /// respawn into the void or a wall.
 pub const DW_CHECKPOINT_UNSTANDABLE: &str = "DW0316";
+/// `DW0379`: **retry cost** (spec-0016 §7, warning tier) — the proven walk from a
+/// rest point to a beat it can respawn the party into is longer than
+/// [`RETRY_BUDGET_TICKS`]. Dying must be an investment, not a commute: past the
+/// budget the loop stops teaching and starts taxing. A **warning**, deliberately:
+/// a long walk can be the authored point (a pilgrimage, a set-piece approach),
+/// and the compiler will not overrule that — it names the distance and leaves the
+/// judgement to the owner's QA hour.
+pub const DW_RETRY_COST: &str = "DW0379";
+/// `DW0380`: **optional-elite bypass** (spec-0016 §7, warning tier) — an enemy the
+/// critical path never requires the party to kill has no route around it: every
+/// proven forward leg passes inside its aggro radius, so "optional" is a lie and
+/// the fight is mandatory in everything but the objective list.
+///
+/// The Tree Sentinel pattern — a powerful optional enemy near the start, fight it
+/// or walk around it — is explicitly legitimate (owner ruling 2026-08-02), and
+/// this is the one obligation it carries: the walk-around has to exist.
+pub const DW_OPTIONAL_ELITE_UNAVOIDABLE: &str = "DW0380";
 /// `DW0327`: a `begin-stealth` (spec-0014) zone that is unstandable, or unreachable
 /// from the player's position at the beat that activates the stealth check.
 pub const DW_STEALTH_ZONE: &str = "DW0327";
@@ -2054,6 +2072,222 @@ fn verify_checkpoints(
     Ok(())
 }
 
+/// The retry-cost budget (spec-0016 §7): 60 s of traversal from a rest point to
+/// the beat it respawns the party into, in ticks.
+const RETRY_BUDGET_TICKS: u32 = 60 * 20;
+
+/// Default aggro radius for a wave mob with no declared `follow_range` — vanilla's
+/// `generic.follow_range` default for the common hostiles (zombie, skeleton,
+/// husk, pillager). Used by the optional-elite bypass lint when the author has
+/// not tuned the attribute.
+const DEFAULT_FOLLOW_RANGE: u32 = 16;
+
+/// The spec-0016 §7 pacing lints. **Warning tier** — every finding here is a
+/// design judgement the compiler can measure but must not overrule, so these
+/// return diagnostics rather than failing the build.
+///
+/// 1. [`DW_RETRY_COST`] (`DW0379`) — bonfire/checkpoint → the beat it respawns
+///    into, over the proven path, must be under [`RETRY_BUDGET_TICKS`]. Dying
+///    should be an investment, not a commute.
+/// 2. [`DW_OPTIONAL_ELITE_UNAVOIDABLE`] (`DW0380`) — an enemy no critical-path
+///    `kill` objective requires must have a route around it. The Tree Sentinel
+///    pattern is legitimate; a "walk around it" you cannot walk around is not.
+pub fn pacing_lints(plan: &Plan, world: &World) -> Vec<Diagnostic> {
+    let mut out = Vec::new();
+    out.extend(retry_cost_lint(plan, world));
+    out.extend(optional_elite_lint(plan, world));
+    out
+}
+
+/// `DW0379`: the walk back from each rest point to the first beat that follows it.
+fn retry_cost_lint(plan: &Plan, world: &World) -> Vec<Diagnostic> {
+    let cps: Vec<(String, [i32; 3], usize, bool)> = plan
+        .checkpoints
+        .iter()
+        .map(|c| (c.anchor.clone(), c.pos, c.fire_step, c.rest))
+        .collect();
+    verify_retry_cost(world, &cps, &critical_positions(plan))
+}
+
+/// A rest point as the retry-cost lint sees it.
+struct RestRef<'a> {
+    anchor: &'a str,
+    pos: [i32; 3],
+    fire_step: usize,
+    rest: bool,
+}
+
+/// The pure core of [`retry_cost_lint`] (unit-testable against a synthetic
+/// [`World`]). Each rest point is `(anchor, cell, fire_step, is_bonfire)`.
+fn verify_retry_cost(
+    world: &World,
+    rests: &[(String, [i32; 3], usize, bool)],
+    positions: &[VisitedPos],
+) -> Vec<Diagnostic> {
+    let mut out = Vec::new();
+    for (anchor, pos, fire_step, is_rest) in rests {
+        let cp = RestRef {
+            anchor,
+            pos: *pos,
+            fire_step: *fire_step,
+            rest: *is_rest,
+        };
+        let Some(from) = world.snap_standable(cp.pos, SNAP_RADIUS) else {
+            continue; // DW0316 owns an unstandable rest point
+        };
+        let Some(target) = positions
+            .iter()
+            .filter(|p| p.src_step > cp.fire_step && !p.transport_before)
+            .min_by_key(|p| p.src_step)
+        else {
+            continue;
+        };
+        let Some(goal) = world.snap_endpoint(target.pos, target.talk_to) else {
+            continue;
+        };
+        let Some(path) = world.find_path(from, goal) else {
+            continue; // DW0315 owns an unreachable one
+        };
+        let blocks = path.len().saturating_sub(1) as u32;
+        let ticks = blocks * SPRINT_TICKS_PER_BLOCK;
+        if ticks > RETRY_BUDGET_TICKS {
+            out.push(Diagnostic::warning(
+                DW_RETRY_COST,
+                "quests",
+                format!("/content/quests/checkpoint/{}", cp.anchor),
+                format!(
+                    "retry cost: {} `{}` is {blocks} blocks ({} s at {SPRINT_TICKS_PER_BLOCK} \
+                     t/block) from the next beat it respawns the party into — over the {} s \
+                     budget (spec-0016 §7). Dying must be an investment, not a commute: past this \
+                     the loop stops teaching and starts taxing. Move the rest point forward, or \
+                     add one closer to the beat.",
+                    if cp.rest { "bonfire" } else { "checkpoint" },
+                    cp.anchor,
+                    ticks / 20,
+                    RETRY_BUDGET_TICKS / 20
+                ),
+            ));
+        }
+    }
+    out
+}
+
+/// `DW0380`: every optional enemy must be walkable around.
+///
+/// A wave is **optional** when no `kill` objective on the critical path names it —
+/// the party is never required to fight it. For each such wave, its mobs' aggro
+/// spheres (the declared `follow_range`, else [`DEFAULT_FOLLOW_RANGE`]) are
+/// forced solid around the wave anchor and the forced critical path is re-routed:
+/// if a leg that routed before no longer does, every way forward runs through the
+/// fight and "optional" is a lie.
+fn optional_elite_lint(plan: &Plan, world: &World) -> Vec<Diagnostic> {
+    use delvewright_dsl::Objective;
+    let c = plan.campaign;
+    let required: BTreeSet<&str> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| q.objectives.iter())
+        .filter_map(|o| match o {
+            Objective::Kill { wave, .. } => Some(wave.as_str()),
+            _ => None,
+        })
+        .collect();
+    let elites: Vec<(String, [i32; 3], i32)> = c
+        .quests
+        .content
+        .waves
+        .iter()
+        .filter(|w| !required.contains(w.id.as_str()))
+        .filter_map(|w| {
+            let centre = crate::plan::point_any(&plan.anchors, w.anchor.as_str())?;
+            let radius = w
+                .mobs
+                .iter()
+                .filter_map(|m| m.attributes.and_then(|a| a.follow_range))
+                .map(|r| r.max(0.0) as i32)
+                .max()
+                .unwrap_or(DEFAULT_FOLLOW_RANGE as i32);
+            Some((w.id.as_str().to_string(), centre, radius))
+        })
+        .collect();
+    verify_optional_elites(world, &elites, &critical_positions(plan))
+}
+
+/// The pure core of [`optional_elite_lint`] (unit-testable against a synthetic
+/// [`World`]). Each elite is `(wave id, anchor cell, aggro radius)`.
+fn verify_optional_elites(
+    world: &World,
+    elites: &[(String, [i32; 3], i32)],
+    positions: &[VisitedPos],
+) -> Vec<Diagnostic> {
+    let mut out = Vec::new();
+    for (id, centre, radius) in elites {
+        let r = *radius;
+        let mut sphere: BTreeSet<[i32; 3]> = BTreeSet::new();
+        for dx in -r..=r {
+            for dy in -r..=r {
+                for dz in -r..=r {
+                    if dx * dx + dy * dy + dz * dz <= r * r {
+                        sphere.insert([centre[0] + dx, centre[1] + dy, centre[2] + dz]);
+                    }
+                }
+            }
+        }
+        let aggroed = world.with_sealed(&sphere);
+        let blocked = positions.windows(2).find(|pair| {
+            if pair[1].transport_before {
+                return false;
+            }
+            let (Some(a), Some(b)) = (
+                world.snap_endpoint(pair[0].pos, pair[0].talk_to),
+                world.snap_endpoint(pair[1].pos, pair[1].talk_to),
+            ) else {
+                return false;
+            };
+            // A leg that goes nowhere, or that never routed in the clean world,
+            // is not this lint's business (`DW0311` owns the latter).
+            if a == b || world.find_path(a, b).is_none() {
+                return false;
+            }
+            // An endpoint INSIDE the aggro sphere is not a missing bypass — the
+            // party is required to stand there, so the fight is contested ground
+            // by design (a "live threat" wave seated on an objective anchor is a
+            // legitimate, landed pattern). This lint is about the ROUTE being
+            // swallowed, not the destination being dangerous.
+            if sphere.contains(&a) || sphere.contains(&b) {
+                return false;
+            }
+            let (Some(a2), Some(b2)) = (
+                aggroed.snap_endpoint(pair[0].pos, pair[0].talk_to),
+                aggroed.snap_endpoint(pair[1].pos, pair[1].talk_to),
+            ) else {
+                return true;
+            };
+            aggroed.find_path(a2, b2).is_none()
+        });
+        if let Some(pair) = blocked {
+            out.push(Diagnostic::warning(
+                DW_OPTIONAL_ELITE_UNAVOIDABLE,
+                "quests",
+                format!("/content/waves/{id}"),
+                format!(
+                    "optional enemy `{id}` at {centre:?} has no bypass: with its {r}-block aggro \
+                     radius blocked, the forced walk from {:?} to {:?} no longer routes — every \
+                     way forward runs through the fight, so \"optional\" is a lie (spec-0016 §7). \
+                     A powerful OPTIONAL enemy near the start is legitimate — the Tree Sentinel \
+                     pattern — and this is its one obligation: the walk-around has to exist. \
+                     Widen the room, move the wave off the corridor, or make the kill a real \
+                     objective.",
+                    pair[0].pos, pair[1].pos
+                ),
+            ));
+        }
+    }
+    out
+}
+
 /// Prove every `begin-stealth` zone is standable and reachable from the beat that
 /// activates it (DSL v0.6, spec-0014) — [`DW_STEALTH_ZONE`] (`DW0327`). A zone the
 /// player can never legally occupy (walled/void) or can never walk to from the
@@ -3293,6 +3527,145 @@ mod tests {
     }
 
     /// A non-talk-to visited position (test convenience for `route_visited`).
+    /// A room `w × d` split by a wall at `z = zw` with a single doorway at
+    /// `x = gx`, and (optionally) a second permanent opening at `x = bx` — the
+    /// walk-around. Ceilinged, so a body standing in the doorway cannot be
+    /// climbed over.
+    fn two_room_world(w: i32, d: i32, y: i32, zw: i32, gx: i32, bypass: Option<i32>) -> World {
+        let mut walls = Vec::new();
+        for x in 0..w {
+            if x == gx || Some(x) == bypass {
+                continue;
+            }
+            walls.push([x, y, zw]);
+            walls.push([x, y + 1, zw]);
+        }
+        floored(w, d, y, &walls)
+    }
+
+    /// A sentinel parked in the only doorway between two beats: with its aggro
+    /// radius blocked, the forced walk no longer routes. There is nothing to
+    /// walk around it by, so "optional" is a lie — `DW0380`, at warning tier.
+    #[test]
+    fn an_optional_elite_in_the_only_doorway_is_dw0380() {
+        let world = two_room_world(12, 9, 65, 4, 6, None);
+        let elites = vec![("wave/sentinel".to_string(), [6, 65, 4], 2)];
+        let diags = verify_optional_elites(
+            &world,
+            &elites,
+            &[vp_at([1, 65, 1], 0), vp_at([1, 65, 7], 1)],
+        );
+        assert_eq!(diags.len(), 1, "expected one finding: {diags:#?}");
+        assert_eq!(diags[0].code, DW_OPTIONAL_ELITE_UNAVOIDABLE); // DW0380
+        assert_eq!(
+            diags[0].severity,
+            delvewright_dsl::Severity::Warning,
+            "spec-0016 §7 is the design-contract section: this measures, it does not gate"
+        );
+        assert!(
+            diags[0].message.contains("Tree Sentinel"),
+            "the finding must not read as 'no optional enemies' — the pattern is legitimate, \
+             only the missing walk-around is the problem: {}",
+            diags[0].message
+        );
+    }
+
+    /// The same sentinel with a second door far enough away to stay outside its
+    /// aggro radius: the walk-around exists, so the Tree Sentinel pattern stands
+    /// and nothing is reported.
+    #[test]
+    fn an_optional_elite_with_a_walk_around_is_legitimate() {
+        let world = two_room_world(12, 9, 65, 4, 6, Some(0));
+        let elites = vec![("wave/sentinel".to_string(), [6, 65, 4], 2)];
+        let diags = verify_optional_elites(
+            &world,
+            &elites,
+            &[vp_at([1, 65, 1], 0), vp_at([1, 65, 7], 1)],
+        );
+        assert!(
+            diags.is_empty(),
+            "a route around the sentinel is all the engine asks for: {diags:#?}"
+        );
+    }
+
+    /// A beat the party is required to STAND on, inside the aggro radius, is
+    /// contested ground by design — a landed "live threat" pattern, not a missing
+    /// bypass. The lint is about the route, never the destination.
+    #[test]
+    fn an_elite_seated_on_a_beat_is_contested_ground_not_a_missing_bypass() {
+        let world = two_room_world(12, 9, 65, 4, 6, None);
+        let elites = vec![("wave/threat".to_string(), [1, 65, 1], 4)];
+        let diags = verify_optional_elites(
+            &world,
+            &elites,
+            &[vp_at([1, 65, 1], 0), vp_at([1, 65, 7], 1)],
+        );
+        assert!(
+            diags.is_empty(),
+            "an objective inside the fight is design, not a defect: {diags:#?}"
+        );
+    }
+
+    /// A visited critical position at a given step (spec-0016 §7 lints select on
+    /// `src_step`, which the plain `vp` helper always leaves at 0).
+    fn vp_at(pos: [i32; 3], src_step: usize) -> VisitedPos {
+        VisitedPos {
+            pos,
+            transport_before: false,
+            talk_to: false,
+            src_step,
+        }
+    }
+
+    /// A rest point 4 blocks from the next beat is a real retry loop: 16 ticks
+    /// back, well inside the 60 s budget. No warning.
+    #[test]
+    fn a_close_rest_point_is_within_the_retry_budget() {
+        let world = corridor(400, 65);
+        let rests = vec![("anchor/fire".to_string(), [0, 65, 1], 0usize, true)];
+        let diags = verify_retry_cost(&world, &rests, &[vp_at([4, 65, 1], 1)]);
+        assert!(diags.is_empty(), "4 blocks is not a commute: {diags:#?}");
+    }
+
+    /// A rest point 350 blocks from the beat it respawns into is 70 s of walking
+    /// back on every death — `DW0379`, at warning tier.
+    #[test]
+    fn a_distant_rest_point_is_dw0379() {
+        let world = corridor(400, 65);
+        let rests = vec![("anchor/fire".to_string(), [0, 65, 1], 0usize, true)];
+        let diags = verify_retry_cost(&world, &rests, &[vp_at([350, 65, 1], 1)]);
+        assert_eq!(diags.len(), 1, "one finding expected: {diags:#?}");
+        assert_eq!(diags[0].code, DW_RETRY_COST); // DW0379
+        assert_eq!(
+            diags[0].severity,
+            delvewright_dsl::Severity::Warning,
+            "retry cost is a judgement the compiler measures but must not overrule"
+        );
+        assert!(
+            diags[0].message.contains("bonfire `anchor/fire`"),
+            "the message names the rest point: {}",
+            diags[0].message
+        );
+    }
+
+    /// The budget is measured to the FIRST beat after the rest point, not the
+    /// last — a rest point followed immediately by its beat is cheap even if the
+    /// delve runs on for hundreds of blocks afterwards.
+    #[test]
+    fn retry_cost_measures_the_first_beat_after_the_rest_point() {
+        let world = corridor(400, 65);
+        let rests = vec![("anchor/fire".to_string(), [0, 65, 1], 0usize, false)];
+        let diags = verify_retry_cost(
+            &world,
+            &rests,
+            &[vp_at([2, 65, 1], 1), vp_at([390, 65, 1], 2)],
+        );
+        assert!(
+            diags.is_empty(),
+            "the far LATER beat must not be charged to this rest point: {diags:#?}"
+        );
+    }
+
     fn vp(pos: [i32; 3], transport_before: bool) -> VisitedPos {
         VisitedPos {
             pos,

@@ -223,9 +223,11 @@ pub fn build_with_warnings(
         })?;
     // Advisory findings the replay raised (`DW0353` gate-region collisions,
     // `DW0354` broken block support) — reported by the caller, never fatal.
-    let warnings: Vec<delvewright_dsl::Diagnostic> = edit_replay
+    let mut warnings: Vec<delvewright_dsl::Diagnostic> = edit_replay
         .as_ref()
         .map_or_else(Vec::new, |er| er.warnings.clone());
+    // spec-0016 §7 pacing lints, filled in by the nav stage below.
+    let mut pacing: Vec<delvewright_dsl::Diagnostic> = Vec::new();
 
     // v0.4 navigation planning over the solved voxel grid (spec-0008 addendum):
     // collision-safe `move-npc` walked paths (DW0307) + cutscene air-corridor
@@ -323,6 +325,11 @@ pub fn build_with_warnings(
                 // soft-looped. Uses the move-npc waypoints (`m`) for the forced-path
                 // cell set.
                 crate::nav::check_traps(plan, &world, &m)?;
+                // spec-0016 §7 pacing lints (DW0379 retry cost, DW0380 optional-
+                // elite bypass). Warning tier: both are design judgements the
+                // compiler can MEASURE but must not overrule — a long walk back
+                // can be the authored point, and the owner's QA hour decides.
+                pacing = crate::nav::pacing_lints(plan, &world);
                 // Export the DW0311-proven critical-path routes as validation
                 // metadata (task #38): thinned per-leg waypoint polylines the harness
                 // replays as successive nearby goals, so no single giant mineflayer A*
@@ -582,6 +589,7 @@ pub fn build_with_warnings(
     );
     put_json(&mut out, "manifest.json", &manifest);
 
+    warnings.extend(pacing);
     Ok((out, warnings))
 }
 

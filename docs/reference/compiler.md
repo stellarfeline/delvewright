@@ -1494,6 +1494,18 @@ effects are covered.
 |------|---------|
 | `DW0330` | An on-screen `narrate` string (`title` / `subtitle` / `art`) — English source or any declared-language sidecar rendition — renders wider than fits on screen. Advisory (exit 0): shorten the line. Do **not** demote a title to `chat` to silence it, and do not assume a wider monitor fixes it — the overflow scales with GUI scale, not away from it. |
 
+### DW0379/DW0380 — souls pacing lints (`compiler::nav`; **warning**; exit 0)
+
+spec-0016 §7 is the design-contract section, and both of its rules are things the
+compiler can **measure** but must not overrule — so both warn and neither ever
+fails a build. Computed over the same assembled nav model as the completability
+proofs, so their numbers are the numbers every other proof uses.
+
+| Code | Meaning |
+| --- | --- |
+| `DW0379` | **Retry cost**: the proven walk from a rest point (`set-checkpoint` or `bonfire`) to the first beat it can respawn the party into exceeds **60 s** (1200 ticks at the 4 t/block sprint model `DW0355` uses). Dying must be an investment, not a commute — past the budget the loop stops teaching and starts taxing. Measured to the FIRST beat after the rest point, not the last. A warning because a long walk back can be the authored point (a pilgrimage, a set-piece approach). **Known limitation** (planner escalation, 2026-08-02): at 60 s the budget is ~300 blocks of walking, which no box-garden delve currently approaches, so the lint is effectively inert in practice. It is implemented to the spec's threshold rather than retuned — changing the number is an owner decision, not a compiler one. |
+| `DW0380` | **Optional-elite bypass**: an enemy no `kill` objective requires has no route around it — with its aggro radius (declared `follow_range`, else vanilla's 16) forced solid, a forced critical-path leg that routed before no longer does. Every way forward runs through the fight, so "optional" is a lie. The Tree Sentinel pattern — a powerful optional enemy near the start, fight it or walk around it — is explicitly legitimate (owner ruling 2026-08-02); this is its one obligation. Two deliberate exclusions keep it about the ROUTE: a leg with an endpoint **inside** the sphere is contested ground by design (the landed "live threat" pattern, a wave seated on an objective anchor), and a leg that never routed in the clean world belongs to `DW0311`. |
+
 ### DW0351 — NPC location-continuity lint (`compiler::continuity`; **warning**; exit 0)
 
 Tracks each NPC's **staged location history** through the campaign timeline —
@@ -1745,6 +1757,7 @@ this doc is current behavior).
 | Sound + art-title surface (`play-sound`, `narrate` `art`, `delve:art` font, `DW0326`/`DW0328`/`DW0335`) | spec-0014 (v0.6) |
 | Traps: stage-5 `traps[]`, `anchor/trap` dispenser fill + disarm emission, `tnt_explodes` seal, passable plate/tripwire model, `DW0340`/`DW0341`/`DW0342` (all v0.6) | spec-0011 (landed) |
 | Visual authoring loop: `delvec snapshot` + `delvec blocking-chart`, the voxel raycaster, scene manifest and cutaway floor plans (§7) | spec-0015 (P1+P2 landed) |
+| Souls-mode pacing lints: retry cost `DW0379`, optional-elite bypass `DW0380` (both warning tier) (v0.6) | spec-0016 §7 |
 | Souls-mode bonfires: `bonfire{anchor,on_rest?}`, wave `respawns_on_rest`, `DW0370` (v0.6) | spec-0016 §1 |
 | The map editor: stage-7 `world-edits.json`, the full L3 verb set (`select`/`fill`/`replace`/`carve`/`morph`/`scatter`/`plant`/`fragment`/`relight`), the L2 massing verbs (`swap`/`insert`/`remove`/`rewire-socket`/`reseed`; `resize` excluded — no size primitive), per-batch invariant re-proofs, `DW0162`/`DW0322`/`DW0323`/`DW0324`, `delvec edit apply|preview` (all v0.6) | spec-0017 (PRs 1–3) |
 | Map-editor audit fixes: trap-hardware integrity `DW0352`, gate-region + block-support advisories `DW0353`/`DW0354`, out-of-bbox edit-chunk load convergence + forceload release, `edit` running the full build-tier proof set, blockstate-preserving `fragment` stamps | map-editor audit (post-#145/#146/#149) |
