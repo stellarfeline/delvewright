@@ -28,12 +28,24 @@ pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
     let legs: Vec<Value> = routes
         .iter()
         .map(|leg| {
-            let wps: Vec<Value> = thin(&leg.cells).into_iter().map(|c| json!(c)).collect();
-            json!({
+            let wps: Vec<Value> = thin(&leg.cells, &leg.use_gates)
+                .into_iter()
+                .map(|c| json!(c))
+                .collect();
+            let mut leg_json = json!({
                 "from": leg.from,
                 "to": leg.to,
                 "waypoints": wps,
-            })
+            });
+            // Use-gate edges (task #59): the closed fence-gate cells this leg walks
+            // through with an adventure-legal right-click. Emitted only when present,
+            // so gate-free campaigns stay byte-identical. The harness pathfinder's
+            // `canOpenDoors` performs the click (harness PR #110); this names the
+            // cells first-class instead of leaving them workaround folklore.
+            if !leg.use_gates.is_empty() {
+                leg_json["use_gates"] = json!(leg.use_gates);
+            }
+            leg_json
         })
         .collect();
     json!({
@@ -58,7 +70,12 @@ pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
 /// Shared with the visual-tier POV shot planner (`crate::render_plan`): the same
 /// corner-thinned waypoint list the harness replays is where each first-person
 /// camera stands, so a POV shot is taken at every turn/endpoint (not every cell).
-pub(crate) fn thin(cells: &[[i32; 3]]) -> Vec<[i32; 3]> {
+///
+/// `force_keep` cells (a leg's use-gate cells, task #59) are always kept even
+/// mid-straight-run: a gate the player must right-click open is an interaction
+/// point the harness needs as an explicit waypoint, never thinned away. Purely
+/// additive — every force-kept cell is a proven route cell.
+pub(crate) fn thin(cells: &[[i32; 3]], force_keep: &[[i32; 3]]) -> Vec<[i32; 3]> {
     if cells.len() <= 2 {
         return cells.to_vec();
     }
@@ -81,6 +98,9 @@ pub(crate) fn thin(cells: &[[i32; 3]]) -> Vec<[i32; 3]> {
             keep[i] = true; // the corner
             keep[i + 1] = true; // the corridor commit cell just past the corner
         }
+        if force_keep.contains(&cells[i]) {
+            keep[i] = true; // a use-gate cell is always an explicit waypoint
+        }
     }
     (0..cells.len())
         .filter(|&i| keep[i])
@@ -99,9 +119,9 @@ mod tests {
 
     #[test]
     fn short_route_is_kept_verbatim() {
-        assert_eq!(thin(&[[0, 65, 0]]), vec![[0, 65, 0]]);
+        assert_eq!(thin(&[[0, 65, 0]], &[]), vec![[0, 65, 0]]);
         assert_eq!(
-            thin(&[[0, 65, 0], [1, 65, 0]]),
+            thin(&[[0, 65, 0], [1, 65, 0]], &[]),
             vec![[0, 65, 0], [1, 65, 0]]
         );
     }
@@ -111,10 +131,10 @@ mod tests {
         // A 24-block straight flat run has no turns → just the two endpoints (the
         // bot walks the straight corridor between them directly).
         let cells: Vec<[i32; 3]> = (0..=24).map(|x| [x, 65, 0]).collect();
-        assert_eq!(thin(&cells), vec![[0, 65, 0], [24, 65, 0]]);
+        assert_eq!(thin(&cells, &[]), vec![[0, 65, 0], [24, 65, 0]]);
         // A constant-delta staircase is also one straight run → endpoints only.
         let stair: Vec<[i32; 3]> = (0..6).map(|i| [i, 65 + i, 0]).collect();
-        assert_eq!(thin(&stair), vec![[0, 65, 0], [5, 70, 0]]);
+        assert_eq!(thin(&stair, &[]), vec![[0, 65, 0], [5, 70, 0]]);
     }
 
     #[test]
@@ -124,12 +144,12 @@ mod tests {
         // the corridor commit cell one step into the turn ([5,65,1]) — task #45.
         let mut cells: Vec<[i32; 3]> = (0..=5).map(|x| [x, 65, 0]).collect();
         cells.extend((1..=4).map(|z| [5, 65, z]));
-        let wps = thin(&cells);
+        let wps = thin(&cells, &[]);
         assert_eq!(wps, vec![[0, 65, 0], [5, 65, 0], [5, 65, 1], [5, 65, 4]]);
         // A floor-height step is a direction change too, so it is kept.
         let ramp = [[0, 65, 0], [1, 65, 0], [2, 66, 0], [3, 66, 0]];
         assert_eq!(
-            thin(&ramp),
+            thin(&ramp, &[]),
             vec![[0, 65, 0], [1, 65, 0], [2, 66, 0], [3, 66, 0]]
         );
     }
@@ -145,7 +165,7 @@ mod tests {
         // harness recovery has a close corridor-axis target to unstick toward.
         let mut cells: Vec<[i32; 3]> = (247..=261).map(|x| [x, 65, -3]).collect(); // east run
         cells.extend((-2..=0).map(|z| [261, 65, z])); // turn north into the corridor
-        let wps = thin(&cells);
+        let wps = thin(&cells, &[]);
         // The corner and the commit cell one step into the +z corridor are both kept.
         let corner_idx = wps
             .iter()
@@ -167,9 +187,22 @@ mod tests {
     }
 
     #[test]
+    fn a_use_gate_cell_is_never_thinned_away() {
+        // A straight run through a closed fence gate at [3,65,0] (task #59): plain
+        // corner-thinning would collapse it to the endpoints; the force-keep set
+        // pins the gate cell so the harness gets the interaction point explicitly.
+        let cells: Vec<[i32; 3]> = (0..=8).map(|x| [x, 65, 0]).collect();
+        assert_eq!(thin(&cells, &[]), vec![[0, 65, 0], [8, 65, 0]]);
+        assert_eq!(
+            thin(&cells, &[[3, 65, 0]]),
+            vec![[0, 65, 0], [3, 65, 0], [8, 65, 0]]
+        );
+    }
+
+    #[test]
     fn thinning_is_deterministic() {
         let mut cells: Vec<[i32; 3]> = (0..30).map(|x| [x, 65, 0]).collect();
         cells.extend((1..10).map(|z| [29, 65, z]));
-        assert_eq!(thin(&cells), thin(&cells));
+        assert_eq!(thin(&cells, &[]), thin(&cells, &[]));
     }
 }

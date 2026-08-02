@@ -179,7 +179,7 @@ impl PovShot {
 pub fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
     let mut shots = Vec::new();
     for (leg, route) in routes.iter().enumerate() {
-        let wps = crate::waypoints::thin(&route.cells);
+        let wps = crate::waypoints::thin(&route.cells, &route.use_gates);
         if wps.is_empty() {
             continue;
         }
