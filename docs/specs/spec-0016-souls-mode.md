@@ -104,6 +104,20 @@ proofs) and spaced > 10. Emission trap pinned by the spike: the legacy
 `PatrolTarget` compound key is silently dropped by 1.21.11 — only the
 snake_case form routes.
 
+**Non-raider waves: aggro-edge summoning** (owner design 2026-08-02).
+Species without patrol AI never march a lane — instead
+**`wave.summon: aggro-edge`** spawns them AT the boundary of their own
+`follow_range` from the nearest player (or the defended anchor,
+whichever is nearer), so they acquire a target the instant they exist
+and close in under pure native AI — no routing, no brushing past.
+Narrative frame: spirit-summoned (they materialize at the edge of
+perception, which is exactly where the mechanic puts them). Proofs:
+candidate spawn cells are precomputed standable cells (existing wave
+machinery) restricted to the ring `follow_range ± tolerance` around the
+defended anchor, inside the arena, with line-of-sight to the target
+region — a wave whose ring has no valid cell is a compile error, not a
+silent no-spawn (the round-1 kill-less-wave lesson).
+
 ### 7. Death-as-learning pacing rules (design contract, linted)
 One warning-tier lint survives the owner's 2026-08-02 corrections: **retry
 cost** — bonfire → point of failure ≤ 60 s traversal on the proven path
