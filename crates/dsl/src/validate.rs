@@ -1246,6 +1246,14 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     );
                 }
             }
+            // Bonfire re-seating (spec-0016 §1) is a v0.6 stage-5 surface.
+            if w.respawns_on_rest {
+                res(
+                    d,
+                    format!("/content/waves/{i}/respawns_on_rest"),
+                    "wave `respawns_on_rest`",
+                );
+            }
         }
     }
 
@@ -1873,6 +1881,40 @@ fn v06_checks(
                         ),
                     ));
                 }
+            }
+        }
+    }
+
+    // spec-0016 §1: `respawns_on_rest` is re-seating *by a bonfire*. With no
+    // `bonfire` anywhere in the campaign nothing can ever fire the re-seat, so
+    // the field is a silent no-op — the class of defect this compiler always
+    // turns loud (`DW0370`).
+    let mut has_bonfire = false;
+    for q in &c.quests.content.quests {
+        for_each_effect_deep(q, |_path, eff| {
+            has_bonfire |= eff.bonfire().is_some();
+        });
+    }
+    for t in &c.quests.content.triggers {
+        for_each_trigger_effect_deep(t, |_path, eff| {
+            has_bonfire |= eff.bonfire().is_some();
+        });
+    }
+    if !has_bonfire {
+        for (i, w) in quests.waves.iter().enumerate() {
+            if w.respawns_on_rest {
+                d.push(Diagnostic::error(
+                    codes::REST_RESEAT_NO_BONFIRE,
+                    "quests",
+                    format!("/content/waves/{i}/respawns_on_rest"),
+                    format!(
+                        "wave `{}` declares `respawns_on_rest: true` but this campaign declares \
+                         no `bonfire` — nothing can ever re-seat it, so the field is inert. Add \
+                         the `bonfire` the re-seat hangs off (spec-0016 §1), or drop the field; \
+                         do NOT leave a silently dead declaration in the DSL.",
+                        w.id.as_str()
+                    ),
+                ));
             }
         }
     }

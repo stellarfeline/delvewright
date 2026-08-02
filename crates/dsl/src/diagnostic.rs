@@ -141,6 +141,11 @@ pub mod codes {
     /// (v0.3) A `requires_flags` entry references a `flag/<id>` that no `set-flag`
     /// effect ever produces (dangling flag reference).
     pub const FLAG_UNKNOWN: &str = "DW0172";
+    /// (spec-0016 §1) A wave declares `respawns_on_rest: true` but the campaign
+    /// declares no `bonfire` — nothing can ever re-seat it, so the field is a
+    /// silent no-op. Either add the bonfire the re-seat is meant to hang off, or
+    /// drop the field.
+    pub const REST_RESEAT_NO_BONFIRE: &str = "DW0370";
     /// (v0.3) A wave mob `entity` is not a known vanilla entity id. (Item-id
     /// checks for `collect.item`, `interact.requires_item` and `give-item.item`
     /// reuse [`ITEM_UNKNOWN`] / `DW0143`.)

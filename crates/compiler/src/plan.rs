@@ -89,10 +89,19 @@ pub struct CheckpointPlan {
     pub anchor: String,
     /// The resolved absolute anchor cell.
     pub pos: [i32; 3],
-    /// Per-player `on_respawn` effects (may be empty).
+    /// Per-player `on_respawn` effects (may be empty). For a bonfire
+    /// (`rest == true`) this is the `on_rest` bundle: the same effects run on a
+    /// rest and on a respawn (spec-0016 §1).
     pub on_respawn: Vec<QuestEffect>,
     /// `critical_path` step index at which this checkpoint fires (roots DW0315).
+    /// For a bonfire this is the step that **arms** the rest affordance — the
+    /// earliest beat at which a rest (and therefore a respawn here) is possible,
+    /// so the no-stranding proof stays conservative.
     pub fire_step: usize,
+    /// `true` for a `bonfire` (spec-0016 §1): the checkpoint moves only when the
+    /// party rests at the affordance, not when the effect fires. `false` for a
+    /// plain `set-checkpoint` (spec-0012), which is immediate.
+    pub rest: bool,
 }
 
 /// A resolved `begin-stealth` beat (DSL v0.6, spec-0014), collected in
@@ -1092,7 +1101,25 @@ impl<'a> Plan<'a> {
     /// vanilla respawn-detection machinery so checkpoint-free / hook-free campaigns
     /// stay byte-identical (DSL v0.6, spec-0012).
     pub fn any_checkpoint_on_respawn(&self) -> bool {
-        self.checkpoints.iter().any(|c| !c.on_respawn.is_empty())
+        self.checkpoints.iter().any(|c| !c.on_respawn.is_empty()) || !self.reseat_waves().is_empty()
+    }
+
+    /// The waves a bonfire rest / bonfire respawn re-seats (spec-0016 §1), in
+    /// content order. Empty unless the campaign declares BOTH a `bonfire` and at
+    /// least one wave with `respawns_on_rest` — `DW0370` rejects the half that
+    /// declares the field without a bonfire, so this is empty exactly for
+    /// campaigns that use none of the surface (byte-identical emission).
+    pub fn reseat_waves(&self) -> Vec<&delvewright_dsl::Wave> {
+        if !self.checkpoints.iter().any(|c| c.rest) {
+            return Vec::new();
+        }
+        self.campaign
+            .quests
+            .content
+            .waves
+            .iter()
+            .filter(|w| w.respawns_on_rest)
+            .collect()
     }
 
     /// The collected checkpoint matching a `set-checkpoint` effect (by anchor +
@@ -1104,7 +1131,23 @@ impl<'a> Plan<'a> {
     ) -> Option<&CheckpointPlan> {
         self.checkpoints
             .iter()
-            .find(|c| c.anchor == anchor && c.on_respawn.as_slice() == on_respawn)
+            .find(|c| !c.rest && c.anchor == anchor && c.on_respawn.as_slice() == on_respawn)
+    }
+
+    /// The collected **bonfire** matching a `bonfire` effect (by anchor +
+    /// `on_rest` list), giving the emitter its stable content-ordered index
+    /// (spec-0016 §1). Disjoint from [`Self::checkpoint_for`]: a bonfire and a
+    /// plain `set-checkpoint` may share an anchor and a hook list and still be
+    /// two distinct rest points.
+    pub fn bonfire_for(&self, anchor: &str, on_rest: &[QuestEffect]) -> Option<&CheckpointPlan> {
+        self.checkpoints
+            .iter()
+            .find(|c| c.rest && c.anchor == anchor && c.on_respawn.as_slice() == on_rest)
+    }
+
+    /// Every collected bonfire (spec-0016 §1), content-ordered.
+    pub fn bonfires(&self) -> impl Iterator<Item = &CheckpointPlan> {
+        self.checkpoints.iter().filter(|c| c.rest)
     }
 
     /// The collected stealth beat matching a `begin-stealth` effect (by zone
@@ -1714,7 +1757,7 @@ fn collect_v06_effects(
             for opt in &node.options {
                 for eff in &opt.effects {
                     if let Some((anchor, on_respawn)) = eff.set_checkpoint() {
-                        c.push_checkpoint(anchor.as_str(), on_respawn, step);
+                        c.push_checkpoint(anchor.as_str(), on_respawn, step, false);
                     }
                 }
             }
@@ -1976,7 +2019,13 @@ struct V06Collector<'a> {
 }
 
 impl V06Collector<'_> {
-    fn push_checkpoint(&mut self, anchor: &str, on_respawn: &[QuestEffect], fire_step: usize) {
+    fn push_checkpoint(
+        &mut self,
+        anchor: &str,
+        on_respawn: &[QuestEffect],
+        fire_step: usize,
+        rest: bool,
+    ) {
         if let Some(pos) = point_any(self.anchors, anchor) {
             self.checkpoints.push(CheckpointPlan {
                 index: self.checkpoints.len(),
@@ -1984,6 +2033,7 @@ impl V06Collector<'_> {
                 pos,
                 on_respawn: on_respawn.to_vec(),
                 fire_step,
+                rest,
             });
         }
     }
@@ -2016,7 +2066,12 @@ impl V06Collector<'_> {
 
     fn handle(&mut self, eff: &QuestEffect, fire_step: usize) {
         if let Some((anchor, on_respawn)) = eff.set_checkpoint() {
-            self.push_checkpoint(anchor.as_str(), on_respawn, fire_step);
+            self.push_checkpoint(anchor.as_str(), on_respawn, fire_step, false);
+        } else if let Some((anchor, on_rest)) = eff.bonfire() {
+            // A bonfire IS a checkpoint (spec-0016 §1) — it inherits DW0315 /
+            // DW0316 by being collected here. It is rooted at the arming step,
+            // the earliest beat a rest can happen.
+            self.push_checkpoint(anchor.as_str(), on_rest, fire_step, true);
         } else if let Some((zones, on_caught, grace)) = eff.begin_stealth() {
             self.push_stealth(zones, on_caught, grace, fire_step);
         } else if matches!(eff, QuestEffect::EndStealth) {

@@ -1543,6 +1543,9 @@ fn emit_functions(
     // v0.6: trap disarm-affordance detection (spec-0011). Empty for a campaign with
     // no disarmable traps → byte-identical.
     tick.extend(trap_tick(plan));
+    // spec-0016 §1: bonfire rest detection. Empty for a campaign with no bonfire
+    // → byte-identical.
+    tick.extend(bonfire_tick(plan));
     // v0.6 checkpoints (spec-0012): per-player respawn detection via the vanilla
     // `deathCount` criterion, dispatching the active checkpoint's `on_respawn`.
     // Only when a checkpoint carries an `on_respawn` hook.
@@ -1560,6 +1563,8 @@ fn emit_functions(
 
     // --- v0.6 checkpoint respawn dispatch (spec-0012) ---
     fns.extend(emit_checkpoint_functions(plan));
+    // --- spec-0016 §1 bonfire rest functions ---
+    fns.extend(emit_bonfire_functions(plan));
     // --- v0.6 stealth-beat functions (spec-0014) ---
     fns.extend(emit_stealth_functions(plan));
 
@@ -1989,6 +1994,15 @@ fn emit_functions(
             continue;
         };
         let mut body: Vec<String> = Vec::new();
+        // spec-0016 §1: mark the wave as seated, so a bonfire rest only re-seats
+        // waves the party has actually met. Emitted only for a `respawns_on_rest`
+        // wave — every other campaign's `spawn_<wave>` is byte-identical.
+        if w.respawns_on_rest {
+            body.push(format!(
+                "scoreboard players set {} dw.sys 1",
+                wave_seated_holder(w.id.as_str())
+            ));
+        }
         body.push(format!(
             "scoreboard players set {} {} {}",
             plan::wave_counter(w.id.as_str()),
@@ -2047,6 +2061,19 @@ fn emit_functions(
             format!("spawn_{}", plan::safe_local(w.id.as_str())),
             lines(&body),
         ));
+        // spec-0016 §1: the re-seat — clear survivors, then re-run the wave's own
+        // spawn (same authored composition, same proven cells). Emitted only for a
+        // `respawns_on_rest` wave.
+        if w.respawns_on_rest {
+            let safe = plan::safe_local(w.id.as_str());
+            fns.push((
+                format!("wave_reseat_{safe}"),
+                lines(&[
+                    format!("kill @e[tag={}]", plan::wave_tag(w.id.as_str())),
+                    format!("function {ns}:spawn_{safe}"),
+                ]),
+            ));
+        }
         // kill reward: each slain wave mob decrements the countdown, then re-arms.
         fns.push((
             format!("k_reward_{}", plan::safe_local(w.id.as_str())),
@@ -2741,6 +2768,21 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         QuestEffect::SetCheckpoint { anchor, on_respawn } => {
             emit_set_checkpoint(plan, anchor.as_str(), on_respawn, body);
         }
+        QuestEffect::Bonfire { anchor, on_rest } => {
+            // Arm the rest affordance (spec-0016 §1): summon the interaction
+            // entity the party right-clicks to rest. Guarded on absence so a
+            // re-fired beat never stacks a second affordance (and so a `bonfire`
+            // reached twice is idempotent). Nothing else happens here — the
+            // checkpoint moves when the party REST, not when the beat fires.
+            if let Some(bf) = plan.bonfire_for(anchor.as_str(), on_rest) {
+                let v = ent_xyz(bf.pos);
+                let i = bf.index;
+                body.push(format!(
+                    "execute unless entity @e[tag=dw_bonfire_{i}] run summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_bonfire_{i}\"]}}",
+                    v[0], v[1], v[2]
+                ));
+            }
+        }
         QuestEffect::BeginStealth {
             zones, grace_ticks, ..
         } => {
@@ -2975,9 +3017,16 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
         ]),
     ));
     // cp_respawn_fire (as @s): dispatch on the active checkpoint.
+    let reseat = bonfire_reseat_lines(plan);
+    // A bonfire owes the respawning party the same scene reset a rest gives them
+    // (spec-0016 §1), so it dispatches even with an empty `on_rest` when there
+    // are waves to re-seat. A plain `set-checkpoint` keeps the v0.6 rule exactly.
+    let dispatches = |c: &crate::plan::CheckpointPlan| {
+        !c.on_respawn.is_empty() || (c.rest && !reseat.is_empty())
+    };
     let mut fire: Vec<String> = Vec::new();
     for c in &plan.checkpoints {
-        if c.on_respawn.is_empty() {
+        if !dispatches(c) {
             continue;
         }
         fire.push(format!(
@@ -2988,14 +3037,107 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     fns.push(("cp_respawn_fire".to_string(), lines(&fire)));
     // cp_on_respawn_<idx> (as @s): the per-player scene-reset effects.
     for c in &plan.checkpoints {
-        if c.on_respawn.is_empty() {
+        if !dispatches(c) {
             continue;
         }
         // `Audience::Solo` (spec-0018): the checkpoint itself is party state, but
         // its `on_respawn` belongs to the ONE player who just died — re-broadcasting
         // it would re-narrate and re-gift every survivor on each death.
-        let body = emit_effect_bundle(plan, &c.on_respawn, Audience::Solo);
+        //
+        // A bonfire's wave re-seat (spec-0016 §1) is party state and is emitted
+        // BEFORE the bundle: it names no player, so it fires exactly once for the
+        // death, and it must restore the scene before the dying player's own
+        // `on_rest` beats read it.
+        let mut body: Vec<String> = Vec::new();
+        if c.rest {
+            body.extend(reseat.iter().cloned());
+        }
+        body.extend(emit_effect_bundle(plan, &c.on_respawn, Audience::Solo));
         fns.push((format!("cp_on_respawn_{}", c.index), lines(&body)));
+    }
+    fns
+}
+
+/// The fake-player scoreboard holder marking a `respawns_on_rest` wave as
+/// **seated** — set by the wave's own `spawn_<wave>` (spec-0016 §1). A bonfire
+/// only re-seats waves the party has actually met; without this a rest would
+/// spawn every future wave in the delve at once.
+fn wave_seated_holder(wave_id: &str) -> String {
+    format!("#wseat_{}", plan::safe_local(wave_id))
+}
+
+/// The wave re-seat lines a bonfire runs on every rest and on every respawn at
+/// it (spec-0016 §1), in content order. Empty unless the campaign declares both
+/// a bonfire and a `respawns_on_rest` wave → byte-identical.
+fn bonfire_reseat_lines(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    plan.reseat_waves()
+        .iter()
+        .map(|w| {
+            format!(
+                "execute if score {} dw.sys matches 1 run function {ns}:wave_reseat_{}",
+                wave_seated_holder(w.id.as_str()),
+                plan::safe_local(w.id.as_str())
+            )
+        })
+        .collect()
+}
+
+/// Per-tick bonfire rest detection (spec-0016 §1), reusing the same
+/// interaction-entity `use` primitive as the trap disarm: when a player
+/// right-clicks a bonfire's affordance, the party rests. Unlike the disarm this
+/// is deliberately **repeatable** — a bonfire is rested at many times over a
+/// delve, and every rest re-runs the scene reset. Empty for a campaign with no
+/// bonfire → byte-identical.
+fn bonfire_tick(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for bf in plan.bonfires() {
+        let i = bf.index;
+        out.push(format!(
+            "execute if entity @e[tag=dw_bonfire_{i},nbt={{interaction:{{}}}}] run function {ns}:bonfire_rest_{i}"
+        ));
+        out.push(format!(
+            "execute as @e[tag=dw_bonfire_{i}] run data remove entity @s interaction"
+        ));
+    }
+    out
+}
+
+/// The `bonfire_rest_<i>` functions (spec-0016 §1). Resting is the party-wide
+/// event that (a) moves the respawn point to this bonfire — the same three lines
+/// a `set-checkpoint` emits, so `dw:cp`, `spawnpoint` and the `#cp` marker stay
+/// one shared contract — and (b) runs the `on_rest` scene reset.
+///
+/// **Audience (spec-0018).** Resting is a **party event** dispatched from the
+/// tick, which carries no `@s`, so the bundle is emitted with
+/// [`Audience::Scheduled`]: player-facing effects address `@a` — the whole party
+/// rests together — and party-state effects name no player and fire once. The
+/// respawn path runs the SAME authored effects through `cp_on_respawn_<i>` under
+/// [`Audience::Solo`], because a death belongs to the one player who died. That
+/// asymmetry is deliberate and is exactly why spec-0016 requires `on_rest` to be
+/// idempotent: it is the world's single answer to both a rest and a death, read
+/// at two different audiences.
+fn emit_bonfire_functions(plan: &Plan) -> Vec<(String, String)> {
+    let mut fns: Vec<(String, String)> = Vec::new();
+    for bf in plan.bonfires() {
+        let mut body: Vec<String> = Vec::new();
+        let pos = bf.pos;
+        body.push(format!("spawnpoint @a {} {} {}", pos[0], pos[1], pos[2]));
+        body.push(format!(
+            "data modify storage dw:cp pos set value [{}, {}, {}]",
+            pos[0], pos[1], pos[2]
+        ));
+        if plan.any_checkpoint_on_respawn() {
+            body.push(format!("scoreboard players set #cp dw.sys {}", bf.index));
+        }
+        body.extend(bonfire_reseat_lines(plan));
+        body.extend(emit_effect_bundle(
+            plan,
+            &bf.on_respawn,
+            Audience::Scheduled,
+        ));
+        fns.push((format!("bonfire_rest_{}", bf.index), lines(&body)));
     }
     fns
 }
@@ -5630,6 +5772,9 @@ fn emit_packtest(
     // v0.6: trap payload loads into the dispenser; a disarm empties it (spec-0011).
     // Emits nothing when the campaign declares no traps.
     emit_trap_packtests(plan, out);
+    // spec-0016 §1: resting at a bonfire moves the party respawn point and
+    // re-seats its `respawns_on_rest` waves. Emits nothing without a bonfire.
+    emit_bonfire_packtests(plan, out);
 
     // The scheduled-executor contract (AUDIT-P0): a function reached through
     // `schedule` still lands per-player state on real players.
@@ -6275,6 +6420,94 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
     b.push(format!("assert score #bx_bins dw.sys matches {in_x}"));
     out.insert(
         format!("packtest-datapack/data/{ns}/test/v06_boundary_inside.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// spec-0016 §1 bonfire PackTests. A fake player cannot die and respawn inside a
+/// plain mcfunction, so — like the spec-0012 checkpoint test — these drive the
+/// REAL generated `bonfire_rest_<i>` and assert its two machine-checkable
+/// contracts:
+///
+/// * **rest moves the checkpoint**: after the rest function runs, `storage dw:cp
+///   pos` reads back the bonfire cell (the mirror every other feature consumes,
+///   spec-0013's boundary return included).
+/// * **rest re-seats the wave**: a `respawns_on_rest` wave that was spawned and
+///   then wiped is standing again after a rest, at its authored count — and a
+///   wave the party never met (seated sentinel unset) is NOT summoned by a rest,
+///   which is the whole point of the sentinel.
+///
+/// Emits nothing for a campaign with no bonfire → byte-identical.
+fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some(bf) = plan.bonfires().next() else {
+        return;
+    };
+    let i = bf.index;
+    let [x, y, z] = bf.pos;
+
+    // --- rest moves the party checkpoint ---
+    let mut b = packtest_header(&format!(
+        "{title}: resting at a bonfire moves the party checkpoint (spec-0016 §1)"
+    ));
+    b.push(format!("function {ns}:setup"));
+    // Scrub the shared mirror to a value the assert cannot pass by accident, then
+    // run the real rest and read it back per-axis.
+    b.push("data modify storage dw:cp pos set value [0, 0, 0]".to_string());
+    b.push(format!("function {ns}:bonfire_rest_{i}"));
+    for (axis, want) in [(0, x), (1, y), (2, z)] {
+        b.push(format!(
+            "execute store result score #bc{axis}_bfr dw.sys run data get storage dw:cp pos[{axis}]"
+        ));
+        b.push(format!("assert score #bc{axis}_bfr dw.sys matches {want}"));
+    }
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_bonfire_rest.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+
+    // --- rest re-seats a wave the party has met, and only that wave ---
+    let reseat = plan.reseat_waves();
+    let Some(w) = reseat.first() else {
+        return;
+    };
+    let tag = plan::wave_tag(w.id.as_str());
+    let safe = plan::safe_local(w.id.as_str());
+    let seated = wave_seated_holder(w.id.as_str());
+    let total = plan::wave_total(w);
+    let mut b = packtest_header(&format!(
+        "{title}: a bonfire rest re-seats wave `{}` — but only once met (spec-0016 §1)",
+        w.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    // Entity + score residue from a sibling template is batch-global: clear both.
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(format!("scoreboard players set {seated} dw.sys 0"));
+    // Unmet wave: a rest must NOT conjure it.
+    b.push(format!("function {ns}:bonfire_rest_{i}"));
+    b.push(format!(
+        "execute store result score #bu_bfs dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push("assert score #bu_bfs dw.sys matches 0".to_string());
+    // Met wave: spawn it, wipe it, rest — it stands again at the authored count.
+    b.push(format!("function {ns}:spawn_{safe}"));
+    b.push(format!("assert score {seated} dw.sys matches 1"));
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(format!(
+        "execute store result score #bw_bfs dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push("assert score #bw_bfs dw.sys matches 0".to_string());
+    b.push(format!("function {ns}:bonfire_rest_{i}"));
+    b.push(format!(
+        "execute store result score #br_bfs dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push(format!("assert score #br_bfs dw.sys matches {total}"));
+    // Leave no residue for the rest of the batch (pin_dummy rule 4).
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(format!("scoreboard players set {seated} dw.sys 0"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_bonfire_reseat.mcfunction"),
         lines(&b).into_bytes(),
     );
 }

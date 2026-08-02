@@ -275,7 +275,9 @@ fn walk_bundle(
             }
             // Reaction bundles fire at unknowable times — do not descend; any NPC
             // they stage is already excluded from tracking.
-            QuestEffect::SetCheckpoint { .. } | QuestEffect::BeginStealth { .. } => {}
+            QuestEffect::SetCheckpoint { .. }
+            | QuestEffect::Bonfire { .. }
+            | QuestEffect::BeginStealth { .. } => {}
             _ => {}
         }
     }
@@ -313,6 +315,7 @@ fn excluded_npcs(c: &Campaign) -> BTreeSet<String> {
             }
             match e {
                 QuestEffect::SetCheckpoint { on_respawn, .. } => scan(on_respawn, true, out),
+                QuestEffect::Bonfire { on_rest, .. } => scan(on_rest, true, out),
                 QuestEffect::BeginStealth { on_caught, .. } => scan(on_caught, true, out),
                 _ => {
                     for list in e.nested_effect_lists() {
