@@ -89,6 +89,40 @@ fn build(triggers: &str) -> BuildOutput {
     .expect("every emitted command validates")
 }
 
+/// The same build, keeping the failure instead of unwrapping it.
+fn try_build(triggers: &str) -> Result<BuildOutput, emit::BuildFailure> {
+    let raw = RawCampaign {
+        world: read_hw("world.json"),
+        npcs: read_hw("npcs.json"),
+        classes: read_hw("classes.json"),
+        quest_plan: read_hw("quest-plan.json"),
+        quests: quests_doc(triggers),
+        dialogue: read_hw("dialogue.json"),
+        world_edits: None,
+    };
+    let campaign = parse_campaign(&raw).expect("campaign parses");
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
+            structures.insert(piece.structure_file.clone(), bytes);
+        }
+    }
+    let tree = CommandTree::v1_21_11();
+    emit::build(
+        &plan,
+        &BTreeMap::new(),
+        &structures,
+        &tree,
+        &prefabs,
+        None,
+        "unpinned",
+        &BTreeMap::new(),
+    )
+}
+
 /// Every shipped-datapack function body concatenated.
 fn all_functions(out: &BuildOutput) -> String {
     let mut s = String::new();
@@ -218,11 +252,18 @@ fn strike_trigger_away_from_an_npc_changes_nothing() {
 
 /// Scope: right-click on an NPC already belongs to the dialogue advancement, so a
 /// co-located `use` trigger is an authoring conflict, not a detection bug — it
-/// does not share the hitbox. (Since round-6 the conflict is rejected outright at
-/// validate time, `DW0350`; emission never sees it through the CLI. This pins
-/// the emission-level scoping regardless.)
+/// does not share the hitbox and it does not ship.
+///
+/// The conflict is rejected twice over, and this pins the second: `DW0350`
+/// (validate tier, symbolic — same anchor name) is what the CLI reaches first,
+/// and `DW0359` (build tier, geometric — the trigger's own interaction entity
+/// sits inside the NPC's body box) catches it here, where a caller reaching
+/// `emit::build` directly bypasses validation. Before round-7 this test asserted
+/// the *emitted* hitbox line instead; the campaign no longer emits at all, which
+/// is the stronger statement of the same rule (one cell, one hitbox) and the
+/// reason the assertion moved.
 #[test]
-fn use_trigger_on_an_npc_anchor_is_left_alone() {
+fn use_trigger_on_an_npc_anchor_is_rejected() {
     let use_trigger = r#"{
       "id": "trigger/press",
       "at": "anchor/keeper-stand",
@@ -230,11 +271,11 @@ fn use_trigger_on_an_npc_anchor_is_left_alone() {
       "once": true,
       "effects": [ { "type": "narrate", "style": "chat", "text": "He nods." } ]
     }"#;
-    let line = npc_hitbox_line(&build(use_trigger));
-    assert!(
-        line.ends_with(r#"Tags:["dw_npc_keeper"]}"#),
-        "a `use` trigger must not share the npc hitbox:\n{line}"
-    );
+    let err = try_build(use_trigger).expect_err("a `use` trigger in the NPC's cell must not ship");
+    let emit::BuildFailure::Diagnostic { code, message } = err else {
+        panic!("expected a coded build diagnostic, got {err:?}");
+    };
+    assert_eq!(code, "DW0359", "{message}");
 }
 
 /// The generated PackTest writes the vanilla `attack` record onto the NPC's own
