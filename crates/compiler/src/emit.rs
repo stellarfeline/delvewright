@@ -2510,7 +2510,16 @@ fn plan_aggro_edge_spawns(
             continue;
         };
         let need = mob.count as usize;
-        let ring = world.annulus_standable_cells(anchor, bounds, radius, AGGRO_RING_TOLERANCE);
+        // Band [r-2, r-1], strictly INSIDE perception. Ladder evidence (the
+        // drowned bell, runs 10 and 12): the original one-sided [r-1, r] band
+        // seats mobs at the marginal edge of perceiving a defender AT the
+        // anchor — vanilla target acquisition at exactly `follow_range` is a
+        // coin flip, and a summoned mob that acquires nobody stands idle
+        // forever, timing out the kill objective. One block of margin turns
+        // "materializes at the edge of what it can sense" from fiction into
+        // guaranteed engagement.
+        let band_outer = (radius - 1.0).max(2.0);
+        let ring = world.annulus_standable_cells(anchor, bounds, band_outer, AGGRO_RING_TOLERANCE);
         let picked: Vec<[i32; 3]> = ring
             .iter()
             .copied()
@@ -2523,7 +2532,7 @@ fn plan_aggro_edge_spawns(
                 message: format!(
                     "`summon: aggro-edge` wave `{wave}` cannot seat {need} × `{entity}` on its \
                      perception ring: at `follow_range` {radius} (the band \
-                     [{radius}-{AGGRO_RING_TOLERANCE}, {radius}]) around defended anchor \
+                     [{band_outer}-{AGGRO_RING_TOLERANCE}, {band_outer}], one block inside perception) around defended anchor \
                      `{anchor_name}` ({anchor:?}) in area `{area}`, only {found} \
                      cell(s) are standable, walk-reachable AND in line of sight of the anchor. \
                      The mobs must materialize at the EDGE of perception (spec-0016 §6) — the \
