@@ -258,7 +258,7 @@ impl Facing {
 
 /// AABB overlap test (inclusive block cells). Flush (face-touching) pieces do
 /// **not** overlap.
-fn aabb_overlap(a: (&[i32; 3], &[i32; 3]), b: (&[i32; 3], &[i32; 3])) -> bool {
+pub(crate) fn aabb_overlap(a: (&[i32; 3], &[i32; 3]), b: (&[i32; 3], &[i32; 3])) -> bool {
     (0..3).all(|i| a.0[i] <= b.1[i] && b.0[i] <= a.1[i])
 }
 
@@ -1084,7 +1084,7 @@ fn attach_piece(
 }
 
 /// The world pose (socket cell + facing) of a connector on a placed piece.
-fn socket_world(
+pub(crate) fn socket_world(
     pos: [i32; 3],
     rot: Rotation,
     conn: &Connector,
@@ -1106,7 +1106,7 @@ fn socket_world(
 }
 
 /// Build the seal/clear fills for every connector of every placed piece.
-fn seal_layout(registry: &PrefabRegistry, pieces: &[PlacedPiece]) -> Vec<SealFill> {
+pub(crate) fn seal_layout(registry: &PrefabRegistry, pieces: &[PlacedPiece]) -> Vec<SealFill> {
     let mut seals = Vec::new();
     for piece in pieces {
         let Some(meta) = registry.get(&piece.prefab_id) else {
@@ -1137,7 +1137,11 @@ fn seal_layout(registry: &PrefabRegistry, pieces: &[PlacedPiece]) -> Vec<SealFil
 /// The world region of a socket's `[w,h]` opening: `w` wide across the facing's
 /// perpendicular horizontal axis, `h` tall in +y, one block deep at the wall
 /// plane. `wp` is the bottom-centre wall cell.
-fn opening_region(wp: [i32; 3], facing: Facing, opening: [i32; 2]) -> ([i32; 3], [i32; 3]) {
+pub(crate) fn opening_region(
+    wp: [i32; 3],
+    facing: Facing,
+    opening: [i32; 2],
+) -> ([i32; 3], [i32; 3]) {
     let half = (opening[0] - 1) / 2;
     let top = opening[1] - 1;
     match facing {

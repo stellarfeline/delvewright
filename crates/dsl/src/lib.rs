@@ -54,6 +54,6 @@ pub use stages::{
 };
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,
-    TreeKind, WorldEdit, WorldEditsContent,
+    SocketState, TreeKind, WorldEdit, WorldEditsContent,
 };
 pub use validate::{validate_campaign, validate_campaign_with};
