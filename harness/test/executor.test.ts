@@ -32,7 +32,18 @@ class FakeBot extends EventEmitter {
   entity = { position: new FakeVec3(0, 64, 0), onGround: true };
   game = { gameMode: "adventure" as "adventure" | "spectator" };
   pathfinderStops = 0;
-  pathfinder = { stop: (): void => void (this.pathfinderStops += 1) };
+  /** Every pathfinder call, in order — pins that a stop is always followed by the
+   * goal reset that consumes mineflayer-pathfinder's internal `stopPathing` flag. */
+  pathfinderCalls: string[] = [];
+  pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+  };
   /** Whether `blockAt` returns a (loaded) block; false models an unloaded chunk. */
   chunkLoaded = true;
   loadPlugin(): void {}
@@ -69,6 +80,12 @@ test("a death event records position + likely cause and stops the pathfinder", (
   assert.deepEqual(diag.position, [12, 65, -4]); // rounded to whole blocks
   assert.equal(diag.likelyCause, "delve-bot was slain by Zombie");
   assert.equal(bot.pathfinderStops, 1); // in-flight pathfinding aborted
+  // …and the stop is ALWAYS paired with a goal reset. mineflayer-pathfinder's `stop()`
+  // only raises an internal flag that a later `goto` consumes by rejecting instantly
+  // ("Path was stopped before it could be completed!") — leaving it raised poisons every
+  // subsequent hop, which is how a the-drowned-bell run failed a leg it had walked
+  // fine the run before. The reset consumes the flag here, once.
+  assert.deepEqual(bot.pathfinderCalls, ["stop", "setGoal(null)"]);
 });
 
 test("a death fails an in-flight assert-complete fast with the death diagnostic", async () => {
