@@ -10,11 +10,18 @@
 //! the emitter is a pure byte-deterministic function (fixed field order, 2-space
 //! pretty, trailing newline), so the index rides the determinism gate like the plan
 //! it derives from.
+//!
+//! Shots stamped dark-with-night-vision (see [`crate::scene`]'s REVIEW POLICY)
+//! additionally carry `review_policy` = [`crate::scene::REVIEW_POLICY`] and their
+//! `lighting` stamp, so the reviewer knows those images are night-vision
+//! **emulations** (legibility ground truth, not lighting ground truth). Both
+//! fields are absent — not null — everywhere else, keeping indexes for
+//! declaration-free campaigns byte-identical.
 
 use serde::{Deserialize, Serialize};
 
 use crate::diag::{DW_INPUT, Diagnostic};
-use crate::scene::scene_name;
+use crate::scene::{LightingStamp, REVIEW_POLICY, needs_emulation, scene_name};
 
 #[derive(Debug, Deserialize)]
 struct RenderPlan {
@@ -36,6 +43,10 @@ struct Shot {
     /// one-sentence first-person description.
     #[serde(default)]
     expect: Vec<String>,
+    /// The compiler's declaration-derived lighting stamp, if any (raw
+    /// passthrough for the entry, plus the emulation predicate).
+    #[serde(default)]
+    lighting: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -50,6 +61,16 @@ struct IndexEntry {
     /// scene name; `delve-render scene` writes `<image>` beside the scene JSON).
     image: String,
     expect: Vec<String>,
+    /// The shot's `lighting` stamp, passed through verbatim from the plan
+    /// (absent for shots of undeclared areas — index bytes unchanged for them).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lighting: Option<serde_json::Value>,
+    /// [`REVIEW_POLICY`] for shots whose scene `delve-render scene` emulates
+    /// (dark-with-night-vision stamp): tells the reviewing agent/vision model
+    /// the image approximates the night-vision player view — judge layout and
+    /// readability from it, never the world's real lighting.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    review_policy: Option<&'static str>,
 }
 
 #[derive(Debug, Serialize)]
@@ -67,13 +88,25 @@ pub fn index_from_plan(plan_json: &[u8]) -> Result<Vec<u8>, Diagnostic> {
     let shots: Vec<IndexEntry> = plan
         .shots
         .iter()
-        .map(|s| IndexEntry {
-            id: s.id.clone(),
-            kind: s.kind.clone(),
-            leg: s.leg,
-            objective: s.objective.clone(),
-            image: format!("{}.png", scene_name(&s.id)),
-            expect: s.expect.clone(),
+        .map(|s| {
+            // The same predicate `delve-render scene` applies, over the same
+            // stamp — index and scene can never disagree about which shots are
+            // emulated.
+            let stamp: Option<LightingStamp> = s
+                .lighting
+                .clone()
+                .and_then(|v| serde_json::from_value(v).ok());
+            let emulated = needs_emulation(stamp.as_ref());
+            IndexEntry {
+                id: s.id.clone(),
+                kind: s.kind.clone(),
+                leg: s.leg,
+                objective: s.objective.clone(),
+                image: format!("{}.png", scene_name(&s.id)),
+                expect: s.expect.clone(),
+                lighting: s.lighting.clone(),
+                review_policy: emulated.then_some(REVIEW_POLICY),
+            }
         })
         .collect();
     let idx = ShotIndex {
@@ -147,5 +180,40 @@ mod tests {
     #[test]
     fn index_is_deterministic() {
         assert_eq!(index_from_plan(POV).unwrap(), index_from_plan(POV).unwrap());
+    }
+
+    #[test]
+    fn emulated_shots_are_marked_and_others_untouched() {
+        let plan = br#"{"campaign_id":"cave","shots":[
+          {"id":"pov/leg0/wp0","kind":"pov","leg":0,
+           "lighting":{"profile":"dark","mitigation":"night-vision"},
+           "expect":["First-person view walking east."]},
+          {"id":"interior/cave/0","kind":"interior",
+           "lighting":{"profile":"lit"},
+           "expect":["room interior assembled"]},
+          {"id":"spawn","kind":"spawn","expect":["spawn point clear"]}
+        ]}"#;
+        let v: serde_json::Value = serde_json::from_slice(&index_from_plan(plan).unwrap()).unwrap();
+        let shots = v["shots"].as_array().unwrap();
+        // Dark + night-vision → marked, stamp passed through.
+        assert_eq!(
+            shots[0]["review_policy"],
+            crate::scene::REVIEW_POLICY,
+            "emulated shot carries the review marker"
+        );
+        assert_eq!(shots[0]["lighting"]["profile"], "dark");
+        assert_eq!(shots[0]["lighting"]["mitigation"], "night-vision");
+        // Lit → stamp passed through, but never the emulation marker.
+        assert_eq!(shots[1]["lighting"]["profile"], "lit");
+        assert!(shots[1].get("review_policy").is_none());
+        // Unstamped → neither key exists (byte-identical for old campaigns —
+        // the POV fixture proves the same across the whole index).
+        assert!(shots[2].get("lighting").is_none());
+        assert!(shots[2].get("review_policy").is_none());
+        let unstamped: serde_json::Value =
+            serde_json::from_slice(&index_from_plan(POV).unwrap()).unwrap();
+        for s in unstamped["shots"].as_array().unwrap() {
+            assert!(s.get("lighting").is_none() && s.get("review_policy").is_none());
+        }
     }
 }

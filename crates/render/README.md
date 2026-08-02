@@ -113,6 +113,20 @@ render through `scene` exactly as authored, carrying the first-person `fov` (~70
 The compiler already proves every POV eye cell is clear over the assembled world
 (`DW0724`), so a camera never looks out from inside a wall.
 
+**Declared-dark shots get the night-vision REVIEW POLICY.** A shot stamped
+`lighting: {"profile": "dark", "mitigation": "night-vision"}` by the compiler
+frames an area that is meant to be dark with players kept under night vision —
+an honest path trace of it is pure black (exposure boosts cannot reveal a sealed
+cave; there is nothing to amplify). For those shots, and only those, the emitted
+scene adds a review-only `materials` override: every non-emitting block of the
+build's structure palettes at a low uniform emittance
+(`scene::REVIEW_EMITTANCE`), approximating night vision's flat full-bright view;
+real emitters are excluded so fixtures keep their genuine glow. The scene is
+marked `delvewrightReviewPolicy: "night-vision-emulated — review only"` and the
+shot index marks the entry (`review_policy`) — an **approximation for layout
+review, never lighting ground truth** (the compiler's measured light model owns
+that). See `src/scene.rs` module docs and the compiler reference.
+
 **Limitations (recorded):**
 - **Entity overlays** — NPCs and props are entities, not blocks, so they are absent
   from the `.nbt`/world geometry Chunky path-traces; POV/NPC shots render the *scene

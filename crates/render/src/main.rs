@@ -315,6 +315,43 @@ fn run_fidelity_gate(out: Option<&Path>, cli: &Cli) -> ExitCode {
     }
 }
 
+/// Union block palette (block-state strings, sorted, deduped) of every shipped
+/// structure `.nbt` under the build's `datapack/data/<ns>/structure/`. Consumed
+/// only by the night-vision review emulation (`scene::scenes_from_plan`); an
+/// absent structure tree yields an empty palette (harmless unless the plan
+/// stamps a dark shot — then scene emission refuses, see `scene.rs`). An
+/// *unreadable* structure is an error: a corrupt build dir must not silently
+/// degrade the review.
+fn structure_palette(build_dir: &Path) -> Result<Vec<String>, Diagnostic> {
+    let data = build_dir.join("datapack").join("data");
+    let mut nbts: Vec<PathBuf> = Vec::new();
+    if let Ok(namespaces) = std::fs::read_dir(&data) {
+        let mut dirs: Vec<PathBuf> = namespaces
+            .filter_map(|e| e.ok().map(|e| e.path().join("structure")))
+            .collect();
+        dirs.sort();
+        for dir in dirs {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            nbts.extend(
+                entries
+                    .filter_map(|e| e.ok().map(|e| e.path()))
+                    .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("nbt")),
+            );
+        }
+    }
+    nbts.sort();
+    let mut palette = std::collections::BTreeSet::new();
+    for path in &nbts {
+        let st = nbt::parse_structure(path).map_err(|e| {
+            Diagnostic::error(DW_INPUT, format!("structure {}: {e}", path.display()))
+        })?;
+        palette.extend(st.palette);
+    }
+    Ok(palette.into_iter().collect())
+}
+
 fn run_scene(build_dir: &Path, out: &Path, world: &str, cli: &Cli) -> ExitCode {
     let plan_path = build_dir.join("render-plan.json");
     let bytes = match std::fs::read(&plan_path) {
@@ -333,7 +370,13 @@ fn run_scene(build_dir: &Path, out: &Path, world: &str, cli: &Cli) -> ExitCode {
         height: cli.size,
         spp_target: 500,
     };
-    let scenes = match scene::scenes_from_plan(&bytes, &opts) {
+    // The shipped structures' block palette feeds the dark-shot night-vision
+    // review emulation (no-op for plans without dark-stamped shots).
+    let palette = match structure_palette(build_dir) {
+        Ok(p) => p,
+        Err(d) => return fail(d, cli.json, exit::INPUT),
+    };
+    let scenes = match scene::scenes_from_plan(&bytes, &opts, &palette) {
         Ok(s) => s,
         Err(d) => return fail(d, cli.json, exit::INPUT),
     };
