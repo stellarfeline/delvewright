@@ -1347,6 +1347,35 @@ fn emit_functions(
                 "scoreboard players reset @s {}",
                 npc.trigger_objective
             ));
+            // Re-arm the trigger IN THIS FUNCTION, immediately after consuming it.
+            //
+            // `reset` both clears the score and re-locks the trigger, and the only
+            // other re-enable is the per-tick `scoreboard players enable @a` at the
+            // top of `tick`. On a dedicated server that is invisible: the handler
+            // runs inside tick N, the next tick re-enables, and the player's next
+            // click lands in tick N+1 or later. On the **integrated (singleplayer)
+            // server** it is a real hole — 1.21.9+ freezes the integrated server
+            // while a screen is open, and the last thing this handler does is show
+            // the next dialog node. So: tick N re-enables, dispatches here, we lock
+            // the trigger, we open the next screen, ticking STOPS. The player's
+            // click is queued and executed the instant ticking resumes — before the
+            // tick function's re-enable — and vanilla rejects it ("You can't
+            // trigger this objective yet"), silently swallowing one dialogue
+            // choice. A dedicated server never pauses, so no rung of the validation
+            // ladder can reproduce it.
+            //
+            // Placed here rather than at the end of the body on purpose: the
+            // flag-gate below can `return fail`, and an end-of-body re-enable would
+            // be skipped on exactly the path that consumed the trigger without
+            // doing anything. Nothing below re-locks it, so this position strictly
+            // dominates. `enable` on an unset score initialises it to 0, which
+            // matches no dispatch guard (option values are 1-based).
+            //
+            // The per-tick `enable @a` stays as belt-and-braces.
+            body.push(format!(
+                "scoreboard players enable @s {}",
+                npc.trigger_objective
+            ));
             // v0.4: a flag-gated option is inert until its flags are set — so a
             // direct `/trigger` (the bot's path, which bypasses the UI variant
             // hiding) cannot fire it early. `return fail` short-circuits the rest.
@@ -4115,6 +4144,11 @@ fn emit_packtest(
     // the objective scoreboard. Emits nothing for a v0.2 campaign.
     emit_verb_packtests(plan, out);
 
+    // The dialogue trigger must survive a second use with NO tick in between —
+    // the singleplayer pause-freeze contract. Emits nothing for a campaign with no
+    // terminal dialogue option.
+    emit_dialogue_trigger_packtest(plan, out);
+
     // v0.4: prop-on-activation, despawn removes body+hitbox, move arrives at
     // target. Emits nothing when the campaign uses none of them.
     emit_v04_packtests(plan, out, moves);
@@ -4134,6 +4168,60 @@ fn emit_packtest(
     // v0.6: trap payload loads into the dispenser; a disarm empties it (spec-0011).
     // Emits nothing when the campaign declares no traps.
     emit_trap_packtests(plan, out);
+}
+
+/// The dialogue-trigger re-arm PackTest: a player consumes a dialogue trigger and
+/// must be able to use it again **with the tick function never running in
+/// between**. Suppressing the tick function is how a plain mcfunction emulates the
+/// integrated (singleplayer) server's pause-menu tick freeze (1.21.9+), which is
+/// the only condition under which the old per-tick-only re-enable lost a dialogue
+/// choice — and which a dedicated server, and therefore every rung of the
+/// validation ladder, can never enter.
+///
+/// Drives a **terminal** option (no `next`, no flag gate) so the handler contains
+/// no `dialog show` — a PackTest dummy player has no client to show a screen to.
+/// The re-arm is emitted immediately after the trigger reset, so it is reached on
+/// every path through the handler regardless. Emits nothing when the campaign has
+/// no terminal option (nothing to drive).
+fn emit_dialogue_trigger_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some((npc, opt)) = plan.npcs.iter().find_map(|npc| {
+        npc.options
+            .iter()
+            .find(|o| o.next.is_none() && o.requires_flags.is_empty())
+            .map(|o| (npc, o))
+    }) else {
+        return;
+    };
+    let trig = &npc.trigger_objective;
+    let n = opt.n;
+
+    let mut b = packtest_header(&format!(
+        "{title}: dialogue trigger re-arms without a tick (singleplayer pause parity)"
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push("# The per-tick re-enable, run ONCE. Nothing below runs the tick".to_string());
+    b.push("# function again: that suppression IS the integrated server's".to_string());
+    b.push("# pause-menu tick freeze, which a dedicated server never enters.".to_string());
+    b.push(format!("scoreboard players enable @a {trig}"));
+    b.push(format!("execute as @p run trigger {trig} set {n}"));
+    b.push(format!("assert score @p {trig} matches {n}"));
+    b.push("# The tick's dispatch, hand-run: the handler consumes (and locks) the".to_string());
+    b.push("# trigger, then must re-arm it itself.".to_string());
+    b.push(format!(
+        "execute as @p run function {ns}:dlg_{}_{n}",
+        npc.safe
+    ));
+    b.push("# Second use, still with no tick in between. If the handler did not".to_string());
+    b.push("# re-arm, vanilla rejects this and the score stays unset.".to_string());
+    b.push(format!("execute as @p run trigger {trig} set {n}"));
+    b.push(format!("assert score @p {trig} matches {n}"));
+
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/dialogue_trigger_rearm.mcfunction"),
+        lines(&b).into_bytes(),
+    );
 }
 
 /// v0.6 trap PackTests (spec-0011). A fake player in a 0-player void does not tick

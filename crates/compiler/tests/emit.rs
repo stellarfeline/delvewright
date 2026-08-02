@@ -875,3 +875,74 @@ mod gravity_despawn {
         );
     }
 }
+
+/// Singleplayer pause-freeze parity: a dialogue handler must RE-ARM the trigger it
+/// consumes, in the same function. `scoreboard players reset` re-locks a trigger;
+/// the per-tick `scoreboard players enable @a` cannot close the window, because the
+/// handler's last act is to show the next dialog node and the integrated
+/// (singleplayer) server freezes ticking while a screen is open — the player's next
+/// click is then executed before the tick ever runs again and vanilla rejects it.
+/// A dedicated server never pauses, so the validation ladder cannot see this.
+#[test]
+fn dialogue_handler_rearms_its_own_trigger() {
+    let out = build_hello_world();
+    let handlers: Vec<String> = out
+        .keys()
+        .filter(|p| p.contains("/function/dlg_"))
+        .cloned()
+        .collect();
+    assert!(!handlers.is_empty(), "hello-world emits dialogue handlers");
+
+    for path in &handlers {
+        let body = text(&out, path);
+        let lines: Vec<&str> = body.lines().map(str::trim).collect();
+        let reset = lines
+            .iter()
+            .position(|l| l.starts_with("scoreboard players reset @s dw.dlg_"))
+            .unwrap_or_else(|| panic!("{path} must consume its trigger:\n{body}"));
+        let obj = lines[reset]
+            .rsplit(' ')
+            .next()
+            .expect("reset names an objective");
+        // Immediately after the reset — before any `return fail` gate can
+        // short-circuit the rest of the handler, and before any `dialog show`.
+        assert_eq!(
+            lines.get(reset + 1).copied(),
+            Some(format!("scoreboard players enable @s {obj}").as_str()),
+            "{path} must re-arm `{obj}` immediately after resetting it:\n{body}"
+        );
+    }
+
+    // Belt-and-braces: the per-tick re-enable is still there.
+    let tick = text(&out, "datapack/data/hello-world/function/tick.mcfunction");
+    assert!(
+        tick.lines()
+            .any(|l| l.trim().starts_with("scoreboard players enable @a dw.dlg_")),
+        "the per-tick re-enable stays as belt-and-braces:\n{tick}"
+    );
+
+    // The emitted PackTest drives the real freeze scenario: use the trigger, run
+    // the handler, use it again — with the tick function never running.
+    let pt = text(
+        &out,
+        "packtest-datapack/data/hello-world/test/dialogue_trigger_rearm.mcfunction",
+    );
+    assert!(
+        !pt.contains("hello-world:tick"),
+        "the re-arm PackTest must NOT run the tick function (that is the freeze):\n{pt}"
+    );
+    assert_eq!(
+        pt.lines()
+            .filter(|l| l.trim().starts_with("execute as @p run trigger "))
+            .count(),
+        2,
+        "the re-arm PackTest uses the trigger twice:\n{pt}"
+    );
+    assert_eq!(
+        pt.lines()
+            .filter(|l| l.trim().starts_with("assert score @p "))
+            .count(),
+        2,
+        "both uses are asserted:\n{pt}"
+    );
+}
