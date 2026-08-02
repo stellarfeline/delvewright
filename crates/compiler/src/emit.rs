@@ -329,6 +329,9 @@ pub fn build_with_warnings(
                 // already proven with every shortcut gate SEALED (Plan::build seals
                 // them at step 0), so the delve is finishable the long way.
                 crate::nav::check_shortcuts(plan, &world, campaign_spawn(plan))?;
+                // spec-0016 §3 ambush counterplay (DW0376): 初见杀 is legitimate,
+                // a pocket with no retreat is not.
+                crate::nav::check_ambushes(plan, &world, campaign_spawn(plan))?;
                 // Export the DW0311-proven critical-path routes as validation
                 // metadata (task #38): thinned per-leg waypoint polylines the harness
                 // replays as successive nearby goals, so no single giant mineflayer A*
@@ -3098,7 +3101,7 @@ fn shortcut_setup(plan: &Plan) -> Vec<String> {
 /// Per-tick shortcut unlock detection (spec-0016 §2). Fires **once** — the
 /// `#sc_<id>` sentinel is the structural expression of permanence: after the open
 /// there is nothing left to fire, and no verb anywhere can put the gate back
-/// (`DW0358` forbids `close-gate` on a shortcut gate). Empty without a shortcut.
+/// (`DW0372` forbids `close-gate` on a shortcut gate). Empty without a shortcut.
 fn shortcut_tick(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
@@ -6595,7 +6598,7 @@ fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
 /// spec-0016 §2 shortcut PackTest: the unlock really clears the gate region, and
 /// the open is **permanent** — re-running the tick after the sentinel is latched
 /// cannot re-seal it, because nothing in the datapack ever fills a shortcut gate
-/// (`DW0358` makes that structural at compile time; this asserts the runtime side
+/// (`DW0372` makes that structural at compile time; this asserts the runtime side
 /// on a live server). Emits nothing for a campaign with no shortcut.
 fn emit_shortcut_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;

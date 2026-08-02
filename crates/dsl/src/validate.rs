@@ -75,6 +75,7 @@ pub fn validate_campaign_with(
         v06_checks(c, items, anchors, entities, &mut d);
         v06_trap_checks(c, items, anchors, &mut d);
         shortcut_checks(c, anchors, &mut d);
+        ambush_checks(c, &mut d);
     }
     // DSL v0.6 stage 7 (spec-0017): the map-editor edit script. Structural
     // checks only — frame/region *resolution* happens at build time against the
@@ -1241,6 +1242,10 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 "/content/shortcuts".to_string(),
                 "the `shortcuts` section",
             );
+        }
+        // Ambushes (spec-0016 §3) likewise.
+        if !c.quests.content.ambushes.is_empty() {
+            res(d, "/content/ambushes".to_string(), "the `ambushes` section");
         }
         // Wave-mob `equipment` (task #65) is a v0.6 stage-5 surface: reserved
         // before 0.6.0 (the field defaults to absent, so an earlier campaign
@@ -4760,5 +4765,80 @@ fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
                 );
             }
         });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// spec-0016 §3 — ambushes
+// ---------------------------------------------------------------------------
+
+/// Validate the stage-5 `ambushes` section (spec-0016 §3), `DW0375`.
+///
+/// An ambush desugars to an ordinary environment trigger at parse time, so it
+/// inherits every trigger diagnostic already in the compiler — id/range checks
+/// (`DW0194`), anchor resolution, unknown actor refs, the `use`-on-an-NPC rule
+/// (`DW0350`). This function only owns what the sugar itself can get wrong:
+/// its own id, and an actor list that does not actually stage an ambush.
+///
+/// It deliberately does **not** require a `telegraph`. The un-telegraphed
+/// ambush is core souls vocabulary (owner ruling 2026-08-02) — 初见杀 is how a
+/// level teaches. What the engine owes the player is counterplay on the retry,
+/// which is a geometric question and is proven in `compiler::nav` (`DW0376`).
+fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for (i, a) in c.quests.content.ambushes.iter().enumerate() {
+        if !a.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::AMBUSH_INVALID,
+                "quests",
+                format!("/content/ambushes/{i}/id"),
+                format!(
+                    "malformed ambush id `{}` — ambush ids must be lowercase kebab-case with the \
+                     `ambush/` prefix (e.g. `ambush/stair-turn`)",
+                    a.id
+                ),
+            ));
+        }
+        if !seen.insert(a.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::AMBUSH_INVALID,
+                "quests",
+                format!("/content/ambushes/{i}/id"),
+                format!(
+                    "duplicate ambush id `{}` — rename one so every ambush id is unique (each \
+                     desugars to a trigger named after it)",
+                    a.id
+                ),
+            ));
+        }
+        if a.actors.is_empty() {
+            d.push(Diagnostic::error(
+                codes::AMBUSH_INVALID,
+                "quests",
+                format!("/content/ambushes/{i}/actors"),
+                format!(
+                    "ambush `{}` lists no actors — it would spring nothing. List the actors that \
+                     ambush the player, or delete the declaration; a beat that fires and does \
+                     nothing is never what was meant.",
+                    a.id
+                ),
+            ));
+        }
+        let mut dup: BTreeSet<&str> = BTreeSet::new();
+        for (j, actor) in a.actors.iter().enumerate() {
+            if !dup.insert(actor.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::AMBUSH_INVALID,
+                    "quests",
+                    format!("/content/ambushes/{i}/actors/{j}"),
+                    format!(
+                        "ambush `{}` lists actor `{actor}` twice — `spawn-actor` is idempotent, so \
+                         the second one is a silent no-op and the ambush is half the size it \
+                         reads as. Declare a second actor instead.",
+                        a.id
+                    ),
+                ));
+            }
+        }
     }
 }

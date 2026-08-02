@@ -10,8 +10,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{
-    ActorId, AnchorId, AreaId, ClassId, DialogueId, EditBatchId, FlagId, NpcId, ObjectiveId,
-    PoolId, PrefabId, QuestId, RegionId, ShortcutId, TrapId, TriggerId, WaveId,
+    ActorId, AmbushId, AnchorId, AreaId, ClassId, DialogueId, EditBatchId, FlagId, NpcId,
+    ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId, TrapId, TriggerId, WaveId,
 };
 
 /// serde default helper: `true` (used by DSL v0.4 `trigger.once`).
@@ -805,6 +805,54 @@ pub struct QuestsContent {
     /// byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shortcuts: Vec<Shortcut>,
+    /// Ambushes (spec-0016 §3): sugar over "deferred actors + a trigger that
+    /// springs them". Empty/absent in pre-0.6 campaigns (reserved `DW0141`).
+    ///
+    /// **Never serialized.** [`parse_campaign`](crate::parse_campaign) expands
+    /// each ambush into `triggers`, so the canonical form of a campaign is its
+    /// **desugared** form. That is what keeps the canonical round-trip idempotent
+    /// (re-parsing canonical output finds no `ambushes` and so cannot expand a
+    /// second time and duplicate the trigger ids), and it means the sugar exists
+    /// at exactly one layer boundary — the authored `.json` — with nothing
+    /// downstream needing to know it was ever there. The list itself is kept in
+    /// memory so diagnostics can name the ambush the author wrote.
+    #[serde(default, skip_serializing)]
+    pub ambushes: Vec<Ambush>,
+    /// Whether [`Self::expand_ambushes`] has already run (never serialized). The
+    /// authored `ambushes` are deliberately KEPT after expansion so validation
+    /// and the counterplay proof can attribute diagnostics to the ambush the
+    /// author actually wrote; this flag is what makes a second expansion a no-op.
+    #[serde(skip)]
+    pub ambushes_expanded: bool,
+}
+
+impl QuestsContent {
+    /// Every environment trigger this stage produces: the authored `triggers`
+    /// followed by the ones each `ambush` desugars to (spec-0016 §3), in
+    /// declared order.
+    ///
+    /// **This is the single trigger authority.** Validation, the l10n
+    /// inventory, the flag/wave producer scans, the nav proofs and emission all
+    /// read triggers through it, so an ambush behaves exactly like the trigger
+    /// an author would otherwise hand-write — there is no second code path for
+    /// the sugar to drift down. Deterministic (declaration order, no hashing).
+    pub fn all_triggers(&self) -> Vec<EnvTrigger> {
+        let mut out = self.triggers.clone();
+        out.extend(self.ambushes.iter().map(Ambush::to_trigger));
+        out
+    }
+
+    /// Desugar every `ambush` into a real environment trigger and clear the
+    /// ambush list (spec-0016 §3). Called once, by
+    /// [`parse_campaign`](crate::parse_campaign); idempotent by construction
+    /// (a second call sees no ambushes left to expand).
+    pub fn expand_ambushes(&mut self) {
+        if self.ambushes_expanded || self.ambushes.is_empty() {
+            return;
+        }
+        self.triggers = self.all_triggers();
+        self.ambushes_expanded = true;
+    }
 }
 
 /// A stage-5 trap (DSL v0.6, spec-0011): a redstone-native environmental hazard.
@@ -959,6 +1007,75 @@ pub struct TrapDisarm {
     /// The flag set when the trap is disarmed (a new flag this trap produces; other
     /// objectives/triggers may read it via `requires_flags`).
     pub sets_flag: FlagId,
+}
+
+/// A stage-5 **ambush** (spec-0016 §3) — one declaration for a beat that
+/// otherwise takes a deferred actor set plus a hand-wired trigger.
+///
+/// **`telegraph` is optional, and that is a design ruling, not an oversight**
+/// (owner, 2026-08-02). The un-telegraphed ambush — the shove off the cliff you
+/// could not have known about — is core souls vocabulary: 初见杀 is how the level
+/// teaches. The engine does not sand that edge off.
+///
+/// What the engine *does* owe the player is **counterplay on the retry**: having
+/// died once, an informed player must have something to do about it. Determinism
+/// guarantees the second attempt meets the same ambushers in the same cells; the
+/// compiler adds the missing half — `DW0376` proves the trigger cell is not a
+/// sealed pocket, i.e. that with every ambusher standing where it will stand,
+/// a route out still exists (a retreat, luring ground, a positioning line).
+/// Dying uninformed is a lesson; dying with no play available is a broken beat.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Ambush {
+    /// Unique ambush id (`ambush/<kebab>`).
+    pub id: AmbushId,
+    /// The anchor the trigger watches — the corner, doorway or ledge the player
+    /// walks into.
+    pub at: AnchorId,
+    /// The stage-5 actors that spring (1..N). Each is summoned at its own
+    /// declared anchor and immediately unleashed to real AI.
+    pub actors: Vec<ActorId>,
+    /// What springs it (`approach{range}` / `strike` / `use`), exactly the v0.4
+    /// environment-trigger vocabulary.
+    pub trigger: TriggerOn,
+    /// The **optional** tell, fired at the trigger before the ambushers exist:
+    /// a sound, a shadow, a line of narration. Empty = un-telegraphed, which is
+    /// fully legal (owner ruling 2026-08-02).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub telegraph: Vec<QuestEffect>,
+}
+
+impl Ambush {
+    /// The environment trigger this ambush desugars to (spec-0016 §3): a
+    /// one-shot trigger at `at` whose effects are the telegraph, then a
+    /// `spawn-actor` + `unleash-actor` per listed actor, in declared order.
+    ///
+    /// This is the **single** expansion authority. Every consumer — validation,
+    /// the l10n inventory, the flag/wave producer scans, nav, emission — reads
+    /// triggers through [`QuestsContent::all_triggers`], so the sugar cannot
+    /// diverge from a hand-written equivalent, and an ambush is exactly as
+    /// debuggable as the trigger an author would otherwise type.
+    pub fn to_trigger(&self) -> EnvTrigger {
+        let mut effects = self.telegraph.clone();
+        for a in &self.actors {
+            effects.push(QuestEffect::SpawnActor { actor: a.clone() });
+        }
+        for a in &self.actors {
+            effects.push(QuestEffect::UnleashActor { actor: a.clone() });
+        }
+        EnvTrigger {
+            id: TriggerId(format!(
+                "trigger/{}",
+                crate::l10n::local_id(self.id.as_str())
+            )),
+            at: self.at.clone(),
+            on: self.trigger.clone(),
+            requires_flags: Vec::new(),
+            forbids_flags: Vec::new(),
+            once: true,
+            effects,
+        }
+    }
 }
 
 /// A stage-5 **shortcut door** (spec-0016 §2) — the souls loop-back.
