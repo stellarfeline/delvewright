@@ -14,6 +14,10 @@
 //! - [`waypoints`]: export the DW0311-proven critical-path routes as validation
 //!   metadata (`validation/critical-path-waypoints.json`) for leg-by-leg bot nav.
 //! - [`creator`]: the playtest-only creator overlay (`creator-datapack/`, spec-0006).
+//! - [`png`]: the deterministic hand-rolled PNG writer shared by the `delve:art`
+//!   font atlas and the visual-authoring-loop renders.
+//! - [`snapshot`]: `delvec snapshot` — the voxel raycaster + scene manifest that
+//!   let an authoring agent look at its own build (spec-0015).
 
 pub mod analyze;
 pub mod assembled;
@@ -26,9 +30,11 @@ pub mod light;
 pub mod load;
 pub mod nav;
 pub mod plan;
+pub mod png;
 pub mod registry;
 pub mod render_plan;
 pub mod resourcepack;
+pub mod snapshot;
 pub mod solver;
 pub mod textfit;
 pub mod waypoints;
