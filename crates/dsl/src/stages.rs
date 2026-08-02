@@ -84,6 +84,36 @@ pub struct WorldContent {
     /// "You left the keep." on *every* delve, whatever its theme or language.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outro: Option<String>,
+    /// The party size this delve **requires** (DSL v0.6, spec-0018). Absent = 1: a
+    /// party of one is always legal and every pre-0.6 campaign keeps that reading.
+    /// A design whose beats genuinely need `n` players — two rooms whose switches
+    /// are two arms of one AND-join — declares `min_players: n` (max 4), and the
+    /// lobby then refuses to start below it: the class-selection dialog stays shut
+    /// and the waiting players get a party-count actionbar instead.
+    ///
+    /// Progression is party state either way (spec-0018), so this is a *declaration
+    /// of intent*, not a mechanism: it makes a mandatory-n design first-class
+    /// (owner amendment 2026-08-02) and turns on the analyzer's n-agent division
+    /// proof. Out of `1..=4` is `DW0370`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_players: Option<u8>,
+}
+
+/// Who a granted item goes to (DSL v0.6, spec-0018).
+///
+/// Progression is a fact about the party, so the default for every `give-item` and
+/// every class-kit entry is **all**: a quest beat that arms the party arms all of
+/// it. `one` is the deliberate exception for a single quest prop (the wine-skin,
+/// the stake): exactly one copy enters the party, handed to the player whose action
+/// earned it, and the party passes it around physically.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Carrier {
+    /// Every party member receives the item (the default).
+    #[default]
+    All,
+    /// Exactly one copy, to the player whose action fired the effect.
+    One,
 }
 
 /// A declared world time state (DSL v0.5, spec-0010). Values are the vanilla
@@ -695,6 +725,12 @@ pub struct KitItem {
     /// Optional display name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Who gets it (DSL v0.6, spec-0018). Absent = [`Carrier::All`]. A class kit is
+    /// per-player gear by construction — every player who picks the class gets the
+    /// kit — so `carrier` here marks a **party-unique** kit item: exactly one copy
+    /// enters the party, given to the first player to pick this class.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub carrier: Option<Carrier>,
 }
 
 // ---------------------------------------------------------------------------
@@ -934,11 +970,11 @@ pub struct TrapDisarm {
 ///
 /// The compiler owns three obligations, none of them optional:
 /// 1. the `unlock` affordance is reachable while the gate is still sealed — the
-///    long route genuinely exists (`DW0359`);
+///    long route genuinely exists (`DW0373`);
 /// 2. opening the gate genuinely shortens the trip across it — a shortcut that
 ///    pays nothing is a leak, not a shortcut (`DW0360`);
 /// 3. permanence is **structural**: no `close-gate` may target a shortcut gate
-///    (`DW0358`). There is no re-sealing verb to reach for.
+///    (`DW0372`). There is no re-sealing verb to reach for.
 ///
 /// `close-gate` on a NON-shortcut gate (the point-of-no-return staging beat) is
 /// untouched by this — the two verbs are deliberately disjoint.
@@ -1043,7 +1079,7 @@ pub struct Wave {
     /// authored composition and spawn cells.
     ///
     /// Inert without a `bonfire` in the campaign, which is a compile error
-    /// (`DW0356`) rather than a silent no-op.
+    /// (`DW0370`) rather than a silent no-op.
     #[serde(default, skip_serializing_if = "is_false")]
     pub respawns_on_rest: bool,
 }
@@ -1649,7 +1685,7 @@ pub enum QuestEffect {
     /// flag-gatable (gating the campaign's own completion is a deadlock footgun),
     /// so this variant carries no `requires_flags`.
     CampaignComplete,
-    /// Gives the player an item (v0.3).
+    /// Gives the party an item (v0.3; party-wide since v0.6/spec-0018).
     GiveItem {
         /// Vanilla item id to give (validated against the registry).
         item: String,
@@ -1658,6 +1694,12 @@ pub enum QuestEffect {
         /// Optional display name (DSL v0.4), matching [`KitItem::name`].
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
+        /// Who receives it (DSL v0.6, spec-0018). Absent = [`Carrier::All`] — every
+        /// party member. `one` hands a single copy to the player whose action fired
+        /// the effect; it is rejected in a scheduler-only bundle (`DW0371`), which
+        /// has no acting player.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        carrier: Option<Carrier>,
         /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
@@ -2068,6 +2110,7 @@ impl std::fmt::Debug for QuestEffect {
                 item,
                 count,
                 name,
+                carrier,
                 requires_flags,
                 forbids_flags,
             } => ff(
@@ -2075,6 +2118,7 @@ impl std::fmt::Debug for QuestEffect {
                     .field("item", item)
                     .field("count", count)
                     .field("name", name)
+                    .field("carrier", carrier)
                     .field("requires_flags", requires_flags),
                 forbids_flags,
             )
@@ -2553,53 +2597,77 @@ impl ShotStyle {
 /// **plus one block up** (torso height, so a close shot does not frame feet)
 /// before `offset` is applied; an `anchor` subject aims at the block centre
 /// exactly like a [`CameraTarget`].
+/// Each variant's payload is a **named struct** carrying `deny_unknown_fields`
+/// (task #78). Serde has no variant-level `deny_unknown_fields`, so an untagged
+/// enum with inline struct variants silently *ignores* any key it does not
+/// recognise: `{"npc": …, "ofset": [0,1,0]}` deserialized happily with the offset
+/// dropped, and `{"anchor": …, "npc": …}` quietly matched `Anchor` and discarded
+/// the NPC. Lifting each variant into its own type restores the repo-wide
+/// deny-unknown rule for both serde and the published JSON Schema
+/// (`additionalProperties: false`): a mistyped shot subject now fails the schema
+/// instead of rendering a shot pointed somewhere the author never asked for.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum CameraSubject {
     /// A fixed world point: prefab anchor + offset.
-    Anchor {
-        /// The anchor the subject sits at.
-        anchor: AnchorId,
-        /// Integer `[x, y, z]` block offset (default `[0, 0, 0]`).
-        #[serde(default, skip_serializing_if = "is_zero3")]
-        offset: [i32; 3],
-    },
+    Anchor(AnchorSubject),
     /// A stage-2 NPC — moving if a `move-npc` for it runs in the same effect
     /// group / sequence, else static at its declared (or spawn) anchor.
-    Npc {
-        /// The NPC (stage-2 ref).
-        npc: NpcId,
-        /// Integer `[x, y, z]` block offset (default `[0, 0, 0]`).
-        #[serde(default, skip_serializing_if = "is_zero3")]
-        offset: [i32; 3],
-    },
+    Npc(NpcSubject),
     /// A stage-5 actor — moving if a `move-actor` for it runs in the same
     /// effect group / sequence, else static at its declared anchor.
-    Actor {
-        /// The actor (stage-5 `actors` ref).
-        actor: ActorId,
-        /// Integer `[x, y, z]` block offset (default `[0, 0, 0]`).
-        #[serde(default, skip_serializing_if = "is_zero3")]
-        offset: [i32; 3],
-    },
+    Actor(ActorSubject),
+}
+
+/// A [`CameraSubject::Anchor`] payload: a fixed world point.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AnchorSubject {
+    /// The anchor the subject sits at.
+    pub anchor: AnchorId,
+    /// Integer `[x, y, z]` block offset (default `[0, 0, 0]`).
+    #[serde(default, skip_serializing_if = "is_zero3")]
+    pub offset: [i32; 3],
+}
+
+/// A [`CameraSubject::Npc`] payload: a stage-2 NPC.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NpcSubject {
+    /// The NPC (stage-2 ref).
+    pub npc: NpcId,
+    /// Integer `[x, y, z]` block offset (default `[0, 0, 0]`).
+    #[serde(default, skip_serializing_if = "is_zero3")]
+    pub offset: [i32; 3],
+}
+
+/// A [`CameraSubject::Actor`] payload: a stage-5 actor.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ActorSubject {
+    /// The actor (stage-5 `actors` ref).
+    pub actor: ActorId,
+    /// Integer `[x, y, z]` block offset (default `[0, 0, 0]`).
+    #[serde(default, skip_serializing_if = "is_zero3")]
+    pub offset: [i32; 3],
 }
 
 impl CameraSubject {
     /// The subject's integer offset, whichever variant.
     pub fn offset(&self) -> [i32; 3] {
         match self {
-            CameraSubject::Anchor { offset, .. }
-            | CameraSubject::Npc { offset, .. }
-            | CameraSubject::Actor { offset, .. } => *offset,
+            CameraSubject::Anchor(s) => s.offset,
+            CameraSubject::Npc(s) => s.offset,
+            CameraSubject::Actor(s) => s.offset,
         }
     }
 
     /// A short canonical rendering for digests/diagnostics.
     pub fn canon(&self) -> String {
         let (kind, id, o) = match self {
-            CameraSubject::Anchor { anchor, offset } => ("a", anchor.as_str(), offset),
-            CameraSubject::Npc { npc, offset } => ("n", npc.as_str(), offset),
-            CameraSubject::Actor { actor, offset } => ("c", actor.as_str(), offset),
+            CameraSubject::Anchor(s) => ("a", s.anchor.as_str(), &s.offset),
+            CameraSubject::Npc(s) => ("n", s.npc.as_str(), &s.offset),
+            CameraSubject::Actor(s) => ("c", s.actor.as_str(), &s.offset),
         };
         format!("{kind}:{id}@{},{},{}", o[0], o[1], o[2])
     }
@@ -2749,6 +2817,23 @@ impl QuestEffect {
     /// `true` if this is a `give-item` carrying a v0.4 display `name`.
     pub fn give_item_named(&self) -> bool {
         matches!(self, QuestEffect::GiveItem { name: Some(_), .. })
+    }
+
+    /// The declared `carrier` if this is a `give-item` that states one (v0.6,
+    /// spec-0018). `None` for any other effect **and** for a `give-item` that
+    /// leaves it absent — absent reads as [`Carrier::All`], and the distinction
+    /// matters only for the pre-0.6 reserved-field gate.
+    pub fn give_carrier(&self) -> Option<Carrier> {
+        match self {
+            QuestEffect::GiveItem { carrier, .. } => *carrier,
+            _ => None,
+        }
+    }
+
+    /// Does this `give-item` hand a single copy to the acting player (v0.6,
+    /// spec-0018)? `false` for every other effect and for the party-wide default.
+    pub fn gives_to_one(&self) -> bool {
+        matches!(self.give_carrier(), Some(Carrier::One))
     }
 
     /// The `set-block` block id if this is a v0.4 `set-block` effect.
@@ -3070,8 +3155,8 @@ impl QuestEffect {
                 out.push((format!("{base}look_at/anchor"), &t.anchor));
             }
             for (field, subject) in [("subject", &shot.subject), ("subject_b", &shot.subject_b)] {
-                if let Some(CameraSubject::Anchor { anchor, .. }) = subject {
-                    out.push((format!("{base}{field}/anchor"), anchor));
+                if let Some(CameraSubject::Anchor(s)) = subject {
+                    out.push((format!("{base}{field}/anchor"), &s.anchor));
                 }
             }
             out

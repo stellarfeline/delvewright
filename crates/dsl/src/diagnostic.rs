@@ -145,7 +145,7 @@ pub mod codes {
     /// declares no `bonfire` — nothing can ever re-seat it, so the field is a
     /// silent no-op. Either add the bonfire the re-seat is meant to hang off, or
     /// drop the field.
-    pub const REST_RESEAT_NO_BONFIRE: &str = "DW0356";
+    pub const REST_RESEAT_NO_BONFIRE: &str = "DW0370";
     /// (v0.3) A wave mob `entity` is not a known vanilla entity id. (Item-id
     /// checks for `collect.item`, `interact.requires_item` and `give-item.item`
     /// reuse [`ITEM_UNKNOWN`] / `DW0143`.)
@@ -230,12 +230,12 @@ pub mod codes {
     /// malformed or duplicate `shortcut/<id>`, a `gate`/`unlock` anchor no area's
     /// prefab provides, or a `gate` that IS the `unlock` (the mechanism must sit
     /// on the far side, not in the doorway).
-    pub const SHORTCUT_INVALID: &str = "DW0357";
+    pub const SHORTCUT_INVALID: &str = "DW0371";
     /// (spec-0016 §2) A `close-gate` effect targets a gate a `shortcut` owns.
     /// A shortcut opens **permanently** — that is the whole pattern — so its
     /// permanence is structural: there is no verb that can put it back. Use a
     /// different gate for the point-of-no-return beat.
-    pub const SHORTCUT_RESEALED: &str = "DW0358";
+    pub const SHORTCUT_RESEALED: &str = "DW0372";
     /// (v0.6) A trap dispense-payload item id is not in the pinned 1.21.11 registry
     /// (spec-0011; mirrors `DW0143`). Validation-tier (exit 1). Renumbered off the
     /// spec's stale reserved number (0198 — since taken).
@@ -266,4 +266,17 @@ pub mod codes {
     /// the trigger's tag on the NPC's own hitbox instead of summoning a second
     /// one. Validation-tier (exit 1).
     pub const USE_TRIGGER_ON_NPC: &str = "DW0350";
+
+    /// (v0.6, spec-0018) `world.min_players` outside the `1..=4` range. A delve is
+    /// played by ONE party of 1–4 (ADR/CLAUDE.md product definition), so a declared
+    /// mandatory party size can never sit outside it. Validation-tier (exit 1).
+    pub const PARTY_SIZE: &str = "DW0356";
+    /// (v0.6, spec-0018) A `carrier: "one"` `give-item` sits in a bundle that is
+    /// only ever reached from the **scheduler** (`move-npc`/`move-actor`
+    /// `on_arrive`, a `sequence` step). `carrier: "one"` means "hand this single
+    /// quest prop to the player whose action earned it"; a scheduled bundle runs
+    /// with the server command source and has no acting player, so there is no
+    /// defensible recipient. Give it to the whole party (drop `carrier`), or move
+    /// the hand-off onto the beat that a player completes. Validation-tier (exit 1).
+    pub const PARTY_CARRIER_SCHEDULED: &str = "DW0357";
 }

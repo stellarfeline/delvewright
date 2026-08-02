@@ -39,6 +39,16 @@
 //! | `DW0203` | Objective can never be completed (deadlock — e.g. an `after` chain that can't be satisfied). |
 //! | `DW0204` | The exported critical path is not a coherent single-branch playthrough. |
 //! | `DW0210`/`DW0211` | Assembled-light gate — see [`crate::light`]. |
+//! | `DW0358` | A declared `min_players: n` (n ≥ 2) has no n-agent division of labour. |
+//!
+//! ## Party size (spec-0018)
+//!
+//! Completability is proven with **`min_players` agents**. For the default
+//! `min_players: 1` that is exactly the proof above — a party of one is legal,
+//! and every pre-spec-0018 campaign keeps its verdict byte-for-byte. For a
+//! declared mandatory-n design the same playthrough is additionally required to
+//! contain an AND-join the party can actually split n ways
+//! ([`crate::flow::Flow::divide`]).
 
 use delvewright_dsl::{AnchorRegistry, Campaign, Diagnostic, Objective};
 
@@ -54,6 +64,8 @@ pub mod codes {
     pub const OBJECTIVE_DEADLOCK: &str = "DW0203";
     /// The exported critical path is not a walkable playthrough.
     pub const PATH_INCOHERENT: &str = crate::flow::DW_PATH_INCOHERENT;
+    /// A declared `min_players: n` has no n-agent division of labour (spec-0018).
+    pub const PARTY_UNDIVIDABLE: &str = "DW0358";
     // DW0210 (dark-area mitigation) moved to `crate::light` (spec-0010): it is now
     // measured over the assembled world, not a per-piece admission profile.
 }
@@ -148,6 +160,21 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
                 "/content/quests".to_string(),
                 f.message(),
             ));
+        } else {
+            // DW0358 (spec-0018): completability is proven with `min_players`
+            // agents. n = 1 is the single-agent proof just made; n >= 2 must also
+            // admit a real division of labour on that same playthrough.
+            let n = crate::plan::min_players(c) as usize;
+            if n >= 2
+                && let Err(f) = flow.divide(&path, n)
+            {
+                diags.push(Diagnostic::error(
+                    codes::PARTY_UNDIVIDABLE,
+                    "world",
+                    "/content/min_players".to_string(),
+                    f.message(),
+                ));
+            }
         }
     }
 

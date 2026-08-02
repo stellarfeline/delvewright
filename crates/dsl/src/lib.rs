@@ -44,7 +44,7 @@ pub use registry::{
 pub use schema::stage_schema;
 pub use stages::{
     Actor, Area, AreaLighting, AreaMitigation, Boundary, CameraShot, CameraSubject, CameraTarget,
-    CameraWaypoint, Class, ClassesContent, DamageKind, DespawnStyle, DialogueContent,
+    CameraWaypoint, Carrier, Class, ClassesContent, DamageKind, DespawnStyle, DialogueContent,
     DialogueEffect, DialogueNode, DialogueOption, EnvTrigger, Facing, Fixture, Horizon, KitItem,
     Lethality, MobAttributes, MobEffect, MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin,
     NpcsContent, Objective, Persona, Pieces, PlannedQuest, Prop, Quest, QuestEffect,

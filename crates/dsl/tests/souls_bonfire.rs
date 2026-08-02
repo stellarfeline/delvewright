@@ -6,7 +6,7 @@
 //! resolves like every other effect anchor (`DW0142`); its `on_rest` bundle is a
 //! first-class nested effect list (l10n inventory, deep consumer checks); and a
 //! wave declaring `respawns_on_rest` with no bonfire to fire it is a **loud**
-//! defect (`DW0356`), never a silent no-op.
+//! defect (`DW0370`), never a silent no-op.
 
 mod common;
 
@@ -100,7 +100,7 @@ fn bonfire_unknown_anchor_is_dw0142() {
 }
 
 /// A wave declaring `respawns_on_rest` in a campaign with no `bonfire` is inert
-/// — nothing could ever re-seat it. That is `DW0356`, not a silent no-op.
+/// — nothing could ever re-seat it. That is `DW0370`, not a silent no-op.
 #[test]
 fn respawns_on_rest_without_a_bonfire_is_dw0356() {
     let no_bonfire = QUESTS_V06
@@ -109,8 +109,8 @@ fn respawns_on_rest_without_a_bonfire_is_dw0356() {
     assert_ne!(no_bonfire, QUESTS_V06, "the substitution must apply");
     let diags = check_campaign(&campaign_with_quests(&no_bonfire));
     assert!(
-        diags.iter().any(|d| d.code == "DW0356"),
-        "an unreachable respawns_on_rest must be DW0356: {diags:#?}"
+        diags.iter().any(|d| d.code == "DW0370"),
+        "an unreachable respawns_on_rest must be DW0370: {diags:#?}"
     );
 }
 

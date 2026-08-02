@@ -136,12 +136,17 @@ fn move_npc_on_arrive_fires_on_final_waypoint_tick() {
     let out = built();
     let arrive = file(&out, &format!("{FN_DIR}/mv_arrive_keeper_exit.mcfunction"));
     // The arrive bundle is reached ONLY through `schedule` (the walk driver), so
-    // the set-flag must re-bind the party itself — a bare `@s` here has no
-    // executor to resolve against and silently sets nobody's flag (AUDIT-P0; the
-    // full invariant lives in `tests/scheduled_executor.rs`).
+    // it may name no `@s` at all — that executor does not exist (AUDIT-P0; the
+    // full invariant lives in `tests/scheduled_executor.rs`). Under party
+    // progression (spec-0018) the set-flag needs no executor: it writes the party
+    // holder, which is immune to the seam by construction.
     assert!(
-        arrive.contains("execute as @a run scoreboard players set @s dw.f_arrived 1"),
-        "the on_arrive set-flag must be emitted per-player in the arrive bundle: {arrive}"
+        arrive.contains("scoreboard players set #party dw.f_arrived 1"),
+        "the on_arrive set-flag must write the party holder in the arrive bundle: {arrive}"
+    );
+    assert!(
+        !arrive.contains("@s"),
+        "a scheduled bundle may not address `@s`: {arrive}"
     );
     let tick = file(&out, &format!("{FN_DIR}/mv_tick_keeper_exit.mcfunction"));
     assert!(
@@ -184,25 +189,25 @@ fn move_npc_on_arrive_fires_on_final_waypoint_tick() {
     );
 }
 
-/// A `forbids_flags`-gated effect is wrapped in per-player `unless score`
-/// guards (unset-safe: an unset score counts as "not set").
+/// A `forbids_flags`-gated effect is wrapped in a **party** `unless score` guard
+/// (spec-0018; unset-safe: an unset score counts as "not set").
 #[test]
 fn forbids_gated_effect_emits_unless_score_guard() {
     let out = built();
     let complete = file(&out, &format!("{FN_DIR}/complete_o_talk.mcfunction"));
     assert!(
-        complete
-            .lines()
-            .any(|l| l.starts_with("execute unless score @s dw.f_blocked matches 1 run tellraw")),
-        "the forbids-gated narrate must be guarded `unless score @s dw.f_blocked matches 1`: {complete}"
+        complete.lines().any(
+            |l| l.starts_with("execute unless score #party dw.f_blocked matches 1 run tellraw")
+        ),
+        "the forbids-gated narrate must be guarded `unless score #party dw.f_blocked matches 1`: {complete}"
     );
 }
 
-/// A trigger-level `forbids_flags` suppresses the fire condition while ANY
-/// player holds the flag: `unless entity @a[scores={…=1..}]` — a positive
-/// selector inside a negation, so unset scores never suppress.
+/// A trigger-level `forbids_flags` suppresses the fire condition while the PARTY
+/// holds the flag (spec-0018): `unless score #party dw.f_<flag> matches 1` —
+/// unset-safe, and it no longer depends on which player happens to be online.
 #[test]
-fn forbids_gated_trigger_emits_unless_entity_condition() {
+fn forbids_gated_trigger_emits_unless_party_score() {
     let out = built();
     let tick = file(&out, &format!("{FN_DIR}/tick.mcfunction"));
     let fire = tick
@@ -210,12 +215,17 @@ fn forbids_gated_trigger_emits_unless_entity_condition() {
         .find(|l| l.contains("run function hello-world:trig_retaliate"))
         .expect("trigger fire condition emitted");
     assert!(
-        fire.contains("unless entity @a[scores={dw.f_blocked=1..}]"),
-        "trigger arming must carry the any-player forbid guard: {fire}"
+        fire.contains("unless score #party dw.f_blocked matches 1"),
+        "trigger arming must carry the party forbid guard: {fire}"
     );
     assert!(
-        fire.contains("dw.f_arrived=1.."),
+        fire.contains("if score #party dw.f_arrived matches 1"),
         "the requires gate stays on the same condition: {fire}"
+    );
+    // The proximity test stays per-player: SOME member walking in fires it.
+    assert!(
+        fire.contains("if entity @a[distance="),
+        "the approach test is still a player position test: {fire}"
     );
 }
 
@@ -226,9 +236,8 @@ fn forbids_gated_objective_pending_guard_has_unless() {
     let out = built();
     let tick = file(&out, &format!("{FN_DIR}/tick.mcfunction"));
     assert!(
-        tick.lines()
-            .any(|l| l.contains("dw.i_lever")
-                && l.contains("unless score @s dw.f_blocked matches 1")),
+        tick.lines().any(|l| l.contains("dw.i_lever")
+            && l.contains("unless score #party dw.f_blocked matches 1")),
         "the interact objective's tick guard must carry the forbid clause: {tick}"
     );
 }
@@ -242,7 +251,7 @@ fn forbids_gated_dialogue_option_handler_fails_fast() {
         .iter()
         .filter(|(p, _)| p.contains("/function/dlg_keeper_"))
         .map(|(_, b)| String::from_utf8(b.clone()).unwrap())
-        .find(|s| s.contains("execute if score @s dw.f_blocked matches 1 run return fail"));
+        .find(|s| s.contains("execute if score #party dw.f_blocked matches 1 run return fail"));
     assert!(
         gated.is_some(),
         "some dlg_keeper_<n> handler must fail fast on the forbidden flag"
@@ -269,14 +278,14 @@ fn verb_forbid_gate_packtest_emitted() {
         .find("dw.f_blocked 1")
         .expect("suppression phase sets the flag");
     let suppressed = test
-        .find("assert score @a[tag=dw_fbdtest,limit=1] dw.o_lever matches 0")
+        .find("assert score #party dw.o_lever matches 0")
         .expect("suppressed assert present");
     let clear = test[set..]
         .find("dw.f_blocked 0")
         .map(|i| set + i)
         .expect("release phase clears the flag");
     let completed = test
-        .rfind("assert score @a[tag=dw_fbdtest,limit=1] dw.o_lever matches 1")
+        .rfind("assert score #party dw.o_lever matches 1")
         .expect("completed assert present");
     assert!(
         set < suppressed && suppressed < clear && clear < completed,

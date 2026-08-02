@@ -2,10 +2,10 @@
 //!
 //! A shortcut is the souls loop-back: a gate sealed from world-load that a
 //! far-side mechanism opens **permanently**. The DSL layer owns two of the
-//! pattern's three obligations — the declaration must resolve (`DW0357`), and
-//! nothing may re-seal it (`DW0358`). The third (the long route actually exists
+//! pattern's three obligations — the declaration must resolve (`DW0371`), and
+//! nothing may re-seal it (`DW0372`). The third (the long route actually exists
 //! and opening the gate pays) is geometric and lives in the compiler's nav proofs
-//! (`DW0359`/`DW0364`).
+//! (`DW0373`/`DW0374`).
 
 mod common;
 
@@ -69,21 +69,21 @@ fn shortcuts_reserved_before_0_6() {
     );
 }
 
-/// A malformed shortcut id is `DW0357`.
+/// A malformed shortcut id is `DW0371`.
 #[test]
-fn malformed_shortcut_id_is_dw0357() {
+fn malformed_shortcut_id_is_dw0371() {
     let bad = QUESTS_V06.replace("\"shortcut/inner-door\"", "\"Inner Door\"");
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
-        diags.iter().any(|d| d.code == "DW0357"),
-        "a malformed shortcut id must be DW0357: {diags:#?}"
+        diags.iter().any(|d| d.code == "DW0371"),
+        "a malformed shortcut id must be DW0371: {diags:#?}"
     );
 }
 
-/// A `gate`/`unlock` anchor no prefab exposes is `DW0357` — a shortcut the
+/// A `gate`/`unlock` anchor no prefab exposes is `DW0371` — a shortcut the
 /// compiler cannot place is never silently dropped.
 #[test]
-fn invented_shortcut_anchor_is_dw0357() {
+fn invented_shortcut_anchor_is_dw0371() {
     let bad = QUESTS_V06.replace(
         "\"unlock\": \"anchor/exit\"",
         "\"unlock\": \"anchor/invented\"",
@@ -93,27 +93,27 @@ fn invented_shortcut_anchor_is_dw0357() {
     assert!(
         diags
             .iter()
-            .any(|d| d.code == "DW0357" && d.path.ends_with("/unlock")),
-        "an invented unlock anchor must be DW0357: {diags:#?}"
+            .any(|d| d.code == "DW0371" && d.path.ends_with("/unlock")),
+        "an invented unlock anchor must be DW0371: {diags:#?}"
     );
 }
 
 /// The mechanism must sit on the far side, not in the doorway it opens: an
-/// `unlock` equal to the `gate` is `DW0357`.
+/// `unlock` equal to the `gate` is `DW0371`.
 #[test]
-fn unlock_on_its_own_gate_is_dw0357() {
+fn unlock_on_its_own_gate_is_dw0371() {
     let bad = QUESTS_V06.replace("\"unlock\": \"anchor/exit\"", "\"unlock\": \"anchor/door\"");
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
-        diags.iter().any(|d| d.code == "DW0357"),
-        "an unlock on its own gate anchor must be DW0357: {diags:#?}"
+        diags.iter().any(|d| d.code == "DW0371"),
+        "an unlock on its own gate anchor must be DW0371: {diags:#?}"
     );
 }
 
 /// Permanence is structural: a `close-gate` anywhere — including one buried in a
-/// nested timeline — that targets a shortcut gate is `DW0358`.
+/// nested timeline — that targets a shortcut gate is `DW0372`.
 #[test]
-fn close_gate_on_a_shortcut_gate_is_dw0358() {
+fn close_gate_on_a_shortcut_gate_is_dw0372() {
     let bad = QUESTS_V06.replace(
         "\"on_objective_complete\": { \"obj/talk\": [] }",
         "\"on_objective_complete\": { \"obj/talk\": [ { \"type\": \"sequence\", \"steps\": [ { \"at_ticks\": 10, \"effects\": [ { \"type\": \"close-gate\", \"anchor\": \"anchor/door\" } ] } ] } ] }",
@@ -121,8 +121,8 @@ fn close_gate_on_a_shortcut_gate_is_dw0358() {
     assert_ne!(bad, QUESTS_V06);
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
-        diags.iter().any(|d| d.code == "DW0358"),
-        "re-sealing a shortcut gate must be DW0358: {diags:#?}"
+        diags.iter().any(|d| d.code == "DW0372"),
+        "re-sealing a shortcut gate must be DW0372: {diags:#?}"
     );
 }
 
@@ -141,7 +141,7 @@ fn close_gate_on_an_unowned_gate_is_still_legal() {
         );
     let diags = check_campaign(&campaign_with_quests(&no_shortcut));
     assert!(
-        !diags.iter().any(|d| d.code == "DW0358"),
-        "close-gate without a shortcut on that anchor must not trip DW0358: {diags:#?}"
+        !diags.iter().any(|d| d.code == "DW0372"),
+        "close-gate without a shortcut on that anchor must not trip DW0372: {diags:#?}"
     );
 }

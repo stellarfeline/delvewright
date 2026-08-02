@@ -3,7 +3,7 @@
 //! objective reward into a `shortcut`, plus a stage-7 `carve` that opens the LONG
 //! way round through the same wall. That carve is what makes the fixture a real
 //! souls loop rather than a locked door — and a clean build is exactly the
-//! DW0359 (long route exists) + DW0364 (opening it pays) proof.
+//! DW0373 (long route exists) + DW0374 (opening it pays) proof.
 
 mod common;
 
@@ -51,7 +51,7 @@ fn build_fixture() -> BuildOutput {
         "unpinned",
         &BTreeMap::new(),
     )
-    .expect("every emitted command validates (DW0359/DW0364 hold on the fixture)")
+    .expect("every emitted command validates (DW0373/DW0374 hold on the fixture)")
 }
 
 fn fn_body<'a>(out: &'a BuildOutput, name: &str) -> &'a str {
@@ -106,7 +106,7 @@ fn unlock_clears_the_gate_once_and_forever() {
 }
 
 /// Nothing anywhere in the shipped datapack ever re-fills a shortcut gate. This is
-/// the emission-side counterpart of `DW0358`: the validator forbids authoring the
+/// the emission-side counterpart of `DW0372`: the validator forbids authoring the
 /// re-seal, and this asserts the compiler never emits one on its own.
 #[test]
 fn no_emitted_function_ever_reseals_the_shortcut_gate() {
@@ -130,15 +130,21 @@ fn no_emitted_function_ever_reseals_the_shortcut_gate() {
     }
 }
 
-/// The `on_unlock` beat rides the same server-executor contract as every other
-/// scheduled/tick-dispatched bundle: a per-player effect re-binds to the party.
+/// The `on_unlock` beat rides the same audience contract as every other
+/// tick-dispatched bundle (spec-0018): the poll has no `@s`, so a player-facing
+/// effect addresses the party rather than a nonexistent actor. Opening a shortcut
+/// is a party fact — everyone's route just changed.
 #[test]
 fn on_unlock_reaches_the_party() {
     let out = build_fixture();
     let open = fn_body(&out, "shortcut_open_inner_door");
     assert!(
-        open.contains("execute as @a run title @s subtitle"),
+        open.contains("title @a subtitle"),
         "the on_unlock narrate addresses every player, not a nonexistent @s: {open}"
+    );
+    assert!(
+        !open.contains("@s"),
+        "nothing in a tick-dispatched bundle may address @s: {open}"
     );
 }
 
