@@ -263,6 +263,15 @@ pub fn build_with_warnings(
     // empty for a campaign with no walked leg, so its render plan stays byte-identical.
     let mut pov_shots: Vec<crate::render_plan::PovShot> = Vec::new();
 
+    // Every anchor-bearing effect, at every nesting depth, must resolve to a real
+    // world position or the build stops (DW0360). This runs FIRST among the
+    // referential proofs deliberately: emission fails open on an unresolved anchor
+    // (it emits nothing) and the geometry proofs downstream fail *loudly but
+    // wrongly* — an unresolved cutscene waypoint degrades to the world origin and
+    // is then reported as a camera clipping a wall (DW0308), which sends the author
+    // to move a shot that was never the problem. Name the root cause instead.
+    check_effect_anchors(plan)?;
+
     // Actor spawn anchors must resolve to a world position (spec-0014); a spawn is a
     // summon, not a walk, so this needs no occupancy model. DW0325 if one dangles.
     crate::nav::check_actor_placement(plan)?;
@@ -2104,6 +2113,99 @@ fn wave_spawn_pos(plan: &Plan, wave_id: &str) -> Option<[i32; 3]> {
     let w = plan::wave_of(c, wave_id)?;
     let area = plan::wave_area(c, wave_id)?;
     plan.point(area, w.anchor.as_str())
+}
+
+/// `DW0360`: an anchor-bearing quest/trigger effect names an anchor that resolves
+/// to no world position in the assembled build. Validation-tier content mistake
+/// (a typo'd or unassembled anchor), reported as a build diagnostic because only
+/// the assembled world knows which anchors actually exist.
+pub const DW_EFFECT_ANCHOR_UNRESOLVED: &str = "DW0360";
+
+/// Fail the build if any quest/trigger effect — **at any nesting depth** — names an
+/// anchor that resolves to no world position (`DW0360`). This is the single
+/// resolved-anchor-or-diagnostic seal over the whole anchor-bearing effect surface
+/// ([`QuestEffect::anchor_refs`], the nesting-aware sibling of
+/// [`QuestEffect::nested_effect_lists`]).
+///
+/// It exists because every anchor consumer in [`emit_quest_effect`] fails *open*:
+/// `open-gate`/`close-gate` scan `plan.anchors` for a name match and simply fall
+/// out of the loop, `set-block`/`set-checkpoint`/`play-sound`/`damage-players`
+/// bail out of an `if let Some(pos)`, and a cutscene waypoint silently degrades to
+/// `[0, BASE_Y, 0]`. A single typo'd anchor therefore used to emit **nothing** —
+/// a gate that never opens, a checkpoint that never binds — and shipped a broken
+/// delve into the owner's one QA hour. `DW0142` catches what it can at DSL time,
+/// but it only sees an area's declared anchor set (pool areas and cross-area
+/// camera anchors are deferred to here), so this is the backstop that makes the
+/// rule total.
+fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
+    let c = plan.campaign;
+    // (json pointer, effect verb, anchor) for every anchor reference in the
+    // campaign, deep, in deterministic content order.
+    let mut refs: Vec<(String, &'static str, String)> = Vec::new();
+    let collect = |base: String, eff: &QuestEffect, refs: &mut Vec<_>| {
+        fn descend(
+            path: String,
+            eff: &QuestEffect,
+            refs: &mut Vec<(String, &'static str, String)>,
+        ) {
+            for (suffix, anchor) in eff.anchor_refs() {
+                refs.push((
+                    format!("{path}/{suffix}"),
+                    eff.verb(),
+                    anchor.as_str().to_string(),
+                ));
+            }
+            for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+                for (j, inner) in list.iter().enumerate() {
+                    descend(format!("{path}/{pseg}/{j}"), inner, refs);
+                }
+            }
+        }
+        descend(base, eff, refs);
+    };
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oid, effs) in &q.on_objective_complete {
+            for (i, eff) in effs.iter().enumerate() {
+                let base = format!(
+                    "/content/quests/{qi}/on_objective_complete/{}/{i}",
+                    oid.as_str()
+                );
+                collect(base, eff, &mut refs);
+            }
+        }
+        for (i, eff) in q.on_complete.iter().enumerate() {
+            collect(
+                format!("/content/quests/{qi}/on_complete/{i}"),
+                eff,
+                &mut refs,
+            );
+        }
+    }
+    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
+        for (i, eff) in t.effects.iter().enumerate() {
+            collect(
+                format!("/content/triggers/{ti}/effects/{i}"),
+                eff,
+                &mut refs,
+            );
+        }
+    }
+    for (path, verb, anchor) in refs {
+        if anchor_point_any(plan, &anchor).is_some() {
+            continue;
+        }
+        return Err(BuildFailure::Diagnostic {
+            code: DW_EFFECT_ANCHOR_UNRESOLVED,
+            message: format!(
+                "`{verb}` at `{path}` names anchor `{anchor}`, which resolves to no \
+                 position in the assembled world — the effect would emit nothing at \
+                 all (a gate that never opens, a block never placed, a camera stuck \
+                 at the world origin). Anchor names come from prefab metadata: use \
+                 one the area's prefab/pool actually exposes, and do NOT invent one."
+            ),
+        });
+    }
+    Ok(())
 }
 
 /// Fail the build if any `spawn-wave` effect references a wave whose spawn
