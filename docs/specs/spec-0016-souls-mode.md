@@ -3,9 +3,13 @@
 - **Status**: Draft (planner-personal, 2026-08-01; owner's souls direction
   from spec-0011/0012 closing notes; consumes the jump-arc spike
   (docs/notes/jump-arc-model.md) and the TD-routing spike (docs/notes/td-routing-spike.md, PR #147))
-- **Vision**: death is a legitimate teacher. Delves may be punishing when the
-  punishment is legible, retry is fast, and every kill the world scores on
-  the player was telegraphed. The engine's job is to make "fair" provable.
+- **Vision** (owner-corrected 2026-08-02): death IS the teacher. 初见杀 —
+  the un-telegraphed first-encounter kill — is a legitimate, essential
+  souls beat: you die uninformed once, and the SECOND attempt is where
+  the design pays off (positioning, luring, thrown items, routing
+  around). The engine's job is not to sand the edges off — it is to make
+  retry cheap and the world's answers consistent, so dying is always an
+  investment, never a tax.
 
 ## Mechanics
 
@@ -20,28 +24,49 @@ non-bonfire checkpoints (island-style). Proofs: bonfire placement inherits
 DW0316 (standable) + DW0315 (no stranding); a wave marked respawns_on_rest
 on the critical path re-runs its completability proof post-rest.
 
-### 2. One-way doors
-Existing primitives compose: `close-gate` fired behind the player = a point
-of no return. New proof obligation only: the forward path from every one-way
-crossing must still reach a bonfire before any lethal hazard (no
-death-warp-to-stale-bonfire traps) — extends the DW0315 machinery with the
-gate-causal model from #108.
+### 2. Shortcut doors ("the door does not open from this side")
+The owner's definition of the pattern (2026-08-02), which this section is
+now built around: between two bonfires there are TWO routes — a **short
+route** (fast, no enemies or hazards) that starts SEALED, and a **long
+route** full of enemies and mechanisms. Reaching the far side the hard
+way and interacting with a specific mechanism **permanently** opens the
+short route. That loop-back moment is the point of the design.
+
+DSL: **`shortcut{gate, unlock}`** — `gate` is sealed from world-load;
+`unlock` is an interact anchor on the FAR side whose completion fires the
+permanent open (plus its own on_unlock[] beat — the bar lifting, the
+elevator descending). Proofs: (a) the unlock interact is reachable ONLY
+via the long route while the gate is sealed (analyzer frontier proof —
+otherwise the shortcut leaks); (b) post-unlock, the short route is
+genuinely short: proven traversal time from the previous bonfire through
+the opened gate is < the long route's (the loop must pay); (c) the gate
+never re-seals (permanence is structural — no close-gate may target a
+shortcut gate: compile error). `close-gate` behind the player (point of
+no return) remains available as plain staging, unchanged by this spec.
 
 ### 3. Ambushes
 Deferred NPC/actor + `approach`/`strike` trigger + `spawn-actor`/`unleash`
 at corner/doorway anchors — all landed (v0.6). Missing sugar, added here:
-**`ambush{at, actors[], trigger, telegraph}`** — one declaration expanding
-to the deferred spawns + trigger + a REQUIRED `telegraph` (sound or sight
-line beat ≥1.5 s before contact; the fairness rule made structural). New
-diagnostic: an ambush without a telegraph is an error, not a style choice.
+**`ambush{at, actors[], trigger, telegraph?}`** — one declaration
+expanding to the deferred spawns + trigger. `telegraph` is OPTIONAL
+(owner ruling 2026-08-02): the un-telegraphed ambush — the shove off the
+cliff you could not have known about — is core souls vocabulary; the
+creator has full freedom. What the engine still owes the player is
+COUNTERPLAY on the retry: the compiler proves every ambush is avoidable
+or defeatable by an informed player (a route exists that survives it:
+luring ground, a positioning line, or an exit — the existing
+trap-avoidability machinery generalized), and determinism guarantees the
+second attempt meets the same ambush in the same place.
 
 ### 4. Timing gates
 `schedule`-driven oscillating gates: **`timed-gate{gate, open_ticks,
 closed_ticks, phase?}`** emitting a deterministic clock over the gate region
-(open-gate/close-gate alternation). Proof: the passage window admits a
-walking player (window ≥ crossing time at walk speed over the gate span,
-computed from the nav model); required-path timed gates must be passable
-from EVERY phase within one full cycle (no unwinnable phase).
+(open-gate/close-gate alternation). Proof (owner ruling 2026-08-02): NOT
+all-phase passability — a gate that punishes bad timing is the point.
+The requirement: the set of entry phases from which a walking player
+crosses the span before the gate closes covers **≥ 20% of the cycle**
+(computed from the nav model's crossing time over the gate span). Below
+20% the gate is a coin flip, not a timing read — compile error.
 
 ### 5. Lethal parkour
 Jump edges per the measured model (docs/notes/jump-arc-model.md): cardinal
@@ -80,12 +105,17 @@ proofs) and spaced > 10. Emission trap pinned by the spike: the legacy
 snake_case form routes.
 
 ### 7. Death-as-learning pacing rules (design contract, linted)
-Retry cost: bonfire → point of failure ≤ 60 s traversal on the proven path.
-Telegraph rule: every lethal source (trap, ambush, gate, fall) carries a
-declared telegraph. Escalation rule: a mechanic kills gently before it kills
-hard (first instance of each hazard class on a path must be survivable at
-full health). These are warning-tier lints, not hard errors — taste stays
-with the author, the compiler keeps the receipts.
+One warning-tier lint survives the owner's 2026-08-02 corrections: **retry
+cost** — bonfire → point of failure ≤ 60 s traversal on the proven path
+(dying must be an investment, not a commute). Struck by owner ruling: the
+telegraph rule (初见杀 is core vocabulary — §3) and the escalation rule
+(a powerful OPTIONAL enemy near the start — the Tree Sentinel pattern:
+fight it or walk around it — is legitimate and our campaign should pay
+homage; the compiler's only obligation is proving a route AROUND every
+optional elite exists). New in its place: **optional-elite proof** — an
+enemy not on the critical path must have a proven bypass route that a
+player can walk without entering its aggro radius, or the "optional" is a
+lie.
 
 ## Acceptance
 
