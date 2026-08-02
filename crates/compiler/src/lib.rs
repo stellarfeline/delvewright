@@ -13,6 +13,9 @@
 //!   `move-npc` walked paths (`DW0307`) + cutscene air-corridor checks (`DW0308`).
 //! - [`light`]: assembled-world lighting model + deterministic relight pass
 //!   (`DW0210`/`DW0211`, exit 2) + declared time/weather sky attenuation (spec-0010).
+//! - [`eclipse`]: the body-vs-affordance occlusion proof (`DW0359`) — an NPC or
+//!   actor body may not stand on, or immediately in front of, an interaction
+//!   affordance the party has to click.
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
 //! - [`waypoints`]: export the DW0311-proven critical-path routes as validation
 //!   metadata (`validation/critical-path-waypoints.json`) for leg-by-leg bot nav.
@@ -37,6 +40,7 @@ pub mod camera;
 pub mod commands;
 pub mod continuity;
 pub mod creator;
+pub mod eclipse;
 pub mod edit;
 pub mod emit;
 pub mod flow;

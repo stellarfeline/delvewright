@@ -202,12 +202,20 @@ impl Footprint {
     }
 }
 
-/// The hitbox footprint for a vanilla entity id (spec-0014 per-entity dims table).
-/// Standing hitboxes for the 1.21.11 mobs an actor is likely to puppet; anything
-/// unlisted falls back to the humanoid default (0.6 × 1.95). Width only matters
-/// past 1.0 (sub-block mobs are single-column); height gates vertical clearance.
-pub fn entity_footprint(entity: &str) -> Footprint {
-    let (w, h) = match entity.strip_prefix("minecraft:").unwrap_or(entity) {
+/// The standing hitbox `(width, height)` in blocks for a vanilla entity id
+/// (spec-0014 per-entity dims table) — the ONE table in the compiler that knows
+/// how big a mob's body is. Covers the 1.21.11 mobs an actor or a re-dressed NPC
+/// mannequin is likely to wear; anything unlisted falls back to the humanoid
+/// default (0.6 × 1.95).
+///
+/// Two consumers, deliberately sharing one source of truth: [`entity_footprint`]
+/// quantizes it to walkable cells for actor routing, and [`crate::eclipse`] uses
+/// the raw floats for the sub-block body-vs-affordance overlap test (`DW0359`) —
+/// a rule the cell-quantized view could not state honestly (a 1.4-wide iron
+/// golem occupies three columns of *clearance* but its body is only 1.4 blocks
+/// of *hitbox*).
+pub fn entity_dims(entity: &str) -> (f64, f64) {
+    match entity.strip_prefix("minecraft:").unwrap_or(entity) {
         "warden" => (0.9, 2.9),
         "iron_golem" => (1.4, 2.7),
         "ravager" => (1.95, 2.2),
@@ -219,7 +227,15 @@ pub fn entity_footprint(entity: &str) -> Footprint {
         "allay" | "vex" => (0.35, 0.6),
         "armor_stand" | "player" | "mannequin" => (0.6, 1.8),
         _ => (0.6, 1.95),
-    };
+    }
+}
+
+/// The hitbox footprint for a vanilla entity id (spec-0014 per-entity dims table).
+/// Standing hitboxes for the 1.21.11 mobs an actor is likely to puppet; anything
+/// unlisted falls back to the humanoid default (0.6 × 1.95). Width only matters
+/// past 1.0 (sub-block mobs are single-column); height gates vertical clearance.
+pub fn entity_footprint(entity: &str) -> Footprint {
+    let (w, h) = entity_dims(entity);
     Footprint::for_dims(w, h)
 }
 

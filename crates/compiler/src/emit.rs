@@ -292,6 +292,18 @@ pub fn build_with_warnings(
     // Actor spawn anchors must resolve to a world position (spec-0014); a spawn is a
     // summon, not a walk, so this needs no occupancy model. DW0325 if one dangles.
     crate::nav::check_actor_placement(plan)?;
+
+    // No body may stand on the affordance the party has to click (DW0359). Runs
+    // right after the anchor-resolution seals and before any occupancy model:
+    // it is pure box arithmetic over resolved cells, and it is the proof that the
+    // island's giant — a 0.9 × 2.9 warden sharing `anchor/fire-pit` with two
+    // interact objectives — was hiding a required beat behind its own hitbox.
+    warnings.extend(crate::eclipse::check_body_eclipse(plan).map_err(|e| {
+        BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        }
+    })?);
     let has_waves = !plan.campaign.quests.content.waves.is_empty();
     let (moves, actor_moves, wave_placements, wave_rings, lane_routes): (
         Vec<crate::nav::MovePlan>,
@@ -3736,15 +3748,7 @@ fn emit_narrate(
 /// Resolve an anchor name to a world point by scanning every area (first match),
 /// mirroring how `open-gate` resolves its anchor. `None` if unresolved.
 fn anchor_point_any(plan: &Plan, anchor: &str) -> Option<[i32; 3]> {
-    for ((_, name), resolved) in &plan.anchors {
-        if name == anchor {
-            return match resolved {
-                ResolvedAnchor::Point { pos, .. } => Some(*pos),
-                ResolvedAnchor::Gate { from, .. } => Some(*from),
-            };
-        }
-    }
-    None
+    plan.point_any(anchor)
 }
 
 /// Whether a stage-2 NPC declares `deferred: true` (DSL v0.6) — it is not summoned

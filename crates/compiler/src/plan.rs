@@ -1205,6 +1205,20 @@ impl<'a> Plan<'a> {
         }
     }
 
+    /// Resolve an anchor **by name alone**, across areas — the area-agnostic
+    /// lookup `open-gate` / `move-npc` destinations / actor spawns already use.
+    /// `Point` yields its cell, `Gate` its `from` corner; `None` when no placed
+    /// piece provides the name. First match in `anchors` order (a `BTreeMap`, so
+    /// deterministic).
+    pub fn point_any(&self, anchor: &str) -> Option<[i32; 3]> {
+        self.anchors.iter().find_map(|((_, name), resolved)| {
+            (name == anchor).then_some(match resolved {
+                ResolvedAnchor::Point { pos, .. } => *pos,
+                ResolvedAnchor::Gate { from, .. } => *from,
+            })
+        })
+    }
+
     /// Whether any collected checkpoint carries an `on_respawn` hook — gates the
     /// vanilla respawn-detection machinery so checkpoint-free / hook-free campaigns
     /// stay byte-identical (DSL v0.6, spec-0012).
