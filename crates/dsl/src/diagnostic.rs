@@ -160,6 +160,11 @@ pub mod codes {
     /// objective's quest on the stage-4 DAG (and none fires from a trigger or
     /// dialogue), so the objective provably activates on an empty anchor.
     pub const NPC_SPAWNED_LATE: &str = "DW0198";
+    /// (v0.6) A `cutscene` effect's shape is invalid: it mixes the multi-shot
+    /// `shots` list with the single-shot `path`/`seconds` fields, gives neither,
+    /// or declares a shot with an empty camera `path`. A cutscene must resolve to
+    /// at least one shot, and every shot to at least one camera position.
+    pub const CUTSCENE_SHAPE: &str = "DW0199";
 
     /// (v0.6) `horizon: "ocean"` declared without a `boundary` (spec-0013):
     /// validation-tier (exit 1). An infinite swimmable sea with no return rule is

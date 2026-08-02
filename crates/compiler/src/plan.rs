@@ -1044,9 +1044,16 @@ fn collect_effect_anchors(e: &QuestEffect, set: &mut BTreeSet<String>) {
     if let Some((_, a)) = e.move_npc() {
         set.insert(a.as_str().to_string());
     }
-    if let QuestEffect::Cutscene { path, .. } = e {
-        for w in path {
-            set.insert(w.anchor.as_str().to_string());
+    // Every shot's waypoints, plus each shot's `look_at` subject — the camera is
+    // aimed at that world point, so the area's assembly must provide its anchor.
+    if let Some(shots) = e.cutscene_shots() {
+        for shot in &shots {
+            for w in &shot.path {
+                set.insert(w.anchor.as_str().to_string());
+            }
+            if let Some(t) = &shot.look_at {
+                set.insert(t.anchor.as_str().to_string());
+            }
         }
     }
 }
@@ -1783,11 +1790,13 @@ impl V06Collector<'_> {
     }
 }
 
-/// The `seconds` of the first `Cutscene` effect in `effects`, if any.
+/// The total duration of the first `Cutscene` effect in `effects`, if any — the
+/// sum over its shots, which is how long the harness must wait out the whole
+/// cinematic (a multi-shot cutscene plays back-to-back in one bracket).
 fn cutscene_seconds_in<'a>(effects: impl Iterator<Item = &'a QuestEffect>) -> Option<u32> {
     for e in effects {
-        if let QuestEffect::Cutscene { seconds, .. } = e {
-            return Some(*seconds);
+        if let Some(shots) = e.cutscene_shots() {
+            return Some(shots.iter().map(|s| s.seconds).sum());
         }
     }
     None
