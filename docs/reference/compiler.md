@@ -93,6 +93,7 @@ delvec build    <dir> -o <out>             # full deterministic build
 delvec schema   --stage <1..6|all>         # export JSON Schema
 delvec l10n-inventory <dir> [--lang <c>]   # l10n key inventory as JSON (translation input)
 delvec snapshot <dir> [framing] [-o f.png] # draft frame + scene manifest (§7)
+delvec blocking-chart <dir> [-o dir]       # per-elevation cutaway floor plans (§7)
 delvec --version                           # "delvec 0.1.0, dsl 0.6.0, mc 1.21.11"
 ```
 
@@ -1050,7 +1051,7 @@ this doc is current behavior).
 | Stage-1 `horizon` (ocean superflat), `boundary` (derived playable region + 1s return clock), `dw:region`/`dw:cp` mirrors, `DW0320`/`DW0321` (all v0.6) | spec-0013 (landed) |
 | Sound + art-title surface (`play-sound`, `narrate` `art`, `delve:art` font, `DW0326`/`DW0328`/`DW0335`) | spec-0014 (v0.6) |
 | Traps: stage-5 `traps[]`, `anchor/trap` dispenser fill + disarm emission, `tnt_explodes` seal, passable plate/tripwire model, `DW0340`/`DW0341`/`DW0342` (all v0.6) | spec-0011 (landed) |
-| Visual authoring loop: `delvec snapshot`, the voxel raycaster + scene manifest (§7) | spec-0015 (P1 landed) |
+| Visual authoring loop: `delvec snapshot` + `delvec blocking-chart`, the voxel raycaster, scene manifest and cutaway floor plans (§7) | spec-0015 (P1+P2 landed) |
 | Asset-pipeline tooling `DW07xx` (schem/render/admit) | spec-0007 |
 | Determinism invariants | ADR-0006 |
 
@@ -1076,9 +1077,11 @@ this doc is current behavior).
 
 A **view-only** tier of `delvec`: draft renders of the assembled world plus a
 structured description of the same frame, so an authoring agent can look at its
-own build mid-authoring instead of waiting on a full build + Chunky pass. It adds
-no DW diagnostics, changes no emission (build output is byte-identical), and
-never writes a datapack.
+own build mid-authoring instead of waiting on a full build + Chunky pass. Two
+commands — `snapshot` (a perspective viewport: what does it look like from here)
+and `blocking-chart` (orthographic cutaway plans: is there room). Both add no DW
+diagnostics, change no emission (build output is byte-identical), and never write
+a datapack.
 
 ### `delvec snapshot`
 
@@ -1216,6 +1219,85 @@ both.
 single-threaded): assemble + voxel-grid flattening ≈ **30 ms**, a 960×540 frame
 with `--labels` + manifest ≈ **190 ms**. `--timing` prints both to stderr (never
 to the output, so it cannot affect byte-identity).
+
+### `delvec blocking-chart`
+
+```
+delvec blocking-chart <campaign-dir> [-o <dir>] [--timing] [--json]
+```
+
+Per-elevation **cutaway** floor plans: one orthographic top-down PNG per
+detected walkable band per area, plus `blocking-chart.json`. Default output
+directory `blocking-chart/`. It answers the question a viewport structurally
+cannot — *is there room* — so NPC crowding, a post blocking a doorway, or a
+stealth zone lying across the only corridor are visible before the build exists.
+
+**Cutaway, because there is no camera.** A roofed cavern cannot be photographed
+from above, so the renderer simply excludes everything above the cut plane — a
+dollhouse view straight from the voxel model. For a band whose walkable floor is
+`Y`, each column of the area is drawn from the **topmost block in
+`[Y-1, Y+3)`**: the floor a player stands on plus anything up to head height, so
+a lintel and a waist-high obstacle both read, and no ceiling sneaks in.
+
+**Bands are found, not declared.** Walkable cells (a BFS rooted at the area's
+anchors, so a sealed void pocket never counts) are histogrammed by Y, and a band
+is a local maximum of that histogram that
+
+1. holds ≥ `BAND_MIN_CELLS` (6) cells, and
+2. stands out from its neighbouring elevations by `BAND_RELIEF` (3×).
+
+**Relief, not share** — this is the load-bearing choice. A share rule ("≥4% of
+the area's walkable cells") makes a storey's status depend on how big the rest of
+the *area* is, and the island's sheep pen — unambiguously a second floor — fails
+it purely because the beach and meadow below are large. Relief asks the local
+question instead: does walkable area *concentrate* here relative to what is
+immediately above and below? A floor and a mezzanine do; a ramp, contributing one
+or two transit cells per Y, never does. Maxima closer than `MIN_BAND_GAP` (3)
+merge into the more populated one; at most `MAX_BANDS` (8) survive.
+
+A **coverage pass** then guarantees the chart set is trustworthy: *every*
+populated elevation must fall inside some band's cut. Relief finds storeys, but
+rolling outdoor ground (the island's meadow climbing from beach to cave mouth)
+has no storeys at all, and without this pass a walkable stretch would appear on
+no chart at all with nothing to signal it. Uncovered elevations get fill-in
+bands, lowest first, bypassing the merge rule — coverage outranks tidiness.
+
+**Each slice is cropped** to its own band's walkable cells and markers (plus a
+5-block margin), so a campaign whose single area runs from beach to mountain-top
+gives the cavern its own tight frame at its own larger scale, instead of a small
+drawing in a large field of void.
+
+**Overlays**, in order: terrain flat-shaded by [`snapshot::block_color`] and
+lightened with height within the cut (so a step reads as a step); a green wash on
+the band's walkable cells; the DW0311-proven critical-path walk corridor as an
+orange tint; then an outlined, labelled marker for every anchor, gate, NPC/actor
+post, interact marker, stealth zone and trigger region whose elevation range
+meets the cut. Labels use the same kind colours as `snapshot --labels` and the
+same deterministic placer; a label that cannot be fitted on the plan is dropped
+from the image but recorded in the index, never pushed off the edge. Routing is
+best-effort — a campaign whose critical path does not route yet charts without
+the corridor tint rather than refusing to chart.
+
+Orientation is **+X right, +Z down (north up)**; each slice carries a title bar
+naming its area, band index, floor Y and cut range.
+
+**Index** (`blocking-chart.json`, `chart_version: 1`):
+
+```json
+{ "chart_version": 1, "campaign_id": "…", "delvec": "0.1.0",
+  "orientation": "top-down orthographic; +X right, +Z down (north up)",
+  "cut": "each slice draws world Y in [floor-1, floor+3) …",
+  "areas": [ { "area": "area/island",
+               "bounds": { "min": [x,y,z], "max": [x,y,z] },
+               "walkable_cells": 1500,
+               "bands": [ { "index": 0, "floor_y": 69, "walkable_cells": 420,
+                            "y_range": [68, 71], "file": "island-band0-y69.png",
+                            "width": 504, "height": 526,
+                            "labelled": ["anchor/fire-pit", "…"] } ] } ] }
+```
+
+**Performance** (measured, `nobodys-cave-island`, release): **≈90 ms** for the
+whole campaign's four slices, including the nav model and critical-path routing.
 
 ### PNG writing
 

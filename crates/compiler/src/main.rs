@@ -128,6 +128,19 @@ enum Command {
         #[arg(long)]
         timing: bool,
     },
+    /// Per-elevation cutaway floor plans of every area (spec-0015 pillar 3):
+    /// one orthographic top-down PNG per detected walkable band, plus an index.
+    /// Like `snapshot`, it stops after placement + assembly.
+    BlockingChart {
+        /// Campaign directory.
+        campaign_dir: PathBuf,
+        /// Output directory (created if absent).
+        #[arg(short, long, default_value = "blocking-chart")]
+        out: PathBuf,
+        /// Print the render wall-clock time to stderr.
+        #[arg(long)]
+        timing: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -182,6 +195,11 @@ fn main() -> ExitCode {
             },
             cli.json,
         ),
+        Command::BlockingChart {
+            campaign_dir,
+            out,
+            timing,
+        } => run_blocking_chart(campaign_dir, &cli.prefabs, out, *timing, cli.json),
     }
 }
 
@@ -519,7 +537,11 @@ fn run_snapshot(
     if args.labels {
         snapshot::draw_labels(&mut frame, &grid, &cam, &inside);
     }
-    let png = delvewright_compiler::png::encode_rgba(frame.width, frame.height, &frame.rgba);
+    let png = delvewright_compiler::png::encode_rgba(
+        frame.canvas.width,
+        frame.canvas.height,
+        &frame.canvas.rgba,
+    );
     let render_ms = render_started.elapsed().as_secs_f64() * 1000.0;
 
     let image_name = args
@@ -886,6 +908,106 @@ fn write_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(path, bytes)
+}
+
+/// `delvec blocking-chart <campaign-dir> [-o dir]` — the spec-0015 pillar-3
+/// cutaway floor plans.
+///
+/// Needs the same three stages `snapshot` does (parse → placement → assembled
+/// blocks) plus the nav occupancy model, because "walkable" is what the bands
+/// are found from and the corridor overlay is the DW0311-proven critical path.
+/// Routing is best-effort: a campaign whose critical path does not route yet
+/// simply charts without the corridor tint rather than refusing to chart.
+fn run_blocking_chart(
+    campaign_dir: &Path,
+    prefabs_dir: &Path,
+    out: &Path,
+    timing: bool,
+    json: bool,
+) -> ExitCode {
+    let (campaign, prefabs) = match load_for_view(campaign_dir, prefabs_dir, json) {
+        Ok(v) => v,
+        Err(code) => return ExitCode::from(code),
+    };
+    let plan = match Plan::build(&campaign, &prefabs) {
+        Ok(p) => p,
+        Err(e) => {
+            print_build_error(e.code, &e.message, json);
+            return ExitCode::from(3);
+        }
+    };
+    let structures = match read_structures(&plan, prefabs_dir, json) {
+        Ok(s) => s,
+        Err(code) => return ExitCode::from(code),
+    };
+
+    let started = std::time::Instant::now();
+    let blocks = delvewright_compiler::assembled::assembled_blocks(&plan, &structures);
+    let world = delvewright_compiler::nav::World::from_plan(&plan, &structures);
+    let targets = delvewright_compiler::snapshot::collect_targets(&plan);
+    let corridor: std::collections::BTreeSet<[i32; 3]> =
+        delvewright_compiler::nav::critical_path_routes(&plan, &world)
+            .into_iter()
+            .flat_map(|leg| leg.cells)
+            .collect();
+    let chart = delvewright_compiler::blocking::chart(&plan, &blocks, &world, &targets, &corridor);
+    let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+
+    let mut index = match serde_json::to_vec_pretty(&chart.index) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("internal error: cannot serialize chart index: {e}");
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    };
+    index.push(b'\n');
+    let write = || -> std::io::Result<()> {
+        for slice in &chart.slices {
+            write_file(&out.join(&slice.file), &slice.png)?;
+        }
+        write_file(&out.join("blocking-chart.json"), &index)
+    };
+    if let Err(e) = write() {
+        eprintln!("internal error: cannot write blocking chart: {e}");
+        return ExitCode::from(EXIT_INTERNAL);
+    }
+
+    if timing {
+        eprintln!(
+            "blocking-chart timing: {elapsed:.0} ms for {} slice(s)",
+            chart.slices.len()
+        );
+    }
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "dir": out.display().to_string(),
+                "slices": chart.slices.iter().map(|s| serde_json::json!({
+                    "file": s.file,
+                    "area": s.area_id,
+                    "floor_y": s.band.floor_y,
+                    "labelled": s.labelled.len(),
+                })).collect::<Vec<_>>(),
+            })
+        );
+    } else {
+        for s in &chart.slices {
+            println!(
+                "{} — {} floor y={} (cut y{}..{}), {}×{}, {} label(s)",
+                out.join(&s.file).display(),
+                s.area_id,
+                s.band.floor_y,
+                s.y_range.0,
+                s.y_range.1,
+                s.size.0,
+                s.size.1,
+                s.labelled.len()
+            );
+        }
+        println!("{}", out.join("blocking-chart.json").display());
+    }
+    ExitCode::SUCCESS
 }
 
 fn run_build(

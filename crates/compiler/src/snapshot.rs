@@ -61,6 +61,7 @@ use std::collections::BTreeMap;
 use serde_json::{Value, json};
 
 use crate::plan::{Plan, ResolvedAnchor};
+use crate::raster::{Canvas, GLYPH_ROWS, LabelPlacer, ScreenBox, kind_color, text_width};
 
 /// Default frame size — 16:9, big enough to read a label, small enough to render
 /// in a fraction of a second.
@@ -1057,50 +1058,43 @@ impl Default for FrameOpts {
     }
 }
 
-/// A rendered frame: RGBA pixels plus the per-pixel camera-space depth the label
-/// pass uses to hide occluded overlays.
+/// A rendered frame: the pixel canvas plus the per-pixel ray distance the label
+/// pass uses to hide overlays the camera cannot actually see.
 pub struct Frame {
-    /// Frame width in pixels.
-    pub width: u32,
-    /// Frame height in pixels.
-    pub height: u32,
-    /// Row-major RGBA8 pixels.
-    pub rgba: Vec<u8>,
+    /// The pixel buffer (drawing primitives live on [`crate::raster::Canvas`]).
+    pub canvas: Canvas,
     /// Row-major ray distance in blocks (`f64::INFINITY` = background).
     pub depth: Vec<f64>,
 }
 
 impl Frame {
-    /// Blend `color` into pixel `(x, y)` with alpha `a` in `0.0..=1.0`.
-    fn blend(&mut self, x: i64, y: i64, color: [u8; 3], a: f64) {
-        if x < 0 || y < 0 || x >= self.width as i64 || y >= self.height as i64 || a <= 0.0 {
-            return;
-        }
-        let o = ((y as usize) * self.width as usize + x as usize) * 4;
-        for (k, &c) in color.iter().enumerate() {
-            let old = self.rgba[o + k] as f64;
-            self.rgba[o + k] = (old + (c as f64 - old) * a.min(1.0)).round() as u8;
-        }
+    /// Frame width in pixels.
+    pub fn width(&self) -> u32 {
+        self.canvas.width
     }
 
-    /// Ray distance at a pixel (`INFINITY` for background).
+    /// Frame height in pixels.
+    pub fn height(&self) -> u32 {
+        self.canvas.height
+    }
+
+    /// Ray distance at a pixel (`INFINITY` for background / off-frame).
     fn depth_at(&self, x: i64, y: i64) -> f64 {
-        if x < 0 || y < 0 || x >= self.width as i64 || y >= self.height as i64 {
+        if x < 0 || y < 0 || x >= self.canvas.width as i64 || y >= self.canvas.height as i64 {
             return f64::INFINITY;
         }
-        self.depth[(y as usize) * self.width as usize + x as usize]
+        self.depth[(y as usize) * self.canvas.width as usize + x as usize]
     }
 }
 
 /// Raycast one frame of the assembled world.
 pub fn render_frame(grid: &VoxelGrid, cam: &Camera, opts: &FrameOpts) -> Frame {
     let (w, h) = (opts.width, opts.height);
-    let mut rgba = vec![0u8; (w as usize) * (h as usize) * 4];
+    let mut canvas = Canvas::filled(w, h, [0, 0, 0]);
     let mut depth = vec![f64::INFINITY; (w as usize) * (h as usize)];
     for py in 0..h {
         for px in 0..w {
             let dir = cam.ray(w, h, px, py);
-            let o = ((py as usize) * w as usize + px as usize) * 4;
             let (color, d) = match grid.cast(cam.pos, dir, MAX_RAY_DISTANCE) {
                 Some(hit) => {
                     let mut c = shade(grid, &hit);
@@ -1120,19 +1114,11 @@ pub fn render_frame(grid: &VoxelGrid, cam: &Camera, opts: &FrameOpts) -> Frame {
                 }
                 None => (background(cam, dir, opts), f64::INFINITY),
             };
-            rgba[o] = color[0];
-            rgba[o + 1] = color[1];
-            rgba[o + 2] = color[2];
-            rgba[o + 3] = 255;
+            canvas.set(px as i64, py as i64, color);
             depth[(py as usize) * w as usize + px as usize] = d;
         }
     }
-    Frame {
-        width: w,
-        height: h,
-        rgba,
-        depth,
-    }
+    Frame { canvas, depth }
 }
 
 /// Sky colour at the zenith / at the horizon / below the horizon (void).
@@ -1209,19 +1195,6 @@ fn mix(a: [f64; 3], b: [f64; 3], t: f64) -> [u8; 3] {
 // ---------------------------------------------------------------------------
 // Screen-space geometry + the manifest
 // ---------------------------------------------------------------------------
-
-/// A target's screen footprint, in whole pixels, clipped to the frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ScreenBox {
-    /// Left edge (px).
-    pub x: i64,
-    /// Top edge (px).
-    pub y: i64,
-    /// Width (px, ≥ 1).
-    pub w: i64,
-    /// Height (px, ≥ 1).
-    pub h: i64,
-}
 
 /// Project a target's box to a clipped screen bbox, or `None` when it is wholly
 /// behind the camera or wholly off-frame (i.e. outside the frustum).
@@ -1385,84 +1358,6 @@ fn target_json(t: &Target) -> Value {
 // Label / grid overlay
 // ---------------------------------------------------------------------------
 
-/// Glyph cell advance in source pixels (5-wide glyph + 1 px gap).
-const GLYPH_ADVANCE: usize = 6;
-/// Glyph ink height in source pixels.
-const GLYPH_ROWS: usize = 7;
-
-/// Marker colours per target kind, and the text colour drawn on the label plate.
-fn kind_color(kind: &str) -> [u8; 3] {
-    match kind {
-        "anchor" => [255, 214, 84],
-        "gate" => [214, 128, 255],
-        "npc-post" => [104, 232, 255],
-        "actor-post" => [255, 128, 128],
-        "interact" => [124, 255, 148],
-        "stealth-zone" => [180, 180, 255],
-        "trigger" => [255, 168, 92],
-        _ => [230, 230, 230],
-    }
-}
-
-/// Stamp text at `(x, y)` (top-left of the ink) with a dark plate behind it.
-/// Unsupported characters are skipped, so an id with punctuation the caps-only
-/// art font lacks still reads.
-fn stamp_text(f: &mut Frame, x: i64, y: i64, text: &str, scale: i64, color: [u8; 3]) {
-    let w = text_width(text, scale);
-    let h = GLYPH_ROWS as i64 * scale;
-    // Plate: a 1 px-padded dark box at 78% opacity, so labels stay readable over
-    // both a bright sky and a dark cavern floor.
-    for py in (y - scale)..(y + h + scale) {
-        for px in (x - scale)..(x + w + scale) {
-            f.blend(px, py, [12, 12, 16], 0.78);
-        }
-    }
-    let mut pen = x;
-    for ch in text.chars() {
-        if ch == ' ' {
-            pen += GLYPH_ADVANCE as i64 * scale;
-            continue;
-        }
-        if let Some(g) = crate::atmos::glyph(ch) {
-            for (gy, row) in g.iter().enumerate() {
-                for (gx, c) in row.chars().enumerate() {
-                    if c != '#' {
-                        continue;
-                    }
-                    for sy in 0..scale {
-                        for sx in 0..scale {
-                            f.blend(
-                                pen + gx as i64 * scale + sx,
-                                y + gy as i64 * scale + sy,
-                                color,
-                                1.0,
-                            );
-                        }
-                    }
-                }
-            }
-        }
-        pen += GLYPH_ADVANCE as i64 * scale;
-    }
-}
-
-/// Rendered width of `text` in pixels at `scale`.
-fn text_width(text: &str, scale: i64) -> i64 {
-    (text.chars().count() as i64 * GLYPH_ADVANCE as i64 - 1).max(1) * scale
-}
-
-/// Draw a 1 px rectangle outline.
-fn stroke_rect(f: &mut Frame, b: ScreenBox, color: [u8; 3], alpha: f64) {
-    for x in b.x..b.x + b.w {
-        f.blend(x, b.y, color, alpha);
-        f.blend(x, b.y + b.h - 1, color, alpha);
-    }
-    for y in b.y..b.y + b.h {
-        f.blend(b.x, y, color, alpha);
-        f.blend(b.x + b.w - 1, y, color, alpha);
-    }
-}
-
 /// Burn the `--labels` overlay into a frame: a coordinate grid on the ground, a
 /// marker box per in-frustum target, and its id.
 ///
@@ -1480,53 +1375,42 @@ pub fn draw_labels(f: &mut Frame, grid: &VoxelGrid, cam: &Camera, inside: &[Reso
     // An occluded name is stamped only where it lands clear on the first try —
     // the manifest always carries the full list either way.
     for r in inside {
-        stroke_rect(
-            f,
+        f.canvas.stroke_rect(
             r.bbox,
             kind_color(r.target.kind),
             if r.occluded { 0.45 } else { 0.95 },
         );
     }
-    let mut placed: Vec<ScreenBox> = Vec::new();
+    let width = f.width() as i64;
+    let mut placer = LabelPlacer::default();
     for pass_occluded in [false, true] {
         for r in inside.iter().filter(|r| r.occluded == pass_occluded) {
             let color = kind_color(r.target.kind);
             let text = r.target.label();
             let tw = text_width(&text, scale);
-            let th = GLYPH_ROWS as i64 * scale;
-            let lx = (r.bbox.x).min(f.width as i64 - tw - 2).max(2);
+            let th = GLYPH_ROWS * scale;
+            let lx = (r.bbox.x).min(width - tw - 2).max(2);
             let ly = if r.bbox.y - th - 3 < 2 {
                 r.bbox.y + r.bbox.h + 3
             } else {
                 r.bbox.y - th - 3
             };
-            let mut probe = ScreenBox {
+            let want = ScreenBox {
                 x: lx,
                 y: ly,
                 w: tw + 2,
                 h: th + 2,
             };
+            // Occluded names get no nudges: they are stamped only where they land
+            // clear on the first try, and are otherwise crowded out (the manifest
+            // still names them).
             let nudges = if pass_occluded { 0 } else { 24 };
-            let mut clear = !placed.iter().any(|p| overlaps(*p, probe));
-            for _ in 0..nudges {
-                if clear {
-                    break;
-                }
-                probe.y += th + 4;
-                clear = !placed.iter().any(|p| overlaps(*p, probe));
-            }
-            if !clear {
-                continue; // crowded out; the manifest still names it
-            }
-            placed.push(probe);
-            stamp_text(f, lx, probe.y, &text, scale, color);
+            let Some(box_) = placer.place(want, th + 4, nudges) else {
+                continue;
+            };
+            f.canvas.stamp_text(lx, box_.y, &text, scale, color);
         }
     }
-}
-
-/// Whether two screen boxes intersect.
-fn overlaps(a: ScreenBox, b: ScreenBox) -> bool {
-    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 }
 
 /// Grid spacing in blocks for the ground coordinate grid.
@@ -1556,7 +1440,7 @@ fn grid_tint(hit: &Hit) -> Option<f64> {
 /// a ramp all get the same lattice at the same world coordinates, so a reviewer
 /// can read a position off any of them.
 fn draw_ground_grid(f: &mut Frame, grid: &VoxelGrid, cam: &Camera) {
-    let (w, h) = (f.width, f.height);
+    let (w, h) = (f.width(), f.height());
     // The lattice itself is tinted during the primary raycast (see
     // [`render_frame`]); this pass only adds the coordinate readouts.
     // Coordinate readouts at the grid intersections nearest the camera, so the
@@ -1615,8 +1499,7 @@ fn draw_ground_grid(f: &mut Frame, grid: &VoxelGrid, cam: &Camera) {
         if f.depth_at(sx, sy) + 1.5 < dist {
             continue;
         }
-        stamp_text(
-            f,
+        f.canvas.stamp_text(
             sx + 3,
             sy + 3,
             &format!("{},{}", cell[0], cell[2]),
@@ -2058,12 +1941,15 @@ mod tests {
         };
         let a = render_frame(&g, &cam, &opts);
         let b = render_frame(&g, &cam, &opts);
-        assert_eq!(a.rgba, b.rgba, "ADR-0006: rendering is deterministic");
-        assert!(a.rgba.chunks(4).all(|p| p[3] == 255), "opaque frame");
+        assert_eq!(
+            a.canvas.rgba, b.canvas.rgba,
+            "ADR-0006: rendering is deterministic"
+        );
+        assert!(a.canvas.rgba.chunks(4).all(|p| p[3] == 255), "opaque frame");
         // The lit block renders at its full emissive colour somewhere in frame.
         let want = block_color("minecraft:glowstone").0;
         assert!(
-            a.rgba.chunks(4).any(|p| p[..3] == want),
+            a.canvas.rgba.chunks(4).any(|p| p[..3] == want),
             "emissive block must render unshaded"
         );
     }
@@ -2123,8 +2009,8 @@ mod tests {
                 ..FrameOpts::default()
             },
         );
-        stamp_text(&mut f, -20, -20, "EDGE", 1, [255, 255, 255]);
-        stamp_text(&mut f, 100, 100, "EDGE", 2, [255, 255, 255]);
-        assert_eq!(f.rgba.len(), 32 * 24 * 4);
+        f.canvas.stamp_text(-20, -20, "EDGE", 1, [255, 255, 255]);
+        f.canvas.stamp_text(100, 100, "EDGE", 2, [255, 255, 255]);
+        assert_eq!(f.canvas.rgba.len(), 32 * 24 * 4);
     }
 }

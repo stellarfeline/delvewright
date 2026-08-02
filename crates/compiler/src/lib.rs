@@ -16,12 +16,17 @@
 //! - [`creator`]: the playtest-only creator overlay (`creator-datapack/`, spec-0006).
 //! - [`png`]: the deterministic hand-rolled PNG writer shared by the `delve:art`
 //!   font atlas and the visual-authoring-loop renders.
+//! - [`blocking`]: `delvec blocking-chart` — per-elevation cutaway floor plans
+//!   (spec-0015 pillar 3).
+//! - [`raster`]: the shared RGBA canvas + bitmap-text primitives both
+//!   visual-authoring-loop renderers draw on.
 //! - [`snapshot`]: `delvec snapshot` — the voxel raycaster + scene manifest that
 //!   let an authoring agent look at its own build (spec-0015).
 
 pub mod analyze;
 pub mod assembled;
 pub mod atmos;
+pub mod blocking;
 pub mod camera;
 pub mod commands;
 pub mod creator;
@@ -32,6 +37,7 @@ pub mod load;
 pub mod nav;
 pub mod plan;
 pub mod png;
+pub mod raster;
 pub mod registry;
 pub mod render_plan;
 pub mod resourcepack;
