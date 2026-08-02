@@ -167,10 +167,13 @@ fn emit_functions(plan: &Plan) -> Vec<(String, String)> {
             npc.tag, npc.npc_id,
         ));
     }
-    // quests — live per-objective scoreboard state (unset → 0).
+    // quests — live per-objective scoreboard state (unset → 0). Read off the
+    // party holder (spec-0018): objective completion is a fact about the party,
+    // so a creator note records the delve's progress, not the note-taker's.
     for (key, obj_id) in objectives(plan) {
         stamp.push(format!(
-            "execute store result storage {storage} {key} int 1 run scoreboard players get @s {}",
+            "execute store result storage {storage} {key} int 1 run scoreboard players get {} {}",
+            plan::PARTY,
             obj_score(&obj_id)
         ));
     }

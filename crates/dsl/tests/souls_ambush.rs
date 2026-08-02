@@ -8,8 +8,8 @@
 //!
 //! `telegraph` is **optional and stays optional**: the un-telegraphed ambush is
 //! core souls vocabulary (owner ruling 2026-08-02). The declaration checks here
-//! (`DW0365`) never ask for one. What the engine owes the player is counterplay
-//! on the retry, which is geometric and lives in `compiler::nav` (`DW0366`).
+//! (`DW0375`) never ask for one. What the engine owes the player is counterplay
+//! on the retry, which is geometric and lives in `compiler::nav` (`DW0376`).
 
 mod common;
 
@@ -137,41 +137,41 @@ fn ambushes_reserved_before_0_6() {
     );
 }
 
-/// An ambush that lists no actors springs nothing — `DW0365`, never a silent
+/// An ambush that lists no actors springs nothing — `DW0375`, never a silent
 /// no-op.
 #[test]
-fn ambush_with_no_actors_is_dw0365() {
+fn ambush_with_no_actors_is_dw0375() {
     let bad = QUESTS_V06.replace("\"actors\": [\"actor/lurker\"]", "\"actors\": []");
     assert_ne!(bad, QUESTS_V06);
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
-        diags.iter().any(|d| d.code == "DW0365"),
-        "an actor-less ambush must be DW0365: {diags:#?}"
+        diags.iter().any(|d| d.code == "DW0375"),
+        "an actor-less ambush must be DW0375: {diags:#?}"
     );
 }
 
 /// The same actor listed twice reads as a pair but stages one body —
-/// `spawn-actor` is idempotent. `DW0365`.
+/// `spawn-actor` is idempotent. `DW0375`.
 #[test]
-fn ambush_listing_an_actor_twice_is_dw0365() {
+fn ambush_listing_an_actor_twice_is_dw0375() {
     let bad = QUESTS_V06.replace(
         "\"actors\": [\"actor/lurker\"]",
         "\"actors\": [\"actor/lurker\", \"actor/lurker\"]",
     );
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
-        diags.iter().any(|d| d.code == "DW0365"),
-        "a doubled actor must be DW0365: {diags:#?}"
+        diags.iter().any(|d| d.code == "DW0375"),
+        "a doubled actor must be DW0375: {diags:#?}"
     );
 }
 
-/// A malformed ambush id is `DW0365`.
+/// A malformed ambush id is `DW0375`.
 #[test]
-fn malformed_ambush_id_is_dw0365() {
+fn malformed_ambush_id_is_dw0375() {
     let bad = QUESTS_V06.replace("\"ambush/door-turn\"", "\"Door Turn\"");
     let diags = check_campaign(&campaign_with_quests(&bad));
     assert!(
-        diags.iter().any(|d| d.code == "DW0365"),
-        "a malformed ambush id must be DW0365: {diags:#?}"
+        diags.iter().any(|d| d.code == "DW0375"),
+        "a malformed ambush id must be DW0375: {diags:#?}"
     );
 }

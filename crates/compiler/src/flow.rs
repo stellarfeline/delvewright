@@ -170,6 +170,62 @@ pub struct Playthrough {
     pub degenerate: bool,
 }
 
+/// The evolving state of one playthrough replay: which flags are set, which
+/// objectives/quests are done, which quests are active.
+#[derive(Clone, Debug, Default)]
+struct ReplayState {
+    flags: BTreeSet<String>,
+    done_obj: BTreeSet<String>,
+    done_quest: BTreeSet<String>,
+    active: BTreeSet<String>,
+}
+
+/// A proven n-agent division of labour (spec-0018).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Division {
+    /// The AND-join objective whose arms the party splits.
+    pub join: String,
+    /// The arms assigned to each agent (`agents.len() == min_players`), by the
+    /// deterministic round-robin over the join's free arms.
+    pub agents: Vec<Vec<String>>,
+}
+
+/// Why a declared party size has no division of labour to do.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DivisionFailure {
+    /// The declared `min_players`.
+    pub party: usize,
+    /// The most independently-reachable arms any single AND-join offers.
+    pub widest: usize,
+    /// The join that offered them (`None` when the campaign has no AND-join).
+    pub join: Option<String>,
+}
+
+impl DivisionFailure {
+    /// The `DW0358` diagnostic message.
+    pub fn message(&self) -> String {
+        let n = self.party;
+        match &self.join {
+            Some(j) => format!(
+                "`min_players: {n}` declares a delve that REQUIRES {n} players, but no AND-join \
+                 in the campaign gives {n} of them independent work: the widest join (`{j}`) \
+                 offers only {} arm(s) that are reachable at the same moment — the rest wait on a \
+                 sibling arm, a flag an earlier arm sets, or a quest that is not active yet. \
+                 Split one beat into {n} `after`-arms that are each completable from the join's \
+                 frontier, or lower `min_players`",
+                self.widest
+            ),
+            None => format!(
+                "`min_players: {n}` declares a delve that REQUIRES {n} players, but the campaign \
+                 has no AND-join at all — every objective has at most one `after` prerequisite, \
+                 so the whole delve is one serial chain that a single player walks. Give the \
+                 party parallel work (an objective with {n} `after` arms in {n} places), or lower \
+                 `min_players`"
+            ),
+        }
+    }
+}
+
 /// Why a playthrough's step sequence is not a legal playthrough.
 #[derive(Clone, Debug)]
 pub struct ReplayFailure {
@@ -351,18 +407,8 @@ impl<'a> Flow<'a> {
     /// `Ok(())` means every step is activatable and completable at its position
     /// and `campaign-complete` fires exactly at the final step.
     pub fn replay(&self, p: &Playthrough) -> Result<(), ReplayFailure> {
-        let mut flags: BTreeSet<String> = BTreeSet::new();
-        let mut done_obj: BTreeSet<String> = BTreeSet::new();
-        let mut done_quest: BTreeSet<String> = BTreeSet::new();
-        let mut active: BTreeSet<String> = BTreeSet::new();
+        let mut st8 = self.initial_state();
         let mut complete_at: Option<(usize, String)> = None;
-
-        for q in &self.c.quests.content.quests {
-            if matches!(q.trigger, Trigger::CampaignStart) {
-                active.insert(q.id.as_str().to_string());
-            }
-        }
-        self.saturate_ambient(&mut flags);
 
         for (i, st) in p.steps.iter().enumerate() {
             let pos = i + 1;
@@ -383,7 +429,7 @@ impl<'a> Flow<'a> {
             else {
                 return fail("it is not an objective of its quest".to_string());
             };
-            if !active.contains(&st.quest) {
+            if !st8.active.contains(&st.quest) {
                 return fail(format!(
                     "its quest `{}` is not active yet — nothing earlier on the path completes the \
                      quest its trigger names",
@@ -391,7 +437,7 @@ impl<'a> Flow<'a> {
                 ));
             }
             for a in obj.after() {
-                if !done_obj.contains(a.as_str()) {
+                if !st8.done_obj.contains(a.as_str()) {
                     return fail(format!(
                         "its `after` prerequisite `{}` has not been completed at this point",
                         a.as_str()
@@ -399,7 +445,7 @@ impl<'a> Flow<'a> {
                 }
             }
             for f in obj.requires_flags() {
-                if !flags.contains(f.as_str()) {
+                if !st8.flags.contains(f.as_str()) {
                     return fail(format!(
                         "it requires `{}`, which nothing earlier on the path sets (a mutually \
                          exclusive branch produces it)",
@@ -408,7 +454,7 @@ impl<'a> Flow<'a> {
                 }
             }
             for f in obj.forbids_flags() {
-                if flags.contains(f.as_str()) {
+                if st8.flags.contains(f.as_str()) {
                     return fail(format!(
                         "it forbids `{}`, which an earlier step on the path has already set",
                         f.as_str()
@@ -422,7 +468,7 @@ impl<'a> Flow<'a> {
                         npc.as_str()
                     ));
                 };
-                if !self.option_takeable_now(npc.as_str(), n, &flags) {
+                if !self.option_takeable_now(npc.as_str(), n, &st8.flags) {
                     return fail(format!(
                         "the completing dialogue option of `{}` is not reachable at this point — \
                          a node or option on the way to it is still flag-gated",
@@ -431,55 +477,7 @@ impl<'a> Flow<'a> {
                 }
             }
 
-            done_obj.insert(st.objective.clone());
-            if let Some(n) = st.talk_option {
-                for f in self.option_sets(&st.objective, n) {
-                    flags.insert(f);
-                }
-            }
-            if let Some(effs) = quest
-                .on_objective_complete
-                .get(&delvewright_dsl::ObjectiveId(st.objective.clone()))
-            {
-                self.fire(effs, &mut flags, &mut complete_at, pos, &st.objective);
-            }
-            // Quest completion cascade.
-            loop {
-                let mut progressed = false;
-                for q in &self.c.quests.content.quests {
-                    let qid = q.id.as_str();
-                    if done_quest.contains(qid) || !active.contains(qid) {
-                        continue;
-                    }
-                    if !q
-                        .objectives
-                        .iter()
-                        .all(|o| done_obj.contains(o.id().as_str()))
-                    {
-                        continue;
-                    }
-                    done_quest.insert(qid.to_string());
-                    self.fire(
-                        &q.on_complete,
-                        &mut flags,
-                        &mut complete_at,
-                        pos,
-                        &st.objective,
-                    );
-                    for other in &self.c.quests.content.quests {
-                        if let Trigger::QuestComplete { quest } = &other.trigger
-                            && quest.as_str() == qid
-                        {
-                            active.insert(other.id.as_str().to_string());
-                        }
-                    }
-                    progressed = true;
-                }
-                if !progressed {
-                    break;
-                }
-            }
-            self.saturate_ambient(&mut flags);
+            self.advance(&mut st8, st, pos, &mut complete_at);
         }
 
         let last = p.steps.len();
@@ -509,7 +507,224 @@ impl<'a> Flow<'a> {
         }
     }
 
+    /// A concrete n-agent **division of labour** for the declared party size
+    /// (spec-0018), or why none exists.
+    ///
+    /// Party progression makes an `after: [obj/a, obj/b]` AND-join the primitive
+    /// two players split: A clears one arm, B the other, and the successor's guard
+    /// — every term a `#party` read — opens for both. A campaign that *declares*
+    /// `min_players: n` is claiming its beats need n players, and this is the
+    /// machine-checkable content of that claim: somewhere on the proven
+    /// playthrough there must be a join with **n arms that are independently
+    /// reachable at the join's frontier** — the replay state just before the
+    /// earliest arm — with no arm waiting on a sibling. Assignment is then the
+    /// deterministic round-robin over that arm list.
+    ///
+    /// `min_players: 1` never calls this: a party of one is the single-agent
+    /// proof [`Self::replay`] already gives, and every pre-spec-0018 campaign
+    /// keeps exactly that verdict.
+    pub fn divide(&self, p: &Playthrough, n: usize) -> Result<Division, DivisionFailure> {
+        let mut st8 = self.initial_state();
+        let mut complete_at: Option<(usize, String)> = None;
+        // The step position at which each objective completes on the path, and
+        // the frontier state captured before it.
+        let mut best: Option<Division> = None;
+        let mut widest = 0usize;
+        let mut widest_join: Option<String> = None;
+
+        // Where each objective sits on the path (1-based), so a join's frontier
+        // is the state before its EARLIEST arm.
+        let pos_of: BTreeMap<&str, usize> = p
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.objective.as_str(), i + 1))
+            .collect();
+
+        for (i, st) in p.steps.iter().enumerate() {
+            let pos = i + 1;
+            // Every join whose earliest arm completes at THIS position: the
+            // current state is that join's frontier (nothing of the join is done).
+            for (join, arms) in self.and_joins() {
+                let earliest = arms.iter().filter_map(|a| pos_of.get(a.as_str())).min();
+                if earliest != Some(&pos) {
+                    continue;
+                }
+                let free: Vec<String> = arms
+                    .iter()
+                    .filter(|a| self.arm_is_free(a, &st8, &arms))
+                    .cloned()
+                    .collect();
+                if free.len() > widest {
+                    widest = free.len();
+                    widest_join = Some(join.clone());
+                }
+                if free.len() >= n && best.is_none() {
+                    let mut agents: Vec<Vec<String>> = vec![Vec::new(); n];
+                    for (k, arm) in free.iter().enumerate() {
+                        agents[k % n].push(arm.clone());
+                    }
+                    best = Some(Division {
+                        join: join.clone(),
+                        agents,
+                    });
+                }
+            }
+            self.advance(&mut st8, st, pos, &mut complete_at);
+        }
+
+        best.ok_or(DivisionFailure {
+            party: n,
+            widest,
+            join: widest_join,
+        })
+    }
+
+    /// Every AND-join on the campaign: `(objective id, its `after` arms)` for each
+    /// objective with two or more prerequisites, in deterministic content order.
+    fn and_joins(&self) -> Vec<(String, Vec<String>)> {
+        let mut out = Vec::new();
+        for q in &self.c.quests.content.quests {
+            for o in &q.objectives {
+                if o.after().len() >= 2 {
+                    out.push((
+                        o.id().as_str().to_string(),
+                        o.after().iter().map(|a| a.as_str().to_string()).collect(),
+                    ));
+                }
+            }
+        }
+        out
+    }
+
+    /// Can one agent take `arm` starting from the join's frontier state, without
+    /// waiting for any SIBLING arm? (Quest active, own `after` already done,
+    /// flag gates satisfied, and for a `talk-to` a takeable completing option.)
+    fn arm_is_free(&self, arm: &str, st: &ReplayState, siblings: &[String]) -> bool {
+        let Some((quest, obj)) = self.c.quests.content.quests.iter().find_map(|q| {
+            q.objectives
+                .iter()
+                .find(|o| o.id().as_str() == arm)
+                .map(|o| (q, o))
+        }) else {
+            return false;
+        };
+        if !st.active.contains(quest.id.as_str()) {
+            return false;
+        }
+        if obj
+            .after()
+            .iter()
+            .any(|a| siblings.iter().any(|s| s == a.as_str()) || !st.done_obj.contains(a.as_str()))
+        {
+            return false;
+        }
+        if obj
+            .requires_flags()
+            .iter()
+            .any(|f| !st.flags.contains(f.as_str()))
+        {
+            return false;
+        }
+        if obj
+            .forbids_flags()
+            .iter()
+            .any(|f| st.flags.contains(f.as_str()))
+        {
+            return false;
+        }
+        if let Objective::TalkTo { npc, .. } = obj {
+            let takeable = self
+                .worlds
+                .iter()
+                .map(|w| self.solve(w))
+                .filter_map(|s| s.talk_option.get(arm).copied())
+                .any(|k| self.option_takeable_now(npc.as_str(), k, &st.flags));
+            if !takeable {
+                return false;
+            }
+        }
+        true
+    }
+
     // -- internals ---------------------------------------------------------
+
+    /// The replay's starting state: campaign-start quests active, ambient
+    /// (trigger / trap-disarm) flags saturated.
+    fn initial_state(&self) -> ReplayState {
+        let mut st = ReplayState::default();
+        for q in &self.c.quests.content.quests {
+            if matches!(q.trigger, Trigger::CampaignStart) {
+                st.active.insert(q.id.as_str().to_string());
+            }
+        }
+        self.saturate_ambient(&mut st.flags);
+        st
+    }
+
+    /// Apply one path step: complete its objective, fire its effect bundles,
+    /// cascade quest completions and re-saturate ambient producers. The single
+    /// transition function of the replay state machine — shared by [`Self::replay`]
+    /// (which checks each step's guards first) and [`Self::divide`] (which snapshots
+    /// the state before each step).
+    fn advance(
+        &self,
+        st: &mut ReplayState,
+        step: &PathStep,
+        pos: usize,
+        complete_at: &mut Option<(usize, String)>,
+    ) {
+        st.done_obj.insert(step.objective.clone());
+        if let Some(n) = step.talk_option {
+            for f in self.option_sets(&step.objective, n) {
+                st.flags.insert(f);
+            }
+        }
+        if let Some(quest) = self.quest(&step.quest)
+            && let Some(effs) = quest
+                .on_objective_complete
+                .get(&delvewright_dsl::ObjectiveId(step.objective.clone()))
+        {
+            self.fire(effs, &mut st.flags, complete_at, pos, &step.objective);
+        }
+        // Quest completion cascade.
+        loop {
+            let mut progressed = false;
+            for q in &self.c.quests.content.quests {
+                let qid = q.id.as_str();
+                if st.done_quest.contains(qid) || !st.active.contains(qid) {
+                    continue;
+                }
+                if !q
+                    .objectives
+                    .iter()
+                    .all(|o| st.done_obj.contains(o.id().as_str()))
+                {
+                    continue;
+                }
+                st.done_quest.insert(qid.to_string());
+                self.fire(
+                    &q.on_complete,
+                    &mut st.flags,
+                    complete_at,
+                    pos,
+                    &step.objective,
+                );
+                for other in &self.c.quests.content.quests {
+                    if let Trigger::QuestComplete { quest } = &other.trigger
+                        && quest.as_str() == qid
+                    {
+                        st.active.insert(other.id.as_str().to_string());
+                    }
+                }
+                progressed = true;
+            }
+            if !progressed {
+                break;
+            }
+        }
+        self.saturate_ambient(&mut st.flags);
+    }
 
     fn quest(&self, id: &str) -> Option<&'a delvewright_dsl::Quest> {
         self.c

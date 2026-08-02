@@ -323,15 +323,19 @@ pub fn build_with_warnings(
                 // soft-looped. Uses the move-npc waypoints (`m`) for the forced-path
                 // cell set.
                 crate::nav::check_traps(plan, &world, &m)?;
-                // spec-0016 §2 shortcut doors (DW0359/DW0360): the long route must
+                // spec-0016 §2 shortcut doors (DW0373/DW0374): the long route must
                 // exist while the gate is sealed, and opening the gate must
                 // genuinely shorten the crossing. The critical path above was
                 // already proven with every shortcut gate SEALED (Plan::build seals
                 // them at step 0), so the delve is finishable the long way.
                 crate::nav::check_shortcuts(plan, &world, campaign_spawn(plan))?;
-                // spec-0016 §3 ambush counterplay (DW0366): 初见杀 is legitimate,
+                // spec-0016 §3 ambush counterplay (DW0376): 初见杀 is legitimate,
                 // a pocket with no retreat is not.
                 crate::nav::check_ambushes(plan, &world, campaign_spawn(plan))?;
+                // spec-0016 §4 timed gates (DW0378): a gate that punishes bad
+                // timing is the point; one that punishes every timing is a slot
+                // machine. At least 20% of the cycle must admit a crossing.
+                crate::nav::check_timed_gates(plan, &world)?;
                 // Export the DW0311-proven critical-path routes as validation
                 // metadata (task #38): thinned per-leg waypoint polylines the harness
                 // replays as successive nearby goals, so no single giant mineflayer A*
@@ -1295,6 +1299,9 @@ fn emit_functions(
     // spec-0016 §2: summon each shortcut's far-side unlock affordance. The gate
     // itself needs no command — it is sealed from world-load by the prefab.
     setup.extend(shortcut_setup(plan));
+    // spec-0016 §4: start each timed gate's clock. The gate is sealed from
+    // world-load by the prefab, so the clock's first act is always an OPEN.
+    setup.extend(timed_gate_setup(plan));
     // Forceload lifecycle (map-editor audit finding 6, planner decision). The
     // edit-AABB forceloads exist for ONE reason — letting the one-shot
     // `world_edits` writes land — and `place_verify` above has now proven every
@@ -1364,8 +1371,30 @@ fn emit_functions(
             plan::interact_trigger(&oid)
         ));
     }
-    tick.push(format!(
-        "execute as @a unless score @s dw.classed matches 1 unless score @s dw.dlg_shown matches 1 run function {ns}:show_class"
+    // The lobby (spec-0018 `world.min_players`). A design that genuinely needs n
+    // players declares it, and the delve refuses to START below n: the class
+    // dialog stays shut and the waiting players get a live party-count actionbar.
+    // Emitted only for `min_players >= 2`, so every 1-player campaign — i.e. every
+    // pre-0.6 one — stays byte-identical here.
+    let min_players = plan::min_players(c);
+    let lobby_open = if min_players >= 2 {
+        tick.push(format!(
+            "execute store result score {LOBBY_COUNT} dw.sys if entity @a"
+        ));
+        tick.push(format!(
+            "execute if score {LOBBY_COUNT} dw.sys matches ..{} as @a unless score @s dw.classed matches 1 run title @s actionbar {}",
+            min_players - 1,
+            lobby_actionbar(min_players)
+        ));
+        format!("if score {LOBBY_COUNT} dw.sys matches {min_players}.. ")
+    } else {
+        String::new()
+    };
+    tick.push(with_execute_prefix(
+        &lobby_open,
+        format!(
+            "execute as @a unless score @s dw.classed matches 1 unless score @s dw.dlg_shown matches 1 run function {ns}:show_class"
+        ),
     ));
     for class in &plan.classes {
         tick.push(format!(
@@ -1385,14 +1414,19 @@ fn emit_functions(
     // the tick it becomes active (quest active, `after`/flags satisfied, not yet
     // complete) and has not been announced. Runs before the completion checks so
     // "new objective" precedes any same-tick "complete". Empty for v0.2.
+    //
+    // spec-0018: the whole predicate is party state now — the guard and the
+    // announce-once latch both read `#party` — so the driver needs no player
+    // context at all and the announce reaches the party exactly once.
     if v03 {
         for q in &c.quests.content.quests {
             let qa = quest_active_score(q.id.as_str());
             for o in &q.objectives {
                 if o.title().is_some() {
                     tick.push(format!(
-                        "execute as @a{} unless score @s {} matches 1 run function {ns}:announce_{}",
+                        "execute{} unless score {} {} matches 1 run function {ns}:announce_{}",
                         pending_guard(o, &qa),
+                        plan::PARTY,
                         announce_score(o.id().as_str()),
                         safe_obj_fn(o.id().as_str())
                     ));
@@ -1415,7 +1449,7 @@ fn emit_functions(
                     continue;
                 }
                 tick.push(format!(
-                    "execute as @a{} unless score {} dw.sys matches 1 run function {ns}:activate_{}",
+                    "execute{} unless score {} dw.sys matches 1 run function {ns}:activate_{}",
                     pending_guard(o, &qa),
                     activation_flag(o.id().as_str()),
                     safe_obj_fn(o.id().as_str())
@@ -1555,6 +1589,8 @@ fn emit_functions(
     fns.extend(emit_bonfire_functions(plan));
     // --- spec-0016 §2 shortcut unlock functions ---
     fns.extend(emit_shortcut_functions(plan));
+    // --- spec-0016 §4 timed-gate clock functions ---
+    fns.extend(emit_timed_gate_functions(plan));
     // --- v0.6 stealth-beat functions (spec-0014) ---
     fns.extend(emit_stealth_functions(plan));
 
@@ -1596,17 +1632,35 @@ fn emit_functions(
         let plan_class = &plan.classes[i];
         let mut body: Vec<String> = Vec::new();
         body.push("scoreboard players reset @s dw.class".to_string());
-        for item in &class.kit {
+        for (k, item) in class.kit.iter().enumerate() {
             let comp = match &item.name {
                 Some(n) => format!("[custom_name={}]", json!({ "text": n, "italic": false })),
                 None => String::new(),
             };
-            body.push(format!("give @s {}{} {}", item.item, comp, item.count));
+            let give = format!("give @s {}{} {}", item.item, comp, item.count);
+            // A class kit is per-player gear by construction. `carrier: "one"`
+            // (v0.6, spec-0018) marks a **party-unique** kit item — exactly one
+            // copy enters the party, to the first player who takes this class —
+            // latched on its own `dw.sys` sentinel so a second taker gets the rest
+            // of the kit but not the singleton. Absent `carrier` → unchanged.
+            if matches!(item.carrier, Some(delvewright_dsl::Carrier::One)) {
+                let latch = format!("#kit_{}_{k}", plan_class.safe);
+                body.push(format!(
+                    "execute unless score {latch} dw.sys matches 1 run {give}"
+                ));
+                body.push(format!("scoreboard players set {latch} dw.sys 1"));
+            } else {
+                body.push(give);
+            }
         }
         body.push("scoreboard players set @s dw.classed 1".to_string());
+        // Party state (spec-0018): the campaign-start quests activate for the
+        // PARTY the moment any player takes a class, so a second player who is
+        // still on the class screen is not behind on the quest state.
         for qid in &campaign_start {
             body.push(format!(
-                "scoreboard players set @s {} 1",
+                "scoreboard players set {} {} 1",
+                plan::PARTY,
                 quest_active_score(qid)
             ));
         }
@@ -1657,9 +1711,12 @@ fn emit_functions(
             // v0.4: a flag-gated option is inert until its flags are set — so a
             // direct `/trigger` (the bot's path, which bypasses the UI variant
             // hiding) cannot fire it early. `return fail` short-circuits the rest.
+            // The story flags are party state (spec-0018): what one player learned
+            // from an NPC opens the option for whoever next speaks to them.
             for f in &opt.requires_flags {
                 body.push(format!(
-                    "execute unless score @s {} matches 1 run return fail",
+                    "execute unless score {} {} matches 1 run return fail",
+                    plan::PARTY,
                     plan::flag_score(f)
                 ));
             }
@@ -1667,14 +1724,16 @@ fn emit_functions(
             // equally inert to a direct `/trigger` once any listed flag is set.
             for f in &opt.forbids_flags {
                 body.push(format!(
-                    "execute if score @s {} matches 1 run return fail",
+                    "execute if score {} {} matches 1 run return fail",
+                    plan::PARTY,
                     plan::flag_score(f)
                 ));
             }
             // v0.4: set any flags this option declares (dialogue `set-flag`).
             for f in &opt.sets_flags {
                 body.push(format!(
-                    "scoreboard players set @s {} 1",
+                    "scoreboard players set {} {} 1",
+                    plan::PARTY,
                     plan::flag_score(f)
                 ));
             }
@@ -1699,10 +1758,11 @@ fn emit_functions(
             for obj in &opt.completes {
                 if let Some((qid, _)) = objective_quest(c, obj) {
                     body.push(format!(
-                        "execute if score @s {} matches 1 unless score @s {} matches 1 run function {ns}:complete_{}",
+                        "execute if score {p} {} matches 1 unless score {p} {} matches 1 run function {ns}:complete_{}",
                         quest_active_score(qid),
                         obj_score(obj),
-                        safe_obj_fn(obj)
+                        safe_obj_fn(obj),
+                        p = plan::PARTY
                     ));
                 }
             }
@@ -1748,9 +1808,13 @@ fn emit_functions(
             // shows the title + hint once and plays a subtle sound. Emitted only
             // for titled objectives (v0.3); nothing for v0.2.
             if v03 && let Some(title) = o.title() {
+                // spec-0018: the objective is the PARTY's, so its title, hint and
+                // cue address `@a` and the once-latch lives on the party holder —
+                // one announcement per objective, heard by everyone, never a
+                // per-player replay for whoever happened to be standing nearby.
                 let mut ann: Vec<String> = Vec::new();
                 ann.push(format!(
-                    "tellraw @s {}",
+                    "tellraw @a {}",
                     json!([
                         { "text": "New objective: ", "color": "yellow", "bold": true },
                         { "text": title, "color": "gold" }
@@ -1758,20 +1822,28 @@ fn emit_functions(
                 ));
                 if let Some(hint) = o.hint() {
                     ann.push(format!(
-                        "tellraw @s {}",
+                        "tellraw @a {}",
                         json!({ "text": hint, "color": "gray", "italic": true })
                     ));
                 }
-                ann.push("playsound minecraft:block.note_block.pling player @s".to_string());
+                ann.push("playsound minecraft:block.note_block.pling player @a".to_string());
                 ann.push(format!(
-                    "scoreboard players set @s {} 1",
+                    "scoreboard players set {} {} 1",
+                    plan::PARTY,
                     announce_score(oid)
                 ));
                 fns.push((format!("announce_{}", safe_obj_fn(oid)), lines(&ann)));
             }
 
             let mut body: Vec<String> = Vec::new();
-            body.push(format!("scoreboard players set @s {} 1", obj_score(oid)));
+            // The completing action advances the PARTY (spec-0018) — this single
+            // write is what lets two players clear two arms of an AND-join in two
+            // rooms and unlock the successor for both.
+            body.push(format!(
+                "scoreboard players set {} {} 1",
+                plan::PARTY,
+                obj_score(oid)
+            ));
             // Machine completion-marker for the validation bot, broadcast the
             // instant this objective's score flips — BEFORE any effect that may
             // teleport, open a cutscene or complete the campaign, so the harness
@@ -1793,13 +1865,13 @@ fn emit_functions(
             // sound so progress is legible. Titled objectives only; v0.2 unchanged.
             if v03 && let Some(title) = o.title() {
                 body.push(format!(
-                    "tellraw @s {}",
+                    "tellraw @a {}",
                     json!([
                         { "text": "Objective complete: ", "color": "green" },
                         { "text": title, "color": "white" }
                     ])
                 ));
-                body.push("playsound minecraft:entity.experience_orb.pickup player @s".to_string());
+                body.push("playsound minecraft:entity.experience_orb.pickup player @a".to_string());
             }
             // Objective-marker lifecycle (task #45): despawn every ENTITY this
             // objective's activation summoned, so a completed interact/reach
@@ -1817,11 +1889,11 @@ fn emit_functions(
                 body.extend(completion_cleanup(o));
             }
             // `complete_<obj>` is dispatched `as @a` from `tick`, so this bundle
-            // runs with the acting player as `@s` (see `Executor::Player`).
+            // runs with the acting player as `@s` (see `Audience::Party`).
             body.extend(emit_effect_bundle(
                 plan,
                 objective_effects(c, oid),
-                Executor::Player,
+                Audience::Party,
             ));
             // Inter-area transport: if completing this objective moves the player
             // into a different area on the critical path, teleport them to that
@@ -1838,16 +1910,20 @@ fn emit_functions(
         }
 
         // check_q_<quest>
+        // The quest-level AND (every objective done) is a party predicate too:
+        // whoever finishes the LAST objective completes the quest for everyone.
         let mut check: Vec<String> = Vec::new();
         let mut guard = "execute".to_string();
         for o in &q.objectives {
             guard.push_str(&format!(
-                " if score @s {} matches 1",
+                " if score {} {} matches 1",
+                plan::PARTY,
                 obj_score(o.id().as_str())
             ));
         }
         guard.push_str(&format!(
-            " unless score @s {} matches 1 run function {ns}:complete_q_{}",
+            " unless score {} {} matches 1 run function {ns}:complete_q_{}",
+            plan::PARTY,
             quest_score(q.id.as_str()),
             plan::safe_local(q.id.as_str())
         ));
@@ -1860,17 +1936,19 @@ fn emit_functions(
         // complete_q_<quest>
         let mut done: Vec<String> = Vec::new();
         done.push(format!(
-            "scoreboard players set @s {} 1",
+            "scoreboard players set {} {} 1",
+            plan::PARTY,
             quest_score(q.id.as_str())
         ));
-        done.extend(emit_effect_bundle(plan, &q.on_complete, Executor::Player));
+        done.extend(emit_effect_bundle(plan, &q.on_complete, Audience::Party));
         // activate quests triggered by this quest's completion
         for dep in &c.quests.content.quests {
             if let Trigger::QuestComplete { quest } = &dep.trigger
                 && quest.as_str() == q.id.as_str()
             {
                 done.push(format!(
-                    "scoreboard players set @s {} 1",
+                    "scoreboard players set {} {} 1",
+                    plan::PARTY,
                     quest_active_score(dep.id.as_str())
                 ));
             }
@@ -1884,10 +1962,16 @@ fn emit_functions(
     // --- campaign_complete (shared by campaign-complete effect) ---
     let title = &c.world.content.title;
     let mut cc: Vec<String> = Vec::new();
-    cc.push("scoreboard players set @s dw.campaign 1".to_string());
-    cc.push(format!("advancement grant @s only {ns}:campaign_complete"));
+    // Campaign completion is the party's (spec-0018): one holder write, and the
+    // advancement + fanfare granted to every member — the delve ends for all of
+    // them at once, whoever struck the last blow.
     cc.push(format!(
-        "tellraw @s {}",
+        "scoreboard players set {} dw.campaign 1",
+        plan::PARTY
+    ));
+    cc.push(format!("advancement grant @a only {ns}:campaign_complete"));
+    cc.push(format!(
+        "tellraw @a {}",
         json!([
             { "text": format!("{title} — complete."), "color": "gold" },
             { "text": "\n" },
@@ -1899,14 +1983,14 @@ fn emit_functions(
     // shared `campaign_complete` stays byte-identical for hello-world / keep-crawl.
     if v03 {
         cc.push(format!(
-            "title @s title {}",
+            "title @a title {}",
             json!({ "text": "Delve Complete", "color": "gold", "bold": true })
         ));
         cc.push(format!(
-            "title @s subtitle {}",
+            "title @a subtitle {}",
             json!({ "text": title, "color": "yellow" })
         ));
-        cc.push("playsound minecraft:ui.toast.challenge_complete player @s".to_string());
+        cc.push("playsound minecraft:ui.toast.challenge_complete player @a".to_string());
     }
     // Machine-readable completion marker for the validation bot. The bot reads
     // `dw.campaign` from the sidebar per the amended contract, BUT mineflayer
@@ -2449,119 +2533,102 @@ fn check_wave_spawns(plan: &Plan) -> Result<(), BuildFailure> {
     Ok(())
 }
 
-/// Emit a quest effect, wrapping every command it produces in a per-player flag
-/// guard when the effect declares `requires_flags` and/or `forbids_flags` (DSL
-/// v0.6). The guard is `execute if score @s dw.f_<flag> matches 1 [… per
-/// required flag] unless score @s dw.f_<flag> matches 1 [… per forbidden flag]
-/// run <command>` — `unless … matches 1` deliberately treats an **unset** score
-/// as "not set" (flag scores are never pre-initialized to 0, so a
-/// `scores={…=..0}` selector would not work). These effects already run in
-/// per-player context (`complete_<obj>` and `trig_<id>` are entered `as
-/// @a`/`@s`), so `@s` resolves to the acting player. An ungated effect (both
-/// lists empty) is emitted verbatim — byte-identical to the pre-0.6 output,
-/// preserving determinism for every existing campaign.
-fn emit_gated_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
+// ---------------------------------------------------------------------------
+// Effect bundles: audience and command source (spec-0018 party progression)
+// ---------------------------------------------------------------------------
+
+/// Who an emitted effect bundle speaks to, and whether it has an acting player.
+///
+/// **Party state (spec-0018).** Objective/quest/flag progression lives on the
+/// [`plan::PARTY`] holder, so a *party-fact* effect (`set-flag`, `open-gate`,
+/// `spawn-*`, `set-checkpoint`, a driver start, …) names no player at all and
+/// fires exactly once, under every audience. Only *player-facing* effects
+/// (`narrate`, `play-sound`, `damage-players`, `give-item`) need a selector, and
+/// that selector is what this enum decides.
+///
+/// **The scheduled-executor bug this still models (AUDIT-P0).** Vanilla's
+/// `schedule function …` re-invokes a function with the **server** command
+/// source: no executor, so `@s` resolves to nothing and every `@s`-addressed
+/// command silently fails. Under party state a scheduled `set-flag` writes
+/// `#party` and is immune by construction; what remains executor-dependent is
+/// exactly one thing — a `carrier: "one"` `give-item`, which needs the acting
+/// player — and [`Audience::Scheduled`] is where that has no answer (rejected at
+/// validate time, `DW0357`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Audience {
+    /// A **party event** entered as one player (`complete_<obj>`, `complete_q_*`,
+    /// `trig_<id>`): player-facing effects address `@a` (the whole party sees the
+    /// beat), and `@s` is available as the completing player for a `carrier:
+    /// "one"` hand-off.
+    Party,
+    /// A **scheduled** bundle (`mv_arrive_*`, `ma_arrive_*`, `seq_*_<i>`), entered
+    /// with the server command source: player-facing effects address `@a`; there
+    /// is no `@s` at all.
+    Scheduled,
+    /// **One player's own** bundle: a checkpoint `on_respawn` (fired per
+    /// respawning player) and a stealth `on_caught` (fired at the spotted
+    /// player). Player-facing effects address `@s` — re-broadcasting one player's
+    /// death or exposure to the party would duplicate their kit and their
+    /// narration.
+    Solo,
+}
+
+impl Audience {
+    /// The selector a player-facing command uses.
+    fn selector(self) -> &'static str {
+        match self {
+            Audience::Party | Audience::Scheduled => "@a",
+            Audience::Solo => "@s",
+        }
+    }
+
+    /// Is there an acting player (`@s`) in this command source?
+    fn has_actor(self) -> bool {
+        !matches!(self, Audience::Scheduled)
+    }
+}
+
+/// Emit a quest effect, wrapping every command it produces in the effect's
+/// **party** flag guard when it declares `requires_flags` and/or `forbids_flags`
+/// (DSL v0.6). Flags are party state (spec-0018), so the guard is one form under
+/// every audience: `execute if score #party dw.f_<flag> matches 1 [… per required
+/// flag] unless score #party dw.f_<flag> matches 1 [… per forbidden flag] run
+/// <command>`. `unless … matches 1` deliberately treats an **unset** score as
+/// "not set" (flag scores are never pre-initialized to 0, so a `scores={…=..0}`
+/// selector would not work). An ungated effect (both lists empty) is emitted
+/// verbatim.
+fn emit_gated_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut Vec<String>) {
     let flags = eff.requires_flags();
     let forbids = eff.forbids_flags();
+    let mut inner: Vec<String> = Vec::new();
+    emit_quest_effect(plan, eff, aud, &mut inner);
     if flags.is_empty() && forbids.is_empty() {
-        emit_quest_effect(plan, eff, body);
+        body.extend(inner);
         return;
     }
-    let mut inner: Vec<String> = Vec::new();
-    emit_quest_effect(plan, eff, &mut inner);
     let guard: String = flags
         .iter()
-        .map(|f| format!("if score @s {} matches 1 ", plan::flag_score(f.as_str())))
+        .map(|f| {
+            format!(
+                "if score {} {} matches 1 ",
+                plan::PARTY,
+                plan::flag_score(f.as_str())
+            )
+        })
         .chain(forbids.iter().map(|f| {
             format!(
-                "unless score @s {} matches 1 ",
+                "unless score {} {} matches 1 ",
+                plan::PARTY,
                 plan::flag_score(f.as_str())
             )
         }))
         .collect();
     for line in inner {
-        body.push(format!("execute {guard}run {line}"));
+        body.push(with_execute_prefix(&guard, line));
     }
 }
 
-// ---------------------------------------------------------------------------
-// Effect bundles and their command source (task: scheduled-executor fix)
-// ---------------------------------------------------------------------------
-
-/// The command source a generated effect bundle is entered under.
-///
-/// **The bug this models (AUDIT-P0).** Vanilla's `schedule function …` re-invokes
-/// a function with the **server** command source: no executor, so `@s` resolves
-/// to nothing and every `@s`-addressed command silently fails (a scheduled
-/// `scoreboard players set @s dw.f_hidden 1` sets nobody's flag, and the
-/// objective it gates never unlocks — the island's "Get Into the Shadows"
-/// soft-lock). Three generated bundles are only ever reached that way: a
-/// `move-npc`/`move-actor` `on_arrive` (fired from the scheduled walk driver)
-/// and every `sequence` step function (fired from the scheduled timeline). They
-/// are emitted with [`Executor::Server`]; every other bundle keeps
-/// [`Executor::Player`] and stays byte-identical.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Executor {
-    /// Entered from a per-player dispatch (`complete_<obj>` / `trig_<id>` /
-    /// `cp_on_respawn_<i>` / `stealth_caught_<i>` are all entered `as @a`/`as
-    /// @s`), so `@s` is the acting player and effects are emitted verbatim.
-    Player,
-    /// Entered from the scheduler (`schedule function …`) — the server command
-    /// source, with no `@s`. Per-player effects must re-establish the party
-    /// executor themselves; global effects must NOT (they would multi-fire).
-    Server,
-}
-
-/// Does this effect's emitted commands address the **acting player** (`@s`)?
-///
-/// This is the multiplicity contract of the scheduled-executor fix: a
-/// player-scoped effect runs once per player (`execute as @a … run`, exactly
-/// what a top-level bundle gets from its `as @a` dispatch, at the same —
-/// unmoved — command position); a global effect runs exactly once, because a
-/// blanket `as @a` around a whole bundle would fire every `fill`, `summon`,
-/// `schedule` and driver start once per player.
-///
-/// Deliberately an exhaustive match with no wildcard arm: a new effect verb must
-/// state its executor scope here or the compiler refuses to build.
-fn effect_is_player_scoped(eff: &QuestEffect) -> bool {
-    match eff {
-        // Per-player: every emitted command names `@s`, or calls a function
-        // whose body does (`campaign_complete`).
-        QuestEffect::CampaignComplete
-        | QuestEffect::GiveItem { .. }
-        | QuestEffect::SetFlag { .. }
-        | QuestEffect::Narrate { .. }
-        | QuestEffect::PlaySound { .. }
-        | QuestEffect::DamagePlayers { .. } => true,
-        // Global: world edits, entity commands, dimension-wide cuts, and calls
-        // into generated functions that are themselves party-wide or
-        // server-safe (`spawn_<wave>`, `spawn_actor_<id>`, `spawn_npc_<id>`,
-        // `unleash_<id>`, the `mv_`/`ma_` driver starts, `cs_<key>`,
-        // `stealth_begin_<i>`, and `seq_<key>` — whose step functions are
-        // themselves emitted server-source-safe).
-        QuestEffect::OpenGate { .. }
-        | QuestEffect::CloseGate { .. }
-        | QuestEffect::SpawnWave { .. }
-        | QuestEffect::SetBlock { .. }
-        | QuestEffect::DespawnNpc { .. }
-        | QuestEffect::MoveNpc { .. }
-        | QuestEffect::Cutscene { .. }
-        | QuestEffect::SetTime { .. }
-        | QuestEffect::SetWeather { .. }
-        | QuestEffect::SetCheckpoint { .. }
-        | QuestEffect::Bonfire { .. }
-        | QuestEffect::BeginStealth { .. }
-        | QuestEffect::EndStealth
-        | QuestEffect::SpawnActor { .. }
-        | QuestEffect::DespawnActor { .. }
-        | QuestEffect::MoveActor { .. }
-        | QuestEffect::UnleashActor { .. }
-        | QuestEffect::Sequence { .. }
-        | QuestEffect::SpawnNpc { .. } => false,
-    }
-}
-
-/// Splice an `execute` prefix (already space-terminated, e.g. `as @a if score @s
+/// Splice an `execute` prefix (already space-terminated, e.g. `if score #party
 /// dw.f_x matches 1 `) onto one emitted command, folding into a leading
 /// `execute` when there is one rather than nesting a second `execute … run
 /// execute …`.
@@ -2575,69 +2642,23 @@ fn with_execute_prefix(prefix: &str, line: String) -> String {
     }
 }
 
-/// Emit one effect of a bundle entered with the **server** command source.
-///
-/// Per-player effects are re-bound to the party (`as @a`) so each player is the
-/// `@s` of the effect's own commands — the same executor and the same (unmoved)
-/// command position a top-level `execute as @a … run function complete_<obj>`
-/// gives them. Global effects are emitted bare, so they fire exactly once.
-///
-/// The per-effect flag gate (v0.6) follows the executor: under `as @a` it keeps
-/// its per-player spelling (`if score @s dw.f_<flag> matches 1`); on a global
-/// effect there is no player to ask, so it degrades to the party predicate the
-/// trigger layer already uses — `if entity @a[scores={dw.f_<flag>=1..}]` ("any
-/// player holds it") and `unless entity @a[scores={…}]` ("no player holds it").
-/// Note that these bundles previously dropped the gate entirely (they called
-/// `emit_quest_effect`, not `emit_gated_effect`), so a gated effect inside an
-/// `on_arrive`/`sequence` step fired unconditionally.
-fn emit_gated_effect_server(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
-    let per_player = effect_is_player_scoped(eff);
-    let mut inner: Vec<String> = Vec::new();
-    emit_quest_effect(plan, eff, &mut inner);
-    let mut prefix = String::new();
-    if per_player {
-        prefix.push_str("as @a ");
-    }
-    for f in eff.requires_flags() {
-        let score = plan::flag_score(f.as_str());
-        prefix.push_str(&if per_player {
-            format!("if score @s {score} matches 1 ")
-        } else {
-            format!("if entity @a[scores={{{score}=1..}}] ")
-        });
-    }
-    for f in eff.forbids_flags() {
-        let score = plan::flag_score(f.as_str());
-        prefix.push_str(&if per_player {
-            format!("unless score @s {score} matches 1 ")
-        } else {
-            format!("unless entity @a[scores={{{score}=1..}}] ")
-        });
-    }
-    for line in inner {
-        body.push(with_execute_prefix(&prefix, line));
-    }
-}
-
-/// Emit a whole effect bundle under `exec` (see [`Executor`]).
+/// Emit a whole effect bundle for `aud` (see [`Audience`]).
 fn emit_effect_bundle<'a>(
     plan: &Plan,
     effects: impl IntoIterator<Item = &'a QuestEffect>,
-    exec: Executor,
+    aud: Audience,
 ) -> Vec<String> {
     let mut body: Vec<String> = Vec::new();
     for e in effects {
-        match exec {
-            Executor::Player => emit_gated_effect(plan, e, &mut body),
-            Executor::Server => emit_gated_effect_server(plan, e, &mut body),
-        }
+        emit_gated_effect(plan, e, aud, &mut body);
     }
     body
 }
 
-/// Emit a quest effect's commands into `body`.
-fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
+/// Emit a quest effect's commands into `body`, addressing `aud`.
+fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut Vec<String>) {
     let ns = &plan.namespace;
+    let who = aud.selector();
     match eff {
         QuestEffect::OpenGate { anchor, .. } => {
             // Find the gate anchor across areas (first match).
@@ -2680,11 +2701,26 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
                 Some(n) => format!("[custom_name={}]", json!({ "text": n, "italic": false })),
                 None => String::new(),
             };
-            body.push(format!("give @s {item}{comp} {count}"));
+            // spec-0018: a quest beat arms the whole party (`@a`) unless the item
+            // declares `carrier: "one"` — one quest prop, handed to the player
+            // whose action earned it (`@s`), for the party to pass around. A
+            // `carrier: "one"` in a scheduler-only bundle has no acting player and
+            // is rejected at validate time (`DW0357`), so `has_actor` can only be
+            // false here for the party-wide default.
+            let target = if eff.gives_to_one() && aud.has_actor() {
+                "@s"
+            } else {
+                who
+            };
+            body.push(format!("give {target} {item}{comp} {count}"));
         }
         QuestEffect::SetFlag { flag, .. } => {
+            // Party state (spec-0018): one holder, so any player's action sets the
+            // story flag for everyone — and a scheduled bundle can set it too (the
+            // AUDIT-P0 `@s`-in-a-schedule class of bug is structurally gone).
             body.push(format!(
-                "scoreboard players set @s {} 1",
+                "scoreboard players set {} {} 1",
+                plan::PARTY,
                 plan::flag_score(flag.as_str())
             ));
         }
@@ -2698,7 +2734,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
         QuestEffect::Narrate {
             text, style, sound, ..
         } => {
-            emit_narrate(text, *style, sound.as_deref(), body);
+            emit_narrate(text, *style, sound.as_deref(), who, body);
         }
         QuestEffect::SetBlock { anchor, block, .. } => {
             if let Some(pos) = anchor_point_any(plan, anchor.as_str()) {
@@ -2745,7 +2781,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
             pitch,
             ..
         } => {
-            emit_play_sound(plan, sound, at.as_ref(), *volume, *pitch, body);
+            emit_play_sound(plan, sound, at.as_ref(), *volume, *pitch, who, body);
         }
         QuestEffect::DamagePlayers {
             amount,
@@ -2753,7 +2789,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
             damage_type,
             ..
         } => {
-            emit_damage_players(plan, *amount, within.as_ref(), *damage_type, body);
+            emit_damage_players(plan, *amount, within.as_ref(), *damage_type, who, body);
         }
         QuestEffect::SetCheckpoint { anchor, on_respawn } => {
             emit_set_checkpoint(plan, anchor.as_str(), on_respawn, body);
@@ -2834,17 +2870,22 @@ fn emit_despawn_actor(actor: &str, style: delvewright_dsl::DespawnStyle, body: &
     }
 }
 
-/// Emit a `play-sound` effect (DSL v0.6). Effects run in an `as @a` context, so
-/// `@s` is each player: an anchor sound plays once per player positioned at the
-/// resolved anchor (all hear it there); the default `players` target plays at each
-/// player's own position (`~ ~ ~`). `at: actor` never reaches emission — it is
-/// rejected at validate-time (`DW0335`) until the actors surface lands.
+/// Emit a `play-sound` effect (DSL v0.6). `who` is the audience selector
+/// (spec-0018: `@a` for a party beat, `@s` inside a solo `on_respawn`/`on_caught`
+/// bundle). An `at: anchor` sound carries absolute coordinates, so every listener
+/// hears it in the same place; the default `players` target is
+/// listener-relative and, when a volume/pitch is declared (which forces an
+/// explicit position), is emitted through `execute as <who> at @s run … ~ ~ ~` so
+/// `~ ~ ~` resolves at each listener rather than at the command's own position.
+/// `at: actor` never reaches emission — it is rejected at validate-time
+/// (`DW0335`) until the actors surface lands.
 fn emit_play_sound(
     plan: &Plan,
     sound: &str,
     at: Option<&delvewright_dsl::SoundAt>,
     volume: Option<f64>,
     pitch: Option<f64>,
+    who: &str,
     body: &mut Vec<String>,
 ) {
     use delvewright_dsl::SoundAt;
@@ -2863,7 +2904,11 @@ fn emit_play_sound(
         Some(SoundAt::Actor { .. }) => return, // deferred: DW0335 at validate-time
         _ => None,                             // `players` (default): player-relative
     };
-    let mut cmd = format!("playsound {sound} master @s");
+    let listener_relative = pos.is_none() && (volume.is_some() || pitch.is_some());
+    let mut cmd = format!(
+        "playsound {sound} master {}",
+        if listener_relative { "@s" } else { who }
+    );
     if pos.is_some() || volume.is_some() || pitch.is_some() {
         let p = pos.unwrap_or_else(|| "~ ~ ~".to_string());
         cmd.push_str(&format!(" {p}"));
@@ -2874,16 +2919,28 @@ fn emit_play_sound(
             }
         }
     }
+    if listener_relative && who != "@s" {
+        // `~ ~ ~` is the COMMAND's position, not the listener's — rebind so each
+        // party member hears it at their own feet.
+        cmd = format!("execute as {who} at @s run {cmd}");
+    }
     body.push(cmd);
 }
 
-/// Emit a `damage-players` effect (DSL v0.6). Effects run in an `as @a` / `as @s`
-/// context, so `@s` is each acting player: `damage @s <amount> <type>` damages
-/// every acting player once (in a stealth `on_caught`, the single caught player).
+/// Emit a `damage-players` effect (DSL v0.6). `who` is the audience selector
+/// (spec-0018): `@a` on a party beat — the hazard is a fact about the delve, so
+/// it hits every party member once — and `@s` inside a solo `on_caught` /
+/// `on_respawn` bundle, where exactly the one player it belongs to is hurt.
 /// `amount` is in half-hearts (1 HP each); the type is a curated vanilla damage
-/// type (default `minecraft:generic`). A `within` box narrows to acting players
-/// standing inside the anchor-centred AABB — the same `@s[x=…,dx=…]` box model the
-/// stealth zone check uses — preserving the per-`@s` semantics (no double-hit).
+/// type (default `minecraft:generic`). A `within` box narrows to players standing
+/// inside the anchor-centred AABB — the same box model the stealth zone check
+/// uses (no double-hit: each player is judged on their own position).
+///
+/// **`/damage` takes ONE entity** (the vendored command tree says
+/// `amount: "single"`, and 1.21.11 refuses to load a whole function containing
+/// `damage @a[…] …`), so the party form is reached by re-binding —
+/// `execute as @a[…] run damage @s …` — not by widening the target. The solo
+/// form keeps its `if entity @s[…]` guard.
 ///
 /// Every form is guarded by `tag=!dw_cutscene`: a player watching a cutscene is
 /// never harmed by campaign machinery (see [`CUTSCENE_TAG`]).
@@ -2892,38 +2949,46 @@ fn emit_damage_players(
     amount: u32,
     within: Option<&delvewright_dsl::StealthZone>,
     damage_type: Option<delvewright_dsl::DamageKind>,
+    who: &str,
     body: &mut Vec<String>,
 ) {
     use delvewright_dsl::DamageKind;
     let kind = damage_type.unwrap_or(DamageKind::Generic).id();
-    let cmd = format!("damage @s {amount} {kind}");
-    match within {
+    let filters = match within {
         Some(zone) => {
             // A blank box when the anchor is unresolved (referential validation
             // reports that, DW0142) — emit nothing rather than an invalid selector.
-            if let Some(pos) = anchor_point_any(plan, zone.anchor.as_str()) {
-                let lo = [
-                    pos[0] - zone.extent[0] as i32,
-                    pos[1] - zone.extent[1] as i32,
-                    pos[2] - zone.extent[2] as i32,
-                ];
-                let size = [
-                    2 * zone.extent[0] as i32,
-                    2 * zone.extent[1] as i32,
-                    2 * zone.extent[2] as i32,
-                ];
-                body.push(format!(
-                    "execute if entity @s[x={},dx={},y={},dy={},z={},dz={},tag=!{CUTSCENE_TAG}] run {cmd}",
-                    lo[0], size[0], lo[1], size[1], lo[2], size[2]
-                ));
-            }
+            let Some(pos) = anchor_point_any(plan, zone.anchor.as_str()) else {
+                return;
+            };
+            let lo = [
+                pos[0] - zone.extent[0] as i32,
+                pos[1] - zone.extent[1] as i32,
+                pos[2] - zone.extent[2] as i32,
+            ];
+            let size = [
+                2 * zone.extent[0] as i32,
+                2 * zone.extent[1] as i32,
+                2 * zone.extent[2] as i32,
+            ];
+            format!(
+                "x={},dx={},y={},dy={},z={},dz={},tag=!{CUTSCENE_TAG}",
+                lo[0], size[0], lo[1], size[1], lo[2], size[2]
+            )
         }
-        // The bare form still needs the cutscene guard, so it becomes a guarded
-        // `execute` too (see CUTSCENE_TAG: a cutscene is pure observation —
-        // campaign machinery never harms a player who is only watching).
-        None => body.push(format!(
-            "execute if entity @s[tag=!{CUTSCENE_TAG}] run {cmd}"
-        )),
+        // The bare form still needs the cutscene guard (see CUTSCENE_TAG: a
+        // cutscene is pure observation — campaign machinery never harms a player
+        // who is only watching).
+        None => format!("tag=!{CUTSCENE_TAG}"),
+    };
+    if who == "@s" {
+        body.push(format!(
+            "execute if entity @s[{filters}] run damage @s {amount} {kind}"
+        ));
+    } else {
+        body.push(format!(
+            "execute as {who}[{filters}] run damage @s {amount} {kind}"
+        ));
     }
 }
 
@@ -3001,16 +3066,86 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
         if !dispatches(c) {
             continue;
         }
+        // `Audience::Solo` (spec-0018): the checkpoint itself is party state, but
+        // its `on_respawn` belongs to the ONE player who just died — re-broadcasting
+        // it would re-narrate and re-gift every survivor on each death.
+        //
+        // A bonfire's wave re-seat (spec-0016 §1) is party state and is emitted
+        // BEFORE the bundle: it names no player, so it fires exactly once for the
+        // death, and it must restore the scene before the dying player's own
+        // `on_rest` beats read it.
         let mut body: Vec<String> = Vec::new();
         if c.rest {
             body.extend(reseat.iter().cloned());
         }
-        for eff in &c.on_respawn {
-            emit_quest_effect(plan, eff, &mut body);
-        }
+        body.extend(emit_effect_bundle(plan, &c.on_respawn, Audience::Solo));
         fns.push((format!("cp_on_respawn_{}", c.index), lines(&body)));
     }
     fns
+}
+
+// ---------------------------------------------------------------------------
+// spec-0016 §4 timed gates
+// ---------------------------------------------------------------------------
+
+/// `setup_finish` commands for timed gates (spec-0016 §4): start each gate's
+/// clock. The gate is physically sealed by the prefab at world-load, so the
+/// clock's first act is always an OPEN — a `phase` of 0 opens immediately, a
+/// larger one holds the gate shut that many ticks first. Empty for a campaign
+/// with no timed gate → byte-identical.
+fn timed_gate_setup(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    plan.timed_gates
+        .iter()
+        .map(|g| {
+            if g.phase == 0 {
+                format!("function {ns}:tgate_open_{}", g.safe)
+            } else {
+                format!("schedule function {ns}:tgate_open_{} {}t", g.safe, g.phase)
+            }
+        })
+        .collect()
+}
+
+/// The timed-gate clock functions (spec-0016 §4): a two-function ping-pong that
+/// carries its own next hop, so the cycle is one self-sustaining chain with no
+/// per-tick polling and no state to drift.
+///
+/// `tgate_open_<id>` clears the region (the same `fill … replace <block>`
+/// `open-gate` emits) and schedules the close `open_ticks` later;
+/// `tgate_close_<id>` fills it back and schedules the open `closed_ticks` later.
+/// `schedule` is replace-mode in vanilla, so the clock can never double up — the
+/// same property the boundary and night-vision clocks rely on. Both functions are
+/// pure world edits: they name no player, so the server command source they are
+/// re-entered under is irrelevant (§4 "A scheduled bundle has no `@s`").
+fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for g in &plan.timed_gates {
+        let id = &g.safe;
+        let (from, to) = g.gate_region;
+        out.push((
+            format!("tgate_open_{id}"),
+            lines(&[
+                format!(
+                    "fill {} {} {} {} {} {} minecraft:air replace {}",
+                    from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
+                ),
+                format!("schedule function {ns}:tgate_close_{id} {}t", g.open_ticks),
+            ]),
+        ));
+        out.push((
+            format!("tgate_close_{id}"),
+            lines(&[
+                format!(
+                    "fill {} {} {} {} {} {} {}",
+                    from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
+                ),
+                format!("schedule function {ns}:tgate_open_{id} {}t", g.closed_ticks),
+            ]),
+        ));
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -3039,7 +3174,7 @@ fn shortcut_setup(plan: &Plan) -> Vec<String> {
 /// Per-tick shortcut unlock detection (spec-0016 §2). Fires **once** — the
 /// `#sc_<id>` sentinel is the structural expression of permanence: after the open
 /// there is nothing left to fire, and no verb anywhere can put the gate back
-/// (`DW0358` forbids `close-gate` on a shortcut gate). Empty without a shortcut.
+/// (`DW0372` forbids `close-gate` on a shortcut gate). Empty without a shortcut.
 fn shortcut_tick(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
@@ -3071,7 +3206,7 @@ fn emit_shortcut_functions(plan: &Plan) -> Vec<(String, String)> {
                 from[0], from[1], from[2], to[0], to[1], to[2], sc.gate_block
             ),
         ];
-        body.extend(emit_effect_bundle(plan, &sc.on_unlock, Executor::Server));
+        body.extend(emit_effect_bundle(plan, &sc.on_unlock, Audience::Scheduled));
         out.push((format!("shortcut_open_{id}"), lines(&body)));
     }
     out
@@ -3128,12 +3263,15 @@ fn bonfire_tick(plan: &Plan) -> Vec<String> {
 /// a `set-checkpoint` emits, so `dw:cp`, `spawnpoint` and the `#cp` marker stay
 /// one shared contract — and (b) runs the `on_rest` scene reset.
 ///
-/// The bundle is emitted with [`Executor::Server`]: the tick this is dispatched
-/// from carries no `@s`, so per-player effects re-bind to `as @a` (the whole
-/// party rests) and global effects fire exactly once. The respawn path runs the
-/// SAME effects through `cp_on_respawn_<i>` under [`Executor::Player`] (one
-/// respawning player), which is why spec-0016 requires `on_rest` to be
-/// idempotent — it is the world's single answer to both a rest and a death.
+/// **Audience (spec-0018).** Resting is a **party event** dispatched from the
+/// tick, which carries no `@s`, so the bundle is emitted with
+/// [`Audience::Scheduled`]: player-facing effects address `@a` — the whole party
+/// rests together — and party-state effects name no player and fire once. The
+/// respawn path runs the SAME authored effects through `cp_on_respawn_<i>` under
+/// [`Audience::Solo`], because a death belongs to the one player who died. That
+/// asymmetry is deliberate and is exactly why spec-0016 requires `on_rest` to be
+/// idempotent: it is the world's single answer to both a rest and a death, read
+/// at two different audiences.
 fn emit_bonfire_functions(plan: &Plan) -> Vec<(String, String)> {
     let mut fns: Vec<(String, String)> = Vec::new();
     for bf in plan.bonfires() {
@@ -3148,7 +3286,11 @@ fn emit_bonfire_functions(plan: &Plan) -> Vec<(String, String)> {
             body.push(format!("scoreboard players set #cp dw.sys {}", bf.index));
         }
         body.extend(bonfire_reseat_lines(plan));
-        body.extend(emit_effect_bundle(plan, &bf.on_respawn, Executor::Server));
+        body.extend(emit_effect_bundle(
+            plan,
+            &bf.on_respawn,
+            Audience::Scheduled,
+        ));
         fns.push((format!("bonfire_rest_{}", bf.index), lines(&body)));
     }
     fns
@@ -3219,10 +3361,11 @@ fn emit_stealth_functions(plan: &Plan) -> Vec<(String, String)> {
         ));
         fns.push((format!("stealth_eval_{i}"), lines(&eval)));
         // stealth_caught_<i> (as @s): reset grace, run on_caught.
+        // `Audience::Solo` (spec-0018): being spotted is one player's event —
+        // `stealth_eval_<i>` judges each player separately, so the consequence
+        // lands on the player it judged.
         let mut caught: Vec<String> = vec!["scoreboard players set @s dw.st_grace 0".to_string()];
-        for eff in &beat.on_caught {
-            emit_quest_effect(plan, eff, &mut caught);
-        }
+        caught.extend(emit_effect_bundle(plan, &beat.on_caught, Audience::Solo));
         fns.push((format!("stealth_caught_{i}"), lines(&caught)));
     }
     fns
@@ -3230,32 +3373,35 @@ fn emit_stealth_functions(plan: &Plan) -> Vec<(String, String)> {
 
 /// Emit a `narrate` line in its channel (DSL v0.4). `chat` = `tellraw`; `title`
 /// / `subtitle` = the vanilla `title` command (a subtitle is paired with a blank
-/// title so it renders on its own). An optional sound plays alongside.
+/// title so it renders on its own). An optional sound plays alongside. `who` is
+/// the audience selector (spec-0018): the story is told to the whole party
+/// (`@a`), except inside a solo `on_respawn`/`on_caught` bundle (`@s`).
 fn emit_narrate(
     text: &str,
     style: Option<delvewright_dsl::NarrateStyle>,
     sound: Option<&str>,
+    who: &str,
     body: &mut Vec<String>,
 ) {
     use delvewright_dsl::NarrateStyle;
     let comp = json!({ "text": text });
     match style.unwrap_or(NarrateStyle::Chat) {
-        NarrateStyle::Chat => body.push(format!("tellraw @s {comp}")),
-        NarrateStyle::Title => body.push(format!("title @s title {comp}")),
+        NarrateStyle::Chat => body.push(format!("tellraw {who} {comp}")),
+        NarrateStyle::Title => body.push(format!("title {who} title {comp}")),
         NarrateStyle::Subtitle => {
-            body.push(format!("title @s title {}", json!({ "text": " " })));
-            body.push(format!("title @s subtitle {comp}"));
+            body.push(format!("title {who} title {}", json!({ "text": " " })));
+            body.push(format!("title {who} subtitle {comp}"));
         }
         // Large-glyph "art" title through the delve's custom resource-pack font
         // (`delve:art`, DSL v0.6). The font is uppercase-only (glyph coverage is
         // checked at compile time, DW0328), so render uppercase.
         NarrateStyle::Art => {
             let art = json!({ "text": text.to_ascii_uppercase(), "font": "delve:art" });
-            body.push(format!("title @s title {art}"));
+            body.push(format!("title {who} title {art}"));
         }
     }
     if let Some(s) = sound {
-        body.push(format!("playsound {s} player @s"));
+        body.push(format!("playsound {s} player {who}"));
     }
 }
 
@@ -3523,9 +3669,9 @@ fn cutscene_fn(shots: &[delvewright_dsl::CameraShot]) -> String {
             // subject's id instead, so the function name stays greppable.
             head.shot_style.map(|style| {
                 let subj = match &head.subject {
-                    Some(delvewright_dsl::CameraSubject::Anchor { anchor, .. }) => anchor.as_str(),
-                    Some(delvewright_dsl::CameraSubject::Npc { npc, .. }) => npc.as_str(),
-                    Some(delvewright_dsl::CameraSubject::Actor { actor, .. }) => actor.as_str(),
+                    Some(delvewright_dsl::CameraSubject::Anchor(s)) => s.anchor.as_str(),
+                    Some(delvewright_dsl::CameraSubject::Npc(s)) => s.npc.as_str(),
+                    Some(delvewright_dsl::CameraSubject::Actor(s)) => s.actor.as_str(),
                     None => "none",
                 };
                 format!(
@@ -3593,17 +3739,24 @@ fn cutscene_digest(shots: &[delvewright_dsl::CameraShot]) -> String {
     sha256_hex(canon.as_bytes())[..8].to_string()
 }
 
-/// A `[scores={dw.f_a=1..,…}]` selector fragment for a flag list, or `""`.
-fn flag_scores_selector(flags: &[delvewright_dsl::FlagId]) -> String {
-    if flags.is_empty() {
-        return String::new();
-    }
-    let inner = flags
+/// The party flag gate for a list of flags: an ` if score #party dw.f_<flag>
+/// matches 1` fragment per flag (leading space), or `""` for an ungated list.
+///
+/// spec-0018 replaced the pre-party spelling — an `@a[scores={dw.f_a=1..}]`
+/// selector asking "does some player hold it" — with a single party read. The
+/// selector form is now not merely redundant but *wrong*: nothing writes a flag
+/// onto a player any more, so it would never match.
+fn party_flag_gate(flags: &[delvewright_dsl::FlagId]) -> String {
+    flags
         .iter()
-        .map(|f| format!("{}=1..", plan::flag_score(f.as_str())))
-        .collect::<Vec<_>>()
-        .join(",");
-    format!("[scores={{{inner}}}]")
+        .map(|f| {
+            format!(
+                " if score {} {} matches 1",
+                plan::PARTY,
+                plan::flag_score(f.as_str())
+            )
+        })
+        .collect()
 }
 
 /// Every quest effect in the campaign (objective-complete, quest-complete, and
@@ -3728,8 +3881,8 @@ fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, Stri
 
         if !on_arrive.is_empty() {
             // Server command source: the driver that calls this reached us from
-            // `schedule`, so there is no `@s` (see `Executor`).
-            let arrive = emit_effect_bundle(plan, on_arrive, Executor::Server);
+            // `schedule`, so there is no `@s` (see `Audience`).
+            let arrive = emit_effect_bundle(plan, on_arrive, Audience::Scheduled);
             out.push((format!("mv_arrive_{bare}"), lines(&arrive)));
         }
     }
@@ -3946,9 +4099,9 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
         out.push((format!("ma_tick_{bare}"), lines(&tick)));
 
         if !on_arrive.is_empty() {
-            // Server command source (see `Executor`): `ma_tick_<bare>` runs from
+            // Server command source (see `Audience`): `ma_tick_<bare>` runs from
             // the scheduler, so `@s` is unbound in everything it calls.
-            let arrive = emit_effect_bundle(plan, on_arrive, Executor::Server);
+            let arrive = emit_effect_bundle(plan, on_arrive, Audience::Scheduled);
             out.push((format!("ma_arrive_{bare}"), lines(&arrive)));
         }
     }
@@ -3991,7 +4144,7 @@ fn sequence_fns(plan: &Plan) -> Vec<(String, String)> {
             // `on_arrive`). Uniformity is what makes `seq_<key>` a *global*
             // effect everywhere (see `effect_is_player_scoped`): its per-player
             // beats address the party, never one acting player.
-            let b = emit_effect_bundle(plan, &step.effects, Executor::Server);
+            let b = emit_effect_bundle(plan, &step.effects, Audience::Scheduled);
             out.push((format!("{base}_{i}"), lines(&b)));
         }
     }
@@ -4369,18 +4522,17 @@ fn env_trigger_tick(plan: &Plan) -> Vec<String> {
         } else {
             String::new()
         };
-        let fsel = flag_scores_selector(&t.requires_flags);
-        // v0.6 negative gate: the trigger is suppressed while ANY listed flag is
-        // set by ANY player (flags are campaign state; the wake beat stands the
-        // retaliation trigger down for everyone). `unless entity @a[scores=…]`
-        // is unset-safe: a positive `=1..` selector inside a negation matches
-        // only really-set flags, so players with no score never suppress.
+        // Flags are party state (spec-0018): the gate is a single `#party` read,
+        // positive and negative alike. `unless … matches 1` is unset-safe (an
+        // uninitialized flag score counts as "not set").
+        let flag_guard = party_flag_gate(&t.requires_flags);
         let forbid_guard: String = t
             .forbids_flags
             .iter()
             .map(|f| {
                 format!(
-                    "unless entity @a[scores={{{}=1..}}] ",
+                    "unless score {} {} matches 1 ",
+                    plan::PARTY,
                     plan::flag_score(f.as_str())
                 )
             })
@@ -4393,11 +4545,11 @@ fn env_trigger_tick(plan: &Plan) -> Vec<String> {
                 };
                 let _ = tag;
                 // Fire when the interaction entity has recorded the event and (if
-                // gated) some player holds the flags; then clear the record.
-                let flag_cond = if fsel.is_empty() {
+                // gated) the party holds the flags; then clear the record.
+                let flag_cond = if flag_guard.is_empty() {
                     String::new()
                 } else {
-                    format!("if entity @a{fsel} ")
+                    format!("{} ", flag_guard.trim_start())
                 };
                 out.push(format!(
                     "execute {once_guard}{forbid_guard}if entity @e[tag=dw_trig_{id},nbt={{{rec}:{{}}}}] {flag_cond}run function {ns}:trig_{id}"
@@ -4408,18 +4560,12 @@ fn env_trigger_tick(plan: &Plan) -> Vec<String> {
             }
             TriggerOn::Approach { range } => {
                 if let Some(p) = anchor_point_any(plan, t.at.as_str()) {
+                    // The proximity test stays per-player (`@a[distance=…]` — SOME
+                    // party member walked in); the flag gate is a party read
+                    // alongside it, no longer merged into the selector.
                     out.push(format!(
-                        "execute {once_guard}{forbid_guard}positioned {} {} {} if entity @a[distance=..{range}{}] run function {ns}:trig_{id}",
-                        p[0], p[1], p[2],
-                        if fsel.is_empty() {
-                            String::new()
-                        } else {
-                            // merge the flag scores into the distance selector.
-                            t.requires_flags
-                                .iter()
-                                .map(|f| format!(",{}=1..", plan::flag_score(f.as_str())))
-                                .collect::<String>()
-                        }
+                        "execute {once_guard}{forbid_guard}positioned {} {} {} if entity @a[distance=..{range}]{} run function {ns}:trig_{id}",
+                        p[0], p[1], p[2], flag_guard
                     ));
                 }
             }
@@ -4428,9 +4574,16 @@ fn env_trigger_tick(plan: &Plan) -> Vec<String> {
     out
 }
 
-/// Environment-trigger effect functions (`trig_<id>`). Effects run `as @a` (only
-/// players holding the trigger's flags) so `@s`-scoped effects resolve; `once`
-/// sets a global sentinel so the trigger fires at most once.
+/// Environment-trigger effect functions (`trig_<id>`). A trigger is a **party
+/// event** (spec-0018): the beat fires once and its player-facing effects address
+/// `@a` on their own (see [`Audience::Party`]), so the bundle is emitted plainly
+/// — no outer `as @a`, which under party state would fire every `fill`, driver
+/// start and party-holder write once per player. `once` sets a global sentinel so
+/// the trigger fires at most once.
+///
+/// The function is dispatched from `env_trigger_tick` without an executor for an
+/// `approach`/`strike`/`use` trigger, so nothing here may rely on `@s` — the
+/// party model means nothing needs to.
 fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for t in &plan.campaign.quests.content.triggers {
@@ -4439,13 +4592,10 @@ fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
         if t.once {
             body.push(format!("scoreboard players set #trig_{id} dw.sys 1"));
         }
-        let mut effs: Vec<String> = Vec::new();
+        // The trigger's own flag gate is already proven by `env_trigger_tick`
+        // before it dispatches here; each effect still carries its own gate.
         for e in &t.effects {
-            emit_gated_effect(plan, e, &mut effs);
-        }
-        let sel = flag_scores_selector(&t.requires_flags);
-        for line in effs {
-            body.push(format!("execute as @a{sel} run {line}"));
+            emit_gated_effect(plan, e, Audience::Scheduled, &mut body);
         }
         out.push((format!("trig_{id}"), lines(&body)));
     }
@@ -4688,7 +4838,8 @@ fn trap_fns(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<(Strin
         let mut body: Vec<String> = Vec::new();
         body.push(format!("scoreboard players set #trapdis_{id} dw.sys 1"));
         body.push(format!(
-            "scoreboard players set @a {} 1",
+            "scoreboard players set {} {} 1",
+            plan::PARTY,
             plan::flag_score(&dis.sets_flag)
         ));
         if let Some(disp) = t.dispenser {
@@ -4960,6 +5111,25 @@ fn reach_marker_tag(obj_id: &str) -> String {
 /// collect completion check (gap 13).
 const COLLECT_HOLD: &str = "dw.hold";
 
+/// The `dw.sys` fake player holding the live online-player count, recomputed each
+/// tick — the lobby gate's only input (spec-0018 `world.min_players`). Emitted
+/// only for a campaign that declares `min_players >= 2`.
+const LOBBY_COUNT: &str = "#lobby";
+
+/// The lobby's waiting message (spec-0018): a live "x / n" actionbar for players
+/// who have not taken a class yet, while the party is short. The count is a
+/// vanilla `score` component reading [`LOBBY_COUNT`], so it updates itself
+/// without any per-count emission. English-first (CLAUDE.md language policy); a
+/// compiler default, not an authored string, so it is not l10n-inventoried.
+fn lobby_actionbar(min_players: u8) -> String {
+    json!([
+        { "text": "Waiting for the party — ", "color": "yellow" },
+        { "score": { "name": LOBBY_COUNT, "objective": "dw.sys" }, "color": "gold" },
+        { "text": format!(" / {min_players}"), "color": "gold" }
+    ])
+    .to_string()
+}
+
 /// The fake-player sentinel on `dw.sys` that guards an objective's activation
 /// placement so it runs exactly once, world-wide (gap 13).
 fn activation_flag(obj_id: &str) -> String {
@@ -5146,29 +5316,41 @@ fn interact_objectives(c: &delvewright_dsl::Campaign) -> Vec<(String, String)> {
 /// must be active, every `after` prerequisite and `requires_flags` flag set, no
 /// `forbids_flags` flag set (v0.6 negative gate; `unless … matches 1` so an
 /// unset score counts as "not set"), and the objective itself not yet complete.
-/// Returns the ` if …`/` unless …` fragment (leading space); callers prepend
-/// `execute as @a` and append the type-specific condition + `run`. For a v0.2
-/// objective (no `after`/flags) this is exactly the pre-v0.3 reach guard,
-/// keeping keep-crawl byte-identical.
+/// Returns the ` if …`/` unless …` fragment (leading space); callers append the
+/// type-specific condition + `run`, prepending `execute as @a` when they need a
+/// player to test (proximity, inventory, a fired trigger) and a bare `execute`
+/// otherwise.
+///
+/// **Every term reads the party holder** (spec-0018). That is what makes an
+/// `after: [obj/a, obj/b]` AND-join a division of labor: player A clearing
+/// `obj/a` in one room and player B clearing `obj/b` in another both write
+/// `#party`, so the successor's guard opens for the whole party. It is also what
+/// keeps the drivers single-fire under `as @a`: vanilla evaluates the conditions
+/// per selected player in turn, so the first player's `run` sets the party score
+/// and every later player's `unless score #party …` fails in the same tick.
 fn pending_guard(o: &Objective, quest_active: &str) -> String {
-    let mut g = format!(" if score @s {quest_active} matches 1");
+    let p = plan::PARTY;
+    let mut g = format!(" if score {p} {quest_active} matches 1");
     for a in o.after() {
-        g.push_str(&format!(" if score @s {} matches 1", obj_score(a.as_str())));
+        g.push_str(&format!(
+            " if score {p} {} matches 1",
+            obj_score(a.as_str())
+        ));
     }
     for f in o.requires_flags() {
         g.push_str(&format!(
-            " if score @s {} matches 1",
+            " if score {p} {} matches 1",
             plan::flag_score(f.as_str())
         ));
     }
     for f in o.forbids_flags() {
         g.push_str(&format!(
-            " unless score @s {} matches 1",
+            " unless score {p} {} matches 1",
             plan::flag_score(f.as_str())
         ));
     }
     g.push_str(&format!(
-        " unless score @s {} matches 1",
+        " unless score {p} {} matches 1",
         obj_score(o.id().as_str())
     ));
     g
@@ -5211,22 +5393,23 @@ fn node_gated_options<'a>(
 /// click-handler guard (emit.rs ~1166) so an option is shown iff clicking it
 /// would fire.
 fn option_display_conditions(c: &delvewright_dsl::Campaign, opt: &plan::OptionPlan) -> String {
+    let p = plan::PARTY;
     let mut cond = String::new();
     for f in &opt.requires_flags {
-        cond.push_str(&format!(" if score @s {} matches 1", plan::flag_score(f)));
+        cond.push_str(&format!(" if score {p} {} matches 1", plan::flag_score(f)));
     }
     // v0.6 negative gate: hidden once any forbidden flag is set (`unless …
     // matches 1` treats an unset score as "not set").
     for f in &opt.forbids_flags {
         cond.push_str(&format!(
-            " unless score @s {} matches 1",
+            " unless score {p} {} matches 1",
             plan::flag_score(f)
         ));
     }
     for obj in &opt.completes {
         if let Some((qid, _)) = objective_quest(c, obj) {
             cond.push_str(&format!(
-                " if score @s {} matches 1 unless score @s {} matches 1",
+                " if score {p} {} matches 1 unless score {p} {} matches 1",
                 quest_active_score(qid),
                 obj_score(obj)
             ));
@@ -5645,11 +5828,15 @@ fn emit_packtest(
     // a foreign one.
     body.push(pin);
     // Actively establish the asserted baseline — on the shared-batch server
-    // "never set" is not 0.
-    body.push(format!("scoreboard players set {sel} {comp_obj} 0"));
+    // "never set" is not 0. spec-0018: the whole chain is PARTY state, so the
+    // baseline, the activation and the assert all address `#party`; the dummy is
+    // still what DRIVES it (`execute as {sel} run …`), which is exactly the
+    // multiplayer claim — one player's action advances the party.
+    let party = plan::PARTY;
+    body.push(format!("scoreboard players set {party} {comp_obj} 0"));
     for qid in campaign_start_quests(c) {
         body.push(format!(
-            "scoreboard players set {sel} {} 1",
+            "scoreboard players set {party} {} 1",
             quest_active_score(qid)
         ));
     }
@@ -5661,8 +5848,9 @@ fn emit_packtest(
             ));
         }
     }
-    // `assert score` requires a single-entity selector (the pinned dummy).
-    body.push(format!("assert score {sel} {comp_obj} matches {comp_val}"));
+    body.push(format!(
+        "assert score {party} {comp_obj} matches {comp_val}"
+    ));
 
     out.insert(
         format!("packtest-datapack/data/{ns}/test/campaign.mcfunction"),
@@ -5743,10 +5931,209 @@ fn emit_packtest(
     emit_bonfire_packtests(plan, out);
     // spec-0016 §2: the shortcut really opens, and opens exactly once.
     emit_shortcut_packtest(plan, out);
+    // spec-0016 §4: the clock really alternates the gate region.
+    emit_timed_gate_packtest(plan, out);
 
     // The scheduled-executor contract (AUDIT-P0): a function reached through
     // `schedule` still lands per-player state on real players.
     emit_scheduled_executor_packtests(plan, out, moves);
+
+    // spec-0018: one n-dummy division-of-labour test per AND-join.
+    emit_party_join_packtests(plan, out);
+}
+
+/// The AND-joins of a campaign: every objective with **two or more** `after`
+/// prerequisites, with its quest and arms, in deterministic content order.
+/// `after: [obj/a, obj/b]` is the DSL's AND primitive (spec-0018 adds no new
+/// stage-5 syntax), and under party progression it is exactly the shape two
+/// players split between two rooms.
+fn and_joins(c: &delvewright_dsl::Campaign) -> Vec<(&str, &Objective)> {
+    let mut out = Vec::new();
+    for q in &c.quests.content.quests {
+        for o in &q.objectives {
+            if o.after().len() >= 2 {
+                out.push((q.id.as_str(), o));
+            }
+        }
+    }
+    out
+}
+
+/// The party-size cap: a delve is played by one party of 1–4 (CLAUDE.md).
+const MAX_PARTY: usize = 4;
+
+/// Generated **division-of-labour** PackTests (spec-0018), one per AND-join.
+///
+/// The claim under test is the whole point of party progression: `n` DIFFERENT
+/// players each complete exactly one arm of an `after` AND-join, and the
+/// successor opens **for the party**. A single-dummy test cannot make that claim
+/// — it would prove only that one player can do everything in sequence, which was
+/// already true before the party holder existed. So each template spawns the
+/// extra members itself with PackTest's `/dummy <name> spawn` (the framework
+/// `# @dummy` supplies member 1 as `@s`) and drives one arm per member.
+///
+/// Three assertions, in order, and the middle one is the load-bearing negative:
+///
+/// 1. with no arm done, the join's real emitted guard is **not** satisfied;
+/// 2. after member 1's arm alone it is **still** not satisfied (the AND is a real
+///    AND — the successor does not leak open on one arm);
+/// 3. after every member's arm it **is** satisfied, and the LAST member — never
+///    the one who cleared the first arm — completes the join, proving each member
+///    sees and can consume the successor state.
+///
+/// Batch model (#140): own members (spawned and removed by this template alone,
+/// under names no other template uses), own scratch holder (`#pj_<obj>`), own
+/// init (every party score it reads is actively baselined), and no `await` — the
+/// whole body is one atomic tick, so no sibling can interleave inside it.
+///
+/// `n` is the arm count, raised to `world.min_players` when the campaign declares
+/// a bigger mandatory party and capped at [`MAX_PARTY`]; arms are handed out
+/// round-robin, so a join with more arms than members gives someone two.
+fn emit_party_join_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let party = plan::PARTY;
+    let min_players = plan::min_players(c) as usize;
+
+    for (ji, (qid, join)) in and_joins(c).into_iter().enumerate() {
+        let jid = join.id().as_str();
+        let jsafe = plan::safe_local(jid);
+        let arms: Vec<&str> = join.after().iter().map(|a| a.as_str()).collect();
+        let n = arms.len().max(min_players).min(MAX_PARTY);
+        // Member selectors. Member 1 is the framework dummy (`@s` — the binding
+        // survives teleports and can never resolve to a neighbour's dummy);
+        // members 2..n are spawned here under this template's own names.
+        let name = |m: usize| format!("dwj{ji}p{m}");
+        let member = |m: usize| {
+            if m == 0 {
+                "@s".to_string()
+            } else {
+                format!("@a[name={},limit=1]", name(m))
+            }
+        };
+        let scratch = format!("#pj_{jsafe}");
+
+        let mut b = packtest_header(&format!(
+            "{}: AND-join `{jid}` divides across {n} players (spec-0018)",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        for m in 1..n {
+            b.push(format!("dummy {} spawn", name(m)));
+        }
+
+        // --- own init: baseline every party score this join's guard reads ------
+        let mut baseline: Vec<String> = Vec::new();
+        let push_obj_baseline = |baseline: &mut Vec<String>, quest: &str, o: &Objective| {
+            baseline.push(format!(
+                "scoreboard players set {party} {} 1",
+                quest_active_score(quest)
+            ));
+            for f in o.requires_flags() {
+                baseline.push(format!(
+                    "scoreboard players set {party} {} 1",
+                    plan::flag_score(f.as_str())
+                ));
+            }
+            for f in o.forbids_flags() {
+                baseline.push(format!(
+                    "scoreboard players set {party} {} 0",
+                    plan::flag_score(f.as_str())
+                ));
+            }
+        };
+        // The join itself: quest active + its flag gates, its own score cleared.
+        // Its `after` arms are deliberately NOT set — they are what the party
+        // is about to earn.
+        push_obj_baseline(&mut baseline, qid, join);
+        baseline.push(format!(
+            "scoreboard players set {party} {} 0",
+            obj_score(jid)
+        ));
+        // Each arm: its own prerequisites satisfied, its own score cleared.
+        for arm in &arms {
+            let Some((aq, ao)) =
+                objective_quest(c, arm).and_then(|(q, _)| find_objective(c, arm).map(|o| (q, o)))
+            else {
+                continue;
+            };
+            push_obj_baseline(&mut baseline, aq, ao);
+            for prereq in ao.after() {
+                baseline.push(format!(
+                    "scoreboard players set {party} {} 1",
+                    obj_score(prereq.as_str())
+                ));
+            }
+            baseline.push(format!(
+                "scoreboard players set {party} {} 0",
+                obj_score(arm)
+            ));
+        }
+        // Order-preserving dedup: sibling arms share a quest, so their
+        // quest-active baselines coincide.
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        b.extend(baseline.into_iter().filter(|l| seen.insert(l.clone())));
+
+        // The join's REAL emitted activation guard, materialized as a score so a
+        // PackTest can assert it. Not a restatement: `pending_guard` is the very
+        // function the `tick` driver uses.
+        let guard = pending_guard(join, &quest_active_score(qid));
+        let probe = |b: &mut Vec<String>, expect: u32| {
+            b.push(format!("scoreboard players set {scratch} dw.sys 0"));
+            b.push(format!(
+                "execute{guard} run scoreboard players set {scratch} dw.sys 1"
+            ));
+            b.push(format!("assert score {scratch} dw.sys matches {expect}"));
+        };
+
+        // 1. no arm done -> the join is shut.
+        probe(&mut b, 0);
+
+        // 2/3. each member clears exactly one arm (round-robin), and the party
+        // score advances on THEIR action.
+        for (k, arm) in arms.iter().enumerate() {
+            b.push(format!(
+                "execute as {} run function {ns}:complete_{}",
+                member(k % n),
+                safe_obj_fn(arm)
+            ));
+            b.push(format!("assert score {party} {} matches 1", obj_score(arm)));
+            // After the FIRST arm (and while others remain) the join must still
+            // be shut — the negative half that makes this an AND, not an OR.
+            if k == 0 && arms.len() > 1 {
+                probe(&mut b, 0);
+            }
+        }
+        probe(&mut b, 1);
+
+        // The successor is the PARTY's: the LAST member completes it, never the
+        // one who cleared the first arm.
+        b.push(format!(
+            "execute as {} run function {ns}:complete_{}",
+            member((arms.len() - 1) % n),
+            safe_obj_fn(jid)
+        ));
+        b.push(format!("assert score {party} {} matches 1", obj_score(jid)));
+
+        // No residue: the members this template spawned leave with it.
+        for m in 1..n {
+            b.push(format!("dummy {} leave", name(m)));
+        }
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/party_join_{jsafe}.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+}
+
+/// The stage-5 objective with this id, across every quest.
+fn find_objective<'a>(c: &'a delvewright_dsl::Campaign, id: &str) -> Option<&'a Objective> {
+    c.quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| &q.objectives)
+        .find(|o| o.id().as_str() == id)
 }
 
 /// The flag a [`SCHEDULED_PROBE`] `set-flag` sets. Test-only: it exists solely in
@@ -5765,7 +6152,7 @@ const SCHEDULED_PROBE: &str = "pt_sched_probe";
 /// 1. `sched_executor` — **unconditional**, so every campaign (hello-world in
 ///    CI tier 2 included) proves the seam live on a real server. A probe
 ///    function in the PackTest datapack, emitted by the *real* scheduled-bundle
-///    emitter ([`emit_effect_bundle`] with [`Executor::Server`]) over a
+///    emitter ([`emit_effect_bundle`] with [`Audience::Scheduled`]) over a
 ///    `set-flag`, is handed to the vanilla scheduler; the test then awaits the
 ///    flag on its own dummy's score. Pre-fix output emits `scoreboard players
 ///    set @s …` here and the await times out.
@@ -5795,26 +6182,34 @@ fn emit_scheduled_executor_packtests(
             requires_flags: Vec::new(),
             forbids_flags: Vec::new(),
         }],
-        Executor::Server,
+        Audience::Scheduled,
     );
     out.insert(
         format!("packtest-datapack/data/{ns}/function/{SCHEDULED_PROBE}.mcfunction"),
         lines(&probe).into_bytes(),
     );
-    let (pin, sel) = pin_dummy("dw_t_sexec");
     let mut t = packtest_header(&format!(
-        "{title}: a SCHEDULED function still reaches players (scheduled-executor contract)"
+        "{title}: a SCHEDULED function still reaches the party (scheduled-executor contract)"
     ));
     t.push(format!("function {ns}:setup"));
-    t.push(pin);
     // Own init: the probe objective is test-only, so this template creates it and
     // clears its own dummy (never assume 0 on the shared batch server).
     t.push(format!("scoreboard objectives add {probe_score} dummy"));
-    t.push(format!("scoreboard players set {sel} {probe_score} 0"));
+    // spec-0018: the probe flag is party state, so the baseline and the await
+    // both address `#party`. The objective is test-only (it exists solely in the
+    // PackTest datapack), so this template is its sole owner in the batch — the
+    // ownership `tests/packtest_batch.rs` demands of any template that awaits.
+    t.push(format!(
+        "scoreboard players set {} {probe_score} 0",
+        plan::PARTY
+    ));
     // The real scheduler, the real emitted bundle. Not an inline call: an inline
     // call would run as this test's dummy and pass even with the bug present.
     t.push(format!("schedule function {ns}:{SCHEDULED_PROBE} 2t"));
-    t.push(format!("await score {sel} {probe_score} matches 1"));
+    t.push(format!(
+        "await score {} {probe_score} matches 1",
+        plan::PARTY
+    ));
     out.insert(
         format!("packtest-datapack/data/{ns}/test/sched_executor.mcfunction"),
         lines(&t).into_bytes(),
@@ -5843,7 +6238,7 @@ fn emit_scheduled_executor_packtests(
     let Some((m, flag)) = arrival else { return };
     let bare = movenpc_bare(&m.npc, &m.to_anchor);
     let score = plan::flag_score(&flag);
-    let (pin, sel) = pin_dummy("dw_t_sarr");
+
     // The walk is real, so the test must outlive it: the driver reschedules
     // itself once per waypoint tick.
     let mut t = vec![
@@ -5856,10 +6251,9 @@ fn emit_scheduled_executor_packtests(
         String::new(),
     ];
     t.push(format!("function {ns}:setup"));
-    t.push(pin);
-    // Own init: clear the flag on this test's dummy, and release the driver's
-    // re-entry latch (a sibling template may have left it armed).
-    t.push(format!("scoreboard players set {sel} {score} 0"));
+    // Own init: clear the party flag this template alone awaits, and release the
+    // driver's re-entry latch (a sibling template may have left it armed).
+    t.push(format!("scoreboard players set {} {score} 0", plan::PARTY));
     t.push(format!("scoreboard players set #mrun_{bare} dw.sys 0"));
     // The REAL start function: it schedules `mv_tick_<bare>`, which walks itself
     // to the final waypoint and fires `mv_arrive_<bare>` — every hop through the
@@ -5869,7 +6263,7 @@ fn emit_scheduled_executor_packtests(
         "function {ns}:{}",
         movenpc_fn(&m.npc, &m.to_anchor)
     ));
-    t.push(format!("await score {sel} {score} matches 1"));
+    t.push(format!("await score {} {score} matches 1", plan::PARTY));
     out.insert(
         format!("packtest-datapack/data/{ns}/test/sched_arrive_flag.mcfunction"),
         lines(&t).into_bytes(),
@@ -5960,15 +6354,11 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
     let (item, count) = t.payload.as_ref().expect("filtered on Some");
     let dis = t.disarm.as_ref();
 
-    let (pin, sel) = pin_dummy("dw_t_trap");
     let mut b = packtest_header(&format!(
         "{title}: trap `{}` loads its dispenser payload; disarm empties it (spec-0011)",
         t.id
     ));
     b.push(format!("function {ns}:setup"));
-    // Pin this test's own dummy (see `pin_dummy`): the disarm flag is asserted
-    // per-player, and it must be read off the player this test controls.
-    b.push(pin);
     // A 0-player void does not tick entities, so a plate→dispenser fire cannot be
     // simulated here (spec-0011 Findings). Instead place the dispenser and load it
     // with the exact payload the compiler fills, then assert slot 0 is occupied —
@@ -5988,11 +6378,13 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
     b.push("assert score #tload_trap dw.sys matches 1".to_string());
     if let Some(dis) = dis {
         // Run the REAL emitted disarm and assert the dispenser is now empty (no ammo
-        // → cannot fire) and the disarm flag is set — the trap is provably off. The
-        // flag is actively cleared first: a sibling's `@a`-wide write could have
-        // pre-set it, and "never set" is not 0 on the shared-batch server.
+        // → cannot fire) and the disarm flag is set — the trap is provably off.
+        // spec-0018: a disarm is a party fact (one lever, everyone's trap off), so
+        // the baseline and the assert read `#party`. Cleared first: "never set" is
+        // not 0 on the shared-batch server.
         b.push(format!(
-            "scoreboard players set {sel} {} 0",
+            "scoreboard players set {} {} 0",
+            plan::PARTY,
             plan::flag_score(&dis.sets_flag)
         ));
         b.push(format!("function {ns}:trap_disarm_{}", t.safe));
@@ -6002,7 +6394,8 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         b.push("assert score #tempty_trap dw.sys matches 0".to_string());
         b.push(format!(
-            "assert score {sel} {} matches 1",
+            "assert score {} {} matches 1",
+            plan::PARTY,
             plan::flag_score(&dis.sets_flag)
         ));
     }
@@ -6277,10 +6670,59 @@ fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
     );
 }
 
+/// spec-0016 §4 timed-gate PackTest: the emitted clock really alternates the gate
+/// region on a live server. A fake player cannot wait out a `schedule` inside a
+/// plain mcfunction, so this drives the two halves of the ping-pong directly —
+/// which IS the clock's body — and asserts the region's state after each. That is
+/// the machine-checkable half of "a deterministic clock over the gate region";
+/// the *timing* half is the compile-time `DW0378` proof, which needs no server.
+/// Emits nothing for a campaign with no timed gate.
+fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some(g) = plan.timed_gates.first() else {
+        return;
+    };
+    let (from, to) = g.gate_region;
+    let probe = from;
+    let mut b = packtest_header(&format!(
+        "{title}: timed gate `{}` alternates its region (spec-0016 §4)",
+        g.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    // Seal first: `setup` may have already run the clock's opening move, and a
+    // sibling template shares this server.
+    b.push(format!(
+        "fill {} {} {} {} {} {} {}",
+        from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
+    ));
+    b.push(format!(
+        "execute store success score #tg_sealed dw.sys if block {} {} {} {}",
+        probe[0], probe[1], probe[2], g.gate_block
+    ));
+    b.push("assert score #tg_sealed dw.sys matches 1".to_string());
+    b.push(format!("function {ns}:tgate_open_{}", g.safe));
+    b.push(format!(
+        "execute store success score #tg_open dw.sys if block {} {} {} minecraft:air",
+        probe[0], probe[1], probe[2]
+    ));
+    b.push("assert score #tg_open dw.sys matches 1".to_string());
+    b.push(format!("function {ns}:tgate_close_{}", g.safe));
+    b.push(format!(
+        "execute store success score #tg_shut dw.sys if block {} {} {} {}",
+        probe[0], probe[1], probe[2], g.gate_block
+    ));
+    b.push("assert score #tg_shut dw.sys matches 1".to_string());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_timed_gate.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
 /// spec-0016 §2 shortcut PackTest: the unlock really clears the gate region, and
 /// the open is **permanent** — re-running the tick after the sentinel is latched
 /// cannot re-seal it, because nothing in the datapack ever fills a shortcut gate
-/// (`DW0358` makes that structural at compile time; this asserts the runtime side
+/// (`DW0372` makes that structural at compile time; this asserts the runtime side
 /// on a live server). Emits nothing for a campaign with no shortcut.
 fn emit_shortcut_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
@@ -7279,7 +7721,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
             bt.push(pin);
             let clear = |bt: &mut Vec<String>| {
                 for s in &reset {
-                    bt.push(format!("scoreboard players set {sel} {s} 0"));
+                    bt.push(format!("scoreboard players set {} {s} 0", plan::PARTY));
                 }
             };
             // Run the mask, then ISOLATE the option-under-test's bit before the
@@ -7321,10 +7763,10 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
             assert_bit(&mut bt, b, false);
             // Phase B — quest active, objective incomplete: the option appears.
             clear(&mut bt);
-            bt.push(format!("scoreboard players set {sel} {qa} 1"));
+            bt.push(format!("scoreboard players set {} {qa} 1", plan::PARTY));
             assert_bit(&mut bt, b, true);
             // Phase C — objective complete: the option disappears again.
-            bt.push(format!("scoreboard players set {sel} {os} 1"));
+            bt.push(format!("scoreboard players set {} {os} 1", plan::PARTY));
             assert_bit(&mut bt, b, false);
 
             // Flag axis: a flag-only gated option's bit flips with its flag alone,
@@ -7337,7 +7779,8 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                 clear(&mut bt);
                 for f in &flag_opt.requires_flags {
                     bt.push(format!(
-                        "scoreboard players set {sel} {} 1",
+                        "scoreboard players set {} {} 1",
+                        plan::PARTY,
                         plan::flag_score(f)
                     ));
                 }
@@ -7405,26 +7848,34 @@ fn pin_dummy(tag: &str) -> (String, String) {
     )
 }
 
-/// Lines that satisfy an objective's activation guard on `sel` (quest active, all
-/// `after` prerequisites set, all `requires_flags` set, and any required item
-/// given). With `with_flags: false` the flags are not merely omitted but actively
-/// cleared: PackTest runs the whole suite as one batch on one shared server —
-/// sibling templates legitimately set the same flag score on `@a` (every dummy),
-/// so on this server "never set" does not mean 0.
+/// Lines that satisfy an objective's activation guard (quest active, all `after`
+/// prerequisites set, all `requires_flags` set, and any required item given to
+/// `sel`). With `with_flags: false` the flags are not merely omitted but actively
+/// cleared: PackTest runs the whole suite as one batch on one shared server, so
+/// "never set" does not mean 0.
+///
+/// spec-0018: every progression term is written on the **party holder**, which is
+/// the state the generated guards actually read. The holder is batch-global —
+/// but each template is a single atomic mcfunction, so its baseline, its drive
+/// and its assert all land inside one tick with no sibling in between (the one
+/// place that stops being true is a template that `await`s, which
+/// `tests/packtest_batch.rs` polices separately). Only the ITEM still goes to the
+/// test's own pinned dummy.
 fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool, sel: &str) -> Vec<String> {
+    let party = plan::PARTY;
     let mut p = vec![format!(
-        "scoreboard players set {sel} {} 1",
+        "scoreboard players set {party} {} 1",
         quest_active_score(quest_id)
     )];
     for a in o.after() {
         p.push(format!(
-            "scoreboard players set {sel} {} 1",
+            "scoreboard players set {party} {} 1",
             obj_score(a.as_str())
         ));
     }
     for f in o.requires_flags() {
         p.push(format!(
-            "scoreboard players set {sel} {} {}",
+            "scoreboard players set {party} {} {}",
             plan::flag_score(f.as_str()),
             if with_flags { 1 } else { 0 }
         ));
@@ -7434,7 +7885,7 @@ fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool, sel: &str)
     // reasoning as the `with_flags: false` clearing above).
     for f in o.forbids_flags() {
         p.push(format!(
-            "scoreboard players set {sel} {} 0",
+            "scoreboard players set {party} {} 0",
             plan::flag_score(f.as_str())
         ));
     }
@@ -7536,7 +7987,8 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         // on it alone; actively zero the asserted objective first.
         b.push(pin);
         b.push(format!(
-            "scoreboard players set {sel} {} 0",
+            "scoreboard players set {} {} 0",
+            plan::PARTY,
             obj_score(id.as_str())
         ));
         b.extend(packtest_preamble(qid, o, true, &sel));
@@ -7576,7 +8028,8 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         }
         b.push(format!("function {ns}:tick"));
         b.push(format!(
-            "assert score {sel} {} matches 1",
+            "assert score {} {} matches 1",
+            plan::PARTY,
             obj_score(id.as_str())
         ));
         write("verb_kill", b);
@@ -7596,7 +8049,8 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         // alone; actively zero the asserted objective first.
         b.push(pin);
         b.push(format!(
-            "scoreboard players set {sel} {} 0",
+            "scoreboard players set {} {} 0",
+            plan::PARTY,
             obj_score(id.as_str())
         ));
         b.extend(packtest_preamble(qid, o, true, &sel));
@@ -7605,7 +8059,8 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             plan::safe_local(id.as_str())
         ));
         b.push(format!(
-            "assert score {sel} {} matches 1",
+            "assert score {} {} matches 1",
+            plan::PARTY,
             obj_score(id.as_str())
         ));
         write("verb_collect", b);
@@ -7626,7 +8081,8 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         // poisoned `verb_flag_gate`'s withheld phase.
         b.push(pin);
         b.push(format!(
-            "scoreboard players set {sel} {} 0",
+            "scoreboard players set {} {} 0",
+            plan::PARTY,
             obj_score(id.as_str())
         ));
         b.extend(packtest_preamble(qid, o, true, &sel));
@@ -7636,7 +8092,8 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         b.push(format!("function {ns}:tick"));
         b.push(format!(
-            "assert score {sel} {} matches 1",
+            "assert score {} {} matches 1",
+            plan::PARTY,
             obj_score(id.as_str())
         ));
         write("verb_interact", b);
@@ -7671,18 +8128,22 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin.clone());
-        b.push(format!("scoreboard players set {sel} {} 0", obj_score(id)));
+        let party = plan::PARTY;
+        b.push(format!(
+            "scoreboard players set {party} {} 0",
+            obj_score(id)
+        ));
         b.extend(packtest_preamble(qid, o, false, &sel)); // flags withheld (cleared)
         driver(&mut b);
-        b.push(format!("assert score {sel} {} matches 0", obj_score(id)));
+        b.push(format!("assert score {party} {} matches 0", obj_score(id)));
         for f in o.requires_flags() {
             b.push(format!(
-                "scoreboard players set {sel} {} 1",
+                "scoreboard players set {party} {} 1",
                 plan::flag_score(f.as_str())
             ));
         }
         driver(&mut b);
-        b.push(format!("assert score {sel} {} matches 1", obj_score(id)));
+        b.push(format!("assert score {party} {} matches 1", obj_score(id)));
         write("verb_flag_gate", b);
     }
 
@@ -7713,26 +8174,30 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin.clone());
-        b.push(format!("scoreboard players set {sel} {} 0", obj_score(id)));
+        let party = plan::PARTY;
+        b.push(format!(
+            "scoreboard players set {party} {} 0",
+            obj_score(id)
+        ));
         // Preamble satisfies quest/after/requires and CLEARS forbids; then set
         // the forbidden flags to prove suppression.
         b.extend(packtest_preamble(qid, o, true, &sel));
         for f in o.forbids_flags() {
             b.push(format!(
-                "scoreboard players set {sel} {} 1",
+                "scoreboard players set {party} {} 1",
                 plan::flag_score(f.as_str())
             ));
         }
         driver(&mut b);
-        b.push(format!("assert score {sel} {} matches 0", obj_score(id)));
+        b.push(format!("assert score {party} {} matches 0", obj_score(id)));
         for f in o.forbids_flags() {
             b.push(format!(
-                "scoreboard players set {sel} {} 0",
+                "scoreboard players set {party} {} 0",
                 plan::flag_score(f.as_str())
             ));
         }
         driver(&mut b);
-        b.push(format!("assert score {sel} {} matches 1", obj_score(id)));
+        b.push(format!("assert score {party} {} matches 1", obj_score(id)));
         write("verb_forbid_gate", b);
     }
 
@@ -7795,8 +8260,9 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         b.push(format!("function {ns}:setup"));
         // Pin this test's own dummy (see `pin_dummy`) and drive/assert on it alone.
         b.push(pin);
+        let party = plan::PARTY;
         b.push(format!(
-            "scoreboard players set {sel} {} 0",
+            "scoreboard players set {party} {} 0",
             obj_score(id.as_str())
         ));
         // Take the item while the objective is INACTIVE (the pre-activation pickup).
@@ -7805,25 +8271,25 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         // would mask the bug by producing a fresh inventory_changed): set the quest
         // active + every `after` prerequisite + every required flag by hand.
         b.push(format!(
-            "scoreboard players set {sel} {} 1",
+            "scoreboard players set {party} {} 1",
             quest_active_score(qid)
         ));
         for a in o.after() {
             b.push(format!(
-                "scoreboard players set {sel} {} 1",
+                "scoreboard players set {party} {} 1",
                 obj_score(a.as_str())
             ));
         }
         for f in o.requires_flags() {
             b.push(format!(
-                "scoreboard players set {sel} {} 1",
+                "scoreboard players set {party} {} 1",
                 plan::flag_score(f.as_str())
             ));
         }
         // One tick's held check completes it — no inventory_changed event occurs.
         b.push(format!("function {ns}:tick"));
         b.push(format!(
-            "assert score {sel} {} matches 1",
+            "assert score {party} {} matches 1",
             obj_score(id.as_str())
         ));
         write("collect_preheld", b);

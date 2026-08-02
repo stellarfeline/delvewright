@@ -157,12 +157,13 @@ fn critical_path_has_sneak_and_cutscene_seconds() {
 fn every_v04_verb_emitted() {
     let out = build_showcase();
     let talk = fn_body(&out, "complete_o_talk");
+    // spec-0018: a quest beat arms the whole party (no `carrier: "one"` here).
     assert!(
-        talk.contains("give @s minecraft:paper[custom_name="),
+        talk.contains("give @a minecraft:paper[custom_name="),
         "named give-item"
     );
     assert!(
-        talk.contains("title @s subtitle {\"text\":\"The guard rises around you.\"}"),
+        talk.contains("title @a subtitle {\"text\":\"The guard rises around you.\"}"),
         "narrate subtitle"
     );
 
@@ -256,16 +257,19 @@ fn dialogue_display_gating_variants() {
     // option) is set iff obj/talk's quest is active AND the objective is not yet
     // complete; bit 1 iff the flag is set.
     let dmask = fn_body(&out, "dmask_keeper_greet");
+    // spec-0018: the CONDITIONS read party state (quest/objective/flag), while
+    // the mask itself stays a per-player scratch score — the dialog screen is one
+    // player's UI even when what it reflects belongs to the party.
     assert!(
         dmask.contains(
-            "execute if score @s dw.qa_greet matches 1 unless score @s dw.o_talk matches 1 \
-             run scoreboard players add @s dw.dmask 1"
+            "execute if score #party dw.qa_greet matches 1 unless score #party dw.o_talk \
+             matches 1 run scoreboard players add @s dw.dmask 1"
         ),
         "completing option's availability bit mirrors the click guard: {dmask}"
     );
     assert!(
         dmask.contains(
-            "execute if score @s dw.f_summoned matches 1 run scoreboard players add @s dw.dmask 2"
+            "execute if score #party dw.f_summoned matches 1 run scoreboard players add @s dw.dmask 2"
         ),
         "flag option's availability bit is the flag score: {dmask}"
     );
@@ -288,17 +292,21 @@ fn dialogue_visibility_packtest_covers_both_axes() {
         &out["packtest-datapack/data/v04-showcase/test/v04_dialogue_visibility.mcfunction"],
     )
     .unwrap();
-    // The test pins its own dummy (batch model) and drives every phase on it.
+    // The test pins its own dummy (batch model) and reads the MASK off it; the
+    // state it drives is party state (spec-0018), so those writes go to `#party`.
     const SEL: &str = "@a[tag=dw_t_dvis,limit=1]";
     assert!(pt.contains("tag @p add dw_t_dvis"));
+    assert!(pt.contains(&format!(
+        "execute as {SEL} run scoreboard players operation #dm_dvis dw.sys = @s dw.dmask"
+    )));
     // Quest inactive → the completing option (bit 0) is hidden.
-    assert!(pt.contains(&format!("scoreboard players set {SEL} dw.qa_greet 0")));
+    assert!(pt.contains("scoreboard players set #party dw.qa_greet 0"));
     // Quest active, objective incomplete → the completing option appears.
-    assert!(pt.contains(&format!("scoreboard players set {SEL} dw.qa_greet 1")));
+    assert!(pt.contains("scoreboard players set #party dw.qa_greet 1"));
     // Objective complete → hidden again.
-    assert!(pt.contains(&format!("scoreboard players set {SEL} dw.o_talk 1")));
+    assert!(pt.contains("scoreboard players set #party dw.o_talk 1"));
     // Flag axis in isolation → the flag option (bit 1) appears.
-    assert!(pt.contains(&format!("scoreboard players set {SEL} dw.f_summoned 1")));
+    assert!(pt.contains("scoreboard players set #party dw.f_summoned 1"));
     // Every phase runs the emitted mask function (no re-implementation).
     assert!(pt.contains(&format!(
         "execute as {SEL} run function v04-showcase:dmask_keeper_greet"

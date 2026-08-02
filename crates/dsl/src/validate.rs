@@ -1069,6 +1069,16 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     .to_string(),
             ));
         }
+        if c.world.content.min_players.is_some() {
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "world",
+                "/content/min_players".to_string(),
+                "world `min_players` requires dsl_version 0.6.0 — raise this stage's \
+                 `dsl_version` to 0.6.0, or remove the construct"
+                    .to_string(),
+            ));
+        }
         for (i, a) in c.world.content.areas.iter().enumerate() {
             if a.mitigation.is_some() {
                 d.push(Diagnostic::error(
@@ -1082,6 +1092,21 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
             }
         }
     } else {
+        // spec-0018: a delve is played by ONE party of 1–4, so a declared
+        // mandatory size outside that range can never be honoured.
+        if let Some(n) = c.world.content.min_players
+            && !(1..=4).contains(&n)
+        {
+            d.push(Diagnostic::error(
+                codes::PARTY_SIZE,
+                "world",
+                "/content/min_players".to_string(),
+                format!(
+                    "`min_players` = {n} is out of range — a delve is played by one party of 1–4, \
+                     so set it to a value in 1..=4 (absent = 1, a party of one)"
+                ),
+            ));
+        }
         // `horizon: "ocean"` without a return rule strands wanderers in an infinite sea.
         if matches!(c.world.content.horizon, Some(Horizon::Ocean))
             && c.world.content.boundary.is_none()
@@ -1110,6 +1135,24 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     b.margin
                 ),
             ));
+        }
+    }
+
+    // --- Stage 3: kit-item `carrier` (spec-0018), gated on the classes stage ---
+    if !is_v06(c.classes.dsl_version.as_str()) {
+        for (i, class) in c.classes.content.classes.iter().enumerate() {
+            for (k, item) in class.kit.iter().enumerate() {
+                if item.carrier.is_some() {
+                    d.push(Diagnostic::error(
+                        codes::RESERVED,
+                        "classes",
+                        format!("/content/classes/{i}/kit/{k}/carrier"),
+                        "kit item `carrier` requires dsl_version 0.6.0 — raise this stage's \
+                         `dsl_version` to 0.6.0, or remove the construct"
+                            .to_string(),
+                    ));
+                }
+            }
         }
     }
 
@@ -1160,6 +1203,11 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
             // `move-npc` verb, exactly like `cutscene.look_at` above.
             if eff.move_npc_on_arrive().is_some() {
                 res(d, format!("{path_base}/on_arrive"), "move-npc `on_arrive`");
+            }
+            // `give-item.carrier` (spec-0018) is likewise an additive v0.6 field
+            // on the v0.3 `give-item` verb.
+            if eff.give_carrier().is_some() {
+                res(d, format!("{path_base}/carrier"), "give-item `carrier`");
             }
         };
         for (i, q) in c.quests.content.quests.iter().enumerate() {
@@ -1631,6 +1679,61 @@ fn check_no_nested_sequence(effs: &[QuestEffect], path: &str, d: &mut Vec<Diagno
     }
 }
 
+/// Reject a `carrier: "one"` `give-item` inside a **scheduler-only** bundle
+/// (`DW0371`, spec-0018).
+///
+/// `carrier: "one"` means "hand this one quest prop to the player whose action
+/// earned it". A `sequence` step and a `move-npc`/`move-actor` `on_arrive` are
+/// re-invoked by the vanilla scheduler with the **server** command source: there
+/// is no acting player there, so the effect has no defensible recipient. The
+/// party-wide default (absent `carrier`) is always fine — it addresses `@a`.
+///
+/// `scheduled` latches on the way down and the walk deliberately **stops** at a
+/// `set-checkpoint`'s `on_respawn` and a `begin-stealth`'s `on_caught`: those
+/// bundles are dispatched per player (the respawning / spotted one), so they do
+/// have an `@s` even when the effect that installed them was scheduled.
+fn check_carrier_one_not_scheduled(
+    effs: &[QuestEffect],
+    path: &str,
+    scheduled: bool,
+    d: &mut Vec<Diagnostic>,
+) {
+    for e in effs {
+        if scheduled && e.gives_to_one() {
+            d.push(Diagnostic::error(
+                codes::PARTY_CARRIER_SCHEDULED,
+                "quests",
+                path.to_string(),
+                "a `give-item` with `carrier: \"one\"` sits in a bundle only the scheduler ever \
+                 runs (a `sequence` step, or a `move-npc`/`move-actor` `on_arrive`). Those run \
+                 with the server command source — there is no acting player to hand the prop to, \
+                 so the give would silently reach nobody. Drop `carrier` to arm the whole party, \
+                 or move the hand-off onto the beat a player completes"
+                    .to_string(),
+            ));
+        }
+        match e {
+            // These bundles ARE dispatched per player; they reset the latch.
+            QuestEffect::SetCheckpoint { on_respawn, .. } => {
+                check_carrier_one_not_scheduled(on_respawn, path, false, d);
+            }
+            QuestEffect::BeginStealth { on_caught, .. } => {
+                check_carrier_one_not_scheduled(on_caught, path, false, d);
+            }
+            // These are the scheduler-only seams (see `emit::Audience::Scheduled`).
+            QuestEffect::Sequence { steps } => {
+                for st in steps {
+                    check_carrier_one_not_scheduled(&st.effects, path, true, d);
+                }
+            }
+            QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
+                check_carrier_one_not_scheduled(on_arrive, path, true, d);
+            }
+            _ => {}
+        }
+    }
+}
+
 /// DSL v0.6 checks (spec-0014): actor entity ids, skins, anchor resolution, actor
 /// references from staging effects, the no-nested-`sequence` rule, and wave-mob
 /// `equipment` item ids (task #65, `DW0143` — the give-item family). Gated on the
@@ -1777,6 +1880,7 @@ fn v06_checks(
         };
         walk_effects_deep(effs, &mut visit);
         check_no_nested_sequence(effs, path, d);
+        check_carrier_one_not_scheduled(effs, path, false, d);
     }
 
     // Wave-mob `equipment` item ids (task #65): every present slot must name a
@@ -1807,7 +1911,7 @@ fn v06_checks(
     // spec-0016 §1: `respawns_on_rest` is re-seating *by a bonfire*. With no
     // `bonfire` anywhere in the campaign nothing can ever fire the re-seat, so
     // the field is a silent no-op — the class of defect this compiler always
-    // turns loud (`DW0356`).
+    // turns loud (`DW0370`).
     let mut has_bonfire = false;
     for q in &c.quests.content.quests {
         for_each_effect_deep(q, |_path, eff| {
@@ -3200,13 +3304,13 @@ fn cutscene_style_checks(
         d: &mut Vec<Diagnostic>,
     ) {
         let (unknown, kind, id) = match sub {
-            CameraSubject::Anchor { .. } => return,
-            CameraSubject::Npc { npc, .. } => {
-                (!npc_ids.contains(npc.as_str()), "npc", npc.as_str())
-            }
-            CameraSubject::Actor { actor, .. } => {
-                (!actor_ids.contains(actor.as_str()), "actor", actor.as_str())
-            }
+            CameraSubject::Anchor(_) => return,
+            CameraSubject::Npc(s) => (!npc_ids.contains(s.npc.as_str()), "npc", s.npc.as_str()),
+            CameraSubject::Actor(s) => (
+                !actor_ids.contains(s.actor.as_str()),
+                "actor",
+                s.actor.as_str(),
+            ),
         };
         if unknown {
             d.push(Diagnostic::error(
@@ -3327,14 +3431,14 @@ fn cutscene_style_checks(
             }
             if style.needs_moving_subject() {
                 let moved = match &shot.subject {
-                    Some(CameraSubject::Npc { npc, .. }) => {
-                        scope.iter().any(|(a, id)| !a && id == npc.as_str())
+                    Some(CameraSubject::Npc(s)) => {
+                        scope.iter().any(|(a, id)| !a && id == s.npc.as_str())
                     }
-                    Some(CameraSubject::Actor { actor, .. }) => {
-                        scope.iter().any(|(a, id)| *a && id == actor.as_str())
+                    Some(CameraSubject::Actor(s)) => {
+                        scope.iter().any(|(a, id)| *a && id == s.actor.as_str())
                     }
                     // An anchor can never move; a missing subject already got DW0348.
-                    Some(CameraSubject::Anchor { .. }) => false,
+                    Some(CameraSubject::Anchor(_)) => false,
                     None => true,
                 };
                 if !moved {
@@ -4552,11 +4656,11 @@ fn world_edits_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mut Vec<Diag
 /// Validate the stage-5 `shortcuts` section (spec-0016 §2).
 ///
 /// Two rules, two codes:
-/// * `DW0357` — the declaration must resolve: a well-formed, unique
+/// * `DW0371` — the declaration must resolve: a well-formed, unique
 ///   `shortcut/<id>`, a `gate` and an `unlock` some area's prefab provides, and
 ///   the two must be different anchors (the mechanism sits on the FAR side, not
 ///   in the doorway it opens).
-/// * `DW0358` — no `close-gate` anywhere may target a gate a shortcut owns. A
+/// * `DW0372` — no `close-gate` anywhere may target a gate a shortcut owns. A
 ///   shortcut opens permanently; making that structural is cheaper and safer than
 ///   trusting every author to never reach for the re-seal verb. `close-gate` on
 ///   any other gate (the point-of-no-return beat) is untouched.
@@ -4677,7 +4781,7 @@ fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
 // spec-0016 §3 — ambushes
 // ---------------------------------------------------------------------------
 
-/// Validate the stage-5 `ambushes` section (spec-0016 §3), `DW0365`.
+/// Validate the stage-5 `ambushes` section (spec-0016 §3), `DW0375`.
 ///
 /// An ambush desugars to an ordinary environment trigger at parse time, so it
 /// inherits every trigger diagnostic already in the compiler — id/range checks
@@ -4688,7 +4792,7 @@ fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
 /// It deliberately does **not** require a `telegraph`. The un-telegraphed
 /// ambush is core souls vocabulary (owner ruling 2026-08-02) — 初见杀 is how a
 /// level teaches. What the engine owes the player is counterplay on the retry,
-/// which is a geometric question and is proven in `compiler::nav` (`DW0366`).
+/// which is a geometric question and is proven in `compiler::nav` (`DW0376`).
 fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     for (i, a) in c.quests.content.ambushes.iter().enumerate() {
@@ -4752,12 +4856,12 @@ fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 // spec-0016 §4 — timed gates
 // ---------------------------------------------------------------------------
 
-/// Validate the stage-5 `timed_gates` section (spec-0016 §4), `DW0367`.
+/// Validate the stage-5 `timed_gates` section (spec-0016 §4), `DW0377`.
 ///
 /// The structural half only: ids, a cycle that actually cycles, a phase inside
 /// the cycle, and one owner per gate region. The *design* half — that the gate is
 /// a timing read and not a coin flip — needs the nav model's crossing time and
-/// lives in `compiler::nav` (`DW0368`). The fill-block requirement is `DW0343`,
+/// lives in `compiler::nav` (`DW0378`). The fill-block requirement is `DW0343`,
 /// the same rule `close-gate` and `shortcut` obey.
 fn timed_gate_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let quests = &c.quests.content;
@@ -4768,7 +4872,7 @@ fn timed_gate_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     let mut driven: BTreeSet<&str> = BTreeSet::new();
     for (i, g) in quests.timed_gates.iter().enumerate() {
-        let mut err = |path: String, msg: String, d: &mut Vec<Diagnostic>| {
+        let err = |path: String, msg: String, d: &mut Vec<Diagnostic>| {
             d.push(Diagnostic::error(
                 codes::TIMED_GATE_INVALID,
                 "quests",
@@ -4794,7 +4898,10 @@ fn timed_gate_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 d,
             );
         }
-        for (field, ticks) in [("open_ticks", g.open_ticks), ("closed_ticks", g.closed_ticks)] {
+        for (field, ticks) in [
+            ("open_ticks", g.open_ticks),
+            ("closed_ticks", g.closed_ticks),
+        ] {
             if ticks == 0 {
                 err(
                     format!("/content/timed_gates/{i}/{field}"),
@@ -4803,7 +4910,11 @@ fn timed_gate_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                          timing gate. Use `open-gate`/`close-gate` for a one-way state change, or \
                          give both halves of the cycle a real duration.",
                         g.id,
-                        if field == "open_ticks" { "opens" } else { "closes" }
+                        if field == "open_ticks" {
+                            "opens"
+                        } else {
+                            "closes"
+                        }
                     ),
                     d,
                 );

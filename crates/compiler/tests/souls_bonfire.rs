@@ -159,26 +159,30 @@ fn rest_detection_is_per_tick_and_repeatable() {
     );
 }
 
-/// `on_rest` runs on a rest under the SERVER executor (the tick has no `@s`, so
-/// per-player effects re-bind to the party) and the SAME bundle runs on a respawn
-/// at this bonfire under the player executor. One authored answer, two paths.
+/// One authored `on_rest` bundle, two audiences (spec-0018). Resting is a PARTY
+/// event dispatched from the tick, so its player-facing effects address `@a` —
+/// the party rests together. A respawn belongs to the ONE player who died, so the
+/// same bundle addresses `@s` there. Party state (`set-flag`) names no player on
+/// either path and fires exactly once.
 #[test]
-fn on_rest_runs_on_both_rest_and_respawn() {
+fn on_rest_runs_at_the_right_audience_on_both_paths() {
     let out = build_fixture();
     let rest = fn_body(&out, "bonfire_rest_0");
     let respawn = fn_body(&out, "cp_on_respawn_0");
     assert!(
-        rest.contains("as @a run title @s") || rest.contains("execute as @a "),
-        "a per-player on_rest effect re-binds to the party on the scheduled path: {rest}"
+        rest.contains("tellraw @a {\"text\":\"You rest at the shrine fire.\"}"),
+        "the whole party sees the rest: {rest}"
     );
     assert!(
-        rest.contains("dw.f_rested"),
-        "the on_rest set-flag lands on the rest path: {rest}"
+        respawn.contains("tellraw @s {\"text\":\"You rest at the shrine fire.\"}"),
+        "only the player who died sees it on the respawn path: {respawn}"
     );
-    assert!(
-        respawn.contains("dw.f_rested"),
-        "the same bundle lands on the respawn path: {respawn}"
-    );
+    for (label, body) in [("rest", rest), ("respawn", respawn)] {
+        assert!(
+            body.contains("scoreboard players set #party dw.f_rested 1"),
+            "the on_rest set-flag is party state on the {label} path: {body}"
+        );
+    }
 }
 
 /// A `respawns_on_rest` wave is re-seated on every rest and on every respawn at a
