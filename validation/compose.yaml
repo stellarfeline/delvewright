@@ -23,7 +23,9 @@
 # `validate` is the SHIPPED delve image (ADR-0010, Dockerfile.delve) — what the bot
 # completes is exactly what the owner joins. The `packtest` runner is a separate
 # tooling server with the PackTest + Fabric overlay that NEVER touches the delve
-# image (ADR-0003 / spec-0003 criterion).
+# image (ADR-0003 / spec-0003 criterion); it boots the SAME world as the shipped
+# delve — same build output, same world-settings entrypoint (see the service) — so
+# the mod overlay is the only difference between them.
 #
 # EULA: acceptance is the owner's action, never ours — read from the environment,
 # NEVER hardcoded TRUE (ADR-0010). The itzg base downloads the pinned jar at run
@@ -147,19 +149,38 @@ services:
       # settings + datapack mounts (which mirror the shipped delve) live here.
       # itzg copies these directories into the world's datapacks folder on boot.
       DATAPACKS: "/packs/datapack,/packs/packtest-datapack"
-      # Match the delve's void/superflat world so /place template etc. behave the
-      # same as in the shipped delve.
+      # World settings: the campaign-varying ones (difficulty, seed, level-type,
+      # generator-settings) are DERIVED from the build's server/server.properties by
+      # the entrypoint below — the same script the shipped delve image bakes — so
+      # PackTest always runs the world the delve ships (void superflat for a normal
+      # delve, ocean superflat for a `horizon: ocean` campaign). Hardcoding them here
+      # made ocean campaigns test a world that never ships (task #84; same defect
+      # class as #103). The non-varying ones mirror Dockerfile.delve's ENV so the rest
+      # of the world matches too — notably spawn-monsters=false, which matters now
+      # that a wave campaign's derived difficulty is `easy`, not `peaceful`.
+      DELVE_SERVER_PROPERTIES: "/packs/server/server.properties"
       MODE: "adventure"
-      DIFFICULTY: "peaceful"
-      LEVEL_TYPE: "minecraft:flat"
-      GENERATOR_SETTINGS: '{"biome":"minecraft:the_void","layers":[]}'
-      SEED: "20260729"
+      FORCE_GAMEMODE: "true"
+      GENERATE_STRUCTURES: "false"
+      SPAWN_MONSTERS: "false"
+      SPAWN_PROTECTION: "0"
+      ALLOW_NETHER: "false"
+      PVP: "false"
+    # Same derivation as the shipped image (Dockerfile.delve bakes a byte-identical
+    # copy of this script; validation/check-world-settings.sh fails CI on drift).
+    # It exports the compiler's world settings, then execs itzg's entrypoint, and
+    # HARD-FAILS if the build's server.properties is not mounted — a missing file
+    # can never silently downgrade the runner to some other world.
+    entrypoint: ["/bin/bash", "/packs/world-settings-entrypoint.sh"]
     volumes:
       # Named world volume so `down -v` clears it (see `server` note above) — the
       # PackTest runner regenerates the world from the mounted datapacks each run.
       - packtest-data:/data
       - ./delve-output/datapack:/packs/datapack:ro
       - ./delve-output/packtest-datapack:/packs/packtest-datapack:ro
+      # The compiler's world declaration + the shared derivation script (read-only).
+      - ./delve-output/server:/packs/server:ro
+      - ./world-settings-entrypoint.sh:/packs/world-settings-entrypoint.sh:ro
 
 # Named world volumes for the itzg `/data` mounts above. Declared so
 # `docker compose -f validation/compose.yaml down -v` removes them — otherwise the
