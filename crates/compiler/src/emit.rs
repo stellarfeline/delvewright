@@ -2146,6 +2146,9 @@ fn emit_play_sound(
 /// type (default `minecraft:generic`). A `within` box narrows to acting players
 /// standing inside the anchor-centred AABB — the same `@s[x=…,dx=…]` box model the
 /// stealth zone check uses — preserving the per-`@s` semantics (no double-hit).
+///
+/// Every form is guarded by `tag=!dw_cutscene`: a player watching a cutscene is
+/// never harmed by campaign machinery (see [`CUTSCENE_TAG`]).
 fn emit_damage_players(
     plan: &Plan,
     amount: u32,
@@ -2172,12 +2175,17 @@ fn emit_damage_players(
                     2 * zone.extent[2] as i32,
                 ];
                 body.push(format!(
-                    "execute if entity @s[x={},dx={},y={},dy={},z={},dz={}] run {cmd}",
+                    "execute if entity @s[x={},dx={},y={},dy={},z={},dz={},tag=!{CUTSCENE_TAG}] run {cmd}",
                     lo[0], size[0], lo[1], size[1], lo[2], size[2]
                 ));
             }
         }
-        None => body.push(cmd),
+        // The bare form still needs the cutscene guard, so it becomes a guarded
+        // `execute` too (see CUTSCENE_TAG: a cutscene is pure observation —
+        // campaign machinery never harms a player who is only watching).
+        None => body.push(format!(
+            "execute if entity @s[tag=!{CUTSCENE_TAG}] run {cmd}"
+        )),
     }
 }
 
@@ -2278,10 +2286,16 @@ fn emit_stealth_functions(plan: &Plan) -> Vec<(String, String)> {
                     .to_string(),
             ]),
         ));
-        // stealth_tick_<i>: judge every player.
+        // stealth_tick_<i>: judge every player who is actually playing. A player
+        // in the cutscene state is skipped entirely (CUTSCENE_TAG): the judge is
+        // the only writer of `dw.st_grace`, so skipping it freezes the clock —
+        // grace neither accrues nor expires, and `on_caught` cannot fire at a
+        // player who is watching a cinematic in spectator mode.
         fns.push((
             format!("stealth_tick_{i}"),
-            lines(&[format!("execute as @a run function {ns}:stealth_eval_{i}")]),
+            lines(&[format!(
+                "execute as @a[tag=!{CUTSCENE_TAG}] run function {ns}:stealth_eval_{i}"
+            )]),
         ));
         // stealth_eval_<i> (as @s): compute safe flag, update grace, fire caught.
         let mut eval: Vec<String> = vec!["scoreboard players set @s dw.st_safe 0".to_string()];
@@ -2907,6 +2921,19 @@ fn sequence_fns(plan: &Plan) -> Vec<(String, String)> {
     out
 }
 
+/// The entity tag every player carries for the duration of a cutscene.
+///
+/// **Staging invariant — a cutscene is pure observation.** While a player is in
+/// the cutscene state, campaign machinery must not require anything of them and
+/// must not punish them: the stealth judge is suspended for that player (grace
+/// neither accrues nor expires, `on_caught` cannot fire) and `damage-players`
+/// skips them. Any future verb that *demands* input or *deals harm* joins this
+/// list — the player is watching, not playing.
+///
+/// Added by the cutscene `start` alongside `gamemode spectator`, removed by the
+/// `end`/restore, so the state has exactly the cinematic's lifetime.
+const CUTSCENE_TAG: &str = "dw_cutscene";
+
 /// One cutscene shot with its geometry resolved to world coordinates: the dolly
 /// polyline, the optional `look_at` subject point, and the shot's length in ticks.
 struct ResolvedShot {
@@ -2991,6 +3018,11 @@ fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
         start.push(format!(
             "execute at @p run summon minecraft:marker ~ ~ ~ {{Tags:[\"dw_csmark_{bare}\"]}}"
         ));
+        // The cutscene state marker. `gamemode spectator` already takes the
+        // players' bodies out of the world; the tag is what campaign machinery
+        // reads so it does not keep asking anything of a player who is only
+        // watching (see CUTSCENE_TAG).
+        start.push(format!("tag @a add {CUTSCENE_TAG}"));
         start.push("gamemode spectator @a".to_string());
         for cam in ["a", "b"] {
             start.push(format!(
@@ -3052,13 +3084,27 @@ fn cutscene_fns(plan: &Plan) -> Vec<(String, String)> {
         // end / restore: leaving spectator returns each player to their
         // pre-spectator position; the explicit tp to the saved marker makes the
         // restore robust (spec addendum: restore gamemode + position).
-        let end: Vec<String> = vec![
+        let mut end: Vec<String> = vec![
             "gamemode adventure @a".to_string(),
             format!("tp @a @e[tag=dw_csmark_{bare},limit=1]"),
             format!("kill @e[tag=dw_cam_{bare}]"),
             format!("kill @e[tag=dw_csmark_{bare}]"),
-            format!("scoreboard players set #run_{bare} dw.sys 0"),
         ];
+        // Resume: drop the cutscene marker, then re-acknowledge the vanilla
+        // `sneak_time` stat so the first stealth judge tick after the restore
+        // compares against the players' *current* stat rather than the one frozen
+        // when the cinematic began. Grace is deliberately NOT reset — it neither
+        // accrued nor expired during the cutscene, so the beat picks up exactly
+        // where it paused. Emitted only for a campaign with stealth beats, so a
+        // cutscene-only campaign stays byte-identical.
+        end.push(format!("tag @a remove {CUTSCENE_TAG}"));
+        if !plan.stealth_beats.is_empty() {
+            end.push(
+                "execute as @a run scoreboard players operation @s dw.st_sneakack = @s dw.st_sneak"
+                    .to_string(),
+            );
+        }
+        end.push(format!("scoreboard players set #run_{bare} dw.sys 0"));
         out.push((format!("cs_end_{bare}"), lines(&end)));
     }
     out
@@ -4671,6 +4717,47 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
         out.insert(
             format!("packtest-datapack/data/{ns}/test/v06_stealth.mcfunction"),
             lines(&t).into_bytes(),
+        );
+
+        // --- cutscene freeze (the staging invariant, see CUTSCENE_TAG): a player
+        //     in the cutscene state is exposed — outside every zone, not sneaking
+        //     — and must still NOT accrue grace while the marker is on, then must
+        //     resume accruing the moment it comes off. Driven through the real
+        //     `stealth_tick` gate (not `stealth_eval`), because the gate is what
+        //     the freeze lives in.
+        let mut f = packtest_header(&format!(
+            "{title}: a cutscene freezes the stealth clock, and it resumes after"
+        ));
+        f.push(format!("function {ns}:setup"));
+        f.push(format!("function {ns}:stealth_begin_{i}"));
+        // Disarm the live session marker so the world `tick` loop does not judge
+        // in the same tick; this test drives `stealth_tick` explicitly.
+        f.push("scoreboard players set #stealth dw.sys 0".to_string());
+        f.push("scoreboard players set @a dw.st_grace 0".to_string());
+        f.push("scoreboard players set @a dw.st_sneak 0".to_string());
+        f.push("scoreboard players set @a dw.st_sneakack 0".to_string());
+        f.push(format!(
+            "tp @a {} {} {}",
+            outside[0], outside[1], outside[2]
+        ));
+        f.push(format!("tag @a add {CUTSCENE_TAG}"));
+        // Well past `grace_ticks` of exposure: frozen, so grace stays 0.
+        for _ in 0..grace + 2 {
+            f.push(format!("function {ns}:stealth_tick_{i}"));
+        }
+        f.push("assert score @p dw.st_grace matches 0".to_string());
+        // Restore drops the marker; the clock resumes from where it paused.
+        f.push(format!("tag @a remove {CUTSCENE_TAG}"));
+        for _ in 0..grace.saturating_sub(1) {
+            f.push(format!("function {ns}:stealth_tick_{i}"));
+        }
+        f.push(format!(
+            "assert score @p dw.st_grace matches {}",
+            grace.saturating_sub(1)
+        ));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/v06_cutscene_freeze.mcfunction"),
+            lines(&f).into_bytes(),
         );
     }
 

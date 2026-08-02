@@ -96,7 +96,8 @@ fn build_hw(on_complete: &str) -> BuildOutput {
 }
 
 /// An unscoped `damage-players` with no `damage_type` lowers to
-/// `damage @s <amount> minecraft:generic` — per-`@s`, default generic.
+/// `damage @s <amount> minecraft:generic` — per-`@s`, default generic — behind
+/// the cutscene guard (a player watching a cinematic is never harmed).
 #[test]
 fn damage_players_default_emits_generic_at_self() {
     let out = build_hw(
@@ -105,8 +106,10 @@ fn damage_players_default_emits_generic_at_self() {
     );
     let all = shipped_functions(&out);
     assert!(
-        all.lines().any(|l| l == "damage @s 6 minecraft:generic"),
-        "expected `damage @s 6 minecraft:generic`; functions:\n{all}"
+        all.lines().any(
+            |l| l == "execute if entity @s[tag=!dw_cutscene] run damage @s 6 minecraft:generic"
+        ),
+        "expected the cutscene-guarded `damage @s 6 minecraft:generic`; functions:\n{all}"
     );
 }
 
@@ -119,8 +122,10 @@ fn damage_players_explicit_type_maps_to_vanilla_id() {
     );
     let all = shipped_functions(&out);
     assert!(
-        all.lines().any(|l| l == "damage @s 40 minecraft:wither"),
-        "expected `damage @s 40 minecraft:wither`; functions:\n{all}"
+        all.lines().any(
+            |l| l == "execute if entity @s[tag=!dw_cutscene] run damage @s 40 minecraft:wither"
+        ),
+        "expected the cutscene-guarded `damage @s 40 minecraft:wither`; functions:\n{all}"
     );
 }
 
@@ -139,6 +144,7 @@ fn damage_players_in_box_emits_guarded_self_damage() {
             && l.contains("dx=6")
             && l.contains("dy=4")
             && l.contains("dz=6")
+            && l.contains("tag=!dw_cutscene")
             && l.ends_with("run damage @s 6 minecraft:generic")
     });
     assert!(
