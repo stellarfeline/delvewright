@@ -183,13 +183,25 @@ here is **ideas-only**: no source was ported, and none is licensed for it.
 
 **Rockstar / RAGE** — no GDC talk, engine paper, or `cameras.meta` schema for
 the cinematic camera exists publicly; shot durations and cut triggers are
-undocumented. Load-bearing sources: Obbe Vermeij's dev-history account of the
-cinematic cam's origin, relayed by TheGamer and GamesRadar+ (primary-source
-dev, high credibility); GTA Wiki / gta.wiki and GTAForums for community shot
-names — wheel cam, chase-car cut-in, roadside "ground view", bird's-eye
-(folklore tier, treat as suggestive only); PCGamesN's report on the invisible
-truck-cab camera rig in *Father/Son* (a verifiable artifact, and a real
-parallel-tracking-dolly technique). All unlicensed web content.
+undocumented (independently re-verified 2026-08-01: searches for the cut
+interval return only "it frequently changes"). Load-bearing sources: Obbe
+Vermeij's dev-history account of the cinematic cam's origin, relayed by
+TheGamer and GamesRadar+ (primary-source dev, high credibility — GTA III's
+train ride was boring, so he made the camera "switch between random viewpoints
+near the track", then added a wheel cam and a chasing-car view for vehicles);
+GTA Wiki's *Cinematic Camera* page for community shot names (folklore tier,
+suggestive only — it confirms San Andreas introduced selectable angles
+"helicopter, pedestrian, etc." but names no timings); and the invisible
+truck-cab camera rig in *Father/Son*, reported by PCGamesN and torn down on
+rage.re. That teardown is the single most useful Rockstar-technique datum we
+found, and it argues **for** our `side_track` preset: Rockstar mounted the
+cinematic camera on two phantom vehicles (invisible, invincible, no collision)
+running the same vehicle *recording* as the chase, precisely because camera
+animations cannot retime themselves to stay with a subject that speeds up and
+slows down, whereas a vehicle recording can. Their fix for "keep pace with a
+moving subject" was to put the camera on the subject's own motion track — which
+is exactly what `side_track` does with a compiler-known `move-npc` path.
+All unlicensed web content.
 
 **Unity Cinemachine** — `docs.unity3d.com` package manual (CM 2.9 / 3.1) plus
 `Unity-Technologies/com.unity.cinemachine` source for defaults the manual does
