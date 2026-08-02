@@ -1725,17 +1725,18 @@ pub enum QuestEffect {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         on_respawn: Vec<QuestEffect>,
     },
-    /// Begins a stealth beat (DSL v0.6, spec-0014). While active, every player
-    /// must be inside some `zone` **and** sneaking each tick; a player failing
-    /// both for `grace_ticks` fires `on_caught` (typically a kill → checkpoint
-    /// respawn). Sneaking is read from the vanilla `sneak_time` custom stat; zone
-    /// membership from the player's position. The compiler proves each zone is
-    /// standable and reachable from the activating beat (`DW0327`).
+    /// Begins a stealth beat (DSL v0.6, spec-0014; owner ruling 2026-08-01:
+    /// zone presence alone = hidden — no sneak requirement, which collided with
+    /// the spectator cutscene camera). While active, every player must be
+    /// inside some `zone` each tick; a player outside every zone for
+    /// `grace_ticks` fires `on_caught` (typically a kill → checkpoint respawn).
+    /// Zone membership is read from the player's position. The compiler proves
+    /// each zone is standable and reachable from the activating beat (`DW0327`).
     BeginStealth {
         /// The "shadow" regions, each an anchor-centred box (see [`StealthZone`]).
         zones: Vec<StealthZone>,
-        /// Per-player effects fired when a player is caught (out of every zone or
-        /// standing, for `grace_ticks`). Empty = no consequence.
+        /// Per-player effects fired when a player is caught (out of every zone
+        /// for `grace_ticks`). Empty = no consequence.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         on_caught: Vec<QuestEffect>,
         /// Ticks a player may be exposed before `on_caught` fires (default 20).

@@ -122,20 +122,18 @@ fn stealth_judge_skips_players_in_a_cutscene() {
     );
 }
 
-/// The restore re-acknowledges the vanilla `sneak_time` stat so the first judge
-/// tick after the cinematic compares against the *current* stat — but leaves
-/// `dw.st_grace` alone, so the beat resumes exactly where it paused.
+/// The restore leaves the stealth state entirely alone. Under the zone-presence
+/// model (owner ruling 2026-08-01 — no sneak stat, so no ack to re-sync) the
+/// judge reads only the player's position; `dw.st_grace` is frozen, not reset,
+/// so the beat resumes exactly where it paused.
 #[test]
-fn cutscene_end_resyncs_the_sneak_ack_without_resetting_grace() {
+fn cutscene_end_touches_no_stealth_state() {
     let out = build_fixture();
     let end = one_fn(&out, &format!("data/{NS}/function/cs_end_"));
     assert!(
-        end.contains("scoreboard players operation @s dw.st_sneakack = @s dw.st_sneak"),
-        "restore must re-ack the sneak stat:\n{end}"
-    );
-    assert!(
-        !end.contains("dw.st_grace"),
-        "restore must NOT touch grace — it is frozen, not reset:\n{end}"
+        !end.contains("dw.st_"),
+        "restore must NOT touch any stealth score — the judge is position-only \
+         and grace is frozen, not reset:\n{end}"
     );
 }
 
