@@ -596,7 +596,9 @@ impl<'a> Flow<'a> {
                         *complete_at = Some((pos, objective.to_string()));
                     }
                 }
-                QuestEffect::SetCheckpoint { .. } | QuestEffect::BeginStealth { .. } => continue,
+                QuestEffect::SetCheckpoint { .. }
+                | QuestEffect::Bonfire { .. }
+                | QuestEffect::BeginStealth { .. } => continue,
                 _ => {}
             }
             for list in e.nested_effect_lists() {
@@ -758,7 +760,9 @@ fn collect_flags(effs: &[QuestEffect], gate: &[String], out: &mut Vec<GatedFlag>
             });
         }
         match e {
-            QuestEffect::SetCheckpoint { .. } | QuestEffect::BeginStealth { .. } => continue,
+            QuestEffect::SetCheckpoint { .. }
+            | QuestEffect::Bonfire { .. }
+            | QuestEffect::BeginStealth { .. } => continue,
             _ => {
                 for list in e.nested_effect_lists() {
                     collect_flags(list, &here, out);

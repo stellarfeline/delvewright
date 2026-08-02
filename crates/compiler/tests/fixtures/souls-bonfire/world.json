@@ -1,0 +1,20 @@
+{
+  "dsl_version": "0.4.0",
+  "campaign_id": "souls-bonfire",
+  "stage": "world",
+  "content": {
+    "title": "Showcase of the Keep",
+    "theme": "A ruined keep exercising every DSL v0.4 verb.",
+    "premise": "The skinned Keeper sends you to clear the guard, take the key, unbar the door, and reach the shrine — with narration, props, a live-tuned wave, an NPC that moves and departs, environment triggers, and a cutscene.",
+    "seed": 20260731,
+    "target_minutes": 8,
+    "areas": [
+      {
+        "id": "area/keep",
+        "name": "The Stone Keep",
+        "prefab_pool": "pool/stone-keep",
+        "pieces": { "min": 7, "max": 9 }
+      }
+    ]
+  }
+}

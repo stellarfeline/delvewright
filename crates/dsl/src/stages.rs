@@ -985,6 +985,16 @@ pub struct Wave {
     pub anchor: AnchorId,
     /// The mobs that make up the wave (1..N).
     pub mobs: Vec<WaveMob>,
+    /// Re-seat this wave every time the party rests at (or respawns from) a
+    /// bonfire (spec-0016 §1) — the souls contract: progress is kept, the
+    /// enemies come back. The compiler kills any survivor carrying the wave tag
+    /// and re-runs the wave's own spawn function, so the room is restored to its
+    /// authored composition and spawn cells.
+    ///
+    /// Inert without a `bonfire` in the campaign, which is a compile error
+    /// (`DW0356`) rather than a silent no-op.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub respawns_on_rest: bool,
 }
 
 /// One mob stack in a [`Wave`].
@@ -1854,6 +1864,30 @@ pub enum QuestEffect {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         on_respawn: Vec<QuestEffect>,
     },
+    /// Places a **bonfire** rest point (DSL v0.6, spec-0016 §1) — the sibling of
+    /// [`QuestEffect::SetCheckpoint`] for souls-mode pacing. The effect *arms*
+    /// the rest affordance (a `minecraft:interaction` the player right-clicks at
+    /// the anchor, the campfire prop being prefab dressing); the checkpoint moves
+    /// only **when the party actually rests**. Resting fires `on_rest` — the
+    /// scene reset that makes retry cheap: re-arming traps, re-seating waves
+    /// declared `respawns_on_rest`, restoring actor postures. Death respawns the
+    /// party at the last-rested bonfire and runs the **same** `on_rest` bundle,
+    /// so the world's answer to a death and to a rest is identical (spec-0016:
+    /// death is an investment, never a tax).
+    ///
+    /// Proofs are inherited from the checkpoint machinery: the anchor must be
+    /// standable (`DW0316`) and must not strand the party (`DW0315`), rooted at
+    /// the beat that arms the bonfire (the earliest moment a rest can happen).
+    Bonfire {
+        /// The prefab anchor the rest affordance stands at, and the cell the
+        /// party respawns at once rested.
+        anchor: AnchorId,
+        /// Effects re-run on every rest **and** on every respawn at this bonfire
+        /// — the scene reset. Emitted in declared order and expected to be
+        /// idempotent (the same contract as `set-checkpoint`'s `on_respawn`).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        on_rest: Vec<QuestEffect>,
+    },
     /// Begins a stealth beat (DSL v0.6, spec-0014; owner ruling 2026-08-01:
     /// zone presence alone = hidden — no sneak requirement, which collided with
     /// the spectator cutscene camera). While active, every player must be
@@ -2148,6 +2182,11 @@ impl std::fmt::Debug for QuestEffect {
                 .debug_struct("SetCheckpoint")
                 .field("anchor", anchor)
                 .field("on_respawn", on_respawn)
+                .finish(),
+            QuestEffect::Bonfire { anchor, on_rest } => f
+                .debug_struct("Bonfire")
+                .field("anchor", anchor)
+                .field("on_rest", on_rest)
                 .finish(),
             QuestEffect::BeginStealth {
                 zones,
@@ -2676,6 +2715,7 @@ impl QuestEffect {
             | QuestEffect::PlaySound { .. }
             | QuestEffect::DamagePlayers { .. }
             | QuestEffect::SetCheckpoint { .. }
+            | QuestEffect::Bonfire { .. }
             | QuestEffect::BeginStealth { .. }
             | QuestEffect::EndStealth
             | QuestEffect::SpawnActor { .. }
@@ -2723,6 +2763,7 @@ impl QuestEffect {
         match self {
             QuestEffect::CloseGate { .. } => Some("close-gate"),
             QuestEffect::SetCheckpoint { .. } => Some("set-checkpoint"),
+            QuestEffect::Bonfire { .. } => Some("bonfire"),
             QuestEffect::BeginStealth { .. } => Some("begin-stealth"),
             QuestEffect::EndStealth => Some("end-stealth"),
             QuestEffect::PlaySound { .. } => Some("play-sound"),
@@ -2752,6 +2793,14 @@ impl QuestEffect {
             QuestEffect::SetCheckpoint { anchor, on_respawn } => {
                 Some((anchor, on_respawn.as_slice()))
             }
+            _ => None,
+        }
+    }
+
+    /// `(anchor, on_rest)` if this is a `bonfire` effect (spec-0016 §1).
+    pub fn bonfire(&self) -> Option<(&AnchorId, &[QuestEffect])> {
+        match self {
+            QuestEffect::Bonfire { anchor, on_rest } => Some((anchor, on_rest.as_slice())),
             _ => None,
         }
     }
@@ -2809,6 +2858,7 @@ impl QuestEffect {
         match self {
             QuestEffect::Sequence { steps } => steps.iter().map(|s| s.effects.as_slice()).collect(),
             QuestEffect::SetCheckpoint { on_respawn, .. } => vec![on_respawn.as_slice()],
+            QuestEffect::Bonfire { on_rest, .. } => vec![on_rest.as_slice()],
             QuestEffect::BeginStealth { on_caught, .. } => vec![on_caught.as_slice()],
             QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
                 vec![on_arrive.as_slice()]
@@ -2847,6 +2897,9 @@ impl QuestEffect {
             QuestEffect::SetCheckpoint { on_respawn, .. } => {
                 vec![("respawn".to_string(), on_respawn.as_mut_slice())]
             }
+            QuestEffect::Bonfire { on_rest, .. } => {
+                vec![("rest".to_string(), on_rest.as_mut_slice())]
+            }
             QuestEffect::BeginStealth { on_caught, .. } => {
                 vec![("caught".to_string(), on_caught.as_mut_slice())]
             }
@@ -2884,6 +2937,11 @@ impl QuestEffect {
                 "on_respawn".to_string(),
                 "respawn".to_string(),
                 on_respawn.as_slice(),
+            )],
+            QuestEffect::Bonfire { on_rest, .. } => vec![(
+                "on_rest".to_string(),
+                "rest".to_string(),
+                on_rest.as_slice(),
             )],
             QuestEffect::BeginStealth { on_caught, .. } => vec![(
                 "on_caught".to_string(),
@@ -3054,6 +3112,7 @@ impl QuestEffect {
             QuestEffect::CampaignComplete
             | QuestEffect::SpawnNpc { .. }
             | QuestEffect::SetCheckpoint { .. }
+            | QuestEffect::Bonfire { .. }
             | QuestEffect::BeginStealth { .. }
             | QuestEffect::EndStealth
             | QuestEffect::SpawnActor { .. }
@@ -3091,6 +3150,7 @@ impl QuestEffect {
             QuestEffect::CampaignComplete
             | QuestEffect::SpawnNpc { .. }
             | QuestEffect::SetCheckpoint { .. }
+            | QuestEffect::Bonfire { .. }
             | QuestEffect::BeginStealth { .. }
             | QuestEffect::EndStealth
             | QuestEffect::SpawnActor { .. }
