@@ -8,7 +8,11 @@ use serde::Serialize;
 pub enum Severity {
     /// A hard rejection.
     Error,
-    /// Advisory only (unused in v0, reserved for future rules).
+    /// Advisory. Reported and rendered like an error, but does **not** fail the
+    /// run — `delvec` exits non-zero only on [`Severity::Error`]. Reserved for
+    /// rules whose verdict depends on something the compiler cannot fully know
+    /// (e.g. `DW0330`: how much text fits depends on the player's window size and
+    /// GUI scale), where a hard rejection would be a guess dressed as a fact.
     Warning,
 }
 
@@ -40,6 +44,22 @@ impl Diagnostic {
         Diagnostic {
             code: code.to_string(),
             severity: Severity::Error,
+            stage: stage.into(),
+            path: path.into(),
+            message: message.into(),
+        }
+    }
+
+    /// Build a warning (advisory) diagnostic. Reported, but does not fail the run.
+    pub fn warning(
+        code: &str,
+        stage: impl Into<String>,
+        path: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Diagnostic {
+            code: code.to_string(),
+            severity: Severity::Warning,
             stage: stage.into(),
             path: path.into(),
             message: message.into(),

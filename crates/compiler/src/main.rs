@@ -15,7 +15,9 @@ use delvewright_compiler::load::load_campaign_dir;
 use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
-use delvewright_dsl::{Diagnostic, Stage, parse_campaign, stage_schema, validate_campaign_with};
+use delvewright_dsl::{
+    Diagnostic, Severity, Stage, parse_campaign, stage_schema, validate_campaign_with,
+};
 
 /// Internal-error exit code (spec-0002: ≥10).
 const EXIT_INTERNAL: u8 = 10;
@@ -180,6 +182,13 @@ fn validate_stage(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> Result
             // (exit 1) — no-op for a campaign that uses neither surface.
             diags.extend(delvewright_compiler::atmos::check_sounds(&campaign));
             diags.extend(delvewright_compiler::atmos::check_art(&campaign, &sidecars));
+            // On-screen narrate text that overruns the title/subtitle/art width
+            // budget (DW0330). Advisory tier — see `textfit` for why this warns
+            // rather than rejects. Runs over the English source and every
+            // declared-language sidecar rendition.
+            diags.extend(delvewright_compiler::textfit::check_text_fits(
+                &campaign, &sidecars,
+            ));
             // v0.6 `close-gate` gate-block declaration (DW0343): the fill block is
             // prefab metadata, so this compiler-side check runs here (validation
             // tier). No-op for a campaign that uses no `close-gate`.
@@ -202,9 +211,18 @@ fn validate_stage(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> Result
     }
 }
 
+/// Whether any diagnostic is a hard rejection. Warnings (`Severity::Warning`) are
+/// printed like errors but never fail a run: they flag things the compiler cannot
+/// decide with certainty (e.g. `DW0330`, where the true limit depends on the
+/// player's window size and GUI scale), so failing on them would dress a judgement
+/// call as a fact. Every `Severity::Error` still exits non-zero exactly as before.
+fn has_error(diags: &[Diagnostic]) -> bool {
+    diags.iter().any(|d| d.severity == Severity::Error)
+}
+
 fn run_validate(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode {
     match validate_stage(campaign_dir, prefabs_dir, json) {
-        Ok(v) if v.diags.is_empty() => ExitCode::SUCCESS,
+        Ok(v) if !has_error(&v.diags) => ExitCode::SUCCESS,
         Ok(_) => ExitCode::from(1),
         Err(code) => ExitCode::from(code),
     }
@@ -215,7 +233,7 @@ fn run_analyze(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode 
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),
     };
-    if !v.diags.is_empty() {
+    if has_error(&v.diags) {
         return ExitCode::from(1);
     }
     let adiags = analyze_campaign(&v.campaign, &v.prefabs);
@@ -352,7 +370,7 @@ fn run_build(
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),
     };
-    if !v.diags.is_empty() {
+    if has_error(&v.diags) {
         return ExitCode::from(1);
     }
     let Validated {

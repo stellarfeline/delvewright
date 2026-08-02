@@ -159,10 +159,19 @@ fn art_diag(stage: &str, path: String, text: &str, bad: char) -> Diagnostic {
 /// The bitmap-atlas grid width (glyphs per row). 48 glyphs → 6 rows of 8.
 const COLS: usize = 8;
 /// Per-glyph cell size in source pixels (5×7 glyph in the top-left of an 8×8 cell).
-const CELL: usize = 8;
+pub const CELL: usize = 8;
 /// Glyph bitmap dimensions.
-const GW: usize = 5;
+pub const GW: usize = 5;
 const GH: usize = 7;
+
+/// The `delve:art` bitmap provider's rendered glyph height in font pixels, and the
+/// baseline offset. The atlas cell is [`CELL`] px tall, so the provider renders each
+/// glyph at `ART_HEIGHT / CELL` = 4× its source size — that scale is what makes an
+/// art title a full-width banner, and it is what [`crate::textfit`] measures against.
+pub const ART_HEIGHT: usize = 32;
+const ART_ASCENT: usize = 28;
+/// The advance the art font's `space` provider gives a space, in font pixels.
+pub const ART_SPACE_ADVANCE: usize = 16;
 
 /// True if the campaign uses the art title style anywhere (so the font is only
 /// baked into the pack when needed — a non-art campaign's pack is byte-identical).
@@ -191,12 +200,12 @@ fn font_json() -> Vec<u8> {
         .collect();
     let v = serde_json::json!({
         "providers": [
-            { "type": "space", "advances": { " ": 16 } },
+            { "type": "space", "advances": { " ": ART_SPACE_ADVANCE } },
             {
                 "type": "bitmap",
                 "file": "delve:font/art.png",
-                "ascent": 28,
-                "height": 32,
+                "ascent": ART_ASCENT,
+                "height": ART_HEIGHT,
                 "chars": chars
             }
         ]
