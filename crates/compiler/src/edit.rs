@@ -434,16 +434,23 @@ fn check_batch_invariants(
             message: format!("after world-edits batch `{bid}`: {}", diag.message),
         });
     }
+    // The world-generator ambient (spec-0013 `horizon`) is a *premise* of the
+    // boundary-safety proof, not geometry: under `ocean` the pinned superflat
+    // puts bedrock under every column, so there is no void to step into and the
+    // hazard is stranding instead (`nav::verify_boundary_safety`). Deriving it
+    // from the plan here is what keeps that proof from testing a false premise.
+    let ambient = crate::nav::Ambient::of_plan(plan);
     let world = crate::nav::World::from_occupancy(assembled::occupancy_of(
         assembled.blocks.clone(),
         &assembled.open_gates,
-    ));
+    ))
+    .with_ambient(ambient.clone());
     let with_fixtures = if relight.extra_solid.is_empty() {
         world
     } else {
         let mut occ = assembled::occupancy_of(assembled.blocks.clone(), &assembled.open_gates);
         occ.solid.extend(relight.extra_solid.iter().copied());
-        crate::nav::World::from_occupancy(occ)
+        crate::nav::World::from_occupancy(occ).with_ambient(ambient)
     };
     let ctx = |e: crate::nav::NavError| EditError {
         code: e.code,

@@ -893,6 +893,61 @@ impl Target {
     }
 }
 
+/// One placed structure piece, as the manifest reports it — the **layout** half
+/// of the scene description, beside the point/region [`Target`]s.
+///
+/// A `piece-local` edit frame (`{"kind":"piece-local","piece":N,"prefab":…}`) is
+/// resolved by the replay as `piece.origin + rotation.transform(local)` against
+/// `area.pieces[N]` (`edit::resolve_frame_point`). Before this listing existed
+/// the manifest carried area bounds and anchors only, so an editor authoring a
+/// piece-local frame had to *back-solve* N, the prefab guard and the transform
+/// by hand from the rendered geometry. Every input to that resolution is now
+/// stated in-band.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PieceEntry {
+    /// Owning area id.
+    pub area: String,
+    /// Index **within that area's** placed pieces — exactly the `piece` field of
+    /// a `piece-local` edit frame (entry piece is 0).
+    pub index: usize,
+    /// Bound prefab id (`prefab/…`) — the frame's `prefab` guard value.
+    pub prefab: String,
+    /// The `/place template` position: where prefab-local `(0,0,0)` lands.
+    pub origin: [i32; 3],
+    /// Unrotated prefab size `[sx, sy, sz]`.
+    pub size: [i32; 3],
+    /// Placement rotation, in the `/place template` vocabulary (`none`,
+    /// `clockwise_90`, `180`, `counterclockwise_90`).
+    pub rotation: &'static str,
+    /// Inclusive minimum cell of the placed AABB.
+    pub min: [i32; 3],
+    /// Inclusive maximum cell of the placed AABB.
+    pub max: [i32; 3],
+}
+
+/// Collect every placed piece of a compiled plan, in **plan order** — areas as
+/// the plan holds them, pieces entry-first within each area — so `index` is the
+/// piece-local frame's index and the ordering is deterministic (ADR-0006).
+pub fn collect_pieces(plan: &Plan) -> Vec<PieceEntry> {
+    let mut out = Vec::new();
+    for area in &plan.areas {
+        for (index, piece) in area.pieces.iter().enumerate() {
+            let (min, max) = piece.bbox();
+            out.push(PieceEntry {
+                area: area.area_id.clone(),
+                index,
+                prefab: piece.prefab_id.clone(),
+                origin: piece.pos,
+                size: piece.size,
+                rotation: piece.rotation.token().unwrap_or("none"),
+                min,
+                max,
+            });
+        }
+    }
+    out
+}
+
 /// Collect every manifest-addressable target from a compiled plan, sorted by
 /// `(kind, area, id)` so the manifest's ordering is deterministic (ADR-0006).
 ///
@@ -1282,33 +1337,53 @@ pub fn resolve_targets<'a>(
     (inside, outside)
 }
 
+/// What the manifest describes about the world, as opposed to the camera and the
+/// image: the solved layout (`pieces`) plus the targets in and out of frame.
+/// Grouped so [`manifest`] takes one scene rather than three parallel slices.
+pub struct Scene<'a> {
+    /// Every placed piece of the plan ([`collect_pieces`]).
+    pub pieces: &'a [PieceEntry],
+    /// Targets inside the frustum, with their screen boxes.
+    pub inside: &'a [ResolvedTarget<'a>],
+    /// Targets outside it.
+    pub outside: &'a [&'a Target],
+}
+
 /// Build the scene manifest — the structured half of the dual-channel loop.
 ///
-/// Schema (v1):
+/// Schema (v2):
 /// ```text
 /// { manifest_version, campaign_id, delvec, image{path,width,height},
 ///   camera{pos,yaw,pitch,fov,convention}, world{blocks,block_kinds,bounds},
+///   pieces[ {area,index,prefab,origin,size,rotation,box{min,max}} ],
 ///   targets[ {id,kind,area,pos|box,screen_bbox{x,y,w,h},occluded,distance} ],
 ///   out_of_frame[ {id,kind,area,pos|box} ] }
 /// ```
 /// `pos` is present for point targets, `box` (`{min,max}`, inclusive cells) for
 /// region targets — never both. `out_of_frame` is the complement of `targets`:
 /// it is what makes "the subject is absent entirely" (spec-0015 pillar 4)
-/// machine-visible rather than something a reviewer must notice.
+/// machine-visible rather than something a reviewer must notice. `pieces`
+/// ([`PieceEntry`]) is the layout half: the placed structure pieces of the whole
+/// plan (not only the ones in frame), which is what a `piece-local` edit frame
+/// addresses.
 pub fn manifest(
     campaign_id: &str,
     image_path: &str,
     cam: &Camera,
     opts: &FrameOpts,
     grid: &VoxelGrid,
-    inside: &[ResolvedTarget<'_>],
-    outside: &[&Target],
+    scene: Scene<'_>,
 ) -> Value {
+    let Scene {
+        pieces,
+        inside,
+        outside,
+    } = scene;
     let bounds = grid
         .bounds()
         .map(|(lo, hi)| json!({ "min": lo, "max": hi }));
     json!({
-        "manifest_version": 1,
+        "manifest_version": 2,
         "campaign_id": campaign_id,
         "delvec": crate::DELVEC_VERSION,
         "image": {
@@ -1329,6 +1404,15 @@ pub fn manifest(
             "bounds": bounds,
             "sea_plane": opts.sea_level,
         },
+        "pieces": pieces.iter().map(|p| json!({
+            "area": p.area,
+            "index": p.index,
+            "prefab": p.prefab,
+            "origin": p.origin,
+            "size": p.size,
+            "rotation": p.rotation,
+            "box": { "min": p.min, "max": p.max },
+        })).collect::<Vec<_>>(),
         "targets": inside.iter().map(|r| {
             let mut v = target_json(r.target);
             v["screen_bbox"] = json!({

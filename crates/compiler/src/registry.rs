@@ -251,6 +251,15 @@ pub struct AnchorMeta {
     /// Absent for every non-trap anchor (byte-identical for existing metadata).
     #[serde(default)]
     pub dispenser: Option<[i32; 3]>,
+    /// The block the prefab wired as this `anchor/trap`'s **trigger** — the plate
+    /// or tripwire sitting on `pos` (DSL v0.6). Declared with its full blockstate
+    /// exactly as authored (`minecraft:oak_pressure_plate[powered=false]`), because
+    /// flag-gating a trap physically removes and restores this block and must put
+    /// back what was there. The gate-anchor `block` above is the same contract for
+    /// `close-gate`. Absent for every non-trap anchor, and only *required* by a
+    /// trap that declares a flag gate (`DW0363`).
+    #[serde(default)]
+    pub trigger_block: Option<String>,
 }
 
 /// An inclusive local block region (two corners).
@@ -410,6 +419,18 @@ impl PrefabRegistry {
             }
         }
         any_region.then_some(all_have_block)
+    }
+
+    /// The trigger block declared by the `anchor/trap` marker `anchor_name`, if any
+    /// prefab declares one. `None` when no prefab providing the anchor declares a
+    /// `trigger_block` — which is what makes a flag gate on that trap `DW0363`.
+    /// First match in prefab-id order (deterministic; a `BTreeMap` walk).
+    pub fn trap_trigger_block(&self, anchor_name: &str) -> Option<&str> {
+        self.by_id.values().find_map(|meta| {
+            meta.anchors
+                .get(anchor_name)
+                .and_then(|am| am.trigger_block.as_deref())
+        })
     }
 
     /// The prefab ids in `pool_id` that declare `anchor_name` in their metadata.
