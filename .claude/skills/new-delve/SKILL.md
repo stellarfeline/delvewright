@@ -226,8 +226,12 @@ Then:
   English source — exact-key coverage (DW0180/0181) cannot see a stale value.
 - **Wave tuning**: `follow_range` below ~16 means distant wave mobs never
   engage; a kill objective whose mobs idle is unfinishable-in-practice even
-  though machine-valid. Undead waves burn in daylight — order a `set-time`
-  BEFORE `spawn-wave` in the same effect list if the beat is day-adjacent.
+  though machine-valid. Undead waves burn in daylight — the RIGHT fix (owner
+  ruling) is a helmet on the mob (wave `equipment` field, pending task #65);
+  until that field exists, a `set-time` ordered BEFORE `spawn-wave` in the
+  same effect list is the interim. Never route wave mobs like actors: waves
+  are native AI; if a future beat needs lane-then-fight movement, that is the
+  routed-then-feral primitive (M4, task #66), not a follow_range trick.
 - **Player-POV review is live**: the build's `render-plan.json` POV shots
   render through Chunky (see `validation/render-shots.sh`, delve-render scene
   emission, camera mapping fixed in #111). Review the corrected set against
