@@ -214,7 +214,7 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Effect `despawn-actor{actor,style}` | `kill` = vanilla death animation in place; `vanish` = relocate-then-kill (silent, out of view). Targets `dw_actor_<id>` (puppet or twin). | 0.6 |
 | Effect `move-actor{actor,to_anchor,speed?,on_arrive[]}` | Footprint-aware A*-planned per-tick tp of the puppet, yaw along the path tangent; `on_arrive` fires at the destination cell; unroutable → `DW0325`. `move-npc` is a thin wrapper over the same planner (player footprint). **Chained origins (round-6, live-server proven):** an actor's (and NPC's) successive moves chain — the first leg plans from the declared anchor, every later leg from the previous leg's target. Planning every leg from the declared anchor degenerated a second consecutive move (island: mouth→fire-pit at t=260, whose declared anchor IS fire-pit) into a single-waypoint instant teleport — the giant snapped instead of walking on camera. Two moves sharing `(id, to_anchor)` still share one content-keyed driver, planned from the first occurrence's origin (documented limitation of the content key). **Handoff PackTest (round-6):** for the first `move-actor` whose `on_arrive` fires a `spawn-npc` (the walker→NPC scene handoff), a generated `v06_arrive_handoff` template seals every campaign gate (`close-gate` fill), drives the arrival tick, and asserts puppet gone / NPC body present / exactly one NPC hitbox — the beat a delve soft-locks on if the handoff half-fires; gates are re-opened and entities cleared afterwards (batch model). | 0.6 |
 | Effect `unleash-actor{actor}` | Replaces the puppet with a real-AI twin (same entity/pos/name/tag, no puppet marker). Re-caging = `despawn-actor` + `spawn-actor`. | 0.6 |
-| Effect `sequence{steps[]{at_ticks,effects[]}}` | Deterministic timeline: one schedule chain firing effect groups at exact tick offsets. No nested `sequence` → `DW0329`. Effects nested in a step are **first-class**: the flag/wave producer scans, the checkpoint/stealth collector, the l10n inventory, and emission all descend into `sequence.steps` and every nested effect list (`on_respawn`/`on_caught`/`on_arrive`) via one shared traversal, so a `set-flag`/`set-checkpoint` nested in a step produces its flag / registers its indexed checkpoint exactly as at top level. | 0.6 |
+| Effect `sequence{steps[]{at_ticks,effects[]}}` | Deterministic timeline: one schedule chain firing effect groups at exact tick offsets. No nested `sequence` → `DW0329`. Effects nested in a step are **first-class**: the flag/wave producer scans, the checkpoint/stealth collector, the l10n inventory, and emission all descend into `sequence.steps` and every nested effect list (`on_respawn`/`on_caught`/`on_arrive`) via one shared traversal, so a `set-flag`/`set-checkpoint` nested in a step produces its flag / registers its indexed checkpoint exactly as at top level. A sequence is a **global timeline**: every step function (the inline `at_ticks: 0` one included) is emitted server-source-safe, so its per-player beats address the party rather than one acting player — §4 "A scheduled bundle has no `@s`". | 0.6 |
 | `traps[]` | spec-0011: `{id,at,trigger,effect,lethality?,disarm?,reset?,requires_flags?,forbids_flags?}`. `at` binds an `anchor/trap` prefab marker (the trigger/hazard cell; its `dispenser` metadata cell holds the payload socket). `trigger` ∈ `pressure-plate`/`tripwire`/`trapped-chest` (all redstone-native; `trapped-chest` = the only player-distinct trigger). `effect` = `{dispense:{item,count}}` (item `DW0341`; a non-`dispense` key e.g. `tnt` is an unknown variant → `DW0100`). `lethality` ∈ `lethal`/`harmful`(default)/`nonlethal`. `disarm{via,sets_flag}` = a reachable affordance that turns the trap off. `reset` ∈ `once`/`rearm`(default). Structural errors `DW0340`; a lethal forced-path trap without discharge `DW0342`. Reserved (`DW0141`) before 0.6. | 0.6 |
 
 Dialogue effects `set-flag` (v0.4), `set-time`/`set-weather` (v0.5),
@@ -335,7 +335,7 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | `collect` | Chest at anchor pre-loaded `count×item`; `inventory_changed` advancement runs guarded completion. |
 | `interact` | `minecraft:interaction` (tag `dw_i_<obj>`) + `player_interacted_with_entity` advancement + `/trigger dw.i_<obj>`; `requires_item` = `execute if items`; glowing lantern `item_display` marker (also tag `dw_i_<obj>`, only when no `prop`), labeled with the objective `title` — untitled → nameless glow, never a raw-id label. `prop{block}` = `setblock` affordance. Completion despawns both entities (`kill @e[tag=dw_i_<obj>]`) so a finished objective is not clickable; the `prop` block persists as scenery. |
 | environment `triggers[]` (v0.4) | `setup_finish` summons one `minecraft:interaction` per `strike`/`use` trigger at its `at` anchor (tag `dw_trig_<id>`); `approach` needs no entity. `tick`: `strike` fires on `nbt={attack:{}}`, `use` on `nbt={interaction:{}}`, then clears the record (`data remove entity @s <field>`); `approach` is a `distance=..<range>` selector. `once` guards on `#trig_<id> dw.sys`. **Strike on an NPC's anchor — one cell, one hitbox (round-6):** when a `strike` trigger's `at` is also where an NPC stands, the NPC's own interaction hitbox carries `dw_trig_<id>` **and is the trigger's sole entity** — `setup_finish` suppresses the trigger's own summon. The NPC's body is `Invulnerable`, so without the shared tag a swing could land where nothing was watching and the trigger never fire (round-4 island QA); and with a *second*, exactly co-located hitbox (the round-4 form) the client's entity ray-pick is ambiguous — an exact tie resolves to whichever entity iterates first, in practice the world-init summon — so every right-click landed on an entity without `dw_npc_<n>` and the dialogue advancement never fired (round-6 island QA: Polyphemus untalkable after the boulder seal, proven on a live server). Consequences: the trigger's lifecycle follows the NPC's — a `deferred` NPC's strike trigger is armed only after its `spawn-npc` entrance, a `move-npc`'d NPC carries the strike target with it, and `despawn-npc` removes it entirely (which is the trigger's meaning: the thing being struck is the NPC). Scoped to `strike`: right-click on an NPC already belongs to the dialogue advancement, so a co-located `use` trigger is rejected at validate time (`DW0350`). Generated PackTests: `v04_strike_npc` writes the vanilla `attack` compound onto the NPC's hitbox and asserts the trigger fires, once, with the record consumed; `v04_strike_talk` pins the single-hitbox invariant — exactly one interaction entity wears the trigger tag, none wears it without the NPC tag, before and after an attack record is consumed (attack-then-talk must stay clickable). |
-| `set-flag` / `requires_flags` / `forbids_flags` | `dw.f_<flag>` scoreboard (per-player); required flags AND-ed into objective guards (layered on `after`), forbidden flags (v0.6) joined as `unless score @s dw.f_<flag> matches 1` clauses in the same guard. **Per-effect** gates (v0.6) wrap each of the effect's emitted commands in `execute if score @s dw.f_<flag> matches 1 [… per required] unless score @s dw.f_<flag> matches 1 [… per forbidden] run <cmd>`; these effect functions already run per-player (`complete_<obj>` / `trig_<id>` are entered `as @a`/`@s`), and an ungated effect is emitted verbatim (byte-identical). `unless … matches 1` is the deliberate unset-safe spelling: flag scores are never pre-initialized to 0, so a `scores={…=..0}` selector would not match an unset score. **Trigger-level** `forbids_flags` is any-player: the fire condition gains `unless entity @a[scores={dw.f_<flag>=1..}]` per flag (a positive selector inside a negation — flags are campaign state, so one player's wake beat stands the trigger down for everyone); a suppressed strike/use still consumes the interaction record. Generated PackTests: `verb_flag_gate` (requires) and `verb_forbid_gate` (forbids: set flag → drive → assert NOT complete; clear → drive → assert complete). |
+| `set-flag` / `requires_flags` / `forbids_flags` | `dw.f_<flag>` scoreboard (per-player); required flags AND-ed into objective guards (layered on `after`), forbidden flags (v0.6) joined as `unless score @s dw.f_<flag> matches 1` clauses in the same guard. **Per-effect** gates (v0.6) wrap each of the effect's emitted commands in `execute if score @s dw.f_<flag> matches 1 [… per required] unless score @s dw.f_<flag> matches 1 [… per forbidden] run <cmd>`; these effect functions already run per-player (`complete_<obj>` / `trig_<id>` are entered `as @a`/`@s`), and an ungated effect is emitted verbatim (byte-identical). In a **scheduled** bundle (`on_arrive`, `sequence` steps) there is no acting player: a per-player effect's gate stays `if score @s …` but under the effect's own `as @a`, while a global effect's gate degrades to the any-player predicate `if entity @a[scores={dw.f_<flag>=1..}]` — §4 "A scheduled bundle has no `@s`". `unless … matches 1` is the deliberate unset-safe spelling: flag scores are never pre-initialized to 0, so a `scores={…=..0}` selector would not match an unset score. **Trigger-level** `forbids_flags` is any-player: the fire condition gains `unless entity @a[scores={dw.f_<flag>=1..}]` per flag (a positive selector inside a negation — flags are campaign state, so one player's wake beat stands the trigger down for everyone); a suppressed strike/use still consumes the interaction record. Generated PackTests: `verb_flag_gate` (requires) and `verb_forbid_gate` (forbids: set flag → drive → assert NOT complete; clear → drive → assert complete). |
 | `open-gate` | `/fill … air` over the gate region. |
 | `close-gate` | `/fill <region> <block>` over the gate region with the anchor's declared fill block (no `replace` clause — the dual of `open-gate`). |
 | `give-item` | Grants item to player (`name` → SNBT text component). |
@@ -345,7 +345,7 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | `set-block` | `setblock` at resolved anchor. |
 | `despawn-npc` | Kills body + interaction hitbox. The generated `v04_despawn` PackTest targets the campaign's first `despawn-npc` NPC; when that NPC is **deferred** it runs its `spawn_npc_<id>` entrance right after `setup_finish` (a deferred NPC is deliberately absent from world init, so the presence assertion would otherwise read 0). The assertions themselves — 2 entities present, 0 after the kill — are identical in both cases, and the entrance line is emitted only for a deferred target, so a campaign with no deferred NPC keeps byte-identical PackTest output. |
 | `spawn-npc` | `function <ns>:spawn_npc_<npc>` — the generated entrance function, emitted once per **deferred** NPC. Its two lines are the world-init summons, each independently guarded: body by `unless entity @e[tag=dw_npc,tag=dw_npc_<n>]`, hitbox by `unless entity @e[tag=dw_npc_<n>,tag=!dw_npc]` (both carry the id tag, so a single shared guard would let the body's own summon suppress the hitbox). The `npc_summons` PackTest fires each deferred NPC's entrance after `setup_finish` and asserts exactly one body. |
-| `move-npc` | Per-tick tp along A*-planned walkable waypoints (hitbox in lockstep), at cell **centres** with L-shaped vertical steps — see §4 "Entity placement". `on_arrive` (v0.6): the driver's final-waypoint tick additionally runs `mv_arrive_<key>` (the bundle's effects), mirroring `ma_tick`/`ma_arrive_<key>` exactly; a bare move emits no hook (byte-identical). |
+| `move-npc` | Per-tick tp along A*-planned walkable waypoints (hitbox in lockstep), at cell **centres** with L-shaped vertical steps — see §4 "Entity placement". `on_arrive` (v0.6): the driver's final-waypoint tick additionally runs `mv_arrive_<key>` (the bundle's effects), mirroring `ma_tick`/`ma_arrive_<key>` exactly; a bare move emits no hook (byte-identical). The arrive bundle runs with the **server** command source (the driver reached it through `schedule`), so its effects are split per-player / global — see §4 "A scheduled bundle has no `@s`". |
 | `cutscene` | Per player: save gamemode+pos → spectator → alternate `spectate` between two co-located dolly cameras each tick (skipping any player actively holding sneak — `predicate=!<ns>:sneak_held`, see §4 "The `spectate` bounce is sneak-gated") → restore. **Keyframe dolly (task #64, `compiler::camera`)**: each shot's waypoint polyline is arc-length parameterized (equal distance per time, not equal segments) with baked smoothstep ease-in/ease-out, then emitted as a tick-0 snap + a `tp` every *N* ticks with display-entity `teleport_duration:N` armed via `data merge` — the **client** tweens position and rotation linearly between keyframes (spike-measured: one position-sync packet per keyframe, rotation interpolates, the `spectate` bounce cannot reset an in-flight tween, and a same-tick merge+`tp` applies the OLD duration because position syncs flush before metadata — which is exactly why the snap and its cadence merge may share a tick). Cadence *N* = the widest of {10, 5, 4, 2, 1} whose rendered chords stay within 0.25 blocks (perpendicular) and 2° (aim) of the exact eased path; a single-waypoint or 1-tick shot is a static snap (cadence 0, no merge). Each shot with a successor resets `teleport_duration:0` on its last owned tick so the next snap is a hard cut, not a glide. Every keyframe `tp` carries an explicit `<yaw> <pitch>` — **Minecraft** entity rotation (`yaw = atan2(-dx, dz)`, 0 = +Z south; `pitch = atan2(-dy, hypot(dx,dz))`, + = down), *not* the render-plan/Chunky yaw convention — computed at emission from the camera's own position: at the shot's `look_at` subject if it has one, else along the eased path's direction of travel. Never the summon default (yaw 0 = south). Positions and rotations rounded to 3 decimals, `-0.0` collapsed to `0.0`, so emission is byte-stable. The bracket also arms the `dw_cutscene` state on every player and releases it on restore — see §4 "A cutscene is pure observation". Multi-shot: all shots share one `#t_<bare>` counter — shot *k* owns `[offset_k, offset_k+len_k]` and the next starts at `offset_k+len_k+1` (hard cut); one marker, one `gamemode spectator @a`, one camera pair, one restore. Both single-shot spellings emit identical bytes. `critical-path.json`'s `cutscene_seconds` is the **total** across shots. Function key = `cs_<first anchor>_<seconds>_<waypoints>` (a pathless styled shot keys `cs_<style>_<subject>_…`), plus an 8-hex sha256 digest of the whole normalized shot list whenever the cutscene is not a bare single shot without `look_at`/`shot_style` (the key must be injective — two shots sharing a first waypoint must never collapse onto one function). Styled shots are expanded (`compiler::camera::expand_shot`) before keyframe planning; a moving subject's per-tick track comes from its sibling move's A* plan, aligned by effect-group/sequence timing. Deduplication stays DSL-content-keyed, so two byte-identical styled cutscenes in *different* move contexts plan from the first occurrence (documented limitation; give the shots distinguishing content to split them). |
 | `campaign-complete` | `dw.campaign` = 1 (dummy objective, **never on the sidebar** — a raw internal id must not surface to players); broadcast `[Delvewright] complete dw.campaign 1` (dark-gray bot channel, the harness's completion signal); title fanfare. |
 | objective lifecycle | Activation shows `title`+`hint`+`note_block.pling` once (flag `dw.ann_<obj>`); completion sound `experience_orb.pickup`. **Marker cleanup (task #45):** completion despawns every entity the objective's activation summoned via the objective-scoped tag — `interact` hitbox + wayfinding marker (`dw_i_<obj>`), `reach` marker (`dw_r_<obj>`). Prop/affordance *blocks* (`interact.prop`, `collect` chest) are scenery and persist; `talk-to`/`kill` summon no per-objective marker. Gated on v0.3+ with a resolved activation, so v0.2 stays byte-identical. |
@@ -369,6 +369,77 @@ datapack predicate `<ns>:sneak_held` (the cutscene bounce's re-attach gate, §4)
 ---
 
 ## 4. Hard invariants
+
+### A scheduled bundle has no `@s` (executor contract)
+
+`schedule function <ns>:<f> <n>t` re-invokes `<f>` with the **server** command
+source: no executor, so `@s` resolves to nothing and every `@s`-addressed command
+in it *silently does nothing* — no error, no log line. Three generated bundles are
+reached only that way, and all three used to be emitted verbatim:
+
+| bundle | reached from |
+|---|---|
+| `mv_arrive_<key>` | `mv_tick_<key>`, itself re-scheduled every tick |
+| `ma_arrive_<key>` | `ma_tick_<key>`, likewise |
+| `seq_<key>_<i>` | `seq_<key>`'s `schedule … <at_ticks>t` chain |
+
+The cost (round-6 island, AUDIT-P0): two `on_arrive` bundles set the flags
+`obj/take-cover` gates on, so the party soft-locked at "Get Into the Shadows" —
+and the whole seal cinematic's `title`/`tellraw`/`playsound` beats were dead.
+
+**The rule.** A bundle is emitted under an explicit executor
+(`emit::Executor::{Player, Server}`), and under `Server` **each effect is
+classified, never the bundle as a whole** (`effect_is_player_scoped`, an
+exhaustive match — a new effect verb must state its scope or the compiler refuses
+to build):
+
+- **per-player** (`set-flag`, `narrate`, `give-item`, `play-sound`,
+  `damage-players`, `campaign-complete`) → each emitted command gets `as @a`
+  spliced into its `execute`, so it runs **once per player**, with the same
+  executor and the same (unmoved) command position a top-level bundle gets from
+  its `execute as @a … run function complete_<obj>` dispatch;
+- **global** (gates, `set-block`, `spawn-wave`, `spawn`/`despawn`/`move`/
+  `unleash-actor`, `spawn`/`despawn`/`move-npc`, `cutscene`, `set-time`/
+  `set-weather`, `set-checkpoint` (already `@a`-wide), `begin`/`end-stealth`,
+  `sequence`) → emitted **bare**, so it fires **exactly once**. A blanket
+  `execute as @a run function <bundle>` — the obvious fix — is wrong: it would
+  fire every `fill`, `summon`, driver start and `schedule` once per player.
+
+Per-effect flag gates follow the executor: under `as @a` they keep the per-player
+spelling (`if score @s dw.f_<flag> matches 1`); on a **global** effect there is no
+acting player to ask, so the gate degrades to the any-player party predicate the
+trigger layer already uses (`if entity @a[scores={dw.f_<flag>=1..}]` /
+`unless entity @a[scores={…}]`). These bundles previously dropped the gate
+entirely (they called the ungated emitter), so a gated effect inside an
+`on_arrive`/`sequence` step fired unconditionally.
+
+**`sequence` is a global timeline.** *Every* step function is emitted
+server-source-safe, the inline `at_ticks: 0` one included — a timeline whose first
+beat behaved differently from its second would be a trap, and `seq_<key>` is itself
+reachable from a scheduled bundle (a `sequence` nested in an `on_arrive`).
+Consequence: a sequence's per-player beats address the **party**, not one acting
+player, wherever the timeline is started from.
+
+**Enforcement** (all three; never relax one):
+
+1. `tests/scheduled_executor.rs` walks the emitted call graph from every
+   `schedule` site — following `function` calls that do *not* re-bind the
+   executor — and asserts no function in that closure names `@s` outside an `as`
+   clause (`positioned as`/`rotated as` do not bind). Fails on pre-fix output
+   with the exact dead commands listed.
+2. Two generated PackTests drive the **real scheduler** (never an inline
+   `function` call — running the driver inline *as the dummy* supplies exactly
+   the executor the scheduler withholds, which is how a green suite hid this bug
+   for a milestone): `sched_executor` (unconditional, so every campaign proves
+   the seam live — it schedules a probe function emitted by the real
+   scheduled-bundle emitter and awaits the flag on its own dummy) and
+   `sched_arrive_flag` (the content path: the first `move-npc` whose `on_arrive`
+   sets a flag; runs the real start function and lets the driver walk itself to
+   the end). Both verified to go red on pre-fix emission on a live 1.21.11 server.
+3. The suite datapack may therefore carry `data/<ns>/function/` mechanism
+   functions beside `data/<ns>/test/`. PackTest only discovers `test/`, so
+   `tests/emit.rs` requires every `function/` file to be **named by some
+   template** — an orphan there is a test PackTest would never run.
 
 ### Semantics never key on player-facing text
 
@@ -484,6 +555,14 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
   Each template is a single mcfunction and therefore atomic — nothing can
   interleave *within* it; these rules make the boundaries between templates
   order-free.
+- **Drive the real mechanism, not a convenient stand-in.** A template that calls
+  a *scheduled* driver inline (`function <ns>:mv_tick_<key>`) runs it **as its own
+  dummy** — supplying exactly the executor the vanilla scheduler withholds, so the
+  test passes while the shipped delve soft-locks (AUDIT-P0; §4 "A scheduled bundle
+  has no `@s`"). Tests of scheduled machinery hand it to `schedule` and `await` the
+  outcome (`sched_executor`, `sched_arrive_flag`); the pre-existing
+  `v06_move_actor`/`v06_arrive_handoff` inline drives stay as entity-state
+  assertions, which is all they ever claimed.
 
 ### Determinism (ADR-0006)
 
