@@ -182,7 +182,7 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Objective `interact` | `{anchor,requires_item?,prop?,…}`; interaction entity; `requires_item` = `execute if items`. `prop{block}` `setblock`s the affordance (v0.4); `block` accepts a verbatim blockstate suffix `id[key=value,…]` (v0.6). | 0.3 / prop 0.4 |
 | `after[]` | Ordering (acyclic → `DW0140`). | 0.1 |
 | `requires_flags[]` | AND-gate on set flags (puzzle primitive). | 0.3 |
-| `waves[]` | `{id,anchor,mobs[{entity,count,name?,attributes?,effects?}]}`; entity validated (`DW0173`); `attributes`/`effects` are v0.4 (`DW0192`). | 0.3 / tuning 0.4 |
+| `waves[]` | `{id,anchor,mobs[{entity,count,name?,attributes?,effects?,equipment?}]}`; entity validated (`DW0173`); `attributes`/`effects` are v0.4 (`DW0192`). `equipment{head?,chest?,legs?,feet?,main_hand?,off_hand?}` is v0.6 (task #65; reserved `DW0141` pre-0.6): slot item ids validate against the pinned 1.21.11 item registry (`DW0143`, the give-item family); emitted as component-era `equipment`/`drop_chances` summon NBT (never legacy `ArmorItems`/`HandItems` — 1.21.11 ignores them) with **drop chance 0 on every slot** (no-grind: wave gear is never lootable). Explicit slots merge over the armed-mob main-hand default (a helmeted skeleton keeps its bow; explicit `main_hand` overrides). A helmet is the sanctioned daylight-undead fix — never `set-time`. | 0.3 / tuning 0.4 / equipment 0.6 |
 | `triggers[]` | `{id,at,on:strike\|use\|approach{range},requires_flags?,once?,effects[]}` (v0.4). Bad/dup/`range 0` → `DW0194`. | 0.4 |
 | Effect `open-gate` | Fills gate anchor to air. | 0.1 |
 | Effect `close-gate{anchor}` | The physical dual of `open-gate` (v0.6): fills the gate anchor's region with the block the anchor's prefab metadata declares (basalt boulder, iron bars), re-sealing an opened threshold into a wall. A gate anchor that declares no `block` is `DW0343`. Same anchor-existence check as `open-gate` (`DW0142`). Per-effect `requires_flags` like the other per-`@s` verbs. | 0.6 |
@@ -498,11 +498,17 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   positions; a waypoint at each corner/floor-height change **and the corridor commit
   cell one step past each corner** — task #45: a wide-room→corridor corner is
   range-1-satisfiable from an off-route pocket beside it, so the post-corner cell
-  gives the harness a close corridor-axis target for its stall-recovery). The
+  gives the harness a close corridor-axis target for its stall-recovery). A leg
+  that walks through a closed fence gate carries a `use_gates` array (task #59):
+  the gate cells the player right-clicks open (an adventure-legal USE), each also
+  force-kept as an explicit waypoint (never thinned away mid-run); the field is
+  omitted for gate-free legs, so gate-free campaigns stay byte-identical. The
   harness replays these as successive nearby pathfinder goals so no single distant
-  A* solve strands the bot on a large open cave. **Validation metadata, not shipped
-  gameplay** — excluded from the delve image (like `packtest-datapack/`); emitted
-  only when a walked critical leg exists, so a fully-transported campaign stays
+  A* solve strands the bot on a large open cave (its pathfinder's `canOpenDoors`
+  performs the gate click — harness PR #110, whose fence-lip waypoint filter
+  remains as defence-in-depth). **Validation metadata, not shipped gameplay** —
+  excluded from the delve image (like `packtest-datapack/`); emitted only when a
+  walked critical leg exists, so a fully-transported campaign stays
   byte-identical.
 - `<out>/render-plan.json` **player-POV shots** (`crate::render_plan::pov_shots`):
   the visual tier the owner's concern demands — the *player's own eye*, not the
@@ -574,6 +580,43 @@ unchanged — and it is load-bearing for the `DW0342` trap proof: a player must 
 routed *onto* a trigger cell (so the compiler can prove the trap avoidable or not),
 never around a phantom "solid" plate that would call every trap avoidable.
 
+**Collision classes (task #59, `crate::assembled::Occupancy`).** The occupancy is
+no longer a single every-non-air-block-is-a-1×1×1-cube solid set; cells are
+classified:
+
+| Class | Blocks | Walk through? | Stand on top? |
+|---|---|---|---|
+| solid | every other non-air block (full-cube, the conservative default) | no | yes |
+| tall barrier | `*_fence` (incl. `nether_brick_fence`), `*_wall` — 1.5-tall | no | **no** |
+| use-gate | closed `*_fence_gate` (1.5-tall, right-click-openable) | player: yes (USE); autonomous mobs: no | **no** |
+| passable | open `*_fence_gate` (block state `open=true`, read from the prefab palette), trap triggers | yes | no |
+| flooded | water reach | no | no |
+
+Modelled **precisely**: fences, walls, fence gates (open vs closed), trap
+triggers, water. Modelled **conservatively** — treated as a full solid cube, never
+as walkable-through: slabs, stairs, carpets, snow layers, doors, trapdoors, and
+every other partial-collision block (the only inaccuracy this can introduce is a
+floor face one cell off the true surface height, which may over-block a route but
+never over-proves one). The tall/gate classes close the owner-hit soundness hole:
+the full-solid model proved the island pen leg by standing the player ON TOP of a
+1.5-tall `oak_fence` (a "legal" +1 step no vanilla player or bot can perform —
+harness #110 worked around it by filtering fence-lip waypoints), and a gateless
+fence ring would have PASSED the completability proof while being humanly
+impassable (now `DW0311`). A tall/gate cell is never valid floor, which also
+models the barrier's upper half blocking same-level walk-overs for free. Closed
+fence gates are **use-gate** edges: walkable for the player (adventure-legal
+right-click, the same action a human performs), exported first-class per leg (see
+`use_gates` above) — and walkable for scripted `move-npc`/`move-actor` tp
+polylines, whose firing beat's fiction controls the gate (the island ram walks
+out through the pen gate the player just opened — through the threshold, no
+longer teleport-hopping the fence-top). Autonomous placement (`spawn-wave`
+seating) uses the no-gate-use view (`World::without_gate_use`): a spawned mob is
+never seated in a gate threshold and the seating flood never spills through a
+closed gate. Cutscene dolly clipping (`DW0308`) treats fence, wall, and gate
+cells as solids — they contain visible geometry. Water flow is unaffected:
+vanilla water flows only into air, so every non-air block (fences and gates
+included) dams the flood exactly as before.
+
 ### Entity placement: cells are centred, blocks are not
 
 Every entity the compiler **summons or teleports** is positioned at
@@ -610,8 +653,10 @@ head-clearance rule already proved clear.
 ### Nav (compile-time, over the assembled voxel grid)
 
 `move-npc` paths and the critical path are routed by A* over the placed-world
-block data (every non-air block is an obstacle; **water-flooded cells are
-impassable and are never valid floor**; gate cells are passable). Steps are
+block data (obstacles per the collision classes above — full-cube solids, 1.5-tall
+fence/wall barriers, closed fence gates for walkers that cannot use them;
+**water-flooded cells are impassable and are never valid floor**; compiler gate
+regions are passable). Steps are
 cardinal, one block up or down; a step **up** additionally requires head clearance
 to jump (the cell two above the source feet must be air), so a routed/exported path
 is one an entity — including the mineflayer bot — can actually walk (a ramp up under
@@ -884,7 +929,7 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0308` | `cutscene` camera dolly clips a solid block (checked per shot; the message names the shot and segment). |
 | `DW0309` | Mannequin NPC declares `skin.texture_id` but no `skins/<id>.png` to bake. |
 | `DW0310` | `spawn-wave` references a wave whose spawn anchor resolves in no assembled area (dangling spawn). |
-| `DW0311` | Critical path has a consecutive visited-anchor pair with no walkable A* connection and no inter-area transport (player stranded). |
+| `DW0311` | Critical path has a consecutive visited-anchor pair with no walkable A* connection and no inter-area transport (player stranded). Routed over the collision-classified occupancy (task #59), so a required anchor sealed behind an unbroken 1.5-tall fence/wall ring with no fence-gate opening fails here — the full-solid model wrongly proved such pens by standing the player on a fence-top. |
 | `DW0312` | A `spawn-wave` needs more standable spawn cells near its anchor than the anchor's own room provides (task #41). **Analysis-tier: exit 2**, like `DW02xx` — a content-design capacity mistake (shrink the wave or use a larger room), not a geometry defect; the message names the wave, area, and needed-vs-found count. |
 | `DW0313` | A placed gravity block (`sand`/`gravel`/`concrete_powder`/anvil/`dragon_egg`) despawns into the void at placement — an unsupported gravity floor over the `the_void` world falls out on the first block update, holing the shipped map even off the critical path (task #42). The authoritative gravity-settle gate (`crate::assembled`), not a downstream DW0311/DW0312 side effect. **Analysis-tier: exit 2** — a prefab/generator defect; the message attributes despawned cells+counts per piece and prescribes a non-falling substrate. Blocks that fall but **land on support** are faithfully modelled by the settle pass (no diagnostic): the shipped geometry is exact for every consumer, and the generator's own zero-unsupported invariant catches an *unintended* fall at authoring. Anti-dodge: swapping the floor palette to non-falling blocks to silence this is explicitly rejected — gravity floors are a first-class content need; add the substrate. |
 | `DW0314` | An exported critical-path waypoint is not standable in the FINAL assembled world (settled + water-flooded + relight fixtures) — the build-time self-check that makes the water-flow / post-nav-mutation divergence class structurally impossible to ship (task #45). Routes come from A* over that same world, so this fires only if a later pass mutates a cell nav relied on or an endpoint resolves off the walkable set; the message names the offending cell and leg. Fix the prefab/water or the assembly — never nudge the waypoint. |
@@ -896,6 +941,7 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0342` | A **lethal** trap (spec-0011) whose trigger cell lies on the forced critical path with no discharge — not avoidable (the trigger cell is a required path cell), not survivable (`rearm`, so a respawn walk-back re-triggers it → soft-loop), and not disarmable (no disarm affordance reachable before it, over the world with the trap cell blocked). The player is provably killed or soft-looped. **Analysis-tier: exit 2**, like `DW0312` — a content-design mistake, not a geometry defect; the message names the trap and prescribes moving it off the path, setting `reset: once`, or adding a reachable `disarm`. Renumbered off the spec's stale reserved number (0314 — since taken by the waypoint self-check). |
 | `DW0344` | In a `horizon: ocean` world, a placed piece whose prefab metadata declares `waterline_y` does not land that waterline at sea level (`piece.y + waterline_y ≠ 62`) — the piece floats above the sea (its shore an unclimbable cliff, its authored water pocket hanging in the air) or is drowned under it. Build-tier (exit 3), `compiler::plan`, checked after placement. Nothing downstream can catch this: nav, boundary, POV and PackTest all derive from the very placement that is wrong, so a mis-datumed island validates green and ships unplayable. The message names the area, prefab, placed y and the signed offset, and prescribes correcting the declared `waterline_y` (the local y of the piece's top water block; the island convention is 2) or rebuilding the piece against the convention — ocean areas are placed at y=60 and a piece with a different waterline cannot share that datum. Pieces declaring no `waterline_y` author no sea and are not checked. |
 | `DW0345` | The assembled world resolves **no entry anchor** — no placed piece declares any of the entry-anchor names (`spawn`, `entry`; see §4 "First-join placement"). The compiler then has no cell to call the campaign's start: no `setworldspawn`, no class-apply teleport, no first-join placement, no `dw:cp` seed. Build-tier (exit 3), `compiler::emit`. Silent before — the delve compiled clean and fell back to the vanilla spawn search, which a **dedicated** server resolves to the surface (so every rung of the validation ladder stayed green) and the **integrated singleplayer** server resolves to the build floor, i.e. inside solid stone. Prescription: give the pool's entry-role prefab an entry anchor in its metadata `anchors`, or bind the area to a prefab that has one. |
+| `DW0346` | A prefab metadata `*.json` (or `pools.json`) in the prefabs dir failed to read or parse (task #62). The canonical trigger is an **older delvec meeting newer metadata**: `deny_unknown_fields` rejects a field this delvec predates. Previously a silent skip — the prefab vanished from the registry and the run failed much later as a baffling `DW0300` "prefab not found" (or a `DW0160` binding error) with no hint of why. Now `PrefabRegistry::load_dir` records a per-file diagnostic naming the file and the serde error, folded into every `validate`/`analyze`/`build` at **validation tier (exit 1)**; loading continues for the other files (report-all, not fail-fast). Prescription: upgrade delvec, or fix the named field. |
 
 ### DW07xx — workspace tooling (spec-0007; **not `delvec`**)
 

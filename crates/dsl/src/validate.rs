@@ -63,13 +63,14 @@ pub fn validate_campaign_with(
         let effects_reg = VendoredEffectRegistry::v1_21_11();
         v04_checks(c, anchors, &blocks, &effects_reg, &mut d);
     }
-    // DSL v0.6: scripted actors + staging effects (spec-0014) and traps (spec-0011).
-    // Actor entity ids validate against the injected entity registry and anchors
-    // against single-prefab area metadata; traps bind `anchor/trap` markers and
-    // validate their dispense payload against the item registry (pool areas deferred
-    // to the compiler). Gated on the quests stage version.
+    // DSL v0.6: scripted actors + staging effects (spec-0014), traps (spec-0011)
+    // and wave-mob equipment (task #65). Actor entity ids validate against the
+    // injected entity registry and anchors against single-prefab area metadata;
+    // traps' dispense payloads and wave-mob equipment slots validate against the
+    // item registry (pool areas deferred to the compiler). Gated on the quests
+    // stage version.
     if is_v06(c.quests.dsl_version.as_str()) {
-        v06_checks(c, anchors, entities, &mut d);
+        v06_checks(c, items, anchors, entities, &mut d);
         v06_trap_checks(c, items, anchors, &mut d);
     }
 
@@ -1095,6 +1096,20 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
         if !c.quests.content.traps.is_empty() {
             res(d, "/content/traps".to_string(), "the `traps` section");
         }
+        // Wave-mob `equipment` (task #65) is a v0.6 stage-5 surface: reserved
+        // before 0.6.0 (the field defaults to absent, so an earlier campaign
+        // that uses none is byte-identical).
+        for (i, w) in c.quests.content.waves.iter().enumerate() {
+            for (k, m) in w.mobs.iter().enumerate() {
+                if m.equipment.is_some() {
+                    res(
+                        d,
+                        format!("/content/waves/{i}/mobs/{k}/equipment"),
+                        "wave-mob `equipment`",
+                    );
+                }
+            }
+        }
     }
 
     // --- Stage 2: `deferred` NPC entrance, gated on the npcs stage. ---
@@ -1492,10 +1507,12 @@ fn check_no_nested_sequence(effs: &[QuestEffect], path: &str, d: &mut Vec<Diagno
 }
 
 /// DSL v0.6 checks (spec-0014): actor entity ids, skins, anchor resolution, actor
-/// references from staging effects, and the no-nested-`sequence` rule. Gated on the
+/// references from staging effects, the no-nested-`sequence` rule, and wave-mob
+/// `equipment` item ids (task #65, `DW0143` — the give-item family). Gated on the
 /// quests stage version by the caller.
 fn v06_checks(
     c: &Campaign,
+    items: &dyn ItemRegistry,
     anchors: &dyn AnchorRegistry,
     entities: &dyn EntityRegistry,
     d: &mut Vec<Diagnostic>,
@@ -1631,6 +1648,31 @@ fn v06_checks(
         };
         walk_effects_deep(effs, &mut visit);
         check_no_nested_sequence(effs, path, d);
+    }
+
+    // Wave-mob `equipment` item ids (task #65): every present slot must name a
+    // pinned-1.21.11 item — the same registry and DW family as `give-item`
+    // (`DW0143`).
+    for (i, w) in quests.waves.iter().enumerate() {
+        for (k, m) in w.mobs.iter().enumerate() {
+            let Some(eq) = &m.equipment else { continue };
+            for (slot, item) in eq.slots() {
+                if let Some(it) = item
+                    && !items.contains(it)
+                {
+                    d.push(Diagnostic::error(
+                        codes::ITEM_UNKNOWN,
+                        "quests",
+                        format!("/content/waves/{i}/mobs/{k}/equipment/{slot}"),
+                        format!(
+                            "wave-mob equipment `{slot}` item `{it}` is not in the pinned 1.21.11 \
+                             item registry — use a valid namespaced item id (e.g. \
+                             `minecraft:iron_helmet`)"
+                        ),
+                    ));
+                }
+            }
+        }
     }
 }
 

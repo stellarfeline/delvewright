@@ -701,6 +701,47 @@ fn default_equipment(entity: &str) -> Option<String> {
     })
 }
 
+/// The `equipment`/`drop_chances` SNBT fragment for a wave mob (no leading
+/// comma), or `None` for a bare-handed mob. A mob without the v0.6 `equipment`
+/// field takes the [`default_equipment`] path **unchanged** (byte-identity for
+/// pre-equipment waves). With the field, explicit slots merge over the
+/// armed-mob main-hand default (an explicit `main_hand` overrides it — a
+/// helmeted skeleton keeps its bow). Every emitted slot carries drop chance 0:
+/// players must never farm wave gear (no-grind constitution). Component-era
+/// form only — see [`default_equipment`] for why legacy `ArmorItems`/
+/// `HandItems` are silently ignored by 1.21.11 `/summon`. Slot order is fixed
+/// (mainhand, offhand, head, chest, legs, feet) for ADR-0006 determinism.
+fn wave_equipment(entity: &str, eq: Option<&delvewright_dsl::MobEquipment>) -> Option<String> {
+    let Some(eq) = eq else {
+        return default_equipment(entity);
+    };
+    let mainhand = eq.main_hand.as_deref().or_else(|| default_mainhand(entity));
+    let slots: [(&str, Option<&str>); 6] = [
+        ("mainhand", mainhand),
+        ("offhand", eq.off_hand.as_deref()),
+        ("head", eq.head.as_deref()),
+        ("chest", eq.chest.as_deref()),
+        ("legs", eq.legs.as_deref()),
+        ("feet", eq.feet.as_deref()),
+    ];
+    let mut items: Vec<String> = Vec::new();
+    let mut chances: Vec<String> = Vec::new();
+    for (slot, item) in slots {
+        if let Some(it) = item {
+            items.push(format!("{slot}:{{id:\"{it}\",count:1}}"));
+            chances.push(format!("{slot}:0.0f"));
+        }
+    }
+    if items.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "equipment:{{{}}},drop_chances:{{{}}}",
+        items.join(","),
+        chances.join(",")
+    ))
+}
+
 /// The `,attributes:[…]` SNBT fragment (leading comma) for a wave mob's v0.4
 /// attribute overrides, or `""` when none are set. Each present field becomes a
 /// `{id:"minecraft:<attr>",base:<double>}` entry; doubles are formatted with a
@@ -1641,10 +1682,10 @@ fn emit_functions(
                 Some(n) => format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)),
                 None => String::new(),
             };
-            // Default hand equipment for mobs whose natural spawns are armed (M2
-            // fix 5): a summoned wither_skeleton/skeleton otherwise had no weapon
-            // and was trivial. Drop chance 0.
-            let equip = default_equipment(&mob.entity)
+            // Equipment: v0.6 explicit slots merged over the armed-mob default
+            // (M2 fix 5: a summoned wither_skeleton/skeleton otherwise had no
+            // weapon and was trivial). All drop chances 0 — never lootable.
+            let equip = wave_equipment(&mob.entity, mob.equipment.as_ref())
                 .map(|e| format!(",{e}"))
                 .unwrap_or_default();
             // v0.4 attribute overrides (spec-0008 §4), emitted as 1.21.11
@@ -1778,6 +1819,16 @@ fn plan_wave_spawns(
     plan: &Plan,
     world: &crate::nav::World,
 ) -> Result<WavePlacements, BuildFailure> {
+    // Wave mobs cannot right-click a fence gate open: seat them on the
+    // no-gate-use view, where a closed gate cell is a 1.5-tall barrier — never a
+    // seat, and never a doorway the seating flood spills through (task #59).
+    let entity_world_owned;
+    let world: &crate::nav::World = if world.has_use_gates() {
+        entity_world_owned = world.without_gate_use();
+        &entity_world_owned
+    } else {
+        world
+    };
     let c = plan.campaign;
     let mut out: WavePlacements = BTreeMap::new();
     for w in &c.quests.content.waves {

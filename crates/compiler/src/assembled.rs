@@ -58,6 +58,39 @@ pub fn is_passable_trap_trigger(name: &str) -> bool {
     id.ends_with("_pressure_plate") || matches!(id, "tripwire" | "tripwire_hook")
 }
 
+/// Whether a block is a **1.5-block-tall barrier** (task #59): fences (`*_fence`,
+/// incl. `nether_brick_fence`) and walls (`*_wall`). Vanilla gives these a
+/// collision box 1.5 blocks tall on a 1-block cell, which breaks the full-cube
+/// assumption in BOTH directions:
+///
+/// - **Not standable on top by a walking player**: a normal jump rises ~1.25
+///   blocks, so a 1.5-tall top face is unreachable by walking/jumping — the
+///   full-solid model's "legal +1 step onto a fence-top" was a proof of a route no
+///   player (or mineflayer bot) can walk (owner-hit island bug; harness #110).
+/// - **Not passable through**: the barrier fills its cell for a walker, and its
+///   top half also blocks the cell above (feet at `y+1` intersect the `y..y+1.5`
+///   box), which the model gets for free because a tall barrier is never valid
+///   floor.
+///
+/// Fence **gates** are excluded — they are the openable case, see
+/// [`is_fence_gate`].
+pub fn is_tall_barrier(name: &str) -> bool {
+    let id = name.strip_prefix("minecraft:").unwrap_or(name);
+    id.ends_with("_fence") || id.ends_with("_wall")
+}
+
+/// Whether a block is a fence gate (`*_fence_gate` — every vanilla fence gate is
+/// a wooden, right-click-openable one). Closed, it is a 1.5-tall barrier like a
+/// fence but **passable-with-use**: opening it is a right-click USE interaction
+/// vanilla permits in adventure mode (the same action a human player performs),
+/// so the nav model treats a closed gate cell as walkable for the player and tags
+/// it as a "use-gate" cell in the exported critical-path waypoints. Open (block
+/// state `open=true` in the prefab), the threshold is simply passable.
+pub fn is_fence_gate(name: &str) -> bool {
+    let id = name.strip_prefix("minecraft:").unwrap_or(name);
+    id.ends_with("_fence_gate")
+}
+
 /// Whether a palette block id is **free water** (a source or flowing block that
 /// occupies its whole cell as fluid), as opposed to a waterlogged solid block.
 ///
@@ -105,6 +138,19 @@ pub fn region_cells(a: [i32; 3], b: [i32; 3]) -> impl Iterator<Item = [i32; 3]> 
 /// Parse a gzipped vanilla structure `.nbt`, returning its non-air block cells as
 /// `(local [x, y, z], block id)`. Unparseable structures contribute nothing.
 pub fn structure_named_cells(bytes: &[u8]) -> Vec<([i32; 3], String)> {
+    structure_cells(bytes)
+        .into_iter()
+        .map(|(pos, name, _)| (pos, name))
+        .collect()
+}
+
+/// Parse a gzipped vanilla structure `.nbt`, returning its non-air block cells as
+/// `(local [x, y, z], block id, open)`, where `open` is the block-state `open`
+/// property when the palette entry carries one (`Some(true)` for an authored open
+/// fence gate / door / trapdoor; `None` when the state has no `open` property).
+/// The decoder otherwise keeps only `Name` — see [`is_water`] for why waterlogged
+/// solids read as their host id. Unparseable structures contribute nothing.
+pub fn structure_cells(bytes: &[u8]) -> Vec<([i32; 3], String, Option<bool>)> {
     let mut raw = Vec::new();
     if flate2::read::GzDecoder::new(bytes)
         .read_to_end(&mut raw)
@@ -115,12 +161,21 @@ pub fn structure_named_cells(bytes: &[u8]) -> Vec<([i32; 3], String)> {
     let Ok(fastnbt::Value::Compound(root)) = fastnbt::from_bytes::<fastnbt::Value>(&raw) else {
         return Vec::new();
     };
-    let palette: Vec<Option<String>> = match root.get("palette") {
+    let palette: Vec<Option<(String, Option<bool>)>> = match root.get("palette") {
         Some(fastnbt::Value::List(entries)) => entries
             .iter()
             .map(|e| match e {
                 fastnbt::Value::Compound(c) => match c.get("Name") {
-                    Some(fastnbt::Value::String(s)) => Some(s.clone()),
+                    Some(fastnbt::Value::String(s)) => {
+                        let open = match c.get("Properties") {
+                            Some(fastnbt::Value::Compound(p)) => match p.get("open") {
+                                Some(fastnbt::Value::String(v)) => Some(v == "true"),
+                                _ => None,
+                            },
+                            _ => None,
+                        };
+                        Some((s.clone(), open))
+                    }
                     _ => None,
                 },
                 _ => None,
@@ -155,10 +210,10 @@ pub fn structure_named_cells(bytes: &[u8]) -> Vec<([i32; 3], String)> {
                 Some(fastnbt::Value::Int(n)) => *n as usize,
                 _ => continue,
             };
-            if let Some(Some(name)) = palette.get(state)
+            if let Some(Some((name, open))) = palette.get(state)
                 && !is_air(name)
             {
-                out.push((pos, name.clone()));
+                out.push((pos, name.clone(), *open));
             }
         }
     }
@@ -166,40 +221,49 @@ pub fn structure_named_cells(bytes: &[u8]) -> Vec<([i32; 3], String)> {
 }
 
 /// The un-settled cell→block map: placed structures + solver seals + gate clears,
-/// exactly as the two legacy models built it. Kept separate from settling so unit
-/// tests can exercise each half.
+/// exactly as the two legacy models built it — plus the set of fence-gate cells
+/// whose authored block state is `open=true` (task #59: an open gate threshold is
+/// passable; a closed one is passable-with-use). Kept separate from settling so
+/// unit tests can exercise each half.
 fn placed_blocks(
     plan: &Plan,
     structures: &BTreeMap<String, Vec<u8>>,
-) -> BTreeMap<[i32; 3], String> {
+) -> (BTreeMap<[i32; 3], String>, BTreeSet<[i32; 3]>) {
     let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+    let mut open_gates: BTreeSet<[i32; 3]> = BTreeSet::new();
     for area in &plan.areas {
         for piece in &area.pieces {
             let Some(bytes) = structures.get(&piece.structure_file) else {
                 continue;
             };
-            for (local, name) in structure_named_cells(bytes) {
+            for (local, name, open) in structure_cells(bytes) {
                 let t = piece.rotation.transform(local);
-                blocks.insert(
-                    [
-                        piece.pos[0] + t[0],
-                        piece.pos[1] + t[1],
-                        piece.pos[2] + t[2],
-                    ],
-                    name,
-                );
+                let cell = [
+                    piece.pos[0] + t[0],
+                    piece.pos[1] + t[1],
+                    piece.pos[2] + t[2],
+                ];
+                if is_fence_gate(&name) && open == Some(true) {
+                    open_gates.insert(cell);
+                } else {
+                    open_gates.remove(&cell); // a later block overwrites the cell
+                }
+                blocks.insert(cell, name);
             }
         }
         // Seals land after placement: an air fill opens a mated socket; anything
-        // else seals an unused one.
+        // else seals an unused one. Either way the sealed cell is no longer an
+        // authored open gate.
         for s in &area.seals {
             if is_air(&s.block) {
                 for cell in region_cells(s.from, s.to) {
                     blocks.remove(&cell);
+                    open_gates.remove(&cell);
                 }
             } else {
                 for cell in region_cells(s.from, s.to) {
                     blocks.insert(cell, s.block.clone());
+                    open_gates.remove(&cell);
                 }
             }
         }
@@ -209,10 +273,11 @@ fn placed_blocks(
         if let ResolvedAnchor::Gate { from, to, .. } = resolved {
             for cell in region_cells(*from, *to) {
                 blocks.remove(&cell);
+                open_gates.remove(&cell);
             }
         }
     }
-    blocks
+    (blocks, open_gates)
 }
 
 /// The outcome of gravity settling for one falling block: the world cell it ended
@@ -309,15 +374,22 @@ pub struct Assembled {
     /// One outcome per falling block: where it came to rest, or `None` if it
     /// despawned into the void.
     pub settled: Vec<Settled>,
+    /// Fence-gate cells whose authored block state is `open=true` (task #59):
+    /// passable thresholds, as opposed to closed gates (passable-with-use).
+    pub open_gates: BTreeSet<[i32; 3]>,
 }
 
 /// Assemble the world: placed structures + solver seals + gate clears, then
 /// gravity-settle, returning both the settled map and the per-falling-block
 /// outcomes. Shared root for [`assembled_blocks`] and the gravity-despawn check.
 pub fn assemble(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Assembled {
-    let mut blocks = placed_blocks(plan, structures);
+    let (mut blocks, open_gates) = placed_blocks(plan, structures);
     let settled = settle(&mut blocks);
-    Assembled { blocks, settled }
+    Assembled {
+        blocks,
+        settled,
+        open_gates,
+    }
 }
 
 /// The authoritative assembled-world cell→block map: placed structures + solver
@@ -335,9 +407,40 @@ pub fn assembled_blocks(
 /// many cells horizontally before running dry (level 1..=7 → 7 steps).
 const WATER_FLOW_RANGE: u8 = 7;
 
-/// The nav occupancy split of the settled assembled world (task #45): the SOLID
-/// (non-water) block cells and the FLOODED cells (free water). A cell is one of
-/// solid / flooded / air (absent from both) — the three are disjoint.
+/// The collision-classified nav occupancy of the settled assembled world (tasks
+/// #45, #59). The sets are pairwise disjoint; a cell in none of them is passable
+/// air.
+///
+/// | Set | Blocks | Walk through? | Stand on top? |
+/// |---|---|---|---|
+/// | `solid` | every other non-air block (full 1×1×1 cube, the conservative default) | no | yes |
+/// | `tall` | fences + walls ([`is_tall_barrier`], 1.5-tall) | no | **no** |
+/// | `use_gates` | closed fence gates ([`is_fence_gate`], 1.5-tall, openable) | player: yes, via right-click USE; NPC/actor/wave walkers: no | **no** |
+/// | `flooded` | water reach (conservative superset) | no | no |
+///
+/// **Modelled precisely**: fences, walls, fence gates (open = passable, closed =
+/// use-gate), pressure plates / tripwire (passable, [`is_passable_trap_trigger`]),
+/// free water. **Modelled conservatively** (treated as a full solid cube — may
+/// over-block a route, never over-prove one): slabs, stairs, carpets, snow
+/// layers, doors, trapdoors, and every other partial-collision block. A
+/// conservative cell is never walkable-through; the only inaccuracy it can
+/// introduce is a falsely-solid *floor* one cell lower than the real surface
+/// (e.g. standing "on" a bottom slab at `y+1` instead of `y+0.5`), which
+/// over-blocks but keeps every proven route walkable in game.
+pub struct Occupancy {
+    /// Full-cube solid cells: block passage AND are valid floor.
+    pub solid: BTreeSet<[i32; 3]>,
+    /// 1.5-tall barrier cells (fences/walls): block passage, never valid floor.
+    pub tall: BTreeSet<[i32; 3]>,
+    /// Closed fence-gate cells: passable-with-use for the player (adventure-legal
+    /// right-click), impassable for walkers that cannot use gates; never floor.
+    pub use_gates: BTreeSet<[i32; 3]>,
+    /// Water-flooded cells: impassable, never floor (task #45).
+    pub flooded: BTreeSet<[i32; 3]>,
+}
+
+/// The nav occupancy of the settled assembled world (tasks #45, #59) — see
+/// [`Occupancy`] for the collision classes.
 ///
 /// ## Why water is modelled, and why as a *superset* of vanilla flow
 ///
@@ -369,19 +472,28 @@ const WATER_FLOW_RANGE: u8 = 7;
 ///
 /// Settle runs **before** flood: a settled sand column can dam or open a channel, so
 /// the flood must see the post-gravity geometry (task #42 order preserved).
-pub fn assembled_occupancy(
-    plan: &Plan,
-    structures: &BTreeMap<String, Vec<u8>>,
-) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
-    occupancy_of(assemble(plan, structures).blocks)
+pub fn assembled_occupancy(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Occupancy {
+    let assembled = assemble(plan, structures);
+    occupancy_of(assembled.blocks, &assembled.open_gates)
 }
 
-/// Pure core of [`assembled_occupancy`]: split a settled cell→block map into
-/// `(solid, flooded)`. Split out so the flood is unit-testable without a [`Plan`].
+/// Pure core of [`assembled_occupancy`]: classify a settled cell→block map into an
+/// [`Occupancy`]. `open_gates` is the set of fence-gate cells authored `open=true`
+/// (they are passable; closed gates become `use_gates`). Split out so the flood
+/// and the collision classes are unit-testable without a [`Plan`].
+///
+/// Vanilla water flows only into **air** cells, so *every* non-air block dams the
+/// flood — fences, walls, and gates (open or closed) included, exactly as the
+/// pre-classification full-solid model had it. The flood barrier set is therefore
+/// the union of every classified block cell, keeping the water model byte-stable.
 pub fn occupancy_of(
     blocks: BTreeMap<[i32; 3], String>,
-) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
+    open_gates: &BTreeSet<[i32; 3]>,
+) -> Occupancy {
     let mut solid: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut tall: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut use_gates: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut barriers: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut sources: BTreeSet<[i32; 3]> = BTreeSet::new();
     for (cell, name) in &blocks {
         if is_water(name) {
@@ -390,12 +502,26 @@ pub fn occupancy_of(
             // A pressure plate / tripwire is walkable floor decoration, not an
             // obstacle (spec-0011) — leave its cell passable so the trap-trigger
             // cell stays on the walkable path.
+        } else if is_fence_gate(name) {
+            barriers.insert(*cell);
+            if !open_gates.contains(cell) {
+                use_gates.insert(*cell); // closed: passable-with-use (task #59)
+            } // open: a passable threshold (still dams water)
+        } else if is_tall_barrier(name) {
+            barriers.insert(*cell);
+            tall.insert(*cell);
         } else {
+            barriers.insert(*cell);
             solid.insert(*cell);
         }
     }
-    let flooded = flood(&solid, &sources);
-    (solid, flooded)
+    let flooded = flood(&barriers, &sources);
+    Occupancy {
+        solid,
+        tall,
+        use_gates,
+        flooded,
+    }
 }
 
 /// The four cardinal horizontal steps, in a fixed order (determinism, ADR-0006).
@@ -709,7 +835,7 @@ mod tests {
         // the standard vanilla horizontal decay (level 1..=7).
         let mut b = floor(64, -10, 10, 0, 0);
         b.insert([0, 65, 0], "minecraft:water".to_string()); // source at x=0
-        let (_solid, flooded) = occupancy_of(b);
+        let flooded = occupancy_of(b, &BTreeSet::new()).flooded;
         for x in -7..=7 {
             assert!(flooded.contains(&[x, 65, 0]), "x={x} should flood");
         }
@@ -727,7 +853,7 @@ mod tests {
             b.insert([x, 60, 0], "minecraft:stone".to_string()); // deep floor
         }
         b.insert([0, 72, 0], "minecraft:water".to_string()); // source high above x=0
-        let (_solid, flooded) = occupancy_of(b);
+        let flooded = occupancy_of(b, &BTreeSet::new()).flooded;
         // Falls down the open column x=0 from 72 to just above the y=60 floor…
         for y in 61..=72 {
             assert!(flooded.contains(&[0, y, 0]), "column cell [0,{y},0] floods");
@@ -759,7 +885,8 @@ mod tests {
         let mut b = walled_corridor(64, 0, 10);
         b.insert([0, 65, 0], "minecraft:water".to_string()); // source in the lane
         b.insert([3, 65, 0], "minecraft:sand".to_string()); // supported → stays, dams the lane
-        let (solid, flooded) = occupancy_of(b);
+        let occ = occupancy_of(b, &BTreeSet::new());
+        let (solid, flooded) = (occ.solid, occ.flooded);
         assert!(
             solid.contains(&[3, 65, 0]),
             "the sand dam is solid, not flooded"
@@ -786,7 +913,7 @@ mod tests {
             Some("minecraft:sand"),
             "sand settled down into the lane"
         );
-        let (_solid, flooded) = occupancy_of(b);
+        let flooded = occupancy_of(b, &BTreeSet::new()).flooded;
         assert!(
             flooded.contains(&[2, 65, 0]),
             "water reaches the settled dam"
@@ -809,7 +936,7 @@ mod tests {
             !b.contains_key(&[5, 65, 0]),
             "…and did not settle onto a missing floor"
         );
-        let (_solid, flooded) = occupancy_of(b);
+        let flooded = occupancy_of(b, &BTreeSet::new()).flooded;
         // No dam remains, so the flow passes x=5 (and falls into the hole column).
         assert!(
             flooded.contains(&[6, 65, 0]),
@@ -840,7 +967,7 @@ mod tests {
         for x in [0, 1, 2, 3, 4, 5, 15, 16, 17, 18, 19, 20] {
             b.insert([x, 65, 0], "minecraft:water".to_string());
         }
-        let (_solid, flooded) = occupancy_of(b);
+        let flooded = occupancy_of(b, &BTreeSet::new()).flooded;
         // The gap fills completely — every basin cell is wet, well past 7 from any
         // original seed (x=10 is 5 past the x=5 seed's 7-range… reachable only via
         // infinite-water source formation cascading across the gap).
@@ -859,7 +986,7 @@ mod tests {
         // infinite-water rule stays tight, not runaway.
         let mut b = floor(64, -20, 20, 0, 0);
         b.insert([0, 65, 0], "minecraft:water".to_string());
-        let (_solid, flooded) = occupancy_of(b);
+        let flooded = occupancy_of(b, &BTreeSet::new()).flooded;
         assert!(flooded.contains(&[7, 65, 0]), "reaches 7");
         assert!(
             !flooded.contains(&[8, 65, 0]),
@@ -875,7 +1002,7 @@ mod tests {
         let mut b = BTreeMap::new();
         b.insert([0, 64, 0], "minecraft:stone".to_string()); // only the source has a floor
         b.insert([0, 65, 0], "minecraft:water".to_string()); // source
-        let (_solid, flooded) = occupancy_of(b);
+        let flooded = occupancy_of(b, &BTreeSet::new()).flooded;
         // No floor under [1,65,0], yet the superset still marks it wet (vanilla would
         // let it fall). This is the intentional over-approximation.
         assert!(
@@ -901,7 +1028,8 @@ mod tests {
         // height at the standing + head level), so water cannot reach it.
         b.insert([5, 66, 0], "minecraft:stone".to_string());
         b.insert([5, 67, 0], "minecraft:stone".to_string());
-        let (solid, flooded) = occupancy_of(b);
+        let occ = occupancy_of(b, &BTreeSet::new());
+        let (solid, flooded) = (occ.solid, occ.flooded);
         // The open shore between source and wall is the flooded tongue (7-range).
         assert!(
             flooded.contains(&[1, 66, 0]),
@@ -931,7 +1059,8 @@ mod tests {
         // Determinism / no-op guarantee: a waterless world has an empty flood set and
         // every block stays solid.
         let b = floor(64, 0, 3, 0, 3);
-        let (solid, flooded) = occupancy_of(b.clone());
+        let occ = occupancy_of(b.clone(), &BTreeSet::new());
+        let (solid, flooded) = (occ.solid, occ.flooded);
         assert!(flooded.is_empty());
         assert_eq!(solid, b.into_keys().collect());
     }
@@ -979,6 +1108,178 @@ mod tests {
                 "andesite floor cell {x} must remain"
             );
         }
+    }
+
+    // --- collision classes (task #59) ---
+
+    #[test]
+    fn fences_walls_and_gates_classify_off_the_solid_set() {
+        // A stone floor with a fence, a wall, a closed gate, and an open gate on it.
+        let mut b = floor(64, 0, 4, 0, 0);
+        b.insert([0, 65, 0], "minecraft:oak_fence".to_string());
+        b.insert([1, 65, 0], "minecraft:cobblestone_wall".to_string());
+        b.insert([2, 65, 0], "minecraft:oak_fence_gate".to_string()); // closed
+        b.insert([3, 65, 0], "minecraft:oak_fence_gate".to_string()); // open (below)
+        b.insert([4, 65, 0], "minecraft:nether_brick_fence".to_string());
+        let open: BTreeSet<[i32; 3]> = [[3, 65, 0]].into_iter().collect();
+        let occ = occupancy_of(b, &open);
+        assert!(
+            occ.tall.contains(&[0, 65, 0]),
+            "oak_fence is a tall barrier"
+        );
+        assert!(
+            occ.tall.contains(&[1, 65, 0]),
+            "cobblestone_wall is a tall barrier"
+        );
+        assert!(
+            occ.tall.contains(&[4, 65, 0]),
+            "nether_brick_fence is a tall barrier"
+        );
+        assert!(
+            occ.use_gates.contains(&[2, 65, 0]),
+            "a closed fence gate is a use-gate cell"
+        );
+        assert!(
+            !occ.use_gates.contains(&[3, 65, 0]) && !occ.tall.contains(&[3, 65, 0]),
+            "an open fence gate is a passable threshold"
+        );
+        for c in [[0, 65, 0], [1, 65, 0], [2, 65, 0], [3, 65, 0], [4, 65, 0]] {
+            assert!(!occ.solid.contains(&c), "{c:?} must not be full-cube solid");
+        }
+        // Conservative default: a slab / stairs / carpet cell stays full solid.
+        let mut c = floor(64, 0, 0, 0, 0);
+        c.insert([0, 65, 0], "minecraft:oak_slab".to_string());
+        let occ = occupancy_of(c, &BTreeSet::new());
+        assert!(
+            occ.solid.contains(&[0, 65, 0]),
+            "slab is conservative solid"
+        );
+    }
+
+    #[test]
+    fn fences_and_gates_still_dam_the_water_flood() {
+        // Vanilla water flows only into air: a fence (and a gate, open or closed)
+        // dams the flow exactly like the full-solid model did — the flood must not
+        // sneak "through" a now-walker-passable gate cell.
+        let mut b = walled_corridor(64, 0, 10);
+        b.insert([0, 65, 0], "minecraft:water".to_string()); // source in the lane
+        b.insert([3, 65, 0], "minecraft:oak_fence_gate".to_string()); // closed gate dam
+        let occ = occupancy_of(b, &BTreeSet::new());
+        assert!(occ.flooded.contains(&[2, 65, 0]), "water reaches the gate");
+        assert!(!occ.flooded.contains(&[3, 65, 0]), "the gate cell dams");
+        assert!(
+            !occ.flooded.contains(&[4, 65, 0]),
+            "water is dammed past x=3"
+        );
+        assert!(
+            occ.use_gates.contains(&[3, 65, 0]),
+            "the dam is still a use-gate for the walker model"
+        );
+    }
+
+    #[test]
+    fn decoder_reads_the_open_gate_block_state() {
+        // A minimal 2-block structure NBT: a closed and an open oak_fence_gate.
+        // The decoder must surface `open` so occupancy can split them.
+        use fastnbt::Value;
+        let palette = Value::List(vec![
+            Value::Compound(
+                [
+                    (
+                        "Name".to_string(),
+                        Value::String("minecraft:oak_fence_gate".to_string()),
+                    ),
+                    (
+                        "Properties".to_string(),
+                        Value::Compound(
+                            [
+                                ("open".to_string(), Value::String("false".to_string())),
+                                ("facing".to_string(), Value::String("north".to_string())),
+                            ]
+                            .into_iter()
+                            .collect(),
+                        ),
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+            Value::Compound(
+                [
+                    (
+                        "Name".to_string(),
+                        Value::String("minecraft:oak_fence_gate".to_string()),
+                    ),
+                    (
+                        "Properties".to_string(),
+                        Value::Compound(
+                            [("open".to_string(), Value::String("true".to_string()))]
+                                .into_iter()
+                                .collect(),
+                        ),
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+            Value::Compound(
+                [(
+                    "Name".to_string(),
+                    Value::String("minecraft:stone".to_string()),
+                )]
+                .into_iter()
+                .collect(),
+            ),
+        ]);
+        let block = |pos: [i32; 3], state: i32| {
+            Value::Compound(
+                [
+                    (
+                        "pos".to_string(),
+                        Value::List(pos.iter().map(|&v| Value::Int(v)).collect()),
+                    ),
+                    ("state".to_string(), Value::Int(state)),
+                ]
+                .into_iter()
+                .collect(),
+            )
+        };
+        let root = Value::Compound(
+            [
+                ("palette".to_string(), palette),
+                (
+                    "blocks".to_string(),
+                    Value::List(vec![
+                        block([0, 0, 0], 0),
+                        block([1, 0, 0], 1),
+                        block([2, 0, 0], 2),
+                    ]),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let raw = fastnbt::to_bytes(&root).expect("serialize NBT");
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        std::io::Write::write_all(&mut gz, &raw).expect("gzip");
+        let bytes = gz.finish().expect("gzip finish");
+        let cells = structure_cells(&bytes);
+        assert_eq!(
+            cells,
+            vec![
+                (
+                    [0, 0, 0],
+                    "minecraft:oak_fence_gate".to_string(),
+                    Some(false)
+                ),
+                (
+                    [1, 0, 0],
+                    "minecraft:oak_fence_gate".to_string(),
+                    Some(true)
+                ),
+                ([2, 0, 0], "minecraft:stone".to_string(), None),
+            ]
+        );
     }
 
     #[test]
