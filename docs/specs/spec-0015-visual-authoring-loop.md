@@ -62,9 +62,19 @@ Cinemachine are algorithmic, not AI: a curated template bag (static
 pan-tracking, side-track dolly, crane/orbit, low-follow), damped look-at
 springs, per-template lens/FOV, min/max shot durations, cut-on-occlusion
 rather than wall-sliding. spec adds `shot_style` presets the cutscene DSL can
-invoke; the compiler expands a style deterministically into path + look-at +
-FOV. A research dossier (sources → ACKNOWLEDGEMENTS) parameterizes the
-template set before implementation.
+invoke; the compiler expands a style deterministically into path + look-at.
+CORRECTIONS from the research dossier (docs/notes/camera-dossier.md, PR #126):
+vanilla has NO in-game FOV control (spectator ignores speed-effect FOV and the
+proxy is an item_display) — lens feel is CAMERA DISTANCE only; `fov` remains a
+render-tier parameter. Display-entity `teleport_duration` (0–59 ticks,
+client-side tween) is the vanilla-intended smoothing primitive our per-tick tp
+dolly currently ignores — keyframe cadence = teleport_duration pending two
+empirical measurements (rotation interpolation; spectate-bounce vs tween).
+Damping/dead-zone/soft-zone run at EMISSION (baked keyframes, ADR-0006-clean),
+never as runtime springs. Cut rules from published editing research become
+compile-time assertions: 30° rule, 180° x-order rule, log-normal shot-duration
+envelope (~2–10 s), and emission-time subject-visibility proof (strictly
+stronger than the runtime cut-on-occlusion the references use).
 
 ## Delivery order
 
