@@ -1,0 +1,53 @@
+{
+  "dsl_version": "0.6.0",
+  "campaign_id": "souls-shortcut",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": {
+          "type": "campaign-start"
+        },
+        "objectives": [
+          {
+            "type": "talk-to",
+            "id": "obj/talk",
+            "npc": "npc/keeper"
+          },
+          {
+            "type": "reach-anchor",
+            "id": "obj/exit",
+            "anchor": "anchor/exit",
+            "radius": 2,
+            "after": [
+              "obj/talk"
+            ]
+          }
+        ],
+        "on_objective_complete": {
+          "obj/talk": []
+        },
+        "on_complete": [
+          {
+            "type": "campaign-complete"
+          }
+        ]
+      }
+    ],
+    "shortcuts": [
+      {
+        "id": "shortcut/inner-door",
+        "gate": "anchor/door",
+        "unlock": "anchor/exit",
+        "on_unlock": [
+          {
+            "type": "narrate",
+            "text": "The bars grind up. This door is open for good.",
+            "style": "subtitle"
+          }
+        ]
+      }
+    ]
+  }
+}

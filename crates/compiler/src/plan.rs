@@ -104,6 +104,30 @@ pub struct CheckpointPlan {
     pub rest: bool,
 }
 
+/// A resolved stage-5 `shortcut` (spec-0016 §2), collected in deterministic
+/// content order. A shortcut whose `gate` is not a resolvable gate region, or
+/// whose `unlock` anchor does not resolve to a point, carries no plan entry (and
+/// so no emission and no proof) — `DW0357` rejects those at validation.
+#[derive(Clone, Debug)]
+pub struct ShortcutPlan {
+    /// The full shortcut id (`shortcut/<kebab>`).
+    pub id: String,
+    /// The function/tag-safe local id.
+    pub safe: String,
+    /// The gate anchor name.
+    pub gate_anchor: String,
+    /// The gate region's inclusive corners (absolute world coords).
+    pub gate_region: ([i32; 3], [i32; 3]),
+    /// The block the gate region is filled with (cleared to air on unlock).
+    pub gate_block: String,
+    /// The unlock anchor name.
+    pub unlock_anchor: String,
+    /// The resolved far-side unlock cell.
+    pub unlock: [i32; 3],
+    /// Effects fired once, when the shortcut opens.
+    pub on_unlock: Vec<QuestEffect>,
+}
+
 /// A resolved `begin-stealth` beat (DSL v0.6, spec-0014), collected in
 /// deterministic content order; its `index` (1-based) is the active-session id
 /// written to `#stealth dw.sys` (0 = inactive).
@@ -265,6 +289,8 @@ pub struct Plan<'a> {
     pub objective_steps: BTreeMap<String, usize>,
     /// Resolved traps (DSL v0.6, spec-0011), content-ordered.
     pub traps: Vec<TrapPlan>,
+    /// Resolved shortcut doors (spec-0016 §2), content-ordered.
+    pub shortcuts: Vec<ShortcutPlan>,
     /// Resolved gate open/close firings (DSL v0.6), content-ordered — drives the
     /// `close-gate` completability model in `crate::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
@@ -1026,9 +1052,25 @@ impl<'a> Plan<'a> {
         // ---- v0.6 traps (spec-0011) ----
         let traps = collect_traps(campaign, &anchors, &dispenser_cells);
 
+        // ---- shortcut doors (spec-0016 §2) ----
+        let shortcuts = collect_shortcuts(campaign, &anchors);
+
         // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
-        let gate_events = collect_gate_events(campaign, &anchors, &objective_steps);
+        let mut gate_events = collect_gate_events(campaign, &anchors, &objective_steps);
+        // A shortcut gate is sealed from world-load and is opened only by an
+        // OPTIONAL far-side interaction no proof can order (spec-0016 §2). Seal it
+        // for the whole completability model — `fire_step: 0` precedes every leg —
+        // so the critical path, the checkpoints and the traps are all proven over
+        // a world where no shortcut has been taken. The delve must be finishable
+        // the long way; the shortcut is a reward, never a requirement.
+        gate_events.extend(shortcuts.iter().map(|sc| GateEvent {
+            region: sc.gate_region,
+            closes: true,
+            fire_step: 0,
+        }));
         let strict_ancestor_steps = compute_strict_ancestor_steps(campaign, &objective_steps);
+
+        let gate_events = gate_events;
 
         Ok(Self {
             campaign,
@@ -1047,6 +1089,7 @@ impl<'a> Plan<'a> {
             stealth_beats,
             objective_steps,
             traps,
+            shortcuts,
             gate_events,
             strict_ancestor_steps,
             massing_bounds,
@@ -1784,6 +1827,51 @@ fn close_stealth_windows(beats: &mut [StealthBeat], ends: &[usize]) {
             (a, b) => a.or(b),
         };
     }
+}
+
+/// Collect every stage-5 `shortcut` (spec-0016 §2) in declared order, resolving
+/// its gate region and far-side unlock cell. A shortcut whose anchors do not
+/// resolve is skipped here (validation owns that, `DW0357`).
+fn collect_shortcuts(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+) -> Vec<ShortcutPlan> {
+    let mut out = Vec::new();
+    for sc in &campaign.quests.content.shortcuts {
+        let Some((from, to, block)) = gate_region_block_any(anchors, sc.gate.as_str()) else {
+            continue;
+        };
+        let Some(unlock) = point_any(anchors, sc.unlock.as_str()) else {
+            continue;
+        };
+        out.push(ShortcutPlan {
+            id: sc.id.as_str().to_string(),
+            safe: safe_local(sc.id.as_str()),
+            gate_anchor: sc.gate.as_str().to_string(),
+            gate_region: (from, to),
+            gate_block: block,
+            unlock_anchor: sc.unlock.as_str().to_string(),
+            unlock,
+            on_unlock: sc.on_unlock.clone(),
+        });
+    }
+    out
+}
+
+/// The absolute gate region **and fill block** a gate anchor resolves to. `None`
+/// if the anchor is not a gate region.
+fn gate_region_block_any(
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    name: &str,
+) -> Option<([i32; 3], [i32; 3], String)> {
+    for ((_, n), resolved) in anchors {
+        if n == name
+            && let ResolvedAnchor::Gate { from, to, block } = resolved
+        {
+            return Some((*from, *to, block.clone()));
+        }
+    }
+    None
 }
 
 /// The absolute gate region `(from, to)` a gate anchor resolves to (globally, like

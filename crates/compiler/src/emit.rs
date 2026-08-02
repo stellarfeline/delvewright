@@ -323,6 +323,12 @@ pub fn build_with_warnings(
                 // soft-looped. Uses the move-npc waypoints (`m`) for the forced-path
                 // cell set.
                 crate::nav::check_traps(plan, &world, &m)?;
+                // spec-0016 §2 shortcut doors (DW0373/DW0374): the long route must
+                // exist while the gate is sealed, and opening the gate must
+                // genuinely shorten the crossing. The critical path above was
+                // already proven with every shortcut gate SEALED (Plan::build seals
+                // them at step 0), so the delve is finishable the long way.
+                crate::nav::check_shortcuts(plan, &world, campaign_spawn(plan))?;
                 // Export the DW0311-proven critical-path routes as validation
                 // metadata (task #38): thinned per-leg waypoint polylines the harness
                 // replays as successive nearby goals, so no single giant mineflayer A*
@@ -1283,6 +1289,9 @@ fn emit_functions(
     // v0.6: fill each trap dispenser payload and summon disarm affordances
     // (spec-0011). Empty for a campaign with no traps → byte-identical.
     setup.extend(trap_setup(plan, trap_gates));
+    // spec-0016 §2: summon each shortcut's far-side unlock affordance. The gate
+    // itself needs no command — it is sealed from world-load by the prefab.
+    setup.extend(shortcut_setup(plan));
     // Forceload lifecycle (map-editor audit finding 6, planner decision). The
     // edit-AABB forceloads exist for ONE reason — letting the one-shot
     // `world_edits` writes land — and `place_verify` above has now proven every
@@ -1546,6 +1555,9 @@ fn emit_functions(
     // spec-0016 §1: bonfire rest detection. Empty for a campaign with no bonfire
     // → byte-identical.
     tick.extend(bonfire_tick(plan));
+    // spec-0016 §2: shortcut unlock detection. Empty without a shortcut →
+    // byte-identical.
+    tick.extend(shortcut_tick(plan));
     // v0.6 checkpoints (spec-0012): per-player respawn detection via the vanilla
     // `deathCount` criterion, dispatching the active checkpoint's `on_respawn`.
     // Only when a checkpoint carries an `on_respawn` hook.
@@ -1565,6 +1577,8 @@ fn emit_functions(
     fns.extend(emit_checkpoint_functions(plan));
     // --- spec-0016 §1 bonfire rest functions ---
     fns.extend(emit_bonfire_functions(plan));
+    // --- spec-0016 §2 shortcut unlock functions ---
+    fns.extend(emit_shortcut_functions(plan));
     // --- v0.6 stealth-beat functions (spec-0014) ---
     fns.extend(emit_stealth_functions(plan));
 
@@ -3056,6 +3070,70 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
         fns.push((format!("cp_on_respawn_{}", c.index), lines(&body)));
     }
     fns
+}
+
+// ---------------------------------------------------------------------------
+// spec-0016 §2 shortcut doors
+// ---------------------------------------------------------------------------
+
+/// `setup_finish` commands for shortcut doors (spec-0016 §2): summon the
+/// far-side unlock affordance (a right-click target, the same
+/// `minecraft:interaction` primitive as a trap disarm). The gate needs no
+/// command at all — it is **physically sealed in the prefab** from world-load,
+/// which is precisely why the pattern needs no "seal it now" verb and why
+/// permanence can be structural. Empty for a campaign with no shortcut.
+fn shortcut_setup(plan: &Plan) -> Vec<String> {
+    plan.shortcuts
+        .iter()
+        .map(|sc| {
+            let v = ent_xyz(sc.unlock);
+            format!(
+                "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_sc_{}\"]}}",
+                v[0], v[1], v[2], sc.safe
+            )
+        })
+        .collect()
+}
+
+/// Per-tick shortcut unlock detection (spec-0016 §2). Fires **once** — the
+/// `#sc_<id>` sentinel is the structural expression of permanence: after the open
+/// there is nothing left to fire, and no verb anywhere can put the gate back
+/// (`DW0358` forbids `close-gate` on a shortcut gate). Empty without a shortcut.
+fn shortcut_tick(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for sc in &plan.shortcuts {
+        let id = &sc.safe;
+        out.push(format!(
+            "execute unless score #sc_{id} dw.sys matches 1 if entity @e[tag=dw_sc_{id},nbt={{interaction:{{}}}}] run function {ns}:shortcut_open_{id}"
+        ));
+        out.push(format!(
+            "execute as @e[tag=dw_sc_{id}] run data remove entity @s interaction"
+        ));
+    }
+    out
+}
+
+/// The `shortcut_open_<id>` functions (spec-0016 §2): latch the sentinel, clear
+/// the gate region to air (the same `fill … replace <block>` an `open-gate`
+/// emits), then run the `on_unlock` beat. Server-source-safe — the poll lives on
+/// the tick, which has no `@s`.
+fn emit_shortcut_functions(plan: &Plan) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for sc in &plan.shortcuts {
+        let id = &sc.safe;
+        let (from, to) = sc.gate_region;
+        let mut body = vec![
+            format!("scoreboard players set #sc_{id} dw.sys 1"),
+            format!(
+                "fill {} {} {} {} {} {} minecraft:air replace {}",
+                from[0], from[1], from[2], to[0], to[1], to[2], sc.gate_block
+            ),
+        ];
+        body.extend(emit_effect_bundle(plan, &sc.on_unlock, Audience::Scheduled));
+        out.push((format!("shortcut_open_{id}"), lines(&body)));
+    }
+    out
 }
 
 /// The fake-player scoreboard holder marking a `respawns_on_rest` wave as
@@ -5775,6 +5853,8 @@ fn emit_packtest(
     // spec-0016 §1: resting at a bonfire moves the party respawn point and
     // re-seats its `respawns_on_rest` waves. Emits nothing without a bonfire.
     emit_bonfire_packtests(plan, out);
+    // spec-0016 §2: the shortcut really opens, and opens exactly once.
+    emit_shortcut_packtest(plan, out);
 
     // The scheduled-executor contract (AUDIT-P0): a function reached through
     // `schedule` still lands per-player state on real players.
@@ -6508,6 +6588,58 @@ fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
     b.push(format!("scoreboard players set {seated} dw.sys 0"));
     out.insert(
         format!("packtest-datapack/data/{ns}/test/souls_bonfire_reseat.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// spec-0016 §2 shortcut PackTest: the unlock really clears the gate region, and
+/// the open is **permanent** — re-running the tick after the sentinel is latched
+/// cannot re-seal it, because nothing in the datapack ever fills a shortcut gate
+/// (`DW0358` makes that structural at compile time; this asserts the runtime side
+/// on a live server). Emits nothing for a campaign with no shortcut.
+fn emit_shortcut_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some(sc) = plan.shortcuts.first() else {
+        return;
+    };
+    let (from, to) = sc.gate_region;
+    let probe = from; // one representative cell of the gate region
+    let mut b = packtest_header(&format!(
+        "{title}: shortcut `{}` opens its gate, permanently (spec-0016 §2)",
+        sc.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    // Re-seal the gate and clear the sentinel: a sibling template (or `setup`
+    // itself, on a shared batch server) may have left either in any state.
+    b.push(format!("scoreboard players set #sc_{} dw.sys 0", sc.safe));
+    b.push(format!(
+        "fill {} {} {} {} {} {} {}",
+        from[0], from[1], from[2], to[0], to[1], to[2], sc.gate_block
+    ));
+    b.push(format!(
+        "execute store success score #sb_scut dw.sys if block {} {} {} {}",
+        probe[0], probe[1], probe[2], sc.gate_block
+    ));
+    b.push("assert score #sb_scut dw.sys matches 1".to_string());
+    // Pull the mechanism: the gate is air and the sentinel is latched.
+    b.push(format!("function {ns}:shortcut_open_{}", sc.safe));
+    b.push(format!(
+        "execute store success score #sa_scut dw.sys if block {} {} {} minecraft:air",
+        probe[0], probe[1], probe[2]
+    ));
+    b.push("assert score #sa_scut dw.sys matches 1".to_string());
+    b.push(format!("assert score #sc_{} dw.sys matches 1", sc.safe));
+    // Permanence: the latched sentinel suppresses any further unlock dispatch, and
+    // no emitted function re-fills the region — so a second pass leaves it open.
+    b.push(format!("function {ns}:shortcut_open_{}", sc.safe));
+    b.push(format!(
+        "execute store success score #sp_scut dw.sys if block {} {} {} minecraft:air",
+        probe[0], probe[1], probe[2]
+    ));
+    b.push("assert score #sp_scut dw.sys matches 1".to_string());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_shortcut.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
