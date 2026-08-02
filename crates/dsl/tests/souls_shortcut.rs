@@ -5,7 +5,7 @@
 //! pattern's three obligations — the declaration must resolve (`DW0357`), and
 //! nothing may re-seal it (`DW0358`). The third (the long route actually exists
 //! and opening the gate pays) is geometric and lives in the compiler's nav proofs
-//! (`DW0359`/`DW0360`).
+//! (`DW0359`/`DW0364`).
 
 mod common;
 

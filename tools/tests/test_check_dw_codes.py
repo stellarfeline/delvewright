@@ -122,3 +122,111 @@ def test_the_live_repo_has_no_collisions(gate, monkeypatch):
     assert dupes == {}, f"two rules share a DW code: {dupes}"
     rows = {code: n for code, n in live.catalog_row_counts().items() if n > 1}
     assert rows == {}, f"a DW code has two catalog rows: {rows}"
+
+
+# --- the test-coverage gate: coverage means an ASSERTION, not a mention --------
+#
+# The loophole this closes: `tested_codes` used to be a raw `DW[0-9]{4}` grep over
+# whole test files, so a `///` doc comment *naming* a code in a test that never
+# touched it read as full coverage. Two real rules were green that way (`DW0304`,
+# `DW0309`), plus one whose only reference was the code named in an `.expect`
+# failure message while the assertion looked elsewhere (`DW0313`).
+
+
+def _test_rs(gate, crate: str, name: str, body: str) -> None:
+    tests = gate.CRATES_DIR / crate / "tests"
+    tests.mkdir(parents=True, exist_ok=True)
+    (tests / name).write_text(body, encoding="utf-8")
+
+
+def test_a_code_only_named_in_a_comment_is_not_covered(gate):
+    """The exact false-green: a doc comment citing a rule the test never exercises."""
+    _test_rs(
+        gate,
+        "compiler",
+        "solver.rs",
+        "/// Branching growth (lifts the old `DW0304` one-terminal limit).\n"
+        "#[test]\n"
+        "fn branching_two_terminals_both_placed() { assert!(true); }\n",
+    )
+    assert "DW0304" not in gate.tested_codes()
+
+
+def test_a_code_only_named_in_a_failure_message_is_not_covered(gate):
+    """`.expect(\"must raise DW0313\")` names the code in prose while the assertion
+    looks at something else — the test passes whatever code is raised."""
+    _test_rs(
+        gate,
+        "compiler",
+        "emit.rs",
+        '#[test]\nfn t() {\n'
+        '    let msg = f().expect("unsupported sand floor must raise DW0313");\n'
+        '    assert!(msg.contains("despawn"));\n'
+        "}\n",
+    )
+    assert "DW0313" not in gate.tested_codes()
+
+
+def test_a_bare_code_literal_counts_in_every_idiom_the_repo_uses(gate):
+    """The matcher must accept the assertion shapes actually written here —
+    including the table-driven ones, where the literal sits in an array or tuple
+    that a nearby loop asserts over."""
+    _test_rs(
+        gate,
+        "compiler",
+        "shapes.rs",
+        '#[test]\nfn a() { assert_eq!(d.code, "DW0351"); }\n'
+        '#[test]\nfn b() { assert!(diags.iter().any(|d| d.code == "DW0740")); }\n'
+        '#[test]\nfn c() { assert!(stderr.contains("DW0732"), "expected it: {stderr}"); }\n'
+        '#[test]\nfn d() { for code in ["DW0101", "DW0102"] { assert!(covered(code)); } }\n'
+        '#[test]\nfn e() { for (f, x) in [("a.json", "DW0302")] { assert_eq!(run(f), x); } }\n'
+        '#[test]\nfn f() { assert!(codes().contains(&"DW0203".to_string())); }\n',
+    )
+    covered = gate.tested_codes()
+    for code in ("DW0351", "DW0740", "DW0732", "DW0101", "DW0102", "DW0302", "DW0203"):
+        assert code in covered, code
+
+
+def test_a_symbolic_constant_counts_but_a_bare_import_does_not(gate):
+    """A symbol comparison is a real assertion; an import alone is not a use."""
+    _rs(gate, "schem", "diag.rs", 'pub const DW_STRIP: &str = "DW0700";')
+    _test_rs(gate, "schem", "imports.rs", "use delvewright_schem::diag::DW_STRIP;\n")
+    assert "DW0700" not in gate.tested_codes()
+    _test_rs(
+        gate,
+        "schem",
+        "imports.rs",
+        "use delvewright_schem::diag::DW_STRIP;\n"
+        "#[test]\nfn t() { assert_eq!(err.code, DW_STRIP); }\n",
+    )
+    assert "DW0700" in gate.tested_codes()
+
+
+def test_comment_stripping_never_eats_a_rust_string(gate):
+    """Test fixtures are full of `//` inside JSON and path strings; a naive
+    comment stripper would swallow the rest of the line — and with it the
+    assertion that follows."""
+    _test_rs(
+        gate,
+        "compiler",
+        "raws.rs",
+        'const F: &str = r#"{ "url": "https://example.invalid/x" }"#;\n'
+        '#[test]\nfn t() { assert_eq!(d.code, "DW0322"); }\n'
+        '#[test]\nfn u() { let p = "a//b"; assert!(p.is_empty() || d.code == "DW0323"); }\n',
+    )
+    covered = gate.tested_codes()
+    assert "DW0322" in covered
+    assert "DW0323" in covered
+
+
+def test_a_block_comment_hides_a_code_but_not_the_code_after_it(gate):
+    _test_rs(
+        gate,
+        "compiler",
+        "blocks.rs",
+        "/* DW0304 is discussed here /* and here */ but never asserted */\n"
+        '#[test]\nfn t() { assert_eq!(d.code, "DW0305"); }\n',
+    )
+    covered = gate.tested_codes()
+    assert "DW0304" not in covered
+    assert "DW0305" in covered

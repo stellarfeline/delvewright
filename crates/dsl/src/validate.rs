@@ -1846,6 +1846,17 @@ fn anchors_and_items(
             area_anchors.insert(a.id.as_str(), set);
         }
     }
+    // Every anchor any known area provides, and whether that union is the whole
+    // truth (no area binds a pool / an unknown prefab). Used for the anchor
+    // references that have no owning area to resolve against: an environment
+    // trigger's effects (triggers are global) and a cutscene's camera anchors (a
+    // camera legitimately flies across areas).
+    let all_areas_known = c.world.content.areas.len() == area_anchors.len();
+    let union: BTreeSet<&str> = area_anchors
+        .values()
+        .flat_map(|s| s.iter().map(String::as_str))
+        .collect();
+
     // planned quest id -> its area.
     let quest_area: BTreeMap<&str, &str> = c
         .quest_plan
@@ -1897,102 +1908,77 @@ fn anchors_and_items(
                 ));
             }
         }
-        for_each_effect(q, |path, eff| {
-            if let Some(anchor) = eff.open_gate_anchor()
-                && !set.contains(anchor.as_str())
-            {
-                d.push(Diagnostic::error(
-                    codes::ANCHOR_UNRESOLVED,
-                    "quests",
-                    format!("/content/quests/{i}/{path}/anchor"),
-                    format!(
-                        "`open-gate` anchor `{anchor}` is not provided by the prefab bound to \
-                         this quest's area — use a gate anchor the prefab exposes (anchor names \
-                         come from prefab metadata; do NOT invent one)"
-                    ),
-                ));
-            }
-            // v0.6 `close-gate` anchor (mirrors `open-gate`; the fill-block
-            // declaration is checked in the compiler, DW0343).
-            if let Some(anchor) = eff.close_gate_anchor()
-                && !set.contains(anchor.as_str())
-            {
-                d.push(Diagnostic::error(
-                    codes::ANCHOR_UNRESOLVED,
-                    "quests",
-                    format!("/content/quests/{i}/{path}/anchor"),
-                    format!(
-                        "`close-gate` anchor `{anchor}` is not provided by the prefab bound to \
-                         this quest's area — use a gate anchor the prefab exposes (anchor names \
-                         come from prefab metadata; do NOT invent one)"
-                    ),
-                ));
-            }
-            // v0.6 `set-checkpoint` anchor (spec-0012).
-            if let Some((anchor, _)) = eff.set_checkpoint()
-                && !set.contains(anchor.as_str())
-            {
-                d.push(Diagnostic::error(
-                    codes::ANCHOR_UNRESOLVED,
-                    "quests",
-                    format!("/content/quests/{i}/{path}/anchor"),
-                    format!(
-                        "`set-checkpoint` anchor `{anchor}` is not provided by the prefab bound \
-                         to this quest's area — use a checkpoint anchor the prefab exposes (anchor \
-                         names come from prefab metadata; do NOT invent one)"
-                    ),
-                ));
-            }
-            // `bonfire` anchor (spec-0016 §1; same obligation as `set-checkpoint`).
-            if let Some((anchor, _)) = eff.bonfire()
-                && !set.contains(anchor.as_str())
-            {
-                d.push(Diagnostic::error(
-                    codes::ANCHOR_UNRESOLVED,
-                    "quests",
-                    format!("/content/quests/{i}/{path}/anchor"),
-                    format!(
-                        "`bonfire` anchor `{anchor}` is not provided by the prefab bound to this \
-                         quest's area — use a checkpoint/rest anchor the prefab exposes (anchor \
-                         names come from prefab metadata; do NOT invent one)"
-                    ),
-                ));
-            }
-            // v0.6 `damage-players` `in` filter-zone anchor (spec-0014).
-            if let Some(zone) = eff.damage_within()
-                && !set.contains(zone.anchor.as_str())
-            {
-                d.push(Diagnostic::error(
-                    codes::ANCHOR_UNRESOLVED,
-                    "quests",
-                    format!("/content/quests/{i}/{path}/in/anchor"),
-                    format!(
-                        "`damage-players` `in` anchor `{}` is not provided by the prefab bound to \
-                         this quest's area — use an anchor the prefab exposes (anchor names come \
-                         from prefab metadata; do NOT invent one)",
-                        zone.anchor
-                    ),
-                ));
-            }
-            // v0.6 `begin-stealth` zone anchors (spec-0014).
-            if let Some((zones, _, _)) = eff.begin_stealth() {
-                for (z, zone) in zones.iter().enumerate() {
-                    if !set.contains(zone.anchor.as_str()) {
-                        d.push(Diagnostic::error(
-                            codes::ANCHOR_UNRESOLVED,
-                            "quests",
-                            format!("/content/quests/{i}/{path}/zones/{z}/anchor"),
-                            format!(
-                                "`begin-stealth` zone anchor `{}` is not provided by the prefab \
-                                 bound to this quest's area — use an anchor the prefab exposes \
-                                 (anchor names come from prefab metadata; do NOT invent one)",
-                                zone.anchor
-                            ),
-                        ));
-                    }
+        // Effect anchors — **deep** and driven by the single anchor authority
+        // ([`QuestEffect::anchor_refs`]), so every anchor-bearing effect at any
+        // nesting depth resolves or is named. This scan used to be shallow
+        // ([`for_each_effect`]) and enumerate variants by hand: a typo'd
+        // `open-gate`/`set-block`/`set-checkpoint` anchor one level down (a
+        // `sequence` step, an `on_respawn`/`on_caught`/`on_arrive` bundle)
+        // validated clean and then emitted *nothing* — the silent-drop class of
+        // bug the compiler's build-time seal (`DW0360`) now backstops.
+        for_each_effect_deep(q, |path, eff| {
+            // A `cutscene`'s camera anchors are legitimately cross-area (the
+            // camera flies wherever the shot needs), so they resolve against the
+            // union of every known area's anchors; every other effect anchor names
+            // a world position the quest's own area must provide.
+            let cross_area = matches!(eff, QuestEffect::Cutscene { .. });
+            for (suffix, anchor) in eff.anchor_refs() {
+                let resolves = if cross_area {
+                    // An unknown/pool area makes the union incomplete — defer to
+                    // the compiler's build-time seal rather than guess.
+                    !all_areas_known || union.contains(anchor.as_str())
+                } else {
+                    set.contains(anchor.as_str())
+                };
+                if resolves {
+                    continue;
                 }
+                let scope = if cross_area {
+                    "any area's prefab"
+                } else {
+                    "the prefab bound to this quest's area"
+                };
+                d.push(Diagnostic::error(
+                    codes::ANCHOR_UNRESOLVED,
+                    "quests",
+                    format!("/content/quests/{i}/{path}/{suffix}"),
+                    format!(
+                        "`{verb}` anchor `{anchor}` is not provided by {scope} — use an anchor a \
+                         prefab exposes (anchor names come from prefab metadata; do NOT invent \
+                         one)",
+                        verb = eff.verb(),
+                    ),
+                ));
             }
         });
+    }
+
+    // Environment triggers are global (no owning area), so their effect anchors
+    // resolve against the union of every known area's anchors — the same
+    // resolved-or-diagnostic rule as quest effects, applied at the only scope a
+    // trigger has. Skipped entirely when some area binds a pool / an unknown
+    // prefab, because then the union is not the whole truth.
+    if all_areas_known {
+        for (ti, t) in c.quests.content.triggers.iter().enumerate() {
+            for_each_trigger_effect_deep(t, |path, eff| {
+                for (suffix, anchor) in eff.anchor_refs() {
+                    if union.contains(anchor.as_str()) {
+                        continue;
+                    }
+                    d.push(Diagnostic::error(
+                        codes::ANCHOR_UNRESOLVED,
+                        "quests",
+                        format!("/content/triggers/{ti}/{path}/{suffix}"),
+                        format!(
+                            "`{verb}` anchor `{anchor}` in an environment trigger is not provided \
+                             by any area's prefab — use an anchor a prefab exposes (anchor names \
+                             come from prefab metadata; do NOT invent one)",
+                            verb = eff.verb(),
+                        ),
+                    ));
+                }
+            });
+        }
     }
 
     // Kit items.
@@ -3530,6 +3516,40 @@ fn dialogue_v04(c: &Campaign, flags: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
     }
 }
 
+/// Collect every NPC `e` (or an effect nested inside it) despawns **on every
+/// playthrough that runs `e` at all** — the only despawns `DW0195` may reason
+/// about, because its model is quest-DAG order with no branch semantics.
+///
+/// Two things stop the descent, and each is a real branch rather than a
+/// convenience:
+///
+/// - **A flag gate.** An effect carrying `requires_flags`/`forbids_flags` fires
+///   only when campaign state says so. The island's Perimedes walks out through
+///   the cave mouth and despawns *only* on the flee branch (`flag/flee`); the
+///   `talk-to`s that follow live on the sealed-in branch. Counting that despawn
+///   would reject a perfectly playable delve. Branch-conditional reachability is
+///   the branch-coherent completability proof's job (`DW0204`), not this rule's.
+/// - **A lifecycle reaction bundle.** `set-checkpoint`'s `on_respawn` runs only if
+///   a player dies and `begin-stealth`'s `on_caught` only if one is caught, so
+///   neither is guaranteed. A `sequence` step and a `move-*` `on_arrive` *are*
+///   guaranteed once their parent runs, so the descent continues through them.
+fn unconditional_despawns<'a>(e: &'a QuestEffect, out: &mut Vec<&'a crate::ids::NpcId>) {
+    if !e.requires_flags().is_empty() || !e.forbids_flags().is_empty() {
+        return;
+    }
+    if let Some(npc) = e.despawn_npc() {
+        out.push(npc);
+    }
+    for (_pseg, kseg, list) in e.nested_effect_lists_labeled() {
+        if kseg == "respawn" || kseg == "caught" {
+            continue;
+        }
+        for inner in list {
+            unconditional_despawns(inner, out);
+        }
+    }
+}
+
 /// DW0195: a `talk-to` targeting an NPC despawned by an effect that runs strictly
 /// before it on the quest dependency graph. Conservative: quest-ancestor despawn
 /// (via `on_complete`) or same-quest earlier-objective despawn (via
@@ -3558,7 +3578,11 @@ fn despawned_ref_check(c: &Campaign, _npc_ids: &BTreeSet<&str>, d: &mut Vec<Diag
         out
     };
 
-    // Where each npc is despawned: quests that despawn it on completion.
+    // Where each npc is despawned: quests that despawn it on completion. Deep, but
+    // only through effects that are **certain to run** (see
+    // [`unconditional_despawns`]) — a `despawn-npc` nested one level down in a
+    // `sequence` step removes the NPC exactly as thoroughly as a top-level one, and
+    // the shallow scan this replaces walked straight past it.
     let mut despawn_quest: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for q in &c.quests.content.quests {
         for e in q
@@ -3567,7 +3591,9 @@ fn despawned_ref_check(c: &Campaign, _npc_ids: &BTreeSet<&str>, d: &mut Vec<Diag
             .flatten()
             .chain(&q.on_complete)
         {
-            if let Some(npc) = e.despawn_npc() {
+            let mut npcs = Vec::new();
+            unconditional_despawns(e, &mut npcs);
+            for npc in npcs {
                 despawn_quest
                     .entry(npc.as_str())
                     .or_default()

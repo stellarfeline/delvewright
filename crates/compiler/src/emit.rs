@@ -263,6 +263,20 @@ pub fn build_with_warnings(
     // empty for a campaign with no walked leg, so its render plan stays byte-identical.
     let mut pov_shots: Vec<crate::render_plan::PovShot> = Vec::new();
 
+    // Every anchor-bearing effect, at every nesting depth, must resolve to a real
+    // world position or the build stops (DW0360). This runs FIRST among the
+    // referential proofs deliberately: emission fails open on an unresolved anchor
+    // (it emits nothing) and the geometry proofs downstream fail *loudly but
+    // wrongly* — an unresolved cutscene waypoint degrades to the world origin and
+    // is then reported as a camera clipping a wall (DW0308), which sends the author
+    // to move a shot that was never the problem. Name the root cause instead.
+    check_effect_anchors(plan)?;
+
+    // A dialogue node's conditionally-visible options are encoded as 2^n precomputed
+    // variants; past the cap that is a pack-size decision, and past 32 it was a
+    // compiler panic (DW0362).
+    check_dialogue_variant_cap(plan)?;
+
     // Actor spawn anchors must resolve to a world position (spec-0014); a spawn is a
     // summon, not a walk, so this needs no occupancy model. DW0325 if one dangles.
     crate::nav::check_actor_placement(plan)?;
@@ -438,6 +452,10 @@ pub fn build_with_warnings(
             }
         }
     }
+    // Trap flag gating (DSL v0.6): resolve the authored trigger hardware for every
+    // gated trap, rejecting a trigger the compiler cannot restore (DW0363).
+    let trap_gates = trap_gate_hardware(plan, prefabs)?;
+
     let functions = emit_functions(
         plan,
         &sentinels,
@@ -449,30 +467,38 @@ pub fn build_with_warnings(
         &edit_replay.as_ref().map_or(Vec::new(), |er| {
             er.batches.iter().filter_map(|b| b.bounds).collect()
         }),
+        &trap_gates,
     );
     for (name, body) in &functions {
-        out.insert(
+        insert_unique(
+            &mut out,
             format!("datapack/data/{ns}/function/{name}.mcfunction"),
             body.clone().into_bytes(),
-        );
+            "function",
+            name,
+        )?;
     }
 
     // dialogs
     for (name, value) in emit_dialogs(plan) {
-        put_json(
+        insert_unique(
             &mut out,
-            &format!("datapack/data/{ns}/dialog/{name}.json"),
-            &value,
-        );
+            format!("datapack/data/{ns}/dialog/{name}.json"),
+            json_bytes(&value),
+            "dialog",
+            &name,
+        )?;
     }
 
     // advancements
     for (name, value) in emit_advancements(plan) {
-        put_json(
+        insert_unique(
             &mut out,
-            &format!("datapack/data/{ns}/advancement/{name}.json"),
-            &value,
-        );
+            format!("datapack/data/{ns}/advancement/{name}.json"),
+            json_bytes(&value),
+            "advancement",
+            &name,
+        )?;
     }
 
     // predicates — currently only the cutscene bounce's sneak-held gate (see
@@ -905,6 +931,7 @@ fn emit_functions(
     wave_placements: &WavePlacements,
     world_edits: &[String],
     edit_bounds: &[([i32; 3], [i32; 3])],
+    trap_gates: &BTreeMap<String, String>,
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -1261,7 +1288,7 @@ fn emit_functions(
     setup.extend(env_trigger_setup(plan));
     // v0.6: fill each trap dispenser payload and summon disarm affordances
     // (spec-0011). Empty for a campaign with no traps → byte-identical.
-    setup.extend(trap_setup(plan));
+    setup.extend(trap_setup(plan, trap_gates));
     // spec-0016 §2: summon each shortcut's far-side unlock affordance. The gate
     // itself needs no command — it is sealed from world-load by the prefab.
     setup.extend(shortcut_setup(plan));
@@ -1312,6 +1339,13 @@ fn emit_functions(
             "execute if score #placed dw.sys matches 1 as @a[tag=!dw_joined] run function {ns}:join_place"
         ));
     }
+    // A player who disconnects mid-cutscene keeps `dw_cutscene` and spectator
+    // across the relog, but `cs_end_<bare>` is `@a`-scoped and already ran without
+    // them: they rejoin as a ghost, in a world they can fly through and not touch,
+    // with no way back. `join_place` cannot help — it is gated on `dw_joined`,
+    // which a relog also keeps. So the repair is its own tick clause, keyed on the
+    // stuck state itself. Empty for a cutscene-less campaign → byte-identical.
+    tick.extend(cutscene_repair_tick(plan));
     tick.push("scoreboard players enable @a dw.class".to_string());
     for npc in &plan.npcs {
         tick.push(format!(
@@ -1520,6 +1554,9 @@ fn emit_functions(
     fns.extend(emit_shortcut_functions(plan));
     // --- v0.6 stealth-beat functions (spec-0014) ---
     fns.extend(emit_stealth_functions(plan));
+
+    // --- cs_repair: rejoin-after-cutscene repair (see the `tick` driver above) ---
+    fns.extend(cutscene_repair_fns(plan));
 
     // --- join_place: first-join placement (see the `tick` driver above) ---
     //
@@ -2044,7 +2081,7 @@ fn emit_functions(
     fns.extend(sequence_fns(plan));
     fns.extend(cutscene_fns(plan, moves, actor_moves));
     fns.extend(env_trigger_fns(plan));
-    fns.extend(trap_fns(plan));
+    fns.extend(trap_fns(plan, trap_gates));
     fns.extend(boundary_fns(plan));
     fns.extend(night_vision_fns(plan));
 
@@ -2145,6 +2182,226 @@ fn wave_spawn_pos(plan: &Plan, wave_id: &str) -> Option<[i32; 3]> {
     let w = plan::wave_of(c, wave_id)?;
     let area = plan::wave_area(c, wave_id)?;
     plan.point(area, w.anchor.as_str())
+}
+
+/// The closing line on the completion advancement: the authored `world.outro`
+/// (l10n key `world.outro`), else the finale quest's `goal` (key
+/// `quest.<id>.goal`) — the thing the party just accomplished, already inventoried
+/// and translated. Both are campaign content, so no English is baked in here.
+/// Falls back to the delve title only if the finale names no planned quest, which
+/// cross-stage validation (`DW0160`) already rejects.
+fn campaign_outro(c: &delvewright_dsl::Campaign) -> String {
+    if let Some(outro) = &c.world.content.outro {
+        return outro.clone();
+    }
+    let finale = c.quest_plan.content.finale.as_str();
+    c.quest_plan
+        .content
+        .quests
+        .iter()
+        .find(|q| q.id.as_str() == finale)
+        .map(|q| q.goal.clone())
+        .unwrap_or_else(|| c.world.content.title.clone())
+}
+
+/// `DW0362`: a dialogue node declares more conditionally-visible options than the
+/// variant-dialog encoding can carry. Validation-tier content-shape limit.
+pub const DW_DIALOGUE_VARIANT_CAP: &str = "DW0362";
+
+/// The most gated options one dialogue node may declare.
+///
+/// Vanilla has no conditional option inside a `dialog`, so the compiler encodes
+/// visibility by **precomputing every combination**: `n` gated options emit `2^n`
+/// dialog JSONs plus a `2^n`-clause dispatcher keyed on a `dw.dmask` bitmask. Ten
+/// is 1024 variants for a single node — already an order of magnitude past
+/// anything authorable (the largest node in any shipped campaign gates four), and
+/// the point past which the pack size, not the author, decides what the delve is.
+///
+/// There is a hard wall behind the soft one: the mask is built with `1u32 << i`
+/// (undefined past 31, a debug-build panic at 32 — the original symptom of this
+/// gap) and compared against a Minecraft scoreboard, i.e. an `i32`, so bit 31 is
+/// unrepresentable at runtime regardless. The cap keeps the build well clear of
+/// both, and turns a compiler panic into a coded content diagnostic that names the
+/// node.
+pub const MAX_GATED_DIALOGUE_OPTIONS: usize = 10;
+
+/// Fail the build if any dialogue node exceeds [`MAX_GATED_DIALOGUE_OPTIONS`]
+/// (`DW0362`). Runs before any variant emission so the `1u32 << n` shifts in
+/// `gated_node_choosers` / `emit_dialogs` are unreachable past the cap.
+fn check_dialogue_variant_cap(plan: &Plan) -> Result<(), BuildFailure> {
+    let v04 = campaign_is_v04(plan);
+    for npc in &plan.npcs {
+        let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        for opt in &npc.options {
+            if !seen.insert(opt.node_id.as_str()) {
+                continue;
+            }
+            let n = node_gated_options(npc, &opt.node_id, v04).len();
+            if n > MAX_GATED_DIALOGUE_OPTIONS {
+                return Err(BuildFailure::Diagnostic {
+                    code: DW_DIALOGUE_VARIANT_CAP,
+                    message: format!(
+                        "dialogue node `{}` on npc `{}` declares {n} conditionally-visible \
+                         options (`requires_flags` / `forbids_flags` / a `complete-objective` \
+                         effect); the cap is {MAX_GATED_DIALOGUE_OPTIONS}. Vanilla cannot hide a \
+                         dialog option, so the compiler precomputes every combination: this node \
+                         would emit 2^{n} dialog variants and a dispatcher of the same size. \
+                         Split the node into a short chain of nodes, or move some of the gating \
+                         onto the objective that reaches the node.",
+                        opt.node_id, npc.npc_id,
+                    ),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `DW0361`: two distinct generated artifacts sanitize to the same name, so one
+/// would silently overwrite the other in the emitted pack.
+pub const DW_NAME_COLLISION: &str = "DW0361";
+
+/// Insert an emitted artifact, refusing to let one silently overwrite another
+/// (`DW0361`).
+///
+/// Generated names are built by underscore-joining [`plan::safe_local`] outputs,
+/// and `safe_local` is doubly lossy: it drops the `<kind>/` prefix and maps `-`,
+/// `/` and `.` all to `_`. So a wave `wave/npc-x` and an NPC `npc/x` both name
+/// `spawn_npc_x`, and `move-npc npc/guard-a → anchor/post` collides with
+/// `npc/guard → anchor/a-post` (which also aliases their tick counters and
+/// re-entry sentinels — two live movement drivers sharing one score). The output
+/// map is a `BTreeMap`, so the loser used to vanish without a word: the wave simply
+/// never spawned.
+///
+/// Re-emitting the **same bytes** under the same name is fine and expected (the
+/// emitters dedup by content key, and several are called per-consumer), so only a
+/// genuine divergence fails the build.
+fn insert_unique(
+    out: &mut BuildOutput,
+    path: String,
+    bytes: Vec<u8>,
+    kind: &str,
+    name: &str,
+) -> Result<(), BuildFailure> {
+    if let Some(existing) = out.get(&path)
+        && existing != &bytes
+    {
+        return Err(BuildFailure::Diagnostic {
+            code: DW_NAME_COLLISION,
+            message: format!(
+                "two different generated {kind}s both sanitize to `{name}` — one would \
+                 silently overwrite the other at `{path}`. Generated names drop an id's \
+                 `<kind>/` prefix and fold `-`, `/` and `.` into `_`, so ids that look \
+                 distinct can collide (e.g. wave `wave/npc-x` with npc `npc/x`, or \
+                 `move-npc npc/guard-a → anchor/post` with `npc/guard → anchor/a-post`). \
+                 Rename one of the colliding ids so their sanitized local parts differ."
+            ),
+        });
+    }
+    out.insert(path, bytes);
+    Ok(())
+}
+
+/// The canonical pretty-printed bytes of an emitted JSON artifact — the same
+/// rendering [`put_json`] writes, factored out so collision detection can compare
+/// artifacts byte-for-byte before inserting.
+fn json_bytes(value: &Value) -> Vec<u8> {
+    let mut bytes = serde_json::to_vec_pretty(value).expect("json serializes");
+    bytes.push(b'\n');
+    bytes
+}
+
+/// `DW0360`: an anchor-bearing quest/trigger effect names an anchor that resolves
+/// to no world position in the assembled build. Validation-tier content mistake
+/// (a typo'd or unassembled anchor), reported as a build diagnostic because only
+/// the assembled world knows which anchors actually exist.
+pub const DW_EFFECT_ANCHOR_UNRESOLVED: &str = "DW0360";
+
+/// Fail the build if any quest/trigger effect — **at any nesting depth** — names an
+/// anchor that resolves to no world position (`DW0360`). This is the single
+/// resolved-anchor-or-diagnostic seal over the whole anchor-bearing effect surface
+/// ([`QuestEffect::anchor_refs`], the nesting-aware sibling of
+/// [`QuestEffect::nested_effect_lists`]).
+///
+/// It exists because every anchor consumer in [`emit_quest_effect`] fails *open*:
+/// `open-gate`/`close-gate` scan `plan.anchors` for a name match and simply fall
+/// out of the loop, `set-block`/`set-checkpoint`/`play-sound`/`damage-players`
+/// bail out of an `if let Some(pos)`, and a cutscene waypoint silently degrades to
+/// `[0, BASE_Y, 0]`. A single typo'd anchor therefore used to emit **nothing** —
+/// a gate that never opens, a checkpoint that never binds — and shipped a broken
+/// delve into the owner's one QA hour. `DW0142` catches what it can at DSL time,
+/// but it only sees an area's declared anchor set (pool areas and cross-area
+/// camera anchors are deferred to here), so this is the backstop that makes the
+/// rule total.
+fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
+    let c = plan.campaign;
+    // (json pointer, effect verb, anchor) for every anchor reference in the
+    // campaign, deep, in deterministic content order.
+    let mut refs: Vec<(String, &'static str, String)> = Vec::new();
+    let collect = |base: String, eff: &QuestEffect, refs: &mut Vec<_>| {
+        fn descend(
+            path: String,
+            eff: &QuestEffect,
+            refs: &mut Vec<(String, &'static str, String)>,
+        ) {
+            for (suffix, anchor) in eff.anchor_refs() {
+                refs.push((
+                    format!("{path}/{suffix}"),
+                    eff.verb(),
+                    anchor.as_str().to_string(),
+                ));
+            }
+            for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+                for (j, inner) in list.iter().enumerate() {
+                    descend(format!("{path}/{pseg}/{j}"), inner, refs);
+                }
+            }
+        }
+        descend(base, eff, refs);
+    };
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oid, effs) in &q.on_objective_complete {
+            for (i, eff) in effs.iter().enumerate() {
+                let base = format!(
+                    "/content/quests/{qi}/on_objective_complete/{}/{i}",
+                    oid.as_str()
+                );
+                collect(base, eff, &mut refs);
+            }
+        }
+        for (i, eff) in q.on_complete.iter().enumerate() {
+            collect(
+                format!("/content/quests/{qi}/on_complete/{i}"),
+                eff,
+                &mut refs,
+            );
+        }
+    }
+    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
+        for (i, eff) in t.effects.iter().enumerate() {
+            collect(
+                format!("/content/triggers/{ti}/effects/{i}"),
+                eff,
+                &mut refs,
+            );
+        }
+    }
+    for (path, verb, anchor) in refs {
+        if anchor_point_any(plan, &anchor).is_some() {
+            continue;
+        }
+        return Err(BuildFailure::Diagnostic {
+            code: DW_EFFECT_ANCHOR_UNRESOLVED,
+            message: format!(
+                "`{verb}` at `{path}` names anchor `{anchor}`, which resolves to no \
+                 position in the assembled world — the effect would emit nothing at \
+                 all (a gate that never opens, a block never placed, a camera stuck \
+                 at the world origin). Anchor names come from prefab metadata: use \
+                 one the area's prefab/pool actually exposes, and do NOT invent one."
+            ),
+        });
+    }
+    Ok(())
 }
 
 /// Fail the build if any `spawn-wave` effect references a wave whose spawn
@@ -3087,8 +3344,9 @@ fn npc_summon_commands(
             let cname = json!({ "text": name }).to_string().replace('\'', "\\'");
             format!("'{cname}'")
         };
+        let pose = mannequin_pose_nbt(base);
         out.push(format!(
-            "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"],CustomName:{},CustomNameVisible:1b,VillagerData:{{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}}}}",
+            "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"],CustomName:{},CustomNameVisible:1b,VillagerData:{{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}}}}",
             p[0], p[1], p[2], npc.tag, cname_field
         ));
     }
@@ -3516,10 +3774,32 @@ fn actor_puppet_summon(a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> S
         } else {
             ""
         };
+        let pose = mannequin_pose_nbt(&a.entity);
         format!(
-            "summon {} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b,Invulnerable:{inv}b,DeathLootTable:\"minecraft:empty\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}}}",
+            "summon {} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Invulnerable:{inv}b,DeathLootTable:\"minecraft:empty\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}}}",
             a.entity, p[0], p[1], p[2]
         )
+    }
+}
+
+/// The `pose` NBT field a `minecraft:mannequin` needs, or `""` for any other
+/// entity — spliced into every summon whose entity id is author-supplied.
+///
+/// A mannequin summoned without an explicit `pose` serializes it as `DYING`, which
+/// the server then fails to encode at save time (`Failed to encode value 'DYING'`
+/// in a PackTest world's teardown log) and which is simply wrong data for a
+/// standing figure. The skinned NPC/actor paths hardcode `minecraft:mannequin` and
+/// have always emitted it; the paths that take the entity id **from content**
+/// (`npc.base_entity`, `actor.entity`, and the `unleash` twin, which has no skin
+/// branch at all) did not — so an author who spelled `minecraft:mannequin` by hand
+/// got the broken pose. Valid 1.21.11 mannequin poses: standing, crouching,
+/// swimming, fall_flying, sleeping (spec-0009 template).
+fn mannequin_pose_nbt(entity: &str) -> &'static str {
+    let id = entity.strip_prefix("minecraft:").unwrap_or(entity);
+    if id == "mannequin" {
+        ",pose:\"standing\""
+    } else {
+        ""
     }
 }
 
@@ -3534,8 +3814,9 @@ fn actor_twin_summon(a: &delvewright_dsl::Actor) -> String {
         .as_deref()
         .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)))
         .unwrap_or_default();
+    let pose = mannequin_pose_nbt(&a.entity);
     format!(
-        "summon {} ~ ~ ~ {{PersistenceRequired:1b,DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}}}",
+        "summon {} ~ ~ ~ {{PersistenceRequired:1b{pose},DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}}}",
         a.entity
     )
 }
@@ -3759,6 +4040,70 @@ fn campaign_has_cutscene(campaign: &delvewright_dsl::Campaign) -> bool {
         .any(|(eff, _)| eff.cutscene_shots().is_some_and(|s| !s.is_empty()))
 }
 
+/// The campaign-wide count of cutscenes currently playing. A refcount rather than
+/// a flag because nothing forbids two cutscenes overlapping (each `cs_<bare>` only
+/// guards re-entry into *itself*). Never initialized, so an `unless … matches 1..`
+/// test reads correctly before the first cutscene ever runs.
+const CS_LIVE: &str = "#cs_live";
+
+/// The `tick` clause that repairs a player stranded by a mid-cutscene disconnect.
+///
+/// The cutscene bracket is entirely `@a`-scoped: `cs_end_<bare>` restores gamemode,
+/// teleports, and removes [`CUTSCENE_TAG`] from *the players who are online when it
+/// ends*. A player who dropped during the shot is not among them, so they come back
+/// tagged, in spectator, with the marker they would have been teleported to already
+/// killed. `join_place` is no help — it is gated on `dw_joined`, which survives a
+/// relog exactly like the cutscene tag does.
+///
+/// The stuck state is decidable without any per-player bookkeeping: *tagged
+/// `dw_cutscene` while no cutscene is playing*. Empty for a cutscene-less campaign,
+/// so those packs stay byte-identical.
+fn cutscene_repair_tick(plan: &Plan) -> Vec<String> {
+    if !campaign_has_cutscene(plan.campaign) {
+        return Vec::new();
+    }
+    let ns = &plan.namespace;
+    vec![format!(
+        "execute unless score {CS_LIVE} dw.sys matches 1.. as @a[tag={CUTSCENE_TAG}] run function {ns}:cs_repair"
+    )]
+}
+
+/// The repair itself, per stranded player (`@s`): back to adventure, untagged, and
+/// returned to the party's live checkpoint.
+///
+/// The destination is `storage dw:cp pos` — the checkpoint mirror, seeded to the
+/// entry point at setup and rewritten by every `set-checkpoint` — because the
+/// cutscene's own saved position (a single `dw_csmark_<bare>` marker) is destroyed
+/// by `cs_end_<bare>` before this can ever run. It is a macro teleport for the same
+/// reason the boundary return is one: the mirror is an `[x, y, z]` list, not
+/// tp-shaped arguments. Emitted only when the campaign resolves an entry anchor,
+/// which is what seeds the mirror in the first place.
+fn cutscene_repair_fns(plan: &Plan) -> Vec<(String, String)> {
+    if !campaign_has_cutscene(plan.campaign) {
+        return Vec::new();
+    }
+    let ns = &plan.namespace;
+    let mut repair = vec![
+        "gamemode adventure @s".to_string(),
+        format!("tag @s remove {CUTSCENE_TAG}"),
+    ];
+    let mut out = Vec::new();
+    if campaign_spawn(plan).is_some() {
+        for (i, axis) in ["x", "y", "z"].iter().enumerate() {
+            repair.push(format!(
+                "data modify storage dw:cs at.{axis} set from storage dw:cp pos[{i}]"
+            ));
+        }
+        repair.push(format!("function {ns}:cs_repair_tp with storage dw:cs at"));
+        out.push((
+            "cs_repair_tp".to_string(),
+            lines(&["$tp @s $(x) $(y) $(z)".to_string()]),
+        ));
+    }
+    out.push(("cs_repair".to_string(), lines(&repair)));
+    out
+}
+
 /// Cutscene functions (spec-0008 addendum; keyframe dolly per task #64): the
 /// two-camera bounce. Per cutscene (deduped by content key) emits a start
 /// function, a self-scheduling keyframe/`spectate` driver, and an end/restore
@@ -3851,6 +4196,10 @@ fn cutscene_fns(
             "execute if score #run_{bare} dw.sys matches 1 run return fail"
         ));
         start.push(format!("scoreboard players set #run_{bare} dw.sys 1"));
+        // The campaign-wide "some cutscene is playing" refcount. Placed AFTER the
+        // re-entry `return fail` so a re-entrant start never inflates it. Read by
+        // the join repair driver — see `cutscene_repair_fns`.
+        start.push(format!("scoreboard players add {CS_LIVE} dw.sys 1"));
         start.push(format!("scoreboard players set #t_{bare} dw.sys 0"));
         start.push(format!("scoreboard players set #p_{bare} dw.sys 1"));
         start.push(format!(
@@ -3962,6 +4311,7 @@ fn cutscene_fns(
         // during the cutscene, so the beat picks up exactly where it paused.
         end.push(format!("tag @a remove {CUTSCENE_TAG}"));
         end.push(format!("scoreboard players set #run_{bare} dw.sys 0"));
+        end.push(format!("scoreboard players remove {CS_LIVE} dw.sys 1"));
         out.push((format!("cs_end_{bare}"), lines(&end)));
     }
     out
@@ -4103,15 +4453,180 @@ fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
 // v0.6 traps (spec-0011)
 // ---------------------------------------------------------------------------
 
+/// `DW0363`: a trap declares a flag gate (`requires_flags` / `forbids_flags`) but
+/// its trigger hardware cannot be removed and put back exactly as authored, so the
+/// compiler refuses to pretend the gate works.
+pub const DW_TRAP_GATE_UNSUPPORTED: &str = "DW0363";
+
+/// Trap flag-gating hardware: for every trap that declares a flag gate, the
+/// trigger block its `anchor/trap` prefab metadata declares — the thing the gate
+/// physically removes and restores.
+///
+/// The compiler owns world mutation, so "the trap is inactive while a flag is set"
+/// is implemented as exactly that: the plate or tripwire is taken out of the world
+/// and put back on the flag transition. The block comes from prefab metadata for
+/// the same reason a `close-gate`'s fill block does (`DW0343`): the hardware is
+/// baked into the `.nbt` and only the prefab author knows what it is. It is
+/// restored **verbatim, blockstate and all** — stamping a bare id over an authored
+/// state silently changes the block (the `DW0354` lesson).
+///
+/// Only a trigger whose entire state is the block itself can be gated this way. A
+/// `trapped-chest` trigger carries a **block entity with an inventory** that removal
+/// would destroy and the compiler could not restore, so a flag gate on one is
+/// rejected (`DW0363`) rather than shipped as folklore. So is a gated trap whose
+/// prefab declares no `trigger_block` at all: be loud, do not guess.
+fn trap_gate_hardware(
+    plan: &Plan,
+    prefabs: &crate::registry::PrefabRegistry,
+) -> Result<BTreeMap<String, String>, BuildFailure> {
+    let mut out = BTreeMap::new();
+    for t in plan.traps.iter().filter(|t| trap_is_gated(t)) {
+        let declared = prefabs.trap_trigger_block(&t.at_anchor);
+        let gatable = declared
+            .map(|b| b.split('[').next().unwrap_or(b))
+            .is_some_and(crate::assembled::is_passable_trap_trigger);
+        if !gatable {
+            let what = match declared {
+                Some(b) => format!("declares `trigger_block` `{b}`"),
+                None => "declares no `trigger_block`".to_string(),
+            };
+            return Err(BuildFailure::Diagnostic {
+                code: DW_TRAP_GATE_UNSUPPORTED,
+                message: format!(
+                    "trap `{}` declares a flag gate (`requires_flags`/`forbids_flags`), but its \
+                     `anchor/trap` marker `{}` {what}. A flag gate physically removes the \
+                     trigger from the world while the gate is shut and puts it back after, so \
+                     it is only sound for a trigger whose whole state is the block: a pressure \
+                     plate or a tripwire. A `trapped-chest` trigger carries a block entity with \
+                     an inventory that removal would destroy. Declare the plate/tripwire as \
+                     `trigger_block` on the anchor's prefab metadata (with its blockstate, as a \
+                     gate anchor declares its fill `block`), switch the trap to a \
+                     `pressure-plate`/`tripwire` trigger, or drop the flag gate and gate the \
+                     story beat that arms the trap instead.",
+                    t.id, t.at_anchor,
+                ),
+            });
+        }
+        out.insert(t.safe.clone(), declared.unwrap_or_default().to_string());
+    }
+    Ok(out)
+}
+
+/// Whether `t` declares a flag gate at all (an ungated trap emits nothing new, so
+/// every existing campaign stays byte-identical).
+fn trap_is_gated(t: &plan::TrapPlan) -> bool {
+    !t.requires_flags.is_empty() || !t.forbids_flags.is_empty()
+}
+
+/// The `tick` clauses that open and shut every gated trap's hardware.
+///
+/// Edge-triggered on a per-trap sentinel `#trapgate_<safe>` (1 = armed, i.e. the
+/// trigger block is in the world) so the `setblock` fires only on a transition —
+/// a per-tick unconditional write would be both wasteful and wrong (it would also
+/// fight the disarm path).
+///
+/// The gate is **campaign state, not per-player state**: flags are set by whoever
+/// reaches the beat, and a trap does not become live for one player and dead for
+/// another. So the guards use the same any-player form the environment triggers
+/// use — `if entity @a[scores={dw.f_x=1..}]` — rather than `score @s`.
+///
+/// Shutting is one clause per gating flag because "not (all required set and no
+/// forbidden set)" is a disjunction: any single unmet requirement, or any single
+/// forbidden flag, shuts the gate on its own. Each is idempotent behind the
+/// sentinel.
+fn trap_gate_tick(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for t in plan.traps.iter().filter(|t| trap_is_gated(t)) {
+        let id = &t.safe;
+        for f in &t.requires_flags {
+            out.push(format!(
+                "execute if score #trapgate_{id} dw.sys matches 1 unless entity @a[scores={{{}=1..}}] run function {ns}:trap_gate_off_{id}",
+                plan::flag_score(f)
+            ));
+        }
+        for f in &t.forbids_flags {
+            out.push(format!(
+                "execute if score #trapgate_{id} dw.sys matches 1 if entity @a[scores={{{}=1..}}] run function {ns}:trap_gate_off_{id}",
+                plan::flag_score(f)
+            ));
+        }
+        let mut on = format!("execute unless score #trapgate_{id} dw.sys matches 1");
+        for f in &t.requires_flags {
+            on.push_str(&format!(
+                " if entity @a[scores={{{}=1..}}]",
+                plan::flag_score(f)
+            ));
+        }
+        for f in &t.forbids_flags {
+            on.push_str(&format!(
+                " unless entity @a[scores={{{}=1..}}]",
+                plan::flag_score(f)
+            ));
+        }
+        on.push_str(&format!(" run function {ns}:trap_gate_on_{id}"));
+        out.push(on);
+    }
+    out
+}
+
+/// The `trap_gate_on_<safe>` / `trap_gate_off_<safe>` pair per gated trap: flip the
+/// sentinel and write the trigger cell. `on` restores the authored block verbatim
+/// (state and all); `off` clears it to air, which is what the plate/tripwire cell
+/// is when the piece does not carry one.
+fn trap_gate_fns(plan: &Plan, hardware: &BTreeMap<String, String>) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for t in plan.traps.iter().filter(|t| trap_is_gated(t)) {
+        let id = &t.safe;
+        let c = t.trigger_cell;
+        let Some(block) = hardware.get(id) else {
+            continue;
+        };
+        out.push((
+            format!("trap_gate_on_{id}"),
+            lines(&[
+                format!("scoreboard players set #trapgate_{id} dw.sys 1"),
+                format!("setblock {} {} {} {block}", c[0], c[1], c[2]),
+            ]),
+        ));
+        out.push((
+            format!("trap_gate_off_{id}"),
+            lines(&[
+                format!("scoreboard players set #trapgate_{id} dw.sys 0"),
+                format!("setblock {} {} {} minecraft:air", c[0], c[1], c[2]),
+            ]),
+        ));
+    }
+    out
+}
+
 /// `setup_finish` commands for traps (spec-0011): fill each `dispense` trap's
 /// prefab dispenser with its static payload (`item replace block … container.0`,
 /// the same deterministic mechanism as a `collect` chest — no raw NBT), and summon
 /// the disarm affordance's interaction entity. The trap's *harm* needs no command:
 /// the plate/tripwire/trapped-chest → dispenser redstone is already in the prefab.
 /// Empty for a campaign with no traps → byte-identical.
-fn trap_setup(plan: &Plan) -> Vec<String> {
+fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<String> {
     let mut out = Vec::new();
     for t in &plan.traps {
+        // Seed a gated trap's hardware sentinel to match the world it starts in.
+        // Flags are unset at world start, so a `requires_flags` gate is shut and the
+        // authored trigger comes straight back out; a `forbids_flags`-only gate is
+        // open and the prefab's own block stands. Doing this at setup (rather than
+        // letting the tick converge) means there is never a tick in which the trap
+        // is live before its gate has been read.
+        if trap_is_gated(t) && gate_hardware.contains_key(&t.safe) {
+            let armed = t.requires_flags.is_empty();
+            out.push(format!(
+                "scoreboard players set #trapgate_{} dw.sys {}",
+                t.safe,
+                u8::from(armed)
+            ));
+            if !armed {
+                let c = t.trigger_cell;
+                out.push(format!("setblock {} {} {} minecraft:air", c[0], c[1], c[2]));
+            }
+        }
         // Fill the pre-wired dispenser with the declared payload.
         if let (Some(disp), Some((item, count))) = (t.dispenser, &t.payload) {
             out.push(format!(
@@ -4151,6 +4666,7 @@ fn trap_tick(plan: &Plan) -> Vec<String> {
             "execute as @e[tag=dw_trapdis_{id}] run data remove entity @s interaction"
         ));
     }
+    out.extend(trap_gate_tick(plan));
     out
 }
 
@@ -4159,7 +4675,7 @@ fn trap_tick(plan: &Plan) -> Vec<String> {
 /// `requires_flags` reads elsewhere see it) and **empty the dispenser** — the
 /// modeled, global disarm that actually stops a redstone-native dispense trap for
 /// everyone. Empty for a campaign with no disarmable traps.
-fn trap_fns(plan: &Plan) -> Vec<(String, String)> {
+fn trap_fns(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for t in &plan.traps {
         let Some(dis) = &t.disarm else {
@@ -4182,6 +4698,7 @@ fn trap_fns(plan: &Plan) -> Vec<(String, String)> {
         }
         out.push((format!("trap_disarm_{id}"), lines(&body)));
     }
+    out.extend(trap_gate_fns(plan, gate_hardware));
     out
 }
 
@@ -5035,7 +5552,14 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
         ));
     }
 
-    // campaign-complete advancement (granted by command)
+    // campaign-complete advancement (granted by command). Both player-visible
+    // strings are campaign-derived and therefore localized: `localize` rewrites the
+    // whole `Campaign` before emission, so whatever we read here is already in the
+    // target language. The description was a hardcoded `"You left the keep."` on
+    // every delve ever built — the reference keep-crawl's line, shipped verbatim to
+    // a shipwreck campaign and untranslatable in every sidecar because it never
+    // passed through a `Campaign` field at all.
+    let outro = campaign_outro(c);
     advs.push((
         "campaign_complete".to_string(),
         json!({
@@ -5043,7 +5567,7 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
             "display": {
                 "icon": { "id": "minecraft:iron_door" },
                 "title": c.world.content.title,
-                "description": "You left the keep.",
+                "description": outro,
                 "frame": "goal",
                 "show_toast": true,
                 "announce_to_chat": false,
@@ -5481,6 +6005,60 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
     }
     out.insert(
         format!("packtest-datapack/data/{ns}/test/v06_trap.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+    emit_trap_gate_packtest(plan, out);
+}
+
+/// v0.6 trap **flag-gate** PackTest (spec-0011): the gate physically removes and
+/// restores the trigger hardware, so the machine-checkable contract is the block
+/// itself — while the gate is shut the trigger cell is air (a player stepping there
+/// touches nothing), and when it opens the authored trigger is back, verbatim.
+///
+/// This is the assertion the feature never had: `requires_flags`/`forbids_flags`
+/// were validated and planned but read by no emission site at all, so the
+/// documented "inactive while the flag is set" behaviour simply did not exist.
+fn emit_trap_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    // The first trap gated by a single forbidding flag, which is the shape that can
+    // be driven from a test: set the flag → shut, clear it → open.
+    let Some(t) = plan
+        .traps
+        .iter()
+        .find(|t| t.requires_flags.is_empty() && t.forbids_flags.len() == 1)
+    else {
+        return;
+    };
+    let flag = plan::flag_score(&t.forbids_flags[0]);
+    let c = t.trigger_cell;
+    let (pin, sel) = pin_dummy("dw_t_tgate");
+    let mut b = packtest_header(&format!(
+        "{title}: trap `{}` is physically disarmed while `{}` is set (spec-0011)",
+        t.id, t.forbids_flags[0]
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(pin);
+    // Start from the armed world the setup leaves behind, then shut the gate by
+    // setting the flag and running the real emitted tick clause path.
+    b.push(format!("function {ns}:trap_gate_on_{}", t.safe));
+    b.push(format!("scoreboard players set {sel} {flag} 1"));
+    b.push(format!("function {ns}:trap_gate_off_{}", t.safe));
+    b.push(format!(
+        "execute store success score #tgate dw.sys if block {} {} {} minecraft:air",
+        c[0], c[1], c[2]
+    ));
+    b.push("assert score #tgate dw.sys matches 1".to_string());
+    // Clear the flag and re-open: the authored trigger must be back in the world.
+    b.push(format!("scoreboard players set {sel} {flag} 0"));
+    b.push(format!("function {ns}:trap_gate_on_{}", t.safe));
+    b.push(format!(
+        "execute store success score #tgate dw.sys if block {} {} {} minecraft:air",
+        c[0], c[1], c[2]
+    ));
+    b.push("assert score #tgate dw.sys matches 0".to_string());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/v06_trap_gate.mcfunction"),
         lines(&b).into_bytes(),
     );
 }

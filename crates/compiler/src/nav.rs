@@ -66,14 +66,14 @@ pub const DW_CHECKPOINT_UNSTANDABLE: &str = "DW0316";
 /// dead scenery. The whole pattern is "earn the far side the hard way, then open
 /// the door forever"; without a hard way there is nothing to earn.
 pub const DW_SHORTCUT_NO_LONG_ROUTE: &str = "DW0359";
-/// `DW0360`: a `shortcut` (spec-0016 §2) that **leaks** — opening its gate does not
+/// `DW0364`: a `shortcut` (spec-0016 §2) that **leaks** — opening its gate does not
 /// shorten the walk from the campaign entry to its own `unlock` affordance, so the
 /// unlock is not on the far side of anything. The pattern is "earn the far side
 /// the hard way, then open the door forever"; if the door is irrelevant to
 /// reaching the mechanism that opens it, the loop-back moment — which IS the
 /// design — never happens. The classic form is an `unlock` placed on the NEAR
 /// side of its own gate.
-pub const DW_SHORTCUT_NO_GAIN: &str = "DW0360";
+pub const DW_SHORTCUT_NO_GAIN: &str = "DW0364";
 /// `DW0327`: a `begin-stealth` (spec-0014) zone that is unstandable, or unreachable
 /// from the player's position at the beat that activates the stealth check.
 pub const DW_STEALTH_ZONE: &str = "DW0327";
@@ -214,6 +214,84 @@ impl MovePlan {
     }
 }
 
+/// The **world-generator ambient** the placed geometry sits in — what a column
+/// the compiler modelled nothing into actually contains in the delivered world
+/// (spec-0013 `horizon`).
+///
+/// The assembled model ([`crate::assembled`]) knows only cells a prefab, a socket
+/// seal or an edit wrote. Everything else is "absent", and what *absent* means is
+/// a property of the level generator, not of the content: under `horizon: void`
+/// an absent column is bottomless; under `horizon: ocean` it is the pinned
+/// bedrock/stone/water superflat, so there is no void anywhere in the world and
+/// stepping off the land is swimming. Boundary safety ([`verify_boundary_safety`])
+/// is the one proof whose premise is exactly this, so the ambient rides on the
+/// [`World`] rather than being re-derived (or, as before, silently assumed to be
+/// `Void`) at the call site.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum Ambient {
+    /// `horizon: void` (default/absent) — an empty superflat layer list. Every
+    /// column the content did not build is bottomless.
+    #[default]
+    Void,
+    /// `horizon: ocean` — the pinned bedrock/stone/water superflat ([`Sea`]).
+    Ocean(Sea),
+}
+
+/// The ocean horizon's ambient sea: a global water plane topping out at
+/// [`Sea::level`], solid ground from [`Sea::floor_top`] down, and air above —
+/// present in **every** column except those a placed piece overwrote
+/// ([`Sea::covered`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Sea {
+    /// Y of the topmost ambient water block (`crate::plan::SEA_LEVEL`, 62).
+    pub level: i32,
+    /// Y of the topmost ambient solid block — the sea floor
+    /// (`crate::plan::SEA_FLOOR_TOP_Y`, 54). Ambient water occupies
+    /// `floor_top+1 ..= level`.
+    pub floor_top: i32,
+    /// Inclusive world AABBs of every placed piece. `/place template` writes the
+    /// whole box (air included), so inside a box the piece decides what is there
+    /// and the ambient does not apply; outside every box (and below them —
+    /// pieces sit *on* the sea, so the water under an island base is ambient) it
+    /// does. Deterministic order: plan area order, entry piece first.
+    pub covered: Vec<([i32; 3], [i32; 3])>,
+}
+
+impl Sea {
+    /// Whether `c` falls inside a placed piece's AABB (piece-authored, so the
+    /// ambient says nothing about it).
+    fn covered(&self, c: [i32; 3]) -> bool {
+        self.covered
+            .iter()
+            .any(|(lo, hi)| (0..3).all(|a| lo[a] <= c[a] && c[a] <= hi[a]))
+    }
+
+    /// Whether `c` is ambient sea water: inside the generator's water layers and
+    /// not overwritten by a placed piece.
+    fn ambient_water(&self, c: [i32; 3]) -> bool {
+        c[1] > self.floor_top && c[1] <= self.level && !self.covered(c)
+    }
+}
+
+impl Ambient {
+    /// The ambient a campaign's `horizon` declares (spec-0013), with the placed
+    /// pieces of `plan` as the covered region.
+    pub fn of_plan(plan: &Plan) -> Ambient {
+        match plan.campaign.world.content.horizon {
+            Some(delvewright_dsl::Horizon::Ocean) => Ambient::Ocean(Sea {
+                level: crate::plan::SEA_LEVEL,
+                floor_top: crate::plan::SEA_FLOOR_TOP_Y,
+                covered: plan
+                    .areas
+                    .iter()
+                    .flat_map(|a| a.pieces.iter().map(|p| p.bbox()))
+                    .collect(),
+            }),
+            _ => Ambient::Void,
+        }
+    }
+}
+
 /// A collision/standability model of the assembled world (spec-0008 addendum),
 /// derived from the shared gravity-settled assembled-world model
 /// ([`crate::assembled`]): every placed prefab block, plus the solver's socket
@@ -245,6 +323,13 @@ pub struct World {
     tall: BTreeSet<[i32; 3]>,
     use_gates: BTreeSet<[i32; 3]>,
     flooded: BTreeSet<[i32; 3]>,
+    /// What the *unmodelled* columns contain (spec-0013 `horizon`). Defaults to
+    /// [`Ambient::Void`] — the pre-0.6 world and every synthetic test world —
+    /// and is set from the plan by [`World::from_plan`] /
+    /// [`World::with_ambient`]. Read only by [`verify_boundary_safety`]; it
+    /// deliberately does **not** feed the walkability sets, so routing,
+    /// standability and every other proof stay byte-identical.
+    ambient: Ambient,
 }
 
 impl World {
@@ -255,6 +340,7 @@ impl World {
     /// (task #42), not a phantom floor the model wrongly seats mobs on.
     pub fn from_plan(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Self {
         Self::from_occupancy(crate::assembled::assembled_occupancy(plan, structures))
+            .with_ambient(Ambient::of_plan(plan))
     }
 
     /// Build the walkability model from a collision-classified [`Occupancy`]
@@ -265,7 +351,16 @@ impl World {
             tall: occ.tall,
             use_gates: occ.use_gates,
             flooded: occ.flooded,
+            ambient: Ambient::Void,
         }
+    }
+
+    /// This world with its world-generator [`Ambient`] declared (spec-0013). The
+    /// occupancy sets are untouched — the ambient is a *premise*
+    /// ([`verify_boundary_safety`]), not geometry.
+    pub fn with_ambient(mut self, ambient: Ambient) -> Self {
+        self.ambient = ambient;
+        self
     }
 
     /// Build the occupancy model exactly like [`World::from_plan`], then add
@@ -300,6 +395,7 @@ impl World {
             tall: self.tall.clone(),
             use_gates: self.use_gates.clone(),
             flooded: self.flooded.clone(),
+            ambient: self.ambient.clone(),
         }
     }
 
@@ -320,6 +416,7 @@ impl World {
             tall,
             use_gates: BTreeSet::new(),
             flooded: self.flooded.clone(),
+            ambient: self.ambient.clone(),
         }
     }
 
@@ -344,6 +441,7 @@ impl World {
             tall: BTreeSet::new(),
             use_gates: BTreeSet::new(),
             flooded: BTreeSet::new(),
+            ambient: Ambient::Void,
         }
     }
 
@@ -355,6 +453,7 @@ impl World {
             tall: BTreeSet::new(),
             use_gates: BTreeSet::new(),
             flooded,
+            ambient: Ambient::Void,
         }
     }
 
@@ -1740,7 +1839,7 @@ fn verify_checkpoints(
 ///    far-side `unlock` affordance must still be walkable from the campaign
 ///    entry. That walk IS the long route. Without it the mechanism that opens the
 ///    shortcut sits behind the shortcut, and the gate is dead scenery.
-/// 2. [`DW_SHORTCUT_NO_GAIN`] (`DW0360`) — opening the gate must strictly shorten
+/// 2. [`DW_SHORTCUT_NO_GAIN`] (`DW0364`) — opening the gate must strictly shorten
 ///    that same walk. This is the anti-leak proof: it is what makes `unlock` a
 ///    FAR-side anchor rather than a label. An unlock on the near side of its own
 ///    gate measures identically sealed and open, and fails here.
@@ -2387,27 +2486,95 @@ pub fn verify_pov_cameras(world: &World, cameras: &[(String, [i32; 3])]) -> Resu
     Ok(())
 }
 
-/// `DW0322`: after a world edit, a reachable walkable cell borders a **void
-/// drop** — a horizontally adjacent column the player can step (or open a gate)
-/// into that has no support of any kind below, so one step off the proven
-/// ground falls out of the world (spec-0017 invariant 4). This is the guarantee
-/// the greenfield generator's bounding berm used to provide *physically*, made
-/// a checked invariant so an edit script is free to reshape the boundary into
-/// natural landform — as long as the landform still holds the line.
+/// `DW0322`: **boundary safety** (spec-0017 invariant 4) — after a world edit,
+/// the reachable walk region fails the "one step off the proven ground is
+/// survivable and recoverable" guarantee the greenfield generator's bounding
+/// berm used to provide *physically*. What that means is a property of the
+/// world-generator [`Ambient`], so the code names one rule stated per horizon:
+///
+/// * `horizon: void` — a reachable walkable cell borders a **void drop**: a
+///   horizontally adjacent column the player can step (or open a gate) into
+///   with no support of any kind below, so the step leaves the world.
+/// * `horizon: ocean` — a reachable walkable cell borders **water the player
+///   cannot get out of**: the pinned superflat puts bedrock under every column,
+///   so nothing can fall out of an ocean world and the void premise is vacuous;
+///   the real hazard the ocean horizon introduced (`plan::OCEAN_BASE_Y`) is
+///   *stranding* — a player who ends up in the sea with no shoreline to climb
+///   back onto is out of the delve just as permanently as one who fell out of a
+///   void world. See [`verify_boundary_safety`] for the exact model.
 pub const DW_EDIT_BORDERS_VOID: &str = "DW0322";
 
-/// Assert no reachable walkable cell borders a void drop (spec-0017 boundary
+/// How many individual violations a `DW0322` report names before summarising the
+/// remainder as a count. A boundary failure is systemic by nature — one stripped
+/// berm is hundreds of exposed columns — and hundreds of identical lines are
+/// noise, not information (the `DW0354` aggregation precedent, `edit::check_support`).
+/// Aborting at the first one instead hid the *scale*, which is the single most
+/// useful fact about the failure: "one cell" and "the whole coastline" call for
+/// completely different fixes.
+const BOUNDARY_LIST_LIMIT: usize = 6;
+
+/// How far past the placed geometry the ocean-stranding search window extends
+/// before the sea counts as **open sea** (see [`verify_boundary_safety`]). Any
+/// margin ≥ 1 works: the ring beyond the window is untouched ambient water in
+/// every direction, so every body that reaches it is one and the same sea.
+const OPEN_SEA_MARGIN: i32 = 2;
+
+/// Assert the reachable walk region's boundary is safe (spec-0017 boundary
 /// safety; [`DW_EDIT_BORDERS_VOID`]). `starts` are the reachability roots (the
-/// plan's resolved anchors — the same roots the relight pass floods from).
+/// plan's resolved anchors — the same roots the relight pass floods from). Run
+/// after every edit batch — never on the no-edit path, whose worlds provide this
+/// physically.
 ///
-/// A neighbour column is a void drop when the player could enter it — its feet
-/// and head cells are clear (a closed fence gate counts as enterable: opening
-/// it is an adventure-legal right-click) — and **nothing anywhere below** would
-/// arrest the fall: no solid, no 1.5-tall barrier top, no gate top, no water.
-/// A deep drop onto real geometry is legal (that is falling, not leaving the
-/// world); only a bottomless column is an error. Run after every edit batch —
-/// never on the no-edit path, whose worlds provide this physically.
+/// The premise is the world's [`Ambient`] — what a column the compiler modelled
+/// nothing into actually contains — and the rule follows from it:
+///
+/// **`Ambient::Void`** (unchanged, byte-identical semantics). A neighbour column
+/// is a void drop when the player could enter it — its feet and head cells are
+/// clear (a closed fence gate counts as enterable: opening it is an
+/// adventure-legal right-click) — and **nothing anywhere below** would arrest
+/// the fall: no solid, no 1.5-tall barrier top, no gate top, no water. A deep
+/// drop onto real geometry is legal (that is falling, not leaving the world);
+/// only a bottomless column is an error.
+///
+/// **`Ambient::Ocean`** — the *stranding* invariant. The superflat's bedrock
+/// floor makes every column fall-arresting, so the question is never "can the
+/// player fall out" but "can the player get back". The model:
+///
+/// 1. **Entering.** A reachable walkable cell `c` puts the player in the sea if
+///    some horizontally adjacent column is enterable at `c`'s level (feet + head
+///    clear of solids and 1.5-tall barriers — water does *not* block walking in)
+///    and that column is open, between `c`'s level and the sea surface, all the
+///    way to ambient water. Whether the player walks in, wades in or falls from a
+///    cliff, they end up afloat: vanilla buoyancy puts a swimmer at the surface
+///    plane, `sea.level`.
+/// 2. **The sea.** A surface cell (`y == sea.level`) is swimmable when it is not
+///    solid/tall and is either ambient water or authored water (a lagoon at sea
+///    level is physically the same plane). Surface cells are 4-connected into
+///    **bodies**; a body that reaches the edge of the search window is the open
+///    sea, and all such bodies are one (the ring beyond the window is untouched
+///    ambient water). Connectivity is taken on the surface plane only — a diver
+///    might swim under a land bridge into another body, which this model
+///    deliberately does not count on.
+/// 3. **Climbing out.** A body is escapable when some surface cell of it is
+///    horizontally adjacent to a **proven reachable walkable** cell whose feet
+///    are at `sea.level` (wade out of the shallows onto a rim one block below the
+///    waterline) or at `sea.level + 1` (the canonical beach: land flush with the
+///    sea surface). A ledge higher than that is a wall to a swimmer, and a
+///    boat/blocks are not available in adventure mode.
+///
+/// A body the player can enter and cannot climb out of is the violation.
 pub fn verify_boundary_safety(world: &World, starts: &[[i32; 3]]) -> Result<(), NavError> {
+    let reachable = world.reachable_walkable(starts);
+    match &world.ambient {
+        Ambient::Void => boundary_void(world, &reachable),
+        Ambient::Ocean(sea) => boundary_ocean(world, &reachable, sea),
+    }
+}
+
+/// Boundary safety under [`Ambient::Void`]: no reachable walkable cell may
+/// border a bottomless column. Every violation is collected (see
+/// [`BOUNDARY_LIST_LIMIT`]) so one report shows the scale of the breach.
+fn boundary_void(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Result<(), NavError> {
     // Per-column lowest fall-arresting cell: solid, tall barrier, use-gate, or
     // flooded — anything vanilla stops a falling player on (or in).
     let mut col_min: BTreeMap<(i32, i32), i32> = BTreeMap::new();
@@ -2419,7 +2586,10 @@ pub fn verify_boundary_safety(world: &World, starts: &[[i32; 3]]) -> Result<(), 
                 .or_insert(c[1]);
         }
     }
-    for cell in world.reachable_walkable(starts) {
+    // (edge cell, void column entered) pairs, in deterministic BTreeSet order.
+    let mut hits: Vec<([i32; 3], [i32; 3])> = Vec::new();
+    let mut columns: BTreeSet<(i32, i32)> = BTreeSet::new();
+    for &cell in reachable {
         for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
             let n = [cell[0] + dx, cell[1], cell[2] + dz];
             let head = [n[0], n[1] + 1, n[2]];
@@ -2436,21 +2606,236 @@ pub fn verify_boundary_safety(world: &World, starts: &[[i32; 3]]) -> Result<(), 
                 .get(&(n[0], n[2]))
                 .is_some_and(|&lowest| lowest < n[1]);
             if !has_support {
-                return Err(NavError {
-                    code: DW_EDIT_BORDERS_VOID,
-                    message: format!(
-                        "boundary safety (spec-0017): reachable walkable cell {cell:?} borders a \
-                         void drop at {n:?} — one step off the proven ground falls out of the \
-                         world. The edit stripped the physical boundary here: extend the terrain \
-                         under the exposed edge (fill/morph a slope or outcrop below {n:?}) or \
-                         reinstate a barrier shape; do NOT weaken this check or reroute the \
-                         path to sidestep it"
-                    ),
-                });
+                hits.push((cell, n));
+                columns.insert((n[0], n[2]));
             }
         }
     }
-    Ok(())
+    if hits.is_empty() {
+        return Ok(());
+    }
+    let mut listing = String::new();
+    for (cell, n) in hits.iter().take(BOUNDARY_LIST_LIMIT) {
+        listing.push_str(&format!("\n  - {cell:?} → void drop at {n:?}"));
+    }
+    if hits.len() > BOUNDARY_LIST_LIMIT {
+        listing.push_str(&format!(
+            "\n  - … and {} more",
+            hits.len() - BOUNDARY_LIST_LIMIT
+        ));
+    }
+    let first = hits[0].1;
+    Err(NavError {
+        code: DW_EDIT_BORDERS_VOID,
+        message: format!(
+            "boundary safety (spec-0017): {} reachable walkable cell(s) border a void drop over \
+             {} distinct column(s) — one step off the proven ground falls out of the world:{}\n\
+             The edit stripped the physical boundary here: extend the terrain under the exposed \
+             edge (fill/morph a slope or outcrop below {first:?}) or reinstate a barrier shape; \
+             do NOT weaken this check or reroute the path to sidestep it",
+            hits.len(),
+            columns.len(),
+            listing,
+        ),
+    })
+}
+
+/// One 4-connected body of sea-surface cells, plus what the walk region does
+/// with it (see [`verify_boundary_safety`]'s ocean model).
+struct SeaBody {
+    /// Reaches the search-window edge ⇒ it is the open sea, and every other
+    /// open body is the same water.
+    open: bool,
+    /// Some surface cell of the body is adjacent to a reachable walkable cell at
+    /// `sea.level` or `sea.level + 1`.
+    escapable: bool,
+    /// Reachable walkable cells from which the player enters this body, in
+    /// deterministic order.
+    entries: BTreeSet<[i32; 3]>,
+    /// A representative surface cell (the smallest, for a stable message).
+    sample: [i32; 3],
+    /// Surface cells in the body.
+    size: usize,
+}
+
+/// Boundary safety under [`Ambient::Ocean`]: the stranding invariant. See
+/// [`verify_boundary_safety`] for the model this implements.
+fn boundary_ocean(
+    world: &World,
+    reachable: &BTreeSet<[i32; 3]>,
+    sea: &Sea,
+) -> Result<(), NavError> {
+    let level = sea.level;
+    let Some(([min_x, min_z], [max_x, max_z])) = ocean_window(world, sea) else {
+        return Ok(()); // nothing placed: open sea everywhere, nothing to strand
+    };
+    let w = (max_x - min_x + 1) as usize;
+    let d = (max_z - min_z + 1) as usize;
+    let idx = |x: i32, z: i32| (x - min_x) as usize * d + (z - min_z) as usize;
+    let inside = |x: i32, z: i32| (min_x..=max_x).contains(&x) && (min_z..=max_z).contains(&z);
+    let blocked = |c: [i32; 3]| world.solid.contains(&c) || world.tall.contains(&c);
+    let swimmable = |x: i32, z: i32| {
+        let c = [x, level, z];
+        !blocked(c) && (world.flooded.contains(&c) || sea.ambient_water(c))
+    };
+
+    // --- label the sea-surface bodies (deterministic scan + BFS) -------------
+    const NONE: u32 = u32::MAX;
+    let mut label = vec![NONE; w * d];
+    let mut bodies: Vec<SeaBody> = Vec::new();
+    for x in min_x..=max_x {
+        for z in min_z..=max_z {
+            if label[idx(x, z)] != NONE || !swimmable(x, z) {
+                continue;
+            }
+            let id = bodies.len() as u32;
+            let mut body = SeaBody {
+                open: false,
+                escapable: false,
+                entries: BTreeSet::new(),
+                sample: [x, level, z],
+                size: 0,
+            };
+            let mut queue = std::collections::VecDeque::from([(x, z)]);
+            label[idx(x, z)] = id;
+            while let Some((cx, cz)) = queue.pop_front() {
+                body.size += 1;
+                if cx == min_x || cx == max_x || cz == min_z || cz == max_z {
+                    body.open = true;
+                }
+                for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let (nx, nz) = (cx + dx, cz + dz);
+                    if !inside(nx, nz) || label[idx(nx, nz)] != NONE || !swimmable(nx, nz) {
+                        continue;
+                    }
+                    label[idx(nx, nz)] = id;
+                    queue.push_back((nx, nz));
+                }
+            }
+            bodies.push(body);
+        }
+    }
+    if bodies.is_empty() {
+        return Ok(());
+    }
+
+    // --- where the walk region touches the water ----------------------------
+    for &cell in reachable {
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            let n = [cell[0] + dx, cell[1], cell[2] + dz];
+            // Climb-out: standing at (or one above) the waterline beside water.
+            if (cell[1] == level || cell[1] == level + 1) && inside(n[0], n[2]) {
+                let id = label[idx(n[0], n[2])];
+                if id != NONE {
+                    bodies[id as usize].escapable = true;
+                }
+            }
+            // Entry: an enterable neighbour column that is open all the way to
+            // the sea surface. Water does not block walking in.
+            if blocked(n) || blocked([n[0], n[1] + 1, n[2]]) || !inside(n[0], n[2]) {
+                continue;
+            }
+            let id = label[idx(n[0], n[2])];
+            if id == NONE {
+                continue;
+            }
+            let (lo, hi) = if n[1] > level {
+                (level + 1, n[1])
+            } else {
+                (n[1], level)
+            };
+            if (lo..=hi).any(|y| blocked([n[0], y, n[2]])) {
+                continue;
+            }
+            bodies[id as usize].entries.insert(cell);
+        }
+    }
+
+    // Every body that reaches the window edge is the same open sea: one climb-out
+    // anywhere on the coast serves all of them.
+    let open_escapable = bodies.iter().any(|b| b.open && b.escapable);
+    let stranding: Vec<&SeaBody> = bodies
+        .iter()
+        .filter(|b| !b.entries.is_empty() && !b.escapable && !(b.open && open_escapable))
+        .collect();
+    if stranding.is_empty() {
+        return Ok(());
+    }
+
+    let shores: usize = stranding.iter().map(|b| b.entries.len()).sum();
+    let mut listing = String::new();
+    let mut listed = 0usize;
+    for b in &stranding {
+        for cell in b.entries.iter() {
+            if listed == BOUNDARY_LIST_LIMIT {
+                break;
+            }
+            listing.push_str(&format!(
+                "\n  - {cell:?} → the sea at {:?} ({})",
+                b.sample,
+                if b.open { "open sea" } else { "enclosed water" }
+            ));
+            listed += 1;
+        }
+    }
+    if shores > listed {
+        listing.push_str(&format!("\n  - … and {} more", shores - listed));
+    }
+    let first = stranding[0]
+        .entries
+        .iter()
+        .next()
+        .copied()
+        .unwrap_or_default();
+    Err(NavError {
+        code: DW_EDIT_BORDERS_VOID,
+        message: format!(
+            "boundary safety (spec-0017, `horizon: ocean`): {shores} reachable walkable cell(s) \
+             let the player into {} body/bodies of water ({} surface cell(s)) with NO way back \
+             ashore — nothing in an ocean world falls out of the world, but a swimmer who cannot \
+             climb out is stranded there for the rest of the delve:{}\n\
+             A climb-out is a proven-walkable cell at y={level} (a rim one block under the \
+             waterline: wade out) or y={} (land flush with the sea surface) beside the water. \
+             Give the shoreline near {first:?} such a step — a beach, a bank, a ladder-free \
+             landing — or wall the edge off so the player cannot enter the water there; do NOT \
+             weaken this check",
+            stranding.len(),
+            stranding.iter().map(|b| b.size).sum::<usize>(),
+            listing,
+            level + 1,
+        ),
+    })
+}
+
+/// The x/z window the ocean stranding search runs over: every placed piece and
+/// every modelled cell, inflated by [`OPEN_SEA_MARGIN`]. `None` when the world is
+/// completely empty. Beyond the window the ambient sea is uniform in every
+/// direction, so a body that reaches the edge is the open sea.
+fn ocean_window(world: &World, sea: &Sea) -> Option<([i32; 2], [i32; 2])> {
+    let mut lo = [i32::MAX; 2];
+    let mut hi = [i32::MIN; 2];
+    let mut note = |x: i32, z: i32| {
+        lo[0] = lo[0].min(x);
+        lo[1] = lo[1].min(z);
+        hi[0] = hi[0].max(x);
+        hi[1] = hi[1].max(z);
+    };
+    for (bmin, bmax) in &sea.covered {
+        note(bmin[0], bmin[2]);
+        note(bmax[0], bmax[2]);
+    }
+    for set in [&world.solid, &world.tall, &world.use_gates, &world.flooded] {
+        for c in set.iter() {
+            note(c[0], c[2]);
+        }
+    }
+    if lo[0] > hi[0] {
+        return None;
+    }
+    Some((
+        [lo[0] - OPEN_SEA_MARGIN, lo[1] - OPEN_SEA_MARGIN],
+        [hi[0] + OPEN_SEA_MARGIN, hi[1] + OPEN_SEA_MARGIN],
+    ))
 }
 
 #[cfg(test)]
@@ -2531,6 +2916,217 @@ mod tests {
         }
         let world = World::from_solid_cells(solid);
         verify_boundary_safety(&world, &[[0, 64, 0]]).expect("deep drops onto land are legal");
+    }
+
+    // -----------------------------------------------------------------------
+    // DW0322 aggregation + the ocean horizon's stranding invariant
+    // -----------------------------------------------------------------------
+
+    /// `DW0322` reports **every** violation of a run, not the first: a stripped
+    /// boundary is systemic, and the scale of the breach is the most useful fact
+    /// about it. The bare 3×3 platform exposes 12 edge/void pairs over 12 columns
+    /// (4 corners × 2 + 4 edges × 1); the message counts all of them and lists
+    /// [`BOUNDARY_LIST_LIMIT`] before summarising the rest.
+    #[test]
+    fn boundary_safety_aggregates_every_void_drop_dw0322() {
+        let mut solid = BTreeSet::new();
+        for x in 0..3 {
+            for z in 0..3 {
+                solid.insert([x, 63, z]);
+            }
+        }
+        let world = World::from_solid_cells(solid);
+        let err = verify_boundary_safety(&world, &[[1, 64, 1]]).expect_err("edge borders void");
+        assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
+        assert!(
+            err.message.contains("12 reachable walkable cell(s)"),
+            "counts every violation, not just the first:\n{}",
+            err.message
+        );
+        assert!(
+            err.message.contains("12 distinct column(s)"),
+            "counts the exposed columns:\n{}",
+            err.message
+        );
+        assert_eq!(
+            err.message.matches("void drop at").count(),
+            BOUNDARY_LIST_LIMIT,
+            "listing is bounded:\n{}",
+            err.message
+        );
+        assert!(
+            err.message.contains("and 6 more"),
+            "summarises the tail:\n{}",
+            err.message
+        );
+    }
+
+    /// The `ocean` horizon's ambient: sea level 62, sea floor 54 (the pinned
+    /// superflat `crate::plan::SEA_LEVEL` / `SEA_FLOOR_TOP_Y`), with `covered`
+    /// standing in for the placed pieces' AABBs.
+    fn ocean(solid: BTreeSet<[i32; 3]>, flooded: BTreeSet<[i32; 3]>, covered: Vec<Bbox>) -> World {
+        World::from_solid_and_flooded(solid, flooded).with_ambient(Ambient::Ocean(Sea {
+            level: 62,
+            floor_top: 54,
+            covered,
+        }))
+    }
+
+    /// An inclusive world AABB, as `Sea::covered` carries it.
+    type Bbox = ([i32; 3], [i32; 3]);
+
+    /// A `size`×`size` island of one solid plate whose top block is at `top`,
+    /// inside a piece AABB spanning y 60..=`top`.
+    fn island(size: i32, top: i32) -> (BTreeSet<[i32; 3]>, Vec<Bbox>) {
+        let mut solid = BTreeSet::new();
+        for x in 0..size {
+            for z in 0..size {
+                for y in 60..=top {
+                    solid.insert([x, y, z]);
+                }
+            }
+        }
+        (solid, vec![([0, 60, 0], [size - 1, top, size - 1])])
+    }
+
+    /// Ocean horizon (spec-0013), the false-premise fix: the pinned superflat
+    /// puts bedrock under *every* column, so a coastline is not a void drop —
+    /// the identical geometry is `DW0322` under `horizon: void` and clean under
+    /// `horizon: ocean`, because its shore is a canonical beach (land top flush
+    /// with the sea surface, walk plane at `sea_level + 1`).
+    #[test]
+    fn boundary_safety_ocean_beach_is_not_a_void_drop_dw0322() {
+        let (solid, covered) = island(8, 62);
+        let voidish = World::from_solid_cells(solid.clone());
+        let err = verify_boundary_safety(&voidish, &[[3, 63, 3]])
+            .expect_err("under `void` the same coast IS a void drop");
+        assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
+        assert!(err.message.contains("void drop"));
+
+        let sea = ocean(solid, BTreeSet::new(), covered);
+        verify_boundary_safety(&sea, &[[3, 63, 3]])
+            .expect("an ocean beach is swimming, not falling out of the world");
+    }
+
+    /// The ocean horizon's replacement invariant: a sheer-cliff coast with no
+    /// climb-out anywhere strands the player who steps off it, and that is
+    /// `DW0322` — with every shore cell aggregated, not the first one.
+    #[test]
+    fn boundary_safety_ocean_sheer_cliff_strands_the_player_dw0322() {
+        let (solid, covered) = island(8, 70);
+        let world = ocean(solid, BTreeSet::new(), covered);
+        let err = verify_boundary_safety(&world, &[[3, 71, 3]])
+            .expect_err("a sheer coast cannot be re-climbed");
+        assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
+        assert!(
+            err.message.contains("NO way back ashore"),
+            "names the stranding hazard:\n{}",
+            err.message
+        );
+        assert!(
+            err.message.contains("open sea"),
+            "names the water body:\n{}",
+            err.message
+        );
+        // 8×8 plateau: 28 distinct rim cells touch the water (a corner counts
+        // once — the report is per shore *cell*, not per cell/direction pair).
+        assert!(
+            err.message.contains("28 reachable walkable cell(s)"),
+            "aggregates every shore cell:\n{}",
+            err.message
+        );
+        assert!(
+            err.message.contains("and 22 more"),
+            "bounded listing + tail count:\n{}",
+            err.message
+        );
+    }
+
+    /// The other admitted shoreline profile: a rim one block **under** the
+    /// waterline (walk plane at `sea_level`, wade out of the shallows). Both it
+    /// and the flush beach pass; a lip two blocks above the surface does not.
+    #[test]
+    fn boundary_safety_ocean_admits_a_rim_below_the_waterline() {
+        let (solid, covered) = island(8, 61);
+        let world = ocean(solid, BTreeSet::new(), covered);
+        verify_boundary_safety(&world, &[[3, 62, 3]]).expect("wade out of the shallows");
+
+        // One block higher than the flush beach: the swimmer faces a wall.
+        let (solid, covered) = island(8, 64);
+        let world = ocean(solid, BTreeSet::new(), covered);
+        let err = verify_boundary_safety(&world, &[[3, 65, 3]])
+            .expect_err("a lip 2 above the surface is not a climb-out");
+        assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
+    }
+
+    /// Stranding is proven **per body of water**, not globally: an island whose
+    /// outer coast is a perfect beach still fails if it contains an inner pool
+    /// the player can walk into and not climb out of. A global "is there a
+    /// climb-out anywhere" test would pass this world.
+    #[test]
+    fn boundary_safety_ocean_enclosed_pool_is_checked_separately_dw0322() {
+        // Outer plate: top 62 (flush beach, walk plane 63) over 0..=12.
+        let mut solid = BTreeSet::new();
+        for x in 0..=12 {
+            for z in 0..=12 {
+                for y in 60..=62 {
+                    solid.insert([x, y, z]);
+                }
+            }
+        }
+        // Inner plateau one step up (top 63, walk plane 64) over 3..=9, with a
+        // 3×3 shaft at 5..=7 down to a pool at sea level.
+        let mut flooded = BTreeSet::new();
+        for x in 3..=9 {
+            for z in 3..=9 {
+                if (5..=7).contains(&x) && (5..=7).contains(&z) {
+                    solid.remove(&[x, 62, z]);
+                    flooded.insert([x, 62, z]);
+                } else {
+                    solid.insert([x, 63, z]);
+                }
+            }
+        }
+        let world = ocean(solid, flooded, vec![([0, 60, 0], [12, 63, 12])]);
+        let err = verify_boundary_safety(&world, &[[1, 63, 1]])
+            .expect_err("the inner pool has 2-high walls all round");
+        assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
+        assert!(
+            err.message.contains("enclosed water"),
+            "names the enclosed body, not the (escapable) open sea:\n{}",
+            err.message
+        );
+        assert!(
+            !err.message.contains("open sea"),
+            "the outer beach is proven fine and must not be reported:\n{}",
+            err.message
+        );
+        assert!(
+            err.message.contains("1 body/bodies of water"),
+            "exactly one failing body:\n{}",
+            err.message
+        );
+
+        // Lower the inner plateau to the outer datum and the pool is flush with
+        // its bank: the player steps straight back out.
+        let mut solid = BTreeSet::new();
+        for x in 0..=12 {
+            for z in 0..=12 {
+                for y in 60..=62 {
+                    solid.insert([x, y, z]);
+                }
+            }
+        }
+        let mut flooded = BTreeSet::new();
+        for x in 5..=7 {
+            for z in 5..=7 {
+                solid.remove(&[x, 62, z]);
+                flooded.insert([x, 62, z]);
+            }
+        }
+        let world = ocean(solid, flooded, vec![([0, 60, 0], [12, 62, 12])]);
+        verify_boundary_safety(&world, &[[1, 63, 1]])
+            .expect("a flush pool is a puddle, not a trap");
     }
 
     /// A non-talk-to visited position (test convenience for `route_visited`).
@@ -3621,15 +4217,15 @@ mod tests {
 
     /// The classic leak: the `unlock` sits on the NEAR side of its own gate, so
     /// the player can pull it without ever earning the far side — and opening the
-    /// gate measurably changes nothing about reaching it. `DW0360`.
+    /// gate measurably changes nothing about reaching it. `DW0364`.
     #[test]
-    fn shortcut_whose_unlock_is_on_the_near_side_is_dw0360() {
+    fn shortcut_whose_unlock_is_on_the_near_side_is_dw0364() {
         let world = shortcut_world(12, 9, 65, 4, 1, Some(10));
         // Entry z=1, wall z=4: an unlock at z=2 is on the entry's own side.
         let sc = shortcut(1, 65, 4, [5, 65, 2]);
         let err = verify_shortcuts(&world, &[sc], Some([1, 65, 1]))
             .expect_err("an unlock the gate does not stand in front of is a leak");
-        assert_eq!(err.code, DW_SHORTCUT_NO_GAIN); // DW0360
+        assert_eq!(err.code, DW_SHORTCUT_NO_GAIN); // DW0364
         assert!(
             err.message.contains("leaks"),
             "the message must name the leak: {}",
@@ -3643,6 +4239,7 @@ mod tests {
             id: "trap/darts".to_string(),
             safe: "darts".to_string(),
             trigger: TrapTrigger::PressurePlate,
+            at_anchor: "anchor/trap".to_string(),
             trigger_cell: cell,
             dispenser: None,
             payload: None,
