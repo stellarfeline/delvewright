@@ -94,6 +94,72 @@ fn build_actor_hello_world() -> BuildOutput {
     out
 }
 
+/// hello-world reshaped into the island's sealed-handoff beat (round-6 QA): the
+/// keeper deferred, a puppet whose arrival despawns itself and spawns the
+/// keeper, a `close-gate` on the door, and a strike trigger on the keeper's
+/// stand — so the `v06_arrive_handoff` and `v04_strike_talk` templates are
+/// emitted and swept by the batch-model rules below.
+fn build_handoff_hello_world() -> BuildOutput {
+    let src = common::hello_world_dir();
+    let dst =
+        std::env::temp_dir().join(format!("dw-packtest-batch-handoff-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dst);
+    std::fs::create_dir_all(&dst).unwrap();
+    for f in common::STAGE_FILES {
+        std::fs::copy(src.join(f), dst.join(f)).unwrap();
+    }
+    let np = dst.join("npcs.json");
+    let n = std::fs::read_to_string(&np)
+        .unwrap()
+        .replacen("\"0.2.0\"", "\"0.6.0\"", 1)
+        .replace(
+            "\"base_entity\": \"minecraft:villager\",",
+            "\"base_entity\": \"minecraft:villager\",\n        \"deferred\": true,",
+        );
+    assert!(n.contains("deferred"), "npcs.json patch applied");
+    std::fs::write(&np, n).unwrap();
+    let search = r#"            {
+              "type": "open-gate",
+              "anchor": "anchor/door"
+            }"#;
+    let replace = r#"            { "type": "open-gate", "anchor": "anchor/door" },
+            { "type": "spawn-actor", "actor": "actor/giant" },
+            { "type": "move-actor", "actor": "actor/giant", "to_anchor": "anchor/exit",
+              "on_arrive": [ { "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" },
+                             { "type": "spawn-npc", "npc": "npc/keeper" } ] }"#;
+    let triggers = r#"    ],
+    "triggers": [
+      { "id": "trigger/wake", "at": "anchor/keeper-stand", "on": { "on": "strike" },
+        "once": true,
+        "effects": [ { "type": "narrate", "style": "chat", "text": "He stirs." } ] }
+    ],
+    "actors": [
+      { "id": "actor/giant", "entity": "minecraft:zombie", "name": "The Sleeper", "anchor": "anchor/keeper-stand", "facing": "east" }
+    ]
+  }
+}"#;
+    let qp = dst.join("quests.json");
+    let q = std::fs::read_to_string(&qp)
+        .unwrap()
+        .replace("\"dsl_version\": \"0.2.0\"", "\"dsl_version\": \"0.6.0\"")
+        .replace(search, replace)
+        // Seal the door only at quest end — after the critical path has walked
+        // through it (a close-gate across the forced path is DW0311).
+        .replace(
+            "\"on_complete\": [\n          {\n            \"type\": \"campaign-complete\"\n          }\n        ]",
+            "\"on_complete\": [\n          { \"type\": \"close-gate\", \"anchor\": \"anchor/door\" },\n          { \"type\": \"campaign-complete\" }\n        ]",
+        )
+        .replace("    ]\n  }\n}", triggers);
+    assert!(
+        q.contains("spawn-npc") && q.contains("close-gate"),
+        "quests.json patch applied"
+    );
+    std::fs::write(&qp, q).unwrap();
+    let out = build_dir(&dst);
+    let _ = std::fs::remove_dir_all(&dst);
+    out
+}
+
 /// The generated PackTest templates of a build: `(file name, body)`.
 fn templates(out: &BuildOutput) -> Vec<(String, String)> {
     out.iter()
@@ -189,7 +255,23 @@ fn packtest_templates_are_interleaving_independent() {
             build_dir(&common::compiler_fixtures_dir().join("v06-checkpoints")),
         ),
         ("hello-world+actors", build_actor_hello_world()),
+        ("hello-world+handoff", build_handoff_hello_world()),
     ];
+
+    // The round-6 handoff/strike-talk family must really be in scope.
+    for t in ["v06_arrive_handoff", "v04_strike_talk", "v04_strike_npc"] {
+        assert!(
+            suites
+                .iter()
+                .find(|(s, _)| *s == "hello-world+handoff")
+                .map(|(_, out)| out)
+                .expect("handoff suite present")
+                .contains_key(&format!(
+                    "packtest-datapack/data/hello-world/test/{t}.mcfunction"
+                )),
+            "handoff template {t} emitted"
+        );
+    }
 
     // The actor family (the round-6 island flake) must really be in scope.
     for t in [

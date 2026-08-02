@@ -228,6 +228,60 @@ fn malformed_trigger_id_is_dw0194() {
 }
 
 // ---------------------------------------------------------------------------
+// DW0350 — a `use` trigger anchored where an NPC stands (round-6 island QA:
+// two interaction hitboxes in one cell race for the same right-click, and the
+// losing entity is silently dead — dialogue soft-lock class)
+// ---------------------------------------------------------------------------
+
+/// The trigger body decides the verdict: `use` on the keeper's own anchor is the
+/// collision; `strike` there is the sanctioned form (the NPC's hitbox carries
+/// the trigger's tag — no second entity, nothing to race).
+fn quests_trigger_on_keeper_stand(on: &str) -> String {
+    QUESTS_BAD_TRIGGER.replace(
+        r#""id": "not-a-valid-trigger-id",
+        "at": "anchor/exit",
+        "on": { "on": "strike" },"#,
+        &format!(
+            r#""id": "trigger/nudge",
+        "at": "anchor/keeper-stand",
+        "on": {{ "on": "{on}" }},"#
+        ),
+    )
+}
+
+#[test]
+fn use_trigger_on_an_npc_anchor_is_dw0350() {
+    let quests = quests_trigger_on_keeper_stand("use");
+    assert!(
+        quests.contains("anchor/keeper-stand"),
+        "fixture patch applied"
+    );
+    let diags = check_campaign(&campaign_with(
+        &valid_npcs_v04(),
+        &quests,
+        &valid_dialogue_v04(),
+    ));
+    assert!(
+        diags.iter().any(|d| d.code == "DW0350"),
+        "a `use` trigger on an NPC's anchor must be DW0350: {diags:#?}"
+    );
+}
+
+#[test]
+fn strike_trigger_on_an_npc_anchor_is_not_dw0350() {
+    let quests = quests_trigger_on_keeper_stand("strike");
+    let diags = check_campaign(&campaign_with(
+        &valid_npcs_v04(),
+        &quests,
+        &valid_dialogue_v04(),
+    ));
+    assert!(
+        !diags.iter().any(|d| d.code == "DW0350"),
+        "`strike` on an NPC's anchor is the sanctioned shared-hitbox form: {diags:#?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // DW0195 — a `talk-to` targets an NPC despawned by a prerequisite quest
 // ---------------------------------------------------------------------------
 
