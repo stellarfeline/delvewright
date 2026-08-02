@@ -29,7 +29,7 @@ pub use envelope::{
 };
 pub use ids::{
     ActorId, AnchorId, AreaId, CampaignId, ClassId, DialogueId, EditBatchId, FlagId, NpcId,
-    ObjectiveId, PoolId, PrefabId, QuestId, RegionId, TriggerId, WaveId,
+    ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId, TriggerId, WaveId,
 };
 pub use l10n::{
     ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, MARKER_SIGIL, ScreenNarrate, SoundRef,
@@ -48,9 +48,9 @@ pub use stages::{
     DialogueEffect, DialogueNode, DialogueOption, EnvTrigger, Facing, Fixture, Horizon, KitItem,
     Lethality, MobAttributes, MobEffect, MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin,
     NpcsContent, Objective, Persona, Pieces, PlannedQuest, Prop, Quest, QuestEffect,
-    QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep, ShotStyle, SkinModel,
-    SoundAt, StealthZone, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerOn,
-    Wave, WaveMob, WorldContent, WorldTime, WorldWeather,
+    QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep, Shortcut, ShotStyle,
+    SkinModel, SoundAt, StealthZone, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger,
+    TriggerOn, Wave, WaveMob, WorldContent, WorldTime, WorldWeather,
 };
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,

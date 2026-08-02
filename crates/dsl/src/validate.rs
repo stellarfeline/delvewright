@@ -74,6 +74,7 @@ pub fn validate_campaign_with(
     if is_v06(c.quests.dsl_version.as_str()) {
         v06_checks(c, items, anchors, entities, &mut d);
         v06_trap_checks(c, items, anchors, &mut d);
+        shortcut_checks(c, anchors, &mut d);
     }
     // DSL v0.6 stage 7 (spec-0017): the map-editor edit script. Structural
     // checks only — frame/region *resolution* happens at build time against the
@@ -1233,6 +1234,14 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
         if !c.quests.content.traps.is_empty() {
             res(d, "/content/traps".to_string(), "the `traps` section");
         }
+        // Shortcut doors (spec-0016 §2) are a v0.6 stage-5 surface too.
+        if !c.quests.content.shortcuts.is_empty() {
+            res(
+                d,
+                "/content/shortcuts".to_string(),
+                "the `shortcuts` section",
+            );
+        }
         // Wave-mob `equipment` (task #65) is a v0.6 stage-5 surface: reserved
         // before 0.6.0 (the field defaults to absent, so an earlier campaign
         // that uses none is byte-identical).
@@ -1657,7 +1666,7 @@ fn check_no_nested_sequence(effs: &[QuestEffect], path: &str, d: &mut Vec<Diagno
 }
 
 /// Reject a `carrier: "one"` `give-item` inside a **scheduler-only** bundle
-/// (`DW0357`, spec-0018).
+/// (`DW0371`, spec-0018).
 ///
 /// `carrier: "one"` means "hand this one quest prop to the player whose action
 /// earned it". A `sequence` step and a `move-npc`/`move-actor` `on_arrive` are
@@ -4623,5 +4632,133 @@ fn world_edits_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mut Vec<Diag
                 }
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// spec-0016 §2 — shortcut doors
+// ---------------------------------------------------------------------------
+
+/// Validate the stage-5 `shortcuts` section (spec-0016 §2).
+///
+/// Two rules, two codes:
+/// * `DW0371` — the declaration must resolve: a well-formed, unique
+///   `shortcut/<id>`, a `gate` and an `unlock` some area's prefab provides, and
+///   the two must be different anchors (the mechanism sits on the FAR side, not
+///   in the doorway it opens).
+/// * `DW0372` — no `close-gate` anywhere may target a gate a shortcut owns. A
+///   shortcut opens permanently; making that structural is cheaper and safer than
+///   trusting every author to never reach for the re-seal verb. `close-gate` on
+///   any other gate (the point-of-no-return beat) is untouched.
+///
+/// Anchor resolution stays lenient for pool areas the compiler resolves later —
+/// the same policy as the trap and trigger checks.
+fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
+    let quests = &c.quests.content;
+    if quests.shortcuts.is_empty() {
+        return;
+    }
+    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
+    let mut has_pool_area = false;
+    for a in &c.world.content.areas {
+        if let Some(prefab) = &a.prefab {
+            if let Some(set) = anchors.anchors_for(prefab) {
+                known_anchor.extend(set.iter().map(String::as_str));
+            }
+        } else if a.prefab_pool.is_some() {
+            has_pool_area = true;
+        }
+    }
+    let resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
+
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for (i, sc) in quests.shortcuts.iter().enumerate() {
+        if !sc.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::SHORTCUT_INVALID,
+                "quests",
+                format!("/content/shortcuts/{i}/id"),
+                format!(
+                    "malformed shortcut id `{}` — shortcut ids must be lowercase kebab-case with \
+                     the `shortcut/` prefix (e.g. `shortcut/keep-lift`)",
+                    sc.id
+                ),
+            ));
+        }
+        if !seen.insert(sc.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::SHORTCUT_INVALID,
+                "quests",
+                format!("/content/shortcuts/{i}/id"),
+                format!(
+                    "duplicate shortcut id `{}` — rename one so every shortcut id is unique",
+                    sc.id
+                ),
+            ));
+        }
+        for (field, anchor) in [("gate", &sc.gate), ("unlock", &sc.unlock)] {
+            if !resolvable(anchor.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::SHORTCUT_INVALID,
+                    "quests",
+                    format!("/content/shortcuts/{i}/{field}"),
+                    format!(
+                        "shortcut `{field}` anchor `{anchor}` is not provided by any area's \
+                         prefab — use an anchor a prefab exposes (anchor names come from prefab \
+                         metadata; do NOT invent one)"
+                    ),
+                ));
+            }
+        }
+        if sc.gate == sc.unlock {
+            d.push(Diagnostic::error(
+                codes::SHORTCUT_INVALID,
+                "quests",
+                format!("/content/shortcuts/{i}/unlock"),
+                format!(
+                    "shortcut `{}` unlocks at its own gate anchor `{}` — the mechanism belongs on \
+                     the FAR side of the door you have not opened yet, which is the entire point \
+                     of the pattern (spec-0016 §2)",
+                    sc.id, sc.gate
+                ),
+            ));
+        }
+    }
+
+    // `close-gate` may never target a shortcut gate: permanence is structural.
+    let owned: BTreeSet<&str> = quests.shortcuts.iter().map(|s| s.gate.as_str()).collect();
+    let report = |path: String, anchor: &str, d: &mut Vec<Diagnostic>| {
+        d.push(Diagnostic::error(
+            codes::SHORTCUT_RESEALED,
+            "quests",
+            path,
+            format!(
+                "`close-gate` targets `{anchor}`, a gate a `shortcut` owns — a shortcut opens \
+                 PERMANENTLY (spec-0016 §2), so nothing may re-seal it. Use a different gate for \
+                 the point-of-no-return beat, or drop the shortcut declaration."
+            ),
+        ));
+    };
+    for (qi, q) in quests.quests.iter().enumerate() {
+        for_each_effect_deep(q, |path, eff| {
+            if let Some(a) = eff.close_gate_anchor()
+                && owned.contains(a.as_str())
+            {
+                report(format!("/content/quests/{qi}/{path}/anchor"), a.as_str(), d);
+            }
+        });
+    }
+    for (ti, t) in quests.triggers.iter().enumerate() {
+        for_each_trigger_effect_deep(t, |path, eff| {
+            if let Some(a) = eff.close_gate_anchor()
+                && owned.contains(a.as_str())
+            {
+                report(
+                    format!("/content/triggers/{ti}/{path}/anchor"),
+                    a.as_str(),
+                    d,
+                );
+            }
+        });
     }
 }

@@ -16,10 +16,12 @@ use crate::registry::PrefabRegistry;
 /// its prefab metadata (or is not a gate region), so the compiler cannot seal it.
 pub const DW_GATE_NO_BLOCK: &str = "DW0343";
 
-/// Validate every `close-gate` effect (DSL v0.6) references a gate anchor that
-/// declares a fill `block` (`DW0343`). Descends every nested effect list
-/// (`sequence` steps / lifecycle bundles) so a `close-gate` buried in a timeline is
-/// checked too.
+/// Validate every verb that needs a gate anchor's **fill block** references an
+/// anchor that declares one (`DW0343`): `close-gate` (which fills the region back
+/// in) and a stage-5 `shortcut` (spec-0016 §2, whose unlock clears the region
+/// `replace <block>` and whose gate is sealed from world-load by that very
+/// block). Descends every nested effect list (`sequence` steps / lifecycle
+/// bundles) so a `close-gate` buried in a timeline is checked too.
 pub fn check_close_gates(c: &Campaign, prefabs: &PrefabRegistry) -> Vec<Diagnostic> {
     let mut d = Vec::new();
     let diag = |anchor: &str, path: String| -> Option<Diagnostic> {
@@ -33,11 +35,11 @@ pub fn check_close_gates(c: &Campaign, prefabs: &PrefabRegistry) -> Vec<Diagnost
             "quests",
             path,
             format!(
-                "`close-gate` anchor `{anchor}` declares no fill `block` in its prefab metadata \
-                 (or is not a gate region), so the compiler cannot seal it — `close-gate` fills \
-                 the gate region with the anchor's declared block (the dual of `open-gate`). \
-                 Declare a `block` on the gate anchor in the prefab metadata, or remove the \
-                 `close-gate`."
+                "gate anchor `{anchor}` declares no fill `block` in its prefab metadata (or is \
+                 not a gate region), so the compiler cannot fill or clear it — `close-gate` fills \
+                 the region with the anchor's declared block (the dual of `open-gate`), and a \
+                 `shortcut` clears exactly that block on unlock. Declare a `block` on the gate \
+                 anchor in the prefab metadata, or remove the verb."
             ),
         ))
     };
@@ -69,6 +71,14 @@ pub fn check_close_gates(c: &Campaign, prefabs: &PrefabRegistry) -> Vec<Diagnost
         for (i, eff) in t.effects.iter().enumerate() {
             let base = format!("/content/triggers/{ti}/effects/{i}");
             scan(eff, &base, &mut d);
+        }
+    }
+    // spec-0016 §2: a shortcut's gate is cleared `replace <block>` on unlock and is
+    // sealed by that same block at world-load, so it carries the identical
+    // fill-block obligation as `close-gate`.
+    for (si, sc) in c.quests.content.shortcuts.iter().enumerate() {
+        if let Some(diagnostic) = diag(sc.gate.as_str(), format!("/content/shortcuts/{si}/gate")) {
+            d.push(diagnostic);
         }
     }
     d
