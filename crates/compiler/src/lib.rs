@@ -29,6 +29,7 @@ pub mod atmos;
 pub mod blocking;
 pub mod camera;
 pub mod commands;
+pub mod continuity;
 pub mod creator;
 pub mod emit;
 pub mod gates;

@@ -127,6 +127,8 @@ pub struct TrapPlan {
     pub disarm: Option<TrapDisarmPlan>,
     /// Flags that gate the trap being active.
     pub requires_flags: Vec<String>,
+    /// Flags whose being set deactivates the trap (DSL v0.6 negative gate).
+    pub forbids_flags: Vec<String>,
 }
 
 /// A gate open/close firing (DSL v0.6), collected in deterministic content order.
@@ -336,6 +338,8 @@ pub struct OptionPlan {
     pub sets_flags: Vec<String>,
     /// Flags that must be set for this option to be shown (DSL v0.4).
     pub requires_flags: Vec<String>,
+    /// Flags whose being set HIDES this option (DSL v0.6 negative gate).
+    pub forbids_flags: Vec<String>,
     /// World-time cuts this option fires (DSL v0.5 dialogue `set-time`), in order.
     pub sets_time: Vec<delvewright_dsl::WorldTime>,
     /// Weather cuts this option fires (DSL v0.5 dialogue `set-weather`), in order.
@@ -1143,6 +1147,11 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
                     .iter()
                     .map(|f| f.as_str().to_string())
                     .collect(),
+                forbids_flags: opt
+                    .forbids_flags
+                    .iter()
+                    .map(|f| f.as_str().to_string())
+                    .collect(),
                 sets_time,
                 sets_weather,
                 sets_checkpoints,
@@ -1717,6 +1726,11 @@ fn collect_traps(
             disarm,
             requires_flags: t
                 .requires_flags
+                .iter()
+                .map(|f| f.as_str().to_string())
+                .collect(),
+            forbids_flags: t
+                .forbids_flags
                 .iter()
                 .map(|f| f.as_str().to_string())
                 .collect(),

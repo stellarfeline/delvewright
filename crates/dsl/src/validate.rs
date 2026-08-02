@@ -920,32 +920,92 @@ fn reserved_v06(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// quest effect (`on_objective_complete` / `on_complete`) or environment-trigger
 /// effect that carries a non-empty `requires_flags` under a pre-0.6 quests stage
 /// is reserved (`DW0141`). `campaign-complete` cannot carry the field at all.
+///
+/// `forbids_flags` (the negative gate) is likewise a v0.6 surface **everywhere
+/// it is accepted** — objectives, environment triggers, quest/trigger effects,
+/// and dialogue options (the dialogue-stage form is gated on the dialogue
+/// stage's version, mirroring how dialogue `requires_flags` was v0.4-gated).
 fn reserved_v06_effect_flags(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    if !is_v06(c.dialogue.dsl_version.as_str()) {
+        for (i, t) in c.dialogue.content.dialogues.iter().enumerate() {
+            for (j, node) in t.nodes.iter().enumerate() {
+                for (k, opt) in node.options.iter().enumerate() {
+                    if !opt.forbids_flags.is_empty() {
+                        d.push(Diagnostic::error(
+                            codes::RESERVED,
+                            "dialogue",
+                            format!("/content/dialogues/{i}/nodes/{j}/options/{k}/forbids_flags"),
+                            "dialogue option `forbids_flags` (negative flag gating) requires \
+                             dsl_version 0.6.0 — raise this stage's `dsl_version` to 0.6.0, or \
+                             remove the field"
+                                .to_string(),
+                        ));
+                    }
+                }
+            }
+        }
+    }
     if is_v06(c.quests.dsl_version.as_str()) {
         return;
     }
-    let msg = "effect `requires_flags` (per-effect flag gating) requires dsl_version 0.6.0 — raise \
-               this stage's `dsl_version` to 0.6.0, or remove the field";
+    let req_msg = "effect `requires_flags` (per-effect flag gating) requires dsl_version 0.6.0 — \
+                   raise this stage's `dsl_version` to 0.6.0, or remove the field";
+    let fbd_msg = "`forbids_flags` (negative flag gating) requires dsl_version 0.6.0 — raise this \
+                   stage's `dsl_version` to 0.6.0, or remove the field";
     for (i, q) in c.quests.content.quests.iter().enumerate() {
+        for (j, obj) in q.objectives.iter().enumerate() {
+            if !obj.forbids_flags().is_empty() {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("/content/quests/{i}/objectives/{j}/forbids_flags"),
+                    fbd_msg.to_string(),
+                ));
+            }
+        }
         for_each_effect(q, |path, eff| {
             if !eff.requires_flags().is_empty() {
                 d.push(Diagnostic::error(
                     codes::RESERVED,
                     "quests",
                     format!("/content/quests/{i}/{path}/requires_flags"),
-                    msg.to_string(),
+                    req_msg.to_string(),
+                ));
+            }
+            if !eff.forbids_flags().is_empty() {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("/content/quests/{i}/{path}/forbids_flags"),
+                    fbd_msg.to_string(),
                 ));
             }
         });
     }
     for (i, t) in c.quests.content.triggers.iter().enumerate() {
+        if !t.forbids_flags.is_empty() {
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "quests",
+                format!("/content/triggers/{i}/forbids_flags"),
+                fbd_msg.to_string(),
+            ));
+        }
         for (m, eff) in t.effects.iter().enumerate() {
             if !eff.requires_flags().is_empty() {
                 d.push(Diagnostic::error(
                     codes::RESERVED,
                     "quests",
                     format!("/content/triggers/{i}/effects/{m}/requires_flags"),
-                    msg.to_string(),
+                    req_msg.to_string(),
+                ));
+            }
+            if !eff.forbids_flags().is_empty() {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("/content/triggers/{i}/effects/{m}/forbids_flags"),
+                    fbd_msg.to_string(),
                 ));
             }
         }
@@ -1068,6 +1128,11 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
             }
             if eff.cutscene_multi_shot() {
                 res(d, format!("{path_base}/shots"), "cutscene `shots`");
+            }
+            // `move-npc.on_arrive` is an additive v0.6 field on the v0.4
+            // `move-npc` verb, exactly like `cutscene.look_at` above.
+            if eff.move_npc_on_arrive().is_some() {
+                res(d, format!("{path_base}/on_arrive"), "move-npc `on_arrive`");
             }
         };
         for (i, q) in c.quests.content.quests.iter().enumerate() {
@@ -1457,26 +1522,31 @@ fn for_each_trigger_effect_deep(
 
 /// Recursively visit every effect in `effs`, descending into every nested effect
 /// list ([`QuestEffect::nested_effect_lists`]: `sequence` steps, `set-checkpoint`
-/// `on_respawn`, `begin-stealth` `on_caught`, `move-actor` `on_arrive`).
+/// `on_respawn`, `begin-stealth` `on_caught`, `move-actor` / `move-npc`
+/// `on_arrive`).
 fn walk_effects_deep(effs: &[QuestEffect], f: &mut dyn FnMut(&QuestEffect)) {
     for e in effs {
         e.visit_deep(f);
     }
 }
 
-/// True if `e` is (or transitively reaches, via a `move-actor` `on_arrive`) a
-/// `sequence` — the recursion `DW0329` forbids inside another sequence's steps.
+/// True if `e` is (or transitively reaches, via a `move-actor` / `move-npc`
+/// `on_arrive`) a `sequence` — the recursion `DW0329` forbids inside another
+/// sequence's steps.
 fn reaches_sequence(e: &QuestEffect) -> bool {
     match e {
         QuestEffect::Sequence { .. } => true,
-        QuestEffect::MoveActor { on_arrive, .. } => on_arrive.iter().any(reaches_sequence),
+        QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
+            on_arrive.iter().any(reaches_sequence)
+        }
         _ => false,
     }
 }
 
 /// Reject a `sequence` nested inside another `sequence` (`DW0329`). Recurses into a
-/// `move-actor` `on_arrive` (a sequence there is legal — not yet inside a sequence)
-/// but not into an already-flagged sequence's steps (avoids double-reporting).
+/// `move-actor` / `move-npc` `on_arrive` (a sequence there is legal — not yet
+/// inside a sequence) but not into an already-flagged sequence's steps (avoids
+/// double-reporting).
 fn check_no_nested_sequence(effs: &[QuestEffect], path: &str, d: &mut Vec<Diagnostic>) {
     for e in effs {
         match e {
@@ -1498,7 +1568,7 @@ fn check_no_nested_sequence(effs: &[QuestEffect], path: &str, d: &mut Vec<Diagno
                     }
                 }
             }
-            QuestEffect::MoveActor { on_arrive, .. } => {
+            QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
                 check_no_nested_sequence(on_arrive, path, d);
             }
             _ => {}
@@ -2215,6 +2285,24 @@ fn v03_checks(
                     ));
                 }
             }
+            // v0.6: `forbids_flags` gets the same unknown-flag treatment as
+            // `requires_flags` — a never-produced flag can never suppress anything,
+            // so the reference is dead (a typo until proven otherwise).
+            for (m, f) in obj.forbids_flags().iter().enumerate() {
+                if !declared_flags.contains(f.as_str()) {
+                    d.push(Diagnostic::error(
+                        codes::FLAG_UNKNOWN,
+                        "quests",
+                        format!("/content/quests/{i}/objectives/{j}/forbids_flags/{m}"),
+                        format!(
+                            "objective `forbids_flags` references flag `{f}`, which no `set-flag` \
+                             effect ever produces — the gate can never suppress anything; add the \
+                             producing `set-flag {{ flag: \"{f}\" }}` effect, or correct the flag \
+                             name"
+                        ),
+                    ));
+                }
+            }
         }
 
         for_each_effect_deep(q, |path, eff| {
@@ -2260,10 +2348,27 @@ fn v03_checks(
                     ));
                 }
             }
+            // v0.6: per-effect `forbids_flags` — same unknown-flag treatment.
+            for (n, f) in eff.forbids_flags().iter().enumerate() {
+                if !declared_flags.contains(f.as_str()) {
+                    d.push(Diagnostic::error(
+                        codes::FLAG_UNKNOWN,
+                        "quests",
+                        format!("/content/quests/{i}/{path}/forbids_flags/{n}"),
+                        format!(
+                            "effect `forbids_flags` references flag `{f}`, which no `set-flag` \
+                             effect ever produces — the gate can never suppress anything; add the \
+                             producing `set-flag {{ flag: \"{f}\" }}` effect, or correct the flag \
+                             name"
+                        ),
+                    ));
+                }
+            }
         });
     }
 
-    // v0.6: environment-trigger effect `requires_flags` resolution (DW0172).
+    // v0.6: environment-trigger effect `requires_flags` / `forbids_flags`
+    // resolution (DW0172).
     for (i, t) in quests.triggers.iter().enumerate() {
         for_each_trigger_effect_deep(t, |path, eff| {
             for (n, f) in eff.requires_flags().iter().enumerate() {
@@ -2276,6 +2381,21 @@ fn v03_checks(
                             "effect `requires_flags` references flag `{f}`, which no `set-flag` \
                              effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
                              earlier, or correct the flag name"
+                        ),
+                    ));
+                }
+            }
+            for (n, f) in eff.forbids_flags().iter().enumerate() {
+                if !declared_flags.contains(f.as_str()) {
+                    d.push(Diagnostic::error(
+                        codes::FLAG_UNKNOWN,
+                        "quests",
+                        format!("/content/triggers/{i}/{path}/forbids_flags/{n}"),
+                        format!(
+                            "effect `forbids_flags` references flag `{f}`, which no `set-flag` \
+                             effect ever produces — the gate can never suppress anything; add the \
+                             producing `set-flag {{ flag: \"{f}\" }}` effect, or correct the flag \
+                             name"
                         ),
                     ));
                 }
@@ -2498,6 +2618,22 @@ fn v04_checks(
                         "trigger `requires_flags` references flag `{f}`, which no `set-flag` \
                          effect ever produces — add a `set-flag {{ flag: \"{f}\" }}` effect \
                          somewhere, or correct the flag name"
+                    ),
+                ));
+            }
+        }
+        // v0.6: trigger-level `forbids_flags` — same unknown-flag treatment as
+        // `requires_flags` (DW0172).
+        for (m, f) in t.forbids_flags.iter().enumerate() {
+            if !flags.contains(f.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::FLAG_UNKNOWN,
+                    "quests",
+                    format!("/content/triggers/{i}/forbids_flags/{m}"),
+                    format!(
+                        "trigger `forbids_flags` references flag `{f}`, which no `set-flag` \
+                         effect ever produces — the gate can never suppress anything; add the \
+                         producing `set-flag {{ flag: \"{f}\" }}` effect, or correct the flag name"
                     ),
                 ));
             }
@@ -2773,6 +2909,21 @@ fn v06_trap_checks(
                     format!(
                         "trap `requires_flags` references flag `{f}`, which no `set-flag` effect or \
                          trap disarm ever produces — add a producer or correct the flag name"
+                    ),
+                ));
+            }
+        }
+        // Trap `forbids_flags` — same unknown-flag treatment (DW0172).
+        for (m, f) in t.forbids_flags.iter().enumerate() {
+            if !flags.contains(f.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::FLAG_UNKNOWN,
+                    "quests",
+                    format!("/content/traps/{i}/forbids_flags/{m}"),
+                    format!(
+                        "trap `forbids_flags` references flag `{f}`, which no `set-flag` effect or \
+                         trap disarm ever produces — the gate can never suppress anything; add a \
+                         producer or correct the flag name"
                     ),
                 ));
             }
@@ -3208,7 +3359,36 @@ fn dialogue_v04(c: &Campaign, flags: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
             }
         }
     }
-    // Per-NPC: objectives completed by an UNGATED option in that npc's tree.
+    // v0.6: dialogue option `forbids_flags` — same unknown-flag treatment as
+    // `requires_flags` (DW0172).
+    for (i, tree) in c.dialogue.content.dialogues.iter().enumerate() {
+        for (j, node) in tree.nodes.iter().enumerate() {
+            for (k, opt) in node.options.iter().enumerate() {
+                for (m, f) in opt.forbids_flags.iter().enumerate() {
+                    if !flags.contains(f.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::FLAG_UNKNOWN,
+                            "dialogue",
+                            format!(
+                                "/content/dialogues/{i}/nodes/{j}/options/{k}/forbids_flags/{m}"
+                            ),
+                            format!(
+                                "dialogue option `forbids_flags` references flag `{f}`, which no \
+                                 `set-flag` effect ever produces — the gate can never suppress \
+                                 anything; add the producing `set-flag {{ flag: \"{f}\" }}` \
+                                 effect, or correct the flag name"
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    // Per-NPC: objectives completed by an UNGATED option in that npc's tree. An
+    // option gated either way — `requires_flags` (hidden until set) or, v0.6,
+    // `forbids_flags` (hidden once set) — counts as gated: the static analysis
+    // does no temporal reasoning about which flags end up set, so any
+    // conditionally-visible option may be unavailable exactly when needed.
     let mut ungated_completes: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     let mut any_completes: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for tree in &c.dialogue.content.dialogues {
@@ -3221,7 +3401,7 @@ fn dialogue_v04(c: &Campaign, flags: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
                             .entry(npc)
                             .or_default()
                             .insert(objective.as_str());
-                        if opt.requires_flags.is_empty() {
+                        if opt.requires_flags.is_empty() && opt.forbids_flags.is_empty() {
                             ungated_completes
                                 .entry(npc)
                                 .or_default()
@@ -3249,8 +3429,8 @@ fn dialogue_v04(c: &Campaign, flags: &BTreeSet<&str>, d: &mut Vec<Diagnostic>) {
                         format!(
                             "`talk-to` objective `{id}` has no ungated completing dialogue option \
                              in npc `{npc}`'s tree — every completing option is `requires_flags`- \
-                             gated, so it can deadlock the moment it activates; keep at least one \
-                             completing option with no `requires_flags`"
+                             or `forbids_flags`-gated, so it can be unavailable the moment it is \
+                             needed; keep at least one completing option with no flag gate"
                         ),
                     ));
                 }

@@ -290,6 +290,13 @@ fn validate_stage(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> Result
             diags.extend(delvewright_compiler::gates::check_close_gates(
                 &campaign, &prefabs,
             ));
+            // NPC location-continuity lint (DW0351). Advisory tier — a warning
+            // names a staging discontinuity (an NPC materializing or vanishing
+            // away from where it was last staged) but never fails the run:
+            // narrative cover is a legitimate authorial answer.
+            diags.extend(delvewright_compiler::continuity::check_npc_continuity(
+                &campaign,
+            ));
             print_diags(&diags, json);
             Ok(Validated {
                 campaign,

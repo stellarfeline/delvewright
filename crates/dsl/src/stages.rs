@@ -514,6 +514,13 @@ pub struct DialogueOption {
     /// option cannot make a critical-path node unreachable (`DW0191`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requires_flags: Vec<FlagId>,
+    /// Negative flag gate (DSL v0.6, reserved `DW0141` earlier): the option is
+    /// **hidden** (and its `/trigger` handler inert) while ANY listed flag is set
+    /// for the player — the dual of `requires_flags`. A `forbids_flags`-gated
+    /// option counts as *gated* for the `DW0191` deadlock guard: it can be
+    /// suppressed at any point, so it cannot be the only completing path.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forbids_flags: Vec<FlagId>,
     /// Effects fired when this option is chosen.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<DialogueEffect>,
@@ -791,6 +798,10 @@ pub struct Trap {
     /// [`EnvTrigger::requires_flags`]). Default empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requires_flags: Vec<FlagId>,
+    /// Negative flag gate (DSL v0.6): the trap is considered inactive while ANY
+    /// listed flag is set (mirrors [`EnvTrigger::forbids_flags`]). Default empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forbids_flags: Vec<FlagId>,
 }
 
 impl Trap {
@@ -917,6 +928,15 @@ pub struct EnvTrigger {
     /// Flags that must be set before the trigger can fire (DSL v0.4).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requires_flags: Vec<FlagId>,
+    /// Negative flag gate (DSL v0.6, reserved `DW0141` earlier): the trigger is
+    /// **suppressed** while ANY listed flag is set (by any player — flags are
+    /// campaign state). The dual of `requires_flags`, so an "armed between two
+    /// story beats" trigger needs no re-arm plumbing: e.g. a strike-the-giant
+    /// retaliation trigger with `requires_flags: [flag/sealed]` and
+    /// `forbids_flags: [flag/asleep]` arms when the cave seals and stands down
+    /// the moment the wake beat takes over.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forbids_flags: Vec<FlagId>,
     /// Fire at most once (default `true`, mirroring objective completion). Set
     /// `false` to allow re-firing every time the condition is met.
     #[serde(default = "default_true")]
@@ -1128,6 +1148,11 @@ pub enum Objective {
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Negative flag gate (DSL v0.6, reserved `DW0141` earlier): the
+        /// objective is suppressed (cannot activate or complete) while ANY listed
+        /// flag is set for the player — the dual of `requires_flags`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
         /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
         /// bot should traverse sneaking (sprint disabled). Emitted into
         /// `critical-path.json` as `sneak: true` on the step. Purely a harness
@@ -1155,6 +1180,11 @@ pub enum Objective {
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Negative flag gate (DSL v0.6, reserved `DW0141` earlier): the
+        /// objective is suppressed (cannot activate or complete) while ANY listed
+        /// flag is set for the player — the dual of `requires_flags`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
         /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
         /// bot should traverse sneaking (sprint disabled). Emitted into
         /// `critical-path.json` as `sneak: true` on the step. Purely a harness
@@ -1180,6 +1210,11 @@ pub enum Objective {
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Negative flag gate (DSL v0.6, reserved `DW0141` earlier): the
+        /// objective is suppressed (cannot activate or complete) while ANY listed
+        /// flag is set for the player — the dual of `requires_flags`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
         /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
         /// bot should traverse sneaking (sprint disabled). Emitted into
         /// `critical-path.json` as `sneak: true` on the step. Purely a harness
@@ -1209,6 +1244,11 @@ pub enum Objective {
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Negative flag gate (DSL v0.6, reserved `DW0141` earlier): the
+        /// objective is suppressed (cannot activate or complete) while ANY listed
+        /// flag is set for the player — the dual of `requires_flags`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
         /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
         /// bot should traverse sneaking (sprint disabled). Emitted into
         /// `critical-path.json` as `sneak: true` on the step. Purely a harness
@@ -1244,6 +1284,11 @@ pub enum Objective {
         /// Flags that must be set before this objective activates (v0.3).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Negative flag gate (DSL v0.6, reserved `DW0141` earlier): the
+        /// objective is suppressed (cannot activate or complete) while ANY listed
+        /// flag is set for the player — the dual of `requires_flags`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
         /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
         /// bot should traverse sneaking (sprint disabled). Emitted into
         /// `critical-path.json` as `sneak: true` on the step. Purely a harness
@@ -1439,6 +1484,18 @@ impl Objective {
         }
     }
 
+    /// The negative flag gate (DSL v0.6): flags whose being set **suppresses**
+    /// this objective. The dual of [`Objective::requires_flags`].
+    pub fn forbids_flags(&self) -> &[FlagId] {
+        match self {
+            Objective::TalkTo { forbids_flags, .. }
+            | Objective::ReachAnchor { forbids_flags, .. }
+            | Objective::Kill { forbids_flags, .. }
+            | Objective::Collect { forbids_flags, .. }
+            | Objective::Interact { forbids_flags, .. } => forbids_flags,
+        }
+    }
+
     /// The bot stealth hint (DSL v0.4): traverse this leg sneaking.
     pub fn stealth(&self) -> bool {
         match self {
@@ -1487,7 +1544,13 @@ impl Objective {
 /// `give-item`, `set-flag` and `spawn-wave` are **implemented in DSL v0.3**; in a
 /// v0.2 campaign they are still reserved and rejected with `DW0141` (see
 /// [`QuestEffect::v03_effect`]).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+///
+/// `Debug` is hand-written (see the impl below the enum) because it is a
+/// **stable content-key rendering** — the compiler's `sequence_key` hashes
+/// `{steps:?}` to name `seq_<hash>` functions, so an effect that uses none of
+/// the v0.6 `forbids_flags` / `move-npc on_arrive` fields must render
+/// byte-identically to the pre-addition enum (the [`CameraShot`] rule).
+#[derive(Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum QuestEffect {
     /// Opens a prefab-declared gate (one-way).
@@ -1497,6 +1560,10 @@ pub enum QuestEffect {
         /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
     },
     /// Seals a prefab-declared gate — the physical dual of `open-gate` (DSL v0.6):
     /// fills the gate anchor's region with the block the anchor declares (e.g. the
@@ -1512,6 +1579,10 @@ pub enum QuestEffect {
         /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
     },
     /// Marks the campaign complete (final advancement + credits). Terminal — not
     /// flag-gatable (gating the campaign's own completion is a deadlock footgun),
@@ -1529,6 +1600,10 @@ pub enum QuestEffect {
         /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
     },
     /// Sets a campaign flag, enabling flag-gated objectives (v0.3).
     SetFlag {
@@ -1537,6 +1612,10 @@ pub enum QuestEffect {
         /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
     },
     /// Spawns a stage-5 wave's mobs at its anchor (v0.3).
     SpawnWave {
@@ -1545,6 +1624,10 @@ pub enum QuestEffect {
         /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
     },
     /// Narrates a player-visible line (DSL v0.4, spec-0008 §3). `text` enters the
     /// l10n key inventory like any player-visible string.
@@ -1560,6 +1643,10 @@ pub enum QuestEffect {
         /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
     },
     /// Sets a block at an anchor (DSL v0.4, spec-0008 §2). General form of a prop
     /// placement. Block id validated against the pinned 1.21.11 block registry;
@@ -1573,6 +1660,10 @@ pub enum QuestEffect {
         /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
     },
     /// Despawns an NPC and its interaction hitbox (DSL v0.4, spec-0008 §5).
     DespawnNpc {
@@ -1581,6 +1672,10 @@ pub enum QuestEffect {
         /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
     },
     /// Moves an NPC (and its interaction hitbox in lockstep) to an anchor (DSL
     /// v0.4, spec-0008 §5 + addendum). The compiler plans a **collision-safe walked
@@ -1595,9 +1690,23 @@ pub enum QuestEffect {
         /// Optional travel speed in blocks/tick (defaults to ~0.15).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         speed: Option<f64>,
+        /// Effects fired once the NPC arrives at the destination cell (DSL v0.6,
+        /// reserved `DW0141` earlier) — exact parity with [`QuestEffect::MoveActor`]
+        /// `on_arrive`: same arrival detection (the walk driver's final tick), same
+        /// execution context, and every deep effect walker recurses into it via
+        /// [`QuestEffect::nested_effect_lists`]. This is what lets content gate a
+        /// beat on walk *completion* instead of fire-and-forgetting the walk (e.g.
+        /// `on_arrive: [set-flag]` so a cutscene waits for the NPC to reach its
+        /// mark).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        on_arrive: Vec<QuestEffect>,
         /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
     },
     /// Plays a scripted camera cutscene (DSL v0.4 addendum). Per player: save
     /// gamemode+position, spectator, then dolly two co-located cameras along a
@@ -1640,6 +1749,10 @@ pub enum QuestEffect {
         /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
     },
     /// Cuts the dimension-global world time to a new state (DSL v0.5, spec-0010).
     /// Instantaneous (vanilla has no gradual transition); the state persists
@@ -1650,6 +1763,10 @@ pub enum QuestEffect {
         /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
     },
     /// Cuts the dimension-global weather to a new state (DSL v0.5, spec-0010).
     /// Instantaneous; persists because the weather cycle is frozen by sealing.
@@ -1659,6 +1776,10 @@ pub enum QuestEffect {
         /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
     },
     /// Plays a vanilla sound event, positionally or per-player (DSL v0.6,
     /// spec-0014). `sound` is validated against the vendored pinned-1.21.11
@@ -1681,6 +1802,10 @@ pub enum QuestEffect {
         /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
     },
     /// Deals damage to the acting player(s) (DSL v0.6): the real consequence a
     /// stealth `on_caught` or a souls-style beat needs — vanilla's `/damage`
@@ -1708,6 +1833,10 @@ pub enum QuestEffect {
         /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
     },
     /// Sets the party-wide respawn checkpoint (DSL v0.6, spec-0012). Emits
     /// `spawnpoint @a` at the anchor cell and mirrors the coords into
@@ -1801,6 +1930,266 @@ pub enum QuestEffect {
         /// Timeline steps; each fires its `effects` at `at_ticks` from the start.
         steps: Vec<SequenceStep>,
     },
+}
+
+/// `Debug` is hand-written because it is a **stable content-key rendering**: the
+/// compiler's `sequence_key` (FNV over `{steps:?}`, where a step's `effects` are
+/// `QuestEffect`s) names generated `seq_<hash>` functions from it, so an effect
+/// that uses none of the v0.6 additions (`forbids_flags` anywhere, `on_arrive`
+/// on `move-npc`) must render byte-identically to the pre-addition derive —
+/// otherwise every existing sequence would silently churn its function names on
+/// a purely additive schema change (the [`CameraShot`] precedent). Rules:
+/// every pre-existing field prints exactly as `#[derive(Debug)]` printed it (in
+/// declaration order); `forbids_flags` prints only when non-empty; `move-npc`'s
+/// `on_arrive` prints only when non-empty.
+impl std::fmt::Debug for QuestEffect {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        /// Append `forbids_flags` only when non-empty (see the impl doc).
+        fn ff<'c, 'a, 'b: 'a>(
+            d: &'c mut std::fmt::DebugStruct<'a, 'b>,
+            forbids_flags: &[FlagId],
+        ) -> &'c mut std::fmt::DebugStruct<'a, 'b> {
+            if forbids_flags.is_empty() {
+                d
+            } else {
+                d.field("forbids_flags", &forbids_flags)
+            }
+        }
+        match self {
+            QuestEffect::OpenGate {
+                anchor,
+                requires_flags,
+                forbids_flags,
+            } => ff(
+                f.debug_struct("OpenGate")
+                    .field("anchor", anchor)
+                    .field("requires_flags", requires_flags),
+                forbids_flags,
+            )
+            .finish(),
+            QuestEffect::CloseGate {
+                anchor,
+                requires_flags,
+                forbids_flags,
+            } => ff(
+                f.debug_struct("CloseGate")
+                    .field("anchor", anchor)
+                    .field("requires_flags", requires_flags),
+                forbids_flags,
+            )
+            .finish(),
+            QuestEffect::CampaignComplete => f.write_str("CampaignComplete"),
+            QuestEffect::GiveItem {
+                item,
+                count,
+                name,
+                requires_flags,
+                forbids_flags,
+            } => ff(
+                f.debug_struct("GiveItem")
+                    .field("item", item)
+                    .field("count", count)
+                    .field("name", name)
+                    .field("requires_flags", requires_flags),
+                forbids_flags,
+            )
+            .finish(),
+            QuestEffect::SetFlag {
+                flag,
+                requires_flags,
+                forbids_flags,
+            } => ff(
+                f.debug_struct("SetFlag")
+                    .field("flag", flag)
+                    .field("requires_flags", requires_flags),
+                forbids_flags,
+            )
+            .finish(),
+            QuestEffect::SpawnWave {
+                wave,
+                requires_flags,
+                forbids_flags,
+            } => ff(
+                f.debug_struct("SpawnWave")
+                    .field("wave", wave)
+                    .field("requires_flags", requires_flags),
+                forbids_flags,
+            )
+            .finish(),
+            QuestEffect::Narrate {
+                text,
+                style,
+                sound,
+                requires_flags,
+                forbids_flags,
+            } => ff(
+                f.debug_struct("Narrate")
+                    .field("text", text)
+                    .field("style", style)
+                    .field("sound", sound)
+                    .field("requires_flags", requires_flags),
+                forbids_flags,
+            )
+            .finish(),
+            QuestEffect::SetBlock {
+                anchor,
+                block,
+                requires_flags,
+                forbids_flags,
+            } => ff(
+                f.debug_struct("SetBlock")
+                    .field("anchor", anchor)
+                    .field("block", block)
+                    .field("requires_flags", requires_flags),
+                forbids_flags,
+            )
+            .finish(),
+            QuestEffect::DespawnNpc {
+                npc,
+                requires_flags,
+                forbids_flags,
+            } => ff(
+                f.debug_struct("DespawnNpc")
+                    .field("npc", npc)
+                    .field("requires_flags", requires_flags),
+                forbids_flags,
+            )
+            .finish(),
+            QuestEffect::MoveNpc {
+                npc,
+                to_anchor,
+                speed,
+                on_arrive,
+                requires_flags,
+                forbids_flags,
+            } => {
+                let mut d = f.debug_struct("MoveNpc");
+                d.field("npc", npc)
+                    .field("to_anchor", to_anchor)
+                    .field("speed", speed);
+                if !on_arrive.is_empty() {
+                    d.field("on_arrive", on_arrive);
+                }
+                d.field("requires_flags", requires_flags);
+                ff(&mut d, forbids_flags).finish()
+            }
+            QuestEffect::Cutscene {
+                shots,
+                path,
+                seconds,
+                look_at,
+                requires_flags,
+                forbids_flags,
+            } => ff(
+                f.debug_struct("Cutscene")
+                    .field("shots", shots)
+                    .field("path", path)
+                    .field("seconds", seconds)
+                    .field("look_at", look_at)
+                    .field("requires_flags", requires_flags),
+                forbids_flags,
+            )
+            .finish(),
+            QuestEffect::SetTime {
+                time,
+                requires_flags,
+                forbids_flags,
+            } => ff(
+                f.debug_struct("SetTime")
+                    .field("time", time)
+                    .field("requires_flags", requires_flags),
+                forbids_flags,
+            )
+            .finish(),
+            QuestEffect::SetWeather {
+                weather,
+                requires_flags,
+                forbids_flags,
+            } => ff(
+                f.debug_struct("SetWeather")
+                    .field("weather", weather)
+                    .field("requires_flags", requires_flags),
+                forbids_flags,
+            )
+            .finish(),
+            QuestEffect::PlaySound {
+                sound,
+                at,
+                volume,
+                pitch,
+                requires_flags,
+                forbids_flags,
+            } => ff(
+                f.debug_struct("PlaySound")
+                    .field("sound", sound)
+                    .field("at", at)
+                    .field("volume", volume)
+                    .field("pitch", pitch)
+                    .field("requires_flags", requires_flags),
+                forbids_flags,
+            )
+            .finish(),
+            QuestEffect::DamagePlayers {
+                amount,
+                within,
+                damage_type,
+                requires_flags,
+                forbids_flags,
+            } => ff(
+                f.debug_struct("DamagePlayers")
+                    .field("amount", amount)
+                    .field("within", within)
+                    .field("damage_type", damage_type)
+                    .field("requires_flags", requires_flags),
+                forbids_flags,
+            )
+            .finish(),
+            QuestEffect::SetCheckpoint { anchor, on_respawn } => f
+                .debug_struct("SetCheckpoint")
+                .field("anchor", anchor)
+                .field("on_respawn", on_respawn)
+                .finish(),
+            QuestEffect::BeginStealth {
+                zones,
+                on_caught,
+                grace_ticks,
+            } => f
+                .debug_struct("BeginStealth")
+                .field("zones", zones)
+                .field("on_caught", on_caught)
+                .field("grace_ticks", grace_ticks)
+                .finish(),
+            QuestEffect::EndStealth => f.write_str("EndStealth"),
+            QuestEffect::SpawnNpc { npc } => f.debug_struct("SpawnNpc").field("npc", npc).finish(),
+            QuestEffect::SpawnActor { actor } => {
+                f.debug_struct("SpawnActor").field("actor", actor).finish()
+            }
+            QuestEffect::DespawnActor { actor, style } => f
+                .debug_struct("DespawnActor")
+                .field("actor", actor)
+                .field("style", style)
+                .finish(),
+            QuestEffect::MoveActor {
+                actor,
+                to_anchor,
+                speed,
+                on_arrive,
+            } => f
+                .debug_struct("MoveActor")
+                .field("actor", actor)
+                .field("to_anchor", to_anchor)
+                .field("speed", speed)
+                .field("on_arrive", on_arrive)
+                .finish(),
+            QuestEffect::UnleashActor { actor } => f
+                .debug_struct("UnleashActor")
+                .field("actor", actor)
+                .finish(),
+            QuestEffect::Sequence { steps } => {
+                f.debug_struct("Sequence").field("steps", steps).finish()
+            }
+        }
+    }
 }
 
 /// Default `grace_ticks` for [`QuestEffect::BeginStealth`] (spec-0014).
@@ -2407,8 +2796,8 @@ impl QuestEffect {
 
     /// The effect lists nested one level inside this effect (DSL v0.6): a
     /// `sequence`'s per-step effects (in step order), a `set-checkpoint`'s
-    /// `on_respawn`, a `begin-stealth`'s `on_caught`, and a `move-actor`'s
-    /// `on_arrive`. Empty for a leaf effect.
+    /// `on_respawn`, a `begin-stealth`'s `on_caught`, and a `move-actor`'s /
+    /// `move-npc`'s `on_arrive`. Empty for a leaf effect.
     ///
     /// This is the **single authority** on effect nesting. Every deep traversal —
     /// the flag/wave producer scans, the checkpoint/stealth collector, the l10n
@@ -2421,7 +2810,9 @@ impl QuestEffect {
             QuestEffect::Sequence { steps } => steps.iter().map(|s| s.effects.as_slice()).collect(),
             QuestEffect::SetCheckpoint { on_respawn, .. } => vec![on_respawn.as_slice()],
             QuestEffect::BeginStealth { on_caught, .. } => vec![on_caught.as_slice()],
-            QuestEffect::MoveActor { on_arrive, .. } => vec![on_arrive.as_slice()],
+            QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
+                vec![on_arrive.as_slice()]
+            }
             _ => Vec::new(),
         }
     }
@@ -2459,7 +2850,7 @@ impl QuestEffect {
             QuestEffect::BeginStealth { on_caught, .. } => {
                 vec![("caught".to_string(), on_caught.as_mut_slice())]
             }
-            QuestEffect::MoveActor { on_arrive, .. } => {
+            QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
                 vec![("arrive".to_string(), on_arrive.as_mut_slice())]
             }
             _ => Vec::new(),
@@ -2499,11 +2890,13 @@ impl QuestEffect {
                 "caught".to_string(),
                 on_caught.as_slice(),
             )],
-            QuestEffect::MoveActor { on_arrive, .. } => vec![(
-                "on_arrive".to_string(),
-                "arrive".to_string(),
-                on_arrive.as_slice(),
-            )],
+            QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
+                vec![(
+                    "on_arrive".to_string(),
+                    "arrive".to_string(),
+                    on_arrive.as_slice(),
+                )]
+            }
             _ => Vec::new(),
         }
     }
@@ -2668,6 +3061,55 @@ impl QuestEffect {
             | QuestEffect::MoveActor { .. }
             | QuestEffect::UnleashActor { .. }
             | QuestEffect::Sequence { .. } => &[],
+        }
+    }
+
+    /// The per-effect **negative** flag gate (DSL v0.6): flags whose being set
+    /// (per player) **suppresses** this effect — the dual of
+    /// [`QuestEffect::requires_flags`], accepted on exactly the same verbs.
+    /// Emission wraps a gated effect's commands in a per-player
+    /// `execute unless score @s dw.f_<flag> matches 1` guard, so an unset score
+    /// counts as "not set" (flag scores are never pre-initialized). Empty for an
+    /// ungated effect and for the verbs that are not per-effect gatable (see
+    /// `requires_flags`); a pre-0.6 campaign that uses it is rejected (`DW0141`).
+    pub fn forbids_flags(&self) -> &[FlagId] {
+        match self {
+            QuestEffect::OpenGate { forbids_flags, .. }
+            | QuestEffect::CloseGate { forbids_flags, .. }
+            | QuestEffect::GiveItem { forbids_flags, .. }
+            | QuestEffect::SetFlag { forbids_flags, .. }
+            | QuestEffect::SpawnWave { forbids_flags, .. }
+            | QuestEffect::Narrate { forbids_flags, .. }
+            | QuestEffect::SetBlock { forbids_flags, .. }
+            | QuestEffect::DespawnNpc { forbids_flags, .. }
+            | QuestEffect::MoveNpc { forbids_flags, .. }
+            | QuestEffect::Cutscene { forbids_flags, .. }
+            | QuestEffect::SetTime { forbids_flags, .. }
+            | QuestEffect::SetWeather { forbids_flags, .. }
+            | QuestEffect::PlaySound { forbids_flags, .. }
+            | QuestEffect::DamagePlayers { forbids_flags, .. } => forbids_flags,
+            QuestEffect::CampaignComplete
+            | QuestEffect::SpawnNpc { .. }
+            | QuestEffect::SetCheckpoint { .. }
+            | QuestEffect::BeginStealth { .. }
+            | QuestEffect::EndStealth
+            | QuestEffect::SpawnActor { .. }
+            | QuestEffect::DespawnActor { .. }
+            | QuestEffect::MoveActor { .. }
+            | QuestEffect::UnleashActor { .. }
+            | QuestEffect::Sequence { .. } => &[],
+        }
+    }
+
+    /// The `on_arrive` bundle if this is a `move-npc` carrying one (DSL v0.6;
+    /// parity with `move-actor`). `None` for a bare `move-npc` and every other
+    /// effect — the v0.6-reserved gate (`DW0141`) keys off `Some`.
+    pub fn move_npc_on_arrive(&self) -> Option<&[QuestEffect]> {
+        match self {
+            QuestEffect::MoveNpc { on_arrive, .. } if !on_arrive.is_empty() => {
+                Some(on_arrive.as_slice())
+            }
+            _ => None,
         }
     }
 

@@ -1432,6 +1432,14 @@ fn emit_functions(
                     plan::flag_score(f)
                 ));
             }
+            // v0.6: the negative gate — a `forbids_flags`-suppressed option is
+            // equally inert to a direct `/trigger` once any listed flag is set.
+            for f in &opt.forbids_flags {
+                body.push(format!(
+                    "execute if score @s {} matches 1 run return fail",
+                    plan::flag_score(f)
+                ));
+            }
             // v0.4: set any flags this option declares (dialogue `set-flag`).
             for f in &opt.sets_flags {
                 body.push(format!(
@@ -1946,15 +1954,20 @@ fn check_wave_spawns(plan: &Plan) -> Result<(), BuildFailure> {
 }
 
 /// Emit a quest effect, wrapping every command it produces in a per-player flag
-/// guard when the effect declares `requires_flags` (DSL v0.6). The guard is
-/// `execute if score @s dw.f_<flag> matches 1 [… per flag] run <command>`. These
-/// effects already run in per-player context (`complete_<obj>` and `trig_<id>`
-/// are entered `as @a`/`@s`), so `@s` resolves to the acting player. An ungated
-/// effect (empty `requires_flags`) is emitted verbatim — byte-identical to the
-/// pre-0.6 output, preserving determinism for every existing campaign.
+/// guard when the effect declares `requires_flags` and/or `forbids_flags` (DSL
+/// v0.6). The guard is `execute if score @s dw.f_<flag> matches 1 [… per
+/// required flag] unless score @s dw.f_<flag> matches 1 [… per forbidden flag]
+/// run <command>` — `unless … matches 1` deliberately treats an **unset** score
+/// as "not set" (flag scores are never pre-initialized to 0, so a
+/// `scores={…=..0}` selector would not work). These effects already run in
+/// per-player context (`complete_<obj>` and `trig_<id>` are entered `as
+/// @a`/`@s`), so `@s` resolves to the acting player. An ungated effect (both
+/// lists empty) is emitted verbatim — byte-identical to the pre-0.6 output,
+/// preserving determinism for every existing campaign.
 fn emit_gated_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
     let flags = eff.requires_flags();
-    if flags.is_empty() {
+    let forbids = eff.forbids_flags();
+    if flags.is_empty() && forbids.is_empty() {
         emit_quest_effect(plan, eff, body);
         return;
     }
@@ -1963,6 +1976,12 @@ fn emit_gated_effect(plan: &Plan, eff: &QuestEffect, body: &mut Vec<String>) {
     let guard: String = flags
         .iter()
         .map(|f| format!("if score @s {} matches 1 ", plan::flag_score(f.as_str())))
+        .chain(forbids.iter().map(|f| {
+            format!(
+                "unless score @s {} matches 1 ",
+                plan::flag_score(f.as_str())
+            )
+        }))
         .collect();
     for line in inner {
         body.push(format!("execute {guard}run {line}"));
@@ -2827,6 +2846,11 @@ fn movenpc_bare(npc: &str, to_anchor: &str) -> String {
 /// the waypoint polyline at the planned speed. Client interpolation smooths the
 /// per-tick jumps into a walk (spike-verified). Deduped by content key; empty for
 /// a campaign with no moves (v0.2/v0.3 stay byte-identical).
+///
+/// An `on_arrive` bundle (DSL v0.6, parity with `move-actor`) fires on the
+/// driver's **final-waypoint tick** — exactly the arrival detection `ma_tick`
+/// uses — via a generated `mv_arrive_<key>` function. A bare `move-npc` emits no
+/// arrive hook and stays byte-identical to pre-0.6 output.
 fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
@@ -2835,6 +2859,22 @@ fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, Stri
         let bare = movenpc_bare(&m.npc, &m.to_anchor);
         let safe = plan::safe_local(&m.npc);
         let total = m.ticks();
+        // The on_arrive bundle for this (npc, to_anchor) — the first-seen effect,
+        // matching the planner's dedup order (mirrors `actor_fns`).
+        let on_arrive: &[QuestEffect] = all_campaign_effects(plan.campaign)
+            .into_iter()
+            .find_map(|e| match e {
+                QuestEffect::MoveNpc {
+                    npc,
+                    to_anchor,
+                    on_arrive,
+                    ..
+                } if npc.as_str() == m.npc && to_anchor.as_str() == m.to_anchor => {
+                    Some(on_arrive.as_slice())
+                }
+                _ => None,
+            })
+            .unwrap_or(&[]);
 
         // start: guard re-entry, reset the tick counter, schedule the driver.
         let start = vec![
@@ -2856,6 +2896,11 @@ fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, Stri
                 fmt_f64(w[2])
             ));
         }
+        if !on_arrive.is_empty() {
+            tick.push(format!(
+                "execute if score #mt_{bare} dw.sys matches {total} run function {ns}:mv_arrive_{bare}"
+            ));
+        }
         tick.push(format!("scoreboard players add #mt_{bare} dw.sys 1"));
         tick.push(format!(
             "execute if score #mt_{bare} dw.sys matches {}.. run scoreboard players set #mrun_{bare} dw.sys 0",
@@ -2866,6 +2911,14 @@ fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, Stri
             total + 1
         ));
         out.push((format!("mv_tick_{bare}"), lines(&tick)));
+
+        if !on_arrive.is_empty() {
+            let mut arrive: Vec<String> = Vec::new();
+            for e in on_arrive {
+                emit_quest_effect(plan, e, &mut arrive);
+            }
+            out.push((format!("mv_arrive_{bare}"), lines(&arrive)));
+        }
     }
     out
 }
@@ -3409,6 +3462,21 @@ fn env_trigger_tick(plan: &Plan) -> Vec<String> {
             String::new()
         };
         let fsel = flag_scores_selector(&t.requires_flags);
+        // v0.6 negative gate: the trigger is suppressed while ANY listed flag is
+        // set by ANY player (flags are campaign state; the wake beat stands the
+        // retaliation trigger down for everyone). `unless entity @a[scores=…]`
+        // is unset-safe: a positive `=1..` selector inside a negation matches
+        // only really-set flags, so players with no score never suppress.
+        let forbid_guard: String = t
+            .forbids_flags
+            .iter()
+            .map(|f| {
+                format!(
+                    "unless entity @a[scores={{{}=1..}}] ",
+                    plan::flag_score(f.as_str())
+                )
+            })
+            .collect();
         match &t.on {
             TriggerOn::Strike | TriggerOn::Use => {
                 let (rec, tag) = match t.on {
@@ -3424,7 +3492,7 @@ fn env_trigger_tick(plan: &Plan) -> Vec<String> {
                     format!("if entity @a{fsel} ")
                 };
                 out.push(format!(
-                    "execute {once_guard}if entity @e[tag=dw_trig_{id},nbt={{{rec}:{{}}}}] {flag_cond}run function {ns}:trig_{id}"
+                    "execute {once_guard}{forbid_guard}if entity @e[tag=dw_trig_{id},nbt={{{rec}:{{}}}}] {flag_cond}run function {ns}:trig_{id}"
                 ));
                 out.push(format!(
                     "execute as @e[tag=dw_trig_{id}] run data remove entity @s {rec}"
@@ -3433,7 +3501,7 @@ fn env_trigger_tick(plan: &Plan) -> Vec<String> {
             TriggerOn::Approach { range } => {
                 if let Some(p) = anchor_point_any(plan, t.at.as_str()) {
                     out.push(format!(
-                        "execute {once_guard}positioned {} {} {} if entity @a[distance=..{range}{}] run function {ns}:trig_{id}",
+                        "execute {once_guard}{forbid_guard}positioned {} {} {} if entity @a[distance=..{range}{}] run function {ns}:trig_{id}",
                         p[0], p[1], p[2],
                         if fsel.is_empty() {
                             String::new()
@@ -4000,11 +4068,13 @@ fn interact_objectives(c: &delvewright_dsl::Campaign) -> Vec<(String, String)> {
 }
 
 /// The intra-quest activation + pending guard for an objective (v0.3): the quest
-/// must be active, every `after` prerequisite and `requires_flags` flag set, and
-/// the objective itself not yet complete. Returns the ` if …`/` unless …` fragment
-/// (leading space); callers prepend `execute as @a` and append the type-specific
-/// condition + `run`. For a v0.2 objective (no `after`/flags) this is exactly the
-/// pre-v0.3 reach guard, keeping keep-crawl byte-identical.
+/// must be active, every `after` prerequisite and `requires_flags` flag set, no
+/// `forbids_flags` flag set (v0.6 negative gate; `unless … matches 1` so an
+/// unset score counts as "not set"), and the objective itself not yet complete.
+/// Returns the ` if …`/` unless …` fragment (leading space); callers prepend
+/// `execute as @a` and append the type-specific condition + `run`. For a v0.2
+/// objective (no `after`/flags) this is exactly the pre-v0.3 reach guard,
+/// keeping keep-crawl byte-identical.
 fn pending_guard(o: &Objective, quest_active: &str) -> String {
     let mut g = format!(" if score @s {quest_active} matches 1");
     for a in o.after() {
@@ -4013,6 +4083,12 @@ fn pending_guard(o: &Objective, quest_active: &str) -> String {
     for f in o.requires_flags() {
         g.push_str(&format!(
             " if score @s {} matches 1",
+            plan::flag_score(f.as_str())
+        ));
+    }
+    for f in o.forbids_flags() {
+        g.push_str(&format!(
+            " unless score @s {} matches 1",
             plan::flag_score(f.as_str())
         ));
     }
@@ -4027,13 +4103,16 @@ fn pending_guard(o: &Objective, quest_active: &str) -> String {
 // dialogs / advancements
 // ---------------------------------------------------------------------------
 
-/// Whether an option's display is gated (DSL v0.4+): it either requires flags
-/// (flag axis) or completes an objective (objective-state axis — visible only
-/// while that objective is active). Below v0.4 nothing is display-gated, so
-/// v0.2/v0.3 nodes stay byte-identical. `requires_flags` is itself a v0.4 verb,
-/// so the whole predicate collapses to `false` pre-v0.4.
+/// Whether an option's display is gated (DSL v0.4+): it requires flags (flag
+/// axis), forbids flags (v0.6 negative flag axis), or completes an objective
+/// (objective-state axis — visible only while that objective is active). Below
+/// v0.4 nothing is display-gated, so v0.2/v0.3 nodes stay byte-identical.
+/// `requires_flags` is itself a v0.4 verb (`forbids_flags` v0.6), so the whole
+/// predicate collapses to `false` pre-v0.4.
 fn option_display_gated(opt: &plan::OptionPlan, v04: bool) -> bool {
-    v04 && (!opt.requires_flags.is_empty() || !opt.completes.is_empty())
+    v04 && (!opt.requires_flags.is_empty()
+        || !opt.forbids_flags.is_empty()
+        || !opt.completes.is_empty())
 }
 
 /// The display-gated options of `node_id`, in declared order — the bit order of
@@ -4060,6 +4139,14 @@ fn option_display_conditions(c: &delvewright_dsl::Campaign, opt: &plan::OptionPl
     let mut cond = String::new();
     for f in &opt.requires_flags {
         cond.push_str(&format!(" if score @s {} matches 1", plan::flag_score(f)));
+    }
+    // v0.6 negative gate: hidden once any forbidden flag is set (`unless …
+    // matches 1` treats an unset score as "not set").
+    for f in &opt.forbids_flags {
+        cond.push_str(&format!(
+            " unless score @s {} matches 1",
+            plan::flag_score(f)
+        ));
     }
     for obj in &opt.completes {
         if let Some((qid, _)) = objective_quest(c, obj) {
@@ -4148,6 +4235,7 @@ fn has_gated_dialogue(c: &delvewright_dsl::Campaign) -> bool {
             .flat_map(|n| &n.options)
             .any(|o| {
                 !o.requires_flags.is_empty()
+                    || !o.forbids_flags.is_empty()
                     || o.effects
                         .iter()
                         .any(|e| matches!(e, DialogueEffect::CompleteObjective { .. }))
@@ -4589,7 +4677,7 @@ fn emit_dialogue_trigger_packtest(plan: &Plan, out: &mut BuildOutput) {
     let Some((npc, opt)) = plan.npcs.iter().find_map(|npc| {
         npc.options
             .iter()
-            .find(|o| o.next.is_none() && o.requires_flags.is_empty())
+            .find(|o| o.next.is_none() && o.requires_flags.is_empty() && o.forbids_flags.is_empty())
             .map(|o| (npc, o))
     }) else {
         return;
@@ -5756,6 +5844,9 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                 for f in &g.requires_flags {
                     reset.insert(plan::flag_score(f));
                 }
+                for f in &g.forbids_flags {
+                    reset.insert(plan::flag_score(f));
+                }
                 for o in &g.completes {
                     if let Some((q, _)) = objective_quest(c, o) {
                         reset.insert(quest_active_score(q));
@@ -5926,6 +6017,15 @@ fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool, sel: &str)
             if with_flags { 1 } else { 0 }
         ));
     }
+    // v0.6 negative gate: actively clear every forbidden flag so the objective
+    // is not suppressed by a sibling template's leftover state (same batch-server
+    // reasoning as the `with_flags: false` clearing above).
+    for f in o.forbids_flags() {
+        p.push(format!(
+            "scoreboard players set {sel} {} 0",
+            plan::flag_score(f.as_str())
+        ));
+    }
     match o {
         Objective::Collect { item, count, .. } => {
             p.push(format!("give {sel} {item} {count}"));
@@ -5943,7 +6043,8 @@ fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool, sel: &str)
 
 /// Emit a per-verb mechanism PackTest for the first `kill` / `collect` /
 /// `interact` objective, plus a flag-gate test for the first flag-gated
-/// collect/interact objective.
+/// collect/interact objective and a forbid-gate test for the first
+/// `forbids_flags`-gated one (v0.6 negative gate).
 fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -5964,6 +6065,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     let mut first_collect = None;
     let mut first_interact = None;
     let mut first_flag_gated = None;
+    let mut first_forbid_gated = None;
     for q in &c.quests.content.quests {
         for o in &q.objectives {
             let qid = q.id.as_str();
@@ -5993,6 +6095,12 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
                 && matches!(o, Objective::Collect { .. } | Objective::Interact { .. })
             {
                 first_flag_gated = Some((qid, o));
+            }
+            if first_forbid_gated.is_none()
+                && !o.forbids_flags().is_empty()
+                && matches!(o, Objective::Collect { .. } | Objective::Interact { .. })
+            {
+                first_forbid_gated = Some((qid, o));
             }
         }
     }
@@ -6164,6 +6272,56 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         driver(&mut b);
         b.push(format!("assert score {sel} {} matches 1", obj_score(id)));
         write("verb_flag_gate", b);
+    }
+
+    // forbid gate (v0.6 negative gate): with a forbidden flag SET the objective
+    // must NOT complete; with it cleared, it does. The mirror image of
+    // `verb_flag_gate`, phases reversed (suppress first, then release) so both
+    // truth-table rows of the negative gate are exercised on one dummy.
+    if let Some((qid, o)) = first_forbid_gated {
+        let id = o.id().as_str();
+        let (pin, sel) = pin_dummy("dw_fbdtest");
+        let driver = |b: &mut Vec<String>| match o {
+            Objective::Collect { .. } => b.push(format!(
+                "execute as {sel} run function {ns}:c_reward_{}",
+                plan::safe_local(id)
+            )),
+            Objective::Interact { .. } => {
+                b.push(format!(
+                    "scoreboard players set {sel} {} 1",
+                    plan::interact_trigger(id)
+                ));
+                b.push(format!("function {ns}:tick"));
+            }
+            _ => {}
+        };
+        let mut b = packtest_header(&format!(
+            "{}: forbids_flags suppresses objective `{id}`",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin.clone());
+        b.push(format!("scoreboard players set {sel} {} 0", obj_score(id)));
+        // Preamble satisfies quest/after/requires and CLEARS forbids; then set
+        // the forbidden flags to prove suppression.
+        b.extend(packtest_preamble(qid, o, true, &sel));
+        for f in o.forbids_flags() {
+            b.push(format!(
+                "scoreboard players set {sel} {} 1",
+                plan::flag_score(f.as_str())
+            ));
+        }
+        driver(&mut b);
+        b.push(format!("assert score {sel} {} matches 0", obj_score(id)));
+        for f in o.forbids_flags() {
+            b.push(format!(
+                "scoreboard players set {sel} {} 0",
+                plan::flag_score(f.as_str())
+            ));
+        }
+        driver(&mut b);
+        b.push(format!("assert score {sel} {} matches 1", obj_score(id)));
+        write("verb_forbid_gate", b);
     }
 
     // gap 9: every NPC body actually summoned. The bot drives talk-to via a
