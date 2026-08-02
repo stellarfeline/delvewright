@@ -1770,7 +1770,10 @@ fn build_critical_path(
 
 /// Resolve an anchor name to a point cell by scanning every area's resolved
 /// anchors (first match), mirroring the emitter's `anchor_point_any`.
-fn point_any(anchors: &BTreeMap<(String, String), ResolvedAnchor>, name: &str) -> Option<[i32; 3]> {
+pub(crate) fn point_any(
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    name: &str,
+) -> Option<[i32; 3]> {
     for ((_, n), resolved) in anchors {
         if n == name {
             return match resolved {
