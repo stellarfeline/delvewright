@@ -114,6 +114,26 @@ fn resource_pack_and_sha1_emitted() {
         manifest.contains("\"resource_pack_sha1\""),
         "manifest records resource_pack_sha1"
     );
+
+    // The shipped pack must carry the 1.21.11 metadata shape. A bare
+    // `pack_format` above the resource-pack threshold (64) is rejected by the
+    // client with "missing mandatory fields min_format and max_format", and the
+    // pack — every NPC skin in it — silently never loads. Client-side only: no
+    // server ever parses a resource pack, so nothing in the validation ladder
+    // (dedicated server + PackTest + bot) can observe it.
+    let zip = String::from_utf8_lossy(&out["resourcepack.zip"]).to_string();
+    assert!(
+        zip.contains("\"min_format\"") && zip.contains("\"max_format\""),
+        "pack.mcmeta must declare min_format/max_format"
+    );
+    assert!(
+        !zip.contains("\"pack_format\""),
+        "a bare `pack_format` must not be emitted alongside min/max"
+    );
+    assert!(
+        zip.contains("75"),
+        "the 1.21.11 resource-pack format is 75.0"
+    );
 }
 
 /// The critical path carries the harness contract fields: version `0.4.0`,
