@@ -356,6 +356,79 @@ fn unreachable_finale_exits_2_with_dw0201() {
     assert_eq!(code(&b), 2, "build should exit 2 on unreachable finale");
 }
 
+/// `DW0204`: a campaign whose two endings are both unconditionally completable
+/// puts both on one critical path, so the first ending's `campaign-complete`
+/// fires mid-path — the delve would end before the finale. `validate` passes
+/// (nothing structural is wrong); only the flow model's ordered path replay sees
+/// it, at exit 2 like every other `DW02xx`.
+#[test]
+fn incoherent_critical_path_exits_2_with_dw0204() {
+    let camp = tmp("double-ending");
+    let mut quests: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            common::compiler_fixtures_dir().join("branch-endings/quests.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    // Strip every flag gate: both endings become reachable in one playthrough.
+    for quest in quests["content"]["quests"].as_array_mut().unwrap() {
+        for obj in quest["objectives"].as_array_mut().unwrap() {
+            obj.as_object_mut().unwrap().remove("requires_flags");
+        }
+        if let Some(map) = quest
+            .get_mut("on_objective_complete")
+            .and_then(|m| m.as_object_mut())
+        {
+            for effs in map.values_mut() {
+                for e in effs.as_array_mut().unwrap() {
+                    e.as_object_mut().unwrap().remove("requires_flags");
+                }
+            }
+        }
+    }
+    common::materialize_from(
+        &common::compiler_fixtures_dir().join("branch-endings"),
+        &serde_json::json!({ "documents": { "quests": quests } }),
+        &camp,
+    );
+    let pf = common::prefabs_dir();
+
+    let v = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&v),
+        0,
+        "validate should pass: {}",
+        String::from_utf8_lossy(&v.stdout)
+    );
+
+    let a = delvec(&[
+        "analyze",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(code(&a), 2, "analyze should exit 2");
+    let stdout = String::from_utf8_lossy(&a.stdout);
+    assert!(stdout.contains("DW0204"), "expected DW0204:\n{stdout}");
+
+    let b = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        camp.join("out").to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    assert_eq!(code(&b), 2, "build must refuse an incoherent critical path");
+}
+
 /// `DW0203`: an objective can never complete because its own `requires_flags`
 /// gate can only ever be satisfied by an effect on its *own* completion (a
 /// self-cycle) — a genuinely deep reachability deadlock no static DSL rule

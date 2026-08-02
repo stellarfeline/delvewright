@@ -26,6 +26,7 @@ use delvewright_dsl::{
     QuestEffect, TrapReset, TrapTrigger, Trigger,
 };
 
+use crate::flow::objectives_in_order;
 use crate::registry::{AnchorMeta, PrefabRegistry};
 use crate::solver::{self, Facing, Rotation, SealFill, Splitmix64};
 
@@ -1279,12 +1280,19 @@ struct CriticalPath {
     obj_step: BTreeMap<String, usize>,
 }
 
-/// Build the critical path: select first class, then each critical objective in
-/// topological order (quests by `depends_on`, objectives by `after`), then assert
-/// campaign completion. Also returns the inter-area transport map (when
-/// consecutive objectives sit in different areas) and, per step, the DSL v0.4
-/// harness hints: `sneak` (a `stealth` objective) and `cutscene_seconds` (a step
-/// whose completion triggers a `QuestEffect::Cutscene`).
+/// Build the critical path: select first class, then each objective of the
+/// **flow-proven single-branch playthrough** ([`crate::flow::Flow::playthrough`])
+/// in topological order (quests by `depends_on`, objectives by `after`), then
+/// assert campaign completion. Quests that belong to a mutually exclusive branch
+/// the chosen playthrough does not take are excluded, and each `talk-to` takes
+/// the completing dialogue option that belongs to that branch — so the exported
+/// path is a sequence one player can actually walk (proven by
+/// `crate::flow::Flow::replay`, `DW0204`, before the build reaches here).
+///
+/// Also returns the inter-area transport map (when consecutive objectives sit in
+/// different areas) and, per step, the DSL v0.4 harness hints: `sneak` (a
+/// `stealth` objective) and `cutscene_seconds` (a step whose completion triggers
+/// a `QuestEffect::Cutscene`).
 fn build_critical_path(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
@@ -1303,8 +1311,19 @@ fn build_critical_path(
         });
     }
 
-    // Quest order: finale's depends_on closure, topologically sorted.
-    let quest_order = finale_quest_order(campaign)?;
+    // The branch-coherent playthrough: one world's completing quests in
+    // `depends_on` order, their objectives in `after` order, and the dialogue
+    // option each `talk-to` takes on that branch.
+    let flow = crate::flow::Flow::new(campaign);
+    let path = flow.playthrough();
+    if path.cyclic {
+        return Err(PlanError::new(
+            DW_BUILD,
+            "internal invariant violation: a quest dependency cycle survived into critical-path \
+             ordering — `DW0130` should have rejected it in validation. This is a compiler bug; \
+             stop and escalate",
+        ));
+    }
     let stage5: BTreeMap<&str, &_> = campaign
         .quests
         .content
@@ -1313,8 +1332,9 @@ fn build_critical_path(
         .map(|q| (q.id.as_str(), q))
         .collect();
 
-    for qid in &quest_order {
-        let Some(quest) = stage5.get(qid.as_str()) else {
+    for st in &path.steps {
+        let qid = st.quest.as_str();
+        let Some(quest) = stage5.get(qid) else {
             continue;
         };
         let area = campaign
@@ -1325,7 +1345,14 @@ fn build_critical_path(
             .find(|q| q.id.as_str() == qid)
             .map(|q| q.area.as_str())
             .unwrap_or("");
-        for obj in objectives_in_order(&quest.objectives) {
+        let Some(obj) = quest
+            .objectives
+            .iter()
+            .find(|o| o.id().as_str() == st.objective)
+        else {
+            continue;
+        };
+        {
             match obj {
                 Objective::TalkTo { id, npc, .. } => {
                     let npc_plan =
@@ -1342,10 +1369,18 @@ fn build_critical_path(
                                     ),
                                 )
                             })?;
-                    let opt = npc_plan
-                        .options
-                        .iter()
-                        .find(|o| o.completes.iter().any(|c| c == id.as_str()))
+                    // The branch-consistent completing option (the flow model
+                    // picked it); fall back to the first completing option only
+                    // for a campaign with no branch at all.
+                    let opt = st
+                        .talk_option
+                        .and_then(|n| npc_plan.options.iter().find(|o| o.n as usize == n))
+                        .or_else(|| {
+                            npc_plan
+                                .options
+                                .iter()
+                                .find(|o| o.completes.iter().any(|c| c == id.as_str()))
+                        })
                         .ok_or_else(|| {
                             PlanError::new(DW_BUILD, format!(
                                 "internal invariant violation: objective `{id}` has no dialogue \
@@ -1951,106 +1986,6 @@ fn point_of(
     }
 }
 
-/// Topologically order the finale quest and its transitive `depends_on`.
-fn finale_quest_order(campaign: &Campaign) -> Result<Vec<String>, PlanError> {
-    let plan = &campaign.quest_plan.content;
-    let deps: BTreeMap<&str, &Vec<_>> = plan
-        .quests
-        .iter()
-        .map(|q| (q.id.as_str(), &q.depends_on))
-        .collect();
-
-    // Closure over finale's dependencies.
-    let mut needed: BTreeSet<&str> = BTreeSet::new();
-    let mut stack = vec![plan.finale.as_str()];
-    while let Some(q) = stack.pop() {
-        if needed.insert(q)
-            && let Some(ds) = deps.get(q)
-        {
-            for d in ds.iter() {
-                stack.push(d.as_str());
-            }
-        }
-    }
-
-    // Kahn topological sort restricted to `needed`.
-    let mut indeg: BTreeMap<&str, usize> = needed.iter().map(|q| (*q, 0)).collect();
-    for q in &needed {
-        if let Some(ds) = deps.get(q) {
-            for d in ds.iter() {
-                if needed.contains(d.as_str()) {
-                    *indeg.get_mut(q).unwrap() += 1;
-                }
-            }
-        }
-    }
-    let mut queue: VecDeque<&str> = indeg
-        .iter()
-        .filter(|&(_, &d)| d == 0)
-        .map(|(q, _)| *q)
-        .collect();
-    let mut order = Vec::new();
-    while let Some(q) = queue.pop_front() {
-        order.push(q.to_string());
-        // Decrement dependents.
-        for r in &needed {
-            if let Some(ds) = deps.get(r)
-                && ds.iter().any(|d| d.as_str() == q)
-            {
-                let e = indeg.get_mut(*r).unwrap();
-                *e -= 1;
-                if *e == 0 {
-                    queue.push_back(r);
-                }
-            }
-        }
-    }
-    if order.len() != needed.len() {
-        return Err(PlanError::new(
-            DW_BUILD,
-            "internal invariant violation: a quest dependency cycle survived into critical-path \
-             ordering — `DW0130` should have rejected it in validation. This is a compiler bug; \
-             stop and escalate",
-        ));
-    }
-    Ok(order)
-}
-
-/// Order a quest's objectives by their intra-quest `after` DAG (Kahn).
-fn objectives_in_order(objectives: &[Objective]) -> Vec<&Objective> {
-    let ids: Vec<&str> = objectives.iter().map(|o| o.id().as_str()).collect();
-    let mut indeg: BTreeMap<&str, usize> = ids.iter().map(|i| (*i, 0)).collect();
-    for o in objectives {
-        for a in o.after() {
-            if indeg.contains_key(a.as_str()) {
-                *indeg.get_mut(o.id().as_str()).unwrap() += 1;
-            }
-        }
-    }
-    let mut queue: VecDeque<&str> = ids.iter().filter(|i| indeg[**i] == 0).copied().collect();
-    let by_id: BTreeMap<&str, &Objective> =
-        objectives.iter().map(|o| (o.id().as_str(), o)).collect();
-    let mut order = Vec::new();
-    while let Some(id) = queue.pop_front() {
-        order.push(by_id[id]);
-        for o in objectives {
-            if o.after().iter().any(|a| a.as_str() == id) {
-                let e = indeg.get_mut(o.id().as_str()).unwrap();
-                *e -= 1;
-                if *e == 0 {
-                    queue.push_back(o.id().as_str());
-                }
-            }
-        }
-    }
-    // Fallback: if a cycle slipped through (validation should prevent it), keep
-    // declared order for the remainder.
-    if order.len() != objectives.len() {
-        return objectives.iter().collect();
-    }
-    order
-}
-
 /// The stage-5 quest containing an objective id, and that objective.
 pub fn objective_quest<'a>(
     campaign: &'a Campaign,
@@ -2215,10 +2150,12 @@ struct OrderedObj<'a> {
     area: &'a str,
 }
 
-/// Every objective in critical-path order (finale-dependency topo order, then each
-/// quest's objectives by their `after` DAG) — the order the player completes them.
+/// Every objective in critical-path order — the branch-coherent playthrough
+/// ([`crate::flow::Flow::playthrough`]), i.e. exactly the sequence
+/// [`build_critical_path`] exports, so the gate-aware reachability proof
+/// (`DW0306`) judges the same walk the bot will.
 fn critical_objective_order(campaign: &Campaign) -> Vec<OrderedObj<'_>> {
-    let quest_order = finale_quest_order(campaign).unwrap_or_default();
+    let path = crate::flow::Flow::new(campaign).playthrough();
     let stage5: BTreeMap<&str, &Quest> = campaign
         .quests
         .content
@@ -2234,18 +2171,22 @@ fn critical_objective_order(campaign: &Campaign) -> Vec<OrderedObj<'_>> {
         .map(|q| (q.id.as_str(), q.area.as_str()))
         .collect();
     let mut out = Vec::new();
-    for qid in &quest_order {
-        let Some(q) = stage5.get(qid.as_str()) else {
+    for st in &path.steps {
+        let Some(q) = stage5.get(st.quest.as_str()) else {
             continue;
         };
-        let area = quest_area.get(qid.as_str()).copied().unwrap_or("");
-        for obj in objectives_in_order(&q.objectives) {
-            out.push(OrderedObj {
-                obj,
-                quest: q.id.as_str(),
-                area,
-            });
-        }
+        let Some(obj) = q
+            .objectives
+            .iter()
+            .find(|o| o.id().as_str() == st.objective)
+        else {
+            continue;
+        };
+        out.push(OrderedObj {
+            obj,
+            quest: q.id.as_str(),
+            area: quest_area.get(st.quest.as_str()).copied().unwrap_or(""),
+        });
     }
     out
 }
