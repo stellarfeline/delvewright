@@ -108,6 +108,7 @@ fn build(on_arrive: &str) -> BuildOutput {
         quest_plan: read_hw("quest-plan.json"),
         quests: quests_doc(on_arrive),
         dialogue: read_hw("dialogue.json"),
+        world_edits: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();

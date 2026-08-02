@@ -28,8 +28,8 @@ pub use envelope::{
     check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, parse_campaign,
 };
 pub use ids::{
-    ActorId, AnchorId, AreaId, CampaignId, ClassId, DialogueId, FlagId, NpcId, ObjectiveId, PoolId,
-    PrefabId, QuestId, TriggerId, WaveId,
+    ActorId, AnchorId, AreaId, CampaignId, ClassId, DialogueId, EditBatchId, FlagId, NpcId,
+    ObjectiveId, PoolId, PrefabId, QuestId, RegionId, TriggerId, WaveId,
 };
 pub use l10n::{
     ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, ScreenNarrate, SoundRef, art_narrates,
@@ -51,5 +51,9 @@ pub use stages::{
     QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep, ShotStyle, SkinModel,
     SoundAt, StealthZone, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerOn,
     Wave, WaveMob, WorldContent, WorldTime, WorldWeather,
+};
+pub use stages::{
+    EditBatch, EditFrame, MorphOp, PaletteBlock, PaletteRecipe, RegionShape, WorldEdit,
+    WorldEditsContent,
 };
 pub use validate::{validate_campaign, validate_campaign_with};

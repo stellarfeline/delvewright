@@ -48,6 +48,7 @@ fn campaign_with_traps(version: &str, traps: &str) -> RawCampaign {
         quest_plan: common::read_valid("quest-plan.json"),
         quests,
         dialogue: common::read_valid("dialogue.json"),
+        world_edits: None,
     }
 }
 

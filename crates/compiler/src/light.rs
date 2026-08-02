@@ -501,18 +501,31 @@ pub fn area_night_vision(area: &delvewright_dsl::Area) -> bool {
 /// string — so the `DW0210` verdict is identical in every build language by
 /// construction, with nothing to thread past the localization pass (ADR-0006).
 pub fn relight(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Relight {
+    relight_over(plan, &crate::assembled::assemble(plan, structures))
+}
+
+/// [`relight`] over an already-assembled (possibly **edited**) world model —
+/// the spec-0017 re-entry point: after every edit batch, and for the final
+/// build of an edited campaign, the relight pass runs over the edited geometry
+/// instead of re-deriving the pristine assembly. Behavior-identical to
+/// [`relight`] for an unedited world (both derive from the same
+/// [`crate::assembled::Assembled`]).
+pub fn relight_over(plan: &Plan, assembled: &crate::assembled::Assembled) -> Relight {
     let c = plan.campaign;
     let sky = darkest_effective_sky(c);
 
     // The base assembled geometry (nav) and required-path cells fixtures must avoid.
-    let nav = World::from_plan(plan, structures);
+    let nav = World::from_occupancy(crate::assembled::occupancy_of(
+        assembled.blocks.clone(),
+        &assembled.open_gates,
+    ));
     // move-npc waypoint cells are part of the required paths; plan them on the base
     // world (an unroutable move is a separate DW0307 handled by emit — here we
     // just collect paths, ignoring routing errors).
     let moves = crate::nav::plan_moves(plan, &nav).unwrap_or_default();
     let required = nav.required_path_cells(plan, &moves);
 
-    let mut model = LightModel::from_plan(plan, structures);
+    let mut model = LightModel::from_blocks(assembled.blocks.clone());
     let mut out = Relight::default();
 
     for area in &plan.areas {

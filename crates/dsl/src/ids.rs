@@ -106,6 +106,15 @@ prefixed_id!(
     /// Trap id: `trap/<kebab>` (stage-5 `traps` section, DSL v0.6, spec-0011).
     /// Unique within the stage-5 traps namespace.
     TrapId, "trap");
+prefixed_id!(
+    /// Edit-batch id: `batch/<kebab>` (stage-7 `world-edits` batches, DSL v0.6,
+    /// spec-0017). Unique within the edit script; also the batch's snapshot name
+    /// and its seed-stream label, so renaming a batch deliberately reseeds it.
+    EditBatchId, "batch");
+prefixed_id!(
+    /// Named edit region: `region/<kebab>` (stage-7 `select` verb, DSL v0.6,
+    /// spec-0017). Scoped to its batch; later edits in the batch refer back to it.
+    RegionId, "region");
 
 /// Campaign id: a bare kebab-case token (no type prefix).
 #[derive(

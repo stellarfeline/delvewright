@@ -90,6 +90,7 @@ fn parse_hw_with(deferred: bool, quests: String) -> Campaign {
         quest_plan: read_hw("quest-plan.json"),
         quests,
         dialogue: read_hw("dialogue.json"),
+        world_edits: None,
     };
     parse_campaign(&raw).expect("campaign parses")
 }

@@ -10,8 +10,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{
-    ActorId, AnchorId, AreaId, ClassId, DialogueId, FlagId, NpcId, ObjectiveId, PoolId, PrefabId,
-    QuestId, TrapId, TriggerId, WaveId,
+    ActorId, AnchorId, AreaId, ClassId, DialogueId, EditBatchId, FlagId, NpcId, ObjectiveId,
+    PoolId, PrefabId, QuestId, RegionId, TrapId, TriggerId, WaveId,
 };
 
 /// serde default helper: `true` (used by DSL v0.4 `trigger.once`).
@@ -3125,4 +3125,233 @@ impl QuestEffect {
             _ => None,
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Stage 7 — world-edits (the map editor edit script, DSL v0.6, spec-0017)
+// ---------------------------------------------------------------------------
+
+/// Stage 7 payload (optional; DSL v0.6, spec-0017): the map-editor edit script.
+///
+/// The artifact of record for L3 world detailing: an ordered list of edit
+/// batches the compiler replays deterministically **after** world assembly.
+/// The world files are never truth — same DSL + same edits + same seed →
+/// byte-identical world (ADR-0006). A campaign without a `world-edits.json`
+/// builds byte-identically to one from before this stage existed.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WorldEditsContent {
+    /// Ordered edit batches, replayed in order. After every batch the post-edit
+    /// invariants re-prove (walkability, sealing + relight, boundary safety),
+    /// so each batch is a valid, snapshot-reviewable world state.
+    pub batches: Vec<EditBatch>,
+}
+
+/// One edit batch: an ordered group of edit verbs applied to a single area,
+/// checked and snapshot-rendered as a unit.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EditBatch {
+    /// Batch id (`batch/<kebab>`), unique in the script. Also the batch's
+    /// snapshot name and seed-stream label — renaming a batch deliberately
+    /// reseeds its noise.
+    pub id: EditBatchId,
+    /// The stage-1 area this batch edits. Frames and regions resolve against
+    /// this area's placed pieces and anchors.
+    pub area: AreaId,
+    /// Authoring context (why this batch exists). Machine-ignored; **excluded**
+    /// from l10n like `theme`/`premise`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// Ordered edit verbs. `select` defines named regions; later verbs in the
+    /// same batch refer back to them (strictly backward, like every DSL ref).
+    pub edits: Vec<WorldEdit>,
+}
+
+/// One edit verb (spec-0017 L3). Every verb operates on named regions and every
+/// seeded verb derives its noise stream from the campaign seed + its script
+/// position (`edits/<batch>/<index>`) — no wall clock, no unseeded RNG.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "verb", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum WorldEdit {
+    /// Define a named region (`region/<kebab>`) for later verbs in this batch.
+    Select {
+        /// The region name being defined (unique within the batch).
+        name: RegionId,
+        /// The region's shape (box, surface band, palette match, or a
+        /// composition of earlier regions).
+        shape: RegionShape,
+    },
+    /// Fill every cell of a region from a seeded palette recipe (value-noise
+    /// keyed, so picks cluster into patches — never a uniform fill).
+    Fill {
+        /// The region (an earlier `select` in this batch) to fill.
+        region: RegionId,
+        /// The palette recipe to fill with.
+        recipe: PaletteRecipe,
+    },
+    /// Like `fill`, but only rewrites cells whose current block matches one of
+    /// `matching` (base ids; blockstate suffixes are ignored when matching).
+    Replace {
+        /// The region (an earlier `select` in this batch) to edit.
+        region: RegionId,
+        /// Base block ids to rewrite (e.g. `["minecraft:stone"]`).
+        matching: Vec<String>,
+        /// The palette recipe to rewrite them with.
+        recipe: PaletteRecipe,
+    },
+    /// Clear a region to air. Sealing-aware: the carved region re-enters the
+    /// sealing + relight passes and every walkability invariant re-proves.
+    Carve {
+        /// The region (an earlier `select` in this batch) to clear.
+        region: RegionId,
+    },
+    /// Reshape terrain surface within a region (raise / lower / smooth).
+    Morph {
+        /// The region (an earlier `select` in this batch) whose columns to
+        /// reshape. The region defines the footprint and where each column's
+        /// surface is read (the highest occupied cell in the region's y-range);
+        /// `raise`/`smooth` may add cells above the region's top — reshaping
+        /// upward is the point — while removal only touches region cells.
+        region: RegionId,
+        /// The surface operation.
+        op: MorphOp,
+    },
+}
+
+/// A `select` verb's shape (spec-0017): primitive shapes resolve in a declared
+/// frame; compositions combine earlier regions of the same batch.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum RegionShape {
+    /// An inclusive axis-aligned box, `min`/`max` in the declared frame.
+    Box {
+        /// The coordinate frame `min`/`max` resolve in.
+        frame: EditFrame,
+        /// Inclusive minimum corner (frame coordinates).
+        min: [i32; 3],
+        /// Inclusive maximum corner (frame coordinates; each axis ≥ `min`).
+        max: [i32; 3],
+    },
+    /// The band of cells at `from..=to` blocks relative to each column's
+    /// terrain surface (the highest non-air cell of the column) within an
+    /// earlier region. `from: 1, to: 3` is the 3 cells of air-space above the
+    /// surface; `from: 0, to: 0` is the surface cells themselves; negative
+    /// offsets reach below the surface.
+    SurfaceBand {
+        /// The earlier region whose columns are scanned.
+        over: RegionId,
+        /// Inclusive band start, relative to each column's surface y.
+        from: i32,
+        /// Inclusive band end (≥ `from`), relative to each column's surface y.
+        to: i32,
+    },
+    /// The cells of an earlier region whose current block matches one of
+    /// `blocks` (base ids; blockstate suffixes ignored when matching).
+    PaletteMatch {
+        /// The earlier region to filter.
+        within: RegionId,
+        /// Base block ids to match (e.g. `["minecraft:grass_block"]`).
+        blocks: Vec<String>,
+    },
+    /// The union of earlier regions.
+    Union {
+        /// The earlier regions to unite (≥ 2).
+        of: Vec<RegionId>,
+    },
+    /// The intersection of earlier regions.
+    Intersect {
+        /// The earlier regions to intersect (≥ 2).
+        of: Vec<RegionId>,
+    },
+    /// An earlier region minus other earlier regions.
+    Subtract {
+        /// The earlier region to start from.
+        base: RegionId,
+        /// The earlier regions to remove from it (≥ 1).
+        remove: Vec<RegionId>,
+    },
+}
+
+/// The coordinate frame a primitive [`RegionShape`] resolves in (spec-0017):
+/// piece-local or anchor-relative — never raw world coordinates, so an edit
+/// script survives a layout's world placement moving.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum EditFrame {
+    /// The local frame of a placed piece of the batch's area: `[0, 0, 0]` is
+    /// the piece's structure origin, axes as authored (the compiler applies
+    /// the piece's placed rotation).
+    PieceLocal {
+        /// The piece's placement index in the area's solved layout (0-based,
+        /// entry piece first — the order `delvec snapshot`'s manifest lists).
+        piece: u32,
+        /// The prefab the indexed piece must be (a drift guard: if a re-solve
+        /// changed the layout, the mismatch is a loud compile error, never a
+        /// silently misplaced edit).
+        prefab: PrefabId,
+    },
+    /// Relative to a resolved anchor of the batch's area: `[0, 0, 0]` is the
+    /// anchor cell, axes world-aligned.
+    AnchorRelative {
+        /// The anchor (prefab metadata, resolved by the compiler).
+        anchor: AnchorId,
+    },
+}
+
+/// A surface operation for the `morph` verb (spec-0017).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum MorphOp {
+    /// Raise each column's surface by up to `by` blocks, drawing the added
+    /// cells from `recipe` (value-noise keyed per cell, so a raised band reads
+    /// as natural strata, not an extruded slab).
+    Raise {
+        /// How many blocks to raise each column (≥ 1).
+        by: u32,
+        /// The palette recipe for the added cells.
+        recipe: PaletteRecipe,
+    },
+    /// Lower each column's surface by up to `by` blocks (carving the topmost
+    /// solid cells to air).
+    Lower {
+        /// How many blocks to lower each column (≥ 1).
+        by: u32,
+    },
+    /// Relax each column's surface toward the mean of its cardinal neighbours
+    /// (one block per pass), turning steps into slopes. Added cells draw from
+    /// `recipe`; removed cells carve to air. Deterministic double-buffered
+    /// passes in fixed scan order.
+    Smooth {
+        /// Relaxation passes (≥ 1).
+        passes: u32,
+        /// The palette recipe for cells a pass adds.
+        recipe: PaletteRecipe,
+    },
+}
+
+/// A seeded palette recipe (spec-0017): weighted blocks picked per cell by a
+/// smooth value-noise sample, the island/cave generators' proven primitive —
+/// picks cluster into strata/patches instead of per-cell speckle, and a
+/// single-entry recipe is the degenerate (discouraged) uniform case.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PaletteRecipe {
+    /// Weighted palette entries (≥ 1; ≥ 2 for any visible surface).
+    pub blocks: Vec<PaletteBlock>,
+    /// Noise frequency in blocks⁻¹ (default `0.35` — patches a few blocks
+    /// across). Larger = smaller patches. Must be finite and > 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f64>,
+}
+
+/// One weighted entry of a [`PaletteRecipe`].
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PaletteBlock {
+    /// Vanilla block id (validated against the pinned 1.21.11 registry), with
+    /// an optional verbatim blockstate suffix (`minecraft:oak_leaves[persistent=true]`).
+    pub block: String,
+    /// Relative weight (finite, > 0).
+    pub weight: f64,
 }

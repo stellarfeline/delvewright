@@ -1,0 +1,44 @@
+{
+  "dsl_version": "0.2.0",
+  "campaign_id": "hello-world",
+  "stage": "dialogue",
+  "content": {
+    "dialogues": [
+      {
+        "npc": "npc/keeper",
+        "root": "dlg/greeting",
+        "nodes": [
+          {
+            "id": "dlg/greeting",
+            "text": "Halt, traveler. This keep is mine to guard, and the door stays shut.",
+            "options": [
+              {
+                "label": "Who are you?",
+                "next": "dlg/lore"
+              },
+              {
+                "label": "Open the door, please.",
+                "effects": [
+                  {
+                    "type": "complete-objective",
+                    "objective": "obj/talk"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "dlg/lore",
+            "text": "I am the Keeper. I have watched this gate since the moor swallowed the old road.",
+            "options": [
+              {
+                "label": "Back.",
+                "next": "dlg/greeting"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -162,6 +162,7 @@ fn campaign(npcs: &str, quests: &str, dialogue: &str) -> RawCampaign {
         quest_plan: QUEST_PLAN.to_string(),
         quests: quests.to_string(),
         dialogue: dialogue.to_string(),
+        world_edits: None,
     }
 }
 

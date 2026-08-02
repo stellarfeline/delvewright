@@ -22,6 +22,7 @@ fn campaign_with(npcs: &str, quests: &str, dialogue: &str) -> RawCampaign {
         quest_plan: common::read_valid("quest-plan.json"),
         quests: quests.to_string(),
         dialogue: dialogue.to_string(),
+        world_edits: None,
     }
 }
 
@@ -392,6 +393,7 @@ fn talk_to_targets_despawned_npc_is_dw0195() {
         quest_plan: QUEST_PLAN_TWO_QUESTS.to_string(),
         quests: QUESTS_DESPAWNED_REF.to_string(),
         dialogue: DIALOGUE_TWO_OBJECTIVES.to_string(),
+        world_edits: None,
     };
     let diags = check_campaign(&raw);
     assert!(
