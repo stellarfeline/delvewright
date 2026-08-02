@@ -30,6 +30,7 @@ pub mod registry;
 pub mod render_plan;
 pub mod resourcepack;
 pub mod solver;
+pub mod textfit;
 pub mod waypoints;
 
 /// This compiler's version (reported by `--version`, stamped in `manifest.json`).

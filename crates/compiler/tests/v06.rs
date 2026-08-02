@@ -13,7 +13,10 @@ use delvewright_compiler::emit::{self, BuildOutput};
 use delvewright_compiler::load::load_campaign_dir;
 use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, L10nDoc, RawCampaign, art_narrates, parse_campaign};
+use delvewright_compiler::textfit;
+use delvewright_dsl::{
+    Campaign, L10nDoc, RawCampaign, Severity, art_narrates, on_screen_narrates, parse_campaign,
+};
 
 /// A v0.6 `quests` document whose single quest fires the given `on_complete`
 /// effects (a raw JSON array body, without the surrounding brackets).
@@ -428,5 +431,163 @@ fn nested_valid_sound_and_art_are_clean() {
     assert!(
         atmos::check_art(&c, &BTreeMap::new()).is_empty(),
         "valid nested art is clean"
+    );
+}
+
+// --- DW0330: on-screen text fit ------------------------------------------
+
+/// A short title fits the width budget and stays quiet.
+#[test]
+fn short_title_fits_clean() {
+    let c = parse_hw(
+        &quests_doc(
+            r#"{ "type": "narrate", "text": "He Wakes", "style": "title" },
+               { "type": "campaign-complete" }"#,
+        ),
+        None,
+    );
+    assert!(
+        textfit::check_text_fits(&c, &BTreeMap::new()).is_empty(),
+        "a short title must fit the screen"
+    );
+}
+
+/// A `chat` narrate has no width budget at all — chat wraps and scrolls — so even a
+/// very long line stays quiet. Guards against the check over-reaching.
+#[test]
+fn long_chat_line_is_not_dw0330() {
+    let c = parse_hw(
+        &quests_doc(
+            r#"{ "type": "narrate", "text": "The surf gives up its dead: three drowned wade out of the shallows toward the fire, and not one of them says a word.", "style": "chat" },
+               { "type": "campaign-complete" }"#,
+        ),
+        None,
+    );
+    assert!(
+        textfit::check_text_fits(&c, &BTreeMap::new()).is_empty(),
+        "chat wraps and scrolls — it has no width budget"
+    );
+}
+
+/// An over-long title fires `DW0330`, at **warning** severity: over-long text is a
+/// legibility defect, not a build failure (the true limit depends on the player's
+/// window and GUI scale), so it must not reject the campaign.
+#[test]
+fn overlong_title_is_dw0330_warning() {
+    let c = parse_hw(
+        &quests_doc(
+            r#"{ "type": "narrate", "text": "He Rises Blind And Very Angry Indeed", "style": "title" },
+               { "type": "campaign-complete" }"#,
+        ),
+        None,
+    );
+    let d = textfit::check_text_fits(&c, &BTreeMap::new());
+    assert!(
+        d.iter()
+            .any(|x| x.code == textfit::DW_TEXT_OVERRUNS_SCREEN && x.severity == Severity::Warning),
+        "an over-long title must be a DW0330 warning: {d:#?}"
+    );
+}
+
+/// A subtitle gets twice a title's budget (it renders at ×2, not ×4): the same
+/// string that overruns as a title fits as a subtitle.
+#[test]
+fn subtitle_budget_is_twice_the_title_budget() {
+    let text = "He Rises Blind And Angry";
+    let as_title = parse_hw(
+        &quests_doc(&format!(
+            r#"{{ "type": "narrate", "text": "{text}", "style": "title" }},
+               {{ "type": "campaign-complete" }}"#
+        )),
+        None,
+    );
+    let as_subtitle = parse_hw(
+        &quests_doc(&format!(
+            r#"{{ "type": "narrate", "text": "{text}", "style": "subtitle" }},
+               {{ "type": "campaign-complete" }}"#
+        )),
+        None,
+    );
+    assert!(
+        !textfit::check_text_fits(&as_title, &BTreeMap::new()).is_empty(),
+        "the string must overrun the ×4 title budget"
+    );
+    assert!(
+        textfit::check_text_fits(&as_subtitle, &BTreeMap::new()).is_empty(),
+        "the same string must fit the ×2 subtitle budget"
+    );
+}
+
+/// An art title takes the ×4 title scale *and* the `delve:art` font's 4×-scaled
+/// glyphs, so it fits far fewer characters than a default-font title of the same
+/// length — the case the campaign's `THE QUIET SAIL` hit.
+#[test]
+fn overlong_art_title_is_dw0330() {
+    let c = parse_hw(
+        &quests_doc(
+            r#"{ "type": "narrate", "text": "THE QUIET SAIL", "style": "art" },
+               { "type": "campaign-complete" }"#,
+        ),
+        None,
+    );
+    let d = textfit::check_text_fits(&c, &BTreeMap::new());
+    assert!(
+        d.iter().any(|x| x.code == textfit::DW_TEXT_OVERRUNS_SCREEN),
+        "an over-long art title must be DW0330: {d:#?}"
+    );
+    // The same text in the default font fits a title easily — it is the art font's
+    // glyph scale, not the character count, that overruns.
+    let plain = parse_hw(
+        &quests_doc(
+            r#"{ "type": "narrate", "text": "THE QUIET SAIL", "style": "title" },
+               { "type": "campaign-complete" }"#,
+        ),
+        None,
+    );
+    assert!(
+        textfit::check_text_fits(&plain, &BTreeMap::new()).is_empty(),
+        "the same string fits as a default-font title"
+    );
+}
+
+/// The l10n half — the case the owner actually hit. The English source fits, but the
+/// `zh-cn` sidecar rendition does not, and the finding must name the locale and the
+/// l10n key so the string to shorten is unambiguous.
+#[test]
+fn overlong_zh_subtitle_translation_is_dw0330() {
+    let mut world: serde_json::Value = serde_json::from_str(&read_hw("world.json")).unwrap();
+    world["content"]["languages"] = serde_json::json!(["zh-cn"]);
+    let c = parse_hw(
+        &quests_doc(
+            r#"{ "type": "narrate", "text": "Stay down.", "style": "subtitle" },
+               { "type": "campaign-complete" }"#,
+        ),
+        Some(world.to_string()),
+    );
+    assert!(
+        textfit::check_text_fits(&c, &BTreeMap::new()).is_empty(),
+        "the English source must fit"
+    );
+    let key = on_screen_narrates(&c)[0].key.clone();
+    let sidecar_json = serde_json::json!({
+        "dsl_version": "0.6.0",
+        "campaign_id": "hello-world",
+        "kind": "l10n",
+        "lang": "zh-cn",
+        "content": {
+            key.clone(): "待在阴影里。伏低。别弄出一点他能循着找来的声音,他会听见的。"
+        }
+    });
+    let doc: L10nDoc = serde_json::from_value(sidecar_json).unwrap();
+    let mut sidecars = BTreeMap::new();
+    sidecars.insert("zh-cn".to_string(), doc);
+
+    let d = textfit::check_text_fits(&c, &sidecars);
+    assert!(
+        d.iter().any(|x| x.code == "DW0330"
+            && x.stage == "l10n"
+            && x.path.contains("zh-cn")
+            && x.path.contains(&key)),
+        "an over-long zh subtitle must be DW0330 against the l10n sidecar, named by key: {d:#?}"
     );
 }
