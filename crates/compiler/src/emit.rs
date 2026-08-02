@@ -162,6 +162,37 @@ pub fn build(
     content_sha: &str,
     skins: &BTreeMap<String, Vec<u8>>,
 ) -> Result<BuildOutput, BuildFailure> {
+    build_with_warnings(
+        plan,
+        input_bytes,
+        structures,
+        tree,
+        prefabs,
+        language,
+        content_sha,
+        skins,
+    )
+    .map(|(out, _)| out)
+}
+
+/// [`build`], additionally returning the advisory diagnostics the build raised.
+///
+/// Warning-tier findings that only the *built* model can see (currently the
+/// stage-7 edit replay's `DW0353`/`DW0354`) have no other channel: they are
+/// discovered after `dsl::validate` has run and long after `analyze`. `build`
+/// stays the discard-warnings convenience wrapper so every existing caller —
+/// and every test asserting byte-identical output — is untouched.
+#[allow(clippy::too_many_arguments)]
+pub fn build_with_warnings(
+    plan: &Plan,
+    input_bytes: &BTreeMap<String, Vec<u8>>,
+    structures: &BTreeMap<String, Vec<u8>>,
+    tree: &CommandTree,
+    prefabs: &crate::registry::PrefabRegistry,
+    language: Option<&str>,
+    content_sha: &str,
+    skins: &BTreeMap<String, Vec<u8>>,
+) -> Result<(BuildOutput, Vec<delvewright_dsl::Diagnostic>), BuildFailure> {
     let ns = &plan.namespace;
     let mut out: BuildOutput = BTreeMap::new();
 
@@ -190,6 +221,11 @@ pub fn build(
             code: e.code,
             message: e.message,
         })?;
+    // Advisory findings the replay raised (`DW0353` gate-region collisions,
+    // `DW0354` broken block support) — reported by the caller, never fatal.
+    let warnings: Vec<delvewright_dsl::Diagnostic> = edit_replay
+        .as_ref()
+        .map_or_else(Vec::new, |er| er.warnings.clone());
 
     // v0.4 navigation planning over the solved voxel grid (spec-0008 addendum):
     // collision-safe `move-npc` walked paths (DW0307) + cutscene air-corridor
@@ -515,7 +551,7 @@ pub fn build(
     );
     put_json(&mut out, "manifest.json", &manifest);
 
-    Ok(out)
+    Ok((out, warnings))
 }
 
 /// The `SKINS.md` build-output note: how the packaging task wires the emitted
@@ -836,6 +872,18 @@ fn ent_xyz(c: [i32; 3]) -> [String; 3] {
     [fmt_f64(p[0]), fmt_f64(p[1]), fmt_f64(p[2])]
 }
 
+/// Every `(chunk_x, chunk_z)` an inclusive block AABB covers, in ascending
+/// order. Chunk coordinates use vanilla's floor division (negative block coords
+/// belong to the chunk below, not toward zero — the fifth-level piece
+/// straddling chunk `z=-1` that motivated the placement retry loop lives here).
+fn chunk_span(min: [i32; 3], max: [i32; 3]) -> Vec<(i32, i32)> {
+    let (x0, x1) = (min[0].div_euclid(16), max[0].div_euclid(16));
+    let (z0, z1) = (min[2].div_euclid(16), max[2].div_euclid(16));
+    (x0..=x1)
+        .flat_map(|cx| (z0..=z1).map(move |cz| (cx, cz)))
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn emit_functions(
     plan: &Plan,
@@ -1004,6 +1052,35 @@ fn emit_functions(
     }
     setup.push("scoreboard players set #placed dw.sys 0".to_string());
 
+    // The edit-script chunk ledger (map-editor audit, findings 2 + 6): which
+    // chunks the `world_edits` writes need loaded, and which of those the piece
+    // forceloads do NOT already cover. `forceload add` only MARKS a chunk — the
+    // very reason placement is retried — so `world_edits` needs the same
+    // load-convergence gate (`place_verify` below) and, being one-shot, may
+    // release its own chunks afterwards.
+    let piece_chunks: BTreeSet<(i32, i32)> = plan
+        .areas
+        .iter()
+        .flat_map(|a| a.pieces.iter())
+        .flat_map(|p| {
+            let (min, max) = p.bbox();
+            chunk_span(min, max)
+        })
+        .collect();
+    // Chunk → a representative block cell inside BOTH the chunk and the edit
+    // AABB (`execute if loaded` takes a block pos). Deterministic: `BTreeMap`
+    // keyed on the chunk coordinate, first AABB to reach a chunk wins.
+    let mut edit_chunks: BTreeMap<(i32, i32), [i32; 3]> = BTreeMap::new();
+    for (min, max) in edit_bounds {
+        for (cx, cz) in chunk_span(*min, *max) {
+            edit_chunks.entry((cx, cz)).or_insert([
+                (cx * 16).max(min[0]),
+                min[1],
+                (cz * 16).max(min[2]),
+            ]);
+        }
+    }
+
     // --- place_all: idempotent template placement, retried from tick ---
     let mut place_all: Vec<String> = Vec::new();
     for area in &plan.areas {
@@ -1020,10 +1097,30 @@ fn emit_functions(
     }
     fns.push(("place_all".to_string(), lines(&place_all)));
 
-    // --- place_verify: sentinel check per piece; all present → setup_finish ---
+    // --- place_verify: sentinel check per piece + per edit chunk; all present
+    // → setup_finish ---
     let mut place_verify: Vec<String> = Vec::new();
     place_verify.push("scoreboard players set #placeok dw.sys 0".to_string());
     let mut sentinel_count = 0u32;
+    // Edit-script chunks that no piece bbox covers get their OWN convergence
+    // sentinel (map-editor audit finding 2). Without it `setup_finish` could
+    // fire the moment the pieces verify, run `world_edits` into a still-loading
+    // chunk, and lose those writes permanently — vanilla `setblock` into an
+    // unloaded chunk fails with no output, and `world_edits` runs exactly once.
+    // Folding them into `#placeok` reuses the placement retry loop verbatim:
+    // the tick function re-runs `place_verify` until every sentinel AND every
+    // edit chunk reports in. Empty for a campaign whose edits stay inside the
+    // pieces → `place_verify` byte-identical.
+    for ((cx, cz), cell) in &edit_chunks {
+        if piece_chunks.contains(&(*cx, *cz)) {
+            continue;
+        }
+        place_verify.push(format!(
+            "execute if loaded {} {} {} run scoreboard players add #placeok dw.sys 1",
+            cell[0], cell[1], cell[2]
+        ));
+        sentinel_count += 1;
+    }
     for area in &plan.areas {
         for piece in &area.pieces {
             if let Some((local, block)) = sentinels.get(&piece.structure_file) {
@@ -1154,6 +1251,22 @@ fn emit_functions(
     // v0.6: fill each trap dispenser payload and summon disarm affordances
     // (spec-0011). Empty for a campaign with no traps → byte-identical.
     setup.extend(trap_setup(plan));
+    // Forceload lifecycle (map-editor audit finding 6, planner decision). The
+    // edit-AABB forceloads exist for ONE reason — letting the one-shot
+    // `world_edits` writes land — and `place_verify` above has now proven every
+    // one of those chunks loaded. Release the ones no piece bbox covers, at the
+    // very END of `setup_finish` so every other write in this function (relight
+    // fixtures, NPC summons, trap hardware) has already run against loaded
+    // chunks. The PIECE forceloads are deliberately untouched: the gameplay tick
+    // machinery (gate fills, wave spawns, checkpoint and trap block reads) keeps
+    // addressing those chunks for the whole session. Empty for a campaign whose
+    // edits stay inside the pieces → `setup_finish` byte-identical.
+    for ((cx, cz), cell) in &edit_chunks {
+        if piece_chunks.contains(&(*cx, *cz)) {
+            continue;
+        }
+        setup.push(format!("forceload remove {} {}", cell[0], cell[2]));
+    }
     setup.push("scoreboard players set #placed dw.sys 1".to_string());
     fns.push(("setup_finish".to_string(), lines(&setup)));
 
