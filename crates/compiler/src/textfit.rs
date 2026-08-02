@@ -15,9 +15,11 @@
 //!
 //! `Gui.renderTitle` pushes a **×4** pose scale for the title and **×2** for the
 //! subtitle, then draws centred at `guiWidth / 2`. An art title is a `title` in the
-//! `delve:art` font, so it takes the ×4 title scale *and* that font's much larger
-//! glyphs ([`crate::atmos::ART_HEIGHT`] / [`crate::atmos::CELL`] = 4× the source
-//! bitmap) — the two multiply, which is why art fits so few characters.
+//! `delve:art` font, so it takes the ×4 title scale on top of that font's own
+//! provider scale ([`crate::atmos::ART_SCALE`]). Those two multiply — which is why
+//! the art font renders at source size (×1) and still draws a title-sized banner.
+//! Through v0.6 the provider scale was ×4, and ×4 × ×4 left room for four glyphs;
+//! see `ART_SCALE` for why it is 1.
 //!
 //! So a string fits when `width_in_font_px * style_scale <= usable_gui_width`.
 //!
@@ -37,7 +39,7 @@ use std::collections::BTreeMap;
 
 use delvewright_dsl::{Campaign, Diagnostic, L10nDoc, NarrateStyle, on_screen_narrates};
 
-use crate::atmos::{ART_HEIGHT, ART_SPACE_ADVANCE, CELL, GW};
+use crate::atmos::{ART_GLYPH_ADVANCE, ART_SPACE_ADVANCE};
 
 /// `DW0330`: an on-screen `narrate` string (`title` / `subtitle` / `art`), in the
 /// English source or a sidecar translation, is wider than the screen renders.
@@ -196,17 +198,16 @@ pub fn default_font_width(text: &str) -> u32 {
 }
 
 /// The rendered width of `text` in the `delve:art` font, in font pixels. Every art
-/// glyph is the same [`GW`]-px-wide bitmap scaled by `ART_HEIGHT / CELL`, so its
-/// advance is uniform; the space comes from the font's own `space` provider. Derived
-/// from the same constants that emit the font, so the two cannot drift.
+/// glyph advances the same [`ART_GLYPH_ADVANCE`]; the space comes from the font's own
+/// `space` provider. Both are the constants that *emit* the font (they derive from
+/// `atmos::ART_SCALE`), so the lint and the shipped font cannot drift.
 pub fn art_font_width(text: &str) -> u32 {
-    let glyph = (GW * ART_HEIGHT / CELL + 1) as u32;
     text.chars()
         .map(|ch| {
             if ch == ' ' {
                 ART_SPACE_ADVANCE as u32
             } else {
-                glyph
+                ART_GLYPH_ADVANCE as u32
             }
         })
         .sum()
@@ -341,8 +342,24 @@ mod tests {
     /// glyph-size change cannot leave the budget stale.
     #[test]
     fn art_glyphs_are_derived_from_the_font_it_emits() {
-        assert_eq!(art_font_width("A"), 21);
-        assert_eq!(art_font_width("A A"), 21 + 16 + 21);
+        assert_eq!(art_font_width("A"), ART_GLYPH_ADVANCE as u32);
+        assert_eq!(art_font_width("A"), 6);
+        assert_eq!(art_font_width("A A"), 6 + 4 + 6);
+    }
+
+    /// The reason `ART_SCALE` is 1: the ×4 title pose leaves 90 font px, and an
+    /// ending banner needs at least a dozen glyphs in it. This is the acceptance the
+    /// scale was chosen against — if the font grows again, this fails first.
+    #[test]
+    fn the_art_budget_fits_a_real_banner() {
+        let fits = budget(NarrateStyle::Art) / ART_GLYPH_ADVANCE as u32;
+        assert_eq!(fits, 15, "art fits 15 glyphs at the ×4 title pose");
+        assert!(fits >= 12, "an ending banner needs ≥12 glyphs");
+        // The strings the owner hit on screen, both renditions of each.
+        assert!(art_font_width("NOBODY") <= budget(NarrateStyle::Art));
+        assert!(art_font_width("HOMEWARD") <= budget(NarrateStyle::Art));
+        // …and the check still bites past the budget.
+        assert!(art_font_width("HOMEWARD BOUND AGAIN") > budget(NarrateStyle::Art));
     }
 
     /// The budgets follow from the reference GUI width and the vanilla pose scales.

@@ -32,7 +32,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   output byte-identical.
 - spec-0014 sound + art-title have **landed** at `dsl_version 0.6.0`: the
   `play-sound` effect (`DW0326` unknown sound, `DW0335` deferred `at: actor`) and
-  the `narrate` `style: art` large-glyph `delve:art` font (`DW0328` glyph
+  the `narrate` `style: art` `delve:art` pixel-banner font (`DW0328` glyph
   coverage). The remaining v0.6 surface (scripted actors) lands in a sibling PR
   under the same version gate.
 - task #55 has **landed** on `dsl_version 0.6.0`: per-effect `requires_flags` (a
@@ -189,7 +189,7 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Effect `spawn-wave` | Summons wave mobs (AI on), tag `dw_wave_<id>`. | 0.3 |
 | Effect `give-item{item,count,name?}` | Grants item (`name` v0.4). | 0.3 |
 | Effect `set-flag{flag}` | Sets `dw.f_<flag>` (per-player). | 0.3 |
-| Effect `narrate{text,style?,sound?}` | chat/title/subtitle/**art**; `text` → l10n; `sound` validated (`DW0326`); `art` = large-glyph `delve:art` font, glyph-checked (`DW0328`). | 0.4 / art 0.6 |
+| Effect `narrate{text,style?,sound?}` | chat/title/subtitle/**art**; `text` → l10n; `sound` validated (`DW0326`); `art` = the `delve:art` pixel-banner font, glyph-checked (`DW0328`), width-checked (`DW0330`). | 0.4 / art 0.6 |
 | Effect `set-block{anchor,block}` | `setblock` at anchor; base block id validated (`DW0193`). `block` accepts a verbatim blockstate suffix `id[key=value,…]` (v0.6). | 0.4 / state 0.6 |
 | Effect `requires_flags[]` (any effect) | Per-effect AND-gate (v0.6): wraps the effect's command(s) in a per-player `execute if score @s dw.f_<flag> matches 1 run …`. Valid on any `on_objective_complete` / `on_complete` / trigger effect **except** terminal `campaign-complete`; refs resolve like objective flags (`DW0172`). | 0.6 |
 | Effect `despawn-npc{npc}` | Removes NPC + hitbox. | 0.4 |
@@ -302,7 +302,7 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | `open-gate` | `/fill … air` over the gate region. |
 | `close-gate` | `/fill <region> <block>` over the gate region with the anchor's declared fill block (no `replace` clause — the dual of `open-gate`). |
 | `give-item` | Grants item to player (`name` → SNBT text component). |
-| `narrate` | chat / `title` / `subtitle` (+ optional sound); `art` = `title` with a `{"font":"delve:art"}` text component, rendered uppercase. |
+| `narrate` | chat / `title` / `subtitle` (+ optional sound); `art` = `title` with a `{"font":"delve:art"}` text component, rendered uppercase in the pixel-banner font (6 font px/glyph → ~15 glyphs fit; see [The `delve:art` font](#the-delveart-font)). |
 | `play-sound` | `playsound <sound> master @s [<pos>] [<vol> [<pitch>]]` — effects run `as @a`, so `@s` is each player: `anchor` uses the resolved anchor pos (all hear it there), `players` uses `~ ~ ~`. |
 | `damage-players` | `damage @s <amount> <type>` (per-`@s`; default `minecraft:generic`). With `in`: `execute if entity @s[x=…,dx=2·ext,…] run damage @s …` (the stealth-zone box model, so it stays per-`@s` — no double-hit). A generated `v06_damage` PackTest summons a tagged dummy, applies the declared amount+type, and asserts its `Health` strictly dropped. |
 | `set-block` | `setblock` at resolved anchor. |
@@ -775,6 +775,41 @@ identically.
 | `DW0328` | An `art`-styled `narrate` string — the English source **or** any declared-language sidecar translation — uses a character outside the `delve:art` font's glyph inventory (A–Z, 0–9, space, `! " ' ( ) , - . / : ; ?`; lowercase folds to uppercase). Forces per-language art titles to stay ASCII/Latin — a `zh-cn` art translation must be an ASCII rendition. |
 | `DW0335` | A `play-sound` targets `at: {actor: …}`, accepted by the schema but not yet wired — the actors surface (spec-0014 `actors[]`) has not landed. Use `at: {anchor}` or `at: players`. (Graduates when the actors PR wires actor-position resolution.) |
 
+#### The `delve:art` font
+
+An original 5×7 pixel bitmap font authored in `compiler::atmos` (`ART_GLYPHS`), baked
+into `resourcepack.zip` as `assets/delve/font/art.json` +
+`assets/delve/textures/font/art.png` — and **only** when the campaign uses `style:
+art`, so a non-art campaign's pack stays byte-identical. The PNG is written by a
+hand-rolled deterministic encoder (stored DEFLATE, no compressor), like the pack's
+hand-rolled ZIP/SHA-1.
+
+| Constant | Value | Meaning |
+|----------|-------|---------|
+| `CELL` / `GW` / `GH` | 8 / 5 / 7 | atlas cell, glyph ink width, glyph ink height, in source px |
+| `ART_SCALE` | **1** | the provider's source-pixel scale — the one knob for on-screen size |
+| `ART_HEIGHT` / `ART_ASCENT` | 8 / 7 | provider `height` / `ascent` = `CELL·ART_SCALE` / `GH·ART_SCALE` |
+| `ART_GLYPH_ADVANCE` | **6** | `GW·ART_SCALE + 1`, vanilla's `round(ink·height/cellHeight)+1` |
+| `ART_SPACE_ADVANCE` | 4 | the `space` provider's advance, `4·ART_SCALE` |
+
+**`ART_SCALE` must stay an integer** — the font atlas is sampled nearest-neighbour,
+so a fractional scale splits a source pixel across screen pixels and the glyph edges
+go ragged. It was **4** through v0.6, which is why art banners could not physically
+fit: an art `narrate` renders in the vanilla **title** slot, so the provider scale
+and the slot's ×4 pose scale multiply, and 21 font px/glyph against `DW0330`'s 90 px
+budget left room for *four* glyphs. The island's `NOBODY` (126 px) and `HOMEWARD`
+(168 px) ran off both edges on screen. Halving to 2 was not enough — 11 px/glyph fits
+8, which `HOMEWARD` exactly exhausts — so `ART_SCALE` is **1**, the largest integer
+scale that fits **15** glyphs. The title slot still draws it ×4, so an art title
+remains a title-sized blocky all-caps banner; what changed is that it now occupies a
+title's share of the screen instead of four times it. `ART_ASCENT = GH·ART_SCALE`
+keeps the ink sitting exactly on the baseline at any scale.
+
+The width model treats every glyph as a flat `ART_GLYPH_ADVANCE`. That is exact for
+every letter and digit (all ink the full 5 columns) and deliberately **conservative**
+for the few narrow punctuation glyphs (`'`, `(`, `!`), which vanilla advances less —
+`DW0330` never under-measures a line.
+
 ### DW0330 — on-screen text fit (`compiler::textfit`; **warning**; exit 0)
 
 The only **advisory** code in the compiler. Vanilla draws a `title`, a `subtitle`
@@ -791,12 +826,14 @@ tuned for, so the check sums real advances: the ASCII sheet's per-glyph widths, 
 glyph metrics, derived from the same constants that emit the font.
 
 **Budget.** `Gui.renderTitle` renders a title at pose scale **×4** and a subtitle at
-**×2**; an art title is a title, so it takes ×4 *and* the art font's 4×-scaled
-glyphs (the two multiply — art fits ~4 characters). Against a reference GUI width of
-**426** scaled px (what Minecraft's auto GUI scale yields at 1280×720 and 2560×1440;
-1920×1080 gives 480, and 320 is the auto floor) at **85%** usable width, the budgets
-are **90** font px for `title` and `art` and **181** for `subtitle`. `chat` has no
-budget — it wraps and scrolls.
+**×2**; an art title is a title, so it takes ×4 on top of the `delve:art` provider's
+own scale (see [The `delve:art` font](#the-delveart-font)). Against a reference GUI
+width of **426** scaled px (what Minecraft's auto GUI scale yields at 1280×720 and
+2560×1440; 1920×1080 gives 480, and 320 is the auto floor) at **85%** usable width,
+the budgets are **90** font px for `title` and `art` and **181** for `subtitle`.
+`chat` has no budget — it wraps and scrolls. At the art font's 6 px/glyph that is
+**15 art glyphs**; the lint reads the same `ART_GLYPH_ADVANCE` / `ART_SPACE_ADVANCE`
+constants the font emission does, so the two cannot drift.
 
 **Why warning, not error.** The true limit is a property of the player's window and
 GUI scale, which the compiler cannot know; rejecting on it would dress a judgement

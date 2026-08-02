@@ -518,16 +518,17 @@ fn subtitle_budget_is_twice_the_title_budget() {
     );
 }
 
-/// An art title takes the ×4 title scale *and* the `delve:art` font's 4×-scaled
-/// glyphs, so it fits far fewer characters than a default-font title of the same
-/// length — the case the campaign's `THE QUIET SAIL` hit.
+/// The negative half of the `ART_SCALE` shrink: shrinking the provider must not
+/// disarm the check. An art title still renders in the ×4 title slot on a 90 px
+/// budget, so a full sentence of a banner overruns it and must still be `DW0330`.
 #[test]
 fn overlong_art_title_is_dw0330() {
+    const LONG: &str = "THE QUIET SAIL HOMEWARD";
     let c = parse_hw(
-        &quests_doc(
-            r#"{ "type": "narrate", "text": "THE QUIET SAIL", "style": "art" },
-               { "type": "campaign-complete" }"#,
-        ),
+        &quests_doc(&format!(
+            r#"{{ "type": "narrate", "text": "{LONG}", "style": "art" }},
+               {{ "type": "campaign-complete" }}"#
+        )),
         None,
     );
     let d = textfit::check_text_fits(&c, &BTreeMap::new());
@@ -535,19 +536,39 @@ fn overlong_art_title_is_dw0330() {
         d.iter().any(|x| x.code == textfit::DW_TEXT_OVERRUNS_SCREEN),
         "an over-long art title must be DW0330: {d:#?}"
     );
-    // The same text in the default font fits a title easily — it is the art font's
-    // glyph scale, not the character count, that overruns.
-    let plain = parse_hw(
-        &quests_doc(
-            r#"{ "type": "narrate", "text": "THE QUIET SAIL", "style": "title" },
-               { "type": "campaign-complete" }"#,
-        ),
+    // It is the ×4 title slot that overruns, not the string being unusable on screen:
+    // the same line fits the ×2 subtitle budget.
+    let sub = parse_hw(
+        &quests_doc(&format!(
+            r#"{{ "type": "narrate", "text": "{LONG}", "style": "subtitle" }},
+               {{ "type": "campaign-complete" }}"#
+        )),
         None,
     );
     assert!(
-        textfit::check_text_fits(&plain, &BTreeMap::new()).is_empty(),
-        "the same string fits as a default-font title"
+        textfit::check_text_fits(&sub, &BTreeMap::new()).is_empty(),
+        "the same string fits the ×2 subtitle budget"
     );
+}
+
+/// The regression this PR exists for: the island's ending banners are 6 and 8 glyphs
+/// and **must** be quiet. At the old ×4 provider scale they measured 126 and 168 px
+/// against a 90 px budget and physically could not fit on screen.
+#[test]
+fn island_ending_banners_fit_the_art_budget() {
+    for text in ["NOBODY", "HOMEWARD"] {
+        let c = parse_hw(
+            &quests_doc(&format!(
+                r#"{{ "type": "narrate", "text": "{text}", "style": "art" }},
+                   {{ "type": "campaign-complete" }}"#
+            )),
+            None,
+        );
+        assert!(
+            textfit::check_text_fits(&c, &BTreeMap::new()).is_empty(),
+            "the `{text}` ending banner must fit the art budget"
+        );
+    }
 }
 
 /// The l10n half — the case the owner actually hit. The English source fits, but the
