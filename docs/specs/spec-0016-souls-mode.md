@@ -74,9 +74,112 @@ with the author, the compiler keeps the receipts.
    criteria. Genres: tower defense; one-map siege (attacker + defender
    campaigns); stealth heist; horror escape; detective mystery; moving
    escort; time-attack parkour; boss rush; puzzle dungeon; horde survival;
-   branching moral drama; negotiation adventure. Suite ships as an appendix
-   to this spec before M4 close.
+   branching moral drama; negotiation adventure. The suite is Appendix A.
 
 ## Non-goals
 Difficulty settings (a delve is tuned once); PvP; procedural difficulty
 scaling; any runtime LLM.
+
+## Appendix A — skill-completeness prompt suite (owner-run)
+
+**Protocol.** The owner runs each prompt through `/new-delve` verbatim, with
+no planner assistance during the run. Each genre has two prompts: a
+**free** one-liner (tests creative competence — does the skill produce a
+coherent delve of the genre from almost nothing?) and a **brief** (tests
+fidelity — every criterion is checkable on the generated campaign). A genre
+passes when the free run yields a full-ladder-green playable delve
+recognizably of the genre, and the brief run additionally satisfies every
+criterion. Failures are skill/toolchain findings, never prompt findings —
+fix the skill, don't tune the prompt.
+
+1. **Tower defense** — free: "Make me a tower-defense delve: monster waves
+   march down fixed lanes toward a heart I defend."
+   Brief: ≥3 lanes converging on one defended anchor; ≥5 waves, escalating
+   composition + equipment; lane mobs march routed while distant and fight
+   with native AI once aggroed (§6); between-wave build/rest phase with a
+   visible timer; defeat = heart destroyed → checkpoint, victory = final
+   wave cleared; defense resources issued by the story, never farmed.
+
+2. **One-map siege** (Bannerlord-style, owner-named) — free: "One fortress,
+   two campaigns: in one I storm it, in the other I hold it."
+   Brief: one shared prefab set/world, two campaign DSLs on the SAME seed;
+   attacker: breach → courtyard → keep with ≥2 proven breach routes;
+   defender: hold 3 fallback lines against timed assault waves; mirrored
+   cast (the commander you serve in one is the boss of the other); both
+   campaigns full-ladder green independently.
+
+3. **Stealth heist** — free: "A heist: get in, take the prize, get out —
+   without being seen."
+   Brief: patrol actors + dark zones with declared mitigation; caught =
+   telegraphed consequence (death→checkpoint or alarm escalation, not
+   nothing); the prize is a collect objective; ≥2 infiltration routes both
+   analyzer-proven; zero mandatory combat.
+
+4. **Horror escape** — free: "Something hunts me through this place; I
+   can't kill it, only get out."
+   Brief: an unkillable pursuer (unleashed actor / puppet handoff); ≥2
+   hide beats; one-way doors sealing the route behind the player; darkness
+   as a managed resource (declared dark areas + light the story issues);
+   the ending is escape, no kill objective on the pursuer.
+
+5. **Detective mystery** — free: "A murder on a small island; everyone has
+   a story; I name the culprit."
+   Brief: ≥5 interrogatable NPCs with flag-tracked branching dialogue; ≥4
+   physical clue collects; the accusation dialogue gated on evidence
+   flags; a wrong accusation has consequences but is never a soft-lock;
+   two suspects stay viable until the final clue (red-herring provable).
+
+6. **Moving escort** — free: "I escort someone precious across dangerous
+   ground; they must arrive alive."
+   Brief: escort walks a real route (move-npc/actor) across ≥2 areas; ≥2
+   scripted ambushes on the route, both telegraphed (§3); escort waits at
+   contested points until the player clears them; escort death →
+   checkpoint; arrival cutscene (multi-shot).
+
+7. **Time-attack parkour** — free: "A race against the clock across jumps
+   that can kill me."
+   Brief: parkour areas within the measured envelope (§5); visible
+   schedule-driven timer; ≥1 timed-gate section (§4); falls route to a
+   bonfire, never strand (DW0315); bonfire density per §7.
+
+8. **Boss rush** — free: "No filler: a chain of boss arenas, each worse
+   than the last."
+   Brief: ≥3 arenas chained by one-way doors (§2); each boss = staged
+   waves + actor set-piece with telegraphed patterns; bonfire between
+   arenas; a pre-fight cutscene per boss; no trash mobs between arenas.
+
+9. **Puzzle dungeon** — free: "A dungeon that attacks my mind, not my
+   health bar."
+   Brief: ≥4 distinct puzzle idioms (flag logic, item use, timing gate,
+   interact ordering); no combat required; every puzzle's solution on the
+   analyzer-proven path; gates actually seal (no walk-around brute force);
+   an optional hint NPC.
+
+10. **Horde survival** — free: "Hold this position; the night is long and
+    they keep coming."
+    Brief: one defensible position, ≥6 waves with rest phases between;
+    wave equipment + composition escalation; final wave led by a named
+    elite (actor); visible wave counter; defeat restarts the current wave
+    at the bonfire (respawns_on_rest, §1).
+
+11. **Branching moral drama** — free: "A story where my choices cost
+    something and the ending is mine to answer for."
+    Brief: ≥3 endings from accumulated choice flags; no ending marked
+    correct; earlier choices echoed later via flag-gated dialogue
+    variants; ≥1 irreversible choice; endings as fullscreen titles; l10n
+    complete across all branches.
+
+12. **Negotiation adventure** — free: "Three factions on the edge of war;
+    my only weapon is talk."
+    Brief: the central conflict resolvable entirely through dialogue; ≥3
+    factions with stances tracked as flags; failed talks degrade to a
+    harder path, never a soft-lock; a final summit where every earlier
+    concession is referenced; the pacifist route analyzer-proven.
+
+**Coverage.** Together the twelve stress every subsystem the skill can
+reach: lanes/waves (1, 2, 10), shared-world multi-campaign (2), stealth +
+consequence (3, 4), actor pursuit/escort/set-pieces (4, 6, 8, 10), deep
+dialogue/flag machinery (5, 11, 12), souls mechanics §§1–7 (7, 8, 10),
+puzzle/gate logic (9), endings + l10n breadth (11, 12). A subsystem no
+genre exercises is a gap in this suite — extend the suite, don't shrink
+the claim.
