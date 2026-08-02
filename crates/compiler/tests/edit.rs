@@ -1122,3 +1122,72 @@ fn fragment_stamps_preserve_blockstate() {
         "no bare (floor) lantern is stamped:\n{body}"
     );
 }
+
+/// **Rotated fragment stamps are REFUSED, not warned about** (planner ruling on
+/// the gap `fragment_stamps_preserve_blockstate` surfaced). `rotation` turns
+/// cell POSITIONS only — there is no rotate-aware blockstate rewriter — so a
+/// quarter-turned stamp of a prefab carrying `facing`/`axis`/`shape`/connection
+/// state would ship visibly deformed geometry. That is the silently-deformed-map
+/// class, so it is a build error (`DW0323`, the fragment verb's resolution code).
+///
+/// It is a **collision test, not a blanket ban**: a prefab whose every state is
+/// yaw-invariant (`hello-room` carries only `lantern[hanging=true]`) rotates
+/// correctly and stays allowed. Rejecting that too would be a check asserting
+/// something false.
+#[test]
+fn rotated_fragment_of_a_directional_prefab_is_dw0323() {
+    let dir = edits_copy("edits-rotation");
+    let stamp = |prefab: &str, rotation: Option<&str>| {
+        let mut edit = serde_json::json!({
+            "verb": "fragment", "prefab": prefab,
+            "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+            "at": [0, -9, 0]
+        });
+        if let Some(r) = rotation {
+            edit["rotation"] = serde_json::json!(r);
+        }
+        set_batches(
+            &dir,
+            serde_json::json!([{ "id": "batch/rot", "area": "area/keep", "edits": [edit] }]),
+        );
+        delvec(&[
+            "build",
+            dir.to_str().unwrap(),
+            "-o",
+            tmp("edits-rotation-out").to_str().unwrap(),
+            "--prefabs",
+            &prefabs_arg(),
+        ])
+    };
+
+    // `keep-stair` carries `facing`/`shape` stair state: a quarter-turn would
+    // leave every stair pointing the way it did before it moved.
+    let r = stamp("prefab/keep-stair", Some("clockwise90"));
+    assert_eq!(r.status.code(), Some(3), "build-tier refusal");
+    let stdout = combined(&r);
+    assert!(stdout.contains("DW0323"), "expected DW0323:\n{stdout}");
+    assert!(
+        stdout.contains("prefab/keep-stair") && stdout.contains("facing="),
+        "names the prefab and the offending property:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("rotate-aware stamping is NOT implemented"),
+        "says the compiler refuses, and why:\n{stdout}"
+    );
+
+    // The same prefab stamped unrotated is fine — the refusal is about the
+    // rotation, not about the prefab.
+    let r = stamp("prefab/keep-stair", None);
+    assert!(r.status.success(), "unrotated is fine:\n{}", combined(&r));
+
+    // And a prefab with no yaw-dependent state rotates correctly, in both
+    // directions: the check must not reject provably correct output.
+    for rot in ["clockwise90", "counterclockwise90", "clockwise180"] {
+        let r = stamp("prefab/hello-room", Some(rot));
+        assert!(
+            r.status.success(),
+            "yaw-invariant prefab rotates fine ({rot}):\n{}",
+            combined(&r)
+        );
+    }
+}

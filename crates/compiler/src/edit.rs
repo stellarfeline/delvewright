@@ -1396,9 +1396,7 @@ fn fragment(
     // occupancy model stores bare ids, but a `fragment` stamp's writes ARE the
     // runtime `setblock` lines. Reading bare ids turned the hello-room prefab's
     // `lantern[hanging=true]` into a floor lantern stamped into mid-air, which
-    // vanilla drops on the next chunk tick. NOTE: `rotation` still turns only
-    // POSITIONS — direction-bearing properties (`facing`, `axis`, `shape`) are
-    // not re-oriented; see `docs/reference/compiler.md`.
+    // vanilla drops on the next chunk tick.
     let cells = assembled::structure_cells_stateful(bytes);
     if cells.is_empty() {
         return Err(EditError {
@@ -1410,12 +1408,92 @@ fn fragment(
             ),
         });
     }
+    // `rotation` turns POSITIONS only — the compiler has no rotate-aware
+    // blockstate rewriter, so a stamped `facing`/`axis`/`shape` would keep its
+    // unrotated value and ship visibly deformed geometry (stairs facing into
+    // walls, logs lying across the grain). That is the silently-deformed-map
+    // class, so the compiler REFUSES rather than warns: a rotated stamp of a
+    // prefab carrying any yaw-dependent property is a build error. Prefabs whose
+    // states are provably yaw-INVARIANT (`hanging`, `half`, `waterlogged`,
+    // `axis=y`, `facing=up|down`, …) rotate correctly and stay allowed — this is
+    // a collision test, not a blanket ban on `rotation`.
+    if rotation != delvewright_dsl::FragmentRotation::None
+        && let Some((local, name, prop)) = first_yaw_dependent(&cells)
+    {
+        return Err(EditError {
+            code: DW_EDIT_UNRESOLVED,
+            message: format!(
+                "world-edits batch `{bid}`: fragment prefab `{prefab}` is stamped with \
+                 `rotation: {rotation:?}`, but it contains direction-bearing blockstates \
+                 (`{name}` at prefab-local [{}, {}, {}] carries `{prop}`) and rotate-aware \
+                 stamping is NOT implemented — the stamp turns cell POSITIONS only, so every \
+                 `facing`/`axis`/`shape`/connection property would keep its unrotated value \
+                 and the stamped geometry would ship visibly deformed. Stamp it unrotated, or \
+                 admit a pre-rotated prefab variant to the library; do NOT stamp it rotated \
+                 and hand-fix the facings downstream with extra edits",
+                local[0], local[1], local[2],
+            ),
+        });
+    }
     for (local, name, _open) in cells {
         let t = rot.transform(local);
         let cell = [origin[0] + t[0], origin[1] + t[1], origin[2] + t[2]];
         write_cell(assembled, batch_writes, cell, &name);
     }
     Ok(())
+}
+
+/// Blockstate properties whose value encodes a **horizontal** direction, and is
+/// therefore wrong after a quarter-turn unless it is rewritten with the stamp:
+///
+/// * `facing` — stairs, doors, furnaces, wall torches, chests, … (values `up`
+///   and `down` are yaw-invariant and excluded below)
+/// * `axis` — logs/pillars/chains, where `x` and `z` swap (`y` is invariant)
+/// * `shape` — stair corners (`inner_left`/`outer_right`/…) and rail bends
+/// * `rotation` — the 16-step yaw of signs, banners and skulls
+/// * `orientation` — jigsaw markers and crafters (`north_up`, …)
+/// * `hinge` — a door's `left`/`right`, meaningful only against its `facing`
+/// * `north`/`south`/`east`/`west` — the connection flags of fences, walls,
+///   panes, redstone and mushroom blocks
+///
+/// Everything else a prefab can carry (`hanging`, `half`, `waterlogged`, `open`,
+/// `lit`, `type`, `level`, `persistent`, `thickness`, `vertical_direction`, …)
+/// is yaw-invariant, so a prefab built only from those rotates correctly.
+const YAW_DEPENDENT_PROPS: &[&str] = &[
+    "facing",
+    "axis",
+    "shape",
+    "rotation",
+    "orientation",
+    "hinge",
+    "north",
+    "south",
+    "east",
+    "west",
+];
+
+/// The first `(local pos, block, "key=value")` in a decoded stamp whose state
+/// depends on yaw, scanning in the decoder's deterministic cell order. `None`
+/// when every state in the stamp is rotation-invariant.
+fn first_yaw_dependent(
+    cells: &[([i32; 3], String, Option<bool>)],
+) -> Option<([i32; 3], &str, String)> {
+    for (local, name, _) in cells {
+        let Some(open) = name.find('[') else { continue };
+        for pair in name[open + 1..name.len().saturating_sub(1)].split(',') {
+            let Some((k, v)) = pair.split_once('=') else {
+                continue;
+            };
+            // `axis=y` and `facing=up|down` name the vertical axis, which a
+            // quarter-turn about y leaves untouched — never reject those.
+            let invariant =
+                (k == "axis" && v == "y") || (k == "facing" && (v == "up" || v == "down"));
+            if YAW_DEPENDENT_PROPS.contains(&k) && !invariant {
+                return Some((*local, base_id(name), pair.to_string()));
+            }
+        }
+    }
+    None
 }
 
 /// The `relight` verb (spec-0017 PR 2): run the spec-0010 fixture-placement
