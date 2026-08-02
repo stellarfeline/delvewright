@@ -1214,43 +1214,14 @@ fn run_build(
         Err(code) => return ExitCode::from(code),
     };
 
-    // read the NPC-skin PNGs referenced by mannequin NPCs (spec-0009 bake). The
-    // PNG lives in the campaign dir at `skins/<texture_id>.png`; a missing one is
-    // a build error (DW0309), not a silent skip.
-    let mut skins: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for npc in &campaign.npcs.content.npcs {
-        if let Some(skin) = &npc.skin {
-            if skins.contains_key(&skin.texture_id) {
-                continue;
-            }
-            let path = campaign_dir
-                .join("skins")
-                .join(format!("{}.png", skin.texture_id));
-            match std::fs::read(&path) {
-                Ok(bytes) => {
-                    skins.insert(skin.texture_id.clone(), bytes);
-                }
-                Err(e) => {
-                    print_build_error(
-                        "DW0309",
-                        &format!(
-                            "cannot read skin PNG `{}`: {e} — a mannequin npc declares this \
-                             `skin.texture_id` but the campaign has no matching \
-                             `skins/<texture_id>.png`. Add the PNG at that path, or remove the \
-                             npc's `skin`",
-                            path.display()
-                        ),
-                        json,
-                    );
-                    return ExitCode::from(3);
-                }
-            }
-        }
-    }
+    let skins = match read_skins(campaign_dir, &campaign, json) {
+        Ok(s) => s,
+        Err(code) => return ExitCode::from(code),
+    };
 
     let tree = CommandTree::v1_21_11();
     let content_sha = resolve_content_sha();
-    let output = match emit::build(
+    let output = match emit::build_with_warnings(
         &plan,
         &loaded.inputs,
         &structures,
@@ -1260,7 +1231,13 @@ fn run_build(
         &content_sha,
         &skins,
     ) {
-        Ok(o) => o,
+        Ok((o, warnings)) => {
+            // Advisory build-tier findings (stage-7 edit replay: DW0353/DW0354).
+            // Printed exactly like the validation-tier warnings, and like them
+            // they never change the exit code.
+            print_diags(&warnings, json);
+            o
+        }
         Err(emit::BuildFailure::Validation(errors)) => {
             eprintln!(
                 "build failure: {} emitted command(s) failed validation:",
@@ -1297,6 +1274,47 @@ fn run_build(
     ExitCode::SUCCESS
 }
 
+/// Read the NPC-skin PNGs referenced by mannequin NPCs (spec-0009 bake). The PNG
+/// lives in the campaign dir at `skins/<texture_id>.png`; a missing one is a
+/// build error (`DW0309`), not a silent skip. Shared by `build` and by `edit`'s
+/// build-tier proof run — the editor must prove exactly what `build` proves.
+fn read_skins(
+    campaign_dir: &Path,
+    campaign: &delvewright_dsl::Campaign,
+    json: bool,
+) -> Result<BTreeMap<String, Vec<u8>>, u8> {
+    let mut skins: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for npc in &campaign.npcs.content.npcs {
+        let Some(skin) = &npc.skin else { continue };
+        if skins.contains_key(&skin.texture_id) {
+            continue;
+        }
+        let path = campaign_dir
+            .join("skins")
+            .join(format!("{}.png", skin.texture_id));
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                skins.insert(skin.texture_id.clone(), bytes);
+            }
+            Err(e) => {
+                print_build_error(
+                    "DW0309",
+                    &format!(
+                        "cannot read skin PNG `{}`: {e} — a mannequin npc declares this \
+                         `skin.texture_id` but the campaign has no matching \
+                         `skins/<texture_id>.png`. Add the PNG at that path, or remove the \
+                         npc's `skin`",
+                        path.display()
+                    ),
+                    json,
+                );
+                return Err(3);
+            }
+        }
+    }
+    Ok(skins)
+}
+
 /// `delvec edit apply|preview` (spec-0017): the edit → replay → snapshot loop.
 ///
 /// Replays the stage-7 edit script — with an optional `--batch` candidate
@@ -1306,6 +1324,18 @@ fn run_build(
 /// additionally persists the candidate into `world-edits.json` (canonical
 /// form) once the whole replay is green; `preview` never writes to the
 /// campaign directory. Editing sessions leave no state outside the script.
+///
+/// **One proof tier, not two** (map-editor audit finding 3). The per-batch
+/// invariants are a *subset* of what `build` proves — they cover gravity,
+/// relight, critical-path/checkpoint walkability and boundary safety, but not
+/// cutscene clipping (`DW0308`), stealth zones (`DW0327`), trap completability
+/// (`DW0342`), wave seating (`DW0312`), `move-npc`/`move-actor` routability, or
+/// the exported-route self-check. `apply` used to persist on that subset, so a
+/// script `build` rejects could be written into the campaign. Both verbs now run
+/// the **whole** build-tier proof set (`analyze` + `emit::build`, output
+/// discarded) before anything is persisted; measured cost is ~0.3 s on the
+/// largest content campaign against a ~0.34 s snapshot render, so there is no
+/// reason for a cheaper tier to exist.
 fn run_edit(
     campaign_dir: &Path,
     prefabs_dir: &Path,
@@ -1506,15 +1536,71 @@ fn run_edit(
         shots.push((b.id.clone(), png_path.display().to_string()));
     }
 
-    // Persist the accepted candidate — `apply` only, green replay only (we are
-    // past every invariant gate here).
+    // ---- the FULL build-tier proof set (map-editor audit finding 3) ----
+    // Everything `delvec build` proves, over the same edited model: the DW02xx
+    // reachability analysis, then `emit::build` (cutscene clip DW0308, stealth
+    // zones DW0327, trap completability DW0342, wave seating DW0312, move
+    // routability DW0307/DW0325, exported-route + POV self-checks
+    // DW0314/DW0724, entry anchor DW0345, and the emitted-command validator).
+    // Output is discarded — this run exists purely so `edit` can never accept a
+    // script `build` would reject.
+    let adiags = analyze_campaign(&v.campaign, &v.prefabs);
+    if !adiags.is_empty() {
+        print_diags(&adiags, json);
+        return ExitCode::from(2);
+    }
+    let tree = CommandTree::v1_21_11();
+    let skins = match read_skins(campaign_dir, &v.campaign, json) {
+        Ok(s) => s,
+        Err(code) => return ExitCode::from(code),
+    };
+    let content_sha = resolve_content_sha();
+    match emit::build_with_warnings(
+        &plan,
+        &v.loaded.inputs,
+        &structures,
+        &tree,
+        &v.prefabs,
+        None,
+        &content_sha,
+        &skins,
+    ) {
+        Ok((_, warnings)) => print_diags(&warnings, json),
+        Err(emit::BuildFailure::Validation(errors)) => {
+            eprintln!(
+                "build failure: {} emitted command(s) failed validation:",
+                errors.len()
+            );
+            for e in errors.iter().take(20) {
+                eprintln!("  {}: {}", e.reason, e.line);
+            }
+            return ExitCode::from(3);
+        }
+        Err(emit::BuildFailure::Diagnostic { code, message }) => {
+            print_build_error(code, &message, json);
+            let analysis_tier = code.starts_with("DW02")
+                || code == emit::DW_WAVE_NO_ROOM
+                || code == delvewright_compiler::assembled::DW_GRAVITY_DESPAWN
+                || code == delvewright_compiler::nav::DW_TRAP_LETHAL_UNAVOIDABLE;
+            return ExitCode::from(if analysis_tier { 2 } else { 3 });
+        }
+    }
+
+    // Persist the accepted candidate — `apply` only, and only now that the full
+    // build-tier proof set is green. Written tmp-then-rename: a crash or a full
+    // disk mid-write must never leave the campaign's script truncated, and
+    // `world-edits.json` is the artifact of record (ADR-0006).
     let persisted = persist && batch.is_some();
-    if persisted
-        && let Some(script) = &augmented_script
-        && let Err(e) = std::fs::write(campaign_dir.join(WORLD_EDITS_FILE), script)
-    {
-        eprintln!("internal error: cannot write {WORLD_EDITS_FILE}: {e}");
-        return ExitCode::from(EXIT_INTERNAL);
+    if persisted && let Some(script) = &augmented_script {
+        let final_path = campaign_dir.join(WORLD_EDITS_FILE);
+        let tmp_path = campaign_dir.join(format!("{WORLD_EDITS_FILE}.tmp"));
+        if let Err(e) =
+            std::fs::write(&tmp_path, script).and_then(|()| std::fs::rename(&tmp_path, &final_path))
+        {
+            let _ = std::fs::remove_file(&tmp_path);
+            eprintln!("internal error: cannot write {WORLD_EDITS_FILE}: {e}");
+            return ExitCode::from(EXIT_INTERNAL);
+        }
     }
 
     if json {

@@ -21,6 +21,22 @@
 //!    exactly as the final build's nav phase does.
 //! 4. **Boundary safety** (`DW0322`, [`crate::nav::verify_boundary_safety`]):
 //!    no reachable walkable cell may border a void drop.
+//! 5. **Trap-hardware integrity** (`DW0352`): no batch write may land on a
+//!    trap's trigger / dispenser / disarm cell. `setup_finish` runs
+//!    `world_edits` *before* `trap_setup`, so such an edit silently kills the
+//!    trap at runtime (`item replace block … container.0` into a non-container
+//!    fails with no output) while every other proof stays green.
+//!
+//! And two advisory (warning-tier) checks, reported but never fatal:
+//!
+//! * **Gate-region collision** (`DW0353`): a write inside a `close-gate`
+//!   region survives the proofs but is visually destroyed by one close/open
+//!   cycle (the gate fill overwrites it, the open clears it to air).
+//! * **Support validity** (`DW0354`): a support-dependent block (torch,
+//!   flora, …) whose support a later batch removed, or flora scattered onto a
+//!   block flowers cannot stand on. Error tier when the broken block is a
+//!   fixture the script's own `relight` verb placed — that one is a *declared*
+//!   lighting guarantee, not decoration.
 //!
 //! ## Runtime materialization
 //!
@@ -39,7 +55,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use delvewright_dsl::{EditFrame, MorphOp, PaletteRecipe, RegionShape, WorldEdit};
+use delvewright_dsl::{Diagnostic, EditFrame, MorphOp, PaletteRecipe, RegionShape, WorldEdit};
 
 use crate::assembled::{self, Assembled};
 use crate::plan::{Plan, ResolvedAnchor};
@@ -51,6 +67,30 @@ use crate::solver::stream_seed;
 /// whose target region resolves to zero cells (a silent no-op is always a
 /// defect). Build-tier (exit 3).
 pub const DW_EDIT_UNRESOLVED: &str = "DW0323";
+
+/// A stage-7 batch writes a block into a cell a trap's hardware occupies (its
+/// trigger/hazard cell, its dispenser socket, or its disarm affordance cell).
+/// `setup_finish` applies `world_edits` **before** `trap_setup`, so the edit
+/// wins and the trap is loaded into a block that is no longer there — vanilla's
+/// `item replace block … container.0` on a non-container fails with no output,
+/// shipping a dead trap past every green proof. Build-tier (exit 3).
+pub const DW_EDIT_TRAP_HARDWARE: &str = "DW0352";
+
+/// **Advisory.** A stage-7 batch writes inside a `close-gate` region: the
+/// gameplay seal fills that region with the gate anchor's block and `open-gate`
+/// clears it to air, so one close/open cycle destroys the edit visually. Every
+/// proof stays sound (the occupancy model already treats the region as
+/// gate-controlled), so this warns rather than rejects.
+pub const DW_EDIT_GATE_REGION: &str = "DW0353";
+
+/// A support-dependent block (torch, lantern, flora, …) the edit script placed
+/// has no valid support in the post-batch world — its support block was carved
+/// or replaced by a later batch, or flora was scattered onto a block flowers
+/// cannot stand on. Vanilla pops such a block off as an item the moment the
+/// chunk ticks, silently undoing the edit. **Advisory** for decoration;
+/// **error** when the popped block is a fixture the script's own `relight` verb
+/// placed (a declared minimum-light guarantee, not decoration).
+pub const DW_EDIT_SUPPORT: &str = "DW0354";
 
 /// A failed edit replay: a stable diagnostic code plus a message that names the
 /// offending batch.
@@ -81,6 +121,10 @@ pub struct EditReplay {
     pub commands: Vec<String>,
     /// Per-batch outcomes, in script order.
     pub batches: Vec<BatchOutcome>,
+    /// Advisory findings (`DW0353`/`DW0354`) raised during the replay, in batch
+    /// order. Never fatal — `delvec` exits non-zero only on `Severity::Error`.
+    /// Empty for a view replay (`replay_view` proves nothing).
+    pub warnings: Vec<Diagnostic>,
 }
 
 /// Whether the campaign carries a non-empty edit script. `false` keeps the
@@ -135,6 +179,12 @@ fn replay_with(
     let mut assembled = assembled::assemble(plan, structures);
     let mut commands: Vec<String> = Vec::new();
     let mut batches: Vec<BatchOutcome> = Vec::new();
+    let mut warnings: Vec<Diagnostic> = Vec::new();
+    // Support-validity bookkeeping (DW0354), cumulative across batches: every
+    // support-dependent block the script has placed so far, and which of those
+    // cells a `relight` verb placed (those are declared lighting, error tier).
+    let mut support_watch: BTreeMap<[i32; 3], String> = BTreeMap::new();
+    let mut fixture_cells: BTreeSet<[i32; 3]> = BTreeSet::new();
 
     for batch in &env.content.batches {
         let bid = batch.id.as_str();
@@ -171,8 +221,10 @@ fn replay_with(
                 }
                 WorldEdit::Fill { region, recipe } => {
                     let cells = used_region(bid, &regions, region.as_str())?;
+                    check_recipe(bid, "fill", recipe)?;
                     for &cell in cells {
-                        let block = pick(recipe, noise_at(seed, cell, recipe));
+                        let block = pick(recipe, noise_at(seed, cell, recipe))
+                            .ok_or_else(|| empty_recipe(bid, "fill"))?;
                         write_cell(&mut assembled, &mut batch_writes, cell, block);
                     }
                 }
@@ -182,6 +234,7 @@ fn replay_with(
                     recipe,
                 } => {
                     let cells = used_region(bid, &regions, region.as_str())?;
+                    check_recipe(bid, "replace", recipe)?;
                     let matches: BTreeSet<&str> =
                         matching.iter().map(|m| strip_ns(base_id(m))).collect();
                     for &cell in cells {
@@ -191,7 +244,8 @@ fn replay_with(
                         if !matches.contains(strip_ns(current.as_str())) {
                             continue;
                         }
-                        let block = pick(recipe, noise_at(seed, cell, recipe));
+                        let block = pick(recipe, noise_at(seed, cell, recipe))
+                            .ok_or_else(|| empty_recipe(bid, "replace"))?;
                         write_cell(&mut assembled, &mut batch_writes, cell, block);
                     }
                 }
@@ -203,7 +257,7 @@ fn replay_with(
                 }
                 WorldEdit::Morph { region, op } => {
                     let cells = used_region(bid, &regions, region.as_str())?;
-                    morph(&mut assembled, &mut batch_writes, cells, op, seed);
+                    morph(&mut assembled, &mut batch_writes, cells, op, seed, bid)?;
                 }
                 WorldEdit::Scatter {
                     region,
@@ -225,7 +279,8 @@ fn replay_with(
                         *spacing,
                         *limit,
                         seed,
-                    );
+                        bid,
+                    )?;
                 }
                 WorldEdit::Plant {
                     region,
@@ -276,6 +331,7 @@ fn replay_with(
                     relight_region(
                         &mut assembled,
                         &mut batch_writes,
+                        &mut fixture_cells,
                         plan,
                         batch,
                         bid,
@@ -315,10 +371,29 @@ fn replay_with(
             });
         }
 
-        // Post-batch invariants: relight re-entry (spec-0010), walkability
-        // re-proof, boundary safety (spec-0017). Each failure names the batch.
+        // Every support-dependent block this batch placed joins the cumulative
+        // watch list; a later batch that carves its support is what DW0354
+        // catches. Recorded regardless of `enforce` (cheap, and a view replay
+        // simply never evaluates it).
+        for (cell, block) in &batch_writes {
+            if support_of(block).is_some() {
+                support_watch.insert(*cell, block.clone());
+            }
+        }
+
+        // Post-batch invariants: trap-hardware integrity (spec-0017 audit),
+        // relight re-entry (spec-0010), walkability re-proof, boundary safety
+        // (spec-0017). Each failure names the batch.
         if enforce {
-            check_batch_invariants(plan, &assembled, bid)?;
+            check_batch_invariants(plan, &assembled, bid, &batch_writes)?;
+            check_support(
+                &assembled,
+                bid,
+                &support_watch,
+                &fixture_cells,
+                &mut warnings,
+            )?;
+            warnings.extend(gate_region_warnings(plan, bid, &batch_writes));
         }
 
         // Runtime materialization + snapshot bounds for this batch.
@@ -334,6 +409,7 @@ fn replay_with(
         assembled,
         commands,
         batches,
+        warnings,
     }))
 }
 
@@ -341,7 +417,16 @@ fn replay_with(
 /// `bid` in any failure. Mirrors the final build's pass order: relight first
 /// (its colliding fixtures join the nav world), then the walkability proofs,
 /// then boundary safety.
-fn check_batch_invariants(plan: &Plan, assembled: &Assembled, bid: &str) -> Result<(), EditError> {
+fn check_batch_invariants(
+    plan: &Plan,
+    assembled: &Assembled,
+    bid: &str,
+    batch_writes: &BTreeMap<[i32; 3], String>,
+) -> Result<(), EditError> {
+    // Trap-hardware integrity first: it is a *structural* clash the geometry
+    // proofs below can never see (they model walkability and light, not whether
+    // a dispenser is still a dispenser).
+    check_trap_hardware(plan, bid, batch_writes)?;
     let relight = crate::light::relight_over(plan, assembled);
     if let Some(diag) = relight.diagnostics.first() {
         return Err(EditError {
@@ -370,6 +455,297 @@ fn check_batch_invariants(plan: &Plan, assembled: &Assembled, bid: &str) -> Resu
     }
     let starts = anchor_starts(plan);
     crate::nav::verify_boundary_safety(&with_fixtures, &starts).map_err(ctx)?;
+    Ok(())
+}
+
+/// Every cell whose **block** a trap's hardware depends on, mapped to
+/// `(trap id, role)`. Content order (`plan.traps`) decides ties, so the message
+/// a colliding edit gets is deterministic.
+fn trap_hardware<'p>(plan: &'p Plan) -> BTreeMap<[i32; 3], (&'p str, &'static str)> {
+    let mut out: BTreeMap<[i32; 3], (&'p str, &'static str)> = BTreeMap::new();
+    for t in &plan.traps {
+        out.entry(t.trigger_cell)
+            .or_insert((t.id.as_str(), "trigger/hazard"));
+        if let Some(d) = t.dispenser {
+            out.entry(d).or_insert((t.id.as_str(), "dispenser socket"));
+        }
+        if let Some(dis) = &t.disarm {
+            out.entry(dis.via_cell)
+                .or_insert((t.id.as_str(), "disarm affordance"));
+        }
+    }
+    out
+}
+
+/// **Trap-hardware integrity** (`DW0352`, map-editor audit). The runtime order
+/// inside `setup_finish` is `world_edits` → … → `trap_setup`: an edit that
+/// filled or carved a trap's trigger, dispenser socket or disarm cell lands
+/// FIRST, and `trap_setup`'s `item replace block … container.0` then addresses
+/// a block that is no longer a container — which vanilla fails **silently**.
+/// The trap ships dead, its `DW0342` completability proof still green (that
+/// proof reasons about the *planned* hazard, not the surviving hardware). No
+/// geometry proof can see this, so it gets its own structural check.
+fn check_trap_hardware(
+    plan: &Plan,
+    bid: &str,
+    batch_writes: &BTreeMap<[i32; 3], String>,
+) -> Result<(), EditError> {
+    if plan.traps.is_empty() {
+        return Ok(());
+    }
+    let hardware = trap_hardware(plan);
+    for (cell, block) in batch_writes {
+        let Some((trap, role)) = hardware.get(cell) else {
+            continue;
+        };
+        return Err(EditError {
+            code: DW_EDIT_TRAP_HARDWARE,
+            message: format!(
+                "world-edits batch `{bid}` writes `{block}` at [{}, {}, {}] — that cell is trap \
+                 `{trap}`'s {role}. `setup_finish` runs `world_edits` BEFORE `trap_setup`, so \
+                 this edit lands first and the trap is then wired into a block that is no \
+                 longer there: `item replace block … container.0` on a non-container fails \
+                 SILENTLY, and the delve ships a dead trap with every proof green (`DW0342` \
+                 proves the planned hazard, not the surviving hardware). Move the region off \
+                 the trap's trigger/dispenser/disarm cells, or re-anchor the trap; do NOT \
+                 assume the edit leaves the redstone intact",
+                cell[0], cell[1], cell[2]
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// **Gate-region collision** (`DW0353`, advisory). A `close-gate` fills its
+/// region with the gate anchor's declared block and `open-gate` clears it back
+/// to air, so anything a batch wrote inside that region is destroyed by the
+/// first close/open cycle. The proofs stay sound — the occupancy model already
+/// treats gate regions as gate-controlled — so this warns: an author may
+/// legitimately be dressing the *closed* state.
+fn gate_region_warnings(
+    plan: &Plan,
+    bid: &str,
+    batch_writes: &BTreeMap<[i32; 3], String>,
+) -> Vec<Diagnostic> {
+    let mut out = Vec::new();
+    for ev in &plan.gate_events {
+        if !ev.closes {
+            continue;
+        }
+        let (lo, hi) = ev.region;
+        let hits: Vec<[i32; 3]> = batch_writes
+            .keys()
+            .copied()
+            .filter(|c| (0..3).all(|a| c[a] >= lo[a] && c[a] <= hi[a]))
+            .collect();
+        let Some(first) = hits.first() else { continue };
+        out.push(Diagnostic::warning(
+            DW_EDIT_GATE_REGION,
+            "world-edits",
+            format!("/content/batches/{bid}"),
+            format!(
+                "world-edits batch `{bid}` writes {} cell(s) (first [{}, {}, {}]) inside a \
+                 `close-gate` region [{}, {}, {}]..[{}, {}, {}]. That region is filled solid \
+                 when the gate closes and cleared to AIR when it opens, so one close/open \
+                 cycle erases the edit — the dressing you see in `delvec snapshot` is not what \
+                 players see after the beat fires. Move the edit outside the gate region, or \
+                 keep it only if you are deliberately dressing the sealed state",
+                hits.len(),
+                first[0],
+                first[1],
+                first[2],
+                lo[0],
+                lo[1],
+                lo[2],
+                hi[0],
+                hi[1],
+                hi[2],
+            ),
+        ));
+        // One finding per gate region is enough: the remedy is the same for
+        // every cell, and a listing would be noise.
+    }
+    out
+}
+
+/// What a block needs underneath it to survive a chunk tick.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Support {
+    /// Any full-support block below (torch, lantern, campfire, carpet, …).
+    SolidBelow,
+    /// A block flowers/grass can root in (dirt family, moss, farmland, mud).
+    Soil,
+}
+
+/// Blocks that pop off without a solid block below them.
+const NEEDS_SOLID_BELOW: &[&str] = &[
+    "torch",
+    "soul_torch",
+    "redstone_torch",
+    "lantern",
+    "soul_lantern",
+    "campfire",
+    "soul_campfire",
+    "candle",
+    "flower_pot",
+    "snow",
+    "sea_pickle",
+    "repeater",
+    "comparator",
+    "redstone_wire",
+    "rail",
+    "powered_rail",
+    "detector_rail",
+    "activator_rail",
+];
+
+/// Blocks that pop off unless they are rooted in soil.
+const NEEDS_SOIL: &[&str] = &[
+    "poppy",
+    "dandelion",
+    "blue_orchid",
+    "allium",
+    "azure_bluet",
+    "red_tulip",
+    "orange_tulip",
+    "white_tulip",
+    "pink_tulip",
+    "oxeye_daisy",
+    "cornflower",
+    "lily_of_the_valley",
+    "wither_rose",
+    "torchflower",
+    "short_grass",
+    "tall_grass",
+    "fern",
+    "large_fern",
+    "oak_sapling",
+    "spruce_sapling",
+    "birch_sapling",
+    "jungle_sapling",
+    "acacia_sapling",
+    "dark_oak_sapling",
+    "cherry_sapling",
+    "sweet_berry_bush",
+];
+
+/// Blocks flowers and grass root in.
+const SOIL: &[&str] = &[
+    "grass_block",
+    "dirt",
+    "coarse_dirt",
+    "rooted_dirt",
+    "podzol",
+    "mycelium",
+    "farmland",
+    "moss_block",
+    "mud",
+    "muddy_mangrove_roots",
+    "pale_moss_block",
+];
+
+/// The support a block field needs, or `None` when the block stands on its own
+/// (or attaches sideways/above — `wall_torch`, a hanging lantern — where the
+/// compiler models no support cell and must stay silent rather than guess).
+fn support_of(block: &str) -> Option<Support> {
+    if block.contains("hanging=true") {
+        return None; // a hanging lantern's support is the block ABOVE it
+    }
+    let id = strip_ns(base_id(block));
+    if NEEDS_SOIL.contains(&id) {
+        Some(Support::Soil)
+    } else if NEEDS_SOLID_BELOW.contains(&id) {
+        Some(Support::SolidBelow)
+    } else {
+        None
+    }
+}
+
+/// **Support validity** (`DW0354`) at batch close. Every support-dependent
+/// block the script has placed so far is re-checked against the *current*
+/// world: a later batch that carved the floor out from under a torch, or a
+/// `scatter` that dropped flowers onto bare stone, leaves a block vanilla pops
+/// off as an item the first time the chunk ticks — the edit silently undone,
+/// with the compile-time model (which has no item-drop physics) still showing
+/// it in every snapshot.
+///
+/// Advisory for decoration. **Error** when the popped block is a fixture the
+/// script's own `relight` verb placed: that is a declared `min_light`
+/// guarantee, and losing it re-darkens a region the `DW0211` proof passed.
+/// Findings are aggregated per `(reason, block)` — a carved floor can strand
+/// hundreds of flowers, and hundreds of identical lines are noise, not
+/// information.
+fn check_support(
+    assembled: &Assembled,
+    bid: &str,
+    watch: &BTreeMap<[i32; 3], String>,
+    fixture_cells: &BTreeSet<[i32; 3]>,
+    warnings: &mut Vec<Diagnostic>,
+) -> Result<(), EditError> {
+    // (reason, block id) → (count, first offending cell)
+    let mut agg: BTreeMap<(&'static str, String), (usize, [i32; 3])> = BTreeMap::new();
+    for (cell, block) in watch {
+        // A later batch overwrote this cell: it is no longer our placement.
+        let base = strip_ns(base_id(block));
+        match assembled.blocks.get(cell) {
+            Some(current) if strip_ns(current.as_str()) == base => {}
+            _ => continue,
+        }
+        let Some(need) = support_of(block) else {
+            continue;
+        };
+        let below = [cell[0], cell[1] - 1, cell[2]];
+        let under = assembled.blocks.get(&below);
+        // `(singular, plural)` phrasing of the same finding: the fixture-tier
+        // message names one block, the aggregated advisory names many.
+        let reason = match (need, under) {
+            (_, None) => (
+                "has no block below it at all",
+                "have no block below them at all",
+            ),
+            (Support::Soil, Some(u)) if !SOIL.contains(&strip_ns(u.as_str())) => (
+                "sits on a block flowers cannot root in",
+                "sit on a block flowers cannot root in",
+            ),
+            _ => continue,
+        };
+        // A broken relight fixture is a broken lighting guarantee: error now,
+        // naming the cell precisely (there are never many).
+        if fixture_cells.contains(cell) {
+            return Err(EditError {
+                code: DW_EDIT_SUPPORT,
+                message: format!(
+                    "after world-edits batch `{bid}`: the `relight` fixture `{block}` at \
+                     [{}, {}, {}] {} — vanilla pops it off as an item the first time \
+                     the chunk ticks, so the region silently loses the `min_light` the \
+                     `DW0211` proof accepted. Keep the fixture's support intact (order the \
+                     carving batch BEFORE the `relight`), or move the fixture; do NOT ship a \
+                     light source the world drops on the floor",
+                    cell[0], cell[1], cell[2], reason.0
+                ),
+            });
+        }
+        let entry = agg
+            .entry((reason.1, base.to_string()))
+            .or_insert((0, *cell));
+        entry.0 += 1;
+    }
+    for ((reason, block), (count, first)) in agg {
+        warnings.push(Diagnostic::warning(
+            DW_EDIT_SUPPORT,
+            "world-edits",
+            format!("/content/batches/{bid}"),
+            format!(
+                "after world-edits batch `{bid}`: {count} placed `{block}` block(s) {reason} \
+                 (first at [{}, {}, {}]). Vanilla pops a support-dependent block off \
+                 as an item the first time the chunk ticks, so these writes silently vanish in \
+                 the delivered world while every snapshot still shows them. Fix the support \
+                 (put soil under flora, keep the floor under a torch) or reorder the batches \
+                 so the carve happens first",
+                first[0], first[1], first[2],
+            ),
+        ));
+    }
     Ok(())
 }
 
@@ -593,7 +969,11 @@ fn morph(
     cells: &BTreeSet<[i32; 3]>,
     op: &MorphOp,
     seed: u64,
-) {
+    bid: &str,
+) -> Result<(), EditError> {
+    if let MorphOp::Raise { recipe, .. } | MorphOp::Smooth { recipe, .. } = op {
+        check_recipe(bid, "morph", recipe)?;
+    }
     let cols = columns(cells);
     // Each column's surface: the highest occupied cell within the region column,
     // or None for an all-air column (which never participates).
@@ -615,10 +995,16 @@ fn morph(
         recipe: Option<(&PaletteRecipe, u64)>,
     ) {
         if target > surf {
-            let (recipe, seed) = recipe.expect("raising morphs carry a recipe");
+            // Only a RAISING morph reaches this arm, and every raising morph
+            // (`raise`/`smooth`) carries a recipe the caller already proved
+            // non-empty — but never panic on content: a missing recipe skips
+            // the raise rather than aborting the process.
+            let Some((recipe, seed)) = recipe else { return };
             for y in (surf + 1)..=target {
                 let cell = [x, y, z];
-                let block = pick(recipe, noise_at(seed, cell, recipe));
+                let Some(block) = pick(recipe, noise_at(seed, cell, recipe)) else {
+                    return;
+                };
                 write_cell(assembled, batch_writes, cell, block);
             }
         } else {
@@ -703,6 +1089,7 @@ fn morph(
             }
         }
     }
+    Ok(())
 }
 
 /// The union `(x, z)` footprint of the keep-clear (`avoid`) regions.
@@ -749,7 +1136,22 @@ fn scatter(
     spacing: Option<u32>,
     limit: Option<u32>,
     seed: u64,
-) {
+    bid: &str,
+) -> Result<(), EditError> {
+    // Defense in depth (map-editor audit): `dsl::validate` rejects an empty
+    // `items` list, but `emit::build` is callable without it — a library caller
+    // gets a structured error, never an index panic.
+    let Some(last) = items.last() else {
+        return Err(EditError {
+            code: DW_EDIT_UNRESOLVED,
+            message: format!(
+                "world-edits batch `{bid}`: a `scatter` verb declares an empty `items` list, so \
+                 it can place nothing (validation should have caught this — this build path \
+                 skipped `dsl::validate`). Give the scatter at least one weighted item, or \
+                 drop the edit"
+            ),
+        });
+    };
     // Candidates: standable region cells off the keep-clear footprint, gated
     // by the density noise, carrying their placement-order noise.
     let mut cand: Vec<(f64, [i32; 3])> = Vec::new();
@@ -781,7 +1183,7 @@ fn scatter(
         }
         // Weighted item pick from an independent white-noise sample.
         let mut t = hash01(seed, c[0], c[1], c[2], 155).min(0.999_999) * total;
-        let mut chosen = &items[items.len() - 1].block;
+        let mut chosen = &last.block;
         for b in items {
             if t < b.weight {
                 chosen = &b.block;
@@ -792,6 +1194,7 @@ fn scatter(
         write_cell(assembled, batch_writes, c, chosen);
         placed.push((c[0], c[2]));
     }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -989,7 +1392,12 @@ fn fragment(
         delvewright_dsl::FragmentRotation::Clockwise180 => crate::solver::Rotation::Cw180,
         delvewright_dsl::FragmentRotation::Counterclockwise90 => crate::solver::Rotation::Ccw90,
     };
-    let cells = assembled::structure_cells(bytes);
+    // Blockstate-preserving read (map-editor audit, surfaced by DW0354): the
+    // occupancy model stores bare ids, but a `fragment` stamp's writes ARE the
+    // runtime `setblock` lines. Reading bare ids turned the hello-room prefab's
+    // `lantern[hanging=true]` into a floor lantern stamped into mid-air, which
+    // vanilla drops on the next chunk tick.
+    let cells = assembled::structure_cells_stateful(bytes);
     if cells.is_empty() {
         return Err(EditError {
             code: DW_EDIT_UNRESOLVED,
@@ -1000,12 +1408,92 @@ fn fragment(
             ),
         });
     }
+    // `rotation` turns POSITIONS only — the compiler has no rotate-aware
+    // blockstate rewriter, so a stamped `facing`/`axis`/`shape` would keep its
+    // unrotated value and ship visibly deformed geometry (stairs facing into
+    // walls, logs lying across the grain). That is the silently-deformed-map
+    // class, so the compiler REFUSES rather than warns: a rotated stamp of a
+    // prefab carrying any yaw-dependent property is a build error. Prefabs whose
+    // states are provably yaw-INVARIANT (`hanging`, `half`, `waterlogged`,
+    // `axis=y`, `facing=up|down`, …) rotate correctly and stay allowed — this is
+    // a collision test, not a blanket ban on `rotation`.
+    if rotation != delvewright_dsl::FragmentRotation::None
+        && let Some((local, name, prop)) = first_yaw_dependent(&cells)
+    {
+        return Err(EditError {
+            code: DW_EDIT_UNRESOLVED,
+            message: format!(
+                "world-edits batch `{bid}`: fragment prefab `{prefab}` is stamped with \
+                 `rotation: {rotation:?}`, but it contains direction-bearing blockstates \
+                 (`{name}` at prefab-local [{}, {}, {}] carries `{prop}`) and rotate-aware \
+                 stamping is NOT implemented — the stamp turns cell POSITIONS only, so every \
+                 `facing`/`axis`/`shape`/connection property would keep its unrotated value \
+                 and the stamped geometry would ship visibly deformed. Stamp it unrotated, or \
+                 admit a pre-rotated prefab variant to the library; do NOT stamp it rotated \
+                 and hand-fix the facings downstream with extra edits",
+                local[0], local[1], local[2],
+            ),
+        });
+    }
     for (local, name, _open) in cells {
         let t = rot.transform(local);
         let cell = [origin[0] + t[0], origin[1] + t[1], origin[2] + t[2]];
         write_cell(assembled, batch_writes, cell, &name);
     }
     Ok(())
+}
+
+/// Blockstate properties whose value encodes a **horizontal** direction, and is
+/// therefore wrong after a quarter-turn unless it is rewritten with the stamp:
+///
+/// * `facing` — stairs, doors, furnaces, wall torches, chests, … (values `up`
+///   and `down` are yaw-invariant and excluded below)
+/// * `axis` — logs/pillars/chains, where `x` and `z` swap (`y` is invariant)
+/// * `shape` — stair corners (`inner_left`/`outer_right`/…) and rail bends
+/// * `rotation` — the 16-step yaw of signs, banners and skulls
+/// * `orientation` — jigsaw markers and crafters (`north_up`, …)
+/// * `hinge` — a door's `left`/`right`, meaningful only against its `facing`
+/// * `north`/`south`/`east`/`west` — the connection flags of fences, walls,
+///   panes, redstone and mushroom blocks
+///
+/// Everything else a prefab can carry (`hanging`, `half`, `waterlogged`, `open`,
+/// `lit`, `type`, `level`, `persistent`, `thickness`, `vertical_direction`, …)
+/// is yaw-invariant, so a prefab built only from those rotates correctly.
+const YAW_DEPENDENT_PROPS: &[&str] = &[
+    "facing",
+    "axis",
+    "shape",
+    "rotation",
+    "orientation",
+    "hinge",
+    "north",
+    "south",
+    "east",
+    "west",
+];
+
+/// The first `(local pos, block, "key=value")` in a decoded stamp whose state
+/// depends on yaw, scanning in the decoder's deterministic cell order. `None`
+/// when every state in the stamp is rotation-invariant.
+fn first_yaw_dependent(
+    cells: &[([i32; 3], String, Option<bool>)],
+) -> Option<([i32; 3], &str, String)> {
+    for (local, name, _) in cells {
+        let Some(open) = name.find('[') else { continue };
+        for pair in name[open + 1..name.len().saturating_sub(1)].split(',') {
+            let Some((k, v)) = pair.split_once('=') else {
+                continue;
+            };
+            // `axis=y` and `facing=up|down` name the vertical axis, which a
+            // quarter-turn about y leaves untouched — never reject those.
+            let invariant =
+                (k == "axis" && v == "y") || (k == "facing" && (v == "up" || v == "down"));
+            if YAW_DEPENDENT_PROPS.contains(&k) && !invariant {
+                return Some((*local, base_id(name), pair.to_string()));
+            }
+        }
+    }
+    None
 }
 
 /// The `relight` verb (spec-0017 PR 2): run the spec-0010 fixture-placement
@@ -1019,6 +1507,7 @@ fn fragment(
 fn relight_region(
     assembled: &mut Assembled,
     batch_writes: &mut BTreeMap<[i32; 3], String>,
+    fixture_cells: &mut BTreeSet<[i32; 3]>,
     plan: &Plan,
     batch: &delvewright_dsl::EditBatch,
     bid: &str,
@@ -1034,13 +1523,27 @@ fn relight_region(
         .iter()
         .find(|a| a.id.as_str() == batch.area.as_str())
         .and_then(|a| a.lighting);
+    // Defense in depth (map-editor audit): `dsl::validate` requires a
+    // `fixture`/`min_light` override when the area declares no `lighting`
+    // (DW0162), but `emit::build` is callable without validation — a library
+    // caller gets a structured error, never a panic.
+    let missing = |field: &str| EditError {
+        code: DW_EDIT_UNRESOLVED,
+        message: format!(
+            "world-edits batch `{bid}`: a `relight` verb resolves no `{field}` — area `{}` \
+             declares no `lighting` and the verb overrides none (validation should have caught \
+             this — this build path skipped `dsl::validate`). Declare the area's `lighting`, or \
+             give the verb an explicit `fixture` + `min_light`",
+            batch.area
+        ),
+    };
     let spec = delvewright_dsl::AreaLighting {
         fixture: fixture
             .or(declared.map(|l| l.fixture))
-            .expect("validated: fixture declared or overridden"),
+            .ok_or_else(|| missing("fixture"))?,
         min_light: min_light
             .or(declared.map(|l| l.min_light))
-            .expect("validated: min_light declared or overridden"),
+            .ok_or_else(|| missing("min_light"))?,
     };
     let sky = crate::light::darkest_effective_sky(c);
     let nav = crate::nav::World::from_occupancy(assembled::occupancy_of(
@@ -1091,6 +1594,9 @@ fn relight_region(
     }
     for p in &out.placements {
         write_cell(assembled, batch_writes, p.pos, &p.block);
+        // A `relight` placement is a DECLARED lighting guarantee: DW0354 treats
+        // losing its support as an error, not an advisory.
+        fixture_cells.insert(p.pos);
     }
     Ok(())
 }
@@ -1311,20 +1817,41 @@ fn noise_at(seed: u64, cell: [i32; 3], recipe: &PaletteRecipe) -> f64 {
 /// Pick a palette entry by cumulative weight at noise sample `n` (the
 /// generators' `pick`). `n` is clamped just below 1 so the last entry's band is
 /// inclusive.
-fn pick(recipe: &PaletteRecipe, n: f64) -> &str {
+/// `None` for an empty palette (structurally rejected upstream by
+/// [`check_recipe`]; returning an `Option` rather than indexing keeps a library
+/// caller that skipped `dsl::validate` from panicking).
+fn pick(recipe: &PaletteRecipe, n: f64) -> Option<&str> {
     let total: f64 = recipe.blocks.iter().map(|b| b.weight).sum();
     let mut t = n.min(0.999_999) * total;
     for b in &recipe.blocks {
         if t < b.weight {
-            return &b.block;
+            return Some(&b.block);
         }
         t -= b.weight;
     }
-    &recipe
-        .blocks
-        .last()
-        .expect("validated: recipe has ≥ 1 entry")
-        .block
+    recipe.blocks.last().map(|b| b.block.as_str())
+}
+
+/// The structured error an empty palette recipe raises. `dsl::validate` rejects
+/// one (`DW0100`), but `emit::build` is callable without validation — defense in
+/// depth against the map-editor audit's content-reachable panics.
+fn empty_recipe(bid: &str, verb: &str) -> EditError {
+    EditError {
+        code: DW_EDIT_UNRESOLVED,
+        message: format!(
+            "world-edits batch `{bid}`: a `{verb}` verb declares an empty palette `recipe`, so \
+             it can place nothing (validation should have caught this — this build path skipped \
+             `dsl::validate`). Give the recipe at least one weighted block, or drop the edit"
+        ),
+    }
+}
+
+/// Reject an empty palette recipe before any cell is written.
+fn check_recipe(bid: &str, verb: &str, recipe: &PaletteRecipe) -> Result<(), EditError> {
+    if recipe.blocks.is_empty() {
+        return Err(empty_recipe(bid, verb));
+    }
+    Ok(())
 }
 
 /// A block field's base id: everything before a `[state]` suffix.
@@ -1379,10 +1906,10 @@ mod tests {
             ("minecraft:stone", 3.0),
             ("minecraft:mossy_cobblestone", 1.0),
         ]);
-        assert_eq!(pick(&r, 0.0), "minecraft:stone");
-        assert_eq!(pick(&r, 0.74), "minecraft:stone");
-        assert_eq!(pick(&r, 0.76), "minecraft:mossy_cobblestone");
-        assert_eq!(pick(&r, 1.0), "minecraft:mossy_cobblestone");
+        assert_eq!(pick(&r, 0.0), Some("minecraft:stone"));
+        assert_eq!(pick(&r, 0.74), Some("minecraft:stone"));
+        assert_eq!(pick(&r, 0.76), Some("minecraft:mossy_cobblestone"));
+        assert_eq!(pick(&r, 1.0), Some("minecraft:mossy_cobblestone"));
     }
 
     #[test]
@@ -1464,7 +1991,9 @@ mod tests {
             None,
             None,
             42,
-        );
+            "batch/test",
+        )
+        .unwrap();
         assert!(!writes.is_empty(), "density 1.0 dresses every free cell");
         assert!(
             writes.keys().all(|c| c[0] >= 4),
@@ -1483,15 +2012,41 @@ mod tests {
             None,
             None,
             42,
-        );
+            "batch/test",
+        )
+        .unwrap();
         assert_eq!(writes, writes2);
         // A different seed decorrelates the density gate at density < 1.
         let mut c1 = slab(8, 8);
         let mut w1 = BTreeMap::new();
-        scatter(&mut c1, &mut w1, &cells, &avoid, &items, 0.3, None, None, 1);
+        scatter(
+            &mut c1,
+            &mut w1,
+            &cells,
+            &avoid,
+            &items,
+            0.3,
+            None,
+            None,
+            1,
+            "batch/test",
+        )
+        .unwrap();
         let mut c2 = slab(8, 8);
         let mut w2 = BTreeMap::new();
-        scatter(&mut c2, &mut w2, &cells, &avoid, &items, 0.3, None, None, 2);
+        scatter(
+            &mut c2,
+            &mut w2,
+            &cells,
+            &avoid,
+            &items,
+            0.3,
+            None,
+            None,
+            2,
+            "batch/test",
+        )
+        .unwrap();
         assert_ne!(w1, w2, "seed decorrelates placement");
     }
 
@@ -1514,7 +2069,9 @@ mod tests {
             Some(4),
             Some(3),
             7,
-        );
+            "batch/test",
+        )
+        .unwrap();
         assert!(writes.len() <= 3, "limit caps placements: {}", writes.len());
         let placed: Vec<[i32; 3]> = writes.keys().copied().collect();
         for (i, a1) in placed.iter().enumerate() {

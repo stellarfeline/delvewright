@@ -151,6 +151,26 @@ pub fn structure_named_cells(bytes: &[u8]) -> Vec<([i32; 3], String)> {
 /// The decoder otherwise keeps only `Name` — see [`is_water`] for why waterlogged
 /// solids read as their host id. Unparseable structures contribute nothing.
 pub fn structure_cells(bytes: &[u8]) -> Vec<([i32; 3], String, Option<bool>)> {
+    structure_cells_inner(bytes, false)
+}
+
+/// [`structure_cells`] keeping each block's **full blockstate** string —
+/// `minecraft:lantern[hanging=true]`, `minecraft:oak_log[axis=x]` — with the
+/// properties in sorted key order (deterministic, ADR-0006).
+///
+/// The occupancy model deliberately stores bare ids (its classifiers match exact
+/// names), so [`structure_cells`] stays the default. This variant exists for the
+/// one consumer that must reproduce a prefab's blocks *as blocks* rather than as
+/// occupancy: the stage-7 `fragment` verb, whose emitted `setblock` lines are
+/// the actual runtime writes. Stamping a bare `minecraft:lantern` where the
+/// prefab authored `minecraft:lantern[hanging=true]` places a floor lantern into
+/// mid-air — which vanilla drops on the next chunk tick (the defect `DW0354`
+/// surfaced).
+pub fn structure_cells_stateful(bytes: &[u8]) -> Vec<([i32; 3], String, Option<bool>)> {
+    structure_cells_inner(bytes, true)
+}
+
+fn structure_cells_inner(bytes: &[u8], stateful: bool) -> Vec<([i32; 3], String, Option<bool>)> {
     let mut raw = Vec::new();
     if flate2::read::GzDecoder::new(bytes)
         .read_to_end(&mut raw)
@@ -167,14 +187,41 @@ pub fn structure_cells(bytes: &[u8]) -> Vec<([i32; 3], String, Option<bool>)> {
             .map(|e| match e {
                 fastnbt::Value::Compound(c) => match c.get("Name") {
                     Some(fastnbt::Value::String(s)) => {
-                        let open = match c.get("Properties") {
-                            Some(fastnbt::Value::Compound(p)) => match p.get("open") {
-                                Some(fastnbt::Value::String(v)) => Some(v == "true"),
-                                _ => None,
-                            },
+                        let props = match c.get("Properties") {
+                            Some(fastnbt::Value::Compound(p)) => Some(p),
                             _ => None,
                         };
-                        Some((s.clone(), open))
+                        let open = match props.and_then(|p| p.get("open")) {
+                            Some(fastnbt::Value::String(v)) => Some(v == "true"),
+                            _ => None,
+                        };
+                        // `fastnbt`'s compound is a `HashMap`, so the property
+                        // order it yields is hash order — collect through a
+                        // `BTreeMap` before rendering (ADR-0006: no hash-order
+                        // iteration in the compiler).
+                        let name = match (stateful, props) {
+                            (true, Some(p)) if !p.is_empty() => {
+                                let sorted: std::collections::BTreeMap<&String, String> = p
+                                    .iter()
+                                    .filter_map(|(k, v)| match v {
+                                        fastnbt::Value::String(sv) => Some((k, sv.clone())),
+                                        _ => None,
+                                    })
+                                    .collect();
+                                let body = sorted
+                                    .iter()
+                                    .map(|(k, v)| format!("{k}={v}"))
+                                    .collect::<Vec<_>>()
+                                    .join(",");
+                                if body.is_empty() {
+                                    s.clone()
+                                } else {
+                                    format!("{s}[{body}]")
+                                }
+                            }
+                            _ => s.clone(),
+                        };
+                        Some((name, open))
                     }
                     _ => None,
                 },
@@ -211,7 +258,7 @@ pub fn structure_cells(bytes: &[u8]) -> Vec<([i32; 3], String, Option<bool>)> {
                 _ => continue,
             };
             if let Some(Some((name, open))) = palette.get(state)
-                && !is_air(name)
+                && !is_air(name.split('[').next().unwrap_or(name))
             {
                 out.push((pos, name.clone(), *open));
             }
