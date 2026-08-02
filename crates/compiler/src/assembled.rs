@@ -38,10 +38,37 @@ use std::io::Read;
 
 use crate::plan::{Plan, ResolvedAnchor};
 
+/// The bare block id of a (possibly blockstate-carrying) block name: strips a
+/// trailing `[state]` / `{nbt}` suffix, keeping the namespace
+/// (`minecraft:oak_slab[type=top]` → `minecraft:oak_slab`).
+///
+/// The assembled map stores **full blockstates** (task #78): waterlogging, slab
+/// halves and snow-layer counts are all block *state*, and a model that throws
+/// the state away cannot tell a half-step from a full cube or a submerged fence
+/// from a dry one. Every classifier below therefore matches on `base_id`, and
+/// the state-sensitive ones read the property they need with [`state_value`].
+pub fn base_id(name: &str) -> &str {
+    match name.find(['[', '{']) {
+        Some(i) => &name[..i],
+        None => name,
+    }
+}
+
+/// The value of blockstate property `key` in an `id[k=v,…]` block name, or
+/// `None` when the name carries no state or lacks that property.
+pub fn state_value<'a>(name: &'a str, key: &str) -> Option<&'a str> {
+    let open = name.find('[')?;
+    let close = name[open..].find(']')? + open;
+    name[open + 1..close].split(',').find_map(|kv| {
+        let (k, v) = kv.split_once('=')?;
+        (k.trim() == key).then_some(v.trim())
+    })
+}
+
 /// The air block variants that count as "no block" (passable / transparent).
 pub fn is_air(name: &str) -> bool {
     matches!(
-        name,
+        base_id(name),
         "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
     )
 }
@@ -54,8 +81,14 @@ pub fn is_air(name: &str) -> bool {
 /// in game, so this is the faithful model; a `_pressure_plate`/`tripwire` cell
 /// always rests on a solid support block below, so standability is unaffected.
 pub fn is_passable_trap_trigger(name: &str) -> bool {
-    let id = name.strip_prefix("minecraft:").unwrap_or(name);
+    let id = strip_ns(base_id(name));
     id.ends_with("_pressure_plate") || matches!(id, "tripwire" | "tripwire_hook")
+}
+
+/// The namespace-free bare id (`minecraft:oak_slab[type=top]` → `oak_slab`).
+fn strip_ns(id: &str) -> &str {
+    let id = base_id(id);
+    id.strip_prefix("minecraft:").unwrap_or(id)
 }
 
 /// Whether a block is a **1.5-block-tall barrier** (task #59): fences (`*_fence`,
@@ -75,7 +108,7 @@ pub fn is_passable_trap_trigger(name: &str) -> bool {
 /// Fence **gates** are excluded — they are the openable case, see
 /// [`is_fence_gate`].
 pub fn is_tall_barrier(name: &str) -> bool {
-    let id = name.strip_prefix("minecraft:").unwrap_or(name);
+    let id = strip_ns(name);
     id.ends_with("_fence") || id.ends_with("_wall")
 }
 
@@ -87,23 +120,48 @@ pub fn is_tall_barrier(name: &str) -> bool {
 /// it as a "use-gate" cell in the exported critical-path waypoints. Open (block
 /// state `open=true` in the prefab), the threshold is simply passable.
 pub fn is_fence_gate(name: &str) -> bool {
-    let id = name.strip_prefix("minecraft:").unwrap_or(name);
-    id.ends_with("_fence_gate")
+    strip_ns(name).ends_with("_fence_gate")
 }
 
 /// Whether a palette block id is **free water** (a source or flowing block that
-/// occupies its whole cell as fluid), as opposed to a waterlogged solid block.
+/// occupies its whole cell as fluid, with no host block), as opposed to a
+/// waterlogged solid block ([`is_waterlogged`]).
 ///
-/// Structure `.nbt` palettes carry `Name` + optional `Properties`; the decoder
-/// ([`structure_named_cells`]) keeps only `Name`, so a *waterlogged* block (fence,
-/// stairs, slab with `waterlogged=true`) reads as its solid host id and is modelled
-/// as solid — correct for nav, and vanilla waterlogging never spreads to a
-/// neighbour. Only a `minecraft:water` cell is free water that flows, so only it
-/// seeds the flood. A stored flowing-water cell (`level>0`) also reads as
-/// `minecraft:water`; the flood treats every water cell as a full-strength source,
-/// which over-marks its reach — deliberately safe (see [`flood`]).
+/// A stored flowing-water cell (`level>0`) also reads as `minecraft:water`; the
+/// flood treats every water cell as a full-strength source, which over-marks its
+/// reach — deliberately safe (see [`flood`]).
 pub fn is_water(name: &str) -> bool {
-    name == "minecraft:water"
+    base_id(name) == "minecraft:water"
+}
+
+/// Whether a block carries `waterlogged=true` — **the cell contains a water
+/// source** alongside the host block (MC 1.13+ waterlogging).
+///
+/// Fidelity fix (task #78). The model previously stored bare block ids and its
+/// own doc claimed "vanilla waterlogging never spreads to a neighbour", which is
+/// factually wrong: a waterlogged block's cell holds a genuine water *source*
+/// that ticks and spreads into adjacent air exactly like a free source block
+/// (this is why a single waterlogged stair placed on dry land produces flowing
+/// water around it). A model that ignores it under-marks the flood — the one
+/// direction [`assembled_occupancy`]'s never-under-mark contract forbids, because
+/// an under-marked cell ships as proven-dry and strands the bot.
+///
+/// So a waterlogged cell is BOTH:
+/// - a flood **source** (it wets its neighbours), and
+/// - its host block's normal collision class (solid / tall / gate): the cell is
+///   still occupied by the block, so nothing walks or flows *into* it.
+pub fn is_waterlogged(name: &str) -> bool {
+    state_value(name, "waterlogged") == Some("true")
+}
+
+/// Whether a cell's block is a **fluid** — water or lava. Vanilla's
+/// `FallingBlock.isFree` treats a fluid (and air, fire, and replaceable blocks)
+/// as "no support": a falling block entity passes straight through it and keeps
+/// falling, displacing the fluid when it finally lands on something solid. Used
+/// by [`settle`]; deliberately narrower than `isFree` (replaceable plants are not
+/// modelled), which only ever makes settling *more* conservative.
+fn is_liquid(name: &str) -> bool {
+    matches!(base_id(name), "minecraft:water" | "minecraft:lava")
 }
 
 /// Whether a block falls under gravity when the cell below cannot support it
@@ -116,8 +174,88 @@ pub fn is_water(name: &str) -> bool {
 /// so the "supported from below" settling rule here does not model them — a cave
 /// generator hangs dripstone *stalactites* from the ceiling, and this rule must
 /// never mistake a ceiling-hung block for an unsupported one and delete it.
+/// A full block's collision height in sixteenths — the unit [`collision_top_16`]
+/// reports in. Vanilla builds every partial collision box out of sixteenths, so
+/// integer sixteenths represent every case exactly (no float ordering, ADR-0006).
+pub const FULL_HEIGHT_16: u8 = 16;
+/// Below this collision height a block is **stepped over, not onto**: the walker's
+/// feet stay on whatever supports it. 8/16 = half a block, the slab step. Anything
+/// thinner (carpet 1/16, a 1–4-layer snow drift ≤ 6/16) is under the vanilla
+/// 0.6-block auto-step, so modelling it as a floor *level* of its own would be
+/// noise; modelling it as a full cube (the old behaviour) is a lie.
+pub const THIN_HEIGHT_16: u8 = 8;
+
+/// The height of a block's **collision box top face**, in sixteenths of a block
+/// (0 = no collision at all, 16 = a full cube). Anything not listed is a full
+/// cube — the conservative default, unchanged from the pre-#78 model.
+///
+/// Fidelity fix (task #78): modelling a slab or a snow layer as a full 1×1×1 cube
+/// misplaces the surface a walker stands on by up to a whole block, which makes
+/// the nav step rule prove step-ups vanilla refuses (stepping from a bottom slab
+/// up onto a full block is a **1.5-block** rise — above the ~1.25-block jump
+/// apex) and refuse step-ups vanilla allows (stepping onto a bottom slab is a
+/// 0.5-block auto-step needing no jump headroom at all).
+///
+/// Sources (Minecraft Java 1.21.11 block shapes):
+/// - **Slabs**: `type=bottom` occupies the lower half → 8; `type=top` and
+///   `type=double` reach the cell top → 16. `type` **defaults to `bottom`**, so a
+///   bare `minecraft:oak_slab` is a half-step.
+/// - **Snow layers** (`minecraft:snow`): collision height is `(layers - 1) * 2`
+///   sixteenths (`SnowLayerBlock` indexes its shape table at `layers - 1`), so
+///   `layers=1` has **no** collision box (you walk through it) and `layers=8` is
+///   14/16. The *outline* shape is `layers * 2`, which is what the block looks
+///   like — the collision box is what a walker stands on. `layers` defaults to 1.
+/// - **Carpets**: 1/16 (`pale_moss_carpet` only when `bottom=true`; its default
+///   wall-vine form has no collision box at all).
+/// - **`dirt_path` / `farmland`**: 15/16 (the one-pixel dip you step down into).
+pub fn collision_top_16(name: &str) -> u8 {
+    let id = strip_ns(name);
+    if id.ends_with("_slab") {
+        return match state_value(name, "type") {
+            Some("top") | Some("double") => FULL_HEIGHT_16,
+            // `bottom` — and the default state, which omits the property.
+            _ => 8,
+        };
+    }
+    if id == "snow" {
+        let layers: u8 = state_value(name, "layers")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1);
+        return layers.clamp(1, 8).saturating_sub(1) * 2;
+    }
+    if id == "pale_moss_carpet" {
+        // The odd one out: a floor carpet only when `bottom=true` (1/16); its
+        // wall-vine form (`bottom=false`, the default) has NO collision box.
+        return u8::from(state_value(name, "bottom") == Some("true"));
+    }
+    if id.ends_with("_carpet") || id == "moss_carpet" {
+        return 1;
+    }
+    if matches!(id, "dirt_path" | "farmland") {
+        return 15;
+    }
+    FULL_HEIGHT_16
+}
+
+/// Whether a block is thin enough to be **walked over rather than onto**
+/// ([`THIN_HEIGHT_16`]): its cell is passable and never a floor level of its own,
+/// so a walker standing there rests on the block below it. Vanilla agrees — none
+/// of these blocks obstructs a 1.8-block-tall walker, and every one of them is
+/// under the 0.6-block auto-step.
+pub fn is_thin_decoration(name: &str) -> bool {
+    collision_top_16(name) < THIN_HEIGHT_16
+}
+
+/// Whether a block is a **partial-height floor**: it fills its cell for passage
+/// purposes but its walkable top face sits below the cell top (a bottom slab, a
+/// deep snow drift). Its height is [`collision_top_16`].
+pub fn is_partial_floor(name: &str) -> bool {
+    let h = collision_top_16(name);
+    (THIN_HEIGHT_16..FULL_HEIGHT_16).contains(&h)
+}
+
 pub fn is_falling_block(name: &str) -> bool {
-    let id = name.strip_prefix("minecraft:").unwrap_or(name);
+    let id = strip_ns(name);
     // NB: `suspicious_sand`/`suspicious_gravel` are brushable archaeology blocks,
     // NOT `FallingBlock` — they stay put, so they are deliberately excluded.
     matches!(
@@ -148,8 +286,9 @@ pub fn structure_named_cells(bytes: &[u8]) -> Vec<([i32; 3], String)> {
 /// `(local [x, y, z], block id, open)`, where `open` is the block-state `open`
 /// property when the palette entry carries one (`Some(true)` for an authored open
 /// fence gate / door / trapdoor; `None` when the state has no `open` property).
-/// The decoder otherwise keeps only `Name` — see [`is_water`] for why waterlogged
-/// solids read as their host id. Unparseable structures contribute nothing.
+/// The decoder otherwise keeps only `Name`; the assembled model uses the
+/// blockstate-preserving [`structure_cells_stateful`] instead (task #78).
+/// Unparseable structures contribute nothing.
 pub fn structure_cells(bytes: &[u8]) -> Vec<([i32; 3], String, Option<bool>)> {
     structure_cells_inner(bytes, false)
 }
@@ -283,7 +422,10 @@ fn placed_blocks(
             let Some(bytes) = structures.get(&piece.structure_file) else {
                 continue;
             };
-            for (local, name, open) in structure_cells(bytes) {
+            // Blockstate-preserving read (task #78): waterlogging, slab halves and
+            // snow-layer counts are block STATE, and the fluid/step models below
+            // are wrong without them. Every classifier matches on [`base_id`].
+            for (local, name, open) in structure_cells_stateful(bytes) {
                 let t = piece.rotation.transform(local);
                 let cell = [
                     piece.pos[0] + t[0],
@@ -340,12 +482,21 @@ pub struct Settled {
 }
 
 /// Settle every gravity-affected block in `blocks` as vanilla physics would in the
-/// void world: within each `(x, z)` column, non-falling blocks are immovable
-/// supports; each falling block drops onto the highest support at or below it
-/// (stacking in original order), and a falling block with no support anywhere
-/// below it despawns (falls out of the world → air). Mutates `blocks` in place and
-/// returns one [`Settled`] per falling block (its authored cell and where it
-/// ended up), so callers can distinguish a benign land-on-support from a despawn.
+/// void world: within each `(x, z)` column, non-falling **solid** blocks are
+/// immovable supports; each falling block drops onto the highest support at or
+/// below it (stacking in original order), and a falling block with no support
+/// anywhere below it despawns (falls out of the world → air). Mutates `blocks` in
+/// place and returns one [`Settled`] per falling block (its authored cell and
+/// where it ended up), so callers can distinguish a benign land-on-support from a
+/// despawn.
+///
+/// **Fluids are not supports** (task #78). Vanilla's `FallingBlock.isFree` counts
+/// a liquid cell as free space: a falling block sinks straight through water/lava
+/// and lands on the first genuinely solid block, *displacing* the fluid in the
+/// cell it comes to rest in. The pre-#78 model treated a `minecraft:water` cell as
+/// an immovable support, so a sand block authored over a pool "settled on the
+/// water surface" — a floating floor the game does not have, which the flood then
+/// dammed and nav then walked on. See [`is_liquid`].
 ///
 /// Deterministic (ADR-0006): columns iterate in `BTreeMap` order and blocks stack
 /// bottom-up.
@@ -359,13 +510,15 @@ fn settle(blocks: &mut BTreeMap<[i32; 3], String>) -> Vec<Settled> {
     for ((x, z), mut ys) in columns {
         ys.sort_unstable();
         // Split the column into immovable supports and falling blocks (ascending).
+        // A liquid cell is NEITHER: it does not hold a falling block up, and a
+        // block that lands in it replaces it.
         let mut fixed: Vec<i32> = Vec::new();
         let mut falling: Vec<(i32, String)> = Vec::new();
         for y in &ys {
             let name = &blocks[&[x, *y, z]];
             if is_falling_block(name) {
                 falling.push((*y, name.clone()));
-            } else {
+            } else if !is_liquid(name) {
                 fixed.push(*y);
             }
         }
@@ -394,7 +547,9 @@ fn settle(blocks: &mut BTreeMap<[i32; 3], String>) -> Vec<Settled> {
         for (base, group) in by_base {
             // Stack from base+1 upward; the group came from the open gap above
             // `base`, so it cannot overrun the next support — but skip any fixed
-            // cell defensively.
+            // cell defensively. A liquid cell in the way is deliberately NOT
+            // skipped: the landing block displaces the fluid (the insert below
+            // overwrites it), exactly as sand dropped into a pond does.
             let mut yy = base + 1;
             for (from_y, name) in group {
                 while fixed.binary_search(&yy).is_ok() {
@@ -469,20 +624,19 @@ const WATER_FLOW_RANGE: u8 = 7;
 ///
 /// | Set | Blocks | Walk through? | Stand on top? |
 /// |---|---|---|---|
-/// | `solid` | every other non-air block (full 1×1×1 cube, the conservative default) | no | yes |
+/// | `solid` | every other non-air block (full cube unless listed in `partial`) | no | yes |
 /// | `tall` | fences + walls ([`is_tall_barrier`], 1.5-tall) | no | **no** |
 /// | `use_gates` | closed fence gates ([`is_fence_gate`], 1.5-tall, openable) | player: yes, via right-click USE; NPC/actor/wave walkers: no | **no** |
 /// | `flooded` | water reach (conservative superset) | no | no |
+/// | `partial` | a `solid` cell's true top-face height, in sixteenths, when < 16 | no | yes, **at that height** |
 ///
 /// **Modelled precisely**: fences, walls, fence gates (open = passable, closed =
-/// use-gate), pressure plates / tripwire (passable, [`is_passable_trap_trigger`]),
-/// free water. **Modelled conservatively** (treated as a full solid cube — may
-/// over-block a route, never over-prove one): slabs, stairs, carpets, snow
-/// layers, doors, trapdoors, and every other partial-collision block. A
-/// conservative cell is never walkable-through; the only inaccuracy it can
-/// introduce is a falsely-solid *floor* one cell lower than the real surface
-/// (e.g. standing "on" a bottom slab at `y+1` instead of `y+0.5`), which
-/// over-blocks but keeps every proven route walkable in game.
+/// use-gate), pressure plates / tripwire and every other sub-auto-step decoration
+/// (passable, [`is_thin_decoration`]), free water AND waterlogged blocks
+/// ([`is_waterlogged`]), and partial floor heights for slabs / snow layers /
+/// paths ([`collision_top_16`]). **Modelled conservatively** (treated as a full
+/// solid cube — may over-block a route, never over-prove one): stairs, doors,
+/// trapdoors, and every other partial-collision block.
 pub struct Occupancy {
     /// Full-cube solid cells: block passage AND are valid floor.
     pub solid: BTreeSet<[i32; 3]>,
@@ -491,8 +645,13 @@ pub struct Occupancy {
     /// Closed fence-gate cells: passable-with-use for the player (adventure-legal
     /// right-click), impassable for walkers that cannot use gates; never floor.
     pub use_gates: BTreeSet<[i32; 3]>,
-    /// Water-flooded cells: impassable, never floor (task #45).
+    /// Water-flooded cells: impassable, never floor (task #45). Disjoint from
+    /// every block set — a waterlogged cell is its host block's class, not this.
     pub flooded: BTreeSet<[i32; 3]>,
+    /// For each `solid` cell whose walkable top face is **below** the cell top,
+    /// that height in sixteenths of a block (task #78). Absent = a full cube
+    /// (16/16). Drives the nav step rule's true rise between two standing cells.
+    pub partial: BTreeMap<[i32; 3], u8>,
 }
 
 /// The nav occupancy of the settled assembled world (tasks #45, #59) — see
@@ -551,13 +710,21 @@ pub fn occupancy_of(
     let mut use_gates: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut barriers: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut sources: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut partial: BTreeMap<[i32; 3], u8> = BTreeMap::new();
     for (cell, name) in &blocks {
+        // A waterlogged block's cell holds a real water source that spreads into
+        // its air neighbours (task #78) — seed the flood from it, then classify
+        // the host block normally below (the cell itself stays occupied).
+        if is_waterlogged(name) {
+            sources.insert(*cell);
+        }
         if is_water(name) {
             sources.insert(*cell);
-        } else if is_passable_trap_trigger(name) {
-            // A pressure plate / tripwire is walkable floor decoration, not an
-            // obstacle (spec-0011) — leave its cell passable so the trap-trigger
-            // cell stays on the walkable path.
+        } else if is_passable_trap_trigger(name) || is_thin_decoration(name) {
+            // A pressure plate / tripwire / carpet / thin snow drift is walkable
+            // floor decoration, not an obstacle (spec-0011) — leave its cell
+            // passable so the trap-trigger cell stays on the walkable path, and
+            // so a 2-high corridor with a carpet in it stays walkable.
         } else if is_fence_gate(name) {
             barriers.insert(*cell);
             if !open_gates.contains(cell) {
@@ -569,14 +736,23 @@ pub fn occupancy_of(
         } else {
             barriers.insert(*cell);
             solid.insert(*cell);
+            let h = collision_top_16(name);
+            if h < FULL_HEIGHT_16 {
+                partial.insert(*cell, h);
+            }
         }
     }
-    let flooded = flood(&barriers, &sources);
+    // The sets stay pairwise disjoint: a waterlogged (or fluid-adjacent) barrier
+    // cell is already impassable as its host class, so it must not also appear as
+    // free water — `flooded` means "a walker would be in open water here".
+    let mut flooded = flood(&barriers, &sources);
+    flooded.retain(|c| !barriers.contains(c));
     Occupancy {
         solid,
         tall,
         use_gates,
         flooded,
+        partial,
     }
 }
 
@@ -779,7 +955,7 @@ fn despawn_message(settled: &[Settled], pieces: &[PieceBox]) -> Option<String> {
     for s in &despawned {
         let entry = per_piece.entry(piece_of(s.from)).or_default();
         entry.0.push(s.from);
-        entry.1.insert(s.block.replace("minecraft:", ""));
+        entry.1.insert(strip_ns(&s.block).to_string());
     }
 
     let total = despawned.len();
@@ -1397,6 +1573,152 @@ mod tests {
             despawn_message(&ok_settled, &pieces).is_none(),
             "supported floor is clean"
         );
+    }
+
+    // --- waterlogging is water (task #78) ---
+
+    #[test]
+    fn a_waterlogged_block_seeds_the_flood_like_a_free_source() {
+        // MC 1.13+: a waterlogged block's cell holds a real water source that
+        // spreads into adjacent air. The pre-#78 model stored bare ids and
+        // asserted (wrongly) that waterlogging "never spreads to a neighbour", so
+        // it under-marked the flood — the one direction the never-under-mark
+        // contract forbids.
+        let mut b = floor(64, 0, 6, 0, 0);
+        b.insert(
+            [0, 65, 0],
+            "minecraft:oak_fence[waterlogged=true]".to_string(),
+        );
+        let occ = occupancy_of(b, &BTreeSet::new());
+        assert!(
+            occ.tall.contains(&[0, 65, 0]),
+            "the host block keeps its own collision class"
+        );
+        assert!(
+            !occ.flooded.contains(&[0, 65, 0]),
+            "the sets stay disjoint: an occupied cell is not open water"
+        );
+        for x in 1..=6 {
+            assert!(
+                occ.flooded.contains(&[x, 65, 0]),
+                "water must flow out of the waterlogged cell to x={x}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_dry_block_of_the_same_kind_floods_nothing() {
+        // The control: `waterlogged=false` (what every current prefab authors) is
+        // bone dry, so this fix cannot silently wet an existing build.
+        let mut b = floor(64, 0, 6, 0, 0);
+        b.insert(
+            [0, 65, 0],
+            "minecraft:oak_fence[waterlogged=false]".to_string(),
+        );
+        let occ = occupancy_of(b, &BTreeSet::new());
+        assert!(occ.flooded.is_empty(), "a dry fence floods nothing");
+    }
+
+    // --- gravity blocks sink through fluids (task #78) ---
+
+    #[test]
+    fn a_falling_block_sinks_through_water_and_displaces_it() {
+        // Vanilla `FallingBlock.isFree` counts a fluid as free space: sand dropped
+        // over a pool falls THROUGH the water and lands on the rock beneath,
+        // replacing the water cell it rests in. The pre-#78 model treated the
+        // water cell as an immovable support and floated the sand on the surface —
+        // a phantom floor that dammed the flood and that nav then walked on.
+        let mut b = BTreeMap::new();
+        b.insert([0, 63, 0], "minecraft:stone".to_string()); // pool floor
+        b.insert([0, 64, 0], "minecraft:water".to_string()); // 2-deep water
+        b.insert([0, 65, 0], "minecraft:water".to_string());
+        b.insert([0, 67, 0], "minecraft:sand".to_string()); // dropped in
+        let outcomes = settle(&mut b);
+        assert_eq!(
+            b.get(&[0, 64, 0]).map(String::as_str),
+            Some("minecraft:sand"),
+            "the sand rests on the rock, displacing the water it landed in"
+        );
+        assert_eq!(
+            b.get(&[0, 65, 0]).map(String::as_str),
+            Some("minecraft:water"),
+            "the water above the landing is untouched"
+        );
+        assert!(
+            !b.contains_key(&[0, 67, 0]),
+            "the sand left its authored cell"
+        );
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].to, Some([0, 64, 0]));
+    }
+
+    #[test]
+    fn a_falling_block_over_water_with_no_floor_still_despawns() {
+        // Water cannot rescue an unsupported gravity block: with nothing solid
+        // anywhere below, it sinks through and falls out of the void world. The
+        // old model "caught" it on the water and hid the hole (DW0313).
+        let mut b = BTreeMap::new();
+        b.insert([0, 64, 0], "minecraft:water".to_string());
+        b.insert([0, 66, 0], "minecraft:sand".to_string());
+        let outcomes = settle(&mut b);
+        assert!(!b.contains_key(&[0, 66, 0]));
+        assert!(!b.contains_key(&[0, 65, 0]));
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].to, None, "no fluid is a support: {outcomes:?}");
+    }
+
+    // --- partial collision heights (task #78) ---
+
+    #[test]
+    fn collision_heights_match_the_vanilla_shapes() {
+        // Slabs: `type` defaults to `bottom`, so a bare id is a half-step.
+        assert_eq!(collision_top_16("minecraft:oak_slab"), 8);
+        assert_eq!(collision_top_16("minecraft:oak_slab[type=bottom]"), 8);
+        assert_eq!(collision_top_16("minecraft:oak_slab[type=top]"), 16);
+        assert_eq!(collision_top_16("minecraft:oak_slab[type=double]"), 16);
+        // Snow: collision is (layers-1)*2/16 — one layer has no collision box.
+        assert_eq!(collision_top_16("minecraft:snow[layers=1]"), 0);
+        assert_eq!(collision_top_16("minecraft:snow"), 0); // layers defaults to 1
+        assert_eq!(collision_top_16("minecraft:snow[layers=5]"), 8);
+        assert_eq!(collision_top_16("minecraft:snow[layers=8]"), 14);
+        // Carpets and paths.
+        assert_eq!(collision_top_16("minecraft:red_carpet"), 1);
+        assert_eq!(collision_top_16("minecraft:moss_carpet"), 1);
+        assert_eq!(collision_top_16("minecraft:pale_moss_carpet"), 0);
+        assert_eq!(
+            collision_top_16("minecraft:pale_moss_carpet[bottom=true]"),
+            1
+        );
+        assert_eq!(collision_top_16("minecraft:dirt_path"), 15);
+        assert_eq!(collision_top_16("minecraft:farmland"), 15);
+        // Everything else stays a conservative full cube.
+        assert_eq!(collision_top_16("minecraft:stone"), 16);
+        assert_eq!(collision_top_16("minecraft:oak_stairs[facing=north]"), 16);
+    }
+
+    #[test]
+    fn partial_floors_are_solid_and_thin_decoration_is_passable() {
+        let mut b = floor(63, 0, 3, 0, 0);
+        b.insert([0, 64, 0], "minecraft:oak_slab[type=bottom]".to_string());
+        b.insert([1, 64, 0], "minecraft:oak_slab[type=top]".to_string());
+        b.insert([2, 64, 0], "minecraft:red_carpet".to_string());
+        b.insert([3, 64, 0], "minecraft:snow[layers=1]".to_string());
+        let occ = occupancy_of(b, &BTreeSet::new());
+        assert_eq!(
+            occ.partial.get(&[0, 64, 0]),
+            Some(&8),
+            "bottom slab is 8/16"
+        );
+        assert!(
+            occ.solid.contains(&[1, 64, 0]) && !occ.partial.contains_key(&[1, 64, 0]),
+            "a top slab is a full-height floor"
+        );
+        for c in [[2, 64, 0], [3, 64, 0]] {
+            assert!(
+                !occ.solid.contains(&c),
+                "{c:?} is sub-auto-step decoration, walked over rather than onto"
+            );
+        }
     }
 
     #[test]

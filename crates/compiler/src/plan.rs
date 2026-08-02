@@ -107,7 +107,7 @@ pub struct CheckpointPlan {
 /// A resolved stage-5 `shortcut` (spec-0016 §2), collected in deterministic
 /// content order. A shortcut whose `gate` is not a resolvable gate region, or
 /// whose `unlock` anchor does not resolve to a point, carries no plan entry (and
-/// so no emission and no proof) — `DW0357` rejects those at validation.
+/// so no emission and no proof) — `DW0371` rejects those at validation.
 #[derive(Clone, Debug)]
 pub struct ShortcutPlan {
     /// The full shortcut id (`shortcut/<kebab>`).
@@ -537,6 +537,28 @@ pub enum Step {
         /// Expected value.
         value: i32,
     },
+}
+
+/// The **party holder** (spec-0018): the single fake player that carries every
+/// shared progression score.
+///
+/// Progress is a fact about the party, not about a player. Objective completion,
+/// quest activation/completion, story flags, the announce-once latches and
+/// campaign completion all live on `#party` — so any player's completing action
+/// advances everyone, and two players clearing two arms of an `after` AND-join in
+/// two different rooms unlock the successor together.
+///
+/// A fake player needs no entity and survives every join/leave, which is exactly
+/// the lifetime party state needs. Everything that is genuinely per-player —
+/// class + kit, `dw.dlg_shown`, the interact/dialogue triggers, `dw.dmask`, the
+/// `deathCount` respawn edge, the stealth grace clocks, `dw.hold` — stays on the
+/// player and is deliberately NOT routed here.
+pub const PARTY: &str = "#party";
+
+/// The declared mandatory party size (spec-0018 `world.min_players`), defaulting
+/// to 1 — a party of one is always legal, and every pre-0.6 campaign reads as 1.
+pub fn min_players(campaign: &Campaign) -> u8 {
+    campaign.world.content.min_players.unwrap_or(1)
 }
 
 /// Sanitize an id's local part (after its `/`) to `[a-z0-9_]`.
@@ -1147,7 +1169,7 @@ impl<'a> Plan<'a> {
 
     /// The waves a bonfire rest / bonfire respawn re-seats (spec-0016 §1), in
     /// content order. Empty unless the campaign declares BOTH a `bonfire` and at
-    /// least one wave with `respawns_on_rest` — `DW0356` rejects the half that
+    /// least one wave with `respawns_on_rest` — `DW0370` rejects the half that
     /// declares the field without a bonfire, so this is empty exactly for
     /// campaigns that use none of the surface (byte-identical emission).
     pub fn reseat_waves(&self) -> Vec<&delvewright_dsl::Wave> {
@@ -1829,7 +1851,7 @@ fn close_stealth_windows(beats: &mut [StealthBeat], ends: &[usize]) {
 
 /// Collect every stage-5 `shortcut` (spec-0016 §2) in declared order, resolving
 /// its gate region and far-side unlock cell. A shortcut whose anchors do not
-/// resolve is skipped here (validation owns that, `DW0357`).
+/// resolve is skipped here (validation owns that, `DW0371`).
 fn collect_shortcuts(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,

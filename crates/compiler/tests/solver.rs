@@ -306,11 +306,8 @@ fn keep_trial_builds_all_verbs_and_is_deterministic() {
     );
     let clear = gate
         .lines()
-        .position(|l| {
-            l.starts_with("scoreboard players set @a[tag=dw_flagtest,limit=1] dw.f_")
-                && l.ends_with(" 0")
-        })
-        .expect("withheld flag is actively cleared to 0 on the pinned dummy");
+        .position(|l| l.starts_with("scoreboard players set #party dw.f_") && l.ends_with(" 0"))
+        .expect("withheld flag is actively cleared to 0 on the party holder (spec-0018)");
     let assert0 = gate
         .lines()
         .position(|l| l.starts_with("assert score") && l.ends_with("matches 0"))
@@ -465,8 +462,8 @@ fn keep_trial_m2_presentation_fixes() {
         "datapack/data/keep-trial/function/campaign_complete.mcfunction",
     );
     assert!(
-        cc.contains("title @s title ") && cc.contains("Delve Complete"),
-        "finale shows a title banner"
+        cc.contains("title @a title ") && cc.contains("Delve Complete"),
+        "finale shows a title banner to the whole party"
     );
     assert!(cc.contains("playsound minecraft:ui.toast.challenge_complete"));
 

@@ -82,6 +82,13 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 - Every emitted `.mcfunction` line is checked against the vendored 1.21.11
   Brigadier tree (`compiler::commands`; structure-only — arity/paths, not arg
   values). mecha re-validates in CI (ADR-0011); disagreement fails CI.
+  **Single-entity arity** (round-7 live finding, spec-0018): an entity argument
+  the tree marks `amount: "single"` rejects `@a`/`@e` without `limit=1`.
+  `damage @a[…] 40 minecraft:generic` is a well-shaped command that 1.21.11
+  refuses to *load* ("Only one entity is allowed…") — taking the whole enclosing
+  function down with it, silently. The tree already carries the fact, so the
+  compiler enforces it rather than leaving it to folklore; the party form of
+  `damage-players` is `execute as @a[…] run damage @s …`.
 - Determinism (ADR-0006): all map/set iteration is `BTreeMap`/sorted; the only
   randomness is stage-1 `seed` → a named splitmix64 per-area stream.
 
@@ -144,6 +151,7 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 | `time` (opt) | `day`/`noon`/`night`/`midnight` (default `noon`). Dimension-global initial state, emitted in the sealing baseline (`time set <kw>`). | 0.5 |
 | `weather` (opt) | `clear`/`rain`/`thunder` (default `clear`; `clear` emits nothing — byte-identical to pre-0.5). Dimension-global, emitted after sealing (`weather <kw>`). Rain/thunder attenuate the assembled-light sky term. | 0.5 |
 | `horizon` (opt) | spec-0013: `void` (default/absent, byte-identical to v0.5) or `ocean` — a pinned bedrock/stone/water superflat (sea level y=62), no structures/mobs. Drives `generator-settings` **and the area-origin datum**: ocean areas are placed at y=60 = `sea_level − 2`, so an island piece's authored waterline (local y=2) meets the world ocean and its walk plane (local y=3) is the vanilla-normal one block above the sea. Enforced by `DW0344`. | 0.6 |
+| `min_players` (opt, 1..=4) | spec-0018: the party size the delve **requires**. Absent = 1 (a party of one is always legal; every pre-0.6 campaign reads as 1). `>= 2` emits the **lobby gate**: `tick` recomputes the live count into `#lobby dw.sys`, the class-selection dialog driver is prefixed `if score #lobby dw.sys matches <n>..` (so the delve cannot START short-handed), and unclassed players get a self-updating `x / n` actionbar (`{"score":{"name":"#lobby","objective":"dw.sys"}}` — one emitted line, no per-count strings; a compiler default, not an l10n key). Out of range = `DW0356`; a mandatory-n declaration with no n-way division of labour = `DW0358`. `min_players: 1` emits **nothing** (byte-identical). | 0.6 |
 | `boundary {margin?,message?}` (opt) | spec-0013: declares a **derived** playable region (union of final placed-piece AABBs, inflated horizontally by `margin` (`0..=64`, default 16; else `DW0321`), unbounded up, floor = lowest placed block − 8). A 1s clock returns any player outside it to the last checkpoint (`dw:cp`) with an actionbar `message` (l10n `world.boundary.message`, English default when absent) + a soft sound; no damage, no item loss. `horizon:"ocean"` without a `boundary` = `DW0320`. | 0.6 |
 
 ### Stage 2 — `npcs` (casting sheets, stationary)
@@ -159,7 +167,11 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 ### Stage 3 — `classes`
 
 1..4 classes. `kit[]` = vanilla item id + count + optional display `name`
-(→ l10n `class.<c>.kit.<i>.name`). `name`/`blurb` player-visible. Reserved kit
+(→ l10n `class.<c>.kit.<i>.name`) + optional `carrier` (v0.6, spec-0018:
+`all` (default) or `one`). A kit is per-player gear by construction; `carrier:
+"one"` marks a **party-unique** kit item — `class_apply_<c>` guards that one
+`give` behind a `#kit_<class>_<i> dw.sys` latch, so exactly one copy enters the
+party (the first player to take the class) while the rest of the kit is unchanged. `name`/`blurb` player-visible. Reserved kit
 fields `lore`/`enchantments`/`attributes` are **not defined** → unknown-field
 `DW0100`. Kit items carry **no semantics**: a night-vision potion in a kit is
 flavor. The `DW0210` dark mitigation is the stage-1 `areas[].mitigation`
@@ -190,8 +202,10 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | `forbids_flags[]` | Negative gate, accepted **everywhere `requires_flags` is** (objectives, `triggers[]`, per-effect, dialogue options, `traps[]`): the element is suppressed while ANY listed flag is set. Per-player sites emit `unless score @s dw.f_<flag> matches 1` clauses (unset-safe — flag scores are never pre-initialized, so a `scores={…=..0}` selector would wrongly fail on unset); trigger arming uses the any-player form `unless entity @a[scores={dw.f_<flag>=1..}]` (a positive selector inside a negation). Unknown flags get the same `DW0172` treatment as `requires_flags`. Reserved (`DW0141`) pre-0.6 at every site. | 0.6 |
 | `waves[]` | `{id,anchor,mobs[{entity,count,name?,attributes?,effects?,equipment?}]}`; entity validated (`DW0173`); `attributes`/`effects` are v0.4 (`DW0192`). `equipment{head?,chest?,legs?,feet?,main_hand?,off_hand?}` is v0.6 (task #65; reserved `DW0141` pre-0.6): slot item ids validate against the pinned 1.21.11 item registry (`DW0143`, the give-item family); emitted as component-era `equipment`/`drop_chances` summon NBT (never legacy `ArmorItems`/`HandItems` — 1.21.11 ignores them) with **drop chance 0 on every slot** (no-grind: wave gear is never lootable). Explicit slots merge over the armed-mob main-hand default (a helmeted skeleton keeps its bow; explicit `main_hand` overrides). A helmet is the sanctioned daylight-undead fix — never `set-time`. | 0.3 / tuning 0.4 / equipment 0.6 |
 | `waves[].respawns_on_rest` | `true` re-seats the wave on every bonfire rest **and** on every respawn at a bonfire (spec-0016 §1) — the souls contract: progress is kept, the enemies come back. Emission: `spawn_<wave>` additionally sets a seated sentinel `#wseat_<wave> dw.sys`, and `wave_reseat_<wave>` kills every survivor carrying `dw_wave_<id>` then re-runs the wave's own spawn (authored composition, DW0312-proven cells). A rest only re-seats waves the party has actually met — an unmet wave is never conjured. Declaring the field with **no** `bonfire` in the campaign is inert, so it is `DW0356`, not a silent no-op. Reserved `DW0141` pre-0.6. | 0.6 |
-| `ambushes[]` | `{id,at,actors[],trigger,telegraph[]?}` (spec-0016 §3, reserved `DW0141` pre-0.6) — **sugar**, not a new runtime mechanism. `parse_campaign` desugars each ambush into an ordinary one-shot `EnvTrigger` named `trigger/<local id>` at `at`, whose effects are the `telegraph` bundle, then a `spawn-actor` per listed actor, then an `unleash-actor` per listed actor. Everything downstream — validation, l10n, the flag/wave producer scans, nav, emission — sees only that trigger, so the sugar has no second code path to drift down and an ambush is exactly as debuggable as the trigger an author would otherwise type. The canonical form of a campaign is therefore its **desugared** form (the section is never serialized), which is what keeps the canonical round-trip idempotent. `telegraph` is **optional and stays optional** (owner ruling 2026-08-02): the un-telegraphed ambush is core souls vocabulary and nothing in the compiler asks for a tell. Declaration errors are `DW0365`; the counterplay obligation is `DW0366`. | 0.6 |
-| `shortcuts[]` | `{id,gate,unlock,on_unlock[]?}` (spec-0016 §2, reserved `DW0141` pre-0.6) — the souls loop-back. The `gate` is **sealed from world-load** (the prefab carries the physical fill), and the `unlock` anchor on the FAR side opens it **permanently**. Declaration errors are `DW0357` (malformed/duplicate id, an anchor no prefab provides, or an `unlock` equal to its own `gate`); a gate anchor with no declared fill `block` is `DW0343` (the same rule `close-gate` obeys); a `close-gate` anywhere targeting a shortcut gate is `DW0358` — permanence is structural, there is no re-seal verb to reach for. Geometry proofs: `DW0359` (the long route exists while the gate is sealed) and `DW0364` (opening it strictly shortens the walk to the unlock — the anti-leak proof that makes `unlock` a far-side anchor rather than a label). Every shortcut gate is additionally **sealed for the whole completability model** (`Plan::build` registers it as a `close-gate` at step 0), so `DW0311`/`DW0315`/`DW0342` all prove the delve finishable with no shortcut ever taken. | 0.6 |
+| `ambushes[]` | `{id,at,actors[],trigger,telegraph[]?}` (spec-0016 §3, reserved `DW0141` pre-0.6) — **sugar**, not a new runtime mechanism. `parse_campaign` desugars each ambush into an ordinary one-shot `EnvTrigger` named `trigger/<local id>` at `at`, whose effects are the `telegraph` bundle, then a `spawn-actor` per listed actor, then an `unleash-actor` per listed actor. Everything downstream — validation, l10n, the flag/wave producer scans, nav, emission — sees only that trigger, so the sugar has no second code path to drift down and an ambush is exactly as debuggable as the trigger an author would otherwise type. The canonical form of a campaign is therefore its **desugared** form (the section is never serialized), which is what keeps the canonical round-trip idempotent. `telegraph` is **optional and stays optional** (owner ruling 2026-08-02): the un-telegraphed ambush is core souls vocabulary and nothing in the compiler asks for a tell. Declaration errors are `DW0375`; the counterplay obligation is `DW0376`. | 0.6 |
+| `shortcuts[]` | `{id,gate,unlock,on_unlock[]?}` (spec-0016 §2, reserved `DW0141` pre-0.6) — the souls loop-back. The `gate` is **sealed from world-load** (the prefab carries the physical fill), and the `unlock` anchor on the FAR side opens it **permanently**. Declaration errors are `DW0371` (malformed/duplicate id, an anchor no prefab provides, or an `unlock` equal to its own `gate`); a gate anchor with no declared fill `block` is `DW0343` (the same rule `close-gate` obeys); a `close-gate` anywhere targeting a shortcut gate is `DW0372` — permanence is structural, there is no re-seal verb to reach for. Geometry proofs: `DW0373` (the long route exists while the gate is sealed) and `DW0374` (opening it strictly shortens the walk to the unlock — the anti-leak proof that makes `unlock` a far-side anchor rather than a label). Every shortcut gate is additionally **sealed for the whole completability model** (`Plan::build` registers it as a `close-gate` at step 0), so `DW0311`/`DW0315`/`DW0342` all prove the delve finishable with no shortcut ever taken. | 0.6 |
+| `waves[].respawns_on_rest` | `true` re-seats the wave on every bonfire rest **and** on every respawn at a bonfire (spec-0016 §1) — the souls contract: progress is kept, the enemies come back. Emission: `spawn_<wave>` additionally sets a seated sentinel `#wseat_<wave> dw.sys`, and `wave_reseat_<wave>` kills every survivor carrying `dw_wave_<id>` then re-runs the wave's own spawn (authored composition, DW0312-proven cells). A rest only re-seats waves the party has actually met — an unmet wave is never conjured. Declaring the field with **no** `bonfire` in the campaign is inert, so it is `DW0370`, not a silent no-op. Reserved `DW0141` pre-0.6. | 0.6 |
+| `shortcuts[]` | `{id,gate,unlock,on_unlock[]?}` (spec-0016 §2, reserved `DW0141` pre-0.6) — the souls loop-back. The `gate` is **sealed from world-load** (the prefab carries the physical fill), and the `unlock` anchor on the FAR side opens it **permanently**. Declaration errors are `DW0371` (malformed/duplicate id, an anchor no prefab provides, or an `unlock` equal to its own `gate`); a gate anchor with no declared fill `block` is `DW0343` (the same rule `close-gate` obeys); a `close-gate` anywhere targeting a shortcut gate is `DW0372` — permanence is structural, there is no re-seal verb to reach for. Geometry proofs: `DW0373` (the long route exists while the gate is sealed) and `DW0374` (opening it strictly shortens the walk to the unlock — the anti-leak proof that makes `unlock` a far-side anchor rather than a label). Every shortcut gate is additionally **sealed for the whole completability model** (`Plan::build` registers it as a `close-gate` at step 0), so `DW0311`/`DW0315`/`DW0342` all prove the delve finishable with no shortcut ever taken. | 0.6 |
 | `triggers[]` | `{id,at,on:strike\|use\|approach{range},requires_flags?,forbids_flags?,once?,effects[]}` (v0.4; `forbids_flags` v0.6). Bad/dup/`range 0` → `DW0194`. A trigger is armed while every `requires_flags` flag is held by some player AND no `forbids_flags` flag is set by anyone — e.g. a retaliation trigger armed by `flag/sealed` that stands down the moment `flag/asleep` is set (the wake beat takes over), with no re-arm plumbing. | 0.4 / forbids 0.6 |
 | Effect `open-gate` | Fills gate anchor to air. | 0.1 |
 | Effect `close-gate{anchor}` | The physical dual of `open-gate` (v0.6): fills the gate anchor's region with the block the anchor's prefab metadata declares (basalt boulder, iron bars), re-sealing an opened threshold into a wall. A gate anchor that declares no `block` is `DW0343`. Same anchor-existence check as `open-gate` (`DW0142`). Per-effect `requires_flags` like the other per-`@s` verbs. | 0.6 |
@@ -209,7 +223,7 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Effect `set-time{time}` | Instantaneous dimension-global cut (`time set <kw>`); persists (cycle frozen). | 0.5 |
 | Effect `set-weather{weather}` | Instantaneous dimension-global cut (`weather <kw>`); persists (cycle frozen). | 0.5 |
 | Effect `play-sound{sound,at?,volume?,pitch?}` | Plays a sound event; `sound` validated (`DW0326`); `at` = `{anchor}`\|`players` (default)\|`{actor}` (deferred → `DW0335`); positional or per-player. | 0.6 |
-| Effect `damage-players{amount,in?,damage_type?}` | Deals `amount` half-hearts of damage to the acting player(s) — a real `on_caught`/souls consequence over vanilla `/damage` (`damage @s …`). Per-`@s`: top-level hits every player once, in `on_caught` the caught player. `amount ≥ 40` is lethal through golden apples. `in {anchor,extent}` narrows to acting players inside the anchor-centred box (same box model as a stealth zone; anchor `DW0142`). `damage_type` is a **curated enum** of vanilla types that respect `keepInventory` and do NOT bypass totems (no `out_of_world`/`generic_kill`), default `generic`; an unknown value is `DW0100` (needs no registry). Named `damage_type`, not `type`, since the effect enum is internally tagged on `type`. Per-effect `requires_flags` allowed (per-`@s` verb). Every form is guarded by `tag=!dw_cutscene` — a player watching a cutscene is never harmed (§4). | 0.6 |
+| Effect `damage-players{amount,in?,damage_type?}` | Deals `amount` half-hearts of damage over vanilla `/damage` — a real `on_caught`/souls consequence. **Audience (spec-0018)**: on a quest beat / trigger the hazard is a fact about the delve, so it hits the whole party (`execute as @a[…] run damage @s …` — `/damage` takes ONE entity, see §1); inside a solo `on_caught`/`on_respawn` bundle it hits exactly that player (`execute if entity @s[…] run damage @s …`). `amount ≥ 40` is lethal through golden apples. `in {anchor,extent}` narrows to acting players inside the anchor-centred box (same box model as a stealth zone; anchor `DW0142`). `damage_type` is a **curated enum** of vanilla types that respect `keepInventory` and do NOT bypass totems (no `out_of_world`/`generic_kill`), default `generic`; an unknown value is `DW0100` (needs no registry). Named `damage_type`, not `type`, since the effect enum is internally tagged on `type`. Per-effect `requires_flags` allowed (per-`@s` verb). Every form is guarded by `tag=!dw_cutscene` — a player watching a cutscene is never harmed (§4). | 0.6 |
 | Effect `set-checkpoint{anchor,on_respawn?}` | Party-wide respawn point: `spawnpoint @a` at the anchor + `storage dw:cp pos` mirror. Monotonic by quest order. `on_respawn[]` = per-player effects re-run on respawn while active (vanilla `deathCount` detection). Proofs `DW0315`/`DW0316`. Also a dialogue effect. | 0.6 |
 | Effect `bonfire{anchor,on_rest?}` | The souls sibling of `set-checkpoint` (spec-0016 §1). The effect only **arms** a rest affordance at the anchor (a `minecraft:interaction` the party right-clicks; the campfire is prefab dressing) — the respawn point moves when the party actually **rests**. Every rest, and every respawn at this bonfire, runs the same `on_rest[]` scene reset and re-seats every wave declared `respawns_on_rest`. Arming is idempotent (guarded summon), resting is deliberately repeatable (unlike the one-shot trap disarm). Proofs are inherited: a bonfire is collected as a checkpoint, so `DW0316` (standable) and `DW0315` (no stranding — rooted at the ARMING beat, the earliest rest) apply unchanged. Quest/trigger effect only (not a dialogue effect). | 0.6 |
 | Effect `begin-stealth{zones[{anchor,extent}],on_caught?,grace_ticks?}` | Per-tick: every player must be inside some zone — zone presence alone = hidden (owner ruling 2026-08-01; no sneak requirement, which collided with the spectator cutscene camera); exposed for `grace_ticks` (default 20) → `on_caught`. Zone standable/reachable proof `DW0327`; onset-survivability proof `DW0355` (a beat whose `on_caught` punishes must be escapable inside `grace_ticks` from where the player provably stands when it arms, and from every checkpoint that can respawn them into it). | 0.6 |
@@ -346,7 +360,7 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | `give-item` | Grants item to player (`name` → SNBT text component). |
 | `narrate` | chat / `title` / `subtitle` (+ optional sound); `art` = `title` with a `{"font":"delve:art"}` text component, rendered uppercase in the pixel-banner font (6 font px/glyph → ~15 glyphs fit; see [The `delve:art` font](#the-delveart-font)). |
 | `play-sound` | `playsound <sound> master @s [<pos>] [<vol> [<pitch>]]` — effects run `as @a`, so `@s` is each player: `anchor` uses the resolved anchor pos (all hear it there), `players` uses `~ ~ ~`. |
-| `damage-players` | `damage @s <amount> <type>` (per-`@s`; default `minecraft:generic`). With `in`: `execute if entity @s[x=…,dx=2·ext,…] run damage @s …` (the stealth-zone box model, so it stays per-`@s` — no double-hit). A generated `v06_damage` PackTest summons a tagged dummy, applies the declared amount+type, and asserts its `Health` strictly dropped. |
+| `damage-players` | `execute as <audience>[tag=!dw_cutscene] run damage @s <amount> <type>` for a party beat (`@a`), `execute if entity @s[…] run damage @s …` inside a solo `on_caught`/`on_respawn` (default type `minecraft:generic`). With `in`, the stealth-zone box (`x=…,dx=2·ext,…`) joins the same selector, so each player is judged on their own position — no double-hit. `/damage` takes a single entity, so the party form re-binds rather than widening the target (§1, single-entity arity). A generated `v06_damage` PackTest summons a tagged dummy, applies the declared amount+type, and asserts its `Health` strictly dropped. |
 | `set-block` | `setblock` at resolved anchor. |
 | `despawn-npc` | Kills body + interaction hitbox. The generated `v04_despawn` PackTest targets the campaign's first `despawn-npc` NPC; when that NPC is **deferred** it runs its `spawn_npc_<id>` entrance right after `setup_finish` (a deferred NPC is deliberately absent from world init, so the presence assertion would otherwise read 0). The assertions themselves — 2 entities present, 0 after the kill — are identical in both cases, and the entrance line is emitted only for a deferred target, so a campaign with no deferred NPC keeps byte-identical PackTest output. |
 | `spawn-npc` | `function <ns>:spawn_npc_<npc>` — the generated entrance function, emitted once per **deferred** NPC. Its two lines are the world-init summons, each independently guarded: body by `unless entity @e[tag=dw_npc,tag=dw_npc_<n>]`, hitbox by `unless entity @e[tag=dw_npc_<n>,tag=!dw_npc]` (both carry the id tag, so a single shared guard would let the body's own summon suppress the hitbox). The `npc_summons` PackTest fires each deferred NPC's entrance after `setup_finish` and asserts exactly one body. |
@@ -361,9 +375,43 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | `shortcut` (spec-0016 §2) | `setup_finish` summons the far-side unlock affordance (`minecraft:interaction`, tag `dw_sc_<id>`) — and emits **nothing** for the gate, which the prefab already seals. `tick` polls the affordance's `interaction` record once, guarded by the `#sc_<id> dw.sys` sentinel → `shortcut_open_<id>`, then clears the record. `shortcut_open_<id>` latches the sentinel, clears the gate region (`fill … minecraft:air replace <block>`, the same command `open-gate` emits) and runs `on_unlock` server-source-safe. No emitted function anywhere ever re-fills a shortcut gate — the runtime half of permanence, asserted by a test over the whole datapack. Generated PackTest `souls_shortcut`: sealed before, air after, still air after a second unlock pass. |
 | `bonfire` (spec-0016 §1) | Inline at the arming beat: `execute unless entity @e[tag=dw_bonfire_<i>] run summon minecraft:interaction … Tags:["dw_bonfire_<i>"]` — nothing else; the checkpoint does not move. `tick` polls the affordance's `interaction` record (`nbt={interaction:{}}`) → `bonfire_rest_<i>`, then clears the record so the next rest re-fires (no one-shot sentinel). `bonfire_rest_<i>` = the three `set-checkpoint` lines (`spawnpoint @a`, the `dw:cp pos` mirror, `#cp dw.sys = <i>`) + the wave re-seats + the `on_rest` bundle, emitted **server-source-safe** (§4 — the tick has no `@s`, so per-player effects re-bind to `as @a` and global effects fire once). The respawn path runs the same `on_rest` bundle through `cp_on_respawn_<i>` under the player executor, so a bonfire with an empty `on_rest` still dispatches when it owes a re-seat. Generated PackTests `souls_bonfire_rest` (the real rest function moves `dw:cp` to the bonfire cell) and `souls_bonfire_reseat` (a met, wiped wave stands again at its authored count after a rest; an unmet one is not conjured). |
 | `begin-stealth` / `end-stealth` | `begin` → `#stealth dw.sys = <session>` + reset per-player `dw.st_grace`. `tick` runs `stealth_tick_<session>` while active → per-player `stealth_eval_<session>`: safe iff inside some zone box (a pure position selector — **zone presence alone = hidden**, owner ruling 2026-08-01; the earlier sneak-edge requirement is gone, it collided with the spectator cutscene camera); grace resets when safe, climbs when exposed, and at `grace_ticks` fires `stealth_caught_<session>` (`on_caught`). `end` → `#stealth dw.sys = 0`. The `v06_stealth` PackTest disarms `#stealth` (sets it 0) after each `stealth_begin` because it drives `stealth_eval` explicitly: an armed session would make the world `tick` loop run a *second* judge pass in the same tick, double-counting exposure and mis-accruing grace (this only isolates the test; runtime gameplay has the tick loop as sole caller). It pins its dummy by tag (see "PackTest batch model" below), drives hidden/exposed purely by teleporting the dummy in/out of the zone box, runs the spare (safe-player) section first and the `on_caught` trip LAST — the trip executes arbitrary campaign `on_caught` content (possibly lethal), so nothing state-dependent follows it and the closing assert reads the dummy through the tag, which keeps matching even if the trip killed it. |
+| `give-item` `carrier` (v0.6, spec-0018) | Absent/`all` → `give @a <item> <count>`: a quest beat arms the whole party. `one` → `give @s …`, the single quest prop handed to the player whose action fired the effect, for the party to pass around physically. `one` inside a scheduler-only bundle has no acting player and is rejected at validate time (`DW0357`). |
 | trap `dispense` (spec-0011) | `setup_finish`: `item replace block <disp> container.0 with <item> <count>` fills the prefab's pre-wired dispenser socket (the `anchor/trap` metadata `dispenser` cell) — a static, deterministic payload, the same mechanism as a `collect` chest. **No detection** is emitted for the harm: the plate/tripwire/trapped-chest → dispenser redstone is already in the prefab. Pressure plates and tripwire are modelled **passable** in the assembled occupancy (`crate::assembled::is_passable_trap_trigger`) so nav routes a player ONTO a trigger cell rather than around a "solid" plate. |
 | trap `requires_flags` / `forbids_flags` (spec-0011) | A **physical** gate, because the compiler owns world mutation: `trap_gate_on_<trap>` restores the trigger block declared by the `anchor/trap` metadata's `trigger_block` (verbatim, blockstate and all) and `trap_gate_off_<trap>` clears the cell to air, so a shut gate means a player stepping on the trigger steps on nothing. Edge-triggered on a `#trapgate_<trap>` sentinel, so the `setblock` fires on a flag transition rather than every tick. The gate is **campaign state, not per-player state** — flags are set by whoever reaches the beat — so the `tick` guards use the any-player form (`if entity @a[scores={dw.f_<flag>=1..}]`), one shutting clause per gating flag ("not (all required and no forbidden)" is a disjunction) and one opening clause carrying the full conjunction. `setup_finish` seeds the sentinel to the world the campaign starts in: a `requires_flags` gate starts shut (no flag is set yet) and clears the cell immediately, a `forbids_flags`-only gate starts open on the prefab's own block. An **ungated** trap emits none of this (byte-identical). Only sound for a trigger whose whole state is the block — `DW0363` rejects the rest rather than shipping folklore. PackTest `v06_trap_gate`: flag set → the trigger cell is air; flag cleared → the authored trigger is back. |
 | trap `disarm` (spec-0011) | `setup_finish` summons a `minecraft:interaction` at the disarm `via` cell (tag `dw_trapdis_<trap>`); `tick` fires `trap_disarm_<trap>` once on a right-click (`nbt={interaction:{}}`, reusing the v0.4 `use` primitive). `trap_disarm_<trap>` sets the party-wide `dw.f_<flag>` and empties the dispenser (`data modify block <disp> Items set value []`) — the modeled, global disarm that actually stops a redstone dispense trap. |
+
+**The party holder (`#party`, spec-0018).** Progress is a fact about the party,
+not about a player. Every progression score — `dw.o_<obj>`, `dw.q_<quest>`,
+`dw.qa_<quest>`, `dw.f_<flag>`, `dw.ann_<obj>` and `dw.campaign` — is read and
+written on the single fake player `#party`, so any member's completing action
+advances everyone, and `after: [obj/a, obj/b]` becomes a **division of labour**:
+A clears one arm in one room, B the other in another, and the successor's guard
+(every term a `#party` read) opens for both. A fake player needs no entity and
+survives every join/leave, which is exactly the lifetime party state needs.
+
+Consequences, all mechanical:
+
+- the `announce_<obj>` / `activate_<obj>` tick drivers need no player context at
+  all (their whole predicate is party state) and therefore fire **once for the
+  party**; the completion drivers keep `as @a` because they still test a real
+  player (proximity, held items, a fired trigger). Those stay single-fire because
+  vanilla evaluates `execute as @a … if … run` per selected player *in turn*: the
+  first player's `run` sets the party score and every later player's `unless score
+  #party …` fails in the same tick;
+- objective/quest/campaign UI addresses `@a` (`tellraw @a`, `title @a`,
+  `playsound … @a`, `advancement grant @a`), so the party is told together;
+- what stays **per-player** is exactly what belongs to a body: `dw.class` /
+  `dw.classed` / `dw.dlg_shown`, `dw.dlg_<npc>` / `dw.i_<obj>` triggers,
+  `dw.dmask` (this player's dialog screen — its *conditions* read `#party`),
+  `dw.hold`, `dw.deaths` / `dw.death_ack`, `dw.st_grace` / `dw.st_safe`,
+  inventory, position, and cinematic attach/restore.
+
+CI-enforced by `tests/party.rs::no_per_player_progression_scoreboard_remains`, a
+sweep over every emitted pack of every fixture family: a progression score may
+appear only after the `#party` holder token (or in its `scoreboard objectives
+add` declaration), and no selector may filter players by one. A *partial*
+migration — player A's objective set, player B's guard still shut — is the
+soft-lock that no single-player test can see.
 
 Naming: `dw.o_<obj>`, `dw.q_<quest>`, `dw.qa_<quest>` (active), `dw.dlg_<npc>`,
 `dw.f_<flag>`, tags `dw_npc_<npc>`/`dw_wave_<id>`/`dw_i_<obj>`/`dw_r_<obj>`.
@@ -395,29 +443,48 @@ The cost (round-6 island, AUDIT-P0): two `on_arrive` bundles set the flags
 `obj/take-cover` gates on, so the party soft-locked at "Get Into the Shadows" —
 and the whole seal cinematic's `title`/`tellraw`/`playsound` beats were dead.
 
-**The rule.** A bundle is emitted under an explicit executor
-(`emit::Executor::{Player, Server}`), and under `Server` **each effect is
-classified, never the bundle as a whole** (`effect_is_player_scoped`, an
-exhaustive match — a new effect verb must state its scope or the compiler refuses
-to build):
+**The rule.** A bundle is emitted for an explicit **audience**
+(`emit::Audience::{Party, Scheduled, Solo}`), and each effect is classified
+individually, never the bundle as a whole (`emit_quest_effect` takes the audience
+selector; the executor match is exhaustive — a new effect verb must state its
+scope or the compiler refuses to build):
 
-- **per-player** (`set-flag`, `narrate`, `give-item`, `play-sound`,
-  `damage-players`, `campaign-complete`) → each emitted command gets `as @a`
-  spliced into its `execute`, so it runs **once per player**, with the same
-  executor and the same (unmoved) command position a top-level bundle gets from
-  its `execute as @a … run function complete_<obj>` dispatch;
-- **global** (gates, `set-block`, `spawn-wave`, `spawn`/`despawn`/`move`/
-  `unleash-actor`, `spawn`/`despawn`/`move-npc`, `cutscene`, `set-time`/
-  `set-weather`, `set-checkpoint` (already `@a`-wide), `begin`/`end-stealth`,
-  `sequence`) → emitted **bare**, so it fires **exactly once**. A blanket
-  `execute as @a run function <bundle>` — the obvious fix — is wrong: it would
-  fire every `fill`, `summon`, driver start and `schedule` once per player.
+- `Party` — a party event entered as one player (`complete_<obj>`,
+  `complete_q_<quest>`, `trig_<id>`): `@s` exists and is the completing player;
+- `Scheduled` — the three bundles above: **no `@s` at all**;
+- `Solo` — a checkpoint `on_respawn` / a stealth `on_caught`: the bundle belongs
+  to the one player it fired for, and stays `@s` throughout (re-broadcasting one
+  player's death would re-gift and re-narrate at every survivor).
 
-Per-effect flag gates follow the executor: under `as @a` they keep the per-player
-spelling (`if score @s dw.f_<flag> matches 1`); on a **global** effect there is no
-acting player to ask, so the gate degrades to the any-player party predicate the
-trigger layer already uses (`if entity @a[scores={dw.f_<flag>=1..}]` /
-`unless entity @a[scores={…}]`). These bundles previously dropped the gate
+Under `Party`/`Scheduled`:
+
+- **player-facing** (`narrate`, `give-item`, `play-sound`, `damage-players`) →
+  the command names `@a` directly (`tellraw @a`, `give @a`, `damage @a[…]`,
+  `playsound … @a`), so the whole party sees the beat **once**. The one
+  listener-relative form (a `players` sound with an explicit volume/pitch, which
+  forces a `~ ~ ~`) is wrapped `execute as @a at @s run …` so `~ ~ ~` resolves at
+  each listener rather than at the command's own position;
+- **party-fact** (`set-flag` — now a `#party` write, gates, `set-block`,
+  `spawn-wave`, `spawn`/`despawn`/`move`/`unleash-actor`,
+  `spawn`/`despawn`/`move-npc`, `cutscene`, `set-time`/`set-weather`,
+  `set-checkpoint`, `begin`/`end-stealth`, `sequence`, `campaign-complete`) →
+  emitted **bare**, so it fires exactly once. A blanket `execute as @a run
+  function <bundle>` — the obvious fix — is wrong: it would fire every `fill`,
+  `summon`, driver start and `schedule` once per player.
+
+**spec-0018 narrowed this seam to nearly nothing, and that is the point.**
+Progression moved to the `#party` holder, so a scheduled `set-flag` writes
+`scoreboard players set #party dw.f_<flag> 1` and names no executor — the exact
+soft-lock the AUDIT-P0 fix was written for **cannot recur for flags**. Every
+player-facing effect addresses `@a`, which needs no executor either. Exactly one
+construct is still executor-shaped: a `carrier: "one"` `give-item`, which needs
+the acting player, and is therefore rejected at validate time inside a
+scheduler-only bundle (`DW0357`).
+
+Per-effect flag gates have **one spelling** everywhere now (`if score #party
+dw.f_<flag> matches 1` / `unless score #party …`, unset-safe): flags are party
+state, so there is no per-player variant to diverge and no "does some player hold
+it" selector to approximate it with. These bundles previously dropped the gate
 entirely (they called the ungated emitter), so a gated effect inside an
 `on_arrive`/`sequence` step fired unconditionally.
 
@@ -434,7 +501,9 @@ player, wherever the timeline is started from.
    `schedule` site — following `function` calls that do *not* re-bind the
    executor — and asserts no function in that closure names `@s` outside an `as`
    clause (`positioned as`/`rotated as` do not bind). Fails on pre-fix output
-   with the exact dead commands listed.
+   with the exact dead commands listed. Post-spec-0018 it passes because nothing
+   in those bundles addresses a player at all — which is the strongest form the
+   lesson can take.
 2. Two generated PackTests drive the **real scheduler** (never an inline
    `function` call — running the driver inline *as the dummy* supplies exactly
    the executor the scheduler withholds, which is how a green suite hid this bug
@@ -444,6 +513,8 @@ player, wherever the timeline is started from.
    `sched_arrive_flag` (the content path: the first `move-npc` whose `on_arrive`
    sets a flag; runs the real start function and lets the driver walk itself to
    the end). Both verified to go red on pre-fix emission on a live 1.21.11 server.
+   Both now `await` the flag on `#party` and are the **sole owner** of the score
+   they await (`tests/packtest_batch.rs::party_state_across_ticks_is_owned`).
 3. The suite datapack may therefore carry `data/<ns>/function/` mechanism
    functions beside `data/<ns>/test/`. PackTest only discovers `test/`, so
    `tests/emit.rs` requires every `function/` file to be **named by some
@@ -570,6 +641,16 @@ placement, and an explicit `path`/`look_at`/`seconds` overrides any part.
 Entity subjects (`npc`/`actor`) aim one block above the feet cell (torso)
 before `offset`; `anchor` subjects use the block centre exactly.
 
+A `subject` is discriminated by its key — exactly one of `anchor` / `npc` /
+`actor`, plus an optional `offset`, **and nothing else**. Each spelling is its own
+`deny_unknown_fields` type (`AnchorSubject` / `NpcSubject` / `ActorSubject`), so
+both serde and the exported JSON Schema (`additionalProperties: false`) reject a
+typo'd key or a subject naming two discriminators at once with `DW0100` (task
+#78). Before that, the untagged enum silently *ignored* an unrecognised key: a
+mistyped `ofset` deserialized fine with the offset dropped, and
+`{"anchor": …, "npc": …}` quietly matched the anchor and discarded the npc —
+shipping a shot framed somewhere the author never asked for.
+
 | Style | Expansion (camera relative to subject S) | Aim | `dist` default | Default `seconds` | Notes |
 |---|---|---|---|---|---|
 | `insert` | Static at `dist` (3), +0.5 up | S | 3 | 2 | A prop, an inscription. Structurally judder-free. |
@@ -609,6 +690,21 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
   two templates share a holder. Real runtime scores (`#stealth`, `#placed`,
   `#trig_<id>`, the `#mt_`/`#at_`/`#arun_` move drivers) are deliberately
   shared — tests drive them and initialize them explicitly.
+- **Own scores, extended to party state (spec-0018).** Progression now lives on
+  the batch-global `#party` holder rather than on each test's dummy, so a
+  template's baseline writes are visible to every sibling. Inside a template that
+  is harmless — a template is one atomic mcfunction, so its baseline, its drive
+  and its assert land in one tick with nothing in between. It stops being
+  harmless the moment a template spans ticks: `party_state_across_ticks_is_owned`
+  requires that any template containing an `await`/`schedule` be the **sole**
+  template touching each `#party` score it uses (`sched_executor`'s probe flag is
+  test-only for exactly this reason).
+- **Own members (spec-0018).** A division-of-labour template needs more than one
+  player, and `# @dummy` gives exactly one. It spawns the rest itself
+  (`/dummy <name> spawn`, PackTest's own command), addresses them by
+  `@a[name=…,limit=1]` — as exclusive as a tag, and admitted alongside it by rule
+  2 — and removes every one it spawned (`spawned_members_are_uniquely_named_and_removed`
+  also checks the ≤16-char player-name limit and cross-template name uniqueness).
 - **Own init.** "Never set" is not 0 and "fresh world" does not exist here:
   every score a template asserts on is actively initialized by that template
   (`packtest_preamble` with `with_flags: false` clears withheld flags to 0),
@@ -623,6 +719,16 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
   Each template is a single mcfunction and therefore atomic — nothing can
   interleave *within* it; these rules make the boundaries between templates
   order-free.
+- **Division of labour is not simulable with one dummy.** A single-dummy test of
+  an AND-join proves only that one player can do both arms in sequence — which
+  was already true before the party holder existed. The generated
+  `party_join_<obj>` template therefore drives **n different players**, one arm
+  each, and asserts the join's REAL emitted `pending_guard` (materialized into
+  `#pj_<obj> dw.sys`) in three phases: shut with no arm, **still shut after only
+  one** (the negative half that makes it an AND, not an OR), open after all of
+  them — and then has the LAST member, never the one who cleared the first arm,
+  complete the successor. n = the join's arm count, raised to `world.min_players`
+  and capped at 4 (the party maximum); arms are handed out round-robin.
 - **Drive the real mechanism, not a convenient stand-in.** A template that calls
   a *scheduled* driver inline (`function <ns>:mv_tick_<key>`) runs it **as its own
   dummy** — supplying exactly the executor the vanilla scheduler withholds, so the
@@ -819,14 +925,28 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 
 `crate::assembled` builds the one authoritative cell→block map of the world the
 shipped delve actually assembles — placed prefab structures (`/place template`),
-solver socket seals, gate clears — **then settles gravity-affected blocks**. The
+solver socket seals, gate clears — **then settles gravity-affected blocks**.
+
+The map stores **full blockstates** (`minecraft:oak_slab[type=top]`), not bare
+ids (task #78): waterlogging, slab halves and snow-layer counts are block *state*,
+and the fluid and step models below are wrong without them. Consumers that need
+the bare id call `crate::assembled::base_id`; state-sensitive rules read their
+property with `state_value`.
+
+The
 delve ships into a `the_void` flat world (no natural floor), so a vanilla
 `FallingBlock` (`sand`/`red_sand`/`gravel`/`*_concrete_powder`/anvils/`dragon_egg`)
 placed unsupported by `/place template` immediately falls out of the world and
-leaves air. Settling reproduces this per `(x,z)` column: non-falling blocks are
-immovable supports (stone floats), each falling block drops onto the highest
-support at or below it, and a falling block with no support anywhere below it
-despawns into the void. `pointed_dripstone`/`scaffolding` attach upward / by
+leaves air. Settling reproduces this per `(x,z)` column: non-falling **solid**
+blocks are immovable supports (stone floats), each falling block drops onto the
+highest support at or below it, and a falling block with no support anywhere below
+it despawns into the void. **Fluids are not supports** (task #78): vanilla's
+`FallingBlock.isFree` counts a water/lava cell as free space, so a falling block
+sinks straight through and lands on the first genuinely solid block, *displacing*
+the fluid in the cell it rests in — and a gravity block over water with no floor
+beneath still despawns. (The pre-#78 model floated sand on the water surface, a
+phantom floor that then dammed the flood and that nav walked on.)
+`pointed_dripstone`/`scaffolding` attach upward / by
 support-distance and are deliberately not settled by the below-support rule (a
 ceiling stalactite must not be mistaken for an unsupported floor block). Both the
 nav occupancy model (`crate::nav::World`) and the relight light model
@@ -847,8 +967,8 @@ and the tileset generator's own zero-unsupported invariant catches unintended
 falls at authoring time (strongest-form defence, per the debug doctrine).
 
 The settle pass is followed by a **water-flood pass** (task #45), the fluid peer of
-gravity settling. Free `minecraft:water` cells seed a deterministic, **conservative
-superset** of vanilla flow (mirroring spec-0010's never-overestimate-walkability
+gravity settling. Free `minecraft:water` cells **and every `waterlogged=true`
+block** (task #78) seed a deterministic, **conservative superset** of vanilla flow (mirroring spec-0010's never-overestimate-walkability
 stance): (1) infinite-water source formation — a supported air cell flanked by ≥2
 source cells becomes a source, cascading, so a walled pool basin fills completely,
 not just 7 cells from its seeds; (2) 7-level horizontal decay from the completed
@@ -858,8 +978,18 @@ water level, plus sources) is **impassable and never standable floor** for every
 consumer — nav, wave seating, relight fixture placement, waypoint export — the same
 single-model discipline as settle. This closes the water analogue of the gravity
 divergence: a `cave-shore` pool floods `[261,66,1]`, a cell an unpatched model
-routed a talk-to leg's step-up through. (Waterlogged solids keep their host id and
-stay solid; they do not seed the flood — vanilla waterlogging never spreads.)
+routed a talk-to leg's step-up through.
+
+**Waterlogging is water** (task #78). Since MC 1.13 a `waterlogged=true` block's
+cell holds a genuine water *source* that ticks and spreads into adjacent air
+exactly like a free source (place one waterlogged stair on dry land and water
+flows around it). The pre-#78 model stored bare ids and asserted the opposite
+("waterlogging never spreads to a neighbour"), which **under-marked** the flood —
+the one direction the never-under-mark contract forbids, since an under-marked
+cell ships as proven-dry and strands the bot. A waterlogged cell is now both a
+flood source *and* its host block's normal collision class: nothing walks or flows
+*into* it, and `flooded` stays disjoint from every block class (it means "a walker
+would be in open water here").
 
 Trap triggers (spec-0011): `*_pressure_plate`, `tripwire`, and `tripwire_hook`
 (`crate::assembled::is_passable_trap_trigger`) are non-collidable in game, so the
@@ -878,15 +1008,33 @@ classified:
 | solid | every other non-air block (full-cube, the conservative default) | no | yes |
 | tall barrier | `*_fence` (incl. `nether_brick_fence`), `*_wall` — 1.5-tall | no | **no** |
 | use-gate | closed `*_fence_gate` (1.5-tall, right-click-openable) | player: yes (USE); autonomous mobs: no | **no** |
-| passable | open `*_fence_gate` (block state `open=true`, read from the prefab palette), trap triggers | yes | no |
+| passable | open `*_fence_gate` (block state `open=true`, read from the prefab palette), trap triggers, thin decoration (< 8/16 collision) | yes | no |
 | flooded | water reach | no | no |
+| partial | a solid cell's true top-face height in sixteenths, when < 16 | no | yes, **at that height** |
+
+**Partial floor heights (task #78).** `crate::assembled::collision_top_16` reports
+a block's collision-box top face in sixteenths, against the 1.21.11 shapes:
+
+| Block | Height | Note |
+|---|---|---|
+| `*_slab` `type=bottom` (**the default state**) | 8/16 | a half-step |
+| `*_slab` `type=top` / `type=double` | 16/16 | the face is the cell top |
+| `snow[layers=N]` | `(N-1)·2 / 16` | `layers=1` (the default) has **no** collision box; `layers=8` is 14/16 |
+| `*_carpet`, `moss_carpet` | 1/16 | `pale_moss_carpet` only when `bottom=true`, else 0 |
+| `dirt_path`, `farmland` | 15/16 | |
+| everything else | 16/16 | the conservative default |
+
+A block under 8/16 is **thin decoration**: its cell is passable and is never a
+floor level of its own (a walker stands on whatever is below it, and a 2-high
+corridor with a carpet in it stays walkable). At 8/16–15/16 the cell blocks
+passage but its walkable face is recorded in `Occupancy::partial`, which is what
+makes the nav step rule physical rather than cell-counting — see below.
 
 Modelled **precisely**: fences, walls, fence gates (open vs closed), trap
-triggers, water. Modelled **conservatively** — treated as a full solid cube, never
-as walkable-through: slabs, stairs, carpets, snow layers, doors, trapdoors, and
-every other partial-collision block (the only inaccuracy this can introduce is a
-floor face one cell off the true surface height, which may over-block a route but
-never over-proves one). The tall/gate classes close the owner-hit soundness hole:
+triggers, thin decoration, water and waterlogging, and partial floor heights.
+Modelled **conservatively** — treated as a full solid cube, never as
+walkable-through: stairs, doors, trapdoors, and every other partial-collision
+block. The tall/gate classes close the owner-hit soundness hole:
 the full-solid model proved the island pen leg by standing the player ON TOP of a
 1.5-tall `oak_fence` (a "legal" +1 step no vanilla player or bot can perform —
 harness #110 worked around it by filtering fence-lip waypoints), and a gateless
@@ -945,13 +1093,35 @@ head-clearance rule already proved clear.
 block data (obstacles per the collision classes above — full-cube solids, 1.5-tall
 fence/wall barriers, closed fence gates for walkers that cannot use them;
 **water-flooded cells are impassable and are never valid floor**; compiler gate
-regions are passable). Steps are
-cardinal, one block up or down; a step **up** additionally requires head clearance
-to jump (the cell two above the source feet must be air), so a routed/exported path
-is one an entity — including the mineflayer bot — can actually walk (a ramp up under
-a low ceiling is unroutable, not a silent strand). Cutscene dollies must pass only
-non-solid cells. Unroutable/clipping/stranded → `DW0307`/`DW0308`/`DW0311` at build
-(never a runtime glitch).
+regions are passable). Steps are cardinal, one cell up or down.
+
+**The step rule is physical, not cell-adjacency (task #78).** Each standing cell
+has a true **feet height** in sixteenths — the cell below's `partial` face height,
+so standing on a bottom slab is `y - 0.5`, not `y` — and a candidate step is gated
+on the **rise** between the two feet heights:
+
+| Rise | Verdict |
+|---|---|
+| ≤ 9/16 (0.5625) | a walk-up. Vanilla `maxUpStep` is 0.6, so no jump — and therefore **no headroom** is required above the source cell |
+| ≤ 20/16 (1.25) | a jump; the swept head cell above the source feet must be clear or the entity head-bonks |
+| > 20/16 | **impossible** — a vanilla jump apex is ≈1.2522 blocks, so 1.3125 is unreachable |
+
+This corrects the rule in both directions. It **rejects** what the old full-cube
+model proved: stepping off a bottom slab (feet at `y+0.5`) onto a ledge whose face
+is at `y+2` is a **1.5-block** rise, which the old rule read as an ordinary "+1
+cell" step and certified as a walkable route no player or mineflayer bot can
+perform. It **admits** what the old model refused: stepping from a full floor onto
+a bottom slab is a 0.5-block auto-step, legal even directly under a ceiling that
+would block a jump. Vertical candidates stay `{0, −1, +1}` cells — a `+2`-cell hop
+between two very thin floors can be physically legal, but omitting it only ever
+refuses a route, never proves one.
+
+Cutscene dollies must pass only non-solid cells; the clip test is an **exact 3-D
+grid walk** (Amanatides–Woo DDA) visiting every cell each segment intersects, with
+no error term — it replaced a ≤0.25-block sampler that could miss a cell a shot
+only grazed through a corner and certify the shot clear (task #78).
+Unroutable/clipping/stranded → `DW0307`/`DW0308`/`DW0311` at build (never a
+runtime glitch).
 
 **Close-gate solidity (v0.6, DAG-causal).** The base occupancy model treats every
 gate region as **passable** (the conservative "assume the gate the player needs is
@@ -977,6 +1147,18 @@ genuinely-forced re-crossing (a causal leg whose sealed gate is never reopened
 before it) still fails `DW0311` (`DW0315` from a checkpoint) with a message naming
 the sealed gate — the "point of no return by geometry" the owner's staging vision
 wants, provable at compile time.
+
+**One leg model for every consumer (task #78).** The per-leg seal
+(`nav::leg_seal`) and the routing that uses it (`nav::route_walked_legs`) are now
+the single definition shared by the completability proof, the forced-cell set the
+`DW0342` trap proof reasons about (`World::required_path_cells`), and the exported
+harness waypoints (`nav::critical_path_routes`). Previously only the proof ran
+under seals while the other two routed the fully-open world, so the compiler could
+(a) hand the bot a route through a gate the campaign had already sealed and (b)
+call a lethal trap "avoidable" when the player only walks its detour *because* a
+`close-gate` shut the direct route. A trap's disarm-reachability search likewise
+runs under the gate state of the earliest leg that crosses the trap cell, not the
+fully-open world.
 
 **Talk-to endpoint (task #45):** a talk-to leg's target anchor is the NPC's own
 occupied cell (the mannequin stands there, its interaction hitbox fills it). The
@@ -1208,12 +1390,14 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0343` | A verb that needs a gate anchor's **fill block** targets an anchor that declares none (or is not a gate region at all): `close-gate` (v0.6), which fills the region back in, or a stage-5 `shortcut` (spec-0016 §2), whose unlock clears exactly that block and whose gate is sealed by it from world-load. Compiler-side (needs prefab metadata the DSL anchor registry does not carry), reported at **validation tier (exit 1)** like the atmos `DW032x` checks; scan is over every prefab (gate anchors resolve globally like `open-gate`), and **all** region-providers of the anchor must declare a `block`. Prescription: declare `block` on the gate anchor, or remove the `close-gate`. |
 | `DW0348` | A `shot_style` declaration is semantically invalid (v0.6, spec-0015): a styled shot with no `subject`; style params (`subject`/`subject_b`/`dist`/`degrees`/`bearing`) on an unstyled shot; `subject_b` off `two-shot` (or a `two-shot` without one); `degrees` off `orbit-arc` or outside `45..=120`; `dist` outside `1..=48`; `bearing` outside `-360..=360`. Validation-tier (exit 1), `dsl::validate`. |
 | `DW0349` | A `side-track`/`low-follow` shot whose subject provably cannot move: those styles dolly *with* a moving subject, so the subject must be an npc/actor with a matching `move-npc`/`move-actor` in the same effect group or the same `sequence` timeline (an `anchor` subject can never move; reaction lists `on_arrive`/`on_caught`/`on_respawn` start a fresh scope — their firing time is statically unknowable). Validation-tier (exit 1), `dsl::validate`. Prescription: add the move alongside the cutscene, or use a static style (`locked-off`, `push-in`). |
+| `DW0356` | `world.min_players` outside `1..=4` (v0.6, spec-0018). A delve is played by ONE party of 1–4 (the product definition), so a declared mandatory size can never sit outside it. Absent = 1. Validation-tier (exit 1), `dsl::validate`. |
+| `DW0357` | A `carrier: "one"` `give-item` sits in a bundle only the scheduler ever runs — a `sequence` step, or a `move-npc`/`move-actor` `on_arrive` (v0.6, spec-0018). Those run with the server command source and have no acting player, so the single prop would reach nobody. The walk **stops** at `set-checkpoint.on_respawn` / `begin-stealth.on_caught`: those are dispatched per player and do have an `@s`. Validation-tier (exit 1), `dsl::validate`. Prescription: drop `carrier` (arm the whole party), or move the hand-off onto the beat a player completes. |
 | `DW0350` | A `use` trigger anchored where an NPC stands (round-6 island QA). Right-click on an NPC already belongs to its dialogue advancement; a second interaction hitbox in the same cell makes the client's entity ray-pick ambiguous, and whichever entity loses the tie is silently dead — the soft-lock class that starved the giant's dialogue of every right-click. `strike` triggers are exempt (a left-click has no dialogue meaning): they ride the NPC's own hitbox instead of summoning a second one. Validation-tier (exit 1), `dsl::validate`. Prescription: move the trigger to its own anchor, or express the interaction as a dialogue option. |
 
-| `DW0365` | An `ambush` declaration (spec-0016 §3) is structurally invalid: a malformed or duplicate `ambush/<id>`, an empty `actors` list (an ambush that springs nothing), or the same actor listed twice — `spawn-actor` is idempotent, so the second one is a silent no-op and the ambush is half the size it reads as. Validation-tier (exit 1), `dsl::validate`. Deliberately does **not** require a `telegraph`: the un-telegraphed ambush is core souls vocabulary (owner ruling 2026-08-02). Everything else about an ambush is checked as the trigger it desugars to (`DW0194`, the anchor seals, `DW0350`). |
-| `DW0357` | A `shortcut` declaration (spec-0016 §2) does not resolve: a malformed or duplicate `shortcut/<id>`, a `gate`/`unlock` anchor no area's prefab provides, or an `unlock` equal to its own `gate` — the mechanism belongs on the far side of the door it opens, which is the entire point of the pattern. Validation-tier (exit 1), `dsl::validate`; anchor resolution stays lenient for pool areas the compiler resolves later, like the trap and trigger checks. |
-| `DW0358` | A `close-gate` effect targets a gate a `shortcut` owns (spec-0016 §2). A shortcut opens **permanently** — that is the pattern — so permanence is made structural rather than left to authoring discipline: there is simply no way to spell the re-seal. The scan descends nested effect lists, so a `close-gate` buried in a `sequence` step is caught. `close-gate` on any other gate (the point-of-no-return staging beat) is untouched. Validation-tier (exit 1), `dsl::validate`. |
-| `DW0356` | A wave declares `respawns_on_rest: true` but the campaign declares **no** `bonfire` (spec-0016 §1) — nothing can ever fire the re-seat, so the field is a silent no-op, the defect class this compiler always makes loud. Validation-tier (exit 1), `dsl::validate`; the scan descends every nested effect list (a `bonfire` inside a `sequence` step counts) over quests and triggers. Prescription: add the bonfire the re-seat hangs off, or drop the field — never leave a dead declaration in the DSL. |
+| `DW0375` | An `ambush` declaration (spec-0016 §3) is structurally invalid: a malformed or duplicate `ambush/<id>`, an empty `actors` list (an ambush that springs nothing), or the same actor listed twice — `spawn-actor` is idempotent, so the second one is a silent no-op and the ambush is half the size it reads as. Validation-tier (exit 1), `dsl::validate`. Deliberately does **not** require a `telegraph`: the un-telegraphed ambush is core souls vocabulary (owner ruling 2026-08-02). Everything else about an ambush is checked as the trigger it desugars to (`DW0194`, the anchor seals, `DW0350`). |
+| `DW0371` | A `shortcut` declaration (spec-0016 §2) does not resolve: a malformed or duplicate `shortcut/<id>`, a `gate`/`unlock` anchor no area's prefab provides, or an `unlock` equal to its own `gate` — the mechanism belongs on the far side of the door it opens, which is the entire point of the pattern. Validation-tier (exit 1), `dsl::validate`; anchor resolution stays lenient for pool areas the compiler resolves later, like the trap and trigger checks. |
+| `DW0372` | A `close-gate` effect targets a gate a `shortcut` owns (spec-0016 §2). A shortcut opens **permanently** — that is the pattern — so permanence is made structural rather than left to authoring discipline: there is simply no way to spell the re-seal. The scan descends nested effect lists, so a `close-gate` buried in a `sequence` step is caught. `close-gate` on any other gate (the point-of-no-return staging beat) is untouched. Validation-tier (exit 1), `dsl::validate`. |
+| `DW0370` | A wave declares `respawns_on_rest: true` but the campaign declares **no** `bonfire` (spec-0016 §1) — nothing can ever fire the re-seat, so the field is a silent no-op, the defect class this compiler always makes loud. Validation-tier (exit 1), `dsl::validate`; the scan descends every nested effect list (a `bonfire` inside a `sequence` step counts) over quests and triggers. Prescription: add the bonfire the re-seat hangs off, or drop the field — never leave a dead declaration in the DSL. |
 
 ### DW032x/033x — sound & art-title validation (`compiler::atmos`; error; exit 1)
 
@@ -1369,11 +1553,30 @@ cover); the author decides.
 tier) in `main`; `DW0201`–`DW0204` come from `compiler::analyze` over the
 branch-coherent flow model (`compiler::flow`).
 
+**The emitter table never overestimates (`crate::light::emission`).** Both gates
+are only sound if the modelled light is a *lower* bound on the game's — a block
+modelled brighter than vanilla lets a genuinely dark area ship unmitigated. The
+table is evaluated over each block's **actual blockstate** (the assembled map
+carries full states) against verified 1.21.11 values, with a source cited per
+entry in the code. Blocks absent from the table emit 0 (an underestimate, the safe
+direction). Task #78 corrected seven entries that broke the contract by collapsing
+a state-dependent block onto its brightest state, or on plain wrong values:
+`sea_pickle` 15 → `3 + 3·pickles` when waterlogged and **0 when dry**;
+`redstone_ore` 7 → **0** idle (9 when `lit`); `respawn_anchor` 7 → **0** at
+`charges=0`; `amethyst_cluster` 7 → 5 (buds 4/2/1); `brewing_stand` and
+`brown_mushroom` 3 → **1**; `glow_item_frame` 7 → **0** (it is an entity, not a
+block, and emits no block light in Java — the 7 was a Bedrock value). A
+nonexistent `minecraft:froglight` id was dropped, and the furnace family now
+reports 13 when `lit`. Blocks whose `lit`/`charges`/`berries` state has a *bright*
+default (campfire, soul campfire, redstone torch) still evaluate bright from a
+bare id, so the compiler's own relight fixtures are unaffected.
+
 | Code | Meaning |
 |------|---------|
 | `DW0201` | Finale quest can never complete (unreachable finale). |
 | `DW0202` | Quest can never be triggered (dead quest — its trigger source never completes). |
 | `DW0203` | Objective can never be completed **in any branch** (deadlock: unsatisfiable `after` chain, an unproducible `requires_flags` gate, or a `talk-to` completing option unreachable through the trigger/`after`/dialogue graph). |
+| `DW0358` | A declared `min_players: n` (n ≥ 2) has **no n-agent division of labour** (v0.6, spec-0018). Completability is proven with `min_players` agents: n = 1 is the unchanged single-agent proof, and n ≥ 2 additionally requires the proven playthrough to contain an AND-join with n arms that are *independently reachable at the join's frontier* — the replay state just before its earliest arm — with no arm waiting on a sibling, a flag a sibling sets, or a quest that is not active yet (`flow::Flow::divide`). Names the widest join and how many arms it actually offers, or says the campaign has no AND-join at all. Reported on `world`/`/content/min_players`, exit 2. Prescription: split one beat into n `after`-arms completable from the same frontier, or lower `min_players`. |
 | `DW0204` | The exported critical path is not a playthrough any player can walk: some step is not activatable/completable at its position, or `campaign-complete` fires before the final step (the signature of two mutually exclusive endings sharing one path). Names the first incoherent step. |
 | `DW0210` | **Measured** (spec-0010): a reachable walkable cell of an area is below light 3, under the darkest reachable (time, weather) sky, with no `lighting` declaration and no `mitigation` declaration. Judged over the assembled world (per-seam, sealed-cavity aware — unreachable cavities are never counted). Admission `LightingProfile` is no longer a gating input. **v0.6:** keys on the stage-1 `areas[].mitigation` declaration; the display-name heuristic is deleted, so a renamed water bottle in a class kit no longer passes the gate. |
 | `DW0211` | An area's declared relight `fixture` cannot raise every reachable walkable cell to `min_light` — no valid placement site remains (spec-0010). |
@@ -1460,16 +1663,16 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0314` | An exported critical-path waypoint is not standable in the FINAL assembled world (settled + water-flooded + relight fixtures) — the build-time self-check that makes the water-flow / post-nav-mutation divergence class structurally impossible to ship (task #45). Routes come from A* over that same world, so this fires only if a later pass mutates a cell nav relied on or an endpoint resolves off the walkable set; the message names the offending cell and leg. Fix the prefab/water or the assembly — never nudge the waypoint. |
 | `DW0315` | A `set-checkpoint` (spec-0012) strands the party: re-rooting the DW0311 reachability at the checkpoint cell, the first remaining required critical-path anchor is no longer walkable from it (a checkpoint behind a one-way drop the forward path can't re-cross after respawn). The message names the checkpoint and the first unreachable anchor and prescribes moving the checkpoint or adding a return route — never deleting the checkpoint to silence the proof. |
 | `DW0316` | A `set-checkpoint` anchor has no standable footing within snap range on the final assembled model (a trap-trigger / hazard / mid-air cell) — the party would respawn into void or a wall (spec-0012). Because the relight pass already proves every reachable walkable cell meets the area's `min_light`, a checkpoint that clears this and DW0315 provably meets `min_light` too. |
-| `DW0366` | An `ambush` (spec-0016 §3) with **no counterplay**: standing every ambusher on the cell it will occupy, no checkpoint, bonfire or campaign entry is walkable from the trigger cell any more — the party is sealed in a pocket with the ambush and can only trade blows blind. The `DW0342` trap-avoidability machinery generalized from one hazard cell to an occupied cell set. This is NOT a telegraph requirement: 初见杀 is legitimate and determinism guarantees the second attempt meets the same ambushers in the same cells; what this proves is that the second attempt has a *play* — a retreat, luring ground, an exit. `compiler::nav::check_ambushes`, build-tier (exit 3). |
-| `DW0359` | A `shortcut` (spec-0016 §2) has **no long route**: with its gate sealed, the far-side `unlock` affordance is not walkable from the campaign entry, so the mechanism that opens the shortcut sits behind the shortcut and can never be pulled. `compiler::nav::check_shortcuts`, build-tier (exit 3). Prescription: connect the far side by a long route, or move the unlock onto one — never open the gate at world-load to silence it. |
-| `DW0364` | A `shortcut` (spec-0016 §2) **leaks**: opening its gate does not strictly shorten the A* walk from the campaign entry to its own `unlock`, so the unlock is not on the far side of anything and the loop-back the shortcut exists for never happens. The classic form is an `unlock` placed on the NEAR side of its own gate — this is the proof that makes `unlock` a far-side anchor rather than a label. Both distances are measured over the same nav model, differing only in the gate. `compiler::nav::check_shortcuts`, build-tier (exit 3). |
+| `DW0376` | An `ambush` (spec-0016 §3) with **no counterplay**: standing every ambusher on the cell it will occupy, no checkpoint, bonfire or campaign entry is walkable from the trigger cell any more — the party is sealed in a pocket with the ambush and can only trade blows blind. The `DW0342` trap-avoidability machinery generalized from one hazard cell to an occupied cell set. This is NOT a telegraph requirement: 初见杀 is legitimate and determinism guarantees the second attempt meets the same ambushers in the same cells; what this proves is that the second attempt has a *play* — a retreat, luring ground, an exit. `compiler::nav::check_ambushes`, build-tier (exit 3). |
+| `DW0373` | A `shortcut` (spec-0016 §2) has **no long route**: with its gate sealed, the far-side `unlock` affordance is not walkable from the campaign entry, so the mechanism that opens the shortcut sits behind the shortcut and can never be pulled. `compiler::nav::check_shortcuts`, build-tier (exit 3). Prescription: connect the far side by a long route, or move the unlock onto one — never open the gate at world-load to silence it. |
+| `DW0374` | A `shortcut` (spec-0016 §2) **leaks**: opening its gate does not strictly shorten the A* walk from the campaign entry to its own `unlock`, so the unlock is not on the far side of anything and the loop-back the shortcut exists for never happens. The classic form is an `unlock` placed on the NEAR side of its own gate — this is the proof that makes `unlock` a far-side anchor rather than a label. Both distances are measured over the same nav model, differing only in the gate. `compiler::nav::check_shortcuts`, build-tier (exit 3). |
 | `DW0324` | An L2 massing verb cannot apply to the solved layout (v0.6, spec-0017 PR 3): the target area binds a single `prefab` (no jigsaw layout to mass), a `piece` index / `prefab` guard mismatches the placement (layout drift), a `swap-piece`/`reseed-piece` candidate cannot re-mate every mated socket without overlap (or the pool has no compatible variant), an `insert-piece` socket is already mated or nothing attaches without overlap, a `remove-piece` targets the entry piece or a non-leaf, or a `rewire-socket` names an out-of-range connector / seals an already-sealed (opens an already-open) socket. `compiler::massing`, build-tier (exit 3); every message names the batch and prescribes re-inspecting the layout with `delvec snapshot` — never deleting the drift guard or the sockets. |
 | `DW0322` | Post-edit boundary safety (v0.6, spec-0017 invariant 4): after a world-edits batch, the reachable walk region fails "one step off the proven ground is survivable **and recoverable**". `nav::verify_boundary_safety`, run after every edit batch (never on the no-edit path, whose worlds provide the guarantee physically). One code, one rule — *stated against the world-generator ambient* (`nav::Ambient`, spec-0013 `horizon`), because what an unmodelled column contains is the generator's property, not the content's. **`horizon: void`**: a reachable walkable cell borders a **void drop** — a horizontally adjacent column the player can step (or open a gate) into with no fall-arrest of any kind below (no solid, no fence/wall/gate top, no water); one step off the proven ground falls out of the world. Prescription: extend the terrain under the exposed edge (fill/morph a slope or outcrop) or reinstate a barrier shape. **`horizon: ocean`**: the pinned bedrock/stone/water superflat puts ground under *every* column, so nothing can fall out of an ocean world and the void premise is vacuous — the rule is the **stranding** invariant instead (the hazard `plan::OCEAN_BASE_Y` already names): a reachable walkable cell lets the player into a body of water with no climb-out back into the reachable walk region. Prescription: give the shoreline a step at the waterline (a beach or a bank), or wall the edge so the water cannot be entered there. Both branches **aggregate**: one report per run listing up to 6 violations plus a total, so the scale of a breach (one cell vs. the whole coastline) is visible without re-probing. Build-tier (exit 3); the message names the batch. Numbered in the 032x world/region family beside the spec-0013 boundary pair (`DW0320`/`DW0321` are validation-tier; this one is build-tier — it needs the edited geometry). Never weaken the check or reroute the path around it. |
 | `DW0323` | A stage-7 edit fails to **resolve** against the solved layout (v0.6, spec-0017): a piece-local frame's `piece` index is out of range or its `prefab` guard mismatches the placed piece (layout drift — the loud alternative to a silently misplaced edit), an `anchor-relative` frame names an anchor the batch's area does not resolve, or a verb's target region resolves to **zero cells** (a silent no-op is always a defect: the select drifted off the content it targeted). Also the `fragment` verb's own resolution failures: a prefab outside the admitted library, one decoding to zero non-air cells, and a `rotation` other than `none` on a prefab carrying yaw-dependent blockstate — rotate-aware stamping is not implemented, so the compiler refuses the stamp instead of shipping unrotated facings (see the stage-7 `fragment` row). `compiler::edit`, build-tier (exit 3); the message names the batch and prescribes re-inspecting the layout with `delvec snapshot` — never deleting the prefab guard or leaving a dead edit. |
 | `DW0352` | A world-edits batch writes into a cell a trap's hardware occupies (v0.6, spec-0017 + spec-0011): its trigger/hazard cell, its dispenser socket, or its disarm-affordance cell. `setup_finish` runs `world_edits` **before** `trap_setup`, so the edit lands first and the trap is loaded into a block that is no longer there — vanilla's `item replace block … container.0` on a non-container fails with **no output**, so the delve ships a dead trap with every proof green (`DW0342` proves the *planned* hazard, not the surviving hardware; no geometry proof models "is this still a dispenser"). `compiler::edit`, checked first in the per-batch invariants, build-tier (exit 3). The message names the batch, the cell, the trap and which role the cell plays; prescription is to move the region off the trap's cells or re-anchor the trap — never to assume the edit leaves the redstone intact. |
 | `DW0354` | A support-dependent block the edit script placed has no valid support in the post-batch world (v0.6, spec-0017): a torch/lantern/campfire/rail-family block with **nothing below it** after a later batch carved its support away, or flora rooted in a block flowers cannot stand on (a `scatter` over bare stone). Vanilla pops such a block off as an item on the first chunk tick, so the write silently vanishes from the delivered world while every snapshot still shows it. **Two tiers, one code**: advisory (exit 0) for decoration, aggregated per reason + block with a count and one example cell; **error (exit 3)** when the popped block is a fixture the script's own `relight` verb placed — that is a declared `min_light` guarantee the `DW0211` proof accepted, and losing it re-darkens the region. `compiler::edit`, evaluated at every batch close over the cumulative placement set. Deliberately conservative: blocks supported sideways or from above (`wall_torch`, `hanging=true` lanterns) are classified as needing no support, and "support removed" means removed to **air** — the check never guesses about a block it cannot classify. |
 | `DW0325` | A `move-actor` destination is unreachable over the assembled geometry for the **actor's footprint** (per-entity dims table; warden 0.9×2.9 needs 3 cells of headroom, so it can be stranded where a player fits), or an actor spawn/destination anchor resolves to no world position (spec-0014). Build-tier (exit 3), `compiler::nav`; the message names the actor, the leg, and a best-effort first blocked cell. |
-| `DW0327` | A `begin-stealth` (spec-0014) zone is unstandable, or unreachable from the player's position at the beat that activates the stealth check — a guaranteed-unwinnable stealth beat. The message names the zone and prescribes placing it over reachable floor / within walkable reach of the activating beat. |
+| `DW0327` | A `begin-stealth` (spec-0014) zone has **no** standable cell, or **no** standable cell of the zone is reachable from the player's position at the beat that activates the stealth check — a guaranteed-unwinnable stealth beat. Reachability is **reachable-any over every cell of the zone box** (task #78): testing only the cell nearest the zone centre raised a spurious `DW0327` whenever that one cell happened to snap into a walled-off pocket of an otherwise perfectly reachable zone. The message names the zone and prescribes placing it over reachable floor / within walkable reach of the activating beat. |
 | `DW0355` | A **punishing** `begin-stealth` beat whose grace window cannot be beaten (spec-0014 + spec-0016): from a position a player legally occupies the instant the session arms, no zone is reachable within `grace_ticks` at sprint speed over the assembled geometry. DW0327 proves cover exists and is *connected*; this proves it is reachable **in time** — the gap that shipped the island's blinding beat, where the beat armed under the player's feet at the fire-pit and killed every player (bot and human alike) ~2 s later, on a first honest ladder run. Start positions: the activating objective's anchor **and** every `set-checkpoint` reigning inside the beat's active window `[fire_step, end_step]` — a respawn point that cannot beat the window makes the retry loop non-terminating rather than a souls retry. Cost model: 4 ticks/block (vanilla sprint 0.2806 blocks/tick, rounded up — no sprint-jump credit) + 6 ticks per block climbed + 10 ticks of standing-start reaction; routed over the same per-leg geometry DW0311/DW0315 use (gates causally sealed by the firing step forced solid). Build-tier (exit 3), `compiler::nav`. The message names the beat, the start, the nearest zone cell, the measured flee time and the tick deficit. Scope: only beats whose `on_caught` tree actually punishes (`damage-players` / `spawn-wave`) — a narrate-only beat has nothing to escape. Prescription: raise `grace_ticks` to at least the measured need plus a tension margin, put a zone within reach of where the beat starts, move the checkpoint into/beside a zone, or arm the beat from a less exposed objective. **Delaying the arm does not discharge it** (a `sequence` step buys drama, not proof: the clock still starts with the player free to be standing at the start cell), and deleting the `on_caught` consequence is explicitly not a fix. Numbered `DW0355`, not `DW0352`: this rule and the map editor's trap-hardware check were developed on parallel branches, each picking the next free code against its own branch point, and collided on merge — `tools/check-dw-codes.py` now gates one-code-one-rule so that class fails CI instead of shipping. |
 | `DW0329` | A `sequence` effect is nested inside another `sequence` (directly, or reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse (spec-0014). Validation-tier (exit 1), `dsl::validate`. Flatten the inner steps into the outer timeline (shift their `at_ticks`). |
 | `DW0342` | A **lethal** trap (spec-0011) whose trigger cell lies on the forced critical path with no discharge — not avoidable (the trigger cell is a required path cell), not survivable (`rearm`, so a respawn walk-back re-triggers it → soft-loop), and not disarmable (no disarm affordance reachable before it, over the world with the trap cell blocked). The player is provably killed or soft-looped. **Analysis-tier: exit 2**, like `DW0312` — a content-design mistake, not a geometry defect; the message names the trap and prescribes moving it off the path, setting `reset: once`, or adding a reachable `disarm`. Renumbered off the spec's stale reserved number (0314 — since taken by the waypoint self-check). |
@@ -1553,11 +1756,12 @@ this doc is current behavior).
 | Sound + art-title surface (`play-sound`, `narrate` `art`, `delve:art` font, `DW0326`/`DW0328`/`DW0335`) | spec-0014 (v0.6) |
 | Traps: stage-5 `traps[]`, `anchor/trap` dispenser fill + disarm emission, `tnt_explodes` seal, passable plate/tripwire model, `DW0340`/`DW0341`/`DW0342` (all v0.6) | spec-0011 (landed) |
 | Visual authoring loop: `delvec snapshot` + `delvec blocking-chart`, the voxel raycaster, scene manifest and cutaway floor plans (§7) | spec-0015 (P1+P2 landed) |
-| Souls-mode ambushes: stage-5 `ambushes[]` (parse-time desugaring to a trigger), `DW0365`/`DW0366`, optional telegraph (v0.6) | spec-0016 §3 |
-| Souls-mode shortcut doors: stage-5 `shortcuts[]`, `DW0357`/`DW0358`/`DW0359`/`DW0364`, shortcut gates sealed for the whole completability model (v0.6) | spec-0016 §2 |
-| Souls-mode bonfires: `bonfire{anchor,on_rest?}`, wave `respawns_on_rest`, `DW0356` (v0.6) | spec-0016 §1 |
+| Souls-mode ambushes: stage-5 `ambushes[]` (parse-time desugaring to a trigger), `DW0375`/`DW0376`, optional telegraph (v0.6) | spec-0016 §3 |
+| Souls-mode shortcut doors: stage-5 `shortcuts[]`, `DW0371`/`DW0372`/`DW0373`/`DW0374`, shortcut gates sealed for the whole completability model (v0.6) | spec-0016 §2 |
+| Souls-mode bonfires: `bonfire{anchor,on_rest?}`, wave `respawns_on_rest`, `DW0370` (v0.6) | spec-0016 §1 |
 | The map editor: stage-7 `world-edits.json`, the full L3 verb set (`select`/`fill`/`replace`/`carve`/`morph`/`scatter`/`plant`/`fragment`/`relight`), the L2 massing verbs (`swap`/`insert`/`remove`/`rewire-socket`/`reseed`; `resize` excluded — no size primitive), per-batch invariant re-proofs, `DW0162`/`DW0322`/`DW0323`/`DW0324`, `delvec edit apply|preview` (all v0.6) | spec-0017 (PRs 1–3) |
 | Map-editor audit fixes: trap-hardware integrity `DW0352`, gate-region + block-support advisories `DW0353`/`DW0354`, out-of-bbox edit-chunk load convergence + forceload release, `edit` running the full build-tier proof set, blockstate-preserving `fragment` stamps | map-editor audit (post-#145/#146/#149) |
+| Party-shared progression: the `#party` holder, party-addressed UI, `world.min_players` + lobby gate, `give-item`/kit `carrier`, the n-agent division proof and the n-dummy `party_join_<obj>` PackTests, `DW0356`/`DW0357`/`DW0358` (all v0.6) | spec-0018 (landed) |
 | Asset-pipeline tooling `DW07xx` (schem/render/admit) | spec-0007 |
 | Determinism invariants | ADR-0006 |
 
@@ -1569,6 +1773,15 @@ this doc is current behavior).
 - **`gamerule keep_inventory true`** is emitted by the sealing baseline but is
   **not** in spec-0002's environment-sealing list (added as box-garden death
   policy; recorded here).
+- **spec-0018 runtime tier, partial by design.** The static half is complete
+  (completability is proven with `min_players` agents; `DW0358`) and the runtime
+  half is complete for AND-joins (the generated n-dummy `party_join_<obj>`
+  templates). The **critical-path bot** is still single-bot: `critical-path.json`
+  and its replay describe one abstract playthrough of party state, which is
+  exactly right for `min_players: 1` and remains a *sound* (if not maximal) proof
+  for a bigger party — one agent can always walk what n can divide. Running
+  `min_players` bots is harness work, tracked as a follow-up, not a gap in this
+  layer's contract.
 - **Sky attenuation constants** (`crate::light::effective_sky`, spec-0010): the
   stored sky-light baseline (15 at a sky-open cell) and the `time`/`weather` set
   commands are live-verified (1.21.11 itzg VANILLA); the per-state *effective*
