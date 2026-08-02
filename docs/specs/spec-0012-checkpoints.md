@@ -47,8 +47,11 @@
 
 ## Emission
 
-Deterministic: `spawnpoint @a <x> <y> <z>` in the step's completion function.
-No scoreboard state needed — vanilla holds the respawn point.
+Deterministic: `spawnpoint @a <x> <y> <z>` in the step's completion function,
+plus `data modify storage dw:cp pos set value [<x>,<y>,<z>]` — vanilla holds
+the respawn point; the storage mirror is the readable "last checkpoint"
+contract other features consume (spec-0013 boundary return uses a macro tp
+from `dw:cp`). Setup initializes `dw:cp` to the spawn cell.
 
 ## Validation
 
@@ -81,6 +84,16 @@ No scoreboard state needed — vanilla holds the respawn point.
 1. **Party-wide `@a`** respawn (recommended) — confirm.
 2. **Explicit `set-checkpoint` only**, no automatic per-area checkpoints
    (recommended: author intent, no magic) — confirm.
+
+## Addendum — `on_respawn` hook (planner, 2026-08-01, island-remake driven)
+
+`set-checkpoint` gains optional `on_respawn: [effects]`: a per-player effect
+list run when a player respawns while this checkpoint is the active one
+(detected via the vanilla respawn advancement/tick hook). Purpose: scene state
+reset — e.g. re-caging an unleashed actor to its idle puppet (spec-0014) after
+a death in an unwinnable fight. Effects must be idempotent (despawn-by-tag +
+respawn patterns); the compiler orders them deterministically. This is the M3
+substrate; full souls-mode "rest resets the world" stays M4.
 
 ## Note — souls-mode reframing (owner, 2026-07-31)
 
