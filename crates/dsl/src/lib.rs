@@ -46,9 +46,10 @@ pub use stages::{
     Actor, Area, AreaLighting, AreaMitigation, Boundary, CameraShot, CameraTarget, CameraWaypoint,
     Class, ClassesContent, DamageKind, DespawnStyle, DialogueContent, DialogueEffect, DialogueNode,
     DialogueOption, EnvTrigger, Facing, Fixture, Horizon, KitItem, Lethality, MobAttributes,
-    MobEffect, NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces,
-    PlannedQuest, Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role,
-    SequenceStep, SkinModel, SoundAt, StealthZone, Trap, TrapDisarm, TrapEffect, TrapReset,
-    TrapTrigger, Trigger, TriggerOn, Wave, WaveMob, WorldContent, WorldTime, WorldWeather,
+    MobEffect, MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective,
+    Persona, Pieces, PlannedQuest, Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent,
+    Relationship, Role, SequenceStep, SkinModel, SoundAt, StealthZone, Trap, TrapDisarm,
+    TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerOn, Wave, WaveMob, WorldContent, WorldTime,
+    WorldWeather,
 };
 pub use validate::{validate_campaign, validate_campaign_with};
