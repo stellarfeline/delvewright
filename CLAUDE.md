@@ -114,6 +114,12 @@ validation/          # docker compose: headless server + bot, same image as CI &
   invariants, the full DW diagnostics catalog); specs stay historical decision
   records. Any PR that changes compiler behavior updates it in the same PR — CI
   enforces the DW-code subset bidirectionally (`tools/check-dw-codes.py`, docs job).
+- **Tooling sync** (owner, 2026-08-02): a PR that adds or changes an authoring
+  tool or loop updates `docs/reference/` AND every skill whose workflow it
+  touches, in the same PR. LLM-facing tools enter skills as mandatory workflow
+  steps; human-in-the-loop tools enter as advisory one-line mentions at the
+  right step — never blocking, never waiting for a use/don't-use decision. A
+  tool absent from docs and skills does not exist for future sessions.
 - Repeated workflows become skills/slash commands (`/new-campaign`, `/validate`,
   `/release`) — see ROADMAP; design them when the workflow has been done manually twice.
 

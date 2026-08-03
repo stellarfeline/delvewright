@@ -1107,7 +1107,7 @@ impl Ambush {
                 "trigger/{}",
                 crate::l10n::local_id(self.id.as_str())
             )),
-            at: self.at.clone(),
+            at: Some(self.at.clone()),
             on: self.trigger.clone(),
             requires_flags: Vec::new(),
             forbids_flags: Vec::new(),
@@ -1164,8 +1164,13 @@ pub struct Shortcut {
 pub struct EnvTrigger {
     /// Unique trigger id (`trigger/<kebab>`).
     pub id: TriggerId,
-    /// The anchor this trigger watches.
-    pub at: AnchorId,
+    /// The anchor this trigger watches. Required for `strike` / `use` /
+    /// `approach`, which watch a *place*; **absent** for `strike-npc` (DSL
+    /// v0.6), which watches a *character* and names it in `on.npc` instead —
+    /// there is no cell for the author to supply and no cell the compiler
+    /// would use. Either mismatch is `DW0194`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<AnchorId>,
     /// The event that fires it.
     pub on: TriggerOn,
     /// Flags that must be set before the trigger can fire (DSL v0.4).
@@ -1188,6 +1193,14 @@ pub struct EnvTrigger {
     pub effects: Vec<QuestEffect>,
 }
 
+impl EnvTrigger {
+    /// The anchor this trigger watches, if it watches a place at all. `None`
+    /// for `strike-npc`, whose target is a character.
+    pub fn at_anchor(&self) -> Option<&str> {
+        self.at.as_ref().map(|a| a.as_str())
+    }
+}
+
 /// The event an [`EnvTrigger`] watches (DSL v0.4).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "on", rename_all = "kebab-case", deny_unknown_fields)]
@@ -1201,15 +1214,48 @@ pub enum TriggerOn {
         /// Approach radius (blocks).
         range: u32,
     },
+    /// The player attacks (left-clicks) an **NPC's body** (DSL v0.6, reserved
+    /// `DW0141` earlier).
+    ///
+    /// The place-based [`TriggerOn::Strike`] cannot express "hit the giant": it
+    /// summons its own `minecraft:interaction` at a *cell*, and a large NPC's
+    /// body eclipses that cell (`DW0359`), so the click never reaches the
+    /// trigger — the owner's island round-7 finding. This form has no cell. It
+    /// rides the interaction entity the NPC already owns, which is the entity a
+    /// click on that NPC reaches by construction.
+    ///
+    /// Right-click and left-click stay separate all the way down: a
+    /// `minecraft:interaction` records them in two distinct NBT fields
+    /// (`interaction` and `attack`), so the NPC's dialogue keeps the right-click
+    /// and this trigger takes the left-click, on one shared hitbox.
+    StrikeNpc {
+        /// The NPC (stage-2 ref) whose body is the target.
+        npc: NpcId,
+    },
 }
 
 impl TriggerOn {
-    /// The kebab tag (`strike` / `use` / `approach`).
+    /// The kebab tag (`strike` / `use` / `approach` / `strike-npc`).
     pub fn kind(&self) -> &'static str {
         match self {
             TriggerOn::Strike => "strike",
             TriggerOn::Use => "use",
             TriggerOn::Approach { .. } => "approach",
+            TriggerOn::StrikeNpc { .. } => "strike-npc",
+        }
+    }
+
+    /// Whether this event needs an `at` anchor — true for everything that
+    /// watches a place, false for `strike-npc`, which watches a character.
+    pub fn needs_anchor(&self) -> bool {
+        !matches!(self, TriggerOn::StrikeNpc { .. })
+    }
+
+    /// The NPC whose body this event watches (`strike-npc` only).
+    pub fn npc_target(&self) -> Option<&NpcId> {
+        match self {
+            TriggerOn::StrikeNpc { npc } => Some(npc),
+            _ => None,
         }
     }
 }
