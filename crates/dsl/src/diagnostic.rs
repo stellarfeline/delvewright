@@ -121,6 +121,9 @@ pub mod codes {
     /// (spec-0021) A `loot` declaration carries more stacks than the container
     /// it fills has slots.
     pub const LOOT_TOO_MANY_ITEMS: &str = "DW0432";
+    /// An `interact` declares `missing_item_hint` without a `requires_item`: the
+    /// hint answers a gate that does not exist, so it could never narrate.
+    pub const MISSING_ITEM_HINT_WITHOUT_ITEM: &str = "DW0437";
     /// Planned quest (stage 4) has no expansion in stage 5.
     pub const QUEST_NOT_EXPANDED: &str = "DW0150";
     /// Stage-5 quest is not planned in stage 4.

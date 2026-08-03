@@ -1721,11 +1721,23 @@ fn emit_functions(
                     ));
                 }
                 Objective::Interact {
-                    id, requires_item, ..
+                    id,
+                    requires_item,
+                    missing_item_hint,
+                    ..
                 } => {
                     let trigger = plan::interact_trigger(id.as_str());
+                    // `requires_item` means HELD, not possessed (owner ruling,
+                    // 2026-08-03): presenting the item is the action, so the gate
+                    // reads the main hand (`weapon.mainhand`), not the whole
+                    // inventory (`container.*`). The inventory reading made every
+                    // gated interaction fire the moment the item was picked up
+                    // anywhere — a player who right-clicked a sleeping giant with a
+                    // sharpened stake in their backpack blinded it without ever
+                    // raising a hand. (`collect`'s hold check below still reads
+                    // `container.*`: that one genuinely counts an inventory.)
                     let item_guard = match requires_item {
-                        Some(it) => format!(" if items entity @s container.* {it}"),
+                        Some(it) => format!(" if items entity @s weapon.mainhand {it}"),
                         None => String::new(),
                     };
                     // The trigger is set by the bot's chat command or the
@@ -1735,6 +1747,24 @@ fn emit_functions(
                         pending_guard(o, &qa),
                         safe_obj_fn(id.as_str())
                     ));
+                    // v0.7: the empty-hand answer. A click that reaches an OPEN
+                    // interaction without the item in hand used to be met with pure
+                    // silence, which reads as a broken affordance; an authored
+                    // `missing_item_hint` narrates it to that player instead. Same
+                    // activation guard as the completion line above (so an inactive
+                    // or already-finished objective stays quiet) plus the negation
+                    // of the item guard — and it sits BEFORE the trigger reset, in
+                    // the same tick that consumes the click record, so one click
+                    // yields exactly one line. Ordering against the completion line
+                    // is immaterial (the two conditions are mutually exclusive) but
+                    // is kept adjacent for readability. Absent field emits nothing.
+                    if let (Some(it), Some(hint)) = (requires_item, missing_item_hint) {
+                        tick.push(format!(
+                            "execute as @a[scores={{{trigger}=1..}}]{} unless items entity @s weapon.mainhand {it} run tellraw @s {}",
+                            pending_guard(o, &qa),
+                            json!({ "text": hint })
+                        ));
+                    }
                     // Reset the trigger every tick so a gated attempt can be retried
                     // (e.g. clicked the door before holding the key).
                     tick.push(format!(
@@ -10430,7 +10460,14 @@ fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool, sel: &str)
             requires_item: Some(it),
             ..
         } => {
-            p.push(format!("give {sel} {it} 1"));
+            // HELD, not merely carried (owner ruling, 2026-08-03): the gate reads
+            // `weapon.mainhand`, so the preamble must put the item THERE. `give`
+            // only happened to satisfy the old inventory-wide gate because a fresh
+            // dummy's first free slot is also its selected one — an accident, not a
+            // guarantee, and exactly the kind of coincidence a test must not rest on.
+            p.push(format!(
+                "item replace entity {sel} weapon.mainhand with {it}"
+            ));
         }
         _ => {}
     }
@@ -10460,6 +10497,10 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     let mut first_armed_kill = None;
     let mut first_collect = None;
     let mut first_interact = None;
+    // The first `interact` that actually gates on an item — the subject of the
+    // held-vs-carried test below. Distinct from `first_interact`, which may be
+    // ungated and would make that test vacuous.
+    let mut first_interact_item = None;
     let mut first_flag_gated = None;
     let mut first_forbid_gated = None;
     for q in &c.quests.content.quests {
@@ -10483,8 +10524,21 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
                 Objective::Collect { .. } if first_collect.is_none() => {
                     first_collect = Some((qid, o))
                 }
-                Objective::Interact { .. } if first_interact.is_none() => {
-                    first_interact = Some((qid, o))
+                Objective::Interact { .. } => {
+                    if first_interact.is_none() {
+                        first_interact = Some((qid, o));
+                    }
+                    if first_interact_item.is_none()
+                        && matches!(
+                            o,
+                            Objective::Interact {
+                                requires_item: Some(_),
+                                ..
+                            }
+                        )
+                    {
+                        first_interact_item = Some((qid, o));
+                    }
                 }
                 _ => {}
             }
@@ -10635,6 +10689,79 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             obj_score(id.as_str())
         ));
         write("verb_interact", b);
+    }
+
+    // interact + `requires_item`: HELD, not merely carried (owner ruling,
+    // 2026-08-03). Two phases on one dummy, one tick each:
+    //
+    //   A. the item is in the pack, the hand is empty  -> must NOT complete
+    //   B. the same item is in the main hand           -> completes
+    //
+    // Phase A first proves the item really is carried (`if items entity @s
+    // container.*` bridged to a score) — without that, "did not complete" would be
+    // indistinguishable from "had no item at all", i.e. a vacuous test that the old
+    // inventory-wide gate would also have passed.
+    //
+    // What this template deliberately does NOT assert is the `missing_item_hint`
+    // narration: PackTest can observe scores, blocks and entities, but a `tellraw`
+    // leaves no game state to assert against — there is no chat-log primitive, and
+    // inventing a "did it narrate" scoreboard side-channel inside the emitted tick
+    // would be a hack the player pays for (no-hack doctrine). The hint's emission is
+    // proven instead by an exact-line assertion in `crates/compiler/tests/v07_*.rs`,
+    // and its in-game appearance by the live tier. The mechanism it rides on — the
+    // main-hand gate itself — is what this template proves.
+    if let Some((qid, o)) = first_interact_item
+        && let Objective::Interact {
+            id,
+            requires_item: Some(it),
+            ..
+        } = o
+    {
+        let (pin, sel) = pin_dummy("dw_t_vheld");
+        let trigger = plan::interact_trigger(id.as_str());
+        let party = plan::PARTY;
+        let carried = "#carried_vheld";
+        let mut b = packtest_header(&format!(
+            "{}: `requires_item` is HELD — carried is not enough",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.push(format!(
+            "scoreboard players set {party} {} 0",
+            obj_score(id.as_str())
+        ));
+        b.extend(packtest_preamble(qid, o, true, &sel));
+        // --- phase A: carried, not held ---
+        b.push(format!(
+            "item replace entity {sel} weapon.mainhand with minecraft:air"
+        ));
+        b.push(format!("item replace entity {sel} inventory.0 with {it}"));
+        b.push(format!("scoreboard players set {carried} dw.sys 0"));
+        b.push(format!(
+            "execute as {sel} if items entity @s container.* {it} run scoreboard players set {carried} dw.sys 1"
+        ));
+        b.push(format!("assert score {carried} dw.sys matches 1"));
+        b.push(format!("scoreboard players set {sel} {trigger} 1"));
+        b.push(format!("function {ns}:tick"));
+        b.push(format!(
+            "assert score {party} {} matches 0",
+            obj_score(id.as_str())
+        ));
+        // --- phase B: the same item, now presented ---
+        b.push(format!(
+            "item replace entity {sel} inventory.0 with minecraft:air"
+        ));
+        b.push(format!(
+            "item replace entity {sel} weapon.mainhand with {it}"
+        ));
+        b.push(format!("scoreboard players set {sel} {trigger} 1"));
+        b.push(format!("function {ns}:tick"));
+        b.push(format!(
+            "assert score {party} {} matches 1",
+            obj_score(id.as_str())
+        ));
+        write("verb_interact_held", b);
     }
 
     // flag gate: without the flag the objective must NOT complete; with it, it

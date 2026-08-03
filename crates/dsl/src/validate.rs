@@ -946,7 +946,8 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v07(c, d);
 }
 
-/// DSL v0.7 reserved-feature gating (spec-0020): the per-quest `cast` ledger.
+/// DSL v0.7 reserved-feature gating (spec-0020): the per-quest `cast` ledger,
+/// plus the `interact.missing_item_hint` empty-hand narration.
 ///
 /// Note the asymmetry with the deprecation window. *Declaring* a ledger below
 /// v0.7 is `DW0141` like any other newer construct — the version contract stays
@@ -958,6 +959,23 @@ fn reserved_v07(c: &Campaign, d: &mut Vec<Diagnostic>) {
         return;
     }
     for (i, q) in c.quests.content.quests.iter().enumerate() {
+        for (j, o) in q.objectives.iter().enumerate() {
+            if let Objective::Interact {
+                missing_item_hint: Some(_),
+                ..
+            } = o
+            {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("/content/quests/{i}/objectives/{j}/missing_item_hint"),
+                    "`interact.missing_item_hint` (the line narrated when a player clicks \
+                     without the required item in hand) requires dsl_version 0.7.0 — raise this \
+                     stage's `dsl_version` to 0.7.0, or remove the field"
+                        .to_string(),
+                ));
+            }
+        }
         if q.cast.is_empty() {
             continue;
         }
@@ -2566,8 +2584,24 @@ fn v03_checks(
                 Objective::Interact {
                     anchor,
                     requires_item,
+                    missing_item_hint,
                     ..
                 } => {
+                    // v0.7: the empty-hand narration answers the held-item gate;
+                    // without a gate there is no missing hand to narrate to, and
+                    // the authored line would be dead content that never fires.
+                    if missing_item_hint.is_some() && requires_item.is_none() {
+                        d.push(Diagnostic::error(
+                            codes::MISSING_ITEM_HINT_WITHOUT_ITEM,
+                            "quests",
+                            format!("/content/quests/{i}/objectives/{j}/missing_item_hint"),
+                            "`interact.missing_item_hint` narrates the click that arrives \
+                             without the required item in hand, but this objective declares no \
+                             `requires_item` — add the `requires_item` this hint is about, or \
+                             drop the hint"
+                                .to_string(),
+                        ));
+                    }
                     if let Some(it) = requires_item
                         && !items.contains(it)
                     {

@@ -28,6 +28,7 @@
 //! | `npc.<npc>.name` | each stage-2 NPC `name` |
 //! | `quest.<quest>.goal` | each stage-4 planned-quest `goal` |
 //! | `obj.<quest>.<obj>.title` / `.hint` | a stage-5 objective's `title`/`hint` (only if set) |
+//! | `obj.<quest>.<obj>.missing_item_hint` | a stage-5 `interact`'s `missing_item_hint` (v0.7, only if set) |
 //! | `dlg.<npc>.<node>.text` | each stage-6 dialogue node `text` |
 //! | `dlg.<npc>.<node>.opt.<i>.label` | each dialogue option `label` |
 //! | `wave.<wave>.mob.<i>.name` | a wave mob's custom `name` (only if set) |
@@ -235,6 +236,17 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             }
             if let Some(hint) = o.hint_mut().as_mut() {
                 f(&format!("obj.{ql}.{ol}.hint"), hint);
+            }
+            // Stage 5 — v0.7 `interact.missing_item_hint`: narrated in chat to the
+            // player who clicks without the required item in hand, so it is as
+            // player-visible as `hint` and translates like it. Absent on every
+            // pre-0.7 objective → inventory unchanged.
+            if let crate::stages::Objective::Interact {
+                missing_item_hint: Some(m),
+                ..
+            } = o
+            {
+                f(&format!("obj.{ql}.{ol}.missing_item_hint"), m);
             }
         }
         // Stage 5 — v0.4 effect strings: `narrate` text + named `give-item`
