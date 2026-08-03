@@ -838,60 +838,140 @@ import {
   type CombatPlan,
 } from "../src/combat.ts";
 
+/** How a test asks the fake server to re-seat the wave. */
+interface ReseatSpec {
+  count?: number;
+  /** Health every freshly summoned mob arrives with (default: full). */
+  health?: number;
+  /** Entity ids the re-seat failed to clear — the survivors. */
+  keepIds?: number[];
+  /** Health those survivors kept from the last life. */
+  survivorHealth?: number;
+  /** Blocks from the encounter anchor. */
+  distance?: number;
+}
+
+/** One wave mob as the fake server publishes it to a client. */
+interface FakeMob {
+  id: number;
+  name: string;
+  height: number;
+  position: FakeVec3;
+  metadata: Record<number, unknown>;
+  attributes: Record<string, { value: number }>;
+}
+
+/** Where the pinned registry puts `health` in a zombie's metadata. Resolved by
+ * NAME, exactly as the harness does — neither side hardcodes the index. */
+const ZOMBIE_HEALTH_IDX = (
+  registryFor("1.21.11") as unknown as {
+    entitiesByName: Record<string, { metadataKeys: string[] }>;
+  }
+).entitiesByName["zombie"]!.metadataKeys.indexOf("health");
+
+const FULL_HEALTH = 20;
+
 /**
  * A FakeBot that can be driven through a whole `kill` step with the die-retry
  * stage on.
  *
- * The fake server does two things a real one does: it kills the bot when the
- * harness `/damage`s itself (then respawns it), and it re-seats the wave mob on
- * respawn — `respawns_on_rest` in miniature. `attack` puts the mob down, so both
- * `tradeBlows` and `fightWave` terminate in a poll or two instead of burning
- * their real budgets.
+ * The fake server does what a real one does: it kills the bot when the harness
+ * `/damage`s itself, respawns it, and re-seats the wave on that respawn — with
+ * whatever fidelity the test asks for. Wave mobs live in `entities`, because the
+ * re-seat check reads the whole tracked SET, not a nearest hit.
  */
 class CombatFakeBot extends InteractFakeBot {
   /** Whether `/damage @s` actually kills the bot (the bot is opped for it). */
   scriptedDeathsLand = true;
-  /** Injected fault: the re-engage probe throws, standing in for ANY unexpected
-   * fault after the death has been taken. The shipped one was the death-aware
-   * wait throwing on the very death it was waiting for. */
+  /** Injected fault, armed only AFTER a death so it lands on the re-engage probe:
+   * stands in for ANY unexpected fault once the death has been taken. The shipped
+   * one was the death-aware wait throwing on the very death it waited for. */
   failReEngageProbe = false;
-  /** Whether the respawn re-seats the wave (`respawns_on_rest: true` in miniature).
-   * `false` models the legitimate design where a won fight stays won. */
-  reSeatOnRespawn = true;
-  /** The live wave mob, or `undefined` once it is down. */
-  mob: { id: number; name: string; height: number; position: FakeVec3 } | undefined = {
-    id: 7,
-    name: "vindicator",
-    height: 2,
-    position: new FakeVec3(1, 64, 0),
-  };
+  /** How the respawn re-seats the wave. `undefined` = do not re-seat at all. */
+  reSeat: ReseatSpec | undefined = { count: 1 };
+  /** Delay before the re-seated wave becomes visible to the client — entity
+   * tracking lags arrival, which is the island-r14 false negative. */
+  reSeatVisibleAfterMs = 0;
+  private died = false;
+  private nextId = 100;
+
+  constructor() {
+    super();
+    this.seat(1);
+  }
+
+  /** Replace the tracked wave with `count` fresh mobs. */
+  seat(count: number, opts: ReseatSpec | Omit<ReseatSpec, "count"> = {}): void {
+    this.entities = {};
+    for (const id of opts.keepIds ?? []) this.entities[id] = this.makeMob(id, opts);
+    const fresh = count - (opts.keepIds?.length ?? 0);
+    for (let i = 0; i < fresh; i++) {
+      this.entities[this.nextId] = this.makeMob(this.nextId, opts);
+      this.nextId += 1;
+    }
+  }
+
+  private makeMob(id: number, opts: Omit<ReseatSpec, "count">): FakeMob {
+    const d = opts.distance ?? 1;
+    // A survivor the re-seat failed to clear keeps the damage the last life dealt
+    // it; a freshly summoned mob is whole unless the test says otherwise.
+    const survivor = (opts.keepIds ?? []).includes(id);
+    const health = survivor
+      ? (opts.survivorHealth ?? opts.health ?? FULL_HEALTH)
+      : (opts.health ?? FULL_HEALTH);
+    const self = this;
+    return {
+      id,
+      name: "zombie",
+      height: 2,
+      metadata: { [ZOMBIE_HEALTH_IDX]: health },
+      attributes: { "minecraft:max_health": { value: FULL_HEALTH } },
+      get position(): FakeVec3 {
+        if (self.failReEngageProbe && self.died) {
+          throw new Error("mineflayer blew up probing the re-engage");
+        }
+        return new FakeVec3(d, 64, 0);
+      },
+    };
+  }
+
   override chat(message: string): void {
     this.calls.push(`chat(${message})`);
     if (!message.startsWith("/damage") || !this.scriptedDeathsLand) return;
     setTimeout(() => {
+      this.died = true;
       this.emit("messagestr", "delve-bot was slain by Vindicator");
       this.emit("death");
-      // The wave is re-seated by the respawn, as `respawns_on_rest` would. The
-      // respawn lands FAST, as a real server's does — faster than the harness can
-      // poll the death latch and arm a wait, which is exactly the race the spawn
+      // The respawn lands FAST, as a real server's does — faster than the harness
+      // can poll the death latch and arm a wait, which is the race the spawn
       // counter exists for.
       setTimeout(() => {
-        if (this.reSeatOnRespawn) {
-          this.mob = { id: 7, name: "vindicator", height: 2, position: new FakeVec3(1, 64, 0) };
+        this.entities = {};
+        const reseat = this.reSeat;
+        if (reseat) {
+          const apply = (): void => this.seat(reseat.count ?? 0, reseat);
+          if (this.reSeatVisibleAfterMs > 0) setTimeout(apply, this.reSeatVisibleAfterMs);
+          else apply();
         }
         this.emit("spawn");
       }, 10);
     }, 5);
   }
 
-  nearestEntity(): unknown {
-    if (this.failReEngageProbe) throw new Error("mineflayer blew up probing the re-engage");
-    return this.mob;
+  nearestEntity(match: (e: unknown) => boolean = () => true): unknown {
+    let best: FakeMob | undefined;
+    for (const e of Object.values(this.entities) as FakeMob[]) {
+      if (!match(e)) continue;
+      if (!best || e.position.distanceTo(this.entity.position) < best.position.distanceTo(this.entity.position)) {
+        best = e;
+      }
+    }
+    return best;
   }
 
-  attack(): void {
+  attack(mob: { id: number }): void {
     this.calls.push("attack");
-    this.mob = undefined; // one swing is enough in the fake world
+    delete this.entities[mob.id]; // one swing is enough in the fake world
   }
 
   async lookAt(): Promise<void> {}
@@ -918,7 +998,7 @@ const ENCOUNTER = {
   checkpoint: [0, 64, 0] as [number, number, number],
 };
 
-function combatPlan(): CombatPlan {
+function combatPlan(count = 1, respawnsOnRest = true): CombatPlan {
   return {
     version: "0.6.0",
     campaignId: "the-drowned-bell",
@@ -930,8 +1010,8 @@ function combatPlan(): CombatPlan {
         step: ENCOUNTER.step,
         tier: ENCOUNTER.tier,
         pos: ENCOUNTER.pos,
-        count: ENCOUNTER.count,
-        respawnsOnRest: true,
+        count,
+        respawnsOnRest,
         checkpoint: ENCOUNTER.checkpoint,
       },
     ],
@@ -1037,11 +1117,11 @@ test("a wave already beaten before the death records cleared-before-retry, and p
   // the loop worked. Before this, the same fixture went red or green depending
   // on whether the bot's timed melee happened to finish the wave first.
   const bot = new CombatFakeBot();
-  bot.mob = undefined; // the fight was won before the scripted death
-  bot.reSeatOnRespawn = false;
+  bot.seat(0); // the fight was won before the scripted death
+  bot.reSeat = undefined; // `respawns_on_rest: false` — a won fight stays won
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
-  executor.useCombatPlan(combatPlan(), true);
+  executor.useCombatPlan(combatPlan(1, false), true);
   bot.emit("messagestr", "[dw:complete the-drowned-bell obj/hold-the-gate]");
 
   await executor.kill(KILL_STEP);
@@ -1055,7 +1135,11 @@ test("a wave already beaten before the death records cleared-before-retry, and p
   assert.ok(trials.every((t) => t.objectiveComplete && !t.reEngaged));
   assert.deepEqual(dieRetryFindings(trials), [], "a won fight staying won is not a finding");
   assert.deepEqual(
-    dieRetryCoverageFailures(combatPlan().encounters, executor.dieRetryEngagements(), trials),
+    dieRetryCoverageFailures(
+      combatPlan(1, false).encounters,
+      executor.dieRetryEngagements(),
+      trials,
+    ),
     [],
     "and it counts as full coverage — these are proved trials, not skipped ones",
   );
@@ -1066,11 +1150,11 @@ test("a wave that vanishes with its objective UNFINISHED is a soft lock, loudly"
   // "did not re-engage" red could not tell apart from a won fight: the party can
   // neither finish the encounter nor fight it again.
   const bot = new CombatFakeBot();
-  bot.mob = undefined;
-  bot.reSeatOnRespawn = false;
+  bot.seat(0);
+  bot.reSeat = undefined;
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
-  executor.useCombatPlan(combatPlan(), true);
+  executor.useCombatPlan(combatPlan(1, false), true);
   // …and no completion marker for obj/hold-the-gate ever arrives.
 
   await executor.kill(KILL_STEP);
@@ -1085,4 +1169,119 @@ test("a wave that vanishes with its objective UNFINISHED is a soft lock, loudly"
   assert.equal(findings.length, 2, "every stranded trial is a red finding");
   assert.match(findings[0]!, /STRANDED/);
   assert.match(findings[0]!, /obj\/hold-the-gate/);
+});
+
+// --- re-seat fidelity + the wandered-mob false negative (task #108) ----------
+
+async function dieRetryAgainst(bot: CombatFakeBot, count: number): Promise<MineflayerExecutor> {
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(count, true), true);
+  await executor.kill({ ...KILL_STEP, count });
+  return executor;
+}
+
+test("a wave that re-seats whole — fresh entities, full health, authored count — passes", async () => {
+  const bot = new CombatFakeBot();
+  bot.seat(3);
+  bot.reSeat = { count: 3 };
+  const executor = await dieRetryAgainst(bot, 3);
+
+  const trials = executor.deathTrials();
+  assert.deepEqual(
+    trials.map((t) => t.outcome),
+    ["re-engaged", "re-engaged"],
+  );
+  assert.deepEqual(dieRetryFindings(trials), [], "a faithful re-seat is silent");
+  for (const t of trials) {
+    assert.equal(t.reengage!.present, 3);
+    assert.equal(t.reengage!.carriedOver, 0, "every mob is a NEW entity");
+    assert.equal(t.reengage!.damaged, 0);
+    assert.equal(t.reengage!.healthReadable, 3, "health was readable via the pinned registry");
+  }
+});
+
+test("a re-seat that comes back SHORT is red", async () => {
+  const bot = new CombatFakeBot();
+  bot.seat(3);
+  bot.reSeat = { count: 2 }; // one mob never came back
+  const executor = await dieRetryAgainst(bot, 3);
+
+  const findings = dieRetryFindings(executor.deathTrials());
+  assert.equal(findings.length, 2);
+  assert.match(findings[0]!, /came back SHORT — 2 mob\(s\) standing, 3 declared/);
+  assert.equal(executor.deathTrials()[0]!.reengage!.present, 2);
+});
+
+test("a damaged survivor carried across a life is red — the owner's grind rule", async () => {
+  // 打一半的怪要移除重新生成一模一样的: a half-fought mob is REMOVED and regenerated.
+  // Here the re-seat tops the wave up AROUND the survivor the last life chipped,
+  // which is exactly how a party grinds a boss down one swing per death.
+  const bot = new CombatFakeBot();
+  bot.seat(3);
+  const survivor = Object.values(bot.entities as Record<number, { id: number }>)[0]!.id;
+  bot.reSeat = { count: 3, keepIds: [survivor], survivorHealth: 6 };
+  const executor = await dieRetryAgainst(bot, 3);
+
+  const trials = executor.deathTrials();
+  const findings = dieRetryFindings(trials);
+  assert.equal(findings.length, 2);
+  assert.match(findings[0]!, /the bot already\s+fought in a previous life/);
+  assert.match(findings[0]!, /never topped up around its survivors/);
+  assert.equal(trials[0]!.reengage!.carriedOver, 1);
+  assert.equal(trials[0]!.reengage!.damaged, 1, "exactly the survivor is the wounded one");
+});
+
+test("a wave that comes back whole but WOUNDED is red", async () => {
+  // No carried-over entity — the re-seat did replace them — but they arrived
+  // below full health. The player respawns whole; so must the wave.
+  const bot = new CombatFakeBot();
+  bot.seat(3);
+  bot.reSeat = { count: 3, health: 11 };
+  const executor = await dieRetryAgainst(bot, 3);
+
+  const findings = dieRetryFindings(executor.deathTrials());
+  assert.equal(findings.length, 2);
+  assert.match(findings[0]!, /came back BELOW full/);
+  assert.equal(executor.deathTrials()[0]!.reengage!.damaged, 3);
+});
+
+test("wave mobs that WANDERED off the anchor are re-engaged, never stranded", async () => {
+  // The island-r14 false negative: three feral drowned (follow_range 48) wander
+  // off the anchor after killing the bot. They are alive and will come — the bot
+  // cleared 3/3 moments later — but both trials reported "no hostile was there to
+  // fight" and went red. There is no distance filter: anything the client tracks
+  // is inside vanilla's 128-block monster range, well beyond any follow_range.
+  const bot = new CombatFakeBot();
+  bot.seat(3, { distance: 60 });
+  bot.reSeat = { count: 3, distance: 60 };
+  const executor = await dieRetryAgainst(bot, 3);
+
+  const trials = executor.deathTrials();
+  assert.deepEqual(
+    trials.map((t) => t.outcome),
+    ["re-engaged", "re-engaged"],
+    "alive-but-wandered is the fight still existing",
+  );
+  assert.deepEqual(dieRetryFindings(trials), []);
+  assert.ok(trials[0]!.reengage!.farthest! > 48, "and how far they had strayed is recorded");
+});
+
+test("the re-engage probe SETTLES instead of sampling the instant it arrives", async () => {
+  // The other half of r14: a client learns about an entity when the server sends
+  // it, which takes ticks after arrival. One instantaneous sample read an empty
+  // room; the probe now waits for the room to fill.
+  const bot = new CombatFakeBot();
+  bot.seat(2);
+  bot.reSeat = { count: 2 };
+  bot.reSeatVisibleAfterMs = 900; // tracking catches up well after the walk back
+  const executor = await dieRetryAgainst(bot, 2);
+
+  const trials = executor.deathTrials();
+  assert.deepEqual(
+    trials.map((t) => t.outcome),
+    ["re-engaged", "re-engaged"],
+  );
+  assert.ok(trials[0]!.reengage!.settleMs >= 500, "the probe waited rather than guessed");
+  assert.equal(trials[0]!.reengage!.present, 2);
 });

@@ -385,6 +385,113 @@ export function retryOutcome(waveMobPresent: boolean, objectiveComplete: boolean
   return objectiveComplete ? "cleared-before-retry" : "stranded";
 }
 
+/** One wave mob as the bot saw it at re-engage. */
+export interface WaveSighting {
+  readonly id: number;
+  /** Blocks from the encounter anchor — recorded because a FERAL mob wanders off
+   * it after killing the party and is still very much part of the fight. */
+  readonly distance: number;
+  /** Current health, when the server surfaced it (see the executor's reader). */
+  readonly health: number | undefined;
+  /** Max health, when the server sent this entity's attributes. */
+  readonly maxHealth: number | undefined;
+}
+
+/**
+ * What the bot found when it walked back, as a whole SET rather than a nearest hit.
+ *
+ * Two failures live here, and they need different evidence:
+ *
+ *  * the false negative (island r14): the probe used to be a single instantaneous
+ *    sample the moment the walk-back resolved. Entity tracking is not
+ *    instantaneous — `fightWave` has always slept a second on arrival for exactly
+ *    this reason — so three demonstrably-alive drowned read as "no hostile was
+ *    there to fight" and the trial went red. The probe now SETTLES.
+ *  * the fidelity failure (owner ruling 2026-08-03): a retry must never let the
+ *    party chip a wave down across lives. A re-seating wave must come back whole
+ *    — the authored count, all-new entities, undamaged — never topped up around
+ *    the survivors the last life left standing.
+ */
+export interface ReengageObservation {
+  /** Wave mobs present after the settle. */
+  readonly present: number;
+  /** What the compiler's plan says the wave holds. */
+  readonly declared: number;
+  /** Of those present, how many are entities the bot ALREADY saw before it died.
+   * On a re-seating wave every one of these is a survivor that was not cleared —
+   * the chipped mob the ruling forbids carrying across a life. */
+  readonly carriedOver: number;
+  /** How many had readable health, and how many of those were below full. */
+  readonly healthReadable: number;
+  readonly damaged: number;
+  /** Distance spread from the encounter anchor, for the wandered-mob case. */
+  readonly nearest: number | undefined;
+  readonly farthest: number | undefined;
+  /** How long the probe waited before it settled on this answer. */
+  readonly settleMs: number;
+}
+
+/** Summarize a settled set of sightings. */
+export function observationOf(
+  sightings: readonly WaveSighting[],
+  declared: number,
+  carriedOverIds: ReadonlySet<number>,
+  settleMs: number,
+): ReengageObservation {
+  const distances = sightings.map((s) => s.distance);
+  const readable = sightings.filter((s) => s.health !== undefined && s.maxHealth !== undefined);
+  return {
+    present: sightings.length,
+    declared,
+    carriedOver: sightings.filter((s) => carriedOverIds.has(s.id)).length,
+    healthReadable: readable.length,
+    damaged: readable.filter((s) => s.health! < s.maxHealth!).length,
+    nearest: distances.length > 0 ? Math.min(...distances) : undefined,
+    farthest: distances.length > 0 ? Math.max(...distances) : undefined,
+    settleMs,
+  };
+}
+
+/**
+ * The re-seat fidelity verdict for one trial, or `undefined` when the wave came
+ * back whole. Only ever consulted for a `respawns_on_rest` wave that re-engaged.
+ *
+ * Owner ruling 2026-08-03: "打一半的怪要移除重新生成一模一样的,玩家满血了怪也满血了,
+ * 不能通过每条命砍一刀磨过去" — a half-fought wave is REMOVED and regenerated
+ * identically; the player comes back full, so the wave does too. Grinding a boss
+ * down one swing per life is not a difficulty curve, it is a bug.
+ */
+export function reseatFidelityFinding(
+  wave: string,
+  attempt: number,
+  phase: DeathPhase,
+  obs: ReengageObservation,
+): string | undefined {
+  const where = `${wave} death ${attempt} (${phase})`;
+  if (obs.carriedOver > 0) {
+    return (
+      `${where}: ${obs.carriedOver} of the ${obs.present} wave mob(s) standing after the ` +
+      `re-seat ${obs.carriedOver === 1 ? "is an entity" : "are entities"} the bot already ` +
+      `fought in a previous life. A \`respawns_on_rest\` wave must be REMOVED and ` +
+      `re-summoned whole, never topped up around its survivors — otherwise the party ` +
+      `grinds it down one swing per death.`
+    );
+  }
+  if (obs.present < obs.declared) {
+    return (
+      `${where}: the re-seated wave came back SHORT — ${obs.present} mob(s) standing, ` +
+      `${obs.declared} declared. A retry must face the fight the first life faced.`
+    );
+  }
+  if (obs.damaged > 0) {
+    return (
+      `${where}: ${obs.damaged} of the ${obs.healthReadable} wave mob(s) whose health could ` +
+      `be read came back BELOW full. The player respawns whole; so must the wave.`
+    );
+  }
+  return undefined;
+}
+
 /** One scripted death and everything proved about the loop it opened. */
 export interface DeathTrial {
   readonly encounter: string;
@@ -405,6 +512,10 @@ export interface DeathTrial {
   readonly reEngaged: boolean;
   /** Raw observation behind {@link outcome}: is the encounter's objective complete? */
   readonly objectiveComplete: boolean;
+  /** Does this wave re-seat on rest? Only such a wave owes re-seat fidelity. */
+  readonly reseats: boolean;
+  /** The settled set the outcome and the fidelity verdict were read from. */
+  readonly reengage: ReengageObservation | undefined;
   /** Objectives that were complete before the death and are still complete after. */
   readonly objectivesIntact: boolean;
   /** Objectives that were complete before the death and were NOT after. */
@@ -444,6 +555,8 @@ export function openTrial(enc: Encounter, attempt: number, phase: DeathPhase): D
     returned: false,
     reEngaged: false,
     objectiveComplete: false,
+    reseats: enc.respawnsOnRest,
+    reengage: undefined,
     objectivesIntact: true,
     lostObjectives: [],
     completed: false,
@@ -498,6 +611,13 @@ export function trialVerdict(t: DeathTrial): string | undefined {
       `whether the encounter could be re-engaged or was already cleared. Nothing was ` +
       `proved about the retry loop, so nothing is passed.`
     );
+  }
+  // A wave the content declared `respawns_on_rest` owes one more thing: it must
+  // come back WHOLE. Checked last, because a stranded party or lost progress is a
+  // worse fault than an imperfect re-seat and should be the sentence a reader sees.
+  if (t.reseats && t.outcome === "re-engaged" && t.reengage !== undefined) {
+    const fidelity = reseatFidelityFinding(t.wave, t.attempt, t.phase, t.reengage);
+    if (fidelity !== undefined) return fidelity;
   }
   // `re-engaged` (the fight is retriable) and `cleared-before-retry` (the fight
   // was already won and the objective survived the death) are both the loop

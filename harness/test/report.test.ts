@@ -26,6 +26,8 @@ const TRIAL: DeathTrial = {
   returned: true,
   reEngaged: true,
   objectiveComplete: false,
+  reseats: false,
+  reengage: undefined,
   objectivesIntact: true,
   lostObjectives: [],
   completed: true,
@@ -147,4 +149,34 @@ test("a die-retry entry states what was waiting at the end of the loop", () => {
   assert.equal(json["die_retry"][0]!["outcome"], "cleared-before-retry");
   assert.equal(json["die_retry"][0]!["re_engaged"], false);
   assert.equal(json["die_retry"][0]!["objective_complete"], true);
+});
+
+test("a die-retry entry publishes what the settled re-engage probe saw", () => {
+  // `present: 0` is only readable next to `settle_ms`: a probe that answered
+  // instantly saw an empty room, one that spent its budget waited for a room that
+  // never filled (the island-r14 false negative was the former).
+  const report = new RunReport("nobodys-cave-island", "normal");
+  report.recordTrials([
+    {
+      ...TRIAL,
+      reseats: true,
+      reengage: {
+        present: 3,
+        declared: 3,
+        carriedOver: 0,
+        healthReadable: 3,
+        damaged: 0,
+        nearest: 12.5,
+        farthest: 61.25,
+        settleMs: 750,
+      },
+    },
+  ]);
+  const json = report.toJSON() as { die_retry: Record<string, unknown>[] };
+  const re = json["die_retry"][0]!["reengage"] as Record<string, unknown>;
+  assert.equal(json["die_retry"][0]!["reseats_on_rest"], true);
+  assert.equal(re["present"], 3);
+  assert.equal(re["carried_over"], 0);
+  assert.equal(re["farthest_blocks"], 61.25, "how far a feral mob strayed is evidence");
+  assert.equal(re["settle_ms"], 750);
 });
