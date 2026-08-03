@@ -370,6 +370,22 @@ fn props_map(props: &Props) -> Option<BTreeMap<String, String>> {
     })
 }
 
+/// The flattened view the shared `invariants` gates read: exactly the blocks this
+/// piece is about to write, palette already resolved. Lives here because
+/// `Structure`'s fields are private to this module.
+pub fn invariant_cells(s: &Structure) -> crate::invariants::Cells {
+    s.blocks
+        .iter()
+        .map(|b| {
+            let p = &s.palette[b.state as usize];
+            (
+                b.pos,
+                (p.name.clone(), p.properties.clone().unwrap_or_default()),
+            )
+        })
+        .collect()
+}
+
 pub fn serialize(grid: &Grid) -> Structure {
     let [sx, sy, sz] = grid.size;
     let mut pal = Palette::new();
