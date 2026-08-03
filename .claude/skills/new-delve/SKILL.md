@@ -166,7 +166,55 @@ Operationally, per campaign:
   default here.** Somatic rendering is what the pole looks like. Sometimes let a
   character say they are afraid.
 
-### C. Plain-prose baseline (Strunk 1918, public domain)
+### C. HARD RULE — dialogue options are labels, not sentences
+
+Owner ruling, 2026-08-03. **A dialogue option is a button caption.** Vanilla
+draws each option as a fixed-width button; a label wider than the button
+*scrolls* rather than wrapping or shrinking, and a shelf of scrolling captions is
+a miserable thing to read and pick from. This is not a style preference — it is
+the widget.
+
+The geometry, so the budget is arithmetic and not taste. The compiler emits each
+node as a `minecraft:multi_action` dialog with `columns: 1` and **no `width`
+override**, so every option button is vanilla's default **150 GUI px**, leaving
+roughly **146 px** for the label after the widget's inset. Dialog buttons draw at
+pose scale ×1, so one font pixel is one GUI pixel — unlike `narrate` titles,
+which `DW0330` budgets at ×4/×2 (`crates/compiler/src/textfit.rs`).
+
+Mirror that module's reasoning: **width is measured in font pixels, not
+characters**, because `i` and `W` differ by 3× and a Han glyph (advance 9) is 1.5×
+a Latin one (typical advance 6), so any character count is unfair to whichever
+script it was not tuned for. Character counts below are the authoring rule of
+thumb derived from those advances — the pixel budget is the real rule:
+
+| | scroll threshold | **author to** |
+|---|---|---|
+| English | ~24 characters (146 px ÷ ~6 px average advance) | **≤ 20 characters** |
+| Chinese (`zh-*`) | ~16 characters (146 px ÷ 9 px Han advance) | **≤ 12 characters** |
+
+Author to the target, not the threshold: the English is the source a translation
+grows from, and a label at the English limit has nowhere to go in `zh-cn`.
+
+```
+BAD   "I don't know — are you sure there isn't another way out of the cave?"
+GOOD  "Another way out?"
+
+BAD   "我不太确定，你是说这座洞窟还有别的出口吗？"     (20 chars ≈ 180 px — scrolls)
+GOOD  "还有别的出口吗？"                              (8 chars ≈ 72 px)
+```
+
+The content that does not fit belongs in the node's body text, which wraps
+normally, or in the NPC's reply — not in the button. This applies to every
+`.opt.<n>.label`, in the English source **and** in every l10n sidecar; the
+localization stage's critique pass already checks that translated labels stay
+short and scannable.
+
+A compiler diagnostic for this is being added separately (engine task #110), on
+the same font-pixel measurement `DW0330` uses. Until it lands the rule is
+enforced here, by you, at authoring time — and when it lands it will be telling
+you the same thing this section does.
+
+### D. Plain-prose baseline (Strunk 1918, public domain)
 
 Two rules carry most of the load for text rendered into a chat line:
 
@@ -201,6 +249,9 @@ For each stage in order — world → npcs → classes → quest-plan → quests
    - NPCs: personas per schema (archetype/speech_style/motivation required);
      honor them in every stage-6 line. Dialogue: branching options; flavor NPCs
      get real trees too.
+   - **Stage 6: every option label fits its button** — ≤20 Latin / ≤12 Han
+     characters, *Writing craft* §C. A long label scrolls; move the content into
+     the node body or the NPC's reply.
    - **Stage 6: re-derive every node's option list from that node's situation.**
      (Owner ruling, 2026-08-03.) Never carry an option list forward from an
      earlier node. Before shipping a node, check each option for semantic fit

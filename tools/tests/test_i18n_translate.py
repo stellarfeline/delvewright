@@ -236,6 +236,19 @@ def test_reflection_prompt_names_all_four_critique_axes():
     assert "clipped, soldierly" in user, "and the persona it must sound like"
 
 
+def test_option_label_button_budget_reaches_both_prompts():
+    """Owner ruling 2026-08-03: an over-long option label scrolls on its
+    fixed-width button. The budget must survive translation, so it is stated in
+    the translate step AND checked in the critique step."""
+    inv = inventory()
+    batch = inv.pending()
+    translate = t.build_messages(inv, batch, "zh-cn")[0]["content"]
+    critique = t.build_reflection_messages(inv, batch, "zh-cn", {})[0]["content"]
+    for prompt in (translate, critique):
+        assert "12 Han" in prompt and "20 Latin" in prompt
+        assert "scroll" in prompt.lower()
+
+
 def test_reflection_step_does_not_ask_for_json():
     system = t.build_reflection_messages(inventory(), inventory().pending(), "zh-cn", {})[0][
         "content"

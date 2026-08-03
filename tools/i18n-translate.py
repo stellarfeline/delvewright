@@ -267,7 +267,11 @@ Rules:
 - Each item may name a `speaker`: that NPC's persona and speech style are given
   below — the translation must sound like that character.
 - Keys ending in `.opt.<n>.label` are the PLAYER's reply inside that NPC's
-  dialogue tree: keep them short, first-person, and selectable at a glance.
+  dialogue tree, drawn on a FIXED-WIDTH BUTTON: keep them short, first-person,
+  and selectable at a glance. A label too wide for the button scrolls, which is
+  a broken-looking UI — so a label is a caption, never a sentence. Budget: about
+  146 font pixels, i.e. roughly 20 Latin characters or 12 Han characters. Being
+  shorter than the English here is correct, not a loss.
 - Keys under `obj.` are objective titles/hints, `quest.` are goals, `class.` are
   class names/blurbs, `npc.`/`area.`/`world.` are proper nouns and headings.
 - Reuse the glossary translations verbatim wherever those names appear.
@@ -331,8 +335,10 @@ Judge on four axes:
    anything a native reader would have to re-read.
 3. STYLE / REGISTER — does the line sound like the speaking NPC's persona and
    speech style, and like a hand-made fantasy adventure map rather than a
-   product manual? Are `.opt.<n>.label` lines short, first-person and scannable?
-   Does the string still fit a chat line, item name or title card?
+   product manual? Does the string still fit a chat line, item name or title
+   card? `.opt.<n>.label` lines are drawn on a fixed-width button and SCROLL if
+   they overrun — flag any that exceed roughly 20 Latin or 12 Han characters,
+   and say how to cut it to a caption.
 4. TERMINOLOGY — glossary proper nouns reproduced verbatim; one English term
    rendered the same way at every key; consistent with the source's domain.
 

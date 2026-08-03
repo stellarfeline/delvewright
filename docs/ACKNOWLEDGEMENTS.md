@@ -81,10 +81,13 @@ compiled code. Licences below re-verified from the primary source on 2026-08-03.
 |---|---|---|
 | [andrewyng/translation-agent](https://github.com/andrewyng/translation-agent) | MIT — "Copyright (c) 2024 Andrew Ng" (repo `LICENSE`) | The three-step **translate → reflect → improve** shape and the four critique axes (accuracy / fluency / style / terminology) behind `--reflect` in `tools/i18n-translate.py`. Our prompts extend them with domain criteria (NPC persona, key-kind conventions, render width), a re-derived translationese checklist in place of the generic "fluency" criterion, and an explicit anti-churn rule. |
 | Strunk, *The Elements of Style* (1918) — [Gutenberg #37134](https://www.gutenberg.org/ebooks/37134) | Public domain ("Public domain in the USA."; first published 1918) | Rules 12 and 13 and Rule 13's substitution table, quoted in the skill's plain-prose baseline. **Only the 1918 Strunk is quotable** — the rules most people attribute to it ("omit needless words" aside) come from E. B. White's 1959 chapter and are still in copyright; those are ideas-only. |
-| Wikipedia, *[Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing)* | CC BY-SA 4.0 | **Ideas only, no text reproduced** — deliberately, so no share-alike obligation attaches to this repo. Its taxonomy (negative parallelisms, rule of three, participial stacking) informed the section-A checklist, which is written from scratch. |
+| Wikipedia, *[Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing)* | CC BY-SA 4.0 | **Ideas only, by choice — not by licence.** Its taxonomy (negative parallelisms, rule of three, participial stacking) informed the section-A checklist, which is written from scratch. Importing the text verbatim *is* available to us: Creative Commons' 2015 compatibility declaration makes CC BY-SA 4.0 **one-way compatible with GPLv3**, so an adaptation may be relicensed GPLv3. We did not, because that page is written for Wikipedia editors — it spends most of its length on citation defects, markup artifacts and promotional tone, none of which apply to NPC dialogue — so re-deriving for fiction was simply the better text. If a future PR does want a list verbatim, the route is open: relicense the adaptation as GPLv3 and carry a provenance note naming the article, its revision and the compatibility declaration. |
 
-Ideas-only inspiration, **no text ported** (each is unlicensed or copyrighted;
-listed because it shaped a decision, not because anything was taken):
+Ideas-only inspiration, **no text ported** — listed because each shaped a
+decision, not because anything was taken. Most are unlicensed or copyrighted, so
+ideas are all that is available; where a licence *would* have permitted more, the
+entry says so, because a ledger that records a business decision as a legal
+prohibition is a wrong record.
 
 - `NemoVonNirgend/NemoEngine`'s anti-slop interview notes — **no LICENSE file**.
   The framing "pattern warnings, not technique bans" and the fiction-specific
@@ -99,9 +102,12 @@ listed because it shaped a decision, not because anything was taken):
 - 余光中《论中文的常态与变态》 and 思果《翻译研究》 — copyrighted. The 翻译腔
   checklist in the i18n prompts is our own paraphrase of the tradition they
   established, not a reproduction of either text.
-- `yetone/openai-translator` — **AGPL-3.0; not used at all.** (The widely
-  repeated claim that it is the origin of the 信达雅 prompt does not survive
-  checking its source.)
+- `yetone/openai-translator` — AGPL-3.0. **Not adopted as a cost/benefit call,
+  not a legal bar**: AGPLv3 and GPLv3 combine explicitly (each licence's §13
+  provides for it), so we *could* have taken code. Nothing beyond prompt ideas
+  was needed, and taking on the network-interaction copyleft for a few prompt
+  lines is a bad trade. (Separately, the widely repeated claim that it is the
+  origin of the 信达雅 prompt does not survive checking its source.)
 
 ## Research that shaped the design (cited; no code ported)
 
