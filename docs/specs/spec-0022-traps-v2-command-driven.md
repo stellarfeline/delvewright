@@ -32,11 +32,18 @@ A trap becomes `{id, trigger, payload}`:
   the same observer-free machinery as today. Disarm affordances unchanged.
 - `payload`: an ordered effect list, the SAME effect vocabulary quests use,
   plus trap-payload verbs:
-  - `volley {projectile, from_anchor, count?, spread?}` — command-summoned
-    projectiles with real velocity vectors aimed at the triggering player's
-    position at fire time (arrow/spectral_arrow/small_fireball…). Solves the
-    stair-volley's "wrong height, can't hit" outright: aim is computed, not
-    built.
+  - `volley {projectile, from_anchor, kill_zone, salvos?, interval?}` —
+    command-summoned projectiles with real velocity vectors. **Saturation,
+    not sniping** (owner ruling 2026-08-03): a volley must blanket its
+    declared kill zone — every standable cell of the zone receives fire, and
+    the pattern repeats for `salvos` rounds (default 3) at `interval` ticks
+    (default 10) — so a player moving through the zone cannot dodge it by
+    accident; escaping means LEAVING the zone, a decision, not a lucky
+    strafe. One aimed shot at the triggering player's fire-time position is
+    additionally included per salvo (punishes standing still), but coverage
+    is the contract. Solves the stair-volley's "wrong height, can't hit"
+    outright: trajectories are computed per target cell, not built from
+    dispensers.
   - `collapse {region_anchor, falling_block?, then_floor?}` — delete the
     region's blocks and summon falling-block entities (gravel/sand/anvil) over
     the player's column: the buried-alive trap.
@@ -47,10 +54,11 @@ A trap becomes `{id, trigger, payload}`:
 
 - Trigger hardware proofs carry over from spec-0011 unchanged (hardware
   present, disarm completability, DW0363 gating surface).
-- `volley`: `from_anchor` must have line-of-sight to the trigger's kill zone
-  in the assembled world (the aim ray is checkable — same machinery as
-  cutscene clear-eye), else error. This is the compile-time form of "the
-  gallery slot can actually hit a player on the stairs".
+- `volley`: `from_anchor` must have line-of-sight to EVERY standable cell of
+  the kill zone in the assembled world (the aim rays are checkable — same
+  machinery as cutscene clear-eye), else error naming the uncovered cell.
+  This is the compile-time form of "the gallery slot can actually hit a
+  player anywhere on the stairs" — coverage is proven, not hoped.
 - `collapse`: the region must sit above standable cells of the trigger's
   vicinity; the critical path must remain completable with the region
   collapsed (the post-trap world joins the completability model, like
@@ -68,10 +76,12 @@ replaces the fixed per-type effect wiring.
 
 ## Acceptance criteria
 
-- [ ] `volley` PackTest: dummy on the trigger → arrow entities exist with
-      velocity toward the dummy; dummy takes damage.
+- [ ] `volley` PackTest: dummy on the trigger → projectiles cover every
+      standable cell of the kill zone (entity count and positions asserted)
+      across the declared salvos; a dummy anywhere in the zone takes damage,
+      including one moved to a different zone cell between salvos.
 - [ ] `volley` line-of-sight proof: a blocked gallery slot is a build error
-      naming the obstructing cell.
+      naming the uncovered cell.
 - [ ] `collapse` PackTest: region blocks removed, falling blocks land, dummy
       takes suffocation/impact damage; completability proof with the region
       gone stays green.
