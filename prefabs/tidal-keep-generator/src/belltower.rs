@@ -182,7 +182,7 @@ pub fn build(g: &mut Grid, seed: u64) {
         for x in S1_X0..=S1_X1 {
             g.carve(bx(x, x, w, w + 3, z, z));
             if z > 3 && stair1_walk(z - 1) > w {
-                stairs(g, x, w - 1, z, "minecraft:stone_brick_stairs", "south");
+                stairs(g, x, w - 1, z, "minecraft:stone_brick_stairs", "north");
             } else {
                 g.blk(
                     x,
@@ -264,7 +264,7 @@ pub fn build(g: &mut Grid, seed: u64) {
         for x in S2_X0..=S2_X1 {
             g.carve(bx(x, x, w, w + 3, z, z));
             if z > 3 && stair2_walk(z - 1) > w {
-                stairs(g, x, w - 1, z, "minecraft:stone_brick_stairs", "south");
+                stairs(g, x, w - 1, z, "minecraft:stone_brick_stairs", "north");
             } else {
                 g.blk(
                     x,
@@ -525,6 +525,13 @@ pub fn build(g: &mut Grid, seed: u64) {
     g.carve(bx(0, IN0 - 1, KEEP_WALK, KEEP_WALK + 2, 12, 14));
 
     // ---- 10. Invariants -----------------------------------------------------
+    // Both flights rise through OPEN room air, so their side rails are whatever
+    // happens to sit one block under a tread — the rope-room floor, the loft
+    // floor, and (at z=7) the x=19 purlin itself. Five newels; without them the
+    // route side-steps into mid-flight and `DW0430` reports a tread that is
+    // asked to carry two climbs at once.
+    seal_stair_flanks(g, "minecraft:stone_brick_wall");
+
     let mut climb: Vec<[i32; 3]> = Vec::new();
     for z in (16..=20).rev() {
         climb.push([4, KEEP_WALK, z]);

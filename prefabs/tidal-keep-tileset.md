@@ -207,6 +207,12 @@ time (air at feet and head, solid floor below); `region` anchors carry the `bloc
 their gate verbs fill with; `trap` anchors additionally carry the pre-wired
 dispenser socket and the trigger blockstate.
 
+One class is deliberately **not** a footing: a *slot* anchor (spec-0022
+`volley.from_anchor`) marks the opening a summoned projectile spawns in, so it is
+proved **clear and dry** instead of standable — the same condition `DW0446`
+enforces one layer later. Asserting standability there would demand a floor under
+an arrow loop.
+
 **`tk-barrow-field`** — `spawn`; `anchor/l0-tide-line`, `anchor/l0-bonfire`
 (BF1), `anchor/l0-elite-stand`, `anchor/l0-elite-dormant`, `anchor/l0-banner`,
 `anchor/l0-flank-west`, `anchor/l0-flank-east`, `anchor/l0-barrow-1..4`,
@@ -216,7 +222,10 @@ dispenser socket and the trigger blockstate.
 `anchor/l1a-watch-corpse`, `anchor/l1a-gate-timed` *(region, `iron_bars`)*,
 `anchor/l1a-ward`, `anchor/l1a-stair-foot`, `anchor/l1a-trap-boulder` *(trap;
 dispenser `[14,12,15]`, trigger `minecraft:stone_pressure_plate[powered=false]`)*,
-`anchor/l1a-stair-head`, `anchor/l1a-runout`, `anchor/l1a-spill-shaft`,
+`anchor/l1a-volley-slot` *(slot; the arch-rib opening at `[14,11,15]`, one course
+under the dispenser)*, `anchor/l1a-stair-run` *(the volley kill-zone centre,
+`[14,8,19]`)*, `anchor/l1a-stair-head`, `anchor/l1a-runout`,
+`anchor/l1a-spill-shaft`,
 `anchor/l1a-undercroft`, `anchor/l1a-mural-foot`, `anchor/l1a-mural-door`,
 `anchor/l1a-roof-door`.
 
@@ -236,7 +245,9 @@ dispenser `[14,12,15]`, trigger `minecraft:stone_pressure_plate[powered=false]`)
 `anchor/l3-ambush-a`, `anchor/l3-ambush-b`, `anchor/l3-item-alcove`,
 `anchor/l3-ledge`, `anchor/l3-secret`, `anchor/l3-trap-darts` *(trap; dispenser
 `[39,9,28]`, trigger `minecraft:stone_pressure_plate[powered=false]`)*,
-`anchor/l3-dart-lever`, `anchor/l3-unlock`, `anchor/l3-landing`.
+`anchor/l3-gallery-slot` *(slot; the shaft head at `[38,10,27]`, three treads
+above the plate so the climber walks into the fire)*, `anchor/l3-dart-lever`,
+`anchor/l3-unlock`, `anchor/l3-landing`.
 
 **`tk-bell-tower`** — `anchor/l4-rope-room`, `anchor/l4-bonfire` (BF3),
 `anchor/l4-rope-foot`, `anchor/l4-loft-door`, `anchor/l4-loft`,
@@ -304,16 +315,33 @@ Debug doctrine: each lesson is pinned as a generator assertion rather than prose
   head-sweep check on every full-block rise.
 - `assert_field_open` — no barrow may intrude on the elite's bypass lanes.
 - `sightline_clear` — every rafter perch is visible from the loft doorway.
-- `assert_anchors_sane` — every point anchor is standable, every anchor id is a
-  legal `anchor/<kebab>` (or the reserved `spawn`), every trap marker's declared
-  dispenser socket really is a dispenser, and every region is in bounds.
+- `assert_anchors_sane` — every *footing* anchor is standable and every *slot*
+  anchor is clear and dry, every anchor id is a legal `anchor/<kebab>` (or the
+  reserved `spawn`), every trap marker's declared dispenser socket really is a
+  dispenser, and every region is in bounds.
+- `seal_stair_flanks` + `assert_stair_flanks_sealed` — **a flight is entered at
+  its foot, never over its side rail.** Where a floor sits flush one block under
+  a mid-flight tread, the nav model reads a perfectly legal side-step onto that
+  tread; the tread then carries two climbs at once and whichever way it faces,
+  one of them is backwards. The pass newels every such cell (deterministic
+  collect-then-apply, ADR-0006) and the assert proves none is left, on all six
+  pieces including the ones with no stairs today. Found five open flanks in
+  `tk-bell-tower` (both flights rise through open room air; one of them off the
+  x=19 purlin) and one at the head of the gatehouse mural stair.
 - `wire_dust` — every redstone cell has a solid support below, and every up-step
   in a dust staircase has its connection cell clear.
 - `assert_no_unsupported_gravity` — no gravity block over air (`DW0313`'s
   backstop, one layer earlier).
 
 `TK_PROBE=<salt>,<x>,<y>,<z>` dumps a labelled block neighbourhood of any piece —
-the tool that found the light finding below.
+the tool that found the light finding below, and the one that placed both volley
+slots. `TK_DEBUG_STAIRS=1` prints every cell `seal_stair_flanks` closed.
+
+CI runs every generator in `prefabs/` twice into separate trees on each PR
+(`prefab-generators` job): a panicking invariant fails the job and the two trees
+must be byte-identical. Until 2026-08-03 nothing in CI compiled these workspaces
+at all, which is how a tileset with 132 reversed stair blocks reached a playtest
+through a green pipeline.
 
 ## Render notes
 

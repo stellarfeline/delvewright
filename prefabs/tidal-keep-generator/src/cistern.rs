@@ -302,7 +302,7 @@ pub fn build(g: &mut Grid, seed: u64) {
         for x in DS_X0..=DS_X1 {
             g.carve(bx(x, x, w, w + 3, z, z));
             if z > DS_Z0 && descent_walk(z - 1) > w {
-                stairs(g, x, w - 1, z, "minecraft:stone_brick_stairs", "south");
+                stairs(g, x, w - 1, z, "minecraft:stone_brick_stairs", "north");
             } else {
                 g.blk(
                     x,
@@ -328,7 +328,7 @@ pub fn build(g: &mut Grid, seed: u64) {
         for x in EX_X0..=EX_X1 {
             g.carve(bx(x, x, e, e + 3, z, z));
             if z < EX_Z1 && exit_walk(z + 1) < e {
-                stairs(g, x, e - 1, z, "minecraft:stone_brick_stairs", "south");
+                stairs(g, x, e - 1, z, "minecraft:stone_brick_stairs", "north");
             } else {
                 g.blk(
                     x,
@@ -510,6 +510,11 @@ pub fn build(g: &mut Grid, seed: u64) {
     cut_socket(g, Side::East, KEEP_FLOOR_Y, 19);
 
     // ---- 11. Invariants -----------------------------------------------------
+    // Both flights are carved column-by-column, so their flanks are live rock
+    // and this seals nothing today — it is here so a later widening of the
+    // undercroft cannot open a side entry onto a tread without saying so.
+    seal_stair_flanks(g, "minecraft:stone_brick_wall");
+
     let mut lr: Vec<[i32; 3]> = Vec::new();
     for z in DS_Z0..=DS_Z1 {
         lr.push([3, descent_walk(z), z]);
@@ -599,6 +604,16 @@ pub fn anchors() -> Vec<(&'static str, AnchorJson)> {
             "anchor/l3-item-alcove",
             a_pos([21, U_WALK, U_Z0 - 1], "south"),
         ),
+        // The two undercroft barrels, as `loot[]` targets (spec-0021): the cell
+        // the furniture occupies, not the footing that reaches it.
+        (
+            "anchor/l3-alcove-cache",
+            a_container([21, U_WALK, U_Z0 - 2], "south"),
+        ),
+        (
+            "anchor/l3-secret-cache",
+            a_container([21, U_WALK, U_Z1], "north"),
+        ),
         (
             "anchor/l3-ledge",
             a_pos([LEDGE_X, ledge_floor(31) + 1, 31], "north"),
@@ -607,6 +622,13 @@ pub fn anchors() -> Vec<(&'static str, AnchorJson)> {
         (
             "anchor/l3-trap-darts",
             a_trap([EX_X0 + 1, dw, DART_Z], "north", DART_DISP, PLATE_BLOCK),
+        ),
+        // spec-0022 traps v2: the gallery fires from the open shaft head one
+        // tread ABOVE the plate, so the climber walks into the fire rather than
+        // being shot in the back. The dispenser below stays as scenery.
+        (
+            "anchor/l3-gallery-slot",
+            a_slot([EX_X0 + 1, exit_walk(DART_Z - 3) + 2, DART_Z - 3], "south"),
         ),
         ("anchor/l3-dart-lever", a_pos([39, KEEP_WALK, 17], "east")),
         ("anchor/l3-unlock", a_pos([35, KEEP_WALK, 19], "west")),

@@ -56,6 +56,57 @@ jobs:
       - name: cargo test (incl. determinism double-build gate)
         run: cargo test --workspace
 
+  # The prefab generators are separate workspaces OUTSIDE `crates/` (so they never
+  # enter the shipped `delvec`), which until now meant `cargo …--workspace` never
+  # saw them and nothing in CI compiled, ran or checked them at all. Their whole
+  # design is that every debugging lesson is pinned as an ASSERT — route
+  # walkability, stair-flank sealing, anchor sanity, gravity substrate, sightlines
+  # — so simply running each generator IS the gate: it either emits or panics.
+  # Wired after the drowned-bell shipped a tileset with 132 reversed stair blocks
+  # (`DW0430`, owner playtest 2026-08-03) through a green pipeline.
+  prefab-generators:
+    name: prefab generators (invariants + determinism)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            prefabs/generator
+            prefabs/cave-generator
+            prefabs/island-generator
+            prefabs/island-terrain-generator
+            prefabs/tidal-keep-generator
+      # fmt only. `clippy -D warnings` is deliberately NOT wired here yet: the
+      # oldest generator (`prefabs/generator`) carries two pre-existing style
+      # lints, and silencing them belongs in its own PR rather than riding along
+      # with a stair fix. Tracked as a follow-up; the correctness gate below is
+      # the one that matters and it covers all five.
+      - name: cargo fmt --check each generator workspace
+        run: |
+          set -euo pipefail
+          for g in generator cave-generator island-generator \
+                   island-terrain-generator tidal-keep-generator; do
+            cargo fmt --manifest-path "prefabs/$g/Cargo.toml" --all -- --check
+          done
+      # Running the generator twice into different trees proves BOTH halves at
+      # once: the invariants (a panic fails the job) and ADR-0006 byte-identity.
+      - name: run every generator twice — invariants hold, output is identical
+        run: |
+          set -euo pipefail
+          for g in generator cave-generator island-generator \
+                   island-terrain-generator tidal-keep-generator; do
+            echo "::group::$g"
+            rm -rf "/tmp/$g-a" "/tmp/$g-b"
+            mkdir -p "/tmp/$g-a" "/tmp/$g-b"
+            cargo run --release --manifest-path "prefabs/$g/Cargo.toml" \
+              -- "/tmp/$g-a" > /dev/null
+            cargo run --release --manifest-path "prefabs/$g/Cargo.toml" \
+              -- "/tmp/$g-b" > /dev/null
+            diff -r "/tmp/$g-a" "/tmp/$g-b"
+            echo "::endgroup::"
+          done
+
   harness:
     name: harness (typecheck, test)
     runs-on: ubuntu-latest

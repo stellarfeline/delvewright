@@ -153,7 +153,7 @@ pub fn build(g: &mut Grid, seed: u64) {
                     } else {
                         "minecraft:mossy_stone_brick_stairs"
                     },
-                    "south",
+                    "north",
                 );
             } else {
                 let pal = if worn { tread_worn() } else { tread_unworn() };
@@ -264,7 +264,7 @@ pub fn build(g: &mut Grid, seed: u64) {
             g.carve(bx(x, x, w, w + 3, z, z));
             let rise = z < MU_Z1 && mural_walk(z + 1) < w;
             if rise {
-                stairs(g, x, w - 1, z, "minecraft:stone_brick_stairs", "south");
+                stairs(g, x, w - 1, z, "minecraft:stone_brick_stairs", "north");
             } else {
                 g.blk(
                     x,
@@ -443,6 +443,11 @@ pub fn build(g: &mut Grid, seed: u64) {
     }
 
     // ---- 11. Invariants -----------------------------------------------------
+    // The boulder stair is carved column-by-column and needs nothing, but the
+    // mural flank's TOP tread comes out flush beside the keep plinth, so the
+    // plinth is a one-block side entry onto it. One newel closes it.
+    seal_stair_flanks(g, "minecraft:mossy_stone_brick_wall");
+
     let mut stair_route: Vec<[i32; 3]> = Vec::new();
     for z in (ST_Z0..=35).rev() {
         let w = if z > ST_Z1 { SHORE_WALK } else { stair_walk(z) };
@@ -496,6 +501,20 @@ pub fn anchors() -> Vec<(&'static str, AnchorJson)> {
         (
             "anchor/l1a-trap-boulder",
             a_trap([14, plate_w, PLATE_Z], "north", DISP, PLATE_BLOCK),
+        ),
+        // spec-0022 traps v2: the consequence is a command payload, so the run
+        // needs a slot to fire FROM and a box to blanket. The slot is the arch
+        // rib's own opening one course under the dispenser — the murder-hole
+        // that was always in the masonry; the dispenser stays as its visible
+        // scenery. Deliberately NOT the dispenser cell itself, which is solid
+        // (`DW0446`).
+        (
+            "anchor/l1a-volley-slot",
+            a_slot([14, DISP[1] - 1, RIB_Z], "south"),
+        ),
+        (
+            "anchor/l1a-stair-run",
+            a_pos([14, stair_walk(19), 19], "north"),
         ),
         ("anchor/l1a-stair-head", a_pos([14, KEEP_WALK, 9], "north")),
         ("anchor/l1a-runout", a_pos([7, KEEP_WALK, 6], "west")),
