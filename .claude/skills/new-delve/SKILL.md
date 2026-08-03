@@ -425,9 +425,13 @@ Then:
      the arithmetic proven, so declare the health you tuned against.
   3. *The die-retry ladder stage*: the bot deliberately dies twice at every
      encounter and proves respawn at the governing checkpoint -> the route back
-     -> the fight re-engages -> no completed objective was lost. Author with
-     that in mind: every encounter needs a checkpoint/bonfire that governs it,
-     and a wave the party must be able to re-fight wants `respawns_on_rest`.
+     -> the encounter is still finishable -> no completed objective was lost.
+     Author with that in mind: every encounter needs a checkpoint/bonfire that
+     governs it, and a wave the party must be able to re-fight wants
+     `respawns_on_rest`. Leaving it off is legitimate — a won fight stays won,
+     and the stage records that as `cleared-before-retry` and passes it. What it
+     reds is `stranded`: nothing left to fight AND the objective unfinished, so
+     the party can neither complete the encounter nor re-fight it.
   4. *The inverted floor gate*: mark a set-piece fight `tier: "elite"` or
      `"boss"` (DSL v0.7, on the wave). The ladder then gives it one UNASSISTED
      bot attempt; if the bot — a poor fencer by design — wins cold, the run

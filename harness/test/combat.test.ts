@@ -16,6 +16,7 @@ import {
   openTrial,
   parseCombatPlan,
   respawnedAtCheckpoint,
+  retryOutcome,
   scriptedDeathCommand,
   trialVerdict,
   type DeathTrial,
@@ -169,11 +170,13 @@ function trial(over: Partial<DeathTrial> = {}): DeathTrial {
     wave: "wave/bellkeeper",
     attempt: 1,
     phase: "first-contact",
+    outcome: "re-engaged",
     cause: undefined,
     respawnPos: [97, 71, -96],
     atCheckpoint: true,
     returned: true,
     reEngaged: true,
+    objectiveComplete: false,
     objectivesIntact: true,
     lostObjectives: [],
     completed: true,
@@ -204,15 +207,49 @@ test("losing a completed objective to a death is state corruption, not difficult
   assert.match(String(v), /obj\/hold-the-gate/);
 });
 
-test("an encounter that does not re-engage is a one-shot fight", () => {
-  assert.match(String(trialVerdict(trial({ reEngaged: false }))), /only be attempted once/);
+// --- what was waiting at the end of the loop (planner ruling 2026-08-03) ------
+
+test("a re-engaged encounter is the ordinary pass", () => {
+  assert.equal(trialVerdict(trial({ outcome: "re-engaged", reEngaged: true })), undefined);
 });
 
-test("the corruption check outranks the re-engage check", () => {
+test("a fight already won before the death is a PASS, not a broken retry loop", () => {
+  // The sacred property is that dying is safe for PROGRESSION, not that the fight
+  // must still be standing. A player who dies to the last mob's parting hit has
+  // won; so has the bot. Reading this as red made the verdict depend on whether
+  // the bot's timed melee happened to finish the wave — the keep-trial fixture
+  // went red then green on consecutive live runs.
+  const v = trialVerdict(
+    trial({ outcome: "cleared-before-retry", reEngaged: false, objectiveComplete: true }),
+  );
+  assert.equal(v, undefined);
+});
+
+test("nothing to fight AND an unfinished objective is a soft lock, loudly", () => {
+  const v = trialVerdict(
+    trial({ outcome: "stranded", reEngaged: false, objectiveComplete: false }),
+  );
+  assert.match(String(v), /STRANDED/);
+  assert.match(String(v), /soft lock/);
+  assert.match(String(v), /obj\/the-keeper/, "the unfinished objective is named");
+});
+
+test("a loop that never established either is unproven, never a pass", () => {
+  assert.match(String(trialVerdict(trial({ outcome: "unproven" }))), /Nothing was proved/);
+});
+
+test("retryOutcome maps the two observations onto the three outcomes", () => {
+  assert.equal(retryOutcome(true, false), "re-engaged");
+  assert.equal(retryOutcome(true, true), "re-engaged", "a live mob outranks a done objective");
+  assert.equal(retryOutcome(false, true), "cleared-before-retry");
+  assert.equal(retryOutcome(false, false), "stranded");
+});
+
+test("the corruption check outranks the stranded check", () => {
   // Both broken at once: report the one that means the delve ate progress, which
   // is the more serious and the more confusing to debug from the other's message.
   const v = trialVerdict(
-    trial({ reEngaged: false, objectivesIntact: false, lostObjectives: ["obj/x"] }),
+    trial({ outcome: "stranded", reEngaged: false, objectivesIntact: false, lostObjectives: ["obj/x"] }),
   );
   assert.match(String(v), /LOST completed progress/);
 });

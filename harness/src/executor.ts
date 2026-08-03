@@ -38,6 +38,7 @@ import {
   floorFinding,
   openTrial,
   respawnedAtCheckpoint,
+  retryOutcome,
   scriptedDeathCommand,
   type AssistWindow,
   type CombatPlan,
@@ -2257,11 +2258,18 @@ export class MineflayerExecutor implements StepExecutor {
         const after = new Set(this.completedObjectives.keys());
         trial.lostObjectives = [...before].filter((o) => !after.has(o));
         trial.objectivesIntact = trial.lostObjectives.length === 0;
-        // Re-engageable: a wave mob is standing here again. `respawns_on_rest`
-        // re-seats the room on a rest; without it the survivors are simply still
-        // there. Either way, something must be left to fight — a wave that dies
-        // with the player is a fight that can only be attempted once.
+        // Two observations, one verdict (see RetryOutcome). A wave mob standing
+        // here again means the fight is retriable. Nothing left to fight is only
+        // a failure if the encounter's objective is ALSO unfinished — then the
+        // party can neither complete it nor re-fight it, which is a soft lock.
+        // A wave already beaten before the death is a won fight staying won.
         trial.reEngaged = Boolean(bot.nearestEntity((e) => isWaveMob(e, bot.entity)));
+        trial.objectiveComplete = this.completedObjectives.has(enc.objective);
+        trial.outcome = retryOutcome(trial.reEngaged, trial.objectiveComplete);
+        process.stderr.write(
+          `[die-retry] ${step.wave} death ${attempt}: ${trial.outcome}` +
+            `${trial.outcome === "cleared-before-retry" ? ` (\`${enc.objective}\` was already complete — the death cost no progress)` : ""}\n`,
+        );
         trial.completed = true;
       } catch (err) {
         trial.abortedWith ??= err instanceof Error ? err.message : String(err);

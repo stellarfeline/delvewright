@@ -855,6 +855,9 @@ class CombatFakeBot extends InteractFakeBot {
    * fault after the death has been taken. The shipped one was the death-aware
    * wait throwing on the very death it was waiting for. */
   failReEngageProbe = false;
+  /** Whether the respawn re-seats the wave (`respawns_on_rest: true` in miniature).
+   * `false` models the legitimate design where a won fight stays won. */
+  reSeatOnRespawn = true;
   /** The live wave mob, or `undefined` once it is down. */
   mob: { id: number; name: string; height: number; position: FakeVec3 } | undefined = {
     id: 7,
@@ -873,7 +876,9 @@ class CombatFakeBot extends InteractFakeBot {
       // poll the death latch and arm a wait, which is exactly the race the spawn
       // counter exists for.
       setTimeout(() => {
-        this.mob = { id: 7, name: "vindicator", height: 2, position: new FakeVec3(1, 64, 0) };
+        if (this.reSeatOnRespawn) {
+          this.mob = { id: 7, name: "vindicator", height: 2, position: new FakeVec3(1, 64, 0) };
+        }
         this.emit("spawn");
       }, 10);
     }, 5);
@@ -957,6 +962,11 @@ test("the die-retry stage survives its OWN scripted death and records both trial
     "both loops reached a verdict",
   );
   assert.deepEqual(dieRetryFindings(trials), [], "and every verdict was clean");
+  assert.deepEqual(
+    trials.map((t) => t.outcome),
+    ["re-engaged", "re-engaged"],
+    "hostiles were standing there again both times",
+  );
   assert.equal(trials[0]!.cause, "delve-bot was slain by Vindicator");
   // The bot really did chat the death command, twice — not a bookkeeping-only pass.
   assert.equal(bot.calls.filter((c) => c === "chat(/damage @s 1000 minecraft:generic)").length, 2);
@@ -1016,4 +1026,63 @@ test("an encounter the stage entered but never died at is engaged, not silent", 
   );
   assert.equal(failures.length, 1);
   assert.match(failures[0]!, /ENGAGED this encounter but proved only 0\/2/);
+});
+
+// --- what was waiting at the end of the loop (planner ruling 2026-08-03) ------
+
+test("a wave already beaten before the death records cleared-before-retry, and passes", async () => {
+  // `respawns_on_rest: false` is a legitimate design — a won fight stays won —
+  // so the wave is simply gone when the bot walks back. With the encounter's
+  // objective COMPLETE, the party that died here can still finish the delve:
+  // the loop worked. Before this, the same fixture went red or green depending
+  // on whether the bot's timed melee happened to finish the wave first.
+  const bot = new CombatFakeBot();
+  bot.mob = undefined; // the fight was won before the scripted death
+  bot.reSeatOnRespawn = false;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+  bot.emit("messagestr", "[dw:complete the-drowned-bell obj/hold-the-gate]");
+
+  await executor.kill(KILL_STEP);
+
+  const trials = executor.deathTrials();
+  assert.equal(trials.length, 2);
+  assert.deepEqual(
+    trials.map((t) => t.outcome),
+    ["cleared-before-retry", "cleared-before-retry"],
+  );
+  assert.ok(trials.every((t) => t.objectiveComplete && !t.reEngaged));
+  assert.deepEqual(dieRetryFindings(trials), [], "a won fight staying won is not a finding");
+  assert.deepEqual(
+    dieRetryCoverageFailures(combatPlan().encounters, executor.dieRetryEngagements(), trials),
+    [],
+    "and it counts as full coverage — these are proved trials, not skipped ones",
+  );
+});
+
+test("a wave that vanishes with its objective UNFINISHED is a soft lock, loudly", async () => {
+  // The failure the stage exists to catch, and the one the old uniform
+  // "did not re-engage" red could not tell apart from a won fight: the party can
+  // neither finish the encounter nor fight it again.
+  const bot = new CombatFakeBot();
+  bot.mob = undefined;
+  bot.reSeatOnRespawn = false;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+  // …and no completion marker for obj/hold-the-gate ever arrives.
+
+  await executor.kill(KILL_STEP);
+
+  const trials = executor.deathTrials();
+  assert.deepEqual(
+    trials.map((t) => t.outcome),
+    ["stranded", "stranded"],
+  );
+  assert.ok(trials.every((t) => !t.objectiveComplete && !t.reEngaged));
+  const findings = dieRetryFindings(trials);
+  assert.equal(findings.length, 2, "every stranded trial is a red finding");
+  assert.match(findings[0]!, /STRANDED/);
+  assert.match(findings[0]!, /obj\/hold-the-gate/);
 });
