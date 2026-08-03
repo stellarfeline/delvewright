@@ -131,7 +131,18 @@ carry a dialogue-root **swap**, so spec-0020's cast-ledger templates (`cast_root
 `cast_bark_cycle`, `cast_none_silent`) simply do not exist in its output. It has no
 `interact` objective either, so the `interact` templates (`verb_interact` and
 `verb_interact_held`, the held-vs-carried proof) are likewise absent — CI therefore
-runs `crates/dsl/fixtures/valid/keep-trial` as a third pass.
+runs `crates/dsl/fixtures/valid/keep-trial` as a third pass. It has no bonfire and
+no wave, and no lane anywhere in the repo's tier-2 set, so the whole souls retry
+loop (`souls_bonfire_rest`/`_reseat`/`_options`, `souls_reseat_stationed`,
+`wave_census`) and the whole TD-lane family (`souls_td_patrol_nbt`,
+`souls_td_lane_march`, `souls_td_lane_release`, `souls_td_lane_reseat`,
+`souls_td_aggro_edge`) were emitted and never executed — including the codec-trap
+test, whose entire reason to exist is that a wrong `patrol_target` key is
+invisible to every static proof. `crates/compiler/tests/fixtures/souls-bonfire`
+and `crates/compiler/tests/fixtures/souls-td-lanes` are the fourth and fifth
+passes. They are two fixtures and not one because `DW0478` forbids a bonfire
+inside a hostile's aggro range, and the lane fixture's corridor tileset has no
+cell more than 16 blocks off its own lane.
 
 `DELVE_OUTPUT` (and `PACKTEST_CONTAINER`, since container names are Docker-global
 while `-p` only isolates volumes and networks) let the same profile boot a second
