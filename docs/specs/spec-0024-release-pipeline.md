@@ -1,6 +1,6 @@
 # spec-0024: Release pipeline — from green campaign branch to joinable delve
 
-- **Status**: Proposed
+- **Status**: Approved (owner approval in conversation, 2026-08-03)
 - **ADRs**: 0007 (split licensing), 0008 (CI as arbiter), 0009 (pinned MC),
   0010 (OCI packaging), 0014 (creator distribution)
 - **Depends on**: island content PR merge (first release candidate);

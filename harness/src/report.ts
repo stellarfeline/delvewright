@@ -14,7 +14,27 @@
 // runs of the same delve diff cleanly.
 
 import { writeFile } from "node:fs/promises";
-import type { AssistWindow, DeathTrial } from "./combat.ts";
+import type { AssistWindow, DeathTrial, EncounterPhase, EncounterTier } from "./combat.ts";
+
+/**
+ * One planned encounter, and how the run actually approached it.
+ *
+ * Added by task #102. `assist_windows: []` on a run where the bot demonstrably
+ * died was unreadable: spec-0023 takes NO assist while the die-retry stage is
+ * deliberately dying, and none on a billed `elite`/`boss`'s honest first
+ * attempt, so an empty ledger is often exactly per policy — but it looks
+ * identical to an assist mechanism that was never wired. Stating the policy and
+ * the phase the run reached per encounter makes the two distinguishable in the
+ * artifact, which is the only evidence a reader has.
+ */
+export interface EncounterReport {
+  readonly encounter: string;
+  readonly wave: string;
+  readonly tier: EncounterTier;
+  readonly assistPolicy: "assisted" | "unassisted-first";
+  readonly phaseReached: EncounterPhase;
+  readonly assistWindows: number;
+}
 
 /** The ladder's labelled stages. */
 export const STAGES = ["critical-path", "die-retry"] as const;
@@ -37,6 +57,7 @@ export class RunReport {
   private readonly assists: AssistWindow[] = [];
   private readonly trials: DeathTrial[] = [];
   private readonly floor: string[] = [];
+  private readonly encounters: EncounterReport[] = [];
 
   constructor(campaignId: string, difficulty: string) {
     this.campaignId = campaignId;
@@ -57,6 +78,10 @@ export class RunReport {
 
   recordFloorFinding(finding: string): void {
     this.floor.push(finding);
+  }
+
+  recordEncounters(entries: readonly EncounterReport[]): void {
+    this.encounters.push(...entries);
   }
 
   /** Every advisory the run produced, for the one-line stderr summary. */
@@ -82,6 +107,19 @@ export class RunReport {
           failures: [...r.failures],
         };
       }),
+      // Every encounter the compiler put in the plan, with the assist policy it
+      // is approached under and the phase the run actually reached. Without this
+      // an empty `assist_windows` says nothing: it is the expected reading for a
+      // run that never got past the die-retry stage, and also the reading for an
+      // assist mechanism that was never wired (task #102).
+      encounters: this.encounters.map((e) => ({
+        encounter: e.encounter,
+        wave: e.wave,
+        tier: e.tier,
+        assist_policy: e.assistPolicy,
+        phase_reached: e.phaseReached,
+        assist_windows: e.assistWindows,
+      })),
       // spec-0023 §3: "the run artifact names every assist window (encounter id,
       // ticks)". Loudly, and including any the harness failed to close.
       assist_windows: this.assists.map((w) => ({
@@ -99,12 +137,18 @@ export class RunReport {
         wave: t.wave,
         attempt: t.attempt,
         phase: t.phase,
+        cause: t.cause ?? null,
         respawn_pos: t.respawnPos ?? null,
         at_checkpoint: t.atCheckpoint,
         returned: t.returned,
         re_engaged: t.reEngaged,
         objectives_intact: t.objectivesIntact,
         lost_objectives: [...t.lostObjectives],
+        // A trial the run abandoned half-way is still IN this array — that is the
+        // point of recording on death — so every entry says whether its loop
+        // actually reached a verdict.
+        completed: t.completed,
+        aborted_with: t.abortedWith ?? null,
       })),
       floor_findings: [...this.floor],
     };

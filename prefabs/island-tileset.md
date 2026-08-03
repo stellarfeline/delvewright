@@ -137,7 +137,13 @@ the box outline, enclosure-safe). A terraced **switchback path** — grass-to-st
 gradient plus a coarse-dirt trail, a stair tread on every riser so it is walked
 natively — climbs the south face to a **cave-mouth ledge**; the **boulder gate region**
 (`anchor/boulder`, basalt: what `open-gate`/`set-block` fills to seal or open the
-mouth) sits at the mouth, with a decorative Chekhov boulder beside it. The mouth opens
+mouth) sits at the mouth, with a decorative Chekhov boulder beside it. Where that
+boulder's blob reaches out over the ledge terrace it **weathers the tread**
+(`cobblestone_stairs` → `mossy_cobblestone_stairs`, same facing) instead of dropping a
+rock on it — `distress_blk`, after the owner found stray stone standing on the
+cave-mouth steps (round 13). Distress embeds, it never stacks, and
+`invariants::assert_distress_never_stacks` now fails any tileset that regresses. The
+mouth opens
 into ONE tall-wide **cavern hall** (interior 30×14×24, NOT rooms-and-corridors): a
 cheese store by the entry, a central fire pit (baked lit campfire = the relight
 fixture), a **rock-shelf ramp** (no ladders) up to an empty upper sheep pen, four dark

@@ -22,6 +22,9 @@ class FakeVec3 {
   distanceTo(o: { x: number; y: number; z: number }): number {
     return Math.hypot(this.x - o.x, this.y - o.y, this.z - o.z);
   }
+  offset(dx: number, dy: number, dz: number): FakeVec3 {
+    return new FakeVec3(this.x + dx, this.y + dy, this.z + dz);
+  }
 }
 
 // A fake mineflayer Bot: an EventEmitter with just the surface the executor touches
@@ -104,6 +107,25 @@ test("a death fails an in-flight assert-complete fast with the death diagnostic"
     () => executor.assertComplete(step),
     (err: unknown) => err instanceof BotDeathError && /high place/.test(err.message),
   );
+});
+
+test("a respawn that lands before the wait is armed is still observed", async () => {
+  // mineflayer auto-respawns within a few dozen ms; the caller only reaches
+  // recoverFromDeath after polling the death latch. The old `once("spawn")` was
+  // therefore armed AFTER the event it waited for and burned the full 15s
+  // timeout — free before spec-0023, 15s per scripted death once the die-retry
+  // stage runs (task #102, observed live on the keep-trial fixture).
+  const bot = new FakeBot();
+  const executor = attach(bot);
+  bot.emit("death");
+  bot.emit("spawn"); // the server respawned it before anyone was listening
+  const started = Date.now();
+  await executor.recoverFromDeath();
+  assert.ok(
+    Date.now() - started < 1_000,
+    "the spawn counter cannot miss an event that already fired",
+  );
+  assert.equal(executor.deathDiagnostic(), undefined, "the death latch is cleared");
 });
 
 test("awaitCutscene waits out the cutscene and returns once control is restored", async () => {
@@ -804,4 +826,194 @@ test("interact leaves the hand alone when the step requires no item", async () =
   setTimeout(() => bot.emit("messagestr", "[dw:complete keep-trial obj/unbar]"), 20);
   await executor.interact(interactStep(null));
   assert.deepEqual(bot.calls, ["chat(/trigger dw.i.unbar)"]);
+});
+
+// --- the die-retry stage: the run artifact must never lose a death (task #102) ---
+
+import type { KillStep } from "../src/critical-path.ts";
+import {
+  dieRetryCoverageFailures,
+  dieRetryFindings,
+  trialVerdict,
+  type CombatPlan,
+} from "../src/combat.ts";
+
+/**
+ * A FakeBot that can be driven through a whole `kill` step with the die-retry
+ * stage on.
+ *
+ * The fake server does two things a real one does: it kills the bot when the
+ * harness `/damage`s itself (then respawns it), and it re-seats the wave mob on
+ * respawn — `respawns_on_rest` in miniature. `attack` puts the mob down, so both
+ * `tradeBlows` and `fightWave` terminate in a poll or two instead of burning
+ * their real budgets.
+ */
+class CombatFakeBot extends InteractFakeBot {
+  /** Whether `/damage @s` actually kills the bot (the bot is opped for it). */
+  scriptedDeathsLand = true;
+  /** Injected fault: the re-engage probe throws, standing in for ANY unexpected
+   * fault after the death has been taken. The shipped one was the death-aware
+   * wait throwing on the very death it was waiting for. */
+  failReEngageProbe = false;
+  /** The live wave mob, or `undefined` once it is down. */
+  mob: { id: number; name: string; height: number; position: FakeVec3 } | undefined = {
+    id: 7,
+    name: "vindicator",
+    height: 2,
+    position: new FakeVec3(1, 64, 0),
+  };
+  override chat(message: string): void {
+    this.calls.push(`chat(${message})`);
+    if (!message.startsWith("/damage") || !this.scriptedDeathsLand) return;
+    setTimeout(() => {
+      this.emit("messagestr", "delve-bot was slain by Vindicator");
+      this.emit("death");
+      // The wave is re-seated by the respawn, as `respawns_on_rest` would. The
+      // respawn lands FAST, as a real server's does — faster than the harness can
+      // poll the death latch and arm a wait, which is exactly the race the spawn
+      // counter exists for.
+      setTimeout(() => {
+        this.mob = { id: 7, name: "vindicator", height: 2, position: new FakeVec3(1, 64, 0) };
+        this.emit("spawn");
+      }, 10);
+    }, 5);
+  }
+
+  nearestEntity(): unknown {
+    if (this.failReEngageProbe) throw new Error("mineflayer blew up probing the re-engage");
+    return this.mob;
+  }
+
+  attack(): void {
+    this.calls.push("attack");
+    this.mob = undefined; // one swing is enough in the fake world
+  }
+
+  async lookAt(): Promise<void> {}
+}
+
+const KILL_STEP: KillStep = {
+  action: "kill",
+  objective: "obj/hold-the-gate",
+  wave: "wave/gate-assault",
+  pos: [0, 64, 0],
+  tag: "dw.wave.gate_assault",
+  count: 1,
+  sneak: false,
+};
+
+const ENCOUNTER = {
+  wave: "wave/gate-assault",
+  objective: "obj/hold-the-gate",
+  step: 11,
+  tier: "ordinary" as const,
+  pos: [0, 64, 0] as [number, number, number],
+  count: 1,
+  respawns_on_rest: true,
+  checkpoint: [0, 64, 0] as [number, number, number],
+};
+
+function combatPlan(): CombatPlan {
+  return {
+    version: "0.6.0",
+    campaignId: "the-drowned-bell",
+    difficulty: "normal",
+    encounters: [
+      {
+        wave: ENCOUNTER.wave,
+        objective: ENCOUNTER.objective,
+        step: ENCOUNTER.step,
+        tier: ENCOUNTER.tier,
+        pos: ENCOUNTER.pos,
+        count: ENCOUNTER.count,
+        respawnsOnRest: true,
+        checkpoint: ENCOUNTER.checkpoint,
+      },
+    ],
+  };
+}
+
+test("the die-retry stage survives its OWN scripted death and records both trials", async () => {
+  // The shipped defect (the-drowned-bell round 3): the stage waited for its
+  // scripted death with the harness's death-AWARE poll, which throws the recorded
+  // BotDeathError the instant one exists. So the wait threw on the very death it
+  // was asked for, `kill` aborted, the run blamed the content ("bot died … likely
+  // cause: Hollow Gate-Warder") and the artifact shipped `die_retry: []` with
+  // `passed: true`. No die-retry trial could EVER complete.
+  const bot = new CombatFakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+  await executor.kill(KILL_STEP);
+
+  const trials = executor.deathTrials();
+  assert.equal(trials.length, 2, "spec-0023 takes two scripted deaths per encounter");
+  assert.deepEqual(
+    trials.map((t) => t.phase),
+    ["first-contact", "mid-fight"],
+  );
+  assert.ok(
+    trials.every((t) => t.completed),
+    "both loops reached a verdict",
+  );
+  assert.deepEqual(dieRetryFindings(trials), [], "and every verdict was clean");
+  assert.equal(trials[0]!.cause, "delve-bot was slain by Vindicator");
+  // The bot really did chat the death command, twice — not a bookkeeping-only pass.
+  assert.equal(bot.calls.filter((c) => c === "chat(/damage @s 1000 minecraft:generic)").length, 2);
+});
+
+test("a loop abandoned after the death still carries the death in the artifact", async () => {
+  // The integrity rule: a scripted death that HAPPENED is in the report the moment
+  // it happens, however the run ends. Before this, the trial was appended only
+  // after the whole loop succeeded, so an abort discarded it — and the stage, with
+  // nothing recorded and therefore no findings, read `passed: true`.
+  const bot = new CombatFakeBot();
+  bot.failReEngageProbe = true;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+
+  await assert.rejects(() => executor.kill(KILL_STEP), /blew up probing the re-engage/);
+
+  const trials = executor.deathTrials();
+  assert.equal(trials.length, 1, "the death that happened is recorded");
+  assert.equal(trials[0]!.completed, false);
+  assert.match(String(trials[0]!.abortedWith), /blew up probing the re-engage/);
+  // …and it reads RED, not silent: an unfinished trial is never a passed one.
+  assert.match(String(trialVerdict(trials[0]!)), /ABANDONED/);
+  const failures = [
+    ...dieRetryFindings(trials),
+    ...dieRetryCoverageFailures(
+      combatPlan().encounters,
+      executor.dieRetryEngagements(),
+      trials,
+    ),
+  ];
+  assert.ok(failures.length > 0, "the stage cannot report a pass");
+  assert.ok(failures.some((f) => /ENGAGED this encounter but proved only 0\/2/.test(f)));
+});
+
+test("an encounter the stage entered but never died at is engaged, not silent", async () => {
+  // The approach leg fails, so no death is ever taken. Nothing to record — which
+  // is exactly the silence that used to read as a pass. The engagement is booked
+  // before the walk, so coverage still fails the stage.
+  const bot = new CombatFakeBot();
+  bot.entity.position = new FakeVec3(0, 64, 0);
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  const plan = combatPlan();
+  executor.useCombatPlan(plan, true);
+  const far: KillStep = { ...KILL_STEP, pos: [400, 64, 400] };
+
+  await assert.rejects(() => executor.kill(far));
+
+  assert.equal(executor.deathTrials().length, 0);
+  assert.ok(executor.dieRetryEngagements().has("wave/gate-assault"));
+  const failures = dieRetryCoverageFailures(
+    plan.encounters,
+    executor.dieRetryEngagements(),
+    executor.deathTrials(),
+  );
+  assert.equal(failures.length, 1);
+  assert.match(failures[0]!, /ENGAGED this encounter but proved only 0\/2/);
 });
