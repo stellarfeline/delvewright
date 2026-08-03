@@ -830,7 +830,7 @@ test("interact leaves the hand alone when the step requires no item", async () =
 
 // --- the die-retry stage: the run artifact must never lose a death (task #102) ---
 
-import type { KillStep } from "../src/critical-path.ts";
+import type { KillStep, SelectClassStep } from "../src/critical-path.ts";
 import {
   dieRetryCoverageFailures,
   dieRetryFindings,
@@ -887,6 +887,14 @@ class CombatFakeBot extends InteractFakeBot {
    * stands in for ANY unexpected fault once the death has been taken. The shipped
    * one was the death-aware wait throwing on the very death it waited for. */
   failReEngageProbe = false;
+  /** Where the server puts the bot on respawn. `undefined` = it never moves — the
+   * default, which keeps every other test's geometry exactly as it was. */
+  respawnAt: [number, number, number] | undefined;
+  /** The route back from the respawn is not walkable — the bell run-five symptom. */
+  failReturnLeg = false;
+  /** The server did NOT keep the inventory across the death (a broken
+   * `gamerule keep_inventory true` seal). */
+  loseKitOnDeath = false;
   /** How the respawn re-seats the wave. `undefined` = do not re-seat at all. */
   reSeat: ReseatSpec | undefined = { count: 1 };
   /** Delay before the re-seated wave becomes visible to the client — entity
@@ -899,6 +907,26 @@ class CombatFakeBot extends InteractFakeBot {
     super();
     this.seat(1);
   }
+
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    goto: async (): Promise<void> => {
+      this.calls.push("goto");
+      // A route walkable on the way in and not on the way back: exactly what a
+      // respawn dumped somewhere unreachable looks like to the bot.
+      if (this.failReturnLeg && this.died) {
+        throw new Error("no path to the encounter from here");
+      }
+    },
+  };
 
   /** Replace the tracked wave with `count` fresh mobs. */
   seat(count: number, opts: ReseatSpec | Omit<ReseatSpec, "count"> = {}): void {
@@ -925,11 +953,18 @@ class CombatFakeBot extends InteractFakeBot {
       name: "zombie",
       height: 2,
       metadata: { [ZOMBIE_HEALTH_IDX]: health },
-      attributes: { "minecraft:max_health": { value: FULL_HEALTH } },
-      get position(): FakeVec3 {
+      // The fault sits on `attributes` because the re-engage probe is its ONLY
+      // reader. `position` is also read by the walk-back's threat scan, so a fault
+      // there aborts the RETURN LEG instead — which the trial catches by design
+      // (`returned: false`), leaving this test never reaching the abort path it
+      // exists for (task #120).
+      get attributes(): Record<string, { value: number }> {
         if (self.failReEngageProbe && self.died) {
           throw new Error("mineflayer blew up probing the re-engage");
         }
+        return { "minecraft:max_health": { value: FULL_HEALTH } };
+      },
+      get position(): FakeVec3 {
         return new FakeVec3(d, 64, 0);
       },
     };
@@ -947,6 +982,13 @@ class CombatFakeBot extends InteractFakeBot {
       // counter exists for.
       setTimeout(() => {
         this.entities = {};
+        // `gamerule keep_inventory true` is what a delve seals; a server without
+        // it hands the player back an empty bag.
+        if (this.loseKitOnDeath) this.carried = [];
+        // A respawn puts the player at their spawn point, which is somewhere else.
+        if (this.respawnAt) {
+          this.entity.position = new FakeVec3(...this.respawnAt);
+        }
         const reseat = this.reSeat;
         if (reseat) {
           const apply = (): void => this.seat(reseat.count ?? 0, reseat);
@@ -1054,6 +1096,95 @@ test("the die-retry stage survives its OWN scripted death and records both trial
   assert.equal(trials[0]!.cause, "delve-bot was slain by Vindicator");
   // The bot really did chat the death command, twice — not a bookkeeping-only pass.
   assert.equal(bot.calls.filter((c) => c === "chat(/damage @s 1000 minecraft:generic)").length, 2);
+});
+
+/** The class step the die-retry stage used to replay after every death. */
+const SELECT_CLASS_STEP: SelectClassStep = {
+  action: "select-class",
+  class: "class/warden",
+  command: "/trigger dw.class set 1",
+};
+
+test("a scripted death re-arms the bot WITHOUT re-selecting the class", async () => {
+  // task #120, the-drowned-bell run five. The re-arm used to replay `select-class`.
+  // The `dw.class` trigger is re-enabled for every player on every tick and
+  // `class_apply_<class>` ENDS IN `teleport @s <campaign entry point>`, so every
+  // post-death re-arm silently warped the bot from the checkpoint it had just
+  // respawned on back to the start of the delve — 150 blocks and eight levels away
+  // on the bell. `respawn_pos` was measured correctly at the bonfire and made a lie
+  // one second later, and the walk back then measured a route no dying player walks.
+  const bot = new CombatFakeBot();
+  bot.carried = [{ name: "iron_sword", type: 1 }];
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+  await executor.selectClass(SELECT_CLASS_STEP);
+  await executor.kill(KILL_STEP);
+
+  assert.equal(
+    bot.calls.filter((c) => c === `chat(${SELECT_CLASS_STEP.command})`).length,
+    1,
+    "the class trigger is chatted once, at the start of the run, and never after a death",
+  );
+  // What a respawn DOES need: the kept kit back on. `keep_inventory` is sealed by
+  // the compiler, so re-equipping is the whole of a legitimate re-arm.
+  assert.ok(
+    bot.calls.filter((c) => c === "equip(iron_sword,hand)").length >= 3,
+    `the kit goes back on after each of the two deaths: ${bot.calls.join(",")}`,
+  );
+  assert.ok(
+    executor.deathTrials().every((t) => t.kitKept),
+    "and the kit survived every death",
+  );
+});
+
+test("a kit lost across a death reds the trial — keep_inventory is the seal", async () => {
+  const bot = new CombatFakeBot();
+  bot.carried = [{ name: "iron_sword", type: 1 }];
+  bot.loseKitOnDeath = true;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+  await executor.selectClass(SELECT_CLASS_STEP);
+  await executor.kill(KILL_STEP);
+
+  const trials = executor.deathTrials();
+  assert.ok(trials.length > 0);
+  assert.equal(trials[0]!.kitKept, false);
+  assert.match(String(trialVerdict(trials[0]!)), /EMPTY-HANDED/);
+});
+
+test("a trial that never walked back reports NO re-engagement observation", async () => {
+  // The run-five artifact carried, in ONE trial: `returned: false` ("the route from
+  // the respawn back to the encounter is not walkable"), `re_engaged: true` and
+  // `completed: true`. The probe reads the entities the CLIENT tracks, so a bot
+  // stuck 150 blocks away was reporting on wherever it stood, not on the fight.
+  // "Did not look" and "looked and found nothing" are different facts and neither
+  // is a pass.
+  // The delve's own shape: the checkpoint (a bonfire) is a long way from the fight,
+  // the respawn lands ON it — the loop's premise holds — and the route back is
+  // broken. That is a real content failure and it must read as exactly one.
+  const bot = new CombatFakeBot();
+  bot.respawnAt = [60, 64, 0];
+  bot.failReturnLeg = true;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  const plan = combatPlan();
+  const encounter = { ...plan.encounters[0]!, checkpoint: [60, 64, 0] as [number, number, number] };
+  executor.useCombatPlan({ ...plan, encounters: [encounter] }, true);
+  await assert.rejects(() => executor.kill(KILL_STEP));
+
+  const trials = executor.deathTrials();
+  assert.ok(trials.length > 0);
+  for (const t of trials) {
+    assert.deepEqual(t.respawnPos, [60, 64, 0], "the respawn point is MEASURED, not assumed");
+    assert.equal(t.atCheckpoint, true);
+    assert.equal(t.returned, false);
+    assert.equal(t.reEngaged, false, "no re-engagement is claimed from a fight never reached");
+    assert.equal(t.reengage, undefined, "and no observation is fabricated for the artifact");
+    assert.equal(t.outcome, "unproven");
+  }
+  assert.match(String(trialVerdict(trials[0]!)), /not walkable/);
 });
 
 test("a loop abandoned after the death still carries the death in the artifact", async () => {

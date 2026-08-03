@@ -23,6 +23,7 @@ const TRIAL: DeathTrial = {
   cause: "delve-bot died",
   respawnPos: [97, 71, -96],
   atCheckpoint: true,
+  kitKept: true,
   returned: true,
   reEngaged: true,
   objectiveComplete: false,

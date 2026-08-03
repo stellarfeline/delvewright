@@ -567,6 +567,17 @@ const SPAWN_POLL_MS = 50;
  */
 const REENGAGE_SETTLE_MS = 6_000;
 
+/**
+ * How long the post-respawn re-arm waits for the kept kit to arrive on the wire.
+ *
+ * A respawn keeps the kit — the compiler seals `gamerule keep_inventory true` in
+ * every build — but the inventory is re-sent to the client a few ticks after the
+ * spawn packet, so an immediate read sees an empty bag that is only empty yet.
+ * The wait returns the instant an item shows up; only a bag still empty at the
+ * deadline is a bag that lost its kit.
+ */
+const KIT_SETTLE_MS = 3_000;
+
 /** How far from a rest step's anchor cell its `interaction` affordance may sit. */
 const AFFORDANCE_RADIUS = 3;
 
@@ -748,8 +759,9 @@ export class MineflayerExecutor implements StepExecutor {
   private actorFloorGate = true;
   /** Objectives the compiled path proves — decides which actor fights are reachable. */
   private pathObjectives: ReadonlySet<string> = new Set();
-  /** The last `select-class` step, replayed to re-arm after a scripted death. */
-  private lastSelectClass: SelectClassStep | undefined;
+  /** How many items the bot was carrying the last time it was known to be alive
+   * and kitted. The baseline `keep_inventory` is judged against after a death. */
+  private itemsBeforeDeath = 0;
   /**
    * task #38: how many walked legs have been consumed. Legs are matched in lockstep
    * path order (not by destination coordinate), so an anchor visited more than once
@@ -1551,10 +1563,11 @@ export class MineflayerExecutor implements StepExecutor {
 
   async selectClass(step: SelectClassStep): Promise<void> {
     const bot = this.requireBot();
-    // Remembered so the die-retry stage can re-arm after a scripted death: a
-    // respawn drops the whole kit, and a bare-handed bot proves nothing about
-    // the fight it is about to re-engage (spec-0023 §1).
-    this.lastSelectClass = step;
+    // Deliberately NOT remembered for replay. `class_apply_<class>` ends in
+    // `teleport @s <campaign entry point>`, so re-running this after a death moves
+    // the bot off the very respawn point the die-retry stage exists to measure
+    // (task #120). The post-death re-arm is `rearmAfterRespawn`, which only puts
+    // the kept kit back on.
     // The class-selection dialog button runs `step.command` (a `/trigger`); the
     // bot fires the same command directly. The per-tick handler then applies the
     // kit and teleports the player to the campaign spawn.
@@ -1564,6 +1577,9 @@ export class MineflayerExecutor implements StepExecutor {
     // Equip the kit (sword + armor) so the bot can fight v0.3 combat waves. A
     // no-op for kits without those items.
     await this.equipLoadout();
+    // The baseline every later `keep_inventory` judgement is made against: what a
+    // living, kitted bot carries.
+    this.itemsBeforeDeath = bot.inventory.items().length;
   }
 
   /**
@@ -2514,6 +2530,9 @@ export class MineflayerExecutor implements StepExecutor {
       this.trials.push(trial);
       try {
         const seq = this.deathSeq;
+        // What the bot carries INTO the death — the baseline `keep_inventory` is
+        // judged against on the way out.
+        this.itemsBeforeDeath = bot.inventory.items().length;
         bot.chat(scriptedDeathCommand());
         if (!(await this.awaitDeathAfter(seq, RESPAWN_TIMEOUT_MS))) {
           // The bot is opped for exactly this command; if no death followed, the
@@ -2525,8 +2544,15 @@ export class MineflayerExecutor implements StepExecutor {
           throw new Error(`die-retry: ${trial.abortedWith}`);
         }
         trial.cause = this.death?.likelyCause;
-        trial.respawnPos = await this.respawnAndRearm();
+        const respawn = await this.respawnAndRearm();
+        trial.respawnPos = respawn.pos;
+        trial.kitKept = respawn.kitKept;
         trial.atCheckpoint = respawnedAtCheckpoint(trial.respawnPos ?? [0, 0, 0], enc.checkpoint);
+        process.stderr.write(
+          `[die-retry] ${step.wave} death ${attempt}: respawned at ` +
+            `${trial.respawnPos ? trial.respawnPos.join(",") : "an unknown position"}` +
+            `${trial.atCheckpoint ? "" : ` — NOT the governing checkpoint ${enc.checkpoint?.join(",") ?? "(none)"}`}\n`,
+        );
         try {
           await this.walkTo(step.pos, 3, `die-retry return ${step.wave}`, step.sneak);
           trial.returned = true;
@@ -2537,23 +2563,39 @@ export class MineflayerExecutor implements StepExecutor {
         const after = new Set(this.completedObjectives.keys());
         trial.lostObjectives = [...before].filter((o) => !after.has(o));
         trial.objectivesIntact = trial.lostObjectives.length === 0;
+        trial.objectiveComplete = this.completedObjectives.has(enc.objective);
         // Two observations, one verdict (see RetryOutcome). A wave mob standing
         // here again means the fight is retriable. Nothing left to fight is only
         // a failure if the encounter's objective is ALSO unfinished — then the
         // party can neither complete it nor re-fight it, which is a soft lock.
         // A wave already beaten before the death is a won fight staying won.
-        const obs = await this.awaitReengage(enc, seenBefore);
-        trial.reengage = obs;
-        trial.reEngaged = obs.present > 0;
-        trial.objectiveComplete = this.completedObjectives.has(enc.objective);
-        trial.outcome = retryOutcome(trial.reEngaged, trial.objectiveComplete);
-        process.stderr.write(
-          `[die-retry] ${step.wave} death ${attempt}: ${obs.present}/${obs.declared} wave mob(s) ` +
-            `after ${obs.settleMs}ms` +
-            `${obs.nearest !== undefined ? `, ${obs.nearest.toFixed(1)}–${obs.farthest!.toFixed(1)} blocks from the anchor` : ""}` +
-            `${obs.carriedOver > 0 ? `, ${obs.carriedOver} carried over from a previous life` : ""}` +
-            `${obs.healthReadable > 0 ? `, ${obs.damaged}/${obs.healthReadable} damaged` : ""}\n`,
-        );
+        //
+        // Observed ONLY when the bot got back (task #120). The probe reads the
+        // entities the CLIENT tracks, so a bot standing 150 blocks from the fight
+        // is not observing the encounter at all — it is observing wherever it is
+        // stuck. Reporting that as `re_engaged` produced the run-five artifact in
+        // which one trial said "the route back is not walkable" and "the fight
+        // re-engaged" at once. A trial that never returned leaves `re_engaged`
+        // false, `reengage` null and its outcome `unproven`: not looked at is not
+        // the same fact as looked at and empty, and neither is a pass.
+        if (trial.returned) {
+          const obs = await this.awaitReengage(enc, seenBefore);
+          trial.reengage = obs;
+          trial.reEngaged = obs.present > 0;
+          trial.outcome = retryOutcome(trial.reEngaged, trial.objectiveComplete);
+          process.stderr.write(
+            `[die-retry] ${step.wave} death ${attempt}: ${obs.present}/${obs.declared} wave mob(s) ` +
+              `after ${obs.settleMs}ms` +
+              `${obs.nearest !== undefined ? `, ${obs.nearest.toFixed(1)}–${obs.farthest!.toFixed(1)} blocks from the anchor` : ""}` +
+              `${obs.carriedOver > 0 ? `, ${obs.carriedOver} carried over from a previous life` : ""}` +
+              `${obs.healthReadable > 0 ? `, ${obs.damaged}/${obs.healthReadable} damaged` : ""}\n`,
+          );
+        } else {
+          process.stderr.write(
+            `[die-retry] ${step.wave} death ${attempt}: the bot never got back to the ` +
+              `encounter, so re-engagement was NOT observed (outcome stays \`unproven\`)\n`,
+          );
+        }
         process.stderr.write(
           `[die-retry] ${step.wave} death ${attempt}: ${trial.outcome}` +
             `${trial.outcome === "cleared-before-retry" ? ` (\`${enc.objective}\` was already complete — the death cost no progress)` : ""}\n`,
@@ -2731,20 +2773,75 @@ export class MineflayerExecutor implements StepExecutor {
     }
   }
 
-  /** Wait out a death, note WHERE the bot came back, then replay `select-class` so
-   * it is armed again. The position is read before the re-selection, because the
-   * class trigger teleports — the respawn point is what the checkpoint contract is
-   * about, and it must be measured while it is still observable. */
-  private async respawnAndRearm(): Promise<Vec3Tuple | undefined> {
+  /**
+   * Wait out a death, note WHERE the bot came back, and ready it to fight again
+   * **without moving it**.
+   *
+   * The re-arm used to replay `select-class`, on the premise that "a respawn drops
+   * class state". That premise is false and the replay was destructive (task #120,
+   * the-drowned-bell run five):
+   *
+   *   * false, because the compiler seals `gamerule keep_inventory true` in every
+   *     build — the kit survives the death — and class state lives in scoreboard
+   *     values and player tags, which survive it too;
+   *   * destructive, because `class_apply_<class>` ends in
+   *     `teleport @s <campaign entry point>` and the `dw.class` trigger is
+   *     re-enabled for every player on every tick. Chatting it again therefore
+   *     teleported the bot off the checkpoint it had just respawned on, back to the
+   *     start of the delve — 150 blocks and eight levels away on the bell — and the
+   *     "walk back to the encounter" leg then measured a route no dying player ever
+   *     walks. Every trial recorded a truthful `respawn_pos` at the bonfire and then
+   *     immediately made it a lie.
+   *
+   * So: measure the position, then re-equip what the player kept. Nothing here may
+   * move the bot — the respawn point IS the thing under test.
+   */
+  private async respawnAndRearm(): Promise<{ pos: Vec3Tuple | undefined; kitKept: boolean }> {
     const bot = this.requireBot();
     await this.recoverFromDeath();
     const p = bot.entity?.position;
-    const respawnPos: Vec3Tuple | undefined =
+    const pos: Vec3Tuple | undefined =
       p === undefined ? undefined : [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)];
-    if (this.lastSelectClass) {
-      await this.selectClass(this.lastSelectClass);
+    const kitKept = await this.rearmAfterRespawn();
+    return { pos, kitKept };
+  }
+
+  /**
+   * Ready the bot to fight again after a respawn, without teleporting it.
+   *
+   * `keep_inventory` means the kit is still in the bag; what a respawn does clear
+   * is the *equipped* state a client tracks, so the loadout is put back on. Returns
+   * whether the kit survived: a bag that carried items into the death and is still
+   * empty {@link KIT_SETTLE_MS} after the respawn lost them, which breaks the retry
+   * loop for a human player exactly as it breaks it for the bot.
+   */
+  async rearmAfterRespawn(): Promise<boolean> {
+    const kept = await this.awaitKeptKit();
+    if (!kept) {
+      process.stderr.write(
+        `[death] the bot came back EMPTY-HANDED: it carried items into the death and the ` +
+          `bag is still empty ${KIT_SETTLE_MS}ms after the respawn. The delve seals ` +
+          `\`gamerule keep_inventory true\`, so a lost kit means that seal is not in force\n`,
+      );
     }
-    return respawnPos;
+    await this.equipLoadout();
+    return kept;
+  }
+
+  /**
+   * Wait for the kept inventory to arrive, bounded. `true` the moment an item is
+   * visible (and immediately for a bot that carried nothing into the death — there
+   * is nothing to keep, so nothing was lost).
+   */
+  private async awaitKeptKit(): Promise<boolean> {
+    const bot = this.requireBot();
+    if (this.itemsBeforeDeath === 0) return true;
+    const deadline = Date.now() + KIT_SETTLE_MS;
+    for (;;) {
+      if (bot.inventory.items().length > 0) return true;
+      if (Date.now() >= deadline) return false;
+      await delay(SPAWN_POLL_MS);
+    }
   }
 
   /**

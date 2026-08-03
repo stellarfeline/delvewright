@@ -878,6 +878,19 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   (keep/cave/test say `spawn`, the island tileset says `entry`), so the compiler
   owns the resolution rather than leaving it to per-tileset folklore. Resolving
   **none** of them is `DW0345`.
+- **The class trigger is a live warp — treat it as one-shot.** `class_apply_<c>`
+  ends in `teleport @s <entry point>`, and `tick` re-`enable`s the `dw.class`
+  trigger for every player every tick, so `/trigger dw.class set <n>` teleports
+  whoever runs it back to the start of the delve at any point in a run —
+  already-classed player or not. A human never sees that button twice (the class
+  dialog is shown only `unless score @s dw.classed matches 1`), but anything that
+  *chats* commands can fire it forever. The harness replaying it to "re-arm" after
+  a death is exactly the task-#120 defect: every die-retry trial then walked back
+  from the campaign entry instead of from the checkpoint the player respawned on,
+  while the report — correctly — said the respawn had landed on the bonfire. The
+  legitimate post-death re-arm is *nothing*: `gamerule keep_inventory true` keeps
+  the kit, and `dw.classed` / `dw_class_<c>` are scoreboard and tag state that a
+  death does not touch.
 - **First-join placement is datapack-owned** (not the server's reading of
   level.dat). `tick` runs `execute if score #placed dw.sys matches 1 as
   @a[tag=!dw_joined] run function <ns>:join_place`; `join_place` teleports `@s` to

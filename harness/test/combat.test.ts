@@ -177,6 +177,7 @@ function trial(over: Partial<DeathTrial> = {}): DeathTrial {
     cause: undefined,
     respawnPos: [97, 71, -96],
     atCheckpoint: true,
+    kitKept: true,
     returned: true,
     reEngaged: true,
     objectiveComplete: false,
