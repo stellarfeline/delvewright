@@ -155,9 +155,9 @@ Shell entry points:
 
 | Script | Class | Purpose |
 |---|---|---|
-| `validation/mutex.sh` | agent (**mandatory**) | the only sanctioned way to claim the validation stack. `source validation/mutex.sh`, then `dw_mutex_acquire <name> [wait-s]` / `trap dw_mutex_release EXIT` / `dw_mutex_assert_not_owner_session`. `dw_mutex_release` only works in the shell that acquired (agent tool calls never share shells) — cross-shell coordinators release with `dw_mutex_release_named <holder>`, which matches the HOLDER name exactly and refuses to free `owner-play-session` while the play-profile container is running. Acquisition is `mkdir`'s return value, never inferred from the lock directory existing; the lock names its holder in `HOLDER`, and **`owner-play-session` is sacred** — refuse all Docker work, never wait on it, never steal it. Pair with worker isolation: own compose project (`-p dw-worker-<unique>`), no 25565 host binding, tear down only your own project. See [`../../validation/README.md`](../../validation/README.md) "Sharing the Docker host" |
+| `validation/mutex.sh` | agent (**mandatory**) | the only sanctioned way to claim the validation stack. `source validation/mutex.sh`, then `dw_mutex_acquire <name> [wait-s]` / `trap dw_mutex_release EXIT` / `dw_mutex_assert_not_owner_session`. `dw_mutex_release` only works in the shell that acquired (agent tool calls never share shells) — cross-shell coordinators release with `dw_mutex_release_named <holder>`, which matches the HOLDER name exactly and refuses to free `owner-play-session` while the play-profile container is running. Acquisition is `mkdir`'s return value, never inferred from the lock directory existing; the lock names its holder in `HOLDER`, and **`owner-play-session` is sacred** — refuse all Docker work, never wait on it, never steal it. Pair with worker isolation: own compose project (`-p dw-worker-<unique>`), no 25565 host binding, tear down only your own project — and prove that teardown with `validation/fresh-volumes.sh --project dw-worker-<unique>`, since `down -v` on its own leaves the world volume alive whenever an exited container still holds it. See [`../../validation/README.md`](../../validation/README.md) "Sharing the Docker host" |
 | `validation/warden-probe.sh` | agent (spike) | `[POLL_SECONDS=n] [WATCH_SECONDS=n] [CONTAINER=name] validation/warden-probe.sh` — measures what a summoned 1.21.11 warden actually does (dig-down timing, `dig_cooldown`/`anger` NBT, difficulty effects) against a **throwaway** pinned server, never the shared stack. Refuses to run while the mutex reads `owner-play-session` |
-| `validation/fresh-volumes.sh` | agent | tear the stack down and **prove** the world volumes are gone. Run before any re-run of the bot ladder — a stale volume keeps completed objectives completed and fails a fresh playthrough for reasons unrelated to the delve |
+| `validation/fresh-volumes.sh` | agent | tear a stack down and **prove** its world volumes are gone. Two modes and no default: `--project <compose-project>` removes only that compose project's containers and volumes (what worker isolation requires; honours `COMPOSE_PROJECT_NAME`), `--all` is the daemon-wide sweep and refuses while the mutex reads `owner-play-session`. With neither flag it exits 2 rather than guess — the daemon-wide sweep matches `server-data$` across **every** project and force-removes the pinned `delvewright-*` container names, i.e. it destroys the owner's and other workers' worlds. Run it before any re-run of the bot ladder: `docker compose -p <proj> … down -v` silently leaves `<proj>_server-data` behind whenever an exited container of that project still holds it, and the stale volume carries the scoreboard — so the re-run starts with objectives already complete and the bot reports a **false CONTENT failure** (three misattributed red runs, island round 13) |
 | `validation/render-shots.sh <build-dir> [out-dir]` | agent | turn a build output into the Chunky scene set + shot index (`delve-render scene` + `index`), including the first-person POV shots |
 | `validation/playtest-note-flow.sh` | CI (tier 3) | `EULA=TRUE validation/playtest-note-flow.sh` — drives the whole spec-0006 note loop non-interactively and asserts the report |
 | `validation/rehearsal-flow.sh` | CI (tier 3) | `EULA=TRUE validation/rehearsal-flow.sh` — drives the whole spec-0019 calibration loop (`dw.aim`/`dw.faster`/`dw.mark`/`dw.done` → harvest → `delvec calibrate`) and asserts the patch resolves back to the cell the bot marked |
@@ -178,6 +178,14 @@ npm --prefix harness start              # node src/run.ts <critical-path.json>  
 
 `harness/src/note-bot.ts` is driven by `validation/playtest-note-flow.sh` and
 `harness/src/rehearsal-bot.ts` by `validation/rehearsal-flow.sh`, never by hand.
+
+An `interact` step whose `critical-path.json` entry carries `requires_item` puts
+that item in the bot's **mainhand** before it sends the trigger
+(`src/held-item.ts`), because `requires_item` is held, not carried
+([`compiler.md` §objectives](compiler.md)). Actuation only: the guard stays in the
+datapack, and a bot that cannot hold the item still fails the step on its objective
+marker — but the log now says which of the two happened instead of showing a bare
+30s timeout.
 
 ## 9. Prefab generators (`prefabs/*-generator`, `prefabs/generator`) · agent + CI
 

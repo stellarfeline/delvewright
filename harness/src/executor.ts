@@ -29,6 +29,7 @@ import type {
 } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError, likelyDeathCause } from "./death.ts";
+import { presentAndTrigger } from "./held-item.ts";
 import { CAMPAIGN_TOKEN, markerLine, parseCompletionMarker } from "./markers.ts";
 import { allowNonCollidingEntities, configureLeg } from "./movement.ts";
 import {
@@ -1991,13 +1992,19 @@ export class MineflayerExecutor implements StepExecutor {
     await this.requireObjective(step.objective, `collect ${step.item}`);
   }
 
-  /** Interact at the anchor: go there, then chat the emitted `/trigger` command. */
+  /**
+   * Interact at the anchor: go there, take the required item in hand, then chat
+   * the emitted `/trigger` command.
+   *
+   * The interaction advancement and that chat command both feed the same per-tick
+   * handler, and the datapack applies the `requires_item` + flag guards there —
+   * `requires_item` against the MAINHAND (compiler PR #205), which is why the hand
+   * is loaded first. See {@link presentAndTrigger}.
+   */
   async interact(step: InteractStep): Promise<void> {
     const bot = this.requireBot();
     await this.walkTo(step.pos, 3, `interact ${step.anchor}`, step.sneak);
-    // The interaction advancement and this chat command both feed the same
-    // per-tick handler; the datapack applies the requires_item + flag guards.
-    bot.chat(step.command);
+    await presentAndTrigger<Item>(bot, step, step.anchor);
     await this.requireObjective(step.objective, `interact ${step.anchor}`);
     await delay(EFFECT_SETTLE_MS);
   }
