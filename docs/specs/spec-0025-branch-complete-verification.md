@@ -28,6 +28,16 @@ campaign is verified when **every reachable narrative branch** has been proven
 generation-time review of the compiler-assembled branch chronicle. Each layer
 asserts only what it can honestly own.
 
+**Decompilation principle** (owner, 2026-08-03): the generation workflow is
+natural language → design doc → DSL. Whether the DSL matches the design is
+NOT visible to an LLM — checking would mean simulating compilation in its
+head, which is unreliable by construction. So the compiler compiles the DSL
+*back* into natural language (the chronicle) and the reviewer compares like
+with like, NL against NL. This is the narrative instance of the doctrine the
+visual loop already follows (spec-0015: snapshot/blocking-chart render the
+compiled world back into the reviewer's medium); expect future verification
+surfaces to take the same shape.
+
 ## Design
 
 ### 1. Branches become first-class (DSL, stage 4)
