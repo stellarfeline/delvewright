@@ -304,6 +304,10 @@ pub struct MovePlan {
     pub target: [i32; 3],
     /// Per-tick world positions along the walked path.
     pub waypoints: Vec<[f64; 3]>,
+    /// Per-waypoint yaw (degrees), the bearing of the segment the body is walking
+    /// (see [`yaws_along`]). Without it a tp'd body keeps a stale yaw and glides
+    /// backwards — owner playtest, island round 13.
+    pub yaws: Vec<i32>,
 }
 
 impl MovePlan {
@@ -1341,9 +1345,15 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
     // single-waypoint instant teleport instead of a walk). Keyed by npc id, in
     // campaign effect order (the same deterministic order the dedup uses).
     let mut chained_start: BTreeMap<String, [i32; 3]> = BTreeMap::new();
+    // Facing chains with position: the yaw a leg ends on is the yaw the next leg
+    // starts from (the seed `yaws_along` uses before the first horizontal step).
+    let mut chained_yaw: BTreeMap<String, i32> = BTreeMap::new();
     // The cell route planned for each `(npc, to_anchor)` driver, so a deduped
     // repeat occurrence can be re-checked against its own timeline's seals.
     let mut planned: BTreeMap<(String, String), Vec<[i32; 3]>> = BTreeMap::new();
+    // The yaw each planned driver ends on, so a deduped repeat chains the same
+    // facing forward as the first occurrence did.
+    let mut planned_end_yaw: BTreeMap<(String, String), i32> = BTreeMap::new();
     let mut cache = SealCache::default();
     for (eff, seal) in crate::timeline::walk(plan) {
         let QuestEffect::MoveNpc {
@@ -1404,8 +1414,12 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
                     ));
                 }
             }
-            // The walk still ends here, so the NPC's next leg chains from this target.
+            // The walk still ends here, so the NPC's next leg chains from this
+            // target — and from the facing the shared driver leaves the body in.
             chained_start.insert(npc.as_str().to_string(), target);
+            if let Some(y) = planned_end_yaw.get(&key) {
+                chained_yaw.insert(npc.as_str().to_string(), *y);
+            }
             continue;
         }
         let start = match chained_start.get(npc.as_str()) {
@@ -1456,15 +1470,53 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
             }
         };
         chained_start.insert(npc.as_str().to_string(), target);
-        planned.insert(key, cells.clone());
+        planned.insert(key.clone(), cells.clone());
+        let waypoints = resample(&cells, speed.unwrap_or(DEFAULT_SPEED));
+        // Seed: the facing this body already has — the previous leg's exit yaw if
+        // this NPC has walked before, else the yaw its summon gave it (the home
+        // anchor's declared facing, `emit::npc_summon_commands`).
+        let seed = chained_yaw
+            .get(npc.as_str())
+            .copied()
+            .unwrap_or_else(|| npc_spawn_yaw(plan, npc.as_str()));
+        let yaws = yaws_along(&waypoints, seed);
+        let end_yaw = yaws.last().copied().unwrap_or(seed);
+        chained_yaw.insert(npc.as_str().to_string(), end_yaw);
+        planned_end_yaw.insert(key, end_yaw);
         out.push(MovePlan {
             npc: npc.as_str().to_string(),
             to_anchor: to_anchor.as_str().to_string(),
             target,
-            waypoints: resample(&cells, speed.unwrap_or(DEFAULT_SPEED)),
+            waypoints,
+            yaws,
         });
     }
     Ok(out)
+}
+
+/// The yaw an NPC's summon gives it: its home anchor's declared `facing`, exactly
+/// as `emit::npc_summon_commands` resolves it. The seed a walk starts from, so a
+/// move that opens with no horizontal motion keeps the body's authored facing
+/// instead of snapping it south.
+fn npc_spawn_yaw(plan: &Plan, npc_id: &str) -> i32 {
+    let facing = (|| {
+        let npc = plan
+            .campaign
+            .npcs
+            .content
+            .npcs
+            .iter()
+            .find(|n| n.id.as_str() == npc_id)?;
+        let area = plan.npc_area(npc_id)?;
+        match plan
+            .anchors
+            .get(&(area.to_string(), npc.anchor.to_string()))
+        {
+            Some(ResolvedAnchor::Point { facing, .. }) => facing.clone(),
+            _ => None,
+        }
+    })();
+    crate::emit::facing_yaw(facing.as_deref())
 }
 
 /// A planned `move-actor` (spec-0014): resolved endpoints, the per-tick waypoint
@@ -1529,15 +1581,22 @@ fn yaw_of(dx: f64, dz: f64) -> Option<i32> {
     Some(y)
 }
 
-/// A yaw per waypoint, each tangent to the path (facing the next distinct
-/// waypoint); the last reuses the previous. A puppet tp'd without a matching yaw
-/// moonwalks (task #46 packet evidence).
-fn yaws_along(waypoints: &[[f64; 3]]) -> Vec<i32> {
+/// A yaw per waypoint, each the **exact bearing of the segment about to be
+/// walked** (no smoothing: a corner turns on the tick it is taken); the last
+/// reuses the previous. A body tp'd without a matching yaw moonwalks — proven for
+/// puppets by task #46 packet evidence and reported again for NPCs by the owner at
+/// island round 13 ("NPC 运动时身体朝向不一定是前进的方向").
+///
+/// `seed` is the facing the body already has, used for any leading waypoints with
+/// no horizontal motion of their own (a walk that opens with `resample`'s vertical
+/// step-up leg, or a degenerate zero-length move). An established facing is never
+/// overwritten with a fabricated south.
+fn yaws_along(waypoints: &[[f64; 3]], seed: i32) -> Vec<i32> {
     let n = waypoints.len();
     let mut yaws = vec![0i32; n];
     // Forward pass: each waypoint faces its NEXT step; the final waypoint reuses the
     // last motion direction (so arrival keeps the walk facing, not a snap to south).
-    let mut last = 0i32;
+    let mut last = seed;
     for i in 0..n {
         if i + 1 < n {
             let a = waypoints[i];
@@ -1677,9 +1736,13 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
     // walking on camera. Keyed by actor id, in campaign effect order (the same
     // deterministic order the dedup uses).
     let mut chained_start: BTreeMap<String, [i32; 3]> = BTreeMap::new();
+    // Facing chains with position (see `plan_moves`).
+    let mut chained_yaw: BTreeMap<String, i32> = BTreeMap::new();
     // The cell route planned for each `(actor, to_anchor)` driver, so a deduped
     // repeat occurrence can be re-checked against its own timeline's seals.
     let mut planned: BTreeMap<(String, String), Vec<[i32; 3]>> = BTreeMap::new();
+    // The yaw each planned driver ends on, so a deduped repeat chains it forward.
+    let mut planned_end_yaw: BTreeMap<(String, String), i32> = BTreeMap::new();
     let mut cache = SealCache::default();
     for (eff, seal) in crate::timeline::walk(plan) {
         let QuestEffect::MoveActor {
@@ -1749,8 +1812,12 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                     ));
                 }
             }
-            // The walk still ends here, so the actor's next leg chains from this target.
+            // The walk still ends here, so the actor's next leg chains from this
+            // target — and from the facing the shared driver leaves the puppet in.
             chained_start.insert(actor.as_str().to_string(), target);
+            if let Some(y) = planned_end_yaw.get(&key) {
+                chained_yaw.insert(actor.as_str().to_string(), *y);
+            }
             continue;
         }
         let start = match chained_start.get(actor.as_str()) {
@@ -1806,9 +1873,18 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
             }
         };
         chained_start.insert(actor.as_str().to_string(), target);
-        planned.insert(key, cells.clone());
+        planned.insert(key.clone(), cells.clone());
         let waypoints = resample(&cells, speed.unwrap_or(DEFAULT_SPEED));
-        let yaws = yaws_along(&waypoints);
+        // Seed: the facing the puppet already has — the previous leg's exit yaw,
+        // else the actor's declared spawn `facing` (`emit::actor_facing_yaw`).
+        let seed = chained_yaw
+            .get(actor.as_str())
+            .copied()
+            .unwrap_or_else(|| crate::emit::facing_yaw(a.facing.map(|f| f.token())));
+        let yaws = yaws_along(&waypoints, seed);
+        let end_yaw = yaws.last().copied().unwrap_or(seed);
+        chained_yaw.insert(actor.as_str().to_string(), end_yaw);
+        planned_end_yaw.insert(key, end_yaw);
         out.push(ActorMovePlan {
             actor: actor.as_str().to_string(),
             to_anchor: to_anchor.as_str().to_string(),
@@ -5883,7 +5959,40 @@ mod tests {
         assert_eq!(yaw_of(0.0, 0.0), None);
         // A straight +x path yaws every waypoint east (270), including the last.
         let wps = vec![[0.0, 65.0, 0.0], [1.0, 65.0, 0.0], [2.0, 65.0, 0.0]];
-        assert_eq!(yaws_along(&wps), vec![270, 270, 270]);
+        assert_eq!(yaws_along(&wps, 0), vec![270, 270, 270]);
+    }
+
+    /// The corner turns on the tick it is taken: each waypoint carries the exact
+    /// bearing of the segment it is about to walk, with no smoothing between the
+    /// two legs, and the arrival waypoint keeps the last leg's facing.
+    #[test]
+    fn yaw_turns_at_a_direction_change() {
+        // +x for two steps (east, 270), then +z for two (south, 0).
+        let wps = vec![
+            [0.0, 65.0, 0.0],
+            [1.0, 65.0, 0.0],
+            [2.0, 65.0, 0.0],
+            [2.0, 65.0, 1.0],
+            [2.0, 65.0, 2.0],
+        ];
+        assert_eq!(yaws_along(&wps, 180), vec![270, 270, 0, 0, 0]);
+    }
+
+    /// A leading segment with no horizontal motion (`resample`'s vertical step-up
+    /// leg) keeps the seed — the facing the body already has — instead of
+    /// fabricating a snap to south.
+    #[test]
+    fn yaw_keeps_the_seed_until_the_first_horizontal_step() {
+        // Rise in place, then walk -z (north, 180).
+        let wps = vec![
+            [0.5, 65.0, 0.5],
+            [0.5, 66.0, 0.5],
+            [0.5, 66.0, -0.5],
+            [0.5, 66.0, -1.5],
+        ];
+        assert_eq!(yaws_along(&wps, 90), vec![90, 180, 180, 180]);
+        // A degenerate zero-length move never overrides the established facing.
+        assert_eq!(yaws_along(&[[0.0, 65.0, 0.0]], 90), vec![90]);
     }
 
     // --- v0.6 trap completability proof (spec-0011, DW0342) ---

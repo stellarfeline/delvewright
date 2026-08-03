@@ -906,7 +906,7 @@ fn sealing_commands(
 }
 
 /// Yaw for a facing keyword (MC: yaw 0 = +z/south).
-fn facing_yaw(facing: Option<&str>) -> i32 {
+pub(crate) fn facing_yaw(facing: Option<&str>) -> i32 {
     match facing {
         Some("north") => 180,
         Some("east") => 270,
@@ -4564,7 +4564,14 @@ fn movenpc_bare(npc: &str, to_anchor: &str) -> String {
 /// that teleports the NPC body + interaction hitbox (both carry the id tag) along
 /// the waypoint polyline at the planned speed. Client interpolation smooths the
 /// per-tick jumps into a walk (spike-verified). Deduped by content key; empty for
-/// a campaign with no moves (v0.2/v0.3 stay byte-identical).
+/// a campaign with no moves.
+///
+/// Each `tp` carries the **planned yaw** for that tick (`nav::yaws_along`, pitch
+/// always 0 — a walk is level by construction). A rotation-less `tp` leaves the
+/// body's yaw at whatever its summon or previous beat set, so an NPC routed the
+/// other way slides backwards for the whole walk (owner playtest, island round
+/// 13); the actor puppets have carried their tangent yaw since task #46 and this
+/// is `move-npc` reaching the same standard.
 ///
 /// An `on_arrive` bundle (DSL v0.6, parity with `move-actor`) fires on the
 /// driver's **final-waypoint tick** — exactly the arrival detection `ma_tick`
@@ -4607,9 +4614,9 @@ fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, Stri
         // per-tick driver: tp both body + hitbox to waypoint[t], advance, and
         // reschedule until the path is walked; the final waypoint is the target.
         let mut tick: Vec<String> = Vec::new();
-        for (t, w) in m.waypoints.iter().enumerate() {
+        for (t, (w, y)) in m.waypoints.iter().zip(m.yaws.iter()).enumerate() {
             tick.push(format!(
-                "execute if score #mt_{bare} dw.sys matches {t} run tp @e[tag=dw_npc_{safe}] {} {} {}",
+                "execute if score #mt_{bare} dw.sys matches {t} run tp @e[tag=dw_npc_{safe}] {} {} {} {y} 0",
                 fmt_f64(w[0]),
                 fmt_f64(w[1]),
                 fmt_f64(w[2])
