@@ -510,6 +510,84 @@ fn bonfire_runtime_behaviour_is_packtested() {
     );
 }
 
+/// **Stationed re-seat** (owner ruling 2026-08-04). A beaten `respawns_on_rest`
+/// wave does come back — but it comes back where it was FIRST seated, in the
+/// state it was first seated in, never in the state the party last left it in.
+///
+/// The engine satisfies this by construction: the re-seat re-enters through the
+/// wave's own `spawn_<wave>`, so "the spawn state" and "the stationed state" are
+/// the same bytes. This test pins that identity, because it is the whole reason
+/// the ruling needs no separate re-stationing pass — if a future change ever
+/// gives `wave_reseat_<wave>` a body of its own, the two can drift apart and a
+/// re-seated squad could keep the previous life's routing.
+#[test]
+fn the_reseat_re_enters_through_the_wave_s_own_spawn() {
+    let out = build_fixture();
+    let reseat = fn_body(&out, "wave_reseat_guards");
+    assert_eq!(
+        reseat.lines().count(),
+        2,
+        "the re-seat is exactly `kill` + the authored spawn — any third line is state the \
+         first summon never wrote: {reseat}"
+    );
+    assert!(
+        reseat.trim_end().ends_with(&format!("{NS}:spawn_guards")),
+        "the stationed state IS the spawn state: {reseat}"
+    );
+    // A non-lane wave is stationed by having no routing at all: vanilla-local AI
+    // only, so no patrol NBT may appear on it on any path.
+    let spawn = fn_body(&out, "spawn_guards");
+    assert!(
+        !spawn.contains("Patrolling") && !spawn.contains("patrol_target"),
+        "a non-lane wave stands at its anchor under native AI, never routed: {spawn}"
+    );
+}
+
+/// …and the claim is checked on a live server, from the worst state the wave can
+/// be in: hauled onto the party, off its footing, every mob branded.
+#[test]
+fn the_stationed_reseat_is_packtested() {
+    let out = build_fixture();
+    let t = std::str::from_utf8(
+        out.get(&format!(
+            "packtest-datapack/data/{NS}/test/souls_reseat_stationed.mcfunction"
+        ))
+        .expect("the stationed re-seat PackTest is emitted"),
+    )
+    .unwrap();
+    assert!(
+        t.contains("run tp @e[tag=dw_wave_guards] ~ ~ ~"),
+        "the wave is dragged onto the party BEFORE the re-seat, or the proximity claim is \
+         vacuous: {t}"
+    );
+    assert!(
+        t.contains(&format!("function {NS}:bonfire_rest_0")),
+        "the re-seat is driven through the REAL rest function: {t}"
+    );
+    assert!(
+        t.contains("assert score #n_rsst dw.sys matches 2"),
+        "the authored count is standing again: {t}"
+    );
+    assert!(
+        t.contains("execute store result score #b_rsst dw.sys if entity @e[tag=dw_brand_guards]")
+            && t.contains("assert score #b_rsst dw.sys matches 0"),
+        "not one mob of the previous life survives the re-seat — identity, not arithmetic: {t}"
+    );
+    assert!(
+        t.contains("distance=..1") && t.contains("assert score #d_rsst dw.sys matches 2"),
+        "every mob is back on the wave's own seating footing, not where it was chasing from: {t}"
+    );
+    assert!(
+        t.contains("assert score #p_rsst dw.sys matches 0"),
+        "a non-lane wave carries no patrol NBT after a re-seat either: {t}"
+    );
+    assert!(
+        t.trim_end()
+            .ends_with("tag @a[tag=dw_rsst,limit=1] remove dw_rsst"),
+        "the template leaves no residue for the shared batch: {t}"
+    );
+}
+
 /// The owner's ruling is a claim about two options *differing at runtime*, so a
 /// live server has to see the difference. Health cannot carry it — PackTest fake
 /// players are immune to `/damage`, so a dummy can never be hurt and therefore

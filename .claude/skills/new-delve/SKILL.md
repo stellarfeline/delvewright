@@ -594,6 +594,20 @@ Then:
   `prompt`/`rest_label`/`save_label` only when the fiction wants its own words,
   and keep the two labels button captions (`DW0331`: ~20 Latin / ~12 Han).
   Both the flask and the labels need `dsl_version 0.8.0` on their stage.
+- **Place a bonfire OUT of every hostile's reach.** A rest point is where the
+  party respawns and where every `respawns_on_rest` wave is put back on its
+  feet, so a fire inside a hostile's `follow_range` delivers the party straight
+  into combat on arrival — the build error `DW0478`. The clearance is measured
+  against where the force actually IS: a wave's seated spawn cells, and for a
+  `lane` wave the whole marched polyline (a lane wave walks its corridor while
+  you are elsewhere, so a fire beside the far end of a lane is a fire in the
+  lane). Fighting actors — anything `unleash-actor`ed, or staged `vulnerable` —
+  count too, at their staging anchor. Put fires in side rooms, past the
+  threshold, or beyond the end of the lane; never buy the clearance by
+  shrinking `follow_range`, which retunes the fight to hide the placement.
+  A re-seated wave always comes back **stationed** — a lane wave at its lane
+  start, a plain wave at its anchor — so the safe zone stays true across every
+  rest and every death.
 
 - **Wave tuning**: `follow_range` below ~16 means distant wave mobs never
   engage; a kill objective whose mobs idle is unfinishable-in-practice even
