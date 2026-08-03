@@ -35,9 +35,9 @@ pub use ids::{
 };
 pub use l10n::{
     ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, MARKER_SIGIL, OptionLabel, ScreenNarrate,
-    SoundRef, art_narrates, dialogue_option_labels, each_string, inventory as l10n_inventory,
-    key_speaker, local_id, localize, on_screen_narrates, play_sound_actor_refs, sound_refs,
-    validate_l10n, validate_marker_channel,
+    SoundRef, art_narrates, bonfire_option_labels, dialogue_option_labels, each_string,
+    inventory as l10n_inventory, key_speaker, local_id, localize, on_screen_narrates,
+    play_sound_actor_refs, sound_refs, validate_l10n, validate_marker_channel,
 };
 pub use registry::{
     AnchorRegistry, BlockRegistry, EffectRegistry, EntityRegistry, ItemBackedBlockRegistry,
@@ -47,17 +47,18 @@ pub use registry::{
 pub use schema::stage_schema;
 pub use stages::for_each_campaign_effect;
 pub use stages::{
-    Actor, Ambush, Area, AreaLighting, AreaMitigation, Boundary, BranchDecl, BranchPoint,
-    CameraShot, CameraSubject, CameraTarget, CameraWaypoint, Carrier, CastAbsence, CastBarks,
-    CastDialogue, CastDialogueKeyword, CastEntry, CastPlace, CastPlacement, Class, ClassesContent,
-    DamageKind, DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption,
-    EffectSite, EnchantedItem, EncounterTier, EnvTrigger, EquipItem, Facing, Fixture, Happening,
-    HappeningVerb, Horizon, KitItem, Lethality, Loot, LootItem, MobAttributes, MobEffect,
-    MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces,
-    PlannedQuest, Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role,
-    SequenceStep, Shortcut, ShotStyle, SkinModel, SoundAt, StealthZone, TimedGate, Trap,
-    TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerOn, Wave, WaveLane, WaveMob,
-    WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather,
+    Actor, Ambush, Area, AreaLighting, AreaMitigation, BONFIRE_PROMPT_EN, BONFIRE_REST_LABEL_EN,
+    BONFIRE_SAVE_LABEL_EN, BonfireLabels, Boundary, BranchDecl, BranchPoint, CameraShot,
+    CameraSubject, CameraTarget, CameraWaypoint, Carrier, CastAbsence, CastBarks, CastDialogue,
+    CastDialogueKeyword, CastEntry, CastPlace, CastPlacement, Class, ClassesContent, DamageKind,
+    DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EffectSite,
+    EnchantedItem, EncounterTier, EnvTrigger, EquipItem, Facing, Fixture, Happening, HappeningVerb,
+    Horizon, KitItem, Lethality, Loot, LootItem, MobAttributes, MobEffect, MobEquipment,
+    NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces, PlannedQuest,
+    Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep,
+    Shortcut, ShotStyle, SkinModel, SoundAt, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect,
+    TrapReset, TrapTrigger, Trigger, TriggerOn, Wave, WaveLane, WaveMob, WaveSummon, WorldContent,
+    WorldDifficulty, WorldTime, WorldWeather,
 };
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,

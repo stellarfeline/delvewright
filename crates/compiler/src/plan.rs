@@ -102,6 +102,14 @@ pub struct CheckpointPlan {
     /// party rests at the affordance, not when the effect fires. `false` for a
     /// plain `set-checkpoint` (spec-0012), which is immediate.
     pub rest: bool,
+    /// The bonfire rest dialog's three strings, already resolved against the
+    /// compiler's canonical English (owner ruling 2026-08-03). Meaningless for a
+    /// plain `set-checkpoint`, which shows no dialog.
+    pub prompt: String,
+    /// The **rest and save** button label.
+    pub rest_label: String,
+    /// The **save only** button label.
+    pub save_label: String,
 }
 
 /// A resolved stage-5 `shortcut` (spec-0016 §2), collected in deterministic
@@ -1305,6 +1313,23 @@ impl<'a> Plan<'a> {
         self.checkpoints.iter().filter(|c| c.rest)
     }
 
+    /// Every class-kit **flask** (DSL v0.8, spec-0016 §1): `(class index, kit
+    /// index)` pairs in declaration order — the recovery stacks a bonfire rest
+    /// replenishes to their declared `count`. Empty for a campaign that declares
+    /// none, which is exactly the campaigns whose emission stays byte-identical
+    /// (`DW0476` guarantees a bonfire campaign is never in that set).
+    pub fn flasks(&self) -> Vec<(usize, usize)> {
+        let mut out = Vec::new();
+        for (i, class) in self.campaign.classes.content.classes.iter().enumerate() {
+            for (k, item) in class.kit.iter().enumerate() {
+                if item.flask {
+                    out.push((i, k));
+                }
+            }
+        }
+        out
+    }
+
     /// The collected stealth beat matching a `begin-stealth` effect (by zone
     /// anchors + `grace_ticks`), giving the emitter its 1-based session id.
     pub fn stealth_for(
@@ -1926,7 +1951,7 @@ fn collect_v06_effects(
             for opt in &node.options {
                 for eff in &opt.effects {
                     if let Some((anchor, on_respawn)) = eff.set_checkpoint() {
-                        c.push_checkpoint(anchor.as_str(), on_respawn, step, false);
+                        c.push_checkpoint(anchor.as_str(), on_respawn, step, false, None);
                     }
                 }
             }
@@ -2334,8 +2359,14 @@ impl V06Collector<'_> {
         on_respawn: &[QuestEffect],
         fire_step: usize,
         rest: bool,
+        labels: Option<delvewright_dsl::BonfireLabels<'_>>,
     ) {
         if let Some(pos) = point_any(self.anchors, anchor) {
+            let labels = labels.unwrap_or(delvewright_dsl::BonfireLabels {
+                prompt: None,
+                rest_label: None,
+                save_label: None,
+            });
             self.checkpoints.push(CheckpointPlan {
                 index: self.checkpoints.len(),
                 anchor: anchor.to_string(),
@@ -2343,6 +2374,9 @@ impl V06Collector<'_> {
                 on_respawn: on_respawn.to_vec(),
                 fire_step,
                 rest,
+                prompt: labels.prompt_or_default().to_string(),
+                rest_label: labels.rest_or_default().to_string(),
+                save_label: labels.save_or_default().to_string(),
             });
         }
     }
@@ -2375,12 +2409,18 @@ impl V06Collector<'_> {
 
     fn handle(&mut self, eff: &QuestEffect, fire_step: usize) {
         if let Some((anchor, on_respawn)) = eff.set_checkpoint() {
-            self.push_checkpoint(anchor.as_str(), on_respawn, fire_step, false);
+            self.push_checkpoint(anchor.as_str(), on_respawn, fire_step, false, None);
         } else if let Some((anchor, on_rest)) = eff.bonfire() {
             // A bonfire IS a checkpoint (spec-0016 §1) — it inherits DW0315 /
             // DW0316 by being collected here. It is rooted at the arming step,
             // the earliest beat a rest can happen.
-            self.push_checkpoint(anchor.as_str(), on_rest, fire_step, true);
+            self.push_checkpoint(
+                anchor.as_str(),
+                on_rest,
+                fire_step,
+                true,
+                eff.bonfire_labels(),
+            );
         } else if let Some((zones, on_caught, grace)) = eff.begin_stealth() {
             self.push_stealth(zones, on_caught, grace, fire_step);
         } else if matches!(eff, QuestEffect::EndStealth) {

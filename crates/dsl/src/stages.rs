@@ -832,6 +832,52 @@ pub struct KitItem {
     /// enters the party, given to the first player to pick this class.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub carrier: Option<Carrier>,
+    /// **The flask** (DSL v0.8, spec-0016 §1, owner ruling 2026-08-03): this kit
+    /// entry is the class's recovery item, and resting at a bonfire replenishes
+    /// it to exactly `count`. A campaign that places a `bonfire` and declares no
+    /// flask anywhere in its kits is `DW0476` — the estus loop is what makes
+    /// dying an investment, so a souls campaign without one is a build error, not
+    /// a design choice. Absent on every pre-0.8 kit → emission byte-identical.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub flask: bool,
+}
+
+/// The canonical English title of the bonfire rest dialog (owner ruling
+/// 2026-08-03). Baked at emit time when the campaign authors no `prompt`, in the
+/// `world.boundary.message` tradition: a compiler default is not inventoried, an
+/// authored line is — so a delve that wants this sentence in `zh-cn` authors it.
+pub const BONFIRE_PROMPT_EN: &str = "Bonfire";
+/// The canonical English label of the **rest and save** option.
+pub const BONFIRE_REST_LABEL_EN: &str = "Rest and save";
+/// The canonical English label of the **save only** option.
+pub const BONFIRE_SAVE_LABEL_EN: &str = "Save only";
+
+/// A `bonfire`'s authored rest-dialog strings, each `None` when the campaign
+/// leaves the compiler's canonical English in place
+/// ([`QuestEffect::bonfire_labels`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BonfireLabels<'a> {
+    /// Dialog title; `None` → [`BONFIRE_PROMPT_EN`].
+    pub prompt: Option<&'a str>,
+    /// **Rest and save** button label; `None` → [`BONFIRE_REST_LABEL_EN`].
+    pub rest_label: Option<&'a str>,
+    /// **Save only** button label; `None` → [`BONFIRE_SAVE_LABEL_EN`].
+    pub save_label: Option<&'a str>,
+}
+
+impl BonfireLabels<'_> {
+    /// The dialog title actually emitted.
+    pub fn prompt_or_default(&self) -> &str {
+        self.prompt.unwrap_or(BONFIRE_PROMPT_EN)
+    }
+    /// The **rest and save** label actually emitted.
+    pub fn rest_or_default(&self) -> &str {
+        self.rest_label.unwrap_or(BONFIRE_REST_LABEL_EN)
+    }
+    /// The **save only** label actually emitted.
+    pub fn save_or_default(&self) -> &str {
+        self.save_label.unwrap_or(BONFIRE_SAVE_LABEL_EN)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3015,6 +3061,21 @@ pub enum QuestEffect {
         /// idempotent (the same contract as `set-checkpoint`'s `on_respawn`).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         on_rest: Vec<QuestEffect>,
+        /// Title of the two-option rest dialog (DSL v0.8, owner ruling
+        /// 2026-08-03). Absent = the compiler's canonical English `Bonfire`,
+        /// baked at emit time (the `world.boundary.message` precedent): an
+        /// authored line is inventoried and translates like every other
+        /// player-visible string.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        prompt: Option<String>,
+        /// Label of the **rest and save** button. Absent = `Rest and save`.
+        /// A dialog button is a fixed-width caption, so keep it to ~20 Latin /
+        /// ~12 Han characters (skill *Writing craft* §C) — a wider label scrolls.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rest_label: Option<String>,
+        /// Label of the **save only** button. Absent = `Save only`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        save_label: Option<String>,
     },
     /// Begins a stealth beat (DSL v0.6, spec-0014; owner ruling 2026-08-01:
     /// zone presence alone = hidden — no sneak requirement, which collided with
@@ -3438,10 +3499,19 @@ impl std::fmt::Debug for QuestEffect {
                 .field("anchor", anchor)
                 .field("on_respawn", on_respawn)
                 .finish(),
-            QuestEffect::Bonfire { anchor, on_rest } => f
+            QuestEffect::Bonfire {
+                anchor,
+                on_rest,
+                prompt,
+                rest_label,
+                save_label,
+            } => f
                 .debug_struct("Bonfire")
                 .field("anchor", anchor)
                 .field("on_rest", on_rest)
+                .field("prompt", prompt)
+                .field("rest_label", rest_label)
+                .field("save_label", save_label)
                 .finish(),
             QuestEffect::BeginStealth {
                 zones,
@@ -4231,7 +4301,28 @@ impl QuestEffect {
     /// `(anchor, on_rest)` if this is a `bonfire` effect (spec-0016 §1).
     pub fn bonfire(&self) -> Option<(&AnchorId, &[QuestEffect])> {
         match self {
-            QuestEffect::Bonfire { anchor, on_rest } => Some((anchor, on_rest.as_slice())),
+            QuestEffect::Bonfire {
+                anchor, on_rest, ..
+            } => Some((anchor, on_rest.as_slice())),
+            _ => None,
+        }
+    }
+
+    /// The bonfire's authored rest-dialog strings, each `None` when unauthored
+    /// (the compiler then bakes its canonical English). `None` for every other
+    /// effect. spec-0016 §1, owner ruling 2026-08-03.
+    pub fn bonfire_labels(&self) -> Option<BonfireLabels<'_>> {
+        match self {
+            QuestEffect::Bonfire {
+                prompt,
+                rest_label,
+                save_label,
+                ..
+            } => Some(BonfireLabels {
+                prompt: prompt.as_deref(),
+                rest_label: rest_label.as_deref(),
+                save_label: save_label.as_deref(),
+            }),
             _ => None,
         }
     }

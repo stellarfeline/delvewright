@@ -31,7 +31,8 @@ fn version_line() {
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.contains("delvec 0.1.0"), "{s}");
     // spec-0025 raised the implemented DSL to 0.8.0 (declared branch points, the
-    // per-node `happening`, named endings).
+    // per-node `happening`, named endings); spec-0016 §1's bonfire rulings add
+    // the rest interaction's authorable labels + the class-kit `flask` to it.
     assert!(s.contains("dsl 0.8.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }

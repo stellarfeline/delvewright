@@ -17,7 +17,7 @@
                 "next": "dlg/lore"
               },
               {
-                "label": "We hold. I will stand the watch with you.",
+                "label": "We hold.",
                 "effects": [
                   { "type": "set-flag", "flag": "flag/wait" },
                   { "type": "complete-objective", "objective": "obj/decide" }
@@ -29,7 +29,7 @@
                 }
               },
               {
-                "label": "I run. Keep your drowned road.",
+                "label": "I run.",
                 "effects": [
                   { "type": "set-flag", "flag": "flag/flee" },
                   { "type": "complete-objective", "objective": "obj/decide" }

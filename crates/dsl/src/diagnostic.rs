@@ -165,6 +165,12 @@ pub mod codes {
     /// silent no-op. Either add the bonfire the re-seat is meant to hang off, or
     /// drop the field.
     pub const REST_RESEAT_NO_BONFIRE: &str = "DW0370";
+    /// (spec-0016 §1, owner ruling 2026-08-03) The campaign places a `bonfire`
+    /// but no class kit declares a `flask`. Resting replenishes the flask to its
+    /// declared count; with no flask the rest interaction's whole recovery half
+    /// is a no-op and the souls loop has no consumable to spend, so this is a
+    /// build error rather than a design choice.
+    pub const BONFIRE_NO_FLASK: &str = "DW0476";
     /// (v0.3) A wave mob `entity` is not a known vanilla entity id. (Item-id
     /// checks for `collect.item`, `interact.requires_item` and `give-item.item`
     /// reuse [`ITEM_UNKNOWN`] / `DW0143`.)
