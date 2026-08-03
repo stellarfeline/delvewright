@@ -32,4 +32,5 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0021](spec-0021-container-loot.md) | Container loot + actor equipment | Draft |
 | [spec-0022](spec-0022-traps-v2-command-driven.md) | Traps v2 — physical triggers, command-driven consequences | Draft |
 | [spec-0023](spec-0023-combat-verification-semantics.md) | Combat verification semantics — the machine proves the loop, not the win | Accepted |
+| [spec-0024](spec-0024-release-pipeline.md) | Release pipeline — from green campaign branch to joinable delve | Approved |
 | [spec-0025](spec-0025-branch-complete-verification.md) | Branch-complete narrative verification | Approved |
