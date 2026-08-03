@@ -1030,10 +1030,16 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     index means — while the exported path additionally carries one `rest` step
     after the beat arming each bonfire, so they drift by one per bonfire armed
     earlier. **Every artifact a harness reads states exported coordinates**;
-    `Plan::exported_step` is the one translation, and
+    `Plan::exported_step` is the translation for the main path, and
     `the_combat_plan_step_indexes_the_exported_path` pins it against the real
     emitted documents (the step the plan points at must BE the encounter's kill)
-    rather than against the arithmetic.
+    rather than against the arithmetic. It is deliberately **main-path only**:
+    spec-0025's per-branch paths resequence the same steps, so an index cannot be
+    carried across at all and `emit::rest_step_index` translates through the
+    *objective* the arming beat names instead. On the main path that translation
+    is the identity, which is exactly what makes the simple count valid there and
+    nowhere else. There is one `combat-plan.json`, over the main path, so this
+    never crosses the boundary.
   - `checkpoint` is the last checkpoint/bonfire fired **strictly before** the
     step, omitted when there is none. Strictly, not "at or before": a
     `fire_step` is the step whose COMPLETION arms the checkpoint, and a death

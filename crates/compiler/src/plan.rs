@@ -1369,12 +1369,25 @@ impl<'a> Plan<'a> {
     /// index while being a `critical_path` one).
     ///
     /// **Every artifact a harness reads states EXPORTED coordinates**, and this
-    /// is the one place the translation lives. It mirrors
-    /// `emit::with_bonfire_rest_steps` by construction — a rest for bonfire `b`
-    /// is pushed after the step at `b.fire_step`, so a step at index `i` is
-    /// preceded by one rest per bonfire with `fire_step < i` — and
+    /// is where that translation lives for the MAIN path.
+    ///
+    /// **Scope — the main `critical-path.json` only.** spec-0025's per-branch
+    /// paths are a different *sequence* of the same steps, so an index cannot be
+    /// carried across at all; `emit::rest_step_index` is the general translation
+    /// and goes through the **objective** the arming beat names, because a fire
+    /// is armed by a beat rather than by a position. On the main path that
+    /// translation is the identity (an objective appears at exactly one step),
+    /// which is precisely what makes the count below correct here and nowhere
+    /// else. A branch-path consumer must use `rest_step_index`, never this.
+    ///
+    /// The arithmetic mirrors `emit::with_bonfire_rest_steps` by construction —
+    /// a rest for bonfire `b` is pushed after the step at `b.fire_step`, so a
+    /// step at index `i` is preceded by one rest per bonfire with
+    /// `fire_step < i`. That agreement is not left to inspection:
     /// `the_combat_plan_step_indexes_the_exported_path` pins the two together
-    /// against the real emitted documents rather than against this arithmetic.
+    /// against the real emitted documents (the step the plan points at must BE
+    /// the encounter's kill), so a future change to the splice fails the test
+    /// rather than silently desynchronising this.
     ///
     /// Identity for a campaign with no bonfire.
     pub fn exported_step(&self, step: usize) -> usize {

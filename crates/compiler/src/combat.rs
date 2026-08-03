@@ -144,8 +144,11 @@ pub struct Encounter {
     /// This is **not** the index the harness sees: the exported
     /// `critical-path.json` additionally carries a spliced `rest` step after the
     /// beat that arms each bonfire, so the two drift by one per bonfire.
-    /// [`Plan::exported_step`] is the single translation, and the emitted combat
-    /// plan states exported coordinates.
+    /// [`Plan::exported_step`] is the translation for that path, and the emitted
+    /// combat plan states exported coordinates. (There is exactly one
+    /// `combat-plan.json`, over the main path — spec-0025's per-branch paths
+    /// resequence the same steps and need `emit::rest_step_index` instead, which
+    /// is why this never crosses into them.)
     pub step: usize,
     /// What the content bills the fight as (`ordinary` unless declared).
     pub tier: EncounterTier,
