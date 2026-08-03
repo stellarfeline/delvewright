@@ -576,7 +576,7 @@ pub fn build_with_warnings(
     // vanilla, so they flow through the command-tree validator below and the
     // determinism gate like the main datapack; the shipped delve image excludes
     // this directory (CI-checked, same as packtest-datapack/).
-    crate::creator::emit_creator(plan, &mut out);
+    crate::creator::emit_creator(plan, &mut out, &moves, &actor_moves);
 
     // ---- server ----
     emit_server(plan, &mut out);

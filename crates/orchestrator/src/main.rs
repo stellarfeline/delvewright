@@ -8,11 +8,18 @@
 //! `<manifest>` is the creator overlay's `layout.json` (emitted beside
 //! `creator-datapack/`) — the harvester's only campaign knowledge (area→prefab,
 //! objective→quest). Exit codes: `0` ok · `1` bad input · `≥10` internal error.
+//!
+//! The same pass also harvests spec-0019 `[DelveShot]` stamps (the creator's
+//! `/trigger dw.done`) into a versioned `rehearsal-report.json` **beside** the
+//! playtest report. It is written only when the session actually stamped a
+//! proposal, so a plain note-taking playtest produces exactly the artifact it
+//! did before.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Parser;
+use delvewright_orchestrator::rehearsal::{harvest_rehearsal, rehearsal_json};
 use delvewright_orchestrator::{Layout, harvest, report_json};
 
 #[derive(Parser)]
@@ -28,6 +35,10 @@ struct Cli {
     /// Where to write the report (`-` for stdout).
     #[arg(short, long, default_value = "playtest-report.json")]
     out: String,
+    /// Where to write the spec-0019 rehearsal report. Written only when the log
+    /// carries at least one `[DelveShot]` stamp (`-` for stdout).
+    #[arg(long, default_value = "rehearsal-report.json")]
+    rehearsal_out: String,
 }
 
 fn main() -> ExitCode {
@@ -64,6 +75,24 @@ fn main() -> ExitCode {
         eprintln!("cannot write report {}: {e}", cli.out);
         return ExitCode::from(10);
     }
+    // spec-0019: the shot proposals the creator stamped with `dw.done`. Silent
+    // when the session stamped none — a note-only playtest keeps its old output.
+    let rehearsal = harvest_rehearsal(&log, &layout.campaign_id);
+    if !rehearsal.shots.is_empty() {
+        let json = rehearsal_json(&rehearsal);
+        if cli.rehearsal_out == "-" {
+            print!("{json}");
+        } else if let Err(e) = std::fs::write(&cli.rehearsal_out, &json) {
+            eprintln!("cannot write rehearsal report {}: {e}", cli.rehearsal_out);
+            return ExitCode::from(10);
+        }
+        eprintln!(
+            "harvested {} shot proposal(s) into {}",
+            rehearsal.shots.len(),
+            cli.rehearsal_out
+        );
+    }
+
     eprintln!(
         "harvested {} note(s) from {}",
         report.notes.len(),

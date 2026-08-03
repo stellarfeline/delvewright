@@ -71,6 +71,28 @@ jobs:
       - name: bot fires /trigger dw.note + a note; harvester report is asserted
         run: bash validation/playtest-note-flow.sh
 
+  # ---- creator shot-calibration flow (spec-0019) ------------------------------
+  # Same tier-3 class and same reasoning as note-flow above: a live server + bot.
+  # Tier 1 already proves overlay emission + determinism (compiler tests),
+  # `[DelveShot]` parsing (orchestrator tests) and the snapping / diagnostic
+  # matrix (`delvec calibrate` tests). This job proves the live wiring: the
+  # calibration triggers fire for a plain non-op player, the macro stamp reaches
+  # the server log, and the adjusted numbers survive harvest → calibrate → patch.
+  rehearsal-flow:
+    name: shot calibration flow (spec-0019)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/checkout-content
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: harness/package-lock.json
+      - name: bot adjusts a shot, stamps it, and the harvest is asserted
+        run: bash validation/rehearsal-flow.sh
+
   # ---- multi-arch delve image → GHCR (only after the playthrough is green) ----
   publish-image:
     name: multi-arch delve image → GHCR

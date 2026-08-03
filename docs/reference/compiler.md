@@ -108,6 +108,8 @@ delvec snapshot <dir> [framing] [-o f.png] # draft frame + scene manifest (§7)
 delvec blocking-chart <dir> [-o dir]       # per-elevation cutaway floor plans (§7)
 delvec edit apply   <dir> [--batch f] [-o dir]  # replay edit script (+ candidate), persist on green (§7)
 delvec edit preview <dir> [--batch f] [-o dir]  # same replay + renders, never persists
+delvec calibrate <report> --layout <layout.json> [-o f.json]
+                                           # harvested shot proposals -> anchor+offset DSL patch (§8)
 delvec --version                           # "delvec 0.1.0, dsl 0.6.0, mc 1.21.11"
 ```
 
@@ -1778,6 +1780,19 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0363` | A trap declares a flag gate (`requires_flags` / `forbids_flags`) whose trigger hardware the compiler cannot remove and restore. Trap flag-gating is a **physical** gate: the trigger block leaves the world while the gate is shut and is put back verbatim (blockstate and all) when it opens, so it is only sound for a trigger whose entire state is the block — a pressure plate or a tripwire. A `trapped-chest` trigger carries a block entity with an inventory that removal would destroy, and a gated trap whose `anchor/trap` metadata declares no `trigger_block` names nothing the compiler could put back. Rejecting the gating surface for those cases is deliberate: the alternative is shipping the documented behaviour as folklore, which is exactly what happened before (the flag lists were planned and `DW0172`-checked but read by **no** emission site, so "inactive while the flag is set" did not exist). Build-tier (exit 3), `compiler::emit`. Prescription: declare the plate/tripwire as `trigger_block` on the anchor's prefab metadata (with its blockstate, as a gate anchor declares its fill `block`), switch the trap to a `pressure-plate`/`tripwire` trigger, or gate the story beat that arms the trap instead. |
 | `DW0359` | An NPC or actor **body** stands on, or immediately in front of, an interaction affordance the party has to click (owner island QA, round 7). Bodies are boxes: a mannequin wears its `base_entity`'s standing hitbox (`nav::entity_dims` — one dims table, shared with actor-footprint routing), or the player model's 0.6 × 1.8 when it declares a `skin`; every affordance the compiler summons is a `minecraft:interaction` of `width:1.0f,height:2.0f`, i.e. exactly its anchor cell's column two blocks tall. Five affordance sources, one shape: `interact` objectives, `use`/`strike` triggers, `bonfire` rest points, `shortcut` unlocks and trap `disarm` affordances. **Two tiers, one code**: **error (exit 3)** when the boxes overlap in all three axes — the client's ray-pick reaches the invulnerable body and the affordance can never be clicked, so a required objective is unreachable and the delve soft-locks; **advisory (exit 0)** when they are apart but within 1 block horizontally (Chebyshev) with overlapping vertical spans, because whether a neighbouring body actually shadows the crosshair depends on the approach angle the player takes, which the compiler cannot know. `compiler::eclipse`, run with the referential seals before any occupancy model (pure box arithmetic over resolved cells). This is the geometric statement of `DW0350`, which is symbolic (same anchor *name*) and sees only `use` triggers — an NPC body over an *objective's* affordance, or a 1.95-wide ravager's shoulder reaching into the cell next door, passed silently. It is the check the round-7 island needed: `npc/polyphemus`, a 0.9 × 2.9 warden on `anchor/fire-pit`, hid `obj/harden` and `obj/blind` behind itself. Two exemptions, both about not inventing certainty: a `strike` trigger on an NPC's own anchor summons **no** entity (it rides the NPC's hitbox — nothing to eclipse), and a body the campaign ever **moves** (`move-npc`/`move-actor`, any depth) is skipped, because a declared anchor is only a walker's starting mark and deciding "is it still there when the affordance goes live?" needs a timeline the compiler will not guess (known blind spot: a body walked *onto* an affordance, which wants a destination rule of its own). Prescription: move the body's anchor or the interaction's anchor 2+ blocks apart — **never** make the body intangible, which trades a dead objective for a character the party cannot talk to. |
 
+### DW039x — shot calibration (`delvec calibrate`; spec-0019)
+
+`calibrate` is the only subcommand that reads no campaign and builds no world —
+just a harvested `rehearsal-report.json` plus the build's
+`creator-datapack/layout.json`. Its codes therefore carry their own exit
+mapping, stated per row rather than by the DW03xx section default.
+
+| Code | Meaning |
+|------|---------|
+| `DW0390` | A harvested shot proposal names a cell with **no declared anchor within the 16-block snap radius**, so it cannot be written back into the DSL at all — the DSL has no free-floating world coordinates (spec-0019 §5). Reported per offending cell with the nearest anchor and its distance; the whole shot is left un-patched (a half-snapped dolly would fly a path nobody authored), while every other shot of the same session still is. **Exit 3**, and the patch file is still written. Prescription: declare an anchor near that cell in the prefab's metadata and re-mark the shot, or move the shot to an anchored spot — do NOT widen the radius and do NOT write a raw coordinate into the stage document. |
+| `DW0391` | The rehearsal report and the `--layout` manifest name **different campaigns**: the proposals would snap onto another delve's anchors and silently relocate every camera. Refused before any snapping. **Exit 1**. Prescription: point `--layout` at the `creator-datapack/layout.json` of the build that session actually played — do NOT reuse an older build's manifest. |
+| `DW0392` | The rehearsal report is unreadable, is not a rehearsal report, or carries a schema `version` this `delvec` does not understand (likewise for an unreadable layout manifest). **Exit 1**. Prescription: re-run `delve-harvest` over the session log — the report is a machine artifact and is never hand-written or hand-edited. |
+
 ### DW07xx — workspace tooling (spec-0007; **not `delvec`**)
 
 Separate binaries with their own exit-code schemes; diagnostics to **stderr**.
@@ -2171,3 +2186,113 @@ must be a function of this repo:
   `compiler::atmos`; resource-pack bytes are unchanged.
 - `encode_rgba` (DEFLATE at a pinned level, via the existing `flate2` dep) — the
   snapshot renders, which are megapixel review artifacts.
+
+---
+
+## 8. Cutscene rehearsal + shot calibration (spec-0019)
+
+LLMs are bad at authoring camera positions as `anchor + offset` numbers — three
+island QA rounds shipped shots that pointed the wrong way. spec-0019 moves the
+judgement into the running game: the creator adjusts a **proposal** live and
+harvests it once; the DSL stays the artifact of record.
+
+**Landed (this reference describes only what `delvec` does today):** the shot
+proposal in data storage, the calibration verbs that mutate it, the `dw.done`
+harvest, `delve-harvest`'s `rehearsal-report.json`, and `delvec calibrate`.
+**Not yet landed:** playback — the macro-function dolly, `dw.beat` / `dw.shot`
+replay, `dw.free`, and the compiler-derived state-restore inverses.
+
+### The proposal (`dw:rehearsal` storage, creator overlay only)
+
+`compiler::rehearsal` enumerates every rehearsable **beat** (an effect bundle
+containing a `cutscene`, at any nesting depth) and every **shot** inside it, in
+campaign declaration order, giving each a 1-based id and the **JSON pointer**
+that names its `cutscene` **effect** in the `quests` stage document, plus its
+0-based index within that effect. The pointer names the effect and not the shot
+on purpose: the single-shot spelling (`{path, seconds}`) and its one-entry
+`shots` equivalent are the same cutscene and must emit byte-identical output
+(`v06_cutscene::single_shot_spellings_are_byte_identical`), so a shot's identity
+cannot depend on which spelling was used. A patch applies at
+`<pointer>/shots/<index>` under the multi-shot spelling and at `<pointer>`
+itself under the single-shot one. `compiler::creator` bakes
+that inventory into the overlay:
+
+- `creator/rehearsal/defaults` writes the compiled values into
+  `dw:rehearsal base` (immutable) and copies them to `dw:rehearsal shots` (the
+  live proposal). It runs from `#minecraft:load` **guarded on
+  `unless data storage dw:rehearsal shots`**, so a `/reload` does not discard a
+  proposal the creator is midway through.
+- A campaign with no cutscene emits **no rehearsal artifacts at all** — the
+  overlay is byte-identical to its pre-spec-0019 form, and no dead trigger is
+  registered.
+
+**Everything in the proposal is an integer block cell.** That is the DSL's own
+granularity (a camera waypoint is `anchor + integer offset`, resolved by
+`nav::anchor_offset_point` to `cell + 0.5`), so the write-back round trip is
+lossless — the snap error is identically zero, not "small". It is also the only
+NBT numeric type a function macro substitutes without a type suffix: a `double`
+expands as `12.5d`, which is an unparseable argument to `say` and `tp`. Each
+shot additionally carries `pstr`/`lstr`, the pre-formatted strings the harvest
+stamp substitutes, maintained in lockstep with the numeric `path`/`look` by
+every verb that writes them.
+
+### Calibration verbs (trigger objectives, overlay only)
+
+All take a **1-based** shot id (`-0` cannot express "reset shot 0"). All mutate
+`dw:rehearsal` storage and nothing else — no datapack write, no world edit, no
+campaign scoreboard — which is what lets adjust-and-replay cycle with no reload.
+
+| Trigger | Effect |
+|------|---------|
+| `/trigger dw.mark set <s>` | Append the creator's **eye cell** as the next waypoint of shot `s`. The first mark after a (re)set *replaces* the compiled path (so "first call = start, second = end" reads true); later marks append. The eye cell is derived as `floor((Pos + eye height) × 1000 / 1000)` via scoreboard division, which floors correctly below `y=0`/`z=0` where plain `int 1` truncation would be off by one. |
+| `/trigger dw.mark set -<s>` | Reset shot `s` to its compiled values (`base[s]`). |
+| `/trigger dw.aim set <s>` | Set shot `s`'s `look_at` to the block the creator is looking at. A **bounded, one-shot** ray — `execute anchored eyes positioned ^ ^ ^0.25`, 256 steps ≈ 64 blocks, run on demand, never polled — whose hit cell is read back off a `marker` summoned and killed inside the same command chain (vanilla has no position→score primitive). |
+| `/trigger dw.faster set <s>` / `dw.slower set <s>` | Scale `seconds` by ∓20 % with a floor of one whole second, clamped to 2..30. The one-second floor is why the step is `max(1, 20 %)`: plain integer scaling leaves a 2 s shot at its fixpoint forever. |
+| `/trigger dw.done` | The single harvest — one `[DelveShot]` line per shot. |
+
+The overlay also `say`-stamps a one-line `[DelveShotRoster]` the first time each
+player joins, mapping shot ids to their JSON pointers; without it the creator
+has no way to know what `dw.mark set 3` addresses.
+
+### The harvest stamp
+
+```text
+[DelveShot] shot=<n> beat=<n> ptr=<json-pointer> idx=<n> seconds=<n> look_at=<x,y,z|none> path=<x,y,z;…>
+```
+
+`say`, not `tellraw` — the same channel and the same reason as `[DelveNote]`
+(spec-0006 §3): a system message to players never reaches the server stdout log
+the harvester reads. `shot`/`beat`/`ptr`/`idx` are compile-time constants, so a
+harvested proposal always knows which DSL node its patch belongs on; only the
+live values are macro-substituted.
+
+### `rehearsal-report.json` (`delve-harvest`)
+
+The same harvest pass that writes `playtest-report.json` also parses
+`[DelveShot]` lines into a versioned `rehearsal-report.json` **beside** it,
+written only when the session actually stamped a proposal. Schema version
+`0.1.0`; per shot: `shot`, `beat`, `pointer`, `shot_index`, `path`, `look_at`, `seconds`, the
+stamp's `at` timestamp, and `stamps` (how many times that shot was stamped).
+`dw.done` fired twice keeps the **last** reading — the creator's final word — so
+a report can never silently mix an early and a late state of one loop.
+
+### `delvec calibrate`
+
+```
+delvec calibrate <rehearsal-report.json> --layout <creator-datapack/layout.json> [-o shot-patch.json]
+```
+
+Snaps every proposal cell to the **nearest declared anchor** within
+`SNAP_RADIUS` (16 blocks) and emits `anchor + integer offset` — a zero offset is
+spelled as a bare `{"anchor": …}`, exactly as the DSL does. Ties break on anchor
+id, so the converter is a pure function of its inputs (ADR-0006). The
+resolved-anchor vocabulary comes from `creator-datapack/layout.json`, which
+spec-0019 extended with an `anchors` array (`id`, `area`, `kind`, resolved
+`pos`) and a `shots` roster; it lives there rather than in a new build output
+because it is a creator-loop artifact and the shipped image never carries
+`creator-datapack/`.
+
+The patch is **never applied here**: nothing writes to a stage document from the
+game. The agent applies it, reruns `delvec build`, and the normal proofs
+(`DW0308` air corridors, `DW0347` angular budget) gate the result exactly as
+they gate a hand-written shot.
