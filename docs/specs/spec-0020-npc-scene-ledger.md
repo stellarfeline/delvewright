@@ -37,8 +37,18 @@ been spawned and not explicitly removed:
 - `doing`: free prose. Not machine-checked; it is the LLM's forcing function —
   you cannot fill it without deciding the character's business, and it feeds
   the dialogue stage as context.
-- `dialogue`: the dialogue root available on right-click during this quest, or
-  `"none"`.
+- `dialogue`: what right-click offers during this quest — one of:
+  - a dialogue root id (the full branching tree);
+  - `{"barks": ["…", "…"]}` — a **bark pool** (owner addition, 2026-08-03):
+    right-click yields one inconsequential in-character line, no tree, no
+    consequences. The sleeping giant murmurs in his sleep; a town's
+    background NPCs make small talk instead of standing mute. Lines cycle
+    deterministically (per-NPC counter — no unseeded RNG anywhere near the
+    compiler; runtime cycling is vanilla scoreboard arithmetic). Bark strings
+    are player-visible: they enter the l10n inventory like narrate text.
+  - `"none"` — genuinely no reaction. Legal but the skill treats it as a
+    last resort: if a body is clickable, the world should answer; prefer a
+    bark.
 
 ## 2. Compiler proofs (build tier)
 
@@ -51,12 +61,13 @@ been spawned and not explicitly removed:
    while the history leaves the NPC at `anchor/alcove-4` is an error citing
    both cells and the missing `move-npc`. This is the check that catches
    "the crew stood forgotten in the alcoves" at compile time.
-3. **Dialogue gating**: `dialogue: none` emits suppression of the NPC's
-   right-click advancement for that quest's duration (flag-gated, the same
-   machinery per-option gates use today); a declared root must be the one the
-   gating actually exposes. The sleeping giant's awake tree becomes
-   unreachable *because the cast says so*, not because an author remembered a
-   flag.
+3. **Dialogue gating**: the declaration IS the gate. A declared root must be
+   the one the emitted gating exposes for that quest's duration; `barks`
+   emits the bark cycler in place of the tree; `none` emits suppression —
+   all flag-gated with the same machinery per-option gates use today. The
+   sleeping giant's awake tree becomes unreachable *because the cast says
+   his right-click is a sleep-murmur bark*, not because an author remembered
+   a flag.
 4. **Branch honesty**: where the history is branch-dependent (different
    dialogue outcomes stage different worlds), the declaration must hold on
    every reachable branch, or the quest declares per-branch casts. No
@@ -87,7 +98,10 @@ one version window (the deprecation lever), then the requirement hardens.
       fails, citing both cells; the fixed declaration passes.
 - [ ] Proof 3 fixtures: `dialogue: none` provably suppresses right-click
       advancement (PackTest: interaction record written, no dialog opens,
-      record consumed safely); a declared root stays reachable.
+      record consumed safely); a declared root stays reachable; a `barks`
+      pool cycles deterministically through its lines on repeated
+      right-clicks (PackTest), and bark strings appear in the l10n
+      inventory.
 - [ ] Proof 4 fixture: a branch-divergent position with a single flat
       declaration fails; per-branch casts pass.
 - [ ] Island + drowned-bell rebuilt green with real cast blocks; the island's
