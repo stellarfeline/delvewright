@@ -58,12 +58,25 @@ model (e.g. main agent on `sonnet` → all subagents `sonnet`).
 Campaigns do not live in this repo (CLAUDE.md forbidden zone) — they live in the
 **`delvewright-campaigns` git repo** (symlinked at `campaigns/`, real path
 `../delvewright-campaigns/`; override: `$DELVEWRIGHT_CAMPAIGNS_DIR`). Create
-`campaigns/campaigns/<campaign-id>/` with the six stage JSONs and a
-`GENERATION.md` (prompt verbatim, date, dsl_version, decisions made); build
+`campaigns/campaigns/<campaign-id>/` with the six stage JSONs, a
+`GENERATION.md` (prompt verbatim, date, dsl_version, decisions made), and a
+`DESIGN.md` (the authoritative design record: layout, dramaturgy beats,
+branch/ending table); build
 output goes beside them (gitignored there). After validation passes, **commit the
 campaign in that repo** (conventional message; do not push unless asked). The DSL documents are the artifact
 of record: the delve must be rebuildable byte-identically from them without any
 LLM (ADR-0006/0012).
+
+**Iteration protocol (owner ruling 2026-08-03 — NEVER skip on any revision
+round):** `DESIGN.md` is the single authoritative design document. Every
+iteration round, however mechanical its trigger, (1) changes ONLY what the
+user asked to change — a mechanics fix must not incidentally rewrite story,
+staging, or dialogue; (2) updates `DESIGN.md` in the same commit when an
+approved change moves the design; (3) ends with a **conformance review**:
+diff the campaign's current behavior against `DESIGN.md` beat by beat, and
+report any deviation the user did not request instead of shipping it. Drift
+discovered during review is restored to the design or escalated — never
+silently kept.
 
 ## The loop
 
