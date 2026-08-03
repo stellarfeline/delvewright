@@ -41,6 +41,14 @@ an error — undeclared story fork. Enumerated branches are the product of
 declared branch points, so the set is authored and small, never a combinatorial
 sweep of all flags.
 
+Each branch point additionally REQUIRES a **branch script** (剧本): per
+branch, for every quest from the fork onward, an authored beat synopsis —
+what is true here, what the characters know, what this quest's scene is
+about on THIS branch. This is the forcing function (the spec-0020 `doing`
+pattern): a design that "never wrote the per-node script" cannot compile a
+branch point. The script is the narrative authority everything downstream
+is checked against; missing entries are build errors, not review gaps.
+
 ### 2. Compile-time branch proofs (static layer)
 
 Per enumerated branch, existing proofs re-run under that branch's flag
@@ -82,14 +90,26 @@ Tiering (cost honesty — a full run is ~20 min):
 ### 4. Branch-fact sheets + narrative review (generation-time layer)
 
 Dialogue text carries meaning no compiler can check ("Where is Antiphos,
-Captain" is only wrong because Antiphos is alive HERE). The compiler owns the
-facts; the reviewer owns the reading: per branch, the compiler emits a **fact
-sheet** — who is alive/dead/present/absent per quest under that branch, which
-flags hold, which ending it reaches. The `/new-delve` skill gains a mandatory
-per-branch pass: every dialogue line, bark, and title reachable on a branch is
-reviewed against that branch's fact sheet. The artifact of record is the
-review's output (per-branch sign-off in the generation log), so the step is
-checkable, not folklore.
+Captain" is only wrong because Antiphos is alive HERE). The rubber-stamp risk
+is real: a reviewer handed one derived artifact has no way to know the
+authoritative answer for a node, and will nod. The design closes it from two
+sides:
+
+- **Authority is authored, then machine-anchored.** The per-branch **fact
+  sheet** the compiler emits carries BOTH columns: the authored branch script
+  (§1 — what the author meant here) and the derived facts (what the compiled
+  world actually does: who is alive/dead/present/absent per quest, which
+  flags hold, which ending). The machine-comparable subset (presence, life
+  state, ending) is diffed compiler-side against the cast ledger and staging
+  — divergence between meant and does is a build error before any LLM reads
+  anything. The reviewer never establishes facts; it inherits facts that two
+  independent declarations already agree on.
+- **Review is a positive obligation, not a sign-off.** The `/new-delve`
+  per-branch pass must CITE, for every dialogue line, bark, and title that
+  touches branch-divergent state, the branch-script entry that licenses it —
+  uncited lines fail the pass mechanically. The artifact of record is the
+  citation table in the generation log, so "reviewed" is checkable, never
+  folklore.
 
 ## Out of scope
 
@@ -115,6 +135,12 @@ checkable, not folklore.
 - [ ] Harness completes a scripted-choice branch run on a two-branch fixture;
       release tier runs all branches; PR tier runs diff-touched branches and
       the artifact names skipped ones.
-- [ ] Compiler emits per-branch fact sheets; SKILL.md gains the mandatory
-      per-branch narrative review step (tooling-sync in the same PR).
+- [ ] A branch point whose branch script is missing an entry for any quest
+      from the fork onward fails the build (missing-script DW code + test);
+      divergence between the script's machine-comparable facts and the
+      derived staging facts fails the build with both columns shown.
+- [ ] Compiler emits per-branch fact sheets carrying both the authored
+      script and the derived facts; SKILL.md gains the mandatory per-branch
+      citation review (every branch-divergent line cites its licensing
+      script entry; uncited lines fail) — tooling-sync in the same PR.
 - [ ] Verification changes touch no shipped campaign bytes.
