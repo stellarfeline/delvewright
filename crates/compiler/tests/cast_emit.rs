@@ -179,3 +179,76 @@ fn cast_packtests_are_emitted() {
         assert!(out.contains_key(&p), "missing packtest template {name}");
     }
 }
+
+/// task #133 (island r15): a cast template's dispatch assertion must be
+/// batch-order-free. The generated templates always zeroed every `dw.qa_*` they
+/// read but left the ledger's branch-gate flags (`requires_flags`/
+/// `forbids_flags`) to whatever the batch had — and three sibling verb
+/// templates legitimately end with a campaign flag set to 1, so whichever ran
+/// first made `cast_root_swap`'s later assert read the OTHER branch's clause
+/// (expected `dw.cast 2`, got 3). The consumer now pins every flag its ledger
+/// reads to the value that selects the asserted scene — the generator-side
+/// defense that holds against any future flag-setting template.
+#[test]
+fn cast_root_swap_pins_the_branch_gate_flags_it_asserts_under() {
+    let out = build(&common::compiler_fixtures_dir().join("branch-two-endings"));
+    let t = text(
+        &out,
+        "packtest-datapack/data/hello-world/test/cast_root_swap.mcfunction",
+    );
+
+    // Phase 1 asserts the ungated pre-fork root: every ledger flag pinned 0.
+    // Phase 2 asserts the hold-branch root (`requires flag/wait`): wait pinned
+    // 1, the sibling branch's flee pinned 0 — the exact poison of island r15.
+    let first_assert = t.find("assert score").expect("first assert present");
+    let wait_zero = t
+        .find("scoreboard players set #party dw.f_wait 0")
+        .expect("phase 1 pins wait to 0");
+    let flee_zero = t
+        .find("scoreboard players set #party dw.f_flee 0")
+        .expect("phase 1 pins flee to 0");
+    assert!(
+        wait_zero < first_assert && flee_zero < first_assert,
+        "phase 1's pins precede its assert:\n{t}"
+    );
+    let wait_one = t
+        .find("scoreboard players set #party dw.f_wait 1")
+        .expect("phase 2 pins wait to 1");
+    let flee_zero_again = t
+        .rfind("scoreboard players set #party dw.f_flee 0")
+        .expect("phase 2 re-pins flee to 0");
+    let last_assert = t.rfind("assert score").expect("second assert present");
+    assert!(
+        first_assert < wait_one && wait_one < last_assert,
+        "phase 2's requires-pin sits between the two asserts:\n{t}"
+    );
+    assert!(
+        first_assert < flee_zero_again && flee_zero_again < last_assert,
+        "phase 2 re-pins the sibling branch's flag to 0:\n{t}"
+    );
+    // The pin must precede the phase's dispatch drive, not merely its assert.
+    let last_drive = t
+        .rfind("run function hello-world:cast_")
+        .expect("dispatch driven");
+    assert!(
+        wait_one < last_drive && flee_zero_again < last_drive,
+        "phase 2 pins land before the dispatch runs:\n{t}"
+    );
+}
+
+/// A ledger with no branch-gated clause emits no pin lines — byte identity for
+/// every pre-#133 cast campaign.
+#[test]
+fn unbranched_cast_templates_emit_no_flag_pins() {
+    let out = ledger();
+    for name in ["cast_root_swap", "cast_none_silent"] {
+        let t = text(
+            &out,
+            &format!("packtest-datapack/data/cast-ledger/test/{name}.mcfunction"),
+        );
+        assert!(
+            !t.contains("dw.f_"),
+            "{name} must not touch any flag for an ungated ledger:\n{t}"
+        );
+    }
+}
