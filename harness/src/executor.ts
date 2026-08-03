@@ -23,6 +23,7 @@ import type {
   InteractStep,
   KillStep,
   ReachStep,
+  RestStep,
   SelectClassStep,
   TalkToStep,
   Vec3Tuple,
@@ -36,6 +37,7 @@ import {
   assistPolicy,
   deathPhases,
   floorFinding,
+  checkpointPreconditionFinding,
   observationOf,
   openTrial,
   respawnedAtCheckpoint,
@@ -47,6 +49,7 @@ import {
   type DeathTrialRecord,
   type Encounter,
   type EncounterPhase,
+  type PerformedRest,
   type ReengageObservation,
   type WaveSighting,
 } from "./combat.ts";
@@ -536,6 +539,13 @@ const SPAWN_POLL_MS = 50;
  * still come for the party is a mob the client can see.
  */
 const REENGAGE_SETTLE_MS = 6_000;
+
+/** How far from a rest step's anchor cell its `interaction` affordance may sit. */
+const AFFORDANCE_RADIUS = 3;
+
+/** Grace between the bonfire click and the trigger command: the opener runs as an
+ * advancement reward, so `dw.rest` is enabled a tick or two after the click. */
+const REST_OPEN_SETTLE_MS = 500;
 /** Recent chat lines retained for death-cause diagnosis. */
 const CHAT_BUFFER = 16;
 /**
@@ -681,6 +691,15 @@ export class MineflayerExecutor implements StepExecutor {
   /** Waves the die-retry stage entered, whether or not it finished with them.
    * Engagement without records is the silence the run report must not keep. */
   private readonly dieRetryEngaged = new Set<string>();
+  /** Every `rest` step the PATH declares, and which of them the bot performed —
+   * the die-retry precondition reads both (compiler #220). Declared up front
+   * rather than accumulated as they run, so "the route passed this fire without
+   * resting" is a statement the check can actually make. */
+  private restSteps: readonly PerformedRest[] = [];
+  private readonly restedBonfires = new Set<number>();
+  /** Encounters whose scripted deaths were SKIPPED because no checkpoint was armed. */
+  private readonly preconditionFindings: string[] = [];
+  private readonly preconditionWaves = new Set<string>();
   /** Highest health ever observed per `<wave>/<mob name>` — the stand-in for a
    * max-health attribute vanilla never puts on the wire (see fullHealthOf). */
   private readonly waveFullHealth = new Map<string, number>();
@@ -2229,6 +2248,24 @@ export class MineflayerExecutor implements StepExecutor {
     // encounter is a finding. `dieRetryCoverageFailures` turns an engagement with
     // no completed trial into a red stage, so a run that dies on the way in can
     // never report a passed die-retry (task #102).
+    // PRECONDITION (compiler #220): the loop this stage proves is "death → respawn
+    // at the governing checkpoint → walk back". If that checkpoint was never armed
+    // — a bonfire the route walked past without resting — the respawn lands at
+    // world spawn and every measurement below describes the harness's own gap, not
+    // the delve. Report it as the gap it is and take NO death: a scripted death
+    // here would blame the campaign for a proof that skipped the player loop.
+    const precondition = checkpointPreconditionFinding(
+      enc,
+      this.restSteps,
+      this.restedBonfires,
+      this.currentStep,
+    );
+    if (precondition !== undefined) {
+      this.preconditionFindings.push(precondition);
+      this.preconditionWaves.add(enc.wave);
+      process.stderr.write(`[die-retry] ${precondition}\n`);
+      return;
+    }
     this.dieRetryEngaged.add(enc.wave);
     await this.walkTo(step.pos, 3, `die-retry approach ${step.wave}`, step.sneak);
     const phases = deathPhases();
@@ -2496,6 +2533,100 @@ export class MineflayerExecutor implements StepExecutor {
       await this.selectClass(this.lastSelectClass);
     }
     return respawnPos;
+  }
+
+  /**
+   * Rest at a bonfire (compiler #220) — the player loop every later proof depends on.
+   *
+   * Two acts, in this order, and the order is the whole thing:
+   *
+   *   1. **right-click the `dw_bonfire_<i>` interaction**. This is not flavour. The
+   *      click is what fires the `player_interacted_with_entity` advancement whose
+   *      reward opens the dialog AND `enable`s the `dw.rest` trigger. Until then the
+   *      trigger is DISABLED and the chat line below is a silent no-op.
+   *   2. **chat the step's command** — the exact line the "rest and save" button runs.
+   *
+   * Why not click the dialog button: a `dialog show` is rendered client-side and
+   * mineflayer models no dialog at all, so there is no button to press. The button's
+   * command is the primitive the compiler exports precisely so a headless client can
+   * perform the same loop; `/trigger` is also the only command form a non-operator
+   * player may run, so this is the player's own path, not an op shortcut.
+   *
+   * The affordance is found by POSITION, not by tag: entity `Tags` are server-side
+   * and never reach a client. The compiler puts the interaction on the step's own
+   * anchor cell, so the nearest `interaction` entity to it is the fire.
+   *
+   * Actuation only. Nothing here asserts the checkpoint moved — the next die-retry
+   * trial's respawn position is what proves that, and it proves it the way a player
+   * would find out.
+   */
+  async rest(step: RestStep): Promise<void> {
+    const bot = this.requireBot();
+    await this.walkTo(step.pos, 2, `bonfire ${step.anchor}`, step.sneak);
+    const fire = this.affordanceAt(step.pos);
+    if (!fire) {
+      throw new Error(
+        `no \`interaction\` affordance within ${AFFORDANCE_RADIUS} blocks of bonfire ` +
+          `${step.bonfire} at [${step.pos.join(", ")}] — the bot is standing at the fire ` +
+          `and there is nothing to right-click, so the rest can never be performed ` +
+          `(bot at ${fmt(bot.entity.position)})`,
+      );
+    }
+    process.stderr.write(
+      `[rest] bonfire ${step.bonfire} (${step.anchor}): right-clicking the affordance, ` +
+        `then \`${step.command}\`\n`,
+    );
+    await bot.activateEntity(fire);
+    // The opener runs through an advancement reward, so the trigger is enabled a
+    // tick or two after the click lands — chatting inside the same tick would be
+    // refused exactly as chatting without clicking is.
+    await delay(REST_OPEN_SETTLE_MS);
+    bot.chat(step.command);
+    await delay(EFFECT_SETTLE_MS);
+    this.restedBonfires.add(step.bonfire);
+  }
+
+  /** The nearest `minecraft:interaction` affordance to `pos`, if one is tracked. */
+  private affordanceAt(pos: Vec3Tuple): Entity | undefined {
+    const bot = this.requireBot();
+    let best: Entity | undefined;
+    let bestDist = AFFORDANCE_RADIUS;
+    for (const e of Object.values(bot.entities)) {
+      if (e?.name !== "interaction" || !e.position) continue;
+      const d = Math.sqrt(
+        (e.position.x - (pos[0] + 0.5)) ** 2 +
+          (e.position.y - pos[1]) ** 2 +
+          (e.position.z - (pos[2] + 0.5)) ** 2,
+      );
+      if (d <= bestDist) {
+        best = e;
+        bestDist = d;
+      }
+    }
+    return best;
+  }
+
+  /** Adopt the rest steps the exported critical path carries (compiler #220), with
+   * their EXPORTED indices — the coordinate system the precondition compares in. */
+  useRestSteps(rests: readonly PerformedRest[]): void {
+    this.restSteps = rests;
+  }
+
+  /** Rests this run performed, and the bonfires among them. For the run report. */
+  performedRests(): readonly PerformedRest[] {
+    return this.restSteps.filter((r) => this.restedBonfires.has(r.bonfire));
+  }
+
+  /** Encounters whose scripted deaths were skipped for want of an armed checkpoint. */
+  dieRetryPreconditionFindings(): readonly string[] {
+    return this.preconditionFindings;
+  }
+
+  /** The waves those findings name. Coverage stays silent about them: the
+   * precondition already says why they are unproven, and "never reached this
+   * encounter" would be plainly untrue — the bot stood in the room and declined. */
+  dieRetryPreconditionWaves(): ReadonlySet<string> {
+    return this.preconditionWaves;
   }
 
   /** Collect items from the chest at the anchor: go there, open it, withdraw all. */

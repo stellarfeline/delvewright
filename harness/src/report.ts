@@ -14,7 +14,13 @@
 // runs of the same delve diff cleanly.
 
 import { writeFile } from "node:fs/promises";
-import type { AssistWindow, DeathTrial, EncounterPhase, EncounterTier } from "./combat.ts";
+import type {
+  AssistWindow,
+  DeathTrial,
+  EncounterPhase,
+  EncounterTier,
+  PerformedRest,
+} from "./combat.ts";
 
 /**
  * One planned encounter, and how the run actually approached it.
@@ -58,6 +64,7 @@ export class RunReport {
   private readonly trials: DeathTrial[] = [];
   private readonly floor: string[] = [];
   private readonly encounters: EncounterReport[] = [];
+  private readonly rests: PerformedRest[] = [];
 
   constructor(campaignId: string, difficulty: string) {
     this.campaignId = campaignId;
@@ -84,6 +91,10 @@ export class RunReport {
     this.encounters.push(...entries);
   }
 
+  recordRests(entries: readonly PerformedRest[]): void {
+    this.rests.push(...entries);
+  }
+
   /** Every advisory the run produced, for the one-line stderr summary. */
   findings(): string[] {
     return [...this.floor, ...[...this.stages.values()].flatMap((s) => [...s.findings])];
@@ -107,6 +118,15 @@ export class RunReport {
           failures: [...r.failures],
         };
       }),
+      // The bonfires the bot actually RESTED at (compiler #220). A bonfire only
+      // arms an affordance; the respawn point moves when the party rests, so this
+      // list is what makes every `at_checkpoint` below mean anything.
+      rests: this.rests.map((r) => ({
+        bonfire: r.bonfire,
+        anchor: r.anchor,
+        pos: [...r.pos],
+        step: r.step,
+      })),
       // Every encounter the compiler put in the plan, with the assist policy it
       // is approached under and the phase the run actually reached. Without this
       // an empty `assist_windows` says nothing: it is the expected reading for a

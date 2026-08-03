@@ -99,6 +99,15 @@ async function main(): Promise<number> {
   // Absent → single-goal navigation (fallback); malformed → hard failure.
   const waypoints = await loadWaypointsForCriticalPath(pathArg);
 
+  // compiler #220: the path's rest steps, with their EXPORTED indices. The bot
+  // performs them as ordinary steps; the die-retry precondition needs to know they
+  // exist even when one was not reached, so it is told up front.
+  const restSteps = criticalPath.steps.flatMap((s, i) =>
+    s.action === "rest"
+      ? [{ bonfire: s.bonfire, anchor: s.anchor, pos: s.pos, step: i }]
+      : [],
+  );
+
   const config = botConfigFromEnv();
   const budgetMs = runTimeoutMs();
   process.stderr.write(
@@ -110,6 +119,13 @@ async function main(): Promise<number> {
   // Scope the completion oracle to this campaign: only markers naming it count
   // (AUDIT-P0). Comes from the contract, never inferred.
   executor.useCampaign(criticalPath.campaignId);
+  if (restSteps.length > 0) {
+    executor.useRestSteps(restSteps);
+    process.stderr.write(
+      `${restSteps.length} bonfire rest(s) on the proven path — a fire only ARMS on ` +
+        `arrival; the checkpoint moves when the party rests\n`,
+    );
+  }
   if (waypoints) {
     executor.useWaypoints(waypoints);
     process.stderr.write(
@@ -155,10 +171,16 @@ async function main(): Promise<number> {
     // and failed it, and a trial (or a whole encounter) the run never proved at
     // all. The second is the one an empty `die_retry` array used to hide.
     const dieRetryFailures = [
+      // A precondition gap comes FIRST: it explains why the trials below are
+      // missing, and reading the coverage failure without it sends a reader
+      // hunting a content bug that is not there.
+      ...executor.dieRetryPreconditionFindings(),
       ...dieRetryFindings(trials),
       ...(dieRetry
         ? dieRetryCoverageFailures(
-            combatPlan?.encounters ?? [],
+            (combatPlan?.encounters ?? []).filter(
+              (e) => !executor.dieRetryPreconditionWaves().has(e.wave),
+            ),
             executor.dieRetryEngagements(),
             trials,
           )
@@ -180,6 +202,7 @@ async function main(): Promise<number> {
       }),
     );
     report.recordEncounters(encounterReports);
+    report.recordRests(executor.performedRests());
     for (const f of executor.floorGateFindings()) report.recordFloorFinding(f);
     report.stage({
       stage: "critical-path",

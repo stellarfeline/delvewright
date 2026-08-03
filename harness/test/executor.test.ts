@@ -1285,3 +1285,138 @@ test("the re-engage probe SETTLES instead of sampling the instant it arrives", a
   assert.ok(trials[0]!.reengage!.settleMs >= 500, "the probe waited rather than guessed");
   assert.equal(trials[0]!.reengage!.present, 2);
 });
+
+// --- bonfire rest steps + the die-retry precondition (compiler #220) ---------
+
+import type { RestStep } from "../src/critical-path.ts";
+import { checkpointPreconditionFinding } from "../src/combat.ts";
+
+/** A CombatFakeBot that also publishes a bonfire's `interaction` affordance. */
+class BonfireFakeBot extends CombatFakeBot {
+  /** Whether the compiler's affordance is actually there to click. */
+  affordance = true;
+  activated: number[] = [];
+
+  constructor() {
+    super();
+    this.seat(0);
+    this.reSeat = undefined;
+  }
+
+  /** The affordance is an entity like any other, so it lives in `entities`.
+   * Re-published after every re-seat: a bonfire is rested at, never used up. */
+  armBonfire(id: number, pos: FakeVec3): void {
+    if (!this.affordance) return;
+    this.bonfires ??= new Map();
+    this.bonfires.set(id, { id, name: "interaction", height: 0, position: pos });
+    this.entities[id] = this.bonfires.get(id)!;
+  }
+  // Declared without an initialiser on purpose: the BASE constructor calls `seat`,
+  // which runs this override before a subclass field initialiser would have run.
+  private bonfires?: Map<number, unknown>;
+
+  override seat(count: number, opts: Parameters<CombatFakeBot["seat"]>[1] = {}): void {
+    super.seat(count, opts);
+    for (const [id, e] of this.bonfires ?? []) this.entities[id] = e;
+  }
+
+  async activateEntity(e: { id: number }): Promise<void> {
+    this.activated.push(e.id);
+    this.calls.push(`activateEntity(${e.id})`);
+  }
+}
+
+const REST_STEP: RestStep = {
+  action: "rest",
+  bonfire: 1,
+  anchor: "anchor/beach-fire",
+  pos: [0, 64, 0],
+  command: "/trigger dw.rest set 2",
+};
+
+test("a rest CLICKS the bonfire affordance before it chats the trigger", async () => {
+  // Order is the whole step. The click fires the `player_interacted_with_entity`
+  // advancement whose reward ENABLES `dw.rest`; until then the trigger is disabled
+  // and the chat line is a silent no-op — which is how bell round 3 walked past
+  // every fire and still respawned on the beach.
+  const bot = new BonfireFakeBot();
+  bot.armBonfire(55, new FakeVec3(0.5, 64, 0.5));
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+
+  await executor.rest(REST_STEP);
+
+  assert.deepEqual(bot.calls.filter((c) => c.startsWith("activateEntity") || c.startsWith("chat")), [
+    "activateEntity(55)",
+    "chat(/trigger dw.rest set 2)",
+  ]);
+  assert.deepEqual(bot.activated, [55], "the affordance was right-clicked, not just chatted at");
+});
+
+test("a bonfire with no affordance to click fails the step loudly", async () => {
+  // Nothing to right-click means the rest can never be performed — and a silently
+  // skipped rest is exactly the failure this step exists to prevent.
+  const bot = new BonfireFakeBot();
+  bot.affordance = false;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+
+  await assert.rejects(() => executor.rest(REST_STEP), /nothing to right-click/);
+  assert.deepEqual(bot.activated, []);
+});
+
+test("the die-retry precondition proceeds once the governing bonfire has been rested", async () => {
+  const bot = new BonfireFakeBot();
+  bot.seat(1); // `seat` re-publishes the tracked set, so the fire is armed after it
+  bot.armBonfire(55, new FakeVec3(0.5, 64, 0.5));
+  bot.reSeat = { count: 1 };
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useRestSteps([{ bonfire: 1, anchor: "anchor/beach-fire", pos: [0, 64, 0], step: 2 }]);
+  const plan = combatPlan(1, true);
+  const withCp: CombatPlan = {
+    ...plan,
+    encounters: [{ ...plan.encounters[0]!, checkpoint: [0, 64, 0] }],
+  };
+  executor.useCombatPlan(withCp, true);
+
+  executor.beginStep(3);
+  await executor.rest(REST_STEP); // the party rests at the fire…
+  executor.beginStep(9);
+  await executor.kill(KILL_STEP); // …so the death loop measures something real
+
+  assert.equal(executor.deathTrials().length, 2, "both scripted deaths were taken");
+  assert.deepEqual(executor.dieRetryPreconditionFindings(), []);
+  assert.equal(executor.performedRests().length, 1);
+});
+
+test("an unrested bonfire skips the scripted death and reports the gap", async () => {
+  // Bell round 3: every fire walked past, both trials respawned at world spawn on
+  // the far beach, and a 60s walk-back budget judged the CAMPAIGN for a proof that
+  // never performed the player loop. No death is taken now — the run still goes
+  // red, but on the harness's gap rather than the delve's difficulty.
+  const bot = new BonfireFakeBot();
+  bot.seat(1);
+  bot.reSeat = { count: 1 };
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useRestSteps([{ bonfire: 1, anchor: "anchor/beach-fire", pos: [0, 64, 0], step: 2 }]);
+  const plan = combatPlan(1, true);
+  executor.useCombatPlan(
+    { ...plan, encounters: [{ ...plan.encounters[0]!, checkpoint: [0, 64, 0] }] },
+    true,
+  );
+
+  executor.beginStep(9); // …and the rest step at index 2 was never performed
+  await executor.kill(KILL_STEP);
+
+  assert.equal(executor.deathTrials().length, 0, "no death was scripted");
+  assert.equal(
+    bot.calls.filter((c) => c === "chat(/damage @s 1000 minecraft:generic)").length,
+    0,
+  );
+  const findings = executor.dieRetryPreconditionFindings();
+  assert.equal(findings.length, 1);
+  assert.match(findings[0]!, /no checkpoint armed/);
+  assert.match(findings[0]!, /passed bonfire 1 \(anchor\/beach-fire\) without resting/);
+});

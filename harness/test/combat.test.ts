@@ -14,6 +14,7 @@ import {
   dieRetryFindings,
   floorFinding,
   openTrial,
+  checkpointPreconditionFinding,
   observationOf,
   parseCombatPlan,
   reseatFidelityFinding,
@@ -386,4 +387,46 @@ test("only a re-seating wave owes fidelity — a persisting wave is judged by ou
     String(trialVerdict(trial({ reseats: true, reengage: wounded, outcome: "re-engaged" }))),
     /previous life/,
   );
+});
+
+// --- die-retry precondition: an armed checkpoint (compiler #220) -------------
+
+const FIRE = { bonfire: 1, anchor: "anchor/beach-fire", pos: [97, 71, -96] as const, step: 4 };
+
+test("a governing checkpoint on a bonfire the bot rested at is armed", () => {
+  assert.equal(
+    checkpointPreconditionFinding(encounter(), [FIRE], new Set([1]), 16),
+    undefined,
+  );
+});
+
+test("a bonfire the route walked past leaves the checkpoint unarmed", () => {
+  // Bell round 3: a fire only ARMS on arrival; the respawn point moves when the
+  // party RESTS. Every fire walked past, so both trials respawned at world spawn.
+  const v = checkpointPreconditionFinding(encounter(), [FIRE], new Set(), 16);
+  assert.match(String(v), /no checkpoint armed/);
+  assert.match(String(v), /passed bonfire 1 \(anchor\/beach-fire\) without resting/);
+  assert.match(String(v), /No death was taken/);
+});
+
+test("a checkpoint that is no bonfire arms itself — nothing to contradict", () => {
+  // An ordinary `set-checkpoint` fires with its beat. Only a bonfire needs a rest.
+  assert.equal(checkpointPreconditionFinding(encounter(), [], new Set(), 16), undefined);
+});
+
+test("an encounter with no declared checkpoint is governed by world spawn", () => {
+  assert.equal(
+    checkpointPreconditionFinding(encounter({ checkpoint: undefined }), [FIRE], new Set(), 16),
+    undefined,
+  );
+});
+
+test("a governing bonfire the path only rests at LATER is still unarmed now", () => {
+  // The souls-bonfire fixture's real shape: the fire is armed by the very beat the
+  // encounter completes, so the plan hands the encounter a checkpoint whose rest
+  // step sits AFTER it. The respawn point has not moved when the death would be
+  // scripted, whatever the path does afterwards.
+  const v = checkpointPreconditionFinding(encounter(), [{ ...FIRE, step: 40 }], new Set(), 16);
+  assert.match(String(v), /does not rest at bonfire 1 \(anchor\/beach-fire\) until AFTER/);
+  assert.match(String(v), /path step 40/);
 });

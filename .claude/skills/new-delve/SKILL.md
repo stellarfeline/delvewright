@@ -459,8 +459,10 @@ Then:
      publishes no per-entity default attributes, so an undeclared stack gets no
      numeric bound at all and the build warns `DW0475`. A souls campaign wants
      the arithmetic proven, so declare the health you tuned against.
-  3. *The die-retry ladder stage*: the bot deliberately dies twice at every
-     encounter and proves respawn at the governing checkpoint -> the route back
+  3. *The die-retry ladder stage*: the bot rests at every bonfire on the path
+     (a fire only ARMS on arrival — the respawn point moves when the party
+     RESTS), then deliberately dies twice at every encounter and proves respawn
+     at the governing checkpoint -> the route back
      -> the encounter is still finishable -> no completed objective was lost.
      Author with that in mind: every encounter needs a checkpoint/bonfire that
      governs it, and a wave the party must be able to re-fight wants
