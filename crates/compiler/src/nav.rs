@@ -3101,7 +3101,7 @@ fn verify_bonfire_safe_zone(
                 code: DW_BONFIRE_IN_AGGRO,
                 message: format!(
                     "bonfire `{anchor}` ({pos:?}) sits INSIDE the aggro range of `{id}`: its \
-                     {what} {cell:?} is {dist:.1} blocks away, within the {radius:.0}-block \
+                     {what} {cell:?} is {dist:.1} blocks away, within the {radius:.1}-block \
                      perception radius ({radius_source}). A bonfire is where the party respawns \
                      and where every `respawns_on_rest` wave is put back on its feet — with a \
                      hostile already perceiving that cell, resting and dying both deliver the \
