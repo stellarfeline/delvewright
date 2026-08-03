@@ -348,12 +348,51 @@ export function respawnedAtCheckpoint(
   return Math.sqrt(dx * dx + dy * dy + dz * dz) <= radius;
 }
 
+/**
+ * What the harness found when it walked back to the encounter.
+ *
+ * The stage's sacred property is that **dying is safe for PROGRESSION** — not
+ * that the fight must still be standing there. A wave the party already beat
+ * before dying is not a broken retry loop; it is a won fight staying won, which
+ * is exactly what a player who dies to the last mob's parting hit experiences.
+ * Reading "no hostile present" as a uniform red made the verdict depend on
+ * whether the bot's timed melee happened to finish the wave — the same fixture
+ * went red then green on consecutive runs (task #102 follow-up; planner ruling
+ * 2026-08-03).
+ *
+ * The distinction that actually matters is whether the party can still FINISH:
+ *
+ *   * `re-engaged`           — hostiles are there again. The fight is retriable.
+ *   * `cleared-before-retry` — nothing left to fight, and the encounter's
+ *     objective is COMPLETE. The death cost nothing; progression is intact.
+ *   * `stranded`             — nothing left to fight and the objective is NOT
+ *     complete. The fight can neither be finished nor re-fought: a soft lock,
+ *     and precisely what this stage exists to catch.
+ *
+ * `unproven` is the opening value: the loop never got far enough to look.
+ */
+export const RETRY_OUTCOMES = [
+  "unproven",
+  "re-engaged",
+  "cleared-before-retry",
+  "stranded",
+] as const;
+export type RetryOutcome = (typeof RETRY_OUTCOMES)[number];
+
+/** Decide the outcome from the two observations that determine it. */
+export function retryOutcome(waveMobPresent: boolean, objectiveComplete: boolean): RetryOutcome {
+  if (waveMobPresent) return "re-engaged";
+  return objectiveComplete ? "cleared-before-retry" : "stranded";
+}
+
 /** One scripted death and everything proved about the loop it opened. */
 export interface DeathTrial {
   readonly encounter: string;
   readonly wave: string;
   readonly attempt: number;
   readonly phase: DeathPhase;
+  /** What the harness found waiting for it at the end of the loop. */
+  readonly outcome: RetryOutcome;
   /** The death message the loop opened with, when the server broadcast one. */
   readonly cause: string | undefined;
   /** Where the bot respawned. */
@@ -362,8 +401,10 @@ export interface DeathTrial {
   readonly atCheckpoint: boolean;
   /** Did it walk back to the encounter? */
   readonly returned: boolean;
-  /** Did the encounter re-engage (hostiles present again)? */
+  /** Raw observation behind {@link outcome}: was a wave mob standing there again? */
   readonly reEngaged: boolean;
+  /** Raw observation behind {@link outcome}: is the encounter's objective complete? */
+  readonly objectiveComplete: boolean;
   /** Objectives that were complete before the death and are still complete after. */
   readonly objectivesIntact: boolean;
   /** Objectives that were complete before the death and were NOT after. */
@@ -396,11 +437,13 @@ export function openTrial(enc: Encounter, attempt: number, phase: DeathPhase): D
     wave: enc.wave,
     attempt,
     phase,
+    outcome: "unproven",
     cause: undefined,
     respawnPos: undefined,
     atCheckpoint: false,
     returned: false,
     reEngaged: false,
+    objectiveComplete: false,
     objectivesIntact: true,
     lostObjectives: [],
     completed: false,
@@ -440,13 +483,25 @@ export function trialVerdict(t: DeathTrial): string | undefined {
       `(spec-0016 §1) — this is state corruption, not difficulty.`
     );
   }
-  if (!t.reEngaged) {
+  if (t.outcome === "stranded") {
     return (
-      `${t.wave} death ${t.attempt} (${t.phase}): the encounter did not re-engage after the ` +
-      `return — no hostile was there to fight. A wave that dies with the player is a ` +
-      `fight that can only be attempted once.`
+      `${t.wave} death ${t.attempt} (${t.phase}): after the walk back there was no hostile ` +
+      `left to fight AND \`${t.encounter}\` is still incomplete. The encounter can neither ` +
+      `be finished nor re-fought, so a party that dies here is STRANDED — a soft lock, not ` +
+      `difficulty. (A wave that does not re-seat is legitimate; a wave that vanishes with ` +
+      `its objective unfinished is not.)`
     );
   }
+  if (t.outcome === "unproven") {
+    return (
+      `${t.wave} death ${t.attempt} (${t.phase}): the loop finished without establishing ` +
+      `whether the encounter could be re-engaged or was already cleared. Nothing was ` +
+      `proved about the retry loop, so nothing is passed.`
+    );
+  }
+  // `re-engaged` (the fight is retriable) and `cleared-before-retry` (the fight
+  // was already won and the objective survived the death) are both the loop
+  // WORKING: in each case a party that dies here can still finish the delve.
   return undefined;
 }
 
