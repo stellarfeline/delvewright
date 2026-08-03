@@ -16,6 +16,9 @@
 //! - [`eclipse`]: the body-vs-affordance occlusion proof (`DW0359`) — an NPC or
 //!   actor body may not stand on, or immediately in front of, an interaction
 //!   affordance the party has to click.
+//! - [`clearance`]: the body-vs-block proof (`DW0450`/`DW0451`) — no NPC or actor
+//!   body may occupy the same space as block geometry, at its spawn anchor or at
+//!   any tick of any walked leg.
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
 //! - [`waypoints`]: export the DW0311-proven critical-path routes as validation
 //!   metadata (`validation/critical-path-waypoints.json`) for leg-by-leg bot nav.
@@ -42,6 +45,8 @@ pub mod atmos;
 pub mod blocking;
 pub mod calibrate;
 pub mod camera;
+pub mod cast;
+pub mod clearance;
 pub mod commands;
 pub mod continuity;
 pub mod creator;

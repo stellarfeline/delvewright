@@ -137,10 +137,20 @@ services:
   # then a follow-up PR repins this to
   #   ghcr.io/stellarfeline/delvewright-toolserver@sha256:<digest>
   # and records the digest in versions.toml ([images.toolserver].digest, now TBD).
+  # `DELVE_OUTPUT` (default `./delve-output`) selects WHICH build output tree this
+  # runner boots. A campaign only exercises the generated templates it actually
+  # emits, so proving a template class needs a campaign that HAS one: spec-0020's
+  # cast-ledger templates (root swap, bark delivery, explicit-none) cannot exist in
+  # hello-world, which is one quest and one NPC. Rather than distort hello-world —
+  # bumping it to dsl 0.7.0 would churn a fixture many determinism tests pin — CI
+  # runs this profile a second time over a second build tree. `container_name` is
+  # parameterized alongside it because container names are Docker-global: `-p`
+  # isolates volumes and networks but NOT names, so two trees would collide on a
+  # leftover container from a swallowed teardown.
   packtest:
     profiles: ["packtest"]
     image: ghcr.io/stellarfeline/delvewright-toolserver@sha256:31ed5d5a5c50158470bfee8c7197a75e6f586a25c950bf25b69b533f88e0ba0b
-    container_name: delvewright-packtest
+    container_name: ${PACKTEST_CONTAINER:-delvewright-packtest}
     environment:
       EULA: ${EULA:?set EULA=TRUE in your environment to accept Mojang's EULA (https://aka.ms/MinecraftEULA)}
       ONLINE_MODE: "FALSE"
@@ -176,10 +186,10 @@ services:
       # Named world volume so `down -v` clears it (see `server` note above) — the
       # PackTest runner regenerates the world from the mounted datapacks each run.
       - packtest-data:/data
-      - ./delve-output/datapack:/packs/datapack:ro
-      - ./delve-output/packtest-datapack:/packs/packtest-datapack:ro
+      - ${DELVE_OUTPUT:-./delve-output}/datapack:/packs/datapack:ro
+      - ${DELVE_OUTPUT:-./delve-output}/packtest-datapack:/packs/packtest-datapack:ro
       # The compiler's world declaration + the shared derivation script (read-only).
-      - ./delve-output/server:/packs/server:ro
+      - ${DELVE_OUTPUT:-./delve-output}/server:/packs/server:ro
       - ./world-settings-entrypoint.sh:/packs/world-settings-entrypoint.sh:ro
 
 # Named world volumes for the itzg `/data` mounts above. Declared so

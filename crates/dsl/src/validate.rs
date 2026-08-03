@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
     Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06,
+    is_v07,
 };
 use crate::ids::is_kebab;
 use crate::registry::{
@@ -668,7 +669,26 @@ fn dialogue(c: &Campaign, d: &mut Vec<Diagnostic>) {
             })
             .collect();
         let mut seen: BTreeSet<&str> = BTreeSet::new();
+        // Entry points: the tree's own `root`, plus (DSL v0.7, spec-0020) every
+        // node some quest's `cast` ledger declares as this NPC's root. A ledger
+        // root IS an entry point — right-click opens it directly once that quest
+        // begins — so a node reached only that way is reachable, not orphaned.
+        // Without this, retiring a premise root by swapping to a later one would
+        // make the later one `DW0120`, and the ledger would be unusable for the
+        // exact thing it exists to do.
         let mut stack = vec![tree.root.as_str()];
+        for q in &c.quests.content.quests {
+            for (npc, entry) in &q.cast {
+                if npc.as_str() != tree.npc.as_str() {
+                    continue;
+                }
+                for p in entry.placements() {
+                    if let Some(crate::stages::CastDialogue::Root(r)) = &p.dialogue {
+                        stack.push(r.as_str());
+                    }
+                }
+            }
+        }
         while let Some(cur) = stack.pop() {
             if seen.insert(cur)
                 && let Some(neis) = adj.get(cur)
@@ -923,6 +943,34 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v04(c, d);
     reserved_v05(c, d);
     reserved_v06(c, d);
+    reserved_v07(c, d);
+}
+
+/// DSL v0.7 reserved-feature gating (spec-0020): the per-quest `cast` ledger.
+///
+/// Note the asymmetry with the deprecation window. *Declaring* a ledger below
+/// v0.7 is `DW0141` like any other newer construct — the version contract stays
+/// exact. What the window (`DW0465`, compiler tier) forgives is the **absence**
+/// of a ledger in a pre-0.7 campaign: those keep building, with a warning, for
+/// one version.
+fn reserved_v07(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    if is_v07(c.quests.dsl_version.as_str()) {
+        return;
+    }
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        if q.cast.is_empty() {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            "quests",
+            format!("/content/quests/{i}/cast"),
+            "the per-quest `cast` ledger (where each NPC is, what they are doing, and what their \
+             right-click offers) requires dsl_version 0.7.0 — raise this stage's `dsl_version` to \
+             0.7.0"
+                .to_string(),
+        ));
+    }
 }
 
 /// DSL v0.6 reserved-feature gating + validation. Several independent,

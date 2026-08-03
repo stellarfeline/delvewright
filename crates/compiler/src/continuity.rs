@@ -64,10 +64,45 @@ struct NpcState {
     ever_staged: bool,
 }
 
-/// Run the lint over the whole campaign. Returns `DW0351` warnings (in timeline
-/// order). Empty for a campaign with no NPC lifecycle discontinuities.
-pub fn check_npc_continuity(c: &Campaign) -> Vec<Diagnostic> {
+/// Where the replayed effect history leaves an NPC at some point on the
+/// timeline. The vocabulary the cast ledger's placement proof checks against
+/// (spec-0020 proof 2) — same conservative model as the lint: symbolic anchor
+/// names, and `Indeterminate` rather than a guess.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NpcWhere {
+    /// On stage at this anchor.
+    At(String),
+    /// Not in the world (despawned, or deferred and not yet spawned).
+    Offstage,
+    /// The history does not determine it: this NPC's lifecycle is driven from a
+    /// branch (a flag-gated effect or a dialogue option) or from a source with no
+    /// static position at all (an environment trigger, a reaction bundle). The
+    /// payload names the reason, for the diagnostic that reports it.
+    Indeterminate(&'static str),
+}
+
+/// One full replay of the campaign timeline: the `DW0351` findings, plus a
+/// snapshot of every NPC's whereabouts at the moment each quest becomes active.
+pub struct Timeline {
+    /// `DW0351` warnings, in timeline order.
+    pub diags: Vec<Diagnostic>,
+    /// `quest id -> npc id -> whereabouts as that quest opens`. The snapshot is
+    /// taken *before* the quest's own effect bundles fire, so it is the state the
+    /// quest's `cast` block describes.
+    pub at_quest_start: BTreeMap<String, BTreeMap<String, NpcWhere>>,
+}
+
+/// Replay the campaign timeline once, collecting both the continuity findings
+/// and the per-quest whereabouts snapshot.
+///
+/// The snapshot exists because spec-0020's cast ledger has to answer "where does
+/// the effect history actually leave this NPC when this quest opens?" — a value
+/// this replay has always computed and immediately overwritten. Exposing it here
+/// keeps exactly one model of NPC whereabouts in the compiler: the lint and the
+/// ledger proof cannot disagree about where somebody is standing.
+pub fn replay(c: &Campaign) -> Timeline {
     let mut diags = Vec::new();
+    let mut at_quest_start: BTreeMap<String, BTreeMap<String, NpcWhere>> = BTreeMap::new();
     let excluded = excluded_npcs(c);
 
     // Initial staging: non-deferred NPCs stand at their anchor from world init.
@@ -86,6 +121,24 @@ pub fn check_npc_continuity(c: &Campaign) -> Vec<Diagnostic> {
 
     // Replay the quest-DAG linearization.
     for q in quests_in_dag_order(c) {
+        // Snapshot before this quest's own bundles fire: this is the world the
+        // quest's `cast` block declares.
+        at_quest_start.insert(
+            q.id.as_str().to_string(),
+            state
+                .iter()
+                .map(|(npc, st)| {
+                    let w = match excluded.get(npc.as_str()) {
+                        Some(reason) => NpcWhere::Indeterminate(reason),
+                        None => match &st.on_stage {
+                            Some(a) => NpcWhere::At(a.clone()),
+                            None => NpcWhere::Offstage,
+                        },
+                    };
+                    (npc.clone(), w)
+                })
+                .collect(),
+        );
         let qi = c
             .quests
             .content
@@ -126,7 +179,16 @@ pub fn check_npc_continuity(c: &Campaign) -> Vec<Diagnostic> {
             &mut diags,
         );
     }
-    diags
+    Timeline {
+        diags,
+        at_quest_start,
+    }
+}
+
+/// Run the lint over the whole campaign. Returns `DW0351` warnings (in timeline
+/// order). Empty for a campaign with no NPC lifecycle discontinuities.
+pub fn check_npc_continuity(c: &Campaign) -> Vec<Diagnostic> {
+    replay(c).diags
 }
 
 /// Walk one effect bundle in declared order, descending into `sequence` steps
@@ -140,7 +202,7 @@ fn walk_bundle(
     path: &str,
     scene: Option<&str>,
     covered_by_arrival_at: Option<&str>,
-    excluded: &BTreeSet<String>,
+    excluded: &BTreeMap<String, &'static str>,
     state: &mut BTreeMap<String, NpcState>,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -181,7 +243,7 @@ fn walk_bundle(
                 on_arrive,
                 ..
             } => {
-                if !excluded.contains(npc.as_str())
+                if !excluded.contains_key(npc.as_str())
                     && let Some(st) = state.get_mut(npc.as_str())
                     && st.on_stage.is_some()
                 {
@@ -198,7 +260,7 @@ fn walk_bundle(
                 );
             }
             QuestEffect::DespawnNpc { npc, .. } => {
-                if excluded.contains(npc.as_str()) {
+                if excluded.contains_key(npc.as_str()) {
                     continue;
                 }
                 let Some(st) = state.get_mut(npc.as_str()) else {
@@ -227,7 +289,7 @@ fn walk_bundle(
                 st.last_staged = Some(loc);
             }
             QuestEffect::SpawnNpc { npc } => {
-                if excluded.contains(npc.as_str()) {
+                if excluded.contains_key(npc.as_str()) {
                     continue;
                 }
                 let Some(st) = state.get_mut(npc.as_str()) else {
@@ -290,8 +352,14 @@ fn walk_bundle(
 /// effect (whether it fires depends on runtime flag state). Conservative by
 /// construction: exclusion silences the lint for that NPC rather than warning
 /// on a history the compiler cannot order.
-fn excluded_npcs(c: &Campaign) -> BTreeSet<String> {
-    let mut out = BTreeSet::new();
+/// The value is *why* — the phrase a diagnostic can drop into a sentence.
+fn excluded_npcs(c: &Campaign) -> BTreeMap<String, &'static str> {
+    let mut out: BTreeMap<String, &'static str> = BTreeMap::new();
+    /// Record a reason, keeping the first one recorded (the walk order is
+    /// deterministic, so the attributed reason is too).
+    fn note(out: &mut BTreeMap<String, &'static str>, npc: &str, reason: &'static str) {
+        out.entry(npc.to_string()).or_insert(reason);
+    }
 
     /// The lifecycle-target NPC of `e`, if it is a lifecycle effect.
     fn lifecycle_npc(e: &QuestEffect) -> Option<&str> {
@@ -306,12 +374,25 @@ fn excluded_npcs(c: &Campaign) -> BTreeSet<String> {
 
     /// Walk `effs`; `reactive` is true once inside an `on_respawn`/`on_caught`
     /// bundle (their contents are unordered w.r.t. the DAG).
-    fn scan(effs: &[QuestEffect], reactive: bool, out: &mut BTreeSet<String>) {
+    fn scan(effs: &[QuestEffect], reactive: bool, out: &mut BTreeMap<String, &'static str>) {
         for e in effs {
-            if let Some(npc) = lifecycle_npc(e)
-                && (reactive || !e.requires_flags().is_empty() || !e.forbids_flags().is_empty())
-            {
-                out.insert(npc.to_string());
+            if let Some(npc) = lifecycle_npc(e) {
+                if reactive {
+                    note(
+                        out,
+                        npc,
+                        "its lifecycle is driven from a reaction bundle \
+                         (`on_respawn`/`on_rest`/`on_caught`), which fires at no fixed point on \
+                         the quest DAG",
+                    );
+                } else if !e.requires_flags().is_empty() || !e.forbids_flags().is_empty() {
+                    note(
+                        out,
+                        npc,
+                        "its lifecycle is driven by a flag-gated effect, so it stands in \
+                         different places on different branches",
+                    );
+                }
             }
             match e {
                 QuestEffect::SetCheckpoint { on_respawn, .. } => scan(on_respawn, true, out),
@@ -334,11 +415,16 @@ fn excluded_npcs(c: &Campaign) -> BTreeSet<String> {
     }
     // Trigger-fired lifecycle events have no DAG position at all.
     for t in &c.quests.content.triggers {
-        fn scan_all(effs: &[QuestEffect], out: &mut BTreeSet<String>) {
+        fn scan_all(effs: &[QuestEffect], out: &mut BTreeMap<String, &'static str>) {
             for e in effs {
                 e.visit_deep(&mut |x| {
                     if let Some(npc) = lifecycle_npc(x) {
-                        out.insert(npc.to_string());
+                        note(
+                            out,
+                            npc,
+                            "its lifecycle is driven from an environment trigger, which the \
+                             player may fire at any time (or never)",
+                        );
                     }
                 });
             }
@@ -351,7 +437,12 @@ fn excluded_npcs(c: &Campaign) -> BTreeSet<String> {
             for opt in &node.options {
                 for e in &opt.effects {
                     if let Some(npc) = e.spawn_npc() {
-                        out.insert(npc.as_str().to_string());
+                        note(
+                            &mut out,
+                            npc.as_str(),
+                            "its lifecycle is driven from a dialogue option, so it stands in \
+                             different places depending on what the player said",
+                        );
                     }
                 }
             }

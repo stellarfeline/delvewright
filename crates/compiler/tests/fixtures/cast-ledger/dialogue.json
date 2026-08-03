@@ -1,0 +1,46 @@
+{
+  "dsl_version": "0.7.0",
+  "campaign_id": "cast-ledger",
+  "stage": "dialogue",
+  "content": {
+    "dialogues": [
+      {
+        "npc": "npc/keeper",
+        "root": "dlg/greeting",
+        "nodes": [
+          {
+            "id": "dlg/greeting",
+            "text": "Halt, traveler. The door stays shut.",
+            "options": [
+              {
+                "label": "Open the door, please.",
+                "effects": [
+                  {
+                    "type": "complete-objective",
+                    "objective": "obj/talk"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "dlg/farewell",
+            "text": "The road is yours. Do not look back.",
+            "options": []
+          }
+        ]
+      },
+      {
+        "npc": "npc/sleeper",
+        "root": "dlg/snore",
+        "nodes": [
+          {
+            "id": "dlg/snore",
+            "text": "...mm. Not my watch. Not my watch.",
+            "options": []
+          }
+        ]
+      }
+    ]
+  }
+}

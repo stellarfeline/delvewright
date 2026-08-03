@@ -299,6 +299,11 @@ fn suites() -> Vec<(&'static str, BuildOutput)> {
             "souls-td-lanes",
             build_dir(&common::compiler_fixtures_dir().join("souls-td-lanes")),
         ),
+        // spec-0020: the cast-ledger templates (root swap, bark cycle, silent scene).
+        (
+            "cast-ledger",
+            build_dir(&common::compiler_fixtures_dir().join("cast-ledger")),
+        ),
         ("hello-world+actors", build_actor_hello_world()),
         ("hello-world+handoff", build_handoff_hello_world()),
     ]

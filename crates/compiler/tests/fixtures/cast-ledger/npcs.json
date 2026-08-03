@@ -1,0 +1,35 @@
+{
+  "dsl_version": "0.7.0",
+  "campaign_id": "cast-ledger",
+  "stage": "npcs",
+  "content": {
+    "npcs": [
+      {
+        "id": "npc/keeper",
+        "name": "The Keeper",
+        "role": "quest-giver",
+        "area": "area/keep",
+        "anchor": "anchor/keeper-stand",
+        "base_entity": "minecraft:villager",
+        "persona": {
+          "archetype": "stoic gatekeeper",
+          "speech_style": "Terse, formal, archaic.",
+          "motivation": "Keep the gate shut until someone asks well."
+        }
+      },
+      {
+        "id": "npc/sleeper",
+        "name": "The Sleeper",
+        "role": "flavor",
+        "area": "area/keep",
+        "anchor": "anchor/exit",
+        "base_entity": "minecraft:villager",
+        "persona": {
+          "archetype": "wine-drowned watchman",
+          "speech_style": "Slurred, half-dreaming.",
+          "motivation": "Sleep through his whole watch."
+        }
+      }
+    ]
+  }
+}

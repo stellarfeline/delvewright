@@ -11,7 +11,7 @@ use crate::stages::{
 };
 
 /// The latest `dsl_version` this crate implements (identity / tooling default).
-pub const SUPPORTED_DSL_VERSION: &str = "0.6.0";
+pub const SUPPORTED_DSL_VERSION: &str = "0.7.0";
 
 /// Every `dsl_version` this crate accepts. Each version is an **additive
 /// superset** of the previous: v0.3 added the stage-5 verbs/waves/flags; v0.4
@@ -24,21 +24,41 @@ pub const SUPPORTED_DSL_VERSION: &str = "0.6.0";
 /// stage-1 `horizon` (`ocean` backdrop) + `boundary` (playable region +
 /// return-to-checkpoint enforcement), and the staging surface — the `play-sound`
 /// effect and the `narrate` `art` style — alongside the actors/sequence surface
-/// from sibling PRs.
+/// from sibling PRs; v0.7 (spec-0020) adds the per-quest `cast` ledger.
 /// Older campaigns remain valid and compile byte-identically. A construct
 /// introduced in a later version is rejected with `DW0141` in an earlier one.
-pub const SUPPORTED_DSL_VERSIONS: &[&str] = &["0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0"];
+pub const SUPPORTED_DSL_VERSIONS: &[&str] = &["0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0"];
 
 /// True if `version` is a `dsl_version` this crate accepts.
 pub fn is_supported_version(version: &str) -> bool {
     SUPPORTED_DSL_VERSIONS.contains(&version)
 }
 
+/// The minor-version ordinal of a supported `dsl_version` (`0.4.0` → 4); `0` for
+/// anything this crate does not accept.
+///
+/// Every version predicate below is `ordinal(version) >= n`, so adding a version
+/// to [`SUPPORTED_DSL_VERSIONS`] is the *only* edit a version bump needs. The
+/// hand-written `version == "0.4.0" || version == "0.5.0" || …` chains this
+/// replaced had to be extended in lockstep in five places; forgetting one made
+/// the newest campaigns silently lose an older version's surface.
+fn ordinal(version: &str) -> u32 {
+    match version {
+        "0.2.0" => 2,
+        "0.3.0" => 3,
+        "0.4.0" => 4,
+        "0.5.0" => 5,
+        "0.6.0" => 6,
+        "0.7.0" => 7,
+        _ => 0,
+    }
+}
+
 /// True if `version` enables the DSL v0.3 verbs (`kill`/`collect`/`interact`,
 /// `give-item`/`set-flag`/`spawn-wave`, waves, flags). v0.4 is an additive
 /// superset, so it enables the whole v0.3 surface too.
 pub fn is_v03(version: &str) -> bool {
-    version == "0.3.0" || version == "0.4.0" || version == "0.5.0" || version == "0.6.0"
+    ordinal(version) >= 3
 }
 
 /// True if `version` enables the DSL v0.4 surface (spec-0008): dialogue
@@ -46,14 +66,14 @@ pub fn is_v03(version: &str) -> bool {
 /// `narrate`, wave `attributes`/`effects`, `despawn-npc`/`move-npc`, `cutscene`,
 /// NPC `skin`, stage-5 `triggers`, named `give-item`, objective `stealth`.
 pub fn is_v04(version: &str) -> bool {
-    version == "0.4.0" || version == "0.5.0" || version == "0.6.0"
+    ordinal(version) >= 4
 }
 
 /// True if `version` enables the DSL v0.5 surface (spec-0010): declared world
 /// `time`/`weather`, per-area `lighting` (deterministic relight fixtures), and
 /// the `set-time`/`set-weather` effect verbs. v0.6 is an additive superset.
 pub fn is_v05(version: &str) -> bool {
-    version == "0.5.0" || version == "0.6.0"
+    ordinal(version) >= 5
 }
 
 /// True if `version` enables the DSL v0.6 surface: the `set-checkpoint` effect
@@ -66,7 +86,17 @@ pub fn is_v05(version: &str) -> bool {
 /// byte-identical, and a use of the v0.6 surface in an earlier campaign is
 /// rejected with `DW0141`.
 pub fn is_v06(version: &str) -> bool {
-    version == "0.6.0"
+    ordinal(version) >= 6
+}
+
+/// True if `version` enables the DSL v0.7 surface (spec-0020): the per-quest
+/// `cast` ledger — for every live stage-2 NPC, where it stands, what it is doing,
+/// and what its right-click offers during that quest. Additive over v0.6: a
+/// campaign that declares no `cast` compiles byte-identically, and a pre-0.7
+/// campaign that declares none keeps building with the `DW0465` deprecation
+/// warning for one version window.
+pub fn is_v07(version: &str) -> bool {
+    ordinal(version) >= 7
 }
 
 /// Which stage a document belongs to.

@@ -25,7 +25,7 @@ pub use canonical::to_canonical_string;
 pub use diagnostic::{Diagnostic, Severity, codes};
 pub use envelope::{
     Campaign, Envelope, RawCampaign, SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage,
-    check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, parse_campaign,
+    check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, parse_campaign,
 };
 pub use ids::{
     ActorId, AmbushId, AnchorId, AreaId, CampaignId, ClassId, DialogueId, EditBatchId, FlagId,
@@ -45,14 +45,15 @@ pub use registry::{
 pub use schema::stage_schema;
 pub use stages::{
     Actor, Ambush, Area, AreaLighting, AreaMitigation, Boundary, CameraShot, CameraSubject,
-    CameraTarget, CameraWaypoint, Carrier, Class, ClassesContent, DamageKind, DespawnStyle,
-    DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EnchantedItem, EnvTrigger,
-    EquipItem, Facing, Fixture, Horizon, KitItem, Lethality, Loot, LootItem, MobAttributes,
-    MobEffect, MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective,
-    Persona, Pieces, PlannedQuest, Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent,
-    Relationship, Role, SequenceStep, Shortcut, ShotStyle, SkinModel, SoundAt, StealthZone,
-    TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerOn, Wave,
-    WaveLane, WaveMob, WaveSummon, WorldContent, WorldTime, WorldWeather,
+    CameraTarget, CameraWaypoint, Carrier, CastAbsence, CastBarks, CastDialogue,
+    CastDialogueKeyword, CastEntry, CastPlace, CastPlacement, Class, ClassesContent, DamageKind,
+    DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EnchantedItem,
+    EnvTrigger, EquipItem, Facing, Fixture, Horizon, KitItem, Lethality, Loot, LootItem,
+    MobAttributes, MobEffect, MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent,
+    Objective, Persona, Pieces, PlannedQuest, Prop, Quest, QuestEffect, QuestPlanContent,
+    QuestsContent, Relationship, Role, SequenceStep, Shortcut, ShotStyle, SkinModel, SoundAt,
+    StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger,
+    TriggerOn, Wave, WaveLane, WaveMob, WaveSummon, WorldContent, WorldTime, WorldWeather,
 };
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,

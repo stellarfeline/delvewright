@@ -1,0 +1,78 @@
+{
+  "dsl_version": "0.7.0",
+  "campaign_id": "cast-ledger",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/ask",
+        "trigger": {
+          "type": "campaign-start"
+        },
+        "objectives": [
+          {
+            "type": "talk-to",
+            "id": "obj/talk",
+            "npc": "npc/keeper"
+          }
+        ],
+        "on_complete": [
+          {
+            "type": "open-gate",
+            "anchor": "anchor/door"
+          }
+        ],
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "doing": "barring the door with his body",
+            "dialogue": "dlg/greeting"
+          },
+          "npc/sleeper": {
+            "at": "anchor/exit",
+            "doing": "wine-drowned sleep against the wall",
+            "dialogue": {
+              "barks": [
+                "...mm. Not my watch.",
+                "...tell the captain I never left.",
+                "...mm."
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": "quest/leave",
+        "trigger": {
+          "type": "quest-complete",
+          "quest": "quest/ask"
+        },
+        "objectives": [
+          {
+            "type": "reach-anchor",
+            "id": "obj/exit",
+            "anchor": "anchor/exit",
+            "radius": 2
+          }
+        ],
+        "on_complete": [
+          {
+            "type": "campaign-complete"
+          }
+        ],
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "doing": "standing aside, watching you go",
+            "dialogue": "dlg/farewell"
+          },
+          "npc/sleeper": {
+            "at": "anchor/exit",
+            "doing": "dead asleep, past waking",
+            "dialogue": "none"
+          }
+        }
+      }
+    ]
+  }
+}

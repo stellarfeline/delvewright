@@ -95,6 +95,16 @@ For each stage in order — world → npcs → classes → quest-plan → quests
    - NPCs: personas per schema (archetype/speech_style/motivation required);
      honor them in every stage-6 line. Dialogue: branching options; flavor NPCs
      get real trees too.
+   - **Stage 6: re-derive every node's option list from that node's situation.**
+     (Owner ruling, 2026-08-03.) Never carry an option list forward from an
+     earlier node. Before shipping a node, check each option for semantic fit
+     with what has *just happened* in the story — "would a survivor say this line
+     right now?" Premise and exposition options must retire once their moment
+     passes, via the cast ledger's dialogue swap (declare a later root) or a flag
+     gate. A "who are we" / "what is that thing" option must be **impossible** at
+     the finale. The motivating playtest defect: after the climactic escape, a
+     crew NPC still offered "Tell me what he is." and "Is there another way
+     out?" — questions the character had already lived through the answers to.
    - Pace to `target_minutes`; no grind (forbidden zone); mandatory-only quests.
    - Objectives (v0.3): author `title` (short player-facing name, e.g. "Unbar the
      Deep Gate") and `hint` (one-line location/direction guidance, e.g. "Past the
@@ -120,6 +130,30 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      knows (the entrance hall, the gate, a named NPC) — never room-shape jargon
      ("corner room", "L-shaped hall") or solver-internal terms (anchor/piece/socket
      ids).
+   - **Stage 5: write the `cast` block FIRST, before the objectives** (spec-0020).
+     Every quest declares, for every NPC live in it, `{at, doing, dialogue}` —
+     position first, story second. `at` is an anchor (or `"offstage"`/`"dead"`,
+     which must match a real `despawn-npc` — declaring a position does not move
+     anybody, `DW0461`). `doing` is free prose and is the point: you cannot fill
+     it without deciding the character's business in this beat, and stage 6
+     writes their lines against it. `dialogue` is a stage-6 root id,
+     `{"barks": [...]}`, `"unchanged"`, or `"none"`.
+     - **A sleeping, working or background NPC gets a `barks` pool**, not
+       `"none"`. Right-click then yields one inconsequential in-character line
+       (the sleeping giant murmurs; a camp's off-duty crew make small talk)
+       instead of dead silence. Use `"none"` only when the silence is itself the
+       statement.
+     - **Write `"unchanged"` when you are deliberately carrying dialogue
+       forward** — never re-spell the same root id, and never omit `dialogue`
+       hoping it defaults (it does not: `DW0463`). `"unchanged"` at an NPC's
+       first appearance is `DW0466`.
+     - **Treat the `DW0467` staleness warning as a design smell, not a
+       nuisance.** It means an NPC's right-click never learns that the story
+       moved. Give it a scene that changes, or make it a bark-pool background
+       character — do not silence it by shuffling spellings.
+     - Omitting a live NPC is `DW0460`: an unaccounted NPC is how two crew
+       members ended up standing forgotten in the alcoves while the player
+       escaped the cave.
 3. `delvec validate <campaign-dir>` — fix by diagnostic code (DW####; see
    `crates/dsl/README.md` + `crates/compiler/README.md` tables). Loop until clean.
    Three failed repairs on the same code → stop and think about the design instead

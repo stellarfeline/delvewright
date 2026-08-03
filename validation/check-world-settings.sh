@@ -38,14 +38,28 @@ else
 fi
 
 # 2) The PackTest runner runs that same script as its entrypoint, over the build's
-#    server.properties.
+#    server.properties. The output tree is selectable (`DELVE_OUTPUT`, so CI can run
+#    the profile a second time over a campaign whose generated templates hello-world
+#    cannot carry), which is why the mount is matched in its parameterized form.
 if grep -q 'entrypoint: \["/bin/bash", "/packs/world-settings-entrypoint.sh"\]' "$COMPOSE" \
    && grep -q './world-settings-entrypoint.sh:/packs/world-settings-entrypoint.sh:ro' "$COMPOSE" \
-   && grep -q './delve-output/server:/packs/server:ro' "$COMPOSE" \
+   && grep -q '${DELVE_OUTPUT:-./delve-output}/server:/packs/server:ro' "$COMPOSE" \
    && grep -q 'DELVE_SERVER_PROPERTIES: "/packs/server/server.properties"' "$COMPOSE"; then
   pass "compose packtest runner derives its world via the shared entrypoint"
 else
-  fail "compose packtest runner must mount ./delve-output/server + the shared entrypoint script, set DELVE_SERVER_PROPERTIES, and use it as its entrypoint"
+  fail "compose packtest runner must mount \${DELVE_OUTPUT:-./delve-output}/server + the shared entrypoint script, set DELVE_SERVER_PROPERTIES, and use it as its entrypoint"
+fi
+
+# 2b) ...and every pack mount must come from the SAME tree. Selecting the output
+#     directory per-run created a new way to reproduce exactly the defect this file
+#     exists to catch: point `datapack` at one build and `server` at another, and the
+#     runner tests a world the delve never shipped — with nothing else to notice.
+#     Three mounts (datapack, packtest-datapack, server), one prefix.
+prefixed=$(grep -c '\${DELVE_OUTPUT:-\./delve-output}/' "$COMPOSE" || true)
+if [ "$prefixed" -eq 3 ]; then
+  pass "compose packtest runner draws all three pack mounts from one build tree"
+else
+  fail "compose packtest runner must draw datapack, packtest-datapack and server from the SAME \${DELVE_OUTPUT:-./delve-output} tree (found $prefixed of 3) - a split tree tests a world the delve never ships"
 fi
 
 # 3) No consumer may hardcode a campaign-varying world setting: those come from the

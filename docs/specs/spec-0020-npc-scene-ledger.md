@@ -89,6 +89,28 @@ the fixture proof; hello-world grows the minimal block. `dsl_version` bumps to
 0.7.0; pre-0.7 documents without `cast` keep building with a **warning** for
 one version window (the deprecation lever), then the requirement hardens.
 
+## Amendment (owner, 2026-08-03)
+
+Two additions, landed with the implementation.
+
+**1. `dialogue: "unchanged"`.** A fourth `dialogue` form: the keyword
+`"unchanged"` resolves to whatever this NPC's dialogue was at its previous
+appearance in the node ordering. Carrying dialogue forward must be a *conscious,
+declared act* — never an implicit default (an omitted `dialogue` stays an error)
+and never a silently repeated root id that then drifts out of sync with the tree.
+It resolves transitively (`unchanged` → `unchanged` → a root) and the resolved
+value must exist; used at an NPC's **first** appearance it is an error, because
+there is nothing to carry. Emission is a no-op — no root swap is emitted for that
+NPC at that node — which is what keeps the sugar cheap and byte-stable.
+
+**2. Whole-campaign staleness lint (warning tier).** If an NPC appears in the
+cast of 2+ nodes and its dialogue never changes across *all* its appearances —
+the same root throughout, however spelled — the compiler warns: plot-relevant
+NPCs should evolve with the story; a genuinely background character should carry
+a bark pool instead. Warning, not error: a static minor NPC is legal, the author
+just has to see the flag. Bark pools are exempt, since a bark pool never claims
+to advance anything.
+
 ## Acceptance criteria
 
 - [ ] Schema: `cast` required at 0.7.0, each entry `{at, doing, dialogue}` or
@@ -108,3 +130,8 @@ one version window (the deprecation lever), then the requirement hardens.
       round-8 "crew forgotten in alcoves" state, replayed against the new
       compiler, is RED (regression-proof of the motivating defect).
 - [ ] Pre-0.7 campaigns: warning, not error; documented in compiler.md.
+- [ ] Amendment: `"unchanged"` at a first appearance fails; a second-appearance
+      `"unchanged"` resolves to the carried scene and emits no new artifact; an
+      NPC whose dialogue never changes across 2+ appearances warns (including
+      when the repetition is spelled `"unchanged"`), and a repeated bark pool
+      does not.
