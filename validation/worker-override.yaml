@@ -1,0 +1,10 @@
+# Worker isolation override (CLAUDE.md / validation/mutex.sh "Worker isolation").
+# Drops the pinned container_name and the 127.0.0.1:25565 host binding so a
+# worker stack can never collide with — or be torn down together with — the
+# owner's session. Compose derives a project-scoped name instead.
+services:
+  server:
+    container_name: !reset null
+    ports: !reset []
+  packtest:
+    container_name: !reset null

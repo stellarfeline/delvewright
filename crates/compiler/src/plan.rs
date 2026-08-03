@@ -147,6 +147,9 @@ pub struct TimedGatePlan {
     pub closed_ticks: u32,
     /// Ticks after world init before the first open window.
     pub phase: u32,
+    /// Whether the closing edge kills players caught inside the region
+    /// (spec-0016 §4 addendum).
+    pub crush: bool,
 }
 
 /// A resolved stage-5 `ambush` (spec-0016 §3), collected in declared order —
@@ -1119,6 +1122,7 @@ impl<'a> Plan<'a> {
                     open_ticks: g.open_ticks,
                     closed_ticks: g.closed_ticks,
                     phase: g.phase,
+                    crush: g.crush,
                 })
             })
             .collect();

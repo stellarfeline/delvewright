@@ -1092,6 +1092,22 @@ pub struct TimedGate {
     /// be less than the full cycle.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub phase: u32,
+    /// Whether the gate **kills** a player caught inside its region when it
+    /// shuts (owner directive 2026-08-03, spec-0016 §4 addendum). A portcullis
+    /// that merely shoves you aside teaches nothing; mistiming the crossing is
+    /// supposed to be a death you learn from, which is the whole point of §4's
+    /// ≥20%-of-cycle window proof — the window is fair, so the penalty can be
+    /// absolute.
+    ///
+    /// This is a real judgement issued by command on the closing tick, not
+    /// suffocation: vanilla's in-wall damage is slow, gear-dependent and
+    /// escapable, so it would make the portcullis a suggestion. `damage` at the
+    /// closing edge is exact and unarguable.
+    ///
+    /// **Defaults to `false`**, so every campaign authored before this field
+    /// existed compiles byte-identically; a delve opts its portcullis in.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub crush: bool,
 }
 
 /// serde `skip_serializing_if` helper: skip a `0`.
