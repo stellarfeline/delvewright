@@ -61,11 +61,12 @@ Founding decisions live in `docs/adr/` and originate from the kickoff handoff
 CLAUDE.md            # this file
 docs/adr/            # architecture decision records (numbered, immutable once Accepted)
 docs/specs/          # owner-approved specs, one per feature
+docs/reference/      # live behavior records: compiler.md, tools.md, i18n.md
 docs/ROADMAP.md      # milestones; M1 = hello-world delve
-crates/              # Rust workspace: dsl / compiler / orchestrator
+crates/              # Rust workspace: dsl / compiler / orchestrator / admit / schem / render
 prefabs/             # .nbt library + metadata (git-lfs)
 harness/             # mineflayer bot tests (TypeScript)
-tools/               # auxiliary Python tooling (skin composer/previewer) — never shipped in delves
+tools/               # auxiliary Python tooling (skins, i18n, CI checks) — never shipped in delves
 packtest/            # PackTest templates
 validation/          # docker compose: headless server + bot, same image as CI & prod
 ```
@@ -119,7 +120,9 @@ validation/          # docker compose: headless server + bot, same image as CI &
   touches, in the same PR. LLM-facing tools enter skills as mandatory workflow
   steps; human-in-the-loop tools enter as advisory one-line mentions at the
   right step — never blocking, never waiting for a use/don't-use decision. A
-  tool absent from docs and skills does not exist for future sessions.
+  tool absent from docs and skills does not exist for future sessions. The
+  inventory of the whole tool surface — every binary, script and flag, with its
+  class — is `docs/reference/tools.md`.
 - Repeated workflows become skills/slash commands (`/new-campaign`, `/validate`,
   `/release`) — see ROADMAP; design them when the workflow has been done manually twice.
 

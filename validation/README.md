@@ -2,17 +2,23 @@
 
 Docker-compose entrypoint for running Delvewright the same way CI and prod do
 (ADR-0005, ADR-0008, ADR-0010, spec-0003). "Works on my machine" is defined as
-"this compose profile passes". Two profiles:
+"this compose profile passes". Four profiles, all driven by one `delvec build`
+output tree (`validation/delve-output`):
 
-- **`play`** (available now) — a bare, pinned vanilla **1.21.11** server the owner
-  can join by hand from their own client to check a delve at any time.
-- **`validate`** (stub, comments in `compose.yaml`) — the full two-layer dynamic
-  validation stack (server + PackTest runner + mineflayer bot, exit codes
-  propagated to CI). Arrives with the rest of spec-0003 once the compiler emits a
-  delve.
+- **`play`** — the shipped delve image, pinned vanilla **1.21.11**, joinable by
+  hand from the owner's own client.
 - **`playtest`** (spec-0006) — the same shipped delve image as `play`, plus the
   **creator overlay** mounted as an extra datapack (`/trigger dw.note` marks a spot
   in the server log). See "Creator playtest loop" below.
+- **`validate`** — server + the mineflayer critical-path bot; the bot's exit code
+  is the profile's (`--exit-code-from bot`).
+- **`packtest`** — the generated PackTest suite on the pinned tool server
+  (`--exit-code-from packtest`).
+
+The tooling-mod overlay (PackTest + Fabric) and the creator overlay are layered on
+at compose time only and never leak into the shipped delve image; CI asserts their
+absence. Every tool in the repo, including the scripts below, is indexed in
+[`../docs/reference/tools.md`](../docs/reference/tools.md).
 
 ## World fidelity (all profiles)
 
@@ -103,29 +109,22 @@ tier 2's ~2-min budget. Every-push coverage of the mechanism already lives in ti
 incl. Chinese note text) and the overlay emission + byte-determinism
 (`crates/compiler` tests). Only the live wiring is deferred to tier 3.
 
-## What works today vs with M1 integration
-
-**Today (bare pinned server):**
+## What the stack does today
 
 - Boots vanilla 1.21.11 via the `itzg/minecraft-server` image, which downloads the
   pinned server jar at runtime (never baked into a layer — the ADR-0010 EULA-safe
-  pattern).
-- Empty world generated on first boot. No delve is loaded yet: the compiler
-  (spec-0002) does not exist, so there is nothing to mount.
-- Port bound to `127.0.0.1` only — never world-reachable.
-
-**Arrives with M1 integration:**
-
-- The compiler's build output (`<out>/`: `manifest.json`, `datapack/`, `server/`,
-  `packtest-datapack/`, `critical-path.json`) is mounted into the server so it
-  loads the compiled delve. The placeholder mount path is documented (commented) in
-  `compose.yaml`: `./delve-output/datapack -> /data/world/datapacks/<campaign-id>`.
-- The `validate` profile is filled in: `packtest-runner` (exit code = failed tests)
-  and `bot` (the `../harness` mineflayer runner reading `critical-path.json`,
-  exiting 0/1). The tooling-mod overlay (PackTest + Fabric) is layered on only at
-  compose time and must never leak into the shipped delve image.
-- `docker compose --profile validate up` then reproduces CI locally with exit codes
+  pattern). Port bound to `127.0.0.1` only — never world-reachable.
+- Every profile serves one compiler build output (`manifest.json`, `datapack/`,
+  `server/`, `packtest-datapack/`, `critical-path.json`), so `--profile validate`
+  and `--profile packtest` reproduce CI's dynamic tiers locally with exit codes
   propagated (spec-0003 acceptance criteria).
+- **Re-runs**: `validation/fresh-volumes.sh` tears the stack down and proves the
+  world volumes are gone. A persisted volume keeps completed objectives completed,
+  which fails a "fresh" playthrough for reasons unrelated to the delve — run it
+  before every repeat playthrough.
+- **Shot sets**: `validation/render-shots.sh <build-dir> [out-dir]` turns a build
+  output into the Chunky scene set plus the shot index (`delve-render scene` +
+  `index`) for visual review, including the first-person player-POV shots.
 
 ## Harness
 
