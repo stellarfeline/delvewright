@@ -130,6 +130,18 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      knows (the entrance hall, the gate, a named NPC) — never room-shape jargon
      ("corner room", "L-shaped hall") or solver-internal terms (anchor/piece/socket
      ids).
+   - **A beat that can FAIL the player must not arm before they could have read
+     it.** (Owner ruling, 2026-08-03.) Any fail-able beat — follow-an-NPC, escort,
+     timed escape, stealth onset — arms only after a grace window long enough to
+     read the on-screen prompt that explains it: the player must never be failable
+     before they could have understood what is being asked. Where the DSL has an
+     explicit knob, set it consciously rather than inheriting the default
+     (`begin-stealth`'s `grace_ticks`); where the pacing is authored, put the first
+     enforcing step late enough in the `sequence`'s `at_ticks`. Budget the window
+     from the prompt's length, not from a habit — a two-line chat prompt is several
+     seconds of reading before the first step is taken. The motivating playtest
+     defect: the flock the player was told to follow left while they were still
+     reading the instruction, and the beat then failed them for it.
    - **Stage 5: write the `cast` block FIRST, before the objectives** (spec-0020).
      Every quest declares, for every NPC live in it, `{at, doing, dialogue}` —
      position first, story second. `at` is an anchor (or `"offstage"`/`"dead"`,

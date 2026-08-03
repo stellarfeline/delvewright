@@ -156,8 +156,10 @@ fn occupies_gate(c: [i32; 3], (min, max): ([i32; 3], [i32; 3])) -> bool {
         && c[1] + (PLAYER_OCCUPANCY - 1) >= min[1]
 }
 
-/// The route cells at a timed gate's **mouth**: every cell whose occupancy is inside
-/// the region, plus the route cell immediately before and after each of them.
+/// The route cells at a timed gate's **mouth**: for each maximal run of cells whose
+/// occupancy is inside the region, the route cell immediately BEFORE the run and the
+/// one immediately AFTER it — the two cells flanking the crossing, on either side of
+/// the gate. Cells *inside* the region are deliberately NOT returned.
 ///
 /// These are force-kept as waypoints for the same reason a use-gate cell is (task
 /// #59) — an interaction point must never be thinned away — but the payoff here is
@@ -165,26 +167,41 @@ fn occupies_gate(c: [i32; 3], (min, max): ([i32; 3], [i32; 3])) -> bool {
 /// gate to its two endpoints, which asks the runtime bot to walk the WHOLE straight
 /// run inside one open window; on the-drowned-bell that is an 18-block hop through a
 /// 5-second window, and it loses the race. Pinning the mouth splits it into a long
-/// approach hop that no clock can interrupt plus a one-block crossing that any
-/// readable window admits — matching what `DW0378` actually proves, which is that the
-/// window admits crossing the SPAN, not an arbitrary run-up to it.
+/// approach hop that no clock can interrupt plus a short crossing that any readable
+/// window admits — matching what `DW0378` actually proves, which is that the window
+/// admits crossing the SPAN, not an arbitrary run-up to it.
+///
+/// **Why the in-region cells must not be pinned** (task #204): the harness treats
+/// every waypoint as an *arrive-at* goal, so a waypoint inside the region parks the
+/// bot under the gate — and a `crush: true` gate then fills that cell with the bot in
+/// it. The waypoint contract is "stand here", and standing inside a timed gate is
+/// never a thing to ask for. The flanking pair says the same thing about the route
+/// (approach, then cross) without ever naming a lethal cell as a destination; the
+/// crossing span itself is what `DW0378` charges, not a rest stop.
 ///
 /// Purely additive and deterministic: every kept cell is a proven route cell, and
 /// consecutive kept cells stay a straight constant-delta run, so the polyline can
 /// never leave the proven path.
 fn gate_mouth_cells(cells: &[[i32; 3]], region: ([i32; 3], [i32; 3])) -> Vec<[i32; 3]> {
     let mut out = Vec::new();
-    for (i, c) in cells.iter().enumerate() {
-        if !occupies_gate(*c, region) {
+    let mut i = 0;
+    while i < cells.len() {
+        if !occupies_gate(cells[i], region) {
+            i += 1;
             continue;
+        }
+        // `i..end` is a maximal run of cells inside the region.
+        let mut end = i;
+        while end + 1 < cells.len() && occupies_gate(cells[end + 1], region) {
+            end += 1;
         }
         if i > 0 {
             out.push(cells[i - 1]);
         }
-        out.push(*c);
-        if let Some(next) = cells.get(i + 1) {
-            out.push(*next);
+        if let Some(after) = cells.get(end + 1) {
+            out.push(*after);
         }
+        i = end + 1;
     }
     out
 }
@@ -370,18 +387,56 @@ mod tests {
         assert_eq!(cells.first(), Some(&[24, 63, 4]));
         assert_eq!(thin(&cells, &[]), vec![[24, 63, 4], [24, 63, -14]]);
         let keep = gate_mouth_cells(&cells, region);
-        assert_eq!(keep, vec![[24, 63, -9], [24, 63, -10], [24, 63, -11]]);
+        // The two cells FLANKING the gate — never the cell under it (task #204).
+        assert_eq!(keep, vec![[24, 63, -9], [24, 63, -11]]);
         assert_eq!(
             thin(&cells, &keep),
-            vec![
-                [24, 63, 4],
-                [24, 63, -9],
-                [24, 63, -10],
-                [24, 63, -11],
-                [24, 63, -14],
-            ],
-            "a long approach, then a one-block crossing any readable window admits"
+            vec![[24, 63, 4], [24, 63, -9], [24, 63, -11], [24, 63, -14]],
+            "a long approach, then a two-block crossing any readable window admits"
         );
+    }
+
+    #[test]
+    fn no_waypoint_ever_stands_inside_a_timed_gate_region() {
+        // The harness treats every waypoint as an ARRIVE-AT goal, so a waypoint
+        // inside the region parks the bot under the portcullis — and a `crush: true`
+        // gate then fills that cell with the bot in it (the-drowned-bell round-2
+        // death, task #204). The mouth pins must flank the crossing, never name it.
+        //
+        // A 3-deep region, so the crossing run is several cells long: the whole run
+        // must be absent from the pins.
+        let region = ([22, 63, -11], [26, 65, -9]);
+        let cells: Vec<[i32; 3]> = (-14..=4).rev().map(|z| [24, 63, z]).collect();
+        let keep = gate_mouth_cells(&cells, region);
+        assert_eq!(keep, vec![[24, 63, -8], [24, 63, -12]]);
+        for c in thin(&cells, &keep) {
+            assert!(
+                !occupies_gate(c, region),
+                "waypoint {c:?} stands inside the gate region"
+            );
+        }
+    }
+
+    #[test]
+    fn a_route_that_re_enters_a_gate_pins_both_crossings() {
+        // Two separate crossings of the same region (a there-and-back leg): each
+        // maximal in-region run contributes its own flanking pair, and no more.
+        let region = ([5, 63, 0], [5, 64, 0]);
+        let mut cells: Vec<[i32; 3]> = (0..=8).map(|x| [x, 63, 0]).collect();
+        cells.extend((0..=7).rev().map(|x| [x, 63, 0]));
+        assert_eq!(
+            gate_mouth_cells(&cells, region),
+            vec![[4, 63, 0], [6, 63, 0], [6, 63, 0], [4, 63, 0]]
+        );
+    }
+
+    #[test]
+    fn a_gate_at_the_very_start_of_a_leg_pins_only_the_far_mouth() {
+        // No cell precedes the run, so there is only one flank to pin — and the
+        // in-region start cell still never becomes a waypoint of its own accord.
+        let region = ([0, 63, 0], [0, 64, 0]);
+        let cells: Vec<[i32; 3]> = (0..=6).map(|x| [x, 63, 0]).collect();
+        assert_eq!(gate_mouth_cells(&cells, region), vec![[1, 63, 0]]);
     }
 
     #[test]

@@ -2548,7 +2548,13 @@ fn v03_checks(
                         ));
                     }
                 }
-                Objective::Collect { item, anchor, .. } => {
+                Objective::Collect {
+                    id: oid,
+                    item,
+                    count,
+                    anchor,
+                    ..
+                } => {
                     if !items.contains(item) {
                         d.push(Diagnostic::error(
                             codes::ITEM_UNKNOWN,
@@ -2561,6 +2567,17 @@ fn v03_checks(
                             ),
                         ));
                     }
+                    // The objective's props are placed with a single-slot `item
+                    // replace … container.0` fill, so an over-cap count leaves the
+                    // chest empty and the objective uncompletable (`DW0436`).
+                    check_stack_count(
+                        item,
+                        *count,
+                        &format!("collect objective `{oid}`"),
+                        format!("/content/quests/{i}/objectives/{j}/count"),
+                        items,
+                        d,
+                    );
                     anchor_resolves(set, anchor, i, j, "anchor", d);
                 }
                 Objective::Interact {
@@ -3390,18 +3407,29 @@ fn v06_trap_checks(
                 ));
             }
         });
-        if let Some((item, _)) = t.dispense()
-            && !items.contains(item)
-        {
-            d.push(Diagnostic::error(
-                codes::TRAP_PAYLOAD_UNKNOWN,
-                "quests",
-                format!("/content/traps/{i}/effect/dispense/item"),
-                format!(
-                    "trap dispense payload item `{item}` is not in the pinned 1.21.11 item \
-                     registry — use a valid namespaced item id (e.g. `minecraft:arrow`)"
-                ),
-            ));
+        if let Some((item, count)) = t.dispense() {
+            if !items.contains(item) {
+                d.push(Diagnostic::error(
+                    codes::TRAP_PAYLOAD_UNKNOWN,
+                    "quests",
+                    format!("/content/traps/{i}/effect/dispense/item"),
+                    format!(
+                        "trap dispense payload item `{item}` is not in the pinned 1.21.11 item \
+                         registry — use a valid namespaced item id (e.g. `minecraft:arrow`)"
+                    ),
+                ));
+            }
+            // The dispenser payload is the same single-slot `item replace …
+            // container.0` fill a `loot` entry is, so it carries the same silent
+            // over-cap failure (`DW0436`) — a splash potion caps at 1.
+            check_stack_count(
+                item,
+                count,
+                &format!("trap `{}` dispense payload", t.id),
+                format!("/content/traps/{i}/effect/dispense/count"),
+                items,
+                d,
+            );
         }
         for (m, f) in t.requires_flags.iter().enumerate() {
             if !flags.contains(f.as_str()) {
@@ -5587,6 +5615,47 @@ fn check_enchantments(
     }
 }
 
+/// `DW0436`: a **single-slot fill** whose `count` exceeds the item's
+/// `minecraft:max_stack_size` in the pinned 1.21.11 registry.
+///
+/// Every one of these compiles to `item replace … container.<n> with <item>
+/// <count>`, and that command fails **silently** above the cap: the slot simply
+/// stays empty and the server logs nothing. A `count: 2` of `minecraft:rabbit_stew`
+/// (cap 1) shipped an empty chest slot in the-drowned-bell round 2 — exactly the
+/// silent-failure class `DW0431` exists for, one tier too late. The cap comes from
+/// Mojang's own item-components data, vendored per MC pin
+/// (`crates/compiler/data/item-stack-sizes-1.21.11.json`), never a hand table.
+///
+/// Skipped when the registry does not carry stack sizes (the small vendored DSL-side
+/// subset) or the item id is unknown — the latter is already `DW0143`, and stacking
+/// a second diagnostic on one typo is noise.
+fn check_stack_count(
+    item: &str,
+    count: u32,
+    what: &str,
+    path: String,
+    items: &dyn ItemRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let Some(cap) = items.max_stack_size(item) else {
+        return;
+    };
+    if count <= cap {
+        return;
+    }
+    d.push(Diagnostic::error(
+        codes::ITEM_COUNT_OVER_STACK,
+        "quests",
+        path,
+        format!(
+            "{what} declares `{item}` × {count}, but `{item}` stacks to at most {cap} in \
+             1.21.11. This is filled with `item replace … container.<n>`, which fails \
+             SILENTLY above the cap — the slot ships empty and nothing is logged. Lower \
+             the count to {cap} or fewer, or declare additional entries/containers."
+        ),
+    ));
+}
+
 /// Stage-5 `loot` declarations (spec-0021): id syntax/uniqueness (`DW0110`/
 /// `DW0111`), anchor resolution (`DW0142`), item ids (`DW0143`), enchantments
 /// (`DW0433`/`DW0434`), duplicate anchors (`DW0435`) and slot overflow
@@ -5705,6 +5774,14 @@ fn loot_checks(
                     ),
                 ));
             }
+            check_stack_count(
+                &it.item,
+                it.count,
+                &format!("loot `{}`", l.id),
+                format!("/content/loot/{i}/items/{k}/count"),
+                items,
+                d,
+            );
             check_enchantments(
                 &it.enchantments,
                 &format!("loot `{}` item `{}`", l.id, it.item),

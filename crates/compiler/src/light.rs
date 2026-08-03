@@ -550,7 +550,12 @@ impl LightModel {
 pub fn effective_sky(time: WorldTime, weather: WorldWeather) -> u8 {
     let base: u8 = match time {
         WorldTime::Noon | WorldTime::Day => 15,
-        WorldTime::Night | WorldTime::Midnight => 4,
+        // Dusk (12000) is the sun going down and dawn (23000) is still before
+        // sunrise, so both are held at the vanilla night floor. The sky at those two
+        // instants is in fact brighter than midnight, so this is the CONSERVATIVE
+        // reading — it can only make the `dark`-needs-mitigation proof stricter,
+        // never weaker.
+        WorldTime::Dusk | WorldTime::Night | WorldTime::Midnight | WorldTime::Dawn => 4,
     };
     if base <= 4 {
         // Night floor: weather darkening is negligible at night.
@@ -572,12 +577,17 @@ pub fn effective_sky(time: WorldTime, weather: WorldWeather) -> u8 {
 pub fn darkest_effective_sky(c: &Campaign) -> u8 {
     let mut times: BTreeSet<u8> = BTreeSet::new(); // discriminant via token order
     let mut weathers: BTreeSet<u8> = BTreeSet::new();
+    // Exhaustive both ways (no wildcard arm): adding a `WorldTime` variant fails to
+    // compile until it is given a discriminant HERE and a case in `time_of` below,
+    // so the darkest-reachable scan can never silently skip a new time state.
     let add_t = |t: WorldTime, set: &mut BTreeSet<u8>| {
         set.insert(match t {
             WorldTime::Day => 0,
             WorldTime::Noon => 1,
-            WorldTime::Night => 2,
-            WorldTime::Midnight => 3,
+            WorldTime::Dusk => 2,
+            WorldTime::Night => 3,
+            WorldTime::Midnight => 4,
+            WorldTime::Dawn => 5,
         });
     };
     let add_w = |w: WorldWeather, set: &mut BTreeSet<u8>| {
@@ -633,8 +643,10 @@ pub fn darkest_effective_sky(c: &Campaign) -> u8 {
     let time_of = |d: u8| match d {
         0 => WorldTime::Day,
         1 => WorldTime::Noon,
-        2 => WorldTime::Night,
-        _ => WorldTime::Midnight,
+        2 => WorldTime::Dusk,
+        3 => WorldTime::Night,
+        4 => WorldTime::Midnight,
+        _ => WorldTime::Dawn,
     };
     let weather_of = |d: u8| match d {
         0 => WorldWeather::Clear,
