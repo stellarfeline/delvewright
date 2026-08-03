@@ -102,12 +102,56 @@ dw_mutex_acquire() {
 }
 
 # Idempotent; releases only a lock this process actually took.
+#
+# NOTE the shell-state contract: this only works in the SAME shell session that
+# ran dw_mutex_acquire ($DW_MUTEX_ME does not survive a new shell). A caller
+# operating across shells — every agent tool invocation is a fresh shell — MUST
+# use dw_mutex_release_named instead. The no-op below stays silent-successful
+# because `trap dw_mutex_release EXIT` relies on it, but it now says so on
+# stderr: a real incident (2026-08-03) had a planner shell "release" a lock,
+# echo its own success message, and leave the lock in place for hours, stalling
+# every waiting worker.
 dw_mutex_release() {
-  [ -n "$DW_MUTEX_ME" ] || return 0
+  if [ -z "$DW_MUTEX_ME" ]; then
+    echo "dw_mutex_release: nothing was acquired in THIS shell — no-op." >&2
+    echo "  (cross-shell release: dw_mutex_release_named <holder-name>)" >&2
+    return 0
+  fi
   if [ "$(dw_mutex_holder)" = "$DW_MUTEX_ME" ]; then
     rm -f "$DW_MUTEX_DIR/HOLDER"
     rmdir "$DW_MUTEX_DIR" 2>/dev/null
     echo "mutex released by $DW_MUTEX_ME"
   fi
   DW_MUTEX_ME=""
+}
+
+# dw_mutex_release_named <holder-name>
+# Cross-shell release: frees the lock ONLY if HOLDER matches the given name
+# exactly. This is how a coordinator releases a lock it took in an earlier
+# shell (agent tool calls never share shell state). Releasing
+# owner-play-session is additionally guarded: it is refused while the
+# play-profile server container is actually running — the name is sacred
+# because a HUMAN may be behind it, so the end of their session must be
+# verifiable, not assumed.
+dw_mutex_release_named() {
+  local name="${1:?dw_mutex_release_named needs the holder name to release}"
+  local holder; holder="$(dw_mutex_holder)"
+  if [ -z "$holder" ]; then
+    echo "dw_mutex_release_named: lock is already free." >&2
+    return 0
+  fi
+  if [ "$holder" != "$name" ]; then
+    echo "REFUSING: lock is held by '$holder', not '$name' — not touching it." >&2
+    return 1
+  fi
+  if [ "$name" = "owner-play-session" ] && command -v docker >/dev/null 2>&1; then
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "delvewright-server"; then
+      echo "REFUSING: delvewright-server is RUNNING — the owner may still be playing." >&2
+      echo "Stop the play profile first; only then may owner-play-session be released." >&2
+      return 1
+    fi
+  fi
+  rm -f "$DW_MUTEX_DIR/HOLDER"
+  rmdir "$DW_MUTEX_DIR" 2>/dev/null
+  echo "mutex (holder '$name') released by name"
 }
