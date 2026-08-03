@@ -65,6 +65,118 @@ pub fn state_value<'a>(name: &'a str, key: &str) -> Option<&'a str> {
     })
 }
 
+/// Rewrite a blockstate's **orientation properties** for a piece placed with
+/// rotation `r`, the way vanilla's `/place template … <rotation>` does.
+///
+/// Model fidelity (task #191). [`placed_blocks`] rotates a prefab cell's
+/// *position* via [`crate::solver::Rotation::transform`] but used to insert the
+/// palette name verbatim, so for any piece with `rotation != None` the assembled
+/// map disagreed with the world the server actually builds: vanilla rotates
+/// blockstates during structure placement, the model did not. Nothing consumed
+/// the affected properties before, which is why it never surfaced — the
+/// occupancy classifiers read only `type`/`layers`/`open`/`waterlogged`/`bottom`,
+/// every one of them rotation-invariant, so this correction leaves nav, seating,
+/// relight, snapshots and every emitted command byte-identical (ADR-0006). The
+/// stair-orientation proof (`DW0430`) is the first consumer that reads `facing`,
+/// and without this it would report a false defect on every rotated piece.
+///
+/// Rotated, per the vanilla `BlockState::rotate` implementations:
+/// - `facing` — horizontal values only; `up`/`down` (hoppers, observers) are
+///   yaw-invariant and pass through.
+/// - `axis` — `x` ↔ `z` under a quarter turn, unchanged under a half turn; `y`
+///   never moves.
+/// - `rotation` — the 16-step sign/banner/skull dial, `+4` per clockwise quarter.
+/// - `north`/`south`/`east`/`west` — the connection properties of fences, walls,
+///   panes, redstone wire and vines. Permuted as a set, so a wall's
+///   `none`/`low`/`tall` values travel with their side.
+/// - `orientation` — the crafter/jigsaw `<front>_<top>` pair; both components are
+///   rotated when horizontal.
+/// - `shape` — **only rail shapes** (`north_east`, `ascending_west`, …). A
+///   *stair's* `shape` (`straight`, `inner_left`, `outer_right`, …) is expressed
+///   relative to its own `facing`, so it is already correct once `facing` moves;
+///   rotating it too would corrupt the corner. The value, not the block id,
+///   decides — which is what keeps this table-free.
+pub fn rotate_state(name: &str, r: crate::solver::Rotation) -> String {
+    use crate::solver::Rotation;
+    if r == Rotation::None {
+        return name.to_string();
+    }
+    let Some(open) = name.find('[') else {
+        return name.to_string();
+    };
+    let Some(close) = name[open..].find(']').map(|i| i + open) else {
+        return name.to_string();
+    };
+    let quarter_turns = match r {
+        Rotation::None => 0,
+        Rotation::Cw90 => 1,
+        Rotation::Cw180 => 2,
+        Rotation::Ccw90 => 3,
+    };
+    /// The rotated value of one `k=v` pair, or `None` to keep `v` unchanged.
+    /// `name` is the ORIGINAL blockstate, so the connection-property permutation
+    /// reads pre-rotation values and is therefore simultaneous.
+    fn rotated_value(
+        name: &str,
+        k: &str,
+        v: &str,
+        r: crate::solver::Rotation,
+        quarter_turns: u32,
+    ) -> Option<String> {
+        use crate::solver::{Facing, Rotation};
+        let rot_dir = |s: &str| Facing::parse(s).map(|f| f.rotate(r).token());
+        match k {
+            "facing" => rot_dir(v).map(str::to_string),
+            "axis" => match (v, quarter_turns % 2) {
+                ("x", 1) => Some("z".to_string()),
+                ("z", 1) => Some("x".to_string()),
+                _ => None,
+            },
+            "rotation" => v
+                .parse::<u32>()
+                .ok()
+                .map(|n| ((n + 4 * quarter_turns) % 16).to_string()),
+            // The value now under `k` is the one that sat on the side `k` came
+            // FROM — `k` turned backwards by the same amount.
+            "north" | "south" | "east" | "west" => {
+                let mut src = Facing::parse(k)?;
+                for _ in 0..(4 - quarter_turns) % 4 {
+                    src = src.rotate(Rotation::Cw90);
+                }
+                state_value(name, src.token()).map(str::to_string)
+            }
+            // `<front>_<top>` (crafter, jigsaw) — rotate each horizontal half.
+            "orientation" => {
+                let (a, b) = v.split_once('_')?;
+                let ra = rot_dir(a).unwrap_or(a);
+                let rb = rot_dir(b).unwrap_or(b);
+                Some(format!("{ra}_{rb}"))
+            }
+            // Rail shapes only — a stair's shape is relative to its own facing.
+            "shape" => match v.split_once('_')? {
+                ("ascending", d) => rot_dir(d).map(|rd| format!("ascending_{rd}")),
+                (a, b) => Some(format!("{}_{}", rot_dir(a)?, rot_dir(b)?)),
+            },
+            _ => None,
+        }
+    }
+    let body: Vec<String> = name[open + 1..close]
+        .split(',')
+        .map(|kv| {
+            let Some((k, v)) = kv.split_once('=') else {
+                return kv.to_string();
+            };
+            let (k, v) = (k.trim(), v.trim());
+            let out = rotated_value(name, k, v, r, quarter_turns);
+            format!("{k}={}", out.unwrap_or_else(|| v.to_string()))
+        })
+        .collect();
+    // Keys keep their (already BTreeMap-sorted) order; only values move, so the
+    // rendered name stays canonical without re-sorting. Except the connection
+    // set, whose keys are themselves sorted — still stable, values permuted.
+    format!("{}[{}]", &name[..open], body.join(","))
+}
+
 /// The air block variants that count as "no block" (passable / transparent).
 pub fn is_air(name: &str) -> bool {
     matches!(
@@ -426,6 +538,9 @@ fn placed_blocks(
             // snow-layer counts are block STATE, and the fluid/step models below
             // are wrong without them. Every classifier matches on [`base_id`].
             for (local, name, open) in structure_cells_stateful(bytes) {
+                // Vanilla rotates blockstates as well as positions during
+                // `/place template … <rotation>` (task #191) — see [`rotate_state`].
+                let name = rotate_state(&name, piece.rotation);
                 let t = piece.rotation.transform(local);
                 let cell = [
                     piece.pos[0] + t[0],
@@ -1744,6 +1859,145 @@ mod tests {
                 blocks.get(&[x, 63, 0]).map(String::as_str),
                 Some("minecraft:stone")
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod rotate_state_tests {
+    use super::rotate_state;
+    use crate::solver::Rotation;
+
+    #[test]
+    fn identity_rotation_is_untouched() {
+        let s = "minecraft:stone_stairs[facing=north,half=bottom]";
+        assert_eq!(rotate_state(s, Rotation::None), s);
+    }
+
+    #[test]
+    fn stateless_names_pass_through() {
+        assert_eq!(
+            rotate_state("minecraft:stone", Rotation::Cw90),
+            "minecraft:stone"
+        );
+    }
+
+    #[test]
+    fn facing_turns_with_the_piece() {
+        let s = "minecraft:stone_stairs[facing=north,half=bottom,shape=straight]";
+        assert_eq!(
+            rotate_state(s, Rotation::Cw90),
+            "minecraft:stone_stairs[facing=east,half=bottom,shape=straight]"
+        );
+        assert_eq!(
+            rotate_state(s, Rotation::Cw180),
+            "minecraft:stone_stairs[facing=south,half=bottom,shape=straight]"
+        );
+        assert_eq!(
+            rotate_state(s, Rotation::Ccw90),
+            "minecraft:stone_stairs[facing=west,half=bottom,shape=straight]"
+        );
+    }
+
+    /// A stair's `shape` is expressed relative to its own `facing`, so it must
+    /// NOT be rotated — only rail shapes are absolute.
+    #[test]
+    fn stair_shape_is_relative_and_never_rotated() {
+        assert_eq!(
+            rotate_state(
+                "minecraft:stone_stairs[facing=north,shape=inner_left]",
+                Rotation::Cw90
+            ),
+            "minecraft:stone_stairs[facing=east,shape=inner_left]"
+        );
+    }
+
+    #[test]
+    fn rail_shapes_are_absolute_and_do_rotate() {
+        assert_eq!(
+            rotate_state("minecraft:rail[shape=ascending_north]", Rotation::Cw90),
+            "minecraft:rail[shape=ascending_east]"
+        );
+        assert_eq!(
+            rotate_state("minecraft:rail[shape=north_east]", Rotation::Cw90),
+            "minecraft:rail[shape=east_south]"
+        );
+    }
+
+    #[test]
+    fn axis_swaps_on_a_quarter_turn_only() {
+        assert_eq!(
+            rotate_state("minecraft:oak_log[axis=x]", Rotation::Cw90),
+            "minecraft:oak_log[axis=z]"
+        );
+        assert_eq!(
+            rotate_state("minecraft:oak_log[axis=x]", Rotation::Cw180),
+            "minecraft:oak_log[axis=x]"
+        );
+        assert_eq!(
+            rotate_state("minecraft:oak_log[axis=y]", Rotation::Cw90),
+            "minecraft:oak_log[axis=y]"
+        );
+    }
+
+    #[test]
+    fn sign_rotation_dial_advances_four_per_quarter_turn() {
+        assert_eq!(
+            rotate_state("minecraft:oak_sign[rotation=0]", Rotation::Cw90),
+            "minecraft:oak_sign[rotation=4]"
+        );
+        assert_eq!(
+            rotate_state("minecraft:oak_sign[rotation=14]", Rotation::Cw90),
+            "minecraft:oak_sign[rotation=2]"
+        );
+    }
+
+    /// Connection properties permute as a SET, simultaneously — reading the
+    /// original state, never a half-rewritten one.
+    #[test]
+    fn fence_connections_permute_simultaneously() {
+        let s = "minecraft:oak_fence[east=false,north=true,south=false,west=false]";
+        // Cw90 sends north -> east, so the `true` must land on `east`.
+        assert_eq!(
+            rotate_state(s, Rotation::Cw90),
+            "minecraft:oak_fence[east=true,north=false,south=false,west=false]"
+        );
+    }
+
+    #[test]
+    fn wall_heights_travel_with_their_side() {
+        let s = "minecraft:stone_brick_wall[east=none,north=tall,south=low,west=none]";
+        assert_eq!(
+            rotate_state(s, Rotation::Cw90),
+            "minecraft:stone_brick_wall[east=tall,north=none,south=none,west=low]"
+        );
+    }
+
+    #[test]
+    fn vertical_facings_are_yaw_invariant() {
+        assert_eq!(
+            rotate_state("minecraft:hopper[facing=down]", Rotation::Cw90),
+            "minecraft:hopper[facing=down]"
+        );
+    }
+
+    /// Rotation-invariant properties the occupancy classifiers actually read are
+    /// untouched — this is why the correction keeps every output byte-identical.
+    #[test]
+    fn occupancy_relevant_properties_are_untouched() {
+        for s in [
+            "minecraft:oak_slab[type=top,waterlogged=false]",
+            "minecraft:snow[layers=5]",
+            "minecraft:oak_fence_gate[facing=north,open=true]",
+        ] {
+            let r = rotate_state(s, Rotation::Cw90);
+            for key in ["type", "waterlogged", "layers", "open"] {
+                assert_eq!(
+                    super::state_value(s, key),
+                    super::state_value(&r, key),
+                    "{key} changed in {r}"
+                );
+            }
         }
     }
 }

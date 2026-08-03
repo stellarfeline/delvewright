@@ -109,6 +109,18 @@ pub mod codes {
     pub const ANCHOR_UNRESOLVED: &str = "DW0142";
     /// Item id not in the pinned 1.21.11 registry.
     pub const ITEM_UNKNOWN: &str = "DW0143";
+    /// (spec-0021) An `equipment` or `loot` enchantment id is not in the pinned
+    /// 1.21.11 enchantment registry.
+    pub const ENCHANTMENT_UNKNOWN: &str = "DW0433";
+    /// (spec-0021) An enchantment level is outside the 1..=255 range vanilla's
+    /// `minecraft:enchantments` component can carry.
+    pub const ENCHANTMENT_LEVEL: &str = "DW0434";
+    /// (spec-0021) Two `loot` entries target the same anchor, so one would
+    /// silently overwrite the other's contents.
+    pub const LOOT_DUPLICATE_ANCHOR: &str = "DW0435";
+    /// (spec-0021) A `loot` declaration carries more stacks than the container
+    /// it fills has slots.
+    pub const LOOT_TOO_MANY_ITEMS: &str = "DW0432";
     /// Planned quest (stage 4) has no expansion in stage 5.
     pub const QUEST_NOT_EXPANDED: &str = "DW0150";
     /// Stage-5 quest is not planned in stage 4.
