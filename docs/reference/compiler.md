@@ -583,8 +583,50 @@ player, wherever the timeline is started from.
    they await (`tests/packtest_batch.rs::party_state_across_ticks_is_owned`).
 3. The suite datapack may therefore carry `data/<ns>/function/` mechanism
    functions beside `data/<ns>/test/`. PackTest only discovers `test/`, so
-   `tests/emit.rs` requires every `function/` file to be **named by some
-   template** — an orphan there is a test PackTest would never run.
+   every `function/` file must be **reachable from some template** — named by a
+   template directly (`tests/emit.rs`), or through the packtest function graph
+   (the campaign phase chain below; `tests/packtest_campaign.rs` walks the
+   closure). An orphan there is a test PackTest would never run.
+
+### The campaign mechanism test (scheduled endings, branches — task #125)
+
+The `campaign` template drives every objective's `complete_o_*` on its dummy and
+asserts the completion objective on `#party`. Two structural facts of the
+campaign pick its shape (the-wake escalation — a `sequence`-scheduled finale
+made the old same-tick assert structurally unreachable, and the template drove
+both branches' terminal objectives in one tick, a state no playthrough reaches):
+
+- **Synchronous ending, no `branch_points`** — the original single-tick
+  template, byte for byte: baseline, drive, `assert`, all in one atomic
+  mcfunction.
+- **Scheduled ending, no `branch_points`** — the emitter computes the ending
+  tail (`campaign_complete_tail`: max scheduled offset to a `campaign-complete`
+  across all nesting — `sequence` steps add `at_ticks`, `move-npc`/`move-actor`
+  `on_arrive` adds the planned walk; reaction bundles are skipped, `DW0204`
+  proves the path's ending is not exclusively there) and the template `await`s
+  the completion objective with `# @timeout 100 + tail`. The baseline + drive
+  are hoisted into `pt_camp_drive` (a suite `function/`, called on the drive
+  tick) so the tick-spanning template's body touches ONLY the score it awaits
+  and solely owns (`party_state_across_ticks_is_owned`); the hoisted writes stay
+  atomic-with-the-drive exactly as in the single-tick form.
+- **Declared `branch_points`** — ONE template, one **phase per reachable
+  realized branch**, serialized through the vanilla scheduler (two concurrent
+  templates awaiting the shared completion objective would hand each other
+  false verdicts in batch order). `pt_camp_run_<i>` re-baselines the whole
+  progression surface (completion objective, every flag, every
+  `dw.q_*`/`dw.qa_*`/`dw.o_*` — a prior phase's completed quest would otherwise
+  keep its `unless dw.q_*` guarded `on_complete` from re-firing), activates the
+  campaign-start quests, then drives ONLY that branch's flow playthrough in
+  path order, emulating each branch-scripted dialogue option's `set-flag`s
+  immediately before its `talk-to` drive (the real playthrough sets them there;
+  a UI click is not available to a dummy). It then schedules
+  `pt_camp_check_<i>` at `tail_i + 20t`, which counts `#party <completion> ==
+  <value>` into the template-owned `#camp_phase dw.sys` and starts the next
+  phase's run. The template's single closing `await score #camp_phase dw.sys
+  matches <n>` (timeout `100 + Σ(tail_i + 20)`) demands every phase's verdict —
+  a missed ending leaves the count short and times out red, never weaker than
+  the old assert and now quantified over branches. Campaigns without
+  `branch_points` are untouched by this shape.
 
 ### Semantics never key on player-facing text
 
@@ -960,6 +1002,16 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   cannot verify. Endgame rule: campaign completion is due at the LAST objective step;
   the campaign marker arriving earlier fails the run on the spot, because every
   remaining step is then provably hollow.
+
+  **`ending_tail_ticks`** (task #125): the terminal `assert-complete` step carries
+  the path's scheduled-ending tail — the compiler-computed maximum tick offset
+  between the terminal objective completing and `campaign-complete` firing
+  (`sequence` `at_ticks`, `move-npc`/`move-actor` walk durations; the-wake: 250t).
+  The harness completion window becomes `max(15s, tail·50ms + 10s)` — widened,
+  never narrowed. Omitted when the ending is synchronous, so pre-#125 paths are
+  byte-identical. Emitted by the same computation the campaign PackTest's await
+  timeout uses, and per branch on each `validation/branch-path-<branch>.json`
+  (a branch waits out its OWN ending's tail).
 
   **`rest` steps** (spec-0016 §1, bell round-3 finding 2026-08-03). A bonfire arms
   an affordance and moves nothing until the party rests — souls-correct, and also

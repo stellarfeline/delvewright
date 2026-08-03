@@ -202,6 +202,15 @@ export interface AssertCompleteStep {
   /** The sidebar-displayed objective the bot reads. */
   readonly objective: string;
   readonly value: number;
+  /**
+   * Scheduled-ending tail (task #125): the compiler-computed maximum tick offset
+   * between the terminal objective completing and `campaign-complete` firing —
+   * a `sequence`-scheduled finale (the-wake: 250t) or a `move-npc`/`move-actor`
+   * arrival bundle. The completion window must cover it: the window becomes
+   * `max(default settle, tail + margin)`. Absent (undefined) for a synchronous
+   * ending, which keeps pre-#125 paths byte-identical.
+   */
+  readonly endingTailTicks?: number;
 }
 
 export type Step =
@@ -550,12 +559,22 @@ function parseStep(value: unknown, pointer: string): Step {
       };
     }
     case "assert-complete": {
-      rejectUnknownKeys(obj, ["action", "scoreboard"], pointer);
+      rejectUnknownKeys(obj, ["action", "scoreboard", "ending_tail_ticks"], pointer);
       const board = requireScoreboard(obj, pointer);
+      const tail = obj["ending_tail_ticks"];
+      if (tail !== undefined) {
+        if (typeof tail !== "number" || !Number.isInteger(tail) || tail <= 0) {
+          fail(
+            `${pointer}/ending_tail_ticks`,
+            `must be a positive integer, got ${describe(tail)}`,
+          );
+        }
+      }
       return {
         action: "assert-complete",
         objective: board.objective,
         value: board.value,
+        ...(tail !== undefined ? { endingTailTicks: tail as number } : {}),
       };
     }
     default:

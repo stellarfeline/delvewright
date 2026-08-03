@@ -306,7 +306,53 @@ fn suites() -> Vec<(&'static str, BuildOutput)> {
         ),
         ("hello-world+actors", build_actor_hello_world()),
         ("hello-world+handoff", build_handoff_hello_world()),
+        // task #125: the branch-aware campaign template (phased drive + await)
+        // and the scheduled-ending await template must obey the batch model too.
+        (
+            "branch-two-endings",
+            build_dir(&common::compiler_fixtures_dir().join("branch-two-endings")),
+        ),
+        (
+            "hello-world+scheduled-ending",
+            build_scheduled_hello_world(),
+        ),
     ]
+}
+
+/// hello-world with its finale `campaign-complete` moved 240t into a closing
+/// `sequence` (the-wake's shape, task #125), so the awaiting campaign template
+/// is emitted and swept by the batch-model rules.
+fn build_scheduled_hello_world() -> BuildOutput {
+    let src = common::hello_world_dir();
+    let dst = scratch_dir("sched-ending");
+    let _ = std::fs::remove_dir_all(&dst);
+    std::fs::create_dir_all(&dst).unwrap();
+    for f in common::STAGE_FILES {
+        std::fs::copy(src.join(f), dst.join(f)).unwrap();
+    }
+    let search = r#"        "on_complete": [
+          {
+            "type": "campaign-complete"
+          }
+        ]"#;
+    let replace = r#"        "on_complete": [
+          {
+            "type": "sequence",
+            "steps": [
+              { "at_ticks": 240, "effects": [ { "type": "campaign-complete" } ] }
+            ]
+          }
+        ]"#;
+    let qp = dst.join("quests.json");
+    let q = std::fs::read_to_string(&qp)
+        .unwrap()
+        .replace("\"dsl_version\": \"0.2.0\"", "\"dsl_version\": \"0.6.0\"")
+        .replace(search, replace);
+    assert!(q.contains("at_ticks"), "quests.json patch applied");
+    std::fs::write(&qp, q).unwrap();
+    let out = build_dir(&dst);
+    let _ = std::fs::remove_dir_all(&dst);
+    out
 }
 
 /// Own members (spec-0018): a template that spawns extra dummies names them

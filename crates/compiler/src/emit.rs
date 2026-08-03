@@ -697,7 +697,11 @@ pub fn build_with_warnings(
     emit_server(plan, &mut out);
 
     // ---- critical path ----
-    put_json(&mut out, "critical-path.json", &emit_critical_path(plan));
+    put_json(
+        &mut out,
+        "critical-path.json",
+        &emit_critical_path(plan, &moves, &actor_moves),
+    );
 
     // ---- visual-tier render plan (spec-0003 / spec-0007) ----
     // Deterministic camera + expect-checklist shot list for the visual tier;
@@ -773,7 +777,7 @@ pub fn build_with_warnings(
     // A branch's scripted dialogue choices ride inside its own `talk-to` steps
     // (each carries the `/trigger` line of the option belonging to that branch),
     // which is the only player-legal way to actuate a server-driven dialog button.
-    for (slug, path) in branch_paths(plan)? {
+    for (slug, path) in branch_paths(plan, &moves, &actor_moves)? {
         put_json(
             &mut out,
             &format!("validation/branch-path-{slug}.json"),
@@ -8043,50 +8047,119 @@ fn emit_packtest(
     // proves the compiler's objective -> quest -> campaign chain end to end
     // without needing dialog-UI clicks or bot movement (verified live: passes on
     // Fabric + PackTest 2.4.0).
+    //
+    // Two structural facts of the campaign shape the template (task #125, the-wake):
+    //
+    //   * `campaign-complete` may sit at any nesting depth (spec-0025 / DW0481) —
+    //     the-wake schedules it 250t into its closing `sequence`. A same-tick
+    //     `assert` after the drive is then structurally unreachable ("got 0 on
+    //     tick 0"), so a campaign whose ending has a scheduled tail must AWAIT
+    //     the completion objective, with the timeout sized by the tail the
+    //     emitter itself scheduled.
+    //   * Declared `branch_points` make some terminal objectives mutually
+    //     exclusive: driving every objective in one pass reaches a state no
+    //     playthrough can (both endings fired in one tick). A branch campaign
+    //     therefore drives one coherent per-branch path per phase, serialized
+    //     through the vanilla scheduler.
+    //
+    // Campaigns with no branch points and a synchronous ending keep the original
+    // single-tick template byte for byte.
     let (pin, sel) = pin_dummy("dw_t_camp");
-    let mut body: Vec<String> = Vec::new();
-    body.push(format!(
-        "#> {}: objective completions set {comp_obj} (Delvewright mechanism test)",
-        c.world.content.title
-    ));
-    body.push("# @dummy".to_string());
-    body.push("# @timeout 100".to_string());
-    body.push(String::new());
-    body.push(format!("function {ns}:setup"));
-    // Pin this test's own dummy and drive the whole chain on it alone (see
-    // `pin_dummy`): `@a`-wide quest/objective writes would land on every
-    // sibling test's dummy in the batch, and the closing `@p` assert could read
-    // a foreign one.
-    body.push(pin);
-    // Actively establish the asserted baseline — on the shared-batch server
-    // "never set" is not 0. spec-0018: the whole chain is PARTY state, so the
-    // baseline, the activation and the assert all address `#party`; the dummy is
-    // still what DRIVES it (`execute as {sel} run …`), which is exactly the
-    // multiplayer claim — one player's action advances the party.
     let party = plan::PARTY;
-    body.push(format!("scoreboard players set {party} {comp_obj} 0"));
-    for qid in campaign_start_quests(c) {
-        body.push(format!(
-            "scoreboard players set {party} {} 1",
-            quest_active_score(qid)
-        ));
-    }
-    for q in &c.quests.content.quests {
-        for o in &q.objectives {
-            body.push(format!(
-                "execute as {sel} run function {ns}:complete_{}",
-                safe_obj_fn(o.id().as_str())
+    let branches: Vec<crate::branch::RealizedBranch> = crate::branch::realize(c)
+        .into_iter()
+        .filter(|r| r.world.is_some())
+        .collect();
+    if branches.is_empty() {
+        // No declared branch points (or nothing reachable — already DW0482):
+        // one coherent drive over every objective, exactly as before.
+        let quests: BTreeSet<&str> = c
+            .quests
+            .content
+            .quests
+            .iter()
+            .map(|q| q.id.as_str())
+            .collect();
+        let tail = quests_ending_tail(c, &quests, moves, actor_moves);
+        // Baseline + drive. Actively establish the asserted baseline — on the
+        // shared-batch server "never set" is not 0. spec-0018: the whole chain is
+        // PARTY state, so the baseline, the activation and the assert all address
+        // `#party`; the dummy is still what DRIVES it (`execute as {sel} run …`),
+        // which is exactly the multiplayer claim — one player's action advances
+        // the party.
+        let mut drive: Vec<String> = Vec::new();
+        drive.push(format!("scoreboard players set {party} {comp_obj} 0"));
+        for qid in campaign_start_quests(c) {
+            drive.push(format!(
+                "scoreboard players set {party} {} 1",
+                quest_active_score(qid)
             ));
         }
+        for q in &c.quests.content.quests {
+            for o in &q.objectives {
+                drive.push(format!(
+                    "execute as {sel} run function {ns}:complete_{}",
+                    safe_obj_fn(o.id().as_str())
+                ));
+            }
+        }
+        let mut body: Vec<String> = Vec::new();
+        body.push(format!(
+            "#> {}: objective completions set {comp_obj} (Delvewright mechanism test)",
+            c.world.content.title
+        ));
+        body.push("# @dummy".to_string());
+        if tail == 0 {
+            body.push("# @timeout 100".to_string());
+            body.push(String::new());
+            body.push(format!("function {ns}:setup"));
+            // Pin this test's own dummy and drive the whole chain on it alone (see
+            // `pin_dummy`): `@a`-wide quest/objective writes would land on every
+            // sibling test's dummy in the batch, and the closing `@p` assert could
+            // read a foreign one.
+            body.push(pin);
+            body.extend(drive);
+            body.push(format!(
+                "assert score {party} {comp_obj} matches {comp_val}"
+            ));
+        } else {
+            // Scheduled ending: the ending lands `tail` ticks after the terminal
+            // drive, so the template awaits it (never a weaker assert — `await`
+            // fails the test at timeout exactly as `assert` fails it on the
+            // spot). The template now spans ticks, so its body may touch no
+            // `#party` score a sibling template also touches
+            // (`tests/packtest_batch.rs::party_state_across_ticks_is_owned`):
+            // the baseline + drive — shared quest/flag state, written and
+            // consumed atomically within one tick, exactly as in the single-tick
+            // form — is hoisted into `pt_camp_drive`, leaving the awaited
+            // completion objective (owned by this template alone) as the
+            // template's only cross-tick surface.
+            body.push(format!("# @timeout {}", 100 + tail));
+            body.push(String::new());
+            body.push(format!("function {ns}:setup"));
+            body.push(pin);
+            body.push(format!("function {ns}:pt_camp_drive"));
+            body.push(format!("await score {party} {comp_obj} matches {comp_val}"));
+            out.insert(
+                format!("packtest-datapack/data/{ns}/function/pt_camp_drive.mcfunction"),
+                lines(&drive).into_bytes(),
+            );
+        }
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/campaign.mcfunction"),
+            lines(&body).into_bytes(),
+        );
+    } else {
+        emit_branch_campaign_packtest(
+            plan,
+            out,
+            &branches,
+            moves,
+            actor_moves,
+            (&comp_obj, comp_val),
+            (&pin, &sel),
+        );
     }
-    body.push(format!(
-        "assert score {party} {comp_obj} matches {comp_val}"
-    ));
-
-    out.insert(
-        format!("packtest-datapack/data/{ns}/test/campaign.mcfunction"),
-        lines(&body).into_bytes(),
-    );
 
     // Sealed-state test: prove the environment-sealing baseline (spec-0002) is
     // applied on boot. What PackTest / vanilla 1.21.11 lets us assert in-test:
@@ -8229,6 +8302,256 @@ fn emit_packtest(
 
     // spec-0018: one n-dummy division-of-labour test per AND-join.
     emit_party_join_packtests(plan, out);
+}
+
+/// Ticks between one PackTest campaign phase's ending window closing and its
+/// verdict being taken — slack for the scheduler landing the ending's last
+/// function plus the completion write itself.
+const CAMPAIGN_PHASE_MARGIN_TICKS: u32 = 20;
+
+/// The branch-aware campaign mechanism test (task #125): ONE template that
+/// drives each reachable branch's coherent path as its own phase, serialized
+/// through the vanilla scheduler, and awaits one verdict per phase.
+///
+/// Why one template rather than one per branch: every phase's verdict is the
+/// shared completion objective, and a template that spans ticks must be the sole
+/// owner of every `#party` score it depends on across ticks
+/// (`tests/packtest_batch.rs::party_state_across_ticks_is_owned`) — two
+/// concurrently-running branch templates zeroing and awaiting `dw.campaign`
+/// would hand each other false verdicts in an order the compiler does not
+/// control. Phases are strictly ordered by construction: phase *i*'s scheduled
+/// check is what starts phase *i + 1*.
+///
+/// Each phase (`pt_camp_run_<i>`) re-baselines the WHOLE progression surface
+/// (completion objective, every flag, every quest active/complete score, every
+/// objective score — a fresh coherent run; a prior phase's terminal quest would
+/// otherwise stay `dw.q_* = 1` and its completion-guarded `on_complete` never
+/// re-fire), sets the campaign-start quests active, then drives ONLY this
+/// branch's path in play order. A `talk-to` step whose branch-scripted option
+/// sets flags has those flags emulated immediately before its drive — the
+/// option handler is UI-bound, and this is where the real playthrough sets
+/// them. The phase's verdict is taken `tail + margin` ticks later
+/// (`pt_camp_check_<i>`): completion objective at its expected value counts the
+/// phase into `#camp_phase`, and the template's single closing `await` demands
+/// every phase counted. A missed ending leaves the count short and the await
+/// times out red — never weaker than the old assert, and now quantified over
+/// branches.
+#[allow(clippy::too_many_arguments)]
+fn emit_branch_campaign_packtest(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    branches: &[crate::branch::RealizedBranch],
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+    (comp_obj, comp_val): (&str, i32),
+    (pin, sel): (&str, &str),
+) {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let party = plan::PARTY;
+    let n = branches.len();
+    let mut timeout: u32 = 100;
+    for (i, r) in branches.iter().enumerate() {
+        let quests: BTreeSet<&str> = r.path.iter().map(|s| s.quest.as_str()).collect();
+        let tail = quests_ending_tail(c, &quests, moves, actor_moves);
+        let wait = tail + CAMPAIGN_PHASE_MARGIN_TICKS;
+        timeout += wait;
+        let mut run: Vec<String> = Vec::new();
+        run.push(format!(
+            "# Phase {i}: branch `{}` — full progression re-baseline, then this branch's",
+            r.branch.id
+        ));
+        run.push(
+            "# coherent path only (its scripted dialogue choices emulated as the flags".to_string(),
+        );
+        run.push("# those options set, at their real path positions).".to_string());
+        run.push(format!("scoreboard players set {party} {comp_obj} 0"));
+        for f in declared_flags(c) {
+            run.push(format!(
+                "scoreboard players set {party} {} 0",
+                plan::flag_score(&f)
+            ));
+        }
+        for q in &c.quests.content.quests {
+            run.push(format!(
+                "scoreboard players set {party} {} 0",
+                quest_score(q.id.as_str())
+            ));
+            run.push(format!(
+                "scoreboard players set {party} {} 0",
+                quest_active_score(q.id.as_str())
+            ));
+            for o in &q.objectives {
+                run.push(format!(
+                    "scoreboard players set {party} {} 0",
+                    obj_score(o.id().as_str())
+                ));
+            }
+        }
+        for qid in campaign_start_quests(c) {
+            run.push(format!(
+                "scoreboard players set {party} {} 1",
+                quest_active_score(qid)
+            ));
+        }
+        for step in &r.path {
+            if let Some(opt) = step.talk_option {
+                for f in option_sets_flags(plan, &step.objective, opt) {
+                    run.push(format!(
+                        "scoreboard players set {party} {} 1",
+                        plan::flag_score(f)
+                    ));
+                }
+            }
+            run.push(format!(
+                "execute as {sel} run function {ns}:complete_{}",
+                safe_obj_fn(&step.objective)
+            ));
+        }
+        run.push(format!("schedule function {ns}:pt_camp_check_{i} {wait}t"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/function/pt_camp_run_{i}.mcfunction"),
+            lines(&run).into_bytes(),
+        );
+
+        let mut chk = vec![format!(
+            "execute if score {party} {comp_obj} matches {comp_val} run \
+             scoreboard players add #camp_phase dw.sys 1"
+        )];
+        if i + 1 < n {
+            chk.push(format!("function {ns}:pt_camp_run_{}", i + 1));
+        }
+        out.insert(
+            format!("packtest-datapack/data/{ns}/function/pt_camp_check_{i}.mcfunction"),
+            lines(&chk).into_bytes(),
+        );
+    }
+
+    let mut body: Vec<String> = Vec::new();
+    body.push(format!(
+        "#> {}: each branch's coherent path sets {comp_obj} (Delvewright mechanism test)",
+        c.world.content.title
+    ));
+    body.push("# @dummy".to_string());
+    body.push(format!("# @timeout {timeout}"));
+    body.push(String::new());
+    body.push(format!("function {ns}:setup"));
+    body.push(pin.to_string());
+    // Own init for the phase counter — on the shared batch server "never set"
+    // is not 0, and `#camp_phase` belongs to this template alone.
+    body.push("scoreboard players set #camp_phase dw.sys 0".to_string());
+    // The phase chain: pt_camp_run_0 -> pt_camp_check_0 -> pt_camp_run_1 -> …
+    // (each check is scheduled by its run and starts the next run).
+    body.push(format!("function {ns}:pt_camp_run_0"));
+    body.push(format!("await score #camp_phase dw.sys matches {n}"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/campaign.mcfunction"),
+        lines(&body).into_bytes(),
+    );
+}
+
+/// The flags the branch-scripted dialogue option at flat index `n` (1-based, per
+/// the NPC the `talk-to` objective names) sets when chosen — what the campaign
+/// phase drive emulates in place of a UI click. Empty when the objective is not
+/// a `talk-to` or names no such option.
+fn option_sets_flags<'p>(plan: &'p Plan, objective: &str, n: usize) -> &'p [String] {
+    let npc = plan
+        .campaign
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| &q.objectives)
+        .find_map(|o| match o {
+            Objective::TalkTo { id, npc, .. } if id.as_str() == objective => Some(npc.as_str()),
+            _ => None,
+        });
+    npc.and_then(|npc_id| plan.npcs.iter().find(|p| p.npc_id == npc_id))
+        .and_then(|p| p.options.iter().find(|o| o.n == n as i32))
+        .map(|o| o.sets_flags.as_slice())
+        .unwrap_or(&[])
+}
+
+/// The scheduled tail (ticks) between firing `effs` and a `campaign-complete`
+/// nested anywhere inside it — `None` when the bundle reaches none (task #125).
+///
+/// spec-0025 / DW0481 admit the ending at any nesting depth (the-wake schedules
+/// its finale 250t into the closing `sequence`), so every consumer that waits
+/// for the ending — the campaign PackTest, the harness completion window — must
+/// wait out the tail the emitter itself scheduled. `sequence` steps add their
+/// `at_ticks`; a `move-npc` / `move-actor` `on_arrive` adds the planned walk
+/// duration. Reaction bundles (`on_respawn` / `on_rest` / `on_caught`) are
+/// skipped: driving objective completions never fires them, and `DW0204` proves
+/// the path's ending does not live exclusively there. Flag gates are ignored —
+/// a gated ending yields an upper bound, and waiting longer can only wait,
+/// never wrongly pass.
+fn campaign_complete_tail(
+    effs: &[QuestEffect],
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+) -> Option<u32> {
+    effs.iter()
+        .filter_map(|e| match e {
+            QuestEffect::CampaignComplete { .. } => Some(0),
+            QuestEffect::Sequence { steps } => steps
+                .iter()
+                .filter_map(|s| {
+                    campaign_complete_tail(&s.effects, moves, actor_moves).map(|t| s.at_ticks + t)
+                })
+                .max(),
+            QuestEffect::MoveNpc {
+                npc,
+                to_anchor,
+                on_arrive,
+                ..
+            } => campaign_complete_tail(on_arrive, moves, actor_moves).map(|t| {
+                t + moves
+                    .iter()
+                    .find(|m| m.npc == npc.as_str() && m.to_anchor == to_anchor.as_str())
+                    .map(|m| m.ticks() as u32)
+                    .unwrap_or(0)
+            }),
+            QuestEffect::MoveActor {
+                actor,
+                to_anchor,
+                on_arrive,
+                ..
+            } => campaign_complete_tail(on_arrive, moves, actor_moves).map(|t| {
+                t + actor_moves
+                    .iter()
+                    .find(|m| m.actor == actor.as_str() && m.to_anchor == to_anchor.as_str())
+                    .map(|m| m.ticks() as u32)
+                    .unwrap_or(0)
+            }),
+            _ => None,
+        })
+        .max()
+}
+
+/// The ending tail a driven run of `quest_ids` can schedule: the max
+/// [`campaign_complete_tail`] over those quests' `on_objective_complete` bundles
+/// and `on_complete`. `0` when the ending is synchronous (which keeps every
+/// pre-task-#125 campaign's emission byte-identical).
+fn quests_ending_tail(
+    c: &delvewright_dsl::Campaign,
+    quest_ids: &BTreeSet<&str>,
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+) -> u32 {
+    c.quests
+        .content
+        .quests
+        .iter()
+        .filter(|q| quest_ids.contains(q.id.as_str()))
+        .flat_map(|q| {
+            q.on_objective_complete
+                .values()
+                .map(|effs| effs.as_slice())
+                .chain(std::iter::once(q.on_complete.as_slice()))
+        })
+        .filter_map(|effs| campaign_complete_tail(effs, moves, actor_moves))
+        .max()
+        .unwrap_or(0)
 }
 
 /// The AND-joins of a campaign: every objective with **two or more** `after`
@@ -12320,7 +12643,11 @@ fn rest_step_index(plan: &Plan, walked: &[plan::Step], fire_step: usize) -> Opti
 /// An unreachable branch contributes nothing: there is no world that plays it,
 /// which `DW0482` has already failed the build for; `branch-plan.json` still names
 /// it, so the harness reports it skipped rather than silently absent.
-fn branch_paths(plan: &Plan) -> Result<Vec<(String, Value)>, BuildFailure> {
+fn branch_paths(
+    plan: &Plan,
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+) -> Result<Vec<(String, Value)>, BuildFailure> {
     let branches = crate::branch::realize(plan.campaign);
     if branches.is_empty() {
         return Ok(Vec::new());
@@ -12343,19 +12670,27 @@ fn branch_paths(plan: &Plan) -> Result<Vec<(String, Value)>, BuildFailure> {
                 &cp.transport_by_step,
                 &cp.sneak_by_step,
                 &cp.cutscene_by_step,
+                moves,
+                actor_moves,
             ),
         ));
     }
     Ok(out)
 }
 
-fn emit_critical_path(plan: &Plan) -> Value {
+fn emit_critical_path(
+    plan: &Plan,
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+) -> Value {
     critical_path_json(
         plan,
         &plan.critical_path,
         &plan.critical_path_transport,
         &plan.critical_path_sneak,
         &plan.critical_path_cutscene,
+        moves,
+        actor_moves,
     )
 }
 
@@ -12370,7 +12705,26 @@ fn critical_path_json(
     transports: &[Option<[i32; 3]>],
     sneak: &[bool],
     cutscene: &[Option<u32>],
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
 ) -> Value {
+    // Scheduled-ending tail for THIS path's quests (task #125): exported on the
+    // terminal `assert-complete` step as `ending_tail_ticks`, so the harness
+    // completion window covers a `sequence`-scheduled finale (the-wake: 250t)
+    // exactly as it already covers `cutscene_seconds`. Omitted when 0, keeping
+    // every synchronous-ending path byte-identical.
+    let path_quests: BTreeSet<&str> = {
+        let objs: BTreeSet<&str> = walked.iter().filter_map(plan::Step::objective).collect();
+        plan.campaign
+            .quests
+            .content
+            .quests
+            .iter()
+            .filter(|q| q.objectives.iter().any(|o| objs.contains(o.id().as_str())))
+            .map(|q| q.id.as_str())
+            .collect()
+    };
+    let ending_tail = quests_ending_tail(plan.campaign, &path_quests, moves, actor_moves);
     let steps: Vec<Value> = walked
         .iter()
         .enumerate()
@@ -12400,9 +12754,17 @@ fn critical_path_json(
                     "action": "interact", "objective": objective_id, "anchor": anchor_id,
                     "pos": pos, "command": command, "requires_item": requires_item
                 }),
-                Step::AssertComplete { objective, value } => json!({
-                    "action": "assert-complete", "scoreboard": { "objective": objective, "value": value }
-                }),
+                Step::AssertComplete { objective, value } => {
+                    let mut v = json!({
+                        "action": "assert-complete", "scoreboard": { "objective": objective, "value": value }
+                    });
+                    if ending_tail > 0
+                        && let Some(obj) = v.as_object_mut()
+                    {
+                        obj.insert("ending_tail_ticks".to_string(), json!(ending_tail));
+                    }
+                    v
+                }
             };
             // gap 8: mark a step whose completion teleports the player to another
             // area with the absolute destination, so the harness waits for the
