@@ -54,7 +54,13 @@ fn text(out: &BuildOutput, path: &str) -> String {
     .unwrap()
 }
 
+/// A function from the cast-ledger fixture's namespace.
 fn func(out: &BuildOutput, name: &str) -> String {
+    text(out, &format!("datapack/data/cast-ledger/function/{name}"))
+}
+
+/// A function from hello-world's namespace (the no-ledger control).
+fn hw_func(out: &BuildOutput, name: &str) -> String {
     text(out, &format!("datapack/data/hello-world/function/{name}"))
 }
 
@@ -65,13 +71,13 @@ fn declared_root_swaps_between_beats() {
     let out = ledger();
     let talk = func(&out, "talk_keeper.mcfunction");
     assert!(
-        talk.contains("function hello-world:cast_keeper"),
+        talk.contains("function cast-ledger:cast_keeper"),
         "talk must dispatch through the scene selector:\n{talk}"
     );
     // Scene 1 = the premise root; scene 2 = the farewell root.
     assert!(
         talk.contains(
-            "execute if score @s dw.cast matches 2 run dialog show @s hello-world:keeper_farewell"
+            "execute if score @s dw.cast matches 2 run dialog show @s cast-ledger:keeper_farewell"
         ),
         "the later beat must show the later root:\n{talk}"
     );
@@ -91,7 +97,7 @@ fn declared_root_swaps_between_beats() {
 fn a_silent_scene_emits_no_action_clause() {
     let talk = func(&ledger(), "talk_sleeper.mcfunction");
     assert!(
-        talk.contains("advancement revoke @s only hello-world:sleeper_interact"),
+        talk.contains("advancement revoke @s only cast-ledger:sleeper_interact"),
         "the interaction record must still be consumed:\n{talk}"
     );
     // Scene 2 is the sleeper's `"none"`: no clause may mention it.
@@ -102,7 +108,7 @@ fn a_silent_scene_emits_no_action_clause() {
     // ...while its live sibling scenes do.
     assert!(
         talk.contains(
-            "execute if score @s dw.cast matches 1 run function hello-world:bark_sleeper_1"
+            "execute if score @s dw.cast matches 1 run function cast-ledger:bark_sleeper_1"
         ),
         "the bark scene must still dispatch:\n{talk}"
     );
@@ -140,7 +146,7 @@ fn cast_objective_is_declared_only_when_a_ledger_exists() {
         "a campaign with a ledger must declare the selector"
     );
     assert!(
-        !func(&build(&common::hello_world_dir()), "setup.mcfunction").contains("dw.cast"),
+        !hw_func(&build(&common::hello_world_dir()), "setup.mcfunction").contains("dw.cast"),
         "a campaign with no ledger must not declare the selector"
     );
 }
@@ -150,7 +156,7 @@ fn cast_objective_is_declared_only_when_a_ledger_exists() {
 #[test]
 fn no_ledger_means_byte_identical_talk_functions() {
     let out = build(&common::hello_world_dir());
-    let talk = func(&out, "talk_keeper.mcfunction");
+    let talk = hw_func(&out, "talk_keeper.mcfunction");
     assert_eq!(
         talk.trim(),
         "advancement revoke @s only hello-world:keeper_interact\n\
@@ -169,7 +175,7 @@ fn no_ledger_means_byte_identical_talk_functions() {
 fn cast_packtests_are_emitted() {
     let out = ledger();
     for name in ["cast_root_swap", "cast_bark_cycle", "cast_none_silent"] {
-        let p = format!("packtest-datapack/data/hello-world/test/{name}.mcfunction");
+        let p = format!("packtest-datapack/data/cast-ledger/test/{name}.mcfunction");
         assert!(out.contains_key(&p), "missing packtest template {name}");
     }
 }

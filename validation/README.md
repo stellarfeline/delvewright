@@ -13,7 +13,11 @@ output tree (`validation/delve-output`):
 - **`validate`** — server + the mineflayer critical-path bot; the bot's exit code
   is the profile's (`--exit-code-from bot`).
 - **`packtest`** — the generated PackTest suite on the pinned tool server
-  (`--exit-code-from packtest`).
+  (`--exit-code-from packtest`). Set `DELVE_OUTPUT` to point it at a **different**
+  build tree (default `./delve-output`) — a campaign only exercises the templates
+  it actually emits, so proving a template class means running the profile over a
+  campaign that has one. CI does exactly that for spec-0020's cast-ledger
+  templates; see "Running a second campaign through `packtest`" below.
 
 The tooling-mod overlay (PackTest + Fabric) and the creator overlay are layered on
 at compose time only and never leak into the shipped delve image; CI asserts their
@@ -104,6 +108,34 @@ offline mode, add `ONLINE_MODE=TRUE` (auth mode is still an open spec-0003 decis
 
 If `EULA` is unset, compose fails fast with a message telling you to set it — by
 design.
+
+## Running a second campaign through `packtest`
+
+The generated PackTest suite is per-campaign: `delvec` emits a template only for a
+campaign that uses the feature it proves. hello-world — one quest, one NPC — cannot
+carry a dialogue-root **swap**, so spec-0020's cast-ledger templates (`cast_root_swap`,
+`cast_bark_cycle`, `cast_none_silent`) simply do not exist in its output.
+
+`DELVE_OUTPUT` (and `PACKTEST_CONTAINER`, since container names are Docker-global
+while `-p` only isolates volumes and networks) let the same profile boot a second
+tree:
+
+```sh
+delvec build crates/compiler/tests/fixtures/cast-ledger \
+  -o validation/delve-output-cast --prefabs campaigns/prefabs
+
+EULA=TRUE DELVE_OUTPUT=./delve-output-cast PACKTEST_CONTAINER=delvewright-packtest-cast \
+  docker compose -p dw-cast -f validation/compose.yaml --profile packtest up \
+    --abort-on-container-exit --exit-code-from packtest
+
+EULA=TRUE DELVE_OUTPUT=./delve-output-cast PACKTEST_CONTAINER=delvewright-packtest-cast \
+  docker compose -p dw-cast -f validation/compose.yaml --profile packtest down -v --remove-orphans
+```
+
+`validation/delve-output*/` is gitignored, so extra trees need no bookkeeping. The
+same two variables are how CI's tier-2 job runs its second pass — add a step there
+alongside the existing one when a new feature's templates need live execution
+rather than shape verification.
 
 ## Creator playtest loop (spec-0006)
 
