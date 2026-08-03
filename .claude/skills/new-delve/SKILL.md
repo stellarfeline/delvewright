@@ -315,9 +315,16 @@ Then:
      — two labelled stages once the delve has mandatory combat (spec-0023):
      `critical-path` and `die-retry`. The die-retry stage adds two scripted
      deaths per encounter, so a combat-heavy delve needs a larger
-     `DELVEWRIGHT_RUN_TIMEOUT_MS` than the 20-minute default. Read
+     `DELVEWRIGHT_RUN_TIMEOUT_MS` than the 20-minute default — set it on the
+     command (`DELVEWRIGHT_RUN_TIMEOUT_MS=2400000 EULA=TRUE docker compose …`);
+     compose forwards it to the bot. Read
      `validation/run-out/run-report.json` afterwards: it names every combat-assist
-     window, every death trial, and any inverted-floor-gate finding. A red
+     window, every death trial, and any inverted-floor-gate finding. An EMPTY
+     `assist_windows` is not evidence of anything on its own — read the
+     `encounters` block beside it, which states each encounter's assist policy
+     and the phase the run actually reached (no assist is taken while the
+     die-retry stage is deliberately dying, nor on a billed fight's honest first
+     attempt). A red
      `die-retry` stage is a CONTENT bug of the most serious kind — the delve is
      completable but dying is not safe. Never set `DELVEWRIGHT_DIE_RETRY=0` to
      get green; the report records a skipped stage as skipped, not as passed.

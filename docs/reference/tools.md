@@ -150,7 +150,7 @@ profiles boot the world the compiler declared, via the shared
 |---|---|---|---|
 | `play` | human | `EULA=TRUE docker compose -f validation/compose.yaml --profile play up` | the shipped delve image, joinable at `localhost:25565` |
 | `playtest` | human | `EULA=TRUE CREATOR_NAME=<mc-name> docker compose -f validation/compose.yaml --profile playtest up --build` | `play` plus the creator overlay: `/trigger dw.note` stamps the log for `delve-harvest` |
-| `validate` | agent | `EULA=TRUE docker compose -f validation/compose.yaml --profile validate up --build --abort-on-container-exit --exit-code-from bot` | server + mineflayer critical-path bot. Two labelled ladder stages once the build carries a `validation/combat-plan.json` (spec-0023): `critical-path` (the whole delve, with bounded **combat-assist** windows at each encounter) and `die-retry` (≥2 scripted deaths per encounter, proving respawn → return → re-engage with no lost progress). The run writes `validation/run-out/run-report.json` — every assist window with its encounter id and ticks, every death trial, and the inverted floor gate's findings. The bot is opped for exactly two harness commands (`/damage @s`, `/effect give @s minecraft:resistance`). `DELVEWRIGHT_DIE_RETRY=0` skips the stage for local iteration and the report records that it was SKIPPED, never that it passed |
+| `validate` | agent | `EULA=TRUE docker compose -f validation/compose.yaml --profile validate up --build --abort-on-container-exit --exit-code-from bot` | server + mineflayer critical-path bot. Two labelled ladder stages once the build carries a `validation/combat-plan.json` (spec-0023): `critical-path` (the whole delve, with bounded **combat-assist** windows at each encounter) and `die-retry` (≥2 scripted deaths per encounter, proving respawn → return → re-engage with no lost progress). The run writes `validation/run-out/run-report.json` — an `encounters` block (per encounter: assist policy and the phase the run reached), every assist window with its encounter id and ticks, every death trial (recorded when the death is TAKEN, so an aborted run still carries it, and each says whether its loop reached a verdict), and the inverted floor gate's findings. The `die-retry` stage passes only when every planned encounter has its ≥2 COMPLETED trials — an encounter it engaged and proved nothing at, or never reached, is a red stage, never a silent pass. The bot is opped for exactly two harness commands (`/damage @s`, `/effect give @s minecraft:resistance`). `DELVEWRIGHT_DIE_RETRY=0` skips the stage for local iteration and the report records that it was SKIPPED, never that it passed |
 | `packtest` | agent | `EULA=TRUE docker compose -f validation/compose.yaml --profile packtest up --exit-code-from packtest` | headless PackTest suite on the tool server. `DELVE_OUTPUT` (default `./delve-output`) + `PACKTEST_CONTAINER` boot a **different** build tree — the generated suite is per-campaign, so a template class is only proven live by a campaign that emits it (CI runs extra passes for template classes hello-world cannot emit: `crates/compiler/tests/fixtures/cast-ledger` for spec-0020's root-swap/bark/explicit-none templates, and `crates/dsl/fixtures/valid/keep-trial` for the `interact` verb templates — `verb_interact` and `verb_interact_held`, the held-vs-carried proof — since hello-world has no `interact` objective at all). See `validation/README.md` "Running a second campaign through `packtest`" |
 
 Shell entry points:
@@ -182,14 +182,14 @@ npm --prefix harness start              # node src/run.ts <critical-path.json>  
 `harness/src/rehearsal-bot.ts` by `validation/rehearsal-flow.sh`, never by hand.
 
 Run-shaping environment (all read by `src/run.ts`; the compose `validate` profile
-sets the spec-0023 pair):
+forwards every one of them, so they can be set on the `docker compose` command line):
 
 | Variable | Effect |
 |---|---|
 | `DELVEWRIGHT_RUN_REPORT` | Path to write the spec-0023 run report to. Unset = the pre-spec-0023 stderr-only run |
 | `DELVEWRIGHT_DIE_RETRY` | `0` skips the die-retry stage (local iteration only). Default ON whenever a combat plan is present |
 | `DELVEWRIGHT_RETRY_ON_DEATH` | `1`/`true` lets the sequencer retry a step once after an unscripted death (spec-0008) |
-| `DELVEWRIGHT_RUN_TIMEOUT_MS` | Hard wall-clock budget for the whole run (default 20 min). **Raise it when the die-retry stage is on**: two scripted deaths per encounter add a respawn, a re-arm and a walk back to every fight |
+| `DELVEWRIGHT_RUN_TIMEOUT_MS` | Hard wall-clock budget for the whole run (default 20 min, forwarded by the compose `bot` service). **Raise it when the die-retry stage is on**: two scripted deaths per encounter add a respawn, a re-arm and a walk back to every fight |
 | `DELVEWRIGHT_BOT_USERNAME` | The bot's name; feeds the server's `DELVE_OPS_OFFLINE` seed (offline-UUID ops.json — never itzg `OPS`, which would resolve the name via Mojang PlayerDB and abort on an offline-only name) or the assist and scripted-death commands are silently refused |
 
 An `interact` step whose `critical-path.json` entry carries `requires_item` puts

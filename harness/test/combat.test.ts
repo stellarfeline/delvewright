@@ -10,8 +10,10 @@ import {
   assistCommand,
   assistPolicy,
   deathPhases,
+  dieRetryCoverageFailures,
   dieRetryFindings,
   floorFinding,
+  openTrial,
   parseCombatPlan,
   respawnedAtCheckpoint,
   scriptedDeathCommand,
@@ -167,12 +169,15 @@ function trial(over: Partial<DeathTrial> = {}): DeathTrial {
     wave: "wave/bellkeeper",
     attempt: 1,
     phase: "first-contact",
+    cause: undefined,
     respawnPos: [97, 71, -96],
     atCheckpoint: true,
     returned: true,
     reEngaged: true,
     objectivesIntact: true,
     lostObjectives: [],
+    completed: true,
+    abortedWith: undefined,
     ...over,
   };
 }
@@ -210,4 +215,63 @@ test("the corruption check outranks the re-engage check", () => {
     trial({ reEngaged: false, objectivesIntact: false, lostObjectives: ["obj/x"] }),
   );
   assert.match(String(v), /LOST completed progress/);
+});
+
+// --- report integrity: a death that happened is never silent (task #102) -----
+
+test("an opened trial starts at its FAILING values, so an abandoned one reads red", () => {
+  // The record exists from the moment the harness commits to dying. If the run
+  // ends there, every verdict field must still say "not proved" — a half-filled
+  // record that defaulted to `true` would be worse than no record at all.
+  const t = openTrial(encounter(), 1, "first-contact");
+  assert.equal(t.completed, false);
+  assert.equal(t.atCheckpoint, false);
+  assert.equal(t.returned, false);
+  assert.equal(t.reEngaged, false);
+  assert.match(String(trialVerdict(t)), /ABANDONED/);
+});
+
+test("an abandoned trial outranks every other verdict and names why", () => {
+  const v = trialVerdict(trial({ completed: false, abortedWith: "the bot never respawned" }));
+  assert.match(String(v), /ABANDONED/);
+  assert.match(String(v), /the bot never respawned/);
+  // …even though the rest of the record looks clean: nothing downstream of an
+  // abandoned loop was actually observed.
+});
+
+test("a stage that engaged an encounter and proved nothing cannot read as passed", () => {
+  // The-drowned-bell round 3: `die_retry: []` next to a log line naming the death
+  // it had just taken, and the stage reported `passed: true` because an empty
+  // trial list yields an empty finding list.
+  const plan = parseCombatPlan(PLAN).encounters;
+  const failures = dieRetryCoverageFailures(plan, new Set(["wave/gate-assault"]), []);
+  assert.equal(failures.length, 1);
+  assert.match(failures[0]!, /ENGAGED this encounter but proved only 0\/2/);
+});
+
+test("an encounter the run never reached is reported unproven, not passed", () => {
+  const plan = parseCombatPlan(PLAN).encounters;
+  const failures = dieRetryCoverageFailures(plan, new Set(), []);
+  assert.equal(failures.length, 1);
+  assert.match(failures[0]!, /never reached this encounter/);
+});
+
+test("an incomplete trial does not count toward coverage", () => {
+  const plan = parseCombatPlan(PLAN).encounters;
+  const trials = [
+    trial({ wave: "wave/gate-assault", attempt: 1 }),
+    trial({ wave: "wave/gate-assault", attempt: 2, completed: false, abortedWith: "boom" }),
+  ];
+  const failures = dieRetryCoverageFailures(plan, new Set(["wave/gate-assault"]), trials);
+  assert.equal(failures.length, 1);
+  assert.match(failures[0]!, /proved only 1\/2 scripted death\(s\) \(2 recorded\)/);
+});
+
+test("two completed trials per encounter is full coverage and says nothing", () => {
+  const plan = parseCombatPlan(PLAN).encounters;
+  const trials = [
+    trial({ wave: "wave/gate-assault", attempt: 1 }),
+    trial({ wave: "wave/gate-assault", attempt: 2 }),
+  ];
+  assert.deepEqual(dieRetryCoverageFailures(plan, new Set(["wave/gate-assault"]), trials), []);
 });

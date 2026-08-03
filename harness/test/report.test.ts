@@ -19,12 +19,15 @@ const TRIAL: DeathTrial = {
   wave: "wave/bellkeeper",
   attempt: 1,
   phase: "mid-fight",
+  cause: "delve-bot died",
   respawnPos: [97, 71, -96],
   atCheckpoint: true,
   returned: true,
   reEngaged: true,
   objectivesIntact: true,
   lostObjectives: [],
+  completed: true,
+  abortedWith: undefined,
 };
 
 test("the ladder has exactly the two labelled stages spec-0023 names", () => {
@@ -91,4 +94,42 @@ test("the report is written only when the environment names a path", () => {
   assert.equal(reportPathFromEnv({}), undefined);
   assert.equal(reportPathFromEnv({ DELVEWRIGHT_RUN_REPORT: "" }), undefined);
   assert.equal(reportPathFromEnv({ DELVEWRIGHT_RUN_REPORT: "/out/run.json" }), "/out/run.json");
+});
+
+// --- reading an EMPTY assist ledger (task #102) ------------------------------
+
+test("the report states each encounter's assist policy and how far the run got", () => {
+  // The-drowned-bell round 3 shipped `assist_windows: []` on a run in which the
+  // bot demonstrably died. Empty was the CORRECT reading — spec-0023 takes no
+  // assist while the die-retry stage is deliberately dying, and the run never got
+  // past that stage — but the artifact could not say so, leaving "per policy"
+  // indistinguishable from "never wired". This is what makes it readable.
+  const report = new RunReport("the-drowned-bell", "normal");
+  report.recordEncounters([
+    {
+      encounter: ENC.objective,
+      wave: ENC.wave,
+      tier: ENC.tier,
+      assistPolicy: "unassisted-first",
+      phaseReached: "die-retry",
+      assistWindows: 0,
+    },
+  ]);
+  const json = report.toJSON() as { encounters: Record<string, unknown>[] };
+  assert.equal(json["encounters"].length, 1);
+  assert.equal(json["encounters"][0]!["assist_policy"], "unassisted-first");
+  assert.equal(json["encounters"][0]!["phase_reached"], "die-retry");
+  assert.equal(json["encounters"][0]!["assist_windows"], 0);
+});
+
+test("a die-retry entry says whether its loop ever reached a verdict", () => {
+  const report = new RunReport("the-drowned-bell", "normal");
+  report.recordTrials([
+    { ...TRIAL, completed: false, abortedWith: "the run ended at the scripted death" },
+  ]);
+  const json = report.toJSON() as { die_retry: Record<string, unknown>[] };
+  assert.equal(json["die_retry"].length, 1, "a death that happened is in the artifact");
+  assert.equal(json["die_retry"][0]!["completed"], false);
+  assert.equal(json["die_retry"][0]!["aborted_with"], "the run ended at the scripted death");
+  assert.equal(json["die_retry"][0]!["cause"], "delve-bot died");
 });

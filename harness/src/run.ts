@@ -12,8 +12,13 @@ import { runSequence, StepExecutionError } from "./sequencer.ts";
 import { botConfigFromEnv, MineflayerExecutor } from "./executor.ts";
 import { BotDeathError } from "./death.ts";
 import { loadWaypointsForCriticalPath } from "./waypoints.ts";
-import { dieRetryFindings, loadCombatPlanForCriticalPath } from "./combat.ts";
-import { RunReport, reportPathFromEnv, writeRunReport } from "./report.ts";
+import {
+  assistPolicy,
+  dieRetryCoverageFailures,
+  dieRetryFindings,
+  loadCombatPlanForCriticalPath,
+} from "./combat.ts";
+import { RunReport, reportPathFromEnv, writeRunReport, type EncounterReport } from "./report.ts";
 
 /**
  * Exit code for a run that failed specifically because the bot died (spec-0008),
@@ -145,10 +150,36 @@ async function main(): Promise<number> {
     // The report is written whether the run passed or failed: a red run's assist
     // windows and death trials are exactly what a reader needs to see.
     const trials = executor.deathTrials();
-    const dieRetryFailures = dieRetryFindings(trials);
+    const assists = executor.assistWindows();
+    // Two independent ways the stage can be red: a trial that reached a verdict
+    // and failed it, and a trial (or a whole encounter) the run never proved at
+    // all. The second is the one an empty `die_retry` array used to hide.
+    const dieRetryFailures = [
+      ...dieRetryFindings(trials),
+      ...(dieRetry
+        ? dieRetryCoverageFailures(
+            combatPlan?.encounters ?? [],
+            executor.dieRetryEngagements(),
+            trials,
+          )
+        : []),
+    ];
     const leaked = executor.leakedAssists();
-    report.recordAssists(executor.assistWindows());
+    report.recordAssists(assists);
     report.recordTrials(trials);
+    // Per-encounter assist policy + how far the run got, so a reader can tell a
+    // policy-empty assist ledger from an unwired one (task #102).
+    const encounterReports: EncounterReport[] = (combatPlan?.encounters ?? []).map(
+      (enc): EncounterReport => ({
+        encounter: enc.objective,
+        wave: enc.wave,
+        tier: enc.tier,
+        assistPolicy: assistPolicy(enc),
+        phaseReached: executor.encounterPhase(enc.wave),
+        assistWindows: assists.filter((w) => w.wave === enc.wave).length,
+      }),
+    );
+    report.recordEncounters(encounterReports);
     for (const f of executor.floorGateFindings()) report.recordFloorFinding(f);
     report.stage({
       stage: "critical-path",
@@ -166,7 +197,13 @@ async function main(): Promise<number> {
       stage: "die-retry",
       ran: dieRetry,
       passed: dieRetry && dieRetryFailures.length === 0,
-      findings: dieRetry ? [] : ["skipped via DELVEWRIGHT_DIE_RETRY=0"],
+      findings: dieRetry
+        ? []
+        : [
+            combatPlan === undefined
+              ? "no combat plan in this build — the campaign declares no mandatory combat"
+              : "skipped via DELVEWRIGHT_DIE_RETRY=0",
+          ],
       failures: dieRetryFailures,
     });
 

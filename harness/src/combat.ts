@@ -200,6 +200,26 @@ export function assistPolicy(enc: Encounter): "unassisted-first" | "assisted" {
   return enc.tier === "ordinary" ? "assisted" : "unassisted-first";
 }
 
+/**
+ * How far `kill()` got with one encounter.
+ *
+ * The run artifact states this per encounter because an EMPTY `assist_windows`
+ * array is otherwise unreadable: spec-0023 takes NO assist during the die-retry
+ * stage (the whole point there is to die) and none on the first attempt at a
+ * billed `elite`/`boss` (the inverted floor gate needs one honest unassisted
+ * try). So zero windows is entirely possible per policy — and, before this
+ * field existed, indistinguishable from an assist mechanism that was never
+ * wired at all (task #102, the-drowned-bell round 3).
+ */
+export const ENCOUNTER_PHASES = [
+  "not-reached",
+  "die-retry",
+  "unassisted",
+  "assisted",
+  "cleared",
+] as const;
+export type EncounterPhase = (typeof ENCOUNTER_PHASES)[number];
+
 /** One opened (and, normally, closed) assist window, as the run report states it. */
 export interface AssistWindow {
   readonly encounter: string;
@@ -334,6 +354,8 @@ export interface DeathTrial {
   readonly wave: string;
   readonly attempt: number;
   readonly phase: DeathPhase;
+  /** The death message the loop opened with, when the server broadcast one. */
+  readonly cause: string | undefined;
   /** Where the bot respawned. */
   readonly respawnPos: Vec3Tuple | undefined;
   /** Did it respawn at the governing checkpoint? */
@@ -346,10 +368,56 @@ export interface DeathTrial {
   readonly objectivesIntact: boolean;
   /** Objectives that were complete before the death and were NOT after. */
   readonly lostObjectives: readonly string[];
+  /** Did the loop run all the way to its verdict? A trial the run abandoned
+   * half-way proves nothing about respawn, return or re-engagement. */
+  readonly completed: boolean;
+  /** Why it did not, when `completed` is false. */
+  readonly abortedWith: string | undefined;
+}
+
+/**
+ * The same record while the harness is still filling it in.
+ *
+ * A trial is entered in the ledger the MOMENT the harness commits to dying, not
+ * when the loop reaches its verdict, and every fact is written as it is learned.
+ * A death that happened and went unrecorded is the one thing this artifact must
+ * never do: the-drowned-bell round 3 shipped a report with `die_retry: []` and
+ * `passed: true` beside a log line naming the death it had just taken (task
+ * #102).
+ */
+export type DeathTrialRecord = { -readonly [K in keyof DeathTrial]: DeathTrial[K] };
+
+/** Open a trial: the record as it exists between the death command and the first
+ * fact learned about the loop. Nothing is assumed proved — every verdict field
+ * starts at its FAILING value, so a record abandoned here reads red, not green. */
+export function openTrial(enc: Encounter, attempt: number, phase: DeathPhase): DeathTrialRecord {
+  return {
+    encounter: enc.objective,
+    wave: enc.wave,
+    attempt,
+    phase,
+    cause: undefined,
+    respawnPos: undefined,
+    atCheckpoint: false,
+    returned: false,
+    reEngaged: false,
+    objectivesIntact: true,
+    lostObjectives: [],
+    completed: false,
+    abortedWith: undefined,
+  };
 }
 
 /** The verdict on one trial: a red run, or nothing. */
 export function trialVerdict(t: DeathTrial): string | undefined {
+  if (!t.completed) {
+    return (
+      `${t.wave} death ${t.attempt} (${t.phase}): the retry loop was ABANDONED before it ` +
+      `reached a verdict — ${t.abortedWith ?? "no reason was recorded"}. The bot died and ` +
+      `the run ended there, so nothing is known about respawn, return or re-engagement. ` +
+      `An unfinished trial is never a passed one.`
+    );
+  }
   if (!t.atCheckpoint) {
     return (
       `${t.wave} death ${t.attempt} (${t.phase}): respawned at ` +
@@ -385,4 +453,43 @@ export function trialVerdict(t: DeathTrial): string | undefined {
 /** Every finding across a stage's trials, in order. */
 export function dieRetryFindings(trials: readonly DeathTrial[]): string[] {
   return trials.map(trialVerdict).filter((v): v is string => v !== undefined);
+}
+
+/**
+ * Whether the stage actually PROVED what it claims, encounter by encounter.
+ *
+ * The per-trial verdicts above can only judge trials that exist. The failure
+ * mode they cannot see is silence: a stage that engaged an encounter and
+ * recorded nothing produced an empty `die_retry` array, and an empty array of
+ * findings, and therefore read `passed: true` — which is exactly how a run that
+ * aborted at its first scripted death reported a green die-retry stage (task
+ * #102). Coverage closes that: the stage owes `expected` COMPLETED trials for
+ * every encounter the compiler put in the plan, and anything less is a stage
+ * that did not prove its property, whatever else went right.
+ */
+export function dieRetryCoverageFailures(
+  plan: readonly Encounter[],
+  engagedWaves: ReadonlySet<string>,
+  trials: readonly DeathTrial[],
+  expected: number = DIE_RETRY_DEATHS,
+): string[] {
+  const out: string[] = [];
+  for (const enc of plan) {
+    const recorded = trials.filter((t) => t.wave === enc.wave);
+    const proved = recorded.filter((t) => t.completed).length;
+    if (proved >= expected) continue;
+    if (engagedWaves.has(enc.wave)) {
+      out.push(
+        `${enc.wave}: the die-retry stage ENGAGED this encounter but proved only ` +
+          `${proved}/${expected} scripted death(s) (${recorded.length} recorded). ` +
+          `"Dying is always safe" is unproven here, so the stage has not passed.`,
+      );
+    } else {
+      out.push(
+        `${enc.wave}: the die-retry stage never reached this encounter — the run ended ` +
+          `first. Its retry loop is unproven, so the stage cannot report a pass for it.`,
+      );
+    }
+  }
+  return out;
 }
