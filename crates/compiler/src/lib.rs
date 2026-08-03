@@ -35,6 +35,7 @@
 //!   in the *same* bundle / `sequence` provably sealed, feeding the `DW0410`
 //!   staged-walk proof in [`nav`].
 
+pub mod affordance;
 pub mod analyze;
 pub mod assembled;
 pub mod atmos;

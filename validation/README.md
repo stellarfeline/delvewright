@@ -54,7 +54,26 @@ dw-worker-<unique> down -v`) — never a bare `docker compose down`, never
 Both exist because of a real incident (2026-08-02): a hand-rolled waiter whose
 "did I get the lock?" guard tested directory existence fell through against the
 owner's held lock and ran a teardown that — via the pinned `container_name` —
-destroyed her live play session and its world volume mid-playtest.
+destroyed a live play session and its world volume mid-playtest.
+
+**Use [`worker-override.yaml`](worker-override.yaml) — do not hand-roll it.**
+`-p dw-worker-<unique>` alone is NOT isolation: `compose.yaml` pins
+`container_name: delvewright-server`, which is global, so a worker project still
+materialises a container with the owner's name on it and still grabs
+`127.0.0.1:25565`. The override drops both:
+
+```bash
+docker compose -p dw-worker-<unique> \
+  -f validation/compose.yaml -f validation/worker-override.yaml \
+  --profile play up -d --build
+```
+
+Removing a key an override inherits needs Compose's `!reset` tag
+(`container_name: !reset null`, `ports: !reset []`); the intuitive
+`container_name: null` is silently ignored and the container comes up named
+`delvewright-server` anyway (verified 2026-08-03 — a near-miss caught only by
+reading `docker compose ps`). Confirm with `… config` before `up`: if
+`container_name` or a published port appears, the override is not doing its job.
 
 ## World fidelity (all profiles)
 

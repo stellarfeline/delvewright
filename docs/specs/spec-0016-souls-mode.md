@@ -68,6 +68,29 @@ crosses the span before the gate closes covers **≥ 20% of the cycle**
 (computed from the nav model's crossing time over the gate span). Below
 20% the gate is a coin flip, not a timing read — compile error.
 
+**Addendum — the portcullis crushes** (owner directive 2026-08-03). A
+player inside the gate region at the closing tick **dies**. Optional
+`crush: true` (default `false`, so pre-addendum campaigns stay
+byte-identical); the closing edge deals lethal `damage` by command to
+every player whose position intersects the region, before the fill. By
+command and not by suffocation: vanilla's in-wall damage is slow,
+gear-dependent and escapable, which makes a portcullis a suggestion. The
+20% window proof above is what earns this — the window is provably fair,
+so the penalty for misreading it may be absolute. Zero per-tick cost is
+unchanged: the judgement rides the closing tick of the existing schedule
+ping-pong.
+
+**Addendum — affordance hardware** (drowned-bell playtest, 2026-08-02).
+An `unlock` is not just a hitbox. The engine emitted shortcut unlocks,
+trap disarms and bonfires as bare `minecraft:interaction` entities —
+invisible — and left the visible lever to whatever the tileset happened
+to carry. The drowned bell's did not, so the unlock cell was bare air;
+the only visible thing there belonged to an unrelated `reach-anchor`
+objective that killed its own marker on completion, and the delve
+soft-locked. The compiler now owns every affordance's visibility
+(`DW0420`) and forbids any machinery but the affordance's own
+consumption from retiring it (`DW0421`).
+
 ### 5. Lethal parkour
 Jump edges per the measured model (docs/notes/jump-arc-model.md): cardinal
 jump edges, sprint-runway requirement, clearance 3/3/2, content envelope =
