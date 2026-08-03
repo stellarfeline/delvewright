@@ -116,7 +116,11 @@ EOF
 
 echo
 echo "==> merging per-branch reports into $MERGED"
-python3 - "$MERGED" "$PLAN" "${reports[@]}" <<'PY'
+# `${reports[@]+…}`: bash 3.2 (the dev environment's /bin/bash) treats an empty
+# array's `[@]` expansion as an unbound variable under `set -u`. A run where every
+# branch failed before writing a report must still reach the merge and SAY so —
+# crashing here would hide the very thing this artifact exists to show.
+python3 - "$MERGED" "$PLAN" ${reports[@]+"${reports[@]}"} <<'PY'
 import json, sys
 
 merged_path, plan_path, *report_paths = sys.argv[1:]
