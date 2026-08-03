@@ -322,3 +322,74 @@ fn a_shortcut_with_no_long_route_is_rejected_by_the_critical_path_proof() {
         "the sealed shortcut gate must break the critical path: {message}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Affordance hardware — the drowned-bell soft-lock (DW0420 / DW0421)
+// ---------------------------------------------------------------------------
+
+/// **The unlock is VISIBLE.** Reproduced live on 1.21.11 during the drowned-bell
+/// playtest: the unlock cell was bare air holding one `minecraft:interaction`,
+/// an invisible entity, and the only thing the player could see there belonged
+/// to an unrelated `reach-anchor` objective that killed its own marker on
+/// completion. The lever appeared to vanish; the delve soft-locked.
+///
+/// The compiler now owns the affordance's visibility outright, rather than
+/// hoping the tileset dressed the cell.
+#[test]
+fn the_unlock_affordance_has_visible_hardware_at_its_own_cell() {
+    let out = build_fixture();
+    let setup = fn_body(&out, "setup_finish");
+
+    let hitbox = setup
+        .lines()
+        .find(|l| l.contains("summon minecraft:interaction") && l.contains("dw_sc_"))
+        .expect("the unlock hitbox is summoned");
+    let hardware = setup
+        .lines()
+        .find(|l| l.contains("summon minecraft:item_display") && l.contains("dw_hw_dw_sc_"))
+        .expect("…and so is its visible hardware — an invisible affordance is a soft-lock");
+
+    // Same cell: hardware anywhere else marks the wrong thing.
+    let cell = |line: &str| {
+        line.split_whitespace()
+            .skip(2)
+            .take(3)
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    assert_eq!(
+        cell(hitbox),
+        cell(hardware),
+        "hardware stands exactly where the player must click:\n{hitbox}\n{hardware}"
+    );
+    assert!(
+        hardware.contains("Glowing:1b"),
+        "the hardware is findable in a dark undercroft: {hardware}"
+    );
+}
+
+/// **Only the shortcut's own opening may retire its hardware.** The bar is
+/// thrown, the door is open, the lever is spent — and nothing else in the
+/// datapack is allowed to reach it. This is the erasure half of the defect: an
+/// unrelated `kill` matching the hardware tag would leave a live affordance
+/// invisible again.
+#[test]
+fn only_the_open_retires_the_unlock_hardware() {
+    let out = build_fixture();
+    for (path, bytes) in &out {
+        if !path.starts_with("datapack/") || !path.ends_with(".mcfunction") {
+            continue;
+        }
+        let body = std::str::from_utf8(bytes).unwrap();
+        for line in body.lines().filter(|l| l.contains("dw_hw_dw_sc_")) {
+            if !line.contains("kill @") {
+                continue;
+            }
+            assert!(
+                path.contains("/shortcut_open_"),
+                "only the shortcut's own open may retire its hardware; `{path}` \
+                 does it too: {line}"
+            );
+        }
+    }
+}

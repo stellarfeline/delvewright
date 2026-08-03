@@ -268,3 +268,89 @@ fn bonfire_runtime_behaviour_is_packtested() {
         "the template leaves no residue for the shared batch: {reseat}"
     );
 }
+
+// --- spec-0021 coexistence with the affordance hardware pass (#192) ---
+
+/// An **equipped actor** and the compiler-owned affordance hardware must
+/// coexist: the bonfire is permanent hardware (`retired_by: None`), so `DW0421`
+/// treats ANY `kill` reaching its `dw_hw_*` tag in the shipped datapack as an
+/// erasure. spec-0021 emission must therefore stay clear of it — actor gear is
+/// summon NBT, container fills are `item replace block`, and the only `kill`
+/// spec-0021 emits at all lives in `packtest-datapack/`, which the proof
+/// deliberately does not judge (ADR-0003).
+///
+/// This builds the bonfire fixture with an equipped actor spliced in, so both
+/// passes run over one datapack. A clean build IS the coexistence proof:
+/// `affordance::check` runs on the finished tree and would fail the build.
+#[test]
+fn an_equipped_actor_coexists_with_affordance_hardware() {
+    let dir = fixture_dir();
+    let mut loaded = load_campaign_dir(&dir).unwrap();
+
+    // Splice an equipped actor into the fixture's stage-5 doc, in memory.
+    let mut q: serde_json::Value = serde_json::from_str(&loaded.raw.quests).unwrap();
+    q["content"]["actors"] = serde_json::json!([{
+        "id": "actor/elite",
+        "entity": "minecraft:wither_skeleton",
+        // NOT the bonfire's own anchor: a body standing on an affordance
+        // eclipses it (`DW0359`), which is a separate, correct proof.
+        "anchor": "anchor/wave",
+        "equipment": {
+            "head": { "item": "minecraft:netherite_helmet",
+                      "enchantments": { "minecraft:protection": 4 } },
+            "main_hand": { "item": "minecraft:netherite_sword",
+                           "enchantments": { "minecraft:sharpness": 5 } }
+        }
+    }]);
+    loaded.raw.quests = serde_json::to_string(&q).unwrap();
+
+    let campaign = parse_campaign(&loaded.raw).expect("parses with an equipped actor");
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let items = FullItemRegistry::v1_21_11();
+    let entities = FullEntityRegistry::v1_21_11();
+    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    assert!(diags.is_empty(), "must validate clean: {diags:#?}");
+
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
+            structures.insert(piece.structure_file.clone(), bytes);
+        }
+    }
+    let mut skins: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for npc in &campaign.npcs.content.npcs {
+        if let Some(skin) = &npc.skin {
+            let png = std::fs::read(dir.join("skins").join(format!("{}.png", skin.texture_id)))
+                .expect("skin png present");
+            skins.insert(skin.texture_id.clone(), png);
+        }
+    }
+    let tree = CommandTree::v1_21_11();
+    // DW0420/DW0421 run inside `emit::build` over the finished tree.
+    let out = emit::build(
+        &plan,
+        &loaded.inputs,
+        &structures,
+        &tree,
+        &prefabs,
+        None,
+        "unpinned",
+        &skins,
+    )
+    .expect("affordance proofs hold with spec-0021 emission present");
+
+    // The gear really is there (so the build proved something, not nothing)…
+    let spawn = fn_body(&out, "spawn_actor_elite");
+    assert!(
+        spawn.contains("minecraft:netherite_sword"),
+        "the equipped actor must actually be emitted:\n{spawn}"
+    );
+    // …and the bonfire's visible hardware survives in the shipped datapack.
+    let all = all_functions(&out);
+    assert!(
+        all.contains("dw_hw_dw_bonfire_"),
+        "the bonfire's compiler-owned hardware must still be summoned"
+    );
+}

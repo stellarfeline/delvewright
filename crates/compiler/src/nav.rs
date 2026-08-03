@@ -5876,6 +5876,9 @@ mod tests {
             open_ticks,
             closed_ticks,
             phase: 0,
+            // The DW0378 window proof is about geometry and timing, not the
+            // penalty for mistiming it — crush changes neither.
+            crush: false,
         }
     }
 

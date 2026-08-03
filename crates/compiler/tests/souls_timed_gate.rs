@@ -83,10 +83,16 @@ fn the_clock_is_a_self_sustaining_ping_pong() {
             .lines()
             .collect::<Vec<_>>(),
         vec![
+            // spec-0016 §4 addendum: the fixture opts into `crush`, so the
+            // judgement rides the closing tick — BEFORE the fill, while the
+            // victim is still standing in an open gateway rather than already
+            // encased (where vanilla suffocation, not the portcullis, would be
+            // the thing killing them).
+            "execute as @a[x=4,dx=1,y=65,dy=2,z=6,dz=0,tag=!dw_cutscene] run damage @s 1000 minecraft:generic",
             "fill 4 65 6 5 67 6 minecraft:iron_bars",
             &format!("schedule function {NS}:tgate_open_inner_door 40t"),
         ],
-        "close seals it back, then arms the open"
+        "close judges anyone caught in the region, seals it back, then arms the open"
     );
     // Neither half is on the tick — the chain carries itself.
     let tick = fn_body(&out, "tick");
@@ -189,4 +195,175 @@ fn waypoints_artifact_exports_the_gate_table_and_marks_the_crossing_leg() {
             "a marked leg names declared gates, in declared order: {leg:#?}"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// spec-0016 §4 addendum — the portcullis judgement (`crush`)
+// ---------------------------------------------------------------------------
+
+/// Build the fixture with `crush` forced to the given value, so the two
+/// emissions can be compared directly.
+fn build_with_crush(crush: bool) -> BuildOutput {
+    let dir = common::compiler_fixtures_dir().join(NS);
+    let loaded = load_campaign_dir(&dir).unwrap();
+    let mut campaign = parse_campaign(&loaded.raw).expect("souls-timed-gate parses");
+    campaign.quests.content.timed_gates[0].crush = crush;
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
+            structures.insert(piece.structure_file.clone(), bytes);
+        }
+    }
+    emit::build(
+        &plan,
+        &loaded.inputs,
+        &structures,
+        &CommandTree::v1_21_11(),
+        &prefabs,
+        None,
+        "unpinned",
+        &BTreeMap::new(),
+    )
+    .expect("both crush settings emit valid commands")
+}
+
+/// **`crush` defaults to false and is inert when false.** A campaign authored
+/// before the addendum existed must compile to the same bytes it always did, so
+/// the ONLY file the flag may touch is the closing half of the clock (plus the
+/// PackTest fixtures it adds). Everything else — including the manifest's hashes
+/// of every other file — is untouched.
+#[test]
+fn crush_false_is_inert() {
+    let off = build_with_crush(false);
+    let on = build_with_crush(true);
+
+    // With the flag off, the closing half is exactly the pre-addendum two lines.
+    assert_eq!(
+        std::str::from_utf8(
+            off.get(&format!(
+                "datapack/data/{NS}/function/tgate_close_inner_door.mcfunction"
+            ))
+            .unwrap()
+        )
+        .unwrap()
+        .lines()
+        .collect::<Vec<_>>(),
+        vec![
+            "fill 4 65 6 5 67 6 minecraft:iron_bars",
+            &format!("schedule function {NS}:tgate_open_inner_door 40t"),
+        ],
+        "a gate that does not opt in emits no damage at all"
+    );
+    // …and nothing anywhere in the shipped datapack damages a player.
+    for (path, bytes) in &off {
+        if path.starts_with("datapack/") && path.ends_with(".mcfunction") {
+            let body = std::str::from_utf8(bytes).unwrap();
+            assert!(
+                !body.contains("damage @s 1000"),
+                "crush:false must emit no crush anywhere, found one in {path}"
+            );
+        }
+    }
+
+    // The two builds differ ONLY in the closing function and the crush PackTests
+    // (the manifest hashes those files, so it differs too — and must).
+    let differing: Vec<&String> = off
+        .keys()
+        .chain(on.keys())
+        .filter(|k| off.get(*k) != on.get(*k))
+        .collect();
+    let expected = [
+        format!("datapack/data/{NS}/function/tgate_close_inner_door.mcfunction"),
+        format!("packtest-datapack/data/{NS}/test/souls_timed_gate_crush.mcfunction"),
+        "manifest.json".to_string(),
+    ];
+    for path in &differing {
+        assert!(
+            expected.contains(path),
+            "crush must not perturb `{path}` — byte-identity for every campaign \
+             that does not opt in"
+        );
+    }
+}
+
+/// The judgement is **region-scoped and lethal**, and it lands before the fill.
+/// A crush that ran after the seal would be indistinguishable from suffocation,
+/// which is slow, gear-dependent and escapable — the opposite of a portcullis.
+#[test]
+fn crush_is_region_scoped_lethal_and_precedes_the_seal() {
+    let out = build_with_crush(true);
+    let body = std::str::from_utf8(
+        out.get(&format!(
+            "datapack/data/{NS}/function/tgate_close_inner_door.mcfunction"
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let damage = body
+        .lines()
+        .position(|l| l.contains("damage @s"))
+        .expect("the closing tick judges");
+    let fill = body
+        .lines()
+        .position(|l| l.starts_with("fill "))
+        .expect("the closing tick seals");
+    assert!(damage < fill, "judgement precedes the seal: {body}");
+
+    let line = body.lines().nth(damage).unwrap();
+    // The gate region is 4..5 x, 65..67 y, 6 z — the selector spans exactly it.
+    assert!(
+        line.contains("x=4,dx=1,y=65,dy=2,z=6,dz=0"),
+        "the selector covers exactly the gate region: {line}"
+    );
+    // `/damage` takes ONE entity, so the party form must re-bind through
+    // `execute as`, never widen the target to `@a`.
+    assert!(
+        line.starts_with("execute as @a[") && line.contains("run damage @s "),
+        "the party form re-binds rather than widening /damage: {line}"
+    );
+    // A player watching a cutscene is never harmed by campaign machinery.
+    assert!(
+        line.contains("tag=!dw_cutscene"),
+        "the cutscene guard holds here too: {line}"
+    );
+}
+
+/// The generated crush PackTest asserts **scoping**, live, on real geometry:
+/// the emitted selector holds the player standing in the gate and releases them
+/// two blocks clear of it. It cannot assert death — PackTest fake players are
+/// immune to `/damage` (measured on the pinned toolserver) — so lethality is
+/// pinned by `crush_is_region_scoped_lethal_and_precedes_the_seal` above and was
+/// verified end-to-end against a real mineflayer client.
+#[test]
+fn crush_runtime_scoping_is_packtested() {
+    let out = build_with_crush(true);
+    let t = std::str::from_utf8(
+        out.get(&format!(
+            "packtest-datapack/data/{NS}/test/souls_timed_gate_crush.mcfunction"
+        ))
+        .expect("crush PackTest emitted when the gate opts in"),
+    )
+    .unwrap();
+    // The template drives the REAL clock and tests the REAL selector.
+    assert!(
+        t.contains(&format!("function {NS}:tgate_open_inner_door")),
+        "the template opens the real gate first: {t}"
+    );
+    assert!(
+        t.contains("x=4,dx=1,y=65,dy=2,z=6,dz=0"),
+        "it tests the same region selector the closing tick runs: {t}"
+    );
+    assert!(
+        t.contains("assert score #cr_in dw.sys matches 1")
+            && t.contains("assert score #cr_out dw.sys matches 0"),
+        "both directions are asserted — in the gate, and clear of it: {t}"
+    );
+    // Sibling templates share ONE world, so the subject must be `@s`, never `@a`.
+    assert!(
+        !t.contains("if entity @a["),
+        "the assertion binds @s so a sibling test's dummy is never counted: {t}"
+    );
 }

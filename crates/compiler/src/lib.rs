@@ -35,6 +35,7 @@
 //!   in the *same* bundle / `sequence` provably sealed, feeding the `DW0410`
 //!   staged-walk proof in [`nav`].
 
+pub mod affordance;
 pub mod analyze;
 pub mod assembled;
 pub mod atmos;
@@ -51,6 +52,7 @@ pub mod flow;
 pub mod gates;
 pub mod light;
 pub mod load;
+pub mod loot;
 pub mod massing;
 pub mod nav;
 pub mod plan;
@@ -62,6 +64,7 @@ pub mod render_plan;
 pub mod resourcepack;
 pub mod snapshot;
 pub mod solver;
+pub mod stairs;
 pub mod textfit;
 pub mod timeline;
 pub mod waypoints;

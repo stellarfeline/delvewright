@@ -77,6 +77,7 @@ pub fn validate_campaign_with(
         shortcut_checks(c, anchors, &mut d);
         ambush_checks(c, &mut d);
         timed_gate_checks(c, &mut d);
+        loot_checks(c, items, anchors, &mut d);
         lane_checks(c, anchors, &mut d);
     }
     // DSL v0.6 stage 7 (spec-0017): the map-editor edit script. Structural
@@ -1269,6 +1270,20 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 "the `timed_gates` section",
             );
         }
+        // Container fills (spec-0021) are a v0.6 stage-5 surface.
+        if !c.quests.content.loot.is_empty() {
+            res(d, "/content/loot".to_string(), "the `loot` section");
+        }
+        // Actor `equipment` (spec-0021) likewise.
+        for (i, a) in c.quests.content.actors.iter().enumerate() {
+            if a.equipment.is_some() {
+                res(
+                    d,
+                    format!("/content/actors/{i}/equipment"),
+                    "actor `equipment`",
+                );
+            }
+        }
         // Wave-mob `equipment` (task #65) is a v0.6 stage-5 surface: reserved
         // before 0.6.0 (the field defaults to absent, so an earlier campaign
         // that uses none is byte-identical).
@@ -1929,23 +1944,27 @@ fn v06_checks(
     for (i, w) in quests.waves.iter().enumerate() {
         for (k, m) in w.mobs.iter().enumerate() {
             let Some(eq) = &m.equipment else { continue };
-            for (slot, item) in eq.slots() {
-                if let Some(it) = item
-                    && !items.contains(it)
-                {
-                    d.push(Diagnostic::error(
-                        codes::ITEM_UNKNOWN,
-                        "quests",
-                        format!("/content/waves/{i}/mobs/{k}/equipment/{slot}"),
-                        format!(
-                            "wave-mob equipment `{slot}` item `{it}` is not in the pinned 1.21.11 \
-                             item registry — use a valid namespaced item id (e.g. \
-                             `minecraft:iron_helmet`)"
-                        ),
-                    ));
-                }
-            }
+            check_equipment(
+                eq,
+                "wave-mob",
+                &format!("/content/waves/{i}/mobs/{k}/equipment"),
+                items,
+                d,
+            );
         }
+    }
+
+    // Actor `equipment` (spec-0021): the same shape, the same registries, the
+    // same diagnostics as a wave mob's — one surface, one rule set.
+    for (i, a) in quests.actors.iter().enumerate() {
+        let Some(eq) = &a.equipment else { continue };
+        check_equipment(
+            eq,
+            "actor",
+            &format!("/content/actors/{i}/equipment"),
+            items,
+            d,
+        );
     }
 
     // spec-0016 §1: `respawns_on_rest` is re-seating *by a bonfire*. With no
@@ -5385,8 +5404,8 @@ fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
                 let held = m
                     .equipment
                     .as_ref()
-                    .and_then(|e| e.main_hand.as_deref())
-                    .unwrap_or(*weapon);
+                    .and_then(|e| e.main_hand.as_ref())
+                    .map_or(*weapon, |p| p.item());
                 if held != *weapon {
                     d.push(Diagnostic::error(
                         codes::LANE_UNARMED,
@@ -5430,6 +5449,221 @@ fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
                     lane.aggro_radius
                 ),
             ));
+        }
+    }
+}
+
+/// Validate one [`MobEquipment`] block — item ids against the pinned registry
+/// (`DW0143`) and every piece's enchantments against the pinned enchantment
+/// registry (`DW0433`) and level range (`DW0434`).
+///
+/// Shared verbatim by wave mobs and actors so the two surfaces cannot drift:
+/// they are the same schema type and therefore must be the same rules.
+fn check_equipment(
+    eq: &crate::stages::MobEquipment,
+    what: &str,
+    base_path: &str,
+    items: &dyn ItemRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let ench_reg = crate::registry::VendoredEnchantmentRegistry::v1_21_11();
+    for (slot, piece) in eq.slots() {
+        let Some(piece) = piece else { continue };
+        let it = piece.item();
+        if !items.contains(it) {
+            d.push(Diagnostic::error(
+                codes::ITEM_UNKNOWN,
+                "quests",
+                format!("{base_path}/{slot}"),
+                format!(
+                    "{what} equipment `{slot}` item `{it}` is not in the pinned 1.21.11 \
+                     item registry — use a valid namespaced item id (e.g. \
+                     `minecraft:iron_helmet`)"
+                ),
+            ));
+        }
+        check_enchantments(
+            piece.enchantments(),
+            &format!("{what} equipment `{slot}`"),
+            &format!("{base_path}/{slot}/enchantments"),
+            &ench_reg,
+            d,
+        );
+    }
+}
+
+/// Validate an enchantment map: known ids (`DW0433`), legal levels (`DW0434`).
+///
+/// Levels are checked against what the `minecraft:enchantments` **component**
+/// can carry (1..=255), not against each enchantment's survival max. Exceeding
+/// the survival max from a command is legal vanilla and is a legitimate way to
+/// build a set-piece elite, so refusing it would be the compiler overruling a
+/// design decision it cannot second-guess; 0 and >255 are simply not
+/// representable and would be silently dropped by the game.
+fn check_enchantments(
+    ench: &std::collections::BTreeMap<String, u32>,
+    what: &str,
+    path: &str,
+    reg: &dyn crate::registry::EnchantmentRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    for (id, level) in ench {
+        if !reg.contains(id) {
+            d.push(Diagnostic::error(
+                codes::ENCHANTMENT_UNKNOWN,
+                "quests",
+                format!("{path}/{id}"),
+                format!(
+                    "{what} enchantment `{id}` is not in the pinned 1.21.11 enchantment \
+                     registry — use a valid namespaced enchantment id (e.g. \
+                     `minecraft:protection`, `minecraft:sharpness`). Note the vanilla \
+                     ids for curses are `minecraft:binding_curse` and \
+                     `minecraft:vanishing_curse`, NOT `curse_of_binding`."
+                ),
+            ));
+        }
+        if *level == 0 || *level > 255 {
+            d.push(Diagnostic::error(
+                codes::ENCHANTMENT_LEVEL,
+                "quests",
+                format!("{path}/{id}"),
+                format!(
+                    "{what} enchantment `{id}` has level {level}, outside the 1..=255 range \
+                     the `minecraft:enchantments` component stores. Levels above an \
+                     enchantment's survival maximum ARE allowed (that is how a set-piece \
+                     elite is built) — but 0 means \"not enchanted\" and is silently \
+                     dropped by the game, so declare the level you want or remove the entry."
+                ),
+            ));
+        }
+    }
+}
+
+/// Stage-5 `loot` declarations (spec-0021): id syntax/uniqueness (`DW0110`/
+/// `DW0111`), anchor resolution (`DW0142`), item ids (`DW0143`), enchantments
+/// (`DW0433`/`DW0434`), duplicate anchors (`DW0435`) and slot overflow
+/// (`DW0432`).
+///
+/// The *container-ness* of the anchor's cell is deliberately NOT checked here:
+/// it needs the assembled world, so it is a build-tier proof (`DW0431`) in the
+/// compiler. This tier checks everything decidable from the DSL alone.
+fn loot_checks(
+    c: &Campaign,
+    items: &dyn ItemRegistry,
+    anchors: &dyn AnchorRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let quests = &c.quests.content;
+    if quests.loot.is_empty() {
+        return;
+    }
+    let ench_reg = crate::registry::VendoredEnchantmentRegistry::v1_21_11();
+
+    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
+    let mut has_pool_area = false;
+    for a in &c.world.content.areas {
+        if let Some(prefab) = &a.prefab {
+            if let Some(set) = anchors.anchors_for(prefab) {
+                known_anchor.extend(set.iter().map(String::as_str));
+            }
+        } else if a.prefab_pool.is_some() {
+            has_pool_area = true;
+        }
+    }
+    let anchor_resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
+
+    // The smallest vanilla container the surface admits. A barrel and a single
+    // chest both hold 27; refusing >27 up front keeps the overflow from being
+    // discovered as a silently dropped stack on a live server.
+    const MIN_CONTAINER_SLOTS: usize = 27;
+
+    let mut seen_id: BTreeSet<&str> = BTreeSet::new();
+    let mut seen_anchor: BTreeMap<&str, usize> = BTreeMap::new();
+    for (i, l) in quests.loot.iter().enumerate() {
+        if !l.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::ID_SYNTAX,
+                "quests",
+                format!("/content/loot/{i}/id"),
+                format!(
+                    "malformed loot id `{}` — loot ids must be lowercase kebab-case with the \
+                     `loot/` prefix (e.g. `loot/galley-stores`)",
+                    l.id
+                ),
+            ));
+        }
+        if !seen_id.insert(l.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ID_DUPLICATE,
+                "quests",
+                format!("/content/loot/{i}/id"),
+                format!("duplicate loot id `{}`", l.id),
+            ));
+        }
+        if !anchor_resolvable(l.anchor.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ANCHOR_UNRESOLVED,
+                "quests",
+                format!("/content/loot/{i}/anchor"),
+                format!(
+                    "loot anchor `{}` is not provided by any prefab bound in this campaign — \
+                     use an anchor the prefab exposes (anchor names come from prefab metadata; \
+                     do NOT invent one)",
+                    l.anchor
+                ),
+            ));
+        }
+        // Two fills on one container: the second `item replace block` overwrites
+        // the first slot-for-slot, so one declaration silently loses.
+        if let Some(prev) = seen_anchor.insert(l.anchor.as_str(), i) {
+            d.push(Diagnostic::error(
+                codes::LOOT_DUPLICATE_ANCHOR,
+                "quests",
+                format!("/content/loot/{i}/anchor"),
+                format!(
+                    "loot `{}` and loot `{}` both fill anchor `{}`. Slots are assigned \
+                     positionally from `container.0`, so the later declaration overwrites the \
+                     earlier one and its items never appear. Merge the two `items` lists into \
+                     ONE `loot` entry — do NOT rely on declaration order to combine them.",
+                    quests.loot[prev].id, l.id, l.anchor
+                ),
+            ));
+        }
+        if l.items.len() > MIN_CONTAINER_SLOTS {
+            d.push(Diagnostic::error(
+                codes::LOOT_TOO_MANY_ITEMS,
+                "quests",
+                format!("/content/loot/{i}/items"),
+                format!(
+                    "loot `{}` declares {} stacks, more than the {MIN_CONTAINER_SLOTS} slots a \
+                     vanilla chest or barrel has. Slots are assigned positionally, so every \
+                     stack past the {MIN_CONTAINER_SLOTS}th would be dropped silently. Split \
+                     the contents across more than one container.",
+                    l.id,
+                    l.items.len()
+                ),
+            ));
+        }
+        for (k, it) in l.items.iter().enumerate() {
+            if !items.contains(&it.item) {
+                d.push(Diagnostic::error(
+                    codes::ITEM_UNKNOWN,
+                    "quests",
+                    format!("/content/loot/{i}/items/{k}/item"),
+                    format!(
+                        "loot item `{}` is not in the pinned 1.21.11 item registry — use a \
+                         valid namespaced item id (e.g. `minecraft:cooked_cod`)",
+                        it.item
+                    ),
+                ));
+            }
+            check_enchantments(
+                &it.enchantments,
+                &format!("loot `{}` item `{}`", l.id, it.item),
+                &format!("/content/loot/{i}/items/{k}/enchantments"),
+                &ench_reg,
+                d,
+            );
         }
     }
 }
