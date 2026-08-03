@@ -156,6 +156,35 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      seconds of reading before the first step is taken. The motivating playtest
      defect: the flock the player was told to follow left while they were still
      reading the instruction, and the beat then failed them for it.
+   - **Stage 4: declare every story fork** (spec-0025, DSL v0.8). If a choice
+     forks who lives, where the party ends up, or which ending plays, it is a
+     `branch_points` entry: `{id, opens_at, forks_on:[flags], branches:[{id,
+     flags, leads_to}]}`. `leads_to` is one field — a `quest/…` the branches
+     converge at, or an `ending/…` this branch runs to (the id prefix says
+     which). Name each ending on the `campaign-complete` that fires it
+     (`"ending": "ending/<slug>"`). A flag that gates casts, staging or quest
+     structure and is *not* set on every playthrough must belong to a declared
+     point, or the build fails (`DW0480`). Every declared branch must reach an
+     ending (`DW0482`) and must be exclusive: no sibling's flag may be producible
+     on it (`DW0484`).
+   - **Every story node declares a `happening`** (spec-0025). One line saying
+     what the node does to the story: `{verb, text, subject?}`, where `verb` is
+     one of `dies` / `survives` / `departs` / `arrives` / `learns` / `believes` /
+     `gains` / `loses` / `opens` / `seals`. Required on every quest, every
+     objective, every staging / wave / gate / `campaign-complete` effect, and
+     every dialogue option that sets a flag — a missing one is `DW0481`. It is
+     the event-flow twin of the cast ledger's `doing`: you cannot fill it without
+     deciding what the beat *is*. Keep `subject` accurate (`npc/…`, `actor/…`,
+     `wave/…`, `anchor/…`, or an `item/…` label) — the compiler reads only the
+     verb and the subject, and uses them to catch a dead character who later acts
+     or a sealed gate later walked through, per branch (`DW0485`).
+   - **Post-fork casts are per branch, every quest.** After a fork opens, an
+     NPC whose situation differs by branch declares a **list** of placements,
+     each gated by the flags of the branch it belongs to — in *every* later
+     quest, not just the first. Leaving one ungated as a fallback is `DW0483`:
+     later declarations win, so the fallback keeps governing the branch that
+     already has its own. This is the island round-13 defect ("the fork moved the
+     ledger but never moved the bodies").
    - **Stage 5: write the `cast` block FIRST, before the objectives** (spec-0020).
      Every quest declares, for every NPC live in it, `{at, doing, dialogue}` —
      position first, story second. `at` is an anchor (or `"offstage"`/`"dead"`,

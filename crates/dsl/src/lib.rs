@@ -25,12 +25,13 @@ pub use canonical::to_canonical_string;
 pub use diagnostic::{Diagnostic, Severity, codes};
 pub use envelope::{
     Campaign, Envelope, RawCampaign, SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage,
-    check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, parse_campaign,
+    check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08,
+    parse_campaign,
 };
 pub use ids::{
-    ActorId, AmbushId, AnchorId, AreaId, CampaignId, ClassId, DialogueId, EditBatchId, FlagId,
-    NpcId, ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId, TimedGateId, TriggerId,
-    WaveId,
+    ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, CampaignId, ClassId, DialogueId,
+    EditBatchId, EndingId, FlagId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId, RegionId,
+    ShortcutId, TimedGateId, TriggerId, WaveId,
 };
 pub use l10n::{
     ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, MARKER_SIGIL, OptionLabel, ScreenNarrate,
@@ -44,18 +45,19 @@ pub use registry::{
     VendoredEntityRegistry, VendoredItemRegistry, is_technical_block,
 };
 pub use schema::stage_schema;
+pub use stages::for_each_campaign_effect;
 pub use stages::{
-    Actor, Ambush, Area, AreaLighting, AreaMitigation, Boundary, CameraShot, CameraSubject,
-    CameraTarget, CameraWaypoint, Carrier, CastAbsence, CastBarks, CastDialogue,
-    CastDialogueKeyword, CastEntry, CastPlace, CastPlacement, Class, ClassesContent, DamageKind,
-    DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EnchantedItem,
-    EncounterTier, EnvTrigger, EquipItem, Facing, Fixture, Horizon, KitItem, Lethality, Loot,
-    LootItem, MobAttributes, MobEffect, MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin,
-    NpcsContent, Objective, Persona, Pieces, PlannedQuest, Prop, Quest, QuestEffect,
-    QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep, Shortcut, ShotStyle,
-    SkinModel, SoundAt, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset,
-    TrapTrigger, Trigger, TriggerOn, Wave, WaveLane, WaveMob, WaveSummon, WorldContent,
-    WorldDifficulty, WorldTime, WorldWeather,
+    Actor, Ambush, Area, AreaLighting, AreaMitigation, Boundary, BranchDecl, BranchPoint,
+    CameraShot, CameraSubject, CameraTarget, CameraWaypoint, Carrier, CastAbsence, CastBarks,
+    CastDialogue, CastDialogueKeyword, CastEntry, CastPlace, CastPlacement, Class, ClassesContent,
+    DamageKind, DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption,
+    EffectSite, EnchantedItem, EncounterTier, EnvTrigger, EquipItem, Facing, Fixture, Happening,
+    HappeningVerb, Horizon, KitItem, Lethality, Loot, LootItem, MobAttributes, MobEffect,
+    MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces,
+    PlannedQuest, Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role,
+    SequenceStep, Shortcut, ShotStyle, SkinModel, SoundAt, StealthZone, TimedGate, Trap,
+    TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerOn, Wave, WaveLane, WaveMob,
+    WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather,
 };
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,

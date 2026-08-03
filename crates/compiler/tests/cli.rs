@@ -30,8 +30,9 @@ fn version_line() {
     assert_eq!(code(&out), 0);
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.contains("delvec 0.1.0"), "{s}");
-    // spec-0020 raised the implemented DSL to 0.7.0 (the per-quest cast ledger).
-    assert!(s.contains("dsl 0.7.0"), "{s}");
+    // spec-0025 raised the implemented DSL to 0.8.0 (declared branch points, the
+    // per-node `happening`, named endings).
+    assert!(s.contains("dsl 0.8.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 
@@ -1875,4 +1876,131 @@ fn a_missing_skin_png_is_dw0309() {
         "expected DW0309 for a missing skin PNG:\nstderr: {stderr}\nstdout: {stdout}"
     );
     assert_ne!(code(&out), 0, "a missing skin PNG must fail the build");
+}
+
+// ---------------------------------------------------------------------------
+// spec-0025 — the branch artifacts, and the v0.8 emission fence
+// ---------------------------------------------------------------------------
+
+/// The two-branch fixture builds, emits both spec-0025 artifacts under
+/// `validation/`, hashes them into the manifest like every other output, and is
+/// byte-identical across runs (ADR-0006).
+#[test]
+fn branch_artifacts_are_emitted_hashed_and_byte_identical() {
+    let fx = common::compiler_fixtures_dir().join("branch-two-endings");
+    let pf = common::prefabs_dir();
+    let out_a = tmp("branch-a");
+    let out_b = tmp("branch-b");
+    for out in [&out_a, &out_b] {
+        let r = delvec(&[
+            "build",
+            fx.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--prefabs",
+            pf.to_str().unwrap(),
+        ]);
+        assert_eq!(code(&r), 0, "build: {}", String::from_utf8_lossy(&r.stderr));
+    }
+    let a = read_tree(&out_a);
+    let b = read_tree(&out_b);
+    assert_eq!(a.keys().collect::<Vec<_>>(), b.keys().collect::<Vec<_>>());
+    for (path, bytes) in &a {
+        assert_eq!(bytes, &b[path], "byte mismatch in {path}");
+    }
+    for f in [
+        "validation/branch-plan.json",
+        "validation/branch-chronicle-hold.md",
+        "validation/branch-chronicle-bolt.md",
+    ] {
+        assert!(a.contains_key(f), "missing {f}: {:?}", a.keys());
+    }
+    // Validation metadata, never shipped gameplay: nothing under `datapack/`.
+    assert!(!a.keys().any(|k| k.starts_with("datapack/branch")));
+    // Listed in the manifest like `critical-path-waypoints.json`.
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&a["manifest.json"]).expect("manifest parses");
+    let outputs = manifest["outputs"].as_object().expect("outputs map");
+    for f in [
+        "validation/branch-plan.json",
+        "validation/branch-chronicle-hold.md",
+    ] {
+        assert!(outputs.contains_key(f), "manifest does not hash {f}");
+    }
+}
+
+/// **The version fence, proven on bytes.** The v0.8 surface — `branch_points`,
+/// every `happening`, the named `ending` — is validation metadata with no
+/// emission of its own: stripping all of it and dropping the campaign back to
+/// `dsl_version 0.7.0` produces a **byte-identical `datapack/`**. That is the
+/// guarantee that a 0.6/0.7 campaign cannot move by one byte because spec-0025
+/// landed.
+#[test]
+fn the_v08_surface_changes_no_datapack_byte() {
+    let fx = common::compiler_fixtures_dir().join("branch-two-endings");
+    let pf = common::prefabs_dir();
+
+    let stripped = tmp("branch-stripped-src");
+    for f in common::STAGE_FILES {
+        let mut v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(fx.join(f)).unwrap()).unwrap();
+        if v["dsl_version"] == "0.8.0" {
+            v["dsl_version"] = serde_json::Value::from("0.7.0");
+        }
+        strip_v08(&mut v);
+        std::fs::write(stripped.join(f), serde_json::to_string_pretty(&v).unwrap()).unwrap();
+    }
+
+    let with = tmp("branch-with");
+    let without = tmp("branch-without");
+    for (src, out) in [(&fx, &with), (&stripped, &without)] {
+        let r = delvec(&[
+            "build",
+            src.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--prefabs",
+            pf.to_str().unwrap(),
+        ]);
+        assert_eq!(code(&r), 0, "build: {}", String::from_utf8_lossy(&r.stderr));
+    }
+    let a = read_tree(&with);
+    let b = read_tree(&without);
+    let pack = |t: &BTreeMap<String, Vec<u8>>| -> BTreeMap<String, Vec<u8>> {
+        t.iter()
+            .filter(|(k, _)| k.starts_with("datapack/"))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    };
+    let (pa, pb) = (pack(&a), pack(&b));
+    assert!(!pa.is_empty());
+    assert_eq!(
+        pa.keys().collect::<Vec<_>>(),
+        pb.keys().collect::<Vec<_>>(),
+        "the v0.8 surface must not add or remove a datapack file"
+    );
+    for (path, bytes) in &pa {
+        assert_eq!(bytes, &pb[path], "the v0.8 surface moved bytes in {path}");
+    }
+    // …and the artifacts exist only on the declaring side.
+    assert!(a.contains_key("validation/branch-plan.json"));
+    assert!(!b.contains_key("validation/branch-plan.json"));
+}
+
+/// Recursively drop every DSL v0.8 field from a stage document.
+fn strip_v08(v: &mut serde_json::Value) {
+    match v {
+        serde_json::Value::Object(map) => {
+            map.remove("happening");
+            map.remove("branch_points");
+            if map.get("type").and_then(|t| t.as_str()) == Some("campaign-complete") {
+                map.remove("ending");
+            }
+            for (_, child) in map.iter_mut() {
+                strip_v08(child);
+            }
+        }
+        serde_json::Value::Array(items) => items.iter_mut().for_each(strip_v08),
+        _ => {}
+    }
 }

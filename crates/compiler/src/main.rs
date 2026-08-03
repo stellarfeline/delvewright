@@ -568,6 +568,12 @@ fn validate_loaded(
             // effect history. Error tier, except the pre-0.7 deprecation window
             // (DW0465) and the staleness lint (DW0467), which warn.
             diags.extend(delvewright_compiler::cast::check_cast(&campaign));
+            // spec-0025 (DSL v0.8): branch-complete narrative verification. Every
+            // declared branch is enumerated and every static proof re-run under
+            // its flag assignment — terminality, cast continuity, exclusive-content
+            // leakage, hard event contradictions — plus the forcing function that
+            // every story node says what it does to the story. No-op below 0.8.0.
+            diags.extend(delvewright_compiler::branch::check_branches(&campaign));
             print_diags(&diags, json);
             Ok(Validated {
                 campaign,

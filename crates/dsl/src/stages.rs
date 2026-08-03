@@ -10,9 +10,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{
-    ActorId, AmbushId, AnchorId, AreaId, ClassId, DialogueId, EditBatchId, FlagId, LootId, NpcId,
-    ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId, TimedGateId, TrapId, TriggerId,
-    WaveId,
+    ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, ClassId, DialogueId, EditBatchId,
+    EndingId, FlagId, LootId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId,
+    TimedGateId, TrapId, TriggerId, WaveId,
 };
 
 /// serde default helper: `true` (used by DSL v0.4 `trigger.once`).
@@ -656,6 +656,13 @@ pub struct DialogueOption {
     /// Effects fired when this option is chosen.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<DialogueEffect>,
+    /// What choosing this option does to the story (DSL v0.8, spec-0025;
+    /// reserved `DW0141` earlier). Required at 0.8.0 for a **story-weight** beat
+    /// — an option carrying a `set-flag` effect, which is how a player's choice
+    /// forks the world (`DW0481`). An option that only walks the tree or
+    /// completes an objective needs none: the objective already declares one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub happening: Option<Happening>,
 }
 
 /// Effect fired by a dialogue option. `complete-objective` (v0.2) and, from DSL
@@ -839,6 +846,141 @@ pub struct QuestPlanContent {
     pub quests: Vec<PlannedQuest>,
     /// The quest whose completion ends the campaign.
     pub finale: QuestId,
+    /// The campaign's declared **story forks** (DSL v0.8, spec-0025; reserved
+    /// `DW0141` earlier). Empty/absent = a campaign that claims to have no
+    /// branch — which the compiler then *verifies* rather than assumes: any flag
+    /// that gates casts, staging or structure and is set on some playthroughs and
+    /// not others belongs to no declared point and is `DW0480`.
+    ///
+    /// Enumerated branches are the **product of the declared points**, so the
+    /// branch set is authored and small — never a combinatorial sweep of every
+    /// flag in the campaign.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub branch_points: Vec<BranchPoint>,
+}
+
+/// One declared story fork (DSL v0.8, spec-0025).
+///
+/// A branch point names the flag set the story forks on, the quest at which the
+/// fork opens, and every branch it offers. Each branch pins the point's whole
+/// flag set: the flags it lists are **set**, and every other flag of `forks_on`
+/// is **not** — which is what makes exclusive-content leakage (`DW0484`) and
+/// per-branch cast resolution (`DW0483`) decidable instead of hopeful.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BranchPoint {
+    /// Unique branch-point id.
+    pub id: BranchPointId,
+    /// The quest at which the fork opens — every branch's divergent content is at
+    /// or after it in the stage-4 DAG.
+    pub opens_at: QuestId,
+    /// The flag set the story forks on. Every branch's `flags` is a subset of
+    /// this, and the flags it does not list are pinned **unset** on that branch.
+    pub forks_on: Vec<FlagId>,
+    /// The alternatives (≥ 2).
+    pub branches: Vec<BranchDecl>,
+}
+
+/// One alternative of a [`BranchPoint`] (DSL v0.8, spec-0025).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BranchDecl {
+    /// Unique branch id (campaign-wide — it names the emitted chronicle file).
+    pub id: BranchId,
+    /// The subset of the point's `forks_on` that is SET on this branch. The rest
+    /// of `forks_on` is pinned unset. An empty list is legal — the "took neither
+    /// option" branch — as long as it is genuinely reachable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub flags: Vec<FlagId>,
+    /// Where this branch goes: either the `quest/<kebab>` the branches converge
+    /// at, or the `ending/<kebab>` this branch runs to.
+    ///
+    /// One field, not two mutually exclusive ones, because the **id prefix
+    /// already says which it is** — the same convention every cross-stage
+    /// reference in the DSL uses. That is what makes "exactly one of them" an
+    /// unrepresentable state rather than a rule some diagnostic has to police: a
+    /// value that is neither a syntactically valid `quest/…` nor `ending/…` is
+    /// the ordinary malformed-id `DW0110`, and one that names nothing is the
+    /// ordinary dangling-reference `DW0112`.
+    pub leads_to: String,
+}
+
+impl BranchDecl {
+    /// The convergence quest, if [`Self::leads_to`] names one.
+    pub fn converges_at(&self) -> Option<QuestId> {
+        let q = QuestId(self.leads_to.clone());
+        q.is_valid_syntax().then_some(q)
+    }
+
+    /// The ending, if [`Self::leads_to`] names one.
+    pub fn ending(&self) -> Option<EndingId> {
+        let e = EndingId(self.leads_to.clone());
+        e.is_valid_syntax().then_some(e)
+    }
+}
+
+/// What a story node does to the story (DSL v0.8, spec-0025).
+///
+/// The generalization of spec-0020's `doing` from NPC presence to event flow: a
+/// design that never got written down node by node cannot compile. It is
+/// **node-local on purpose** — there is no parallel per-branch script document
+/// that could itself drift from the graph.
+///
+/// `text` is authoring/validation metadata, never shown to a player, so it is
+/// deliberately **excluded from the l10n inventory** exactly like `doing`. The
+/// compiler reads only `verb` and `subject`; `text` is the flesh the per-branch
+/// chronicle is assembled from.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Happening {
+    /// The structured event verb — the machine-decidable part.
+    pub verb: HappeningVerb,
+    /// One line of prose stating what this node does to the story.
+    pub text: String,
+    /// What the event happens TO: an `npc/`, `actor/`, `wave/` or `anchor/` id
+    /// (validated — a dangling one is `DW0112`), or an `item/<kebab>` label for a
+    /// story token the campaign tracks by hand. Optional, because not every beat
+    /// is about somebody; the hard-contradiction proof (`DW0485`) reasons only
+    /// over the beats that name one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+}
+
+/// The structured event vocabulary (DSL v0.8, spec-0025).
+///
+/// Deliberately small and closed. These ten verbs are what make a subset of
+/// narrative errors machine-decidable per branch (`DW0485`); everything else a
+/// beat means lives in [`Happening::text`], which the compiler never interprets.
+/// Extend only when a real campaign cannot state its beat with what is here.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum HappeningVerb {
+    /// The subject is killed / destroyed. Terminal: nothing the subject does may
+    /// follow it on the same branch.
+    Dies,
+    /// The subject comes through alive — the explicit counterpart of `dies`,
+    /// which is what lets a branch state that somebody *did not* die.
+    Survives,
+    /// The subject leaves the stage (offstage, not dead). Cleared by `arrives`.
+    Departs,
+    /// The subject enters the stage.
+    Arrives,
+    /// Somebody learns a fact — the true-information beat.
+    Learns,
+    /// Somebody comes to believe something (whether or not it is true) — the beat
+    /// that carries a wrong belief forward, which is where branch drift shows.
+    Believes,
+    /// The party (or the subject) gains a thing.
+    Gains,
+    /// The party (or the subject) loses a thing. A second `loses` with no
+    /// intervening `gains` is spending what is already spent (`DW0485`).
+    Loses,
+    /// A way is opened.
+    Opens,
+    /// A way is sealed. Cleared by `opens`.
+    Seals,
 }
 
 /// One planned quest (dependency-graph node).
@@ -1276,10 +1418,16 @@ impl Ambush {
     pub fn to_trigger(&self) -> EnvTrigger {
         let mut effects = self.telegraph.clone();
         for a in &self.actors {
-            effects.push(QuestEffect::SpawnActor { actor: a.clone() });
+            effects.push(QuestEffect::SpawnActor {
+                actor: a.clone(),
+                happening: None,
+            });
         }
         for a in &self.actors {
-            effects.push(QuestEffect::UnleashActor { actor: a.clone() });
+            effects.push(QuestEffect::UnleashActor {
+                actor: a.clone(),
+                happening: None,
+            });
         }
         EnvTrigger {
             id: TriggerId(format!(
@@ -1767,6 +1915,10 @@ pub struct Quest {
     /// window), so a campaign that declares none compiles byte-identically.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub cast: BTreeMap<NpcId, CastEntry>,
+    /// What this quest does to the story (DSL v0.8, spec-0025; required at 0.8.0,
+    /// `DW0481`; reserved `DW0141` earlier).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub happening: Option<Happening>,
 }
 
 /// One NPC's entry in a quest's [`cast`](Quest::cast) ledger.
@@ -2021,6 +2173,10 @@ pub enum Objective {
         /// hint; no datapack effect.
         #[serde(default, skip_serializing_if = "is_false")]
         stealth: bool,
+        /// What this objective does to the story (DSL v0.8, spec-0025; required
+        /// at 0.8.0, `DW0481`; reserved `DW0141` earlier).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        happening: Option<Happening>,
     },
     /// Completed by reaching an anchor once prerequisites are met.
     ReachAnchor {
@@ -2053,6 +2209,10 @@ pub enum Objective {
         /// hint; no datapack effect.
         #[serde(default, skip_serializing_if = "is_false")]
         stealth: bool,
+        /// What this objective does to the story (DSL v0.8, spec-0025; required
+        /// at 0.8.0, `DW0481`; reserved `DW0141` earlier).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        happening: Option<Happening>,
     },
     /// Completed when the referenced wave is fully slain (v0.3).
     Kill {
@@ -2083,6 +2243,10 @@ pub enum Objective {
         /// hint; no datapack effect.
         #[serde(default, skip_serializing_if = "is_false")]
         stealth: bool,
+        /// What this objective does to the story (DSL v0.8, spec-0025; required
+        /// at 0.8.0, `DW0481`; reserved `DW0141` earlier).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        happening: Option<Happening>,
     },
     /// Completed when `count` of `item` have been collected from `anchor` (v0.3).
     Collect {
@@ -2117,6 +2281,10 @@ pub enum Objective {
         /// hint; no datapack effect.
         #[serde(default, skip_serializing_if = "is_false")]
         stealth: bool,
+        /// What this objective does to the story (DSL v0.8, spec-0025; required
+        /// at 0.8.0, `DW0481`; reserved `DW0141` earlier).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        happening: Option<Happening>,
     },
     /// Completed by interacting with an entity at `anchor`; if `requires_item` is
     /// set, the item must be **held in the main hand** (v0.3; held semantics since
@@ -2176,6 +2344,10 @@ pub enum Objective {
         /// hint; no datapack effect.
         #[serde(default, skip_serializing_if = "is_false")]
         stealth: bool,
+        /// What this objective does to the story (DSL v0.8, spec-0025; required
+        /// at 0.8.0, `DW0481`; reserved `DW0141` earlier).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        happening: Option<Happening>,
     },
 }
 
@@ -2393,6 +2565,17 @@ impl Objective {
         }
     }
 
+    /// What this objective does to the story (DSL v0.8, spec-0025).
+    pub fn happening(&self) -> Option<&Happening> {
+        match self {
+            Objective::TalkTo { happening, .. }
+            | Objective::ReachAnchor { happening, .. }
+            | Objective::Kill { happening, .. }
+            | Objective::Collect { happening, .. }
+            | Objective::Interact { happening, .. } => happening.as_ref(),
+        }
+    }
+
     /// The bot stealth hint (DSL v0.4): traverse this leg sneaking.
     pub fn stealth(&self) -> bool {
         match self {
@@ -2461,6 +2644,13 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// What this beat does to the story (DSL v0.8, spec-0025; required at
+        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// the hand-written `Debug` rendering below: the declaration is
+        /// validation metadata with no emission of its own, so a content key can
+        /// never move because a beat gained a line of prose.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        happening: Option<Happening>,
     },
     /// Seals a prefab-declared gate — the physical dual of `open-gate` (DSL v0.6):
     /// fills the gate anchor's region with the block the anchor declares (e.g. the
@@ -2480,11 +2670,35 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// What this beat does to the story (DSL v0.8, spec-0025; required at
+        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// the hand-written `Debug` rendering below: the declaration is
+        /// validation metadata with no emission of its own, so a content key can
+        /// never move because a beat gained a line of prose.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        happening: Option<Happening>,
     },
     /// Marks the campaign complete (final advancement + credits). Terminal — not
     /// flag-gatable (gating the campaign's own completion is a deadlock footgun),
     /// so this variant carries no `requires_flags`.
-    CampaignComplete,
+    CampaignComplete {
+        /// Which ENDING this is (DSL v0.8, spec-0025; reserved `DW0141` earlier).
+        /// A campaign with more than one `campaign-complete` has more than one
+        /// ending, and a branch that runs to an ending names it here — so the
+        /// terminality proof (`DW0482`) can state *which* ending a branch reached
+        /// instead of merely that something ended. There is no separate `endings`
+        /// section: the set of endings is exactly the set named here, the same
+        /// rule flags follow.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ending: Option<EndingId>,
+        /// What this beat does to the story (DSL v0.8, spec-0025; required at
+        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// the hand-written `Debug` rendering below: the declaration is
+        /// validation metadata with no emission of its own, so a content key can
+        /// never move because a beat gained a line of prose.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        happening: Option<Happening>,
+    },
     /// Gives the party an item (v0.3; party-wide since v0.6/spec-0018).
     GiveItem {
         /// Vanilla item id to give (validated against the registry).
@@ -2531,6 +2745,13 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// What this beat does to the story (DSL v0.8, spec-0025; required at
+        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// the hand-written `Debug` rendering below: the declaration is
+        /// validation metadata with no emission of its own, so a content key can
+        /// never move because a beat gained a line of prose.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        happening: Option<Happening>,
     },
     /// Narrates a player-visible line (DSL v0.4, spec-0008 §3). `text` enters the
     /// l10n key inventory like any player-visible string.
@@ -2579,6 +2800,13 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// What this beat does to the story (DSL v0.8, spec-0025; required at
+        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// the hand-written `Debug` rendering below: the declaration is
+        /// validation metadata with no emission of its own, so a content key can
+        /// never move because a beat gained a line of prose.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        happening: Option<Happening>,
     },
     /// Moves an NPC (and its interaction hitbox in lockstep) to an anchor (DSL
     /// v0.4, spec-0008 §5 + addendum). The compiler plans a **collision-safe walked
@@ -2610,6 +2838,13 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// What this beat does to the story (DSL v0.8, spec-0025; required at
+        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// the hand-written `Debug` rendering below: the declaration is
+        /// validation metadata with no emission of its own, so a content key can
+        /// never move because a beat gained a line of prose.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        happening: Option<Happening>,
     },
     /// Plays a scripted camera cutscene (DSL v0.4 addendum). Per player: save
     /// gamemode+position, spectator, then dolly two co-located cameras along a
@@ -2809,6 +3044,13 @@ pub enum QuestEffect {
     SpawnNpc {
         /// The NPC (stage-2 ref) to summon.
         npc: NpcId,
+        /// What this beat does to the story (DSL v0.8, spec-0025; required at
+        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// the hand-written `Debug` rendering below: the declaration is
+        /// validation metadata with no emission of its own, so a content key can
+        /// never move because a beat gained a line of prose.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        happening: Option<Happening>,
     },
     // --- DSL v0.6 actor staging effects (spec-0014) ---
     /// Summons a stage-5 actor's puppet at its anchor (DSL v0.6). Idempotent: a
@@ -2816,6 +3058,13 @@ pub enum QuestEffect {
     SpawnActor {
         /// The actor (stage-5 `actors` ref) to summon.
         actor: ActorId,
+        /// What this beat does to the story (DSL v0.8, spec-0025; required at
+        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// the hand-written `Debug` rendering below: the declaration is
+        /// validation metadata with no emission of its own, so a content key can
+        /// never move because a beat gained a line of prose.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        happening: Option<Happening>,
     },
     /// Removes an actor's puppet (DSL v0.6). `kill` plays the vanilla death
     /// animation (cutscene deaths); `vanish` is silent removal.
@@ -2824,6 +3073,13 @@ pub enum QuestEffect {
         actor: ActorId,
         /// How the puppet is removed.
         style: DespawnStyle,
+        /// What this beat does to the story (DSL v0.8, spec-0025; required at
+        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// the hand-written `Debug` rendering below: the declaration is
+        /// validation metadata with no emission of its own, so a content key can
+        /// never move because a beat gained a line of prose.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        happening: Option<Happening>,
     },
     /// Walks an actor's puppet to an anchor by A*-planned per-tick teleport over
     /// the assembled model, using the actor's hitbox footprint, yawed along the
@@ -2841,6 +3097,13 @@ pub enum QuestEffect {
         /// Effects fired once the puppet arrives at the destination cell.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         on_arrive: Vec<QuestEffect>,
+        /// What this beat does to the story (DSL v0.8, spec-0025; required at
+        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// the hand-written `Debug` rendering below: the declaration is
+        /// validation metadata with no emission of its own, so a content key can
+        /// never move because a beat gained a line of prose.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        happening: Option<Happening>,
     },
     /// Replaces an actor's puppet with a real-AI twin of the same type / position /
     /// name / attributes / tag (DSL v0.6) — the "attack the idle giant → real
@@ -2849,6 +3112,13 @@ pub enum QuestEffect {
     UnleashActor {
         /// The actor (stage-5 `actors` ref) to unleash.
         actor: ActorId,
+        /// What this beat does to the story (DSL v0.8, spec-0025; required at
+        /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
+        /// the hand-written `Debug` rendering below: the declaration is
+        /// validation metadata with no emission of its own, so a content key can
+        /// never move because a beat gained a line of prose.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        happening: Option<Happening>,
     },
     /// A deterministic timeline (DSL v0.6): one schedule chain firing effect groups
     /// at exact tick offsets. Effects are any in the stage-5 set except a nested
@@ -2972,6 +3242,7 @@ impl std::fmt::Debug for QuestEffect {
                 anchor,
                 requires_flags,
                 forbids_flags,
+                ..
             } => ff(
                 f.debug_struct("OpenGate")
                     .field("anchor", anchor)
@@ -2983,6 +3254,7 @@ impl std::fmt::Debug for QuestEffect {
                 anchor,
                 requires_flags,
                 forbids_flags,
+                ..
             } => ff(
                 f.debug_struct("CloseGate")
                     .field("anchor", anchor)
@@ -2990,7 +3262,7 @@ impl std::fmt::Debug for QuestEffect {
                 forbids_flags,
             )
             .finish(),
-            QuestEffect::CampaignComplete => f.write_str("CampaignComplete"),
+            QuestEffect::CampaignComplete { .. } => f.write_str("CampaignComplete"),
             QuestEffect::GiveItem {
                 item,
                 count,
@@ -3023,6 +3295,7 @@ impl std::fmt::Debug for QuestEffect {
                 wave,
                 requires_flags,
                 forbids_flags,
+                ..
             } => ff(
                 f.debug_struct("SpawnWave")
                     .field("wave", wave)
@@ -3062,6 +3335,7 @@ impl std::fmt::Debug for QuestEffect {
                 npc,
                 requires_flags,
                 forbids_flags,
+                ..
             } => ff(
                 f.debug_struct("DespawnNpc")
                     .field("npc", npc)
@@ -3076,6 +3350,7 @@ impl std::fmt::Debug for QuestEffect {
                 on_arrive,
                 requires_flags,
                 forbids_flags,
+                ..
             } => {
                 let mut d = f.debug_struct("MoveNpc");
                 d.field("npc", npc)
@@ -3179,11 +3454,13 @@ impl std::fmt::Debug for QuestEffect {
                 .field("grace_ticks", grace_ticks)
                 .finish(),
             QuestEffect::EndStealth => f.write_str("EndStealth"),
-            QuestEffect::SpawnNpc { npc } => f.debug_struct("SpawnNpc").field("npc", npc).finish(),
-            QuestEffect::SpawnActor { actor } => {
+            QuestEffect::SpawnNpc { npc, .. } => {
+                f.debug_struct("SpawnNpc").field("npc", npc).finish()
+            }
+            QuestEffect::SpawnActor { actor, .. } => {
                 f.debug_struct("SpawnActor").field("actor", actor).finish()
             }
-            QuestEffect::DespawnActor { actor, style } => f
+            QuestEffect::DespawnActor { actor, style, .. } => f
                 .debug_struct("DespawnActor")
                 .field("actor", actor)
                 .field("style", style)
@@ -3193,6 +3470,7 @@ impl std::fmt::Debug for QuestEffect {
                 to_anchor,
                 speed,
                 on_arrive,
+                ..
             } => f
                 .debug_struct("MoveActor")
                 .field("actor", actor)
@@ -3200,7 +3478,7 @@ impl std::fmt::Debug for QuestEffect {
                 .field("speed", speed)
                 .field("on_arrive", on_arrive)
                 .finish(),
-            QuestEffect::UnleashActor { actor } => f
+            QuestEffect::UnleashActor { actor, .. } => f
                 .debug_struct("UnleashActor")
                 .field("actor", actor)
                 .finish(),
@@ -3683,7 +3961,7 @@ impl QuestEffect {
         match self {
             QuestEffect::OpenGate { .. } => "open-gate",
             QuestEffect::CloseGate { .. } => "close-gate",
-            QuestEffect::CampaignComplete => "campaign-complete",
+            QuestEffect::CampaignComplete { .. } => "campaign-complete",
             QuestEffect::GiveItem { .. } => "give-item",
             QuestEffect::SetFlag { .. } => "set-flag",
             QuestEffect::SpawnWave { .. } => "spawn-wave",
@@ -3807,7 +4085,7 @@ impl QuestEffect {
             QuestEffect::SpawnWave { .. } => Some("spawn-wave"),
             QuestEffect::OpenGate { .. }
             | QuestEffect::CloseGate { .. }
-            | QuestEffect::CampaignComplete => None,
+            | QuestEffect::CampaignComplete { .. } => None,
             // v0.4 effects report via `v04_effect`; v0.5 via `v05_effect`; they
             // are not v0.3 verbs.
             QuestEffect::Narrate { .. }
@@ -3935,7 +4213,7 @@ impl QuestEffect {
     /// [`QuestEffect::despawn_npc`]).
     pub fn spawn_npc(&self) -> Option<&NpcId> {
         match self {
-            QuestEffect::SpawnNpc { npc } => Some(npc),
+            QuestEffect::SpawnNpc { npc, .. } => Some(npc),
             _ => None,
         }
     }
@@ -4362,7 +4640,7 @@ impl QuestEffect {
             // `despawn-actor` / `move-actor` / `unleash-actor` / `sequence`) and
             // `spawn-npc` are world-global staging — none are per-player `@s`
             // effects. Gate these at the objective / dialogue-option level instead.
-            QuestEffect::CampaignComplete
+            QuestEffect::CampaignComplete { .. }
             | QuestEffect::SpawnNpc { .. }
             | QuestEffect::SetCheckpoint { .. }
             | QuestEffect::Bonfire { .. }
@@ -4402,7 +4680,7 @@ impl QuestEffect {
             | QuestEffect::DamagePlayers { forbids_flags, .. }
             | QuestEffect::Volley { forbids_flags, .. }
             | QuestEffect::Collapse { forbids_flags, .. } => forbids_flags,
-            QuestEffect::CampaignComplete
+            QuestEffect::CampaignComplete { .. }
             | QuestEffect::SpawnNpc { .. }
             | QuestEffect::SetCheckpoint { .. }
             | QuestEffect::Bonfire { .. }
@@ -4433,10 +4711,10 @@ impl QuestEffect {
     /// no single actor (its nested effects each carry their own).
     pub fn actor_ref(&self) -> Option<&ActorId> {
         match self {
-            QuestEffect::SpawnActor { actor }
+            QuestEffect::SpawnActor { actor, .. }
             | QuestEffect::DespawnActor { actor, .. }
             | QuestEffect::MoveActor { actor, .. }
-            | QuestEffect::UnleashActor { actor } => Some(actor),
+            | QuestEffect::UnleashActor { actor, .. } => Some(actor),
             _ => None,
         }
     }
@@ -4853,4 +5131,124 @@ pub struct PaletteBlock {
     pub block: String,
     /// Relative weight (finite, > 0).
     pub weight: f64,
+}
+
+/// Where in the campaign one effect sits — the attribution every per-branch
+/// proof and the branch chronicle need (spec-0025).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EffectSite {
+    /// A quest's `on_objective_complete[<objective>]` bundle.
+    Objective {
+        /// The owning quest.
+        quest: String,
+        /// The objective whose completion fires the bundle.
+        objective: String,
+    },
+    /// A quest's `on_complete` bundle.
+    QuestComplete {
+        /// The owning quest.
+        quest: String,
+    },
+    /// An environment trigger's `effects` bundle — ambient, no DAG position.
+    Trigger {
+        /// The trigger id.
+        trigger: String,
+    },
+    /// A trap's spec-0022 `payload` bundle — ambient, no DAG position.
+    Trap {
+        /// The trap id.
+        trap: String,
+    },
+}
+
+impl EffectSite {
+    /// The quest this site belongs to, if it has a DAG position at all.
+    pub fn quest(&self) -> Option<&str> {
+        match self {
+            EffectSite::Objective { quest, .. } | EffectSite::QuestComplete { quest } => {
+                Some(quest)
+            }
+            EffectSite::Trigger { .. } | EffectSite::Trap { .. } => None,
+        }
+    }
+}
+
+/// Visit **every** quest / trigger / trap-payload effect in the campaign,
+/// top-level and transitively nested, in a fixed deterministic order, invoking
+/// `f(json_pointer, site, effect)`.
+///
+/// The shared traversal spec-0025's proofs, the `DW0141` v0.8 fence and the
+/// branch chronicle all walk, so none of them can drift from what emission does:
+/// nesting is descended through the one
+/// [`QuestEffect::nested_effect_lists_labeled`] authority, exactly like the l10n
+/// inventory and the consumer-ref scans.
+pub fn for_each_campaign_effect<'a>(
+    c: &'a crate::envelope::Campaign,
+    f: &mut dyn FnMut(&str, &EffectSite, &'a QuestEffect),
+) {
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oid, effs) in &q.on_objective_complete {
+            let site = EffectSite::Objective {
+                quest: q.id.as_str().to_string(),
+                objective: oid.as_str().to_string(),
+            };
+            for (i, eff) in effs.iter().enumerate() {
+                campaign_effect_deep(
+                    eff,
+                    &format!(
+                        "/content/quests/{qi}/on_objective_complete/{}/{i}",
+                        oid.as_str()
+                    ),
+                    &site,
+                    f,
+                );
+            }
+        }
+        let site = EffectSite::QuestComplete {
+            quest: q.id.as_str().to_string(),
+        };
+        for (i, eff) in q.on_complete.iter().enumerate() {
+            campaign_effect_deep(
+                eff,
+                &format!("/content/quests/{qi}/on_complete/{i}"),
+                &site,
+                f,
+            );
+        }
+    }
+    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
+        let site = EffectSite::Trigger {
+            trigger: t.id.as_str().to_string(),
+        };
+        for (i, eff) in t.effects.iter().enumerate() {
+            campaign_effect_deep(
+                eff,
+                &format!("/content/triggers/{ti}/effects/{i}"),
+                &site,
+                f,
+            );
+        }
+    }
+    for (pi, trap) in c.quests.content.traps.iter().enumerate() {
+        let site = EffectSite::Trap {
+            trap: trap.id.as_str().to_string(),
+        };
+        for (i, eff) in trap.payload.iter().enumerate() {
+            campaign_effect_deep(eff, &format!("/content/traps/{pi}/payload/{i}"), &site, f);
+        }
+    }
+}
+
+fn campaign_effect_deep<'a>(
+    eff: &'a QuestEffect,
+    path: &str,
+    site: &EffectSite,
+    f: &mut dyn FnMut(&str, &EffectSite, &'a QuestEffect),
+) {
+    f(path, site, eff);
+    for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+        for (j, inner) in list.iter().enumerate() {
+            campaign_effect_deep(inner, &format!("{path}/{pseg}/{j}"), site, f);
+        }
+    }
 }

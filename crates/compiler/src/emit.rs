@@ -731,6 +731,17 @@ pub fn build_with_warnings(
         Some(sha1)
     };
 
+    // spec-0025 validation metadata: `branch-plan.json` (the branch set, each
+    // one's flag assignment, its critical path and the dialogue choices that
+    // enter it — what the harness scripts its per-branch runs from) and one
+    // `branch-chronicle-<branch>.md` per branch for the generation-time
+    // narrative review. Both are pure functions of the campaign document, so
+    // they are byte-identical across builds (ADR-0006), and both are EMPTY for a
+    // campaign that declares no branch points — nothing moves for anybody who
+    // has not opted in. Emitted before the manifest so its hashes cover them,
+    // exactly like `critical-path-waypoints.json`.
+    out.extend(crate::branch::artifacts(plan.campaign));
+
     // ---- manifest (hashes of inputs + all other outputs) ----
     let manifest = emit_manifest(
         plan,
@@ -3273,7 +3284,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 }
             }
         }
-        QuestEffect::CampaignComplete => {
+        QuestEffect::CampaignComplete { .. } => {
             body.push(format!("function {ns}:campaign_complete"));
         }
         QuestEffect::GiveItem {
@@ -3421,13 +3432,13 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             body.push(format!("function {ns}:{}", collapse_fn(eff)));
         }
         // --- DSL v0.6 actor staging effects (spec-0014) ---
-        QuestEffect::SpawnActor { actor } => {
+        QuestEffect::SpawnActor { actor, .. } => {
             body.push(format!(
                 "function {ns}:spawn_actor_{}",
                 plan::safe_local(actor.as_str())
             ));
         }
-        QuestEffect::DespawnActor { actor, style } => {
+        QuestEffect::DespawnActor { actor, style, .. } => {
             emit_despawn_actor(actor.as_str(), *style, body);
         }
         QuestEffect::MoveActor {
@@ -3438,7 +3449,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 moveactor_fn(actor.as_str(), to_anchor.as_str())
             ));
         }
-        QuestEffect::UnleashActor { actor } => {
+        QuestEffect::UnleashActor { actor, .. } => {
             body.push(format!(
                 "function {ns}:unleash_{}",
                 plan::safe_local(actor.as_str())
@@ -3447,7 +3458,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         QuestEffect::Sequence { steps } => {
             body.push(format!("function {ns}:{}", sequence_fn(steps)));
         }
-        QuestEffect::SpawnNpc { npc } => {
+        QuestEffect::SpawnNpc { npc, .. } => {
             body.push(format!("function {ns}:{}", spawn_npc_fn(npc.as_str())));
         }
     }
@@ -11580,6 +11591,7 @@ mod tests {
             at_ticks: t,
             effects: vec![delvewright_dsl::QuestEffect::UnleashActor {
                 actor: delvewright_dsl::ActorId("actor/giant".to_string()),
+                happening: None,
             }],
         };
         let a = vec![step(0), step(40)];

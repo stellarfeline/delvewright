@@ -198,6 +198,10 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 (`DW0131`) + convergent sink (`DW0132`), `mandatory: true` required
 (`DW0133` on `false`). `goal` → l10n `quest.<q>.goal`.
 
+| Element | Fields → behavior | Since |
+|---------|-------------------|-------|
+| `branch_points[]` | `{id, opens_at, forks_on[], branches[]}` (spec-0025, reserved `DW0141` pre-0.8) — the campaign's declared **story forks**. `forks_on` is the flag set this fork owns; `opens_at` the quest at which it opens. Each branch is `{id, flags[], leads_to}`: `flags` is the subset of `forks_on` this branch holds (the rest of `forks_on` is pinned **unset** on it — that half is what makes `DW0484` decidable), and `leads_to` is a **single** field whose id prefix says which kind of terminus it is — a `quest/<kebab>` the branches converge at, or an `ending/<kebab>` this branch runs to. One field rather than two mutually exclusive ones, so "exactly one of them" is an unrepresentable state instead of a rule some diagnostic polices: a value with neither prefix is the ordinary `DW0110`, one naming nothing is the ordinary `DW0112`. Enumerated branches are the **product of the declared points**, so the branch set is authored and small. Empty/absent = a campaign claiming to have no branch, which the compiler then *verifies* rather than assumes (`DW0480`). Proofs: `DW0480`–`DW0485`. | 0.8 |
+
 ### Stage 5 — `quests` (+ v0.3/v0.4 gameplay surface)
 
 | Element | Fields → behavior | Since |
@@ -220,11 +224,12 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | `waves[].lane` | `{waypoints[],aggro_radius}` (spec-0016 §6, reserved `DW0141` pre-0.6) — **routed while distant, feral once aggroed**, on vanilla's Raider patrol system (the intended primitive; live-verified 1.21.11, `docs/notes/td-routing-spike.md`). The squad spawns `Patrolling:1b` with one `PatrolLeader:1b` and the **snake_case int-array** `patrol_target:[I;x,y,z]`; a per-wave clock (`lane_tick_<wave>`, 30t, self-terminating) advances a shared waypoint index and per mob releases `Patrolling:0b` whenever a player is inside `aggro_radius`. `aggro_radius` is emitted verbatim as each lane mob's `follow_range` attribute — release radius and perception radius MUST be one number, so a contradicting per-mob override is `DW0381`. Lanes are raider-family only (`DW0382`: pillager / vindicator / evoker / ravager / witch), squad ≥ 2 (`DW0383`: a lone patroller self-cancels), and a lane pillager must keep its crossbow (`DW0384`: its only attack goal is crossbow-gated, so an otherwise-armed one deadlocks on target acquisition). Declaration errors (no waypoints, an invented waypoint anchor, a repeated consecutive waypoint, `aggro_radius` outside `4..=64`, `lane` + `summon: aggro-edge` together) are `DW0381`; lane geometry is the build-tier `DW0386`. Lane waypoints join the wave's spawn anchor in the layout solver's **required-anchor** set for the wave's area, so a prefab-pool area is guaranteed to draw a piece providing each one — without that a pool draw can legally omit a waypoint's carrier and the lane fails `DW0386` for a reason the author cannot act on. |
 | `waves[].summon` | `anchor` (default, the pre-0.6 behaviour) or `aggro-edge` (spec-0016 §6, reserved `DW0141` pre-0.6). **Aggro-edge = spirit-summoned at the edge of perception**: species without patrol AI never march a lane, so each mob instead materializes on the ring at its own `attributes.follow_range` from the wave `anchor` — which in this mode is the **defended point**, not the spawn point. Candidate cells are standable, walk-reachable and in line of sight of that point, on the one-sided band `[follow_range - 2, follow_range - 1]`, ordered outermost-first: one full block INSIDE the mob's own perception, because ladder evidence (the drowned bell, runs 10/12) showed a mob seated exactly AT the radius acquires a defender at the anchor only marginally — vanilla target acquisition at the boundary is a coin flip, and a summoned mob that acquires nobody stands idle forever, timing out its kill objective. Never beyond perception, never on top of the party. `follow_range` is mandatory here (`DW0385`) — the ring radius is authored, never guessed from a vanilla defaults table the compiler cannot verify. A ring with too few valid cells is `DW0387`, not a silent short spawn. |
 | `shortcuts[]` | `{id,gate,unlock,on_unlock[]?}` (spec-0016 §2, reserved `DW0141` pre-0.6) — the souls loop-back. The `gate` is **sealed from world-load** (the prefab carries the physical fill), and the `unlock` anchor on the FAR side opens it **permanently**. Declaration errors are `DW0371` (malformed/duplicate id, an anchor no prefab provides, or an `unlock` equal to its own `gate`); a gate anchor with no declared fill `block` is `DW0343` (the same rule `close-gate` obeys); a `close-gate` anywhere targeting a shortcut gate is `DW0372` — permanence is structural, there is no re-seal verb to reach for. Geometry proofs: `DW0373` (the long route exists while the gate is sealed) and `DW0374` (opening it strictly shortens the walk to the unlock — the anti-leak proof that makes `unlock` a far-side anchor rather than a label). Every shortcut gate is additionally **sealed for the whole completability model** (`Plan::build` registers it as a `close-gate` at step 0), so `DW0311`/`DW0315`/`DW0342` all prove the delve finishable with no shortcut ever taken. | 0.6 |
+| `happening` | `{verb, text, subject?}` (spec-0025, reserved `DW0141` pre-0.8) — what this node does to the story. Declared on a **quest**, an **objective**, a **story-weight dialogue option** (one carrying a `set-flag`), and the **eleven story-node effects** (`spawn-npc`/`despawn-npc`/`move-npc`, `spawn-actor`/`despawn-actor`/`move-actor`/`unleash-actor`, `spawn-wave`, `open-gate`/`close-gate`, `campaign-complete`) — and nowhere else, so a `happening` on a `narrate` is an unknown field (`DW0100`) rather than a beat nobody reads. `verb` is the closed ten-word vocabulary `dies` / `survives` / `departs` / `arrives` / `learns` / `believes` / `gains` / `loses` / `opens` / `seals`; `text` is one line of prose the compiler never interprets; `subject` names an `npc/`, `actor/` or `wave/` id (validated, `DW0112`), an `anchor/`, or an `item/<kebab>` label for a story token the campaign tracks by hand. Required at 0.8.0 (`DW0481`) — the forcing function, generalizing the cast ledger's `doing` from NPC presence to event flow. **Never player-visible**, so it is excluded from the l10n inventory exactly like `doing`, and it is deliberately absent from `QuestEffect`'s hand-written `Debug` — a content key can never move because a beat gained a line of prose. | 0.8 |
 | `cast` | `{ "<npc id>": <entry>, … }` (spec-0020, reserved `DW0141` pre-0.7) — the **scene ledger**: for every NPC live during this quest, where they are, what they are doing, and what their right-click offers *for this quest's duration*. An entry is the bare keyword `"dead"`/`"offstage"`, one placement object, or a **list** of placements (per-branch casts, each gated by `requires_flags`/`forbids_flags`). A placement is `{at, doing, dialogue, requires_flags?, forbids_flags?}`: `at` is an anchor or `"offstage"`/`"dead"`; `doing` is free prose the compiler never checks (required anyway — it is the forcing function, and stage 6 writes the NPC's lines against it); `dialogue` is a stage-6 root id, `{"barks": [...]}`, `"none"`, or `"unchanged"`. **The declaration is the gate** — see "Cast-ledger dispatch" in §3. Barks enter the l10n inventory as `cast.<quest>.<npc>.<branch>.bark.<i>`; `doing` deliberately does not (it is never shown to a player). A cast-declared root counts as a **dialogue entry point**, so `DW0120` reachability is measured from the tree `root` plus every ledger root — without that, retiring a premise root by swapping to a later one would make the later one unreachable. Proofs: `DW0460`–`DW0467`. | 0.7 |
 | `triggers[]` | `{id,at?,on:strike\|use\|approach{range}\|strike-npc{npc},requires_flags?,forbids_flags?,once?,effects[]}` (v0.4; `forbids_flags` and `strike-npc` v0.6, reserved `DW0141` earlier). `at` names a **place** and is required for `strike`/`use`/`approach`; `strike-npc` names a **character** and takes no `at` at all — either mismatch is `DW0194`, because an ignored anchor reads as meaningful and does nothing. A `strike-npc` target that stage 2 does not declare is `DW0112` (the trigger's tag would ride nothing). Bad/dup/`range 0` → `DW0194`. A trigger is armed while every `requires_flags` flag is held by some player AND no `forbids_flags` flag is set by anyone — e.g. a retaliation trigger armed by `flag/sealed` that stands down the moment `flag/asleep` is set (the wake beat takes over), with no re-arm plumbing. | 0.4 / forbids 0.6 |
 | Effect `open-gate` | Fills gate anchor to air. | 0.1 |
 | Effect `close-gate{anchor}` | The physical dual of `open-gate` (v0.6): fills the gate anchor's region with the block the anchor's prefab metadata declares (basalt boulder, iron bars), re-sealing an opened threshold into a wall. A gate anchor that declares no `block` is `DW0343`. Same anchor-existence check as `open-gate` (`DW0142`). Per-effect `requires_flags` like the other per-`@s` verbs. | 0.6 |
-| Effect `campaign-complete` | Sets `dw.campaign`; finale fanfare. | 0.1 |
+| Effect `campaign-complete` | Sets `dw.campaign`; finale fanfare. `ending` (opt, v0.8, spec-0025, reserved `DW0141` earlier) NAMES this ending — there is no separate `endings` section, the set of endings is exactly the set named here, the same rule flags follow — so a stage-4 branch can declare which ending it runs to and `DW0482` can state *which* ending a branch reached rather than merely that something ended. Validation metadata: never emitted, so a campaign that names none is byte-identical. | 0.1 / `ending` 0.8 |
 | Effect `spawn-wave` | Summons wave mobs (AI on), tag `dw_wave_<id>`. | 0.3 |
 | Effect `give-item{item,count,name?}` | Grants item (`name` v0.4). | 0.3 |
 | Effect `set-flag{flag}` | Sets `dw.f_<flag>` (per-player). | 0.3 |
@@ -253,7 +258,8 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 
 Dialogue effects `set-flag` (v0.4), `set-time`/`set-weather` (v0.5),
 `set-checkpoint`/`spawn-npc` (v0.6) and option `requires_flags` mirror the quest
-forms.
+forms. A dialogue **option** may carry a `happening` (v0.8), and must when it
+sets a flag (`DW0481`) — a choice that forks the world is a story node.
 Per-effect `requires_flags` is a v0.6 **quests-stage** surface only (dialogue
 effects are not mirrored — a dialogue option's own `requires_flags` already gates
 its whole effect bundle). Newer surface declared under an older `dsl_version` is
@@ -956,6 +962,15 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   bounded by two full cycles plus margin, instead of failing the leg when the
   gate fills mid-approach. Both keys are omitted entirely for a campaign with no
   gate clock, so such campaigns stay byte-identical.
+- `<out>/validation/branch-plan.json` + `<out>/validation/branch-chronicle-<branch>.md`
+  (spec-0025, DSL v0.8): the branch set — per branch, its flag assignment, its
+  critical path computed under that branch, and the dialogue choices that enter
+  it — plus one per-branch chronicle, every reachable node's `happening` line in
+  compiled play order. **Validation metadata, not shipped gameplay**, excluded
+  from the delve image like `critical-path-waypoints.json`, and emitted **only**
+  for a campaign that declares `branch_points`, so nobody who has not opted in
+  gains a file. Full description in §5 "DW048x — branch-complete narrative
+  verification".
 - `<out>/validation/combat-plan.json` (spec-0023): the bot ladder's encounter
   table — one entry per **mandatory** encounter (a wave a `kill` step on the
   compiled critical path names), in path order, carrying `wave`, `objective`,
@@ -1555,7 +1570,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0}`). |
+| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0}`). |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
@@ -1569,7 +1584,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0132` | `finale` is not the convergent sink (some quest is not a transitive dependency of finale). |
 | `DW0133` | Non-mandatory quest (`mandatory:false`), reserved until M3. |
 | `DW0140` | Objective `after` cycle. |
-| `DW0141` | Reserved enum value/field for the campaign's `dsl_version`. **This row is the single enumerated list of reserved surface** — §2 deliberately does not restate it (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: area `mitigation`, `close-gate`, `damage-players`, `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, `forbids_flags` at every site, `move-npc.on_arrive`, stage-2 npc `deferred` + the `spawn-npc` effect, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, the `traps[]` section, the `bonfire` effect, wave `respawns_on_rest`, wave `equipment`, `waves[].lane` / `waves[].summon`, the `shortcuts[]` / `ambushes[]` / `timed_gates[]` sections, the `loot[]` section, actor `equipment`, and the spec-0022 trap `payload` surface + its `volley` / `collapse` effects; under pre-0.7 the v0.7 surface: the stage-5 `cast` ledger, wave `tier`). |
+| `DW0141` | Reserved enum value/field for the campaign's `dsl_version`. **This row is the single enumerated list of reserved surface** — §2 deliberately does not restate it (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: area `mitigation`, `close-gate`, `damage-players`, `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, `forbids_flags` at every site, `move-npc.on_arrive`, stage-2 npc `deferred` + the `spawn-npc` effect, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, the `traps[]` section, the `bonfire` effect, wave `respawns_on_rest`, wave `equipment`, `waves[].lane` / `waves[].summon`, the `shortcuts[]` / `ambushes[]` / `timed_gates[]` sections, the `loot[]` section, actor `equipment`, and the spec-0022 trap `payload` surface + its `volley` / `collapse` effects; under pre-0.7 the v0.7 surface: the stage-5 `cast` ledger, wave `tier`; under pre-0.8 the v0.8 surface (spec-0025): the stage-4 `branch_points` section, the per-node `happening` on a quest / objective / dialogue option / staging-or-gate-or-ending effect, and the named `campaign-complete` `ending`). |
 | `DW0142` | Anchor not provided by the area's bound prefab. |
 | `DW0143` | Item id not in the pinned 1.21.11 registry (kit / `collect` / `interact.requires_item` / `give-item`). |
 | `DW0150` | Planned quest (stage 4) has no stage-5 expansion. |
@@ -2141,6 +2156,75 @@ pins that pairing so a future MC pin breaking it fails loudly.
 | `DW0474` | (**warning**; exit 0) A campaign with mandatory combat hands the party **no sustain at all**: no class kit, `give-item` effect (any nesting depth) or `loot` container carries an item with a `minecraft:food` component. Natural regeneration stops once the hunger bar falls below 18, so after the first fight the party's health only goes down. Warning rather than error because the fight budget a party actually needs depends on play the compiler is forbidden to model (spec-0023 "Out of scope") — the finding is the literal zero, which is a design fact, not a balance opinion. Prescription: put food in the kits, or stock a container on the route. |
 | `DW0475` | (**warning**; exit 0) The numeric time-to-kill bound **could not be computed** for one or more mandatory encounters, so they ship with the structural proofs only (damageable, reachable, wired) and no arithmetic. Two causes, both stated per encounter: a stack that declares no `attributes.max_health` (Mojang publishes no per-entity defaults, so its health is unknown — see the block header), or a party whose kits carry no item with an `attack_damage` attribute at all, which means the damage output is unknown rather than zero (a bow's damage is projectile code and appears in no vanilla data; absence in the item table is a fact about attributes, never a claim of harmlessness). One finding per campaign, listing every affected encounter. Prescription: declare `attributes.max_health` to opt the encounter into `DW0472`. Deliberately advisory: an encounter left on vanilla stats is legitimate — the author just has to see that nothing arithmetic was proven about it. |
 
+### DW048x — branch-complete narrative verification (`compiler::branch`; spec-0025, DSL v0.8)
+
+"Provably completable by machine" quantifies over **branches**, not paths. The
+ladder used to prove ONE critical path: a fork that decides who lives was
+declared in the DSL, reachability-checked as a graph, and then never played. The
+island round-13 defect is the whole blind class in one shape — the flee branch's
+cast ledger said Antiphos lives while the staging still belonged to the death
+branch: an NPC despawned himself, another held a cave the party had left, a third
+mourned a man standing beside him. **The fork moved the ledger but never moved
+the bodies**, and no check owned the gap.
+
+**The model.** Stage 4 declares its `branch_points`: the flag set a fork owns
+(`forks_on`), the quest it `opens_at`, and the branches it offers. An
+**enumerated branch** is one point of the product over the declared points, so
+the branch set is authored and small — never a combinatorial sweep of every flag.
+Each branch carries a **flag assignment**: the flags it lists are pinned SET and
+every other flag of its points' `forks_on` is pinned UNSET. That second half is
+what makes leakage decidable rather than hopeful. An assignment is realized
+against `compiler::flow`'s enumerated worlds — a world realizes a branch when its
+solved flag set holds every pinned-set flag and no pinned-unset one — and the
+branch's own playthrough is rooted at **the branch**, not at the stage-4
+`finale` (a branch running to its own ending never completes the finale, so
+rooting there would say the branch plays nothing).
+
+Validation-tier (exit 1), like the `DW046x` ledger it extends. The whole module
+is **fenced at `dsl_version 0.8.0`**: below it nothing here fires, which is
+proven on bytes — stripping the entire v0.8 surface from a campaign and dropping
+it to 0.7.0 produces a byte-identical `datapack/`
+(`the_v08_surface_changes_no_datapack_byte`).
+
+| Code | Meaning |
+|------|---------|
+| `DW0480` | **Undeclared story fork.** A flag that gates casts, staging, quest structure or a staging trigger, is set on some enumerated playthroughs and not others, and belongs to no declared branch point. "Forks" is decided, never guessed: a flag EVERY playthrough sets is ordinary sequencing and is silent. An undeclared fork is a branch nothing verifies — exactly how a campaign ships with the ledger on one branch and the bodies on the other. Prescription: declare the branch point (`forks_on`, `opens_at`, and each branch's `leads_to`). Do NOT silence it by ungating the content — the gate is the story. |
+| `DW0481` | **A story node declares no `happening`** (0.8.0+). The forcing function, generalizing spec-0020's `doing` from NPC presence to event flow: a design that never got written down node by node cannot compile. Required on every quest, every objective, every one of the **eleven story-node effects** (`spawn-npc`, `despawn-npc`, `move-npc`, `spawn-actor`, `despawn-actor`, `move-actor`, `unleash-actor`, `spawn-wave`, `open-gate`, `close-gate`, `campaign-complete`) at any nesting depth, and every **story-weight dialogue option** — one carrying a `set-flag`, which is how a player's choice forks the world. An option that only walks the tree or completes an objective needs none (the objective already declares one). Prescription: state the beat with one of the ten verbs plus a line of prose. Do NOT fill it with a placeholder: the per-branch chronicle the narrative review reads is assembled from exactly these lines. |
+| `DW0482` | **Branch terminality.** A declared branch reaches no ending: either **no playthrough realizes its flag assignment** (a branch nobody can take — commonly a branch declaring two mutually exclusive flags), or its playthrough fires no `campaign-complete`, or it fires an ending other than the one the branch declares, or the quest it declares it `converges_at` never completes. The message names the branch, the assignment, and the ending that really fires. |
+| `DW0483` | **Cast continuity** — spec-0020 proof 4 (`DW0462`) extended from "the declaration exists" to "the selector resolves to THIS branch's cast at every quest after the fork". For each enumerated branch, at each quest **strictly after** its fork, an NPC declaring per-branch casts must have exactly one placement selected under the branch's flag state when that quest opens. Zero selecting means the NPC has no declared position on this branch; two or more means emission dispatches the last clause, which is how a placement left UNGATED (or gated on the other branch's flag) keeps governing long past the beat that wrote it — the round-13 defect. The fork quest itself is excluded on purpose: during it the flag state is by construction pre-fork, so a per-branch cast there could never select. Prescription: gate each placement on the flags of the branch it belongs to, every branch, every post-fork quest. Do NOT leave one ungated as a fallback. |
+| `DW0484` | **Exclusive-content leakage.** Every playthrough that realizes a branch's set flags also produces a flag the branch pins UNSET — so content gated on a sibling's flag is reachable HERE. The mourning scene on the branch where nobody died, as a build error rather than a review note. The message names the leaked flag and where it is produced (an ambient environment trigger or trap disarm is called out explicitly, since those fire on every branch by construction). Prescription: make the producer exclusive to the branch that owns it. Do NOT relax the branch declaration to admit the leak. |
+| `DW0485` | **Hard event contradiction**, per branch, over the chronicle order, with **both chronicle lines shown**. Four rules, each decidable from the structured verbs alone: `dies(S)` then any later act by `S`; `departs(S)` then an act by `S` with no `arrives(S)` between; `seals(S)` then any later beat about `S` that is not `opens(S)`; `loses(S)` then a second `loses(S)` with no `gains(S)` between. `learns`/`believes` are **epistemic** and never contradict — their subject is what the beat is *about*, and a living character may perfectly well believe something about a dead one; "Elpenor mourns a man standing beside him" is precisely the class spec-0025 leaves to the chronicle's human reader, because no verb makes it decidable. Ambient beats (environment triggers, trap payloads) are excluded: `flow` refuses to date them, so ordering them against the dated account would invent a sequence. Prescription: fix whichever beat is on the wrong branch. Do NOT reword the `happening` to hide the clash — the verbs are the only part of the chronicle a machine can check. |
+
+The rest of the `DW048x` block is unassigned, reserved for the spec-0025 harness
+tier (scripted-choice branch runs) and for real needs as they arise.
+
+#### The branch artifacts (validation metadata)
+
+Two outputs, emitted only for a campaign that declares `branch_points`, both pure
+functions of the campaign document and therefore byte-identical across builds
+(ADR-0006). They live under `validation/` and are hashed into `manifest.json`
+like `critical-path-waypoints.json` — **never** part of the shipped datapack.
+
+- **`validation/branch-plan.json`** — per branch: its id, the alternative taken
+  at each point, its flag assignment (`set` / `unset`), where its fork opens,
+  what it `leads_to`, whether it is reachable, the **dialogue choices that enter
+  it** (`npc` + the flat option index the harness clicks), the endings it
+  reaches, and its **critical path computed under that branch** (the flow-level
+  `quest` / `objective` / `talk_option` step list). This is what the harness
+  scripts a per-branch run from.
+- **`validation/branch-chronicle-<branch>.md`** — the 流水账: every reachable
+  node's `happening` line in the order the compiled graph plays them, readable
+  start to ending, followed by the undated ambient beats and the endings reached.
+  The SKELETON (ordering, reachability, which nodes appear) is derived machine
+  truth — it is exactly the order `Flow::journal` replays, which is exactly the
+  order `Flow::replay` proves; only the flesh (each line's text) is authored,
+  node-locally. This is the **decompilation principle** (spec-0025): the
+  generation workflow is natural language → design doc → DSL, and whether the DSL
+  matches the design is not something an LLM can check by simulating compilation
+  in its head — so the compiler compiles the DSL *back* into natural language and
+  the reviewer compares NL against NL. Narrative incoherence becomes a readable
+  contradiction in sequence.
+
 ### DW07xx — workspace tooling (spec-0007; **not `delvec`**)
 
 Separate binaries with their own exit-code schemes; diagnostics to **stderr**.
@@ -2224,6 +2308,7 @@ this doc is current behavior).
 | Party-shared progression: the `#party` holder, party-addressed UI, `world.min_players` + lobby gate, `give-item`/kit `carrier`, the n-agent division proof and the n-dummy `party_join_<obj>` PackTests, `DW0356`/`DW0357`/`DW0358` (all v0.6) | spec-0018 (landed) |
 | The NPC scene ledger: stage-5 `cast` (DSL **v0.7**), the four build proofs `DW0460`–`DW0462`, the forcing function `DW0463`, dangling refs `DW0464`, the pre-0.7 deprecation window `DW0465`, the `"unchanged"` sugar `DW0466` and the staleness lint `DW0467`; the `dw.cast` scene dispatch + bark pools; cast roots as dialogue entry points | spec-0020 (+ owner amendment 2026-08-03) |
 | Combat verification: wave `tier` (DSL **v0.7**), the winnability arithmetic `DW0470`–`DW0473` + the advisories `DW0474`/`DW0475`, the vendored `item-combat` / `damage-types` tables, `validation/combat-plan.json`, and the bot ladder's die-retry stage / assist windows / inverted floor gate | spec-0023 |
+| Branch-complete narrative verification: stage-4 `branch_points`, the per-node `happening`, the named `campaign-complete` `ending` (DSL **v0.8**); the six proofs `DW0480`–`DW0485`; `validation/branch-plan.json` + the per-branch chronicle | spec-0025 (compiler half; harness branch runs pending) |
 | Asset-pipeline tooling `DW07xx` (schem/render/admit) | spec-0007 |
 | Determinism invariants | ADR-0006 |
 

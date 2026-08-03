@@ -324,7 +324,7 @@ fn seal_flags(c: &Campaign) -> Vec<(String, bool)> {
                 QuestEffect::OpenGate { .. } => "open-gate",
                 QuestEffect::MoveActor { .. } => "move-actor",
                 QuestEffect::Sequence { .. } => "sequence",
-                QuestEffect::CampaignComplete => "campaign-complete",
+                QuestEffect::CampaignComplete { .. } => "campaign-complete",
                 _ => "other",
             };
             (name.to_string(), !state.is_empty())
