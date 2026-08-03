@@ -148,6 +148,70 @@ fn build_with_trap_hw(
     )
 }
 
+/// Validate only (no build) against the FULL 1.21.11 registry, so a test can
+/// assert on a diagnostic instead of asserting the campaign is clean.
+fn validate_trap(name: &str, trap: serde_json::Value) -> Vec<delvewright_dsl::Diagnostic> {
+    let camp_dir = tmp(&format!("{name}-camp"));
+    let patch = serde_json::json!({
+        "documents": { "world": world_v06(), "quests": quests_v06(trap) }
+    });
+    common::materialize_from(&common::hello_world_dir(), &patch, &camp_dir);
+    let prefabs_dir = patched_prefabs(
+        &format!("{name}-prefabs"),
+        Some("minecraft:oak_pressure_plate[powered=false]"),
+    );
+    let loaded = load_campaign_dir(&camp_dir).unwrap();
+    let campaign = parse_campaign(&loaded.raw).expect("campaign parses");
+    let prefabs = PrefabRegistry::load_dir(&prefabs_dir).unwrap();
+    validate_campaign_with(
+        &campaign,
+        &FullItemRegistry::v1_21_11(),
+        &prefabs,
+        &FullEntityRegistry::v1_21_11(),
+    )
+}
+
+/// `DW0436`: a dispenser payload is the same single-slot `item replace …
+/// container.0` fill a `loot` entry is, and fails just as silently above the
+/// item's max stack size — a splash potion caps at 1, so `count: 3` would load
+/// an empty dispenser and the trap would fire nothing.
+#[test]
+fn a_dispense_count_above_the_stack_size_is_dw0436() {
+    let diags = validate_trap(
+        "trap-overcap",
+        serde_json::json!({
+            "id": "trap/dart-hall",
+            "at": "anchor/trap",
+            "trigger": "trapped-chest",
+            "effect": { "dispense": { "item": "minecraft:splash_potion", "count": 3 } },
+            "lethality": "nonlethal"
+        }),
+    );
+    let d = diags
+        .iter()
+        .find(|d| d.code == "DW0436")
+        .unwrap_or_else(|| panic!("an over-cap dispense count must fire DW0436: {diags:#?}"));
+    assert!(
+        d.message.contains("trap/dart-hall")
+            && d.message.contains("minecraft:splash_potion")
+            && d.message.contains("at most 1"),
+        "{}",
+        d.message
+    );
+    // A stack of arrows (cap 64) is exactly what a dispense trap is for: clean.
+    let clean = validate_trap(
+        "trap-in-cap",
+        serde_json::json!({
+            "id": "trap/dart-hall",
+            "at": "anchor/trap",
+            "trigger": "trapped-chest",
+            "effect": { "dispense": { "item": "minecraft:arrow", "count": 64 } },
+            "lethality": "nonlethal"
+        }),
+    );
+    assert!(!clean.iter().any(|d| d.code == "DW0436"), "{clean:#?}");
+}
+
 fn text(out: &BuildOutput, key: &str) -> String {
     String::from_utf8(
         out.get(key)

@@ -122,6 +122,94 @@ fn loot_on_a_non_container_anchor_is_dw0431() {
     }
 }
 
+/// Validate only (no build), against the FULL 1.21.11 registry — the tier that
+/// carries the stack-size table `DW0436` reads.
+fn validate_doc(doc: &str) -> Vec<delvewright_dsl::Diagnostic> {
+    let c = parse_hw(doc);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    validate_campaign_with(
+        &c,
+        &FullItemRegistry::v1_21_11(),
+        &prefabs,
+        &FullEntityRegistry::v1_21_11(),
+    )
+}
+
+/// `DW0436`: a `loot` count above the item's max stack size. `item replace …
+/// container.<n>` fails SILENTLY above the cap — the-drowned-bell round 2 shipped
+/// an empty chest slot from `rabbit_stew` × 2 (cap 1). The message must name the
+/// item, the declared count and the cap.
+#[test]
+fn a_loot_count_above_the_items_stack_size_is_dw0436() {
+    let diags = validate_doc(&quests_doc(
+        r#"{ "id": "loot/stores", "anchor": "anchor/exit",
+             "items": [ { "item": "minecraft:rabbit_stew", "count": 2 } ] }"#,
+    ));
+    let d = diags
+        .iter()
+        .find(|d| d.code == "DW0436")
+        .unwrap_or_else(|| panic!("an over-cap loot count must fire DW0436: {diags:#?}"));
+    assert_eq!(d.path, "/content/loot/0/items/0/count");
+    assert!(
+        d.message.contains("minecraft:rabbit_stew")
+            && d.message.contains("2")
+            && d.message.contains("at most 1"),
+        "the message must name the item, the declared count and the cap: {}",
+        d.message
+    );
+    // An ender pearl caps at 16, not 1 — the table is per-item, not a 1-vs-64 rule.
+    let diags = validate_doc(&quests_doc(
+        r#"{ "id": "loot/stores", "anchor": "anchor/exit",
+             "items": [ { "item": "minecraft:ender_pearl", "count": 17 } ] }"#,
+    ));
+    assert!(
+        diags
+            .iter()
+            .any(|d| d.code == "DW0436" && d.message.contains("at most 16")),
+        "{diags:#?}"
+    );
+}
+
+/// A count exactly at the cap — and any count under it — is clean. The check is a
+/// cap, never a nudge toward smaller stacks.
+#[test]
+fn a_loot_count_at_or_below_the_cap_is_clean() {
+    for (item, count) in [
+        ("minecraft:rabbit_stew", 1),
+        ("minecraft:ender_pearl", 16),
+        ("minecraft:cooked_cod", 64),
+    ] {
+        let diags = validate_doc(&quests_doc(&format!(
+            r#"{{ "id": "loot/stores", "anchor": "anchor/exit",
+                 "items": [ {{ "item": "{item}", "count": {count} }} ] }}"#
+        )));
+        assert!(
+            !diags.iter().any(|d| d.code == "DW0436"),
+            "{item} x{count} must be clean: {diags:#?}"
+        );
+    }
+}
+
+/// The same silent `item replace … container.<n>` failure reaches a `collect`
+/// objective's prop chest, so `DW0436` covers it too — an over-cap count would
+/// leave the chest empty and the objective uncompletable.
+#[test]
+fn a_collect_objective_count_above_the_stack_size_is_dw0436() {
+    let doc = quests_doc("").replace(
+        r#"{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }"#,
+        r#"{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+           { "type": "collect", "id": "obj/get", "item": "minecraft:rabbit_stew",
+             "count": 3, "anchor": "anchor/exit", "after": ["obj/talk"] }"#,
+    );
+    let diags = validate_doc(&doc);
+    let d = diags
+        .iter()
+        .find(|d| d.code == "DW0436")
+        .unwrap_or_else(|| panic!("an over-cap collect count must fire DW0436: {diags:#?}"));
+    assert!(d.path.ends_with("/count"), "{}", d.path);
+    assert!(d.message.contains("obj/get"), "{}", d.message);
+}
+
 /// No `loot` at all: the campaign builds exactly as before.
 #[test]
 fn no_loot_still_builds() {

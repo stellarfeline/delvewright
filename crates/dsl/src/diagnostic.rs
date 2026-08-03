@@ -121,6 +121,10 @@ pub mod codes {
     /// (spec-0021) A `loot` declaration carries more stacks than the container
     /// it fills has slots.
     pub const LOOT_TOO_MANY_ITEMS: &str = "DW0432";
+    /// A single-slot fill's `count` exceeds the item's `minecraft:max_stack_size`
+    /// in the pinned 1.21.11 registry. `item replace … container.<n> with <item>
+    /// <count>` fails **silently** above the cap, shipping an empty slot.
+    pub const ITEM_COUNT_OVER_STACK: &str = "DW0436";
     /// An `interact` declares `missing_item_hint` without a `requires_item`: the
     /// hint answers a gate that does not exist, so it could never narrate.
     pub const MISSING_ITEM_HINT_WITHOUT_ITEM: &str = "DW0437";
@@ -354,4 +358,22 @@ pub mod codes {
     /// defensible recipient. Give it to the whole party (drop `carrier`), or move
     /// the hand-off onto the beat that a player completes. Validation-tier (exit 1).
     pub const PARTY_CARRIER_SCHEDULED: &str = "DW0357";
+
+    /// (v0.6, owner ruling 2026-08-03) `world.difficulty` is `peaceful`. On
+    /// peaceful the server discards every hostile-category mob as it is ticked —
+    /// `/summon`ed, `NoAI`, `PersistenceRequired`, all of it — so a peaceful delve
+    /// is one in which every wave, every hostile actor and every ambush silently
+    /// ceases to exist. There is no delve that wants that, so the keyword is
+    /// refused rather than honoured. Validation-tier (exit 1).
+    pub const DIFFICULTY_INVALID: &str = "DW0468";
+    /// (v0.6, owner ruling 2026-08-03) A campaign fields scripted `actors[]` (an
+    /// ambush desugars into these too) but **no** `waves[]` and no declared
+    /// `world.difficulty`, so the compiler's historical derivation ships
+    /// `difficulty=peaceful` — under which every one of those actors that is a
+    /// hostile species is discarded on the tick it spawns. The compiler cannot
+    /// decide the question for the author: the pinned entity registry is a
+    /// membership set with no mob-category data, so "is this actor a monster" is
+    /// not something it can verify rather than guess. Advisory (warning,
+    /// exit 0) — declaring `world.difficulty` settles it either way.
+    pub const DIFFICULTY_UNDECLARED_ACTORS: &str = "DW0469";
 }

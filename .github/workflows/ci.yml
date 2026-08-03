@@ -206,6 +206,13 @@ jobs:
       # naming the wrong diagnostic). Deterministic, offline, stdlib-only python3.
       - name: docs tree carries no duplicate rows/headings or conflict markers
         run: python3 tools/check-doc-dupes.py
+      # Worker isolation (validation/README.md): container names and host ports
+      # are Docker-GLOBAL, so `-p dw-worker-<x>` does not isolate them and a
+      # service missing from validation/worker-override.yaml collides between two
+      # concurrent workers. Cost a run twice — `server` (#190), then `bot`.
+      # Deterministic, offline, stdlib-only python3.
+      - name: worker override resets every globally-named compose service
+        run: python3 tools/check-worker-override.py
       # --offline: check only local/internal links. The repo is private, so
       # external-link checks would fail or flake.
       - uses: lycheeverse/lychee-action@v2

@@ -17,10 +17,15 @@ use serde::Deserialize;
 /// files (report-all, not fail-fast).
 pub const DW_PREFAB_META_INVALID: &str = "DW0346";
 
-/// The complete 1.21.11 item registry (1505 ids), vendored under `data/`.
+/// The complete 1.21.11 item registry (1505 ids) plus each item's
+/// `minecraft:max_stack_size`, vendored under `data/`.
 #[derive(Debug, Clone)]
 pub struct FullItemRegistry {
     ids: BTreeSet<String>,
+    /// Item id → default `minecraft:max_stack_size` (1, 16 or 64 in 1.21.11).
+    /// Mojang's own data, regenerated per MC pin by
+    /// `tools/extract-item-stack-sizes.py` — never a hand-maintained table.
+    stack_sizes: BTreeMap<String, u32>,
 }
 
 impl FullItemRegistry {
@@ -29,22 +34,39 @@ impl FullItemRegistry {
         let raw = include_str!("../data/items-1.21.11.json");
         let ids: Vec<String> =
             serde_json::from_str(raw).expect("vendored item registry is valid JSON");
+        let raw_sizes = include_str!("../data/item-stack-sizes-1.21.11.json");
+        let stack_sizes: BTreeMap<String, u32> =
+            serde_json::from_str(raw_sizes).expect("vendored item stack sizes are valid JSON");
         Self {
             ids: ids.into_iter().collect(),
+            stack_sizes,
         }
+    }
+
+    /// Resolve an id to its canonical namespaced form, if known.
+    fn canonical(&self, item_id: &str) -> Option<String> {
+        if self.ids.contains(item_id) {
+            return Some(item_id.to_string());
+        }
+        // Accept an un-namespaced id by assuming the default `minecraft:` namespace.
+        if !item_id.contains(':') {
+            let ns = format!("minecraft:{item_id}");
+            if self.ids.contains(&ns) {
+                return Some(ns);
+            }
+        }
+        None
     }
 }
 
 impl ItemRegistry for FullItemRegistry {
     fn contains(&self, item_id: &str) -> bool {
-        if self.ids.contains(item_id) {
-            return true;
-        }
-        // Accept an un-namespaced id by assuming the default `minecraft:` namespace.
-        if !item_id.contains(':') {
-            return self.ids.contains(&format!("minecraft:{item_id}"));
-        }
-        false
+        self.canonical(item_id).is_some()
+    }
+
+    fn max_stack_size(&self, item_id: &str) -> Option<u32> {
+        self.canonical(item_id)
+            .and_then(|id| self.stack_sizes.get(&id).copied())
     }
 }
 
@@ -463,5 +485,39 @@ impl AnchorRegistry for PrefabRegistry {
         self.by_id
             .get(prefab.as_str())
             .and_then(|m| m.lighting.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The vendored stack-size table must cover EXACTLY the vendored item
+    /// registry. Both come from the same 1.21.11 summary, so a regeneration that
+    /// updates one and not the other would silently turn `DW0436` off for the
+    /// items it forgot — a check that stops checking without failing.
+    #[test]
+    fn the_stack_size_table_covers_exactly_the_item_registry() {
+        let r = FullItemRegistry::v1_21_11();
+        let sized: BTreeSet<&String> = r.stack_sizes.keys().collect();
+        let known: BTreeSet<&String> = r.ids.iter().collect();
+        assert_eq!(sized, known, "item registry and stack-size table disagree");
+        assert_eq!(r.ids.len(), 1505);
+    }
+
+    /// Stack sizes are Mojang's, per item — not a 1-vs-64 folk rule. 1.21.11 uses
+    /// exactly three caps.
+    #[test]
+    fn stack_sizes_are_the_pinned_vanilla_caps() {
+        let r = FullItemRegistry::v1_21_11();
+        assert_eq!(r.max_stack_size("minecraft:rabbit_stew"), Some(1));
+        assert_eq!(r.max_stack_size("minecraft:ender_pearl"), Some(16));
+        assert_eq!(r.max_stack_size("minecraft:cooked_cod"), Some(64));
+        // Un-namespaced ids resolve under `minecraft:`, like `contains`.
+        assert_eq!(r.max_stack_size("rabbit_stew"), Some(1));
+        // An unknown item has no cap to report (its own diagnostic is `DW0143`).
+        assert_eq!(r.max_stack_size("minecraft:not_an_item"), None);
+        let caps: BTreeSet<u32> = r.stack_sizes.values().copied().collect();
+        assert_eq!(caps, BTreeSet::from([1, 16, 64]));
     }
 }

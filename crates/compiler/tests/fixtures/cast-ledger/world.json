@@ -8,6 +8,7 @@
     "premise": "One locked door stands between you and the road home. The Keeper holds the key, and only conversation will move him.",
     "seed": 20260729,
     "target_minutes": 5,
+    "difficulty": "normal",
     "areas": [
       {
         "id": "area/keep",
