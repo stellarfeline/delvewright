@@ -405,7 +405,16 @@ Then:
      `encounters` block beside it, which states each encounter's assist policy
      and the phase the run actually reached (no assist is taken while the
      die-retry stage is deliberately dying, nor on a billed fight's honest first
-     attempt). A red
+     attempt). **Read the `floor_gate` block every time**: it is the compiler's
+     coverage ledger, and `not_covered` names each fight the delve bills
+     `elite`/`boss` that the gate cannot measure, with the reason — an empty
+     findings list over an uncovered elite is silence, not a pass. The `actors[]`
+     block beside it does the same for tier-declaring stage-5 actors: one row per
+     actor, fought (with its outcome) or not (with why). An actor unleashed only
+     by an ambient trigger is reported unexercised by design — if you want the
+     ladder to measure that fight, unleash it from an objective on the critical
+     path, and stage it where the party already stands (an actor anchored inside a
+     later objective's zone completes that objective during the fight). A red
      `die-retry` stage is a CONTENT bug of the most serious kind — the delve is
      completable but dying is not safe. Never set `DELVEWRIGHT_DIE_RETRY=0` to
      get green; the report records a skipped stage as skipped, not as passed.

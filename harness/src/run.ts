@@ -14,6 +14,7 @@ import { botConfigFromEnv, MineflayerExecutor } from "./executor.ts";
 import { BotDeathError } from "./death.ts";
 import { loadWaypointsForCriticalPath } from "./waypoints.ts";
 import {
+  actorExercise,
   assistPolicy,
   dieRetryCoverageFailures,
   dieRetryFindings,
@@ -23,6 +24,7 @@ import {
   RunReport,
   reportPathFromEnv,
   writeRunReport,
+  type ActorReport,
   type BranchOutcome,
   type EncounterReport,
 } from "./report.ts";
@@ -87,6 +89,17 @@ function runTimeoutMs(env = process.env): number {
  */
 function dieRetryFromEnv(env = process.env): boolean {
   return env["DELVEWRIGHT_DIE_RETRY"] !== "0";
+}
+
+/**
+ * Whether the actor floor gate runs (#114). ON whenever the build's combat plan
+ * declares a tiered actor. `DELVEWRIGHT_ACTOR_FLOOR=0` skips the engagements for
+ * local iteration; the report then records each actor as SKIPPED with that
+ * reason, never as measured — the same discipline `DELVEWRIGHT_DIE_RETRY=0`
+ * follows, and for the same reason.
+ */
+function actorFloorFromEnv(env = process.env): boolean {
+  return env["DELVEWRIGHT_ACTOR_FLOOR"] !== "0";
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -211,13 +224,36 @@ async function main(): Promise<number> {
   // delve is allowed to be. Absent → the pre-spec-0023 run, unchanged.
   const combatPlan = await loadCombatPlanForCriticalPath(pathArg);
   const dieRetry = combatPlan !== undefined && dieRetryFromEnv();
+  const actorFloor = actorFloorFromEnv();
   const report = new RunReport(criticalPath.campaignId, combatPlan?.difficulty ?? "unknown");
+  // Which objectives this run proves — the set that decides which actor fights it
+  // can reach at all (#114). Taken from the path being WALKED, so a branch run
+  // (spec-0025) measures the actors its own storyline unleashes.
+  const pathObjectives = new Set(
+    criticalPath.steps.flatMap((s) => ("objective" in s ? [s.objective] : [])),
+  );
+  executor.usePathObjectives(pathObjectives);
   if (combatPlan) {
-    executor.useCombatPlan(combatPlan, dieRetry);
+    executor.useCombatPlan(combatPlan, dieRetry, actorFloor);
     process.stderr.write(
       `combat plan: ${combatPlan.encounters.length} mandatory encounter(s) at ` +
         `difficulty '${combatPlan.difficulty}'; die-retry ${dieRetry ? "ON" : "SKIPPED"}\n`,
     );
+    if (combatPlan.actors.length > 0) {
+      const exercisable = combatPlan.actors.filter(
+        (a) => actorExercise(a, pathObjectives).kind === "exercise",
+      ).length;
+      process.stderr.write(
+        `combat plan: ${combatPlan.actors.length} tiered actor(s), ${exercisable} reachable on ` +
+          `this path; actor floor gate ${actorFloor ? "ON" : "SKIPPED"}\n`,
+      );
+    }
+    if (!combatPlan.floorGate.present) {
+      process.stderr.write(
+        `combat plan: NO floor-gate ledger — this build predates it; the run cannot tell you ` +
+          `which billed fights the gate covers\n`,
+      );
+    }
   }
 
   try {
@@ -275,6 +311,43 @@ async function main(): Promise<number> {
       }),
     );
     report.recordEncounters(encounterReports);
+    // #114: the compiler's floor-gate ledger, verbatim, plus one row per tiered
+    // actor — fought (with the outcome) or not (with the reason). Recorded even on
+    // a red run: what the gate could NOT measure is exactly what a reader of a
+    // failed run needs, and an actor the run never reached must still be visible.
+    if (combatPlan) {
+      const actorTrials = executor.actorFightTrials();
+      const actorReports: ActorReport[] = combatPlan.actors.map((a): ActorReport => {
+        const trial = actorTrials.find((t) => t.actor === a.actor);
+        if (trial) {
+          return {
+            actor: a.actor,
+            tier: a.tier,
+            entity: a.entity,
+            anchor: a.anchor,
+            covered: a.floorGate.covered,
+            exercised: true,
+            trial,
+          };
+        }
+        const decision = actorExercise(a, pathObjectives);
+        return {
+          actor: a.actor,
+          tier: a.tier,
+          entity: a.entity,
+          anchor: a.anchor,
+          covered: a.floorGate.covered,
+          exercised: false,
+          reason:
+            decision.kind === "skip"
+              ? decision.reason
+              : actorFloor
+                ? `unleashed by ${decision.afterObjective}, which this run never reached`
+                : "skipped via DELVEWRIGHT_ACTOR_FLOOR=0",
+        };
+      });
+      report.recordCombatCoverage(combatPlan.floorGate, actorReports);
+    }
     report.recordRests(executor.performedRests());
     for (const f of executor.floorGateFindings()) report.recordFloorFinding(f);
     // spec-0025 §3: every enumerated branch appears here — the one this session

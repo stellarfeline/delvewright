@@ -1015,6 +1015,10 @@ function combatPlan(count = 1, respawnsOnRest = true): CombatPlan {
         checkpoint: ENCOUNTER.checkpoint,
       },
     ],
+    // No tiered actor and an empty (but PRESENT) ledger: this fixture's campaign
+    // bills nothing the wave gate does not already cover.
+    actors: [],
+    floorGate: { present: true, covered: [], notCovered: [] },
   };
 }
 
@@ -1419,4 +1423,170 @@ test("an unrested bonfire skips the scripted death and reports the gap", async (
   assert.equal(findings.length, 1);
   assert.match(findings[0]!, /no checkpoint armed/);
   assert.match(findings[0]!, /passed bonfire 1 \(anchor\/beach-fire\) without resting/);
+});
+
+// ---------------------------------------------------------------------------
+// The actor floor gate (#114): the other shape an elite takes
+// ---------------------------------------------------------------------------
+
+import type { ActorEncounter, CombatPlan as CP } from "../src/combat.ts";
+import { displayNameOf } from "../src/executor.ts";
+
+/** The body an `unleash-actor` beat leaves standing: a real-AI twin of the actor's
+ * entity type, at the actor's anchor cell, wearing its custom name. */
+class ActorFakeBot extends InteractFakeBot {
+  /** Swings needed before the body goes down — the fight's whole difficulty here. */
+  hitsToKill = 1;
+  private hits = 0;
+
+  seatBody(id = 500, pos: [number, number, number] = [1, 64, 0]): void {
+    this.entities[id] = {
+      id,
+      name: "wither_skeleton",
+      height: 2.4,
+      customName: "Barrow Warden",
+      position: new FakeVec3(pos[0], pos[1], pos[2]),
+    };
+  }
+
+  attack(mob: { id: number }): void {
+    this.calls.push("attack");
+    if (++this.hits >= this.hitsToKill) delete this.entities[mob.id];
+  }
+
+  async lookAt(): Promise<void> {}
+  nearestEntity(): unknown {
+    return undefined;
+  }
+}
+
+const BARROW_WARDEN: ActorEncounter = {
+  actor: "actor/barrow-warden",
+  entity: "minecraft:wither_skeleton",
+  name: "Barrow Warden",
+  tier: "elite",
+  anchor: "anchor/wave",
+  pos: [0, 64, 0],
+  tag: "dw_actor_barrow_warden",
+  vulnerable: false,
+  spawnedBy: [],
+  unleashedBy: [
+    {
+      site: "objective",
+      owner: "quest/the-barrow",
+      objective: "obj/hold-the-gate",
+      path: "/content/quests/0/on_objective_complete/obj~1hold-the-gate/1",
+    },
+  ],
+  floorGate: { covered: true },
+  maxHealth: 60,
+};
+
+function actorPlan(actors: ActorEncounter[] = [BARROW_WARDEN]): CP {
+  return {
+    version: "0.8.0",
+    campaignId: "souls-bonfire",
+    difficulty: "normal",
+    encounters: [],
+    actors,
+    floorGate: { present: true, covered: [], notCovered: [] },
+  };
+}
+
+/** Drive an objective to completion with the actor gate armed. */
+async function completeObjective(
+  bot: ActorFakeBot,
+  env: Record<string, string | undefined> = {},
+  actors: ActorEncounter[] = [BARROW_WARDEN],
+): Promise<MineflayerExecutor> {
+  const executor = attach(bot, env);
+  executor.useCampaign("souls-bonfire");
+  executor.usePathObjectives(["obj/hold-the-gate"]);
+  executor.useCombatPlan(actorPlan(actors), false, env["DELVEWRIGHT_ACTOR_FLOOR"] !== "0");
+  executor.beginStep(3);
+  bot.emit("messagestr", "[dw:complete souls-bonfire obj/hold-the-gate]");
+  await executor.requireObjective("obj/hold-the-gate", "test");
+  return executor;
+}
+
+test("the objective that unleashes a billed actor starts one unassisted fight", async () => {
+  const bot = new ActorFakeBot();
+  bot.seatBody();
+  const executor = await completeObjective(bot);
+
+  const trials = executor.actorFightTrials();
+  assert.equal(trials.length, 1);
+  assert.equal(trials[0]!.actor, "actor/barrow-warden");
+  assert.equal(trials[0]!.afterObjective, "obj/hold-the-gate");
+  assert.equal(trials[0]!.outcome, "won-first-try");
+  assert.ok(trials[0]!.swings >= 1);
+  // …and beating a billed fight cold is the advisory the inverted gate exists for.
+  const findings = executor.floorGateFindings();
+  assert.equal(findings.length, 1);
+  assert.match(findings[0]!, /billed `elite`/);
+  // NO assist window was opened: nothing downstream waits on an actor fight, so
+  // there is no obligation to win it and nothing to unblock (spec-0023's assist
+  // exists for fights the run must finish).
+  assert.deepEqual([...executor.assistWindows()], []);
+});
+
+test("a body that never appears is `body-not-found`, never a win", async () => {
+  // The silence this closes: an unleash beat that did not fire looks exactly like
+  // a fight won instantly if the outcome is inferred from an empty room.
+  const bot = new ActorFakeBot(); // no body seated
+  const executor = await completeObjective(bot);
+  const trial = executor.actorFightTrials()[0]!;
+  assert.equal(trial.outcome, "body-not-found");
+  assert.equal(trial.swings, 0);
+  assert.match(trial.detail!, /no live `minecraft:wither_skeleton`/);
+  assert.deepEqual([...executor.floorGateFindings()], []);
+});
+
+test("the actor gate fires once per actor, however often the marker is re-broadcast", async () => {
+  const bot = new ActorFakeBot();
+  bot.seatBody();
+  const executor = await completeObjective(bot);
+  bot.seatBody(501);
+  await executor.requireObjective("obj/hold-the-gate", "test again");
+  assert.equal(executor.actorFightTrials().length, 1);
+});
+
+test("DELVEWRIGHT_ACTOR_FLOOR=0 skips the fight and records no measurement", async () => {
+  const bot = new ActorFakeBot();
+  bot.seatBody();
+  const executor = await completeObjective(bot, { DELVEWRIGHT_ACTOR_FLOOR: "0" });
+  assert.deepEqual([...executor.actorFightTrials()], []);
+  assert.deepEqual([...executor.floorGateFindings()], []);
+  assert.equal(bot.calls.includes("attack"), false);
+});
+
+test("an actor no on-path objective unleashes is never engaged", async () => {
+  const bot = new ActorFakeBot();
+  bot.seatBody();
+  const ambient: ActorEncounter = {
+    ...BARROW_WARDEN,
+    unleashedBy: [
+      {
+        site: "trigger",
+        owner: "trigger/warden-answers",
+        path: "/content/triggers/0/effects/1",
+        on: "strike-npc",
+        npc: "npc/keeper",
+      },
+    ],
+  };
+  const executor = await completeObjective(bot, {}, [ambient]);
+  assert.deepEqual([...executor.actorFightTrials()], []);
+  assert.equal(bot.calls.includes("attack"), false);
+});
+
+test("a custom name is read from every shape mineflayer hands it back in", () => {
+  assert.equal(displayNameOf({ customName: "Barrow Warden" }), "Barrow Warden");
+  assert.equal(displayNameOf({ displayName: { text: "Barrow Warden" } }), "Barrow Warden");
+  assert.equal(
+    displayNameOf({ displayName: { toString: () => "Barrow Warden" } }),
+    "Barrow Warden",
+  );
+  assert.equal(displayNameOf({}), undefined);
+  assert.equal(displayNameOf({ displayName: {} }), undefined);
 });

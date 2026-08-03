@@ -15,12 +15,35 @@
 
 import { writeFile } from "node:fs/promises";
 import type {
+  ActorTrial,
   AssistWindow,
   DeathTrial,
   EncounterPhase,
   EncounterTier,
+  FloorLedger,
   PerformedRest,
 } from "./combat.ts";
+
+/**
+ * One tiered actor, and what this run did about it (#114).
+ *
+ * Every actor in the plan gets a row, fought or not — an actor missing from the
+ * report is the silence the floor-gate ledger exists to end. A row that did not
+ * run always carries the reason it did not.
+ */
+export interface ActorReport {
+  readonly actor: string;
+  readonly tier: EncounterTier;
+  readonly entity: string;
+  readonly anchor: string;
+  /** The compiler's own coverage verdict, carried through verbatim. */
+  readonly covered: boolean;
+  readonly exercised: boolean;
+  /** Why this run did not fight it. `undefined` only when it did. */
+  readonly reason?: string;
+  /** The engagement, when there was one. */
+  readonly trial?: ActorTrial;
+}
 
 /**
  * One planned encounter, and how the run actually approached it.
@@ -92,6 +115,8 @@ export class RunReport {
   private branches: BranchOutcome[] | undefined;
   private branchTier: string | undefined;
   private drivenBranch: string | undefined;
+  private readonly actors: ActorReport[] = [];
+  private floorLedger: FloorLedger | undefined;
 
   constructor(campaignId: string, difficulty: string) {
     this.campaignId = campaignId;
@@ -129,6 +154,21 @@ export class RunReport {
    * fork produces exactly the report it produced before — no empty section that
    * would have to be read as "no branches" rather than "no branch machinery".
    */
+  /**
+   * Record the compiler's floor-gate ledger and every tiered actor's outcome
+   * (#222 emission, #114 surfacing).
+   *
+   * The ledger is printed VERBATIM, both sides: what the inverted floor gate
+   * covers, and what it cannot with the reason. Before this the ladder's only
+   * surfacing of an unmeasurable elite was a build-time `DW0477` warning, so a
+   * reader holding a green run report had no way to learn that its empty findings
+   * list covered a fight nobody ever had.
+   */
+  recordCombatCoverage(ledger: FloorLedger, actors: readonly ActorReport[]): void {
+    this.floorLedger = ledger;
+    this.actors.push(...actors);
+  }
+
   recordBranches(tier: string, driven: string | undefined, outcomes: readonly BranchOutcome[]): void {
     this.branchTier = tier;
     this.drivenBranch = driven;
@@ -208,6 +248,41 @@ export class RunReport {
       })),
       // spec-0023 §3: "the run artifact names every assist window (encounter id,
       // ticks)". Loudly, and including any the harness failed to close.
+      // The compiler's floor-gate ledger, verbatim (#222/#114). `present: false`
+      // means the build shipped NO ledger — a plan from a delvec older than the
+      // ledger — which is a different fact from a campaign that bills nothing
+      // hard, and the two must never be read as one. `not_covered` carries the
+      // compiler's own reason per entry: this is the line that stops an empty
+      // findings list being mistaken for a pass over fights nobody had.
+      floor_gate: {
+        present: this.floorLedger?.present ?? false,
+        covered: (this.floorLedger?.covered ?? []).map((e) => ({
+          kind: e.kind,
+          id: e.id,
+          tier: e.tier,
+        })),
+        not_covered: (this.floorLedger?.notCovered ?? []).map((e) => ({
+          kind: e.kind,
+          id: e.id,
+          tier: e.tier,
+          reason: e.reason ?? null,
+        })),
+      },
+      // Every tiered actor the plan declares, fought or not — and when not, why.
+      actors: this.actors.map((a) => ({
+        actor: a.actor,
+        tier: a.tier,
+        entity: a.entity,
+        anchor: a.anchor,
+        covered: a.covered,
+        exercised: a.exercised,
+        reason: a.reason ?? null,
+        outcome: a.trial?.outcome ?? null,
+        after_objective: a.trial?.afterObjective ?? null,
+        swings: a.trial?.swings ?? null,
+        elapsed_ms: a.trial?.elapsedMs ?? null,
+        detail: a.trial?.detail ?? null,
+      })),
       assist_windows: this.assists.map((w) => ({
         encounter: w.encounter,
         wave: w.wave,

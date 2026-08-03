@@ -32,6 +32,8 @@ import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError, likelyDeathCause } from "./death.ts";
 import {
   AssistLedger,
+  actorExercise,
+  actorFloorFinding,
   assistClearCommand,
   assistCommand,
   assistPolicy,
@@ -43,6 +45,9 @@ import {
   respawnedAtCheckpoint,
   retryOutcome,
   scriptedDeathCommand,
+  type ActorEncounter,
+  type ActorOutcome,
+  type ActorTrial,
   type AssistWindow,
   type CombatPlan,
   type DeathTrial,
@@ -418,6 +423,28 @@ const REACH_POLL_MS = 250;
 const KILL_TIMEOUT_MS = 90_000;
 /** Attack cadence (ms) — roughly the vanilla sword cooldown. */
 const ATTACK_INTERVAL_MS = 400;
+
+/**
+ * How far from its anchor cell an actor's unleashed body may be and still be
+ * recognised as that actor (#114). Generous but local: `unleash-actor` replaces
+ * the puppet with a real-AI twin at the same cell, and the twin then MOVES — it
+ * charges the bot — so a radius tight enough to be an identity check would lose
+ * the fight it just started. Nothing else of that entity type exists nearby: the
+ * delve world is sealed (`spawn_mobs false`), so every living body is
+ * compiler-summoned.
+ */
+const ACTOR_MATCH_RADIUS = 24;
+
+/** How long to wait for the unleashed twin to exist and reach entity tracking. */
+const ACTOR_SETTLE_MS = 6_000;
+
+/**
+ * Budget for one unassisted actor attempt. Shorter than the wave `kill` budget on
+ * purpose: nothing downstream waits on this fight, and a bot that has not killed
+ * a single body in half a minute of swinging has already answered the only
+ * question the floor gate asks.
+ */
+const ACTOR_FIGHT_TIMEOUT_MS = 45_000;
 /**
  * How long (ms) the die-retry stage trades blows before taking its `mid-fight`
  * scripted death (spec-0023 §1). Short on purpose: the point is that the wave has
@@ -709,6 +736,14 @@ export class MineflayerExecutor implements StepExecutor {
   private readonly encounterPhases = new Map<string, EncounterPhase>();
   /** Inverted floor gate findings: billed fights the unassisted bot beat cold. */
   private readonly floorFindings: string[] = [];
+  /** Actor fights this run attempted (#114) — one entry per engagement, won or lost. */
+  private readonly actorTrials: ActorTrial[] = [];
+  /** Actors already engaged, so an objective marker re-broadcast cannot re-fight one. */
+  private readonly actorsEngaged = new Set<string>();
+  /** Whether the actor floor gate runs at all (`DELVEWRIGHT_ACTOR_FLOOR=0` skips). */
+  private actorFloorGate = true;
+  /** Objectives the compiled path proves — decides which actor fights are reachable. */
+  private pathObjectives: ReadonlySet<string> = new Set();
   /** The last `select-class` step, replayed to re-arm after a scripted death. */
   private lastSelectClass: SelectClassStep | undefined;
   /**
@@ -1321,6 +1356,16 @@ export class MineflayerExecutor implements StepExecutor {
    * pathfinder and a real chest.
    */
   async requireObjective(objectiveId: string, label: string): Promise<void> {
+    await this.awaitObjectiveMarker(objectiveId, label);
+    // spec-0023's floor gate, on the OTHER shape an elite takes (#222/#114): an
+    // actor fight has no `kill` step, so the only moment the harness can know it
+    // starts is the completion of the objective that unleashes it. Runs here, once
+    // per actor, after the objective it hangs off is proven — never before.
+    await this.actorFloorGateAfter(objectiveId);
+  }
+
+  /** The completion wait itself — see {@link requireObjective}. */
+  private async awaitObjectiveMarker(objectiveId: string, label: string): Promise<void> {
     const alreadyDone = this.completedObjectives.get(objectiveId);
     if (alreadyDone !== undefined && alreadyDone < this.currentStep) {
       // Not a failure — the objective did complete — but the path claims THIS step
@@ -2101,9 +2146,21 @@ export class MineflayerExecutor implements StepExecutor {
    * a delve may be, and a billed `elite`/`boss` gets one honest unassisted attempt
    * so the inverted floor gate has something to measure.
    */
-  useCombatPlan(plan: CombatPlan, dieRetry: boolean): void {
+  useCombatPlan(plan: CombatPlan, dieRetry: boolean, actorFloorGate = true): void {
     this.combatPlan = plan;
     this.dieRetry = dieRetry;
+    this.actorFloorGate = actorFloorGate;
+  }
+
+  /** The objectives the compiled path proves — what decides which actor fights
+   * this run can reach at all. Set by the entrypoint before the run starts. */
+  usePathObjectives(objectives: Iterable<string>): void {
+    this.pathObjectives = new Set(objectives);
+  }
+
+  /** Every actor fight this run attempted, for the run report. */
+  actorFightTrials(): readonly ActorTrial[] {
+    return this.actorTrials;
   }
 
   /** Every assist window this run opened, for the run report. */
@@ -2189,6 +2246,150 @@ export class MineflayerExecutor implements StepExecutor {
     this.encounterPhases.set(enc.wave, "assisted");
     await this.withAssist(enc, "policy: ordinary encounter", () => this.fightWave(step));
     this.encounterPhases.set(enc.wave, "cleared");
+  }
+
+  /**
+   * The actor floor gate (#114), fired once per actor after the objective that
+   * unleashes it completes.
+   *
+   * Telemetry, never a gate: nothing on the critical path depends on the outcome,
+   * so every failure mode here — the body never appearing, a lost fight, a
+   * timeout, even the bot dying — is RECORDED and the run continues. An actor
+   * fight blocks no objective, which is also why it takes **no assist**: the
+   * assist exists to stop bot fencing skill capping how hard a delve may be on a
+   * fight the run must finish, and there is no such obligation here. Losing is a
+   * perfectly good souls answer.
+   */
+  private async actorFloorGateAfter(objectiveId: string): Promise<void> {
+    const actors = this.combatPlan?.actors ?? [];
+    if (actors.length === 0) return;
+    for (const a of actors) {
+      if (this.actorsEngaged.has(a.actor)) continue;
+      const decision = actorExercise(a, this.pathObjectives);
+      if (decision.kind !== "exercise" || decision.afterObjective !== objectiveId) continue;
+      this.actorsEngaged.add(a.actor);
+      if (!this.actorFloorGate) {
+        process.stderr.write(
+          `[actor] ${a.actor}: skipped via DELVEWRIGHT_ACTOR_FLOOR=0 — the report records it ` +
+            `as skipped, never as measured\n`,
+        );
+        continue;
+      }
+      const trial = await this.fightActor(a, objectiveId);
+      this.actorTrials.push(trial);
+      const finding = actorFloorFinding(trial);
+      if (finding) {
+        this.floorFindings.push(finding);
+        process.stderr.write(`[floor] ${finding}\n`);
+      }
+    }
+  }
+
+  /**
+   * One honest, unassisted attempt at a tiered actor's unleashed body.
+   *
+   * The body is identified the way the plan describes it — the actor's own entity
+   * type, near the anchor cell the compiler resolved, preferring the one wearing
+   * its custom name. Entity TAGS are the compiler's real identity for it, but a
+   * client cannot read tags, so this is the closest a bot can honestly get; a
+   * body it cannot find is reported as `body-not-found` rather than counted as a
+   * win, because "nothing was there" and "I beat it" must never share a row.
+   */
+  private async fightActor(a: ActorEncounter, afterObjective: string): Promise<ActorTrial> {
+    const started = Date.now();
+    let swings = 0;
+    const record = (outcome: ActorOutcome, detail?: string): ActorTrial => ({
+      actor: a.actor,
+      tier: a.tier,
+      afterObjective,
+      outcome,
+      swings,
+      elapsedMs: Date.now() - started,
+      detail,
+    });
+    const pos = a.pos!;
+    process.stderr.write(
+      `[actor] ${a.actor} is billed \`${a.tier}\` (${a.entity}` +
+        `${a.maxHealth !== undefined ? `, ${a.maxHealth} hp` : ""}) and \`${afterObjective}\` ` +
+        `unleashed it — one unassisted attempt at ${pos.join(",")}\n`,
+    );
+    try {
+      await this.walkTo(pos, 3, `actor ${a.actor}`);
+      const bot = this.requireBot();
+      const body = await this.findActorBody(a);
+      if (body === undefined) {
+        const why =
+          `no live \`${a.entity}\` within ${ACTOR_MATCH_RADIUS} blocks of ${pos.join(",")} ` +
+          `after ${ACTOR_SETTLE_MS}ms — the unleash beat may not have fired, or the twin was ` +
+          `summoned elsewhere`;
+        process.stderr.write(`[actor] ${a.actor}: ${why}\n`);
+        return record("body-not-found", why);
+      }
+      const id = body.id;
+      const deadline = Date.now() + ACTOR_FIGHT_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        if (this.death) throw this.death;
+        const live = bot.entities[id];
+        if (!live?.position) {
+          process.stderr.write(
+            `[actor] ${a.actor}: DOWN after ${swings} swing(s) — the unassisted bot won cold\n`,
+          );
+          return record("won-first-try");
+        }
+        await this.maybeEat(`actor ${a.actor}`);
+        const dist = bot.entity.position.distanceTo(live.position);
+        if (dist > 3) {
+          await this.walkTo(
+            [Math.floor(live.position.x), Math.floor(live.position.y), Math.floor(live.position.z)],
+            2,
+            `actor ${a.actor}`,
+          );
+          continue;
+        }
+        await bot.lookAt(live.position.offset(0, (live.height ?? 1) * 0.5, 0), true);
+        bot.attack(live);
+        swings += 1;
+        await delay(ATTACK_INTERVAL_MS);
+      }
+      const why = `still standing after ${ACTOR_FIGHT_TIMEOUT_MS}ms and ${swings} swing(s)`;
+      process.stderr.write(`[actor] ${a.actor}: ${why}\n`);
+      return record("timed-out", why);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[actor] ${a.actor}: the unassisted attempt ended — ${detail}\n`);
+      // A death here is the encounter doing its job, not a failed run: recover the
+      // bot the same way a lost wave attempt does and let the path carry on.
+      if (this.death) await this.respawnAndRearm();
+      return record("lost", detail);
+    }
+  }
+
+  /**
+   * The actor's live body: the nearest entity of its declared type within
+   * {@link ACTOR_MATCH_RADIUS} of the anchor cell, waiting up to
+   * {@link ACTOR_SETTLE_MS} for the summon to land and entity tracking to catch up.
+   * A custom-named actor prefers the body wearing that name.
+   */
+  private async findActorBody(a: ActorEncounter): Promise<{ id: number } | undefined> {
+    const bot = this.requireBot();
+    const want = a.entity.replace(/^minecraft:/, "");
+    const pos = a.pos!;
+    const deadline = Date.now() + ACTOR_SETTLE_MS;
+    for (;;) {
+      const near = Object.values(bot.entities)
+        .filter((e) => e?.position && e.name === want)
+        .map((e) => ({
+          id: e.id,
+          named: displayNameOf(e) === a.name,
+          d: Math.hypot(e.position.x - pos[0], e.position.y - pos[1], e.position.z - pos[2]),
+        }))
+        .filter((e) => e.d <= ACTOR_MATCH_RADIUS)
+        .sort((x, y) => Number(y.named) - Number(x.named) || x.d - y.d);
+      const best = near[0];
+      if (best) return { id: best.id };
+      if (Date.now() >= deadline) return undefined;
+      await delay(REACH_POLL_MS);
+    }
   }
 
   /**
@@ -2840,6 +3041,29 @@ export class MineflayerExecutor implements StepExecutor {
 
 function fmt(p: { x: number; y: number; z: number }): string {
   return `[${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}]`;
+}
+
+/**
+ * An entity's custom name as plain text, or `undefined` when it has none.
+ *
+ * mineflayer surfaces a custom name in several shapes across versions — a plain
+ * string, a chat component with `toString`, or `{ text }` — so this reads all of
+ * them and gives up quietly rather than throwing. Used only to PREFER the right
+ * body among candidates of the same entity type (#114); identity never rests on
+ * it, because a client cannot read the entity tag the compiler actually uses.
+ */
+export function displayNameOf(e: unknown): string | undefined {
+  const ent = e as { displayName?: unknown; customName?: unknown };
+  for (const raw of [ent.customName, ent.displayName]) {
+    if (typeof raw === "string" && raw.length > 0) return raw;
+    if (raw && typeof raw === "object") {
+      const o = raw as { text?: unknown; toString?: () => string };
+      if (typeof o.text === "string" && o.text.length > 0) return o.text;
+      const s = typeof o.toString === "function" ? o.toString() : "";
+      if (s && s !== "[object Object]") return s;
+    }
+  }
+  return undefined;
 }
 
 /**
