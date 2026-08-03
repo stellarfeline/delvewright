@@ -8957,6 +8957,50 @@ fn emit_dialogue_trigger_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// dialog to. The `"none"` test is the exception and drives `talk_<npc>` itself,
 /// precisely because a silent scene emits no `dialog show`: that is what makes
 /// "the record is written and consumed, and nothing opens" directly assertable.
+/// Pin every branch-gate flag an NPC's cast ledger reads to the value that
+/// selects `clause`: its `requires_flags` to 1, every other flag any clause
+/// reads to 0 (task #133, island r15).
+///
+/// The generated cast templates zero every `dw.qa_*` their dispatch reads but
+/// used to leave the ledger's `requires_flags`/`forbids_flags` to whatever the
+/// batch had: three sibling templates (`verb_flag_gate`, `verb_interact`,
+/// `verb_interact_arming`) legitimately end with a campaign flag set to 1, so
+/// whichever ran first poisoned `cast_root_swap`'s later assert — the flee
+/// clause overrode the expected scene (expected `dw.cast 2`, got 3) purely by
+/// batch order. Pinning at the CONSUMER is the generator-side defense: it holds
+/// against any future flag-setting template, rather than trusting each one to
+/// clean up. It is also what makes a `requires_flags`-gated clause assertable
+/// at all — "never set" is not 1 on the shared server any more than it is 0.
+/// Emits nothing for a ledger with no branch-gated clause, so pre-#133
+/// campaigns are byte-identical.
+fn pin_cast_clause_flags(
+    b: &mut Vec<String>,
+    cast: &crate::cast::NpcCast,
+    clause: &crate::cast::CastClause,
+) {
+    let flags: BTreeSet<&str> = cast
+        .by_quest
+        .iter()
+        .flat_map(|cl| cl.requires_flags.iter().chain(cl.forbids_flags.iter()))
+        .map(|s| s.as_str())
+        .collect();
+    if flags.is_empty() {
+        return;
+    }
+    b.push("# Branch-gate flags are batch state a sibling template may have".to_string());
+    b.push("# left set (island r15: a verb template ended with its flag at 1".to_string());
+    b.push("# and the sibling clause overrode this assert). Pin every flag the".to_string());
+    b.push("# ledger reads to the value that selects the asserted scene.".to_string());
+    for f in flags {
+        let v = i32::from(clause.requires_flags.iter().any(|r| r == f));
+        b.push(format!(
+            "scoreboard players set {} {} {v}",
+            plan::PARTY,
+            plan::flag_score(f)
+        ));
+    }
+}
+
 fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
     use crate::cast::SceneAction;
     let ns = &plan.namespace;
@@ -8980,13 +9024,11 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
         // The two quests whose scenes those are, in ledger order.
         let first = cast.by_quest.iter().find(|c| c.scene == roots[0].0)?;
         let later = cast.by_quest.iter().find(|c| c.scene == roots[1].0)?;
-        Some((
-            npc,
-            (first.quest.clone(), first.scene),
-            (later.quest.clone(), later.scene),
-        ))
+        Some((npc, first.clone(), later.clone()))
     });
-    if let Some((npc, (q_first, i_first), (q_later, i_later))) = swapper {
+    if let Some((npc, first, later)) = swapper {
+        let (q_first, i_first) = (first.quest.clone(), first.scene);
+        let (q_later, i_later) = (later.quest.clone(), later.scene);
         let (pin, sel) = pin_dummy("dw_t_castswap");
         let mut b = packtest_header(&format!(
             "{title}: npc `{}` right-click swaps root as the story advances (cast ledger)",
@@ -9002,6 +9044,7 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
                 quest_active_score(&cl.quest)
             ));
         }
+        pin_cast_clause_flags(&mut b, &casts[&npc.npc_id], &first);
         b.push(format!(
             "scoreboard players set {} {} 1",
             plan::PARTY,
@@ -9015,6 +9058,7 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
         b.push("# The later beat begins. `dw.qa_*` is never cleared, so BOTH are".to_string());
         b.push("# now set — and the later scene must win, retiring the earlier".to_string());
         b.push("# root. That is the whole retirement mechanism.".to_string());
+        pin_cast_clause_flags(&mut b, &casts[&npc.npc_id], &later);
         b.push(format!(
             "scoreboard players set {} {} 1",
             plan::PARTY,
@@ -9077,9 +9121,10 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
             .iter()
             .find(|s| s.action == SceneAction::Silent)?;
         let cl = cast.by_quest.iter().find(|c| c.scene == scene.index)?;
-        Some((npc, scene.index, cl.quest.clone()))
+        Some((npc, scene.index, cl.clone()))
     });
-    if let Some((npc, idx, qid)) = silent {
+    if let Some((npc, idx, cl)) = silent {
+        let qid = cl.quest.clone();
         let (pin, sel) = pin_dummy("dw_t_castnone");
         let mut b = packtest_header(&format!(
             "{title}: npc `{}`'s `\"none\"` scene consumes the interaction and opens nothing",
@@ -9087,13 +9132,14 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin);
-        for cl in &casts[&npc.npc_id].by_quest {
+        for c in &casts[&npc.npc_id].by_quest {
             b.push(format!(
                 "scoreboard players set {} {} 0",
                 plan::PARTY,
-                quest_active_score(&cl.quest)
+                quest_active_score(&c.quest)
             ));
         }
+        pin_cast_clause_flags(&mut b, &casts[&npc.npc_id], &cl);
         b.push(format!(
             "scoreboard players set {} {} 1",
             plan::PARTY,
