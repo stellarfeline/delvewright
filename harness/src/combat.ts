@@ -992,56 +992,103 @@ function near(a: Vec3Tuple, b: Vec3Tuple, radius: number): boolean {
 }
 
 /**
- * Is the encounter's governing checkpoint actually ARMED, or is the harness about
- * to script a death into an unmoved respawn point?
+ * Why the die-retry stage may not script a death at an encounter.
+ *
+ * `reds` is the whole reason this is a structure rather than a string. Both gaps
+ * stop the scripted death, but they are different KINDS of fact:
+ *
+ *   * `unarmed` is about the RUN — the proof walked past the fire it was about to
+ *     be measured against. That is the harness's own gap, and it reds the stage;
+ *   * `no-checkpoint` is about the CONTENT — the campaign fires no checkpoint
+ *     before this fight at all, so every death here is a full restart by design.
+ *     Whether that is acceptable is a pacing judgement the compiler already owns
+ *     (`DW0379` retry cost, the checkpoint proofs `DW0315`/`DW0316`), so the
+ *     harness states it and declines to grade it.
+ */
+export interface CheckpointPreconditionGap {
+  readonly kind: "unarmed" | "no-checkpoint";
+  readonly finding: string;
+  /** Whether this gap makes the die-retry stage RED, or is advisory only. */
+  readonly reds: boolean;
+}
+
+/**
+ * Can the die-retry stage honestly script a death at this encounter?
  *
  * A bonfire arms an affordance and moves nothing until the party rests
  * (spec-0016 §1). The combat plan's `checkpoint` is the last checkpoint the
- * campaign FIRES at or before the encounter — for a bonfire that means armed, not
- * rested. Bell round 3 died into exactly that gap: every fire walked past
+ * campaign fires strictly BEFORE the encounter — for a bonfire that means armed,
+ * not rested. Bell round 3 died into exactly that gap: every fire walked past
  * untouched, both trials respawned at world spawn on the far beach, and a 60s
  * walk-back budget judged the campaign for a loop the proof had never performed.
  *
- * The harness can settle it from the two artifacts it already holds: the path's
- * `rest` steps say which checkpoints are bonfires, and the executor knows which of
- * those it performed. Three cases, and only one of them is a finding:
+ * The harness settles it from the two artifacts it already holds: the path's
+ * `rest` steps say which checkpoints are bonfires, and the executor knows which
+ * of those it performed. Four cases, and only two of them stop the death:
  *
- *   * the governing checkpoint sits on a bonfire the bot rested at → armed;
- *   * it matches no bonfire in the path → an ordinary `set-checkpoint`, which arms
- *     itself when its beat fires. Nothing to contradict, exactly as before;
- *   * it sits on a bonfire the bot walked past → NOT armed, and a scripted death
- *     here would measure the campaign against a respawn point the player loop was
- *     never performed for.
+ *   * the governing checkpoint sits on a bonfire the bot rested at → armed,
+ *     proceed;
+ *   * it matches no bonfire in the path → an ordinary `set-checkpoint`, which
+ *     arms itself when its beat fires. Nothing to contradict, proceed;
+ *   * it sits on a bonfire the bot walked past → **unarmed**, and a scripted
+ *     death here would measure the campaign against a respawn point the player
+ *     loop was never performed for. Red;
+ *   * the plan names **no governing checkpoint at all** → the campaign fires none
+ *     before this fight, so a death respawns at world spawn and the retry loop is
+ *     a full restart. Advisory: this is a content fact, and in a souls campaign a
+ *     design smell, but the compiler's checkpoint/retry-cost rules are what judge
+ *     it. Post-#223 this is no longer hypothetical — `fire_step < i` means a
+ *     checkpoint armed by the encounter's own kill step is correctly NOT its
+ *     governing one, and souls-bonfire's encounter now truthfully reports none.
+ *     Before that fix the same case was silently "armed", which is the answer
+ *     that would have flattered the campaign.
  */
-export function checkpointPreconditionFinding(
+export function checkpointPrecondition(
   enc: Encounter,
   bonfires: readonly PerformedRest[],
   rested: ReadonlySet<number>,
   beforeStep: number,
-): string | undefined {
-  if (enc.checkpoint === undefined) return undefined;
+): CheckpointPreconditionGap | undefined {
+  if (enc.checkpoint === undefined) {
+    return {
+      kind: "no-checkpoint",
+      reds: false,
+      finding:
+        `${enc.wave}: die-retry precondition: no governing checkpoint — die-retry cannot ` +
+        `prove safe death here. The plan names no checkpoint fired before this encounter, so ` +
+        `a death respawns at world spawn and the retry loop is a full restart of the delve. ` +
+        `No death was taken. Advisory, not a failure: this is a CONTENT fact about where the ` +
+        `campaign puts its rest points, and the compiler's rules own that judgement (DW0379 ` +
+        `retry cost, DW0315/DW0316 checkpoint proofs) — the harness only reports that this ` +
+        `fight's retry loop went unproven.`,
+    };
+  }
   // Matched by POSITION, never by step order: what makes a checkpoint unarmed is
   // that nobody has rested at it yet, and that is true whether the path rests
   // there later or never. Order only changes the sentence.
   const fire = bonfires.find((b) => near(b.pos, enc.checkpoint!, BONFIRE_MATCH_RADIUS));
   if (fire === undefined || rested.has(fire.bonfire)) return undefined;
-  // `beforeStep` is the EXPORTED path index the encounter is executing at, never
-  // `enc.step`: the combat plan indexes `plan.critical_path`, which the rest
-  // splice deliberately leaves untouched, so the two coordinate systems drift by
-  // one per bonfire the moment a campaign has any. Comparing across them would be
-  // a silent off-by-N (compiler #220 notes the split explicitly).
+  // BOTH sides of this comparison are EXPORTED path indices (compiler #223): the
+  // combat plan's `step` is exported-coordinate now, and `beforeStep` is the index
+  // the encounter is executing at. The rest splice inserts steps, so exported and
+  // `plan.critical_path` indices drift by one per bonfire — which is exactly why
+  // the plan was moved onto the exported system rather than the harness being
+  // taught to convert. Nothing here consumes `enc.step`.
   const why =
     fire.step < beforeStep
       ? `the route passed bonfire ${fire.bonfire} (${fire.anchor}) without resting`
       : `the path does not rest at bonfire ${fire.bonfire} (${fire.anchor}) until AFTER ` +
         `this encounter (path step ${fire.step})`;
-  return (
-    `${enc.wave}: die-retry precondition: no checkpoint armed — ${why}, so the governing ` +
-    `checkpoint at ${enc.checkpoint.join(",")} has never moved. A bonfire ARMS on arrival ` +
-    `and only moves the respawn point when the party RESTS; scripting a death now would ` +
-    `measure the delve against world spawn. No death was taken — this is a gap in the ` +
-    `proof, not a fault in the encounter.`
-  );
+  return {
+    kind: "unarmed",
+    reds: true,
+    finding:
+      `${enc.wave}: die-retry precondition: no checkpoint armed — ${why}, so the governing ` +
+      `checkpoint at ${enc.checkpoint.join(",")} has never moved. A bonfire ARMS on arrival ` +
+      `and only moves the respawn point when the party RESTS; scripting a death now would ` +
+      `measure the delve against world spawn. No death was taken — this is a gap in the ` +
+      `proof, not a fault in the encounter.`,
+  };
 }
 
 /** Every finding across a stage's trials, in order. */

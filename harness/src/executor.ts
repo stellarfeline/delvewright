@@ -39,7 +39,7 @@ import {
   assistPolicy,
   deathPhases,
   floorFinding,
-  checkpointPreconditionFinding,
+  checkpointPrecondition,
   observationOf,
   openTrial,
   respawnedAtCheckpoint,
@@ -724,8 +724,12 @@ export class MineflayerExecutor implements StepExecutor {
    * resting" is a statement the check can actually make. */
   private restSteps: readonly PerformedRest[] = [];
   private readonly restedBonfires = new Set<number>();
-  /** Encounters whose scripted deaths were SKIPPED because no checkpoint was armed. */
+  /** Encounters whose scripted deaths were SKIPPED because the checkpoint the
+   * stage would measure against was never armed — the RUN's own gap, and red. */
   private readonly preconditionFindings: string[] = [];
+  /** Encounters whose scripted deaths were skipped because the campaign fires NO
+   * checkpoint before them — a content fact, reported and not graded (#223). */
+  private readonly preconditionAdvisories: string[] = [];
   private readonly preconditionWaves = new Set<string>();
   /** Highest health ever observed per `<wave>/<mob name>` — the stand-in for a
    * max-health attribute vanilla never puts on the wire (see fullHealthOf). */
@@ -2449,22 +2453,29 @@ export class MineflayerExecutor implements StepExecutor {
     // encounter is a finding. `dieRetryCoverageFailures` turns an engagement with
     // no completed trial into a red stage, so a run that dies on the way in can
     // never report a passed die-retry (task #102).
-    // PRECONDITION (compiler #220): the loop this stage proves is "death → respawn
-    // at the governing checkpoint → walk back". If that checkpoint was never armed
-    // — a bonfire the route walked past without resting — the respawn lands at
-    // world spawn and every measurement below describes the harness's own gap, not
-    // the delve. Report it as the gap it is and take NO death: a scripted death
-    // here would blame the campaign for a proof that skipped the player loop.
-    const precondition = checkpointPreconditionFinding(
+    // PRECONDITION (compiler #220, refined by #223): the loop this stage proves is
+    // "death → respawn at the governing checkpoint → walk back". Two ways that
+    // premise can be false, and they are different kinds of fact:
+    //   * the checkpoint exists but was never ARMED (a bonfire the route walked
+    //     past) — the harness's own gap, and every measurement below would
+    //     describe it rather than the delve. Red;
+    //   * the campaign fires NO checkpoint before this fight at all — a content
+    //     fact: every death here is a full restart. Advisory, because the
+    //     compiler's retry-cost and checkpoint rules are what judge that.
+    // Either way: take NO death. A scripted death would blame the campaign for a
+    // proof that was never in a position to be made.
+    const precondition = checkpointPrecondition(
       enc,
       this.restSteps,
       this.restedBonfires,
       this.currentStep,
     );
     if (precondition !== undefined) {
-      this.preconditionFindings.push(precondition);
+      (precondition.reds ? this.preconditionFindings : this.preconditionAdvisories).push(
+        precondition.finding,
+      );
       this.preconditionWaves.add(enc.wave);
-      process.stderr.write(`[die-retry] ${precondition}\n`);
+      process.stderr.write(`[die-retry] ${precondition.finding}\n`);
       return;
     }
     this.dieRetryEngaged.add(enc.wave);
@@ -2818,9 +2829,18 @@ export class MineflayerExecutor implements StepExecutor {
     return this.restSteps.filter((r) => this.restedBonfires.has(r.bonfire));
   }
 
-  /** Encounters whose scripted deaths were skipped for want of an armed checkpoint. */
+  /** Encounters whose scripted deaths were skipped for want of an ARMED
+   * checkpoint — the run's own gap, so these red the stage. */
   dieRetryPreconditionFindings(): readonly string[] {
     return this.preconditionFindings;
+  }
+
+  /** Encounters whose scripted deaths were skipped because the campaign fires no
+   * governing checkpoint before them (#223). Advisory: the retry loop there went
+   * unproven, and whether that staging is acceptable is the compiler's call, not
+   * this stage's. Reported, never graded — and never silent. */
+  dieRetryPreconditionAdvisories(): readonly string[] {
+    return this.preconditionAdvisories;
   }
 
   /** The waves those findings name. Coverage stays silent about them: the
