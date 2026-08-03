@@ -103,7 +103,17 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      budget is 146 font px ≈ 24 Latin / 16 Han characters; author to **≤20 Latin,
      ≤12 Han** so a translation has room to grow (a `zh-cn` sidecar is checked
      under its own key). What does not fit belongs in the node's body text, which
-     wraps, or in the NPC's reply — never in the button.
+     wraps, in the option's `tooltip`, or in the NPC's reply — never in the button.
+   - **Stage 6: `button = caption, tooltip = the full line.`** (Owner design,
+     2026-08-04.) When the caption cannot carry what the character actually
+     says — the wine beat, where "Pour it out." stands for a whole sentence —
+     author the option's optional `tooltip`: vanilla shows it in a hover box
+     beside the button. It **wraps** (no `DW0331`, no width budget), so it takes
+     a full sentence. Use it for the *said line*, not for hints or mechanics;
+     the button still has to be readable on its own, since a player on a
+     controller or reading fast never hovers. Needs `dsl_version 0.8.0` on the
+     dialogue stage, and it translates under its own key
+     (`dlg.<npc>.<node>.opt.<i>.tooltip`).
    - **Stage 6: re-derive every node's option list from that node's situation.**
      (Owner ruling, 2026-08-03.) Never carry an option list forward from an
      earlier node. Before shipping a node, check each option for semantic fit

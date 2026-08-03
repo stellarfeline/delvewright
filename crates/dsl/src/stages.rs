@@ -636,6 +636,17 @@ pub struct DialogueNode {
 pub struct DialogueOption {
     /// Button label.
     pub label: String,
+    /// The full line this button is the caption of (DSL v0.8, owner design
+    /// 2026-08-04; reserved `DW0141` earlier). Vanilla's dialog button codec
+    /// (`CommonButtonData`) carries an optional `tooltip` component beside
+    /// `label`, and the client hangs it on the button as a real hover tooltip —
+    /// so a caption on the button and the sentence the character actually says
+    /// can both exist. **Not** subject to `DW0331`: a tooltip is not drawn on the
+    /// 150 px button, it is wrapped at 170 px into its own hover box, so it never
+    /// scrolls. Player-visible, so it translates like the label
+    /// (`dlg.<npc>.<node>.opt.<i>.tooltip`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tooltip: Option<String>,
     /// Next node; omitted closes the dialog.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next: Option<DialogueId>,

@@ -31,6 +31,7 @@
 //! | `obj.<quest>.<obj>.missing_item_hint` | a stage-5 `interact`'s `missing_item_hint` (v0.7, only if set) |
 //! | `dlg.<npc>.<node>.text` | each stage-6 dialogue node `text` |
 //! | `dlg.<npc>.<node>.opt.<i>.label` | each dialogue option `label` |
+//! | `dlg.<npc>.<node>.opt.<i>.tooltip` | that option's hover `tooltip` (v0.8, only if set) |
 //! | `wave.<wave>.mob.<i>.name` | a wave mob's custom `name` (only if set) |
 //! | `fx.…​.narrate` / `fx.…​.give` | a `narrate` line / named `give-item` in an effect list |
 //! | `fx.…​.rest_prompt` / `.rest_label` / `.save_label` | a `bonfire`'s authored rest-dialog strings (v0.8, only if set) |
@@ -315,6 +316,13 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             f(&format!("dlg.{np}.{nd}.text"), &mut node.text);
             for (i, opt) in node.options.iter_mut().enumerate() {
                 f(&format!("dlg.{np}.{nd}.opt.{i}.label"), &mut opt.label);
+                // v0.8: the button's hover tooltip. A player reads it exactly as
+                // they read the caption, so it translates exactly like one; an
+                // unauthored tooltip is absent from the inventory (no key, no
+                // coverage obligation), like every other `only if set` string.
+                if let Some(tip) = opt.tooltip.as_mut() {
+                    f(&format!("dlg.{np}.{nd}.opt.{i}.tooltip"), tip);
+                }
             }
         }
     }
