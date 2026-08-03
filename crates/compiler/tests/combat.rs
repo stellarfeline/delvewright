@@ -292,9 +292,15 @@ fn the_combat_plan_is_validation_only_and_names_the_tier() {
     let json: serde_json::Value = serde_json::from_slice(plan).unwrap();
     assert_eq!(json["encounters"][0]["tier"], "boss");
     assert_eq!(json["encounters"][0]["wave"], "wave/guards");
+    // No `checkpoint`: souls-bonfire's only rest point is armed by `obj/slay`'s
+    // OWN completion — the very kill this encounter is — so nothing governs a
+    // death during the fight. See
+    // `a_checkpoint_armed_by_the_encounters_own_step_does_not_govern_it`, which
+    // pins that shape deliberately; this assertion used to read the opposite and
+    // was encoding the off-by-one.
     assert!(
-        json["encounters"][0]["checkpoint"].is_array(),
-        "the bonfire governs a death at this encounter: {json}"
+        json["encounters"][0]["checkpoint"].is_null(),
+        "nothing is armed yet at this encounter: {json}"
     );
     // Validation metadata only — nothing under `datapack/` may mention it.
     assert!(
@@ -560,4 +566,132 @@ fn declaring_an_actor_tier_moves_no_shipped_byte() {
         plan_plain["actors"].as_array().unwrap().is_empty(),
         "{plan_plain}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The governing checkpoint, and the one coordinate system (#221 follow-up).
+// ---------------------------------------------------------------------------
+
+/// Parse both harness documents out of one build.
+fn path_and_plan(out: &BuildOutput) -> (serde_json::Value, serde_json::Value) {
+    let path: serde_json::Value =
+        serde_json::from_slice(out.get("critical-path.json").expect("path exported")).unwrap();
+    let plan: serde_json::Value = serde_json::from_slice(
+        out.get("validation/combat-plan.json")
+            .expect("plan emitted"),
+    )
+    .unwrap();
+    (path, plan)
+}
+
+#[test]
+fn a_checkpoint_armed_by_the_encounters_own_step_does_not_govern_it() {
+    // souls-bonfire's exact shape, and the reason this is a defect rather than a
+    // taste: the bonfire is fired by `obj/slay`'s completion — the completion of
+    // the very kill the encounter IS — so at any death DURING that fight the
+    // fire has not been armed, let alone rested at, and the party returns to
+    // world spawn. `fire_step <= i` handed the encounter a respawn point one
+    // beat in its own future.
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    let (out, _) = build(tmp.path()).expect("the untouched fixture builds");
+    let (path, plan) = path_and_plan(&out);
+
+    let enc = &plan["encounters"][0];
+    assert_eq!(enc["wave"], "wave/guards");
+    assert!(
+        enc["checkpoint"].is_null(),
+        "a checkpoint armed by this encounter's own step must not govern it: {plan}"
+    );
+
+    // …and this really is the same-step case, not merely a campaign with no
+    // checkpoints: the exported path rests at the bonfire on the step directly
+    // AFTER the kill, which is what "armed by the kill's own completion" looks
+    // like from the outside.
+    let steps = path["steps"].as_array().unwrap();
+    let kill = enc["step"].as_u64().unwrap() as usize;
+    assert_eq!(steps[kill]["action"], "kill");
+    assert_eq!(steps[kill + 1]["action"], "rest", "{path}");
+}
+
+#[test]
+fn a_checkpoint_armed_earlier_governs_the_encounter() {
+    // The same fixture with the bonfire moved one beat earlier — armed by
+    // `obj/talk` instead of `obj/slay`. Now it IS armed before the fight, so it
+    // governs, which is what proves the rule is `< i` and not "never".
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| {
+        let slay = quests["content"]["quests"][1]["on_objective_complete"]["obj/slay"]
+            .as_array_mut()
+            .unwrap();
+        let at = slay
+            .iter()
+            .position(|e| e["type"] == "bonfire")
+            .expect("the fixture's bonfire");
+        let bonfire = slay.remove(at);
+        quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap()
+            .push(bonfire);
+    });
+    let (out, _) = build(tmp.path()).expect("the moved bonfire builds");
+    let (_, plan) = path_and_plan(&out);
+    assert!(
+        plan["encounters"][0]["checkpoint"].is_array(),
+        "a checkpoint armed strictly before the encounter governs it: {plan}"
+    );
+}
+
+#[test]
+fn the_combat_plan_step_indexes_the_exported_path() {
+    // One coordinate system for every harness document. `plan.critical_path` and
+    // the exported `critical-path.json` drift by one per bonfire armed earlier
+    // (spec-0016 §1 splices a `rest` step after each arming beat), and the combat
+    // plan's `step` claimed to be an exported index while being an internal one.
+    // Proven against the real emitted documents, not against the arithmetic:
+    // whatever the splice does, the step the plan points at must BE the
+    // encounter's kill.
+    //
+    // The bonfire is moved to `obj/talk` so the two coordinates genuinely differ
+    // — with the fixture's own placement they coincide, and a test that cannot
+    // fail proves nothing.
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| {
+        let slay = quests["content"]["quests"][1]["on_objective_complete"]["obj/slay"]
+            .as_array_mut()
+            .unwrap();
+        let at = slay.iter().position(|e| e["type"] == "bonfire").unwrap();
+        let bonfire = slay.remove(at);
+        quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap()
+            .push(bonfire);
+    });
+    let (out, _) = build(tmp.path()).expect("builds");
+    let (path, plan) = path_and_plan(&out);
+    let steps = path["steps"].as_array().unwrap();
+
+    // The splice really did move things: a `rest` step sits before the kill.
+    let rest_at = steps
+        .iter()
+        .position(|s| s["action"] == "rest")
+        .expect("a rest step");
+    let kill_at = steps
+        .iter()
+        .position(|s| s["action"] == "kill")
+        .expect("a kill step");
+    assert!(rest_at < kill_at, "{path}");
+
+    for enc in plan["encounters"].as_array().unwrap() {
+        let i = enc["step"].as_u64().unwrap() as usize;
+        assert_eq!(
+            steps[i]["action"], "kill",
+            "step {i} is not the kill: {path}"
+        );
+        assert_eq!(steps[i]["wave"], enc["wave"], "{path}");
+        assert_eq!(steps[i]["objective"], enc["objective"], "{path}");
+    }
+    // …and the internal index it came from is genuinely a different number, so
+    // this test would have failed before the reconciliation.
+    assert_eq!(kill_at, 3, "{path}");
 }

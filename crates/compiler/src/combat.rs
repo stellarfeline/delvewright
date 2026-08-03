@@ -138,7 +138,14 @@ pub struct Encounter {
     pub wave_id: String,
     /// The `kill` objective the wave completes.
     pub objective_id: String,
-    /// Index into `plan.critical_path` of the `kill` step.
+    /// Index into `plan.critical_path` of the `kill` step — the compiler's OWN
+    /// coordinate system, the one every `fire_step` and nav proof indexes.
+    ///
+    /// This is **not** the index the harness sees: the exported
+    /// `critical-path.json` additionally carries a spliced `rest` step after the
+    /// beat that arms each bonfire, so the two drift by one per bonfire.
+    /// [`Plan::exported_step`] is the single translation, and the emitted combat
+    /// plan states exported coordinates.
     pub step: usize,
     /// What the content bills the fight as (`ordinary` unless declared).
     pub tier: EncounterTier,
@@ -306,12 +313,29 @@ pub fn encounters(plan: &Plan) -> Vec<Encounter> {
         };
         let wave = plan::wave_of(plan.campaign, wave_id);
         // The checkpoint governing a death at this encounter is the last one the
-        // campaign fires at or before the step (spec-0012 checkpoints are
+        // campaign fires STRICTLY BEFORE the step (spec-0012 checkpoints are
         // party-wide and monotonic by quest order).
+        //
+        // `< i`, not `<= i`, and the difference is a real defect (#221's
+        // precondition found it on the souls-bonfire fixture). A checkpoint's
+        // `fire_step` is the step whose COMPLETION arms it — for a bonfire, the
+        // beat after which a rest first becomes possible. A death *during* step
+        // i happens while step i is unfinished, so a checkpoint armed by step i
+        // does not exist yet at that death. `<= i` handed the encounter a
+        // respawn point one beat in its own future: souls-bonfire arms bonfire 0
+        // from `obj/slay`'s completion — the very kill this encounter IS — and
+        // the plan claimed a death mid-fight would return the party to that
+        // fire, when in truth it returns them to world spawn.
+        //
+        // Fixing it toward the STRICTER answer is deliberate: the die-retry
+        // stage asserts the party respawns at the governing checkpoint, so an
+        // over-generous claim here is a proof that measures the delve against a
+        // rest point the player never had. An encounter with no governing
+        // checkpoint reports none, and the ladder judges it for what it is.
         let checkpoint = plan
             .checkpoints
             .iter()
-            .rfind(|cp| cp.fire_step <= i)
+            .rfind(|cp| cp.fire_step < i)
             .map(|cp| cp.pos);
         out.push(Encounter {
             wave_id: wave_id.clone(),
@@ -1199,7 +1223,11 @@ pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEn
             let mut o = json!({
                 "wave": e.wave_id,
                 "objective": e.objective_id,
-                "step": e.step,
+                // EXPORTED coordinates — the index this encounter's `kill` step
+                // has in `critical-path.json`, rest splices included. The plan
+                // is a harness document, and every harness document speaks one
+                // coordinate system.
+                "step": plan.exported_step(e.step),
                 "tier": e.tier.token(),
                 "pos": [e.pos[0], e.pos[1], e.pos[2]],
                 "count": e.count,
