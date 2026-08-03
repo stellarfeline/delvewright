@@ -49,9 +49,26 @@ const QUESTS_V06: &str = r#"{
   }
 }"#;
 
+/// hello-world's world stage raised to 0.6.0 with a declared `difficulty`.
+///
+/// The actor surface under test **unleashes** its giant, and this campaign has no
+/// `waves[]` — the exact shape `DW0469` warns about, because the derived
+/// `difficulty=peaceful` would have the server discard the unleashed twin on the
+/// tick it spawned. Declaring the difficulty is what makes the fixture a campaign
+/// whose actor surface actually exists at runtime.
+fn world_v06_normal() -> String {
+    common::read_valid("world.json")
+        .replacen("\"0.2.0\"", "\"0.6.0\"", 1)
+        .replacen(
+            "\"target_minutes\": 5,",
+            "\"target_minutes\": 5,\n    \"difficulty\": \"normal\",",
+            1,
+        )
+}
+
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     RawCampaign {
-        world: common::read_valid("world.json"),
+        world: world_v06_normal(),
         npcs: common::read_valid("npcs.json"),
         classes: common::read_valid("classes.json"),
         quest_plan: common::read_valid("quest-plan.json"),

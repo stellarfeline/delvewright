@@ -46,9 +46,27 @@ const QUESTS_V06: &str = r#"{
   }
 }"#;
 
+/// hello-world's world stage raised to 0.6.0 with a declared `difficulty`.
+///
+/// Required, not decorative: this fixture's campaign fields an ambushing husk and
+/// **no** `waves[]`, which is precisely the shape `DW0469` warns about — without
+/// a declaration the build would derive `difficulty=peaceful` and the server
+/// would discard the ambusher on the tick it spawned. The ambush tests are about
+/// the sugar, so the world here states the difficulty the ambush needs to exist
+/// at all.
+fn world_v06_normal() -> String {
+    common::read_valid("world.json")
+        .replacen("\"0.2.0\"", "\"0.6.0\"", 1)
+        .replacen(
+            "\"target_minutes\": 5,",
+            "\"target_minutes\": 5,\n    \"difficulty\": \"normal\",",
+            1,
+        )
+}
+
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     RawCampaign {
-        world: common::read_valid("world.json"),
+        world: world_v06_normal(),
         npcs: common::read_valid("npcs.json"),
         classes: common::read_valid("classes.json"),
         quest_plan: common::read_valid("quest-plan.json"),

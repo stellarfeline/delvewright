@@ -53,7 +53,8 @@ pub use stages::{
     Objective, Persona, Pieces, PlannedQuest, Prop, Quest, QuestEffect, QuestPlanContent,
     QuestsContent, Relationship, Role, SequenceStep, Shortcut, ShotStyle, SkinModel, SoundAt,
     StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger,
-    TriggerOn, Wave, WaveLane, WaveMob, WaveSummon, WorldContent, WorldTime, WorldWeather,
+    TriggerOn, Wave, WaveLane, WaveMob, WaveSummon, WorldContent, WorldDifficulty, WorldTime,
+    WorldWeather,
 };
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,

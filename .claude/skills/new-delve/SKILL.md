@@ -367,6 +367,15 @@ Then:
   a localized campaign, APPEND rather than insert where order allows, and after
   any structural edit re-check every shifted key's translation against its new
   English source — exact-key coverage (DW0180/0181) cannot see a stale value.
+- **Difficulty is declarable** (`world.difficulty`: `easy`/`normal`/`hard`).
+  Absent, the compiler derives `easy` for a wave campaign — which HALVES the
+  damage players take (`min(dmg/2+1, dmg)`), the setting behind "the enemies are
+  too weak". A souls-style brief almost certainly wants `normal` or `hard`; when
+  you change it, retune the combat arithmetic (mob `attributes`, class gear,
+  wave sizes) rather than only flipping the keyword. `peaceful` is rejected
+  (DW0468) — it deletes every hostile. Scripted `actors` take the same
+  `attributes` block wave mobs do, so an elite can be tuned on both its staged
+  puppet and its unleashed twin.
 - **Wave tuning**: `follow_range` below ~16 means distant wave mobs never
   engage; a kill objective whose mobs idle is unfinishable-in-practice even
   though machine-valid. Undead waves burn in daylight — the RIGHT fix (owner

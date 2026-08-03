@@ -93,8 +93,12 @@ if [ ! -f "$props" ]; then
   exit 1
 fi
 prop() { sed -n "s/^$1=//p" "$props" | head -1; }
-# v0.3: combat-wave campaigns need difficulty=easy (peaceful removes summoned
-# mobs); wave-free delves stay peaceful. The seed is the compiler's (ADR-0006).
+# Difficulty. v0.6: `world.difficulty` is DECLARED by the campaign (easy/normal/
+# hard) and the compiler writes it here; absent, it derives easy for a wave
+# campaign and peaceful for a wave-free one (peaceful removes summoned mobs).
+# Either way the file is the authority: the image's DIFFICULTY env is a fallback
+# for an absent file only, and this line is what stops it from deciding how hard
+# the delve is. The seed is the compiler's (ADR-0006).
 d=$(prop difficulty);   if [ -n "$d" ];  then export DIFFICULTY="$d";        fi
 s=$(prop level-seed);   if [ -n "$s" ];  then export SEED="$s";              fi
 # World generator (spec-0013 v0.6 `horizon`): void by default, ocean superflat for
