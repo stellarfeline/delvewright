@@ -377,3 +377,34 @@ jobs:
           DELVE_OUTPUT: ./delve-output-keeptrial
           PACKTEST_CONTAINER: delvewright-packtest-keeptrial
         run: docker compose -p dw-keeptrial -f validation/compose.yaml --profile packtest down -v --remove-orphans || true
+
+      # spec-0016 §1 — the souls templates (`souls_bonfire_rest`,
+      # `souls_bonfire_reseat`, `souls_bonfire_options`, `souls_reseat_death`) are
+      # emitted only for a campaign that HAS a bonfire and a `respawns_on_rest`
+      # wave. No fixture in the passes above does, so until now every one of them
+      # was shape-verified in Rust and never actually RUN in this repo's CI — the
+      # gap the cast-ledger pass exists to close, on the mechanic a delve's whole
+      # retry loop hangs off. It cost the drowned bell a full playtest round: the
+      # re-seat's death path had no live proof anywhere, and a wave the party had
+      # already beaten kept coming back and hunting them. souls-bonfire is the
+      # smallest fixture carrying both. Same cost profile: one extra toolserver
+      # boot, no new pull, no new compile.
+      - name: build the souls-bonfire delve output (spec-0016 §1)
+        run: |
+          cargo run -p delvewright-compiler --bin delvec -- \
+            build crates/compiler/tests/fixtures/souls-bonfire \
+            -o validation/delve-output-souls --prefabs campaigns/prefabs
+
+      - name: PackTest suite — souls bonfire (rest, re-seat, death re-seat, options)
+        env:
+          DELVE_OUTPUT: ./delve-output-souls
+          PACKTEST_CONTAINER: delvewright-packtest-souls
+        run: |
+          docker compose -p dw-souls -f validation/compose.yaml --profile packtest up \
+            --abort-on-container-exit --exit-code-from packtest
+      - name: tear down (souls bonfire)
+        if: always()
+        env:
+          DELVE_OUTPUT: ./delve-output-souls
+          PACKTEST_CONTAINER: delvewright-packtest-souls
+        run: docker compose -p dw-souls -f validation/compose.yaml --profile packtest down -v --remove-orphans || true

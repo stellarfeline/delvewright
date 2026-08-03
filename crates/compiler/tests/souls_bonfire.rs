@@ -636,3 +636,104 @@ fn an_equipped_actor_coexists_with_affordance_hardware() {
         "the bonfire's compiler-owned hardware must still be summoned"
     );
 }
+
+/// The seat RETIRES when the fight is over (drowned-bell run seven, 2026-08-03).
+///
+/// `#wseat_<wave>` was written by `spawn_<wave>` and by nothing else, so a wave
+/// stayed seated for the rest of the delve — and every later rest and every later
+/// death re-summoned an encounter the party had already beaten. `tick` guards the
+/// objective's completion line with `unless score #party <obj> matches 1`, so
+/// nothing could ever consume those mobs again; on the bell they were a spec-0016
+/// §6 lane squad, and they marched three encounters downstream and killed the bot
+/// on a `reach` step. The wave's own `kill` objective is what ends the fight, so
+/// its completion is what retires the seat.
+#[test]
+fn completing_the_kill_objective_retires_the_wave_seat() {
+    let out = build_fixture();
+    let complete = fn_body(&out, "complete_o_slay");
+    assert!(
+        complete.contains("scoreboard players set #wseat_guards dw.sys 0"),
+        "completing the wave's kill objective retires its seat: {complete}"
+    );
+    // Order matters: an `on_objective_complete` that re-spawns this very wave must
+    // still leave it seated, so the retirement precedes the effect bundle.
+    let retire = complete
+        .find("scoreboard players set #wseat_guards dw.sys 0")
+        .expect("retirement line present");
+    let check = complete
+        .find(&format!("function {NS}:check_q_"))
+        .expect("the quest check closes the function");
+    assert!(
+        retire < check,
+        "the seat retires inside the completion body, before the quest check: {complete}"
+    );
+    // Nothing else in the delve retires a seat: the seat is the wave's own
+    // encounter state, and only spawning or beating that encounter may move it.
+    let all = all_functions(&out);
+    assert_eq!(
+        all.matches("scoreboard players set #wseat_guards dw.sys 0")
+            .count(),
+        1,
+        "exactly one retirement site: {all}"
+    );
+    assert_eq!(
+        all.matches("scoreboard players set #wseat_guards dw.sys 1")
+            .count(),
+        1,
+        "exactly one seating site (`spawn_guards`): {all}"
+    );
+}
+
+/// The DEATH path owed the same proof the rest path already had. This template
+/// drives the real chain from the only thing the engine sees as a death — the
+/// `dw.deaths`/`dw.death_ack` edge — through `cp_respawn_check`, and asserts the
+/// authored count, zero survivors carried across the death, and a retired seat
+/// that stays retired.
+#[test]
+fn the_death_path_reseat_is_packtested() {
+    let out = build_fixture();
+    let t = std::str::from_utf8(
+        out.get(&format!(
+            "packtest-datapack/data/{NS}/test/souls_reseat_death.mcfunction"
+        ))
+        .expect("death-path re-seat PackTest emitted"),
+    )
+    .unwrap();
+    // Driven from the death EDGE, not from the re-seat function it should reach:
+    // the whole point is that the death path arrives there at all.
+    assert_eq!(
+        t.matches("dw.deaths 1").count(),
+        3,
+        "three deaths are staged (unmet, chipped, retired): {t}"
+    );
+    assert!(
+        t.contains(&format!("run function {NS}:cp_respawn_check"))
+            && !t.contains(&format!("function {NS}:cp_on_respawn_")),
+        "the template enters at the death-count edge, never at the hook: {t}"
+    );
+    assert!(
+        t.contains("assert score #ru_rsd dw.sys matches 0"),
+        "an unmet wave is not conjured by a death: {t}"
+    );
+    assert!(
+        t.contains("tag @e[tag=dw_wave_guards] add dw_rsd_life")
+            && t.contains("kill @e[tag=dw_wave_guards,limit=1]")
+            && t.contains("assert score #rc_rsd dw.sys matches 1"),
+        "this life's mobs are branded and the wave is chipped: {t}"
+    );
+    assert!(
+        t.contains("assert score #rn_rsd dw.sys matches 2"),
+        "the wave comes back at its authored count: {t}"
+    );
+    assert!(
+        t.contains(
+            "execute store result score #rp_rsd dw.sys if entity \
+             @e[tag=dw_wave_guards,tag=dw_rsd_life]"
+        ) && t.contains("assert score #rp_rsd dw.sys matches 0"),
+        "not one branded mob survives the death: {t}"
+    );
+    assert!(
+        t.contains("assert score #rr_rsd dw.sys matches 0"),
+        "a retired seat re-seats nothing on a later death: {t}"
+    );
+}

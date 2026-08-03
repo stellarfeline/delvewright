@@ -2259,6 +2259,26 @@ fn emit_functions(
             if v03 && !activation_commands(plan, q_area, o).is_empty() {
                 body.extend(completion_cleanup(o));
             }
+            // spec-0016 §1: RETIRE the wave's seat when the fight it belongs to is
+            // over. The seat exists so a bonfire re-seats the encounter the party
+            // is still retrying; a `kill` objective that has COMPLETED is not being
+            // retried, and `tick`'s completion line is guarded `unless score #party
+            // <obj> matches 1`, so anything re-seated afterwards can never be
+            // consumed by anything. The drowned-bell run seven measured the cost:
+            // gate-assault kept coming back on every later rest and every later
+            // death, and — being a §6 lane wave — its squad marched on the party
+            // three encounters downstream and killed the bot on a `reach` step
+            // beside the chapel. Emitted before the effect bundle so an
+            // `on_objective_complete` that re-spawns this very wave still leaves it
+            // seated. Empty unless the wave is `respawns_on_rest` -> byte-identical.
+            if let Objective::Kill { wave, .. } = o
+                && plan::wave_of(c, wave.as_str()).is_some_and(|w| w.respawns_on_rest)
+            {
+                body.push(format!(
+                    "scoreboard players set {} dw.sys 0",
+                    wave_seated_holder(wave.as_str())
+                ));
+            }
             // `complete_<obj>` is dispatched `as @a` from `tick`, so this bundle
             // runs with the acting player as `@s` (see `Audience::Party`).
             body.extend(emit_effect_bundle(
@@ -7934,6 +7954,10 @@ fn emit_packtest(
     emit_bonfire_packtests(plan, out);
     // spec-0016 §1 (owner ruling 2026-08-03): rest and save-only really differ.
     emit_bonfire_option_packtest(plan, out);
+    // spec-0016 §1: the DEATH path re-seats exactly as a rest does, and a wave
+    // whose fight is over is not re-seated at all. Emits nothing without a
+    // bonfire + a `respawns_on_rest` wave.
+    emit_reseat_death_packtest(plan, out);
     // spec-0016 §2: the shortcut really opens, and opens exactly once.
     emit_shortcut_packtest(plan, out);
     // spec-0016 §4: the clock really alternates the gate region.
@@ -9139,6 +9163,149 @@ fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
     b.push(format!("scoreboard players set {seated} dw.sys 0"));
     out.insert(
         format!("packtest-datapack/data/{ns}/test/souls_bonfire_reseat.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// spec-0016 §1: the **death** half of the re-seat, and the seat's retirement.
+///
+/// `souls_bonfire_reseat` drives `bonfire_rest_<i>` — the REST path. Death is a
+/// second, independent route into the same re-seat (`dw.deaths` edge →
+/// `cp_respawn_check` → `cp_respawn_fire` → `cp_on_respawn_<i>`), and nothing
+/// covered it. The drowned-bell run seven (2026-08-03) reported wave mobs
+/// accumulating across lives and named the death path as the suspect, so the gap
+/// is now closed at the only place it can be closed honestly: on a live server,
+/// from the death-count edge, not from the re-seat function the edge is supposed
+/// to reach.
+///
+/// A PackTest dummy cannot actually die (fake players are immune to `/damage`;
+/// see `emit_bonfire_option_packtest`), but a death is *observed* by the engine
+/// as exactly one thing — `dw.deaths` overtaking `dw.death_ack` — and that edge
+/// is writable. Driving it is driving the real death path end to end.
+///
+/// Four claims, in one template:
+///
+/// 1. **unmet**: a death re-seats nothing the party has never met.
+/// 2. **whole**: a chipped wave comes back at its authored count.
+/// 3. **no survivors**: every mob standing after the re-seat is NEW. The mobs
+///    alive before the death wear a probe tag; not one of them may still be
+///    standing afterwards. This is the owner's re-seat fidelity ruling
+///    (2026-08-03) stated as a machine assertion on the death path.
+/// 4. **retired**: once the wave's `kill` objective has completed,
+///    `complete_<obj>` clears the seat — and a death then re-seats nothing. This
+///    is the run-seven defect: gate-assault kept being re-summoned three
+///    encounters after it was beaten, and its lane squad hunted the party.
+///
+/// Emits nothing for a campaign without both a bonfire and a `respawns_on_rest`
+/// wave → byte-identical.
+fn emit_reseat_death_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    // The death path only exists when some checkpoint dispatches on respawn, and
+    // `emit_checkpoint_functions` makes a bonfire dispatch precisely when there is
+    // something to re-seat. Take the same first bonfire the rest-path template
+    // uses, so both templates describe the same rest point.
+    let Some(bf) = plan.bonfires().next() else {
+        return;
+    };
+    let reseat = plan.reseat_waves();
+    let Some(w) = reseat.first() else {
+        return;
+    };
+    let i = bf.index;
+    let tag = plan::wave_tag(w.id.as_str());
+    let safe = plan::safe_local(w.id.as_str());
+    let seated = wave_seated_holder(w.id.as_str());
+    let total = plan::wave_total(w);
+    let (pin, sel) = pin_dummy("dw_rsd");
+    // The chip: one mob falls before the death. For a one-mob wave that is the
+    // whole wave, which is still a chipped wave — the re-seat owes the same
+    // answer either way.
+    let chipped = total - 1;
+
+    let mut b = packtest_header(&format!(
+        "{title}: dying re-seats wave `{}` whole — no survivor crosses the death, and a \
+         beaten wave stays beaten (spec-0016 §1)",
+        w.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(pin);
+    // Own dummy, own scores, own init (pin_dummy rule): the death edge is
+    // per-player and the seat/entity residue is batch-global, so clear both. The
+    // death path re-seats EVERY seated wave, not just this template's, so every
+    // sibling wave's seat is cleared too — otherwise a template that left one
+    // seated would have its wave conjured here and left standing for the batch.
+    for r in &reseat {
+        b.push(format!("kill @e[tag={}]", plan::wave_tag(r.id.as_str())));
+        b.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            wave_seated_holder(r.id.as_str())
+        ));
+    }
+    b.push(format!("scoreboard players set #cp dw.sys {i}"));
+    b.push(format!("scoreboard players set {sel} dw.deaths 0"));
+    b.push(format!("scoreboard players set {sel} dw.death_ack 0"));
+
+    // A death is `dw.deaths` overtaking `dw.death_ack`; the check acknowledges it,
+    // so each `die` here is exactly one death.
+    let die = |b: &mut Vec<String>| {
+        b.push(format!("scoreboard players add {sel} dw.deaths 1"));
+        b.push(format!(
+            "execute as {sel} run function {ns}:cp_respawn_check"
+        ));
+    };
+
+    // --- 1. an unmet wave is not conjured by a death ---
+    die(&mut b);
+    b.push(format!(
+        "execute store result score #ru_rsd dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push("assert score #ru_rsd dw.sys matches 0".to_string());
+
+    // --- meet the wave, mark this life's mobs, chip it ---
+    b.push(format!("function {ns}:spawn_{safe}"));
+    b.push(format!("assert score {seated} dw.sys matches 1"));
+    b.push(format!("tag @e[tag={tag}] add dw_rsd_life"));
+    b.push(format!("kill @e[tag={tag},limit=1]"));
+    b.push(format!(
+        "execute store result score #rc_rsd dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push(format!("assert score #rc_rsd dw.sys matches {chipped}"));
+
+    // --- 2 + 3. the death path brings it back WHOLE and brings back NOBODY ---
+    die(&mut b);
+    b.push(format!(
+        "execute store result score #rn_rsd dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push(format!("assert score #rn_rsd dw.sys matches {total}"));
+    b.push(format!(
+        "execute store result score #rp_rsd dw.sys if entity @e[tag={tag},tag=dw_rsd_life]"
+    ));
+    b.push("assert score #rp_rsd dw.sys matches 0".to_string());
+
+    // --- 4. a retired seat — what `complete_<obj>` writes when the wave's `kill`
+    // objective completes — is a wave that stays beaten across every later death.
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(format!("scoreboard players set {seated} dw.sys 0"));
+    die(&mut b);
+    b.push(format!(
+        "execute store result score #rr_rsd dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push("assert score #rr_rsd dw.sys matches 0".to_string());
+
+    // Leave no residue for the rest of the batch (pin_dummy rule 4).
+    for r in &reseat {
+        b.push(format!("kill @e[tag={}]", plan::wave_tag(r.id.as_str())));
+        b.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            wave_seated_holder(r.id.as_str())
+        ));
+    }
+    b.push(format!("scoreboard players reset {sel} dw.deaths"));
+    b.push(format!("scoreboard players reset {sel} dw.death_ack"));
+    b.push(format!("tag {sel} remove dw_rsd"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_reseat_death.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
