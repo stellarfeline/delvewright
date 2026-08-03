@@ -134,6 +134,9 @@ Two classes, one rule each (owner, 2026-08-02):
   the marked point, tell the user in one line that the tool exists and what it
   would catch — then keep going. Never block or wait on a use/don't-use answer.
 
+The full inventory — every binary, script and flag that exists today — is
+`docs/reference/tools.md`. Check it before assuming a capability is missing.
+
 Symptom → tool:
 
 - **Judging any visual outcome** (cutscene framing, set dressing, terrain):
@@ -157,6 +160,31 @@ Symptom → tool:
 - **Declared non-English languages**: `delvec l10n-inventory` +
   `tools/i18n-translate.py` per `docs/reference/i18n.md` — workflow step,
   see the Localization stage below.
+- **The layout needs a prefab the library doesn't have**: import it with
+  `delve-schem convert`, then run the **whole** `delve-admit` admission chain
+  (`audit` → `resolve-jigsaw` → `socket` → `anchor` → `lighting --write` →
+  `catalog validate`; that order — `resolve-jigsaw` before `socket`). Never place
+  an un-audited piece: `audit` is the ADR-0013 licence/code-injection gate, and
+  an unadmitted piece has no anchors or lighting profile for the DSL to name.
+  Flags in `docs/reference/tools.md` §3.
+- **An NPC needs a look no vanilla mob gives you**: the skin toolchain
+  (`tools/skin`, spec-0009) composes an original 64×64 skin from a cast-sheet
+  entry and renders previews — `python -m delve_skin all <cast.json>
+  --skins-dir … --preview-dir … --catalog-dir …` in its own venv. **Look at the
+  previews**, and always set `model` (`wide`/`slim`) — an omitted model renders
+  slim and distorts a wide skin. The compiler bakes the PNG into the delve's
+  resource pack from `campaigns/<id>/skins/`.
+- **Whole-scene or player-POV shots for review**: `validation/render-shots.sh
+  <build-dir>` — emits the Chunky scene set + shot index from the build's
+  `render-plan.json`. First-person POV shots only exist on this path (the
+  per-prefab renderer is an orbit renderer and cannot stand inside a room).
+- **Re-running the machine ladder after a fix**: `validation/fresh-volumes.sh`
+  first — a persisted world volume keeps completed objectives completed, so a
+  "fresh" playthrough fails for reasons that have nothing to do with the delve.
+- **A prefab library needing owner taste, not machine checks**: mention
+  `delve-admit gallery` (browse world) → owner walks it and leaves notes →
+  `delve-admit curate` / `curate-merge` fold them into the catalog cards — one
+  line, human-optional.
 
 ### Localization stage (only when the prompt asks for other languages)
 
@@ -193,6 +221,9 @@ Then:
    (`subagent_type: general-purpose`, `model: sonnet`) instructed to, from repo
    root (docker required):
    - copy/point `validation/delve-output` at the build output
+   - `validation/fresh-volumes.sh` — mandatory on every re-run (and harmless on
+     the first): it tears the stack down and proves the world volumes are gone,
+     so a completed objective from an earlier run cannot fake a red
    - `EULA=TRUE docker compose -f validation/compose.yaml --profile packtest up --exit-code-from packtest`
    - `EULA=TRUE docker compose -f validation/compose.yaml --profile validate up --build --abort-on-container-exit --exit-code-from bot`
    - tear down containers, and report ONLY: per-command exit codes, failed
@@ -220,8 +251,9 @@ Then:
      `expect` line (marker visible? room not dark? NPC faces camera and its name
      is text not JSON? seam clean?). Findings are **DSL-level** — fix the campaign
      (lighting profile, anchor, NPC facing, name string) and rebuild; never
-     hand-edit output. (Whole-scene Chunky beauty shots via `delve-render scene`
-     stay manual/CI-future.)
+     hand-edit output. Whole-scene and player-POV shots come from
+     `validation/render-shots.sh <build-dir>` (`delve-render scene` + `index`);
+     actually path-tracing those scenes with Chunky stays manual/CI-future.
 9. **Storybook** (spec-0007): write `campaigns/campaigns/<id>/README.md` — the
    reader-facing intro. Background/setting ONLY: premise, lore, public NPC
    introductions (never persona `secret`), classes, playtime, build/play

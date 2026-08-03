@@ -6,7 +6,10 @@ compiler does today. A PR that changes compiler behavior updates this file in th
 same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 `tools/check-dw-codes.py`).
 
-- Binary: `delvec` (`crates/compiler`, Rust-native, ADR-0011).
+- Binary: `delvec` (`crates/compiler`, Rust-native, ADR-0011). The other binaries
+  and scripts around it — `delve-schem`, `delve-admit`, `delve-render`,
+  `delve-harvest`, `tools/`, `validation/` — are indexed in
+  [`tools.md`](tools.md).
 - Versions (as of this doc): `delvec 0.1.0`, `dsl 0.6.0`, `mc 1.21.11`.
   Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`, `0.6.0`**
   (additive supersets; `0.2.0` output stays byte-identical across the later
