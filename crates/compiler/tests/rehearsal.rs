@@ -454,3 +454,50 @@ fn the_tier3_fixture_seeds_the_proposal_the_flow_asserts() {
         "shot 1 compiled aim:\n{body}"
     );
 }
+
+/// **A `trigger` objective is armed by its score entry, so `scoreboard players
+/// reset` disarms it.** Vanilla keeps "this player may `/trigger` this
+/// objective" as a lock flag on the score entry; deleting the entry deletes the
+/// permission, and `scoreboard players enable` re-creates it at 0. A tick that
+/// both `enable`s an objective and `reset`s it leaves it permanently unusable —
+/// `/trigger` answers "You cannot trigger this objective yet" and **nothing
+/// reaches the server log**, so no report, no PackTest assertion and no amount
+/// of reading the emitted commands makes it visible.
+///
+/// That is exactly what shipped in the first live run of this feature: a
+/// per-tick hygiene clause resetting the no-op value (`scores={dw.mark=0}`)
+/// matched the entry `enable` had just created, so every adjust verb was
+/// silently refused while `dw.done` — which had no such clause — worked. The
+/// invariant below is the strongest form the lesson can take short of a
+/// compiler diagnostic: it reads the emitted overlay and fails the build's
+/// tests if any function ever again arms and disarms the same objective.
+#[test]
+fn the_tick_never_resets_a_trigger_it_arms() {
+    let (_, out) = build(TWO_SHOT);
+    for name in ["init", "tick"] {
+        let body = overlay(&out, name);
+        let armed: Vec<&str> = body
+            .lines()
+            .filter_map(|l| l.strip_prefix("scoreboard players enable @a "))
+            .collect();
+        assert!(
+            name == "init" || !armed.is_empty(),
+            "the tick must arm the calibration triggers"
+        );
+        for obj in &armed {
+            assert!(
+                !body.contains(&format!("scoreboard players reset @s {obj}")),
+                "creator/{name} both arms and resets `{obj}` — `reset` deletes the score \
+                 entry that carries the trigger permission, so `/trigger {obj}` would be \
+                 refused forever with nothing in the server log. Clear a fired trigger \
+                 inside its handler (the next tick's `enable` re-arms it), never here.\n{body}"
+            );
+        }
+    }
+    // The handlers DO reset — that is the correct place, and it is what makes the
+    // trigger one-shot per fire.
+    assert!(
+        overlay(&out, "rehearsal/mark").contains("scoreboard players reset @s dw.mark"),
+        "a handler clears the trigger it consumed"
+    );
+}

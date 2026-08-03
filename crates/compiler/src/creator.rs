@@ -289,6 +289,23 @@ fn rehearsal_init(ns: &str, inv: &Inventory) -> Vec<String> {
 
 /// `creator/tick` additions: keep every calibration trigger armed, dispatch a
 /// fired one, and stamp the shot roster once per player.
+///
+/// **A `trigger` objective is armed by the score entry, so `scoreboard players
+/// reset` DISARMS it.** Vanilla stores "this player may `/trigger` this
+/// objective" as a *lock flag on the score entry itself*; deleting the entry
+/// deletes the permission with it, and `scoreboard players enable` re-creates
+/// the entry at 0. A tick that both `enable`s an objective and `reset`s it
+/// therefore leaves it permanently unusable — every `/trigger` answers "You
+/// cannot trigger this objective yet", with nothing in the server log to say so.
+///
+/// This cost a live debugging round (spec-0019, round 1): a per-tick "hygiene"
+/// clause resetting the no-op value (`scores={dw.mark=0}`) matched the very
+/// entry `enable` had just created, so `dw.mark`/`dw.aim`/`dw.faster`/`dw.slower`
+/// never fired while `dw.done` — which has no such clause — worked perfectly.
+/// The tick therefore **never** resets a calibration trigger; only a handler
+/// does, after the trigger has actually fired, and the next tick's `enable`
+/// re-arms it. Pinned by
+/// `rehearsal::the_tick_never_resets_a_trigger_it_arms`.
 fn rehearsal_tick(ns: &str, inv: &Inventory) -> Vec<String> {
     if inv.is_empty() {
         return Vec::new();
@@ -297,29 +314,21 @@ fn rehearsal_tick(ns: &str, inv: &Inventory) -> Vec<String> {
         .iter()
         .map(|t| format!("scoreboard players enable @a {t}"))
         .collect();
-    // `dw.mark set <s>` marks, `set -<s>` resets; `set 0` names no shot and is
-    // only cleared (so a stray 0 cannot wedge the trigger).
+    // `dw.mark set <s>` marks, `set -<s>` resets shot `s` to its compiled
+    // values. `set 0` names no shot: it matches no dispatch and is simply left
+    // alone (see the note above on why it must NOT be cleared here).
     out.push(format!(
         "execute as @a[scores={{dw.mark=1..}}] at @s run function {ns}:creator/rehearsal/mark"
     ));
     out.push(format!(
         "execute as @a[scores={{dw.mark=..-1}}] run function {ns}:creator/rehearsal/reset"
     ));
-    out.push(
-        "execute as @a[scores={dw.mark=0}] run scoreboard players reset @s dw.mark".to_string(),
-    );
     out.push(format!(
         "execute as @a[scores={{dw.aim=1..}}] at @s run function {ns}:creator/rehearsal/aim"
     ));
-    out.push(
-        "execute as @a[scores={dw.aim=..0}] run scoreboard players reset @s dw.aim".to_string(),
-    );
     for (trigger, func) in [("dw.faster", "faster"), ("dw.slower", "slower")] {
         out.push(format!(
             "execute as @a[scores={{{trigger}=1..}}] run function {ns}:creator/rehearsal/{func}"
-        ));
-        out.push(format!(
-            "execute as @a[scores={{{trigger}=..0}}] run scoreboard players reset @s {trigger}"
         ));
     }
     out.push(format!(

@@ -2254,6 +2254,22 @@ The overlay also `say`-stamps a one-line `[DelveShotRoster]` the first time each
 player joins, mapping shot ids to their JSON pointers; without it the creator
 has no way to know what `dw.mark set 3` addresses.
 
+**A `trigger` objective is armed by its score entry, so `scoreboard players
+reset` disarms it.** Vanilla stores "this player may `/trigger` this objective"
+as a lock flag on the score entry itself; deleting the entry deletes the
+permission, and `scoreboard players enable` re-creates it at `0`. A tick that
+both `enable`s an objective and `reset`s it therefore leaves it permanently
+unusable: every `/trigger` answers *"You cannot trigger this objective yet"* to
+the player and writes **nothing** to the server log — so no report, no PackTest
+assertion and no amount of reading the emitted commands makes it visible. This
+cost a live debugging round: a per-tick hygiene clause clearing the no-op value
+(`scores={dw.mark=0}`) matched the entry `enable` had just created, so every
+adjust verb was silently refused while `dw.done` — which had no such clause —
+worked. **A fired trigger is cleared inside its handler, never in the tick**;
+the next tick's `enable` re-arms it. Pinned by
+`rehearsal::the_tick_never_resets_a_trigger_it_arms`, which fails the build's
+tests if any overlay function ever again arms and disarms the same objective.
+
 ### The harvest stamp
 
 ```text
