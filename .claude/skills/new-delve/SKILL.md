@@ -124,6 +124,40 @@ Load-bearing patterns proven on real runs — reuse rather than rediscover:
   enforced by geometry, not merely asserted. The return trip is the same mechanism
   in reverse.
 
+### Authoring tools (know these exist; reach for them by symptom)
+
+Two classes, one rule each (owner, 2026-08-02):
+
+- **LLM-facing tools are workflow steps, not options.** Where a step below says
+  "always", skipping it is skipping validation.
+- **Human-in-the-loop tools are offered, never required.** When the flow reaches
+  the marked point, tell the user in one line that the tool exists and what it
+  would catch — then keep going. Never block or wait on a use/don't-use answer.
+
+Symptom → tool:
+
+- **Judging any visual outcome** (cutscene framing, set dressing, terrain):
+  `delvec snapshot` (`--camera x,y,z,yaw,pitch`, `--at <anchor> --dist`,
+  `--shot <render-plan id>`, `--labels`) and `delvec blocking-chart` (per-floor
+  cutaways). *Always* for cutscenes: render start/mid/end of every dolly
+  segment and **look at the frames** before calling the stage done — `DW0308`
+  proves the path is air, not that the shot is pointed at the subject
+  (round-6 shipped an inside-out cinematic that was fully DW-green).
+- **Terrain/visual fixes beyond swapping prefabs**: `delvec edit` — the
+  spec-0017 map editor loop (edit script batch → replay → snapshot). Never
+  hand-patch `.nbt` or invent block edits outside it.
+- **Handing a build to the owner to play**: mention the playtest note flow
+  (spec-0006: `/trigger dw.note` in-game, then `delve-harvest` →
+  `playtest-report.json`) — one line, human-optional.
+- **Delivering or revising a cutscene**: mention spec-0019 rehearsal +
+  calibration (`dw.beat` full-performance replay with free-cam; `dw.mark` /
+  `dw.aim` view-capture → `delvec calibrate` → anchor+offset patch) — one
+  line, human-optional. Check `docs/reference/` for landing status before
+  promising it.
+- **Declared non-English languages**: `delvec l10n-inventory` +
+  `tools/i18n-translate.py` per `docs/reference/i18n.md` — workflow step,
+  see the Localization stage below.
+
 ### Localization stage (only when the prompt asks for other languages)
 
 If the prompt requests one or more languages — or the user prompts in a
