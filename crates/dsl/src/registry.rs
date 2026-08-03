@@ -140,6 +140,99 @@ pub trait BlockRegistry {
     fn contains(&self, block_id: &str) -> bool;
 }
 
+/// The complete 1.21.11 **enchantment** id list. Same rationale as
+/// [`EFFECT_IDS_1_21_11`]: 43 ids, stable across the pinned MC version, so it is
+/// inlined rather than vendored as a data file and injected. Extracted from the
+/// `enchantment` registry of the same misode/mcmeta 1.21.11 registries summary
+/// the item/entity registries come from (SHA-256
+/// `7efb184902cfef62b431bc9826ebcbcde2c23746e5624326ffcf922e15cf28f9`, pinned in
+/// `crates/compiler/data/PROVENANCE.md`) — Mojang's own generated data, not a
+/// third-party reconstruction.
+pub const ENCHANTMENT_IDS_1_21_11: &[&str] = &[
+    "minecraft:aqua_affinity",
+    "minecraft:bane_of_arthropods",
+    "minecraft:binding_curse",
+    "minecraft:blast_protection",
+    "minecraft:breach",
+    "minecraft:channeling",
+    "minecraft:density",
+    "minecraft:depth_strider",
+    "minecraft:efficiency",
+    "minecraft:feather_falling",
+    "minecraft:fire_aspect",
+    "minecraft:fire_protection",
+    "minecraft:flame",
+    "minecraft:fortune",
+    "minecraft:frost_walker",
+    "minecraft:impaling",
+    "minecraft:infinity",
+    "minecraft:knockback",
+    "minecraft:looting",
+    "minecraft:loyalty",
+    "minecraft:luck_of_the_sea",
+    "minecraft:lunge",
+    "minecraft:lure",
+    "minecraft:mending",
+    "minecraft:multishot",
+    "minecraft:piercing",
+    "minecraft:power",
+    "minecraft:projectile_protection",
+    "minecraft:protection",
+    "minecraft:punch",
+    "minecraft:quick_charge",
+    "minecraft:respiration",
+    "minecraft:riptide",
+    "minecraft:sharpness",
+    "minecraft:silk_touch",
+    "minecraft:smite",
+    "minecraft:soul_speed",
+    "minecraft:sweeping_edge",
+    "minecraft:swift_sneak",
+    "minecraft:thorns",
+    "minecraft:unbreaking",
+    "minecraft:vanishing_curse",
+    "minecraft:wind_burst",
+];
+
+/// Membership test for vanilla enchantment ids (`minecraft:sharpness`, …), used
+/// to validate actor/wave `equipment` and `loot` enchantments (`DW0433`).
+pub trait EnchantmentRegistry {
+    /// True if `enchantment_id` is a known enchantment in the pinned MC version.
+    fn contains(&self, enchantment_id: &str) -> bool;
+}
+
+/// Vendored enchantment registry built from [`ENCHANTMENT_IDS_1_21_11`].
+#[derive(Debug, Clone)]
+pub struct VendoredEnchantmentRegistry {
+    ids: BTreeSet<&'static str>,
+}
+
+impl VendoredEnchantmentRegistry {
+    /// The full 1.21.11 enchantment registry.
+    pub fn v1_21_11() -> Self {
+        Self {
+            ids: ENCHANTMENT_IDS_1_21_11.iter().copied().collect(),
+        }
+    }
+}
+
+impl Default for VendoredEnchantmentRegistry {
+    fn default() -> Self {
+        Self::v1_21_11()
+    }
+}
+
+impl EnchantmentRegistry for VendoredEnchantmentRegistry {
+    fn contains(&self, enchantment_id: &str) -> bool {
+        let norm = if enchantment_id.contains(':') {
+            enchantment_id.to_string()
+        } else {
+            format!("minecraft:{enchantment_id}")
+        };
+        self.ids.contains(norm.as_str())
+    }
+}
+
 /// Membership test for vanilla status-effect ids (`minecraft:slowness`, …),
 /// used to validate DSL v0.4 wave-mob `effects` (`DW0192`).
 pub trait EffectRegistry {

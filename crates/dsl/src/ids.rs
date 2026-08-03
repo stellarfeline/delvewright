@@ -120,6 +120,10 @@ prefixed_id!(
     /// Unique within the stage-5 shortcuts namespace.
     ShortcutId, "shortcut");
 prefixed_id!(
+    /// Loot-fill id: `loot/<kebab>` (stage-5 `loot` section, spec-0021). Unique
+    /// within the stage-5 loot namespace.
+    LootId, "loot");
+prefixed_id!(
     /// Edit-batch id: `batch/<kebab>` (stage-7 `world-edits` batches, DSL v0.6,
     /// spec-0017). Unique within the edit script; also the batch's snapshot name
     /// and its seed-stream label, so renaming a batch deliberately reseeds it.

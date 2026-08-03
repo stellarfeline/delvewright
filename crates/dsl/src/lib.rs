@@ -46,13 +46,13 @@ pub use schema::stage_schema;
 pub use stages::{
     Actor, Ambush, Area, AreaLighting, AreaMitigation, Boundary, CameraShot, CameraSubject,
     CameraTarget, CameraWaypoint, Carrier, Class, ClassesContent, DamageKind, DespawnStyle,
-    DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EnvTrigger, Facing, Fixture,
-    Horizon, KitItem, Lethality, MobAttributes, MobEffect, MobEquipment, NarrateStyle, Npc,
-    NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces, PlannedQuest, Prop, Quest,
-    QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep, Shortcut,
-    ShotStyle, SkinModel, SoundAt, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset,
-    TrapTrigger, Trigger, TriggerOn, Wave, WaveLane, WaveMob, WaveSummon, WorldContent, WorldTime,
-    WorldWeather,
+    DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EnchantedItem, EnvTrigger,
+    EquipItem, Facing, Fixture, Horizon, KitItem, Lethality, Loot, LootItem, MobAttributes,
+    MobEffect, MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective,
+    Persona, Pieces, PlannedQuest, Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent,
+    Relationship, Role, SequenceStep, Shortcut, ShotStyle, SkinModel, SoundAt, StealthZone,
+    TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerOn, Wave,
+    WaveLane, WaveMob, WaveSummon, WorldContent, WorldTime, WorldWeather,
 };
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,

@@ -95,6 +95,14 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      them when the NPC is in plain sight of where the player just was; read the "may
      omit" allowance narrowly (playtest lesson: an off-screen NPC 60 blocks away
      through an unfamiliar cave left the player with no guidance at all).
+   - **Furnish the containers.** A prefab's chests and barrels are empty until a
+     stage-5 `loot[]` entry fills them (`{id, anchor, items:[{item, count?, name?,
+     enchantments?}]}`), and an empty chest reads as a bug to the player. Give
+     every reachable container consumables or props; a named `name` is how a
+     prop becomes a story object. The container must already exist in the piece
+     at that anchor — the compiler fills furniture, it never places it
+     (`DW0431`). Elites and set-piece actors take `equipment` in the same shape
+     wave mobs use, enchantments included.
    - Hint wording: give landmark-relative directions from places the player already
      knows (the entrance hall, the gate, a named NPC) — never room-shape jargon
      ("corner room", "L-shaped hall") or solver-internal terms (anchor/piece/socket
