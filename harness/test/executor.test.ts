@@ -714,3 +714,94 @@ test("a gate crossing the pathfinder cannot hold is finished by walking, inside 
   assert.equal(bursts.length, 1, "one physical crossing burst was enough");
   assert.equal(gate.waits, 1, "and it happened inside the FIRST window, not after the budget");
 });
+
+// --- interact: the mainhand contract (compiler PR #205) ----------------------
+
+import type { InteractStep } from "../src/critical-path.ts";
+import registryFor from "prismarine-registry";
+
+/**
+ * A FakeBot that can be driven through a whole `interact` step. Two additions over
+ * the base fake: a real pinned registry (mineflayer-pathfinder's `Movements`
+ * constructor reads the block table) and an inventory/equip/chat recorder.
+ *
+ * The bot is placed AT the interact anchor, so `runGoto` short-circuits on
+ * `withinGoal` and the leg costs no wall time — the walk is not what is under test.
+ */
+class InteractFakeBot extends FakeBot {
+  registry = registryFor("1.21.11");
+  health = 20;
+  food = 20;
+  entities: Record<number, unknown> = {};
+  /** Everything the step made the bot DO, in order. */
+  calls: string[] = [];
+  carried: Array<{ name: string; type: number }> = [];
+  inventory = { items: (): Array<{ name: string; type: number }> => this.carried };
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    goto: async (): Promise<void> => {
+      this.calls.push("goto");
+    },
+  };
+  setControlState(): void {}
+  async equip(item: { name: string }, destination: string): Promise<void> {
+    this.calls.push(`equip(${item.name},${destination})`);
+  }
+  chat(message: string): void {
+    this.calls.push(`chat(${message})`);
+  }
+}
+
+function interactStep(requiresItem: string | null): InteractStep {
+  return {
+    action: "interact",
+    objective: "obj/unbar",
+    anchor: "anchor/gate",
+    pos: [0, 64, 0],
+    command: "/trigger dw.i.unbar",
+    requiresItem,
+    sneak: false,
+  };
+}
+
+test("interact equips the required item BEFORE chatting the trigger", async () => {
+  // The PR #205 regression: `requires_item` became MAINHAND-held, and the bot — which
+  // only ever carried the item — had every trigger swallowed by the datapack guard,
+  // then died on its own objective timeout. Order is the whole assertion: the guard
+  // reads the hand on the tick it consumes the trigger.
+  const bot = new InteractFakeBot();
+  bot.carried = [
+    { name: "stone_sword", type: 1 },
+    { name: "trial_key", type: 2 },
+  ];
+  const executor = attach(bot);
+  executor.useCampaign("keep-trial");
+  executor.beginStep(3);
+  setTimeout(() => bot.emit("messagestr", "[dw:complete keep-trial obj/unbar]"), 20);
+  await executor.interact(interactStep("minecraft:trial_key"));
+  assert.deepEqual(bot.calls, ["equip(trial_key,hand)", "chat(/trigger dw.i.unbar)"]);
+});
+
+test("interact leaves the hand alone when the step requires no item", async () => {
+  // The loadout put a sword there; a step that asked for nothing must not disarm the
+  // bot on its way to the next fight.
+  const bot = new InteractFakeBot();
+  bot.carried = [
+    { name: "stone_sword", type: 1 },
+    { name: "trial_key", type: 2 },
+  ];
+  const executor = attach(bot);
+  executor.useCampaign("keep-trial");
+  executor.beginStep(3);
+  setTimeout(() => bot.emit("messagestr", "[dw:complete keep-trial obj/unbar]"), 20);
+  await executor.interact(interactStep(null));
+  assert.deepEqual(bot.calls, ["chat(/trigger dw.i.unbar)"]);
+});

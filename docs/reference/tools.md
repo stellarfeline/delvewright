@@ -179,6 +179,14 @@ npm --prefix harness start              # node src/run.ts <critical-path.json>  
 `harness/src/note-bot.ts` is driven by `validation/playtest-note-flow.sh` and
 `harness/src/rehearsal-bot.ts` by `validation/rehearsal-flow.sh`, never by hand.
 
+An `interact` step whose `critical-path.json` entry carries `requires_item` puts
+that item in the bot's **mainhand** before it sends the trigger
+(`src/held-item.ts`), because `requires_item` is held, not carried
+([`compiler.md` §objectives](compiler.md)). Actuation only: the guard stays in the
+datapack, and a bot that cannot hold the item still fails the step on its objective
+marker — but the log now says which of the two happened instead of showing a bare
+30s timeout.
+
 ## 9. Prefab generators (`prefabs/*-generator`, `prefabs/generator`) · agent + CI
 
 The tileset libraries are **generated, not hand-built**. Five separate Cargo
