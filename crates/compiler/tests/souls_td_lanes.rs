@@ -189,6 +189,63 @@ fn lane_follow_range_equals_aggro_radius() {
     );
 }
 
+/// **Stationed re-seat, lane half** (owner ruling 2026-08-04). A wave re-seat is
+/// `kill` + the wave's own `spawn_<wave>`, so everything that stations a lane
+/// squad has to be written by `spawn_<wave>` and by nothing else — otherwise a
+/// re-seated warband keeps the previous life's routing and marches on from
+/// wherever the party last dragged it.
+#[test]
+fn the_spawn_alone_stations_the_lane_squad() {
+    let out = build_fixture();
+    let spawn = fn_body(&out, "spawn_warband");
+    // Everyone routed, from waypoint 0.
+    assert_eq!(
+        spawn.matches("Patrolling:1b").count(),
+        3,
+        "every mob of the fresh squad is routed: {spawn}"
+    );
+    assert_eq!(
+        spawn.matches("patrol_target:[I;").count(),
+        3,
+        "…and every one of them is pointed at a waypoint: {spawn}"
+    );
+    // The march clock is reset by the SPAWN, not by the re-seat wrapper, and
+    // re-armed through the same replace-mode schedule.
+    assert!(
+        spawn.contains("scoreboard players set #lane_warband dw.sys 0"),
+        "the spawn puts the march clock back at the lane start: {spawn}"
+    );
+    assert!(
+        spawn.contains(&format!("schedule function {NS}:lane_tick_warband 30t")),
+        "the spawn re-arms the lane clock (replace mode, so a re-seat cannot double it): {spawn}"
+    );
+}
+
+/// The same claim on a live server, driven from the state that killed the
+/// drowned bell's ladder: the squad hauled onto the party, released to native AI
+/// by the real clock, its march clock at the lane's far end.
+#[test]
+fn the_lane_reseat_is_packtested() {
+    let out = build_fixture();
+    let t = template(&out, "souls_td_lane_reseat");
+    assert!(
+        t.contains("assert score #f_tdrst dw.sys matches 3"),
+        "the squad is genuinely FERAL before the re-seat: {t}"
+    );
+    assert!(
+        t.contains("scoreboard players set #lane_warband dw.sys 2"),
+        "…and its march clock is run to the end of the lane: {t}"
+    );
+    assert!(
+        t.contains("assert score #n_tdrst dw.sys matches 3"),
+        "after the re-summon every mob is routed again — the release did not survive: {t}"
+    );
+    assert!(
+        t.contains("assert score #lane_warband dw.sys matches 0"),
+        "…and the march restarts from the lane start: {t}"
+    );
+}
+
 // --- the lane clock --------------------------------------------------------
 
 /// The clock implements the spike's verdict: advance on arrival, release at

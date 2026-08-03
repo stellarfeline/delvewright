@@ -508,6 +508,13 @@ pub fn build_with_warnings(
             // proven cells are what `patrol_target` carries, so the squad is only
             // ever sent somewhere it can stand and walk to.
             let lanes = crate::nav::plan_lanes(plan, &world)?;
+            // spec-0016 §1 (owner ruling 2026-08-04): the bonfire SAFE ZONE
+            // (DW0478). Runs here because it needs both halves of where the
+            // hostiles actually are — the seated spawn cells above and the lane
+            // polylines just resolved — measured against every rest point. A
+            // bonfire inside a hostile's aggro range is a soft-lock: rest and
+            // death both deliver the party into contact on arrival.
+            crate::nav::check_bonfire_safe_zone(plan, &world, &waves, &lanes)?;
             // spec-0022: resolve and prove every `volley` / `collapse`. Volley
             // coverage is proven by construction (one shot per standable
             // kill-zone cell, or DW0442 naming the cell it cannot reach), and a
@@ -671,8 +678,11 @@ pub fn build_with_warnings(
         &mut out,
         &moves,
         &actor_moves,
-        &lane_routes,
-        &wave_rings,
+        &WaveGeometry {
+            placements: &wave_placements,
+            lanes: &lane_routes,
+            rings: &wave_rings,
+        },
         &payload_plans,
     );
 
@@ -2724,6 +2734,20 @@ type WavePlacements = BTreeMap<String, Vec<[i32; 3]>>;
 /// generated PackTest asserts ring distance against exactly this cell, so the
 /// runtime check and the compile-time placement share one origin.
 type WaveRings = BTreeMap<String, [i32; 3]>;
+
+/// Where every wave actually IS in the assembled world: the three products of
+/// wave planning, which always travel together into the generated PackTests.
+/// Bundled because a template that asks "did the re-seat put them back?" needs
+/// all three — the seated cells, the lane polyline, and the aggro-edge ring
+/// centre — to say where "back" is.
+struct WaveGeometry<'a> {
+    /// DW0312-proven seated spawn cells, per wave.
+    placements: &'a WavePlacements,
+    /// DW0386-proven lane polylines, per lane wave.
+    lanes: &'a crate::nav::LaneRoutes,
+    /// The snapped ring centre of each `summon: aggro-edge` wave.
+    rings: &'a WaveRings,
+}
 
 // --- spec-0016 §6: TD lanes -------------------------------------------------
 
@@ -7985,8 +8009,7 @@ fn emit_packtest(
     out: &mut BuildOutput,
     moves: &[crate::nav::MovePlan],
     actor_moves: &[crate::nav::ActorMovePlan],
-    lane_routes: &crate::nav::LaneRoutes,
-    wave_rings: &WaveRings,
+    waves: &WaveGeometry<'_>,
     payloads: &PayloadPlans,
 ) {
     let ns = &plan.namespace;
@@ -8181,6 +8204,11 @@ fn emit_packtest(
     // task #123: the tag census really counts the wave, and only the wave.
     emit_wave_census_packtest(plan, out);
     emit_bonfire_packtests(plan, out);
+    // spec-0016 §1 (owner ruling 2026-08-04): a re-seated wave comes back
+    // STATIONED — at its lane start / anchor, in its routed state, with no trace
+    // of the previous life's feral release. Emits nothing without a bonfire and
+    // a `respawns_on_rest` wave.
+    emit_reseat_stationed_packtest(plan, out, waves.placements, waves.lanes);
     // spec-0016 §1 (owner ruling 2026-08-03): rest and save-only really differ.
     emit_bonfire_option_packtest(plan, out);
     // spec-0016 §2: the shortcut really opens, and opens exactly once.
@@ -8193,7 +8221,7 @@ fn emit_packtest(
     // advances in march order, the squad is released to native AI at aggro range,
     // and an aggro-edge wave really materializes on its perception ring. Emits
     // nothing for a campaign with no lane and no aggro-edge wave.
-    emit_td_lane_packtests(plan, out, lane_routes, wave_rings);
+    emit_td_lane_packtests(plan, out, waves.lanes, waves.rings);
 
     // The scheduled-executor contract (AUDIT-P0): a function reached through
     // `schedule` still lands per-player state on real players.
@@ -9477,6 +9505,196 @@ fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
     );
 }
 
+/// spec-0016 §1 (owner ruling 2026-08-04): **a re-seated wave comes back
+/// STATIONED.**
+///
+/// The souls loop stands — a beaten `respawns_on_rest` wave does return on a rest
+/// and on a death-respawn — but it returns to the state it was FIRST seated in,
+/// never to the state the party last left it in. A lane wave re-enters its routed
+/// patrol from the lane start (`Patrolling:1b` re-applied, `patrol_target` back on
+/// waypoint 0, the march clock back to index 0); a non-lane wave stands at its
+/// anchor under vanilla-local AI with no patrol NBT at all. Nothing re-seated may
+/// pursue across the map.
+///
+/// The engine already satisfies this by construction — the re-seat re-enters
+/// through the wave's own `spawn_<wave>`, and every piece of stationed state is
+/// written there — but "by construction" is folklore until a server says so. This
+/// template makes it a live claim, and it is deliberately driven from the WORST
+/// state the wave can be in: dragged off its lane onto the party, released to
+/// native AI by the real lane clock, its march clock run down the lane, and every
+/// mob branded so a survivor cannot hide inside a correct-looking count. Then it
+/// runs the REAL `bonfire_rest_<i>` and demands four things:
+///
+/// 1. the authored count is standing;
+/// 2. **not one mob of the previous life is** — the brand is gone, so this is a
+///    fresh squad, not the chased one topped up;
+/// 3. every mob is back at its seating footing, within the compiler-known spread
+///    of the wave's own first seated cell (this is the anti-pursuit claim: the
+///    mobs were 0 blocks from the player a moment ago);
+/// 4. the routed state is re-asserted (lane) or absent (non-lane).
+///
+/// Emits nothing without both a bonfire and a `respawns_on_rest` wave →
+/// byte-identical.
+fn emit_reseat_stationed_packtest(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    wave_placements: &WavePlacements,
+    lane_routes: &crate::nav::LaneRoutes,
+) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some(bf) = plan.bonfires().next() else {
+        return;
+    };
+    let reseat = plan.reseat_waves();
+    // Prefer a LANE wave when the campaign has one: its stationed state is the
+    // richer claim (the routed half), and the plain-anchor half is a subset of it.
+    let Some(w) = reseat
+        .iter()
+        .find(|w| lane_routes.contains_key(w.id.as_str()))
+        .or_else(|| reseat.first())
+        .copied()
+    else {
+        return;
+    };
+    let Some(cells) = wave_placements.get(w.id.as_str()) else {
+        return;
+    };
+    let Some(&seat) = cells.first() else {
+        return;
+    };
+    let total = plan::wave_total(w);
+    if total < 1 {
+        return;
+    }
+    let i = bf.index;
+    let safe = plan::safe_local(w.id.as_str());
+    let tag = plan::wave_tag(w.id.as_str());
+    let brand = plan::wave_brand_tag(w.id.as_str());
+    let lane = lane_routes.get(w.id.as_str());
+    // How far the wave's own seating spreads from its first cell, rounded up: the
+    // exact radius the compiler placed this wave inside, so the proximity claim is
+    // as tight as the geometry allows rather than a guessed slack.
+    let spread = cells
+        .iter()
+        .map(|c| {
+            (0..3)
+                .map(|k| f64::from(c[k] - seat[k]).powi(2))
+                .sum::<f64>()
+                .sqrt()
+        })
+        .fold(0.0_f64, f64::max)
+        .ceil()
+        .max(1.0) as i64;
+    let (pin, sel) = pin_dummy("dw_rsst");
+
+    let mut b = packtest_header(&format!(
+        "{title}: a bonfire re-seat returns wave `{}` to its STATIONED state, never to the \
+         chase (spec-0016 §1)",
+        w.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(pin);
+    // A rest re-seats EVERY met wave, so this template owns the whole re-seat
+    // board: clear each one's entities and its seated sentinel first, and put
+    // both back at the end (pin_dummy rule 4).
+    for r in &reseat {
+        b.push(format!("kill @e[tag={}]", plan::wave_tag(r.id.as_str())));
+        b.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            wave_seated_holder(r.id.as_str())
+        ));
+    }
+    // Meet the wave.
+    b.push(format!("function {ns}:spawn_{safe}"));
+    b.push(format!(
+        "assert score {} dw.sys matches 1",
+        wave_seated_holder(w.id.as_str())
+    ));
+    // Now put it in the state the drowned bell's ladder actually died to: the
+    // squad on top of the party, off its lane, feral.
+    b.push(format!("execute at {sel} run tp @e[tag={tag}] ~ ~ ~"));
+    if let Some(wps) = lane {
+        b.push(format!("function {ns}:lane_tick_{safe}"));
+        b.push(format!(
+            "execute store result score #f_rsst dw.sys if entity @e[tag={tag},nbt={{Patrolling:0b}}]"
+        ));
+        b.push(format!("assert score #f_rsst dw.sys matches {total}"));
+        // …and its march clock run down the lane, so a re-seat that forgot to
+        // reset it would send the fresh squad at the lane's far end.
+        b.push(format!(
+            "scoreboard players set {} dw.sys {}",
+            lane_index_holder(w.id.as_str()),
+            wps.len().saturating_sub(1)
+        ));
+    }
+    // Brand this life. `spawn_<wave>` writes the authored NBT and nothing else,
+    // so no re-summon can carry the stamp: identity, not arithmetic.
+    b.push(format!("function {ns}:wave_brand_{safe}"));
+
+    // --- the re-seat, through the real rest function ---
+    b.push(format!("function {ns}:bonfire_rest_{i}"));
+    b.push(format!(
+        "execute store result score #n_rsst dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push(format!("assert score #n_rsst dw.sys matches {total}"));
+    b.push(format!(
+        "execute store result score #b_rsst dw.sys if entity @e[tag={brand}]"
+    ));
+    b.push("assert score #b_rsst dw.sys matches 0".to_string());
+    // Back on their footing — the anti-pursuit claim.
+    let c = ent_xyz(seat);
+    b.push(format!(
+        "execute positioned {} {} {} store result score #d_rsst dw.sys if entity \
+         @e[tag={tag},distance=..{spread}]",
+        c[0], c[1], c[2]
+    ));
+    b.push(format!("assert score #d_rsst dw.sys matches {total}"));
+    match lane {
+        Some(wps) => {
+            b.push(format!(
+                "execute store result score #p_rsst dw.sys if entity \
+                 @e[tag={tag},nbt={{Patrolling:1b}}]"
+            ));
+            b.push(format!("assert score #p_rsst dw.sys matches {total}"));
+            b.push(format!(
+                "execute store result score #t_rsst dw.sys if entity \
+                 @e[tag={tag},nbt={{patrol_target:[I;{},{},{}]}}]",
+                wps[0][0], wps[0][1], wps[0][2]
+            ));
+            b.push(format!("assert score #t_rsst dw.sys matches {total}"));
+            b.push(format!(
+                "assert score {} dw.sys matches 0",
+                lane_index_holder(w.id.as_str())
+            ));
+        }
+        None => {
+            // Vanilla-local AI only: a non-lane wave is never routed, so patrol
+            // NBT must not appear on it — not on the first summon and not on a
+            // re-seat.
+            b.push(format!(
+                "execute store result score #p_rsst dw.sys if entity \
+                 @e[tag={tag},nbt={{Patrolling:1b}}]"
+            ));
+            b.push("assert score #p_rsst dw.sys matches 0".to_string());
+        }
+    }
+
+    b.push(format!("function {ns}:wave_unbrand_{safe}"));
+    for r in &reseat {
+        b.push(format!("kill @e[tag={}]", plan::wave_tag(r.id.as_str())));
+        b.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            wave_seated_holder(r.id.as_str())
+        ));
+    }
+    b.push(format!("tag {sel} remove dw_rsst"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_reseat_stationed.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
 /// spec-0016 §1 (owner ruling 2026-08-03): the **two options really differ**.
 ///
 /// The owner's ruling is that right-clicking a bonfire offers exactly *rest and
@@ -9896,6 +10114,55 @@ fn emit_td_lane_packtests(
         b.push(format!("kill @e[tag={tag}]"));
         b.push(format!("tag {sel} remove dw_pt_tdrel"));
         write("souls_td_lane_release", b);
+
+        // --- the re-summon re-stations the squad (owner ruling 2026-08-04) ---
+        //
+        // A wave re-seat is `kill` + the wave's own `spawn_<wave>`, and the whole
+        // stationed-re-seat ruling rests on that second half putting the squad
+        // back on the lane exactly as the first summon did. This drives the same
+        // two commands from the far side of the mechanism's worst state — the
+        // squad hauled onto the party, released to native AI by the real clock,
+        // its march clock at the END of the lane — and demands the fresh squad is
+        // routed from waypoint 0 again with the release gone. Emitted for every
+        // lane wave, bonfire or not, so a campaign that ships lanes proves it
+        // without having to ship a rest point next to one.
+        let (pin, sel) = pin_dummy("dw_pt_tdrst");
+        let mut b = packtest_header(&format!(
+            "{title}: re-summoning lane `{}` re-stations it — the feral release does not survive \
+             (spec-0016 §1/§6)",
+            w.id
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("function {ns}:spawn_{safe}"));
+        b.push(format!("execute at {sel} run tp @e[tag={tag}] ~ ~ ~"));
+        b.push(format!("function {ns}:lane_tick_{safe}"));
+        b.push(format!(
+            "execute store result score #f_tdrst dw.sys if entity @e[tag={tag},nbt={{Patrolling:0b}}]"
+        ));
+        b.push(format!("assert score #f_tdrst dw.sys matches {total}"));
+        b.push(format!(
+            "scoreboard players set {idx} dw.sys {}",
+            wps.len().saturating_sub(1)
+        ));
+        // The re-seat body, verbatim.
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("function {ns}:spawn_{safe}"));
+        b.push(format!(
+            "execute store result score #n_tdrst dw.sys if entity @e[tag={tag},nbt={{Patrolling:1b}}]"
+        ));
+        b.push(format!("assert score #n_tdrst dw.sys matches {total}"));
+        b.push(format!(
+            "execute store result score #t_tdrst dw.sys if entity \
+             @e[tag={tag},nbt={{patrol_target:[I;{},{},{}]}}]",
+            t0[0], t0[1], t0[2]
+        ));
+        b.push(format!("assert score #t_tdrst dw.sys matches {total}"));
+        b.push(format!("assert score {idx} dw.sys matches 0"));
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("tag {sel} remove dw_pt_tdrst"));
+        write("souls_td_lane_reseat", b);
         let _ = r;
     }
 
