@@ -31,4 +31,24 @@ s=$(prop level-seed);   if [ -n "$s" ];  then export SEED="$s";              fi
 # exercise a world the delve never ships.
 lt=$(prop level-type);        if [ -n "$lt" ]; then export LEVEL_TYPE="$lt";        fi
 gs=$(prop generator-settings); if [ -n "$gs" ]; then export GENERATOR_SETTINGS="$gs"; fi
+# Offline op seeding. itzg's OPS env resolves EVERY name through Mojang's
+# PlayerDB - even with ONLINE_MODE=FALSE - so an offline-only name (the
+# validation bot) aborts the boot: "Could not resolve user from Playerdb".
+# DELVE_OPS_OFFLINE takes a name and writes /data/ops.json directly with the
+# SAME deterministic UUID an offline server assigns that name on join (Java
+# nameUUIDFromBytes: MD5 of "OfflinePlayer:<name>", version 3, RFC variant) -
+# the name never reaches the network, and with OPS unset itzg leaves the file
+# alone. Offline servers only: a real account's online UUID differs, so an
+# ONLINE_MODE=TRUE server keeps using itzg's OPS env instead.
+if [ -n "${DELVE_OPS_OFFLINE:-}" ]; then
+  n="$DELVE_OPS_OFFLINE"
+  h=$(printf 'OfflinePlayer:%s' "$n" | md5sum | cut -c1-32)
+  case "${h:16:1}" in
+    [048c]) v=8;; [159d]) v=9;; [26ae]) v=a;; *) v=b;;
+  esac
+  u="${h:0:8}-${h:8:4}-3${h:13:3}-${v}${h:17:3}-${h:20:12}"
+  printf '[{"uuid":"%s","name":"%s","level":4,"bypassesPlayerLimit":false}]\n' \
+    "$u" "$n" > /data/ops.json
+  echo "[init] Seeded offline op $n ($u) into /data/ops.json"
+fi
 exec /image/scripts/start "$@"
