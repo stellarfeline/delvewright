@@ -228,6 +228,39 @@ impl Facing {
         }
     }
 
+    /// The blockstate keyword for this facing (`north`/`south`/`east`/`west`) —
+    /// the inverse of [`Facing::parse`].
+    pub fn token(self) -> &'static str {
+        match self {
+            Facing::North => "north",
+            Facing::South => "south",
+            Facing::East => "east",
+            Facing::West => "west",
+        }
+    }
+
+    /// The facing of the horizontal step `from` → `to`, or `None` when the two
+    /// cells are not exactly one cardinal step apart horizontally (the vertical
+    /// component is ignored).
+    pub fn between(from: [i32; 3], to: [i32; 3]) -> Option<Facing> {
+        match (to[0] - from[0], to[2] - from[2]) {
+            (1, 0) => Some(Facing::East),
+            (-1, 0) => Some(Facing::West),
+            (0, 1) => Some(Facing::South),
+            (0, -1) => Some(Facing::North),
+            _ => None,
+        }
+    }
+
+    /// The two facings perpendicular to this one (the lateral axis of a stair
+    /// run: the width a staircase is built across).
+    pub fn perpendicular(self) -> [Facing; 2] {
+        match self {
+            Facing::North | Facing::South => [Facing::East, Facing::West],
+            Facing::East | Facing::West => [Facing::North, Facing::South],
+        }
+    }
+
     /// The opposite facing.
     pub fn opposite(self) -> Facing {
         match self {

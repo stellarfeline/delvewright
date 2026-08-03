@@ -382,6 +382,21 @@ pub fn build_with_warnings(
                 // or walls — the water-flow / post-nav-mutation divergence class —
                 // failing the build loudly (DW0314) instead of stranding the bot.
                 crate::nav::verify_exported_routes(&world, &routes)?;
+                // Stair-orientation proof (task #191, DW0430). Nav models a stair
+                // as a full cube, so a reversed stair reads as a legal one-block
+                // jump and every existing proof passes — the delve ships with a
+                // staircase the player must hop up tread by tread. This is the
+                // one check that reads `facing`, over the same proven routes,
+                // against the same assembled world.
+                if !routes.is_empty() {
+                    let route_cells: Vec<Vec<[i32; 3]>> =
+                        routes.iter().map(|r| r.cells.clone()).collect();
+                    let blocks = match &edit_replay {
+                        Some(er) => er.assembled.blocks.clone(),
+                        None => crate::assembled::assembled_blocks(plan, structures),
+                    };
+                    crate::stairs::check_stair_orientation(&blocks, Some(plan), &route_cells)?;
+                }
                 if !routes.is_empty() {
                     put_json(
                         &mut out,

@@ -62,6 +62,7 @@ pub mod render_plan;
 pub mod resourcepack;
 pub mod snapshot;
 pub mod solver;
+pub mod stairs;
 pub mod textfit;
 pub mod timeline;
 pub mod waypoints;
