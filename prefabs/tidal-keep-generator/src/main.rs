@@ -32,6 +32,12 @@ use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::Path;
 
+/// Cross-tileset generator invariants, shared by source include so a lesson
+/// learned in one tileset does not have to be re-learned in the other four
+/// (the five generators are separate Cargo workspaces on purpose).
+#[path = "../../invariants.rs"]
+mod invariants;
+
 use flate2::{Compression, GzBuilder};
 
 use common::*;
@@ -201,6 +207,7 @@ fn write_piece(out: &Path, spec: &Spec) {
     };
 
     let structure = serialize(&g);
+    invariants::assert_distress_never_stacks(spec.id, &invariant_cells(&structure));
     let nbt = fastnbt::to_bytes(&structure).expect("nbt");
     let mut gz = GzBuilder::new()
         .mtime(0)

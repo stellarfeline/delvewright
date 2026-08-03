@@ -11,6 +11,12 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::Write as _;
 use std::path::Path;
 
+/// Cross-tileset generator invariants, shared by source include so a lesson
+/// learned in one tileset does not have to be re-learned in the other four
+/// (the five generators are separate Cargo workspaces on purpose).
+#[path = "../../invariants.rs"]
+mod invariants;
+
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
 
@@ -363,8 +369,24 @@ fn build(spec: &Spec) -> Structure {
     }
 }
 
+/// The flattened view the shared [`invariants`] gates read: exactly the blocks
+/// this piece is about to write, palette already resolved.
+fn invariant_cells(s: &Structure) -> invariants::Cells {
+    s.blocks
+        .iter()
+        .map(|b| {
+            let p = &s.palette[b.state as usize];
+            (
+                b.pos,
+                (p.name.clone(), p.properties.clone().unwrap_or_default()),
+            )
+        })
+        .collect()
+}
+
 fn write_piece(out: &Path, spec: &Spec) {
     let s = build(spec);
+    invariants::assert_distress_never_stacks(spec.id, &invariant_cells(&s));
     let nbt = fastnbt::to_bytes(&s).expect("nbt");
     let mut gz = GzBuilder::new()
         .mtime(0)

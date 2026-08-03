@@ -226,7 +226,19 @@ is parsed as prefab metadata and a stray snippet is `DW0346`.
 **The invariants are the point.** Every debugging lesson these tilesets have cost
 is pinned as an `assert!` in the generator (route walkability, stair-flank
 sealing, anchor sanity, sightlines, gravity substrate, redstone support), so
-*running* a generator is the gate: it either emits or panics. Debug flags, all
+*running* a generator is the gate: it either emits or panics.
+
+Invariants true of **every** tileset live once, in
+[`../../prefabs/invariants.rs`](../../prefabs/invariants.rs), source-included by
+all five (`#[path = "../../invariants.rs"] mod invariants;` — an include, not a
+dependency, so the workspaces stay independent). Today: **distress embeds, it
+never stacks** (`assert_distress_never_stacks`) — a walkable stair tread may
+carry nothing but air or a declared attachment (railing, hardware, light fitting,
+plant), because wear on a walked surface belongs *in* the surface, as a weathered
+variant of the same shape (`invariants::weathered`), never as a lump on top of
+it. Owner playtest, island round 13: stray stone sitting on the cave-mouth steps.
+The shared file carries its own unit tests — including the cases that prove the
+gate *fails* — run by the same CI job. Debug flags, all
 `tidal-keep-generator`: `TK_DEBUG_LIGHT=1` (per-region measured light + darkest
 cell), `TK_PROBE=<salt>,<x>,<y>,<z>` (labelled block dump), `TK_DEBUG_STAIRS=1`
 (every flank the seal pass closed).

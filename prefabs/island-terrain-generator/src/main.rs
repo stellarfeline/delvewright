@@ -36,6 +36,12 @@ use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::Path;
 
+/// Cross-tileset generator invariants, shared by source include so a lesson
+/// learned in one tileset does not have to be re-learned in the other four
+/// (the five generators are separate Cargo workspaces on purpose).
+#[path = "../../invariants.rs"]
+mod invariants;
+
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
 
@@ -1743,21 +1749,57 @@ fn mountain_modules(g: &mut Grid, seed: u64) {
         Some(vec![("axis", "y")]),
     );
 
-    // Decorative Chekhov boulder on the ledge, just east of the mouth.
+    // Decorative Chekhov boulder on the ledge, just east of the mouth. Its mass
+    // belongs in the mouth wall; where the blob reaches out over the ledge terrace
+    // it must WEATHER the tread, not litter it — `distress_blk`.
     for x in 20..=22 {
         for z in 29..=30 {
             for y in M_WALK..=(M_WALK + 2) {
                 if g.inb(x, y, z) && (value_noise(seed, x, y, z, 0.5, 121) > 0.25) {
-                    g.blk(
+                    distress_blk(
+                        g,
                         x,
                         y,
                         z,
                         pick(&boulder_palette(), value_noise(seed, x, y, z, 0.5, 123)),
-                        None,
                     );
                 }
             }
         }
+    }
+}
+
+/// **Distress embeds, it never stacks** (owner playtest, island round 13: stray
+/// stone sitting on the stair treads at the cave mouth).
+///
+/// Writes `name` at `(x, y, z)` — unless that cell is the air a body walks in on
+/// top of a surface, in which case the wear is baked INTO the surface instead: the
+/// block below becomes its weathered variant ([`invariants::weathered`]) keeping
+/// its block state verbatim, so a stair stays the same stair in a damaged material
+/// and the geometry every nav proof walked does not move. The walk envelope is left
+/// clear either way — a surface with no weathered form keeps its own face and the
+/// distress is dropped rather than stacked.
+///
+/// Unsupported cells are skipped: this pass paints wear onto rock, it never hangs a
+/// rock in the air.
+fn distress_blk(g: &mut Grid, x: i32, y: i32, z: i32, name: &str) {
+    if !g.inb(x, y, z) {
+        return;
+    }
+    let headroom = !g.inb(x, y + 1, z) || g.is_air(x, y + 1, z);
+    if !g.is_air(x, y, z) || !headroom {
+        // Inside the mass, or roofed: a normal placement, nothing rests on anything.
+        g.blk(x, y, z, name, None);
+        return;
+    }
+    if !g.is_solid(x, y - 1, z) {
+        return; // nothing under it — a floating lump is debris too
+    }
+    let Cell::Block(surface, props) = g.get(x, y - 1, z).clone() else {
+        return;
+    };
+    if let Some(worn) = invariants::weathered(&surface) {
+        g.blk(x, y - 1, z, worn, props);
     }
 }
 
@@ -1773,6 +1815,21 @@ fn build(spec: &Spec) -> Grid {
         Kind::Mountain => build_mountain(spec, &mut g, seed),
     }
     g
+}
+
+/// The flattened view the shared [`invariants`] gates read: exactly the blocks
+/// this piece is about to write, palette already resolved.
+fn invariant_cells(s: &Structure) -> invariants::Cells {
+    s.blocks
+        .iter()
+        .map(|b| {
+            let p = &s.palette[b.state as usize];
+            (
+                b.pos,
+                (p.name.clone(), p.properties.clone().unwrap_or_default()),
+            )
+        })
+        .collect()
 }
 
 fn write_piece(out: &Path, spec: &Spec) {
@@ -1792,6 +1849,7 @@ fn write_piece(out: &Path, spec: &Spec) {
     assert_no_unsupported_gravity(spec.id, &grid);
 
     let structure = serialize(&grid);
+    invariants::assert_distress_never_stacks(spec.id, &invariant_cells(&structure));
     let nbt = fastnbt::to_bytes(&structure).expect("nbt");
     let mut gz = GzBuilder::new()
         .mtime(0)

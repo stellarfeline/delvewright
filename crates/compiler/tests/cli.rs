@@ -906,6 +906,91 @@ fn v04_showcase_double_build_is_byte_identical() {
     );
 }
 
+/// Every per-tick `tp` of a walked `move-npc` carries the **bearing of the segment
+/// it is about to walk**, so the body faces where it is going instead of gliding
+/// backwards on a stale yaw (owner playtest, island round 13). Asserted against the
+/// real emitted driver: each line's yaw is recomputed from that waypoint's own
+/// delta, and the walk must contain a mid-path direction change — a corner turns on
+/// the tick it is taken, with no smoothing.
+#[test]
+fn walked_move_npc_tps_carry_the_segment_bearing() {
+    let dir = common::compiler_fixtures_dir().join("v04-showcase");
+    let pf = common::prefabs_dir();
+    let out = tmp("mv-yaw");
+    let r = delvec(&[
+        "build",
+        dir.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code(&r),
+        0,
+        "showcase build: {}",
+        String::from_utf8_lossy(&r.stderr)
+    );
+    let tick = std::fs::read_to_string(
+        out.join("datapack/data/v04-showcase/function/mv_tick_keeper_objective.mcfunction"),
+    )
+    .unwrap();
+
+    // (x, y, z, yaw, pitch) per tp line, in tick order.
+    let mut wp: Vec<(f64, f64, f64, i32, i32)> = Vec::new();
+    for line in tick.lines() {
+        let Some((_, tail)) = line.split_once("run tp @e[tag=dw_npc_keeper] ") else {
+            continue;
+        };
+        let f: Vec<&str> = tail.split_whitespace().collect();
+        assert_eq!(
+            f.len(),
+            5,
+            "a walked tp must carry x y z yaw pitch — a bare position leaves the body's \
+             stale facing: {line}"
+        );
+        wp.push((
+            f[0].parse().unwrap(),
+            f[1].parse().unwrap(),
+            f[2].parse().unwrap(),
+            f[3].parse().unwrap(),
+            f[4].parse().unwrap(),
+        ));
+    }
+    assert!(wp.len() > 20, "expected a many-tick walked path");
+
+    // The bearing of waypoint i is the bearing of the segment i -> i+1 (MC yaw:
+    // 0 = +z south, atan2(-dx, dz)); a segment with no horizontal motion inherits
+    // the previous bearing. The final waypoint keeps the last leg's facing.
+    let mut expect = 0i32;
+    let mut seeded = false;
+    for (i, w) in wp.iter().enumerate() {
+        assert_eq!(w.4, 0, "a level walk is emitted with pitch 0");
+        if i + 1 < wp.len() {
+            let (dx, dz) = (wp[i + 1].0 - w.0, wp[i + 1].2 - w.2);
+            if dx.abs() >= 1e-6 || dz.abs() >= 1e-6 {
+                expect = (((-dx).atan2(dz).to_degrees().round() as i32 % 360) + 360) % 360;
+                seeded = true;
+            }
+        }
+        if seeded {
+            assert_eq!(
+                w.3, expect,
+                "tick {i} tp faces {} but its own movement bears {expect}",
+                w.3
+            );
+        }
+    }
+
+    // A corner turns: this route is not a straight line, so the driver must show
+    // more than one bearing.
+    let distinct: std::collections::BTreeSet<i32> = wp.iter().map(|w| w.3).collect();
+    assert!(
+        distinct.len() > 1,
+        "expected a direction change mid-walk, saw only yaw {distinct:?}"
+    );
+}
+
 /// A `move-npc` whose destination cannot be reached over the solved geometry fails
 /// the build with exit 3 and `DW0307` (spec-0008 addendum). keep-crawl places the
 /// keeper in the gatehouse and `anchor/objective` in the keep — two areas across

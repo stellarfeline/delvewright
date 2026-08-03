@@ -35,6 +35,12 @@ use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::Path;
 
+/// Cross-tileset generator invariants, shared by source include so a lesson
+/// learned in one tileset does not have to be re-learned in the other four
+/// (the five generators are separate Cargo workspaces on purpose).
+#[path = "../../invariants.rs"]
+mod invariants;
+
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
 
@@ -1553,6 +1559,21 @@ fn assert_no_unsupported_gravity(id: &str, g: &Grid) -> usize {
 // Emit
 // ---------------------------------------------------------------------------
 
+/// The flattened view the shared [`invariants`] gates read: exactly the blocks
+/// this piece is about to write, palette already resolved.
+fn invariant_cells(s: &Structure) -> invariants::Cells {
+    s.blocks
+        .iter()
+        .map(|b| {
+            let p = &s.palette[b.state as usize];
+            (
+                b.pos,
+                (p.name.clone(), p.properties.clone().unwrap_or_default()),
+            )
+        })
+        .collect()
+}
+
 fn write_piece(out: &Path, spec: &Spec) {
     let grid0 = build(spec);
     // Light is measured over the authored walkable floor (y=0 frame), before the
@@ -1577,6 +1598,7 @@ fn write_piece(out: &Path, spec: &Spec) {
     // Belt-and-braces: no gravity block may sit over air in the shipped piece.
     assert_no_unsupported_gravity(spec.id, &grid);
     let structure = serialize(&grid);
+    invariants::assert_distress_never_stacks(spec.id, &invariant_cells(&structure));
     let nbt = fastnbt::to_bytes(&structure).expect("nbt");
     let mut gz = GzBuilder::new()
         .mtime(0)
