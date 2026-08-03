@@ -1112,6 +1112,9 @@ fn emit_functions(
     let ns = &plan.namespace;
     let c = plan.campaign;
     let v03 = campaign_is_v03(plan);
+    // spec-0020: every NPC's cast ledger resolved into the scenes right-click
+    // swaps between. Empty for a campaign that declares no `cast`.
+    let casts = crate::cast::npc_casts(c);
     let mut fns: Vec<(String, String)> = Vec::new();
 
     // --- load ---
@@ -1190,6 +1193,11 @@ fn emit_functions(
     // exists, so v0.2/v0.3 setup is unchanged.
     if has_gated_dialogue(c) {
         setup.push("scoreboard objectives add dw.dmask dummy".to_string());
+    }
+    // spec-0020: the per-player cast-scene selector. Declared only when some
+    // quest casts an NPC, so a pre-0.7 campaign's setup is unchanged.
+    if !casts.is_empty() {
+        setup.push(format!("scoreboard objectives add {CAST_SCORE} dummy"));
     }
     for (oid, _) in interact_objectives(c) {
         setup.push(format!(
@@ -1943,14 +1951,17 @@ fn emit_functions(
             }
             fns.push((format!("dlg_{}_{}", npc.safe, opt.n), lines(&body)));
         }
-        // keeper interaction reward: (re)show the root dialog.
-        fns.push((
-            format!("talk_{}", npc.safe),
-            lines(&[
-                format!("advancement revoke @s only {ns}:{}_interact", npc.safe),
-                show_node_cmd(plan, npc, &npc.root),
-            ]),
-        ));
+        // keeper interaction reward: consume the interaction record, then show
+        // whatever the cast ledger says this NPC's right-click offers right now
+        // (spec-0020). With no ledger this is the single root line it always was.
+        let mut talk = vec![format!(
+            "advancement revoke @s only {ns}:{}_interact",
+            npc.safe
+        )];
+        talk.extend(cast_dispatch(plan, npc, &casts));
+        fns.push((format!("talk_{}", npc.safe), lines(&talk)));
+        fns.extend(cast_selector_fn(npc, &casts));
+        fns.extend(cast_bark_fns(plan, npc, &casts));
         // v0.4: flag-gate chooser functions for gated nodes.
         for func in gated_node_choosers(plan, npc) {
             fns.push(func);
@@ -6406,6 +6417,138 @@ fn has_gated_dialogue(c: &delvewright_dsl::Campaign) -> bool {
             })
 }
 
+/// The per-player scene selector the cast ledger dispatches on (spec-0020).
+const CAST_SCORE: &str = "dw.cast";
+
+/// The right-click body for one NPC: the cast ledger's scene dispatch, or — for
+/// an NPC no quest casts — the single `show_node_cmd(root)` line that has always
+/// been there (so a campaign with no ledger is byte-identical).
+///
+/// ## Why re-evaluated rather than latched
+///
+/// `dw.qa_<quest>` is set to 1 when a quest starts and is never cleared, so it
+/// reads "has begun". Emitting the selector clauses in quest-DAG order therefore
+/// makes the **latest begun** quest win, and keep winning: the scene advances
+/// with the story and never falls back. That is the whole retirement mechanism —
+/// after the escape beat opens, Perimedes's right-click resolves to the escape
+/// scene's root, and the premise root is unreachable *because the ledger says so*,
+/// not because an author remembered a flag.
+///
+/// Scene `0` is "no declaring quest has begun yet" and shows the stage-6 root.
+/// A `"none"` scene emits no action clause at all: the interaction advancement is
+/// still granted and revoked one line above (the record is written and consumed),
+/// and nothing opens.
+fn cast_dispatch(
+    plan: &Plan,
+    npc: &plan::NpcPlan,
+    casts: &std::collections::BTreeMap<String, crate::cast::NpcCast>,
+) -> Vec<String> {
+    use crate::cast::SceneAction;
+    let ns = &plan.namespace;
+    let Some(cast) = casts.get(&npc.npc_id) else {
+        return vec![show_node_cmd(plan, npc, &npc.root)];
+    };
+    let mut out = vec![format!("function {ns}:cast_{}", npc.safe)];
+    out.push(format!(
+        "execute if score @s {CAST_SCORE} matches 0 run {}",
+        show_node_cmd(plan, npc, &npc.root)
+    ));
+    for scene in &cast.scenes {
+        let i = scene.index;
+        match &scene.action {
+            SceneAction::Root(root) => out.push(format!(
+                "execute if score @s {CAST_SCORE} matches {i} run {}",
+                show_node_cmd(plan, npc, root)
+            )),
+            SceneAction::Barks(_) => out.push(format!(
+                "execute if score @s {CAST_SCORE} matches {i} run function {ns}:bark_{}_{i}",
+                npc.safe
+            )),
+            // Declared silence: no clause. The click is still recorded and
+            // consumed by the `advancement revoke` above.
+            SceneAction::Silent => {}
+        }
+    }
+    out
+}
+
+/// The `cast_<npc>` selector function: compute which scene governs right now into
+/// the per-player `dw.cast`.
+///
+/// Split out of `talk_<npc>` for the same reason `dmask_<npc>_<node>` is split out
+/// of `show_<npc>_<node>`: it is pure scoreboard math, so a PackTest can drive it
+/// and assert which scene the ledger selected **without opening a dialog** (a
+/// PackTest dummy has no client to show a screen to).
+fn cast_selector_fn(
+    npc: &plan::NpcPlan,
+    casts: &std::collections::BTreeMap<String, crate::cast::NpcCast>,
+) -> Option<(String, String)> {
+    let cast = casts.get(&npc.npc_id)?;
+    let mut body = vec![format!("scoreboard players set @s {CAST_SCORE} 0")];
+    for (qid, idx) in &cast.by_quest {
+        body.push(format!(
+            "execute if score {} {} matches 1 run scoreboard players set @s {CAST_SCORE} {idx}",
+            plan::PARTY,
+            quest_active_score(qid)
+        ));
+    }
+    Some((format!("cast_{}", npc.safe), lines(&body)))
+}
+
+/// One `bark_<npc>_<scene>` function per bark-pool scene: speak the next line and
+/// advance the pool.
+///
+/// The counter is a `#bk_<npc>_<scene>` fake player on the shared `dw.sys`
+/// objective — the repo's existing per-entity counter idiom — and it cycles by an
+/// explicit clause ladder, so there is no RNG anywhere near a delve and the
+/// n-th right-click always yields the same line.
+fn cast_bark_fns(
+    plan: &Plan,
+    npc: &plan::NpcPlan,
+    casts: &std::collections::BTreeMap<String, crate::cast::NpcCast>,
+) -> Vec<(String, String)> {
+    use crate::cast::SceneAction;
+    let mut out = Vec::new();
+    let Some(cast) = casts.get(&npc.npc_id) else {
+        return out;
+    };
+    let name = plan
+        .campaign
+        .npcs
+        .content
+        .npcs
+        .iter()
+        .find(|n| n.id.as_str() == npc.npc_id)
+        .map(|n| n.name.clone())
+        .unwrap_or_default();
+    for scene in &cast.scenes {
+        let SceneAction::Barks(pool) = &scene.action else {
+            continue;
+        };
+        let holder = format!("#bk_{}_{}", npc.safe, scene.index);
+        let mut body = vec![
+            format!("scoreboard players add {holder} dw.sys 1"),
+            format!(
+                "execute if score {holder} dw.sys matches {}.. run scoreboard players set {holder} dw.sys 1",
+                pool.len() + 1
+            ),
+        ];
+        for (i, line) in pool.iter().enumerate() {
+            let comp = json!([
+                { "text": name, "color": "yellow" },
+                { "text": ": " },
+                { "text": line, "italic": true }
+            ]);
+            body.push(format!(
+                "execute if score {holder} dw.sys matches {} run tellraw @s {comp}",
+                i + 1
+            ));
+        }
+        out.push((format!("bark_{}_{}", npc.safe, scene.index), lines(&body)));
+    }
+    out
+}
+
 fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
     let c = plan.campaign;
     let v04 = campaign_is_v04(plan);
@@ -6814,6 +6957,7 @@ fn emit_packtest(
     // the singleplayer pause-freeze contract. Emits nothing for a campaign with no
     // terminal dialogue option.
     emit_dialogue_trigger_packtest(plan, out);
+    emit_cast_packtests(plan, out);
 
     // v0.4: prop-on-activation, despawn removes body+hitbox, move arrives at
     // target. Emits nothing when the campaign uses none of them.
@@ -7255,6 +7399,188 @@ fn emit_dialogue_trigger_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// cannot prove the fill took. Asserts the first and last slot of the first
 /// declared fill, by id, so a positional-slot regression is caught too.
 /// Emitted only for a campaign that declares `loot` (else byte-identical).
+/// The cast-ledger PackTests (spec-0020 acceptance): the root swap is observable,
+/// a bark pool cycles deterministically, and a `"none"` scene consumes the
+/// interaction without opening anything.
+///
+/// All three drive `cast_<npc>` (pure scoreboard math) rather than `talk_<npc>`
+/// wherever a dialogue root is involved — a dummy player has no client to show a
+/// dialog to. The `"none"` test is the exception and drives `talk_<npc>` itself,
+/// precisely because a silent scene emits no `dialog show`: that is what makes
+/// "the record is written and consumed, and nothing opens" directly assertable.
+fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
+    use crate::cast::SceneAction;
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let casts = crate::cast::npc_casts(plan.campaign);
+
+    // --- root swap: one NPC whose ledger names two different roots ----------
+    let swapper = plan.npcs.iter().find_map(|npc| {
+        let cast = casts.get(&npc.npc_id)?;
+        let roots: Vec<(u32, &String)> = cast
+            .scenes
+            .iter()
+            .filter_map(|s| match &s.action {
+                SceneAction::Root(r) => Some((s.index, r)),
+                _ => None,
+            })
+            .collect();
+        if roots.len() < 2 {
+            return None;
+        }
+        // The two quests whose scenes those are, in ledger order.
+        let first = cast.by_quest.iter().find(|(_, i)| *i == roots[0].0)?;
+        let later = cast.by_quest.iter().find(|(_, i)| *i == roots[1].0)?;
+        Some((npc, first.clone(), later.clone()))
+    });
+    if let Some((npc, (q_first, i_first), (q_later, i_later))) = swapper {
+        let (pin, sel) = pin_dummy("dw_t_castswap");
+        let mut b = packtest_header(&format!(
+            "{title}: npc `{}` right-click swaps root as the story advances (cast ledger)",
+            npc.npc_id
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.push("# Only the earlier beat has begun: the ledger selects its scene.".to_string());
+        for (q, _) in &casts[&npc.npc_id].by_quest {
+            b.push(format!(
+                "scoreboard players set {} {} 0",
+                plan::PARTY,
+                quest_active_score(q)
+            ));
+        }
+        b.push(format!(
+            "scoreboard players set {} {} 1",
+            plan::PARTY,
+            quest_active_score(&q_first)
+        ));
+        b.push(format!(
+            "execute as {sel} run function {ns}:cast_{}",
+            npc.safe
+        ));
+        b.push(format!("assert score {sel} {CAST_SCORE} matches {i_first}"));
+        b.push("# The later beat begins. `dw.qa_*` is never cleared, so BOTH are".to_string());
+        b.push("# now set — and the later scene must win, retiring the earlier".to_string());
+        b.push("# root. That is the whole retirement mechanism.".to_string());
+        b.push(format!(
+            "scoreboard players set {} {} 1",
+            plan::PARTY,
+            quest_active_score(&q_later)
+        ));
+        b.push(format!(
+            "execute as {sel} run function {ns}:cast_{}",
+            npc.safe
+        ));
+        b.push(format!("assert score {sel} {CAST_SCORE} matches {i_later}"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/cast_root_swap.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+
+    // --- bark pool cycles deterministically ---------------------------------
+    let barker = plan.npcs.iter().find_map(|npc| {
+        let cast = casts.get(&npc.npc_id)?;
+        cast.scenes.iter().find_map(|s| match &s.action {
+            SceneAction::Barks(pool) if pool.len() >= 2 => Some((npc, s.index, pool.len())),
+            _ => None,
+        })
+    });
+    if let Some((npc, scene, n)) = barker {
+        let holder = format!("#bk_{}_{scene}", npc.safe);
+        let (pin, sel) = pin_dummy("dw_t_castbark");
+        let mut b = packtest_header(&format!(
+            "{title}: npc `{}` bark pool cycles deterministically through {n} lines",
+            npc.npc_id
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.push("# The pool counter is shared runtime state: initialize it.".to_string());
+        b.push(format!("scoreboard players set {holder} dw.sys 0"));
+        for i in 1..=n {
+            b.push(format!(
+                "execute as {sel} run function {ns}:bark_{}_{scene}",
+                npc.safe
+            ));
+            b.push(format!("assert score {holder} dw.sys matches {i}"));
+        }
+        b.push("# One more right-click wraps to the first line — never RNG.".to_string());
+        b.push(format!(
+            "execute as {sel} run function {ns}:bark_{}_{scene}",
+            npc.safe
+        ));
+        b.push(format!("assert score {holder} dw.sys matches 1"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/cast_bark_cycle.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+
+    // --- an explicit `"none"` scene answers with nothing ---------------------
+    let silent = plan.npcs.iter().find_map(|npc| {
+        let cast = casts.get(&npc.npc_id)?;
+        let scene = cast
+            .scenes
+            .iter()
+            .find(|s| s.action == SceneAction::Silent)?;
+        let q = cast.by_quest.iter().find(|(_, i)| *i == scene.index)?;
+        Some((npc, scene.index, q.0.clone()))
+    });
+    if let Some((npc, idx, qid)) = silent {
+        let (pin, sel) = pin_dummy("dw_t_castnone");
+        let mut b = packtest_header(&format!(
+            "{title}: npc `{}`'s `\"none\"` scene consumes the interaction and opens nothing",
+            npc.npc_id
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        for (q, _) in &casts[&npc.npc_id].by_quest {
+            b.push(format!(
+                "scoreboard players set {} {} 0",
+                plan::PARTY,
+                quest_active_score(q)
+            ));
+        }
+        b.push(format!(
+            "scoreboard players set {} {} 1",
+            plan::PARTY,
+            quest_active_score(&qid)
+        ));
+        b.push("# Grant the interaction advancement, exactly as a right-click".to_string());
+        b.push("# does: the record is written.".to_string());
+        b.push(format!(
+            "execute as {sel} run advancement grant @s only {ns}:{}_interact",
+            npc.safe
+        ));
+        b.push("# Run the reward the advancement fires. It must revoke (consume)".to_string());
+        b.push("# the record and, for a silent scene, do nothing else.".to_string());
+        b.push(format!(
+            "execute as {sel} run function {ns}:talk_{}",
+            npc.safe
+        ));
+        b.push(format!("assert score {sel} {CAST_SCORE} matches {idx}"));
+        b.push("# The record is consumed, so the advancement is re-armed: a".to_string());
+        b.push("# second right-click still works (no dead NPC).".to_string());
+        // Vanilla has no `execute if advancement`; the selector argument is the
+        // primitive for reading advancement state.
+        b.push(format!(
+            "execute as {sel} if entity @s[advancements={{{ns}:{}_interact=false}}] run scoreboard players set @s dw.sys 1",
+            npc.safe
+        ));
+        b.push(format!("assert score {sel} dw.sys matches 1"));
+        // Deliberately NOT asserted here: that the bark counter did not move.
+        // It is a shared runtime holder, and the bark-cycle template drives it
+        // over the same ticks — asserting it from two templates is exactly the
+        // interleaving dependence `packtest_batch` forbids. "A silent scene
+        // emits no action clause" is a property of the emitted text, so it is
+        // proved in `tests/cast_emit.rs` where it is race-free by construction.
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/cast_none_silent.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+}
+
 fn emit_loot_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = &plan.campaign.world.content.title;

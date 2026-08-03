@@ -42,6 +42,7 @@ pub mod atmos;
 pub mod blocking;
 pub mod calibrate;
 pub mod camera;
+pub mod cast;
 pub mod commands;
 pub mod continuity;
 pub mod creator;
