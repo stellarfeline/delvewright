@@ -88,6 +88,87 @@ test("every enumerated branch appears in the report — run, or skipped with a r
   assert.equal(bolt["chronicle"], "branch-chronicle-bolt.md");
 });
 
+test("the run report prints the compiler's floor-gate ledger, both sides, verbatim", () => {
+  // #114: before this, an unmeasurable elite surfaced only as a build-time
+  // DW0477 — so a reader holding a green run report had no way to learn that its
+  // empty findings list covered a fight nobody ever had.
+  const report = new RunReport("souls-bonfire", "normal");
+  report.recordCombatCoverage(
+    {
+      present: true,
+      covered: [{ kind: "wave", id: "wave/bellkeeper", tier: "boss" }],
+      notCovered: [
+        {
+          kind: "actor",
+          id: "actor/barrow-warden",
+          tier: "elite",
+          reason: "it is staged but never unleashed, and it is not `vulnerable`",
+        },
+      ],
+    },
+    [],
+  );
+  const json = report.toJSON() as {
+    floor_gate: { present: boolean; covered: unknown[]; not_covered: Record<string, unknown>[] };
+  };
+  assert.equal(json.floor_gate.present, true);
+  assert.deepEqual(json.floor_gate.covered, [
+    { kind: "wave", id: "wave/bellkeeper", tier: "boss" },
+  ]);
+  assert.equal(json.floor_gate.not_covered[0]!["id"], "actor/barrow-warden");
+  assert.match(String(json.floor_gate.not_covered[0]!["reason"]), /never unleashed/);
+});
+
+test("a build with no ledger reports it ABSENT, not as an empty ledger", () => {
+  // "This campaign bills nothing hard" and "this build cannot tell you" are
+  // different facts, and only one of them is reassuring.
+  const report = new RunReport("hello-world", "peaceful");
+  const json = report.toJSON() as { floor_gate: { present: boolean } };
+  assert.equal(json.floor_gate.present, false);
+});
+
+test("every tiered actor gets a row — fought with its outcome, or skipped with a reason", () => {
+  const report = new RunReport("souls-bonfire", "normal");
+  report.recordCombatCoverage({ present: true, covered: [], notCovered: [] }, [
+    {
+      actor: "actor/barrow-warden",
+      tier: "elite",
+      entity: "minecraft:wither_skeleton",
+      anchor: "anchor/wave",
+      covered: true,
+      exercised: true,
+      trial: {
+        actor: "actor/barrow-warden",
+        tier: "elite",
+        afterObjective: "obj/open-the-door",
+        outcome: "lost",
+        swings: 7,
+        elapsedMs: 12_000,
+        detail: "bot died",
+      },
+    },
+    {
+      actor: "actor/graveward",
+      tier: "boss",
+      entity: "minecraft:warden",
+      anchor: "anchor/graves",
+      covered: true,
+      exercised: false,
+      reason: "unleashed only by an ambient `strike` trigger",
+    },
+  ]);
+  const json = report.toJSON() as { actors: Record<string, unknown>[] };
+  assert.equal(json.actors.length, 2);
+  assert.equal(json.actors[0]!["exercised"], true);
+  assert.equal(json.actors[0]!["outcome"], "lost");
+  assert.equal(json.actors[0]!["swings"], 7);
+  assert.equal(json.actors[0]!["reason"], null);
+  // The skipped one is present, named, and has no outcome that could be misread.
+  assert.equal(json.actors[1]!["exercised"], false);
+  assert.equal(json.actors[1]!["outcome"], null);
+  assert.match(String(json.actors[1]!["reason"]), /ambient `strike` trigger/);
+});
+
 test("a branch recorded as run-but-failed never reads as passed", () => {
   const report = new RunReport("hello-world", "easy");
   report.recordBranches("branch/bolt", "branch/bolt", [

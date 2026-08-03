@@ -49,6 +49,91 @@ export interface Encounter {
   readonly checkpoint: Vec3Tuple | undefined;
 }
 
+/**
+ * One beat that stages or unleashes an actor, as the plan states it (compiler
+ * `ActorBeat`, #222).
+ *
+ * This is what makes an actor fight *schedulable* at all. A wave encounter has a
+ * `kill` step on the critical path, so the bot already knows when the fight
+ * starts; an actor fight starts because something completed, or because a player
+ * struck, used or walked into something — and that "something" is only stated
+ * here. `site` is the half that decides whether the run can reach it: an
+ * `objective` beat fires when the path completes that objective, while a
+ * `trigger` beat is player-initiated and has no position in the quest DAG.
+ */
+export interface ActorBeat {
+  readonly site: "trigger" | "quest" | "objective" | "trap";
+  /** The owning trigger / quest / trap id. */
+  readonly owner: string;
+  /** The objective, when the site is a quest's `on_objective_complete`. */
+  readonly objective?: string;
+  /** JSON pointer to the effect, so a report line can name it exactly. */
+  readonly path: string;
+  /** Trigger sites: the event kind (`approach`/`strike`/`use`/`strike-npc`). */
+  readonly on?: string;
+  /** Trigger sites: the anchor watched. */
+  readonly at?: string;
+  /** `strike-npc` triggers: the NPC whose body is the target. */
+  readonly npc?: string;
+}
+
+/**
+ * Whether the compiler believes the inverted floor gate can measure a fight, and
+ * — when it cannot — the reason, in the author's own terms.
+ *
+ * Carried verbatim into the run report. The whole point of the ledger (#222) is
+ * that **silence must not read as a pass**: an encounter nobody fought and an
+ * encounter fought and lost produce the same empty findings list, and only this
+ * tells them apart.
+ */
+export interface FloorCoverage {
+  readonly covered: boolean;
+  readonly reason?: string;
+}
+
+/** One tier-declaring stage-5 actor, as the validation ladder sees it (#222). */
+export interface ActorEncounter {
+  readonly actor: string;
+  /** The vanilla entity puppeted and unleashed (`minecraft:wither_skeleton`). */
+  readonly entity: string;
+  readonly name?: string;
+  readonly tier: EncounterTier;
+  readonly anchor: string;
+  /** The anchor resolved to a world cell — where the bot walks to fight it. */
+  readonly pos: Vec3Tuple | undefined;
+  readonly tag: string;
+  readonly vulnerable: boolean;
+  readonly spawnedBy: readonly ActorBeat[];
+  readonly unleashedBy: readonly ActorBeat[];
+  readonly floorGate: FloorCoverage;
+  /** Declared `max_health`, when the actor overrides it — report context only. */
+  readonly maxHealth: number | undefined;
+}
+
+/** One line of the compiler's floor-gate ledger. */
+export interface FloorLedgerEntry {
+  readonly kind: string;
+  readonly id: string;
+  readonly tier: EncounterTier;
+  /** Present exactly on a not-covered entry. */
+  readonly reason?: string;
+}
+
+/**
+ * The floor-gate ledger: every encounter billed `elite`/`boss`, split into what
+ * the gate covers and what it cannot.
+ *
+ * `present: false` means the build carried NO ledger (a plan from a delvec older
+ * than #222) — deliberately distinct from a present-but-empty ledger, because
+ * "this campaign bills nothing hard" and "this build cannot tell you" are
+ * different facts and only one of them is reassuring.
+ */
+export interface FloorLedger {
+  readonly present: boolean;
+  readonly covered: readonly FloorLedgerEntry[];
+  readonly notCovered: readonly FloorLedgerEntry[];
+}
+
 /** The parsed combat plan. */
 export interface CombatPlan {
   readonly version: string;
@@ -56,6 +141,10 @@ export interface CombatPlan {
   /** The declared world difficulty the run is verified AT (spec-0023 §3). */
   readonly difficulty: string;
   readonly encounters: readonly Encounter[];
+  /** Tier-declaring stage-5 actors — the other shape an elite takes (#222). */
+  readonly actors: readonly ActorEncounter[];
+  /** The compiler's coverage ledger, printed verbatim in the run report. */
+  readonly floorGate: FloorLedger;
 }
 
 export class CombatPlanParseError extends Error {
@@ -130,7 +219,139 @@ export function parseCombatPlan(raw: unknown): CombatPlan {
         e["checkpoint"] === undefined ? undefined : requirePos(e["checkpoint"], `${p}/checkpoint`),
     };
   });
-  return { version, campaignId, difficulty, encounters };
+  return {
+    version,
+    campaignId,
+    difficulty,
+    encounters,
+    actors: parseActors(raw["actors"], "/actors"),
+    floorGate: parseFloorLedger(raw["floor_gate"], "/floor_gate"),
+  };
+}
+
+function requireTier(v: unknown, pointer: string): EncounterTier {
+  if (typeof v !== "string" || !ENCOUNTER_TIERS.includes(v as EncounterTier)) {
+    throw new CombatPlanParseError(pointer, `expected one of ${ENCOUNTER_TIERS.join("|")}`);
+  }
+  return v as EncounterTier;
+}
+
+function requireString(o: Record<string, unknown>, key: string, pointer: string): string {
+  const v = o[key];
+  if (typeof v !== "string" || v.length === 0) {
+    throw new CombatPlanParseError(`${pointer}/${key}`, "expected a non-empty string");
+  }
+  return v;
+}
+
+function optionalString(o: Record<string, unknown>, key: string, pointer: string): string | undefined {
+  const v = o[key];
+  if (v === undefined) return undefined;
+  if (typeof v !== "string" || v.length === 0) {
+    throw new CombatPlanParseError(`${pointer}/${key}`, "expected a non-empty string when present");
+  }
+  return v;
+}
+
+const BEAT_SITES = ["trigger", "quest", "objective", "trap"] as const;
+
+function parseBeats(v: unknown, pointer: string): ActorBeat[] {
+  if (!Array.isArray(v)) throw new CombatPlanParseError(pointer, "expected an array");
+  return v.map((b, i): ActorBeat => {
+    const p = `${pointer}/${i}`;
+    if (!isRecord(b)) throw new CombatPlanParseError(p, "expected an object");
+    const site = b["site"];
+    if (typeof site !== "string" || !BEAT_SITES.includes(site as never)) {
+      throw new CombatPlanParseError(`${p}/site`, `expected one of ${BEAT_SITES.join("|")}`);
+    }
+    return {
+      site: site as ActorBeat["site"],
+      owner: requireString(b, "owner", p),
+      objective: optionalString(b, "objective", p),
+      path: requireString(b, "path", p),
+      on: optionalString(b, "on", p),
+      at: optionalString(b, "at", p),
+      npc: optionalString(b, "npc", p),
+    };
+  });
+}
+
+function parseCoverage(v: unknown, pointer: string): FloorCoverage {
+  if (!isRecord(v)) throw new CombatPlanParseError(pointer, "expected an object");
+  const covered = v["covered"];
+  if (typeof covered !== "boolean") {
+    throw new CombatPlanParseError(`${pointer}/covered`, "expected a boolean");
+  }
+  // A not-covered entry without its reason would be the exact silence the ledger
+  // exists to end, so it is a parse error rather than an empty string.
+  if (!covered && (typeof v["reason"] !== "string" || (v["reason"] as string).length === 0)) {
+    throw new CombatPlanParseError(`${pointer}/reason`, "a not-covered entry must state why");
+  }
+  return covered ? { covered: true } : { covered: false, reason: v["reason"] as string };
+}
+
+/**
+ * The plan's `actors[]`. Absent (a plan from a delvec older than #222) parses as
+ * an empty list — the run then says the ledger is absent rather than pretending
+ * the campaign declares no tiered actor.
+ */
+function parseActors(v: unknown, pointer: string): ActorEncounter[] {
+  if (v === undefined) return [];
+  if (!Array.isArray(v)) throw new CombatPlanParseError(pointer, "expected an array");
+  return v.map((a, i): ActorEncounter => {
+    const p = `${pointer}/${i}`;
+    if (!isRecord(a)) throw new CombatPlanParseError(p, "expected an object");
+    const attributes = a["attributes"];
+    const maxHealth =
+      isRecord(attributes) && typeof attributes["max_health"] === "number"
+        ? (attributes["max_health"] as number)
+        : undefined;
+    return {
+      actor: requireString(a, "actor", p),
+      entity: requireString(a, "entity", p),
+      name: optionalString(a, "name", p),
+      tier: requireTier(a["tier"], `${p}/tier`),
+      anchor: requireString(a, "anchor", p),
+      // Absent past DW0325, but the plan types it optional and a missing cell is
+      // exactly a "nowhere to walk" skip reason rather than a parse failure.
+      pos: a["pos"] === undefined ? undefined : requirePos(a["pos"], `${p}/pos`),
+      tag: requireString(a, "tag", p),
+      vulnerable: a["vulnerable"] === true,
+      spawnedBy: parseBeats(a["spawned_by"], `${p}/spawned_by`),
+      unleashedBy: parseBeats(a["unleashed_by"], `${p}/unleashed_by`),
+      floorGate: parseCoverage(a["floor_gate"], `${p}/floor_gate`),
+      maxHealth,
+    };
+  });
+}
+
+function parseLedgerSide(v: unknown, pointer: string, needReason: boolean): FloorLedgerEntry[] {
+  if (!Array.isArray(v)) throw new CombatPlanParseError(pointer, "expected an array");
+  return v.map((e, i): FloorLedgerEntry => {
+    const p = `${pointer}/${i}`;
+    if (!isRecord(e)) throw new CombatPlanParseError(p, "expected an object");
+    const reason = optionalString(e, "reason", p);
+    if (needReason && reason === undefined) {
+      throw new CombatPlanParseError(`${p}/reason`, "a not-covered entry must state why");
+    }
+    return {
+      kind: requireString(e, "kind", p),
+      id: requireString(e, "id", p),
+      tier: requireTier(e["tier"], `${p}/tier`),
+      reason,
+    };
+  });
+}
+
+/** The plan's `floor_gate`. Absent → `present: false` (see {@link FloorLedger}). */
+function parseFloorLedger(v: unknown, pointer: string): FloorLedger {
+  if (v === undefined) return { present: false, covered: [], notCovered: [] };
+  if (!isRecord(v)) throw new CombatPlanParseError(pointer, "expected an object");
+  return {
+    present: true,
+    covered: parseLedgerSide(v["covered"], `${pointer}/covered`, false),
+    notCovered: parseLedgerSide(v["not_covered"], `${pointer}/not_covered`, true),
+  };
 }
 
 /** Read the combat plan beside `criticalPathPath`; `undefined` when absent (a
@@ -296,6 +517,131 @@ export function floorFinding(
     `attempt. The bot is a poor fencer by design — a fight it wins cold is very ` +
     `likely too easy to carry that billing in a souls delve. Advisory: raise the ` +
     `stack, or drop the tier to \`ordinary\`.`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The floor gate on ACTORS (spec-0023's gate, #222's other encounter shape)
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether this run can honestly measure an actor fight, and — when it cannot —
+ * the reason, in the same voice the compiler's ledger uses.
+ *
+ * `exercise` carries the objective whose completion unleashes the actor: that is
+ * the ONLY moment the harness can know a fight starts without inventing one. A
+ * `trigger` beat (`strike`, `use`, `approach`, `strike-npc`) is player-initiated
+ * and, as `compiler::flow` puts it, has no position in the quest DAG — the
+ * campaign does not schedule it, so neither may the bot. Scheduling it anyway
+ * would fabricate a fight and then report telemetry about the fabrication.
+ */
+export type ActorExercise =
+  | { readonly kind: "exercise"; readonly afterObjective: string }
+  | { readonly kind: "skip"; readonly reason: string };
+
+/**
+ * Decide, from the plan alone, whether the bot fights this actor on this run.
+ *
+ * `pathObjectives` is the set of `obj/<id>` the compiled critical path proves —
+ * every step's objective. Pure and total: every actor gets either an exercise or
+ * a NAMED skip, because an actor missing from the report entirely is the silence
+ * the whole ledger exists to end.
+ */
+export function actorExercise(
+  a: ActorEncounter,
+  pathObjectives: ReadonlySet<string>,
+): ActorExercise {
+  if (a.tier === "ordinary") {
+    return {
+      kind: "skip",
+      reason:
+        "billed `ordinary` — the inverted floor gate measures only what the content bills " +
+        "`elite`/`boss`, so there is no expectation here to hold it to",
+    };
+  }
+  if (!a.floorGate.covered) {
+    // The compiler already decided this and said why; repeating it in our own
+    // words would let the two drift.
+    return { kind: "skip", reason: `the compiler's floor gate does not cover it: ${a.floorGate.reason}` };
+  }
+  if (a.pos === undefined) {
+    return {
+      kind: "skip",
+      reason: `the plan resolved no world cell for anchor \`${a.anchor}\`, so there is nowhere to walk`,
+    };
+  }
+  const onPath = a.unleashedBy.find(
+    (b) => b.site === "objective" && b.objective !== undefined && pathObjectives.has(b.objective),
+  );
+  if (onPath?.objective !== undefined) {
+    return { kind: "exercise", afterObjective: onPath.objective };
+  }
+  return { kind: "skip", reason: unleashSkipReason(a) };
+}
+
+/** Why an actor the compiler covers is still not fought on THIS run. */
+function unleashSkipReason(a: ActorEncounter): string {
+  const beats = a.unleashedBy;
+  if (beats.length === 0) {
+    // Unreachable in practice (no unleash beat ⇒ not covered), kept because a
+    // reason must exist for every skip, not for every skip we predicted.
+    return "no `unleash-actor` beat is stated in the plan";
+  }
+  const objectives = beats.flatMap((b) => (b.site === "objective" && b.objective ? [b.objective] : []));
+  if (objectives.length > 0) {
+    return (
+      `unleashed by ${objectives.map((o) => `\`${o}\``).join(", ")}, which the compiled critical ` +
+      `path never completes — the fight is off this run's storyline`
+    );
+  }
+  const quests = beats.flatMap((b) => (b.site === "quest" ? [b.owner] : []));
+  if (quests.length > 0) {
+    return (
+      `unleashed when ${quests.map((q) => `\`${q}\``).join(", ")} completes; the critical path ` +
+      `names objectives, not quests, so the harness cannot tell when that fires`
+    );
+  }
+  const t = beats[0]!;
+  const where = t.at !== undefined ? ` at \`${t.at}\`` : t.npc !== undefined ? ` on \`${t.npc}\`` : "";
+  return (
+    `unleashed only by an ambient \`${t.on ?? t.site}\` ${t.site} (\`${t.owner}\`${where}): a ` +
+    `player-initiated beat with no position in the quest DAG. The campaign does not schedule ` +
+    `it, so the bot inventing a moment to fire it would fabricate the fight it then reported on`
+  );
+}
+
+/** How an actor engagement ended. */
+export const ACTOR_OUTCOMES = ["won-first-try", "lost", "timed-out", "body-not-found"] as const;
+export type ActorOutcome = (typeof ACTOR_OUTCOMES)[number];
+
+/** One actor fight the run attempted, as the report states it. */
+export interface ActorTrial {
+  readonly actor: string;
+  readonly tier: EncounterTier;
+  readonly afterObjective: string;
+  readonly outcome: ActorOutcome;
+  /** Melee swings landed on the body — the reading key for `body-not-found`. */
+  readonly swings: number;
+  readonly elapsedMs: number;
+  /** What ended it, when something did. */
+  readonly detail?: string;
+}
+
+/**
+ * The floor finding for an actor fight, or `undefined` when there is nothing to
+ * say. Same rule and same tier as the wave gate: WARNING, never a failure.
+ *
+ * A bot that loses is exactly the design — spec-0023 downgraded bot melee
+ * competence from gate-critical to telemetry so a souls delve could be as hard
+ * as it likes. What is worth saying out loud is the inverse.
+ */
+export function actorFloorFinding(t: ActorTrial): string | undefined {
+  if (t.tier === "ordinary" || t.outcome !== "won-first-try") return undefined;
+  return (
+    `${t.actor} is billed \`${t.tier}\` and the UNASSISTED bot beat it on its first attempt ` +
+    `(${t.swings} swing(s), ${(t.elapsedMs / 1000).toFixed(1)}s after ${t.afterObjective}). The ` +
+    `bot is a poor fencer by design — a fight it wins cold is very likely too easy to carry ` +
+    `that billing in a souls delve. Advisory: raise the stack, or drop the tier to \`ordinary\`.`
   );
 }
 
