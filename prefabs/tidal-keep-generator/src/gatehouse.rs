@@ -503,14 +503,19 @@ pub fn anchors() -> Vec<(&'static str, AnchorJson)> {
             a_trap([14, plate_w, PLATE_Z], "north", DISP, PLATE_BLOCK),
         ),
         // spec-0022 traps v2: the consequence is a command payload, so the run
-        // needs a slot to fire FROM and a box to blanket. The slot is the arch
-        // rib's own opening one course under the dispenser — the murder-hole
-        // that was always in the masonry; the dispenser stays as its visible
-        // scenery. Deliberately NOT the dispenser cell itself, which is solid
-        // (`DW0446`).
+        // needs a slot to fire FROM and a box to blanket. The slot is the vault
+        // immediately DOWN-RUN of the arch rib; the dispenser set into the rib
+        // stays as its visible scenery.
+        //
+        // Both coordinates are load-bearing, and `DW0442` proved each of them.
+        // High, because the stair's own risers occlude a flat shot — a slot
+        // level with the rib sees two z of the run before the next tread eats
+        // the ray. And one z SOUTH of the rib, because the rib is a solid
+        // course across the corridor: a slot directly above it cannot shoot
+        // down through its own arch.
         (
             "anchor/l1a-volley-slot",
-            a_slot([14, DISP[1] - 1, RIB_Z], "south"),
+            a_slot([14, 12, RIB_Z + 1], "south"),
         ),
         (
             "anchor/l1a-stair-run",

@@ -623,12 +623,19 @@ pub fn anchors() -> Vec<(&'static str, AnchorJson)> {
             "anchor/l3-trap-darts",
             a_trap([EX_X0 + 1, dw, DART_Z], "north", DART_DISP, PLATE_BLOCK),
         ),
-        // spec-0022 traps v2: the gallery fires from the open shaft head one
-        // tread ABOVE the plate, so the climber walks into the fire rather than
-        // being shot in the back. The dispenser below stays as scenery.
+        // spec-0022 traps v2: the gallery fires from the head of the shaft,
+        // three treads ABOVE the plate, so the climber walks into the fire
+        // rather than being shot in the back. The dispenser stays as scenery.
+        //
+        // It sits at the TOP of the shaft's carved headroom because the exit
+        // climb's own risers occlude a flatter shot: `DW0442` rejected the same
+        // slot one course lower, the ray clipping the tread in front of the
+        // deepest kill-zone cell. And on the WEST jamb, because the dispenser
+        // kept as scenery on the east one is a solid block that shadowed the
+        // whole east column of the zone from a slot beside it.
         (
             "anchor/l3-gallery-slot",
-            a_slot([EX_X0 + 1, exit_walk(DART_Z - 3) + 2, DART_Z - 3], "south"),
+            a_slot([EX_X0, exit_walk(DART_Z - 3) + 3, DART_Z - 3], "south"),
         ),
         ("anchor/l3-dart-lever", a_pos([39, KEEP_WALK, 17], "east")),
         ("anchor/l3-unlock", a_pos([35, KEEP_WALK, 19], "west")),
