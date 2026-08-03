@@ -554,6 +554,12 @@ fn validate_loaded(
             diags.extend(delvewright_compiler::continuity::check_npc_continuity(
                 &campaign,
             ));
+            // The NPC scene ledger (DW0460–DW0467, spec-0020): every quest must
+            // say where each live NPC is, what they are doing, and what their
+            // right-click offers, and the declaration is checked against the
+            // effect history. Error tier, except the pre-0.7 deprecation window
+            // (DW0465) and the staleness lint (DW0467), which warn.
+            diags.extend(delvewright_compiler::cast::check_cast(&campaign));
             print_diags(&diags, json);
             Ok(Validated {
                 campaign,

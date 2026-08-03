@@ -249,6 +249,22 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
         for (i, eff) in q.on_complete.iter_mut().enumerate() {
             effect_strings_deep(eff, &format!("fx.{ql}.done.{i}"), f);
         }
+        // Stage 5 — v0.7 cast-ledger bark lines (spec-0020). Barks are spoken
+        // in-game exactly like narrate text, so they translate like it too.
+        // `doing` is deliberately NOT inventoried: it is authoring context for
+        // the dialogue stage, never shown to a player. (`cast` is a BTreeMap and
+        // the placement list is ordered, so the traversal stays deterministic.)
+        for (npc, entry) in &mut q.cast {
+            let np = local(npc.as_str()).to_string();
+            for (b, p) in entry.placements_mut().into_iter().enumerate() {
+                let Some(crate::stages::CastDialogue::Barks(pool)) = p.dialogue.as_mut() else {
+                    continue;
+                };
+                for (i, line) in pool.barks.iter_mut().enumerate() {
+                    f(&format!("cast.{ql}.{np}.{b}.bark.{i}"), line);
+                }
+            }
+        }
     }
     // Stage 5 — v0.4 environment-trigger effect strings.
     for t in &mut c.quests.content.triggers {
@@ -302,7 +318,9 @@ pub fn inventory(c: &Campaign) -> BTreeMap<String, String> {
 
 /// The NPC an inventory key belongs to (its **local** id), when the key scheme
 /// encodes one: `dlg.<npc>.…` (that NPC's dialogue tree — `.text` is the NPC's own
-/// line, `.opt.<i>.label` the player's reply *within* it) and `npc.<npc>.name`.
+/// line, `.opt.<i>.label` the player's reply *within* it), `npc.<npc>.name`, and
+/// `cast.<quest>.<npc>.…` (a v0.7 bark line — the NPC's own murmured speech, so a
+/// translator gets the same persona context a dialogue line gets).
 /// Returns `None` for every other key kind.
 ///
 /// Lives beside [`each_string`] — the traversal that *defines* the key scheme — so
@@ -314,6 +332,8 @@ pub fn key_speaker(key: &str) -> Option<&str> {
     let (kind, rest) = key.split_once('.')?;
     match kind {
         "dlg" | "npc" => rest.split('.').next(),
+        // `cast.<quest>.<npc>.<branch>.bark.<i>` — the npc is the second segment.
+        "cast" => rest.split('.').nth(1),
         _ => None,
     }
 }

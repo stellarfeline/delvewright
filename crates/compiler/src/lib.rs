@@ -45,6 +45,7 @@ pub mod atmos;
 pub mod blocking;
 pub mod calibrate;
 pub mod camera;
+pub mod cast;
 pub mod clearance;
 pub mod commands;
 pub mod continuity;
