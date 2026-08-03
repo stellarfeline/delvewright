@@ -2070,7 +2070,8 @@ pub enum Objective {
         stealth: bool,
     },
     /// Completed by interacting with an entity at `anchor`; if `requires_item` is
-    /// set, the item must be in the player's inventory (v0.3).
+    /// set, the item must be **held in the main hand** (v0.3; held semantics since
+    /// DSL v0.7 — see [`Objective::Interact::requires_item`]).
     Interact {
         /// Objective id.
         id: ObjectiveId,
@@ -2082,9 +2083,27 @@ pub enum Objective {
         hint: Option<String>,
         /// The anchor the interaction entity stands at.
         anchor: AnchorId,
-        /// Item required in inventory to complete the interaction (optional).
+        /// Item the player must be **holding in the main hand** for the
+        /// interaction to complete (optional).
+        ///
+        /// Held, not merely possessed (owner ruling, 2026-08-03): presenting the
+        /// item IS the action — a player who right-clicks a sleeping giant with a
+        /// sharpened stake buried in their backpack has not stabbed anything.
+        /// Before this ruling the gate read the whole inventory, which made every
+        /// `requires_item` interaction fire the moment the item was picked up
+        /// anywhere, whatever the player was actually doing with their hands.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         requires_item: Option<String>,
+        /// Diegetic feedback for a click that arrives without the required item in
+        /// hand (DSL v0.7, reserved `DW0141` earlier): narrated to that player in
+        /// chat instead of the silence the gate used to answer with. Requires
+        /// `requires_item` (`DW0437`).
+        ///
+        /// Only fires while the objective is genuinely open — same activation gate
+        /// as the affordance itself — so a finished or not-yet-active interaction
+        /// stays quiet.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        missing_item_hint: Option<String>,
         /// Prop block that IS the interaction affordance (DSL v0.4, spec-0008
         /// §2): the compiler `setblock`s it at the anchor on activation (exactly
         /// as `collect` uses a real chest). Omitted = the glowing-lantern

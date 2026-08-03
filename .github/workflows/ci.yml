@@ -342,3 +342,32 @@ jobs:
           DELVE_OUTPUT: ./delve-output-cast
           PACKTEST_CONTAINER: delvewright-packtest-cast
         run: docker compose -p dw-cast -f validation/compose.yaml --profile packtest down -v --remove-orphans || true
+
+      # `requires_item` is HELD, not carried (owner ruling, 2026-08-03) — and the
+      # template that proves it, `verb_interact_held`, is emitted only for a campaign
+      # that HAS a gated `interact`. hello-world has no `interact` objective at all,
+      # so without this pass neither it nor `verb_interact` ever runs on a real
+      # server: exactly the shape-verified-but-never-RUN gap the cast-ledger pass
+      # above exists to close, one verb further on. keep-trial is the smallest valid
+      # fixture carrying `interact` + `requires_item` (plus kill/collect/flag-gate,
+      # which come along free). Same cost profile: one extra toolserver boot, no new
+      # pull, no new compile.
+      - name: build the keep-trial delve output (held-item interact)
+        run: |
+          cargo run -p delvewright-compiler --bin delvec -- \
+            build crates/dsl/fixtures/valid/keep-trial \
+            -o validation/delve-output-keeptrial --prefabs campaigns/prefabs
+
+      - name: PackTest suite — keep-trial (`requires_item` is HELD, not carried)
+        env:
+          DELVE_OUTPUT: ./delve-output-keeptrial
+          PACKTEST_CONTAINER: delvewright-packtest-keeptrial
+        run: |
+          docker compose -p dw-keeptrial -f validation/compose.yaml --profile packtest up \
+            --abort-on-container-exit --exit-code-from packtest
+      - name: tear down (keep-trial)
+        if: always()
+        env:
+          DELVE_OUTPUT: ./delve-output-keeptrial
+          PACKTEST_CONTAINER: delvewright-packtest-keeptrial
+        run: docker compose -p dw-keeptrial -f validation/compose.yaml --profile packtest down -v --remove-orphans || true

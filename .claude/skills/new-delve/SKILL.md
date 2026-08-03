@@ -118,6 +118,13 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      them when the NPC is in plain sight of where the player just was; read the "may
      omit" allowance narrowly (playtest lesson: an off-screen NPC 60 blocks away
      through an unfamiliar cave left the player with no guidance at all).
+   - **`interact.requires_item` is HELD, not carried** (owner ruling, 2026-08-03):
+     the player must have the item in their **main hand** when they click —
+     presenting it is the action. Author `missing_item_hint` whenever the
+     empty-handed click deserves diegetic feedback (a sleeping giant mumbles in
+     its sleep; a locked door rattles and holds) — it is narrated in chat to that
+     player, only while the objective is open, and without it the click is met
+     with total silence, which reads as a broken affordance.
    - **Furnish the containers.** A prefab's chests and barrels are empty until a
      stage-5 `loot[]` entry fills them (`{id, anchor, items:[{item, count?, name?,
      enchantments?}]}`), and an empty chest reads as a bug to the player. Give

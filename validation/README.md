@@ -114,7 +114,10 @@ design.
 The generated PackTest suite is per-campaign: `delvec` emits a template only for a
 campaign that uses the feature it proves. hello-world — one quest, one NPC — cannot
 carry a dialogue-root **swap**, so spec-0020's cast-ledger templates (`cast_root_swap`,
-`cast_bark_cycle`, `cast_none_silent`) simply do not exist in its output.
+`cast_bark_cycle`, `cast_none_silent`) simply do not exist in its output. It has no
+`interact` objective either, so the `interact` templates (`verb_interact` and
+`verb_interact_held`, the held-vs-carried proof) are likewise absent — CI therefore
+runs `crates/dsl/fixtures/valid/keep-trial` as a third pass.
 
 `DELVE_OUTPUT` (and `PACKTEST_CONTAINER`, since container names are Docker-global
 while `-p` only isolates volumes and networks) let the same profile boot a second
@@ -133,8 +136,8 @@ EULA=TRUE DELVE_OUTPUT=./delve-output-cast PACKTEST_CONTAINER=delvewright-packte
 ```
 
 `validation/delve-output*/` is gitignored, so extra trees need no bookkeeping. The
-same two variables are how CI's tier-2 job runs its second pass — add a step there
-alongside the existing one when a new feature's templates need live execution
+same two variables are how CI's tier-2 job runs its extra passes — add a step there
+alongside the existing ones when a new feature's templates need live execution
 rather than shape verification.
 
 ## Creator playtest loop (spec-0006)
