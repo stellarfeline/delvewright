@@ -1,7 +1,8 @@
 # spec-0025: Branch-complete narrative verification — every branch is played, not just declared
 
-- **Status**: Proposed (owner directive 2026-08-03: this bug class must be
-  machine-caught, never owner-swept)
+- **Status**: Approved (owner approval in conversation, 2026-08-03; chronicle
+  design is the owner's. Origin: owner directive same day — this bug class must
+  be machine-caught, never owner-swept)
 - **ADRs**: 0005 (two-layer validation — extends both layers from one critical
   path to the branch set), 0006 (determinism)
 - **Depends on**: spec-0020 (cast ledger, per-branch casts), spec-0012
