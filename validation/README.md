@@ -20,6 +20,42 @@ at compose time only and never leak into the shipped delve image; CI asserts the
 absence. Every tool in the repo, including the scripts below, is indexed in
 [`../docs/reference/tools.md`](../docs/reference/tools.md).
 
+## Sharing the Docker host (mutex + isolation)
+
+One Docker host, one port 25565, one `delvewright-server` container name — and
+sometimes a human playing on it. Two rules, both enforced by
+[`mutex.sh`](mutex.sh), keep agents from colliding with each other or with the
+owner:
+
+**1. Take the mutex.** `mutex.sh` is the only sanctioned way to claim the stack:
+
+```bash
+source validation/mutex.sh
+dw_mutex_acquire "my-name" || exit 1   # exits non-zero if someone else holds it
+trap dw_mutex_release EXIT             # idempotent; releases only your own lock
+```
+
+Acquisition is the return value of `mkdir` — never inferred from the lock
+directory existing, which is true precisely when *someone else* holds it. The
+lock carries a `HOLDER` file naming its owner. **`owner-play-session` is
+sacred**: `dw_mutex_assert_not_owner_session` refuses all Docker work while a
+human is playing, and acquire will not wait on it or steal it, however stale it
+looks. Never install a teardown trap before acquisition succeeds.
+
+**2. Isolate your project.** The mutex serialises access; isolation is what makes
+a mistake survivable. Any worker live-server work runs in its **own compose
+project** (`docker compose -p dw-worker-<unique>`, or `docker run` with a unique
+`--name`), publishes **no host binding on 25565** (use the compose network,
+`docker exec … rcon-cli`, or a distinct high port — 25565 belongs to the owner's
+client), and tears down **only its own project** (`docker compose -p
+dw-worker-<unique> down -v`) — never a bare `docker compose down`, never
+`docker rm` on a container it did not create.
+
+Both exist because of a real incident (2026-08-02): a hand-rolled waiter whose
+"did I get the lock?" guard tested directory existence fell through against the
+owner's held lock and ran a teardown that — via the pinned `container_name` —
+destroyed her live play session and its world volume mid-playtest.
+
 ## World fidelity (all profiles)
 
 Every server here boots the world the **compiler** declared: `world-settings-
