@@ -576,7 +576,7 @@ pub fn build_with_warnings(
     // vanilla, so they flow through the command-tree validator below and the
     // determinism gate like the main datapack; the shipped delve image excludes
     // this directory (CI-checked, same as packtest-datapack/).
-    crate::creator::emit_creator(plan, &mut out);
+    crate::creator::emit_creator(plan, &mut out, &moves, &actor_moves);
 
     // ---- server ----
     emit_server(plan, &mut out);
@@ -606,6 +606,13 @@ pub fn build_with_warnings(
     if !errors.is_empty() {
         return Err(BuildFailure::Validation(errors));
     }
+
+    // ---- affordance-hardware self-check (DW0420 / DW0421) ----
+    // Every right-click target the compiler owns must be VISIBLE in the shipped
+    // datapack, and only its own consumption may retire that visibility. Read
+    // off the finished tree, so it judges the commands that actually ship.
+    // See `crate::affordance` for the drowned-bell soft-lock this encodes.
+    crate::affordance::check(&affordances(plan), &out)?;
 
     // ---- NPC-skin resource pack (spec-0009) ----
     // A campaign with skinned (mannequin) NPCs ships a deterministic resource-pack
@@ -3147,6 +3154,16 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                     "execute unless entity @e[tag=dw_bonfire_{i}] run summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_bonfire_{i}\"]}}",
                     v[0], v[1], v[2]
                 ));
+                // …and the visible hardware, under the same absence guard so a
+                // re-fired beat never stacks a second one. A rest point the
+                // player cannot see is the same soft-lock class as an invisible
+                // unlock lever (`DW0420`). Never retired: a bonfire is not
+                // consumed by resting at it.
+                let hw = crate::affordance::hardware_tag(&format!("dw_bonfire_{i}"));
+                body.push(format!(
+                    "execute unless entity @e[tag={hw}] run {}",
+                    affordance_hardware(v, &format!("dw_bonfire_{i}"), "minecraft:campfire")
+                ));
             }
         }
         QuestEffect::BeginStealth {
@@ -3198,13 +3215,27 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
 /// relocates the (Silent) body far below the floor first, so the death sequence
 /// plays entirely out of the players' view — a silent removal from two intended
 /// primitives (tp + kill).
+///
+/// **The relocation must be per-actor** (round-8 island QA, caught on a live
+/// server). `tp <targets> ~ -128 ~` resolves `~ ~` against the **command source**,
+/// not against each target, and every path that reaches a `despawn-actor` — a
+/// `move-actor`'s `on_arrive`, a `sequence` step, a trigger bundle — runs from the
+/// server source, whose position is world spawn. So `vanish` dropped the body at
+/// (spawn.x, -128, spawn.z) rather than straight down its own column: the island's
+/// herdsman, standing at `6.5, -55.5`, died at `10.0, -128.0, 9.0`. Invisible today
+/// only because the `kill` lands on the very next line — but the intent of the
+/// style is "out of sight, in place", and an actor that briefly exists at another
+/// area's coordinates is wrong data, not a detail. `execute as … at @s` is the same
+/// idiom [`emit_play_sound`] uses to make `~ ~ ~` resolve per entity.
 fn emit_despawn_actor(actor: &str, style: delvewright_dsl::DespawnStyle, body: &mut Vec<String>) {
     use delvewright_dsl::DespawnStyle;
     let safe = plan::safe_local(actor);
     match style {
         DespawnStyle::Kill => body.push(format!("kill @e[tag=dw_actor_{safe}]")),
         DespawnStyle::Vanish => {
-            body.push(format!("tp @e[tag=dw_actor_{safe}] ~ -128 ~"));
+            body.push(format!(
+                "execute as @e[tag=dw_actor_{safe}] at @s run tp @s ~ -128 ~"
+            ));
             body.push(format!("kill @e[tag=dw_actor_{safe}]"));
         }
     }
@@ -3447,6 +3478,33 @@ fn timed_gate_setup(plan: &Plan) -> Vec<String> {
         .collect()
 }
 
+/// Half-hearts dealt by a `crush: true` timed gate's closing edge (spec-0016 §4
+/// addendum). Far above any reachable effective health: `minecraft:generic`
+/// ignores armor but not absorption/resistance, and the point of a portcullis
+/// is that being caught in it is not survivable by gearing.
+const CRUSH_DAMAGE: u32 = 1000;
+
+/// A `@a`-selector volume covering an inclusive block region — the same box
+/// model `damage-players`' `within` filter uses. `dx/dy/dz` are spans, so a
+/// one-block region is `dx=0` and still selects the whole block.
+///
+/// Corners are normalised because a gate region's stored corners are whatever
+/// the prefab metadata declared; a selector with a negative span selects
+/// nothing, which would make the crush silently no-op.
+fn region_selector(from: [i32; 3], to: [i32; 3]) -> String {
+    let lo = [from[0].min(to[0]), from[1].min(to[1]), from[2].min(to[2])];
+    let hi = [from[0].max(to[0]), from[1].max(to[1]), from[2].max(to[2])];
+    format!(
+        "x={},dx={},y={},dy={},z={},dz={},tag=!{CUTSCENE_TAG}",
+        lo[0],
+        hi[0] - lo[0],
+        lo[1],
+        hi[1] - lo[1],
+        lo[2],
+        hi[2] - lo[2]
+    )
+}
+
 /// The timed-gate clock functions (spec-0016 §4): a two-function ping-pong that
 /// carries its own next hop, so the cycle is one self-sustaining chain with no
 /// per-tick polling and no state to drift.
@@ -3474,16 +3532,28 @@ fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
                 format!("schedule function {ns}:tgate_close_{id} {}t", g.open_ticks),
             ]),
         ));
-        out.push((
-            format!("tgate_close_{id}"),
-            lines(&[
-                format!(
-                    "fill {} {} {} {} {} {} {}",
-                    from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
-                ),
-                format!("schedule function {ns}:tgate_open_{id} {}t", g.closed_ticks),
-            ]),
+        let mut close = Vec::new();
+        // spec-0016 §4 addendum: the portcullis judgement. Emitted BEFORE the
+        // fill so the victim is judged on the world as it was when they
+        // mistimed it — after the fill they are already inside a solid block
+        // and vanilla's own suffocation would be the thing killing them, which
+        // is slow, gear-dependent and escapable. Costs nothing per tick: this
+        // rides the closing tick of the schedule ping-pong that already exists.
+        if g.crush {
+            close.push(format!(
+                "execute as @a[{}] run damage @s {CRUSH_DAMAGE} minecraft:generic",
+                region_selector(from, to)
+            ));
+        }
+        close.push(format!(
+            "fill {} {} {} {} {} {} {}",
+            from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
         ));
+        close.push(format!(
+            "schedule function {ns}:tgate_open_{id} {}t",
+            g.closed_ticks
+        ));
+        out.push((format!("tgate_close_{id}"), lines(&close)));
     }
     out
 }
@@ -3492,23 +3562,94 @@ fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
 // spec-0016 §2 shortcut doors
 // ---------------------------------------------------------------------------
 
+/// Every compiler-owned interact affordance in this campaign, in deterministic
+/// order — the subjects of the `DW0420` / `DW0421` proofs.
+///
+/// The list is the definition of the class: a point the delve asks the player to
+/// right-click. Adding a new such verb means adding it here, which is what makes
+/// the proof total rather than a spot check.
+fn affordances(plan: &Plan) -> Vec<crate::affordance::Affordance> {
+    let mut out = Vec::new();
+    for sc in &plan.shortcuts {
+        out.push(crate::affordance::Affordance {
+            id: sc.id.clone(),
+            kind: "shortcut unlock",
+            tag: format!("dw_sc_{}", sc.safe),
+            // Opening the door spends the affordance.
+            retired_by: Some(format!("shortcut_open_{}", sc.safe)),
+        });
+    }
+    for t in &plan.traps {
+        if t.disarm.is_some() {
+            out.push(crate::affordance::Affordance {
+                id: t.id.clone(),
+                kind: "trap disarm",
+                tag: format!("dw_trapdis_{}", t.safe),
+                // Throwing the lever spends the affordance.
+                retired_by: Some(format!("trap_disarm_{}", t.safe)),
+            });
+        }
+    }
+    for bf in plan.bonfires() {
+        out.push(crate::affordance::Affordance {
+            id: bf.anchor.clone(),
+            kind: "bonfire",
+            tag: format!("dw_bonfire_{}", bf.index),
+            // A bonfire is rested at, never used up.
+            retired_by: None,
+        });
+    }
+    out
+}
+
 /// `setup_finish` commands for shortcut doors (spec-0016 §2): summon the
 /// far-side unlock affordance (a right-click target, the same
-/// `minecraft:interaction` primitive as a trap disarm). The gate needs no
-/// command at all — it is **physically sealed in the prefab** from world-load,
-/// which is precisely why the pattern needs no "seal it now" verb and why
-/// permanence can be structural. Empty for a campaign with no shortcut.
+/// `minecraft:interaction` primitive as a trap disarm) **and its visible
+/// hardware**. The gate needs no command at all — it is **physically sealed in
+/// the prefab** from world-load, which is precisely why the pattern needs no
+/// "seal it now" verb and why permanence can be structural. Empty for a
+/// campaign with no shortcut.
+///
+/// The hardware is not decoration. `minecraft:interaction` is an invisible
+/// hitbox, so the hitbox alone asks the player to right-click a point nothing
+/// marks — the drowned-bell soft-lock, where the unlock cell was bare air and
+/// the only visible thing there belonged to an unrelated objective. The
+/// compiler owns the affordance's visibility; it is never left to whether the
+/// tileset happens to carry a lever. Proven by `DW0420`
+/// ([`crate::affordance`]).
 fn shortcut_setup(plan: &Plan) -> Vec<String> {
     plan.shortcuts
         .iter()
-        .map(|sc| {
+        .flat_map(|sc| {
             let v = ent_xyz(sc.unlock);
-            format!(
-                "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_sc_{}\"]}}",
-                v[0], v[1], v[2], sc.safe
-            )
+            [
+                format!(
+                    "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_sc_{}\"]}}",
+                    v[0], v[1], v[2], sc.safe
+                ),
+                affordance_hardware(v, &format!("dw_sc_{}", sc.safe), "minecraft:lever"),
+            ]
         })
         .collect()
+}
+
+/// The visible hardware for a compiler-owned interact affordance: a glowing,
+/// collision-free `item_display` at the affordance's own cell, carrying the
+/// derived `dw_hw_<tag>` so [`crate::affordance`] can pair the two.
+///
+/// An `item_display` (not a block) because the affordance's cell must stay
+/// walkable and the interaction hitbox unobstructed — the same reasoning that
+/// made the interact objective's marker a display. It is deliberately
+/// **nameless**: the glow says "use me" without inventing a player-facing
+/// string that no campaign authored and no `l10n` sidecar could translate.
+fn affordance_hardware(pos: [String; 3], tag: &str, item: &str) -> String {
+    format!(
+        "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],billboard:\"center\",item:{{id:\"{item}\",count:1}}}}",
+        pos[0],
+        pos[1],
+        pos[2],
+        crate::affordance::hardware_tag(tag)
+    )
 }
 
 /// Per-tick shortcut unlock detection (spec-0016 §2). Fires **once** — the
@@ -3544,6 +3685,13 @@ fn emit_shortcut_functions(plan: &Plan) -> Vec<(String, String)> {
             format!(
                 "fill {} {} {} {} {} {} minecraft:air replace {}",
                 from[0], from[1], from[2], to[0], to[1], to[2], sc.gate_block
+            ),
+            // The affordance is spent: the bar is thrown and the door is open,
+            // so its hardware retires with it. This is the ONE function allowed
+            // to remove it — `DW0421` fails the build if anything else does.
+            format!(
+                "kill @e[tag={}]",
+                crate::affordance::hardware_tag(&format!("dw_sc_{id}"))
             ),
         ];
         body.extend(emit_effect_bundle(plan, &sc.on_unlock, Audience::Scheduled));
@@ -4310,10 +4458,52 @@ fn mannequin_pose_nbt(entity: &str) -> &'static str {
     }
 }
 
+/// The state vanilla's `finalizeSpawn` would have given this entity, spliced into
+/// every summon the compiler writes with an NBT compound — or `""` for a species
+/// that needs none.
+///
+/// **The trap this closes** (round-8 island QA, proven on a live pinned 1.21.11
+/// server). `/summon <entity> <pos>` calls the mob's `finalizeSpawn`;
+/// `/summon <entity> <pos> <nbt>` — *any* NBT compound, even `{}` — does **not**.
+/// The compiler always passes NBT (tags are how every entity it owns is addressed),
+/// so every mob it summons is spawned un-finalized. For most species that is
+/// invisible. For `minecraft:warden` it is fatal: `finalizeSpawn` is the only place
+/// the `minecraft:dig_cooldown` brain memory is seeded, and a warden whose brain
+/// lacks it enters the DIG activity on its first AI tick, plays the burrow
+/// animation, and despawns about five seconds later. That is exactly what the
+/// owner saw — strike the sleeping giant, watch him turn into a warden, watch the
+/// warden immediately dig itself back into the ground.
+///
+/// Live A/B on the pinned server:
+/// `summon minecraft:warden <pos>` → `Brain{memories:{"minecraft:dig_cooldown":{value:{},ttl:1200L}}}`;
+/// `summon minecraft:warden <pos> {}` → `Brain{memories:{}}`, gone in ~5s.
+///
+/// The fix is to write the same data vanilla would have written — the entity's own
+/// documented, codec-backed NBT, not a workaround for a missing primitive. The
+/// warden refreshes the cooldown itself every tick it is awake and doing anything,
+/// so seeding vanilla's own 1200-tick value is enough to keep an unleashed boss in
+/// the world for as long as the campaign wants it (verified: still present and
+/// roaming past 80 s, `ttl` held at 1199 by the warden's own AI).
+///
+/// Only species whose un-finalized state is actually *wrong* appear here, so every
+/// campaign without one stays byte-identical.
+fn spawn_finalize_nbt(entity: &str) -> &'static str {
+    match entity.strip_prefix("minecraft:").unwrap_or(entity) {
+        // `Warden.finalizeSpawn` → `setMemoryWithExpiry(DIG_COOLDOWN, Unit, 1200)`.
+        "warden" => ",Brain:{memories:{\"minecraft:dig_cooldown\":{value:{},ttl:1200L}}}",
+        _ => "",
+    }
+}
+
 /// The `/summon` command (relative coords, run `execute at` the puppet) for an
 /// actor's real-AI twin (spec-0014 `unleash`): the real `entity` with AI enabled,
 /// same name and body tag (`dw_actor` + `dw_actor_<id>`), but **no** `dw_pup_<id>`
 /// marker — so killing the puppet by its marker leaves the twin fighting.
+///
+/// The twin is the compiler's only *free-AI* summon, so it is where
+/// [`spawn_finalize_nbt`] matters: a caged puppet is `NoAI`, and a `NoAI` mob never
+/// runs `customServerAiStep`, which is why the island's herdsman warden could stand
+/// in the meadow indefinitely while the unleashed one burrowed away.
 fn actor_twin_summon(a: &delvewright_dsl::Actor) -> String {
     let safe = plan::safe_local(a.id.as_str());
     let name = a
@@ -4322,10 +4512,115 @@ fn actor_twin_summon(a: &delvewright_dsl::Actor) -> String {
         .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)))
         .unwrap_or_default();
     let pose = mannequin_pose_nbt(&a.entity);
+    let finalize = spawn_finalize_nbt(&a.entity);
     format!(
-        "summon {} ~ ~ ~ {{PersistenceRequired:1b{pose},DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}}}",
+        "summon {} ~ ~ ~ {{PersistenceRequired:1b{pose},DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}}}",
         a.entity
     )
+}
+
+/// Command storage holding the UUID of the player who most recently struck (or
+/// used) a click trigger, for the duration of that trigger's own effect bundle.
+///
+/// Vanilla writes the clicking player's UUID into the `minecraft:interaction`
+/// entity's `attack` / `interaction` record; `data modify … set from entity` is the
+/// intended primitive for moving it, and command storage is the intended place to
+/// park it. Written at the top of `trig_<id>` and removed at the bottom, so it is
+/// live exactly while the trigger's synchronous effects run and can never go stale.
+const STRIKER_STORAGE: &str = "dw:strike";
+
+/// The storage path under [`STRIKER_STORAGE`] holding the striking player's UUID.
+const STRIKER_PATH: &str = "player";
+
+/// Whether `t` is a click trigger (`strike` / `strike-npc` / `use`) — the forms
+/// whose interaction entity records *which player* acted.
+fn trigger_is_click(t: &delvewright_dsl::EnvTrigger) -> bool {
+    use delvewright_dsl::TriggerOn;
+    matches!(
+        t.on,
+        TriggerOn::Strike | TriggerOn::Use | TriggerOn::StrikeNpc { .. }
+    )
+}
+
+/// The NBT record a click trigger reads off its interaction entity: a left-click
+/// writes `attack`, a right-click writes `interaction`.
+fn trigger_record(t: &delvewright_dsl::EnvTrigger) -> &'static str {
+    match t.on {
+        delvewright_dsl::TriggerOn::Use => "interaction",
+        _ => "attack",
+    }
+}
+
+/// Whether this trigger's effect tree reaches an `unleash-actor` — the only reason
+/// to capture the striker at all. Campaigns that never unleash from a click stay
+/// byte-identical.
+fn trigger_unleashes(t: &delvewright_dsl::EnvTrigger) -> bool {
+    let mut all = Vec::new();
+    for e in &t.effects {
+        push_effect_deep(e, &mut all);
+    }
+    all.iter()
+        .any(|e| matches!(e, QuestEffect::UnleashActor { .. }))
+}
+
+/// Whether any click trigger in the campaign captures a striker — i.e. whether
+/// [`STRIKER_STORAGE`] can ever hold a value. Gates the aggro-lock lines in
+/// `unleash_<id>` so an unrelated campaign's unleash functions are unchanged.
+fn campaign_captures_striker(c: &delvewright_dsl::Campaign) -> bool {
+    c.quests
+        .content
+        .triggers
+        .iter()
+        .any(|t| trigger_is_click(t) && trigger_unleashes(t))
+}
+
+/// Warden anger at which `AngerLevel` is `ANGRY` and the mob commits to a target.
+/// Vanilla's own maximum (`AngerManagement`), so the lock is immediate and total.
+const WARDEN_MAX_ANGER: i32 = 150;
+
+/// The lines that lock an unleashed twin's aggression onto the player who struck
+/// the trigger (owner directive, round 8): a hostile that a player *provoked* must
+/// come for that player, not wander off looking for someone.
+///
+/// **Only species with a proven vanilla primitive get one.** `minecraft:warden`
+/// persists its target list as `anger.suspects` (`AngerManagement`), a codec-backed
+/// field vanilla itself round-trips, and seeding it works end to end on a live
+/// pinned 1.21.11 server: the warden left its spawn cell, closed on the seeded
+/// player's position and killed that player.
+///
+/// The `NeutralMob` pair (`AngerTime` / `AngryAt`) looks like the same primitive for
+/// endermen, piglins, wolves and friends, and was tried — but on 1.21.11 neither
+/// field reads back after a tick, for any of the species tested, with a real online
+/// player's UUID or a synthetic one. Whatever the mechanism (the codec dropping
+/// defaults, or `updatePersistentAnger` clearing the target it just resolved), the
+/// data does not survive, so the compiler does not pretend it does: every non-warden
+/// species is left to vanilla's own nearest-player acquisition, and that limit is
+/// documented rather than papered over (CLAUDE.md: no hacks at any layer — if the
+/// primitive is not really there, the feature does not get faked downstream).
+///
+/// Guarded on the striker storage actually holding a UUID, so an `unleash-actor`
+/// fired from anywhere other than a click trigger's own bundle changes nothing.
+fn aggro_lock_lines(entity: &str, safe: &str) -> Vec<String> {
+    let id = entity.strip_prefix("minecraft:").unwrap_or(entity);
+    if id != "warden" {
+        return Vec::new();
+    }
+    // The twin is the only entity left wearing the body tag: `unleash_<id>` kills
+    // the puppet on the line before these run.
+    let target = format!("@e[tag=dw_actor_{safe},limit=1]");
+    let guard = format!("execute if data storage {STRIKER_STORAGE} {STRIKER_PATH} run");
+    // `AngerManagement`: a suspect list of `{uuid, anger}`. Seed one suspect at
+    // vanilla's maximum anger, then overwrite its placeholder UUID from storage —
+    // `data modify … set from storage` cannot create the list element, so the
+    // element is written first and patched second.
+    vec![
+        format!(
+            "{guard} data modify entity {target} anger.suspects set value [{{anger:{WARDEN_MAX_ANGER},uuid:[I;0,0,0,0]}}]"
+        ),
+        format!(
+            "{guard} data modify entity {target} anger.suspects[0].uuid set from storage {STRIKER_STORAGE} {STRIKER_PATH}"
+        ),
+    ]
 }
 
 /// The generated start-function name for a `move-actor` (content key).
@@ -4383,16 +4678,17 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
                 actor_puppet_summon(a, pos, yaw)
             )]),
         ));
-        out.push((
-            format!("unleash_{safe}"),
-            lines(&[
-                format!(
-                    "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
-                    actor_twin_summon(a)
-                ),
-                format!("kill @e[tag=dw_pup_{safe}]"),
-            ]),
-        ));
+        let mut unleash = vec![
+            format!(
+                "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
+                actor_twin_summon(a)
+            ),
+            format!("kill @e[tag=dw_pup_{safe}]"),
+        ];
+        if campaign_captures_striker(plan.campaign) {
+            unleash.extend(aggro_lock_lines(&a.entity, &safe));
+        }
+        out.push((format!("unleash_{safe}"), lines(&unleash)));
     }
     // move-actor per-tick drivers.
     for m in actor_moves {
@@ -4868,10 +5164,34 @@ fn env_trigger_setup(plan: &Plan) -> Vec<String> {
 
 /// Environment-trigger per-tick checks for the `tick` function. Empty for a
 /// campaign with no triggers.
+///
+/// **Two phases, not one, for the click triggers** (round-8 island QA). A click
+/// trigger is `if <record present> run <effects>` followed by `data remove` of the
+/// record — the removal is what makes a held-down click fire exactly once. Emitting
+/// that pair *per trigger*, inline, is only sound while at most one trigger reads a
+/// given interaction entity. Several `strike-npc` triggers legitimately ride ONE
+/// NPC hitbox (see [`npc_hitbox_trigger_tags`]) — the island's giant carries
+/// `wake-the-giant` (requires `flag/asleep`) and `his-house` (forbids it), one
+/// hitbox, mutually exclusive gates. Inline removal made the FIRST-DECLARED trigger
+/// consume the record even when its own gate was shut, so `his-house` could never
+/// see a click and never fired: a suppressed trigger starved its siblings, and which
+/// one starved depended on declaration order.
+///
+/// So the record is read by every trigger first and cleared afterwards: all fire
+/// clauses in declaration order, then all clear clauses. The semantics become
+/// order-independent — every trigger sharing a hitbox sees the same click, and each
+/// fires exactly when its own gate says so. Consumption is unchanged (the record is
+/// gone by the end of the same `tick` pass, so a held click still fires once).
+///
+/// Byte impact: a campaign whose click triggers are its last-declared triggers is
+/// unchanged; any other ordering moves the clear clauses to the end of the block.
 fn env_trigger_tick(plan: &Plan) -> Vec<String> {
     use delvewright_dsl::TriggerOn;
     let ns = &plan.namespace;
     let mut out = Vec::new();
+    // Phase 2, accumulated while phase 1 is emitted: `(tag, record)` for every
+    // click trigger, in declaration order (deterministic).
+    let mut clears: Vec<String> = Vec::new();
     for t in &plan.campaign.quests.content.triggers {
         let id = plan::safe_local(t.id.as_str());
         let once_guard = if t.once {
@@ -4916,7 +5236,7 @@ fn env_trigger_tick(plan: &Plan) -> Vec<String> {
                 out.push(format!(
                     "execute {once_guard}{forbid_guard}if entity @e[tag=dw_trig_{id},nbt={{{rec}:{{}}}}] {flag_cond}run function {ns}:trig_{id}"
                 ));
-                out.push(format!(
+                clears.push(format!(
                     "execute as @e[tag=dw_trig_{id}] run data remove entity @s {rec}"
                 ));
             }
@@ -4933,6 +5253,7 @@ fn env_trigger_tick(plan: &Plan) -> Vec<String> {
             }
         }
     }
+    out.extend(clears);
     out
 }
 
@@ -4946,18 +5267,43 @@ fn env_trigger_tick(plan: &Plan) -> Vec<String> {
 /// The function is dispatched from `env_trigger_tick` without an executor for an
 /// `approach`/`strike`/`use` trigger, so nothing here may rely on `@s` — the
 /// party model means nothing needs to.
+///
+/// **`#trig_<id>` is written by every trigger, not only `once` ones** (round-8).
+/// `once` *reads* it as its at-most-once guard, but the write is what makes trigger
+/// dispatch observable at all: without it a repeatable trigger firing leaves no
+/// machine-readable trace, and the shared-hitbox starvation bug — where a trigger
+/// simply never fired — was invisible to every automated check the repo had. One
+/// scoreboard write on a rare event buys a PackTest that can assert *which* of two
+/// triggers on one hitbox actually ran (`v06_shared_hitbox`). Byte impact: one added
+/// line per non-`once` trigger function.
 fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for t in &plan.campaign.quests.content.triggers {
         let id = plan::safe_local(t.id.as_str());
         let mut body: Vec<String> = Vec::new();
-        if t.once {
-            body.push(format!("scoreboard players set #trig_{id} dw.sys 1"));
+        body.push(format!("scoreboard players set #trig_{id} dw.sys 1"));
+        // Striker capture (owner directive, round 8). The click record is still on
+        // the hitbox here — `env_trigger_tick` clears every record only after every
+        // trigger has been offered it — so this is the one place the acting player's
+        // UUID is knowable. Parked in storage rather than passed as an argument
+        // because `unleash-actor` may sit behind any amount of nesting inside this
+        // bundle, and removed again below so it can never leak into a later beat.
+        let capture = trigger_is_click(t) && trigger_unleashes(t);
+        if capture {
+            let rec = trigger_record(t);
+            body.push(format!(
+                "data modify storage {STRIKER_STORAGE} {STRIKER_PATH} set from entity @e[tag=dw_trig_{id},limit=1] {rec}.player"
+            ));
         }
         // The trigger's own flag gate is already proven by `env_trigger_tick`
         // before it dispatches here; each effect still carries its own gate.
         for e in &t.effects {
             emit_gated_effect(plan, e, Audience::Scheduled, &mut body);
+        }
+        if capture {
+            body.push(format!(
+                "data remove storage {STRIKER_STORAGE} {STRIKER_PATH}"
+            ));
         }
         out.push((format!("trig_{id}"), lines(&body)));
     }
@@ -5149,14 +5495,21 @@ fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<Stri
                 disp[0], disp[1], disp[2]
             ));
         }
-        // Summon the disarm interaction affordance (a right-click target). The
-        // physical lever may also be in the prefab; this entity is the modeled,
-        // provable disarm the compiler owns.
+        // Summon the disarm interaction affordance (a right-click target) and
+        // the visible hardware that makes it findable. The prefab may ALSO dress
+        // the cell, but the compiler no longer depends on that: an invisible
+        // `minecraft:interaction` on its own is a lever the player cannot see
+        // (the drowned-bell class, `DW0420`).
         if let Some(dis) = &t.disarm {
             let v = ent_xyz(dis.via_cell);
             out.push(format!(
                 "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_trapdis_{}\"]}}",
                 v[0], v[1], v[2], t.safe
+            ));
+            out.push(affordance_hardware(
+                v,
+                &format!("dw_trapdis_{}", t.safe),
+                "minecraft:lever",
             ));
         }
     }
@@ -5212,6 +5565,13 @@ fn trap_fns(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<(Strin
                 disp[0], disp[1], disp[2]
             ));
         }
+        // The lever has been thrown: the disarm affordance is spent, so its
+        // visible hardware retires with it. The ONE function allowed to do this
+        // — `DW0421` fails the build if any other machinery reaches it.
+        body.push(format!(
+            "kill @e[tag={}]",
+            crate::affordance::hardware_tag(&format!("dw_trapdis_{id}"))
+        ));
         out.push((format!("trap_disarm_{id}"), lines(&body)));
     }
     out.extend(trap_gate_fns(plan, gate_hardware));
@@ -6275,6 +6635,10 @@ fn emit_packtest(
     // target. Emits nothing when the campaign uses none of them.
     emit_v04_packtests(plan, out, moves);
 
+    // round-8: two flag-gated click triggers on one NPC hitbox must both be
+    // reachable. Emits nothing without such a pair.
+    emit_shared_hitbox_packtest(plan, out);
+
     // v0.6: boundary return / never-move-inside (spec-0013). Emits nothing without
     // a boundary.
     emit_boundary_packtest(plan, out);
@@ -7084,6 +7448,88 @@ fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     b.push("assert score #tg_shut dw.sys matches 1".to_string());
     out.insert(
         format!("packtest-datapack/data/{ns}/test/souls_timed_gate.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+    emit_timed_gate_crush_packtest(plan, g, out);
+}
+
+/// spec-0016 §4 addendum PackTest: a `crush: true` gate's closing edge selects
+/// **exactly** the players standing in its region.
+///
+/// ## Why this asserts scoping rather than death
+///
+/// The obvious test — put a dummy in the gate, shut it, assert a corpse — cannot
+/// be written. **PackTest fake players are immune to `/damage`** (measured live
+/// on the pinned toolserver, 2026-08-03: a `# @dummy` reports
+/// `playerGameType: 0` (survival), yet `damage @s 1000 minecraft:generic` leaves
+/// `Health` at exactly 20.0, and an explicit `gamemode survival @s` first does
+/// not change that). A lethality assertion against a dummy is therefore
+/// permanently red no matter how correct the engine is. This is the same
+/// limitation that already pushed the `damage-players` PackTest onto a zombie
+/// dummy — and a zombie cannot stand in here, because the crush selects `@a`.
+///
+/// So the runtime rung proves the half it genuinely can, and the other halves are
+/// proven where they can be proven honestly:
+///
+/// * **scoping** (here, live, on real assembled geometry) — the emitted selector
+///   contains the player when they stand in the gate and excludes them when they
+///   step clear. The selector string is the *same* one `tgate_close_<id>` runs.
+/// * **lethality + ordering** — compiler unit tests assert the exact
+///   `execute as @a[…] run damage @s 1000 minecraft:generic` and that it precedes
+///   the `fill`.
+/// * **end-to-end death** — verified live against a real mineflayer client on
+///   pinned 1.21.11: parked two blocks clear of the region a player survives 30 s
+///   of repeated closing ticks at full health, and one closing tick with the same
+///   player standing inside kills them.
+///
+/// The test binds `@s`, not `@a`, on purpose: PackTest runs the whole suite in
+/// ONE shared world, so a sibling template's dummy standing in the same fixture
+/// cell would otherwise be counted. Emits nothing unless the gate opts in, so a
+/// non-crushing campaign's PackTest suite is byte-identical.
+fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mut BuildOutput) {
+    if !g.crush {
+        return;
+    }
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let (from, to) = g.gate_region;
+    let selector = region_selector(from, to);
+    // Feet-centred on one cell of the region: provably inside the selector box.
+    let inside = crate::nav::cell_center(from);
+    // Two blocks past the region's far x edge: provably outside it, and checked in
+    // the same tick as the teleport so no fall or suffocation can confound it.
+    let clear_x = from[0].max(to[0]) + 2;
+
+    let mut b = packtest_header(&format!(
+        "{title}: timed gate `{}` judges exactly the players in its region (spec-0016 §4)",
+        g.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    // Open first: a mistimed crossing leaves the player standing in an open
+    // gateway, which is the position the judgement must catch.
+    b.push(format!("function {ns}:tgate_open_{}", g.safe));
+    b.push(format!(
+        "tp @s {} {} {}",
+        fmt_f64(inside[0]),
+        fmt_f64(inside[1]),
+        fmt_f64(inside[2])
+    ));
+    b.push(format!(
+        "execute store success score #cr_in dw.sys if entity @s[{selector}]"
+    ));
+    b.push("assert score #cr_in dw.sys matches 1".to_string());
+    b.push(format!(
+        "tp @s {} {} {}",
+        fmt_f64(f64::from(clear_x) + 0.5),
+        fmt_f64(inside[1]),
+        fmt_f64(inside[2])
+    ));
+    b.push(format!(
+        "execute store success score #cr_out dw.sys if entity @s[{selector}]"
+    ));
+    b.push("assert score #cr_out dw.sys matches 0".to_string());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_timed_gate_crush.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
@@ -8389,6 +8835,228 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
     }
 }
 
+/// One real `tick` pass with every player on the batch server shielded from harm.
+///
+/// A trigger template that asserts *which* trigger fired has to run the real `tick`,
+/// which runs the trigger's real effects — and a delve's effects include
+/// `damage-players` (the island's `his-house` deals 40, twice a dummy's health).
+/// PackTest runs every generated template as one batch against one shared server, so
+/// an unshielded pass would kill sibling templates' dummies for reasons that have
+/// nothing to do with what they test.
+///
+/// Resistance V is total immunity to the `minecraft:generic` damage the effect
+/// emits, and it is scaffolding around the pass, not part of any assertion: the
+/// claims are all reads of `#trig_<id>`. The damage effect itself is pinned by its
+/// own test.
+fn shielded_tick(ns: &str) -> Vec<String> {
+    vec![
+        "effect give @a minecraft:resistance 1 4 true".to_string(),
+        format!("function {ns}:tick"),
+        "effect clear @a minecraft:resistance".to_string(),
+    ]
+}
+
+/// The first ordered pair of click triggers that ride ONE NPC's interaction hitbox
+/// and can be told apart by flags: `(npc id, npc body tag, earlier, later)`, where
+/// the *later* trigger's open-assignment provably shuts the *earlier* one.
+///
+/// Direction matters. The starvation bug was order-dependent — the earlier-declared
+/// trigger's inline `data remove` ate the click record — so the pair worth pinning
+/// is exactly "the later one must still fire while the earlier one is gated off".
+/// `None` when the campaign has no such pair (nothing to test, nothing emitted).
+fn first_shared_hitbox_pair<'a>(
+    plan: &'a Plan,
+) -> Option<(
+    String,
+    String,
+    &'a delvewright_dsl::EnvTrigger,
+    &'a delvewright_dsl::EnvTrigger,
+)> {
+    let c = plan.campaign;
+    for n in &plan.npcs {
+        let anchor = c
+            .npcs
+            .content
+            .npcs
+            .iter()
+            .find(|d| d.id.as_str() == n.npc_id)
+            .map(|d| d.anchor.as_str())
+            .unwrap_or("");
+        let riders: Vec<&delvewright_dsl::EnvTrigger> = c
+            .quests
+            .content
+            .triggers
+            .iter()
+            .filter(|t| trigger_rides_npc(t, anchor, &n.npc_id))
+            .collect();
+        for (i, a) in riders.iter().enumerate() {
+            for b in &riders[i + 1..] {
+                if trigger_shut_under_open(a, b) {
+                    return Some((n.npc_id.clone(), n.tag.clone(), a, b));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Whether `a`'s gate is shut under the flag assignment that opens `b` — every flag
+/// `b` requires set, every other flag (including everything `b` forbids) unset.
+fn trigger_shut_under_open(
+    a: &delvewright_dsl::EnvTrigger,
+    b: &delvewright_dsl::EnvTrigger,
+) -> bool {
+    let set: Vec<&str> = b.requires_flags.iter().map(|f| f.as_str()).collect();
+    // Shut if a required flag is not among the flags this assignment sets, or a
+    // forbidden flag is.
+    a.requires_flags.iter().any(|f| !set.contains(&f.as_str()))
+        || a.forbids_flags.iter().any(|f| set.contains(&f.as_str()))
+}
+
+/// Generated PackTest for the round-8 island defect: **two flag-gated click triggers
+/// on ONE NPC hitbox, both reachable, neither starving the other**.
+///
+/// The island's giant carried `wake-the-giant` (requires `flag/asleep`) and
+/// `his-house` (requires `flag/sealed`, forbids `flag/asleep`) on a single
+/// interaction entity. The old emission cleared the `attack` record inline, per
+/// trigger, immediately after that trigger's own fire clause — so the
+/// earlier-declared `wake-the-giant` consumed the click even with its gate shut and
+/// `his-house` could never fire. Declaration order silently decided which of two
+/// legal triggers worked.
+///
+/// The template drives the real hardware: it writes the `attack` compound vanilla
+/// writes on a left-click, runs the real `tick`, and reads the per-trigger fire
+/// sentinel `#trig_<id>` (see [`env_trigger_fns`]) to see which one actually ran.
+/// Both directions are asserted — the gated-off trigger must stay silent AND its
+/// sibling must fire — so the test fails both on the original starvation and on any
+/// future change that lets a shut gate fire.
+///
+/// Emitted only for a campaign that has such a pair, so every other campaign is
+/// byte-identical.
+fn emit_shared_hitbox_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let Some((npc_id, npc_tag, early, late)) = first_shared_hitbox_pair(plan) else {
+        return;
+    };
+    let a = plan::safe_local(early.id.as_str());
+    let b = plan::safe_local(late.id.as_str());
+    let hitbox = format!("@e[type=minecraft:interaction,tag={npc_tag},limit=1]");
+    let rec_late = trigger_record(late);
+    let rec_early = trigger_record(early);
+
+    // Every flag either trigger names, deduplicated in declaration order — the set
+    // the template writes and must hand back untouched (flags are party state, and
+    // the batch server is shared).
+    let mut flags: Vec<&str> = Vec::new();
+    for t in [early, late] {
+        for f in t.requires_flags.iter().chain(t.forbids_flags.iter()) {
+            if !flags.contains(&f.as_str()) {
+                flags.push(f.as_str());
+            }
+        }
+    }
+    // `open` writes the assignment that opens `t`: every required flag set, every
+    // other named flag cleared.
+    let open = |t: &delvewright_dsl::EnvTrigger| -> Vec<String> {
+        flags
+            .iter()
+            .map(|f| {
+                let want = usize::from(t.requires_flags.iter().any(|r| r.as_str() == *f));
+                format!(
+                    "scoreboard players set {} {} {want}",
+                    plan::PARTY,
+                    plan::flag_score(f)
+                )
+            })
+            .collect()
+    };
+
+    let mut t = packtest_header(&format!(
+        "{}: `{}` and `{}` share NPC `{npc_id}`'s hitbox — each fires on its own flags",
+        c.world.content.title,
+        early.id.as_str(),
+        late.id.as_str()
+    ));
+    t.push(format!("function {ns}:setup"));
+    t.push("scoreboard players set #placed dw.sys 1".to_string());
+    // Own init (batch contract): rebuild every NPC so exactly one hitbox exists.
+    for n in &plan.npcs {
+        t.push(format!("kill @e[tag={}]", n.tag));
+    }
+    t.push(format!("function {ns}:setup_finish"));
+    if npc_is_deferred(c, &npc_id) {
+        t.push(format!("function {ns}:{}", spawn_npc_fn(&npc_id)));
+    }
+    // Precondition: ONE interaction entity wears BOTH trigger tags. Without this the
+    // rest of the template would pass vacuously on two separate hitboxes.
+    t.push(format!(
+        "execute store result score #shr_one dw.sys if entity @e[type=minecraft:interaction,tag=dw_trig_{a},tag=dw_trig_{b}]"
+    ));
+    t.push("assert score #shr_one dw.sys matches 1".to_string());
+
+    // --- The regression. Later trigger open, earlier trigger gated shut. ---
+    t.extend(open(late));
+    t.push(format!("scoreboard players set #trig_{a} dw.sys 0"));
+    t.push(format!("scoreboard players set #trig_{b} dw.sys 0"));
+    t.push(format!(
+        "data modify entity {hitbox} {rec_late} set value {{player:[I;0,0,0,0],timestamp:1L}}"
+    ));
+    t.extend(shielded_tick(ns));
+    // The starved trigger: 0 before the fix, 1 after.
+    t.push(format!("assert score #trig_{b} dw.sys matches 1"));
+    // …and the gated-off one stayed silent, which is what made its consumption a bug.
+    t.push(format!("assert score #trig_{a} dw.sys matches 0"));
+    // Consumption is unchanged: the record is gone by the end of the same pass.
+    t.push(format!(
+        "execute store result score #shr_rec dw.sys if data entity {hitbox} {rec_late}"
+    ));
+    t.push("assert score #shr_rec dw.sys matches 0".to_string());
+
+    // --- The mirror. Earlier trigger open: it fires, so both are reachable. ---
+    // Rebuild the hitbox first — the earlier trigger's own effects may have removed
+    // the NPC (the island's `wake-the-giant` despawns the giant it wakes).
+    for n in &plan.npcs {
+        t.push(format!("kill @e[tag={}]", n.tag));
+    }
+    t.push(format!("function {ns}:setup_finish"));
+    if npc_is_deferred(c, &npc_id) {
+        t.push(format!("function {ns}:{}", spawn_npc_fn(&npc_id)));
+    }
+    t.extend(open(early));
+    t.push(format!("scoreboard players set #trig_{a} dw.sys 0"));
+    t.push(format!("scoreboard players set #trig_{b} dw.sys 0"));
+    t.push(format!(
+        "data modify entity {hitbox} {rec_early} set value {{player:[I;0,0,0,0],timestamp:1L}}"
+    ));
+    t.extend(shielded_tick(ns));
+    t.push(format!("assert score #trig_{a} dw.sys matches 1"));
+
+    // Leave no poison: clear every flag written, drop any actor the fired triggers
+    // staged, and put the NPCs back the way `setup_finish` makes them.
+    for f in &flags {
+        t.push(format!(
+            "scoreboard players set {} {} 0",
+            plan::PARTY,
+            plan::flag_score(f)
+        ));
+    }
+    for act in &c.quests.content.actors {
+        t.push(format!(
+            "kill @e[tag=dw_actor_{}]",
+            plan::safe_local(act.id.as_str())
+        ));
+    }
+    for n in &plan.npcs {
+        t.push(format!("kill @e[tag={}]", n.tag));
+    }
+    t.push(format!("function {ns}:setup_finish"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/v06_shared_hitbox.mcfunction"),
+        lines(&t).into_bytes(),
+    );
+}
+
 /// The header lines shared by every generated PackTest (`# @dummy` + timeout).
 fn packtest_header(title: &str) -> Vec<String> {
     vec![
@@ -9303,12 +9971,79 @@ mod tests {
             delvewright_dsl::DespawnStyle::Vanish,
             &mut vanish,
         );
+        // The drop is relative to each ACTOR, not to the command source — see
+        // `emit_despawn_actor` for the live-observed failure the bare `tp` caused.
         assert_eq!(
             vanish,
             vec![
-                "tp @e[tag=dw_actor_giant] ~ -128 ~".to_string(),
+                "execute as @e[tag=dw_actor_giant] at @s run tp @s ~ -128 ~".to_string(),
                 "kill @e[tag=dw_actor_giant]".to_string(),
             ]
+        );
+    }
+
+    /// **Despawn-if-exists**: every actor-lifecycle verb has to survive the body
+    /// simply not being there any more.
+    ///
+    /// This is not hypothetical. An `unleash`ed warden is a *real* vanilla warden,
+    /// and vanilla wardens remove themselves — the ancient-city dig-down burrows
+    /// the mob out of the world on its own schedule. So by the time a later beat
+    /// fires `despawn-actor` (and hands off to the NPC), the entity the story
+    /// thinks it is dismissing may already be gone. The staging must be a no-op
+    /// then, never a hard error that takes the rest of the bundle's function down
+    /// with it — and there is no dangling tag to clean up, because tags live on
+    /// the entity and a removed entity takes its tags with it.
+    ///
+    /// The property is structural: the body is always addressed through a **plain
+    /// multi-entity tag selector** — `@e[tag=dw_actor_<id>]` with no `limit=1` —
+    /// so a zero-match run affects nothing and the function continues. A
+    /// single-entity-arity form here would be exactly the 1.21.11 load-failure
+    /// class the command-tree check guards elsewhere.
+    ///
+    /// A bare `@s` is equally forbidden (nothing binds it in a scheduled bundle),
+    /// but an `@s` **bound by an enclosing `execute as`** in the same command is
+    /// fine and is what `vanish` uses: `execute as @e[tag=…] at @s run tp @s …`
+    /// runs its body zero times when nothing matches, and the `at @s` is required
+    /// for the relative `~ -128 ~` to resolve at the body rather than at the
+    /// command source. So the check is "every `@s` is bound", not "no `@s`" —
+    /// the latter would reject a strictly more correct emission.
+    #[test]
+    fn actor_lifecycle_verbs_are_no_ops_when_the_body_is_already_gone() {
+        for style in [
+            delvewright_dsl::DespawnStyle::Kill,
+            delvewright_dsl::DespawnStyle::Vanish,
+        ] {
+            let mut cmds = Vec::new();
+            emit_despawn_actor("actor/giant", style, &mut cmds);
+            assert!(!cmds.is_empty());
+            for c in &cmds {
+                assert!(
+                    c.contains("@e[tag=dw_actor_giant]"),
+                    "targets the body tag, so no match = no effect: {c}"
+                );
+                assert!(
+                    !c.contains("limit=1"),
+                    "no single-entity arity: a zero-match run must not fail the function: {c}"
+                );
+                if c.contains("@s") {
+                    assert!(
+                        c.contains("execute as @e[tag=dw_actor_giant]"),
+                        "every `@s` must be bound by an enclosing `execute as`: {c}"
+                    );
+                }
+            }
+        }
+        // The dual: re-staging after the body removed itself must work. The re-cage
+        // summon is `execute unless entity` guarded, so it fires exactly when the
+        // body is absent and no-ops when it is not.
+        let a = mk_actor("actor/giant", "minecraft:warden", false);
+        let spawn = format!(
+            "execute unless entity @e[tag=dw_actor_giant] run {}",
+            actor_puppet_summon(&a, [0, 64, 0], 0)
+        );
+        assert!(
+            spawn.starts_with("execute unless entity @e[tag=dw_actor_giant] run summon "),
+            "re-cage is idempotent and works from nothing: {spawn}"
         );
     }
 

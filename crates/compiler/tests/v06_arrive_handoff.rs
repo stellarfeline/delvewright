@@ -41,9 +41,19 @@ fn npcs_deferred() -> String {
 }
 
 /// A 0.6 quests doc staging the island beat in miniature: an approach trigger
-/// seals the door gate, spawns a puppet at `anchor/exit`, and walks it to the
-/// keeper's stand; on arrival the puppet vanishes and the (deferred) keeper
-/// spawns. A `strike` trigger sits on the keeper's stand cell.
+/// spawns a puppet at `anchor/exit` and walks it to the keeper's stand; **on
+/// arrival** the door gate seals behind it and the puppet hands off to the
+/// (deferred) keeper. A `strike` trigger sits on the keeper's stand cell.
+///
+/// The seal fires on arrival, not ahead of the walk, because that is the order
+/// the beat physically has: the walker crosses the threshold and *then* the
+/// boulder comes down behind it ("point of no return by geometry"). Sealing
+/// first and walking across afterwards is the round-8 island defect — the
+/// puppet's tp chain drives it straight through solid blocks — and is now a
+/// build error (`DW0410`, `compiler::timeline`). The PackTest below still drives
+/// the arrival with every campaign gate filled: what has to be immune to sealed
+/// terrain is the **arrival machinery**, which is a tp chain and not
+/// pathfinding. What may not be routed across a seal is the compiler's *plan*.
 fn quests_doc(on_arrive: &str) -> String {
     format!(
         r#"{{
@@ -73,11 +83,12 @@ fn quests_doc(on_arrive: &str) -> String {
         "on": {{ "on": "approach", "range": 4 }},
         "once": true,
         "effects": [
-          {{ "type": "close-gate", "anchor": "anchor/door" }},
           {{ "type": "spawn-actor", "actor": "actor/sleeper" }},
           {{ "type": "move-actor", "actor": "actor/sleeper",
              "to_anchor": "anchor/keeper-stand",
-             "on_arrive": [ {on_arrive} ] }}
+             "on_arrive": [
+               {{ "type": "close-gate", "anchor": "anchor/door" }},
+               {on_arrive} ] }}
         ]
       }},
       {{

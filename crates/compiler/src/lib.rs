@@ -31,11 +31,16 @@
 //! - [`edit`]: the map editor's stage-7 edit-script replay (spec-0017) — seeded
 //!   L3 verbs over the assembled world, per-batch invariant re-proofs, runtime
 //!   `fill`/`setblock` materialization.
+//! - [`timeline`]: per-effect-timeline gate state — which gates an earlier effect
+//!   in the *same* bundle / `sequence` provably sealed, feeding the `DW0410`
+//!   staged-walk proof in [`nav`].
 
+pub mod affordance;
 pub mod analyze;
 pub mod assembled;
 pub mod atmos;
 pub mod blocking;
+pub mod calibrate;
 pub mod camera;
 pub mod commands;
 pub mod continuity;
@@ -53,11 +58,13 @@ pub mod plan;
 pub mod png;
 pub mod raster;
 pub mod registry;
+pub mod rehearsal;
 pub mod render_plan;
 pub mod resourcepack;
 pub mod snapshot;
 pub mod solver;
 pub mod textfit;
+pub mod timeline;
 pub mod waypoints;
 
 /// This compiler's version (reported by `--version`, stamped in `manifest.json`).

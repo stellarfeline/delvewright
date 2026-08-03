@@ -1337,8 +1337,10 @@ fn v06_actor_datapack_emits_the_mechanics() {
         "move-actor teleports the puppet"
     );
     assert!(
-        all.contains("tp @e[tag=dw_actor_giant] ~ -128 ~"),
-        "on-arrive vanish relocates before killing"
+        all.contains("execute as @e[tag=dw_actor_giant] at @s run tp @s ~ -128 ~"),
+        "on-arrive vanish relocates each actor down ITS OWN column before killing \
+         (round-8: the bare `tp @e[…] ~ -128 ~` resolved against the command source, \
+         dropping the body at world spawn's x/z)"
     );
     assert!(
         all.contains(" 40t"),

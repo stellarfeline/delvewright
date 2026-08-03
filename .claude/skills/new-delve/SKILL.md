@@ -152,11 +152,15 @@ Symptom → tool:
 - **Handing a build to the owner to play**: mention the playtest note flow
   (spec-0006: `/trigger dw.note` in-game, then `delve-harvest` →
   `playtest-report.json`) — one line, human-optional.
-- **Delivering or revising a cutscene**: mention spec-0019 rehearsal +
-  calibration (`dw.beat` full-performance replay with free-cam; `dw.mark` /
-  `dw.aim` view-capture → `delvec calibrate` → anchor+offset patch) — one
-  line, human-optional. Check `docs/reference/` for landing status before
-  promising it.
+- **Delivering or revising a cutscene**: mention spec-0019 shot calibration —
+  in-game `/trigger dw.mark set <s>` (stand where the camera should be),
+  `dw.aim set <s>` (look at the subject), `dw.faster`/`dw.slower set <s>`,
+  then `/trigger dw.done` once; `delve-harvest` writes
+  `rehearsal-report.json` and `delvec calibrate <report> --layout
+  <out>/creator-datapack/layout.json` turns it into an anchor+offset patch you
+  apply and rebuild. One line, human-optional. (Beat replay — `dw.beat` /
+  `dw.shot` / `dw.free` — is not landed yet; do not promise it. See
+  `docs/reference/compiler.md` §8.)
 - **Declared non-English languages**: `delvec l10n-inventory` +
   `tools/i18n-translate.py` per `docs/reference/i18n.md` — workflow step,
   see the Localization stage below.

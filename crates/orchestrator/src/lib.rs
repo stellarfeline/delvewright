@@ -31,6 +31,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+pub mod rehearsal;
+
 /// The report schema version (tracks the DSL/critical-path versioning).
 pub const REPORT_VERSION: &str = "0.1.0";
 
@@ -157,7 +159,7 @@ struct Chat {
 
 /// Split a log line into its `HH:MM:SS` timestamp (if any) and the message body
 /// (everything after the `]: ` that ends the log prefix).
-fn split_log_line(line: &str) -> (Option<i64>, Option<&str>) {
+pub(crate) fn split_log_line(line: &str) -> (Option<i64>, Option<&str>) {
     let secs = parse_timestamp(line);
     // The vanilla/itzg prefix is `[HH:MM:SS] [thread/LEVEL]: message`. The first
     // `]: ` terminates the thread bracket (the time bracket is followed by ` [`).

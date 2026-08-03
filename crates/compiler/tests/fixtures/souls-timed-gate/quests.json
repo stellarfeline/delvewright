@@ -40,7 +40,8 @@
         "id": "timed-gate/inner-door",
         "gate": "anchor/door",
         "open_ticks": 60,
-        "closed_ticks": 40
+        "closed_ticks": 40,
+    "crush": true
       }
     ]
   }
