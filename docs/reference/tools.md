@@ -177,7 +177,49 @@ npm --prefix harness start              # node src/run.ts <critical-path.json>  
 `harness/src/note-bot.ts` is driven by `validation/playtest-note-flow.sh` and
 `harness/src/rehearsal-bot.ts` by `validation/rehearsal-flow.sh`, never by hand.
 
-## 9. Spikes (not the pipeline)
+## 9. Prefab generators (`prefabs/*-generator`, `prefabs/generator`) · agent + CI
+
+The tileset libraries are **generated, not hand-built**. Five separate Cargo
+workspaces, deliberately outside `crates/` so none of them can enter the shipped
+`delvec` and no existing `.nbt` moves (ADR-0006). All five share one CLI —
+`<out_dir>`, which is the content repo's `prefabs/` when you mean to re-export:
+
+```sh
+cargo run --release --manifest-path prefabs/<gen>/Cargo.toml -- <out_dir>
+```
+
+| `<gen>` | binary | tileset | doc |
+| ------- | ------ | ------- | --- |
+| `generator` | `keep-prefab-gen` | `keep-*` (the original interior set) | `prefabs/keep-tileset.md` |
+| `cave-generator` | `cave-prefab-gen` | `cave-*` | `prefabs/cave-tileset.md` |
+| `island-generator` | `island-prefab-gen` | `island-*` set-pieces | `prefabs/island-tileset.md` |
+| `island-terrain-generator` | `island-terrain-gen` | `island-*` terrain | `prefabs/island-tileset.md` |
+| `tidal-keep-generator` | `tidal-keep-gen` | `tk-*` (souls set) | `prefabs/tidal-keep-tileset.md` |
+
+Each generator prints the `pool/*` block to merge into the content repo's
+`pools.json` — printed, never written, because every `*.json` in that directory
+is parsed as prefab metadata and a stray snippet is `DW0346`.
+
+**The invariants are the point.** Every debugging lesson these tilesets have cost
+is pinned as an `assert!` in the generator (route walkability, stair-flank
+sealing, anchor sanity, sightlines, gravity substrate, redstone support), so
+*running* a generator is the gate: it either emits or panics. Debug flags, all
+`tidal-keep-generator`: `TK_DEBUG_LIGHT=1` (per-region measured light + darkest
+cell), `TK_PROBE=<salt>,<x>,<y>,<z>` (labelled block dump), `TK_DEBUG_STAIRS=1`
+(every flank the seal pass closed).
+
+CI (`prefab-generators` job, tier 1) runs all five twice into separate trees on
+every PR: a panic fails the job, and the two trees must be byte-identical
+(ADR-0006). Wired 2026-08-03 — before that nothing in CI compiled these
+workspaces, which is how a tileset with 132 reversed stair blocks (`DW0430`)
+reached an owner playtest through a green pipeline. `clippy -D warnings` is not
+yet part of that job (`prefabs/generator` carries two legacy style lints).
+
+**Re-export loop**: edit the generator → run it into `campaigns/prefabs/` → the
+`.nbt`/`.json` diff is content-repo work, the source diff is engine work, and the
+two land as a pair.
+
+## 10. Spikes (not the pipeline)
 
 `tools/spike-jump-arc/run.sh` (`EULA=TRUE tools/spike-jump-arc/run.sh`) measures
 1.21.11 jump kinematics on a throwaway server to feed

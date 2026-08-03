@@ -44,13 +44,19 @@ Every debugging lesson from this tileset is pinned as an assertion, not prose �
 `assert_route_walkable` (nav-model walkability of every promised route),
 `assert_field_open` (the optional elite's bypass lanes), `sightline_clear` (the
 loft perches are visible from the doorway), `assert_anchors_sane` (standable
-points, legal ids, real dispenser sockets, in-bounds regions), `wire_dust`
-(redstone supports and up-step clearances) and `assert_no_unsupported_gravity`.
+footings, clear-and-dry volley slots, legal ids, real dispenser sockets,
+in-bounds regions), `assert_stair_flanks_sealed` (no flight is enterable over its
+side rail — the `DW0430` lesson), `wire_dust` (redstone supports and up-step
+clearances) and `assert_no_unsupported_gravity`.
 See the tileset doc for the full list and what each one caught.
+
+CI runs this generator (and its four siblings) twice per PR, so a broken
+invariant or a non-deterministic byte fails the build rather than the playtest.
 
 ## Debugging
 
 ```sh
 TK_DEBUG_LIGHT=1 cargo run … -- /tmp/out     # per-region measured light + darkest cell
 TK_PROBE=2,12,8,18 cargo run … -- /tmp/out   # labelled block dump around <salt>,<x>,<y>,<z>
+TK_DEBUG_STAIRS=1 cargo run … -- /tmp/out    # every stair flank the seal pass closed
 ```
