@@ -9,6 +9,14 @@
 //!
 //! The red family deliberately replays the island round-13 shape: a branch
 //! opened, and a later quest's cast still belonging to the other branch.
+//!
+//! Each branch opens the keep gate for itself — the hold branch when the watch is
+//! stood, the bolt branch by throwing the bar off on the way out. That is not
+//! decoration: with only the hold branch's `open-gate`, the bolt branch's run for
+//! the exit crossed a portcullis nothing on that branch ever lifted, and the first
+//! live branch run (spec-0025 harness tier) stranded on it. A branch path is
+//! flow-proven, not yet nav-proven — see the "Known gap" note in
+//! `docs/reference/compiler.md` §"The branch artifacts".
 
 mod common;
 
@@ -471,4 +479,71 @@ fn artifacts_are_emitted_and_deterministic() {
     let first = md.find("1. **arrives**").expect("opening beat");
     let last = md.find("## Endings reached").expect("endings section");
     assert!(first < last, "{md}");
+}
+
+/// **How a branch choice is actuated** (spec-0025 §3, harness half). A 1.21.11
+/// dialog button is client-rendered, so no bot can click one; every option is
+/// backed by the `/trigger dw.dlg_<npc> set <n>` the button itself runs, and the
+/// plan carries that line so the harness never has to reconstruct the compiler's
+/// id mangling (which would be game logic in a harness that holds none).
+#[test]
+fn entry_choices_carry_the_command_that_takes_them() {
+    let c = green();
+    let a = branch::artifacts(&c);
+    let plan: Value = serde_json::from_slice(&a["validation/branch-plan.json"]).unwrap();
+    let by_id: std::collections::BTreeMap<&str, &Value> = plan["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| (b["id"].as_str().unwrap(), b))
+        .collect();
+    // The two branches are entered by two DIFFERENT options of the same NPC —
+    // which is exactly what makes a branch run a scripted-choice run.
+    let hold = &by_id["branch/hold"]["entry_choices"][0];
+    let bolt = &by_id["branch/bolt"]["entry_choices"][0];
+    assert_eq!(hold["npc"], "npc/keeper");
+    assert_eq!(hold["command"], "/trigger dw.dlg_keeper set 2");
+    assert_eq!(bolt["command"], "/trigger dw.dlg_keeper set 3");
+    assert_ne!(hold["option"], bolt["option"]);
+    // Each reachable branch names the executable path the harness walks for it.
+    assert_eq!(by_id["branch/hold"]["path"], "branch-path-hold.json");
+    assert_eq!(by_id["branch/bolt"]["path"], "branch-path-bolt.json");
+}
+
+/// An option index is 1-based across ONE NPC's tree, so it must be resolved
+/// against the tree of the NPC the step's own `talk-to` names. Resolved against
+/// every tree, the same ordinal names a different option of a different speaker —
+/// and the harness would then chat a line that enters no branch at all.
+#[test]
+fn an_entry_choice_is_resolved_against_its_own_speaker() {
+    let c = campaign_with(|_, quests, dialogue| {
+        // A second NPC whose 2nd/3rd options set nothing, sharing the ordinals the
+        // Keeper's branching options use.
+        dialogue["content"]["dialogues"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "npc": "npc/watcher",
+                "root": "dlg/watcher",
+                "nodes": [{
+                    "id": "dlg/watcher",
+                    "text": "The watcher says nothing you have not heard.",
+                    "options": [
+                        { "label": "Rain again." },
+                        { "label": "Still here?" },
+                        { "label": "Goodnight." }
+                    ]
+                }]
+            }));
+        let _ = quests;
+    });
+    // Adding a silent second speaker must not add, move or rename a single entry
+    // choice: every one still belongs to the Keeper.
+    let a = branch::artifacts(&c);
+    let plan: Value = serde_json::from_slice(&a["validation/branch-plan.json"]).unwrap();
+    for b in plan["branches"].as_array().unwrap() {
+        let choices = b["entry_choices"].as_array().unwrap();
+        assert_eq!(choices.len(), 1, "{b}");
+        assert_eq!(choices[0]["npc"], "npc/keeper");
+    }
 }

@@ -177,6 +177,26 @@ pub struct ChronicleLine {
     pub text: String,
 }
 
+/// A dialogue choice that ENTERS a branch — the player action that forks the story.
+///
+/// `command` is how it is actuated. A 1.21.11 dialog button is drawn by the CLIENT,
+/// so no bot can click one; every option the compiler emits is therefore backed by a
+/// `/trigger dw.dlg_<npc> set <n>` the button itself runs, and chatting that line is
+/// the player-legal primitive the button stands for (the same substitution the
+/// exported critical path has always made for `talk-to` steps — spec-0002, amended
+/// 2026-07-30). Carrying it here rather than leaving the harness to derive it keeps
+/// the id-mangling (`safe_local`) where it belongs: the harness holds assertions and
+/// navigation, never game logic.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EntryChoice {
+    /// The NPC whose tree the option belongs to.
+    pub npc: String,
+    /// The option's trigger value, 1-based across that NPC.
+    pub option: usize,
+    /// The exact chat line that takes the option.
+    pub command: String,
+}
+
 /// A branch, realized: the world that plays it, its critical path, its chronicle.
 #[derive(Clone, Debug)]
 pub struct RealizedBranch {
@@ -186,8 +206,8 @@ pub struct RealizedBranch {
     pub world: Option<usize>,
     /// Its critical path (the flow-level step list, computed under its world).
     pub path: Vec<PathStep>,
-    /// The dialogue choices the bot must make to enter it: `(npc, option index)`.
-    pub entry_choices: Vec<(String, usize)>,
+    /// The dialogue choices the bot must make to enter it.
+    pub entry_choices: Vec<EntryChoice>,
     /// Its chronicle, in compiled play order.
     pub chronicle: Vec<ChronicleLine>,
     /// The endings that fire on it (`campaign-complete` ids; an unnamed
@@ -239,29 +259,48 @@ fn realize_one(c: &Campaign, flow: &Flow<'_>, branch: EnumeratedBranch) -> Reali
 
 /// The dialogue choices that ENTER this branch: every `talk-to` option on the
 /// path that sets one of the branch's pinned-set flags.
+///
+/// The option index is 1-based **across one NPC's tree**, so it is resolved
+/// against the tree of the NPC the step's own `talk-to` objective names — not
+/// against every tree in the campaign, where the same ordinal names a different
+/// option of a different speaker.
 fn entry_choices(
     c: &Campaign,
     pt: &crate::flow::Playthrough,
     set: &BTreeSet<String>,
-) -> Vec<(String, usize)> {
+) -> Vec<EntryChoice> {
     let mut out = Vec::new();
     for step in &pt.steps {
         let Some(n) = step.talk_option else { continue };
-        for tree in &c.dialogue.content.dialogues {
-            let mut k = 0usize;
-            for node in &tree.nodes {
-                for opt in &node.options {
-                    k += 1;
-                    if k != n {
-                        continue;
-                    }
-                    let sets_branch = opt.effects.iter().any(|e| {
-                        matches!(e, delvewright_dsl::DialogueEffect::SetFlag { flag }
-                            if set.contains(flag.as_str()))
+        let Some(npc) = talk_to_npc(c, &step.objective) else {
+            continue;
+        };
+        let Some(tree) = c
+            .dialogue
+            .content
+            .dialogues
+            .iter()
+            .find(|t| t.npc.as_str() == npc)
+        else {
+            continue;
+        };
+        let mut k = 0usize;
+        for node in &tree.nodes {
+            for opt in &node.options {
+                k += 1;
+                if k != n {
+                    continue;
+                }
+                let sets_branch = opt.effects.iter().any(|e| {
+                    matches!(e, delvewright_dsl::DialogueEffect::SetFlag { flag }
+                        if set.contains(flag.as_str()))
+                });
+                if sets_branch {
+                    out.push(EntryChoice {
+                        npc: npc.to_string(),
+                        option: n,
+                        command: format!("/trigger {} set {}", crate::plan::dlg_trigger(npc), n),
                     });
-                    if sets_branch {
-                        out.push((tree.npc.as_str().to_string(), n));
-                    }
                 }
             }
         }
@@ -269,6 +308,21 @@ fn entry_choices(
     out.sort();
     out.dedup();
     out
+}
+
+/// The NPC a `talk-to` objective addresses, if `obj` is one.
+fn talk_to_npc<'a>(c: &'a Campaign, obj: &str) -> Option<&'a str> {
+    c.quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| &q.objectives)
+        .find_map(|o| match o {
+            delvewright_dsl::Objective::TalkTo { id, npc, .. } if id.as_str() == obj => {
+                Some(npc.as_str())
+            }
+            _ => None,
+        })
 }
 
 /// Assemble one branch's chronicle from the journal the flow replay produced.
@@ -1159,6 +1213,15 @@ pub fn artifacts(c: &Campaign) -> BTreeMap<String, Vec<u8>> {
         "branches": branches.iter().map(|r| serde_json::json!({
             "id": r.branch.id,
             "chronicle": format!("branch-chronicle-{}.md", r.branch.slug),
+            // The EXECUTABLE path the harness walks for this branch, in the
+            // `critical-path.json` contract (emitted by `emit::branch_paths`).
+            // `null` for an unreachable branch: there is no world that plays it,
+            // so the harness reports it skipped — named, never silently absent.
+            "path": if r.world.is_some() {
+                serde_json::Value::String(format!("branch-path-{}.json", r.branch.slug))
+            } else {
+                serde_json::Value::Null
+            },
             "selection": r.branch.selection,
             "flags": {
                 "set": r.branch.set.iter().collect::<Vec<_>>(),
@@ -1167,9 +1230,15 @@ pub fn artifacts(c: &Campaign) -> BTreeMap<String, Vec<u8>> {
             "opens_at": r.branch.opens_at,
             "leads_to": r.branch.leads_to,
             "reachable": r.world.is_some(),
-            "entry_choices": r.entry_choices.iter().map(|(npc, n)| serde_json::json!({
-                "npc": npc,
-                "option": n,
+            "entry_choices": r.entry_choices.iter().map(|e| serde_json::json!({
+                "npc": e.npc,
+                "option": e.option,
+                // The chat line the option's dialog button runs. A dialog button is
+                // client-rendered and unclickable by a bot, so this is the
+                // player-legal actuation the harness sends — and what it asserts the
+                // branch path really contains, so a "branch run" that never made the
+                // branching choice cannot pass as one.
+                "command": e.command,
             })).collect::<Vec<_>>(),
             "endings": r.endings,
             "critical_path": r.path.iter().map(|s| {
@@ -1219,7 +1288,7 @@ fn chronicle_markdown(c: &Campaign, r: &RealizedBranch) -> String {
         s.push_str(
             &r.entry_choices
                 .iter()
-                .map(|(npc, n)| format!("option #{n} of `{npc}`"))
+                .map(|e| format!("option #{} of `{}`", e.option, e.npc))
                 .collect::<Vec<_>>()
                 .join(", "),
         );

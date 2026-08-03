@@ -42,8 +42,32 @@ export interface EncounterReport {
   readonly assistWindows: number;
 }
 
+/**
+ * One enumerated branch, and what this run did about it (spec-0025 §3).
+ *
+ * `ran: false` is always accompanied by a `reason`: the spec's rule is that a
+ * skipped branch is NAMED, never silent — a branch list that quietly omitted the
+ * branches nobody walked would read exactly like full coverage.
+ */
+export interface BranchOutcome {
+  readonly branch: string;
+  readonly ran: boolean;
+  /** Meaningful only when `ran`; a branch that did not run passed nothing. */
+  readonly passed: boolean;
+  /** Why it did not run. `undefined` only when it did. */
+  readonly reason?: string;
+  /** The executable path file walked, when one was. */
+  readonly pathFile?: string;
+  /** The per-branch chronicle the generation-time narrative review reads. */
+  readonly chronicle: string;
+  /** The chat lines that took the branching choices, when the branch ran. */
+  readonly entryCommands: readonly string[];
+  /** The endings the compiler proved fire on this branch. */
+  readonly endings: readonly string[];
+}
+
 /** The ladder's labelled stages. */
-export const STAGES = ["critical-path", "die-retry"] as const;
+export const STAGES = ["branch-run", "critical-path", "die-retry"] as const;
 export type StageName = (typeof STAGES)[number];
 
 /** One stage's outcome. `findings` are advisory; `failures` are why it went red. */
@@ -65,6 +89,9 @@ export class RunReport {
   private readonly floor: string[] = [];
   private readonly encounters: EncounterReport[] = [];
   private readonly rests: PerformedRest[] = [];
+  private branches: BranchOutcome[] | undefined;
+  private branchTier: string | undefined;
+  private drivenBranch: string | undefined;
 
   constructor(campaignId: string, difficulty: string) {
     this.campaignId = campaignId;
@@ -95,15 +122,54 @@ export class RunReport {
     this.rests.push(...entries);
   }
 
+  /**
+   * Record the branch tier and every enumerated branch's outcome (spec-0025 §3).
+   *
+   * Called only for a build that HAS a branch plan, so a campaign with no declared
+   * fork produces exactly the report it produced before — no empty section that
+   * would have to be read as "no branches" rather than "no branch machinery".
+   */
+  recordBranches(tier: string, driven: string | undefined, outcomes: readonly BranchOutcome[]): void {
+    this.branchTier = tier;
+    this.drivenBranch = driven;
+    this.branches = [...outcomes];
+  }
+
   /** Every advisory the run produced, for the one-line stderr summary. */
   findings(): string[] {
     return [...this.floor, ...[...this.stages.values()].flatMap((s) => [...s.findings])];
   }
 
   toJSON(): Record<string, unknown> {
+    // spec-0025 §3: the branch set, what this run was answerable for, and what it
+    // did about each branch. Present only when the build declares branches, so a
+    // single-path delve's report is byte-identical to the pre-spec-0025 one.
+    const branches =
+      this.branches === undefined
+        ? {}
+        : {
+            branches: {
+              // The tier as the environment named it, so a reader can tell a
+              // deliberate one-branch PR run from a release run that lost coverage.
+              tier: this.branchTier ?? "all",
+              // Which branch THIS session walked (one per world, by construction).
+              driven: this.drivenBranch ?? null,
+              outcomes: this.branches.map((b) => ({
+                branch: b.branch,
+                ran: b.ran,
+                passed: b.ran && b.passed,
+                reason: b.reason ?? null,
+                path: b.pathFile ?? null,
+                chronicle: b.chronicle,
+                entry_commands: [...b.entryCommands],
+                endings: [...b.endings],
+              })),
+            },
+          };
     return {
       version: 1,
       campaign_id: this.campaignId,
+      ...branches,
       // The difficulty the run was verified AT: spec-0023 §3 proves orchestration
       // end-to-end at the SHIPPED difficulty, so the number it ran under belongs
       // in the artifact next to the assists that made it survivable.

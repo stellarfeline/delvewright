@@ -579,6 +579,23 @@ pub enum Step {
     },
 }
 
+impl Step {
+    /// The `obj/<id>` this step proves, when it stands for a DSL objective.
+    ///
+    /// `None` for the two path-frame steps (`select-class`, `assert-complete`),
+    /// which prove no objective of their own.
+    pub fn objective(&self) -> Option<&str> {
+        match self {
+            Step::TalkTo { objective_id, .. }
+            | Step::Reach { objective_id, .. }
+            | Step::Kill { objective_id, .. }
+            | Step::Collect { objective_id, .. }
+            | Step::Interact { objective_id, .. } => Some(objective_id.as_str()),
+            Step::SelectClass { .. } | Step::AssertComplete { .. } => None,
+        }
+    }
+}
+
 /// The **party holder** (spec-0018): the single fake player that carries every
 /// shared progression score.
 ///
@@ -1099,7 +1116,12 @@ impl<'a> Plan<'a> {
             .collect::<Vec<_>>();
 
         // ---- critical path + inter-area transport ----
-        let cp = build_critical_path(campaign, &anchors, &npcs)?;
+        let cp = build_critical_path(
+            campaign,
+            &anchors,
+            &npcs,
+            &crate::flow::Flow::new(campaign).playthrough(),
+        )?;
 
         // ---- v0.6 checkpoints + stealth beats (spec-0012 / spec-0014) ----
         let (checkpoints, stealth_beats) = collect_v06_effects(campaign, &anchors, &cp.obj_step);
@@ -1181,6 +1203,27 @@ impl<'a> Plan<'a> {
             strict_ancestor_steps,
             massing_bounds,
         })
+    }
+
+    /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).
+    ///
+    /// The same [`build_critical_path`] the exported `critical-path.json` is made
+    /// of, driven by the playthrough of the world that realizes a branch instead
+    /// of the default one. That identity is the point: a branch run must walk
+    /// steps of exactly the shape the ladder already proves, or "branch coverage"
+    /// would mean coverage of a second, less-tested contract. The branch's
+    /// **scripted dialogue choices are inside the result** — each `talk-to` step
+    /// carries the `/trigger` line of the option that belongs to THIS branch,
+    /// which is the only player-legal way to actuate a server-driven dialog
+    /// button (mineflayer cannot click one).
+    ///
+    /// Not called for an unreachable branch: there is no world to walk, and
+    /// `DW0482` has already failed the build.
+    pub fn branch_critical_path(
+        &self,
+        path: &crate::flow::Playthrough,
+    ) -> Result<CriticalPath, PlanError> {
+        build_critical_path(self.campaign, &self.anchors, &self.npcs, path)
     }
 
     /// Whether a gate firing at critical-path step `g` is guaranteed to have fired
@@ -1569,16 +1612,16 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
 }
 
 /// The computed critical path and its per-step metadata.
-struct CriticalPath {
-    steps: Vec<Step>,
-    transport: TransportMap,
-    transport_by_step: Vec<Option<[i32; 3]>>,
-    sneak_by_step: Vec<bool>,
-    cutscene_by_step: Vec<Option<u32>>,
+pub struct CriticalPath {
+    pub steps: Vec<Step>,
+    pub(crate) transport: TransportMap,
+    pub transport_by_step: Vec<Option<[i32; 3]>>,
+    pub sneak_by_step: Vec<bool>,
+    pub cutscene_by_step: Vec<Option<u32>>,
     /// Objective id → its `critical_path` step index (v0.6): roots the checkpoint
     /// no-stranding proof (DW0315) and the stealth-zone reachability proof
     /// (DW0327) at the beat that fires the effect.
-    obj_step: BTreeMap<String, usize>,
+    pub(crate) obj_step: BTreeMap<String, usize>,
 }
 
 /// Build the critical path: select first class, then each objective of the
@@ -1598,6 +1641,7 @@ fn build_critical_path(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     npcs: &[NpcPlan],
+    path: &crate::flow::Playthrough,
 ) -> Result<CriticalPath, PlanError> {
     let mut steps = Vec::new();
     // (objective id, physical area, step index) in critical-path order, for the
@@ -1614,9 +1658,11 @@ fn build_critical_path(
 
     // The branch-coherent playthrough: one world's completing quests in
     // `depends_on` order, their objectives in `after` order, and the dialogue
-    // option each `talk-to` takes on that branch.
-    let flow = crate::flow::Flow::new(campaign);
-    let path = flow.playthrough();
+    // option each `talk-to` takes on that branch. Supplied by the caller so the
+    // same builder serves the exported path (the default playthrough) and the
+    // spec-0025 per-branch paths (the playthrough of the world realizing a
+    // branch) — one code path, so a branch run walks steps built exactly like
+    // the ones the ladder has always walked.
     if path.cyclic {
         return Err(PlanError::new(
             DW_BUILD,

@@ -998,10 +998,13 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   gate fills mid-approach. Both keys are omitted entirely for a campaign with no
   gate clock, so such campaigns stay byte-identical.
 - `<out>/validation/branch-plan.json` + `<out>/validation/branch-chronicle-<branch>.md`
+  + `<out>/validation/branch-path-<branch>.json`
   (spec-0025, DSL v0.8): the branch set — per branch, its flag assignment, its
   critical path computed under that branch, and the dialogue choices that enter
-  it — plus one per-branch chronicle, every reachable node's `happening` line in
-  compiled play order. **Validation metadata, not shipped gameplay**, excluded
+  it — plus one per-branch chronicle (every reachable node's `happening` line in
+  compiled play order) and, per REACHABLE branch, one **executable path** in the
+  ordinary `critical-path.json` contract, which is what the harness's branch runs
+  walk. **Validation metadata, not shipped gameplay**, excluded
   from the delve image like `critical-path-waypoints.json`, and emitted **only**
   for a campaign that declares `branch_points`, so nobody who has not opted in
   gains a file. Full description in §5 "DW048x — branch-complete narrative
@@ -2274,10 +2277,57 @@ like `critical-path-waypoints.json` — **never** part of the shipped datapack.
 - **`validation/branch-plan.json`** — per branch: its id, the alternative taken
   at each point, its flag assignment (`set` / `unset`), where its fork opens,
   what it `leads_to`, whether it is reachable, the **dialogue choices that enter
-  it** (`npc` + the flat option index the harness clicks), the endings it
-  reaches, and its **critical path computed under that branch** (the flow-level
-  `quest` / `objective` / `talk_option` step list). This is what the harness
-  scripts a per-branch run from.
+  it**, the endings it reaches, its **critical path computed under that branch**
+  (the flow-level `quest` / `objective` / `talk_option` step list), and the names
+  of its two companion files (`chronicle`, `path` — `path` is `null` exactly when
+  the branch is unreachable). This is what the harness scripts a per-branch run
+  from.
+  An **entry choice** carries `npc`, the option's 1-based index across that NPC's
+  tree, and — the field the harness actually uses — the `command` that takes it:
+  `/trigger dw.dlg_<npc> set <n>`. A 1.21.11 dialog button is drawn by the
+  CLIENT, so no bot can click one; every option the compiler emits is backed by
+  the trigger line the button itself runs, and chatting it is the player-legal
+  primitive the button stands for — the same substitution the exported critical
+  path has made for `talk-to` steps since spec-0002 was amended. The command is
+  emitted rather than left to the harness because reconstructing it means
+  reproducing `safe_local`, i.e. game logic in a harness that holds none. The
+  option index is resolved against **the tree of the NPC the step's own
+  `talk-to` names** — the same ordinal in another NPC's tree is a different
+  option of a different speaker.
+- **`validation/branch-path-<branch>.json`** — one branch's **executable** path,
+  emitted per reachable branch, in the ordinary `critical-path.json` contract
+  (`format_version` 2, the same steps, the same `transport`/`sneak`/
+  `cutscene_seconds` markers, the same spliced bonfire `rest` steps). Built by
+  the *same* `plan::build_critical_path` the exported path is built by, driven by
+  the playthrough of the world that realizes the branch (`Plan::branch_critical_path`)
+  — so the branch a campaign already exports gets a **byte-identical** file, and
+  "branch coverage" is coverage of the contract the ladder already proves rather
+  than of a second, less-tested one. The branch's scripted dialogue choices are
+  *inside* it: each `talk-to` step carries the `/trigger` line of the option
+  belonging to that branch. A bonfire's `fire_step` (an index into the exported
+  path) is translated onto a branch path through the **objective** its firing
+  beat names, because a fire is armed by a beat and not by a position; a beat
+  that does not happen on a branch arms nothing there. Not emitted for an
+  unreachable branch — there is no world that plays it, and `DW0482` has already
+  failed the build. **Waypoints are not yet per-branch**:
+  `critical-path-waypoints.json` legs are consumed in lockstep with the exported
+  path's walked positions, so a branch whose path differs walks under single-goal
+  navigation and the run report says so.
+
+**Known gap — a branch path is FLOW-proven, not NAV-proven.** `DW0204`'s replay
+and the `DW048x` proofs judge a branch's *story*: its steps are ordered, its gates
+satisfied, its cast selected, its ending reached. The **geometry** proof
+(`nav::check_critical_path`, `DW0311`) still runs over the exported path only, so
+a branch can be structurally perfect and physically unwalkable — its route may
+cross a gate that only a *sibling* branch opens. The first live branch run found
+exactly that in the reference fixture: `branch/bolt` ran for the exit through a
+portcullis that only `obj/watch`, a hold-branch beat, ever lifted, and the bot
+reported `No path to the goal!` on ground the compiler had never claimed. The
+dynamic layer caught it, which is the two-layer split working — but the static
+layer should own it. Extending `DW0311` (and the per-branch waypoint export it
+would produce) to every enumerated branch is the follow-up; until it lands, a
+branch's walkability is proven by running it, and `validation/branch-runs.sh` is
+therefore not optional for a branching campaign.
 - **`validation/branch-chronicle-<branch>.md`** — the 流水账: every reachable
   node's `happening` line in the order the compiled graph plays them, readable
   start to ending, followed by the undated ambient beats and the endings reached.
@@ -2374,7 +2424,7 @@ this doc is current behavior).
 | Party-shared progression: the `#party` holder, party-addressed UI, `world.min_players` + lobby gate, `give-item`/kit `carrier`, the n-agent division proof and the n-dummy `party_join_<obj>` PackTests, `DW0356`/`DW0357`/`DW0358` (all v0.6) | spec-0018 (landed) |
 | The NPC scene ledger: stage-5 `cast` (DSL **v0.7**), the four build proofs `DW0460`–`DW0462`, the forcing function `DW0463`, dangling refs `DW0464`, the pre-0.7 deprecation window `DW0465`, the `"unchanged"` sugar `DW0466` and the staleness lint `DW0467`; the `dw.cast` scene dispatch + bark pools; cast roots as dialogue entry points | spec-0020 (+ owner amendment 2026-08-03) |
 | Combat verification: wave `tier` (DSL **v0.7**) and actor `tier` (DSL **v0.8**), the winnability arithmetic `DW0470`–`DW0473` + the advisories `DW0474`/`DW0475`/`DW0477`, the vendored `item-combat` / `damage-types` tables, `validation/combat-plan.json` (encounters + tiered actors + the floor-gate coverage ledger), and the bot ladder's die-retry stage / assist windows / inverted floor gate | spec-0023 |
-| Branch-complete narrative verification: stage-4 `branch_points`, the per-node `happening`, the named `campaign-complete` `ending` (DSL **v0.8**); the six proofs `DW0480`–`DW0485`; `validation/branch-plan.json` + the per-branch chronicle | spec-0025 (compiler half; harness branch runs pending) |
+| Branch-complete narrative verification: stage-4 `branch_points`, the per-node `happening`, the named `campaign-complete` `ending` (DSL **v0.8**); the six proofs `DW0480`–`DW0485`; `validation/branch-plan.json` + the per-branch chronicle + the per-branch executable path, and the harness's scripted-choice branch runs (`DELVEWRIGHT_BRANCH`/`DELVEWRIGHT_BRANCHES`, `validation/branch-runs.sh`) | spec-0025 (the `from-diff` PR tier still needs a compiler-side diff→branches map) |
 | Asset-pipeline tooling `DW07xx` (schem/render/admit) | spec-0007 |
 | Determinism invariants | ADR-0006 |
 

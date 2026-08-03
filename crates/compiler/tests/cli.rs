@@ -1930,6 +1930,100 @@ fn branch_artifacts_are_emitted_hashed_and_byte_identical() {
     }
 }
 
+/// **The harness tier's input** (spec-0025 §3): one EXECUTABLE path per reachable
+/// branch, in the ordinary `critical-path.json` contract, with the branch's
+/// scripted dialogue choice inside its own `talk-to` step.
+///
+/// The identity that makes a branch run mean something: the branch the exported
+/// path already walks gets a byte-identical file, so "branch coverage" is coverage
+/// of the same contract the ladder has always proven — not of a second, less
+/// tested one. The sibling branch differs in exactly the two ways the story does:
+/// the option it takes at the fork, and the objectives it reaches afterwards.
+#[test]
+fn each_branch_gets_an_executable_path_in_the_critical_path_contract() {
+    let fx = common::compiler_fixtures_dir().join("branch-two-endings");
+    let pf = common::prefabs_dir();
+    let out = tmp("branch-paths");
+    let r = delvec(&[
+        "build",
+        fx.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    assert_eq!(code(&r), 0, "build: {}", String::from_utf8_lossy(&r.stderr));
+    let tree = read_tree(&out);
+
+    // The exported branch's path IS the exported path.
+    assert_eq!(
+        tree["validation/branch-path-hold.json"], tree["critical-path.json"],
+        "the branch the critical path already walks must get the same bytes"
+    );
+
+    let bolt: serde_json::Value =
+        serde_json::from_slice(&tree["validation/branch-path-bolt.json"]).unwrap();
+    // Same contract the harness parses — the version fields the bot checks first.
+    assert_eq!(bolt["format_version"], 2);
+    assert_eq!(bolt["campaign_id"], "hello-world");
+    let steps = bolt["steps"].as_array().unwrap();
+    // The scripted choice rides inside the step: the bolt branch takes the option
+    // the hold branch does not, and a dialog button is unclickable by a bot, so
+    // the `/trigger` line the button runs is what the harness sends.
+    let talk = steps
+        .iter()
+        .find(|s| s["action"] == "talk-to")
+        .expect("a talk-to step");
+    assert_eq!(talk["objective"], "obj/decide");
+    assert_eq!(talk["command"], "/trigger dw.dlg_keeper set 3");
+    // ...and the storyline after the fork is the bolt branch's, not the hold
+    // branch's — the whole point of walking it.
+    let objectives: Vec<&str> = steps
+        .iter()
+        .filter_map(|s| s["objective"].as_str())
+        .collect();
+    assert!(objectives.contains(&"obj/bolt"), "{objectives:?}");
+    assert!(!objectives.contains(&"obj/watch"), "{objectives:?}");
+    assert!(!objectives.contains(&"obj/walk-out"), "{objectives:?}");
+    // Terminal step: the branch ends the campaign, like every proven path.
+    assert_eq!(steps.last().unwrap()["action"], "assert-complete");
+
+    // Validation metadata, hashed like the rest — never shipped gameplay.
+    let manifest: serde_json::Value = serde_json::from_slice(&tree["manifest.json"]).unwrap();
+    for f in [
+        "validation/branch-path-hold.json",
+        "validation/branch-path-bolt.json",
+    ] {
+        assert!(
+            manifest["outputs"].as_object().unwrap().contains_key(f),
+            "manifest does not hash {f}"
+        );
+    }
+    assert!(!tree.keys().any(|k| k.starts_with("datapack/branch")));
+}
+
+/// A campaign that declares no branch point emits no branch path — the whole
+/// harness tier is opt-in, and hello-world's output is untouched by spec-0025.
+#[test]
+fn a_campaign_without_branches_emits_no_branch_path() {
+    let out = tmp("no-branch-paths");
+    let r = delvec(&[
+        "build",
+        common::hello_world_dir().to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ]);
+    assert_eq!(code(&r), 0, "build: {}", String::from_utf8_lossy(&r.stderr));
+    let tree = read_tree(&out);
+    assert!(
+        !tree.keys().any(|k| k.starts_with("validation/branch-")),
+        "{:?}",
+        tree.keys().collect::<Vec<_>>()
+    );
+}
+
 /// **The version fence, proven on bytes.** The v0.8 surface — `branch_points`,
 /// every `happening`, the named `ending` — is validation metadata with no
 /// emission of its own: stripping all of it and dropping the campaign back to

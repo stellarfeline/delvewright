@@ -7,6 +7,7 @@
 // comes from critical-path.json.
 
 import { readFile } from "node:fs/promises";
+import nodePath from "node:path";
 import { parseCriticalPathJson } from "./critical-path.ts";
 import { runSequence, StepExecutionError } from "./sequencer.ts";
 import { botConfigFromEnv, MineflayerExecutor } from "./executor.ts";
@@ -18,7 +19,22 @@ import {
   dieRetryFindings,
   loadCombatPlanForCriticalPath,
 } from "./combat.ts";
-import { RunReport, reportPathFromEnv, writeRunReport, type EncounterReport } from "./report.ts";
+import {
+  RunReport,
+  reportPathFromEnv,
+  writeRunReport,
+  type BranchOutcome,
+  type EncounterReport,
+} from "./report.ts";
+import {
+  assertEntryChoicesOnPath,
+  branchTierFromEnv,
+  drivenBranchFromEnv,
+  loadBranchPlanForCriticalPath,
+  resolveDrivenBranch,
+  selectBranches,
+  type PlannedBranch,
+} from "./branch-plan.ts";
 
 /**
  * Exit code for a run that failed specifically because the bot died (spec-0008),
@@ -90,14 +106,67 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  const text = await readFile(pathArg, "utf8");
+  const exported = await readFile(pathArg, "utf8");
+
+  // spec-0025 §3 — the branch tier. A build that declares narrative branches ships
+  // `validation/branch-plan.json` (which branches exist, how a player enters each)
+  // and one executable path per branch. `DELVEWRIGHT_BRANCHES` says which branches
+  // this tier is answerable for; `DELVEWRIGHT_BRANCH` says which one THIS session
+  // walks — one per world, because party progress only ever moves forward, so a
+  // second branch needs a second world (`validation/branch-runs.sh` is that loop).
+  // Neither set → exactly the run this harness has always done.
+  const branchPlan = await loadBranchPlanForCriticalPath(pathArg);
+  const tier = branchTierFromEnv();
+  const selection = branchPlan ? selectBranches(branchPlan, tier) : undefined;
+  const drivenId = drivenBranchFromEnv();
+  let driven: PlannedBranch | undefined;
+  let text = exported;
+  if (drivenId !== undefined) {
+    if (branchPlan === undefined || selection === undefined) {
+      throw new Error(
+        `DELVEWRIGHT_BRANCH=${drivenId} but this build declares no branches ` +
+          `(no validation/branch-plan.json beside ${pathArg}) — nothing to drive`,
+      );
+    }
+    driven = resolveDrivenBranch(branchPlan, selection, drivenId);
+    const branchPathFile = nodePath.join(branchPlan.dir, driven.pathFile!);
+    text = await readFile(branchPathFile, "utf8");
+    process.stderr.write(
+      `branch run: ${driven.id} (flags set ${driven.flagsSet.join(",") || "none"}; ` +
+        `unset ${driven.flagsUnset.join(",") || "none"}) via ${branchPathFile}\n`,
+    );
+  }
   const criticalPath = parseCriticalPathJson(text);
+
+  // The branch's scripted dialogue choices ride INSIDE its path: each `talk-to`
+  // step carries the `/trigger` line of the option belonging to this branch (a
+  // dialog button is client-rendered and unclickable by a bot, so chatting the
+  // line the button runs is the player-legal actuation — spec-0002's amendment).
+  // This asserts the path really takes them, so a run cannot report branch
+  // coverage while having walked somebody else's storyline.
+  const entryCommands = driven ? assertEntryChoicesOnPath(driven, criticalPath.steps) : [];
+  if (driven && entryCommands.length > 0) {
+    process.stderr.write(`scripted branch choice(s): ${entryCommands.join(" ; ")}\n`);
+  }
 
   // task #38: if the compiler's proven waypoint artifact accompanies the critical
   // path, the executor navigates each walked leg through it (successive nearby
   // goals) so no single distant A* solve strands the bot on a large open cave.
   // Absent → single-goal navigation (fallback); malformed → hard failure.
-  const waypoints = await loadWaypointsForCriticalPath(pathArg);
+  //
+  // The artifact's legs are consumed in LOCKSTEP with the walked positions of the
+  // EXPORTED path, so they may only be replayed when that is the path being
+  // walked. A branch whose path differs walks without them (single-goal
+  // fallback) — per-branch waypoints are a compiler-side follow-up, and using the
+  // wrong legs would strand the bot while looking like a content fault.
+  const walksExportedPath = text === exported;
+  const waypoints = walksExportedPath ? await loadWaypointsForCriticalPath(pathArg) : undefined;
+  const waypointFinding =
+    !walksExportedPath && (await loadWaypointsForCriticalPath(pathArg)) !== undefined
+      ? `branch ${driven?.id ?? "?"} walked without the compiler's waypoint artifact: it is ` +
+        `exported for the critical path only, and its legs are position-ordered ` +
+        `(per-branch waypoints are a compiler follow-up)`
+      : undefined;
 
   // compiler #220: the path's rest steps, with their EXPORTED indices. The bot
   // performs them as ordinary steps; the die-retry precondition needs to know they
@@ -204,6 +273,57 @@ async function main(): Promise<number> {
     report.recordEncounters(encounterReports);
     report.recordRests(executor.performedRests());
     for (const f of executor.floorGateFindings()) report.recordFloorFinding(f);
+    // spec-0025 §3: every enumerated branch appears here — the one this session
+    // walked with its result, and each of the others with the reason it did not.
+    // A skipped branch is named, never silent.
+    if (branchPlan && selection) {
+      const outcomes: BranchOutcome[] = branchPlan.branches.map((b): BranchOutcome => {
+        if (driven !== undefined && b.id === driven.id) {
+          return {
+            branch: b.id,
+            ran: true,
+            passed: failure === undefined,
+            pathFile: b.pathFile,
+            chronicle: b.chronicle,
+            entryCommands,
+            endings: b.endings,
+          };
+        }
+        const skipped = selection.skipped.find((s) => s.branch === b.id);
+        const reason =
+          skipped?.reason ??
+          (driven === undefined
+            ? `selected by this tier, but no branch was driven (DELVEWRIGHT_BRANCH unset): ` +
+              `this session walked the exported critical path`
+            : `selected by this tier; a branch run needs a fresh world, so it runs in its ` +
+              `own session (validation/branch-runs.sh)`);
+        return {
+          branch: b.id,
+          ran: false,
+          passed: false,
+          reason,
+          chronicle: b.chronicle,
+          entryCommands: [],
+          endings: b.endings,
+        };
+      });
+      report.recordBranches(selection.tier, driven?.id, outcomes);
+      report.stage({
+        stage: "branch-run",
+        ran: driven !== undefined,
+        passed: driven !== undefined && failure === undefined,
+        findings: [
+          ...(waypointFinding === undefined ? [] : [waypointFinding]),
+          ...(driven === undefined
+            ? [
+                "this build declares narrative branches and none was driven " +
+                  "(DELVEWRIGHT_BRANCH unset) — the run proves the exported path only",
+              ]
+            : []),
+        ],
+        failures: [],
+      });
+    }
     report.stage({
       stage: "critical-path",
       ran: true,
@@ -250,7 +370,8 @@ async function main(): Promise<number> {
       );
     }
     process.stderr.write(
-      `critical path '${criticalPath.campaignId}' PASSED (${criticalPath.steps.length} steps` +
+      `${driven === undefined ? "critical path" : `branch ${driven.id}`} ` +
+        `'${criticalPath.campaignId}' PASSED (${criticalPath.steps.length} steps` +
         `${trials.length > 0 ? `, ${trials.length} scripted death(s) survived` : ""}` +
         `${report.findings().length > 0 ? `, ${report.findings().length} advisory finding(s)` : ""})\n`,
     );

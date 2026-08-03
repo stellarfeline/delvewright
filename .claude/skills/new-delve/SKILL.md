@@ -46,7 +46,9 @@ visual-review judgment. The **mechanical writing of each stage's JSON and the
 creative brief for the stage plus the schema command (`delvec schema --stage <n>`);
 it returns valid stage JSON and a short summary of the choices it made, which you
 fold into your stage summary. The **validation ladder** stays on a **test
-subagent** (step 7).
+subagent** (step 8). The **branch chronicle review** (step 7) is the authoring
+agent's own: it is narrative judgment against `DESIGN.md`, and delegating it
+would hand the design's intent to somebody who never held it.
 
 Model policy for subagents: **dev subagents run `opus`; test / validation subagents
 run `sonnet`.** A subagent must **NEVER run a higher tier than the main agent
@@ -332,7 +334,50 @@ Then:
 5. `delvec analyze <campaign-dir>` — reachability/deadlock/dark-mitigation. Fix in
    the DSL (never by weakening the campaign; a dead quest is a design bug).
 6. `delvec build <campaign-dir> -o <workspace>/out` — must exit 0.
-7. Machine validation ladder — **delegate to a `sonnet` subagent** (owner policy
+7. **Branch chronicle review (spec-0025 §4) — MANDATORY, per branch, whenever the
+   stage-4 plan declares `branch_points`.** Yours, not a subagent's: this is
+   narrative judgment. Skip it and the campaign is not verified, however green the
+   ladder is.
+
+   The compiler has compiled the DSL **back into natural language**:
+   `<workspace>/out/validation/branch-chronicle-<branch>.md` is one branch's
+   storyline in compiled play order — every reachable node's `happening` line,
+   first beat to ending — and `validation/branch-plan.json` lists the branches.
+   Whether the DSL matches the design is not something you can check by simulating
+   compilation in your head, so you compare like with like: NL against NL (the
+   decompilation principle, spec-0025). Dialogue text carries meaning no compiler
+   can check — "Where is Antiphos, Captain" is wrong only because Antiphos is
+   alive HERE.
+
+   For **each** branch in `branch-plan.json`:
+   a. Read its chronicle **end to end, in order, in one pass.** Do not skim and do
+      not sample: what this catches are contradictions in SEQUENCE ("Antiphos
+      survives" at line 12, "Elpenor mourns Antiphos" at line 31).
+   b. Read it against `DESIGN.md` — the intent document, already conformance-
+      reviewed. Every beat the design promises on this branch must appear in the
+      chronicle; every beat in the chronicle must be one the design licenses on
+      this branch.
+   c. Read it against the dialogue **reachable on that branch** (the stage-5 cast
+      ledger's roots for this branch, and the trees they reach under its flags).
+      **Every dialogue line touching branch-divergent state — who is alive, who is
+      where, what was sealed, opened, lost or gained — must be LICENSED by a
+      chronicle line of that branch.** An unlicensed line is a finding, not a
+      matter of taste.
+   d. Write the **citation table into `GENERATION.md`** — it is the artifact of
+      record, and "reviewed" is checkable, never folklore. Every finding AND every
+      clearance cites chronicle lines by number:
+
+      | branch | claim reviewed (dialogue/design beat) | chronicle line(s) | verdict |
+      |---|---|---|---|
+      | `branch/flee` | Elpenor: "We lost him at the mouth." | 14 `departs` | cleared |
+      | `branch/flee` | Kalliope: "Antiphos is dead." | — | **FINDING** — no chronicle line licenses a death on this branch |
+
+   The pass **fails** if any branch-divergent dialogue line has no citation, if a
+   branch has no table rows at all, or if any row's verdict is a finding. A
+   finding is fixed in the DSL (move the line behind the right flag, swap the
+   cast's dialogue root for that branch, or fix the branch the beat is on) and the
+   review re-run — never argued away, and never left for the owner's QA hour.
+8. Machine validation ladder — **delegate to a `sonnet` subagent** (owner policy
    2026-07-30: execution is mechanical, no creativity needed; also keeps long
    server logs out of the authoring context). Spawn an Agent
    (`subagent_type: general-purpose`, `model: sonnet`) instructed to, from repo
@@ -364,6 +409,16 @@ Then:
      `die-retry` stage is a CONTENT bug of the most serious kind — the delve is
      completable but dying is not safe. Never set `DELVEWRIGHT_DIE_RETRY=0` to
      get green; the report records a skipped stage as skipped, not as passed.
+   - **branch runs (spec-0025 §3) — required whenever the build emitted
+     `validation/branch-plan.json`.** One critical-path run proves ONE storyline;
+     a campaign that forks must have EVERY branch walked. Run
+     `EULA=TRUE validation/branch-runs.sh` (release tier: every enumerated
+     branch, each in its own fresh world — party progress only moves forward, so
+     a second branch needs a second world). It writes
+     `validation/run-out/branch-runs.json`: per branch, ran/skipped-with-reason
+     and the result. `DELVEWRIGHT_BRANCHES=<ids>` narrows the tier for local
+     iteration; a narrowed run is NOT a validated campaign, and the report says
+     which branches it skipped. `from-diff` is not available yet and refuses.
    - tear down containers, and report ONLY: per-command exit codes, failed
      PackTest names, the bot's failed step (if any), any die-retry finding, and
      ≤20 relevant log lines.
@@ -377,7 +432,7 @@ Then:
      the bug, never weaken a check or reroll a seed to get green. A workaround
      that turns a toolchain bug green is itself a quality defect: it ships the
      bug to every future campaign. Escalating is success.
-8. Visual review (spec-0003 visual tier) — **you** (the authoring agent, not a
+9. Visual review (spec-0003 visual tier) — **you** (the authoring agent, not a
    subagent; visual judgment is the point). The build output already contains
    `render-plan.json` (deterministic shots + per-shot `expect` checklists derived
    from the DSL). Render the per-prefab sets with Nucleation and read them against
@@ -393,7 +448,7 @@ Then:
      hand-edit output. Whole-scene and player-POV shots come from
      `validation/render-shots.sh <build-dir>` (`delve-render scene` + `index`);
      actually path-tracing those scenes with Chunky stays manual/CI-future.
-9. **Storybook** (spec-0007): write `campaigns/campaigns/<id>/README.md` — the
+10. **Storybook** (spec-0007): write `campaigns/campaigns/<id>/README.md` — the
    reader-facing intro. Background/setting ONLY: premise, lore, public NPC
    introductions (never persona `secret`), classes, playtime, build/play
    commands. NO puzzle solutions, quest structure, or endings. Images (relative
@@ -402,7 +457,7 @@ Then:
    Localized `README.<code>.md` per declared language. The render-set images are
    the default — the author may later replace them with hand-crafted shots
    (shaders, staged compositions); media ships with the campaign PR.
-10. Report to the user: campaign summary, playtime estimate, validation results,
+11. Report to the user: campaign summary, playtime estimate, validation results,
     and the two commands they care about:
     - play: `EULA=TRUE docker compose -f validation/compose.yaml --profile play up`
     - playtest with notes: same with `--profile playtest` (+ `CREATOR_NAME=<mc name>`)

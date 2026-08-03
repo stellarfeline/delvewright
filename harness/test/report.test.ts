@@ -34,8 +34,75 @@ const TRIAL: DeathTrial = {
   abortedWith: undefined,
 };
 
-test("the ladder has exactly the two labelled stages spec-0023 names", () => {
-  assert.deepEqual([...STAGES], ["critical-path", "die-retry"]);
+test("the ladder's labelled stages: spec-0023's two, framed by spec-0025's branch run", () => {
+  // `branch-run` comes first because it says WHICH storyline the two stages below
+  // it are about — a passed critical path means something different on each branch.
+  assert.deepEqual([...STAGES], ["branch-run", "critical-path", "die-retry"]);
+});
+
+test("a report for a build with no branches carries no branches section at all", () => {
+  // Absent, not empty: an empty section would have to be read as "no branches
+  // exist" and as "the branch machinery never ran", which are different claims.
+  const report = new RunReport("hello-world", "easy");
+  assert.equal("branches" in report.toJSON(), false);
+});
+
+test("every enumerated branch appears in the report — run, or skipped with a reason", () => {
+  const report = new RunReport("hello-world", "easy");
+  report.recordBranches("all", "branch/bolt", [
+    {
+      branch: "branch/hold",
+      ran: false,
+      passed: false,
+      reason: "selected by this tier; a branch run needs a fresh world",
+      chronicle: "branch-chronicle-hold.md",
+      entryCommands: [],
+      endings: ["ending/held"],
+    },
+    {
+      branch: "branch/bolt",
+      ran: true,
+      passed: true,
+      pathFile: "branch-path-bolt.json",
+      chronicle: "branch-chronicle-bolt.md",
+      entryCommands: ["/trigger dw.dlg_keeper set 3"],
+      endings: ["ending/abandoned"],
+    },
+  ]);
+  const json = report.toJSON() as {
+    branches: { tier: string; driven: string; outcomes: Record<string, unknown>[] };
+  };
+  assert.equal(json.branches.tier, "all");
+  assert.equal(json.branches.driven, "branch/bolt");
+  assert.equal(json.branches.outcomes.length, 2);
+  const hold = json.branches.outcomes[0]!;
+  assert.equal(hold["ran"], false);
+  assert.equal(hold["passed"], false);
+  assert.match(String(hold["reason"]), /fresh world/);
+  const bolt = json.branches.outcomes[1]!;
+  assert.equal(bolt["ran"], true);
+  assert.equal(bolt["passed"], true);
+  assert.equal(bolt["reason"], null);
+  assert.deepEqual(bolt["entry_commands"], ["/trigger dw.dlg_keeper set 3"]);
+  assert.deepEqual(bolt["endings"], ["ending/abandoned"]);
+  assert.equal(bolt["chronicle"], "branch-chronicle-bolt.md");
+});
+
+test("a branch recorded as run-but-failed never reads as passed", () => {
+  const report = new RunReport("hello-world", "easy");
+  report.recordBranches("branch/bolt", "branch/bolt", [
+    {
+      branch: "branch/bolt",
+      ran: true,
+      passed: false,
+      pathFile: "branch-path-bolt.json",
+      chronicle: "branch-chronicle-bolt.md",
+      entryCommands: ["/trigger dw.dlg_keeper set 3"],
+      endings: ["ending/abandoned"],
+    },
+  ]);
+  const json = report.toJSON() as { branches: { outcomes: Record<string, unknown>[] } };
+  assert.equal(json.branches.outcomes[0]!["passed"], false);
 });
 
 test("the report names every assist window with its encounter id and ticks", () => {
