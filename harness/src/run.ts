@@ -160,9 +160,13 @@ async function main(): Promise<number> {
   // fallback) — per-branch waypoints are a compiler-side follow-up, and using the
   // wrong legs would strand the bot while looking like a content fault.
   const walksExportedPath = text === exported;
-  const waypoints = walksExportedPath ? await loadWaypointsForCriticalPath(pathArg) : undefined;
+  const exportedWaypoints = await loadWaypointsForCriticalPath(pathArg);
+  const waypoints = walksExportedPath ? exportedWaypoints : undefined;
+  // A branch that lost the artifact says so in the report: navigating a proven
+  // route and navigating without one are different runs, and a reader comparing a
+  // branch's stranding against the exported path's clean walk needs to know which.
   const waypointFinding =
-    !walksExportedPath && (await loadWaypointsForCriticalPath(pathArg)) !== undefined
+    !walksExportedPath && exportedWaypoints !== undefined
       ? `branch ${driven?.id ?? "?"} walked without the compiler's waypoint artifact: it is ` +
         `exported for the critical path only, and its legs are position-ordered ` +
         `(per-branch waypoints are a compiler follow-up)`
