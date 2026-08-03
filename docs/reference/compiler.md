@@ -73,7 +73,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 7 | Assemble world model (placed pieces → voxel grid; ocean sea-level datum check) | `compiler::plan` | `DW030x`/`DW0344` (exit 3) |
 | 8 | Replay the stage-7 edit script over the assembled model (spec-0017; per-batch invariant re-proofs — trap-hardware integrity, gravity, relight, walkability, boundary safety, block support; plus the advisory gate-region check). Skipped entirely for a campaign without one (byte-identical). | `compiler::edit` | `DW0322`/`DW0323`/`DW0352`/`DW0354` + reused invariant codes, batch-attributed (tier per code); advisory `DW0353`/`DW0354` |
 | 9 | Assembled-light + relight (measure, place fixtures; over the **edited** model when a script exists) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
-| 10 | Nav checks (A* `move-npc`/`move-actor` (footprint-aware), cutscene clip (authored polyline + rendered keyframe chords) + angular budget, critical-path walkability — incl. relight fixtures + water flood; talk-to endpoint snap; waypoint self-check; POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone/onset + trap completability proofs; spec-0016 §6 TD lane polylines) — all over the **edited** model when a script exists | `compiler::nav` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0325`/`DW0327`/`DW0342`/`DW0347`/`DW0355`/`DW0386`/`DW0724` (exit 3; `DW0342` → exit 2) |
+| 10 | Nav checks (A* `move-npc`/`move-actor` (footprint-aware, each walk routed over its **own timeline's** gate state), cutscene clip (authored polyline + rendered keyframe chords) + angular budget, critical-path walkability — incl. relight fixtures + water flood; talk-to endpoint snap; waypoint self-check; POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone/onset + trap completability proofs; spec-0016 §6 TD lane polylines) — all over the **edited** model when a script exists | `compiler::nav` + `compiler::timeline` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0325`/`DW0327`/`DW0342`/`DW0347`/`DW0355`/`DW0386`/`DW0410`/`DW0724` (exit 3; `DW0342` → exit 2) |
 | 11 | Referential + placement seals inside emission: every anchor-bearing effect resolves (`DW0360`), no generated name collides (`DW0361`), no body eclipses an interaction affordance (`DW0359`, `compiler::eclipse`) | `compiler::emit` | `DW0359`/`DW0360`/`DW0361` (exit 3) |
 | 12 | Emit (datapack incl. the `world_edits` function, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
 
@@ -1133,6 +1133,39 @@ fence/wall barriers, closed fence gates for walkers that cannot use them;
 **water-flooded cells are impassable and are never valid floor**; compiler gate
 regions are passable). Steps are cardinal, one cell up or down.
 
+**Step cost is terrain-shaped, not distance-only (round 8).** A step costs
+`16 + 2 × |Δfeet|` in sixteenths of level walking: `STEP_COST_16 = 16` for the
+block travelled, plus `ELEV_WEIGHT = 2` per sixteenth of height change, **up or
+down alike**. The A* heuristic is horizontal Manhattan distance × `STEP_COST_16`,
+which no step can undercut, so it stays admissible and consistent — A* still
+returns a true minimum-cost path and never reopens a closed node.
+
+*Why.* Under a distance-only cost every route of equal length is equally good, so
+the planner walked the island's herd and giant along the straight line over
+bumpy 1-step terrain — bobbing a block a dozen times — while the flat cleared road
+two columns over cost the same two-step detour it always did and never won.
+Staged walks are photographed; a body that pogos over lumps reads as broken even
+though every step is legal, and the built road exists to be walked.
+
+*Why 2.* A rise past the auto-step budget is a jump, and vanilla's jump arc is
+≈12 ticks airborne against ≈4.6 ticks to walk a block on the flat — so clearing a
+1-block rise really costs about 2.5 blocks of walking time. Two is the integer
+under that: enough that a 1-block bump is worth ~2 blocks of going around, not so
+much that the planner invents absurd circuits to dodge a single step. It is
+deliberately *under* the physical figure, the safe direction, since overpaying for
+flatness is what would distort routes on legitimately sloped terrain. The weight
+applies per sixteenth, so a slab or `dirt_path` lip costs proportionally less than
+a full block and intentional slab stairs are not penalised like lumpy ground.
+
+*Scope.* Cost shaping changes which of several **valid** routes is chosen, never
+which routes exist: `DW0307`/`DW0311`/`DW0325` reachability semantics are
+unchanged, a bump is a cost and never a wall, and a disconnected goal is still
+unreachable. Determinism is unchanged (integer costs, frontier ordered `(f, g,
+cell)`). Measured on the island: total staged-walk length 1096 → 976 cells and
+cumulative elevation change 228 → 108 blocks, of which the part beyond the legs'
+own net climb fell 128 → 8; the beach→pen walk moved off `x=7` onto the built path
+spine at `x=9..11` and runs flat at `y=63` across the whole greenfield.
+
 **The step rule is physical, not cell-adjacency (task #78).** Each standing cell
 has a true **feet height** in sixteenths — the cell below's `partial` face height,
 so standing on a bottom slab is `y - 0.5`, not `y` — and a candidate step is gated
@@ -1185,6 +1218,52 @@ genuinely-forced re-crossing (a causal leg whose sealed gate is never reopened
 before it) still fails `DW0311` (`DW0315` from a checkpoint) with a message naming
 the sealed gate — the "point of no return by geometry" the owner's staging vision
 wants, provable at compile time.
+
+**Close-gate solidity for *staged walks* (v0.6, timeline-local — `DW0410`, round
+8).** The DAG-causal model above answers "which gates are shut while the **player**
+walks a critical leg". It says nothing about two effects inside one bundle,
+because across bundles there is no order to know. Inside a **single effect
+timeline** there is, and `compiler::timeline` proves it.
+
+The island defect: one `sequence` sealed the boulder at `at_ticks: 460` and walked
+the giant across that region at `at_ticks: 700`. The walk was planned on the open
+world (gates are modelled passable), so the build was green and the actor stepped
+through solid basalt on the live server. The gate state at tick 700 was never in
+doubt — nothing was looking.
+
+`timeline::walk` replays each timeline and pairs every effect with the gate
+regions an **earlier effect in that same timeline** provably sealed. A timeline is
+one `on_objective_complete[obj]` bundle, one `on_complete` bundle, or one
+trigger's `effects` (declared order, one tick, so effect *j* finishes before
+*i > j* starts); a `sequence`, ordered by `(at_ticks, declaration index)` — real
+elapsed time, which is exactly what the island defect turned on; or an `on_arrive`
+bundle, which inherits the state as of its move.
+
+Both walk planners (`plan_actor_moves`, `plan_moves`) then **route over that
+timeline-adjusted world**, so a legal way around a shut gate is simply taken and
+nothing is reported. `DW0410` fires only when the sealed world admits no route
+*and* the open world does — which is what separates it from `DW0325`/`DW0307`
+(unwalkable on the open world at all). A deduped repeat occurrence re-checks the
+already-planned route against its own timeline's seals, since that is the path the
+shared content-keyed driver actually walks. `nav::all_effects` is defined as this
+same walk with the states dropped, so effect and attributed state cannot drift.
+
+**No false certainty** (the `compiler::continuity` stance): cross-bundle order is
+never guessed — every timeline starts from "nothing provably sealed"; a
+`close-gate` carrying `requires_flags`/`forbids_flags` may not fire and so adds no
+seal, and a conditional `open-gate` likewise *drops* the region to unsealed rather
+than asserting it open (both uncertainties collapse toward silence, the direction
+that can only withhold an error, never invent one); and gate effects nested in an
+`on_arrive` seal only within that bundle, since they are not ordered against the
+enclosing bundle's later siblings. Symmetrically a walk may **rely** on a gate an
+earlier effect opened — the occupancy model already treats gate regions as
+passable, so `open-gate` needs no special case.
+
+The PackTest counterpart is unchanged and deliberately so: the generated
+`v06_arrive_handoff` still drives the arrival tick with every campaign gate
+filled. What must be immune to sealed terrain is the **arrival machinery** (a tp
+chain, not pathfinding); what may not be routed across a seal is the compiler's
+*plan*.
 
 **One leg model for every consumer (task #78).** The per-leg seal
 (`nav::leg_seal`) and the routing that uses it (`nav::route_walked_legs`) are now
@@ -1792,6 +1871,15 @@ mapping, stated per row rather than by the DW03xx section default.
 | `DW0390` | A harvested shot proposal names a cell with **no declared anchor within the 16-block snap radius**, so it cannot be written back into the DSL at all — the DSL has no free-floating world coordinates (spec-0019 §5). Reported per offending cell with the nearest anchor and its distance; the whole shot is left un-patched (a half-snapped dolly would fly a path nobody authored), while every other shot of the same session still is. **Exit 3**, and the patch file is still written. Prescription: declare an anchor near that cell in the prefab's metadata and re-mark the shot, or move the shot to an anchored spot — do NOT widen the radius and do NOT write a raw coordinate into the stage document. |
 | `DW0391` | The rehearsal report and the `--layout` manifest name **different campaigns**: the proposals would snap onto another delve's anchors and silently relocate every camera. Refused before any snapping. **Exit 1**. Prescription: point `--layout` at the `creator-datapack/layout.json` of the build that session actually played — do NOT reuse an older build's manifest. |
 | `DW0392` | The rehearsal report is unreadable, is not a rehearsal report, or carries a schema `version` this `delvec` does not understand (likewise for an unreadable layout manifest). **Exit 1**. Prescription: re-run `delve-harvest` over the session log — the report is a machine artifact and is never hand-written or hand-edited. |
+### DW04xx — staging-timeline proofs (`compiler::nav` + `compiler::timeline`; error; exit 3)
+
+Proofs about the order of effects **inside one timeline** — what the DAG-causal
+`DW03xx` gate model deliberately cannot see (it reasons about quest causality
+between bundles; this reasons about position within a bundle).
+
+| Code | Meaning |
+|------|---------|
+| `DW0410` | A staged walk (`move-actor` / `move-npc`) whose path is blocked by a gate an **earlier effect in its own timeline** sealed with `close-gate`. The round-8 island defect exactly: a `sequence` closed the boulder at `at_ticks: 460` and walked the giant across that region at `at_ticks: 700`; the walk was planned on the open world (gate regions are modelled passable), so the build shipped green and the actor stepped through solid basalt on the live server. Timelines are one `on_objective_complete`/`on_complete` bundle, one trigger's `effects` (declared order, one tick), a `sequence` ordered by `(at_ticks, declaration index)`, or an `on_arrive` bundle inheriting its move's state — see §4 "Close-gate solidity for staged walks". **The planner routes over the timeline-adjusted world first**, so a legal detour around a shut gate is simply taken and nothing is reported; this fires only when the sealed world admits no route *and* the open world does — which is precisely what distinguishes it from `DW0325`/`DW0307` (unwalkable on the open world at all). Build-tier (exit 3), `compiler::nav`; the message names the verb, the mover, the leg and every gate anchor sealed ahead of it. Prescription: move the walk before the `close-gate` (a lower `at_ticks`, or an earlier position in the bundle), reopen the gate with `open-gate` before the walk, or retarget the walk to a destination reachable on the sealed side — commonly the walk belongs *before* the seal, since the staging beat is "the walker crosses, then the boulder comes down behind it". Never silence it by deleting the `close-gate`: the seal is the point-of-no-return the staging wants. |
 
 ### DW07xx — workspace tooling (spec-0007; **not `delvec`**)
 
