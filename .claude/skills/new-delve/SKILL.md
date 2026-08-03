@@ -438,7 +438,10 @@ Then:
      `respawns_on_rest`. Leaving it off is legitimate — a won fight stays won,
      and the stage records that as `cleared-before-retry` and passes it. What it
      reds is `stranded`: nothing left to fight AND the objective unfinished, so
-     the party can neither complete the encounter nor re-fight it.
+     the party can neither complete the encounter nor re-fight it. Turning
+     `respawns_on_rest` ON buys a stricter check: the wave must come back WHOLE
+     — declared count, all-new mobs, full health — because a retry must never let
+     the party grind a fight down one swing per death.
   4. *The inverted floor gate*: mark a set-piece fight `tier: "elite"` or
      `"boss"` (DSL v0.7, on the wave). The ladder then gives it one UNASSISTED
      bot attempt; if the bot — a poor fencer by design — wins cold, the run

@@ -146,6 +146,23 @@ export class RunReport {
         returned: t.returned,
         re_engaged: t.reEngaged,
         objective_complete: t.objectiveComplete,
+        reseats_on_rest: t.reseats,
+        // What the settled probe actually saw. `settle_ms` is the reading key for
+        // a `present: 0`: a probe that answered instantly saw an empty room, one
+        // that spent its whole budget waited for a room that never filled.
+        reengage:
+          t.reengage === undefined
+            ? null
+            : {
+                present: t.reengage.present,
+                declared: t.reengage.declared,
+                carried_over: t.reengage.carriedOver,
+                health_readable: t.reengage.healthReadable,
+                damaged: t.reengage.damaged,
+                nearest_blocks: t.reengage.nearest ?? null,
+                farthest_blocks: t.reengage.farthest ?? null,
+                settle_ms: t.reengage.settleMs,
+              },
         objectives_intact: t.objectivesIntact,
         lost_objectives: [...t.lostObjectives],
         // A trial the run abandoned half-way is still IN this array — that is the

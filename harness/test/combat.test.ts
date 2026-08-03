@@ -14,7 +14,9 @@ import {
   dieRetryFindings,
   floorFinding,
   openTrial,
+  observationOf,
   parseCombatPlan,
+  reseatFidelityFinding,
   respawnedAtCheckpoint,
   retryOutcome,
   scriptedDeathCommand,
@@ -177,6 +179,8 @@ function trial(over: Partial<DeathTrial> = {}): DeathTrial {
     returned: true,
     reEngaged: true,
     objectiveComplete: false,
+    reseats: false,
+    reengage: undefined,
     objectivesIntact: true,
     lostObjectives: [],
     completed: true,
@@ -311,4 +315,75 @@ test("two completed trials per encounter is full coverage and says nothing", () 
     trial({ wave: "wave/gate-assault", attempt: 2 }),
   ];
   assert.deepEqual(dieRetryCoverageFailures(plan, new Set(["wave/gate-assault"]), trials), []);
+});
+
+// --- re-seat fidelity, pure (owner ruling 2026-08-03, task #108) -------------
+
+function sighting(id: number, over: Partial<{ distance: number; health: number; maxHealth: number }> = {}) {
+  return { id, distance: over.distance ?? 1, health: over.health ?? 20, maxHealth: over.maxHealth ?? 20 };
+}
+
+test("observationOf counts what came back, what carried over, and how far it strayed", () => {
+  const obs = observationOf(
+    [sighting(1, { distance: 60 }), sighting(2, { health: 6 }), sighting(3)],
+    3,
+    new Set([2]),
+    900,
+  );
+  assert.equal(obs.present, 3);
+  assert.equal(obs.declared, 3);
+  assert.equal(obs.carriedOver, 1);
+  assert.equal(obs.damaged, 1);
+  assert.equal(obs.healthReadable, 3);
+  assert.equal(obs.nearest, 1);
+  assert.equal(obs.farthest, 60);
+  assert.equal(obs.settleMs, 900);
+});
+
+test("a mob whose health the server never published is unknown, never 'full'", () => {
+  const obs = observationOf([{ id: 1, distance: 2, health: undefined, maxHealth: undefined }], 1, new Set(), 0);
+  assert.equal(obs.healthReadable, 0);
+  assert.equal(obs.damaged, 0, "an unknown is not evidence of damage…");
+  assert.equal(
+    reseatFidelityFinding("wave/x", 1, "first-contact", obs),
+    undefined,
+    "…and cannot manufacture a red on its own",
+  );
+});
+
+test("a faithful re-seat is silent", () => {
+  const obs = observationOf([sighting(1), sighting(2), sighting(3)], 3, new Set(), 40);
+  assert.equal(reseatFidelityFinding("wave/x", 1, "first-contact", obs), undefined);
+});
+
+test("a survivor carried across a life outranks every other fidelity fault", () => {
+  // Both wrong at once: report the carried-over mob, because that is the grind
+  // the ruling forbids and it explains the missing health too.
+  const obs = observationOf([sighting(1, { health: 3 }), sighting(2)], 3, new Set([1]), 40);
+  const v = reseatFidelityFinding("wave/x", 2, "mid-fight", obs);
+  assert.match(String(v), /already/);
+  assert.match(String(v), /never topped up around its survivors/);
+});
+
+test("a short re-seat names the observed and declared counts", () => {
+  const obs = observationOf([sighting(1), sighting(2)], 3, new Set(), 6_000);
+  assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /2 mob\(s\) standing, 3 declared/);
+});
+
+test("a whole but wounded re-seat is red on health alone", () => {
+  const obs = observationOf([sighting(1, { health: 11 }), sighting(2)], 2, new Set(), 40);
+  assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /BELOW full/);
+});
+
+test("only a re-seating wave owes fidelity — a persisting wave is judged by outcome alone", () => {
+  const wounded = observationOf([sighting(1, { health: 4 })], 2, new Set([1]), 40);
+  assert.equal(
+    trialVerdict(trial({ reseats: false, reengage: wounded, outcome: "re-engaged" })),
+    undefined,
+    "survivors ARE the design when the wave does not re-seat",
+  );
+  assert.match(
+    String(trialVerdict(trial({ reseats: true, reengage: wounded, outcome: "re-engaged" }))),
+    /previous life/,
+  );
 });

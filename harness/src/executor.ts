@@ -36,6 +36,7 @@ import {
   assistPolicy,
   deathPhases,
   floorFinding,
+  observationOf,
   openTrial,
   respawnedAtCheckpoint,
   retryOutcome,
@@ -46,6 +47,8 @@ import {
   type DeathTrialRecord,
   type Encounter,
   type EncounterPhase,
+  type ReengageObservation,
+  type WaveSighting,
 } from "./combat.ts";
 import { presentAndTrigger } from "./held-item.ts";
 import { CAMPAIGN_TOKEN, markerLine, parseCompletionMarker } from "./markers.ts";
@@ -513,6 +516,26 @@ const RESPAWN_TIMEOUT_MS = 15_000;
 
 /** How often the respawn wait re-reads the spawn counter. */
 const SPAWN_POLL_MS = 50;
+
+/**
+ * How long the die-retry re-engage probe waits for the encounter to show itself
+ * before concluding nothing is there.
+ *
+ * The probe used to be ONE instantaneous sample taken the moment the walk back
+ * resolved, and that is a sampling bug, not an observation: a client learns about
+ * an entity when the server sends it, which takes ticks after arrival —
+ * `fightWave` has always slept a second on arrival for exactly this reason. On
+ * nobodys-cave-island r14 three demonstrably-alive drowned (feral, follow_range
+ * 48, wandered off the anchor after killing the bot) read as "no hostile was
+ * there to fight" and reddened both trials of a healthy encounter.
+ *
+ * Generous on purpose, and it costs nothing on a healthy run: the probe returns
+ * the instant the declared wave is standing. Soundness of looking client-side at
+ * all rests on vanilla's own numbers — a monster is tracked out to 8 chunks (128
+ * blocks) while `follow_range` tops out far below that, so every mob that could
+ * still come for the party is a mob the client can see.
+ */
+const REENGAGE_SETTLE_MS = 6_000;
 /** Recent chat lines retained for death-cause diagnosis. */
 const CHAT_BUFFER = 16;
 /**
@@ -658,6 +681,9 @@ export class MineflayerExecutor implements StepExecutor {
   /** Waves the die-retry stage entered, whether or not it finished with them.
    * Engagement without records is the silence the run report must not keep. */
   private readonly dieRetryEngaged = new Set<string>();
+  /** Highest health ever observed per `<wave>/<mob name>` — the stand-in for a
+   * max-health attribute vanilla never puts on the wire (see fullHealthOf). */
+  private readonly waveFullHealth = new Map<string, number>();
   /** How far `kill()` got with each encounter — the reading key for an empty
    * `assist_windows` array (spec-0023 takes no assist while deliberately dying,
    * nor on a billed encounter's honest first attempt). */
@@ -2225,6 +2251,10 @@ export class MineflayerExecutor implements StepExecutor {
         await this.tradeBlows(step);
       }
       const before = new Set(this.completedObjectives.keys());
+      // Which wave mobs this life fought. A re-seat must replace every one of
+      // them; an id that survives into the next life IS the chipped survivor the
+      // owner ruling forbids (2026-08-03).
+      const seenBefore = new Set(this.waveSightings(enc).map((sight) => sight.id));
       process.stderr.write(
         `[die-retry] ${step.wave} death ${attempt}/${phases.length} (${phase})\n`,
       );
@@ -2263,9 +2293,18 @@ export class MineflayerExecutor implements StepExecutor {
         // a failure if the encounter's objective is ALSO unfinished — then the
         // party can neither complete it nor re-fight it, which is a soft lock.
         // A wave already beaten before the death is a won fight staying won.
-        trial.reEngaged = Boolean(bot.nearestEntity((e) => isWaveMob(e, bot.entity)));
+        const obs = await this.awaitReengage(enc, seenBefore);
+        trial.reengage = obs;
+        trial.reEngaged = obs.present > 0;
         trial.objectiveComplete = this.completedObjectives.has(enc.objective);
         trial.outcome = retryOutcome(trial.reEngaged, trial.objectiveComplete);
+        process.stderr.write(
+          `[die-retry] ${step.wave} death ${attempt}: ${obs.present}/${obs.declared} wave mob(s) ` +
+            `after ${obs.settleMs}ms` +
+            `${obs.nearest !== undefined ? `, ${obs.nearest.toFixed(1)}–${obs.farthest!.toFixed(1)} blocks from the anchor` : ""}` +
+            `${obs.carriedOver > 0 ? `, ${obs.carriedOver} carried over from a previous life` : ""}` +
+            `${obs.healthReadable > 0 ? `, ${obs.damaged}/${obs.healthReadable} damaged` : ""}\n`,
+        );
         process.stderr.write(
           `[die-retry] ${step.wave} death ${attempt}: ${trial.outcome}` +
             `${trial.outcome === "cleared-before-retry" ? ` (\`${enc.objective}\` was already complete — the death cost no progress)` : ""}\n`,
@@ -2299,6 +2338,121 @@ export class MineflayerExecutor implements StepExecutor {
       if (Date.now() >= deadline) return false;
       await delay(SCORE_POLL_MS);
     }
+  }
+
+  /**
+   * Every wave mob the client currently tracks, with its distance from the
+   * encounter anchor and — where the server surfaced them — its health and max
+   * health.
+   *
+   * A SET, not a nearest hit: the re-seat fidelity check needs the whole wave,
+   * and a feral mob that wandered off the anchor after killing the party is still
+   * part of the fight. There is deliberately no distance filter — `follow_range`
+   * (48 at the top end) sits well inside vanilla's 128-block monster tracking
+   * range, so anything the client can see is something that can still come.
+   *
+   * Health is read through the PINNED REGISTRY's named metadata layout
+   * (`metadataKeys`, where `health` is resolved by name for 1.21.11), never a
+   * hardcoded packet index — a protocol-version constant baked into the harness
+   * would be exactly the downstream folklore CLAUDE.md forbids. Both fields are
+   * optional: a server that never sent this entity's attributes leaves max health
+   * unknown, and an unknown is reported as unknown, never as full.
+   */
+  private waveSightings(enc: Encounter): WaveSighting[] {
+    const bot = this.requireBot();
+    const anchor = enc.pos;
+    const out: WaveSighting[] = [];
+    for (const e of Object.values(bot.entities)) {
+      if (!isWaveMob(e, bot.entity)) continue;
+      const p = e.position;
+      if (!p) continue;
+      const dx = p.x - anchor[0];
+      const dy = p.y - anchor[1];
+      const dz = p.z - anchor[2];
+      const health = this.entityHealth(e);
+      out.push({
+        id: e.id,
+        distance: Math.sqrt(dx * dx + dy * dy + dz * dz),
+        health,
+        maxHealth: this.fullHealthOf(enc.wave, e, health),
+      });
+
+    }
+    return out;
+  }
+
+  /** Current health off the entity's metadata, addressed by NAME through the
+   * pinned registry's layout for this mob. `undefined` when the layout does not
+   * publish one or no metadata has arrived yet. */
+  private entityHealth(e: Entity): number | undefined {
+    const bot = this.requireBot();
+    const keys = (
+      bot.registry as { entitiesByName?: Record<string, { metadataKeys?: string[] }> }
+    ).entitiesByName?.[e.name ?? ""]?.metadataKeys;
+    const idx = keys?.indexOf("health") ?? -1;
+    if (idx < 0) return undefined;
+    const raw = (e as unknown as { metadata?: Record<number, unknown> }).metadata?.[idx];
+    return typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
+  }
+
+  /**
+   * What "full health" means for this mob type in this wave.
+   *
+   * Preferred source is the server's own `entity_update_attributes`, but vanilla
+   * only transmits attributes that DIFFER from the entity's defaults — a live
+   * 1.21.11 server sends a wave zombie nothing but `generic.scale`, so max health
+   * is simply not on the wire (verified against the keep-trial fixture, task
+   * #108). Falling back to a vanilla health table would be inventing data the
+   * compiler itself refuses to invent (DW0475).
+   *
+   * So the baseline is the wave AS THIS RUN FIRST MET IT: the highest health ever
+   * observed for this mob type in this wave. The bot always sees the wave fresh —
+   * the die-retry approach happens before a blow is struck — so the baseline is
+   * established whole, and "identical to what the first life faced" is exactly
+   * the property the owner ruling asks for. It errs conservative by construction:
+   * a baseline can only ever be too LOW, which can hide damage, never invent it.
+   */
+  private fullHealthOf(wave: string, e: Entity, health: number | undefined): number | undefined {
+    const attrs = (
+      e as unknown as { attributes?: Record<string, { value?: unknown } | undefined> }
+    ).attributes;
+    for (const key of ["minecraft:max_health", "generic.max_health", "max_health"]) {
+      const raw = attrs?.[key]?.value;
+      if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    }
+    const slot = `${wave}/${e.name ?? "?"}`;
+    const seen = this.waveFullHealth.get(slot);
+    if (health !== undefined && (seen === undefined || health > seen)) {
+      this.waveFullHealth.set(slot, health);
+      return health;
+    }
+    return seen;
+  }
+
+  /**
+   * Wait for the encounter to show itself, then describe what came back.
+   *
+   * Returns the moment the declared wave is standing, so a healthy run pays
+   * nothing; otherwise it settles for {@link REENGAGE_SETTLE_MS} before
+   * concluding. A single instantaneous sample was the island-r14 false negative:
+   * entity tracking lags arrival by ticks, and three living drowned read as an
+   * empty room.
+   */
+  private async awaitReengage(
+    enc: Encounter,
+    seenBefore: ReadonlySet<number>,
+  ): Promise<ReengageObservation> {
+    const started = Date.now();
+    const deadline = started + REENGAGE_SETTLE_MS;
+    let sightings = this.waveSightings(enc);
+    for (;;) {
+      // Enough is standing to answer every question this observation feeds.
+      if (sightings.length >= enc.count) break;
+      if (Date.now() >= deadline) break;
+      await delay(REACH_POLL_MS);
+      sightings = this.waveSightings(enc);
+    }
+    return observationOf(sightings, enc.count, seenBefore, Date.now() - started);
   }
 
   /** Melee whatever wave mob is closest for a moment, so the next scripted death
