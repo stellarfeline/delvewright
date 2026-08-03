@@ -54,7 +54,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Stages 1–5 schema + referential validation.
+    /// Stages 1–7 schema + referential validation.
     Validate {
         /// Campaign directory.
         campaign_dir: PathBuf,
@@ -81,7 +81,7 @@ enum Command {
     },
     /// Export a stage's JSON Schema (LLM authoring aid).
     Schema {
-        /// Stage `1..6` or `all`.
+        /// Stage `1..7` or `all`.
         #[arg(long)]
         stage: String,
     },
