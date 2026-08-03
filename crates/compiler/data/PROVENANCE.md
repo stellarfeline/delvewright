@@ -31,6 +31,7 @@ not third-party reconstructions.
 |---|---|
 | `registries/data.min.json` | `7efb184902cfef62b431bc9826ebcbcde2c23746e5624326ffcf922e15cf28f9` |
 | `commands/data.min.json`    | `f2477dfadbeff5707dce1083f90d5dc88f9130bf860ac1c134ffc1de1982b7f6` |
+| `item_components/data.min.json` | `51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4` |
 | `version.json`              | `be02c05f3cce0e39a4ae855c01b3dda2f572078d575f4b6b2fd824cc8a137d62` |
 
 ## Vendored files (derived, committed here)
@@ -55,6 +56,19 @@ not third-party reconstructions.
   crates/compiler/data/sounds-1.21.11.json`. The script pins and checks the source
   SHA-256 and applies the transform `sorted(set("minecraft:"+i for i in sound_event))`,
   `json.dumps(indent=2, sort_keys=True)`.
+
+- **`item-stack-sizes-1.21.11.json`** — every item's `minecraft:max_stack_size`
+  default component, from `item_components/data.min.json` in the same summary,
+  namespaced to match DSL usage. 1505 entries — exactly the key set of
+  `items-1.21.11.json` (a test pins that, so a future regeneration cannot let the
+  two drift). Validates that a single-slot fill's `count` fits the stack
+  (`DW0436`): `item replace block … container.<n> with <item> <count>` fails
+  **silently** above the cap (rabbit stew caps at 1), the same silent-failure class
+  `DW0431` exists for.
+  **Reproduce it**: `python3 tools/extract-item-stack-sizes.py
+  <item_components/data.min.json> crates/compiler/data/item-stack-sizes-1.21.11.json`.
+  The script pins and checks the source SHA-256, and refuses to default a missing
+  component rather than silently assuming 64.
 
 ## Default-font glyph metrics (measured, not vendored)
 
@@ -101,6 +115,7 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `commands-1.21.11.json` | `8e48958913bbd604bc6a084fa04f139c6012fbe6706391c79b265158221ff6ac` |
 | `entities-1.21.11.json` | `a10cc5f3dc042dfb632e87131823846011586d19bd97814bf62b1fa6e66160d2` |
 | `sounds-1.21.11.json`   | `841adcd38b83410bed32d57bab909829ce796c1ecd959f2891fcafbf427bc16c` |
+| `item-stack-sizes-1.21.11.json` | `a896955918220c489ab2225db6772cd417a0273d94d8dd691029572566e1b5ee` |
 
 ## Not committed
 

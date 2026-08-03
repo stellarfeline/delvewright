@@ -489,3 +489,70 @@ fn render_plan_lighting_stamp_follows_the_declarations() {
     let again = build_with_structure(&c1, dark.clone()).unwrap();
     assert_eq!(out1, again, "stamped build is deterministic");
 }
+
+/// `dusk` / `dawn` (owner ruling, 2026-08-03): vanilla's `/time set` primitive
+/// takes a raw tick count as well as its four keywords, so the states worth naming
+/// for a delve's pacing are not limited to the keywords. The DSL names the beat;
+/// the compiler emits the tick form — and the sealed-state PackTest, which reads
+/// the world time back with `time query daytime`, asserts the exact value.
+#[test]
+fn dusk_and_dawn_emit_the_vanilla_tick_form() {
+    // `dusk` is the SUNSET ONSET (12000), not 13000: 13000 is the instant the sun
+    // has finished setting, which the `night` keyword already sets — so 13000 would
+    // make `dusk` a synonym of `night` instead of its own beat (owner, 2026-08-03).
+    for (time, ticks) in [(WorldTime::Dusk, 12000), (WorldTime::Dawn, 23000)] {
+        let mut c = hello_world();
+        c.world.dsl_version = "0.5.0".to_string();
+        c.world.content.time = Some(time);
+        let out = build(&c).expect("a dusk/dawn campaign builds");
+        let s = setup(&out);
+        assert!(
+            s.contains(&format!("time set {ticks}")),
+            "expected `time set {ticks}` in setup:\n{s}"
+        );
+        let sealed = String::from_utf8(
+            out[out
+                .keys()
+                .find(|k| k.ends_with("/test/sealed_state.mcfunction"))
+                .expect("sealed_state emitted")]
+            .clone(),
+        )
+        .unwrap();
+        assert!(
+            sealed.contains(&format!(
+                "assert score #sealtime_sealed dw.sys matches {ticks}"
+            )),
+            "the sealed-state test must assert the declared daytime:\n{sealed}"
+        );
+        assert_eq!(build(&c).unwrap(), out, "byte-identical rebuild (ADR-0006)");
+    }
+    // The distinction is the whole point: `dusk` must not collapse onto `night`.
+    assert_ne!(
+        WorldTime::Dusk.daytime_ticks(),
+        WorldTime::Night.daytime_ticks(),
+        "dusk is the sunset onset, night is the sun already down — a shared tick \
+         value would make one keyword a synonym of the other"
+    );
+}
+
+/// The four states vanilla names keep emitting their KEYWORD verbatim — the whole
+/// point of the one keyword/tick table is that adding dusk/dawn moves no shipped
+/// campaign's bytes.
+#[test]
+fn the_vanilla_keywords_still_emit_keywords() {
+    for (time, token) in [
+        (WorldTime::Day, "day"),
+        (WorldTime::Noon, "noon"),
+        (WorldTime::Night, "night"),
+        (WorldTime::Midnight, "midnight"),
+    ] {
+        let mut c = hello_world();
+        c.world.dsl_version = "0.5.0".to_string();
+        c.world.content.time = Some(time);
+        let s = setup(&build(&c).expect("builds"));
+        assert!(
+            s.contains(&format!("time set {token}")),
+            "expected the `{token}` keyword, not a tick count:\n{s}"
+        );
+    }
+}

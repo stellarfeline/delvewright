@@ -121,6 +121,10 @@ pub mod codes {
     /// (spec-0021) A `loot` declaration carries more stacks than the container
     /// it fills has slots.
     pub const LOOT_TOO_MANY_ITEMS: &str = "DW0432";
+    /// A single-slot fill's `count` exceeds the item's `minecraft:max_stack_size`
+    /// in the pinned 1.21.11 registry. `item replace … container.<n> with <item>
+    /// <count>` fails **silently** above the cap, shipping an empty slot.
+    pub const ITEM_COUNT_OVER_STACK: &str = "DW0436";
     /// Planned quest (stage 4) has no expansion in stage 5.
     pub const QUEST_NOT_EXPANDED: &str = "DW0150";
     /// Stage-5 quest is not planned in stage 4.

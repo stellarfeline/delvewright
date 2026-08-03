@@ -60,7 +60,13 @@ import {
   pickStalker,
   type ThreatCandidate,
 } from "./threat.ts";
-import { EAT_COOLDOWN_MS, EAT_SAFE_RANGE, eatDecision, pickFood } from "./sustain.ts";
+import {
+  EAT_COOLDOWN_MS,
+  EAT_SAFE_RANGE,
+  eatDecision,
+  isSafeFood,
+  pickFood,
+} from "./sustain.ts";
 import {
   WAVE_CLEAR_STREAK,
   WAVE_ENGAGE_NEAR,
@@ -893,7 +899,12 @@ export class MineflayerExecutor implements StepExecutor {
     return best;
   }
 
-  /** Every edible item currently in the inventory, with its hunger value. */
+  /**
+   * Every edible item currently in the inventory that is safe to eat, with its hunger
+   * value. The registry says what is edible; {@link isSafeFood} says what a player
+   * would actually swallow — rotten flesh is food to minecraft-data and poison to the
+   * run (round 2: 7.3 → 3.4 health from the bot's own "eat when hurt" behavior).
+   */
   private foodInInventory(): Array<{ item: Item; name: string; foodPoints: number }> {
     const bot = this.requireBot();
     // The pinned minecraft-data registry is the single source of truth for what counts
@@ -905,6 +916,7 @@ export class MineflayerExecutor implements StepExecutor {
     for (const item of bot.inventory.items()) {
       const food = foods[item.type];
       if (!food) continue;
+      if (!isSafeFood(item.name)) continue;
       out.push({ item, name: item.name, foodPoints: food.foodPoints ?? 0 });
     }
     return out;
@@ -940,7 +952,7 @@ export class MineflayerExecutor implements StepExecutor {
       `health ${bot.health.toFixed(1)}/${PLAYER_MAX_HEALTH}, hunger ${bot.food}/${PLAYER_MAX_FOOD}`;
     if (decision !== "eat") {
       const why = {
-        "no-food": "no edible item in the kit",
+        "no-food": "no safe edible item in the kit (harmful food is never eaten)",
         "hostile-near": `a hostile is within ${EAT_SAFE_RANGE} blocks — eating would donate free hits`,
         "hunger-full": "hunger is full, so vanilla forbids eating; natural regeneration is running",
       }[decision];

@@ -17,6 +17,19 @@ use crate::ids::{PoolId, PrefabId};
 pub trait ItemRegistry {
     /// True if `item_id` is a known item in the pinned MC version.
     fn contains(&self, item_id: &str) -> bool;
+
+    /// The item's `minecraft:max_stack_size` in the pinned MC version, if this
+    /// registry carries stack-size data for it.
+    ///
+    /// Needed because a single-slot fill (`item replace block … container.<n> with
+    /// <item> <count>`) fails **silently** above the cap — rabbit stew caps at 1, so
+    /// `count: 2` puts nothing in the chest (`DW0436`). `None` means "this registry
+    /// does not know", and the check is then skipped rather than guessed: the small
+    /// vendored DSL-side subset carries ids only, while the compiler injects the full
+    /// 1.21.11 table (`crates/compiler/data/item-stack-sizes-1.21.11.json`).
+    fn max_stack_size(&self, _item_id: &str) -> Option<u32> {
+        None
+    }
 }
 
 /// Membership test for vanilla entity ids (`minecraft:zombie`, …), used to

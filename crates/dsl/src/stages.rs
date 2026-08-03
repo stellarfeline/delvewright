@@ -117,10 +117,18 @@ pub enum Carrier {
     One,
 }
 
-/// A declared world time state (DSL v0.5, spec-0010). Values are the vanilla
-/// `/time set` keywords; the sole difference from vanilla is that the daylight
-/// cycle is frozen (`advance_time false`), so a set state persists for the whole
-/// delve until a `set-time` effect cuts to another.
+/// A declared world time state (DSL v0.5, spec-0010). The sole difference from
+/// vanilla is that the daylight cycle is frozen (`advance_time false`), so a set
+/// state persists for the whole delve until a `set-time` effect cuts to another.
+///
+/// Vanilla's `/time set` primitive takes **either** one of four keywords or a raw
+/// tick count, and the tick form is the general one — so the states worth naming
+/// for a delve's pacing are not limited to the four keywords. `dusk` and `dawn`
+/// (owner ruling, 2026-08-03) are the tick form exposed first-class, per the
+/// no-hack rule: the DSL names the beat, the compiler emits `/time set <ticks>`.
+/// Every keyword-to-tick mapping lives in exactly one table ([`WorldTime::spec`]),
+/// and the four vanilla keywords still emit their keyword verbatim, so existing
+/// campaigns are byte-identical.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum WorldTime {
@@ -129,33 +137,49 @@ pub enum WorldTime {
     /// Midday, brightest (`/time set noon`, 6000 ticks) — the default.
     #[default]
     Noon,
-    /// Dusk/night (`/time set night`, 13000 ticks).
+    /// Sunset — the sky visibly going orange and the day ending
+    /// (`/time set 12000`). Deliberately NOT 13000: that is the instant the sun
+    /// has finished setting, which is what the `night` keyword already sets, so
+    /// 13000 would make `dusk` a synonym rather than its own beat.
+    Dusk,
+    /// Night, sun fully down (`/time set night`, 13000 ticks).
     Night,
     /// Deep night, darkest (`/time set midnight`, 18000 ticks).
     Midnight,
+    /// First light, just before sunrise (`/time set 23000`). Spelled `dawn`;
+    /// `sunrise` is accepted as a synonym on input.
+    #[serde(alias = "sunrise")]
+    Dawn,
 }
 
 impl WorldTime {
-    /// The vanilla `/time set` keyword.
-    pub fn token(self) -> &'static str {
+    /// The single keyword/tick table: `(the /time set argument, daytime ticks)`.
+    ///
+    /// A state vanilla names keeps its keyword — the argument the compiler has
+    /// always emitted — so no shipped campaign's bytes move. A state vanilla does
+    /// not name emits the equivalent tick count, which is the same primitive.
+    const fn spec(self) -> (&'static str, i64) {
         match self {
-            WorldTime::Day => "day",
-            WorldTime::Noon => "noon",
-            WorldTime::Night => "night",
-            WorldTime::Midnight => "midnight",
+            WorldTime::Day => ("day", 1000),
+            WorldTime::Noon => ("noon", 6000),
+            WorldTime::Dusk => ("12000", 12000),
+            WorldTime::Night => ("night", 13000),
+            WorldTime::Midnight => ("midnight", 18000),
+            WorldTime::Dawn => ("23000", 23000),
         }
     }
 
-    /// The `daytime` tick value the keyword sets (the `time query daytime`
-    /// read-back). Vanilla constants: day=1000, noon=6000, night=13000,
-    /// midnight=18000.
+    /// The vanilla `/time set` argument — a keyword for the four states vanilla
+    /// names, a tick count otherwise.
+    pub fn token(self) -> &'static str {
+        self.spec().0
+    }
+
+    /// The `daytime` tick value this state sets (the `time query daytime`
+    /// read-back). Vanilla constants: day=1000, noon=6000, dusk=12000 (sunset
+    /// onset), night=13000, midnight=18000, dawn=23000.
     pub fn daytime_ticks(self) -> i64 {
-        match self {
-            WorldTime::Day => 1000,
-            WorldTime::Noon => 6000,
-            WorldTime::Night => 13000,
-            WorldTime::Midnight => 18000,
-        }
+        self.spec().1
     }
 }
 
