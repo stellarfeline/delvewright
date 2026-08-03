@@ -56,10 +56,18 @@ import {
   type EncounterPhase,
   type PerformedRest,
   type ReengageObservation,
-  type WaveSighting,
+  type WaveCensus,
 } from "./combat.ts";
 import { presentAndTrigger } from "./held-item.ts";
-import { CAMPAIGN_TOKEN, markerLine, parseCompletionMarker } from "./markers.ts";
+import {
+  CAMPAIGN_TOKEN,
+  markerLine,
+  parseCensusMob,
+  parseCensusSummary,
+  parseCompletionMarker,
+  type CensusMob,
+  type CensusSummary,
+} from "./markers.ts";
 import { allowNonCollidingEntities, configureLeg } from "./movement.ts";
 import {
   nextLegWaypoints,
@@ -560,12 +568,25 @@ const SPAWN_POLL_MS = 50;
  * there to fight" and reddened both trials of a healthy encounter.
  *
  * Generous on purpose, and it costs nothing on a healthy run: the probe returns
- * the instant the declared wave is standing. Soundness of looking client-side at
- * all rests on vanilla's own numbers — a monster is tracked out to 8 chunks (128
- * blocks) while `follow_range` tops out far below that, so every mob that could
- * still come for the party is a mob the client can see.
+ * the instant the declared wave is standing. Since task #123 the probe asks the
+ * SERVER, by tag, so what it settles on is the wave itself — client tracking range
+ * no longer bounds the answer, and nothing standing nearby can enter it.
  */
 const REENGAGE_SETTLE_MS = 6_000;
+
+/**
+ * How long one census may take to come back (task #123).
+ *
+ * A census is a `/function` call whose answer arrives on the chat channel within
+ * a tick or two; this is the "the command was refused" deadline, not a settle.
+ * The census returns `undefined` on expiry — never a zero, which would read as
+ * "the wave is gone" and turn an unopped bot into a false `stranded` verdict.
+ */
+const CENSUS_TIMEOUT_MS = 3_000;
+
+/** How many censuses' mob lines stay addressable. Only the newest is ever asked
+ * for; the rest are kept so a late line cannot grow the map without bound. */
+const CENSUS_HISTORY = 4;
 
 /**
  * How long the post-respawn re-arm waits for the kept kit to arrive on the wire.
@@ -742,9 +763,13 @@ export class MineflayerExecutor implements StepExecutor {
    * checkpoint before them — a content fact, reported and not graded (#223). */
   private readonly preconditionAdvisories: string[] = [];
   private readonly preconditionWaves = new Set<string>();
-  /** Highest health ever observed per `<wave>/<mob name>` — the stand-in for a
-   * max-health attribute vanilla never puts on the wire (see fullHealthOf). */
-  private readonly waveFullHealth = new Map<string, number>();
+  /** The newest census summary the chat channel has delivered, and the mob lines
+   * that closed each census, keyed by the server's own sequence number (task
+   * #123). `censusSeq` is how a fresh answer is told from a stale one without the
+   * harness ever writing a delve score to ask its question. */
+  private censusSummary: CensusSummary | undefined;
+  private censusSeq = 0;
+  private readonly censusMobs = new Map<number, CensusMob[]>();
   /** How far `kill()` got with each encounter — the reading key for an empty
    * `assist_windows` array (spec-0023 takes no assist while deliberately dying,
    * nor on a billed encounter's honest first attempt). */
@@ -879,6 +904,7 @@ export class MineflayerExecutor implements StepExecutor {
     // stream feeds the recent-chat ring the death diagnostic mines for a cause.
     bot.on("messagestr", (message: string) => {
       this.observeMarker(message);
+      this.observeCensus(message);
       this.recentChat.push(message);
       if (this.recentChat.length > CHAT_BUFFER) {
         this.recentChat.shift();
@@ -2552,10 +2578,13 @@ export class MineflayerExecutor implements StepExecutor {
         }
       }
       const before = new Set(this.completedObjectives.keys());
-      // Which wave mobs this life fought. A re-seat must replace every one of
-      // them; an id that survives into the next life IS the chipped survivor the
-      // owner ruling forbids (2026-08-03).
-      const seenBefore = new Set(this.waveSightings(enc).map((sight) => sight.id));
+      // BRAND the mobs this life fought (task #123). A re-seat must replace every
+      // one of them; a mob still wearing the brand in the next life IS the chipped
+      // survivor the owner ruling forbids (2026-08-03). The stamp rides the wave's
+      // own tag, so it can only ever land on this wave — the mistake the previous
+      // id-based baseline made, which branded whatever the client happened to be
+      // tracking (#230).
+      this.brandWave(enc);
       process.stderr.write(
         `[die-retry] ${step.wave} death ${attempt}/${phases.length} (${phase})\n`,
       );
@@ -2621,7 +2650,7 @@ export class MineflayerExecutor implements StepExecutor {
           // false, `reengage` null and its outcome `unproven`: not looked at is not
           // the same fact as looked at and empty, and neither is a pass.
           if (trial.returned) {
-            const obs = await this.awaitReengage(enc, seenBefore);
+            const obs = await this.awaitReengage(enc);
             trial.reengage = obs;
             trial.reEngaged = obs.present > 0;
             trial.outcome = retryOutcome(trial.reEngaged, trial.objectiveComplete);
@@ -2650,6 +2679,11 @@ export class MineflayerExecutor implements StepExecutor {
           `[die-retry] ${step.wave} death ${attempt} loop abandoned: ${trial.abortedWith}\n`,
         );
         throw err;
+      } finally {
+        // Clear the brand however the trial ended, so the NEXT death brands a
+        // clean slate and a stale stamp can never be read as a survivor. In the
+        // `finally` because an abandoned trial leaves mobs standing too.
+        this.unbrandWave(enc);
       }
     }
   }
@@ -2675,92 +2709,73 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * Every wave mob the client currently tracks, with its distance from the
-   * encounter anchor and — where the server surfaced them — its health and max
-   * health.
+   * Ask the server what is standing at this encounter — BY TAG (task #123).
    *
-   * A SET, not a nearest hit: the re-seat fidelity check needs the whole wave,
-   * and a feral mob that wandered off the anchor after killing the party is still
-   * part of the fight. There is deliberately no distance filter — `follow_range`
-   * (48 at the top end) sits well inside vanilla's 128-block monster tracking
-   * range, so anything the client can see is something that can still come.
+   * The old probe answered by silhouette: every entity the client tracked, no
+   * distance filter, anything taller than half a block. That set is not the wave.
+   * On the drowned bell it swept in two ambush husks 57 blocks away at the cistern
+   * and whichever neighbouring wave had just been re-seated, so a 2-mob wave read
+   * as 4 standing — and because those bystanders were alive on both sides of a
+   * scripted death, they were reported as survivors the re-seat had failed to
+   * remove. The re-seat was innocent; the ruler was wrong (#230).
    *
-   * Health is read through the PINNED REGISTRY's named metadata layout
-   * (`metadataKeys`, where `health` is resolved by name for 1.21.11), never a
-   * hardcoded packet index — a protocol-version constant baked into the harness
-   * would be exactly the downstream folklore CLAUDE.md forbids. Both fields are
-   * optional: a server that never sent this entity's attributes leaves max health
-   * unknown, and an unknown is reported as unknown, never as full.
+   * Only the server can see the wave tag, so the compiler emits the census and
+   * this reads it: counts of standing / branded / damaged, plus one line per mob
+   * with its position and health. Everything the fidelity verdict consumes is the
+   * server's own answer about entities carrying `dw_wave_<id>`, and nothing else
+   * can enter it.
+   *
+   * Returns `undefined` if no answer arrives — never a zero, which would read as
+   * "the wave is gone".
    */
-  private waveSightings(enc: Encounter): WaveSighting[] {
+  private async census(enc: Encounter): Promise<WaveCensus | undefined> {
     const bot = this.requireBot();
-    const anchor = enc.pos;
-    const out: WaveSighting[] = [];
-    for (const e of Object.values(bot.entities)) {
-      if (!isWaveMob(e, bot.entity)) continue;
-      const p = e.position;
-      if (!p) continue;
-      const dx = p.x - anchor[0];
-      const dy = p.y - anchor[1];
-      const dz = p.z - anchor[2];
-      const health = this.entityHealth(e);
-      out.push({
-        id: e.id,
-        distance: Math.sqrt(dx * dx + dy * dy + dz * dz),
-        health,
-        maxHealth: this.fullHealthOf(enc.wave, e, health),
-      });
-
+    const before = this.censusSeq;
+    bot.chat(`/function ${enc.census.census}`);
+    const deadline = Date.now() + CENSUS_TIMEOUT_MS;
+    for (;;) {
+      const sum = this.censusSummary;
+      if (sum && sum.seq > before && sum.wave === enc.wave) {
+        return { summary: sum, mobs: this.censusMobs.get(sum.seq) ?? [] };
+      }
+      if (Date.now() >= deadline) return undefined;
+      await delay(SCORE_POLL_MS);
     }
-    return out;
   }
 
-  /** Current health off the entity's metadata, addressed by NAME through the
-   * pinned registry's layout for this mob. `undefined` when the layout does not
-   * publish one or no metadata has arrived yet. */
-  private entityHealth(e: Entity): number | undefined {
-    const bot = this.requireBot();
-    const keys = (
-      bot.registry as { entitiesByName?: Record<string, { metadataKeys?: string[] }> }
-    ).entitiesByName?.[e.name ?? ""]?.metadataKeys;
-    const idx = keys?.indexOf("health") ?? -1;
-    if (idx < 0) return undefined;
-    const raw = (e as unknown as { metadata?: Record<number, unknown> }).metadata?.[idx];
-    return typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
+  /** Stamp this life's wave mobs so the next census can name the survivors. */
+  private brandWave(enc: Encounter): void {
+    this.requireBot().chat(`/function ${enc.census.brand}`);
+  }
+
+  /** Clear the stamp, so the next trial brands a clean slate. */
+  private unbrandWave(enc: Encounter): void {
+    this.requireBot().chat(`/function ${enc.census.unbrand}`);
   }
 
   /**
-   * What "full health" means for this mob type in this wave.
-   *
-   * Preferred source is the server's own `entity_update_attributes`, but vanilla
-   * only transmits attributes that DIFFER from the entity's defaults — a live
-   * 1.21.11 server sends a wave zombie nothing but `generic.scale`, so max health
-   * is simply not on the wire (verified against the keep-trial fixture, task
-   * #108). Falling back to a vanilla health table would be inventing data the
-   * compiler itself refuses to invent (DW0475).
-   *
-   * So the baseline is the wave AS THIS RUN FIRST MET IT: the highest health ever
-   * observed for this mob type in this wave. The bot always sees the wave fresh —
-   * the die-retry approach happens before a blow is struck — so the baseline is
-   * established whole, and "identical to what the first life faced" is exactly
-   * the property the owner ruling asks for. It errs conservative by construction:
-   * a baseline can only ever be too LOW, which can hide damage, never invent it.
+   * Buffer a census line. Mob lines arrive before the summary that closes them
+   * (one atomic function call, in emission order), so by the time a summary is
+   * observed its mobs are already collected under the same sequence number.
    */
-  private fullHealthOf(wave: string, e: Entity, health: number | undefined): number | undefined {
-    const attrs = (
-      e as unknown as { attributes?: Record<string, { value?: unknown } | undefined> }
-    ).attributes;
-    for (const key of ["minecraft:max_health", "generic.max_health", "max_health"]) {
-      const raw = attrs?.[key]?.value;
-      if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  private observeCensus(message: string): void {
+    const mob = parseCensusMob(message);
+    if (mob) {
+      if (mob.campaignId !== this.campaignId) return;
+      const at = this.censusMobs.get(mob.seq) ?? [];
+      at.push(mob);
+      this.censusMobs.set(mob.seq, at);
+      // Bounded: only the newest few censuses can still be asked about.
+      while (this.censusMobs.size > CENSUS_HISTORY) {
+        const oldest = Math.min(...this.censusMobs.keys());
+        this.censusMobs.delete(oldest);
+      }
+      return;
     }
-    const slot = `${wave}/${e.name ?? "?"}`;
-    const seen = this.waveFullHealth.get(slot);
-    if (health !== undefined && (seen === undefined || health > seen)) {
-      this.waveFullHealth.set(slot, health);
-      return health;
-    }
-    return seen;
+    const sum = parseCensusSummary(message);
+    if (!sum || sum.campaignId !== this.campaignId) return;
+    this.censusSummary = sum;
+    this.censusSeq = Math.max(this.censusSeq, sum.seq);
   }
 
   /**
@@ -2772,21 +2787,26 @@ export class MineflayerExecutor implements StepExecutor {
    * entity tracking lags arrival by ticks, and three living drowned read as an
    * empty room.
    */
-  private async awaitReengage(
-    enc: Encounter,
-    seenBefore: ReadonlySet<number>,
-  ): Promise<ReengageObservation> {
+  private async awaitReengage(enc: Encounter): Promise<ReengageObservation> {
     const started = Date.now();
     const deadline = started + REENGAGE_SETTLE_MS;
-    let sightings = this.waveSightings(enc);
+    let census = await this.census(enc);
     for (;;) {
       // Enough is standing to answer every question this observation feeds.
-      if (sightings.length >= enc.count) break;
+      if (census && census.summary.present >= enc.count) break;
       if (Date.now() >= deadline) break;
       await delay(REACH_POLL_MS);
-      sightings = this.waveSightings(enc);
+      census = (await this.census(enc)) ?? census;
     }
-    return observationOf(sightings, enc.count, seenBefore, Date.now() - started);
+    if (!census) {
+      // No census came back at all. That is a broken probe, not an empty room, and
+      // the run must say so rather than report a `stranded` the delve never caused.
+      throw new Error(
+        `die-retry: the wave census \`${enc.census.census}\` never answered within ` +
+          `${CENSUS_TIMEOUT_MS}ms — the bot must be opped to call it`,
+      );
+    }
+    return observationOf(census, enc.count, enc.pos, Date.now() - started);
   }
 
   /** Melee whatever wave mob is closest for a moment, so the next scripted death
@@ -3266,10 +3286,18 @@ const NON_WAVE_ENTITIES = new Set<string>([
 ]);
 
 /**
- * True if `e` is a slayable wave mob: not the bot, not a player/NPC/display/
- * dropped object, and tall enough to be a living mob (excludes small dropped
- * entities). Classified by name (reliable across mineflayer versions) rather than
+ * True if `e` is something the bot could swing at: not the bot, not a
+ * player/NPC/display/dropped object, and tall enough to be a living mob.
+ * Classified by name (reliable across mineflayer versions) rather than
  * `type`/`kind`, which vary.
+ *
+ * **This is a TARGETING predicate, never a measurement one** (task #123). The bot
+ * can only attack what its client can see, so picking a swing target by shape is
+ * the only thing it could do — but ANSWERING a question about the wave that way
+ * is how the drowned bell's ambush husks were reported as wave mobs a re-seat had
+ * failed to remove (#230). Every count that reaches a verdict or the run report
+ * now comes from the compiler's tag census instead; nothing here may be used to
+ * decide what is standing at an encounter.
  */
 export function isWaveMob(e: unknown, self: unknown): boolean {
   if (!e || e === self) return false;

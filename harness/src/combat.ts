@@ -23,6 +23,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { SUPPORTED_DSL_VERSIONS, type Vec3Tuple } from "./critical-path.ts";
+import type { CensusMob, CensusSummary } from "./markers.ts";
 
 /** Where the combat plan sits relative to `critical-path.json`. */
 const COMBAT_PLAN_SUBPATH = ["validation", "combat-plan.json"] as const;
@@ -47,6 +48,22 @@ export interface Encounter {
   readonly respawnsOnRest: boolean;
   /** Absent when the campaign has set no checkpoint by this step (world spawn). */
   readonly checkpoint: Vec3Tuple | undefined;
+  /** The compiler-emitted tag-census probe for this wave (task #123). The names
+   * come from the plan and are never re-derived here: `safe_local` is a compiler
+   * naming rule, and reimplementing it in the harness is the downstream folklore
+   * CLAUDE.md forbids. Required — a build too old to state them cannot be
+   * measured by tag, and failing loudly beats silently measuring by silhouette. */
+  readonly census: CensusProbe;
+}
+
+/** The three functions the ladder calls to measure one wave by tag. */
+export interface CensusProbe {
+  /** Counts the wave's standing mobs and states the totals on the chat channel. */
+  readonly census: string;
+  /** Stamps this life's mobs, so the next census can name the survivors. */
+  readonly brand: string;
+  /** Clears the stamp. */
+  readonly unbrand: string;
 }
 
 /**
@@ -217,6 +234,7 @@ export function parseCombatPlan(raw: unknown): CombatPlan {
       respawnsOnRest: e["respawns_on_rest"] === true,
       checkpoint:
         e["checkpoint"] === undefined ? undefined : requirePos(e["checkpoint"], `${p}/checkpoint`),
+      census: parseCensusProbe(e["census"], `${p}/census`),
     };
   });
   return {
@@ -226,6 +244,26 @@ export function parseCombatPlan(raw: unknown): CombatPlan {
     encounters,
     actors: parseActors(raw["actors"], "/actors"),
     floorGate: parseFloorLedger(raw["floor_gate"], "/floor_gate"),
+  };
+}
+
+/**
+ * The census probe block (task #123). Required: measuring a wave by tag is how
+ * the ladder counts anything at all now, so a plan that cannot name its census
+ * functions is a plan this harness must refuse rather than quietly fall back to
+ * counting silhouettes.
+ */
+function parseCensusProbe(v: unknown, pointer: string): CensusProbe {
+  if (!isRecord(v)) throw new CombatPlanParseError(pointer, "expected an object");
+  for (const key of ["census", "brand", "unbrand"] as const) {
+    if (typeof v[key] !== "string" || (v[key] as string).length === 0) {
+      throw new CombatPlanParseError(`${pointer}/${key}`, "expected a non-empty function id");
+    }
+  }
+  return {
+    census: v["census"] as string,
+    brand: v["brand"] as string,
+    unbrand: v["unbrand"] as string,
   };
 }
 
@@ -738,16 +776,10 @@ export function retryOutcome(waveMobPresent: boolean, objectiveComplete: boolean
   return objectiveComplete ? "cleared-before-retry" : "stranded";
 }
 
-/** One wave mob as the bot saw it at re-engage. */
-export interface WaveSighting {
-  readonly id: number;
-  /** Blocks from the encounter anchor — recorded because a FERAL mob wanders off
-   * it after killing the party and is still very much part of the fight. */
-  readonly distance: number;
-  /** Current health, when the server surfaced it (see the executor's reader). */
-  readonly health: number | undefined;
-  /** Max health, when the server sent this entity's attributes. */
-  readonly maxHealth: number | undefined;
+/** One completed census of one wave: the summary line and the mob lines it closed. */
+export interface WaveCensus {
+  readonly summary: CensusSummary;
+  readonly mobs: readonly CensusMob[];
 }
 
 /**
@@ -770,11 +802,16 @@ export interface ReengageObservation {
   readonly present: number;
   /** What the compiler's plan says the wave holds. */
   readonly declared: number;
-  /** Of those present, how many are entities the bot ALREADY saw before it died.
-   * On a re-seating wave every one of these is a survivor that was not cleared —
-   * the chipped mob the ruling forbids carrying across a life. */
+  /** Of those present, how many still wear the BRAND applied to this wave's live
+   * mobs just before the scripted death. On a re-seating wave every one of these
+   * is a survivor that was not cleared — the chipped mob the ruling forbids
+   * carrying across a life. Counted server-side by tag, so a neighbouring wave's
+   * mob or an ambush actor standing nearby can never be mistaken for one (#230). */
   readonly carriedOver: number;
-  /** How many had readable health, and how many of those were below full. */
+  /** How many had readable health, and how many of those were below full. The
+   * census reads `Health` and `max_health` off each mob with vanilla's own
+   * commands, so on this path every counted mob is readable — unlike the client
+   * view, which is never sent an unmodified max health at all. */
   readonly healthReadable: number;
   readonly damaged: number;
   /** Distance spread from the encounter anchor, for the wandered-mob case. */
@@ -784,21 +821,31 @@ export interface ReengageObservation {
   readonly settleMs: number;
 }
 
-/** Summarize a settled set of sightings. */
+/**
+ * Summarize one settled census (task #123).
+ *
+ * Every count here is the SERVER's answer about entities carrying the wave's own
+ * tag. The distances are computed here rather than server-side only because
+ * scoreboards have no square root; the positions they are computed from are the
+ * census's, so they too describe the wave and nothing else.
+ */
 export function observationOf(
-  sightings: readonly WaveSighting[],
+  census: WaveCensus,
   declared: number,
-  carriedOverIds: ReadonlySet<number>,
+  anchor: Vec3Tuple,
   settleMs: number,
 ): ReengageObservation {
-  const distances = sightings.map((s) => s.distance);
-  const readable = sightings.filter((s) => s.health !== undefined && s.maxHealth !== undefined);
+  const distances = census.mobs.map((m) =>
+    Math.sqrt(
+      (m.pos[0] - anchor[0]) ** 2 + (m.pos[1] - anchor[1]) ** 2 + (m.pos[2] - anchor[2]) ** 2,
+    ),
+  );
   return {
-    present: sightings.length,
+    present: census.summary.present,
     declared,
-    carriedOver: sightings.filter((s) => carriedOverIds.has(s.id)).length,
-    healthReadable: readable.length,
-    damaged: readable.filter((s) => s.health! < s.maxHealth!).length,
+    carriedOver: census.summary.branded,
+    healthReadable: census.mobs.length,
+    damaged: census.summary.damaged,
     nearest: distances.length > 0 ? Math.min(...distances) : undefined,
     farthest: distances.length > 0 ? Math.max(...distances) : undefined,
     settleMs,

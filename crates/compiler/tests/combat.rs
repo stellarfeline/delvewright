@@ -695,3 +695,101 @@ fn the_combat_plan_step_indexes_the_exported_path() {
     // this test would have failed before the reconciliation.
     assert_eq!(kill_at, 3, "{path}");
 }
+
+// --- the wave census probe (task #123, #230) --------------------------------
+
+/// The ladder used to answer "what is standing at this encounter?" by silhouette
+/// — every entity the client tracked, no distance filter, anything taller than
+/// half a block. That set is not the wave: on the drowned bell it swept in two
+/// ambush husks 57 blocks away and a neighbouring wave, so a 2-mob wave read as 4
+/// standing, and those bystanders — alive on both sides of a scripted death —
+/// were reported as survivors the re-seat had failed to remove. The re-seat was
+/// innocent.
+///
+/// Only the server can see the wave tag, so the compiler owns the census. These
+/// three functions are the whole probe surface, and the plan NAMES them so the
+/// harness never re-derives `safe_local`.
+#[test]
+fn every_wave_carries_a_tag_census_probe() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    let (out, _) = build(tmp.path()).expect("the reference campaign builds");
+
+    let body = |name: &str| -> String {
+        let path = format!("datapack/data/{NS}/function/{name}.mcfunction");
+        String::from_utf8(
+            out.get(&path)
+                .unwrap_or_else(|| panic!("missing {name}"))
+                .clone(),
+        )
+        .unwrap()
+    };
+
+    // Brand / unbrand ride the wave's own tag, so a stamp can only ever land on
+    // this wave. The unbrand selects the BRAND, so a mob that somehow outlived
+    // its wave tag is still cleaned up.
+    assert_eq!(
+        body("wave_brand_guards").trim(),
+        "tag @e[tag=dw_wave_guards] add dw_brand_guards"
+    );
+    assert_eq!(
+        body("wave_unbrand_guards").trim(),
+        "tag @e[tag=dw_brand_guards] remove dw_brand_guards"
+    );
+
+    // The census walks the TAG — never a type, a radius or a silhouette.
+    let census = body("wave_census_guards");
+    assert!(
+        census.contains("execute as @e[tag=dw_wave_guards] run function"),
+        "the census iterates the wave tag: {census}"
+    );
+    assert!(
+        census.contains("scoreboard players add #wcen_seq dw.sys 1"),
+        "each census takes a sequence number, so a stale answer is tellable: {census}"
+    );
+    for zeroed in ["#wcen_n", "#wcen_b", "#wcen_d"] {
+        assert!(
+            census.contains(&format!("scoreboard players set {zeroed} dw.sys 0")),
+            "every accumulator is zeroed before the walk: {census}"
+        );
+    }
+    assert!(
+        census.contains("[dw:census ") && census.contains("wave/guards"),
+        "the totals are stated on the anchored marker channel: {census}"
+    );
+
+    // Health comes from vanilla's own commands — never a table the compiler
+    // refuses to invent (DW0475), and never a value the client happened to be
+    // sent (an unmodified max health is not on the wire at all).
+    let one = body("wave_census_one_guards");
+    assert!(
+        one.contains("run data get entity @s Health 100")
+            && one.contains("run attribute @s minecraft:max_health get 100")
+            && one.contains("execute if score #wcen_h dw.sys < #wcen_m dw.sys"),
+        "damaged is decided from the server's own health and maximum: {one}"
+    );
+    assert!(
+        one.contains("execute if entity @s[tag=dw_brand_guards]"),
+        "carried-over is decided by the brand, by identity: {one}"
+    );
+    assert!(
+        one.contains("[dw:censusmob "),
+        "each mob states its own position and health: {one}"
+    );
+}
+
+/// The harness calls what the plan names. `safe_local` is a compiler naming rule,
+/// and a harness that re-derived it would be exactly the downstream folklore
+/// CLAUDE.md forbids — so the probe's three function ids travel in the plan.
+#[test]
+fn the_combat_plan_names_the_census_probe() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    let (out, _) = build(tmp.path()).expect("the reference campaign builds");
+    let json: serde_json::Value =
+        serde_json::from_slice(out.get("validation/combat-plan.json").unwrap()).unwrap();
+    let c = &json["encounters"][0]["census"];
+    assert_eq!(c["census"], format!("{NS}:wave_census_guards"));
+    assert_eq!(c["brand"], format!("{NS}:wave_brand_guards"));
+    assert_eq!(c["unbrand"], format!("{NS}:wave_unbrand_guards"));
+}

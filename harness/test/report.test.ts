@@ -12,6 +12,11 @@ const ENC: Encounter = {
   count: 1,
   respawnsOnRest: false,
   checkpoint: [97, 71, -96],
+  census: {
+    census: "the-drowned-bell:wave_census_bellkeeper",
+    brand: "the-drowned-bell:wave_brand_bellkeeper",
+    unbrand: "the-drowned-bell:wave_unbrand_bellkeeper",
+  },
 };
 
 const TRIAL: DeathTrial = {

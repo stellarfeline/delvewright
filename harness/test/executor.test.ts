@@ -859,6 +859,10 @@ interface FakeMob {
   position: FakeVec3;
   metadata: Record<number, unknown>;
   attributes: Record<string, { value: number }>;
+  /** Stands in for the compiler's `dw_wave_<id>` tag: only a mob the wave itself
+   * summoned carries it, so the census can never count a bonfire affordance, an
+   * ambush actor or a neighbouring wave (task #123). */
+  waveTagged: true;
 }
 
 /** Where the pinned registry puts `health` in a zombie's metadata. Resolved by
@@ -905,6 +909,10 @@ class CombatFakeBot extends InteractFakeBot {
   reSeatVisibleAfterMs = 0;
   private died = false;
   private nextId = 100;
+  /** Server-side census state: which mobs wear the brand, and how many censuses
+   * have been answered (the sequence the harness tells fresh from stale by). */
+  private readonly branded = new Set<number>();
+  private censusSeq = 0;
 
   constructor() {
     super();
@@ -955,16 +963,9 @@ class CombatFakeBot extends InteractFakeBot {
       id,
       name: "zombie",
       height: 2,
+      waveTagged: true,
       metadata: { [ZOMBIE_HEALTH_IDX]: health },
-      // The fault sits on `attributes` because the re-engage probe is its ONLY
-      // reader. `position` is also read by the walk-back's threat scan, so a fault
-      // there aborts the RETURN LEG instead — which the trial catches by design
-      // (`returned: false`), leaving this test never reaching the abort path it
-      // exists for (task #120).
       get attributes(): Record<string, { value: number }> {
-        if (self.failReEngageProbe && self.died) {
-          throw new Error("mineflayer blew up probing the re-engage");
-        }
         return { "minecraft:max_health": { value: FULL_HEALTH } };
       },
       get position(): FakeVec3 {
@@ -975,6 +976,44 @@ class CombatFakeBot extends InteractFakeBot {
 
   override chat(message: string): void {
     this.calls.push(`chat(${message})`);
+    // The fake server answers the census the way a real one does: by TAG (task
+    // #123). Only mobs in `entities` carry the wave tag here, so anything a test
+    // parks beside the encounter is invisible to it — which is the whole point.
+    if (message.startsWith("/function ")) {
+      const fn = message.slice("/function ".length);
+      if (fn.includes(":wave_brand_")) {
+        for (const m of this.waveMobs()) this.branded.add(m.id);
+        return;
+      }
+      if (fn.includes(":wave_unbrand_")) {
+        this.branded.clear();
+        return;
+      }
+      if (fn.includes(":wave_census_")) {
+        if (this.failReEngageProbe && this.died) return; // the probe never answers
+        this.censusSeq += 1;
+        const mobs = this.waveMobs();
+        for (const m of mobs) {
+          const p = m.position;
+          const h = Math.round(this.healthOf(m) * 100);
+          this.emit(
+            "messagestr",
+            `[dw:censusmob the-drowned-bell wave/gate-assault ${this.censusSeq} ` +
+              `${Math.round(p.x * 100)} ${Math.round(p.y * 100)} ${Math.round(p.z * 100)} ` +
+              `${h} ${FULL_HEALTH * 100}]`,
+          );
+        }
+        const branded = mobs.filter((m) => this.branded.has(m.id)).length;
+        const damaged = mobs.filter((m) => this.healthOf(m) < FULL_HEALTH).length;
+        this.emit(
+          "messagestr",
+          `[dw:census the-drowned-bell wave/gate-assault ${this.censusSeq} ` +
+            `${mobs.length} ${branded} ${damaged}]`,
+        );
+        return;
+      }
+      return;
+    }
     if (!message.startsWith("/damage") || !this.scriptedDeathsLand) return;
     setTimeout(() => {
       this.died = true;
@@ -1001,6 +1040,16 @@ class CombatFakeBot extends InteractFakeBot {
         this.emit("spawn");
       }, 10);
     }, 5);
+  }
+
+  /** Everything wearing the wave tag — the census's whole universe. */
+  private waveMobs(): FakeMob[] {
+    return (Object.values(this.entities) as FakeMob[]).filter((e) => e?.waveTagged === true);
+  }
+
+  private healthOf(m: FakeMob): number {
+    const raw = m.metadata?.[ZOMBIE_HEALTH_IDX];
+    return typeof raw === "number" ? raw : FULL_HEALTH;
   }
 
   nearestEntity(match: (e: unknown) => boolean = () => true): unknown {
@@ -1057,6 +1106,11 @@ const ENCOUNTER = {
   count: 1,
   respawns_on_rest: true,
   checkpoint: [0, 64, 0] as [number, number, number],
+  census: {
+    census: "the-drowned-bell:wave_census_gate_assault",
+    brand: "the-drowned-bell:wave_brand_gate_assault",
+    unbrand: "the-drowned-bell:wave_unbrand_gate_assault",
+  },
 };
 
 function combatPlan(count = 1, respawnsOnRest = true): CombatPlan {
@@ -1073,6 +1127,7 @@ function combatPlan(count = 1, respawnsOnRest = true): CombatPlan {
         pos: ENCOUNTER.pos,
         count,
         respawnsOnRest,
+        census: ENCOUNTER.census,
         checkpoint: ENCOUNTER.checkpoint,
       },
     ],
@@ -1310,18 +1365,23 @@ test("a loop abandoned after the death still carries the death in the artifact",
   // it happens, however the run ends. Before this, the trial was appended only
   // after the whole loop succeeded, so an abort discarded it — and the stage, with
   // nothing recorded and therefore no findings, read `passed: true`.
+  //
+  // The fault is now a census that never answers (task #123) — the shape a refused
+  // `/function` takes on an unopped bot. It must abort the trial, never return an
+  // empty count: a silent zero would read as `stranded` and blame the delve for
+  // the harness's own broken probe.
   const bot = new CombatFakeBot();
   bot.failReEngageProbe = true;
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
   executor.useCombatPlan(combatPlan(), true);
 
-  await assert.rejects(() => executor.kill(KILL_STEP), /blew up probing the re-engage/);
+  await assert.rejects(() => executor.kill(KILL_STEP), /census .* never answered/);
 
   const trials = executor.deathTrials();
   assert.equal(trials.length, 1, "the death that happened is recorded");
   assert.equal(trials[0]!.completed, false);
-  assert.match(String(trials[0]!.abortedWith), /blew up probing the re-engage/);
+  assert.match(String(trials[0]!.abortedWith), /census .* never answered/);
   // …and it reads RED, not silent: an unfinished trial is never a passed one.
   assert.match(String(trialVerdict(trials[0]!)), /ABANDONED/);
   const failures = [
