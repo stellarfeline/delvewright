@@ -291,10 +291,7 @@ fn bodies(plan: &Plan) -> Vec<Body> {
         // A skinned NPC is summoned as `minecraft:mannequin` — the player model,
         // not the declared base entity (see `emit::npc_summon_commands`). Model
         // what ships, not what is declared.
-        let entity = match &n.skin {
-            Some(_) => "minecraft:mannequin".to_string(),
-            None => n.base_entity.clone(),
-        };
+        let entity = crate::nav::npc_body_entity(n);
         out.push(Body {
             kind: "npc",
             id: n.id.as_str().to_string(),
@@ -311,10 +308,7 @@ fn bodies(plan: &Plan) -> Vec<Body> {
         let Some(pos) = plan.point_any(a.anchor.as_str()) else {
             continue;
         };
-        let entity = match &a.skin {
-            Some(_) => "minecraft:mannequin".to_string(),
-            None => a.entity.clone(),
-        };
+        let entity = crate::nav::actor_body_entity(a);
         out.push(Body {
             kind: "actor",
             id: a.id.as_str().to_string(),
