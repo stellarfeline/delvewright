@@ -120,6 +120,16 @@ pub const DW_OPTIONAL_ELITE_UNAVOIDABLE: &str = "DW0380";
 /// so a tighter lane is a lane the engine quietly stops following — the squad
 /// wanders, and it reads as working-but-drunk rather than as a bug.
 pub const DW_LANE_GEOMETRY: &str = "DW0386";
+/// `DW0478`: **the bonfire safe zone** (spec-0016 §1, owner ruling 2026-08-04) — a
+/// rest checkpoint sits inside some hostile force's aggro range.
+///
+/// A bonfire is where the party respawns and where a `respawns_on_rest` wave is
+/// put back on its feet. If the fire stands inside a hostile's perception radius,
+/// resting and dying both drop the party into contact on the tick they arrive:
+/// the retry loop stops teaching and becomes a soft-lock — a despair machine you
+/// cannot rest your way out of. Error tier, not advisory: unlike the §7 pacing
+/// lints there is no reading of this geometry that is the authored point.
+pub const DW_BONFIRE_IN_AGGRO: &str = "DW0478";
 /// `DW0327`: a `begin-stealth` (spec-0014) zone that is unstandable, or unreachable
 /// from the player's position at the beat that activates the stealth check.
 pub const DW_STEALTH_ZONE: &str = "DW0327";
@@ -2873,6 +2883,252 @@ pub fn plan_lanes(plan: &Plan, world: &World) -> Result<LaneRoutes, NavError> {
     Ok(out)
 }
 
+/// One hostile force as the bonfire safe-zone proof (`DW0478`) sees it: a
+/// perception radius plus every cell the force provably occupies.
+#[derive(Clone, Debug)]
+pub struct AggroSource {
+    /// What the message calls it (`wave/gate-assault`, `actor/barrow-warden`).
+    pub id: String,
+    /// The perception radius, in blocks — the declared `follow_range`, a lane's
+    /// `aggro_radius` (which the compiler emits AS `follow_range`), or
+    /// [`DEFAULT_FOLLOW_RANGE`].
+    pub radius: f64,
+    /// Why this radius is the number it is, for the message.
+    pub radius_source: &'static str,
+    /// Every occupied cell, each labelled with what it is.
+    pub cells: Vec<(&'static str, [i32; 3])>,
+}
+
+/// `DW0478`: **no bonfire may sit inside any hostile's aggro range** (spec-0016
+/// §1, owner ruling 2026-08-04).
+///
+/// The rule, verbatim: for every wave / actor hostile, the distance from the
+/// bonfire cell to that hostile's spawn cell — or to any cell of its lane path —
+/// must EXCEED that hostile's `follow_range` (the declared attribute; the
+/// documented default when undeclared).
+///
+/// What "occupies" means per force:
+/// * a plain wave — its DW0312-proven seated spawn cells (where the datapack
+///   actually summons it, not where its anchor is);
+/// * an `aggro-edge` wave — the same, which for it is its perception ring;
+/// * a **lane** wave — those cells PLUS the marched polyline: every cell of every
+///   A*-proven leg from the form-up point through the waypoints, because a lane
+///   wave's whole design is that it walks that corridor while the party is
+///   elsewhere. This is the shape that killed the drowned bell's ladder bot: a
+///   re-seated gate squad marched its lane, and the lane ended a couple of blocks
+///   outside a bonfire the party had just rested at;
+/// * an **actor** the campaign declares as a fighter — `unleash-actor`ed
+///   somewhere, or staged `vulnerable` — at its staging anchor. Fighter-ness is
+///   read off the campaign's own declarations and never guessed from the species:
+///   the pinned entity registry is a membership set with no mob-category data
+///   (the same rule `DW0469` is built on), so the compiler cannot and does not
+///   ask whether `minecraft:sheep` is a monster.
+///
+/// Radius per force: a lane's `aggro_radius` (emitted verbatim as each lane mob's
+/// `follow_range`), else the largest declared `follow_range` among its mobs, else
+/// [`DEFAULT_FOLLOW_RANGE`] — one documented number, never a per-species table the
+/// compiler would have to invent (`DW0475`'s rule).
+///
+/// A campaign with no bonfire proves nothing here.
+pub fn check_bonfire_safe_zone(
+    plan: &Plan,
+    world: &World,
+    placements: &BTreeMap<String, Vec<[i32; 3]>>,
+    lanes: &LaneRoutes,
+) -> Result<(), NavError> {
+    let bonfires: Vec<(String, [i32; 3])> =
+        plan.bonfires().map(|b| (b.anchor.clone(), b.pos)).collect();
+    if bonfires.is_empty() {
+        return Ok(());
+    }
+    verify_bonfire_safe_zone(&bonfires, &aggro_sources(plan, world, placements, lanes))
+}
+
+/// Every hostile force in the campaign, in deterministic content order (waves
+/// then actors, each in declaration order).
+fn aggro_sources(
+    plan: &Plan,
+    world: &World,
+    placements: &BTreeMap<String, Vec<[i32; 3]>>,
+    lanes: &LaneRoutes,
+) -> Vec<AggroSource> {
+    let c = plan.campaign;
+    let mut out = Vec::new();
+    for w in &c.quests.content.waves {
+        let mut cells: Vec<(&'static str, [i32; 3])> = placements
+            .get(w.id.as_str())
+            .into_iter()
+            .flatten()
+            .map(|p| ("seated spawn cell", *p))
+            .collect();
+        let (radius, radius_source) = match &w.lane {
+            Some(l) => (f64::from(l.aggro_radius), "the lane's `aggro_radius`"),
+            None => match w
+                .mobs
+                .iter()
+                .filter_map(|m| m.attributes.and_then(|a| a.follow_range))
+                .fold(None::<f64>, |acc, r| Some(acc.map_or(r, |a| a.max(r))))
+            {
+                Some(r) => (r, "the wave's declared `follow_range`"),
+                None => (
+                    f64::from(DEFAULT_FOLLOW_RANGE),
+                    "the default `follow_range` (none declared)",
+                ),
+            },
+        };
+        if let Some(wps) = lanes.get(w.id.as_str()) {
+            cells.extend(
+                lane_march_cells(plan, world, w, wps)
+                    .into_iter()
+                    .map(|p| ("lane path cell", p)),
+            );
+        }
+        if cells.is_empty() {
+            continue;
+        }
+        out.push(AggroSource {
+            id: w.id.as_str().to_string(),
+            radius,
+            radius_source,
+            cells,
+        });
+    }
+    for a in &c.quests.content.actors {
+        if !actor_fights(c, a) {
+            continue;
+        }
+        let Some(pos) = crate::plan::point_any(&plan.anchors, a.anchor.as_str()) else {
+            continue;
+        };
+        let (radius, radius_source) = match a.attributes.and_then(|at| at.follow_range) {
+            Some(r) => (r, "the actor's declared `follow_range`"),
+            None => (
+                f64::from(DEFAULT_FOLLOW_RANGE),
+                "the default `follow_range` (none declared)",
+            ),
+        };
+        out.push(AggroSource {
+            id: a.id.as_str().to_string(),
+            radius,
+            radius_source,
+            cells: vec![("staging anchor", pos)],
+        });
+    }
+    out
+}
+
+/// Whether the campaign declares this actor as something that FIGHTS — the same
+/// declaration-based test `DW0469` uses: an `unleash-actor` beat (the author
+/// asking for a real-AI twin) or `vulnerable: true` (a damageable target). Never
+/// inferred from the species.
+fn actor_fights(c: &delvewright_dsl::Campaign, a: &delvewright_dsl::Actor) -> bool {
+    if a.vulnerable {
+        return true;
+    }
+    let mut unleashed = false;
+    delvewright_dsl::for_each_campaign_effect(c, &mut |_, _, eff| {
+        if let QuestEffect::UnleashActor { actor, .. } = eff
+            && actor.as_str() == a.id.as_str()
+        {
+            unleashed = true;
+        }
+    });
+    unleashed
+}
+
+/// Every cell a lane squad provably walks: the A*-proven legs from the wave's
+/// form-up footing through each waypoint, over the same **no-gate-use** view
+/// [`plan_lanes`] proved them on. An unroutable leg is `DW0386`'s business and is
+/// simply skipped here.
+fn lane_march_cells(
+    plan: &Plan,
+    world: &World,
+    w: &delvewright_dsl::Wave,
+    wps: &[[i32; 3]],
+) -> Vec<[i32; 3]> {
+    let entity_world_owned;
+    let world: &World = if world.has_use_gates() {
+        entity_world_owned = world.without_gate_use();
+        &entity_world_owned
+    } else {
+        world
+    };
+    let Some(area) = crate::plan::wave_area(plan.campaign, w.id.as_str()) else {
+        return Vec::new();
+    };
+    let Some(anchor) = plan.point(area, w.anchor.as_str()) else {
+        return Vec::new();
+    };
+    let Some(mut prev) = world.snap_standable(anchor, SNAP_RADIUS) else {
+        return Vec::new();
+    };
+    let mut out = vec![prev];
+    for wp in wps {
+        if let Some(path) = world.find_path(prev, *wp) {
+            out.extend(path);
+        }
+        prev = *wp;
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// The pure core of [`check_bonfire_safe_zone`] (unit-testable without a
+/// [`Plan`]). Reports the FIRST violation in content order, naming the closest
+/// offending cell and the exact clearance the geometry is short by.
+fn verify_bonfire_safe_zone(
+    bonfires: &[(String, [i32; 3])],
+    sources: &[AggroSource],
+) -> Result<(), NavError> {
+    for (anchor, pos) in bonfires {
+        for src in sources {
+            let Some((what, cell, dist)) = src
+                .cells
+                .iter()
+                .map(|(what, cell)| (*what, *cell, cell_distance(*pos, *cell)))
+                .filter(|(_, _, d)| *d <= src.radius)
+                // Nearest first, then by cell, so the message is deterministic.
+                .min_by(|a, b| {
+                    a.2.partial_cmp(&b.2)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| a.1.cmp(&b.1))
+                })
+            else {
+                continue;
+            };
+            return Err(NavError {
+                code: DW_BONFIRE_IN_AGGRO,
+                message: format!(
+                    "bonfire `{anchor}` ({pos:?}) sits INSIDE the aggro range of `{id}`: its \
+                     {what} {cell:?} is {dist:.1} blocks away, within the {radius:.0}-block \
+                     perception radius ({radius_source}). A bonfire is where the party respawns \
+                     and where every `respawns_on_rest` wave is put back on its feet — with a \
+                     hostile already perceiving that cell, resting and dying both deliver the \
+                     party into contact on the tick they arrive, and the retry loop the fire \
+                     exists to make cheap becomes a soft-lock (spec-0016 §1, owner ruling \
+                     2026-08-04). Move the fire out of the danger — into a side room, behind the \
+                     threshold, past the end of the lane — or move the force's anchor / lane. Do \
+                     NOT shrink `follow_range` to buy the clearance: that retunes the fight to \
+                     hide a placement bug.",
+                    id = src.id,
+                    radius = src.radius,
+                    radius_source = src.radius_source,
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Euclidean distance between two cells, in blocks.
+fn cell_distance(a: [i32; 3], b: [i32; 3]) -> f64 {
+    (0..3)
+        .map(|i| f64::from(a[i] - b[i]).powi(2))
+        .sum::<f64>()
+        .sqrt()
+}
+
 /// The pure core of [`check_shortcuts`] (split out so it is unit-testable against
 /// a synthetic [`World`] without a full [`Plan`]). With no resolvable entry cell
 /// there is nothing to measure from and both proofs are vacuous — `DW0345`
@@ -2947,7 +3203,7 @@ const RETRY_BUDGET_TICKS: u32 = 60 * 20;
 /// `generic.follow_range` default for the common hostiles (zombie, skeleton,
 /// husk, pillager). Used by the optional-elite bypass lint when the author has
 /// not tuned the attribute.
-const DEFAULT_FOLLOW_RANGE: u32 = 16;
+pub const DEFAULT_FOLLOW_RANGE: u32 = 16;
 
 /// The spec-0016 §7 pacing lints. **Warning tier** — every finding here is a
 /// design judgement the compiler can measure but must not overrule, so these
@@ -4723,6 +4979,95 @@ mod tests {
             walls.push([x, y + 1, zw]);
         }
         floored(w, d, y, &walls)
+    }
+
+    /// A hostile force for the `DW0478` proof.
+    fn src(id: &str, radius: f64, cells: &[(&'static str, [i32; 3])]) -> AggroSource {
+        AggroSource {
+            id: id.to_string(),
+            radius,
+            radius_source: "the wave's declared `follow_range`",
+            cells: cells.to_vec(),
+        }
+    }
+
+    /// `DW0478`: a bonfire inside a wave's perception radius. The party respawns
+    /// into contact — a soft-lock, not a difficulty choice — so this is an error,
+    /// and the message must name the clearance the geometry is short by.
+    #[test]
+    fn a_bonfire_inside_an_aggro_radius_is_dw0478() {
+        let bonfires = vec![("anchor/chapel".to_string(), [34, 71, -113])];
+        let sources = vec![src(
+            "wave/gate-assault",
+            16.0,
+            &[("seated spawn cell", [34, 71, -103])],
+        )];
+        let err = verify_bonfire_safe_zone(&bonfires, &sources)
+            .expect_err("a fire 10 blocks inside a 16-block perception radius is a soft-lock");
+        assert_eq!(err.code, DW_BONFIRE_IN_AGGRO); // DW0478
+        assert!(
+            err.message.contains("anchor/chapel") && err.message.contains("wave/gate-assault"),
+            "the message names both sides of the violation: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("10.0 blocks"),
+            "the message states the measured distance: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("Do NOT shrink `follow_range`"),
+            "the prescription must not offer retuning the fight as a fix: {}",
+            err.message
+        );
+    }
+
+    /// The LANE half of the same rule: the squad's seated cells can be far away
+    /// and the fire still be unsafe, because a lane wave walks its polyline while
+    /// the party is elsewhere. This is the drowned-bell shape — a fire beside the
+    /// end of a siege lane.
+    #[test]
+    fn a_bonfire_beside_a_lane_path_is_dw0478() {
+        let bonfires = vec![("anchor/l2-bonfire".to_string(), [34, 71, -113])];
+        let sources = vec![src(
+            "wave/gate-assault",
+            16.0,
+            &[
+                ("seated spawn cell", [12, 71, -84]),
+                ("lane path cell", [24, 71, -110]),
+            ],
+        )];
+        let err = verify_bonfire_safe_zone(&bonfires, &sources).expect_err("the lane reaches it");
+        assert_eq!(err.code, DW_BONFIRE_IN_AGGRO);
+        assert!(
+            err.message.contains("lane path cell"),
+            "the message must say it is the MARCH that reaches the fire, not the seating: {}",
+            err.message
+        );
+    }
+
+    /// Clearance strictly greater than the radius is legal — the rule is
+    /// "must exceed", so the boundary itself is not a violation.
+    #[test]
+    fn a_bonfire_outside_every_aggro_radius_is_clean() {
+        let bonfires = vec![("anchor/beach".to_string(), [0, 64, 0])];
+        let sources = vec![
+            src("wave/near", 8.0, &[("seated spawn cell", [9, 64, 0])]),
+            src("wave/far", 16.0, &[("lane path cell", [0, 64, 40])]),
+        ];
+        assert!(verify_bonfire_safe_zone(&bonfires, &sources).is_ok());
+    }
+
+    /// A campaign with no rest point proves nothing here: the rule is about where
+    /// the party is DELIVERED, and without a bonfire nothing delivers them.
+    #[test]
+    fn hostiles_without_a_bonfire_are_not_the_safe_zone_proof_s_business() {
+        let sources = vec![src(
+            "wave/anything",
+            64.0,
+            &[("seated spawn cell", [0, 64, 0])],
+        )];
+        assert!(verify_bonfire_safe_zone(&[], &sources).is_ok());
     }
 
     /// A sentinel parked in the only doorway between two beats: with its aggro
