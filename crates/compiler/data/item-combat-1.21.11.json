@@ -1,0 +1,891 @@
+{
+  "minecraft:apple": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 4.0
+  },
+  "minecraft:baked_potato": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 5.0
+  },
+  "minecraft:beef": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 3.0
+  },
+  "minecraft:beetroot": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 1.0
+  },
+  "minecraft:beetroot_soup": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 6.0
+  },
+  "minecraft:bread": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 5.0
+  },
+  "minecraft:carrot": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 3.0
+  },
+  "minecraft:chainmail_boots": {
+    "armor": 1.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:chainmail_chestplate": {
+    "armor": 5.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:chainmail_helmet": {
+    "armor": 2.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:chainmail_leggings": {
+    "armor": 4.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:chicken": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 2.0
+  },
+  "minecraft:chorus_fruit": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 4.0
+  },
+  "minecraft:cod": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 2.0
+  },
+  "minecraft:cod_bucket": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 2.0
+  },
+  "minecraft:cooked_beef": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 8.0
+  },
+  "minecraft:cooked_chicken": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 6.0
+  },
+  "minecraft:cooked_cod": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 5.0
+  },
+  "minecraft:cooked_mutton": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 6.0
+  },
+  "minecraft:cooked_porkchop": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 8.0
+  },
+  "minecraft:cooked_rabbit": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 5.0
+  },
+  "minecraft:cooked_salmon": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 6.0
+  },
+  "minecraft:cookie": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 2.0
+  },
+  "minecraft:copper_axe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 8.0,
+    "attack_speed": -3.200000047683716,
+    "nutrition": 0.0
+  },
+  "minecraft:copper_boots": {
+    "armor": 1.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:copper_chestplate": {
+    "armor": 4.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:copper_helmet": {
+    "armor": 2.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:copper_hoe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": -2.0,
+    "nutrition": 0.0
+  },
+  "minecraft:copper_horse_armor": {
+    "armor": 4.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:copper_leggings": {
+    "armor": 3.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:copper_nautilus_armor": {
+    "armor": 4.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:copper_pickaxe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 2.0,
+    "attack_speed": -2.799999952316284,
+    "nutrition": 0.0
+  },
+  "minecraft:copper_shovel": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 2.5,
+    "attack_speed": -3.0,
+    "nutrition": 0.0
+  },
+  "minecraft:copper_spear": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 1.0,
+    "attack_speed": -2.8235294818878174,
+    "nutrition": 0.0
+  },
+  "minecraft:copper_sword": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 4.0,
+    "attack_speed": -2.4000000953674316,
+    "nutrition": 0.0
+  },
+  "minecraft:diamond_axe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 8.0,
+    "attack_speed": -3.0,
+    "nutrition": 0.0
+  },
+  "minecraft:diamond_boots": {
+    "armor": 3.0,
+    "armor_toughness": 2.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:diamond_chestplate": {
+    "armor": 8.0,
+    "armor_toughness": 2.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:diamond_helmet": {
+    "armor": 3.0,
+    "armor_toughness": 2.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:diamond_horse_armor": {
+    "armor": 11.0,
+    "armor_toughness": 2.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:diamond_leggings": {
+    "armor": 6.0,
+    "armor_toughness": 2.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:diamond_nautilus_armor": {
+    "armor": 11.0,
+    "armor_toughness": 2.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:diamond_pickaxe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 4.0,
+    "attack_speed": -2.799999952316284,
+    "nutrition": 0.0
+  },
+  "minecraft:diamond_shovel": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 4.5,
+    "attack_speed": -3.0,
+    "nutrition": 0.0
+  },
+  "minecraft:diamond_spear": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 3.0,
+    "attack_speed": -3.0476189851760864,
+    "nutrition": 0.0
+  },
+  "minecraft:diamond_sword": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 6.0,
+    "attack_speed": -2.4000000953674316,
+    "nutrition": 0.0
+  },
+  "minecraft:dried_kelp": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 1.0
+  },
+  "minecraft:enchanted_golden_apple": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 4.0
+  },
+  "minecraft:glow_berries": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 2.0
+  },
+  "minecraft:golden_apple": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 4.0
+  },
+  "minecraft:golden_axe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 6.0,
+    "attack_speed": -3.0,
+    "nutrition": 0.0
+  },
+  "minecraft:golden_boots": {
+    "armor": 1.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:golden_carrot": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 6.0
+  },
+  "minecraft:golden_chestplate": {
+    "armor": 5.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:golden_helmet": {
+    "armor": 2.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:golden_hoe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": -3.0,
+    "nutrition": 0.0
+  },
+  "minecraft:golden_horse_armor": {
+    "armor": 7.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:golden_leggings": {
+    "armor": 3.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:golden_nautilus_armor": {
+    "armor": 7.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:golden_pickaxe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 1.0,
+    "attack_speed": -2.799999952316284,
+    "nutrition": 0.0
+  },
+  "minecraft:golden_shovel": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 1.5,
+    "attack_speed": -3.0,
+    "nutrition": 0.0
+  },
+  "minecraft:golden_spear": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": -2.9473683834075928,
+    "nutrition": 0.0
+  },
+  "minecraft:golden_sword": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 3.0,
+    "attack_speed": -2.4000000953674316,
+    "nutrition": 0.0
+  },
+  "minecraft:honey_bottle": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 6.0
+  },
+  "minecraft:iron_axe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 8.0,
+    "attack_speed": -3.0999999046325684,
+    "nutrition": 0.0
+  },
+  "minecraft:iron_boots": {
+    "armor": 2.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:iron_chestplate": {
+    "armor": 6.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:iron_helmet": {
+    "armor": 2.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:iron_hoe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": -1.0,
+    "nutrition": 0.0
+  },
+  "minecraft:iron_horse_armor": {
+    "armor": 5.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:iron_leggings": {
+    "armor": 5.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:iron_nautilus_armor": {
+    "armor": 5.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:iron_pickaxe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 3.0,
+    "attack_speed": -2.799999952316284,
+    "nutrition": 0.0
+  },
+  "minecraft:iron_shovel": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 3.5,
+    "attack_speed": -3.0,
+    "nutrition": 0.0
+  },
+  "minecraft:iron_spear": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 2.0,
+    "attack_speed": -2.9473683834075928,
+    "nutrition": 0.0
+  },
+  "minecraft:iron_sword": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 5.0,
+    "attack_speed": -2.4000000953674316,
+    "nutrition": 0.0
+  },
+  "minecraft:leather_boots": {
+    "armor": 1.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:leather_chestplate": {
+    "armor": 3.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:leather_helmet": {
+    "armor": 1.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:leather_horse_armor": {
+    "armor": 3.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:leather_leggings": {
+    "armor": 2.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:mace": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 5.0,
+    "attack_speed": -3.4000000953674316,
+    "nutrition": 0.0
+  },
+  "minecraft:melon_slice": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 2.0
+  },
+  "minecraft:mushroom_stew": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 6.0
+  },
+  "minecraft:mutton": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 2.0
+  },
+  "minecraft:netherite_axe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 9.0,
+    "attack_speed": -3.0,
+    "nutrition": 0.0
+  },
+  "minecraft:netherite_boots": {
+    "armor": 3.0,
+    "armor_toughness": 3.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:netherite_chestplate": {
+    "armor": 8.0,
+    "armor_toughness": 3.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:netherite_helmet": {
+    "armor": 3.0,
+    "armor_toughness": 3.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:netherite_horse_armor": {
+    "armor": 19.0,
+    "armor_toughness": 3.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:netherite_leggings": {
+    "armor": 6.0,
+    "armor_toughness": 3.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:netherite_nautilus_armor": {
+    "armor": 19.0,
+    "armor_toughness": 3.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:netherite_pickaxe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 5.0,
+    "attack_speed": -2.799999952316284,
+    "nutrition": 0.0
+  },
+  "minecraft:netherite_shovel": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 5.5,
+    "attack_speed": -3.0,
+    "nutrition": 0.0
+  },
+  "minecraft:netherite_spear": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 4.0,
+    "attack_speed": -3.13043475151062,
+    "nutrition": 0.0
+  },
+  "minecraft:netherite_sword": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 7.0,
+    "attack_speed": -2.4000000953674316,
+    "nutrition": 0.0
+  },
+  "minecraft:poisonous_potato": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 2.0
+  },
+  "minecraft:porkchop": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 3.0
+  },
+  "minecraft:potato": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 1.0
+  },
+  "minecraft:pufferfish": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 1.0
+  },
+  "minecraft:pufferfish_bucket": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 1.0
+  },
+  "minecraft:pumpkin_pie": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 8.0
+  },
+  "minecraft:rabbit": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 3.0
+  },
+  "minecraft:rabbit_stew": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 10.0
+  },
+  "minecraft:rotten_flesh": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 4.0
+  },
+  "minecraft:salmon": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 2.0
+  },
+  "minecraft:salmon_bucket": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 2.0
+  },
+  "minecraft:spider_eye": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 2.0
+  },
+  "minecraft:stone_axe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 8.0,
+    "attack_speed": -3.200000047683716,
+    "nutrition": 0.0
+  },
+  "minecraft:stone_hoe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": -2.0,
+    "nutrition": 0.0
+  },
+  "minecraft:stone_pickaxe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 2.0,
+    "attack_speed": -2.799999952316284,
+    "nutrition": 0.0
+  },
+  "minecraft:stone_shovel": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 2.5,
+    "attack_speed": -3.0,
+    "nutrition": 0.0
+  },
+  "minecraft:stone_spear": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 1.0,
+    "attack_speed": -2.666666626930237,
+    "nutrition": 0.0
+  },
+  "minecraft:stone_sword": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 4.0,
+    "attack_speed": -2.4000000953674316,
+    "nutrition": 0.0
+  },
+  "minecraft:suspicious_stew": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 6.0
+  },
+  "minecraft:sweet_berries": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 2.0
+  },
+  "minecraft:trident": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 8.0,
+    "attack_speed": -2.9000000953674316,
+    "nutrition": 0.0
+  },
+  "minecraft:tropical_fish": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 1.0
+  },
+  "minecraft:tropical_fish_bucket": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 1.0
+  },
+  "minecraft:turtle_helmet": {
+    "armor": 2.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:wolf_armor": {
+    "armor": 11.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": 0.0,
+    "nutrition": 0.0
+  },
+  "minecraft:wooden_axe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 6.0,
+    "attack_speed": -3.200000047683716,
+    "nutrition": 0.0
+  },
+  "minecraft:wooden_hoe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": -3.0,
+    "nutrition": 0.0
+  },
+  "minecraft:wooden_pickaxe": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 1.0,
+    "attack_speed": -2.799999952316284,
+    "nutrition": 0.0
+  },
+  "minecraft:wooden_shovel": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 1.5,
+    "attack_speed": -3.0,
+    "nutrition": 0.0
+  },
+  "minecraft:wooden_spear": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 0.0,
+    "attack_speed": -2.4615384340286255,
+    "nutrition": 0.0
+  },
+  "minecraft:wooden_sword": {
+    "armor": 0.0,
+    "armor_toughness": 0.0,
+    "attack_damage": 3.0,
+    "attack_speed": -2.4000000953674316,
+    "nutrition": 0.0
+  }
+}

@@ -464,6 +464,31 @@ pub fn build_with_warnings(
             // room only (DW0312 if the room lacks the footing) — or, for a
             // `summon: aggro-edge` wave, on its perception ring (DW0387).
             let (waves, rings) = plan_wave_spawns(plan, &world)?;
+            // spec-0023 §2: the winnability arithmetic. Runs here because it
+            // needs the SEATED spawn cells (the exact cells the datapack will
+            // summon on) as well as the campaign's declarations — a hostile the
+            // party cannot reach is a property of where it actually lands, not
+            // of where its anchor is. No-op for a campaign with no `kill` step.
+            if crate::combat::has_encounters(plan) {
+                warnings.extend(
+                    crate::combat::check_winnability(plan, &world, &waves).map_err(|e| {
+                        BuildFailure::Diagnostic {
+                            code: e.code,
+                            message: e.message,
+                        }
+                    })?,
+                );
+                // The bot ladder's combat plan (spec-0023 §1/§3/§4): which
+                // encounters exist, what the content bills each as, and which
+                // checkpoint governs a death at it. Validation metadata only —
+                // it lives under `validation/`, which `Dockerfile.delve`
+                // excludes, so no shipped byte moves.
+                put_json(
+                    &mut out,
+                    "validation/combat-plan.json",
+                    &crate::combat::combat_plan_json(plan, &crate::combat::encounters(plan)),
+                );
+            }
             // spec-0016 §6: resolve and prove each TD lane polyline (DW0386). The
             // proven cells are what `patrol_target` carries, so the squad is only
             // ever sent somewhere it can stand and walk to.

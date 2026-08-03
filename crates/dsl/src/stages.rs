@@ -1474,6 +1474,55 @@ pub struct Wave {
     /// wave `anchor`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summon: Option<WaveSummon>,
+    /// How hard this encounter is *meant* to be (DSL v0.7, spec-0023). Absent =
+    /// [`EncounterTier::Ordinary`], byte-identical to every pre-0.7 campaign.
+    ///
+    /// This is a **declaration, not a knob**: the compiler never scales content
+    /// from it (spec-0023 "Out of scope"). It exists because the validation
+    /// ladder's inverted floor gate needs to know which fights the content
+    /// *claims* are hard — an `elite`/`boss` encounter the unassisted bot beats
+    /// on its first attempt is reported as too easy for its billing. Marking it
+    /// is how the author opts into that scrutiny; the alternative — inferring
+    /// "elite" from how tuned a stack looks — is exactly the downstream folklore
+    /// CLAUDE.md's no-hack rule forbids.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tier: Option<EncounterTier>,
+}
+
+/// What a wave is billed as (DSL v0.7, spec-0023). Consumed by the validation
+/// ladder (the run's combat plan), never by emission — the shipped datapack is
+/// byte-identical whichever tier a wave declares.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum EncounterTier {
+    /// Trash / pressure. No floor expectation: a bot that wins it cold proves
+    /// nothing either way. The default.
+    #[default]
+    Ordinary,
+    /// A set-piece the content bills as a hard fight (spec-0016's optional-elite
+    /// and spawn-and-unleash vocabulary).
+    Elite,
+    /// A campaign's named fight. Same floor rule as `elite`; the distinction is
+    /// for the run report a human reads.
+    Boss,
+}
+
+impl EncounterTier {
+    /// The kebab tag, as it appears in the DSL and in the emitted combat plan.
+    pub fn token(self) -> &'static str {
+        match self {
+            EncounterTier::Ordinary => "ordinary",
+            EncounterTier::Elite => "elite",
+            EncounterTier::Boss => "boss",
+        }
+    }
+
+    /// Does the inverted floor gate (spec-0023) apply to this tier? A fight the
+    /// content bills as hard carries an expectation the bot can measure; an
+    /// ordinary one does not.
+    pub fn has_floor_expectation(self) -> bool {
+        matches!(self, EncounterTier::Elite | EncounterTier::Boss)
+    }
 }
 
 /// Where a wave's mobs materialize (spec-0016 §6).

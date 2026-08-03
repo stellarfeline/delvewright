@@ -32,6 +32,8 @@ not third-party reconstructions.
 | `registries/data.min.json` | `7efb184902cfef62b431bc9826ebcbcde2c23746e5624326ffcf922e15cf28f9` |
 | `commands/data.min.json`    | `f2477dfadbeff5707dce1083f90d5dc88f9130bf860ac1c134ffc1de1982b7f6` |
 | `item_components/data.min.json` | `51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4` |
+| `data/damage_type/data.min.json` | `0ce7edc377446ecddfd1c3b74b32e2dc3b248edc4035275134fb821e98a6c7ad` |
+| `data/tag/damage_type/data.min.json` | `794ce6343293660b5f32d6a78f7a374623bb785d18dfc5ce3cbdeb3093b0161d` |
 | `version.json`              | `be02c05f3cce0e39a4ae855c01b3dda2f572078d575f4b6b2fd824cc8a137d62` |
 
 ## Vendored files (derived, committed here)
@@ -69,6 +71,43 @@ not third-party reconstructions.
   <item_components/data.min.json> crates/compiler/data/item-stack-sizes-1.21.11.json`.
   The script pins and checks the source SHA-256, and refuses to default a missing
   component rather than silently assuming 64.
+
+- **`item-combat-1.21.11.json`** — every item's `attack_damage` / `attack_speed` /
+  `armor` / `armor_toughness` contribution, summed from the `add_value` modifiers of
+  its `minecraft:attribute_modifiers` default component, plus its `minecraft:food`
+  `nutrition` (the sustain term `DW0474` reads), from the same
+  `item_components/data.min.json`. 127 entries (only items with a non-zero number).
+  Feeds the spec-0023 winnability arithmetic (`DW0472`). **Absence is
+  a fact, not a gap**: an item missing here has no combat *attribute*, which is not
+  the same as dealing no damage — a bow's damage is projectile code and appears in no
+  vanilla data at all, which is exactly why `combat.rs` treats a projectile kit as
+  "TTK not provable" instead of "TTK infinite".
+  **Reproduce it**: `python3 tools/extract-item-combat-stats.py
+  <item_components/data.min.json> crates/compiler/data/item-combat-1.21.11.json`.
+  The script refuses any non-`add_value` operation rather than mis-summing it.
+
+- **`damage-types-1.21.11.json`** — every damage type's `scaling` field plus its
+  membership of the vanilla `#minecraft:bypasses_armor` tag, from
+  `data/damage_type/data.min.json` + `data/tag/damage_type/data.min.json`. 50 entries.
+  Feeds the spec-0023 incoming-damage arithmetic (`DW0473`). **The finding this table
+  pins**: eight of the nine damage types the DSL exposes are
+  `when_caused_by_living_non_player`, and `damage-players` emits a bare
+  `/damage <target> <amount> <type>` with **no attacker** — so an Easy campaign's
+  scripted hits are *not* halved by the `min(dmg/2+1, dmg)` formula. Only
+  `minecraft:explosion` (`always`) scales. Deriving the arithmetic from the
+  difficulty formula alone would have been wrong by 2× in the lenient direction.
+  **Reproduce it**: `python3 tools/extract-damage-types.py <damage_type/data.min.json>
+  <tag/damage_type/data.min.json> crates/compiler/data/damage-types-1.21.11.json`.
+
+### What vanilla data does NOT provide (and what the compiler does about it)
+
+Mojang publishes no per-entity default attributes — mob base `max_health` and
+`attack_damage` live in code, and no branch of the mcmeta summary carries them.
+The winnability arithmetic therefore runs its numeric time-to-kill bound **only**
+where the campaign declares `attributes.max_health` on the stack, and says so out
+loud (`DW0475`) rather than inventing a health table. Inventing one is the
+"invented precision" this codebase already refuses for `DEFAULT_FOLLOW_RANGE`
+(`nav.rs`) and `MODEL_MARGIN` (`clearance.rs`).
 
 ## Default-font glyph metrics (measured, not vendored)
 
@@ -116,6 +155,8 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `entities-1.21.11.json` | `a10cc5f3dc042dfb632e87131823846011586d19bd97814bf62b1fa6e66160d2` |
 | `sounds-1.21.11.json`   | `841adcd38b83410bed32d57bab909829ce796c1ecd959f2891fcafbf427bc16c` |
 | `item-stack-sizes-1.21.11.json` | `a896955918220c489ab2225db6772cd417a0273d94d8dd691029572566e1b5ee` |
+| `item-combat-1.21.11.json` | `362288eae4c77d9c53d91547b5735c00d739cafc95e1ab2ef57cd1343b9d29ff` |
+| `damage-types-1.21.11.json` | `c3daed77f2557dc7fd784d373e74c1d67b45157bb812c8e4dee761db4696b6fd` |
 
 ## Not committed
 

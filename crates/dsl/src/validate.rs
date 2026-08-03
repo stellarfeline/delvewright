@@ -959,6 +959,20 @@ fn reserved_v07(c: &Campaign, d: &mut Vec<Diagnostic>) {
     if is_v07(c.quests.dsl_version.as_str()) {
         return;
     }
+    for (i, w) in c.quests.content.waves.iter().enumerate() {
+        if w.tier.is_none() {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            "quests",
+            format!("/content/waves/{i}/tier"),
+            "a wave `tier` (`elite`/`boss` — what the validation ladder's floor gate holds the \
+             encounter to) requires dsl_version 0.7.0 — raise this stage's `dsl_version` to \
+             0.7.0, or remove the field"
+                .to_string(),
+        ));
+    }
     for (i, q) in c.quests.content.quests.iter().enumerate() {
         for (j, o) in q.objectives.iter().enumerate() {
             if let Objective::Interact {
