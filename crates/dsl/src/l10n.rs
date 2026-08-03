@@ -419,6 +419,47 @@ pub fn on_screen_narrates(c: &Campaign) -> Vec<ScreenNarrate> {
     out
 }
 
+/// One dialogue option label — the caption vanilla draws on a fixed-width dialog
+/// button — with its stage-doc path, its l10n inventory key and the canonical
+/// English text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OptionLabel {
+    /// JSON-pointer-ish path within the `dialogue` stage doc.
+    pub path: String,
+    /// The l10n inventory key (`dlg.<npc>.<node>.opt.<i>.label`).
+    pub key: String,
+    /// The canonical English text.
+    pub text: String,
+}
+
+/// Every dialogue option label, in a fixed deterministic order (declaration order:
+/// tree, then node, then option). Each `key` is derived by the **same** keying as
+/// [`inventory`]/[`each_string`], so the compiler's button-width check (`DW0331`)
+/// can look every label up in each declared-language sidecar and report an
+/// overflowing translation under its own locale and key.
+///
+/// Every option label is emitted as a button caption exactly once per node variant
+/// (`emit::build_node_dialog`); display gating (`requires_flags`/`forbids_flags`)
+/// only decides *whether* a variant shows it, never how wide it renders, so gated
+/// and ungated options carry the same budget and are all visited here.
+pub fn dialogue_option_labels(c: &Campaign) -> Vec<OptionLabel> {
+    let mut out = Vec::new();
+    for (ti, tree) in c.dialogue.content.dialogues.iter().enumerate() {
+        let np = local(tree.npc.as_str());
+        for (ni, node) in tree.nodes.iter().enumerate() {
+            let nd = local(node.id.as_str());
+            for (oi, opt) in node.options.iter().enumerate() {
+                out.push(OptionLabel {
+                    path: format!("/content/dialogues/{ti}/nodes/{ni}/options/{oi}/label"),
+                    key: format!("dlg.{np}.{nd}.opt.{oi}.label"),
+                    text: opt.label.clone(),
+                });
+            }
+        }
+    }
+    out
+}
+
 /// Visit every quest/trigger effect — **top-level and every transitively-nested**
 /// one (a `sequence` step, an `on_respawn`/`on_caught`/`on_arrive` bundle) — in the
 /// fixed inventory order, invoking `f(path, keybase, effect)`. `path` is the

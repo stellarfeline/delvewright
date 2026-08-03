@@ -95,6 +95,13 @@ For each stage in order — world → npcs → classes → quest-plan → quests
    - NPCs: personas per schema (archetype/speech_style/motivation required);
      honor them in every stage-6 line. Dialogue: branching options; flavor NPCs
      get real trees too.
+   - **Stage 6: an option label is a button caption, not a sentence** — the
+     compiler rejects over-long ones (`DW0331`, error). Vanilla draws each option
+     on a fixed 150-GUI-px button and *scrolls* a label that does not fit. The
+     budget is 146 font px ≈ 24 Latin / 16 Han characters; author to **≤20 Latin,
+     ≤12 Han** so a translation has room to grow (a `zh-cn` sidecar is checked
+     under its own key). What does not fit belongs in the node's body text, which
+     wraps, or in the NPC's reply — never in the button.
    - **Stage 6: re-derive every node's option list from that node's situation.**
      (Owner ruling, 2026-08-03.) Never carry an option list forward from an
      earlier node. Before shipping a node, check each option for semantic fit
