@@ -945,7 +945,13 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   one beat are spliced in bonfire order. This is a path *export* only:
   `plan.critical_path` is untouched, so every `fire_step` index and every nav proof
   sees exactly what it saw before, and a campaign with no bonfire is
-  byte-identical.
+  byte-identical. **That untouchedness is exactly what created two coordinate
+  systems**, and they drift by one per bonfire armed earlier: internal indices
+  (`fire_step`, `Encounter::step`, every nav proof) count `plan.critical_path`;
+  exported indices count these `steps[]`. Every artifact a harness reads states
+  the EXPORTED one, and `Plan::exported_step` is the single translation — a
+  consumer that mixes them is a silent off-by-N, which is what the combat plan's
+  `step` was until it was reconciled.
 - `<out>/validation/critical-path-waypoints.json`: the DW0311-proven per-leg route
   thinned to sparse waypoints (`from`/`to` = the `critical-path.json` step
   positions; a waypoint at each corner/floor-height change **and the corridor commit
@@ -1012,14 +1018,47 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 - `<out>/validation/combat-plan.json` (spec-0023): the bot ladder's encounter
   table — one entry per **mandatory** encounter (a wave a `kill` step on the
   compiled critical path names), in path order, carrying `wave`, `objective`,
-  `step` (the `critical-path.json` index), `tier` (`ordinary`/`elite`/`boss`,
-  from the wave's declaration), `pos`, `count`, `respawns_on_rest`, and the
-  `checkpoint` governing a death at that encounter (the last checkpoint/bonfire
-  fired at or before the step; omitted when the campaign has set none yet). The
-  document also states the `difficulty` the run is verified AT. This is what
-  turns a `kill` step into a verified encounter for the harness: which fights get
-  the die-retry stage, where a death is supposed to put the party back, and which
-  fights are billed hard enough for the inverted floor gate to have an opinion.
+  `step`, `tier` (`ordinary`/`elite`/`boss`, from the wave's declaration), `pos`,
+  `count`, `respawns_on_rest`, and the `checkpoint` governing a death at that
+  encounter. The document also states the `difficulty` the run is verified AT.
+  Two of those fields carry rules worth stating exactly, because both were once
+  off by one:
+  - `step` is an index into the **exported** `critical-path.json` `steps[]`
+    (`Plan::exported_step`). Two coordinate systems came into existence with
+    spec-0016 §1's rest splice: `plan.critical_path` is the compiler's own list —
+    what every `CheckpointPlan::fire_step`, every nav proof and every internal
+    index means — while the exported path additionally carries one `rest` step
+    after the beat arming each bonfire, so they drift by one per bonfire armed
+    earlier. **Every artifact a harness reads states exported coordinates**;
+    `Plan::exported_step` is the translation for the main path, and
+    `the_combat_plan_step_indexes_the_exported_path` pins it against the real
+    emitted documents (the step the plan points at must BE the encounter's kill)
+    rather than against the arithmetic. It is deliberately **main-path only**:
+    spec-0025's per-branch paths resequence the same steps, so an index cannot be
+    carried across at all and `emit::rest_step_index` translates through the
+    *objective* the arming beat names instead. On the main path that translation
+    is the identity, which is exactly what makes the simple count valid there and
+    nowhere else. There is one `combat-plan.json`, over the main path, so this
+    never crosses the boundary.
+  - `checkpoint` is the last checkpoint/bonfire fired **strictly before** the
+    step, omitted when there is none. Strictly, not "at or before": a
+    `fire_step` is the step whose COMPLETION arms the checkpoint, and a death
+    *during* step `i` happens while step `i` is unfinished — so a checkpoint
+    armed by step `i` does not exist yet at that death. The `<=` form handed an
+    encounter a respawn point one beat in its own future, which the souls-bonfire
+    fixture shows at its sharpest: bonfire 0 is armed by `obj/slay`'s completion,
+    the very kill the encounter IS, and the plan claimed a mid-fight death would
+    return the party to that fire when in truth it returns them to world spawn.
+    Erring toward the stricter answer is deliberate — the die-retry stage asserts
+    the party respawns at the governing checkpoint, so an over-generous claim
+    here makes the proof measure the delve against a rest point the player never
+    had. (A bonfire additionally only MOVES the respawn point when the party
+    rests; the harness's own precondition covers that half.)
+
+  Together these are what turn a `kill` step into a verified encounter for the
+  harness: which fights get the die-retry stage, where a death is supposed to put
+  the party back, and which fights are billed hard enough for the inverted floor
+  gate to have an opinion.
   Two further top-level keys (task #113), both **additive** — nothing was moved
   or renamed in `encounters[]`, and nothing else may be poured into that array,
   because "there is a checkpoint a death here returns to" is a property only a
