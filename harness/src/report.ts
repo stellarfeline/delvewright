@@ -137,11 +137,15 @@ export class RunReport {
         wave: t.wave,
         attempt: t.attempt,
         phase: t.phase,
+        // What was waiting at the end of the loop: `re-engaged`,
+        // `cleared-before-retry` (both passes) or `stranded` (a soft lock).
+        outcome: t.outcome,
         cause: t.cause ?? null,
         respawn_pos: t.respawnPos ?? null,
         at_checkpoint: t.atCheckpoint,
         returned: t.returned,
         re_engaged: t.reEngaged,
+        objective_complete: t.objectiveComplete,
         objectives_intact: t.objectivesIntact,
         lost_objectives: [...t.lostObjectives],
         // A trial the run abandoned half-way is still IN this array — that is the

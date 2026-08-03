@@ -19,11 +19,13 @@ const TRIAL: DeathTrial = {
   wave: "wave/bellkeeper",
   attempt: 1,
   phase: "mid-fight",
+  outcome: "re-engaged",
   cause: "delve-bot died",
   respawnPos: [97, 71, -96],
   atCheckpoint: true,
   returned: true,
   reEngaged: true,
+  objectiveComplete: false,
   objectivesIntact: true,
   lostObjectives: [],
   completed: true,
@@ -132,4 +134,17 @@ test("a die-retry entry says whether its loop ever reached a verdict", () => {
   assert.equal(json["die_retry"][0]!["completed"], false);
   assert.equal(json["die_retry"][0]!["aborted_with"], "the run ended at the scripted death");
   assert.equal(json["die_retry"][0]!["cause"], "delve-bot died");
+});
+
+test("a die-retry entry states what was waiting at the end of the loop", () => {
+  // `re_engaged: false` alone cannot distinguish a won fight from a soft lock;
+  // `outcome` does, and it is the field a reader (and the ladder) judges on.
+  const report = new RunReport("keep-trial", "easy");
+  report.recordTrials([
+    { ...TRIAL, outcome: "cleared-before-retry", reEngaged: false, objectiveComplete: true },
+  ]);
+  const json = report.toJSON() as { die_retry: Record<string, unknown>[] };
+  assert.equal(json["die_retry"][0]!["outcome"], "cleared-before-retry");
+  assert.equal(json["die_retry"][0]!["re_engaged"], false);
+  assert.equal(json["die_retry"][0]!["objective_complete"], true);
 });
