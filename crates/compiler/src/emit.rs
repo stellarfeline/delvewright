@@ -6661,6 +6661,21 @@ fn declared_flags(c: &delvewright_dsl::Campaign) -> std::collections::BTreeSet<S
             }
         }
     }
+    // v0.7 cast ledger (spec-0020): a per-branch cast READS its branch flags in
+    // the scene selector. Reading an objective that was never declared is a
+    // runtime command error, and unlike a `set-flag` write there is nothing
+    // elsewhere that guarantees the declaration — a branch may legitimately be
+    // gated on a flag some *other* campaign path sets. Declared here so the read
+    // is always well-formed.
+    for q in &c.quests.content.quests {
+        for entry in q.cast.values() {
+            for p in entry.placements() {
+                for f in p.requires_flags.iter().chain(&p.forbids_flags) {
+                    out.insert(f.as_str().to_string());
+                }
+            }
+        }
+    }
     out
 }
 
@@ -6933,11 +6948,30 @@ fn cast_selector_fn(
 ) -> Option<(String, String)> {
     let cast = casts.get(&npc.npc_id)?;
     let mut body = vec![format!("scoreboard players set @s {CAST_SCORE} 0")];
-    for (qid, idx) in &cast.by_quest {
+    for cl in &cast.by_quest {
+        // Per-branch casts add their branch gate to the same clause, so a
+        // branch-divergent NPC really does dispatch per branch. Flags are party
+        // state (`#party`), matching every other flag read in the dialogue path.
+        let mut gate = String::new();
+        for f in &cl.requires_flags {
+            gate.push_str(&format!(
+                " if score {} {} matches 1",
+                plan::PARTY,
+                plan::flag_score(f)
+            ));
+        }
+        for f in &cl.forbids_flags {
+            gate.push_str(&format!(
+                " unless score {} {} matches 1",
+                plan::PARTY,
+                plan::flag_score(f)
+            ));
+        }
         body.push(format!(
-            "execute if score {} {} matches 1 run scoreboard players set @s {CAST_SCORE} {idx}",
+            "execute if score {} {} matches 1{gate} run scoreboard players set @s {CAST_SCORE} {}",
             plan::PARTY,
-            quest_active_score(qid)
+            quest_active_score(&cl.quest),
+            cl.scene
         ));
     }
     Some((format!("cast_{}", npc.safe), lines(&body)))
@@ -7879,9 +7913,13 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
             return None;
         }
         // The two quests whose scenes those are, in ledger order.
-        let first = cast.by_quest.iter().find(|(_, i)| *i == roots[0].0)?;
-        let later = cast.by_quest.iter().find(|(_, i)| *i == roots[1].0)?;
-        Some((npc, first.clone(), later.clone()))
+        let first = cast.by_quest.iter().find(|c| c.scene == roots[0].0)?;
+        let later = cast.by_quest.iter().find(|c| c.scene == roots[1].0)?;
+        Some((
+            npc,
+            (first.quest.clone(), first.scene),
+            (later.quest.clone(), later.scene),
+        ))
     });
     if let Some((npc, (q_first, i_first), (q_later, i_later))) = swapper {
         let (pin, sel) = pin_dummy("dw_t_castswap");
@@ -7892,11 +7930,11 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
         b.push(format!("function {ns}:setup"));
         b.push(pin);
         b.push("# Only the earlier beat has begun: the ledger selects its scene.".to_string());
-        for (q, _) in &casts[&npc.npc_id].by_quest {
+        for cl in &casts[&npc.npc_id].by_quest {
             b.push(format!(
                 "scoreboard players set {} {} 0",
                 plan::PARTY,
-                quest_active_score(q)
+                quest_active_score(&cl.quest)
             ));
         }
         b.push(format!(
@@ -7973,8 +8011,8 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
             .scenes
             .iter()
             .find(|s| s.action == SceneAction::Silent)?;
-        let q = cast.by_quest.iter().find(|(_, i)| *i == scene.index)?;
-        Some((npc, scene.index, q.0.clone()))
+        let cl = cast.by_quest.iter().find(|c| c.scene == scene.index)?;
+        Some((npc, scene.index, cl.quest.clone()))
     });
     if let Some((npc, idx, qid)) = silent {
         let (pin, sel) = pin_dummy("dw_t_castnone");
@@ -7984,11 +8022,11 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin);
-        for (q, _) in &casts[&npc.npc_id].by_quest {
+        for cl in &casts[&npc.npc_id].by_quest {
             b.push(format!(
                 "scoreboard players set {} {} 0",
                 plan::PARTY,
-                quest_active_score(q)
+                quest_active_score(&cl.quest)
             ));
         }
         b.push(format!(

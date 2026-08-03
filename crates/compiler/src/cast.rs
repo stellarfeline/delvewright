@@ -94,15 +94,32 @@ pub struct CastScene {
     pub declared_by: String,
 }
 
+/// One selector clause: "while this quest has begun (and this branch's flags
+/// hold), that scene governs".
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CastClause {
+    /// The quest whose ledger declared it.
+    pub quest: String,
+    /// The scene index this clause selects.
+    pub scene: u32,
+    /// Branch gate: every listed flag must be set (per-branch casts).
+    pub requires_flags: Vec<String>,
+    /// Branch gate: no listed flag may be set.
+    pub forbids_flags: Vec<String>,
+}
+
 /// One NPC's whole ledger, resolved into the scenes the emitter swaps between.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct NpcCast {
     /// The distinct scenes, in declaration order; `scenes[i].index == i + 1`.
     pub scenes: Vec<CastScene>,
-    /// `(quest id, scene index)` in quest-DAG order. A quest that declares
-    /// `"unchanged"` maps to the scene it carries forward — which is why the
+    /// The selector clauses in quest-DAG order, then declaration order within a
+    /// quest. **Later clauses override earlier ones**, exactly as a later quest
+    /// overrides an earlier one — so a per-branch entry lists its fallback first
+    /// and its specific branches after. A quest that declares `"unchanged"`
+    /// yields a clause pointing at the scene it carries forward, which is why the
     /// sugar emits no new artifact and still governs the right-click.
-    pub by_quest: Vec<(String, u32)>,
+    pub by_quest: Vec<CastClause>,
 }
 
 /// Resolve every NPC's cast ledger into scenes, in quest-DAG order.
@@ -116,58 +133,73 @@ pub fn npc_casts(c: &Campaign) -> BTreeMap<String, NpcCast> {
     for qid in quest_dag_order(c) {
         let Some(q) = quest(c, &qid) else { continue };
         for (npc, entry) in &q.cast {
-            // A declared absence has no scene: an NPC who is not in the world has
-            // no body to right-click.
-            let Some(p) = governing_placement(entry) else {
-                continue;
-            };
-            let Some(dialogue) = &p.dialogue else {
-                continue;
-            };
-            let cast = out.entry(npc.as_str().to_string()).or_default();
-            let idx = match dialogue {
-                // `"unchanged"`: carry the previous scene forward. Emits nothing
-                // new — the dispatch simply keeps pointing at the same scene.
-                CastDialogue::Keyword(CastDialogueKeyword::Unchanged) => {
-                    match cast.by_quest.last() {
-                        Some((_, i)) => *i,
-                        None => continue, // DW0466 elsewhere; nothing to resolve
-                    }
-                }
-                _ => {
-                    let action = match dialogue {
-                        CastDialogue::Keyword(CastDialogueKeyword::None) => SceneAction::Silent,
-                        CastDialogue::Barks(b) => SceneAction::Barks(b.barks.clone()),
-                        CastDialogue::Root(r) => SceneAction::Root(r.as_str().to_string()),
-                        CastDialogue::Keyword(CastDialogueKeyword::Unchanged) => unreachable!(),
-                    };
-                    // Re-declaring the same scene reuses its index, so a repeated
-                    // root id costs no extra artifact (it is still flagged as
-                    // staleness by `DW0467`).
-                    match cast.scenes.iter().find(|s| s.action == action) {
-                        Some(s) => s.index,
-                        None => {
-                            let index = cast.scenes.len() as u32 + 1;
-                            cast.scenes.push(CastScene {
-                                index,
-                                action,
-                                declared_by: qid.clone(),
-                            });
-                            index
+            // Every placement gets its own selector clause, so a per-branch entry
+            // really does dispatch per branch. A declared absence
+            // (`"offstage"`/`"dead"`) carries no dialogue and so yields no clause:
+            // an NPC who is not in the world has no body to right-click.
+            for p in entry.placements() {
+                let Some(dialogue) = &p.dialogue else {
+                    continue;
+                };
+                let cast = out.entry(npc.as_str().to_string()).or_default();
+                let idx = match dialogue {
+                    // `"unchanged"`: carry the previous scene forward. Emits
+                    // nothing new — the dispatch keeps pointing at the same scene.
+                    CastDialogue::Keyword(CastDialogueKeyword::Unchanged) => {
+                        match cast.by_quest.last() {
+                            Some(c) => c.scene,
+                            None => continue, // DW0466 elsewhere; nothing to resolve
                         }
                     }
-                }
-            };
-            cast.by_quest.push((qid.clone(), idx));
+                    _ => {
+                        let action = match dialogue {
+                            CastDialogue::Keyword(CastDialogueKeyword::None) => SceneAction::Silent,
+                            CastDialogue::Barks(b) => SceneAction::Barks(b.barks.clone()),
+                            CastDialogue::Root(r) => SceneAction::Root(r.as_str().to_string()),
+                            CastDialogue::Keyword(CastDialogueKeyword::Unchanged) => unreachable!(),
+                        };
+                        // Re-declaring the same scene reuses its index, so a
+                        // repeated root id costs no extra artifact (it is still
+                        // flagged as staleness by `DW0467`).
+                        match cast.scenes.iter().find(|s| s.action == action) {
+                            Some(s) => s.index,
+                            None => {
+                                let index = cast.scenes.len() as u32 + 1;
+                                cast.scenes.push(CastScene {
+                                    index,
+                                    action,
+                                    declared_by: qid.clone(),
+                                });
+                                index
+                            }
+                        }
+                    }
+                };
+                cast.by_quest.push(CastClause {
+                    quest: qid.clone(),
+                    scene: idx,
+                    requires_flags: p
+                        .requires_flags
+                        .iter()
+                        .map(|f| f.as_str().to_string())
+                        .collect(),
+                    forbids_flags: p
+                        .forbids_flags
+                        .iter()
+                        .map(|f| f.as_str().to_string())
+                        .collect(),
+                });
+            }
         }
     }
     out
 }
 
-/// The placement a quest's entry uses when only one can govern: the flat form, or
-/// the first per-branch placement. Per-branch entries share one selector clause
-/// (the branch gate lives in the flags, not in the ledger dispatch), so the
-/// dialogue they declare must agree — `DW0462`'s sibling check enforces that.
+/// The placement that carries a quest's declaration for the whole-story lints
+/// (`DW0466`/`DW0467`): the flat form, or the first per-branch placement. Those
+/// lints ask "did this NPC's dialogue advance between beats?", which is a
+/// question about the story, not about one branch — so they read one
+/// representative placement rather than the cross-product of branches.
 fn governing_placement(entry: &CastEntry) -> Option<&CastPlacement> {
     entry.placements().into_iter().next()
 }

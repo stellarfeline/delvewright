@@ -220,10 +220,51 @@ fn proof4_per_branch_casts_pass() {
         { "at": "offstage" }
       ]
     }"#;
-    let codes = codes(&branchy(one, two));
+    let c = branchy(one, two);
+    let codes = codes(&c);
     assert!(
         !codes.contains(&"DW0462".to_string()),
         "per-branch casts must satisfy proof 4, got: {codes:?}"
+    );
+
+    // Each on-stage branch gets its OWN selector clause carrying its own gate:
+    // a per-branch cast that only ever dispatched its first branch would be a
+    // ledger that lies at runtime while passing every build proof.
+    let casts = cast::npc_casts(&c);
+    let scout = &casts["npc/scout"];
+    assert_eq!(
+        scout.by_quest.len(),
+        2,
+        "one clause per on-stage branch (the `offstage` branch has no dialogue \
+         and so no clause): {scout:#?}"
+    );
+    assert_eq!(scout.scenes.len(), 2, "two distinct roots, two scenes");
+}
+
+/// A branch gate on a placement reaches the emitted selector clause, so the
+/// branch really is dispatched at runtime rather than declared and dropped.
+#[test]
+fn per_branch_gates_reach_the_selector() {
+    let one = r#"{
+      "npc/keeper": { "at": "anchor/keeper-stand", "doing": "barring the door", "dialogue": "dlg/greeting" },
+      "npc/scout":  [
+        { "at": "anchor/exit", "doing": "watching the road", "dialogue": "dlg/scout-root" },
+        { "at": "anchor/exit", "doing": "warned, and grim", "dialogue": "dlg/scout-later",
+          "requires_flags": ["flag/warned"] }
+      ]
+    }"#;
+    let c = branchy(one, FULL_TWO);
+    let casts = cast::npc_casts(&c);
+    let scout = &casts["npc/scout"];
+    let gated = scout
+        .by_quest
+        .iter()
+        .find(|cl| !cl.requires_flags.is_empty())
+        .expect("the gated branch must produce its own clause");
+    assert_eq!(gated.requires_flags, vec!["flag/warned".to_string()]);
+    assert_eq!(
+        gated.scene, 2,
+        "the gated branch must select its own scene, not the fallback's"
     );
 }
 
@@ -341,8 +382,12 @@ fn unchanged_carries_the_previous_scene_forward() {
         "`unchanged` must emit no new scene: {scout:#?}"
     );
     assert_eq!(
-        scout.by_quest,
-        vec![("quest/one".to_string(), 1), ("quest/two".to_string(), 1)],
+        scout
+            .by_quest
+            .iter()
+            .map(|c| (c.quest.as_str(), c.scene))
+            .collect::<Vec<_>>(),
+        vec![("quest/one", 1), ("quest/two", 1)],
         "both quests must resolve to the carried-forward scene"
     );
 }
