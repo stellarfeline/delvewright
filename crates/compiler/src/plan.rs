@@ -326,6 +326,8 @@ pub struct Plan<'a> {
     pub traps: Vec<TrapPlan>,
     /// Resolved shortcut doors (spec-0016 §2), content-ordered.
     pub shortcuts: Vec<ShortcutPlan>,
+    /// Resolved container fills (spec-0021), declaration-ordered.
+    pub loot: Vec<LootPlan>,
     /// Resolved ambushes (spec-0016 §3), declaration-ordered.
     pub ambushes: Vec<AmbushPlan>,
     /// Resolved timed gates (spec-0016 §4), declaration-ordered.
@@ -1094,6 +1096,9 @@ impl<'a> Plan<'a> {
         // ---- shortcut doors (spec-0016 §2) ----
         let shortcuts = collect_shortcuts(campaign, &anchors);
 
+        // ---- container fills (spec-0021) ----
+        let loot = collect_loot(campaign, &anchors);
+
         // ---- ambushes (spec-0016 §3) ----
         let ambushes = collect_ambushes(campaign, &anchors);
 
@@ -1153,6 +1158,7 @@ impl<'a> Plan<'a> {
             objective_steps,
             traps,
             shortcuts,
+            loot,
             ambushes,
             timed_gates,
             gate_events,
@@ -2175,6 +2181,64 @@ fn compute_strict_ancestor_steps(
 /// disarm affordance. A trap whose `at` anchor does not resolve to a point is
 /// skipped (validation guarantees the anchor exists; an unresolved pool anchor
 /// simply carries no proof/emission — the same policy as `collect_v06_effects`).
+/// A resolved container fill (spec-0021).
+#[derive(Clone, Debug, PartialEq)]
+pub struct LootPlan {
+    /// Loot id (`loot/<kebab>`).
+    pub id: String,
+    /// The anchor named by the declaration.
+    pub anchor: String,
+    /// The world cell of the container to fill.
+    pub cell: [i32; 3],
+    /// Contents in declaration order; index IS the container slot.
+    pub items: Vec<LootItemPlan>,
+}
+
+/// One stack in a [`LootPlan`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct LootItemPlan {
+    /// Item id.
+    pub item: String,
+    /// Stack size.
+    pub count: u32,
+    /// Custom name, already localized by the build language.
+    pub name: Option<String>,
+    /// Enchantment id → level.
+    pub enchantments: BTreeMap<String, u32>,
+}
+
+/// Resolve every stage-5 `loot` declaration to a world cell. An unresolvable
+/// anchor is skipped here and reported by the DSL tier (`DW0142`).
+fn collect_loot(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+) -> Vec<LootPlan> {
+    campaign
+        .quests
+        .content
+        .loot
+        .iter()
+        .filter_map(|l| {
+            let cell = point_any(anchors, l.anchor.as_str())?;
+            Some(LootPlan {
+                id: l.id.as_str().to_string(),
+                anchor: l.anchor.as_str().to_string(),
+                cell,
+                items: l
+                    .items
+                    .iter()
+                    .map(|it| LootItemPlan {
+                        item: it.item.clone(),
+                        count: it.count,
+                        name: it.name.clone(),
+                        enchantments: it.enchantments.clone(),
+                    })
+                    .collect(),
+            })
+        })
+        .collect()
+}
+
 fn collect_traps(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,

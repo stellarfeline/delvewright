@@ -277,6 +277,16 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             }
         }
     }
+    // Stage 5 — loot item custom names (spec-0021), keyed like a class kit
+    // item's name so a named prop in a chest translates like any other.
+    for l in &mut c.quests.content.loot {
+        let ll = local(l.id.as_str()).to_string();
+        for (i, item) in l.items.iter_mut().enumerate() {
+            if let Some(name) = item.name.as_mut() {
+                f(&format!("loot.{ll}.item.{i}.name"), name);
+            }
+        }
+    }
 }
 
 /// The authoritative key → canonical-English inventory derived from the stage

@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{
-    ActorId, AmbushId, AnchorId, AreaId, ClassId, DialogueId, EditBatchId, FlagId, NpcId,
+    ActorId, AmbushId, AnchorId, AreaId, ClassId, DialogueId, EditBatchId, FlagId, LootId, NpcId,
     ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId, TimedGateId, TrapId, TriggerId,
     WaveId,
 };
@@ -821,6 +821,11 @@ pub struct QuestsContent {
     /// Empty/absent in pre-0.6 campaigns (reserved `DW0141`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub timed_gates: Vec<TimedGate>,
+    /// Container fills (spec-0021): pre-placed chests/barrels in the prefabs
+    /// given contents at world init. Empty/absent in pre-0.6 campaigns
+    /// (reserved `DW0141`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub loot: Vec<Loot>,
     #[serde(default, skip_serializing)]
     pub ambushes: Vec<Ambush>,
     /// Whether [`Self::expand_ambushes`] has already run (never serialized). The
@@ -858,6 +863,52 @@ impl QuestsContent {
         self.triggers = self.all_triggers();
         self.ambushes_expanded = true;
     }
+}
+
+/// A stage-5 container fill (DSL v0.6, spec-0021): contents for a chest or
+/// barrel the prefab already placed.
+///
+/// The container is **hardware the prefab authored**, exactly like a trap's
+/// dispenser: this declaration gives an already-placed, already-lit, already
+/// composed piece of furniture its contents. The compiler never places the
+/// container itself — if the anchor's cell does not already hold one, that is a
+/// content defect and a build error (`DW0431`), not something to paper over by
+/// setblock-ing a chest into a wall.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Loot {
+    /// Unique loot id (`loot/<kebab>`).
+    pub id: LootId,
+    /// The anchor whose cell holds the container to fill.
+    pub anchor: AnchorId,
+    /// Contents, in declaration order. Slot assignment is positional and
+    /// deterministic — the first entry lands in `container.0`, the second in
+    /// `container.1`, and so on (ADR-0006: no RNG, no loot tables).
+    pub items: Vec<LootItem>,
+}
+
+/// One stack inside a [`Loot`] container.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LootItem {
+    /// Item id (e.g. `minecraft:cooked_cod`). Validated against the pinned
+    /// 1.21.11 item registry (`DW0143`).
+    pub item: String,
+    /// Stack size. Defaults to 1.
+    #[serde(default = "one_u32")]
+    pub count: u32,
+    /// Optional custom item name. Enters the l10n string inventory exactly like
+    /// a class kit item's name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Enchantments on this stack (`{"minecraft:sharpness": 3}`), emitted as the
+    /// 1.21 `minecraft:enchantments` item component.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub enchantments: BTreeMap<String, u32>,
+}
+
+fn one_u32() -> u32 {
+    1
 }
 
 /// A stage-5 trap (DSL v0.6, spec-0011): a redstone-native environmental hazard.
@@ -1386,39 +1437,93 @@ pub struct WaveMob {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MobEquipment {
-    /// Head slot item id (e.g. `minecraft:iron_helmet`).
+    /// Head slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub head: Option<String>,
-    /// Chest slot item id.
+    pub head: Option<EquipItem>,
+    /// Chest slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chest: Option<String>,
-    /// Legs slot item id.
+    pub chest: Option<EquipItem>,
+    /// Legs slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub legs: Option<String>,
-    /// Feet slot item id.
+    pub legs: Option<EquipItem>,
+    /// Feet slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub feet: Option<String>,
-    /// Main-hand item id. Overrides the compiler's armed-mob default.
+    pub feet: Option<EquipItem>,
+    /// Main-hand slot. Overrides the compiler's armed-mob default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub main_hand: Option<String>,
-    /// Off-hand item id.
+    pub main_hand: Option<EquipItem>,
+    /// Off-hand slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub off_hand: Option<String>,
+    pub off_hand: Option<EquipItem>,
 }
 
 impl MobEquipment {
-    /// Every slot as `(dsl_field_name, item)`, in the fixed schema order —
+    /// Every slot as `(dsl_field_name, piece)`, in the fixed schema order —
     /// the single iteration source for validation paths and emission.
-    pub fn slots(&self) -> [(&'static str, Option<&str>); 6] {
+    pub fn slots(&self) -> [(&'static str, Option<&EquipItem>); 6] {
         [
-            ("head", self.head.as_deref()),
-            ("chest", self.chest.as_deref()),
-            ("legs", self.legs.as_deref()),
-            ("feet", self.feet.as_deref()),
-            ("main_hand", self.main_hand.as_deref()),
-            ("off_hand", self.off_hand.as_deref()),
+            ("head", self.head.as_ref()),
+            ("chest", self.chest.as_ref()),
+            ("legs", self.legs.as_ref()),
+            ("feet", self.feet.as_ref()),
+            ("main_hand", self.main_hand.as_ref()),
+            ("off_hand", self.off_hand.as_ref()),
         ]
     }
+}
+
+/// One equipped item: either a bare item id, or an id carrying enchantments.
+///
+/// The plain form is the common case and stays a plain JSON string, which is
+/// what keeps every campaign written before enchantments existed byte-identical
+/// on re-serialisation:
+///
+/// ```json
+/// "main_hand": "minecraft:netherite_sword"
+/// "head": { "item": "minecraft:netherite_helmet",
+///           "enchantments": { "minecraft:protection": 4 } }
+/// ```
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum EquipItem {
+    /// A bare item id — no enchantments.
+    Plain(String),
+    /// An item id plus its enchantments.
+    Enchanted(EnchantedItem),
+}
+
+impl EquipItem {
+    /// The item id, whichever form was authored.
+    pub fn item(&self) -> &str {
+        match self {
+            EquipItem::Plain(s) => s,
+            EquipItem::Enchanted(e) => &e.item,
+        }
+    }
+
+    /// The enchantments on this piece — empty for the plain form. `BTreeMap`
+    /// ordered, so emission order is the id order and never hash order
+    /// (ADR-0006).
+    pub fn enchantments(&self) -> &BTreeMap<String, u32> {
+        static EMPTY: std::sync::LazyLock<BTreeMap<String, u32>> =
+            std::sync::LazyLock::new(BTreeMap::new);
+        match self {
+            EquipItem::Plain(_) => &EMPTY,
+            EquipItem::Enchanted(e) => &e.enchantments,
+        }
+    }
+}
+
+/// The enchanted form of [`EquipItem`].
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EnchantedItem {
+    /// Item id (e.g. `minecraft:netherite_chestplate`).
+    pub item: String,
+    /// Enchantment id → level (e.g. `{"minecraft:protection": 4}`). Emitted as
+    /// the 1.21 `minecraft:enchantments` item component.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub enchantments: BTreeMap<String, u32>,
 }
 
 /// Attribute overrides for a wave mob (DSL v0.4). Each field maps to a 1.21.11
@@ -1705,6 +1810,13 @@ pub struct Actor {
     /// knockback-immune; default `false` (fully `Invulnerable`).
     #[serde(default, skip_serializing_if = "is_false")]
     pub vulnerable: bool,
+    /// Gear the actor wears and holds, in the same shape a wave mob uses
+    /// ([`MobEquipment`]). Emitted into BOTH the staged puppet and the
+    /// unleashed twin, so the dormant elite the player has been circling is
+    /// visibly the same armoured thing that stands up. Drop chances are zero —
+    /// wave gear and actor gear are never farmable (no-grind constitution).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub equipment: Option<MobEquipment>,
 }
 
 /// A cardinal facing keyword (DSL v0.6). Emitted as the puppet's spawn yaw

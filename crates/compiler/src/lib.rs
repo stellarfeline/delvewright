@@ -51,6 +51,7 @@ pub mod flow;
 pub mod gates;
 pub mod light;
 pub mod load;
+pub mod loot;
 pub mod massing;
 pub mod nav;
 pub mod plan;

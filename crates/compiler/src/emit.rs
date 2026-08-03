@@ -21,7 +21,9 @@ use crate::plan::{
 };
 use crate::{DELVEC_VERSION, MC_VERSION, PACK_FORMAT};
 
-use delvewright_dsl::{MobEquipment, Objective, QuestEffect, Trigger, is_v03, is_v04, is_v06};
+use delvewright_dsl::{
+    EquipItem, MobEquipment, Objective, QuestEffect, Trigger, is_v03, is_v04, is_v06,
+};
 
 /// The emitted build tree: relative path → file bytes.
 pub type BuildOutput = BTreeMap<String, Vec<u8>>;
@@ -238,6 +240,23 @@ pub fn build_with_warnings(
         .map_or_else(Vec::new, |er| er.warnings.clone());
     // spec-0016 §7 pacing lints, filled in by the nav stage below.
     let mut pacing: Vec<delvewright_dsl::Diagnostic> = Vec::new();
+
+    // spec-0021 container proof (DW0431). Runs off the assembled world — over
+    // the EDITED model when an edit script exists, since a stage-7 batch can
+    // legitimately be what puts the barrel there. Independent of nav, because a
+    // campaign may declare loot without ever walking a leg.
+    if !plan.loot.is_empty() {
+        let blocks = match &edit_replay {
+            Some(er) => er.assembled.blocks.clone(),
+            None => crate::assembled::assembled_blocks(plan, structures),
+        };
+        crate::loot::check_loot_containers(&blocks, &plan.loot).map_err(|e| {
+            BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            }
+        })?;
+    }
 
     // v0.4 navigation planning over the solved voxel grid (spec-0008 addendum):
     // collision-safe `move-npc` walked paths (DW0307) + cutscene air-corridor
@@ -853,6 +872,32 @@ fn snbt_text_component(s: &str) -> String {
     format!("{{text:{}}}", snbt_string(s))
 }
 
+/// The `,components:{…}` SNBT tail carrying an equipped piece's enchantments,
+/// or `""` when it has none (which is what keeps every pre-enchantment campaign
+/// byte-identical).
+///
+/// 1.21 moved enchantments onto the **item component**
+/// `minecraft:enchantments`, whose value is a map of enchantment id → level.
+/// Emission order is the `BTreeMap`'s id order, never hash order (ADR-0006).
+fn enchantment_components(piece: &EquipItem) -> String {
+    enchantment_component_tail(piece.enchantments())
+}
+
+/// The shared `,components:{"minecraft:enchantments":{…}}` renderer — one
+/// implementation for equipped gear and for container loot, so the two cannot
+/// disagree about the component's shape.
+fn enchantment_component_tail(ench: &std::collections::BTreeMap<String, u32>) -> String {
+    if ench.is_empty() {
+        return String::new();
+    }
+    let body = ench
+        .iter()
+        .map(|(id, lvl)| format!("\"{id}\":{lvl}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(",components:{{\"minecraft:enchantments\":{{{body}}}}}")
+}
+
 /// The default main-hand weapon for a summoned mob whose natural spawns are
 /// armed, or `None` for mobs that spawn unarmed. Small static table (documented
 /// in the compiler README); mobs not listed (zombie, drowned — a wild trident is
@@ -886,7 +931,8 @@ fn default_mainhand(entity: &str) -> Option<&'static str> {
 /// the generated test asserted the default (`minecraft:iron_axe`), so the suite
 /// failed on a real server for a campaign that was in fact correct.
 fn effective_mainhand<'a>(entity: &str, eq: Option<&'a MobEquipment>) -> Option<&'a str> {
-    eq.and_then(|e| e.main_hand.as_deref())
+    eq.and_then(|e| e.main_hand.as_ref())
+        .map(|p| p.item())
         .or_else(|| default_mainhand(entity))
 }
 
@@ -926,19 +972,43 @@ fn wave_equipment(entity: &str, eq: Option<&MobEquipment>) -> Option<String> {
     let Some(eq) = eq else {
         return default_equipment(entity);
     };
-    let slots: [(&str, Option<&str>); 6] = [
-        ("mainhand", mainhand),
-        ("offhand", eq.off_hand.as_deref()),
-        ("head", eq.head.as_deref()),
-        ("chest", eq.chest.as_deref()),
-        ("legs", eq.legs.as_deref()),
-        ("feet", eq.feet.as_deref()),
+    // The main-hand slot is the one place a DEFAULT (a bare id, no enchantments)
+    // can stand in for an authored piece, so it carries an id plus an optional
+    // authored piece; the other five are authored or absent.
+    let slots: [(&str, Option<&str>, Option<&EquipItem>); 6] = [
+        ("mainhand", mainhand, eq.main_hand.as_ref()),
+        (
+            "offhand",
+            eq.off_hand.as_ref().map(EquipItem::item),
+            eq.off_hand.as_ref(),
+        ),
+        (
+            "head",
+            eq.head.as_ref().map(EquipItem::item),
+            eq.head.as_ref(),
+        ),
+        (
+            "chest",
+            eq.chest.as_ref().map(EquipItem::item),
+            eq.chest.as_ref(),
+        ),
+        (
+            "legs",
+            eq.legs.as_ref().map(EquipItem::item),
+            eq.legs.as_ref(),
+        ),
+        (
+            "feet",
+            eq.feet.as_ref().map(EquipItem::item),
+            eq.feet.as_ref(),
+        ),
     ];
     let mut items: Vec<String> = Vec::new();
     let mut chances: Vec<String> = Vec::new();
-    for (slot, item) in slots {
+    for (slot, item, piece) in slots {
         if let Some(it) = item {
-            items.push(format!("{slot}:{{id:\"{it}\",count:1}}"));
+            let comps = piece.map(enchantment_components).unwrap_or_default();
+            items.push(format!("{slot}:{{id:\"{it}\",count:1{comps}}}"));
             chances.push(format!("{slot}:0.0f"));
         }
     }
@@ -1388,6 +1458,9 @@ fn emit_functions(
     // v0.6: fill each trap dispenser payload and summon disarm affordances
     // (spec-0011). Empty for a campaign with no traps → byte-identical.
     setup.extend(trap_setup(plan, trap_gates));
+    // spec-0021: fill each declared container. Empty for a campaign with no
+    // `loot` -> byte-identical.
+    setup.extend(loot_setup(&plan.loot));
     // spec-0016 §2: summon each shortcut's far-side unlock affordance. The gate
     // itself needs no command — it is sealed from world-load by the prefab.
     setup.extend(shortcut_setup(plan));
@@ -4311,8 +4384,13 @@ fn actor_puppet_summon(a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> S
             ""
         };
         let pose = mannequin_pose_nbt(&a.entity);
+        // spec-0021: actor gear rides on BOTH the puppet and the twin, so the
+        // dormant elite the party circles is visibly the thing that stands up.
+        let equip = actor_equipment(a)
+            .map(|e| format!(",{e}"))
+            .unwrap_or_default();
         format!(
-            "summon {} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Invulnerable:{inv}b,DeathLootTable:\"minecraft:empty\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}}}",
+            "summon {} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Invulnerable:{inv}b,DeathLootTable:\"minecraft:empty\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}{equip}}}",
             a.entity, p[0], p[1], p[2]
         )
     }
@@ -4394,10 +4472,54 @@ fn actor_twin_summon(a: &delvewright_dsl::Actor) -> String {
         .unwrap_or_default();
     let pose = mannequin_pose_nbt(&a.entity);
     let finalize = spawn_finalize_nbt(&a.entity);
+    // The twin inherits the puppet's gear: unleashing swaps the body, not the
+    // costume. Drop chances stay 0 — killing the elite must never drop its kit.
+    let equip = actor_equipment(a)
+        .map(|e| format!(",{e}"))
+        .unwrap_or_default();
     format!(
-        "summon {} ~ ~ ~ {{PersistenceRequired:1b{pose},DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}}}",
+        "summon {} ~ ~ ~ {{PersistenceRequired:1b{pose},DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{equip}}}",
         a.entity
     )
+}
+
+/// The `equipment`/`drop_chances` SNBT fragment for an actor (no leading comma),
+/// or `None` when the actor declares no gear.
+///
+/// Deliberately NOT the wave path's [`wave_equipment`]: that function falls back
+/// to the armed-mob default table, which would silently arm every actor whose
+/// entity happens to be a vindicator or skeleton and break byte-identity for
+/// every campaign authored before this field existed. An actor is a directed
+/// set piece — it wears exactly what the author declared, and nothing when they
+/// declared nothing.
+fn actor_equipment(a: &delvewright_dsl::Actor) -> Option<String> {
+    let eq = a.equipment.as_ref()?;
+    let mut items: Vec<String> = Vec::new();
+    let mut chances: Vec<String> = Vec::new();
+    // Fixed emission order, matching the wave path (ADR-0006 determinism).
+    let slots: [(&str, Option<&EquipItem>); 6] = [
+        ("mainhand", eq.main_hand.as_ref()),
+        ("offhand", eq.off_hand.as_ref()),
+        ("head", eq.head.as_ref()),
+        ("chest", eq.chest.as_ref()),
+        ("legs", eq.legs.as_ref()),
+        ("feet", eq.feet.as_ref()),
+    ];
+    for (slot, piece) in slots {
+        if let Some(p) = piece {
+            let comps = enchantment_components(p);
+            items.push(format!("{slot}:{{id:\"{}\",count:1{comps}}}", p.item()));
+            chances.push(format!("{slot}:0.0f"));
+        }
+    }
+    if items.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "equipment:{{{}}},drop_chances:{{{}}}",
+        items.join(","),
+        chances.join(",")
+    ))
 }
 
 /// Command storage holding the UUID of the player who most recently struck (or
@@ -5338,6 +5460,53 @@ fn trap_gate_fns(plan: &Plan, hardware: &BTreeMap<String, String>) -> Vec<(Strin
                 format!("setblock {} {} {} minecraft:air", c[0], c[1], c[2]),
             ]),
         ));
+    }
+    out
+}
+
+/// `setup_finish` commands for container fills (spec-0021): give each declared
+/// container its contents with `item replace block … container.<slot>`, the same
+/// deterministic mechanism a trap dispenser and a `collect` chest already use —
+/// no raw NBT, no loot tables, no RNG.
+///
+/// **Slot assignment is positional**: the nth declared stack lands in
+/// `container.<n>`. That is the whole determinism story (ADR-0006) — the same
+/// DSL always produces the same chest, byte for byte, with no shuffling and no
+/// seeded placement to reproduce.
+///
+/// The container itself is never placed here; it is prefab furniture, and
+/// `DW0431` has already proven one is really there.
+fn loot_setup(loot: &[crate::plan::LootPlan]) -> Vec<String> {
+    let mut out = Vec::new();
+    for l in loot {
+        let c = l.cell;
+        for (slot, it) in l.items.iter().enumerate() {
+            let mut comps: Vec<String> = Vec::new();
+            if let Some(n) = &it.name {
+                comps.push(format!(
+                    "custom_name={}",
+                    json!({ "text": n, "italic": false })
+                ));
+            }
+            if !it.enchantments.is_empty() {
+                let body = it
+                    .enchantments
+                    .iter()
+                    .map(|(id, lvl)| format!("\"{id}\":{lvl}"))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                comps.push(format!("enchantments={{{body}}}"));
+            }
+            let comp = if comps.is_empty() {
+                String::new()
+            } else {
+                format!("[{}]", comps.join(","))
+            };
+            out.push(format!(
+                "item replace block {} {} {} container.{slot} with {}{comp} {}",
+                c[0], c[1], c[2], it.item, it.count
+            ));
+        }
     }
     out
 }
@@ -9679,6 +9848,7 @@ mod tests {
             anchor: delvewright_dsl::AnchorId("anchor/stage".to_string()),
             facing: Some(delvewright_dsl::Facing::West),
             vulnerable,
+            equipment: None,
         }
     }
 
@@ -9854,5 +10024,191 @@ mod tests {
             "different content → different key"
         );
         assert_eq!(sequence_fn(&a), format!("seq_{}", sequence_key(&a)));
+    }
+}
+
+#[cfg(test)]
+mod loot_emit_tests {
+    use super::*;
+    use crate::plan::{LootItemPlan, LootPlan};
+
+    fn item(item: &str, count: u32, name: Option<&str>, ench: &[(&str, u32)]) -> LootItemPlan {
+        LootItemPlan {
+            item: item.to_string(),
+            count,
+            name: name.map(str::to_string),
+            enchantments: ench.iter().map(|(k, v)| ((*k).to_string(), *v)).collect(),
+        }
+    }
+
+    fn plan_of(items: Vec<LootItemPlan>) -> Vec<LootPlan> {
+        vec![LootPlan {
+            id: "loot/stores".to_string(),
+            anchor: "anchor/stores".to_string(),
+            cell: [10, 64, -3],
+            items,
+        }]
+    }
+
+    /// Slots are positional and deterministic: nth declared stack -> container.n.
+    #[test]
+    fn slots_are_assigned_positionally() {
+        let out = loot_setup(&plan_of(vec![
+            item("minecraft:cooked_cod", 3, None, &[]),
+            item("minecraft:torch", 16, None, &[]),
+        ]));
+        assert_eq!(
+            out,
+            vec![
+                "item replace block 10 64 -3 container.0 with minecraft:cooked_cod 3",
+                "item replace block 10 64 -3 container.1 with minecraft:torch 16",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_named_stack_carries_the_custom_name_component() {
+        let out = loot_setup(&plan_of(vec![item(
+            "minecraft:paper",
+            1,
+            Some("Tide Ledger"),
+            &[],
+        )]));
+        assert!(
+            out[0].contains(r#"custom_name={"italic":false,"text":"Tide Ledger"}"#),
+            "{}",
+            out[0]
+        );
+    }
+
+    #[test]
+    fn enchantments_emit_as_the_1_21_component_map() {
+        let out = loot_setup(&plan_of(vec![item(
+            "minecraft:iron_sword",
+            1,
+            None,
+            &[("minecraft:sharpness", 3), ("minecraft:knockback", 1)],
+        )]));
+        // BTreeMap order, never hash order (ADR-0006).
+        assert!(
+            out[0].contains(r#"enchantments={"minecraft:knockback":1,"minecraft:sharpness":3}"#),
+            "{}",
+            out[0]
+        );
+    }
+
+    /// The emitted fill must be a command 1.21.11 actually accepts — the item
+    /// component brackets are new ground here, and a syntax error would only
+    /// surface as a silently-skipped line on a live server.
+    #[test]
+    fn every_emitted_fill_validates_against_the_command_tree() {
+        let tree = crate::commands::CommandTree::v1_21_11();
+        let out = loot_setup(&plan_of(vec![
+            item("minecraft:cooked_cod", 3, None, &[]),
+            item("minecraft:paper", 1, Some("Tide Ledger"), &[]),
+            item(
+                "minecraft:netherite_sword",
+                1,
+                Some("Bell-Breaker"),
+                &[("minecraft:sharpness", 5), ("minecraft:unbreaking", 3)],
+            ),
+        ]));
+        for line in &out {
+            assert!(
+                tree.validate_line(line).is_ok(),
+                "emitted command must validate: {line}\n{:?}",
+                tree.validate_line(line)
+            );
+        }
+    }
+
+    #[test]
+    fn no_loot_emits_nothing() {
+        assert!(loot_setup(&[]).is_empty());
+    }
+
+    // --- actor equipment (spec-0021) ---
+
+    fn actor_with(eq: Option<delvewright_dsl::MobEquipment>) -> delvewright_dsl::Actor {
+        delvewright_dsl::Actor {
+            id: delvewright_dsl::ActorId("actor/elite".to_string()),
+            entity: "minecraft:wither_skeleton".to_string(),
+            name: None,
+            skin: None,
+            anchor: delvewright_dsl::AnchorId("anchor/stage".to_string()),
+            facing: None,
+            vulnerable: false,
+            equipment: eq,
+        }
+    }
+
+    fn full_kit() -> delvewright_dsl::MobEquipment {
+        use delvewright_dsl::{EnchantedItem, EquipItem};
+        delvewright_dsl::MobEquipment {
+            head: Some(EquipItem::Enchanted(EnchantedItem {
+                item: "minecraft:netherite_helmet".to_string(),
+                enchantments: [("minecraft:protection".to_string(), 4)]
+                    .into_iter()
+                    .collect(),
+            })),
+            chest: Some(EquipItem::Plain(
+                "minecraft:netherite_chestplate".to_string(),
+            )),
+            legs: None,
+            feet: None,
+            main_hand: Some(EquipItem::Enchanted(EnchantedItem {
+                item: "minecraft:netherite_sword".to_string(),
+                enchantments: [("minecraft:sharpness".to_string(), 5)]
+                    .into_iter()
+                    .collect(),
+            })),
+            off_hand: None,
+        }
+    }
+
+    /// An actor WITHOUT equipment must emit exactly what it did before the field
+    /// existed — including no armed-mob default leaking in from the wave path.
+    #[test]
+    fn an_unequipped_actor_is_byte_identical() {
+        let a = actor_with(None);
+        assert_eq!(actor_equipment(&a), None);
+        let puppet = actor_puppet_summon(&a, [1, 2, 3], 0);
+        assert!(!puppet.contains("equipment:"), "{puppet}");
+        assert!(!actor_twin_summon(&a).contains("equipment:"));
+    }
+
+    /// The gear rides on BOTH bodies — the dormant puppet and the twin that
+    /// replaces it — so unleashing does not undress the elite.
+    #[test]
+    fn equipment_lands_on_both_the_puppet_and_the_twin() {
+        let a = actor_with(Some(full_kit()));
+        let puppet = actor_puppet_summon(&a, [1, 2, 3], 0);
+        let twin = actor_twin_summon(&a);
+        for s in [&puppet, &twin] {
+            assert!(
+                s.contains(
+                    "mainhand:{id:\"minecraft:netherite_sword\",count:1,\
+                     components:{\"minecraft:enchantments\":{\"minecraft:sharpness\":5}}}"
+                ),
+                "enchanted main hand missing:\n{s}"
+            );
+            assert!(
+                s.contains(
+                    "head:{id:\"minecraft:netherite_helmet\",count:1,\
+                            components:{\"minecraft:enchantments\":{\"minecraft:protection\":4}}}"
+                ),
+                "enchanted helmet missing:\n{s}"
+            );
+            assert!(
+                s.contains("chest:{id:\"minecraft:netherite_chestplate\",count:1}"),
+                "plain chestplate missing:\n{s}"
+            );
+            // No-grind: an actor's kit is never lootable.
+            assert!(
+                s.contains("drop_chances:{mainhand:0.0f,head:0.0f,chest:0.0f}"),
+                "zero drop chances missing:\n{s}"
+            );
+            assert!(!s.contains("ArmorItems") && !s.contains("HandItems"));
+        }
     }
 }
