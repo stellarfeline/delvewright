@@ -9764,10 +9764,19 @@ mod tests {
     /// with it — and there is no dangling tag to clean up, because tags live on
     /// the entity and a removed entity takes its tags with it.
     ///
-    /// The property is structural: every command is a **plain tag selector** with
-    /// no `limit=1` and no `@s` binding, so a zero-match run affects nothing and
-    /// the function continues. A single-entity-arity form here would be exactly
-    /// the 1.21.11 load-failure class the command-tree check guards elsewhere.
+    /// The property is structural: the body is always addressed through a **plain
+    /// multi-entity tag selector** — `@e[tag=dw_actor_<id>]` with no `limit=1` —
+    /// so a zero-match run affects nothing and the function continues. A
+    /// single-entity-arity form here would be exactly the 1.21.11 load-failure
+    /// class the command-tree check guards elsewhere.
+    ///
+    /// A bare `@s` is equally forbidden (nothing binds it in a scheduled bundle),
+    /// but an `@s` **bound by an enclosing `execute as`** in the same command is
+    /// fine and is what `vanish` uses: `execute as @e[tag=…] at @s run tp @s …`
+    /// runs its body zero times when nothing matches, and the `at @s` is required
+    /// for the relative `~ -128 ~` to resolve at the body rather than at the
+    /// command source. So the check is "every `@s` is bound", not "no `@s`" —
+    /// the latter would reject a strictly more correct emission.
     #[test]
     fn actor_lifecycle_verbs_are_no_ops_when_the_body_is_already_gone() {
         for style in [
@@ -9783,9 +9792,15 @@ mod tests {
                     "targets the body tag, so no match = no effect: {c}"
                 );
                 assert!(
-                    !c.contains("limit=1") && !c.contains("@s"),
+                    !c.contains("limit=1"),
                     "no single-entity arity: a zero-match run must not fail the function: {c}"
                 );
+                if c.contains("@s") {
+                    assert!(
+                        c.contains("execute as @e[tag=dw_actor_giant]"),
+                        "every `@s` must be bound by an enclosing `execute as`: {c}"
+                    );
+                }
             }
         }
         // The dual: re-staging after the body removed itself must work. The re-cage
