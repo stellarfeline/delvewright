@@ -2055,11 +2055,16 @@ export class MineflayerExecutor implements StepExecutor {
       let clearedStreak = 0;
       let engagedId: number | undefined;
       let engagedSince = 0;
+      // The wave's own census (task #124): every "the fight is over" test below is
+      // a guess made from SHAPES, and the server can simply be asked. See
+      // `waveStillStands`.
+      const enc = this.encounterFor(step.wave);
       while (Date.now() < deadline) {
         // Fail fast if a mob killed the bot mid-fight (gap 7) rather than looping.
         if (this.death) throw this.death;
-        // The whole wave is confirmed down — done, wherever the bot happens to stand.
-        if (engagement.killed >= step.count) return;
+        // The whole wave is confirmed down — done, wherever the bot happens to
+        // stand — unless the server says otherwise.
+        if (engagement.killed >= step.count && !(await this.waveStillStands(step, enc))) return;
         // Eat between exchanges when hurt and nothing is in reach (no-op otherwise).
         await this.maybeEat(`wave ${step.wave}`);
         const wave = bot.nearestEntity((e) => isWaveMob(e, bot.entity) && !blacklist.has(e.id));
@@ -2096,12 +2101,19 @@ export class MineflayerExecutor implements StepExecutor {
           })
         ) {
           if (++clearedStreak >= WAVE_CLEAR_STREAK) {
-            process.stderr.write(
-              `[kill ${step.wave}] every mob this fight engaged is down ` +
-                `(${engagement.killed} confirmed near the anchor) and no hostile is within ` +
-                `${WAVE_ENGAGE_NEAR} blocks — wave cleared\n`,
-            );
-            return;
+            if (!(await this.waveStillStands(step, enc))) {
+              process.stderr.write(
+                `[kill ${step.wave}] every mob this fight engaged is down ` +
+                  `(${engagement.killed} confirmed near the anchor) and no hostile is within ` +
+                  `${WAVE_ENGAGE_NEAR} blocks — wave cleared\n`,
+              );
+              return;
+            }
+            // The census overruled the guess. Start the streak over rather than
+            // asking again on the next poll: a census is a server round-trip, and
+            // a wave that is standing somewhere unreachable would otherwise be
+            // interrogated several times a second until the budget ran out.
+            clearedStreak = 0;
           }
           await delay(REACH_POLL_MS);
           continue;
@@ -2109,8 +2121,20 @@ export class MineflayerExecutor implements StepExecutor {
         clearedStreak = 0;
         if (!mob) {
           // No eligible wave mob remains (every real mob dead; any unkillable actor
-          // blacklisted) → wave cleared.
-          if (++emptyStreak >= WAVE_CLEAR_STREAK) return;
+          // blacklisted) → wave cleared, unless the census can still see it. When it
+          // can, there is nothing this loop can do about it — the survivor is out of
+          // reach or unkillable — so the step still ends, but it ends having SAID so,
+          // instead of reporting a clearance the objective will contradict.
+          if (++emptyStreak >= WAVE_CLEAR_STREAK) {
+            if (await this.waveStillStands(step, enc)) {
+              process.stderr.write(
+                `[kill ${step.wave}] nothing eligible is left to attack, but the wave census ` +
+                  `still counts mobs alive — leaving the fight unfinished rather than claiming ` +
+                  `it won\n`,
+              );
+            }
+            return;
+          }
           await delay(REACH_POLL_MS);
           continue;
         }
@@ -2741,6 +2765,43 @@ export class MineflayerExecutor implements StepExecutor {
       if (Date.now() >= deadline) return undefined;
       await delay(SCORE_POLL_MS);
     }
+  }
+
+  /**
+   * Does the wave still stand? Asks the SERVER, by tag (task #124).
+   *
+   * Every terminal condition in `fightWave` is a guess made from shapes — "a mob
+   * the bot hit winked out near the anchor", "everything it engaged is down and
+   * nothing hostile is close". None of them can tell a wave mob from any other
+   * mob, because the client cannot see the wave tag. On the drowned bell that
+   * cost the campaign a whole round: at the belfry the bot killed one of
+   * `ambush/the-rafters`' husks, counted it as the Bellkeeper (`confirmed kill:
+   * husk#232 (1/1)`), and walked away from a wither skeleton that was still very
+   * much alive. `obj/the-keeper` therefore never completed, `quest/the-keeper`
+   * never completed, `quest/ring-it-home` was never armed — and the next step's
+   * `interact` click was adjudicated against an unarmed quest and spent. The
+   * click was the SYMPTOM; this was the cause.
+   *
+   * So the guesses now only get to END the fight with the server's agreement.
+   * They are still what drives it — the bot can only swing at what it can see —
+   * but "the wave is down" is a fact, and facts come from the census.
+   *
+   * `false` when there is no census to ask (a wave outside the combat plan, or a
+   * census that did not answer): the pre-census terminal conditions then stand
+   * exactly as they did, because refusing to end the fight on a broken probe
+   * would hang the step instead of failing it.
+   */
+  private async waveStillStands(step: KillStep, enc: Encounter | undefined): Promise<boolean> {
+    if (!enc) return false;
+    const census = await this.census(enc);
+    if (!census) {
+      process.stderr.write(
+        `[kill ${step.wave}] the wave census did not answer; falling back to what the client ` +
+          `can see\n`,
+      );
+      return false;
+    }
+    return census.summary.present > 0;
   }
 
   /** Stamp this life's wave mobs so the next census can name the survivors. */
