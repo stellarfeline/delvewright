@@ -6147,6 +6147,19 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
                             format!("/content/dialogues/{i}/nodes/{j}/options/{k}/happening"),
                         ));
                     }
+                    // Owner design 2026-08-04: the button's hover tooltip — the
+                    // full line the caption stands for.
+                    if o.tooltip.is_some() {
+                        d.push(Diagnostic::error(
+                            codes::RESERVED,
+                            "dialogue",
+                            format!("/content/dialogues/{i}/nodes/{j}/options/{k}/tooltip"),
+                            "a dialogue option `tooltip` (the full line vanilla shows in a hover \
+                             box while the button keeps the caption) requires dsl_version 0.8.0 \
+                             — raise this stage's `dsl_version` to 0.8.0, or remove the field"
+                                .to_string(),
+                        ));
+                    }
                 }
             }
         }

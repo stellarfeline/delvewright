@@ -296,7 +296,27 @@ when it is needed, and the static analysis does no temporal reasoning about whic
 flags end up set. Node `text` → l10n `dlg.<n>.<node>.text`, option
 labels → `.opt.<i>.label`. An option label is a **button caption**: it is drawn on a
 fixed 150-GUI-px dialog button and scrolls if it does not fit, so every label —
-source and translation — is width-checked (`DW0331`, error). **Display gating (v0.4+,
+source and translation — is width-checked (`DW0331`, error).
+
+**Option `tooltip` (v0.8, reserved `DW0141` pre-0.8; owner design 2026-08-04) —
+"button = caption, tooltip = the full line".** An option may carry an optional
+`tooltip` beside its `label`: the sentence the character actually says, shown in a
+hover box while the button keeps a caption. This is vanilla's own primitive, not a
+workaround — a dialog action button is `ActionButton(CommonButtonData,
+Optional<DialogAction>)` and `CommonButtonData`'s codec is exactly
+`fieldOf("label")` + `optionalFieldOf("tooltip")` + `optionalFieldOf("width", 150)`
+(read off the pinned 1.21.11 client jar), so the compiler emits `tooltip` as a
+sibling of `label` inside the `actions[]` entry. The client hangs it on the button
+via `Tooltip.create(…)`. **`DW0331` does not apply**: `Tooltip` wraps its text with
+`Font.split(message, 170)`, so a tooltip never scrolls and has no button budget to
+overrun — the format declares no other limit on it, so the compiler enforces none.
+Player-visible, so it is inventoried and translated like the label
+(`dlg.<n>.<node>.opt.<i>.tooltip`); an unauthored tooltip emits no key at all, so
+a campaign that uses none is byte-identical. Precedent, and the live proof the
+codec accepts the field: `class_select` has shipped each class's `blurb` in exactly
+this slot since v0.1, and tier 2 boots it on the pinned vanilla server every PR.
+
+**Display gating (v0.4+,
 task #54):** an option is
 *shown* only when clicking it would fire — every `requires_flags` set and no
 `forbids_flags` set (flag axes; the click handler mirrors both with fail-fast
@@ -337,7 +357,8 @@ Envelope `{dsl_version,campaign_id,kind:"l10n",lang,content}`; `content` = flat
 **stable key → translated string**. Key inventory derived from stage docs
 (`world.title`, `world.outro`, `area.<a>.name`, `class.<c>.name/.blurb/.kit.<i>.name`,
 `npc.<n>.name`, `quest.<q>.goal`, `obj.<q>.<o>.title/.hint`,
-`dlg.<n>.<node>.text/.opt.<i>.label`, `wave.<w>.mob.<i>.name`) plus effect strings
+`dlg.<n>.<node>.text/.opt.<i>.label/.opt.<i>.tooltip` (the tooltip v0.8, only when
+authored), `wave.<w>.mob.<i>.name`) plus effect strings
 `fx.<q>.oc.<o>.<i>.narrate|.give`, `fx.<q>.done.<i>.…`, `fx.trig.<t>.<i>.…`, and a
 `bonfire`'s authored rest-dialog strings `fx.….rest_prompt|.rest_label|.save_label`
 (v0.8; unauthored ones are absent because the compiler bakes its canonical English,
@@ -1710,7 +1731,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0132` | `finale` is not the convergent sink (some quest is not a transitive dependency of finale). |
 | `DW0133` | Non-mandatory quest (`mandatory:false`), reserved until M3. |
 | `DW0140` | Objective `after` cycle. |
-| `DW0141` | Reserved enum value/field for the campaign's `dsl_version`. **This row is the single enumerated list of reserved surface** — §2 deliberately does not restate it (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: area `mitigation`, `close-gate`, `damage-players`, `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, `forbids_flags` at every site, `move-npc.on_arrive`, stage-2 npc `deferred` + the `spawn-npc` effect, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, the `traps[]` section, the `bonfire` effect, wave `respawns_on_rest`, wave `equipment`, `waves[].lane` / `waves[].summon`, the `shortcuts[]` / `ambushes[]` / `timed_gates[]` sections, the `loot[]` section, actor `equipment`, and the spec-0022 trap `payload` surface + its `volley` / `collapse` effects; under pre-0.7 the v0.7 surface: the stage-5 `cast` ledger, wave `tier`; under pre-0.8 the v0.8 surface: the stage-4 `branch_points` section, the per-node `happening` on a quest / objective / dialogue option / staging-or-gate-or-ending effect, and the named `campaign-complete` `ending` (spec-0025); the class-kit `flask` and the `bonfire` rest-dialog labels (spec-0016 §1); and actor `tier` (spec-0023)). |
+| `DW0141` | Reserved enum value/field for the campaign's `dsl_version`. **This row is the single enumerated list of reserved surface** — §2 deliberately does not restate it (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: area `mitigation`, `close-gate`, `damage-players`, `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, `forbids_flags` at every site, `move-npc.on_arrive`, stage-2 npc `deferred` + the `spawn-npc` effect, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, the `traps[]` section, the `bonfire` effect, wave `respawns_on_rest`, wave `equipment`, `waves[].lane` / `waves[].summon`, the `shortcuts[]` / `ambushes[]` / `timed_gates[]` sections, the `loot[]` section, actor `equipment`, and the spec-0022 trap `payload` surface + its `volley` / `collapse` effects; under pre-0.7 the v0.7 surface: the stage-5 `cast` ledger, wave `tier`; under pre-0.8 the v0.8 surface: the stage-4 `branch_points` section, the per-node `happening` on a quest / objective / dialogue option / staging-or-gate-or-ending effect, and the named `campaign-complete` `ending` (spec-0025); the class-kit `flask` and the `bonfire` rest-dialog labels (spec-0016 §1); actor `tier` (spec-0023); and the stage-6 dialogue-option `tooltip` (owner design 2026-08-04)). |
 | `DW0142` | Anchor not provided by the area's bound prefab. |
 | `DW0143` | Item id not in the pinned 1.21.11 registry (kit / `collect` / `interact.requires_item` / `give-item`). |
 | `DW0150` | Planned quest (stage 4) has no stage-5 expansion. |
@@ -1889,6 +1910,15 @@ every GUI scale. `width > 146` therefore *is* "this caption scrolls in game" —
 property of the datapack being built, so it rejects. The remedy is never a wider
 button: move the content into the node's body text, which wraps, or into the NPC's
 reply.
+
+**Not the option `tooltip` (v0.8).** A `tooltip` is a sibling of `label` in
+vanilla's button codec but is never drawn on the button: the client wraps it with
+`Tooltip.create(…)` → `Font.split(message, 170)` into its own hover box. Wrapping
+is the whole difference — the defect `DW0331` rejects is a caption *scrolling*
+inside a fixed button, and nothing overruns a box that wraps. So a tooltip carries
+no width budget, and inventing one would forbid exactly the pattern the field
+exists for ("button = caption, tooltip = the full line"). The label on an option
+that also has a tooltip is measured exactly as before.
 
 **Scope.** Every `.opt.<n>.label` in the canonical English source **and** every
 declared-language sidecar rendition, keyed by the same `dlg.<npc>.<node>.opt.<i>.label`

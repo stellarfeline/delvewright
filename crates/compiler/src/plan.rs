@@ -471,6 +471,10 @@ pub struct OptionPlan {
     pub node_id: String,
     /// Button label.
     pub label: String,
+    /// The button's hover tooltip (DSL v0.8) — the full line the label captions.
+    /// `None` emits no `tooltip` key at all, so a campaign that authors none is
+    /// byte-identical to a pre-0.8 build.
+    pub tooltip: Option<String>,
     /// Navigation target node, if any.
     pub next: Option<String>,
     /// Objectives this option completes.
@@ -1632,6 +1636,7 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
                 n,
                 node_id: node.id.as_str().to_string(),
                 label: opt.label.clone(),
+                tooltip: opt.tooltip.clone(),
                 next: opt
                     .next
                     .as_ref()

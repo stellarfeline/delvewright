@@ -284,3 +284,120 @@ fn every_engine_fixture_fits_its_buttons() {
     }
     assert!(checked >= 10, "the fixture corpus must actually be walked");
 }
+
+// ---------------------------------------------------------------------------
+// The v0.8 `tooltip` is deliberately OUT of scope
+// ---------------------------------------------------------------------------
+
+/// The same node, at 0.8.0, with a caption-length `label` and a sentence-length
+/// `tooltip` — the wine-beat pattern.
+fn dialogue_doc_with_tooltip(label: &str, tooltip: &str) -> String {
+    format!(
+        r#"{{
+  "dsl_version": "0.8.0",
+  "campaign_id": "hello-world",
+  "stage": "dialogue",
+  "content": {{
+    "dialogues": [
+      {{
+        "npc": "npc/keeper",
+        "root": "dlg/greeting",
+        "nodes": [
+          {{
+            "id": "dlg/greeting",
+            "text": "Halt, traveler. This keep is mine to guard, and the door stays shut.",
+            "options": [
+              {{
+                "label": {},
+                "tooltip": {},
+                "effects": [ {{ "type": "complete-objective", "objective": "obj/talk" }} ]
+              }}
+            ]
+          }}
+        ]
+      }}
+    ]
+  }}
+}}"#,
+        serde_json::Value::String(label.to_string()),
+        serde_json::Value::String(tooltip.to_string())
+    )
+}
+
+/// `DW0331` measures the **button**, and a tooltip is not drawn on one.
+///
+/// Ground truth from the pinned 1.21.11 client jar: the dialog control set turns a
+/// present `tooltip` into `Tooltip.create(component)`, and `Tooltip` splits its
+/// text with `Font.split(message, 170)` — it *wraps* into a hover box. The failure
+/// `DW0331` exists to reject is `renderScrollingString` sliding a caption back and
+/// forth across a fixed 150 px button; nothing about a wrapped hover box does that,
+/// so there is no budget here to enforce and inventing one would forbid exactly the
+/// pattern the field was added for.
+#[test]
+fn a_long_tooltip_is_not_dw0331() {
+    // Far past the button budget — as a label this exact string is rejected below.
+    let line = "And who are you, to come knocking at a door shut for thirty winters?";
+    assert!(textfit::default_font_width(line) > BUTTON_LABEL_BUDGET);
+    let c = parse_hw(&dialogue_doc_with_tooltip("Who are you?", line), None);
+    assert!(
+        textfit::check_option_labels(&c, &BTreeMap::new()).is_empty(),
+        "a tooltip wraps at 170 px in its own box — it has no button budget to overrun"
+    );
+    // The control: the same string as the *caption* is still an error, so the
+    // exemption is the tooltip's, not this string's.
+    assert!(
+        textfit::check_option_labels(&parse_hw(&dialogue_doc(line), None), &BTreeMap::new())
+            .iter()
+            .any(|x| x.code == DW_OPTION_LABEL_SCROLLS),
+        "the same line on the button still scrolls"
+    );
+    // And the caption on the same option is measured as it always was.
+    let over = format!("{}l", "A".repeat(24));
+    assert!(
+        textfit::check_option_labels(
+            &parse_hw(&dialogue_doc_with_tooltip(&over, line), None),
+            &BTreeMap::new()
+        )
+        .iter()
+        .any(|x| x.code == DW_OPTION_LABEL_SCROLLS),
+        "an over-wide caption is still rejected when the option also has a tooltip"
+    );
+}
+
+/// The l10n half of the same scope rule: a translated tooltip is not a caption
+/// either, so a `zh-cn` rendition of one raises nothing however long it is.
+#[test]
+fn a_long_tooltip_translation_is_not_dw0331() {
+    let mut world: serde_json::Value = serde_json::from_str(&read_hw("world.json")).unwrap();
+    world["content"]["languages"] = serde_json::json!(["zh-cn"]);
+    let c = parse_hw(
+        &dialogue_doc_with_tooltip("Who are you?", "And who are you, exactly?"),
+        Some(world.to_string()),
+    );
+    // The width check's inventory is the *label* inventory — a tooltip never
+    // enters it, which is what keeps the two surfaces from drifting.
+    let keys: Vec<String> = dialogue_option_labels(&c)
+        .into_iter()
+        .map(|l| l.key)
+        .collect();
+    assert_eq!(keys, vec!["dlg.keeper.greeting.opt.0.label".to_string()]);
+
+    let doc: L10nDoc = serde_json::from_value(serde_json::json!({
+        "dsl_version": "0.6.0",
+        "campaign_id": "hello-world",
+        "kind": "l10n",
+        "lang": "zh-cn",
+        "content": {
+            "dlg.keeper.greeting.opt.0.label": "你是谁？",
+            "dlg.keeper.greeting.opt.0.tooltip":
+                "你又是谁，敢来敲这扇三十个寒冬都没有开过的大门？"
+        }
+    }))
+    .unwrap();
+    let mut sidecars = BTreeMap::new();
+    sidecars.insert("zh-cn".to_string(), doc);
+    assert!(
+        textfit::check_option_labels(&c, &sidecars).is_empty(),
+        "a long zh tooltip is not a scrolling caption"
+    );
+}
