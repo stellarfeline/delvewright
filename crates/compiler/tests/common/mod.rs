@@ -41,6 +41,15 @@ pub fn keep_trial_dir() -> PathBuf {
     repo_root().join("crates/dsl/fixtures/valid/keep-trial")
 }
 
+/// The v0.6 cutscene fixture (`cutscene-shots`): hello-world's world and cast
+/// with a two-shot `cutscene` on its exit beat. The campaign the spec-0019
+/// tier-3 flow (`validation/rehearsal-flow.sh`) plays, kept here so tier 1
+/// fails first if the fixture ever stops producing the proposal that flow
+/// asserts against.
+pub fn cutscene_shots_dir() -> PathBuf {
+    repo_root().join("crates/dsl/fixtures/valid/cutscene-shots")
+}
+
 /// The v0.3 vertical keep-vertical campaign directory (3D stair layout).
 pub fn keep_vertical_dir() -> PathBuf {
     repo_root().join("crates/dsl/fixtures/valid/keep-vertical")

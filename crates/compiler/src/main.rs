@@ -148,6 +148,20 @@ enum Command {
         #[command(subcommand)]
         action: EditAction,
     },
+    /// Convert a harvested `rehearsal-report.json` (spec-0019) into per-shot
+    /// `anchor + offset` DSL patches. Reads only the report and the creator
+    /// overlay's `layout.json` — no campaign, no build, no world assembly.
+    Calibrate {
+        /// The harvested rehearsal report (`delve-harvest --rehearsal-out`).
+        report: PathBuf,
+        /// The creator overlay's layout manifest, which carries the
+        /// resolved-anchor vocabulary to snap onto.
+        #[arg(long)]
+        layout: PathBuf,
+        /// Where to write the patch document (`-` for stdout).
+        #[arg(short, long, default_value = "shot-patch.json")]
+        out: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -264,6 +278,168 @@ fn main() -> ExitCode {
                 cli.json,
             ),
         },
+        Command::Calibrate {
+            report,
+            layout,
+            out,
+        } => run_calibrate(report, layout, out, cli.json),
+    }
+}
+
+/// `delvec calibrate` (spec-0019 §4): the write-back half of the rehearsal loop.
+///
+/// Deliberately the cheapest subcommand in the CLI — it needs neither the
+/// campaign nor the assembled world, only two JSON artifacts of a build that
+/// already happened. The patch it prints is **never applied here**: nothing
+/// writes to a stage document from the game (spec-0019 §4). The agent applies
+/// it, reruns `delvec build`, and the normal proofs gate the result exactly as
+/// they gate a hand-written shot.
+///
+/// Exit codes: `0` every proposal snapped · `1` unreadable/mismatched inputs
+/// (`DW0391`/`DW0392`) · `3` at least one proposal names no anchor within the
+/// snap radius (`DW0390`). The patch file is still written on exit 3 — the
+/// snappable shots are real work, and withholding them would only make the
+/// creator redo the session.
+fn run_calibrate(report_path: &Path, layout_path: &Path, out: &str, json: bool) -> ExitCode {
+    use delvewright_compiler::calibrate;
+
+    let report_raw = match std::fs::read_to_string(report_path) {
+        Ok(s) => s,
+        Err(e) => {
+            print_build_error(
+                calibrate::DW_SHOT_REPORT_INVALID,
+                &format!(
+                    "cannot read rehearsal report `{}`: {e}. It is written by \
+                     `delve-harvest` when a playtest session fired `/trigger dw.done`; \
+                     do NOT hand-write one.",
+                    report_path.display()
+                ),
+                json,
+            );
+            return ExitCode::from(1);
+        }
+    };
+    let report: calibrate::RehearsalReport = match serde_json::from_str(&report_raw) {
+        Ok(r) => r,
+        Err(e) => {
+            print_build_error(
+                calibrate::DW_SHOT_REPORT_INVALID,
+                &format!(
+                    "`{}` is not a readable rehearsal report: {e}. Re-run \
+                     `delve-harvest` over the session log; do NOT edit the report by hand.",
+                    report_path.display()
+                ),
+                json,
+            );
+            return ExitCode::from(1);
+        }
+    };
+    if report.version != calibrate::PATCH_VERSION {
+        print_build_error(
+            calibrate::DW_SHOT_REPORT_INVALID,
+            &format!(
+                "rehearsal report schema version `{}` is not the `{}` this delvec \
+                 understands. Re-harvest the session log with the matching \
+                 `delve-harvest`; do NOT edit the version field.",
+                report.version,
+                calibrate::PATCH_VERSION
+            ),
+            json,
+        );
+        return ExitCode::from(1);
+    }
+    let layout_raw = match std::fs::read_to_string(layout_path) {
+        Ok(s) => s,
+        Err(e) => {
+            print_build_error(
+                calibrate::DW_SHOT_REPORT_INVALID,
+                &format!(
+                    "cannot read layout manifest `{}`: {e}. It is \
+                     `creator-datapack/layout.json` of the build the session played.",
+                    layout_path.display()
+                ),
+                json,
+            );
+            return ExitCode::from(1);
+        }
+    };
+    let layout: calibrate::LayoutAnchors = match serde_json::from_str(&layout_raw) {
+        Ok(l) => l,
+        Err(e) => {
+            print_build_error(
+                calibrate::DW_SHOT_REPORT_INVALID,
+                &format!(
+                    "`{}` is not a readable layout manifest: {e}",
+                    layout_path.display()
+                ),
+                json,
+            );
+            return ExitCode::from(1);
+        }
+    };
+    if layout.campaign_id != report.campaign_id {
+        print_build_error(
+            calibrate::DW_SHOT_CAMPAIGN_MISMATCH,
+            &format!(
+                "the rehearsal report is for campaign `{}` but the layout manifest is \
+                 for `{}` — the proposals would snap onto another delve's anchors. Point \
+                 `--layout` at the `creator-datapack/layout.json` of the build that \
+                 session actually played; do NOT reuse an older build's manifest.",
+                report.campaign_id, layout.campaign_id
+            ),
+            json,
+        );
+        return ExitCode::from(1);
+    }
+
+    let result = calibrate::calibrate(&report, &layout);
+    if out == "-" {
+        print!("{}", String::from_utf8_lossy(&result.to_json()));
+    } else if let Err(e) = write_file(Path::new(out), &result.to_json()) {
+        eprintln!("internal error: cannot write patch {out}: {e}");
+        return ExitCode::from(EXIT_INTERNAL);
+    }
+
+    for u in &result.unsnappable {
+        let near = match &u.nearest {
+            Some(n) => format!(
+                "the nearest declared anchor is `{}`, {} blocks away",
+                n.anchor, n.distance
+            ),
+            None => "the build declares no anchors at all".to_string(),
+        };
+        print_build_error(
+            calibrate::DW_SHOT_UNSNAPPABLE,
+            &format!(
+                "shot {} {}[{}] proposes cell [{}, {}, {}], and {near} — beyond the {} \
+                 block snap radius. The DSL has no free-floating world coordinates \
+                 (spec-0019 §5): declare an anchor near that cell in the prefab's \
+                 metadata and re-mark the shot, or move the shot to an anchored spot. \
+                 Do NOT widen the radius and do NOT write a raw coordinate into the \
+                 stage document.",
+                u.shot,
+                u.kind,
+                u.index,
+                u.cell[0],
+                u.cell[1],
+                u.cell[2],
+                calibrate::SNAP_RADIUS
+            ),
+            json,
+        );
+    }
+
+    if !json {
+        println!(
+            "calibrated {} shot(s) into {out} ({} un-snappable cell(s); integer snap error 0)",
+            result.patches.len(),
+            result.unsnappable.len()
+        );
+    }
+    if result.unsnappable.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(3)
     }
 }
 

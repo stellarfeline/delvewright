@@ -37,6 +37,7 @@ The only path from DSL to datapack (ADR-0001). Full behavior:
 | `blocking-chart <dir>` | per-elevation cutaway floor plans (spec-0015) | `-o blocking-chart`, `--timing` |
 | `edit apply <dir>` | replay the stage-7 edit script, persist a green candidate | `--batch <file>`, `-o edit-shots` |
 | `edit preview <dir>` | same replay + renders, never writes the campaign | `--batch <file>`, `-o edit-shots` |
+| `calibrate <report>` | harvested shot proposals → `anchor + offset` DSL patch (spec-0019) | `--layout <creator-datapack/layout.json>` (required), `-o shot-patch.json` |
 
 Global flags on every subcommand: `--json`, `--prefabs <dir>` (default
 `campaigns/prefabs`), `--lang <code>` (default `en`), `--version`.
@@ -109,8 +110,13 @@ Pairs in-game `[DelveNote]` stamps with the creator's chat notes into
 `playtest-report.json` (spec-0006). The capture half is human — the owner plays and
 runs `/trigger dw.note`; the agent runs the harvester afterwards.
 
+The same pass harvests spec-0019 `[DelveShot]` stamps (`/trigger dw.done`) into
+`rehearsal-report.json`, written **only** when the session actually stamped a
+shot proposal — feed that report to `delvec calibrate`.
+
 ```
 delve-harvest <server.log> <creator-datapack/layout.json> [-o playtest-report.json]
+                                                          [--rehearsal-out rehearsal-report.json]
 ```
 
 Full loop, including how the log is captured:
@@ -149,14 +155,15 @@ Shell entry points:
 | `validation/fresh-volumes.sh` | agent | tear the stack down and **prove** the world volumes are gone. Run before any re-run of the bot ladder — a stale volume keeps completed objectives completed and fails a fresh playthrough for reasons unrelated to the delve |
 | `validation/render-shots.sh <build-dir> [out-dir]` | agent | turn a build output into the Chunky scene set + shot index (`delve-render scene` + `index`), including the first-person POV shots |
 | `validation/playtest-note-flow.sh` | CI (tier 3) | `EULA=TRUE validation/playtest-note-flow.sh` — drives the whole spec-0006 note loop non-interactively and asserts the report |
+| `validation/rehearsal-flow.sh` | CI (tier 3) | `EULA=TRUE validation/rehearsal-flow.sh` — drives the whole spec-0019 calibration loop (`dw.aim`/`dw.faster`/`dw.mark`/`dw.done` → harvest → `delvec calibrate`) and asserts the patch resolves back to the cell the bot marked |
 | `validation/check-versions.sh` | CI (tier 1) | fails if any Dockerfile/compose/workflow disagrees with `versions.toml` |
 | `validation/check-world-settings.sh` | CI (tier 1) | fails if a server profile hardcodes world settings instead of deriving them from the build |
 | `validation/world-settings-entrypoint.sh` | — | the shared entrypoint the above guards; not invoked by hand |
 
 ## 8. Harness (`harness/`) · CI
 
-The mineflayer bot the `validate` profile runs, plus the spec-0006 note bot. It
-contains zero campaign logic — it reads `critical-path.json` and asserts.
+The mineflayer bot the `validate` profile runs, plus the spec-0006 note bot and
+the spec-0019 shot-calibration bot. It contains zero campaign logic — it reads `critical-path.json` and asserts.
 
 ```
 npm --prefix harness run typecheck      # tsc --noEmit
@@ -164,8 +171,8 @@ npm --prefix harness test               # node --test 'test/**/*.test.ts'
 npm --prefix harness start              # node src/run.ts <critical-path.json>  (compose does this)
 ```
 
-`harness/src/note-bot.ts` is driven by `validation/playtest-note-flow.sh`, never
-by hand.
+`harness/src/note-bot.ts` is driven by `validation/playtest-note-flow.sh` and
+`harness/src/rehearsal-bot.ts` by `validation/rehearsal-flow.sh`, never by hand.
 
 ## 9. Spikes (not the pipeline)
 
