@@ -3972,6 +3972,321 @@ fn ocean_window(world: &World, sea: &Sea) -> Option<([i32; 2], [i32; 2])> {
     ))
 }
 
+// ---------------------------------------------------------------------------
+// spec-0022 — command-driven trap payloads: volley coverage + collapse burial
+// ---------------------------------------------------------------------------
+
+/// `DW0442`: a `volley`'s gallery slot has no clear line of fire to a standable
+/// cell of its declared kill zone. The compile-time form of the owner's
+/// saturation ruling (2026-08-03) — a volley must BLANKET its zone, so a cell
+/// the slot cannot reach is a hole a player could stand in and be safe by
+/// accident. Escaping a volley must be a decision (leave the zone), never a
+/// lucky step.
+pub const DW_VOLLEY_ZONE_UNCOVERED: &str = "DW0442";
+/// `DW0444`: a trap-payload region is unusable — a `volley` kill zone with no
+/// standable cell, or a `collapse` region with nothing to drop / nothing to
+/// land on.
+pub const DW_TRAP_REGION_EMPTY: &str = "DW0444";
+/// `DW0445`: the critical path is not completable once a `collapse` has fired.
+pub const DW_COLLAPSE_BURIES_PATH: &str = "DW0445";
+/// `DW0446`: a `volley`'s `from_anchor` cell is not clear, so the projectile
+/// would be summoned inside solid geometry and never leave it.
+pub const DW_VOLLEY_SLOT_OCCLUDED: &str = "DW0446";
+
+/// Height above a kill-zone cell's floor a volley aims at: centre mass of a
+/// standing player (a 1.8-tall hitbox with feet on the floor). Aiming at the
+/// centre rather than the feet means the shot passes through the hitbox for the
+/// whole cell rather than grazing it.
+const VOLLEY_AIM_HEIGHT: f64 = 1.0;
+
+/// Speed of a summoned volley projectile, in blocks/tick.
+///
+/// Arrow impact damage in 1.21.11 is `ceil(|velocity| * damage)` with `damage`
+/// defaulting to 2.0, so 2.5 b/t lands 5 half-hearts per arrow — a real
+/// consequence that three salvos of saturating fire can kill, without any one
+/// arrow being an instant death.
+pub const VOLLEY_SPEED: f64 = 2.5;
+
+/// One computed shot of a volley: the kill-zone cell it covers and the exact
+/// `Motion` vector that carries a projectile from the gallery slot into it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VolleyShot {
+    /// The standable kill-zone cell this shot covers.
+    pub cell: [i32; 3],
+    /// The `Motion` NBT vector, in blocks/tick.
+    pub motion: [f64; 3],
+}
+
+/// A proven volley: every standable cell of the kill zone, each with the
+/// velocity vector that reaches it.
+#[derive(Debug, Clone)]
+pub struct VolleyGeometry {
+    /// The gallery slot cell the projectiles are summoned in.
+    pub from: [i32; 3],
+    /// One shot per standable kill-zone cell, in ascending cell order
+    /// (deterministic — ADR-0006; no RNG anywhere in the pattern).
+    pub shots: Vec<VolleyShot>,
+}
+
+/// The exact world-space point a volley projectile is summoned at.
+pub fn volley_source(from: [i32; 3]) -> [f64; 3] {
+    let c = cell_center(from);
+    [c[0], c[1], c[2]]
+}
+
+/// The exact world-space point a volley shot aims at for kill-zone cell `c`.
+pub fn volley_target(c: [i32; 3]) -> [f64; 3] {
+    let p = cell_center(c);
+    [p[0], p[1] - 0.5 + VOLLEY_AIM_HEIGHT, p[2]]
+}
+
+impl World {
+    /// Whether a cell stops a projectile. Collision geometry stops it outright;
+    /// water is included because it destroys a flat trajectory rather than
+    /// merely slowing it — a shot that has to swim is not a shot that arrives.
+    ///
+    /// Deliberately NOT `blocks_camera`: glass is transparent to a camera and
+    /// solid to an arrow, so reusing the sight predicate would prove coverage
+    /// through a window the projectile cannot pass.
+    fn blocks_projectile(&self, c: [i32; 3]) -> bool {
+        self.is_occupied(c)
+    }
+
+    /// The first cell that stops a projectile flying `from` → `to`, or `None`
+    /// when the line of fire is clear. The origin cell is exempt: that is where
+    /// the projectile is summoned.
+    ///
+    /// Uses the same [`walk_cells`] traversal as the cutscene clip and the mob
+    /// line-of-sight, so "can this be traversed" has one definition in the
+    /// compiler. Critically, the ray checked here is *exactly* the segment the
+    /// emitted `Motion` vector flies (projectiles are summoned `NoGravity`, and
+    /// drag scales speed without turning the path), so the proof and the runtime
+    /// cannot drift apart.
+    fn first_projectile_block(&self, from: [f64; 3], to: [f64; 3]) -> Option<[i32; 3]> {
+        let origin = [
+            from[0].floor() as i32,
+            from[1].floor() as i32,
+            from[2].floor() as i32,
+        ];
+        walk_cells(from, to, |c| c != origin && self.blocks_projectile(c))
+    }
+
+    /// Whether this cell is clear enough to summon a projectile in.
+    pub fn is_volley_slot_clear(&self, c: [i32; 3]) -> bool {
+        !self.blocks_projectile(c)
+    }
+}
+
+/// Plan a volley, proving saturation by construction (spec-0022).
+///
+/// The returned geometry contains one shot per standable kill-zone cell — so
+/// emitting every shot IS the coverage — and the function errors rather than
+/// returning partial cover. `label` names the volley in diagnostics.
+pub fn plan_volley(
+    world: &World,
+    from: [i32; 3],
+    region: ([i32; 3], [i32; 3]),
+    label: &str,
+) -> Result<VolleyGeometry, NavError> {
+    if !world.is_volley_slot_clear(from) {
+        return Err(NavError {
+            code: DW_VOLLEY_SLOT_OCCLUDED,
+            message: format!(
+                "{label}: the `from_anchor` cell [{}, {}, {}] is solid or flooded, so a \
+                 summoned projectile would never leave it. Move the gallery slot into the \
+                 open air of the firing niche (the anchor marks where the projectile \
+                 spawns, not the wall it comes out of)",
+                from[0], from[1], from[2]
+            ),
+        });
+    }
+    let src = volley_source(from);
+    let mut shots = Vec::new();
+    // BTreeSet-ordered cells: the pattern is a pure function of the geometry,
+    // with no RNG and no hash-order iteration (ADR-0006).
+    let cells: Vec<[i32; 3]> = crate::assembled::region_cells(region.0, region.1)
+        .filter(|c| world.is_standable(*c))
+        .collect();
+    if cells.is_empty() {
+        return Err(NavError {
+            code: DW_TRAP_REGION_EMPTY,
+            message: format!(
+                "{label}: the `kill_zone` region [{}, {}, {}]..[{}, {}, {}] contains no \
+                 standable cell, so there is nothing for the volley to saturate — it would \
+                 fire into geometry no player can occupy. Point `kill_zone` at the floor \
+                 players actually cross (the stair treads, the corridor run), not at the \
+                 wall or the air above it",
+                region.0[0], region.0[1], region.0[2], region.1[0], region.1[1], region.1[2]
+            ),
+        });
+    }
+    for cell in cells {
+        let dst = volley_target(cell);
+        if let Some(block) = world.first_projectile_block(src, dst) {
+            return Err(NavError {
+                code: DW_VOLLEY_ZONE_UNCOVERED,
+                message: format!(
+                    "{label}: the gallery slot [{}, {}, {}] has no line of fire to \
+                     kill-zone cell [{}, {}, {}] — the shot is stopped at [{}, {}, {}]. A \
+                     volley must BLANKET its kill zone: an uncovered cell is a pocket a \
+                     player is safe in by accident, which turns dodging from a decision \
+                     into luck. Either clear the obstruction, move `from_anchor` where it \
+                     sees the whole zone, or shrink `kill_zone` to the part it does cover",
+                    from[0],
+                    from[1],
+                    from[2],
+                    cell[0],
+                    cell[1],
+                    cell[2],
+                    block[0],
+                    block[1],
+                    block[2]
+                ),
+            });
+        }
+        let d = [dst[0] - src[0], dst[1] - src[1], dst[2] - src[2]];
+        let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        let motion = if len <= f64::EPSILON {
+            [0.0, 0.0, 0.0]
+        } else {
+            [
+                d[0] / len * VOLLEY_SPEED,
+                d[1] / len * VOLLEY_SPEED,
+                d[2] / len * VOLLEY_SPEED,
+            ]
+        };
+        shots.push(VolleyShot { cell, motion });
+    }
+    Ok(VolleyGeometry { from, shots })
+}
+
+/// A proven collapse: what falls, and where it comes to rest.
+#[derive(Debug, Clone)]
+pub struct CollapseGeometry {
+    /// The region whose blocks are deleted.
+    pub region: ([i32; 3], [i32; 3]),
+    /// Cells that currently hold a block — one `falling_block` summon each, in
+    /// ascending cell order.
+    pub drops: Vec<[i32; 3]>,
+    /// Where the debris settles, in ascending cell order. This is the geometry
+    /// the completability proof treats as solid.
+    pub debris: Vec<[i32; 3]>,
+    /// The tallest fall, in blocks — drives the `then_floor` paving delay.
+    pub max_fall: i32,
+}
+
+/// Plan a collapse and settle its debris deterministically (spec-0022).
+///
+/// Settling reuses the assembled model's rule — a falling block comes to rest on
+/// the first solid cell beneath it, stacking within its own column — so the
+/// post-collapse world the proof reasons over is the world the server will
+/// actually have.
+pub fn plan_collapse(
+    world: &World,
+    blocks: &BTreeMap<[i32; 3], String>,
+    region: ([i32; 3], [i32; 3]),
+    label: &str,
+) -> Result<CollapseGeometry, NavError> {
+    let drops: Vec<[i32; 3]> = crate::assembled::region_cells(region.0, region.1)
+        .filter(|c| blocks.contains_key(c))
+        .collect();
+    if drops.is_empty() {
+        return Err(NavError {
+            code: DW_TRAP_REGION_EMPTY,
+            message: format!(
+                "{label}: the `collapse` region [{}, {}, {}]..[{}, {}, {}] contains no \
+                 blocks, so nothing would fall. Point `region_anchor` at the ceiling slab \
+                 that caves in, not at the air below it",
+                region.0[0], region.0[1], region.0[2], region.1[0], region.1[1], region.1[2]
+            ),
+        });
+    }
+    let lo_y = region.0[1].min(region.1[1]);
+    // Group the drops by column so a stack settles as a stack.
+    let mut by_col: BTreeMap<[i32; 2], usize> = BTreeMap::new();
+    for c in &drops {
+        *by_col.entry([c[0], c[2]]).or_insert(0) += 1;
+    }
+    let mut debris: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut max_fall = 0;
+    let mut landed_any = false;
+    for (col, n) in by_col {
+        // Find the first solid cell below the region in this column: the debris
+        // rests on top of it. Search stops at the world floor.
+        let mut rest: Option<i32> = None;
+        let mut y = lo_y - 1;
+        while y > lo_y - MAX_COLLAPSE_FALL {
+            if world.is_solid([col[0], y, col[1]]) {
+                rest = Some(y + 1);
+                break;
+            }
+            y -= 1;
+        }
+        let Some(base) = rest else { continue };
+        landed_any = true;
+        max_fall = max_fall.max(lo_y - base);
+        for k in 0..n as i32 {
+            debris.insert([col[0], base + k, col[1]]);
+        }
+    }
+    if !landed_any {
+        return Err(NavError {
+            code: DW_TRAP_REGION_EMPTY,
+            message: format!(
+                "{label}: nothing beneath the `collapse` region [{}, {}, {}]..[{}, {}, {}] \
+                 stops the debris within {MAX_COLLAPSE_FALL} blocks — the falling blocks \
+                 would drop out of the box garden instead of burying anyone. Put the \
+                 region over the floor the players walk on",
+                region.0[0], region.0[1], region.0[2], region.1[0], region.1[1], region.1[2]
+            ),
+        });
+    }
+    Ok(CollapseGeometry {
+        region,
+        drops,
+        debris: debris.into_iter().collect(),
+        max_fall,
+    })
+}
+
+/// How far debris is allowed to fall before the compiler calls the collapse
+/// unmodellable. Well beyond any box-garden room height.
+const MAX_COLLAPSE_FALL: i32 = 64;
+
+/// Prove the critical path survives every collapse (spec-0022, `DW0445`).
+///
+/// A trap can always fire — the player WILL step on the plate — so the world the
+/// completability proof must hold in is the world after the collapse, not
+/// before. This is the same pessimism the `shortcut` seal applies (a shortcut is
+/// proven never-taken; a trap is proven always-sprung), and it is deliberately
+/// conservative in one direction: the debris is added as solid geometry while
+/// the deleted region is left in place, so the proof can only ever be stricter
+/// than the real post-collapse world, never laxer.
+pub fn check_collapses(
+    plan: &Plan,
+    world: &World,
+    collapses: &[(String, CollapseGeometry)],
+) -> Result<(), NavError> {
+    for (label, g) in collapses {
+        let debris: BTreeSet<[i32; 3]> = g.debris.iter().copied().collect();
+        let collapsed = world.with_sealed(&debris);
+        if let Err(e) = check_critical_path(plan, &collapsed) {
+            return Err(NavError {
+                code: DW_COLLAPSE_BURIES_PATH,
+                message: format!(
+                    "{label}: the critical path is no longer completable once this collapse \
+                     has fired — the debris buries the route ({}). A trap is proven in its \
+                     SPRUNG state, because a player will step on the trigger: either leave a \
+                     way through the rubble, drop fewer layers (a shallower `region_anchor`), \
+                     or move the collapse off the forced path",
+                    e.message
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5737,6 +6052,7 @@ mod tests {
             trigger_cell: cell,
             dispenser: None,
             payload: None,
+            payload_effects: Vec::new(),
             lethality: Lethality::Lethal,
             reset,
             disarm,

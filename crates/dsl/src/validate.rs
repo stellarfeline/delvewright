@@ -73,7 +73,7 @@ pub fn validate_campaign_with(
     // stage version.
     if is_v06(c.quests.dsl_version.as_str()) {
         v06_checks(c, items, anchors, entities, &mut d);
-        v06_trap_checks(c, items, anchors, &mut d);
+        v06_trap_checks(c, items, entities, anchors, &mut d);
         shortcut_checks(c, anchors, &mut d);
         ambush_checks(c, &mut d);
         timed_gate_checks(c, &mut d);
@@ -1639,6 +1639,26 @@ fn for_each_trigger_effect_deep(
     }
 }
 
+/// The trap-payload analogue of [`for_each_trigger_effect_deep`] (spec-0022):
+/// visit every effect of `t.payload`, descending into nested effect lists, with
+/// the JSON pointer relative to the trap. A trap payload is an effect ROOT — the
+/// same standing as a quest bundle or a trigger bundle — so every consumer scan
+/// that walks the other two walks this one too. Empty for a pure spec-0011
+/// redstone trap.
+fn for_each_trap_payload_deep(t: &crate::stages::Trap, mut f: impl FnMut(String, &QuestEffect)) {
+    fn descend(path: String, eff: &QuestEffect, f: &mut dyn FnMut(String, &QuestEffect)) {
+        f(path.clone(), eff);
+        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            for (j, inner) in list.iter().enumerate() {
+                descend(format!("{path}/{pseg}/{j}"), inner, f);
+            }
+        }
+    }
+    for (m, eff) in t.payload.iter().enumerate() {
+        descend(format!("payload/{m}"), eff, &mut f);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // DSL v0.6 — scripted actors + staging effects (spec-0014)
 // ---------------------------------------------------------------------------
@@ -2395,6 +2415,21 @@ fn v03_checks(
             });
         }
     }
+    // spec-0022: a trap payload is an effect root, so a `set-flag` /
+    // `spawn-wave` inside one is a genuine producer. Missing this would make a
+    // flag a trap produces look undeclared everywhere else (a false `DW0172`).
+    for t in &quests.traps {
+        for eff in &t.payload {
+            eff.visit_deep(&mut |e| {
+                if let Some(f) = e.set_flag() {
+                    declared_flags.insert(f.as_str());
+                }
+                if let Some(w) = e.spawn_wave() {
+                    spawned_waves.insert(w.as_str());
+                }
+            });
+        }
+    }
 
     // area id -> its single-prefab anchor set (pool areas deferred to compiler).
     let mut area_anchors: BTreeMap<&str, &BTreeSet<String>> = BTreeMap::new();
@@ -3049,6 +3084,7 @@ fn collect_declared_flags(c: &Campaign) -> BTreeSet<&str> {
 fn v06_trap_checks(
     c: &Campaign,
     items: &dyn ItemRegistry,
+    entities: &dyn EntityRegistry,
     anchors: &dyn AnchorRegistry,
     d: &mut Vec<Diagnostic>,
 ) {
@@ -3140,6 +3176,153 @@ fn v06_trap_checks(
                 ));
             }
         }
+        // spec-0022: a trap must actually DO something. Neither the legacy
+        // redstone `effect` nor a command `payload` means mute hardware that
+        // the completability proofs would still reason about — a content
+        // mistake, never a deliberate no-op.
+        if t.effect.is_none() && t.payload.is_empty() {
+            d.push(Diagnostic::error(
+                codes::TRAP_NO_CONSEQUENCE,
+                "quests",
+                format!("/content/traps/{i}"),
+                format!(
+                    "trap `{}` declares no consequence — give it a `payload` (an ordered \
+                     effect list: `volley`, `collapse`, `damage-players`, `play-sound`, \
+                     `narrate`, `set-flag`, `spawn-wave`, …). A trigger with nothing \
+                     downstream of it is scenery, not a trap",
+                    t.id
+                ),
+            ));
+        }
+        // spec-0022 payload validation: the trap-payload verbs' own ids and
+        // cadence, plus the standard flag/wave/item consumer resolution every
+        // other effect root gets.
+        for_each_trap_payload_deep(t, |path, eff| {
+            let base = format!("/content/traps/{i}/{path}");
+            match eff {
+                QuestEffect::Volley {
+                    projectile,
+                    salvos,
+                    interval,
+                    ..
+                } => {
+                    let proj = projectile
+                        .as_deref()
+                        .unwrap_or(crate::stages::DEFAULT_VOLLEY_PROJECTILE);
+                    if !entities.contains(proj) {
+                        d.push(Diagnostic::error(
+                            codes::TRAP_VERB_ID_UNKNOWN,
+                            "quests",
+                            format!("{base}/projectile"),
+                            format!(
+                                "volley `projectile` `{proj}` is not in the pinned 1.21.11 \
+                                 entity registry — use a projectile entity id (e.g. \
+                                 `minecraft:arrow`, `minecraft:spectral_arrow`)"
+                            ),
+                        ));
+                    }
+                    let n = salvos.unwrap_or(crate::stages::DEFAULT_VOLLEY_SALVOS);
+                    if n == 0 || n > crate::stages::MAX_VOLLEY_SALVOS {
+                        d.push(Diagnostic::error(
+                            codes::VOLLEY_CADENCE,
+                            "quests",
+                            format!("{base}/salvos"),
+                            format!(
+                                "volley `salvos` is {n} — must be 1..={}. A volley fires \
+                                 its whole kill zone every salvo, so the entity count is \
+                                 `salvos x standable cells`; beyond the cap that is a \
+                                 server hazard, not a trap",
+                                crate::stages::MAX_VOLLEY_SALVOS
+                            ),
+                        ));
+                    }
+                    let iv = interval.unwrap_or(crate::stages::DEFAULT_VOLLEY_INTERVAL);
+                    if iv == 0 || iv > crate::stages::MAX_VOLLEY_INTERVAL {
+                        d.push(Diagnostic::error(
+                            codes::VOLLEY_CADENCE,
+                            "quests",
+                            format!("{base}/interval"),
+                            format!(
+                                "volley `interval` is {iv} ticks — must be 1..={}. Salvos \
+                                 spaced wider than that stop reading as one trap event",
+                                crate::stages::MAX_VOLLEY_INTERVAL
+                            ),
+                        ));
+                    }
+                }
+                QuestEffect::Collapse {
+                    falling_block,
+                    then_floor,
+                    ..
+                } => {
+                    let blocks = ItemBackedBlockRegistry::new(items);
+                    let fb = falling_block
+                        .as_deref()
+                        .unwrap_or(crate::stages::DEFAULT_COLLAPSE_FALLING_BLOCK);
+                    for (field, id) in [
+                        ("falling_block", Some(fb)),
+                        ("then_floor", then_floor.as_deref()),
+                    ] {
+                        let Some(id) = id else { continue };
+                        if !blocks.contains(id) {
+                            d.push(Diagnostic::error(
+                                codes::TRAP_VERB_ID_UNKNOWN,
+                                "quests",
+                                format!("{base}/{field}"),
+                                format!(
+                                    "collapse `{field}` `{id}` is not in the pinned 1.21.11 \
+                                     block registry — use a placeable block id (e.g. \
+                                     `minecraft:gravel`, `minecraft:sand`)"
+                                ),
+                            ));
+                        }
+                    }
+                }
+                _ => {}
+            }
+            for (kind, list) in [
+                ("requires_flags", eff.requires_flags()),
+                ("forbids_flags", eff.forbids_flags()),
+            ] {
+                for (n, f) in list.iter().enumerate() {
+                    if !flags.contains(f.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::FLAG_UNKNOWN,
+                            "quests",
+                            format!("{base}/{kind}/{n}"),
+                            format!(
+                                "trap payload effect `{kind}` references flag `{f}`, which no \
+                                 `set-flag` effect ever produces — add the producing \
+                                 `set-flag {{ flag: \"{f}\" }}`, or correct the flag name"
+                            ),
+                        ));
+                    }
+                }
+            }
+            if let Some(w) = eff.spawn_wave()
+                && !c.quests.content.waves.iter().any(|x| x.id == *w)
+            {
+                d.push(Diagnostic::error(
+                    codes::WAVE_UNKNOWN,
+                    "quests",
+                    format!("{base}/wave"),
+                    format!("trap payload `spawn-wave` references unknown wave `{w}`"),
+                ));
+            }
+            if let Some(item) = eff.give_item()
+                && !items.contains(item)
+            {
+                d.push(Diagnostic::error(
+                    codes::ITEM_UNKNOWN,
+                    "quests",
+                    format!("{base}/item"),
+                    format!(
+                        "trap payload `give-item` item `{item}` is not in the pinned \
+                         1.21.11 item registry"
+                    ),
+                ));
+            }
+        });
         if let Some((item, _)) = t.dispense()
             && !items.contains(item)
         {

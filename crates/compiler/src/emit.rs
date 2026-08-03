@@ -305,14 +305,21 @@ pub fn build_with_warnings(
         }
     })?);
     let has_waves = !plan.campaign.quests.content.waves.is_empty();
-    let (moves, actor_moves, wave_placements, wave_rings, lane_routes): (
+    let (moves, actor_moves, wave_placements, wave_rings, lane_routes, payload_plans): (
         Vec<crate::nav::MovePlan>,
         Vec<crate::nav::ActorMovePlan>,
         WavePlacements,
         WaveRings,
         crate::nav::LaneRoutes,
+        PayloadPlans,
     ) = if crate::nav::needs_world(plan) || has_waves {
         {
+            // spec-0022 payload verbs need the block map (a `collapse` settles
+            // real blocks), not just the occupancy view.
+            let blocks: BTreeMap<[i32; 3], String> = match &edit_replay {
+                Some(er) => er.assembled.blocks.clone(),
+                None => crate::assembled::assembled_blocks(plan, structures),
+            };
             let world = match &edit_replay {
                 Some(er) => {
                     let mut occ = crate::assembled::occupancy_of(
@@ -412,7 +419,13 @@ pub fn build_with_warnings(
             // proven cells are what `patrol_target` carries, so the squad is only
             // ever sent somewhere it can stand and walk to.
             let lanes = crate::nav::plan_lanes(plan, &world)?;
-            (moves, actor_moves, waves, rings, lanes)
+            // spec-0022: resolve and prove every `volley` / `collapse`. Volley
+            // coverage is proven by construction (one shot per standable
+            // kill-zone cell, or DW0442 naming the cell it cannot reach), and a
+            // collapse must leave the critical path completable in its SPRUNG
+            // state (DW0445).
+            let payloads = plan_payload_verbs(plan, &world, &blocks)?;
+            (moves, actor_moves, waves, rings, lanes, payloads)
         }
     } else {
         (
@@ -421,6 +434,7 @@ pub fn build_with_warnings(
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
+            PayloadPlans::default(),
         )
     };
 
@@ -518,6 +532,7 @@ pub fn build_with_warnings(
             er.batches.iter().filter_map(|b| b.bounds).collect()
         }),
         &trap_gates,
+        &payload_plans,
     );
     for (name, body) in &functions {
         insert_unique(
@@ -569,6 +584,7 @@ pub fn build_with_warnings(
         &actor_moves,
         &lane_routes,
         &wave_rings,
+        &payload_plans,
     );
 
     // ---- creator overlay (playtest-only; spec-0006) ----
@@ -1016,6 +1032,7 @@ fn emit_functions(
     world_edits: &[String],
     edit_bounds: &[([i32; 3], [i32; 3])],
     trap_gates: &BTreeMap<String, String>,
+    payloads: &PayloadPlans,
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -2298,6 +2315,10 @@ fn emit_functions(
     fns.extend(cutscene_fns(plan, moves, actor_moves));
     fns.extend(env_trigger_fns(plan));
     fns.extend(trap_fns(plan, trap_gates));
+    // spec-0022: the proven per-cell volley geometry and the settled collapse
+    // debris. Empty for a campaign using neither verb (byte-identical).
+    fns.extend(volley_fns(plan, payloads));
+    fns.extend(collapse_fns(plan, payloads));
     fns.extend(boundary_fns(plan));
     fns.extend(night_vision_fns(plan));
 
@@ -3158,6 +3179,15 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         }
         QuestEffect::EndStealth => {
             body.push("scoreboard players set #stealth dw.sys 0".to_string());
+        }
+        // spec-0022 trap-payload verbs. Both lower to a call into a generated
+        // function whose body is the PROVEN geometry (per-cell velocity vectors
+        // / settled debris), so the effect site itself carries no coordinates.
+        QuestEffect::Volley { .. } => {
+            body.push(format!("function {ns}:{}", volley_fn(eff)));
+        }
+        QuestEffect::Collapse { .. } => {
+            body.push(format!("function {ns}:{}", collapse_fn(eff)));
         }
         // --- DSL v0.6 actor staging effects (spec-0014) ---
         QuestEffect::SpawnActor { actor } => {
@@ -4145,6 +4175,15 @@ fn all_campaign_effects(c: &delvewright_dsl::Campaign) -> Vec<&QuestEffect> {
             push_effect_deep(e, &mut out);
         }
     }
+    // spec-0022: a trap `payload` is an effect root of the same standing as a
+    // quest bundle or a trigger bundle. Without this, a `sequence`/`cutscene`
+    // inside a payload would never get its generated function and the payload's
+    // `function <ns>:…` call would dangle.
+    for t in &c.quests.content.traps {
+        for e in &t.payload {
+            push_effect_deep(e, &mut out);
+        }
+    }
     out
 }
 
@@ -4522,6 +4561,30 @@ fn sequence_key(steps: &[delvewright_dsl::SequenceStep]) -> String {
 /// The generated start-function name for a `sequence` effect (content key).
 fn sequence_fn(steps: &[delvewright_dsl::SequenceStep]) -> String {
     format!("seq_{}", sequence_key(steps))
+}
+
+/// The content key naming a spec-0022 trap-payload verb's generated function.
+/// FNV-1a over the effect's stable `Debug` rendering — the same scheme
+/// [`sequence_key`] uses, so two identical `volley`s share one function and a
+/// campaign's output is a pure function of its content (ADR-0006).
+fn payload_verb_key(eff: &QuestEffect) -> String {
+    let s = format!("{eff:?}");
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in s.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
+/// The generated function name for a `volley` effect.
+fn volley_fn(eff: &QuestEffect) -> String {
+    format!("volley_{}", payload_verb_key(eff))
+}
+
+/// The generated function name for a `collapse` effect.
+fn collapse_fn(eff: &QuestEffect) -> String {
+    format!("collapse_{}", payload_verb_key(eff))
 }
 
 /// Actor staging functions (spec-0014): a `spawn_actor_<id>` (idempotent summon) and
@@ -5361,6 +5424,19 @@ fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<Stri
                 disp[0], disp[1], disp[2]
             ));
         }
+        // spec-0022: a `trapped-chest` trigger with a command payload needs a
+        // detection surface, and the only player-distinct one vanilla offers is
+        // the v0.4 interaction entity (`use`) — the SAME primitive the disarm
+        // affordance already uses. Reading the chest's redstone output would be
+        // block-power polling, which spec-0011 excluded as folklore.
+        if !t.payload_effects.is_empty() && t.trigger == delvewright_dsl::TrapTrigger::TrappedChest
+        {
+            let v = ent_xyz(t.trigger_cell);
+            out.push(format!(
+                "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_trapfire_{}\"]}}",
+                v[0], v[1], v[2], t.safe
+            ));
+        }
         // Summon the disarm interaction affordance (a right-click target). The
         // physical lever may also be in the prefab; this entity is the modeled,
         // provable disarm the compiler owns.
@@ -5381,6 +5457,15 @@ fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<Stri
 fn trap_tick(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
+    // spec-0022: fire the command payload when the trigger is sprung. Redstone
+    // keeps exactly one job — being the visible, learnable trigger — and the
+    // consequence is commands, so the compiler owns the detection tick.
+    //
+    // Detection reuses the two primitives already in the compiler and adds none:
+    // a plate/tripwire is a POSITION test on the trigger cell (the `reach-anchor`
+    // idiom), a trapped chest is the v0.4 interaction `use`. Neither reads block
+    // power — that would be the polling hack spec-0011 excluded.
+    out.extend(trap_fire_tick(plan));
     for t in &plan.traps {
         if t.disarm.is_none() {
             continue;
@@ -5426,7 +5511,365 @@ fn trap_fns(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<(Strin
         }
         out.push((format!("trap_disarm_{id}"), lines(&body)));
     }
+    out.extend(trap_payload_fns(plan));
     out.extend(trap_gate_fns(plan, gate_hardware));
+    out
+}
+
+// ---------------------------------------------------------------------------
+// spec-0022 — trap payload verbs (`volley`, `collapse`)
+// ---------------------------------------------------------------------------
+
+/// `DW0447`: a trap-payload verb centres its volume on an anchor no placed
+/// prefab piece provides, so the kill zone / collapse region cannot be resolved.
+pub const DW_PAYLOAD_ANCHOR_UNRESOLVED: &str = "DW0447";
+
+/// A planned `volley`: the proven per-cell geometry plus its authored cadence.
+struct VolleyEmit {
+    key: String,
+    geom: crate::nav::VolleyGeometry,
+    projectile: String,
+    salvos: u32,
+    interval: u32,
+}
+
+/// A planned `collapse`: the settled debris plus its authored materials.
+struct CollapseEmit {
+    key: String,
+    geom: crate::nav::CollapseGeometry,
+    falling_block: String,
+    then_floor: Option<String>,
+}
+
+/// Every spec-0022 payload verb in the campaign, resolved and proven. Empty for
+/// a campaign that uses none, so its output stays byte-identical.
+#[derive(Default)]
+struct PayloadPlans {
+    volleys: Vec<VolleyEmit>,
+    collapses: Vec<CollapseEmit>,
+}
+
+/// Resolve and PROVE every `volley` / `collapse` in the campaign against the
+/// assembled world (spec-0022).
+///
+/// Coverage is proven by construction: [`crate::nav::plan_volley`] returns one
+/// shot per standable kill-zone cell or an error naming the cell it cannot
+/// reach, and the emitter writes exactly those shots. There is no path by which
+/// a volley ships covering less than its declared zone.
+fn plan_payload_verbs(
+    plan: &Plan,
+    world: &crate::nav::World,
+    blocks: &BTreeMap<[i32; 3], String>,
+) -> Result<PayloadPlans, BuildFailure> {
+    let mut out = PayloadPlans::default();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    for eff in all_campaign_effects(plan.campaign) {
+        let key = payload_verb_key(eff);
+        if let Some((projectile, from_anchor, kill_zone, salvos, interval)) = eff.volley() {
+            if !seen.insert(format!("v{key}")) {
+                continue;
+            }
+            let label = format!("volley from `{from_anchor}` into `{}`", kill_zone.anchor);
+            let from = plan
+                .point_any(from_anchor.as_str())
+                .ok_or_else(|| payload_anchor_failure(&label, from_anchor.as_str()))?;
+            let region = plan
+                .zone_box(kill_zone)
+                .ok_or_else(|| payload_anchor_failure(&label, kill_zone.anchor.as_str()))?;
+            let geom = crate::nav::plan_volley(world, from, region, &label)?;
+            out.volleys.push(VolleyEmit {
+                key,
+                geom,
+                projectile: projectile.to_string(),
+                salvos,
+                interval,
+            });
+        } else if let Some((region_anchor, falling_block, then_floor)) = eff.collapse() {
+            if !seen.insert(format!("c{key}")) {
+                continue;
+            }
+            let label = format!("collapse of `{}`", region_anchor.anchor);
+            let region = plan
+                .zone_box(region_anchor)
+                .ok_or_else(|| payload_anchor_failure(&label, region_anchor.anchor.as_str()))?;
+            let geom = crate::nav::plan_collapse(world, blocks, region, &label)?;
+            out.collapses.push(CollapseEmit {
+                key,
+                geom,
+                falling_block: falling_block.to_string(),
+                then_floor: then_floor.map(str::to_string),
+            });
+        }
+    }
+    // A trap is proven in its SPRUNG state (see `check_collapses`).
+    let labelled: Vec<(String, crate::nav::CollapseGeometry)> = out
+        .collapses
+        .iter()
+        .map(|c| (format!("collapse `{}`", c.key), c.geom.clone()))
+        .collect();
+    crate::nav::check_collapses(plan, world, &labelled)?;
+    Ok(out)
+}
+
+/// The `DW0441` failure for a payload-verb anchor that no placed piece provides.
+fn payload_anchor_failure(label: &str, anchor: &str) -> BuildFailure {
+    BuildFailure::Diagnostic {
+        code: DW_PAYLOAD_ANCHOR_UNRESOLVED,
+        message: format!(
+            "{label}: anchor `{anchor}` is not provided by any placed prefab piece, so the \
+             volume it centres cannot be resolved. Use an anchor name the prefab metadata \
+             actually exposes (anchor names come from prefab metadata; do NOT invent one)"
+        ),
+    }
+}
+
+/// Format a `Motion` component deterministically. Fixed precision, so the same
+/// DSL and seed produce byte-identical NBT on every platform (ADR-0006).
+fn motion_component(v: f64) -> String {
+    format!("{v:.6}")
+}
+
+/// The generated functions for every `volley` (spec-0022).
+///
+/// One start function fans out into one function per salvo — the `sequence`
+/// scheduling shape, so a volley costs **nothing per tick**: no polling, no
+/// clock, just `schedule` hops the server owns. Each salvo function is:
+///
+/// 1. the **saturation** — one projectile per standable kill-zone cell,
+///    unconditional, with the compile-time velocity that reaches that cell. This
+///    is the contract: the zone is blanketed, so a player inside it is hit no
+///    matter which cell they are standing in, and moving between salvos does not
+///    help.
+/// 2. the **aimed extra** — a second projectile toward whichever cells actually
+///    hold a player this tick, selected by a plain vanilla block-volume selector
+///    (`@a[x=…,dx=0,…]`). Standing still therefore costs double fire, exactly as
+///    spec-0022 asks, using only compile-time velocities: no runtime vector
+///    arithmetic, no scoreboard math, no folklore.
+///
+/// Projectiles are summoned `NoGravity` so the flown path is the straight
+/// segment the coverage proof checked, and `crit:0b` so damage is deterministic
+/// (a random crit bonus would make the PackTest flaky).
+fn volley_fns(plan: &Plan, payloads: &PayloadPlans) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for v in &payloads.volleys {
+        let base = format!("volley_{}", v.key);
+        let mut start: Vec<String> = Vec::new();
+        for i in 0..v.salvos {
+            let at = i * v.interval;
+            if at == 0 {
+                start.push(format!("function {ns}:{base}_s{i}"));
+            } else {
+                start.push(format!("schedule function {ns}:{base}_s{i} {at}t"));
+            }
+        }
+        out.push((base.clone(), lines(&start)));
+
+        let src = crate::nav::volley_source(v.geom.from);
+        let pos = format!(
+            "{} {} {}",
+            motion_component(src[0]),
+            motion_component(src[1]),
+            motion_component(src[2])
+        );
+        let mut body: Vec<String> = Vec::new();
+        for shot in &v.geom.shots {
+            body.push(format!(
+                "summon {} {pos} {{Motion:[{}d,{}d,{}d],NoGravity:1b,crit:0b,pickup:0b}}",
+                v.projectile,
+                motion_component(shot.motion[0]),
+                motion_component(shot.motion[1]),
+                motion_component(shot.motion[2])
+            ));
+        }
+        for shot in &v.geom.shots {
+            let c = shot.cell;
+            body.push(format!(
+                "execute if entity @a[x={},dx=0,y={},dy=0,z={},dz=0,tag=!{CUTSCENE_TAG}] run \
+                 summon {} {pos} {{Motion:[{}d,{}d,{}d],NoGravity:1b,crit:0b,pickup:0b}}",
+                c[0],
+                c[1],
+                c[2],
+                v.projectile,
+                motion_component(shot.motion[0]),
+                motion_component(shot.motion[1]),
+                motion_component(shot.motion[2])
+            ));
+        }
+        let salvo_body = lines(&body);
+        for i in 0..v.salvos {
+            out.push((format!("{base}_s{i}"), salvo_body.clone()));
+        }
+    }
+    out
+}
+
+/// Ticks of slack allowed for debris to finish falling before `then_floor`
+/// paves the landing surface. A falling block accelerates at 0.04 b/t², so this
+/// is generous for any box-garden room height.
+const COLLAPSE_SETTLE_SLACK: i32 = 20;
+
+/// The generated functions for every `collapse` (spec-0022).
+///
+/// Summon one `falling_block` per region cell that holds a block, then delete
+/// the region. `HurtEntities` gives the impact damage; the debris pile then
+/// suffocates whoever it lands on — the buried-alive beat redstone cannot
+/// express at all. When `then_floor` is authored, a scheduled second function
+/// paves the settled surface once the rubble has landed.
+fn collapse_fns(plan: &Plan, payloads: &PayloadPlans) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for c in &payloads.collapses {
+        let base = format!("collapse_{}", c.key);
+        let mut body: Vec<String> = Vec::new();
+        for cell in &c.geom.drops {
+            body.push(format!(
+                "summon minecraft:falling_block {} {} {} \
+                 {{BlockState:{{Name:\"{}\"}},Time:1,DropItem:0b,HurtEntities:1b,\
+                 FallHurtMax:40,FallHurtAmount:2.0f}}",
+                f64::from(cell[0]) + 0.5,
+                cell[1],
+                f64::from(cell[2]) + 0.5,
+                c.falling_block
+            ));
+        }
+        let (lo, hi) = c.geom.region;
+        body.push(format!(
+            "fill {} {} {} {} {} {} minecraft:air",
+            lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]
+        ));
+        if c.then_floor.is_some() {
+            let delay = c.geom.max_fall * 4 + COLLAPSE_SETTLE_SLACK;
+            body.push(format!("schedule function {ns}:{base}_floor {delay}t"));
+        }
+        out.push((base.clone(), lines(&body)));
+        if let Some(floor) = &c.then_floor {
+            // Pave only the TOP cell of each debris column: the surface the
+            // party walks on afterwards, which is what the completability proof
+            // reasoned about.
+            let mut tops: BTreeMap<[i32; 2], i32> = BTreeMap::new();
+            for d in &c.geom.debris {
+                let e = tops.entry([d[0], d[2]]).or_insert(d[1]);
+                *e = (*e).max(d[1]);
+            }
+            let floor_body: Vec<String> = tops
+                .into_iter()
+                .map(|(col, y)| format!("setblock {} {y} {} {floor}", col[0], col[1]))
+                .collect();
+            out.push((format!("{base}_floor"), lines(&floor_body)));
+        }
+    }
+    out
+}
+
+/// The guard clauses that must hold for a trap's command payload to fire: the
+/// flag gate (when the trap declares one) and the disarm latch (when it has a
+/// disarm affordance).
+///
+/// The disarm latch is load-bearing in a way it was not for a redstone trap:
+/// emptying a dispenser stopped a `dispense` trap for everyone, but a command
+/// payload has no ammunition to remove, so "disarmed" has to be read at fire
+/// time or the affordance would be decorative.
+fn trap_fire_guard(t: &plan::TrapPlan) -> String {
+    let mut g = String::new();
+    if trap_is_gated(t) {
+        g.push_str(&format!("if score #trapgate_{} dw.sys matches 1 ", t.safe));
+    }
+    if t.disarm.is_some() {
+        g.push_str(&format!(
+            "unless score #trapdis_{} dw.sys matches 1 ",
+            t.safe
+        ));
+    }
+    g
+}
+
+/// Per-tick trigger detection for traps carrying a spec-0022 command payload.
+///
+/// Edge-triggered on a per-trap sentinel (`#trapfire_<safe>`), so stepping onto
+/// a plate fires the payload ONCE rather than every tick the player stands
+/// there. A `rearm` trap clears the sentinel when the trigger cell is vacated
+/// (the plate pops back up); a `once` trap never clears it, which is exactly the
+/// survivability discharge `DW0342` reasons about.
+///
+/// A trap with no command payload emits nothing here, so every spec-0011
+/// campaign stays byte-identical.
+fn trap_fire_tick(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for t in &plan.traps {
+        if t.payload_effects.is_empty() {
+            continue;
+        }
+        let id = &t.safe;
+        let guard = trap_fire_guard(t);
+        match t.trigger {
+            delvewright_dsl::TrapTrigger::TrappedChest => {
+                out.push(format!(
+                    "execute unless score #trapfire_{id} dw.sys matches 1 {guard}if entity \
+                     @e[tag=dw_trapfire_{id},nbt={{interaction:{{}}}}] run function \
+                     {ns}:trap_fire_{id}"
+                ));
+                out.push(format!(
+                    "execute as @e[tag=dw_trapfire_{id}] run data remove entity @s interaction"
+                ));
+                if matches!(t.reset, delvewright_dsl::TrapReset::Rearm) {
+                    out.push(format!(
+                        "execute unless entity @e[tag=dw_trapfire_{id},nbt={{interaction:{{}}}}] \
+                         run scoreboard players set #trapfire_{id} dw.sys 0"
+                    ));
+                }
+            }
+            delvewright_dsl::TrapTrigger::PressurePlate
+            | delvewright_dsl::TrapTrigger::Tripwire => {
+                let c = t.trigger_cell;
+                let at = format!(
+                    "x={},dx=0,y={},dy=0,z={},dz=0,tag=!{CUTSCENE_TAG}",
+                    c[0], c[1], c[2]
+                );
+                out.push(format!(
+                    "execute unless score #trapfire_{id} dw.sys matches 1 {guard}if entity \
+                     @a[{at}] run function {ns}:trap_fire_{id}"
+                ));
+                if matches!(t.reset, delvewright_dsl::TrapReset::Rearm) {
+                    out.push(format!(
+                        "execute unless entity @a[{at}] run scoreboard players set \
+                         #trapfire_{id} dw.sys 0"
+                    ));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The `trap_fire_<id>` function per command-payload trap (spec-0022): latch the
+/// sentinel, then run the authored payload bundle.
+///
+/// The bundle is emitted under [`Audience::Scheduled`] — there is no acting
+/// player. That is the honest audience for a trap: the dungeon fires at the
+/// party, not at whoever happened to touch the plate, and a `volley` salvo chain
+/// re-enters under the server command source anyway (where `@s` resolves to
+/// nothing). Player-facing effects therefore address `@a`, and a `carrier: "one"`
+/// hand-off has no answer here — the same structural guarantee scheduled
+/// sequences have.
+fn trap_payload_fns(plan: &Plan) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for t in &plan.traps {
+        if t.payload_effects.is_empty() {
+            continue;
+        }
+        let mut body = vec![format!(
+            "scoreboard players set #trapfire_{} dw.sys 1",
+            t.safe
+        )];
+        body.extend(emit_effect_bundle(
+            plan,
+            &t.payload_effects,
+            Audience::Scheduled,
+        ));
+        out.push((format!("trap_fire_{}", t.safe), lines(&body)));
+    }
     out
 }
 
@@ -6356,6 +6799,7 @@ fn emit_packtest(
     actor_moves: &[crate::nav::ActorMovePlan],
     lane_routes: &crate::nav::LaneRoutes,
     wave_rings: &WaveRings,
+    payloads: &PayloadPlans,
 ) {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -6506,6 +6950,7 @@ fn emit_packtest(
     // v0.6: trap payload loads into the dispenser; a disarm empties it (spec-0011).
     // Emits nothing when the campaign declares no traps.
     emit_trap_packtests(plan, out);
+    emit_payload_packtests(plan, out, payloads);
     // spec-0016 §1: resting at a bonfire moves the party respawn point and
     // re-seats its `respawns_on_rest` waves. Emits nothing without a bonfire.
     emit_bonfire_packtests(plan, out);
@@ -6989,6 +7434,157 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
         lines(&b).into_bytes(),
     );
     emit_trap_gate_packtest(plan, out);
+}
+
+/// spec-0022 PackTests: the **saturation contract** and the collapse, asserted
+/// on a live pinned server.
+///
+/// The volley test is the runtime half of the owner's ruling (2026-08-03). It
+/// runs the REAL emitted salvo function and then asserts, per standable
+/// kill-zone cell, that a projectile exists on the exact trajectory that reaches
+/// it — so "the volley blankets its zone" is checked in the game, not just in
+/// the compiler. A dummy is parked in one cell, and then MOVED to another
+/// between salvos, and each time the occupied cell must show the extra aimed
+/// shot on top of the saturation one.
+///
+/// Assertions are **presence/count based, never "kill everything first"**: this
+/// suite runs as one batch on a shared server, so a template that cleared all
+/// arrows would sabotage its neighbours. Counting a trajectory that only this
+/// volley can produce is residue-robust.
+///
+/// Boundary worth stating: impact DAMAGE cannot be asserted here. The template
+/// harness is synchronous (its only directives are `@dummy` / `@timeout`, with
+/// no wait primitive), and an arrow needs ticks of flight to land. What the
+/// compiler pins instead is everything damage is a function of — `NoGravity` so
+/// the flight path is the proven straight segment, `crit:0b` so the roll is not
+/// random, and the exact `Motion` magnitude — leaving the landed-damage check to
+/// the tier-3 bot playthrough.
+fn emit_payload_packtests(plan: &Plan, out: &mut BuildOutput, payloads: &PayloadPlans) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+
+    if let Some(v) = payloads.volleys.first() {
+        let base = format!("volley_{}", v.key);
+        let tag = "dw_pt_volley";
+        let mut b = packtest_header(&format!(
+            "{title}: a volley saturates every standable cell of its kill zone (spec-0022)"
+        ));
+        b.push(format!("function {ns}:setup"));
+        // Pin our own dummy BEFORE any teleport to absolute campaign coords —
+        // `@p` would otherwise retarget to a neighbouring test's dummy.
+        b.push(format!("tag @p add {tag}"));
+
+        let motion_nbt = |m: [f64; 3]| {
+            format!(
+                "{{Motion:[{}d,{}d,{}d]}}",
+                motion_component(m[0]),
+                motion_component(m[1]),
+                motion_component(m[2])
+            )
+        };
+        let count_line = |i: usize, m: [f64; 3], holder: &str| {
+            format!(
+                "execute store result score #{holder}{i} dw.sys if entity \
+                 @e[type={},nbt={}]",
+                "minecraft:arrow",
+                motion_nbt(m)
+            )
+        };
+        // Baselines first: "never set" is not 0 on the shared-batch server.
+        for (i, shot) in v.geom.shots.iter().enumerate() {
+            b.push(count_line(i, shot.motion, "vbase_"));
+        }
+        // Park the dummy in the FIRST zone cell, then fire salvo 0.
+        let c0 = v.geom.shots[0].cell;
+        b.push(format!(
+            "tp @a[tag={tag}] {} {} {}",
+            f64::from(c0[0]) + 0.5,
+            c0[1],
+            f64::from(c0[2]) + 0.5
+        ));
+        b.push(format!("function {ns}:{base}_s0"));
+        for (i, shot) in v.geom.shots.iter().enumerate() {
+            b.push(count_line(i, shot.motion, "vpost_"));
+            // Saturation: EVERY cell gains at least one projectile on its own
+            // trajectory, whether or not anyone is standing there. This single
+            // family of assertions is the ruling.
+            b.push(format!(
+                "execute store result score #vgain_{i} dw.sys run scoreboard players get \
+                 #vpost_{i} dw.sys"
+            ));
+            b.push(format!(
+                "scoreboard players operation #vgain_{i} dw.sys -= #vbase_{i} dw.sys"
+            ));
+            let want = if i == 0 { 2 } else { 1 };
+            b.push(format!("assert score #vgain_{i} dw.sys matches {want}.."));
+        }
+        // …and MOVING between salvos does not help: the dummy relocates to a
+        // different cell and that cell now takes the extra aimed shot too.
+        if v.geom.shots.len() > 1 && v.salvos > 1 {
+            let c1 = v.geom.shots[1].cell;
+            b.push(format!(
+                "tp @a[tag={tag}] {} {} {}",
+                f64::from(c1[0]) + 0.5,
+                c1[1],
+                f64::from(c1[2]) + 0.5
+            ));
+            for (i, shot) in v.geom.shots.iter().enumerate() {
+                b.push(count_line(i, shot.motion, "vmid_"));
+            }
+            b.push(format!("function {ns}:{base}_s1"));
+            for (i, shot) in v.geom.shots.iter().enumerate() {
+                b.push(count_line(i, shot.motion, "vend_"));
+                b.push(format!(
+                    "execute store result score #vg2_{i} dw.sys run scoreboard players get \
+                     #vend_{i} dw.sys"
+                ));
+                b.push(format!(
+                    "scoreboard players operation #vg2_{i} dw.sys -= #vmid_{i} dw.sys"
+                ));
+                let want = if i == 1 { 2 } else { 1 };
+                b.push(format!("assert score #vg2_{i} dw.sys matches {want}.."));
+            }
+        }
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/v06_volley.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+
+    if let Some(c) = payloads.collapses.first() {
+        let base = format!("collapse_{}", c.key);
+        let mut b = packtest_header(&format!(
+            "{title}: a collapse deletes its region and drops it as falling blocks (spec-0022)"
+        ));
+        b.push(format!("function {ns}:setup"));
+        // Baseline the falling-block population, then bring the roof down.
+        b.push(
+            "execute store result score #cbase dw.sys if entity @e[type=minecraft:falling_block]"
+                .to_string(),
+        );
+        b.push(format!("function {ns}:{base}"));
+        b.push(
+            "execute store result score #cpost dw.sys if entity @e[type=minecraft:falling_block]"
+                .to_string(),
+        );
+        b.push("scoreboard players operation #cpost dw.sys -= #cbase dw.sys".to_string());
+        b.push(format!(
+            "assert score #cpost dw.sys matches {}..",
+            c.geom.drops.len()
+        ));
+        // The region is genuinely gone — this is what the completability proof
+        // reasoned about, so it has to be true in the world too.
+        for cell in &c.geom.drops {
+            b.push(format!(
+                "assert block {} {} {} minecraft:air",
+                cell[0], cell[1], cell[2]
+            ));
+        }
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/v06_collapse.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
 }
 
 /// v0.6 trap **flag-gate** PackTest (spec-0011): the gate physically removes and

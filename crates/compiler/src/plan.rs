@@ -233,6 +233,10 @@ pub struct TrapPlan {
     pub dispenser: Option<[i32; 3]>,
     /// The dispense payload `(item, count)` this trap loads, if any.
     pub payload: Option<(String, u32)>,
+    /// The spec-0022 **command payload**: the ordered effect bundle the trigger
+    /// fires. Empty for a pure spec-0011 redstone trap, which is what keeps such
+    /// a campaign's output byte-identical.
+    pub payload_effects: Vec<QuestEffect>,
     /// How dangerous the trap is.
     pub lethality: Lethality,
     /// Whether the trap re-arms after firing.
@@ -1219,6 +1223,25 @@ impl<'a> Plan<'a> {
         })
     }
 
+    /// Resolve an anchor-centred box (spec-0022) to absolute inclusive corners:
+    /// `anchor ± extent`, the same shape `begin-stealth` zones and
+    /// `damage-players`'s `in` filter use. `None` when no placed piece provides
+    /// the anchor.
+    ///
+    /// This — not a prefab `region` anchor — is how the trap-payload verbs
+    /// describe a volume, because [`crate::assembled`] unconditionally CLEARS
+    /// every `ResolvedAnchor::Gate` region from the assembled world. A `collapse`
+    /// ceiling declared as a region anchor would be deleted at build time, and a
+    /// `volley` kill zone would silently punch a hole in the geometry it names.
+    pub fn zone_box(&self, zone: &delvewright_dsl::StealthZone) -> Option<([i32; 3], [i32; 3])> {
+        let c = self.point_any(zone.anchor.as_str())?;
+        let e = zone.extent;
+        Some((
+            [c[0] - e[0] as i32, c[1] - e[1] as i32, c[2] - e[2] as i32],
+            [c[0] + e[0] as i32, c[1] + e[1] as i32, c[2] + e[2] as i32],
+        ))
+    }
+
     /// Whether any collected checkpoint carries an `on_respawn` hook — gates the
     /// vanilla respawn-detection machinery so checkpoint-free / hook-free campaigns
     /// stay byte-identical (DSL v0.6, spec-0012).
@@ -2190,6 +2213,7 @@ fn collect_traps(
             .find(|((_, name), _)| name == t.at.as_str())
             .map(|(_, cell)| *cell);
         let payload = t.dispense().map(|(item, count)| (item.to_string(), count));
+        let payload_effects = t.payload.clone();
         let disarm = t.disarm.as_ref().and_then(|dis| {
             point_any(anchors, dis.via.as_str()).map(|via_cell| TrapDisarmPlan {
                 via_anchor: dis.via.as_str().to_string(),
@@ -2205,6 +2229,7 @@ fn collect_traps(
             trigger_cell,
             dispenser,
             payload,
+            payload_effects,
             lethality: t.lethality,
             reset: t.reset,
             disarm,

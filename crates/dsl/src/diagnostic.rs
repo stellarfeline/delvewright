@@ -284,6 +284,23 @@ pub mod codes {
     /// spec's stale reserved number (0198 — since taken).
     pub const TRAP_PAYLOAD_UNKNOWN: &str = "DW0341";
 
+    /// (spec-0022) A trap declares **no consequence at all**: neither the legacy
+    /// redstone `effect` nor a command `payload`. A trap that does nothing is
+    /// mute hardware the completability proofs would nonetheless reason about,
+    /// so it is a content mistake, not a no-op. Validation-tier (exit 1).
+    pub const TRAP_NO_CONSEQUENCE: &str = "DW0440";
+    /// (spec-0022) A `volley` `projectile` / `collapse` `falling_block` /
+    /// `then_floor` id is not in the pinned 1.21.11 registry (a `projectile`
+    /// must be an ENTITY id, the collapse blocks BLOCK ids).
+    /// Validation-tier (exit 1).
+    pub const TRAP_VERB_ID_UNKNOWN: &str = "DW0441";
+    /// (spec-0022) A `volley`'s `salvos` / `interval` is out of range (`salvos`
+    /// in `1..=16`, `interval` in `1..=200`). A volley fires its whole kill zone
+    /// every salvo, so the entity count is `salvos x cells`; and salvos spread
+    /// wider than the interval cap stop reading as one trap event.
+    /// Validation-tier (exit 1).
+    pub const VOLLEY_CADENCE: &str = "DW0443";
+
     /// (v0.6) A `shot_style` declaration is semantically invalid (spec-0015 shot
     /// grammar): a styled shot with no `subject`; style-only fields (`subject`,
     /// `subject_b`, `dist`, `degrees`, `bearing`) on an unstyled shot; a

@@ -881,8 +881,26 @@ pub struct Trap {
     pub at: AnchorId,
     /// What springs the trap (all redstone-native).
     pub trigger: TrapTrigger,
-    /// What the trap does when sprung.
-    pub effect: TrapEffect,
+    /// The **legacy** redstone consequence (spec-0011): a static dispenser
+    /// payload the prefab's own wiring fires. Superseded by [`Trap::payload`]
+    /// (spec-0022) — redstone now keeps only the trigger — but kept meaningful
+    /// so existing campaigns build unchanged. Optional since spec-0022; a trap
+    /// must declare `effect`, `payload`, or both (`DW0440`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect: Option<TrapEffect>,
+    /// The **command payload** (spec-0022): an ordered effect list in the same
+    /// vocabulary quests use, run when the trigger fires. This is where a trap's
+    /// consequence lives now — the compiler owns the detection tick and the
+    /// effect vocabulary, so a trap's payload is authored like any other effect
+    /// bundle rather than built out of dust and repeaters. Expressiveness moves
+    /// from "what dust can carry" to "what the effect vocabulary can say":
+    /// `volley` and `collapse` (spec-0022's trap verbs) join `damage-players`,
+    /// `play-sound`, `narrate`, `set-flag` and `spawn-wave`.
+    ///
+    /// Empty = a pure spec-0011 redstone trap, which emits exactly what it
+    /// emitted before (byte-identical).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub payload: Vec<QuestEffect>,
     /// How dangerous the trap is. A `lethal` trap on the forced critical path
     /// carries the completability obligation (`DW0342`); `harmful`/`nonlethal`
     /// carry none. Defaults to `harmful`.
@@ -908,10 +926,11 @@ pub struct Trap {
 }
 
 impl Trap {
-    /// `(item, count)` if this trap's effect is a `dispense` payload.
+    /// `(item, count)` if this trap declares a legacy `dispense` effect.
     pub fn dispense(&self) -> Option<(&str, u32)> {
         match &self.effect {
-            TrapEffect::Dispense { item, count } => Some((item.as_str(), *count)),
+            Some(TrapEffect::Dispense { item, count }) => Some((item.as_str(), *count)),
+            None => None,
         }
     }
 
@@ -2322,6 +2341,91 @@ pub enum QuestEffect {
         /// Timeline steps; each fires its `effects` at `at_ticks` from the start.
         steps: Vec<SequenceStep>,
     },
+    /// **Saturating projectile volley** (DSL v0.6, spec-0022): command-summoned
+    /// projectiles with real velocity vectors, fired from a gallery slot into a
+    /// declared kill zone.
+    ///
+    /// The contract is **saturation, not sniping** (owner ruling 2026-08-03).
+    /// Every salvo puts one projectile on the trajectory to **every standable
+    /// cell of `kill_zone`**, plus one aimed at the triggering player's
+    /// fire-time position (which punishes standing still). A player therefore
+    /// cannot dodge a volley by strafing — escaping means *leaving the zone*, a
+    /// decision rather than a lucky step. Coverage is proven at compile time:
+    /// `from_anchor` must have clear line of fire to every standable kill-zone
+    /// cell (`DW0442`), so "the gallery slot can actually hit a player anywhere
+    /// on the stairs" is a build-time fact, not a hope.
+    ///
+    /// Projectiles are summoned `NoGravity` so the flown path is exactly the
+    /// straight segment the coverage proof checks — proof and runtime share one
+    /// geometry. Drag scales speed but not direction, so the line is preserved.
+    Volley {
+        /// Projectile entity id (default `minecraft:arrow`; validated against
+        /// the pinned 1.21.11 registry, `DW0441`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        projectile: Option<String>,
+        /// The gallery slot the volley is fired FROM — a point anchor. Its cell
+        /// must be clear (a projectile spawned inside a wall never leaves it).
+        from_anchor: AnchorId,
+        /// The zone the volley must blanket, as an anchor-centred box
+        /// (`anchor ± extent`) — the same shape `damage-players`'s `in` and
+        /// `begin-stealth`'s `zones` use. Every standable cell in it receives
+        /// fire each salvo.
+        ///
+        /// Deliberately NOT a bare prefab `region` anchor: the assembled model
+        /// clears every gate-region anchor's cells unconditionally, so
+        /// describing a zone that way would delete the geometry it names.
+        kill_zone: StealthZone,
+        /// How many rounds the pattern repeats (default 3, `DW0443` bounds it).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        salvos: Option<u32>,
+        /// Ticks between salvos (default 10, `DW0443` bounds it).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        interval: Option<u32>,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
+    },
+    /// **Ceiling collapse** (DSL v0.6, spec-0022): delete a region's blocks and
+    /// drop them as `falling_block` entities — the buried-alive trap redstone
+    /// cannot express at all.
+    ///
+    /// The post-collapse world is **modeled, not guessed**: the compiler clears
+    /// the region, settles every dropped column through the existing gravity
+    /// model (spec-0010), optionally paves the landing surface with
+    /// `then_floor`, and re-runs the critical-path completability proof against
+    /// that mutated world (`DW0445`). A collapse that buries the only route is a
+    /// build error, exactly as a `shortcut` seal that strands the party is.
+    Collapse {
+        /// The volume whose blocks fall, as an anchor-centred box
+        /// (`anchor ± extent`). Must hold blocks and sit above standable footing
+        /// (`DW0444`) — a collapse over nothing is scenery, not a trap.
+        ///
+        /// An anchor-centred box rather than a prefab `region` anchor for a
+        /// load-bearing reason: the assembled model deletes every gate-region
+        /// anchor's cells, so a ceiling slab declared that way would already be
+        /// gone before the trap ever fired.
+        region_anchor: StealthZone,
+        /// The block the falling entities are made of (default
+        /// `minecraft:gravel`; validated against the pinned registry, `DW0441`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        falling_block: Option<String>,
+        /// Optional block the landing surface is paved with once the debris
+        /// settles — the authored post-collapse floor the completability proof
+        /// reasons over.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        then_floor: Option<String>,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
+    },
 }
 
 /// `Debug` is hand-written because it is a **stable content-key rendering**: the
@@ -2587,6 +2691,41 @@ impl std::fmt::Debug for QuestEffect {
             QuestEffect::Sequence { steps } => {
                 f.debug_struct("Sequence").field("steps", steps).finish()
             }
+            // spec-0022 additions. These are NEW variants, so there is no
+            // pre-addition rendering to preserve — every field prints
+            // unconditionally, which is the stable choice going forward.
+            QuestEffect::Volley {
+                projectile,
+                from_anchor,
+                kill_zone,
+                salvos,
+                interval,
+                requires_flags,
+                forbids_flags,
+            } => f
+                .debug_struct("Volley")
+                .field("projectile", projectile)
+                .field("from_anchor", from_anchor)
+                .field("kill_zone", kill_zone)
+                .field("salvos", salvos)
+                .field("interval", interval)
+                .field("requires_flags", requires_flags)
+                .field("forbids_flags", forbids_flags)
+                .finish(),
+            QuestEffect::Collapse {
+                region_anchor,
+                falling_block,
+                then_floor,
+                requires_flags,
+                forbids_flags,
+            } => f
+                .debug_struct("Collapse")
+                .field("region_anchor", region_anchor)
+                .field("falling_block", falling_block)
+                .field("then_floor", then_floor)
+                .field("requires_flags", requires_flags)
+                .field("forbids_flags", forbids_flags)
+                .finish(),
         }
     }
 }
@@ -2595,6 +2734,21 @@ impl std::fmt::Debug for QuestEffect {
 fn default_grace_ticks() -> u32 {
     20
 }
+
+/// Default projectile for [`QuestEffect::Volley`] (spec-0022).
+pub const DEFAULT_VOLLEY_PROJECTILE: &str = "minecraft:arrow";
+/// Default salvo count for [`QuestEffect::Volley`] (spec-0022).
+pub const DEFAULT_VOLLEY_SALVOS: u32 = 3;
+/// Default ticks between salvos for [`QuestEffect::Volley`] (spec-0022).
+pub const DEFAULT_VOLLEY_INTERVAL: u32 = 10;
+/// Largest admissible `salvos` — beyond this a volley is an entity-count
+/// hazard rather than a trap (`DW0443`).
+pub const MAX_VOLLEY_SALVOS: u32 = 16;
+/// Largest admissible `interval` in ticks (`DW0443`): 10 seconds. A volley
+/// slower than this is no longer one event the player reads as a trap.
+pub const MAX_VOLLEY_INTERVAL: u32 = 200;
+/// Default falling block for [`QuestEffect::Collapse`] (spec-0022).
+pub const DEFAULT_COLLAPSE_FALLING_BLOCK: &str = "minecraft:gravel";
 
 /// A stealth "shadow" region (DSL v0.6, spec-0014): an axis-aligned box centred
 /// on `anchor`, extending `extent` blocks along each axis (so the box spans
@@ -3036,6 +3190,8 @@ impl QuestEffect {
             QuestEffect::MoveActor { .. } => "move-actor",
             QuestEffect::UnleashActor { .. } => "unleash-actor",
             QuestEffect::Sequence { .. } => "sequence",
+            QuestEffect::Volley { .. } => "volley",
+            QuestEffect::Collapse { .. } => "collapse",
         }
     }
 
@@ -3156,7 +3312,10 @@ impl QuestEffect {
             | QuestEffect::MoveActor { .. }
             | QuestEffect::UnleashActor { .. }
             | QuestEffect::SpawnNpc { .. }
-            | QuestEffect::Sequence { .. } => None,
+            | QuestEffect::Sequence { .. }
+            // spec-0022 trap-payload verbs are v0.6 — they report via `v06_effect`.
+            | QuestEffect::Volley { .. }
+            | QuestEffect::Collapse { .. } => None,
         }
     }
 
@@ -3207,6 +3366,51 @@ impl QuestEffect {
             QuestEffect::UnleashActor { .. } => Some("unleash-actor"),
             QuestEffect::Sequence { .. } => Some("sequence"),
             QuestEffect::SpawnNpc { .. } => Some("spawn-npc"),
+            // spec-0022 trap-payload verbs — v0.6 surface, reserved earlier.
+            QuestEffect::Volley { .. } => Some("volley"),
+            QuestEffect::Collapse { .. } => Some("collapse"),
+            _ => None,
+        }
+    }
+
+    /// `(projectile, from_anchor, kill_zone, salvos, interval)` if this is a
+    /// `volley` (spec-0022), with the documented defaults already applied.
+    pub fn volley(&self) -> Option<(&str, &AnchorId, &StealthZone, u32, u32)> {
+        match self {
+            QuestEffect::Volley {
+                projectile,
+                from_anchor,
+                kill_zone,
+                salvos,
+                interval,
+                ..
+            } => Some((
+                projectile.as_deref().unwrap_or(DEFAULT_VOLLEY_PROJECTILE),
+                from_anchor,
+                kill_zone,
+                salvos.unwrap_or(DEFAULT_VOLLEY_SALVOS),
+                interval.unwrap_or(DEFAULT_VOLLEY_INTERVAL),
+            )),
+            _ => None,
+        }
+    }
+
+    /// `(region_anchor, falling_block, then_floor)` if this is a `collapse`
+    /// (spec-0022), with the documented default already applied.
+    pub fn collapse(&self) -> Option<(&StealthZone, &str, Option<&str>)> {
+        match self {
+            QuestEffect::Collapse {
+                region_anchor,
+                falling_block,
+                then_floor,
+                ..
+            } => Some((
+                region_anchor,
+                falling_block
+                    .as_deref()
+                    .unwrap_or(DEFAULT_COLLAPSE_FALLING_BLOCK),
+                then_floor.as_deref(),
+            )),
             _ => None,
         }
     }
@@ -3447,6 +3651,21 @@ impl QuestEffect {
                 at: Some(SoundAt::Anchor { anchor }),
                 ..
             } => vec![("at/anchor".to_string(), anchor)],
+            // spec-0022 trap-payload verbs. Both anchors of a `volley` are
+            // load-bearing for the coverage proof, so both register here — a
+            // typo'd `kill_zone` must be a dangling-reference error, never a
+            // silently zero-cell (and therefore vacuously "covered") volley.
+            QuestEffect::Volley {
+                from_anchor,
+                kill_zone,
+                ..
+            } => vec![
+                ("from_anchor".to_string(), from_anchor),
+                ("kill_zone/anchor".to_string(), &kill_zone.anchor),
+            ],
+            QuestEffect::Collapse { region_anchor, .. } => {
+                vec![("region_anchor/anchor".to_string(), &region_anchor.anchor)]
+            }
             // Both cutscene spellings (`DW0199` polices mixing them): the v0.6
             // multi-shot list, or the v0.4 single-shot fields flattened at the
             // effect's own level.
@@ -3617,7 +3836,9 @@ impl QuestEffect {
             | QuestEffect::SetTime { requires_flags, .. }
             | QuestEffect::SetWeather { requires_flags, .. }
             | QuestEffect::PlaySound { requires_flags, .. }
-            | QuestEffect::DamagePlayers { requires_flags, .. } => requires_flags,
+            | QuestEffect::DamagePlayers { requires_flags, .. }
+            | QuestEffect::Volley { requires_flags, .. }
+            | QuestEffect::Collapse { requires_flags, .. } => requires_flags,
             // Terminal / party- or session-global verbs are not per-effect
             // gatable: `campaign-complete` is terminal; `set-checkpoint`
             // (`spawnpoint @a`) / `begin-stealth` / `end-stealth` are party-wide
@@ -3662,7 +3883,9 @@ impl QuestEffect {
             | QuestEffect::SetTime { forbids_flags, .. }
             | QuestEffect::SetWeather { forbids_flags, .. }
             | QuestEffect::PlaySound { forbids_flags, .. }
-            | QuestEffect::DamagePlayers { forbids_flags, .. } => forbids_flags,
+            | QuestEffect::DamagePlayers { forbids_flags, .. }
+            | QuestEffect::Volley { forbids_flags, .. }
+            | QuestEffect::Collapse { forbids_flags, .. } => forbids_flags,
             QuestEffect::CampaignComplete
             | QuestEffect::SpawnNpc { .. }
             | QuestEffect::SetCheckpoint { .. }
