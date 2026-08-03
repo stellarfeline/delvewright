@@ -56,7 +56,13 @@ services:
       # them, and the shipped image is untouched (this is a compose env var, not a
       # baked layer). The `play` profile shares this service, where the name simply
       # matches nobody.
-      OPS: ${DELVEWRIGHT_BOT_USERNAME:-delve-bot}
+      #
+      # NOT itzg's `OPS`: that resolves every name through Mojang's PlayerDB even
+      # with ONLINE_MODE=FALSE, and the bot's offline-only name aborts the boot
+      # ("Could not resolve user from Playerdb"). The shared world-settings
+      # entrypoint seeds /data/ops.json itself with the deterministic offline
+      # UUID, so the name never reaches the network (task #101).
+      DELVE_OPS_OFFLINE: ${DELVEWRIGHT_BOT_USERNAME:-delve-bot}
     volumes:
       # Name the itzg `/data` world volume so `docker compose down -v` actually
       # clears it. The itzg base declares an anonymous `VOLUME /data`; anonymous
@@ -125,9 +131,9 @@ services:
       DELVEWRIGHT_MC_PORT: "25565"
       DELVEWRIGHT_MC_VERSION: "1.21.11"
       DELVEWRIGHT_MC_AUTH: offline
-      # Must match the server's OPS entry above, or the harness's assist and
-      # scripted-death commands are silently refused and every combat proof
-      # degrades into an ordinary fight.
+      # Must match the server's DELVE_OPS_OFFLINE seed above, or the harness's
+      # assist and scripted-death commands are silently refused and every combat
+      # proof degrades into an ordinary fight.
       DELVEWRIGHT_BOT_USERNAME: ${DELVEWRIGHT_BOT_USERNAME:-delve-bot}
       # spec-0023 run artifact. Unset it to keep the pre-spec-0023 stderr-only run.
       DELVEWRIGHT_RUN_REPORT: /delve/run-out/run-report.json
