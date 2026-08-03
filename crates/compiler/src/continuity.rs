@@ -288,7 +288,7 @@ fn walk_bundle(
                 }
                 st.last_staged = Some(loc);
             }
-            QuestEffect::SpawnNpc { npc } => {
+            QuestEffect::SpawnNpc { npc, .. } => {
                 if excluded.contains_key(npc.as_str()) {
                     continue;
                 }
@@ -364,7 +364,7 @@ fn excluded_npcs(c: &Campaign) -> BTreeMap<String, &'static str> {
     /// The lifecycle-target NPC of `e`, if it is a lifecycle effect.
     fn lifecycle_npc(e: &QuestEffect) -> Option<&str> {
         match e {
-            QuestEffect::SpawnNpc { npc } => Some(npc.as_str()),
+            QuestEffect::SpawnNpc { npc, .. } => Some(npc.as_str()),
             QuestEffect::DespawnNpc { npc, .. } | QuestEffect::MoveNpc { npc, .. } => {
                 Some(npc.as_str())
             }

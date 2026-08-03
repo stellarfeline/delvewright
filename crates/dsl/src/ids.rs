@@ -120,6 +120,23 @@ prefixed_id!(
     /// Unique within the stage-5 shortcuts namespace.
     ShortcutId, "shortcut");
 prefixed_id!(
+    /// Branch-point id: `branch-point/<kebab>` (stage-4 `branch_points`, DSL v0.8,
+    /// spec-0025). One declared fork in the story: the flags it forks on, the quest
+    /// it opens at, and the branches it offers.
+    BranchPointId, "branch-point");
+prefixed_id!(
+    /// Branch id: `branch/<kebab>` (stage-4 `branch_points[].branches`, DSL v0.8,
+    /// spec-0025). One alternative of a branch point. Unique campaign-wide, because
+    /// it names the emitted `validation/branch-chronicle-<kebab>.md`.
+    BranchId, "branch");
+prefixed_id!(
+    /// Ending id: `ending/<kebab>` (DSL v0.8, spec-0025). Declared on the
+    /// `campaign-complete` effect that ends the delve that way, and referenced by
+    /// the branch that runs to it. There is no separate declaration list — the set
+    /// of endings is exactly those named by some `campaign-complete`, the same rule
+    /// [`FlagId`] follows.
+    EndingId, "ending");
+prefixed_id!(
     /// Loot-fill id: `loot/<kebab>` (stage-5 `loot` section, spec-0021). Unique
     /// within the stage-5 loot namespace.
     LootId, "loot");
