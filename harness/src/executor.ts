@@ -483,6 +483,27 @@ const WAVE_UNKILLABLE_MS = 6_000;
 const SCORE_SETTLE_MS = 15_000;
 const SCORE_POLL_MS = 250;
 /**
+ * Margin (ms) added on top of a path's exported `ending_tail_ticks` when sizing
+ * the completion window (task #125): the compiler schedules the ending's finale
+ * — the-wake fires `campaign-complete` 250t into its closing `sequence` — and
+ * exports that tail on the terminal step; the window must outlive the tail plus
+ * server slack. See {@link completionWindowMs}.
+ */
+const ENDING_TAIL_MARGIN_MS = 10_000;
+/** Minecraft server ticks per second (the tick → wall-clock conversion). */
+const TICKS_PER_SECOND = 20;
+
+/**
+ * How long (ms) `assertComplete` may wait for the completion marker: the default
+ * settle window, widened — never narrowed — by the path's exported
+ * scheduled-ending tail (`ending_tail_ticks` + margin). Exported for its unit
+ * test; pure arithmetic, no bot state.
+ */
+export function completionWindowMs(endingTailTicks: number | undefined): number {
+  const tailMs = ((endingTailTicks ?? 0) * 1000) / TICKS_PER_SECOND;
+  return Math.max(SCORE_SETTLE_MS, tailMs + ENDING_TAIL_MARGIN_MS);
+}
+/**
  * How long (ms) to wait for a step's OWN objective-completion marker after the bot
  * has done the thing the step asks for (AUDIT-P0). The datapack completes an
  * objective on the tick its condition holds and broadcasts the marker in the same
@@ -3254,9 +3275,12 @@ export class MineflayerExecutor implements StepExecutor {
     //      gains 1.21.11 score-packet support; currently always unset).
     // The campaign completes during the LAST objective step; the sequencer has
     // already failed the run if the marker arrived any earlier than that
-    // (assertEndgameNotReached), so reaching here means it is either due now or due
-    // within a tick or two of the last objective.
-    const deadline = Date.now() + SCORE_SETTLE_MS;
+    // (assertEndgameNotReached), so reaching here means it is either due now or —
+    // when the path exports a scheduled-ending tail (`ending_tail_ticks`, task
+    // #125: the-wake fires `campaign-complete` 250t into its closing `sequence`)
+    // — due within that tail. The window covers whichever is longer.
+    const windowMs = completionWindowMs(step.endingTailTicks);
+    const deadline = Date.now() + windowMs;
     while (Date.now() < deadline) {
       if (this.death) throw this.death;
       if (this.campaignCompleteAtStep !== undefined) {
@@ -3272,7 +3296,7 @@ export class MineflayerExecutor implements StepExecutor {
     const sidebar = board?.itemsMap[bot.username]?.value ?? "unset";
     const done = [...this.completedObjectives.keys()];
     throw new Error(
-      `campaign not complete after ${SCORE_SETTLE_MS}ms: no ` +
+      `campaign not complete after ${windowMs}ms: no ` +
         `\`${markerLine(this.campaignId ?? "?", CAMPAIGN_TOKEN)}\` marker arrived ` +
         `(objective ${step.objective} expected ${step.value}; sidebar: ${sidebar}); ` +
         `objectives completed: ${done.join(", ") || "none"}`,
