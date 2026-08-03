@@ -895,6 +895,9 @@ class CombatFakeBot extends InteractFakeBot {
   /** The server did NOT keep the inventory across the death (a broken
    * `gamerule keep_inventory true` seal). */
   loseKitOnDeath = false;
+  /** The wave kills the bot the first time it swings, mid-trade — before the
+   * harness gets to script the death this trial asked for (task #121). */
+  killBotOnTrade = false;
   /** How the respawn re-seats the wave. `undefined` = do not re-seat at all. */
   reSeat: ReseatSpec | undefined = { count: 1 };
   /** Delay before the re-seated wave becomes visible to the client — entity
@@ -1013,7 +1016,23 @@ class CombatFakeBot extends InteractFakeBot {
 
   attack(mob: { id: number }): void {
     this.calls.push("attack");
+    // The wave wins the exchange: the bot dies mid-trade, before it ever reaches
+    // the line that scripts its own death (task #121). Armed once.
+    if (this.killBotOnTrade) {
+      this.killBotOnTrade = false;
+      this.killBot();
+      return;
+    }
     delete this.entities[mob.id]; // one swing is enough in the fake world
+  }
+
+  /** A death the harness did NOT script, delivered the way a server delivers it:
+   * the death, then a fast auto-respawn. */
+  private killBot(): void {
+    this.died = true;
+    this.emit("messagestr", "delve-bot was slain by Vindicator");
+    this.emit("death");
+    setTimeout(() => this.emit("spawn"), 10);
   }
 
   async lookAt(): Promise<void> {}
@@ -1063,6 +1082,105 @@ function combatPlan(count = 1, respawnsOnRest = true): CombatPlan {
     floorGate: { present: true, covered: [], notCovered: [] },
   };
 }
+
+const ASSIST_ON = "chat(/effect give @s minecraft:resistance 60 2 true)";
+const ASSIST_OFF = "chat(/effect clear @s minecraft:resistance)";
+const SCRIPTED_DEATH = "chat(/damage @s 1000 minecraft:generic)";
+
+test("the die-retry stage is assisted into melee range, and takes its death bare", async () => {
+  // the-drowned-bell run six (task #121). The die-retry stage walked to within 3
+  // blocks of a LIVE encounter with nothing on, so two vindicators killed the bot
+  // before it could script death 1: `dieRetryAt` threw, `kill` never reached its
+  // own assisted phase, and the artifact showed 0/2 trials beside
+  // `assist_windows: []`. Bot fencing skill was deciding whether the stage could
+  // run at all — the exact thing spec-0023 downgraded from gate to telemetry.
+  //
+  // The ordering below IS the fix, and each half of it matters:
+  //   * assist ON before the bot is ever in melee range, and again before the walk
+  //     back — the segments where it must SURVIVE to make a measurement;
+  //   * assist OFF before every scripted death — so `/damage @s 1000` needs no
+  //     argument about resistance arithmetic to be lethal.
+  const bot = new CombatFakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+  await executor.kill(KILL_STEP);
+
+  const combat = bot.calls.filter(
+    (c) => c === ASSIST_ON || c === ASSIST_OFF || c === SCRIPTED_DEATH,
+  );
+  const deaths = combat.filter((c) => c === SCRIPTED_DEATH).length;
+  assert.equal(deaths, 2, "two scripted deaths were taken");
+  for (const [i, call] of combat.entries()) {
+    if (call !== SCRIPTED_DEATH) continue;
+    assert.equal(
+      combat[i - 1],
+      ASSIST_OFF,
+      `the scripted death is taken with no assist in force: ${combat.join(" | ")}`,
+    );
+    assert.equal(
+      combat[i + 1],
+      ASSIST_ON,
+      `and the walk back is assisted again immediately after: ${combat.join(" | ")}`,
+    );
+  }
+  assert.equal(
+    combat[0],
+    ASSIST_ON,
+    `the very first combat act of the stage is arming the assist — before the ` +
+      `approach walks into melee range: ${combat.join(" | ")}`,
+  );
+});
+
+test("die-retry assist windows are named in the ledger, not taken silently", async () => {
+  // spec-0023 §3 asks for disclosure, not for a single window. Each segment the
+  // stage protects is opened, logged and closed on its own, so `assist_windows`
+  // says exactly when the bot was helped.
+  const bot = new CombatFakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+  await executor.kill(KILL_STEP);
+
+  const windows = executor.assistWindows();
+  const dieRetry = windows.filter((w) => w.reason.startsWith("die-retry:"));
+  assert.ok(
+    dieRetry.length >= 4,
+    `each approach and each walk back is its own named window: ${windows.map((w) => w.reason).join(" | ")}`,
+  );
+  assert.ok(
+    dieRetry.every((w) => w.encounter === "obj/hold-the-gate" && w.closedAtMs !== undefined),
+    "every die-retry window names its encounter and is closed",
+  );
+  assert.deepEqual(executor.leakedAssists(), [], "and none of them leaked");
+});
+
+test("a wave that kills the bot mid-trade does not get credited as the scripted death", async () => {
+  // The first-contact/mid-fight race (task #121). `tradeBlows` deliberately stands
+  // in melee; if the wave wins that exchange the bot is already dead when the
+  // harness reads `deathSeq` and chats `/damage`, so the trial would wait for a
+  // death that has to happen a SECOND time and credit its loop to a life the
+  // harness never opened. The accidental death is now recovered from first.
+  const bot = new CombatFakeBot();
+  bot.killBotOnTrade = true;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+  await executor.kill(KILL_STEP);
+
+  const trials = executor.deathTrials();
+  assert.equal(trials.length, 2, "still exactly the two scripted deaths spec-0023 asks for");
+  assert.ok(
+    trials.every((t) => t.completed),
+    "and both loops still reached a verdict",
+  );
+  assert.equal(
+    bot.calls.filter((c) => c === SCRIPTED_DEATH).length,
+    2,
+    "one scripted death per trial — the accidental one did not stand in for either",
+  );
+  assert.deepEqual(dieRetryFindings(trials), []);
+});
 
 test("the die-retry stage survives its OWN scripted death and records both trials", async () => {
   // The shipped defect (the-drowned-bell round 3): the stage waited for its

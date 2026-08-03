@@ -424,13 +424,20 @@ export function assistPolicy(enc: Encounter): "unassisted-first" | "assisted" {
 /**
  * How far `kill()` got with one encounter.
  *
- * The run artifact states this per encounter because an EMPTY `assist_windows`
- * array is otherwise unreadable: spec-0023 takes NO assist during the die-retry
- * stage (the whole point there is to die) and none on the first attempt at a
- * billed `elite`/`boss` (the inverted floor gate needs one honest unassisted
- * try). So zero windows is entirely possible per policy — and, before this
- * field existed, indistinguishable from an assist mechanism that was never
- * wired at all (task #102, the-drowned-bell round 3).
+ * The run artifact states this per encounter because an `assist_windows` array is
+ * otherwise unreadable: no assist is taken on the first attempt at a billed
+ * `elite`/`boss` (the inverted floor gate needs one honest unassisted try), so a
+ * short array is possible per policy — and, before this field existed,
+ * indistinguishable from an assist mechanism that was never wired at all (task
+ * #102, the-drowned-bell round 3).
+ *
+ * The die-retry stage DOES take assist windows (task #121), which is a correction
+ * rather than a softening. It dies on purpose, but it needs the bot alive long
+ * enough to SCHEDULE that death and to walk back afterwards; leaving those
+ * segments bare made bot fencing skill decide whether the stage could run at all
+ * — the very thing spec-0023 downgraded from gate to telemetry. Every window is
+ * still named in the artifact, and the scripted death itself is taken with no
+ * assist in force, so it stays unambiguous.
  */
 export const ENCOUNTER_PHASES = [
   "not-reached",
