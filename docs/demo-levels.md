@@ -41,11 +41,10 @@ Rules of the queue:
 | Map-editor terrain pass (0017) | covered by nobodys-cave-island (de-walling, beach seam) | covered |
 | Ocean horizon / pseudo-open-world boundary (0013) | covered by nobodys-cave-island | covered |
 
-## M5 theme suite (planner-proposed, owner curates)
+## M5 theme suite (owner-approved 2026-08-03, all five)
 
-The owner asked for genre-diverse levels beyond the Greek-myth and souls lines.
-Planner proposals — each exercises a distinct authoring register; owner
-strikes/reorders freely:
+Genre-diverse levels beyond the Greek-myth and souls lines; each exercises a
+distinct authoring register:
 
 1. **Mystery** — a manor whodunit: flags-as-clues, dialogue trees as
    interrogation, the accusation is a branching finale. Zero combat; tests
@@ -60,5 +59,3 @@ strikes/reorders freely:
 5. **Pastoral / cozy** — no fail state at all: a festival day of fetch-and-talk
    beats, bark-pool crowds, one cutscene sunset. Tests whether the engine can
    be gentle.
-
-Owner has final cut on this list; nothing here is committed until she picks.
