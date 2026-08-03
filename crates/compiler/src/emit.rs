@@ -331,7 +331,7 @@ pub fn build_with_warnings(
         WaveRings,
         crate::nav::LaneRoutes,
         PayloadPlans,
-    ) = if crate::nav::needs_world(plan) || has_waves {
+    ) = if crate::nav::needs_world(plan) || has_waves || crate::clearance::has_bodies(plan) {
         {
             // spec-0022 payload verbs need the block map (a `collapse` settles
             // real blocks), not just the occupancy view.
@@ -445,6 +445,21 @@ pub fn build_with_warnings(
             } else {
                 (Vec::new(), Vec::new())
             };
+            // Body clearance (DW0450/DW0451, task #196): no NPC or actor body may
+            // occupy the same space as block geometry — not at the anchor it is
+            // summoned on, and not at any tick of any walked leg. A walked
+            // destination was already safe by construction (endpoint snapping +
+            // passable-cell A*); a `summon` does no snapping, which is how the
+            // island shipped a 2.9-tall warden inside the cliff face beside its
+            // cave mouth with every other proof green. Runs after the moves are
+            // planned because the walked waypoints are half of what it proves.
+            warnings.extend(
+                crate::clearance::check_body_clearance(plan, &world, &moves, &actor_moves)
+                    .map_err(|e| BuildFailure::Diagnostic {
+                        code: e.code,
+                        message: e.message,
+                    })?,
+            );
             // Seat each wave mob on a validated standable cell near its anchor, in
             // room only (DW0312 if the room lacks the footing) — or, for a
             // `summon: aggro-edge` wave, on its perception ring (DW0387).
