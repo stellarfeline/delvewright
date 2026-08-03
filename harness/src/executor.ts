@@ -36,12 +36,15 @@ import {
   assistPolicy,
   deathPhases,
   floorFinding,
+  openTrial,
   respawnedAtCheckpoint,
   scriptedDeathCommand,
   type AssistWindow,
   type CombatPlan,
   type DeathTrial,
+  type DeathTrialRecord,
   type Encounter,
+  type EncounterPhase,
 } from "./combat.ts";
 import { presentAndTrigger } from "./held-item.ts";
 import { CAMPAIGN_TOKEN, markerLine, parseCompletionMarker } from "./markers.ts";
@@ -506,6 +509,9 @@ const CUTSCENE_STEADY_EPS = 0.05;
 const CUTSCENE_POLL_MS = 250;
 /** gap 7 (retry): how long (ms) to wait for the bot to respawn before resuming. */
 const RESPAWN_TIMEOUT_MS = 15_000;
+
+/** How often the respawn wait re-reads the spawn counter. */
+const SPAWN_POLL_MS = 50;
 /** Recent chat lines retained for death-cause diagnosis. */
 const CHAT_BUFFER = 16;
 /**
@@ -599,6 +605,18 @@ export class MineflayerExecutor implements StepExecutor {
    * fails FAST with a diagnostic instead of respawning and pathfinding across the void.
    */
   private death: BotDeathError | undefined;
+  /**
+   * How many deaths this run has observed. The die-retry stage waits for a FRESH
+   * death rather than for `this.death` to be set, so a leftover latch (the bot
+   * died on the way back from the last one) can never be mistaken for the next
+   * scripted death and credited as a trial that never happened.
+   */
+  private deathSeq = 0;
+  /** How many `spawn` events this run has seen (login, then every respawn). */
+  private spawnSeq = 0;
+  /** {@link spawnSeq} at the moment of the last death — the respawn wait watches
+   * for a spawn NEWER than this, so a respawn that beats the wait is never lost. */
+  private spawnSeqAtDeath = 0;
   /** One-shot callbacks armed by {@link raceDeath}, fired on death. */
   private readonly deathWaiters = new Set<(err: BotDeathError) => void>();
   /** Ring buffer of recent chat lines, mined for the death-cause message. */
@@ -632,8 +650,17 @@ export class MineflayerExecutor implements StepExecutor {
   private dieRetry = false;
   /** Every combat-assist window this run opened (spec-0023 §3 run artifact). */
   private readonly assists = new AssistLedger();
-  /** Every scripted death and what it proved about the retry loop. */
-  private readonly trials: DeathTrial[] = [];
+  /** Every scripted death and what it proved about the retry loop. Entries are
+   * appended when the death is TAKEN and mutated as the loop yields facts, so an
+   * aborted run still carries the death it took (task #102). */
+  private readonly trials: DeathTrialRecord[] = [];
+  /** Waves the die-retry stage entered, whether or not it finished with them.
+   * Engagement without records is the silence the run report must not keep. */
+  private readonly dieRetryEngaged = new Set<string>();
+  /** How far `kill()` got with each encounter — the reading key for an empty
+   * `assist_windows` array (spec-0023 takes no assist while deliberately dying,
+   * nor on a billed encounter's honest first attempt). */
+  private readonly encounterPhases = new Map<string, EncounterPhase>();
   /** Inverted floor gate findings: billed fights the unassisted bot beat cold. */
   private readonly floorFindings: string[] = [];
   /** The last `select-class` step, replayed to re-arm after a scripted death. */
@@ -761,6 +788,11 @@ export class MineflayerExecutor implements StepExecutor {
       }
     });
     bot.on("death", () => this.onDeath());
+    // Counted from connect, so a respawn is never missed by a listener armed too
+    // late (see recoverFromDeath).
+    bot.on("spawn", () => {
+      this.spawnSeq += 1;
+    });
     // Self-defense attribution (souls ladder). PRIMARY channel: mineflayer 4.37 turns
     // the 1.20+ `damage_event` packet into `entityHurt(entity, source)`, where `source`
     // is the entity the server names as responsible (`sourceCauseId`). When the hurt
@@ -1326,6 +1358,8 @@ export class MineflayerExecutor implements StepExecutor {
     const cause = likelyDeathCause(this.recentChat, bot?.username ?? "");
     const err = new BotDeathError(position, cause);
     this.death = err;
+    this.deathSeq += 1;
+    this.spawnSeqAtDeath = this.spawnSeq;
     this.stopPathfinding();
     for (const waiter of this.deathWaiters) {
       waiter(err);
@@ -1380,24 +1414,29 @@ export class MineflayerExecutor implements StepExecutor {
    * sequencer re-runs `select-class` afterwards (respawn drops class state).
    */
   async recoverFromDeath(): Promise<void> {
-    const bot = this.requireBot();
-    try {
-      await withTimeout(
-        new Promise<void>((resolve) => {
-          const onSpawn = (): void => {
-            bot.removeListener("spawn", onSpawn);
-            resolve();
-          };
-          bot.once("spawn", onSpawn);
-        }),
-        RESPAWN_TIMEOUT_MS,
-        "waiting for respawn",
+    this.requireBot();
+    // COUNTED, not listened for. mineflayer auto-respawns within a few dozen ms of
+    // the death, which is sooner than a caller polling the death latch can arm a
+    // `once("spawn")` — so the old listener routinely missed the respawn it was
+    // waiting for and burned the whole 15s timeout before "resuming anyway". Free
+    // before spec-0023; on the die-retry stage it is 15s per scripted death, two
+    // per encounter, straight out of the run budget (task #102, observed live on
+    // the keep-trial fixture). A counter cannot miss an event that already fired.
+    const deadline = Date.now() + RESPAWN_TIMEOUT_MS;
+    let respawned = false;
+    while (Date.now() < deadline) {
+      if (this.spawnSeq > this.spawnSeqAtDeath) {
+        respawned = true;
+        break;
+      }
+      await delay(SPAWN_POLL_MS);
+    }
+    if (!respawned) {
+      // Best effort: proceed anyway — the re-select-class teleport re-establishes a
+      // known position regardless.
+      process.stderr.write(
+        `[death] no respawn observed within ${RESPAWN_TIMEOUT_MS}ms; resuming anyway\n`,
       );
-    } catch (err) {
-      // Best effort: if we miss the respawn spawn event, proceed anyway — the
-      // re-select-class teleport re-establishes a known position regardless.
-      const detail = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`[death] ${detail}; resuming anyway\n`);
     }
     this.death = undefined;
     // A respawn starts a new life: old grudges (and old write-offs) do not carry into
@@ -2032,9 +2071,21 @@ export class MineflayerExecutor implements StepExecutor {
     return this.assists.leaked();
   }
 
-  /** Every scripted death of the die-retry stage. */
+  /** Every scripted death of the die-retry stage — including the ones whose loop
+   * the run abandoned half-way, which is the whole point of recording on death. */
   deathTrials(): readonly DeathTrial[] {
     return this.trials;
+  }
+
+  /** Waves the die-retry stage entered. A wave here with no completed trial is an
+   * unproven retry loop, not a silent pass. */
+  dieRetryEngagements(): ReadonlySet<string> {
+    return this.dieRetryEngaged;
+  }
+
+  /** How far `kill()` got with `wave`. `not-reached` when the run ended first. */
+  encounterPhase(wave: string): EncounterPhase {
+    return this.encounterPhases.get(wave) ?? "not-reached";
   }
 
   /** Inverted floor-gate findings (advisory, spec-0023). */
@@ -2063,26 +2114,35 @@ export class MineflayerExecutor implements StepExecutor {
       return;
     }
     if (this.dieRetry) {
+      this.encounterPhases.set(enc.wave, "die-retry");
       await this.dieRetryAt(step, enc);
     }
     if (assistPolicy(enc) === "unassisted-first") {
+      this.encounterPhases.set(enc.wave, "unassisted");
       const won = await this.attemptUnassisted(step, enc);
       const finding = floorFinding(enc, { attempted: true, won });
       if (finding) {
         this.floorFindings.push(finding);
         process.stderr.write(`[floor] ${finding}\n`);
       }
-      if (won) return;
+      if (won) {
+        this.encounterPhases.set(enc.wave, "cleared");
+        return;
+      }
       process.stderr.write(
         `[assist] ${step.wave}: the unassisted attempt did not clear the fight — ` +
           `taking a labelled assist window\n`,
       );
+      this.encounterPhases.set(enc.wave, "assisted");
       await this.withAssist(enc, "after an unassisted attempt failed", () =>
         this.fightWave(step),
       );
+      this.encounterPhases.set(enc.wave, "cleared");
       return;
     }
+    this.encounterPhases.set(enc.wave, "assisted");
     await this.withAssist(enc, "policy: ordinary encounter", () => this.fightWave(step));
+    this.encounterPhases.set(enc.wave, "cleared");
   }
 
   /**
@@ -2138,10 +2198,25 @@ export class MineflayerExecutor implements StepExecutor {
    */
   private async dieRetryAt(step: KillStep, enc: Encounter): Promise<void> {
     const bot = this.requireBot();
+    // Recorded BEFORE the approach walk: from here on, silence about this
+    // encounter is a finding. `dieRetryCoverageFailures` turns an engagement with
+    // no completed trial into a red stage, so a run that dies on the way in can
+    // never report a passed die-retry (task #102).
+    this.dieRetryEngaged.add(enc.wave);
     await this.walkTo(step.pos, 3, `die-retry approach ${step.wave}`, step.sneak);
     const phases = deathPhases();
     for (const [i, phase] of phases.entries()) {
       const attempt = i + 1;
+      // A death still latched from the last loop (the bot was killed for real on
+      // the way back) would make the next scripted death resolve instantly and
+      // credit a trial that never happened. Clear it first, honestly.
+      if (this.death) {
+        process.stderr.write(
+          `[die-retry] an unscripted death is still pending — recovering from it before ` +
+            `taking the next scripted one\n`,
+        );
+        await this.respawnAndRearm();
+      }
       // "mid-fight" means the bot has traded blows first; "first-contact" is the
       // moment of arrival. Both are the same command, taken at different times —
       // what differs is the wave state the respawn has to restore.
@@ -2152,36 +2227,69 @@ export class MineflayerExecutor implements StepExecutor {
       process.stderr.write(
         `[die-retry] ${step.wave} death ${attempt}/${phases.length} (${phase})\n`,
       );
-      bot.chat(scriptedDeathCommand());
-      await this.waitFor(() => this.death !== undefined, RESPAWN_TIMEOUT_MS, SCORE_POLL_MS);
-      const respawnPos = await this.respawnAndRearm();
-      let returned = false;
+      // The record exists from the moment the harness commits to dying. Everything
+      // below MUTATES it, so however the run ends the artifact still says a death
+      // was taken here and what was (and was not) learned from it.
+      const trial = openTrial(enc, attempt, phase);
+      this.trials.push(trial);
       try {
-        await this.walkTo(step.pos, 3, `die-retry return ${step.wave}`, step.sneak);
-        returned = true;
+        const seq = this.deathSeq;
+        bot.chat(scriptedDeathCommand());
+        if (!(await this.awaitDeathAfter(seq, RESPAWN_TIMEOUT_MS))) {
+          // The bot is opped for exactly this command; if no death followed, the
+          // command was refused (or the op seed drifted) and the stage proves
+          // nothing. Fail the trial rather than walk a loop nobody opened.
+          trial.abortedWith =
+            `the scripted death never landed within ${RESPAWN_TIMEOUT_MS}ms — ` +
+            `\`${scriptedDeathCommand()}\` was refused (is the bot opped?)`;
+          throw new Error(`die-retry: ${trial.abortedWith}`);
+        }
+        trial.cause = this.death?.likelyCause;
+        trial.respawnPos = await this.respawnAndRearm();
+        trial.atCheckpoint = respawnedAtCheckpoint(trial.respawnPos ?? [0, 0, 0], enc.checkpoint);
+        try {
+          await this.walkTo(step.pos, 3, `die-retry return ${step.wave}`, step.sneak);
+          trial.returned = true;
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err);
+          process.stderr.write(`[die-retry] return leg failed: ${detail}\n`);
+        }
+        const after = new Set(this.completedObjectives.keys());
+        trial.lostObjectives = [...before].filter((o) => !after.has(o));
+        trial.objectivesIntact = trial.lostObjectives.length === 0;
+        // Re-engageable: a wave mob is standing here again. `respawns_on_rest`
+        // re-seats the room on a rest; without it the survivors are simply still
+        // there. Either way, something must be left to fight — a wave that dies
+        // with the player is a fight that can only be attempted once.
+        trial.reEngaged = Boolean(bot.nearestEntity((e) => isWaveMob(e, bot.entity)));
+        trial.completed = true;
       } catch (err) {
-        const detail = err instanceof Error ? err.message : String(err);
-        process.stderr.write(`[die-retry] return leg failed: ${detail}\n`);
+        trial.abortedWith ??= err instanceof Error ? err.message : String(err);
+        process.stderr.write(
+          `[die-retry] ${step.wave} death ${attempt} loop abandoned: ${trial.abortedWith}\n`,
+        );
+        throw err;
       }
-      const after = new Set(this.completedObjectives.keys());
-      const lost = [...before].filter((o) => !after.has(o));
-      // Re-engageable: a wave mob is standing here again. `respawns_on_rest`
-      // re-seats the room on a rest; without it the survivors are simply still
-      // there. Either way, something must be left to fight — a wave that dies
-      // with the player is a fight that can only be attempted once.
-      const reEngaged = Boolean(bot.nearestEntity((e) => isWaveMob(e, bot.entity)));
-      this.trials.push({
-        encounter: enc.objective,
-        wave: enc.wave,
-        attempt,
-        phase,
-        respawnPos,
-        atCheckpoint: respawnedAtCheckpoint(respawnPos ?? [0, 0, 0], enc.checkpoint),
-        returned,
-        reEngaged,
-        objectivesIntact: lost.length === 0,
-        lostObjectives: lost,
-      });
+    }
+  }
+
+  /**
+   * Wait for a death NEWER than `seq` — the harness's own scripted one.
+   *
+   * Deliberately not {@link waitFor}, which THROWS the recorded
+   * {@link BotDeathError} the instant one exists. That is right everywhere else
+   * in the harness (a death mid-step is a failure to surface fast) and fatal
+   * here, where the death IS the step: `waitFor(() => this.death !== undefined)`
+   * threw on the very condition it was asked to wait for, so no die-retry trial
+   * could ever complete and the harness's own scripted death was reported as the
+   * content killing the bot (task #102, the-drowned-bell round 3).
+   */
+  private async awaitDeathAfter(seq: number, timeoutMs: number): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      if (this.deathSeq > seq) return true;
+      if (Date.now() >= deadline) return false;
+      await delay(SCORE_POLL_MS);
     }
   }
 
