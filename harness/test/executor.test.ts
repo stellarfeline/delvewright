@@ -1293,7 +1293,6 @@ test("the re-engage probe SETTLES instead of sampling the instant it arrives", a
 // --- bonfire rest steps + the die-retry precondition (compiler #220) ---------
 
 import type { RestStep } from "../src/critical-path.ts";
-import { checkpointPreconditionFinding } from "../src/combat.ts";
 
 /** A CombatFakeBot that also publishes a bonfire's `interaction` affordance. */
 class BonfireFakeBot extends CombatFakeBot {
@@ -1589,4 +1588,47 @@ test("a custom name is read from every shape mineflayer hands it back in", () =>
   );
   assert.equal(displayNameOf({}), undefined);
   assert.equal(displayNameOf({ displayName: {} }), undefined);
+});
+
+test("an encounter with NO governing checkpoint skips the death as an ADVISORY, not a red", async () => {
+  // Post-#223 (`fire_step < i`) souls-bonfire's encounter truthfully reports no
+  // governing checkpoint: the only fire is armed by the very kill this encounter
+  // IS, so nothing is armed when a mid-fight death would land. A death here
+  // respawns at world spawn and the retry loop is a full restart of the delve.
+  //
+  // Three things must all hold, and the third is the one worth pinning: the death
+  // is NOT taken (it would measure the delve against world spawn), the gap is
+  // NAMED (an unproven loop must never be silent), and it lands in the ADVISORY
+  // channel — where the campaign puts its rest points is a content staging
+  // judgement the compiler's DW0379/DW0315 rules own, not this stage's.
+  const bot = new CombatFakeBot();
+  bot.seat(1);
+  const executor = attach(bot);
+  executor.useCampaign("souls-bonfire");
+  const plan = combatPlan(1, false);
+  executor.useCombatPlan(
+    { ...plan, encounters: [{ ...plan.encounters[0]!, checkpoint: undefined }] },
+    true,
+  );
+
+  executor.beginStep(9);
+  await executor.kill(KILL_STEP);
+
+  assert.equal(executor.deathTrials().length, 0, "no death was scripted");
+  assert.equal(
+    bot.calls.filter((c) => c === "chat(/damage @s 1000 minecraft:generic)").length,
+    0,
+  );
+  // Advisory, not a failure: nothing here reds the stage.
+  assert.deepEqual([...executor.dieRetryPreconditionFindings()], []);
+  const advisories = executor.dieRetryPreconditionAdvisories();
+  assert.equal(advisories.length, 1);
+  assert.match(advisories[0]!, /no governing checkpoint/);
+  assert.match(advisories[0]!, /die-retry cannot prove safe death here/);
+  // …and coverage stays silent about it, exactly as for the unarmed case: the
+  // advisory already says why the loop is unproven, and "never reached this
+  // encounter" would be plainly untrue.
+  assert.equal(executor.dieRetryPreconditionWaves().has(KILL_STEP.wave), true);
+  // The fight itself still happened — only the scripted death was skipped.
+  assert.equal(executor.encounterPhase(KILL_STEP.wave), "cleared");
 });

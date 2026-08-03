@@ -418,7 +418,12 @@ async function main(): Promise<number> {
       ran: dieRetry,
       passed: dieRetry && dieRetryFailures.length === 0,
       findings: dieRetry
-        ? []
+        ? // #223: an encounter the campaign fires NO checkpoint before had its
+          // scripted death skipped, and the stage says so out loud rather than
+          // passing quietly. Advisory, not a failure — every death there is a full
+          // restart, which is a content staging fact the compiler's retry-cost and
+          // checkpoint rules judge, not this stage.
+          [...executor.dieRetryPreconditionAdvisories()]
         : [
             combatPlan === undefined
               ? "no combat plan in this build — the campaign declares no mandatory combat"
