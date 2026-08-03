@@ -68,7 +68,8 @@
 use std::collections::BTreeMap;
 
 use delvewright_dsl::{
-    Campaign, Diagnostic, L10nDoc, NarrateStyle, dialogue_option_labels, on_screen_narrates,
+    Campaign, Diagnostic, L10nDoc, NarrateStyle, OptionLabel, bonfire_option_labels,
+    dialogue_option_labels, on_screen_narrates,
 };
 
 use crate::atmos::{ART_GLYPH_ADVANCE, ART_SPACE_ADVANCE};
@@ -362,9 +363,17 @@ fn percent_of(budget: u32, width: u32) -> String {
 /// about the player's screen.
 pub fn check_option_labels(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<Diagnostic> {
     let mut d = Vec::new();
-    let labels = dialogue_option_labels(c);
-    for l in &labels {
-        if let Some(diag) = label_over_budget("dialogue", l.path.clone(), &l.text) {
+    // spec-0016 §1 (owner ruling 2026-08-03): a bonfire's two rest options are
+    // drawn on exactly the same 150-GUI-px `multi_action` button, so they carry
+    // exactly the same budget. The check follows the widget, not the stage the
+    // string happened to be authored in.
+    let labels: Vec<(&str, OptionLabel)> = dialogue_option_labels(c)
+        .into_iter()
+        .map(|l| ("dialogue", l))
+        .chain(bonfire_option_labels(c).into_iter().map(|l| ("quests", l)))
+        .collect();
+    for (stage, l) in &labels {
+        if let Some(diag) = label_over_budget(stage, l.path.clone(), &l.text) {
             d.push(diag);
         }
     }
@@ -373,7 +382,7 @@ pub fn check_option_labels(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -
         let Some(doc) = sidecars.get(lang) else {
             continue; // absence is DW0180's job, not ours.
         };
-        for l in &labels {
+        for (_, l) in &labels {
             if let Some(translated) = doc.content.get(&l.key)
                 && let Some(diag) = label_over_budget(
                     "l10n",

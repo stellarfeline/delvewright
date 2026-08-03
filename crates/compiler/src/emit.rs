@@ -1256,6 +1256,14 @@ fn emit_functions(
     setup.push("scoreboard objectives add dw.class trigger".to_string());
     setup.push("scoreboard objectives add dw.classed dummy".to_string());
     setup.push("scoreboard objectives add dw.dlg_shown dummy".to_string());
+    // spec-0016 §1 (owner ruling 2026-08-03): the bonfire's two-option answer
+    // channel. `dw.rest` is a *trigger* because a dialog button runs its command
+    // as the clicking player, and `/trigger` is the one command a non-operator
+    // player may run. Absent for a campaign with no bonfire → byte-identical.
+    if plan.bonfires().next().is_some() {
+        setup.push("scoreboard objectives add dw.rest trigger".to_string());
+        setup.push("scoreboard objectives add dw.rest_at dummy".to_string());
+    }
     for npc in &plan.npcs {
         setup.push(format!(
             "scoreboard objectives add {} trigger",
@@ -1975,6 +1983,14 @@ fn emit_functions(
             } else {
                 body.push(give);
             }
+        }
+        // spec-0016 §1: a bonfire rest refills the resting player's OWN flask, so
+        // the pack has to remember which class they took — `dw.class` is a trigger
+        // this function resets and `dw.classed` records only that a class was
+        // taken. Emitted only when the campaign declares a flask, so every other
+        // campaign's class apply is byte-identical.
+        if !plan.flasks().is_empty() {
+            body.push(format!("tag @s add {}", class_tag(&plan_class.safe)));
         }
         body.push("scoreboard players set @s dw.classed 1".to_string());
         // Party state (spec-0018): the campaign-start quests activate for the
@@ -3387,7 +3403,9 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         QuestEffect::SetCheckpoint { anchor, on_respawn } => {
             emit_set_checkpoint(plan, anchor.as_str(), on_respawn, body);
         }
-        QuestEffect::Bonfire { anchor, on_rest } => {
+        QuestEffect::Bonfire {
+            anchor, on_rest, ..
+        } => {
             // Arm the rest affordance (spec-0016 §1): summon the interaction
             // entity the party right-clicks to rest. Guarded on absence so a
             // re-fired beat never stacks a second affordance (and so a `bonfire`
@@ -3703,6 +3721,16 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
         let mut body: Vec<String> = Vec::new();
         if c.rest {
             body.extend(reseat.iter().cloned());
+            // spec-0016 §1 (owner ruling 2026-08-03), read forward: death respawns
+            // the party at the last-rested bonfire with the same hooks, and vanilla
+            // already returns the dead player at full health and hunger. What it
+            // does NOT restore is the flask — so without this a player who dies
+            // arrives empty-handed at the very bonfire they respawned on and must
+            // rest again before they can play. Retry has to be cheap, so a respawn
+            // at a bonfire refills the flask exactly as a rest does.
+            if !plan.flasks().is_empty() {
+                body.push(format!("function {ns}:bonfire_flask"));
+            }
         }
         body.extend(emit_effect_bundle(plan, &c.on_respawn, Audience::Solo));
         fns.push((format!("cp_on_respawn_{}", c.index), lines(&body)));
@@ -3980,25 +4008,144 @@ fn bonfire_reseat_lines(plan: &Plan) -> Vec<String> {
         .collect()
 }
 
-/// Per-tick bonfire rest detection (spec-0016 §1), reusing the same
-/// interaction-entity `use` primitive as the trap disarm: when a player
-/// right-clicks a bonfire's affordance, the party rests. Unlike the disarm this
-/// is deliberately **repeatable** — a bonfire is rested at many times over a
-/// delve, and every rest re-runs the scene reset. Empty for a campaign with no
-/// bonfire → byte-identical.
+/// Per-tick bonfire **choice** dispatch (spec-0016 §1, owner ruling 2026-08-03).
+///
+/// Right-clicking a bonfire no longer rests: it opens a two-option dialog
+/// (`bonfire_open_<i>`, run as the clicking player by the vanilla
+/// `player_interacted_with_entity` advancement — the same primitive every
+/// interact objective uses). The buttons write the player's answer into the
+/// `dw.rest` **trigger** objective, which is the only command surface a
+/// non-operator player has, and this tick turns that answer into the chosen
+/// function. `dw.rest_at` carries WHICH bonfire the player opened, so a campaign
+/// with several bonfires routes each answer to its own rest point.
+///
+/// `1` = *save only* (move the checkpoint, nothing else), `2` = *rest and save*
+/// (the full loop). Empty for a campaign with no bonfire → byte-identical.
 fn bonfire_tick(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
     for bf in plan.bonfires() {
         let i = bf.index;
         out.push(format!(
-            "execute if entity @e[tag=dw_bonfire_{i},nbt={{interaction:{{}}}}] run function {ns}:bonfire_rest_{i}"
+            "execute as @a[scores={{dw.rest=1,dw.rest_at={i}}}] run function {ns}:bonfire_pick_save_{i}"
         ));
         out.push(format!(
-            "execute as @e[tag=dw_bonfire_{i}] run data remove entity @s interaction"
+            "execute as @a[scores={{dw.rest=2,dw.rest_at={i}}}] run function {ns}:bonfire_pick_rest_{i}"
         ));
     }
     out
+}
+
+/// The player-local restore a **rest** performs (spec-0016 §1, owner ruling
+/// 2026-08-03): health, hunger/saturation, negative status effects, flask.
+///
+/// **Audience (reported ambiguity).** spec-0018 makes the checkpoint party state
+/// and the flask/inventory per-player state; spec-0016 §1 says "player fully
+/// restored" in the singular. This restores the player who chose to rest, and
+/// only them — a party member elsewhere in the map keeps their wounds. The
+/// checkpoint half of the same rest is still party-wide.
+///
+/// **Effect clearing is enumerated, never `effect clear @s`.** A bare clear would
+/// also strip the per-area night-vision mitigation clock (`DW0322`'s emission)
+/// and any beneficial effect the story granted, turning a rest into a debuff.
+/// The list is the pinned 1.21.11 harmful set, sorted, so the emission is
+/// deterministic.
+const HARMFUL_EFFECTS: &[&str] = &[
+    "minecraft:bad_omen",
+    "minecraft:blindness",
+    "minecraft:darkness",
+    "minecraft:hunger",
+    "minecraft:infested",
+    "minecraft:levitation",
+    "minecraft:mining_fatigue",
+    "minecraft:nausea",
+    "minecraft:oozing",
+    "minecraft:poison",
+    "minecraft:raid_omen",
+    "minecraft:slowness",
+    "minecraft:trial_omen",
+    "minecraft:unluck",
+    "minecraft:weakness",
+    "minecraft:weaving",
+    "minecraft:wind_charged",
+    "minecraft:wither",
+];
+
+/// The `bonfire_flask` function: refill every declared flask to its declared
+/// count, for the player it runs as.
+///
+/// `clear` + `give` rather than `item replace`: a kit item has no fixed inventory
+/// slot (the player carries it wherever they moved it), and `item replace` needs
+/// one. Clearing by item id and re-giving the kit's exact stack is slot-free,
+/// idempotent and byte-stable — and it means "replenish to the declared count"
+/// is literally what the commands say, in both directions (a player hoarding
+/// extra flasks is brought back DOWN to the declared count, which is the souls
+/// contract: the flask is a per-rest budget, not a stockpile).
+///
+/// A player's class is read off the `dw_class_<safe>` tag `class_apply_<safe>`
+/// adds — emitted only when the campaign declares a flask at all, so a campaign
+/// without one is byte-identical down to the class-apply function.
+fn emit_flask_function(plan: &Plan) -> Option<(String, String)> {
+    let flasks = plan.flasks();
+    if flasks.is_empty() {
+        return None;
+    }
+    let classes = &plan.campaign.classes.content.classes;
+    let mut body: Vec<String> = Vec::new();
+    for (ci, ki) in flasks {
+        let item = &classes[ci].kit[ki];
+        let tag = class_tag(&plan.classes[ci].safe);
+        body.push(format!(
+            "execute if entity @s[tag={tag}] run clear @s {}",
+            item.item
+        ));
+        let comp = match &item.name {
+            Some(n) => format!("[custom_name={}]", json!({ "text": n, "italic": false })),
+            None => String::new(),
+        };
+        body.push(format!(
+            "execute if entity @s[tag={tag}] run give @s {}{} {}",
+            item.item, comp, item.count
+        ));
+    }
+    Some(("bonfire_flask".to_string(), lines(&body)))
+}
+
+/// The per-player tag marking which class a player took — the only thing that
+/// tells a bonfire rest which flask to refill (`dw.class` is a trigger the class
+/// apply resets, and `dw.classed` records only *that* a class was taken).
+fn class_tag(class_safe: &str) -> String {
+    format!("dw_class_{class_safe}")
+}
+
+/// The `bonfire_restore` function: the full player restore of a *rest*.
+/// Emitted only for a campaign with a bonfire → byte-identical otherwise.
+///
+/// Healing is `instant_health`, feeding is `saturation`: vanilla exposes no
+/// `/health` or `/food` command and `/data merge entity` refuses players, so
+/// these two effects ARE the primitive (CLAUDE.md no-hacks: use the intended one,
+/// do not invent a workaround). Both are instant/1-second and leave nothing
+/// behind.
+fn emit_restore_function(plan: &Plan) -> Option<(String, String)> {
+    plan.bonfires().next()?;
+    let ns = &plan.namespace;
+    let mut body: Vec<String> = vec![
+        // Amplifier 9 heals 2 × 2^10 half-hearts — past any `max_health` a kit
+        // can reach, so "full" needs no health arithmetic.
+        "effect give @s minecraft:instant_health 1 9 true".to_string(),
+        // Saturation adds food + saturation every tick it runs; one second at
+        // amplifier 9 pins both bars at full.
+        "effect give @s minecraft:saturation 1 9 true".to_string(),
+    ];
+    body.extend(
+        HARMFUL_EFFECTS
+            .iter()
+            .map(|e| format!("effect clear @s {e}")),
+    );
+    if !plan.flasks().is_empty() {
+        body.push(format!("function {ns}:bonfire_flask"));
+    }
+    Some(("bonfire_restore".to_string(), lines(&body)))
 }
 
 /// The `bonfire_rest_<i>` functions (spec-0016 §1). Resting is the party-wide
@@ -4016,25 +4163,81 @@ fn bonfire_tick(plan: &Plan) -> Vec<String> {
 /// idempotent: it is the world's single answer to both a rest and a death, read
 /// at two different audiences.
 fn emit_bonfire_functions(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
     let mut fns: Vec<(String, String)> = Vec::new();
     for bf in plan.bonfires() {
-        let mut body: Vec<String> = Vec::new();
+        let i = bf.index;
         let pos = bf.pos;
-        body.push(format!("spawnpoint @a {} {} {}", pos[0], pos[1], pos[2]));
-        body.push(format!(
-            "data modify storage dw:cp pos set value [{}, {}, {}]",
-            pos[0], pos[1], pos[2]
+        // The three lines a `set-checkpoint` writes: vanilla's respawn point, the
+        // `dw:cp` mirror every other feature reads, and the active-checkpoint
+        // marker that selects the respawn hook. This IS "save".
+        let save: Vec<String> = {
+            let mut s = vec![
+                format!("spawnpoint @a {} {} {}", pos[0], pos[1], pos[2]),
+                format!(
+                    "data modify storage dw:cp pos set value [{}, {}, {}]",
+                    pos[0], pos[1], pos[2]
+                ),
+            ];
+            if plan.any_checkpoint_on_respawn() {
+                s.push(format!("scoreboard players set #cp dw.sys {i}"));
+            }
+            s
+        };
+
+        // --- the choice dialog opener (run AS the clicking player) ---
+        // The advancement re-arms itself so a bonfire can be opened again and
+        // again; `dw.rest` is reset before it is enabled so a stale answer from
+        // an earlier rest can never fire the moment the dialog opens.
+        fns.push((
+            format!("bonfire_open_{i}"),
+            lines(&[
+                format!("advancement revoke @s only {ns}:bf_{i}"),
+                format!("scoreboard players set @s dw.rest_at {i}"),
+                "scoreboard players reset @s dw.rest".to_string(),
+                "scoreboard players enable @s dw.rest".to_string(),
+                format!("dialog show @s {ns}:bonfire_{i}"),
+            ]),
         ));
-        if plan.any_checkpoint_on_respawn() {
-            body.push(format!("scoreboard players set #cp dw.sys {}", bf.index));
-        }
+
+        // --- option 1: save only. The checkpoint moves; NOTHING else happens. ---
+        fns.push((format!("bonfire_save_{i}"), lines(&save)));
+        fns.push((
+            format!("bonfire_pick_save_{i}"),
+            lines(&[
+                "scoreboard players reset @s dw.rest".to_string(),
+                format!("function {ns}:bonfire_save_{i}"),
+            ]),
+        ));
+
+        // --- option 2: rest and save. Restore the resting player, then the
+        // party-wide save + scene reset. ---
+        fns.push((
+            format!("bonfire_pick_rest_{i}"),
+            lines(&[
+                "scoreboard players reset @s dw.rest".to_string(),
+                format!("function {ns}:bonfire_restore"),
+                format!("function {ns}:bonfire_rest_{i}"),
+            ]),
+        ));
+
+        // `bonfire_rest_<i>` stays exactly what it was: the party-wide half of a
+        // rest. The respawn path and the generated PackTests both drive it
+        // directly, so it must remain callable with no player restore attached.
+        let mut body = save;
         body.extend(bonfire_reseat_lines(plan));
         body.extend(emit_effect_bundle(
             plan,
             &bf.on_respawn,
             Audience::Scheduled,
         ));
-        fns.push((format!("bonfire_rest_{}", bf.index), lines(&body)));
+        fns.push((format!("bonfire_rest_{i}"), lines(&body)));
+    }
+    if let Some(f) = emit_restore_function(plan) {
+        fns.push(f);
+    }
+    if let Some(f) = emit_flask_function(plan) {
+        fns.push(f);
     }
     fns
 }
@@ -7205,6 +7408,31 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
         }),
     ));
 
+    // spec-0016 §1 (owner ruling 2026-08-03): one bonfire dialog per bonfire,
+    // offering EXACTLY two options — rest and save, or save only. Nothing else
+    // may appear here: the ruling is that a campfire is a real interaction with a
+    // real choice, not a one-click "arrive" objective. Emitted only for a campaign
+    // with a bonfire → byte-identical otherwise.
+    for bf in plan.bonfires() {
+        let i = bf.index;
+        dialogs.push((
+            format!("bonfire_{i}"),
+            json!({
+                "type": "minecraft:multi_action",
+                "title": bf.prompt,
+                "columns": 1,
+                "can_close_with_escape": true,
+                "after_action": "close",
+                "actions": [
+                    { "label": bf.rest_label,
+                      "action": { "type": "minecraft:run_command", "command": "/trigger dw.rest set 2" } },
+                    { "label": bf.save_label,
+                      "action": { "type": "minecraft:run_command", "command": "/trigger dw.rest set 1" } }
+                ]
+            }),
+        ));
+    }
+
     // per-npc dialogue nodes (stage 6) → one dialog each
     for npc in &plan.npcs {
         let dsl_npc = c
@@ -7319,6 +7547,33 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
     let mut advs = Vec::new();
+
+    // spec-0016 §1 (owner ruling 2026-08-03): one advancement per bonfire, so a
+    // right-click opens the rest dialog AS the player who clicked. The interaction
+    // entity's own `interaction` record cannot do this — it names no player the
+    // `dialog show` could target — and this is the same vanilla criterion every
+    // `interact` objective already runs on. `bonfire_open_<i>` revokes it, so the
+    // bonfire is re-openable forever (a rest point is used, never consumed).
+    for bf in plan.bonfires() {
+        let i = bf.index;
+        advs.push((
+            format!("bf_{i}"),
+            json!({
+                "criteria": {
+                    "interact": {
+                        "trigger": "minecraft:player_interacted_with_entity",
+                        "conditions": {
+                            "entity": {
+                                "type": "minecraft:interaction",
+                                "nbt": format!("{{Tags:[\"dw_bonfire_{i}\"]}}")
+                            }
+                        }
+                    }
+                },
+                "rewards": { "function": format!("{ns}:bonfire_open_{i}") }
+            }),
+        ));
+    }
 
     // one interaction advancement per NPC
     for npc in &plan.npcs {
@@ -7648,6 +7903,8 @@ fn emit_packtest(
     // spec-0016 §1: resting at a bonfire moves the party respawn point and
     // re-seats its `respawns_on_rest` waves. Emits nothing without a bonfire.
     emit_bonfire_packtests(plan, out);
+    // spec-0016 §1 (owner ruling 2026-08-03): rest and save-only really differ.
+    emit_bonfire_option_packtest(plan, out);
     // spec-0016 §2: the shortcut really opens, and opens exactly once.
     emit_shortcut_packtest(plan, out);
     // spec-0016 §4: the clock really alternates the gate region.
@@ -8827,11 +9084,116 @@ fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
         "execute store result score #br_bfs dw.sys if entity @e[tag={tag}]"
     ));
     b.push(format!("assert score #br_bfs dw.sys matches {total}"));
+    // --- the SURVIVOR case (owner's no-chip-through ruling, 2026-08-03) ---
+    // A wiped wave coming back proves the count. It does not prove the thing the
+    // ruling is actually about: grinding a wave down one hit per life must never
+    // be a valid path, so a survivor the party chipped has to be REMOVED and
+    // replaced, not topped up and not left standing. Chip one mob to a sliver,
+    // brand it with a tag no re-summon can carry (`spawn_<wave>` writes the
+    // authored NBT and nothing else), rest, and demand the brand is gone while the
+    // wave stands at full count. Identity, not just arithmetic.
+    b.push(format!(
+        "data modify entity @e[tag={tag},limit=1] Health set value 1.0f"
+    ));
+    b.push(format!("tag @e[tag={tag},limit=1] add dw_bfchip"));
+    b.push("execute store result score #bp_bfs dw.sys if entity @e[tag=dw_bfchip]".to_string());
+    b.push("assert score #bp_bfs dw.sys matches 1".to_string());
+    b.push(format!("function {ns}:bonfire_rest_{i}"));
+    b.push("execute store result score #bc_bfs dw.sys if entity @e[tag=dw_bfchip]".to_string());
+    b.push("assert score #bc_bfs dw.sys matches 0".to_string());
+    b.push(format!(
+        "execute store result score #bf_bfs dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push(format!("assert score #bf_bfs dw.sys matches {total}"));
     // Leave no residue for the rest of the batch (pin_dummy rule 4).
     b.push(format!("kill @e[tag={tag}]"));
     b.push(format!("scoreboard players set {seated} dw.sys 0"));
     out.insert(
         format!("packtest-datapack/data/{ns}/test/souls_bonfire_reseat.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// spec-0016 §1 (owner ruling 2026-08-03): the **two options really differ**.
+///
+/// The owner's ruling is that right-clicking a bonfire offers exactly *rest and
+/// save* and *save only*, and that save-only does nothing but move the
+/// checkpoint. That is a runtime claim about two functions, and this drives both
+/// on a live server through the flask — the one restored resource a PackTest
+/// dummy can actually observe.
+///
+/// **Why the flask and not health.** PackTest fake players are immune to
+/// `/damage` (measured on the pinned toolserver, 2026-08-03: `Health` stays at
+/// 20.0 through `damage @s 1000`), so a dummy can never be *hurt* and therefore
+/// never be seen to be *healed* — an assertion on health would be permanently
+/// red no matter how correct the engine is. Inventory has no such problem:
+/// `clear <player> <item> 0` counts matching items without removing them, so the
+/// template can spend the flask down to one, drive each option, and read the
+/// count back. The heal/feed/cure half of a rest is proven where it can be proven
+/// honestly — compiler unit tests assert the exact `effect` commands and their
+/// order inside `bonfire_restore`.
+///
+/// Emits nothing for a campaign without both a bonfire and a flask, which
+/// `DW0476` makes the same thing as "no bonfire" → byte-identical.
+fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some(bf) = plan.bonfires().next() else {
+        return;
+    };
+    let Some(&(ci, ki)) = plan.flasks().first() else {
+        return;
+    };
+    let i = bf.index;
+    let item = &plan.campaign.classes.content.classes[ci].kit[ki];
+    let ctag = class_tag(&plan.classes[ci].safe);
+    let (pin, sel) = pin_dummy("dw_bfopt");
+
+    let mut b = packtest_header(&format!(
+        "{title}: save-only saves and nothing else; rest refills the flask (spec-0016 §1)"
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(pin);
+    // The dummy takes the flask's class, so `bonfire_flask`'s per-class guard
+    // selects it — this is the same tag `class_apply_<class>` adds.
+    b.push(format!("tag {sel} add {ctag}"));
+    // Baseline: exactly ONE flask in the bag (the party has spent the rest).
+    b.push(format!("clear {sel} {}", item.item));
+    b.push(format!("give {sel} {} 1", item.item));
+
+    // --- save only: the checkpoint moves, the flask does NOT come back ---
+    b.push("data modify storage dw:cp pos set value [0, 0, 0]".to_string());
+    b.push(format!(
+        "execute as {sel} run function {ns}:bonfire_pick_save_{i}"
+    ));
+    b.push(format!(
+        "execute store result score #bo_save dw.sys run clear {sel} {} 0",
+        item.item
+    ));
+    b.push("assert score #bo_save dw.sys matches 1".to_string());
+    b.push(
+        "execute store result score #bo_cp dw.sys run data get storage dw:cp pos[0]".to_string(),
+    );
+    b.push(format!("assert score #bo_cp dw.sys matches {}", bf.pos[0]));
+
+    // --- rest and save: the flask is replenished to its declared count ---
+    b.push(format!(
+        "execute as {sel} run function {ns}:bonfire_pick_rest_{i}"
+    ));
+    b.push(format!(
+        "execute store result score #bo_rest dw.sys run clear {sel} {} 0",
+        item.item
+    ));
+    b.push(format!(
+        "assert score #bo_rest dw.sys matches {}",
+        item.count
+    ));
+
+    // Leave no residue for the shared batch (pin_dummy rule 4).
+    b.push(format!("clear {sel} {}", item.item));
+    b.push(format!("tag {sel} remove {ctag}"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_bonfire_options.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
@@ -11193,6 +11555,57 @@ bytes, so byte-identity (ADR-0006) covers the whole `<out>/` tree.\n",
     );
 }
 
+/// Splice a **`rest`** step into the exported critical path after the beat that
+/// arms each bonfire (spec-0016 §1; bell round-3 finding, 2026-08-03).
+///
+/// A bonfire arms an affordance and moves nothing until the party rests — which is
+/// souls-correct and was also invisible to the validation ladder: the proven path
+/// walked past every bonfire without touching it, so the checkpoint never moved,
+/// and a die-retry trial respawned the bot at world spawn (the beach) instead of
+/// at the fire it had just walked past. The walk-back budget blew, and the run
+/// judged the *campaign* for a *proof* that never performed the player loop.
+///
+/// Resting is the intended loop, so the proven path performs it: after the step
+/// that arms bonfire `i` (its `fire_step` — the earliest tick at which a rest is
+/// possible, the same index `DW0315` roots the no-stranding proof at), the path
+/// gains one `rest` step choosing **rest and save**. Several bonfires armed by the
+/// same beat are spliced in bonfire order, so the emission is deterministic.
+///
+/// This is a *path export* change only: `plan.critical_path` is untouched, so
+/// every `fire_step` index, every nav proof and every other consumer sees exactly
+/// what it saw before. Emits nothing for a campaign with no bonfire →
+/// byte-identical.
+///
+/// **Step shape** (the harness contract; execution lands in a follow-up):
+/// ```json
+/// { "action": "rest", "bonfire": 0, "anchor": "anchor/keeper-stand",
+///   "pos": [44, 65, 2], "command": "/trigger dw.rest set 2" }
+/// ```
+/// The bot walks to `pos`, right-clicks the `dw_bonfire_<bonfire>` interaction —
+/// which is what opens the dialog and what *enables* the trigger — and then sends
+/// `command`, the exact chat line the "rest and save" button runs. The click is not
+/// optional: `dw.rest` is a trigger objective and is disabled until the opener
+/// enables it, so a bot that only chats the command changes nothing.
+fn with_bonfire_rest_steps(plan: &Plan, steps: Vec<Value>) -> Vec<Value> {
+    if plan.bonfires().next().is_none() {
+        return steps;
+    }
+    let mut out: Vec<Value> = Vec::with_capacity(steps.len());
+    for (i, step) in steps.into_iter().enumerate() {
+        out.push(step);
+        for bf in plan.bonfires().filter(|b| b.fire_step == i) {
+            out.push(json!({
+                "action": "rest",
+                "bonfire": bf.index,
+                "anchor": bf.anchor,
+                "pos": bf.pos,
+                "command": "/trigger dw.rest set 2"
+            }));
+        }
+    }
+    out
+}
+
 fn emit_critical_path(plan: &Plan) -> Value {
     let steps: Vec<Value> = plan
         .critical_path
@@ -11251,6 +11664,7 @@ fn emit_critical_path(plan: &Plan) -> Value {
             step
         })
         .collect();
+    let steps = with_bonfire_rest_steps(plan, steps);
     json!({
         // Campaign-derived (not the compiler's max supported version): a v0.2
         // campaign emits a v0.2 critical path, a v0.3 campaign a v0.3 one.

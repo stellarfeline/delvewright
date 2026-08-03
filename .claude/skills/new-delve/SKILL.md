@@ -481,6 +481,21 @@ Then:
   fencing skill never caps how hard the delve is allowed to be — read
   `validation/run-out/run-report.json` after a `validate` run for the assist
   windows, the death trials and any floor findings.
+- **Bonfires owe the party a flask.** Right-clicking a `bonfire` opens exactly
+  two options — *rest and save* (full restore: health, hunger, negative effects
+  cleared, flask refilled, checkpoint moved, `respawns_on_rest` waves re-seated,
+  `on_rest[]` fired) and *save only* (the checkpoint, nothing else). The
+  replenished item is a class-kit entry marked `"flask": true`, and **every
+  class kit in a campaign that places a bonfire must declare one** — a bonfire
+  campaign with a flaskless kit is the build error `DW0476`. Author it as a real
+  recovery consumable (a healing potion, a golden apple) with the per-rest
+  budget you tuned against as its `count`: resting sets the stack back to exactly
+  that number, up or down, so the flask is a budget and never a stockpile. The
+  bonfire's three dialog strings default to canonical English; author
+  `prompt`/`rest_label`/`save_label` only when the fiction wants its own words,
+  and keep the two labels button captions (`DW0331`: ~20 Latin / ~12 Han).
+  Both the flask and the labels need `dsl_version 0.8.0` on their stage.
+
 - **Wave tuning**: `follow_range` below ~16 means distant wave mobs never
   engage; a kill objective whose mobs idle is unfinishable-in-practice even
   though machine-valid. Undead waves burn in daylight — the RIGHT fix (owner

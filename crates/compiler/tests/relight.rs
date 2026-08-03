@@ -318,6 +318,7 @@ fn renamed_potion_kit_item_no_longer_mitigates_dw0210() {
             count: 1,
             name: Some("Potion of Night Vision".to_string()),
             carrier: None,
+            flask: false,
         });
     match build_with_structure(&c, dark_box_nbt([11, 6, 11], &[])).unwrap_err() {
         BuildFailure::Diagnostic { code, .. } => assert_eq!(

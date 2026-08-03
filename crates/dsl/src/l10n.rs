@@ -33,6 +33,7 @@
 //! | `dlg.<npc>.<node>.opt.<i>.label` | each dialogue option `label` |
 //! | `wave.<wave>.mob.<i>.name` | a wave mob's custom `name` (only if set) |
 //! | `fx.…​.narrate` / `fx.…​.give` | a `narrate` line / named `give-item` in an effect list |
+//! | `fx.…​.rest_prompt` / `.rest_label` / `.save_label` | a `bonfire`'s authored rest-dialog strings (v0.8, only if set) |
 //!
 //! ## Nested effects (DSL v0.6)
 //!
@@ -68,6 +69,27 @@ fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, 
     match eff {
         QuestEffect::Narrate { text, .. } => f(&format!("{keybase}.narrate"), text),
         QuestEffect::GiveItem { name: Some(n), .. } => f(&format!("{keybase}.give"), n),
+        // spec-0016 §1 (owner ruling 2026-08-03): the bonfire's rest dialog is
+        // read by the player like any other on-screen line, so its authored
+        // strings translate like any other. Unauthored fields are absent from the
+        // inventory — the compiler bakes its canonical English, exactly as
+        // `world.boundary.message` does.
+        QuestEffect::Bonfire {
+            prompt,
+            rest_label,
+            save_label,
+            ..
+        } => {
+            if let Some(p) = prompt.as_mut() {
+                f(&format!("{keybase}.rest_prompt"), p);
+            }
+            if let Some(r) = rest_label.as_mut() {
+                f(&format!("{keybase}.rest_label"), r);
+            }
+            if let Some(s) = save_label.as_mut() {
+                f(&format!("{keybase}.save_label"), s);
+            }
+        }
         _ => {}
     }
 }
@@ -457,6 +479,37 @@ pub fn dialogue_option_labels(c: &Campaign) -> Vec<OptionLabel> {
             }
         }
     }
+    out
+}
+
+/// Every **authored** bonfire rest-dialog label (spec-0016 §1, owner ruling
+/// 2026-08-03), in the same fixed effect order the inventory uses. A bonfire's
+/// two options are drawn on exactly the same 150-GUI-px `multi_action` button a
+/// dialogue option is, so they carry exactly the same width budget (`DW0331`) —
+/// the check follows the widget, not the stage the string was authored in.
+///
+/// Unauthored labels are absent by construction: the compiler's canonical English
+/// (`Rest and save` / `Save only` / `Bonfire`) is measured once by a compiler unit
+/// test rather than re-measured per campaign, since it cannot vary.
+pub fn bonfire_option_labels(c: &Campaign) -> Vec<OptionLabel> {
+    let mut out = Vec::new();
+    each_effect_ref(c, &mut |path, keybase, eff| {
+        let Some(l) = eff.bonfire_labels() else {
+            return;
+        };
+        for (text, field, key) in [
+            (l.rest_label, "rest_label", "rest_label"),
+            (l.save_label, "save_label", "save_label"),
+        ] {
+            if let Some(text) = text {
+                out.push(OptionLabel {
+                    path: format!("{path}/{field}"),
+                    key: format!("{keybase}.{key}"),
+                    text: text.to_string(),
+                });
+            }
+        }
+    });
     out
 }
 

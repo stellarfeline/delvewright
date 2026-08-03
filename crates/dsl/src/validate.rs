@@ -2132,6 +2132,46 @@ fn v06_checks(
             }
         }
     }
+
+    // spec-0016 §1 (owner ruling 2026-08-03): a campaign that places a bonfire is
+    // a souls campaign, and a souls campaign owes the party a flask. Resting
+    // replenishes every `flask` kit entry to its declared count — with none
+    // declared, "rest and save" and "save only" collapse into the same button and
+    // the recovery economy the bonfire exists to serve does not exist (`DW0476`).
+    // Campaign-global on purpose: the flask is per-class gear, and one class
+    // without a flask is as broken as none, so the requirement is on EVERY class.
+    if has_bonfire {
+        let flaskless: Vec<&str> = c
+            .classes
+            .content
+            .classes
+            .iter()
+            .filter(|cl| !cl.kit.iter().any(|k| k.flask))
+            .map(|cl| cl.id.as_str())
+            .collect();
+        if !flaskless.is_empty() {
+            d.push(Diagnostic::error(
+                codes::BONFIRE_NO_FLASK,
+                "classes",
+                "/content/classes".to_string(),
+                format!(
+                    "this campaign places a `bonfire` but {} no `flask` kit item: {}. \
+                     Resting at a bonfire replenishes every kit entry marked `\"flask\": true` to \
+                     its declared `count` — with none, the rest option recovers nothing and the \
+                     souls loop has no consumable to spend (spec-0016 §1, owner ruling \
+                     2026-08-03). Add a recovery item to each class kit and mark it \
+                     `\"flask\": true` (this needs `dsl_version` 0.8.0 on the classes stage). Do \
+                     NOT drop the bonfire to silence this — the rest point is the design.",
+                    if flaskless.len() == 1 {
+                        "one class declares".to_string()
+                    } else {
+                        format!("{} classes declare", flaskless.len())
+                    },
+                    flaskless.join(", ")
+                ),
+            ));
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -5972,11 +6012,14 @@ fn loot_checks(
 }
 
 // ---------------------------------------------------------------------------
-// DSL v0.8 (spec-0025) — branch points, happenings, named endings
+// DSL v0.8 — branch points, happenings, named endings (spec-0025);
+// the bonfire rest interaction + the class-kit flask (spec-0016 §1)
 // ---------------------------------------------------------------------------
 
-/// DSL v0.8 reserved-feature gating (spec-0025): the stage-4 `branch_points`
-/// declaration, the per-node `happening`, and the `campaign-complete` `ending`.
+/// DSL v0.8 reserved-feature gating: spec-0025's stage-4 `branch_points`
+/// declaration, per-node `happening` and `campaign-complete` `ending`, plus
+/// spec-0016 §1's bonfire rest-dialog labels (stage 5) and class-kit `flask`
+/// (stage 3).
 ///
 /// Same asymmetry the v0.7 ledger established: *declaring* any of it below 0.8.0
 /// is `DW0141`, so the version contract stays exact and a 0.6/0.7 campaign's
@@ -6028,6 +6071,52 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     "a named `campaign-complete` `ending` requires dsl_version 0.8.0 — raise this \
                      stage's `dsl_version` to 0.8.0, or remove the field"
                         .to_string(),
+                ));
+            }
+        });
+    }
+    // spec-0016 §1 (owner rulings 2026-08-03): the class-kit `flask` a bonfire
+    // rest replenishes, and the bonfire's authorable rest-dialog labels.
+    if !is_v08(c.classes.dsl_version.as_str()) {
+        for (i, cl) in c.classes.content.classes.iter().enumerate() {
+            for (k, item) in cl.kit.iter().enumerate() {
+                if !item.flask {
+                    continue;
+                }
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "classes",
+                    format!("/content/classes/{i}/kit/{k}/flask"),
+                    "a class kit `flask` (the recovery item a bonfire rest replenishes) requires \
+                     dsl_version 0.8.0 — raise this stage's `dsl_version` to 0.8.0, or remove the \
+                     field"
+                        .to_string(),
+                ));
+            }
+        }
+    }
+    if !is_v08(c.quests.dsl_version.as_str()) {
+        crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+            let Some(l) = eff.bonfire_labels() else {
+                return;
+            };
+            for (present, field) in [
+                (l.prompt.is_some(), "prompt"),
+                (l.rest_label.is_some(), "rest_label"),
+                (l.save_label.is_some(), "save_label"),
+            ] {
+                if !present {
+                    continue;
+                }
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("{path}/{field}"),
+                    format!(
+                        "a `bonfire` `{field}` (an authored label on the two-option rest dialog) \
+                         requires dsl_version 0.8.0 — raise this stage's `dsl_version` to 0.8.0, \
+                         or remove the field and take the compiler's canonical English"
+                    ),
                 ));
             }
         });
