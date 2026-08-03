@@ -312,8 +312,18 @@ Then:
      `<project>_server-data` behind whenever an exited container still holds it
    - `EULA=TRUE docker compose -f validation/compose.yaml --profile packtest up --exit-code-from packtest`
    - `EULA=TRUE docker compose -f validation/compose.yaml --profile validate up --build --abort-on-container-exit --exit-code-from bot`
+     — two labelled stages once the delve has mandatory combat (spec-0023):
+     `critical-path` and `die-retry`. The die-retry stage adds two scripted
+     deaths per encounter, so a combat-heavy delve needs a larger
+     `DELVEWRIGHT_RUN_TIMEOUT_MS` than the 20-minute default. Read
+     `validation/run-out/run-report.json` afterwards: it names every combat-assist
+     window, every death trial, and any inverted-floor-gate finding. A red
+     `die-retry` stage is a CONTENT bug of the most serious kind — the delve is
+     completable but dying is not safe. Never set `DELVEWRIGHT_DIE_RETRY=0` to
+     get green; the report records a skipped stage as skipped, not as passed.
    - tear down containers, and report ONLY: per-command exit codes, failed
-     PackTest names, the bot's failed step (if any), and ≤20 relevant log lines.
+     PackTest names, the bot's failed step (if any), any die-retry finding, and
+     ≤20 relevant log lines.
    Both must exit 0. Re-runs after fixes go through the same subagent. On any
    red, **triage before touching anything** (debug doctrine, CLAUDE.md):
    - *Content bug* (your DSL declares something wrong/unreachable/unlit): fix
@@ -391,6 +401,36 @@ Then:
   (DW0468) — it deletes every hostile. Scripted `actors` take the same
   `attributes` block wave mobs do, so an elite can be tuned on both its staged
   puppet and its unleashed twin.
+- **The machine proves the LOOP, not the win** (spec-0023). Three things are
+  checked about every mandatory encounter, and it is worth authoring toward
+  them rather than discovering them as red builds:
+  1. *Winnability arithmetic* (build errors `DW0470`-`DW0473`): a required
+     hostile must be damageable (Resistance amplifier 4 is total immunity —
+     use at most 3, or put the durability in `attributes.max_health`), must
+     have a standable cell beside it to be fought from, must fall inside the
+     time-to-kill budget, and no `damage-players` in a quest bundle may land
+     >= 20 (a full-health player) — that is a scripted death, not difficulty.
+     A hit the party can dodge (a trap payload, a stealth `on_caught`, a
+     `damage-players` with a `within` zone) is deliberately outside the check.
+  2. **Declare `attributes.max_health` on every mandatory wave stack.** Vanilla
+     publishes no per-entity default attributes, so an undeclared stack gets no
+     numeric bound at all and the build warns `DW0475`. A souls campaign wants
+     the arithmetic proven, so declare the health you tuned against.
+  3. *The die-retry ladder stage*: the bot deliberately dies twice at every
+     encounter and proves respawn at the governing checkpoint -> the route back
+     -> the fight re-engages -> no completed objective was lost. Author with
+     that in mind: every encounter needs a checkpoint/bonfire that governs it,
+     and a wave the party must be able to re-fight wants `respawns_on_rest`.
+  4. *The inverted floor gate*: mark a set-piece fight `tier: "elite"` or
+     `"boss"` (DSL v0.7, on the wave). The ladder then gives it one UNASSISTED
+     bot attempt; if the bot — a poor fencer by design — wins cold, the run
+     reports the fight as too easy for its billing. Leave ordinary pressure
+     waves unmarked: they carry no such expectation. Marking is how you opt
+     into the scrutiny, so mark honestly.
+  Ordinary fights run the ladder under a bounded, logged combat assist, so bot
+  fencing skill never caps how hard the delve is allowed to be — read
+  `validation/run-out/run-report.json` after a `validate` run for the assist
+  windows, the death trials and any floor findings.
 - **Wave tuning**: `follow_range` below ~16 means distant wave mobs never
   engage; a kill objective whose mobs idle is unfinishable-in-practice even
   though machine-valid. Undead waves burn in daylight — the RIGHT fix (owner

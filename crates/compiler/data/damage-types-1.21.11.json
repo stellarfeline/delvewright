@@ -1,0 +1,202 @@
+{
+  "minecraft:arrow": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:bad_respawn_point": {
+    "bypasses_armor": false,
+    "scaling": "always"
+  },
+  "minecraft:cactus": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:campfire": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:cramming": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:dragon_breath": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:drown": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:dry_out": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:ender_pearl": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:explosion": {
+    "bypasses_armor": false,
+    "scaling": "always"
+  },
+  "minecraft:fall": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:falling_anvil": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:falling_block": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:falling_stalactite": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:fireball": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:fireworks": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:fly_into_wall": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:freeze": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:generic": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:generic_kill": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:hot_floor": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:in_fire": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:in_wall": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:indirect_magic": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:lava": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:lightning_bolt": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:mace_smash": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:magic": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:mob_attack": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:mob_attack_no_aggro": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:mob_projectile": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:on_fire": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:out_of_world": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:outside_border": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:player_attack": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:player_explosion": {
+    "bypasses_armor": false,
+    "scaling": "always"
+  },
+  "minecraft:sonic_boom": {
+    "bypasses_armor": true,
+    "scaling": "always"
+  },
+  "minecraft:spear": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:spit": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:stalagmite": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:starve": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:sting": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:sweet_berry_bush": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:thorns": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:thrown": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:trident": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:unattributed_fireball": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:wind_charge": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:wither": {
+    "bypasses_armor": true,
+    "scaling": "when_caused_by_living_non_player"
+  },
+  "minecraft:wither_skull": {
+    "bypasses_armor": false,
+    "scaling": "when_caused_by_living_non_player"
+  }
+}

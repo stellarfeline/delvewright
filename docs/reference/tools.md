@@ -135,6 +135,8 @@ Never shipped inside a delve.
 | `tools/check-worker-override.py` | CI | `python3 tools/check-worker-override.py` — worker-isolation coverage gate: every service in `validation/compose.yaml` that pins a `container_name` or publishes `ports` must be reset (`!reset`) in `validation/worker-override.yaml`. Container names and host ports are Docker-GLOBAL, so `-p dw-worker-<x>` does not isolate them; the omission cost a run twice (`server` #190, then `bot`) |
 | `tools/extract-sound-registry.py` | maintenance | `python3 tools/extract-sound-registry.py <registries/data.min.json> <out.json>` — regenerates the compiler's sound registry for a new MC pin (positional args only, no `--help`) |
 | `tools/extract-item-stack-sizes.py` | maintenance | `python3 tools/extract-item-stack-sizes.py <item_components/data.min.json> <out.json>` — regenerates `crates/compiler/data/item-stack-sizes-1.21.11.json`, the item→`max_stack_size` table `DW0436` reads, for a new MC pin (positional args only). Pins and checks the source SHA-256; refuses to default a missing component rather than assuming 64 |
+| `tools/extract-item-combat-stats.py` | maintenance | `python3 tools/extract-item-combat-stats.py <item_components/data.min.json> <out.json>` — regenerates `crates/compiler/data/item-combat-1.21.11.json`, the item→`attack_damage`/`attack_speed`/`armor`/`armor_toughness`/`nutrition` table the spec-0023 winnability arithmetic reads (`DW0472`, `DW0474`), for a new MC pin (positional args only). Pins the source SHA-256 and refuses any non-`add_value` modifier rather than mis-summing it |
+| `tools/extract-damage-types.py` | maintenance | `python3 tools/extract-damage-types.py <damage_type/data.min.json> <tag/damage_type/data.min.json> <out.json>` — regenerates `crates/compiler/data/damage-types-1.21.11.json`, the damage-type→`{bypasses_armor, scaling}` table `DW0473` reads (positional args only). The finding it pins: `damage-players` emits `/damage` with no attacker, so an Easy campaign's scripted hits are NOT halved — only `scaling: always` types scale |
 | `tools/extract-font-metrics.py` | maintenance | `python3 tools/extract-font-metrics.py <client.jar> …` — regenerates the font metrics behind the DW0330 text-fit lint (positional args only, no `--help`) |
 
 ## 7. Validation stack (`validation/`)
@@ -148,7 +150,7 @@ profiles boot the world the compiler declared, via the shared
 |---|---|---|---|
 | `play` | human | `EULA=TRUE docker compose -f validation/compose.yaml --profile play up` | the shipped delve image, joinable at `localhost:25565` |
 | `playtest` | human | `EULA=TRUE CREATOR_NAME=<mc-name> docker compose -f validation/compose.yaml --profile playtest up --build` | `play` plus the creator overlay: `/trigger dw.note` stamps the log for `delve-harvest` |
-| `validate` | agent | `EULA=TRUE docker compose -f validation/compose.yaml --profile validate up --build --abort-on-container-exit --exit-code-from bot` | server + mineflayer critical-path bot |
+| `validate` | agent | `EULA=TRUE docker compose -f validation/compose.yaml --profile validate up --build --abort-on-container-exit --exit-code-from bot` | server + mineflayer critical-path bot. Two labelled ladder stages once the build carries a `validation/combat-plan.json` (spec-0023): `critical-path` (the whole delve, with bounded **combat-assist** windows at each encounter) and `die-retry` (≥2 scripted deaths per encounter, proving respawn → return → re-engage with no lost progress). The run writes `validation/run-out/run-report.json` — every assist window with its encounter id and ticks, every death trial, and the inverted floor gate's findings. The bot is opped for exactly two harness commands (`/damage @s`, `/effect give @s minecraft:resistance`). `DELVEWRIGHT_DIE_RETRY=0` skips the stage for local iteration and the report records that it was SKIPPED, never that it passed |
 | `packtest` | agent | `EULA=TRUE docker compose -f validation/compose.yaml --profile packtest up --exit-code-from packtest` | headless PackTest suite on the tool server. `DELVE_OUTPUT` (default `./delve-output`) + `PACKTEST_CONTAINER` boot a **different** build tree — the generated suite is per-campaign, so a template class is only proven live by a campaign that emits it (CI runs extra passes for template classes hello-world cannot emit: `crates/compiler/tests/fixtures/cast-ledger` for spec-0020's root-swap/bark/explicit-none templates, and `crates/dsl/fixtures/valid/keep-trial` for the `interact` verb templates — `verb_interact` and `verb_interact_held`, the held-vs-carried proof — since hello-world has no `interact` objective at all). See `validation/README.md` "Running a second campaign through `packtest`" |
 
 Shell entry points:
@@ -178,6 +180,17 @@ npm --prefix harness start              # node src/run.ts <critical-path.json>  
 
 `harness/src/note-bot.ts` is driven by `validation/playtest-note-flow.sh` and
 `harness/src/rehearsal-bot.ts` by `validation/rehearsal-flow.sh`, never by hand.
+
+Run-shaping environment (all read by `src/run.ts`; the compose `validate` profile
+sets the spec-0023 pair):
+
+| Variable | Effect |
+|---|---|
+| `DELVEWRIGHT_RUN_REPORT` | Path to write the spec-0023 run report to. Unset = the pre-spec-0023 stderr-only run |
+| `DELVEWRIGHT_DIE_RETRY` | `0` skips the die-retry stage (local iteration only). Default ON whenever a combat plan is present |
+| `DELVEWRIGHT_RETRY_ON_DEATH` | `1`/`true` lets the sequencer retry a step once after an unscripted death (spec-0008) |
+| `DELVEWRIGHT_RUN_TIMEOUT_MS` | Hard wall-clock budget for the whole run (default 20 min). **Raise it when the die-retry stage is on**: two scripted deaths per encounter add a respawn, a re-arm and a walk back to every fight |
+| `DELVEWRIGHT_BOT_USERNAME` | The bot's name; must match the server's `OPS` entry or the assist and scripted-death commands are silently refused |
 
 An `interact` step whose `critical-path.json` entry carries `requires_item` puts
 that item in the bot's **mainhand** before it sends the trigger

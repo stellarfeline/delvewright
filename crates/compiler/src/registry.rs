@@ -136,6 +136,108 @@ impl FullSoundRegistry {
     }
 }
 
+/// Per-item combat & sustain numbers for the pinned MC version — Mojang's own
+/// `minecraft:attribute_modifiers` / `minecraft:food` default components,
+/// vendored under `data/` (see `data/PROVENANCE.md`; regenerate with
+/// `tools/extract-item-combat-stats.py`). Read by the spec-0023 winnability
+/// arithmetic (`compiler::combat`).
+///
+/// **Absence is a fact, not a gap.** An item with no entry has no combat
+/// *attribute* in Mojang's data, which is emphatically not "deals no damage": a
+/// bow's damage is projectile code and appears in no vanilla data at all. Callers
+/// must treat `None` as *unknown*, never as zero — that distinction is the whole
+/// reason `DW0472` (a bound that failed) and `DW0475` (a bound that could not be
+/// computed) are two different diagnostics.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize)]
+pub struct ItemCombat {
+    /// The item's `minecraft:attack_damage` modifier — what it ADDS to the
+    /// wielder's base attack damage, not the total.
+    pub attack_damage: f64,
+    /// The item's `minecraft:attack_speed` modifier (negative on every weapon:
+    /// it subtracts from the player's base 4.0 attacks/second).
+    pub attack_speed: f64,
+    /// Armour points contributed when worn.
+    pub armor: f64,
+    /// Armour toughness contributed when worn.
+    pub armor_toughness: f64,
+    /// `minecraft:food`'s `nutrition`; 0 for anything that is not food.
+    pub nutrition: f64,
+}
+
+/// The vendored `item id -> ItemCombat` table.
+#[derive(Debug, Clone)]
+pub struct ItemCombatRegistry {
+    stats: BTreeMap<String, ItemCombat>,
+}
+
+impl ItemCombatRegistry {
+    /// Load the vendored 1.21.11 combat/sustain table (embedded at compile time).
+    pub fn v1_21_11() -> Self {
+        let raw = include_str!("../data/item-combat-1.21.11.json");
+        let stats: BTreeMap<String, ItemCombat> =
+            serde_json::from_str(raw).expect("vendored item combat table is valid JSON");
+        Self { stats }
+    }
+
+    /// Mojang's numbers for `item_id`, or `None` when the item contributes none.
+    /// An un-namespaced id resolves under the default `minecraft:` namespace.
+    pub fn get(&self, item_id: &str) -> Option<ItemCombat> {
+        if let Some(s) = self.stats.get(item_id) {
+            return Some(*s);
+        }
+        if !item_id.contains(':') {
+            return self.stats.get(&format!("minecraft:{item_id}")).copied();
+        }
+        None
+    }
+}
+
+/// How a damage type behaves, straight from Mojang's data: whether armour
+/// applies at all (`#minecraft:bypasses_armor` membership) and its `scaling`
+/// field, which decides whether the difficulty multipliers touch it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct DamageTypeFacts {
+    /// True when armour points do not reduce this type at all.
+    pub bypasses_armor: bool,
+    /// `never` | `when_caused_by_living_non_player` | `always`, verbatim.
+    pub scaling: String,
+}
+
+impl DamageTypeFacts {
+    /// Does a bare `/damage <target> <amount> <type>` — which has **no
+    /// attacker** — get scaled by the world difficulty?
+    ///
+    /// Only `always` does. This is the trap the table exists to close: eight of
+    /// the nine types the DSL exposes are `when_caused_by_living_non_player`, so
+    /// a scripted `damage-players` is NOT halved on Easy, whatever the
+    /// `WorldDifficulty` doc-comment formula reads like in isolation.
+    pub fn scales_without_attacker(&self) -> bool {
+        self.scaling == "always"
+    }
+}
+
+/// The vendored `damage type -> DamageTypeFacts` table.
+#[derive(Debug, Clone)]
+pub struct DamageTypeRegistry {
+    facts: BTreeMap<String, DamageTypeFacts>,
+}
+
+impl DamageTypeRegistry {
+    /// Load the vendored 1.21.11 damage-type table (embedded at compile time).
+    pub fn v1_21_11() -> Self {
+        let raw = include_str!("../data/damage-types-1.21.11.json");
+        let facts: BTreeMap<String, DamageTypeFacts> =
+            serde_json::from_str(raw).expect("vendored damage type table is valid JSON");
+        Self { facts }
+    }
+
+    /// Mojang's facts for `type_id`, or `None` if the pinned registry has no
+    /// such type.
+    pub fn get(&self, type_id: &str) -> Option<&DamageTypeFacts> {
+        self.facts.get(type_id)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Prefab metadata (`prefabs/<name>.json`)
 // ---------------------------------------------------------------------------

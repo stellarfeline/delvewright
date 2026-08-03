@@ -47,6 +47,7 @@ pub mod calibrate;
 pub mod camera;
 pub mod cast;
 pub mod clearance;
+pub mod combat;
 pub mod commands;
 pub mod continuity;
 pub mod creator;

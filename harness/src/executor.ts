@@ -29,6 +29,20 @@ import type {
 } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError, likelyDeathCause } from "./death.ts";
+import {
+  AssistLedger,
+  assistClearCommand,
+  assistCommand,
+  assistPolicy,
+  deathPhases,
+  floorFinding,
+  respawnedAtCheckpoint,
+  scriptedDeathCommand,
+  type AssistWindow,
+  type CombatPlan,
+  type DeathTrial,
+  type Encounter,
+} from "./combat.ts";
 import { presentAndTrigger } from "./held-item.ts";
 import { CAMPAIGN_TOKEN, markerLine, parseCompletionMarker } from "./markers.ts";
 import { allowNonCollidingEntities, configureLeg } from "./movement.ts";
@@ -395,6 +409,14 @@ const KILL_TIMEOUT_MS = 90_000;
 /** Attack cadence (ms) — roughly the vanilla sword cooldown. */
 const ATTACK_INTERVAL_MS = 400;
 /**
+ * How long (ms) the die-retry stage trades blows before taking its `mid-fight`
+ * scripted death (spec-0023 §1). Short on purpose: the point is that the wave has
+ * been ENGAGED — some mobs hurt, the fight's state dirty — when the death lands,
+ * because that is the state a respawn has to restore. Winning the fight here would
+ * defeat the trial.
+ */
+const MID_FIGHT_MS = 6_000;
+/**
  * How long (ms) the bot may melee a single target, in range, without it dying before
  * that target is deemed unkillable and blacklisted (task: bot-kill-hunt). A living
  * wave mob dies in a few sword swings; an Invulnerable story actor summoned into the
@@ -599,6 +621,23 @@ export class MineflayerExecutor implements StepExecutor {
    * navigation data, not a route the harness computes.
    */
   private waypoints: Waypoints | undefined;
+  /**
+   * spec-0023: the compiler's combat plan — which encounters are mandatory, what
+   * the content bills each as, and which checkpoint governs a death at it.
+   * Absent (a delve with no mandatory combat, or an older build) → `kill` behaves
+   * exactly as it did before spec-0023, assists and die-retry included out.
+   */
+  private combatPlan: CombatPlan | undefined;
+  /** Whether the die-retry ladder stage runs. */
+  private dieRetry = false;
+  /** Every combat-assist window this run opened (spec-0023 §3 run artifact). */
+  private readonly assists = new AssistLedger();
+  /** Every scripted death and what it proved about the retry loop. */
+  private readonly trials: DeathTrial[] = [];
+  /** Inverted floor gate findings: billed fights the unassisted bot beat cold. */
+  private readonly floorFindings: string[] = [];
+  /** The last `select-class` step, replayed to re-arm after a scripted death. */
+  private lastSelectClass: SelectClassStep | undefined;
   /**
    * task #38: how many walked legs have been consumed. Legs are matched in lockstep
    * path order (not by destination coordinate), so an anchor visited more than once
@@ -1378,6 +1417,10 @@ export class MineflayerExecutor implements StepExecutor {
 
   async selectClass(step: SelectClassStep): Promise<void> {
     const bot = this.requireBot();
+    // Remembered so the die-retry stage can re-arm after a scripted death: a
+    // respawn drops the whole kit, and a bare-handed bot proves nothing about
+    // the fight it is about to re-engage (spec-0023 §1).
+    this.lastSelectClass = step;
     // The class-selection dialog button runs `step.command` (a `/trigger`); the
     // bot fires the same command directly. The per-tick handler then applies the
     // kit and teleports the player to the campaign spawn.
@@ -1792,7 +1835,7 @@ export class MineflayerExecutor implements StepExecutor {
    * Navigation + assertion only: the datapack's kill advancement + countdown are what
    * actually complete the objective when the last tagged mob dies.
    */
-  async kill(step: KillStep): Promise<void> {
+  private async fightWave(step: KillStep): Promise<void> {
     const bot = this.requireBot();
     // Confirmed kills: a mob the bot has attacked that then vanishes near the wave
     // anchor (see wave.ts). Counting these (rather than "no mob-shaped entity remains")
@@ -1963,6 +2006,226 @@ export class MineflayerExecutor implements StepExecutor {
         `(${engagement.killed}/${step.count} confirmed dead; ` +
         `${engagement.engaged.size} mob(s) engaged) not cleared`,
     );
+  }
+
+
+  /**
+   * Adopt the compiler's combat plan (spec-0023). With it, a `kill` step becomes a
+   * verified ENCOUNTER rather than a fight to be won: the die-retry stage proves
+   * dying is safe, the assist windows keep bot fencing skill from capping how hard
+   * a delve may be, and a billed `elite`/`boss` gets one honest unassisted attempt
+   * so the inverted floor gate has something to measure.
+   */
+  useCombatPlan(plan: CombatPlan, dieRetry: boolean): void {
+    this.combatPlan = plan;
+    this.dieRetry = dieRetry;
+  }
+
+  /** Every assist window this run opened, for the run report. */
+  assistWindows(): readonly AssistWindow[] {
+    return this.assists.windows();
+  }
+
+  /** Assist windows the harness opened and failed to close — a harness bug, and
+   * one the report shows rather than swallows. */
+  leakedAssists(): readonly AssistWindow[] {
+    return this.assists.leaked();
+  }
+
+  /** Every scripted death of the die-retry stage. */
+  deathTrials(): readonly DeathTrial[] {
+    return this.trials;
+  }
+
+  /** Inverted floor-gate findings (advisory, spec-0023). */
+  floorGateFindings(): readonly string[] {
+    return this.floorFindings;
+  }
+
+  /** The plan's entry for `wave`, if the campaign declares one. */
+  private encounterFor(wave: string): Encounter | undefined {
+    return this.combatPlan?.encounters.find((e) => e.wave === wave);
+  }
+
+  /**
+   * The critical path's `kill` step (spec-0023 §1/§3/§4).
+   *
+   * Order is the whole design. The die-retry stage runs FIRST, while the
+   * encounter is still live — dying to a fight already won proves nothing — and
+   * only then is the fight taken to completion, unassisted first when the content
+   * billed it hard.
+   */
+  async kill(step: KillStep): Promise<void> {
+    const enc = this.encounterFor(step.wave);
+    if (!enc) {
+      // No combat plan (or a wave outside it): pre-spec-0023 behaviour, untouched.
+      await this.fightWave(step);
+      return;
+    }
+    if (this.dieRetry) {
+      await this.dieRetryAt(step, enc);
+    }
+    if (assistPolicy(enc) === "unassisted-first") {
+      const won = await this.attemptUnassisted(step, enc);
+      const finding = floorFinding(enc, { attempted: true, won });
+      if (finding) {
+        this.floorFindings.push(finding);
+        process.stderr.write(`[floor] ${finding}\n`);
+      }
+      if (won) return;
+      process.stderr.write(
+        `[assist] ${step.wave}: the unassisted attempt did not clear the fight — ` +
+          `taking a labelled assist window\n`,
+      );
+      await this.withAssist(enc, "after an unassisted attempt failed", () =>
+        this.fightWave(step),
+      );
+      return;
+    }
+    await this.withAssist(enc, "policy: ordinary encounter", () => this.fightWave(step));
+  }
+
+  /**
+   * One honest, unassisted attempt at a billed encounter. Returns whether the bot
+   * cleared it; a death or a timeout is a normal `false`, not a failed run — the
+   * bot losing a souls fight is the DESIGN, and spec-0023 downgraded bot melee
+   * competence from gate-critical to telemetry precisely so it could be.
+   */
+  private async attemptUnassisted(step: KillStep, enc: Encounter): Promise<boolean> {
+    process.stderr.write(
+      `[floor] ${step.wave} is billed \`${enc.tier}\` — one unassisted attempt first\n`,
+    );
+    try {
+      await this.fightWave(step);
+      return true;
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[floor] ${step.wave}: unassisted attempt ended — ${detail}\n`);
+      if (this.death) await this.respawnAndRearm();
+      return false;
+    }
+  }
+
+  /** Run `body` inside a bounded, logged Resistance window. */
+  private async withAssist<T>(
+    enc: Encounter,
+    reason: string,
+    body: () => Promise<T>,
+  ): Promise<T> {
+    const bot = this.requireBot();
+    const window = this.assists.open(enc, reason, Date.now());
+    process.stderr.write(
+      `[assist] OPEN ${enc.wave} (${enc.objective}, tier ${enc.tier}): resistance ` +
+        `amplifier ${window.amplifier} for ${window.ticks} ticks — ${reason}\n`,
+    );
+    bot.chat(assistCommand());
+    try {
+      return await body();
+    } finally {
+      bot.chat(assistClearCommand());
+      this.assists.close(window, Date.now());
+      process.stderr.write(`[assist] CLOSE ${enc.wave}\n`);
+    }
+  }
+
+  /**
+   * The die-retry ladder stage for one encounter (spec-0023 §1): the load-bearing
+   * combat proof. In a souls delve the sacred property is not winning — it is that
+   * dying is always SAFE. So the harness deliberately dies to each mandatory
+   * encounter and proves the whole loop: death → respawn at the governing
+   * checkpoint → the route back is walkable → the encounter re-engages → and no
+   * completed objective was lost on the way.
+   */
+  private async dieRetryAt(step: KillStep, enc: Encounter): Promise<void> {
+    const bot = this.requireBot();
+    await this.walkTo(step.pos, 3, `die-retry approach ${step.wave}`, step.sneak);
+    const phases = deathPhases();
+    for (const [i, phase] of phases.entries()) {
+      const attempt = i + 1;
+      // "mid-fight" means the bot has traded blows first; "first-contact" is the
+      // moment of arrival. Both are the same command, taken at different times —
+      // what differs is the wave state the respawn has to restore.
+      if (phase === "mid-fight") {
+        await this.tradeBlows(step);
+      }
+      const before = new Set(this.completedObjectives.keys());
+      process.stderr.write(
+        `[die-retry] ${step.wave} death ${attempt}/${phases.length} (${phase})\n`,
+      );
+      bot.chat(scriptedDeathCommand());
+      await this.waitFor(() => this.death !== undefined, RESPAWN_TIMEOUT_MS, SCORE_POLL_MS);
+      const respawnPos = await this.respawnAndRearm();
+      let returned = false;
+      try {
+        await this.walkTo(step.pos, 3, `die-retry return ${step.wave}`, step.sneak);
+        returned = true;
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[die-retry] return leg failed: ${detail}\n`);
+      }
+      const after = new Set(this.completedObjectives.keys());
+      const lost = [...before].filter((o) => !after.has(o));
+      // Re-engageable: a wave mob is standing here again. `respawns_on_rest`
+      // re-seats the room on a rest; without it the survivors are simply still
+      // there. Either way, something must be left to fight — a wave that dies
+      // with the player is a fight that can only be attempted once.
+      const reEngaged = Boolean(bot.nearestEntity((e) => isWaveMob(e, bot.entity)));
+      this.trials.push({
+        encounter: enc.objective,
+        wave: enc.wave,
+        attempt,
+        phase,
+        respawnPos,
+        atCheckpoint: respawnedAtCheckpoint(respawnPos ?? [0, 0, 0], enc.checkpoint),
+        returned,
+        reEngaged,
+        objectivesIntact: lost.length === 0,
+        lostObjectives: lost,
+      });
+    }
+  }
+
+  /** Melee whatever wave mob is closest for a moment, so the next scripted death
+   * lands mid-fight rather than at first contact. Best effort by design — if
+   * nothing is in reach there is nothing to trade with, and the trial still runs. */
+  private async tradeBlows(step: KillStep): Promise<void> {
+    const bot = this.requireBot();
+    const deadline = Date.now() + MID_FIGHT_MS;
+    while (Date.now() < deadline && !this.death) {
+      const mob = bot.nearestEntity((e) => isWaveMob(e, bot.entity));
+      if (!mob) break;
+      if (bot.entity.position.distanceTo(mob.position) > 3) {
+        try {
+          await this.walkTo(
+            [Math.floor(mob.position.x), Math.floor(mob.position.y), Math.floor(mob.position.z)],
+            2,
+            `die-retry close ${step.wave}`,
+            step.sneak,
+          );
+        } catch {
+          break;
+        }
+        continue;
+      }
+      bot.attack(mob);
+      await delay(ATTACK_INTERVAL_MS);
+    }
+  }
+
+  /** Wait out a death, note WHERE the bot came back, then replay `select-class` so
+   * it is armed again. The position is read before the re-selection, because the
+   * class trigger teleports — the respawn point is what the checkpoint contract is
+   * about, and it must be measured while it is still observable. */
+  private async respawnAndRearm(): Promise<Vec3Tuple | undefined> {
+    const bot = this.requireBot();
+    await this.recoverFromDeath();
+    const p = bot.entity?.position;
+    const respawnPos: Vec3Tuple | undefined =
+      p === undefined ? undefined : [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)];
+    if (this.lastSelectClass) {
+      await this.selectClass(this.lastSelectClass);
+    }
+    return respawnPos;
   }
 
   /** Collect items from the chest at the anchor: go there, open it, withdraw all. */
