@@ -24,6 +24,22 @@ non-bonfire checkpoints (island-style). Proofs: bonfire placement inherits
 DW0316 (standable) + DW0315 (no stranding); a wave marked respawns_on_rest
 on the critical path re-runs its completability proof post-rest.
 
+Owner rulings (2026-08-03, from the bell first playtest — the campfire must
+be a real interaction, never a lazy "arrive" objective):
+
+- **Right-clicking the bonfire opens exactly two options**: *rest and save*
+  vs *save only*. Save-only sets the checkpoint and nothing else. Rest does
+  the full loop: player fully restored, flask refilled, `on_rest[]` fired
+  (non-boss waves re-seat; stage bosses never respawn on rest).
+- **The flask (estus equivalent)**: a souls-mode class kit MUST carry
+  declared recovery potions; resting replenishes them to the declared
+  count. Compile proof: a souls campaign whose kit declares no flask is a
+  build error.
+- **Re-seat fidelity**: a re-seated wave is REMOVED and re-summoned
+  identical — full count, full health, both sides reset. Grinding a wave
+  down one hit per life is never a valid path; the die-retry stage asserts
+  count + health at re-engagement (task #108).
+
 ### 2. Shortcut doors ("the door does not open from this side")
 The owner's definition of the pattern (2026-08-02), which this section is
 now built around: between two bonfires there are TWO routes — a **short
