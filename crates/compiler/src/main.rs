@@ -541,6 +541,14 @@ fn validate_loaded(
             diags.extend(delvewright_compiler::textfit::check_text_fits(
                 &campaign, &sidecars,
             ));
+            // Dialogue option labels that overrun their dialog button (DW0331).
+            // Error tier, unlike DW0330: the 150-GUI-px button is the geometry of
+            // the dialog this compiler emits, not a guess about the player's
+            // window, so an over-wide caption provably scrolls in game. Runs over
+            // the English source and every declared-language sidecar rendition.
+            diags.extend(delvewright_compiler::textfit::check_option_labels(
+                &campaign, &sidecars,
+            ));
             // v0.6 `close-gate` gate-block declaration (DW0343): the fill block is
             // prefab metadata, so this compiler-side check runs here (validation
             // tier). No-op for a campaign that uses no `close-gate`.

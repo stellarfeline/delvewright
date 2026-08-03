@@ -276,7 +276,10 @@ NPC (`DW0122`); every `talk-to` has ≥1 reachable (`DW0123`) and ≥1 **ungated
 `forbids_flags`: either kind of flag gate can make the option unavailable exactly
 when it is needed, and the static analysis does no temporal reasoning about which
 flags end up set. Node `text` → l10n `dlg.<n>.<node>.text`, option
-labels → `.opt.<i>.label`. **Display gating (v0.4+, task #54):** an option is
+labels → `.opt.<i>.label`. An option label is a **button caption**: it is drawn on a
+fixed 150-GUI-px dialog button and scrolls if it does not fit, so every label —
+source and translation — is width-checked (`DW0331`, error). **Display gating (v0.4+,
+task #54):** an option is
 *shown* only when clicking it would fire — every `requires_flags` set and no
 `forbids_flags` set (flag axes; the click handler mirrors both with fail-fast
 guards, so a direct `/trigger` cannot bypass them) and every completed objective
@@ -1717,6 +1720,46 @@ effects are covered.
 | Code | Meaning |
 |------|---------|
 | `DW0330` | An on-screen `narrate` string (`title` / `subtitle` / `art`) — English source or any declared-language sidecar rendition — renders wider than fits on screen. Advisory (exit 0): shorten the line. Do **not** demote a title to `chat` to silence it, and do not assume a wider monitor fixes it — the overflow scales with GUI scale, not away from it. |
+
+### DW0331 — dialogue option button fit (`compiler::textfit`; **error**; exit 1)
+
+Same font metrics as `DW0330`, a harder limit, and the opposite severity — for a
+reason that is worth stating precisely, because "follow the precedent" here means
+following its *reason*, not copying its tier.
+
+**A dialogue option is a button caption.** `emit::build_node_dialog` emits each node
+as a `minecraft:multi_action` dialog with `columns: 1` and **no `width` override**,
+so every option button is vanilla's default **150 GUI px**. Vanilla draws a button's
+label via `AbstractWidget::renderScrollingString`, inset **2 px** per side: a label
+wider than the remaining **146 px** neither wraps nor shrinks — it **scrolls back and
+forth**, and a shelf of sliding captions is unreadable to choose from.
+
+**Budget: 146 font px, no scale divisor.** Dialog buttons draw at the identity pose
+(**×1**), so one font pixel is one GUI pixel — unlike `DW0330`'s titles at ×4/×2.
+Rules of thumb from the advances, for authoring: ~24 Latin or ~16 Han characters at
+the threshold, so author to **~20 / ~12** and leave a translation room to grow
+(`.claude/skills/new-delve/SKILL.md` *Writing craft* §C; `docs/reference/i18n.md`).
+
+**Why error, not warning.** `DW0330` warns because its reference GUI width is a guess
+about the *player's window*, which the compiler cannot know, and rejecting a build on
+a guess dresses a judgement call as a fact. That reasoning does not transfer: 150 px
+is the button width because **this compiler emitted no `width`**, on every window at
+every GUI scale. `width > 146` therefore *is* "this caption scrolls in game" — a
+property of the datapack being built, so it rejects. The remedy is never a wider
+button: move the content into the node's body text, which wraps, or into the NPC's
+reply.
+
+**Scope.** Every `.opt.<n>.label` in the canonical English source **and** every
+declared-language sidecar rendition, keyed by the same `dlg.<npc>.<node>.opt.<i>.label`
+inventory keying as `validate_l10n` (`dsl::l10n::dialogue_option_labels`) — so a
+`zh-cn` label that overflows where its English source fits is reported at
+`l10n/<lang>.json#/content/<key>`, naming the language and the exact string. Display
+gating (`requires_flags`/`forbids_flags`) decides *whether* a variant shows a label,
+never how wide it renders, so gated options carry the same budget.
+
+| Code | Meaning |
+|------|---------|
+| `DW0331` | A dialogue option `label` — English source or any declared-language sidecar rendition — renders wider than the 146 usable font px of the 150-GUI-px dialog button it is drawn on, so vanilla scrolls the caption instead of sitting it still. Error (exit 1): cut the label to a caption and move what it carried into the node's body text or the NPC's reply. |
 
 ### DW0379/DW0380 — souls pacing lints (`compiler::nav`; **warning**; exit 0)
 
