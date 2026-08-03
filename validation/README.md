@@ -55,6 +55,20 @@ client), and tears down **only its own project** (`docker compose -p
 dw-worker-<unique> down -v`) — never a bare `docker compose down`, never
 `docker rm` on a container it did not create.
 
+That teardown is not self-verifying: `down -v` leaves `<project>_server-data`
+behind whenever an exited container of the project still holds the volume, and the
+stale world carries the scoreboard into the next run — objectives already complete,
+so the bot fails and the failure looks like a content bug (three misattributed red
+runs, island round 13). Finish every worker teardown with
+
+```bash
+validation/fresh-volumes.sh --project dw-worker-<unique>
+```
+
+which force-removes that project's containers and volumes and then proves they are
+gone. `--all` exists for whoever owns the host; a worker never runs it, and the
+script refuses it outright while the mutex reads `owner-play-session`.
+
 Both exist because of a real incident (2026-08-02): a hand-rolled waiter whose
 "did I get the lock?" guard tested directory existence fell through against the
 owner's held lock and ran a teardown that — via the pinned `container_name` —
@@ -208,10 +222,13 @@ incl. Chinese note text) and the overlay emission + byte-determinism
   `server/`, `packtest-datapack/`, `critical-path.json`), so `--profile validate`
   and `--profile packtest` reproduce CI's dynamic tiers locally with exit codes
   propagated (spec-0003 acceptance criteria).
-- **Re-runs**: `validation/fresh-volumes.sh` tears the stack down and proves the
-  world volumes are gone. A persisted volume keeps completed objectives completed,
-  which fails a "fresh" playthrough for reasons unrelated to the delve — run it
-  before every repeat playthrough.
+- **Re-runs**: `validation/fresh-volumes.sh --project <your compose project>` (or
+  `--all` when you own the whole host) tears that stack down and *proves* its world
+  volumes are gone. A persisted volume keeps completed objectives completed, which
+  fails a "fresh" playthrough for reasons unrelated to the delve — run it before
+  every repeat playthrough. It takes no default mode on purpose: `--all` sweeps
+  every project on the daemon and is refused outright while the mutex reads
+  `owner-play-session`.
 - **Shot sets**: `validation/render-shots.sh <build-dir> [out-dir]` turns a build
   output into the Chunky scene set plus the shot index (`delve-render scene` +
   `index`) for visual review, including the first-person player-POV shots.
