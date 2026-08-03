@@ -308,24 +308,47 @@ class DyingExecutor extends RecordingExecutor {
     this.calls.push("recover");
     return Promise.resolve();
   }
+
+  rearmAfterRespawn(): Promise<boolean> {
+    this.calls.push("rearm");
+    return Promise.resolve(true);
+  }
 }
 
-test("retryOnDeath recovers, re-selects class, and retries the dead step once", async () => {
+test("retryOnDeath recovers, re-arms where the bot stands, and retries the dead step once", async () => {
   const executor = new DyingExecutor(1);
   await runSequence(
     path([selectClass, reach, assertComplete]),
     executor,
     { retryOnDeath: true },
   );
-  // reach dies → recover → re-select-class → reach passes → assert-complete.
+  // reach dies → recover → re-arm → reach passes → assert-complete.
   assert.deepEqual(executor.calls, [
     "select-class",
     "reach", // died here
     "recover",
-    "select-class", // respawn dropped class state → re-selected
+    "rearm", // kit back on, bot NOT moved
     "reach", // retried and passed
     "assert-complete",
   ]);
+});
+
+test("the death retry never re-selects the class — that would teleport the bot away", async () => {
+  // task #120. `class_apply_<class>` ends in `teleport @s <campaign entry point>`
+  // and the `dw.class` trigger is re-enabled for every player on every tick, so a
+  // second `/trigger dw.class` after a death silently warps the bot back to the
+  // start of the delve. The whole retry path — and every die-retry measurement
+  // taken through it — is about where the player RESPAWNS, so nothing on it may
+  // move the bot.
+  const executor = new DyingExecutor(1);
+  await runSequence(path([selectClass, reach, assertComplete]), executor, {
+    retryOnDeath: true,
+  });
+  assert.equal(
+    executor.calls.filter((c) => c === "select-class").length,
+    1,
+    "the class is selected once, at the start of the run, and never again",
+  );
 });
 
 test("default (fail-fast) surfaces a death as a StepExecutionError without retrying", async () => {

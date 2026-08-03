@@ -848,15 +848,35 @@ export interface DeathTrial {
   readonly outcome: RetryOutcome;
   /** The death message the loop opened with, when the server broadcast one. */
   readonly cause: string | undefined;
-  /** Where the bot respawned. */
+  /**
+   * Where the bot respawned — MEASURED (`bot.entity.position` the moment the
+   * respawn settled), never the plan's expectation. Nothing between the respawn
+   * and this reading may move the bot, which is why the post-death re-arm no
+   * longer replays `select-class` (task #120: `class_apply_*` teleports).
+   */
   readonly respawnPos: Vec3Tuple | undefined;
-  /** Did it respawn at the governing checkpoint? */
+  /** Did it respawn at the governing checkpoint? Derived from {@link respawnPos}. */
   readonly atCheckpoint: boolean;
-  /** Did it walk back to the encounter? */
+  /** Did the kit survive the death? The delve seals `gamerule keep_inventory true`,
+   * so a bot that comes back empty-handed found that seal absent — and a player who
+   * must re-gear after every death has no cheap retry (task #120). */
+  readonly kitKept: boolean;
+  /** Did it walk back to the encounter, from where it respawned? */
   readonly returned: boolean;
-  /** Raw observation behind {@link outcome}: was a wave mob standing there again? */
+  /**
+   * Raw observation behind {@link outcome}: was a wave mob standing there again?
+   *
+   * **Only observed when {@link returned}** (task #120). The probe reads the
+   * entities the CLIENT tracks, so a bot that never got back describes the place it
+   * is stuck in, not the encounter. `returned: false` therefore forces
+   * `reEngaged: false`, `reengage: undefined` and `outcome: "unproven"` — "not
+   * looked at" is a different fact from "looked at and empty", and the run-five
+   * artifact reported an unwalkable route and a re-engaged fight in the same trial
+   * precisely because the two were conflated.
+   */
   readonly reEngaged: boolean;
-  /** Raw observation behind {@link outcome}: is the encounter's objective complete? */
+  /** Raw observation behind {@link outcome}: is the encounter's objective complete?
+   * Read off the scoreboard, so it is meaningful wherever the bot is standing. */
   readonly objectiveComplete: boolean;
   /** Does this wave re-seat on rest? Only such a wave owes re-seat fidelity. */
   readonly reseats: boolean;
@@ -898,6 +918,7 @@ export function openTrial(enc: Encounter, attempt: number, phase: DeathPhase): D
     cause: undefined,
     respawnPos: undefined,
     atCheckpoint: false,
+    kitKept: false,
     returned: false,
     reEngaged: false,
     objectiveComplete: false,
@@ -928,11 +949,21 @@ export function trialVerdict(t: DeathTrial): string | undefined {
       `respawn point is the one thing a souls delve cannot ship.`
     );
   }
+  if (!t.kitKept) {
+    return (
+      `${t.wave} death ${t.attempt} (${t.phase}): the bot came back EMPTY-HANDED. Every ` +
+      `delve seals \`gamerule keep_inventory true\` — dying must never cost the kit — so ` +
+      `this is a broken seal, not difficulty: the party would have to re-gear before every ` +
+      `retry.`
+    );
+  }
   if (!t.returned) {
     return (
-      `${t.wave} death ${t.attempt} (${t.phase}): the route from the respawn back to the ` +
+      `${t.wave} death ${t.attempt} (${t.phase}): the route from the respawn at ` +
+      `${t.respawnPos ? t.respawnPos.join(",") : "an unknown position"} back to the ` +
       `encounter is not walkable. The retry loop is broken: the party can die but not ` +
-      `try again.`
+      `try again. (Nothing is reported about re-engagement here — the bot never reached ` +
+      `the fight to look at it.)`
     );
   }
   if (!t.objectivesIntact) {

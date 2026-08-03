@@ -299,12 +299,20 @@ export class RunReport {
         attempt: t.attempt,
         phase: t.phase,
         // What was waiting at the end of the loop: `re-engaged`,
-        // `cleared-before-retry` (both passes) or `stranded` (a soft lock).
+        // `cleared-before-retry` (both passes), `stranded` (a soft lock) or
+        // `unproven` (the loop never got into a position to look).
         outcome: t.outcome,
         cause: t.cause ?? null,
+        // MEASURED, never planned: the bot's own position read the moment the
+        // respawn settled, before anything else could move it (task #120).
+        // `at_checkpoint` is derived from it and from nothing else.
         respawn_pos: t.respawnPos ?? null,
         at_checkpoint: t.atCheckpoint,
+        kit_kept: t.kitKept,
         returned: t.returned,
+        // Observed ONLY when `returned`. A trial that never walked back reports
+        // `re_engaged: false`, `reengage: null` and `outcome: "unproven"` — it did
+        // not look, which is not the same as looking and finding nothing.
         re_engaged: t.reEngaged,
         objective_complete: t.objectiveComplete,
         reseats_on_rest: t.reseats,

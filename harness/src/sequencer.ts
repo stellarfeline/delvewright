@@ -53,10 +53,22 @@ export interface StepExecutor {
   /**
    * Optional (spec-0008 gap-7, retry path): after a {@link BotDeathError}, ready the
    * bot to resume — wait for respawn and clear the death latch. Called by the
-   * sequencer only when `retryOnDeath` is enabled. Respawn drops class state, so the
-   * sequencer re-runs `select-class` afterwards.
+   * sequencer only when `retryOnDeath` is enabled.
    */
   recoverFromDeath?(): Promise<void>;
+  /**
+   * Optional (task #120): put the kit back on after a respawn, WITHOUT moving the
+   * bot. Paired with {@link recoverFromDeath}.
+   *
+   * The sequencer used to re-run `select-class` here, on the premise that a respawn
+   * drops class state. It does not — the delve seals `gamerule keep_inventory true`
+   * and class state lives in scoreboard values and tags — while the class trigger's
+   * `class_apply_<class>` ends in `teleport @s <campaign entry point>`. So the
+   * "re-arm" silently teleported the bot to the start of the delve after every
+   * death, and whatever the retried step then measured, it was not measuring the
+   * respawn the player got.
+   */
+  rearmAfterRespawn?(): Promise<unknown>;
   /**
    * Optional (AUDIT-P0): the run is about to execute step `index`. Attribution only
    * — the executor uses it to record which step a completion marker arrived during.
@@ -75,8 +87,8 @@ export interface StepExecutor {
 /** Options controlling how {@link runSequence} handles failures. */
 export interface RunOptions {
   /**
-   * Opt-in single retry after a bot death (spec-0008): recover the bot, re-run
-   * `select-class` (respawn loses class state), and retry the failed step once.
+   * Opt-in single retry after a bot death (spec-0008): recover the bot, put its
+   * kit back on where it stands, and retry the failed step once.
    * Default (fail-fast) surfaces the death diagnostic immediately. Intended for
    * future lethal-delve validation; the safe-route ladder stays fail-fast.
    */
@@ -186,11 +198,6 @@ export async function runSequence(
   options: RunOptions = {},
 ): Promise<void> {
   validateStepOrder(path.steps);
-  // Guaranteed present and first by validateStepOrder; captured for the retry path,
-  // which re-selects the class after a respawn drops it (spec-0008).
-  const selectClassStep = path.steps.find(
-    (s): s is SelectClassStep => s.action === "select-class",
-  )!;
   let deathRetryUsed = false;
   // The last step that stands for an objective — `assert-complete` is terminal and
   // proves nothing itself, so it is the step before it (validateStepOrder has
@@ -243,11 +250,11 @@ export async function runSequence(
           deathRetryUsed = true;
           try {
             await executor.recoverFromDeath();
-            // Respawn loses class state; re-select before retrying (unless the step
-            // that died IS select-class, which the retry re-runs anyway).
-            if (step.action !== "select-class") {
-              await executor.selectClass(selectClassStep);
-            }
+            // Re-arm WHERE THE BOT STANDS. Re-running `select-class` here would
+            // teleport it to the campaign entry point (task #120), so the retried
+            // step would be walked from the start of the delve rather than from
+            // the respawn the player actually got.
+            await executor.rearmAfterRespawn?.();
           } catch (recoverCause) {
             throw new StepExecutionError(i, step.action, recoverCause);
           }

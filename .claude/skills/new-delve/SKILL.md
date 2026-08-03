@@ -418,6 +418,13 @@ Then:
      `die-retry` stage is a CONTENT bug of the most serious kind — the delve is
      completable but dying is not safe. Never set `DELVEWRIGHT_DIE_RETRY=0` to
      get green; the report records a skipped stage as skipped, not as passed.
+     Reading one trial: `respawn_pos` is where the bot actually came back and
+     `at_checkpoint` is derived from it; `returned` is the walk back from exactly
+     there. `re_engaged` and `outcome` are observed ONLY when `returned` — a trial
+     that never got back reads `outcome: unproven`, which means the loop was never
+     in a position to be judged, not that the fight vanished; fix the route from
+     that checkpoint first. `kit_kept: false` means the kit did not survive the
+     death, which is a broken world seal, not a difficulty knob.
    - **branch runs (spec-0025 §3) — required whenever the build emitted
      `validation/branch-plan.json`.** One critical-path run proves ONE storyline;
      a campaign that forks must have EVERY branch walked. Run
