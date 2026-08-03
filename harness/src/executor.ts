@@ -2495,7 +2495,21 @@ export class MineflayerExecutor implements StepExecutor {
       return;
     }
     this.dieRetryEngaged.add(enc.wave);
-    await this.walkTo(step.pos, 3, `die-retry approach ${step.wave}`, step.sneak);
+    // ASSISTED (task #121). The approach walks the bot to within 3 blocks of a
+    // LIVE encounter — melee range — and until now it did so with nothing on. That
+    // made bot fencing skill the gate on whether this stage could run at all,
+    // which is exactly what spec-0023 downgraded to telemetry: the die-retry stage
+    // asks "is dying safe here", not "can this bot win". On the-drowned-bell run
+    // six two vindicators killed the bot on the way in, `dieRetryAt` threw before
+    // scripting death 1, and the stage reported 0/2 with no windows at all.
+    //
+    // Every segment where the bot must SURVIVE to make a measurement is assisted;
+    // the scripted death itself deliberately is not (see below). Each window is
+    // opened, logged and closed on its own, so the artifact names exactly when the
+    // bot was protected — spec-0023 §3 asks for disclosure, not for one window.
+    await this.withAssist(enc, "die-retry: approach into melee range", () =>
+      this.walkTo(step.pos, 3, `die-retry approach ${step.wave}`, step.sneak),
+    );
     const phases = deathPhases();
     for (const [i, phase] of phases.entries()) {
       const attempt = i + 1;
@@ -2512,8 +2526,30 @@ export class MineflayerExecutor implements StepExecutor {
       // "mid-fight" means the bot has traded blows first; "first-contact" is the
       // moment of arrival. Both are the same command, taken at different times —
       // what differs is the wave state the respawn has to restore.
+      //
+      // Assisted, for the same reason the approach is: the point of the trade is
+      // to put the wave in its mid-fight state before a SCRIPTED death, and a bot
+      // the wave kills mid-trade takes an unscripted one instead — a death at
+      // roughly the right moment, but not the one this trial asked for.
       if (phase === "mid-fight") {
-        await this.tradeBlows(step);
+        await this.withAssist(enc, "die-retry: trading blows before the scripted death", () =>
+          this.tradeBlows(step),
+        );
+        // ...and if the trade ended in a real death anyway, clear it here rather
+        // than script a second one on top of it. Without this the `deathSeq` read
+        // below already carries the accidental death, so the trial would wait for
+        // a death that has to happen AGAIN — crediting the loop to a life the
+        // harness never opened (the first-contact/mid-fight race, task #121).
+        if (this.death) {
+          process.stderr.write(
+            `[die-retry] the wave killed the bot during the trade — recovering before ` +
+              `taking the scripted death, so the death this trial records is the one it asked for\n`,
+          );
+          await this.respawnAndRearm();
+          await this.withAssist(enc, "die-retry: re-approach after an unscripted death", () =>
+            this.walkTo(step.pos, 3, `die-retry re-approach ${step.wave}`, step.sneak),
+          );
+        }
       }
       const before = new Set(this.completedObjectives.keys());
       // Which wave mobs this life fought. A re-seat must replace every one of
@@ -2553,49 +2589,56 @@ export class MineflayerExecutor implements StepExecutor {
             `${trial.respawnPos ? trial.respawnPos.join(",") : "an unknown position"}` +
             `${trial.atCheckpoint ? "" : ` — NOT the governing checkpoint ${enc.checkpoint?.join(",") ?? "(none)"}`}\n`,
         );
-        try {
-          await this.walkTo(step.pos, 3, `die-retry return ${step.wave}`, step.sneak);
-          trial.returned = true;
-        } catch (err) {
-          const detail = err instanceof Error ? err.message : String(err);
-          process.stderr.write(`[die-retry] return leg failed: ${detail}\n`);
-        }
-        const after = new Set(this.completedObjectives.keys());
-        trial.lostObjectives = [...before].filter((o) => !after.has(o));
-        trial.objectivesIntact = trial.lostObjectives.length === 0;
-        trial.objectiveComplete = this.completedObjectives.has(enc.objective);
-        // Two observations, one verdict (see RetryOutcome). A wave mob standing
-        // here again means the fight is retriable. Nothing left to fight is only
-        // a failure if the encounter's objective is ALSO unfinished — then the
-        // party can neither complete it nor re-fight it, which is a soft lock.
-        // A wave already beaten before the death is a won fight staying won.
-        //
-        // Observed ONLY when the bot got back (task #120). The probe reads the
-        // entities the CLIENT tracks, so a bot standing 150 blocks from the fight
-        // is not observing the encounter at all — it is observing wherever it is
-        // stuck. Reporting that as `re_engaged` produced the run-five artifact in
-        // which one trial said "the route back is not walkable" and "the fight
-        // re-engaged" at once. A trial that never returned leaves `re_engaged`
-        // false, `reengage` null and its outcome `unproven`: not looked at is not
-        // the same fact as looked at and empty, and neither is a pass.
-        if (trial.returned) {
-          const obs = await this.awaitReengage(enc, seenBefore);
-          trial.reengage = obs;
-          trial.reEngaged = obs.present > 0;
-          trial.outcome = retryOutcome(trial.reEngaged, trial.objectiveComplete);
-          process.stderr.write(
-            `[die-retry] ${step.wave} death ${attempt}: ${obs.present}/${obs.declared} wave mob(s) ` +
-              `after ${obs.settleMs}ms` +
-              `${obs.nearest !== undefined ? `, ${obs.nearest.toFixed(1)}–${obs.farthest!.toFixed(1)} blocks from the anchor` : ""}` +
-              `${obs.carriedOver > 0 ? `, ${obs.carriedOver} carried over from a previous life` : ""}` +
-              `${obs.healthReadable > 0 ? `, ${obs.damaged}/${obs.healthReadable} damaged` : ""}\n`,
-          );
-        } else {
-          process.stderr.write(
-            `[die-retry] ${step.wave} death ${attempt}: the bot never got back to the ` +
-              `encounter, so re-engagement was NOT observed (outcome stays \`unproven\`)\n`,
-          );
-        }
+        // The walk back ends INSIDE the re-seated wave, and the probe then stands
+        // there for the whole settle — so both are assisted, for the same reason
+        // the approach is. Whether the ROUTE is walkable is the measurement; a bot
+        // cut down on the last block would answer "no" for a reason that has
+        // nothing to do with the route (task #121).
+        await this.withAssist(enc, "die-retry: walk back and re-engage probe", async () => {
+          try {
+            await this.walkTo(step.pos, 3, `die-retry return ${step.wave}`, step.sneak);
+            trial.returned = true;
+          } catch (err) {
+            const detail = err instanceof Error ? err.message : String(err);
+            process.stderr.write(`[die-retry] return leg failed: ${detail}\n`);
+          }
+          const after = new Set(this.completedObjectives.keys());
+          trial.lostObjectives = [...before].filter((o) => !after.has(o));
+          trial.objectivesIntact = trial.lostObjectives.length === 0;
+          trial.objectiveComplete = this.completedObjectives.has(enc.objective);
+          // Two observations, one verdict (see RetryOutcome). A wave mob standing
+          // here again means the fight is retriable. Nothing left to fight is only
+          // a failure if the encounter's objective is ALSO unfinished — then the
+          // party can neither complete it nor re-fight it, which is a soft lock.
+          // A wave already beaten before the death is a won fight staying won.
+          //
+          // Observed ONLY when the bot got back (task #120). The probe reads the
+          // entities the CLIENT tracks, so a bot standing 150 blocks from the fight
+          // is not observing the encounter at all — it is observing wherever it is
+          // stuck. Reporting that as `re_engaged` produced the run-five artifact in
+          // which one trial said "the route back is not walkable" and "the fight
+          // re-engaged" at once. A trial that never returned leaves `re_engaged`
+          // false, `reengage` null and its outcome `unproven`: not looked at is not
+          // the same fact as looked at and empty, and neither is a pass.
+          if (trial.returned) {
+            const obs = await this.awaitReengage(enc, seenBefore);
+            trial.reengage = obs;
+            trial.reEngaged = obs.present > 0;
+            trial.outcome = retryOutcome(trial.reEngaged, trial.objectiveComplete);
+            process.stderr.write(
+              `[die-retry] ${step.wave} death ${attempt}: ${obs.present}/${obs.declared} wave mob(s) ` +
+                `after ${obs.settleMs}ms` +
+                `${obs.nearest !== undefined ? `, ${obs.nearest.toFixed(1)}–${obs.farthest!.toFixed(1)} blocks from the anchor` : ""}` +
+                `${obs.carriedOver > 0 ? `, ${obs.carriedOver} carried over from a previous life` : ""}` +
+                `${obs.healthReadable > 0 ? `, ${obs.damaged}/${obs.healthReadable} damaged` : ""}\n`,
+            );
+          } else {
+            process.stderr.write(
+              `[die-retry] ${step.wave} death ${attempt}: the bot never got back to the ` +
+                `encounter, so re-engagement was NOT observed (outcome stays \`unproven\`)\n`,
+            );
+          }
+        });
         process.stderr.write(
           `[die-retry] ${step.wave} death ${attempt}: ${trial.outcome}` +
             `${trial.outcome === "cleared-before-retry" ? ` (\`${enc.objective}\` was already complete — the death cost no progress)` : ""}\n`,

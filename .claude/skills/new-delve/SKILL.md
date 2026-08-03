@@ -403,9 +403,12 @@ Then:
      window, every death trial, and any inverted-floor-gate finding. An EMPTY
      `assist_windows` is not evidence of anything on its own — read the
      `encounters` block beside it, which states each encounter's assist policy
-     and the phase the run actually reached (no assist is taken while the
-     die-retry stage is deliberately dying, nor on a billed fight's honest first
-     attempt). **Read the `floor_gate` block every time**: it is the compiler's
+     and the phase the run actually reached (no assist is taken on a billed
+     fight's honest first attempt, nor for the scripted death itself). Expect
+     SEVERAL windows per encounter: the die-retry stage is assisted into melee
+     range and back out again, so bot fencing skill never decides whether that
+     stage can run — only the death loop is under test there. **Read the
+     `floor_gate` block every time**: it is the compiler's
      coverage ledger, and `not_covered` names each fight the delve bills
      `elite`/`boss` that the gate cannot measure, with the reason — an empty
      findings list over an uncovered elite is silence, not a pass. The `actors[]`
