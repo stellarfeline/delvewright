@@ -9752,6 +9752,56 @@ mod tests {
         );
     }
 
+    /// **Despawn-if-exists**: every actor-lifecycle verb has to survive the body
+    /// simply not being there any more.
+    ///
+    /// This is not hypothetical. An `unleash`ed warden is a *real* vanilla warden,
+    /// and vanilla wardens remove themselves — the ancient-city dig-down burrows
+    /// the mob out of the world on its own schedule. So by the time a later beat
+    /// fires `despawn-actor` (and hands off to the NPC), the entity the story
+    /// thinks it is dismissing may already be gone. The staging must be a no-op
+    /// then, never a hard error that takes the rest of the bundle's function down
+    /// with it — and there is no dangling tag to clean up, because tags live on
+    /// the entity and a removed entity takes its tags with it.
+    ///
+    /// The property is structural: every command is a **plain tag selector** with
+    /// no `limit=1` and no `@s` binding, so a zero-match run affects nothing and
+    /// the function continues. A single-entity-arity form here would be exactly
+    /// the 1.21.11 load-failure class the command-tree check guards elsewhere.
+    #[test]
+    fn actor_lifecycle_verbs_are_no_ops_when_the_body_is_already_gone() {
+        for style in [
+            delvewright_dsl::DespawnStyle::Kill,
+            delvewright_dsl::DespawnStyle::Vanish,
+        ] {
+            let mut cmds = Vec::new();
+            emit_despawn_actor("actor/giant", style, &mut cmds);
+            assert!(!cmds.is_empty());
+            for c in &cmds {
+                assert!(
+                    c.contains("@e[tag=dw_actor_giant]"),
+                    "targets the body tag, so no match = no effect: {c}"
+                );
+                assert!(
+                    !c.contains("limit=1") && !c.contains("@s"),
+                    "no single-entity arity: a zero-match run must not fail the function: {c}"
+                );
+            }
+        }
+        // The dual: re-staging after the body removed itself must work. The re-cage
+        // summon is `execute unless entity` guarded, so it fires exactly when the
+        // body is absent and no-ops when it is not.
+        let a = mk_actor("actor/giant", "minecraft:warden", false);
+        let spawn = format!(
+            "execute unless entity @e[tag=dw_actor_giant] run {}",
+            actor_puppet_summon(&a, [0, 64, 0], 0)
+        );
+        assert!(
+            spawn.starts_with("execute unless entity @e[tag=dw_actor_giant] run summon "),
+            "re-cage is idempotent and works from nothing: {spawn}"
+        );
+    }
+
     #[test]
     fn sequence_key_is_deterministic_and_content_addressed() {
         let step = |t: u32| delvewright_dsl::SequenceStep {
