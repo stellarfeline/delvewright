@@ -10,6 +10,7 @@ import type {
   InteractStep,
   KillStep,
   ReachStep,
+  RestStep,
   SelectClassStep,
   Step,
   TalkToStep,
@@ -28,6 +29,11 @@ export interface StepExecutor {
   kill(step: KillStep): Promise<void>;
   collect(step: CollectStep): Promise<void>;
   interact(step: InteractStep): Promise<void>;
+  /** Rest at a bonfire (compiler #220): click the affordance, then run the button's
+   * command. Proves no objective — it performs the loop later steps are proven
+   * under. Optional so existing fakes keep compiling; a path carrying a `rest`
+   * step against an executor without it is a hard failure, never a silent skip. */
+  rest?(step: RestStep): Promise<void>;
   assertComplete(step: AssertCompleteStep): Promise<void>;
   /**
    * Optional (gap 8): after a step whose completion teleports the player to
@@ -154,6 +160,15 @@ async function dispatch(executor: StepExecutor, step: Step): Promise<void> {
       return executor.collect(step);
     case "interact":
       return executor.interact(step);
+    case "rest":
+      if (!executor.rest) {
+        throw new Error(
+          `critical path carries a rest step at bonfire ${step.bonfire} but this executor ` +
+            `cannot rest — the checkpoint would never move and every later proof would ` +
+            `run against the wrong respawn point`,
+        );
+      }
+      return executor.rest(step);
     case "assert-complete":
       return executor.assertComplete(step);
   }
@@ -181,7 +196,15 @@ export async function runSequence(
   // proves nothing itself, so it is the step before it (validateStepOrder has
   // already guaranteed exactly one assert-complete, last). Campaign completion is
   // due at this step and nowhere earlier.
-  const finalObjectiveIndex = path.steps.length - 2;
+  // …and a `rest` step (compiler #220) stands for no objective at all, so a fire
+  // rested at just before the finale must not be mistaken for the beat the campaign
+  // marker is due at.
+  const finalObjectiveIndex = (() => {
+    for (let i = path.steps.length - 2; i >= 0; i--) {
+      if (path.steps[i]!.action !== "rest") return i;
+    }
+    return path.steps.length - 2;
+  })();
 
   for (let i = 0; i < path.steps.length; i++) {
     const step = path.steps[i]!;
