@@ -607,6 +607,13 @@ pub fn build_with_warnings(
         return Err(BuildFailure::Validation(errors));
     }
 
+    // ---- affordance-hardware self-check (DW0420 / DW0421) ----
+    // Every right-click target the compiler owns must be VISIBLE in the shipped
+    // datapack, and only its own consumption may retire that visibility. Read
+    // off the finished tree, so it judges the commands that actually ship.
+    // See `crate::affordance` for the drowned-bell soft-lock this encodes.
+    crate::affordance::check(&affordances(plan), &out)?;
+
     // ---- NPC-skin resource pack (spec-0009) ----
     // A campaign with skinned (mannequin) NPCs ships a deterministic resource-pack
     // zip; its SHA-1 is what a client verifies against the itzg RESOURCE_PACK_SHA1
@@ -3147,6 +3154,16 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                     "execute unless entity @e[tag=dw_bonfire_{i}] run summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_bonfire_{i}\"]}}",
                     v[0], v[1], v[2]
                 ));
+                // …and the visible hardware, under the same absence guard so a
+                // re-fired beat never stacks a second one. A rest point the
+                // player cannot see is the same soft-lock class as an invisible
+                // unlock lever (`DW0420`). Never retired: a bonfire is not
+                // consumed by resting at it.
+                let hw = crate::affordance::hardware_tag(&format!("dw_bonfire_{i}"));
+                body.push(format!(
+                    "execute unless entity @e[tag={hw}] run {}",
+                    affordance_hardware(v, &format!("dw_bonfire_{i}"), "minecraft:campfire")
+                ));
             }
         }
         QuestEffect::BeginStealth {
@@ -3461,6 +3478,33 @@ fn timed_gate_setup(plan: &Plan) -> Vec<String> {
         .collect()
 }
 
+/// Half-hearts dealt by a `crush: true` timed gate's closing edge (spec-0016 §4
+/// addendum). Far above any reachable effective health: `minecraft:generic`
+/// ignores armor but not absorption/resistance, and the point of a portcullis
+/// is that being caught in it is not survivable by gearing.
+const CRUSH_DAMAGE: u32 = 1000;
+
+/// A `@a`-selector volume covering an inclusive block region — the same box
+/// model `damage-players`' `within` filter uses. `dx/dy/dz` are spans, so a
+/// one-block region is `dx=0` and still selects the whole block.
+///
+/// Corners are normalised because a gate region's stored corners are whatever
+/// the prefab metadata declared; a selector with a negative span selects
+/// nothing, which would make the crush silently no-op.
+fn region_selector(from: [i32; 3], to: [i32; 3]) -> String {
+    let lo = [from[0].min(to[0]), from[1].min(to[1]), from[2].min(to[2])];
+    let hi = [from[0].max(to[0]), from[1].max(to[1]), from[2].max(to[2])];
+    format!(
+        "x={},dx={},y={},dy={},z={},dz={},tag=!{CUTSCENE_TAG}",
+        lo[0],
+        hi[0] - lo[0],
+        lo[1],
+        hi[1] - lo[1],
+        lo[2],
+        hi[2] - lo[2]
+    )
+}
+
 /// The timed-gate clock functions (spec-0016 §4): a two-function ping-pong that
 /// carries its own next hop, so the cycle is one self-sustaining chain with no
 /// per-tick polling and no state to drift.
@@ -3488,16 +3532,28 @@ fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
                 format!("schedule function {ns}:tgate_close_{id} {}t", g.open_ticks),
             ]),
         ));
-        out.push((
-            format!("tgate_close_{id}"),
-            lines(&[
-                format!(
-                    "fill {} {} {} {} {} {} {}",
-                    from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
-                ),
-                format!("schedule function {ns}:tgate_open_{id} {}t", g.closed_ticks),
-            ]),
+        let mut close = Vec::new();
+        // spec-0016 §4 addendum: the portcullis judgement. Emitted BEFORE the
+        // fill so the victim is judged on the world as it was when they
+        // mistimed it — after the fill they are already inside a solid block
+        // and vanilla's own suffocation would be the thing killing them, which
+        // is slow, gear-dependent and escapable. Costs nothing per tick: this
+        // rides the closing tick of the schedule ping-pong that already exists.
+        if g.crush {
+            close.push(format!(
+                "execute as @a[{}] run damage @s {CRUSH_DAMAGE} minecraft:generic",
+                region_selector(from, to)
+            ));
+        }
+        close.push(format!(
+            "fill {} {} {} {} {} {} {}",
+            from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
         ));
+        close.push(format!(
+            "schedule function {ns}:tgate_open_{id} {}t",
+            g.closed_ticks
+        ));
+        out.push((format!("tgate_close_{id}"), lines(&close)));
     }
     out
 }
@@ -3506,23 +3562,94 @@ fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
 // spec-0016 §2 shortcut doors
 // ---------------------------------------------------------------------------
 
+/// Every compiler-owned interact affordance in this campaign, in deterministic
+/// order — the subjects of the `DW0420` / `DW0421` proofs.
+///
+/// The list is the definition of the class: a point the delve asks the player to
+/// right-click. Adding a new such verb means adding it here, which is what makes
+/// the proof total rather than a spot check.
+fn affordances(plan: &Plan) -> Vec<crate::affordance::Affordance> {
+    let mut out = Vec::new();
+    for sc in &plan.shortcuts {
+        out.push(crate::affordance::Affordance {
+            id: sc.id.clone(),
+            kind: "shortcut unlock",
+            tag: format!("dw_sc_{}", sc.safe),
+            // Opening the door spends the affordance.
+            retired_by: Some(format!("shortcut_open_{}", sc.safe)),
+        });
+    }
+    for t in &plan.traps {
+        if t.disarm.is_some() {
+            out.push(crate::affordance::Affordance {
+                id: t.id.clone(),
+                kind: "trap disarm",
+                tag: format!("dw_trapdis_{}", t.safe),
+                // Throwing the lever spends the affordance.
+                retired_by: Some(format!("trap_disarm_{}", t.safe)),
+            });
+        }
+    }
+    for bf in plan.bonfires() {
+        out.push(crate::affordance::Affordance {
+            id: bf.anchor.clone(),
+            kind: "bonfire",
+            tag: format!("dw_bonfire_{}", bf.index),
+            // A bonfire is rested at, never used up.
+            retired_by: None,
+        });
+    }
+    out
+}
+
 /// `setup_finish` commands for shortcut doors (spec-0016 §2): summon the
 /// far-side unlock affordance (a right-click target, the same
-/// `minecraft:interaction` primitive as a trap disarm). The gate needs no
-/// command at all — it is **physically sealed in the prefab** from world-load,
-/// which is precisely why the pattern needs no "seal it now" verb and why
-/// permanence can be structural. Empty for a campaign with no shortcut.
+/// `minecraft:interaction` primitive as a trap disarm) **and its visible
+/// hardware**. The gate needs no command at all — it is **physically sealed in
+/// the prefab** from world-load, which is precisely why the pattern needs no
+/// "seal it now" verb and why permanence can be structural. Empty for a
+/// campaign with no shortcut.
+///
+/// The hardware is not decoration. `minecraft:interaction` is an invisible
+/// hitbox, so the hitbox alone asks the player to right-click a point nothing
+/// marks — the drowned-bell soft-lock, where the unlock cell was bare air and
+/// the only visible thing there belonged to an unrelated objective. The
+/// compiler owns the affordance's visibility; it is never left to whether the
+/// tileset happens to carry a lever. Proven by `DW0420`
+/// ([`crate::affordance`]).
 fn shortcut_setup(plan: &Plan) -> Vec<String> {
     plan.shortcuts
         .iter()
-        .map(|sc| {
+        .flat_map(|sc| {
             let v = ent_xyz(sc.unlock);
-            format!(
-                "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_sc_{}\"]}}",
-                v[0], v[1], v[2], sc.safe
-            )
+            [
+                format!(
+                    "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_sc_{}\"]}}",
+                    v[0], v[1], v[2], sc.safe
+                ),
+                affordance_hardware(v, &format!("dw_sc_{}", sc.safe), "minecraft:lever"),
+            ]
         })
         .collect()
+}
+
+/// The visible hardware for a compiler-owned interact affordance: a glowing,
+/// collision-free `item_display` at the affordance's own cell, carrying the
+/// derived `dw_hw_<tag>` so [`crate::affordance`] can pair the two.
+///
+/// An `item_display` (not a block) because the affordance's cell must stay
+/// walkable and the interaction hitbox unobstructed — the same reasoning that
+/// made the interact objective's marker a display. It is deliberately
+/// **nameless**: the glow says "use me" without inventing a player-facing
+/// string that no campaign authored and no `l10n` sidecar could translate.
+fn affordance_hardware(pos: [String; 3], tag: &str, item: &str) -> String {
+    format!(
+        "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],billboard:\"center\",item:{{id:\"{item}\",count:1}}}}",
+        pos[0],
+        pos[1],
+        pos[2],
+        crate::affordance::hardware_tag(tag)
+    )
 }
 
 /// Per-tick shortcut unlock detection (spec-0016 §2). Fires **once** — the
@@ -3558,6 +3685,13 @@ fn emit_shortcut_functions(plan: &Plan) -> Vec<(String, String)> {
             format!(
                 "fill {} {} {} {} {} {} minecraft:air replace {}",
                 from[0], from[1], from[2], to[0], to[1], to[2], sc.gate_block
+            ),
+            // The affordance is spent: the bar is thrown and the door is open,
+            // so its hardware retires with it. This is the ONE function allowed
+            // to remove it — `DW0421` fails the build if anything else does.
+            format!(
+                "kill @e[tag={}]",
+                crate::affordance::hardware_tag(&format!("dw_sc_{id}"))
             ),
         ];
         body.extend(emit_effect_bundle(plan, &sc.on_unlock, Audience::Scheduled));
@@ -5361,14 +5495,21 @@ fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<Stri
                 disp[0], disp[1], disp[2]
             ));
         }
-        // Summon the disarm interaction affordance (a right-click target). The
-        // physical lever may also be in the prefab; this entity is the modeled,
-        // provable disarm the compiler owns.
+        // Summon the disarm interaction affordance (a right-click target) and
+        // the visible hardware that makes it findable. The prefab may ALSO dress
+        // the cell, but the compiler no longer depends on that: an invisible
+        // `minecraft:interaction` on its own is a lever the player cannot see
+        // (the drowned-bell class, `DW0420`).
         if let Some(dis) = &t.disarm {
             let v = ent_xyz(dis.via_cell);
             out.push(format!(
                 "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_trapdis_{}\"]}}",
                 v[0], v[1], v[2], t.safe
+            ));
+            out.push(affordance_hardware(
+                v,
+                &format!("dw_trapdis_{}", t.safe),
+                "minecraft:lever",
             ));
         }
     }
@@ -5424,6 +5565,13 @@ fn trap_fns(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<(Strin
                 disp[0], disp[1], disp[2]
             ));
         }
+        // The lever has been thrown: the disarm affordance is spent, so its
+        // visible hardware retires with it. The ONE function allowed to do this
+        // — `DW0421` fails the build if any other machinery reaches it.
+        body.push(format!(
+            "kill @e[tag={}]",
+            crate::affordance::hardware_tag(&format!("dw_trapdis_{id}"))
+        ));
         out.push((format!("trap_disarm_{id}"), lines(&body)));
     }
     out.extend(trap_gate_fns(plan, gate_hardware));
@@ -7300,6 +7448,88 @@ fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     b.push("assert score #tg_shut dw.sys matches 1".to_string());
     out.insert(
         format!("packtest-datapack/data/{ns}/test/souls_timed_gate.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+    emit_timed_gate_crush_packtest(plan, g, out);
+}
+
+/// spec-0016 §4 addendum PackTest: a `crush: true` gate's closing edge selects
+/// **exactly** the players standing in its region.
+///
+/// ## Why this asserts scoping rather than death
+///
+/// The obvious test — put a dummy in the gate, shut it, assert a corpse — cannot
+/// be written. **PackTest fake players are immune to `/damage`** (measured live
+/// on the pinned toolserver, 2026-08-03: a `# @dummy` reports
+/// `playerGameType: 0` (survival), yet `damage @s 1000 minecraft:generic` leaves
+/// `Health` at exactly 20.0, and an explicit `gamemode survival @s` first does
+/// not change that). A lethality assertion against a dummy is therefore
+/// permanently red no matter how correct the engine is. This is the same
+/// limitation that already pushed the `damage-players` PackTest onto a zombie
+/// dummy — and a zombie cannot stand in here, because the crush selects `@a`.
+///
+/// So the runtime rung proves the half it genuinely can, and the other halves are
+/// proven where they can be proven honestly:
+///
+/// * **scoping** (here, live, on real assembled geometry) — the emitted selector
+///   contains the player when they stand in the gate and excludes them when they
+///   step clear. The selector string is the *same* one `tgate_close_<id>` runs.
+/// * **lethality + ordering** — compiler unit tests assert the exact
+///   `execute as @a[…] run damage @s 1000 minecraft:generic` and that it precedes
+///   the `fill`.
+/// * **end-to-end death** — verified live against a real mineflayer client on
+///   pinned 1.21.11: parked two blocks clear of the region a player survives 30 s
+///   of repeated closing ticks at full health, and one closing tick with the same
+///   player standing inside kills them.
+///
+/// The test binds `@s`, not `@a`, on purpose: PackTest runs the whole suite in
+/// ONE shared world, so a sibling template's dummy standing in the same fixture
+/// cell would otherwise be counted. Emits nothing unless the gate opts in, so a
+/// non-crushing campaign's PackTest suite is byte-identical.
+fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mut BuildOutput) {
+    if !g.crush {
+        return;
+    }
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let (from, to) = g.gate_region;
+    let selector = region_selector(from, to);
+    // Feet-centred on one cell of the region: provably inside the selector box.
+    let inside = crate::nav::cell_center(from);
+    // Two blocks past the region's far x edge: provably outside it, and checked in
+    // the same tick as the teleport so no fall or suffocation can confound it.
+    let clear_x = from[0].max(to[0]) + 2;
+
+    let mut b = packtest_header(&format!(
+        "{title}: timed gate `{}` judges exactly the players in its region (spec-0016 §4)",
+        g.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    // Open first: a mistimed crossing leaves the player standing in an open
+    // gateway, which is the position the judgement must catch.
+    b.push(format!("function {ns}:tgate_open_{}", g.safe));
+    b.push(format!(
+        "tp @s {} {} {}",
+        fmt_f64(inside[0]),
+        fmt_f64(inside[1]),
+        fmt_f64(inside[2])
+    ));
+    b.push(format!(
+        "execute store success score #cr_in dw.sys if entity @s[{selector}]"
+    ));
+    b.push("assert score #cr_in dw.sys matches 1".to_string());
+    b.push(format!(
+        "tp @s {} {} {}",
+        fmt_f64(f64::from(clear_x) + 0.5),
+        fmt_f64(inside[1]),
+        fmt_f64(inside[2])
+    ));
+    b.push(format!(
+        "execute store success score #cr_out dw.sys if entity @s[{selector}]"
+    ));
+    b.push("assert score #cr_out dw.sys matches 0".to_string());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_timed_gate_crush.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
