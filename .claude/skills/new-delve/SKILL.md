@@ -546,7 +546,11 @@ Then:
      the party can neither complete the encounter nor re-fight it. Turning
      `respawns_on_rest` ON buys a stricter check: the wave must come back WHOLE
      — declared count, all-new mobs, full health — because a retry must never let
-     the party grind a fight down one swing per death.
+     the party grind a fight down one swing per death. It re-seats only while the
+     fight is OPEN: completing the wave's `kill` objective retires it, so a wave
+     the party has beaten never comes back to hunt them later. (Un-retired it
+     cost the drowned bell a round — a beaten lane assault kept re-appearing on
+     every later death and killed the bot three encounters downstream.)
   4. *The inverted floor gate*: mark a set-piece fight `tier: "elite"` or
      `"boss"` — on the **wave** (DSL v0.7) or on the **actor** (DSL v0.8), same
      three keywords. The ladder then gives it one UNASSISTED bot attempt; if the
