@@ -190,7 +190,7 @@ sets the spec-0023 pair):
 | `DELVEWRIGHT_DIE_RETRY` | `0` skips the die-retry stage (local iteration only). Default ON whenever a combat plan is present |
 | `DELVEWRIGHT_RETRY_ON_DEATH` | `1`/`true` lets the sequencer retry a step once after an unscripted death (spec-0008) |
 | `DELVEWRIGHT_RUN_TIMEOUT_MS` | Hard wall-clock budget for the whole run (default 20 min). **Raise it when the die-retry stage is on**: two scripted deaths per encounter add a respawn, a re-arm and a walk back to every fight |
-| `DELVEWRIGHT_BOT_USERNAME` | The bot's name; must match the server's `OPS` entry or the assist and scripted-death commands are silently refused |
+| `DELVEWRIGHT_BOT_USERNAME` | The bot's name; feeds the server's `DELVE_OPS_OFFLINE` seed (offline-UUID ops.json — never itzg `OPS`, which would resolve the name via Mojang PlayerDB and abort on an offline-only name) or the assist and scripted-death commands are silently refused |
 
 An `interact` step whose `critical-path.json` entry carries `requires_item` puts
 that item in the bot's **mainhand** before it sends the trigger
