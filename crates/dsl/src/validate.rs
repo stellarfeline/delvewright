@@ -80,6 +80,7 @@ pub fn validate_campaign_with(
         timed_gate_checks(c, &mut d);
         loot_checks(c, items, anchors, &mut d);
         lane_checks(c, anchors, &mut d);
+        difficulty_checks(c, &mut d);
     }
     // DSL v0.6 stage 7 (spec-0017): the map-editor edit script. Structural
     // checks only — frame/region *resolution* happens at build time against the
@@ -946,7 +947,8 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v07(c, d);
 }
 
-/// DSL v0.7 reserved-feature gating (spec-0020): the per-quest `cast` ledger.
+/// DSL v0.7 reserved-feature gating (spec-0020): the per-quest `cast` ledger,
+/// plus the `interact.missing_item_hint` empty-hand narration.
 ///
 /// Note the asymmetry with the deprecation window. *Declaring* a ledger below
 /// v0.7 is `DW0141` like any other newer construct — the version contract stays
@@ -958,6 +960,23 @@ fn reserved_v07(c: &Campaign, d: &mut Vec<Diagnostic>) {
         return;
     }
     for (i, q) in c.quests.content.quests.iter().enumerate() {
+        for (j, o) in q.objectives.iter().enumerate() {
+            if let Objective::Interact {
+                missing_item_hint: Some(_),
+                ..
+            } = o
+            {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("/content/quests/{i}/objectives/{j}/missing_item_hint"),
+                    "`interact.missing_item_hint` (the line narrated when a player clicks \
+                     without the required item in hand) requires dsl_version 0.7.0 — raise this \
+                     stage's `dsl_version` to 0.7.0, or remove the field"
+                        .to_string(),
+                ));
+            }
+        }
         if q.cast.is_empty() {
             continue;
         }
@@ -1141,6 +1160,16 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     .to_string(),
             ));
         }
+        if c.world.content.difficulty.is_some() {
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "world",
+                "/content/difficulty".to_string(),
+                "world `difficulty` requires dsl_version 0.6.0 — raise this stage's `dsl_version` \
+                 to 0.6.0, or remove the construct"
+                    .to_string(),
+            ));
+        }
         for (i, a) in c.world.content.areas.iter().enumerate() {
             if a.mitigation.is_some() {
                 d.push(Diagnostic::error(
@@ -1167,6 +1196,28 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     "`min_players` = {n} is out of range — a delve is played by one party of 1–4, \
                      so set it to a value in 1..=4 (absent = 1, a party of one)"
                 ),
+            ));
+        }
+        // Declared combat difficulty (owner ruling 2026-08-03). `peaceful` is the
+        // one keyword the compiler refuses: on peaceful the server discards every
+        // hostile-category mob as it ticks it — summoned, `NoAI` and
+        // `PersistenceRequired` are all irrelevant — so a peaceful delve is one in
+        // which the entire cast of threats quietly does not exist.
+        if matches!(
+            c.world.content.difficulty,
+            Some(crate::stages::WorldDifficulty::Peaceful)
+        ) {
+            d.push(Diagnostic::error(
+                codes::DIFFICULTY_INVALID,
+                "world",
+                "/content/difficulty".to_string(),
+                "`difficulty: \"peaceful\"` is refused: on peaceful the server discards every \
+                 hostile-category mob as it ticks it — being `/summon`ed, `NoAI` or \
+                 `PersistenceRequired` does not save one — so every wave, hostile actor and \
+                 ambush in this campaign would silently cease to exist. Declare `easy`, `normal` \
+                 or `hard`; for a delve that is genuinely combat-free, simply omit `difficulty` \
+                 (a campaign with no waves already ships peaceful by derivation)"
+                    .to_string(),
             ));
         }
         // `horizon: "ocean"` without a return rule strands wanderers in an infinite sea.
@@ -1322,13 +1373,22 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
         if !c.quests.content.loot.is_empty() {
             res(d, "/content/loot".to_string(), "the `loot` section");
         }
-        // Actor `equipment` (spec-0021) likewise.
+        // Actor `equipment` (spec-0021) likewise, and actor `attributes` (owner
+        // ruling 2026-08-03) — the same v0.4 shape a wave mob's takes, fenced on
+        // the stage the actors themselves are fenced on.
         for (i, a) in c.quests.content.actors.iter().enumerate() {
             if a.equipment.is_some() {
                 res(
                     d,
                     format!("/content/actors/{i}/equipment"),
                     "actor `equipment`",
+                );
+            }
+            if a.attributes.is_some() {
+                res(
+                    d,
+                    format!("/content/actors/{i}/attributes"),
+                    "actor `attributes`",
                 );
             }
         }
@@ -2548,7 +2608,13 @@ fn v03_checks(
                         ));
                     }
                 }
-                Objective::Collect { item, anchor, .. } => {
+                Objective::Collect {
+                    id: oid,
+                    item,
+                    count,
+                    anchor,
+                    ..
+                } => {
                     if !items.contains(item) {
                         d.push(Diagnostic::error(
                             codes::ITEM_UNKNOWN,
@@ -2561,13 +2627,40 @@ fn v03_checks(
                             ),
                         ));
                     }
+                    // The objective's props are placed with a single-slot `item
+                    // replace … container.0` fill, so an over-cap count leaves the
+                    // chest empty and the objective uncompletable (`DW0436`).
+                    check_stack_count(
+                        item,
+                        *count,
+                        &format!("collect objective `{oid}`"),
+                        format!("/content/quests/{i}/objectives/{j}/count"),
+                        items,
+                        d,
+                    );
                     anchor_resolves(set, anchor, i, j, "anchor", d);
                 }
                 Objective::Interact {
                     anchor,
                     requires_item,
+                    missing_item_hint,
                     ..
                 } => {
+                    // v0.7: the empty-hand narration answers the held-item gate;
+                    // without a gate there is no missing hand to narrate to, and
+                    // the authored line would be dead content that never fires.
+                    if missing_item_hint.is_some() && requires_item.is_none() {
+                        d.push(Diagnostic::error(
+                            codes::MISSING_ITEM_HINT_WITHOUT_ITEM,
+                            "quests",
+                            format!("/content/quests/{i}/objectives/{j}/missing_item_hint"),
+                            "`interact.missing_item_hint` narrates the click that arrives \
+                             without the required item in hand, but this objective declares no \
+                             `requires_item` — add the `requires_item` this hint is about, or \
+                             drop the hint"
+                                .to_string(),
+                        ));
+                    }
                     if let Some(it) = requires_item
                         && !items.contains(it)
                     {
@@ -3390,18 +3483,29 @@ fn v06_trap_checks(
                 ));
             }
         });
-        if let Some((item, _)) = t.dispense()
-            && !items.contains(item)
-        {
-            d.push(Diagnostic::error(
-                codes::TRAP_PAYLOAD_UNKNOWN,
-                "quests",
-                format!("/content/traps/{i}/effect/dispense/item"),
-                format!(
-                    "trap dispense payload item `{item}` is not in the pinned 1.21.11 item \
-                     registry — use a valid namespaced item id (e.g. `minecraft:arrow`)"
-                ),
-            ));
+        if let Some((item, count)) = t.dispense() {
+            if !items.contains(item) {
+                d.push(Diagnostic::error(
+                    codes::TRAP_PAYLOAD_UNKNOWN,
+                    "quests",
+                    format!("/content/traps/{i}/effect/dispense/item"),
+                    format!(
+                        "trap dispense payload item `{item}` is not in the pinned 1.21.11 item \
+                         registry — use a valid namespaced item id (e.g. `minecraft:arrow`)"
+                    ),
+                ));
+            }
+            // The dispenser payload is the same single-slot `item replace …
+            // container.0` fill a `loot` entry is, so it carries the same silent
+            // over-cap failure (`DW0436`) — a splash potion caps at 1.
+            check_stack_count(
+                item,
+                count,
+                &format!("trap `{}` dispense payload", t.id),
+                format!("/content/traps/{i}/effect/dispense/count"),
+                items,
+                d,
+            );
         }
         for (m, f) in t.requires_flags.iter().enumerate() {
             if !flags.contains(f.as_str()) {
@@ -5292,6 +5396,84 @@ fn bare_entity(id: &str) -> &str {
     id.strip_prefix("minecraft:").unwrap_or(id)
 }
 
+/// The advisory half of the difficulty surface (owner ruling 2026-08-03,
+/// `DW0469`): a campaign that stages a **fighting** actor but declares no
+/// `waves[]` and no `world.difficulty` ships the compiler's derived
+/// `difficulty=peaceful` — under which the server discards every
+/// hostile-category mob as it ticks it (`/summon`ed, `NoAI` and
+/// `PersistenceRequired` all irrelevant), so that fighter is gone on the tick it
+/// spawns and the beat that summoned it plays to an empty room.
+///
+/// "Fighting" is read off the campaign's own declarations, never guessed from
+/// the species: an `unleash-actor` (the author asking for a real-AI twin) or
+/// `vulnerable: true` (the author declaring a damageable target). Both are
+/// statements of combat intent the compiler can see. The species question — is
+/// `minecraft:sheep` a monster? — is exactly what it cannot answer, because the
+/// pinned entity registry is a membership set with no mob-category data, which
+/// is also why this is advisory rather than an error.
+///
+/// Gated with the rest of the v0.6 quests surface, where actors live —
+/// deliberately NOT on the world stage's version, so a campaign whose world
+/// stage is older still hears about it.
+fn difficulty_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    if c.world.content.difficulty.is_some() || !c.quests.content.waves.is_empty() {
+        return;
+    }
+    let mut fighters: BTreeSet<String> = c
+        .quests
+        .content
+        .actors
+        .iter()
+        .filter(|a| a.vulnerable)
+        .map(|a| a.id.as_str().to_string())
+        .collect();
+    for q in &c.quests.content.quests {
+        for_each_effect_deep(q, |_, eff| {
+            if let QuestEffect::UnleashActor { actor } = eff {
+                fighters.insert(actor.as_str().to_string());
+            }
+        });
+    }
+    for t in &c.quests.content.triggers {
+        for_each_trigger_effect_deep(t, |_, eff| {
+            if let QuestEffect::UnleashActor { actor } = eff {
+                fighters.insert(actor.as_str().to_string());
+            }
+        });
+    }
+    for t in &c.quests.content.traps {
+        for_each_trap_payload_deep(t, |_, eff| {
+            if let QuestEffect::UnleashActor { actor } = eff {
+                fighters.insert(actor.as_str().to_string());
+            }
+        });
+    }
+    if fighters.is_empty() {
+        return;
+    }
+    d.push(Diagnostic::warning(
+        codes::DIFFICULTY_UNDECLARED_ACTORS,
+        "world",
+        "/content/difficulty".to_string(),
+        format!(
+            "this campaign stages {} actor(s) meant to FIGHT ({}) — unleashed into a real-AI twin, \
+             or declared `vulnerable` — but declares no `waves[]` and no `world.difficulty`, so it \
+             ships the compiler's derived `difficulty=peaceful`. On peaceful the server discards \
+             every hostile-category mob as it ticks it, so a monster among these is gone on the \
+             tick it spawns and the beat that summoned it plays to an empty room. Declare \
+             `world.difficulty` on the world stage: `easy` reproduces the halved-damage world \
+             existing combat numbers were tuned in, `normal` is the vanilla baseline. (If every \
+             one of them is a passive species, there is nothing to fix.)",
+            fighters.len(),
+            fighters
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    ));
+}
+
 /// Validate the spec-0016 §6 wave `lane` / `summon` surface.
 ///
 /// Five rules, five codes, each pinned to a live-verified 1.21.11 failure mode:
@@ -5587,6 +5769,47 @@ fn check_enchantments(
     }
 }
 
+/// `DW0436`: a **single-slot fill** whose `count` exceeds the item's
+/// `minecraft:max_stack_size` in the pinned 1.21.11 registry.
+///
+/// Every one of these compiles to `item replace … container.<n> with <item>
+/// <count>`, and that command fails **silently** above the cap: the slot simply
+/// stays empty and the server logs nothing. A `count: 2` of `minecraft:rabbit_stew`
+/// (cap 1) shipped an empty chest slot in the-drowned-bell round 2 — exactly the
+/// silent-failure class `DW0431` exists for, one tier too late. The cap comes from
+/// Mojang's own item-components data, vendored per MC pin
+/// (`crates/compiler/data/item-stack-sizes-1.21.11.json`), never a hand table.
+///
+/// Skipped when the registry does not carry stack sizes (the small vendored DSL-side
+/// subset) or the item id is unknown — the latter is already `DW0143`, and stacking
+/// a second diagnostic on one typo is noise.
+fn check_stack_count(
+    item: &str,
+    count: u32,
+    what: &str,
+    path: String,
+    items: &dyn ItemRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let Some(cap) = items.max_stack_size(item) else {
+        return;
+    };
+    if count <= cap {
+        return;
+    }
+    d.push(Diagnostic::error(
+        codes::ITEM_COUNT_OVER_STACK,
+        "quests",
+        path,
+        format!(
+            "{what} declares `{item}` × {count}, but `{item}` stacks to at most {cap} in \
+             1.21.11. This is filled with `item replace … container.<n>`, which fails \
+             SILENTLY above the cap — the slot ships empty and nothing is logged. Lower \
+             the count to {cap} or fewer, or declare additional entries/containers."
+        ),
+    ));
+}
+
 /// Stage-5 `loot` declarations (spec-0021): id syntax/uniqueness (`DW0110`/
 /// `DW0111`), anchor resolution (`DW0142`), item ids (`DW0143`), enchantments
 /// (`DW0433`/`DW0434`), duplicate anchors (`DW0435`) and slot overflow
@@ -5705,6 +5928,14 @@ fn loot_checks(
                     ),
                 ));
             }
+            check_stack_count(
+                &it.item,
+                it.count,
+                &format!("loot `{}`", l.id),
+                format!("/content/loot/{i}/items/{k}/count"),
+                items,
+                d,
+            );
             check_enchantments(
                 &it.enchantments,
                 &format!("loot `{}` item `{}`", l.id, it.item),

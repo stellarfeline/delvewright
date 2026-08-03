@@ -810,9 +810,25 @@ fn is_vanilla_function(path: &str) -> bool {
 /// `minecraft:`-prefixed on the server, but the bare form is accepted and matches
 /// the vendored command tree (`data/commands-1.21.11.json`), so it is what we
 /// emit and validate.
+/// The campaign's **declared** combat difficulty (`world.difficulty`, v0.6), or
+/// `None` when it declares none and the compiler's historical derivation applies.
+///
+/// Gated on the world stage's `dsl_version` exactly as the rest of the v0.6 world
+/// surface is: validation already rejects the field on an older stage
+/// (`DW0141`), and honouring the gate here too means no build path can
+/// accidentally read a field the campaign is not entitled to declare.
+fn declared_difficulty(c: &delvewright_dsl::Campaign) -> Option<delvewright_dsl::WorldDifficulty> {
+    if is_v06(c.world.dsl_version.as_str()) {
+        c.world.content.difficulty
+    } else {
+        None
+    }
+}
+
 fn sealing_commands(
     time: delvewright_dsl::WorldTime,
     weather: Option<delvewright_dsl::WorldWeather>,
+    difficulty: Option<delvewright_dsl::WorldDifficulty>,
     v06: bool,
 ) -> Vec<String> {
     let mut cmds = vec![
@@ -849,6 +865,17 @@ fn sealing_commands(
     // command and stays byte-identical to pre-v0.5 output.
     if let Some(w) = weather {
         cmds.push(format!("weather {}", w.token()));
+    }
+    // Declared combat difficulty (v0.6, owner ruling 2026-08-03). The shipped
+    // `server/server.properties` already carries it, so this line is not what
+    // makes the delve image correct — it is what makes the DATAPACK correct
+    // wherever else it is loaded (the owner's own test save, a PackTest world
+    // whose properties someone edited). `/difficulty` is idempotent — re-running
+    // it with the current value is a no-op that merely reports "did not change" —
+    // and it is emitted only when the field is declared, so a campaign that
+    // declares none is byte-identical.
+    if let Some(diff) = difficulty {
+        cmds.push(format!("difficulty {}", diff.token()));
     }
     cmds
 }
@@ -1065,10 +1092,21 @@ fn wave_equipment(entity: &str, eq: Option<&MobEquipment>) -> Option<String> {
 /// `{id:"minecraft:<attr>",base:<double>}` entry; doubles are formatted with a
 /// decimal point so SNBT reads them as doubles (ADR-0006 determinism).
 fn attributes_snbt(attrs: Option<&delvewright_dsl::MobAttributes>) -> String {
-    let Some(a) = attrs else {
-        return String::new();
-    };
+    wrap_attribute_entries(attribute_entries(attrs))
+}
+
+/// The individual `{id:…,base:…}` entries for a [`MobAttributes`] block, in the
+/// fixed schema order. Split out of [`attributes_snbt`] so the paths that add a
+/// compiler-owned attribute of their own (the `vulnerable` actor's
+/// knockback-immunity) can concatenate rather than fork the table — the DSL
+/// exposes ONE attribute surface and there is one place that renders it.
+///
+/// [`MobAttributes`]: delvewright_dsl::MobAttributes
+fn attribute_entries(attrs: Option<&delvewright_dsl::MobAttributes>) -> Vec<String> {
     let mut entries: Vec<String> = Vec::new();
+    let Some(a) = attrs else {
+        return entries;
+    };
     let mut add = |id: &str, v: Option<f64>| {
         if let Some(x) = v {
             entries.push(format!("{{id:\"minecraft:{id}\",base:{}}}", fmt_f64(x)));
@@ -1078,6 +1116,12 @@ fn attributes_snbt(attrs: Option<&delvewright_dsl::MobAttributes>) -> String {
     add("attack_damage", a.attack_damage);
     add("movement_speed", a.movement_speed);
     add("follow_range", a.follow_range);
+    entries
+}
+
+/// Wrap rendered attribute entries as the `,attributes:[…]` SNBT fragment
+/// (leading comma), or `""` when there are none.
+fn wrap_attribute_entries(entries: Vec<String>) -> String {
     if entries.is_empty() {
         String::new()
     } else {
@@ -1170,6 +1214,7 @@ fn emit_functions(
     setup.extend(sealing_commands(
         c.world.content.time.unwrap_or_default(),
         c.world.content.weather,
+        declared_difficulty(c),
         is_v06(c.world.dsl_version.as_str()),
     ));
     setup.push("scoreboard objectives add dw.class trigger".to_string());
@@ -1721,11 +1766,23 @@ fn emit_functions(
                     ));
                 }
                 Objective::Interact {
-                    id, requires_item, ..
+                    id,
+                    requires_item,
+                    missing_item_hint,
+                    ..
                 } => {
                     let trigger = plan::interact_trigger(id.as_str());
+                    // `requires_item` means HELD, not possessed (owner ruling,
+                    // 2026-08-03): presenting the item is the action, so the gate
+                    // reads the main hand (`weapon.mainhand`), not the whole
+                    // inventory (`container.*`). The inventory reading made every
+                    // gated interaction fire the moment the item was picked up
+                    // anywhere — a player who right-clicked a sleeping giant with a
+                    // sharpened stake in their backpack blinded it without ever
+                    // raising a hand. (`collect`'s hold check below still reads
+                    // `container.*`: that one genuinely counts an inventory.)
                     let item_guard = match requires_item {
-                        Some(it) => format!(" if items entity @s container.* {it}"),
+                        Some(it) => format!(" if items entity @s weapon.mainhand {it}"),
                         None => String::new(),
                     };
                     // The trigger is set by the bot's chat command or the
@@ -1735,6 +1792,24 @@ fn emit_functions(
                         pending_guard(o, &qa),
                         safe_obj_fn(id.as_str())
                     ));
+                    // v0.7: the empty-hand answer. A click that reaches an OPEN
+                    // interaction without the item in hand used to be met with pure
+                    // silence, which reads as a broken affordance; an authored
+                    // `missing_item_hint` narrates it to that player instead. Same
+                    // activation guard as the completion line above (so an inactive
+                    // or already-finished objective stays quiet) plus the negation
+                    // of the item guard — and it sits BEFORE the trigger reset, in
+                    // the same tick that consumes the click record, so one click
+                    // yields exactly one line. Ordering against the completion line
+                    // is immaterial (the two conditions are mutually exclusive) but
+                    // is kept adjacent for readability. Absent field emits nothing.
+                    if let (Some(it), Some(hint)) = (requires_item, missing_item_hint) {
+                        tick.push(format!(
+                            "execute as @a[scores={{{trigger}=1..}}]{} unless items entity @s weapon.mainhand {it} run tellraw @s {}",
+                            pending_guard(o, &qa),
+                            json!({ "text": hint })
+                        ));
+                    }
                     // Reset the trigger every tick so a gated attempt can be retried
                     // (e.g. clicked the door before holding the key).
                     tick.push(format!(
@@ -4577,11 +4652,16 @@ fn actor_puppet_summon(a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> S
             .as_deref()
             .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)))
             .unwrap_or_default();
-        let attrs = if a.vulnerable {
-            ",attributes:[{id:\"minecraft:knockback_resistance\",base:1.0}]"
-        } else {
-            ""
-        };
+        // Compiler-owned knockback-immunity first (a `vulnerable` puppet is a
+        // damageable creep, never a shovable one), then whatever the author
+        // declared — so a puppet with no `attributes` renders exactly the
+        // pre-`attributes` string and every earlier campaign stays byte-identical.
+        let mut entries: Vec<String> = Vec::new();
+        if a.vulnerable {
+            entries.push("{id:\"minecraft:knockback_resistance\",base:1.0}".to_string());
+        }
+        entries.extend(attribute_entries(a.attributes.as_ref()));
+        let attrs = wrap_attribute_entries(entries);
         let pose = mannequin_pose_nbt(&a.entity);
         // spec-0021: actor gear rides on BOTH the puppet and the twin, so the
         // dormant elite the party circles is visibly the thing that stands up.
@@ -4676,8 +4756,13 @@ fn actor_twin_summon(a: &delvewright_dsl::Actor) -> String {
     let equip = actor_equipment(a)
         .map(|e| format!(",{e}"))
         .unwrap_or_default();
+    // The twin inherits the puppet's tuning too: the whole point of an elite's
+    // `attributes` is the body that actually fights, and unleashing replaces the
+    // body. Knockback-immunity deliberately does NOT ride along — that is the
+    // caged creep's property, not the freed elite's.
+    let attrs = attributes_snbt(a.attributes.as_ref());
     format!(
-        "summon {} ~ ~ ~ {{PersistenceRequired:1b{pose},DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{equip}}}",
+        "summon {} ~ ~ ~ {{PersistenceRequired:1b{pose},DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}}}",
         a.entity
     )
 }
@@ -7444,6 +7529,42 @@ fn emit_packtest(
         format!("packtest-datapack/data/{ns}/test/sealed_state.mcfunction"),
         lines(&sealed).into_bytes(),
     );
+
+    // Declared combat difficulty (v0.6, owner ruling 2026-08-03): prove on a live
+    // pinned server that the difficulty the campaign DECLARED is the difficulty
+    // the world runs at. Unlike the gamerules, this one has a vanilla read-back:
+    // the bare `/difficulty` query command returns `Difficulty#getId()`
+    // (peaceful 0 / easy 1 / normal 2 / hard 3), so `execute store result` reads
+    // it exactly like `time query daytime`. The assertion covers the whole chain
+    // at once — the shipped `server/server.properties` (via the compose
+    // profile's shared world-settings entrypoint) and the `/difficulty` in
+    // `setup` must agree with the declaration, so a regression in EITHER fails
+    // here. Emitted only for a campaign that declares a difficulty.
+    if let Some(diff) = declared_difficulty(c) {
+        let mut df: Vec<String> = Vec::new();
+        df.push(format!(
+            "#> {}: the world runs at the declared difficulty `{}`",
+            c.world.content.title,
+            diff.token()
+        ));
+        df.push("# @dummy".to_string());
+        df.push("# @timeout 100".to_string());
+        df.push(String::new());
+        df.push(format!("function {ns}:setup"));
+        df.push(
+            "# Bare `/difficulty` is the query form: it returns Difficulty#getId()".to_string(),
+        );
+        df.push("# (peaceful 0 / easy 1 / normal 2 / hard 3).".to_string());
+        df.push("execute store result score #difficulty dw.sys run difficulty".to_string());
+        df.push(format!(
+            "assert score #difficulty dw.sys matches {}",
+            diff.id()
+        ));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/declared_difficulty.mcfunction"),
+            lines(&df).into_bytes(),
+        );
+    }
 
     // v0.3: one focused mechanism test per gameplay verb present in the campaign,
     // plus a flag-gate test. Each drives the compiler-generated mechanic functions
@@ -10430,7 +10551,14 @@ fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool, sel: &str)
             requires_item: Some(it),
             ..
         } => {
-            p.push(format!("give {sel} {it} 1"));
+            // HELD, not merely carried (owner ruling, 2026-08-03): the gate reads
+            // `weapon.mainhand`, so the preamble must put the item THERE. `give`
+            // only happened to satisfy the old inventory-wide gate because a fresh
+            // dummy's first free slot is also its selected one — an accident, not a
+            // guarantee, and exactly the kind of coincidence a test must not rest on.
+            p.push(format!(
+                "item replace entity {sel} weapon.mainhand with {it}"
+            ));
         }
         _ => {}
     }
@@ -10460,6 +10588,10 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     let mut first_armed_kill = None;
     let mut first_collect = None;
     let mut first_interact = None;
+    // The first `interact` that actually gates on an item — the subject of the
+    // held-vs-carried test below. Distinct from `first_interact`, which may be
+    // ungated and would make that test vacuous.
+    let mut first_interact_item = None;
     let mut first_flag_gated = None;
     let mut first_forbid_gated = None;
     for q in &c.quests.content.quests {
@@ -10483,8 +10615,21 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
                 Objective::Collect { .. } if first_collect.is_none() => {
                     first_collect = Some((qid, o))
                 }
-                Objective::Interact { .. } if first_interact.is_none() => {
-                    first_interact = Some((qid, o))
+                Objective::Interact { .. } => {
+                    if first_interact.is_none() {
+                        first_interact = Some((qid, o));
+                    }
+                    if first_interact_item.is_none()
+                        && matches!(
+                            o,
+                            Objective::Interact {
+                                requires_item: Some(_),
+                                ..
+                            }
+                        )
+                    {
+                        first_interact_item = Some((qid, o));
+                    }
                 }
                 _ => {}
             }
@@ -10635,6 +10780,79 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             obj_score(id.as_str())
         ));
         write("verb_interact", b);
+    }
+
+    // interact + `requires_item`: HELD, not merely carried (owner ruling,
+    // 2026-08-03). Two phases on one dummy, one tick each:
+    //
+    //   A. the item is in the pack, the hand is empty  -> must NOT complete
+    //   B. the same item is in the main hand           -> completes
+    //
+    // Phase A first proves the item really is carried (`if items entity @s
+    // container.*` bridged to a score) — without that, "did not complete" would be
+    // indistinguishable from "had no item at all", i.e. a vacuous test that the old
+    // inventory-wide gate would also have passed.
+    //
+    // What this template deliberately does NOT assert is the `missing_item_hint`
+    // narration: PackTest can observe scores, blocks and entities, but a `tellraw`
+    // leaves no game state to assert against — there is no chat-log primitive, and
+    // inventing a "did it narrate" scoreboard side-channel inside the emitted tick
+    // would be a hack the player pays for (no-hack doctrine). The hint's emission is
+    // proven instead by an exact-line assertion in `crates/compiler/tests/v07_*.rs`,
+    // and its in-game appearance by the live tier. The mechanism it rides on — the
+    // main-hand gate itself — is what this template proves.
+    if let Some((qid, o)) = first_interact_item
+        && let Objective::Interact {
+            id,
+            requires_item: Some(it),
+            ..
+        } = o
+    {
+        let (pin, sel) = pin_dummy("dw_t_vheld");
+        let trigger = plan::interact_trigger(id.as_str());
+        let party = plan::PARTY;
+        let carried = "#carried_vheld";
+        let mut b = packtest_header(&format!(
+            "{}: `requires_item` is HELD — carried is not enough",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.push(format!(
+            "scoreboard players set {party} {} 0",
+            obj_score(id.as_str())
+        ));
+        b.extend(packtest_preamble(qid, o, true, &sel));
+        // --- phase A: carried, not held ---
+        b.push(format!(
+            "item replace entity {sel} weapon.mainhand with minecraft:air"
+        ));
+        b.push(format!("item replace entity {sel} inventory.0 with {it}"));
+        b.push(format!("scoreboard players set {carried} dw.sys 0"));
+        b.push(format!(
+            "execute as {sel} if items entity @s container.* {it} run scoreboard players set {carried} dw.sys 1"
+        ));
+        b.push(format!("assert score {carried} dw.sys matches 1"));
+        b.push(format!("scoreboard players set {sel} {trigger} 1"));
+        b.push(format!("function {ns}:tick"));
+        b.push(format!(
+            "assert score {party} {} matches 0",
+            obj_score(id.as_str())
+        ));
+        // --- phase B: the same item, now presented ---
+        b.push(format!(
+            "item replace entity {sel} inventory.0 with minecraft:air"
+        ));
+        b.push(format!(
+            "item replace entity {sel} weapon.mainhand with {it}"
+        ));
+        b.push(format!("scoreboard players set {sel} {trigger} 1"));
+        b.push(format!("function {ns}:tick"));
+        b.push(format!(
+            "assert score {party} {} matches 1",
+            obj_score(id.as_str())
+        ));
+        write("verb_interact_held", b);
     }
 
     // flag gate: without the flag the objective must NOT complete; with it, it
@@ -10835,16 +11053,22 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
 }
 
 fn emit_server(plan: &Plan, out: &mut BuildOutput) {
-    // Combat waves (v0.3) require a non-peaceful difficulty: peaceful *removes*
-    // hostile mobs even when summoned. Wave-free campaigns stay `peaceful`
-    // (hello-world / keep-crawl byte-identical). Natural spawning is still off
-    // (`spawn-monsters=false` + gamerule `spawn_mobs false`); only the compiler's
-    // summoned wave mobs exist.
-    let difficulty = if plan.campaign.quests.content.waves.is_empty() {
-        "peaceful"
-    } else {
-        "easy"
-    };
+    // Difficulty. Declared (`world.difficulty`, v0.6) wins; absent falls back to
+    // the historical derivation, which is what keeps every pre-0.6 campaign
+    // byte-identical: combat waves (v0.3) require a non-peaceful difficulty
+    // because peaceful *removes* hostile mobs even when summoned, and wave-free
+    // campaigns stay `peaceful` (hello-world / keep-crawl unchanged). Natural
+    // spawning is off either way (`spawn-monsters=false` + gamerule `spawn_mobs
+    // false`); only the compiler's own summons exist.
+    let difficulty = declared_difficulty(plan.campaign)
+        .map(|d| d.token())
+        .unwrap_or_else(|| {
+            if plan.campaign.quests.content.waves.is_empty() {
+                "peaceful"
+            } else {
+                "easy"
+            }
+        });
     // Horizon (DSL v0.6, spec-0013). `void` (default/absent) keeps the empty-layer
     // superflat + `the_void` biome, byte-identical to v0.5. `ocean` swaps in a
     // pinned bedrock/stone/water superflat: from the -64 build floor, 1+118+8
@@ -11164,6 +11388,7 @@ mod tests {
             facing: Some(delvewright_dsl::Facing::West),
             vulnerable,
             equipment: None,
+            attributes: None,
         }
     }
 
@@ -11454,6 +11679,7 @@ mod loot_emit_tests {
             facing: None,
             vulnerable: false,
             equipment: eq,
+            attributes: None,
         }
     }
 

@@ -64,6 +64,19 @@ pub struct WorldContent {
     /// thunder attenuate effective sky brightness in the assembled-light model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weather: Option<WorldWeather>,
+    /// Declared combat difficulty (DSL v0.6, owner ruling 2026-08-03). Absent =
+    /// the compiler's historical derivation — `easy` when the campaign fields any
+    /// wave, `peaceful` when it fields none — which is what keeps every campaign
+    /// written before this field byte-identical. Declaring it overrides the
+    /// derivation for **both** the shipped `server.properties` and a `/difficulty`
+    /// in the sealing baseline, so the declaration also holds when the datapack is
+    /// dropped into somebody else's world.
+    ///
+    /// `peaceful` is rejected (`DW0468`). Raising difficulty changes the damage
+    /// players take — easy halves it — so combat arithmetic tuned under the old
+    /// implicit `easy` must be redone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub difficulty: Option<WorldDifficulty>,
     /// Scenic horizon (DSL v0.6, spec-0013). Absent or `void` = the void world
     /// (byte-identical to v0.5). `ocean` swaps the world generator for a
     /// deterministic superflat sea (bedrock/stone/water, sea level y=62) and drops
@@ -117,10 +130,18 @@ pub enum Carrier {
     One,
 }
 
-/// A declared world time state (DSL v0.5, spec-0010). Values are the vanilla
-/// `/time set` keywords; the sole difference from vanilla is that the daylight
-/// cycle is frozen (`advance_time false`), so a set state persists for the whole
-/// delve until a `set-time` effect cuts to another.
+/// A declared world time state (DSL v0.5, spec-0010). The sole difference from
+/// vanilla is that the daylight cycle is frozen (`advance_time false`), so a set
+/// state persists for the whole delve until a `set-time` effect cuts to another.
+///
+/// Vanilla's `/time set` primitive takes **either** one of four keywords or a raw
+/// tick count, and the tick form is the general one — so the states worth naming
+/// for a delve's pacing are not limited to the four keywords. `dusk` and `dawn`
+/// (owner ruling, 2026-08-03) are the tick form exposed first-class, per the
+/// no-hack rule: the DSL names the beat, the compiler emits `/time set <ticks>`.
+/// Every keyword-to-tick mapping lives in exactly one table ([`WorldTime::spec`]),
+/// and the four vanilla keywords still emit their keyword verbatim, so existing
+/// campaigns are byte-identical.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum WorldTime {
@@ -129,33 +150,49 @@ pub enum WorldTime {
     /// Midday, brightest (`/time set noon`, 6000 ticks) — the default.
     #[default]
     Noon,
-    /// Dusk/night (`/time set night`, 13000 ticks).
+    /// Sunset — the sky visibly going orange and the day ending
+    /// (`/time set 12000`). Deliberately NOT 13000: that is the instant the sun
+    /// has finished setting, which is what the `night` keyword already sets, so
+    /// 13000 would make `dusk` a synonym rather than its own beat.
+    Dusk,
+    /// Night, sun fully down (`/time set night`, 13000 ticks).
     Night,
     /// Deep night, darkest (`/time set midnight`, 18000 ticks).
     Midnight,
+    /// First light, just before sunrise (`/time set 23000`). Spelled `dawn`;
+    /// `sunrise` is accepted as a synonym on input.
+    #[serde(alias = "sunrise")]
+    Dawn,
 }
 
 impl WorldTime {
-    /// The vanilla `/time set` keyword.
-    pub fn token(self) -> &'static str {
+    /// The single keyword/tick table: `(the /time set argument, daytime ticks)`.
+    ///
+    /// A state vanilla names keeps its keyword — the argument the compiler has
+    /// always emitted — so no shipped campaign's bytes move. A state vanilla does
+    /// not name emits the equivalent tick count, which is the same primitive.
+    const fn spec(self) -> (&'static str, i64) {
         match self {
-            WorldTime::Day => "day",
-            WorldTime::Noon => "noon",
-            WorldTime::Night => "night",
-            WorldTime::Midnight => "midnight",
+            WorldTime::Day => ("day", 1000),
+            WorldTime::Noon => ("noon", 6000),
+            WorldTime::Dusk => ("12000", 12000),
+            WorldTime::Night => ("night", 13000),
+            WorldTime::Midnight => ("midnight", 18000),
+            WorldTime::Dawn => ("23000", 23000),
         }
     }
 
-    /// The `daytime` tick value the keyword sets (the `time query daytime`
-    /// read-back). Vanilla constants: day=1000, noon=6000, night=13000,
-    /// midnight=18000.
+    /// The vanilla `/time set` argument — a keyword for the four states vanilla
+    /// names, a tick count otherwise.
+    pub fn token(self) -> &'static str {
+        self.spec().0
+    }
+
+    /// The `daytime` tick value this state sets (the `time query daytime`
+    /// read-back). Vanilla constants: day=1000, noon=6000, dusk=12000 (sunset
+    /// onset), night=13000, midnight=18000, dawn=23000.
     pub fn daytime_ticks(self) -> i64 {
-        match self {
-            WorldTime::Day => 1000,
-            WorldTime::Noon => 6000,
-            WorldTime::Night => 13000,
-            WorldTime::Midnight => 18000,
-        }
+        self.spec().1
     }
 }
 
@@ -180,6 +217,62 @@ impl WorldWeather {
             WorldWeather::Clear => "clear",
             WorldWeather::Rain => "rain",
             WorldWeather::Thunder => "thunder",
+        }
+    }
+}
+
+/// The declared combat difficulty of the delve (DSL v0.6, owner ruling
+/// 2026-08-03). Values are the vanilla `/difficulty` keywords.
+///
+/// Difficulty is the single largest lever on how hard a delve *feels*, and until
+/// this field existed the compiler chose it: `easy` for any campaign with a wave,
+/// `peaceful` for one without. Easy **halves incoming player damage** —
+/// `min(dmg / 2 + 1, dmg)` — so every combat number in a pre-0.6 campaign was
+/// tuned against a halved world without anyone declaring it. A campaign that
+/// raises this must redo that arithmetic.
+///
+/// [`WorldDifficulty::Peaceful`] parses but is **rejected** by validation
+/// (`DW0468`): peaceful makes the engine discard every hostile-category mob on
+/// the tick it is ticked, summoned or not, so every wave, actor and ambush in the
+/// campaign would silently vanish. It is a variant only so the compiler can say
+/// that in a diagnostic instead of a serde "unknown variant" parse error.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum WorldDifficulty {
+    /// `/difficulty easy` — the compiler's historical choice for a wave
+    /// campaign, and the default reading of an absent field. Incoming player
+    /// damage is halved (`min(dmg / 2 + 1, dmg)`).
+    #[default]
+    Easy,
+    /// `/difficulty normal` — vanilla-baseline damage. The souls-style baseline.
+    Normal,
+    /// `/difficulty hard` — amplified damage, and zombies reinforce.
+    Hard,
+    /// `/difficulty peaceful` — **always rejected** (`DW0468`). Present only so
+    /// the rejection can be a diagnostic with a rationale.
+    Peaceful,
+}
+
+impl WorldDifficulty {
+    /// The vanilla `/difficulty` keyword.
+    pub fn token(self) -> &'static str {
+        match self {
+            WorldDifficulty::Peaceful => "peaceful",
+            WorldDifficulty::Easy => "easy",
+            WorldDifficulty::Normal => "normal",
+            WorldDifficulty::Hard => "hard",
+        }
+    }
+
+    /// The vanilla `Difficulty#getId()` ordinal, which is also what the bare
+    /// `/difficulty` query command returns — the only vanilla read-back path for
+    /// the setting, and so what the generated PackTest asserts on.
+    pub fn id(self) -> i32 {
+        match self {
+            WorldDifficulty::Peaceful => 0,
+            WorldDifficulty::Easy => 1,
+            WorldDifficulty::Normal => 2,
+            WorldDifficulty::Hard => 3,
         }
     }
 }
@@ -1977,7 +2070,8 @@ pub enum Objective {
         stealth: bool,
     },
     /// Completed by interacting with an entity at `anchor`; if `requires_item` is
-    /// set, the item must be in the player's inventory (v0.3).
+    /// set, the item must be **held in the main hand** (v0.3; held semantics since
+    /// DSL v0.7 — see [`Objective::Interact::requires_item`]).
     Interact {
         /// Objective id.
         id: ObjectiveId,
@@ -1989,9 +2083,27 @@ pub enum Objective {
         hint: Option<String>,
         /// The anchor the interaction entity stands at.
         anchor: AnchorId,
-        /// Item required in inventory to complete the interaction (optional).
+        /// Item the player must be **holding in the main hand** for the
+        /// interaction to complete (optional).
+        ///
+        /// Held, not merely possessed (owner ruling, 2026-08-03): presenting the
+        /// item IS the action — a player who right-clicks a sleeping giant with a
+        /// sharpened stake buried in their backpack has not stabbed anything.
+        /// Before this ruling the gate read the whole inventory, which made every
+        /// `requires_item` interaction fire the moment the item was picked up
+        /// anywhere, whatever the player was actually doing with their hands.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         requires_item: Option<String>,
+        /// Diegetic feedback for a click that arrives without the required item in
+        /// hand (DSL v0.7, reserved `DW0141` earlier): narrated to that player in
+        /// chat instead of the silence the gate used to answer with. Requires
+        /// `requires_item` (`DW0437`).
+        ///
+        /// Only fires while the objective is genuinely open — same activation gate
+        /// as the affordance itself — so a finished or not-yet-active interaction
+        /// stays quiet.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        missing_item_hint: Option<String>,
         /// Prop block that IS the interaction affordance (DSL v0.4, spec-0008
         /// §2): the compiler `setblock`s it at the anchor on activation (exactly
         /// as `collect` uses a real chest). Omitted = the glowing-lantern
@@ -2070,6 +2182,15 @@ pub struct Actor {
     /// wave gear and actor gear are never farmable (no-grind constitution).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub equipment: Option<MobEquipment>,
+    /// Attribute overrides, in the same shape a wave mob uses ([`MobAttributes`],
+    /// the v0.4 surface — one type, one rule set, so the two surfaces cannot
+    /// drift). Emitted into BOTH the staged puppet and the unleashed twin, so the
+    /// elite the party fights is the elite the author tuned; without it an actor
+    /// was stuck at vanilla base values while every wave mob could be tuned,
+    /// which is what blocked elite authoring. A `vulnerable` actor's
+    /// knockback-immunity is emitted first and is not authorable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attributes: Option<MobAttributes>,
 }
 
 /// A cardinal facing keyword (DSL v0.6). Emitted as the puppet's spawn yaw

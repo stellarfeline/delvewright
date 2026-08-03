@@ -131,7 +131,10 @@ Never shipped inside a delve.
 | `tools/i18n-translate.py` | agent | `python3 tools/i18n-translate.py <campaign-dir> --lang <code> [--config f] [--delvec cmd] [--batch-size n] [--dry-run] [--force] [--no-validate]` — external OpenAI-compatible API, generation-time only; see [`i18n.md`](i18n.md) |
 | `tools/skin/` (`delve_skin`) | agent | `python -m delve_skin all <cast.json> --skins-dir D --catalog-dir D --preview-dir D [--id ID] [--scale N]`, or the `build` / `preview` / `catalog` stages individually. Needs its own venv (`pip install -r tools/skin/requirements.txt`); see [`../../tools/skin/README.md`](../../tools/skin/README.md) |
 | `tools/check-dw-codes.py` | CI | `python3 tools/check-dw-codes.py` — asserts the DW catalog in `compiler.md` matches `crates/**/*.rs` both ways, and that every code has a test |
+| `tools/check-doc-dupes.py` | CI | `python3 tools/check-doc-dupes.py [path …]` — merge-artifact gate over `docs/**/*.md` + `README.md`: no two body rows in one markdown table share a first-cell key, no heading repeats within a file, no git conflict markers. Kills the class that put `shortcuts[]` in the stage-5 table twice (owner finding 2026-08-03). Same-key rows in *different* tables are fine; a genuine same-table collision means restructure the table, not allowlist it |
+| `tools/check-worker-override.py` | CI | `python3 tools/check-worker-override.py` — worker-isolation coverage gate: every service in `validation/compose.yaml` that pins a `container_name` or publishes `ports` must be reset (`!reset`) in `validation/worker-override.yaml`. Container names and host ports are Docker-GLOBAL, so `-p dw-worker-<x>` does not isolate them; the omission cost a run twice (`server` #190, then `bot`) |
 | `tools/extract-sound-registry.py` | maintenance | `python3 tools/extract-sound-registry.py <registries/data.min.json> <out.json>` — regenerates the compiler's sound registry for a new MC pin (positional args only, no `--help`) |
+| `tools/extract-item-stack-sizes.py` | maintenance | `python3 tools/extract-item-stack-sizes.py <item_components/data.min.json> <out.json>` — regenerates `crates/compiler/data/item-stack-sizes-1.21.11.json`, the item→`max_stack_size` table `DW0436` reads, for a new MC pin (positional args only). Pins and checks the source SHA-256; refuses to default a missing component rather than assuming 64 |
 | `tools/extract-font-metrics.py` | maintenance | `python3 tools/extract-font-metrics.py <client.jar> …` — regenerates the font metrics behind the DW0330 text-fit lint (positional args only, no `--help`) |
 
 ## 7. Validation stack (`validation/`)
@@ -146,13 +149,13 @@ profiles boot the world the compiler declared, via the shared
 | `play` | human | `EULA=TRUE docker compose -f validation/compose.yaml --profile play up` | the shipped delve image, joinable at `localhost:25565` |
 | `playtest` | human | `EULA=TRUE CREATOR_NAME=<mc-name> docker compose -f validation/compose.yaml --profile playtest up --build` | `play` plus the creator overlay: `/trigger dw.note` stamps the log for `delve-harvest` |
 | `validate` | agent | `EULA=TRUE docker compose -f validation/compose.yaml --profile validate up --build --abort-on-container-exit --exit-code-from bot` | server + mineflayer critical-path bot |
-| `packtest` | agent | `EULA=TRUE docker compose -f validation/compose.yaml --profile packtest up --exit-code-from packtest` | headless PackTest suite on the tool server. `DELVE_OUTPUT` (default `./delve-output`) + `PACKTEST_CONTAINER` boot a **different** build tree — the generated suite is per-campaign, so a template class is only proven live by a campaign that emits it (CI runs a second pass over `crates/compiler/tests/fixtures/cast-ledger` for spec-0020's root-swap/bark/explicit-none templates). See `validation/README.md` "Running a second campaign through `packtest`" |
+| `packtest` | agent | `EULA=TRUE docker compose -f validation/compose.yaml --profile packtest up --exit-code-from packtest` | headless PackTest suite on the tool server. `DELVE_OUTPUT` (default `./delve-output`) + `PACKTEST_CONTAINER` boot a **different** build tree — the generated suite is per-campaign, so a template class is only proven live by a campaign that emits it (CI runs extra passes for template classes hello-world cannot emit: `crates/compiler/tests/fixtures/cast-ledger` for spec-0020's root-swap/bark/explicit-none templates, and `crates/dsl/fixtures/valid/keep-trial` for the `interact` verb templates — `verb_interact` and `verb_interact_held`, the held-vs-carried proof — since hello-world has no `interact` objective at all). See `validation/README.md` "Running a second campaign through `packtest`" |
 
 Shell entry points:
 
 | Script | Class | Purpose |
 |---|---|---|
-| `validation/mutex.sh` | agent (**mandatory**) | the only sanctioned way to claim the validation stack. `source validation/mutex.sh`, then `dw_mutex_acquire <name> [wait-s]` / `trap dw_mutex_release EXIT` / `dw_mutex_assert_not_owner_session`. Acquisition is `mkdir`'s return value, never inferred from the lock directory existing; the lock names its holder in `HOLDER`, and **`owner-play-session` is sacred** — refuse all Docker work, never wait on it, never steal it. Pair with worker isolation: own compose project (`-p dw-worker-<unique>`), no 25565 host binding, tear down only your own project. See [`../../validation/README.md`](../../validation/README.md) "Sharing the Docker host" |
+| `validation/mutex.sh` | agent (**mandatory**) | the only sanctioned way to claim the validation stack. `source validation/mutex.sh`, then `dw_mutex_acquire <name> [wait-s]` / `trap dw_mutex_release EXIT` / `dw_mutex_assert_not_owner_session`. `dw_mutex_release` only works in the shell that acquired (agent tool calls never share shells) — cross-shell coordinators release with `dw_mutex_release_named <holder>`, which matches the HOLDER name exactly and refuses to free `owner-play-session` while the play-profile container is running. Acquisition is `mkdir`'s return value, never inferred from the lock directory existing; the lock names its holder in `HOLDER`, and **`owner-play-session` is sacred** — refuse all Docker work, never wait on it, never steal it. Pair with worker isolation: own compose project (`-p dw-worker-<unique>`), no 25565 host binding, tear down only your own project. See [`../../validation/README.md`](../../validation/README.md) "Sharing the Docker host" |
 | `validation/warden-probe.sh` | agent (spike) | `[POLL_SECONDS=n] [WATCH_SECONDS=n] [CONTAINER=name] validation/warden-probe.sh` — measures what a summoned 1.21.11 warden actually does (dig-down timing, `dig_cooldown`/`anger` NBT, difficulty effects) against a **throwaway** pinned server, never the shared stack. Refuses to run while the mutex reads `owner-play-session` |
 | `validation/fresh-volumes.sh` | agent | tear the stack down and **prove** the world volumes are gone. Run before any re-run of the bot ladder — a stale volume keeps completed objectives completed and fails a fresh playthrough for reasons unrelated to the delve |
 | `validation/render-shots.sh <build-dir> [out-dir]` | agent | turn a build output into the Chunky scene set + shot index (`delve-render scene` + `index`), including the first-person POV shots |
@@ -176,7 +179,49 @@ npm --prefix harness start              # node src/run.ts <critical-path.json>  
 `harness/src/note-bot.ts` is driven by `validation/playtest-note-flow.sh` and
 `harness/src/rehearsal-bot.ts` by `validation/rehearsal-flow.sh`, never by hand.
 
-## 9. Spikes (not the pipeline)
+## 9. Prefab generators (`prefabs/*-generator`, `prefabs/generator`) · agent + CI
+
+The tileset libraries are **generated, not hand-built**. Five separate Cargo
+workspaces, deliberately outside `crates/` so none of them can enter the shipped
+`delvec` and no existing `.nbt` moves (ADR-0006). All five share one CLI —
+`<out_dir>`, which is the content repo's `prefabs/` when you mean to re-export:
+
+```sh
+cargo run --release --manifest-path prefabs/<gen>/Cargo.toml -- <out_dir>
+```
+
+| `<gen>` | binary | tileset | doc |
+| ------- | ------ | ------- | --- |
+| `generator` | `keep-prefab-gen` | `keep-*` (the original interior set) | `prefabs/keep-tileset.md` |
+| `cave-generator` | `cave-prefab-gen` | `cave-*` | `prefabs/cave-tileset.md` |
+| `island-generator` | `island-prefab-gen` | `island-*` set-pieces | `prefabs/island-tileset.md` |
+| `island-terrain-generator` | `island-terrain-gen` | `island-*` terrain | `prefabs/island-tileset.md` |
+| `tidal-keep-generator` | `tidal-keep-gen` | `tk-*` (souls set) | `prefabs/tidal-keep-tileset.md` |
+
+Each generator prints the `pool/*` block to merge into the content repo's
+`pools.json` — printed, never written, because every `*.json` in that directory
+is parsed as prefab metadata and a stray snippet is `DW0346`.
+
+**The invariants are the point.** Every debugging lesson these tilesets have cost
+is pinned as an `assert!` in the generator (route walkability, stair-flank
+sealing, anchor sanity, sightlines, gravity substrate, redstone support), so
+*running* a generator is the gate: it either emits or panics. Debug flags, all
+`tidal-keep-generator`: `TK_DEBUG_LIGHT=1` (per-region measured light + darkest
+cell), `TK_PROBE=<salt>,<x>,<y>,<z>` (labelled block dump), `TK_DEBUG_STAIRS=1`
+(every flank the seal pass closed).
+
+CI (`prefab-generators` job, tier 1) runs all five twice into separate trees on
+every PR: a panic fails the job, and the two trees must be byte-identical
+(ADR-0006). Wired 2026-08-03 — before that nothing in CI compiled these
+workspaces, which is how a tileset with 132 reversed stair blocks (`DW0430`)
+reached an owner playtest through a green pipeline. `clippy -D warnings` is not
+yet part of that job (`prefabs/generator` carries two legacy style lints).
+
+**Re-export loop**: edit the generator → run it into `campaigns/prefabs/` → the
+`.nbt`/`.json` diff is content-repo work, the source diff is engine work, and the
+two land as a pair.
+
+## 10. Spikes (not the pipeline)
 
 `tools/spike-jump-arc/run.sh` (`EULA=TRUE tools/spike-jump-arc/run.sh`) measures
 1.21.11 jump kinematics on a throwaway server to feed

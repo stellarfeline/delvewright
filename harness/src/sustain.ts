@@ -63,6 +63,39 @@ export function eatDecision(opts: {
   return "eat";
 }
 
+/**
+ * Edible items the bot must never eat, un-namespaced (the form
+ * `bot.inventory.items()[].name` and minecraft-data use).
+ *
+ * minecraft-data's `foods` registry answers "is this edible", not "is this good for
+ * you" — it carries no consumable-effect data — so the exclusion has to be named
+ * here. It is a DENY list rather than a whitelist of clean foods on purpose: a
+ * whitelist silently stops the bot eating the moment a campaign's class kit hands
+ * out a food nobody added, which turns a survival aid into a slow, invisible
+ * regression. Harmful food is a small, closed vanilla set; new class-kit food is not.
+ *
+ * The-drowned-bell round 2: the bot picked up and ate rotten flesh and poisoned
+ * itself down from 7.3 to 3.4 health mid-run, so its "eat when hurt" behavior was
+ * costing exactly the health it existed to restore.
+ */
+export const HARMFUL_FOODS: ReadonlySet<string> = new Set([
+  "rotten_flesh", // Hunger II
+  "spider_eye", // Poison
+  "poisonous_potato", // Poison
+  "pufferfish", // Poison IV + Hunger III + Nausea
+  "suspicious_stew", // arbitrary authored effect, up to and including Poison/Wither
+  "chicken", // raw: 30% Hunger
+  "chorus_fruit", // random teleport — a navigation hazard, not a poison
+]);
+
+/**
+ * Whether `name` is safe for the bot to eat. Accepts a namespaced id too, so a caller
+ * that has `minecraft:rotten_flesh` in hand cannot slip past the set by spelling.
+ */
+export function isSafeFood(name: string): boolean {
+  return !HARMFUL_FOODS.has(name.replace(/^minecraft:/, ""));
+}
+
 /** An inventory item reduced to what the food rule needs. */
 export interface FoodItem {
   readonly name: string;
@@ -71,13 +104,15 @@ export interface FoodItem {
 }
 
 /**
- * Pick which food to eat: the most nourishing one, ties broken by name so the choice
- * is deterministic for a given inventory (ADR-0006 spirit — the harness is not a
- * source of run-to-run variance).
+ * Pick which food to eat: the most nourishing SAFE one, ties broken by name so the
+ * choice is deterministic for a given inventory (ADR-0006 spirit — the harness is not
+ * a source of run-to-run variance). Harmful food ({@link HARMFUL_FOODS}) is never
+ * picked, however nourishing the registry says it is.
  */
 export function pickFood<T extends FoodItem>(items: readonly T[]): T | undefined {
   let best: T | undefined;
   for (const item of items) {
+    if (!isSafeFood(item.name)) continue;
     if (
       !best ||
       item.foodPoints > best.foodPoints ||

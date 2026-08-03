@@ -58,7 +58,7 @@ flowchart TD
     L --> AN["delvec analyze<br/>reachability · deadlocks · dark rooms"]
     AN --> B["delvec build<br/>deterministic: datapack + world +<br/>everything the checks below need"]
 
-    subgraph MACHINE ["🤖 machine gauntlet (sonnet subagent)"]
+    subgraph MACHINE ["🤖 machine gauntlet"]
         PT["PackTest —<br/>mechanism tests"] --> BOT["mineflayer bot<br/>plays it start → credits"]
     end
     B --> PT

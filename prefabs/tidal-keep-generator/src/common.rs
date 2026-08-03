@@ -481,8 +481,45 @@ pub fn cut_socket(g: &mut Grid, side: Side, floor_y: i32, along: i32) -> [i32; 3
 // every struct there is `deny_unknown_fields`, so no field may drift)
 // ---------------------------------------------------------------------------
 
+/// What a POINT anchor is *for*, and therefore what "correct" means for it.
+///
+/// Until spec-0021/0022 every point anchor was somewhere a player, mob or marker
+/// STANDS, so one invariant (standability) covered them all. Two of the new
+/// stage-5 surfaces name cells that are deliberately not footings, and each is
+/// the exact opposite of standable — a volley slot must be EMPTY, a loot anchor
+/// must be FULL. Declaring the class lets each get the check that is actually
+/// true of it, instead of one check that is wrong for two of them.
+/// Generator-side only: the emitted metadata JSON is unchanged, because the
+/// compiler learns an anchor's role from the DSL that references it.
+#[derive(Clone, Copy, Default, PartialEq)]
+pub enum AnchorKind {
+    /// A footing: standable (air at feet + head, solid dry floor below).
+    #[default]
+    Footing,
+    /// A firing slot (spec-0022 `volley.from_anchor`): clear and dry, so a
+    /// summoned projectile actually leaves it. Mirrors `DW0446`.
+    Slot,
+    /// A container the prefab already placed (spec-0021 `loot[].anchor`): the
+    /// compiler FILLS it and never places it, so the furniture has to be really
+    /// there. Mirrors `DW0431`.
+    Container,
+}
+
+/// The containers `item replace block … container.<n>` can address, and that
+/// `DW0431` accepts. Double chests are excluded there (two block entities make
+/// `container.<n>` ambiguous) and so are they here.
+pub const FILLABLE: [&str; 3] = [
+    "minecraft:chest",
+    "minecraft:trapped_chest",
+    "minecraft:barrel",
+];
+
 #[derive(Serialize, Clone, Default)]
 pub struct AnchorJson {
+    /// Generator-side classification; never serialised (the compiler reads the
+    /// anchor's ROLE from the DSL that references it, not from the metadata).
+    #[serde(skip)]
+    pub kind: AnchorKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pos: Option<[i32; 3]>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -548,6 +585,30 @@ pub struct MetaJson {
 
 pub fn a_pos(pos: [i32; 3], facing: &str) -> AnchorJson {
     AnchorJson {
+        pos: Some(pos),
+        facing: Some(facing.to_string()),
+        ..Default::default()
+    }
+}
+/// A volley firing slot (spec-0022 `from_anchor`): the open cell a summoned
+/// projectile spawns in, NOT a place anything stands. `DW0446` rejects a solid
+/// or flooded one; `assert_anchors_sane` holds the generator to the same rule.
+pub fn a_slot(pos: [i32; 3], facing: &str) -> AnchorJson {
+    AnchorJson {
+        kind: AnchorKind::Slot,
+        pos: Some(pos),
+        facing: Some(facing.to_string()),
+        ..Default::default()
+    }
+}
+/// A loot container (spec-0021 `loot[].anchor`): the cell of a chest, trapped
+/// chest or barrel the PIECE places. The compiler only ever fills it, so a
+/// generator that moves the furniture without moving the anchor is caught here
+/// rather than by `DW0431` two layers later — and `item replace block` against a
+/// non-container fails SILENTLY, which is why both layers check.
+pub fn a_container(pos: [i32; 3], facing: &str) -> AnchorJson {
+    AnchorJson {
+        kind: AnchorKind::Container,
         pos: Some(pos),
         facing: Some(facing.to_string()),
         ..Default::default()
@@ -1093,4 +1154,94 @@ pub fn stairs(g: &mut Grid, x: i32, y: i32, z: i32, kind: &str, facing: &'static
             ("waterlogged", "false"),
         ]),
     );
+}
+
+/// The `facing` of a bottom-half stair at a cell, if one is there.
+fn stair_facing(g: &Grid, x: i32, y: i32, z: i32) -> Option<&'static str> {
+    match g.get(x, y, z) {
+        Cell::Block(n, Some(props)) if n.ends_with("_stairs") => {
+            props.iter().find(|(k, _)| *k == "facing").map(|(_, v)| *v)
+        }
+        _ => None,
+    }
+}
+
+/// The two lateral offsets of a climb, i.e. the axis a flight is *wide* on.
+fn flank_offsets(facing: &str) -> [(i32, i32); 2] {
+    match facing {
+        "north" | "south" => [(-1, 0), (1, 0)],
+        _ => [(0, -1), (0, 1)],
+    }
+}
+
+/// Seal every **lateral step-up onto a stair tread** with a newel course, so a
+/// flight can only be entered at its foot.
+///
+/// The drowned-bell playtest lesson (2026-08-03), pinned as tooling rather than
+/// prose: a stair block carries exactly ONE climb direction, but where a room
+/// floor sits flush one block below a mid-flight tread, the nav model reads a
+/// perfectly legal side-step onto that tread. The tread then serves two climbs
+/// at once — the flight's, and the side-step's — and whichever `facing` it
+/// takes, one of them is backwards. That is `DW0430` with no literal to blame:
+/// the geometry, not the generator's facing, is over-determined. Closing the
+/// flank removes the second climb and leaves the tread with the one job a stair
+/// can actually do.
+///
+/// Deterministic (ADR-0006): the grid is scanned in fixed `x,y,z` order and the
+/// whole fix set is collected before any of it is applied, so no seal can
+/// change whether a later cell is detected.
+pub fn seal_stair_flanks(g: &mut Grid, block: &str) -> Vec<[i32; 3]> {
+    let [sx, sy, sz] = g.size;
+    let mut open = Vec::new();
+    for x in 0..sx {
+        for y in 0..sy {
+            for z in 0..sz {
+                let Some(facing) = stair_facing(g, x, y, z) else {
+                    continue;
+                };
+                for (dx, dz) in flank_offsets(facing) {
+                    // The tread's walk plane is `y + 1`; a neighbour standable at
+                    // `y` is exactly one below it, i.e. a legal lateral rise.
+                    let n = [x + dx, y, z + dz];
+                    if standable(g, n) {
+                        open.push(n);
+                    }
+                }
+            }
+        }
+    }
+    for n in &open {
+        g.blk(n[0], n[1], n[2], block, None);
+    }
+    if std::env::var("TK_DEBUG_STAIRS").is_ok() {
+        eprintln!("seal_stair_flanks: {} cell(s) {open:?}", open.len());
+    }
+    open
+}
+
+/// Proof that `seal_stair_flanks` left nothing behind (and that no later pass
+/// re-opened a flank): no stair tread anywhere in the piece is reachable by a
+/// one-block rise from its side.
+pub fn assert_stair_flanks_sealed(id: &str, g: &Grid) {
+    let [sx, sy, sz] = g.size;
+    for x in 0..sx {
+        for y in 0..sy {
+            for z in 0..sz {
+                let Some(facing) = stair_facing(g, x, y, z) else {
+                    continue;
+                };
+                for (dx, dz) in flank_offsets(facing) {
+                    let n = [x + dx, y, z + dz];
+                    assert!(
+                        !standable(g, n),
+                        "{id}: stair tread [{x}, {y}, {z}] (facing={facing}) can be entered \
+                         SIDEWAYS from {n:?} — a one-block lateral rise onto a tread whose climb \
+                         runs the other way. A route that takes that side-step makes the tread \
+                         carry two climbs at once and `DW0430` reports it with no wrong literal \
+                         to blame. Close the flight's flank instead of turning the tread."
+                    );
+                }
+            }
+        }
+    }
 }

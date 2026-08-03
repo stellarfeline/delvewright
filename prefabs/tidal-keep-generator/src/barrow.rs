@@ -301,6 +301,12 @@ pub fn anchors() -> Vec<(&'static str, AnchorJson)> {
         ("anchor/l0-barrow-3", a_pos([19, y, 19], "north")),
         ("anchor/l0-barrow-4", a_pos([35, y, 28], "north")),
         ("anchor/l0-reward", a_pos([12, y, 20], "north")),
+        // The barrel `anchor/l0-reward` stands in front of (spec-0021 `loot[]`
+        // names the container CELL, not the footing beside it).
+        (
+            "anchor/l0-reward-cache",
+            a_container([12, y + 1, 21], "north"),
+        ),
         ("anchor/l0-gate-approach", a_pos([LINE_X, y, 4], "north")),
     ]
 }

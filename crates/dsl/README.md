@@ -194,6 +194,7 @@ checked without being applied. Player-visible strings only; the key scheme:
 | `npc.<npc>.name` | NPC name |
 | `quest.<quest>.goal` | stage-4 quest goal |
 | `obj.<quest>.<obj>.title` / `.hint` | objective title/hint (if set) |
+| `obj.<quest>.<obj>.missing_item_hint` | `interact` empty-hand line (v0.7, if set) |
 | `dlg.<npc>.<node>.text` / `.opt.<i>.label` | dialogue node text + option labels |
 | `wave.<wave>.mob.<i>.name` | wave mob custom name (if set) |
 

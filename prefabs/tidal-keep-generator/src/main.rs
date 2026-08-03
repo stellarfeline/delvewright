@@ -139,6 +139,11 @@ fn write_piece(out: &Path, spec: &Spec) {
     let seed = piece_seed(spec.id, spec.salt);
     let mut g = Grid::new(spec.size);
     (spec.build)(&mut g, seed);
+    // Uniform over EVERY piece, including the four that have no stairs today: a
+    // future flight that forgets to seal its flanks fails here rather than in a
+    // playtest. The sealing itself belongs to the piece that authors the flight
+    // (see `seal_stair_flanks`), so it runs before that piece's route proofs.
+    assert_stair_flanks_sealed(spec.id, &g);
     assert_no_unsupported_gravity(spec.id, &g);
     if let Ok(probe) = std::env::var("TK_PROBE") {
         let v: Vec<i32> = probe
@@ -289,12 +294,32 @@ fn assert_anchors_sane(spec: &Spec, g: &Grid) {
             spec.id
         );
         if let Some(p) = a.pos {
-            assert!(
-                standable(g, p),
-                "{}: anchor `{name}` at {p:?} is not standable (air at feet+head, solid floor \
-                 below) — an unstandable anchor is a build failure waiting to happen",
-                spec.id
-            );
+            match a.kind {
+                AnchorKind::Footing => assert!(
+                    standable(g, p),
+                    "{}: anchor `{name}` at {p:?} is not standable (air at feet+head, solid floor \
+                     below) — an unstandable anchor is a build failure waiting to happen",
+                    spec.id
+                ),
+                // spec-0022: a firing slot is an opening, not a footing. Same
+                // condition `DW0446` enforces, checked one layer earlier.
+                AnchorKind::Slot => assert!(
+                    passable(g, p) && g.name_at(p[0], p[1], p[2]) != Some("minecraft:water"),
+                    "{}: volley slot `{name}` at {p:?} is solid or flooded — a projectile \
+                     summoned there never leaves the block it spawned in (`DW0446`)",
+                    spec.id
+                ),
+                // spec-0021: the compiler fills a container, never places one.
+                AnchorKind::Container => assert!(
+                    g.name_at(p[0], p[1], p[2])
+                        .is_some_and(|n| FILLABLE.contains(&n)),
+                    "{}: loot anchor `{name}` at {p:?} holds {:?}, not one of {FILLABLE:?} — \
+                     `item replace block … container.<n>` fails SILENTLY against a \
+                     non-container, so the delve would ship with an empty wall (`DW0431`)",
+                    spec.id,
+                    g.name_at(p[0], p[1], p[2])
+                ),
+            }
         }
         if let Some(d) = a.dispenser {
             assert_eq!(
