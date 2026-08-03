@@ -242,6 +242,31 @@ pub fn entity_dims(entity: &str) -> (f64, f64) {
     }
 }
 
+/// The collision height of a vanilla fence / wall / closed fence gate, in blocks
+/// (task #59): 1.5, half a block above the cell it sits in.
+pub const BARRIER_HEIGHT: f64 = 1.5;
+
+/// The entity id whose body a stage-2 NPC actually wears in the shipped delve.
+/// A skinned NPC is summoned as `minecraft:mannequin` — the player model, not the
+/// declared `base_entity` (see `emit::npc_summon_commands`) — so every geometric
+/// proof about NPC bodies ([`crate::eclipse`], [`crate::clearance`]) must model
+/// what ships, not what is declared. One helper, so the two cannot drift.
+pub fn npc_body_entity(n: &delvewright_dsl::Npc) -> String {
+    match &n.skin {
+        Some(_) => "minecraft:mannequin".to_string(),
+        None => n.base_entity.clone(),
+    }
+}
+
+/// The entity id whose body a stage-5 actor wears — the actor's counterpart of
+/// [`npc_body_entity`], same mannequin rule.
+pub fn actor_body_entity(a: &delvewright_dsl::Actor) -> String {
+    match &a.skin {
+        Some(_) => "minecraft:mannequin".to_string(),
+        None => a.entity.clone(),
+    }
+}
+
 /// The hitbox footprint for a vanilla entity id (spec-0014 per-entity dims table).
 /// Standing hitboxes for the 1.21.11 mobs an actor is likely to puppet; anything
 /// unlisted falls back to the humanoid default (0.6 × 1.95). Width only matters
@@ -581,6 +606,35 @@ impl World {
     /// Public wrapper for the visual-tier POV camera self-check ([`verify_pov_cameras`]).
     pub fn is_clear(&self, c: [i32; 3]) -> bool {
         !self.is_occupied(c)
+    }
+
+    /// The top face of the **full-cube-class solid** occupying `c`, in sixteenths
+    /// of a block, or `None` when no such block is there. A bottom slab answers
+    /// `8`, a `dirt_path` `15`, a plain stone `16` — i.e. exactly the collision
+    /// volume `c.y ..= c.y + top/16`, honouring the partial-floor table (task
+    /// #78). Public so the body-clearance proof ([`crate::clearance`]) can
+    /// intersect a real entity AABB against real block volumes rather than
+    /// against whole cells.
+    pub fn solid_top_16(&self, c: [i32; 3]) -> Option<u8> {
+        if !self.solid.contains(&c) {
+            return None;
+        }
+        Some(
+            self.partial
+                .get(&c)
+                .copied()
+                .unwrap_or(crate::assembled::FULL_HEIGHT_16),
+        )
+    }
+
+    /// Whether `c` holds a **1.5-block-tall barrier** — a fence, a wall, or a
+    /// closed fence gate ([`crate::assembled::is_tall_barrier`] /
+    /// [`crate::assembled::is_fence_gate`]). Its collision volume rises
+    /// [`BARRIER_HEIGHT`] from the cell floor but is a narrow post/panel
+    /// horizontally, which is why the clearance proof treats it as advisory
+    /// rather than as a wall.
+    pub fn is_barrier(&self, c: [i32; 3]) -> bool {
+        self.tall.contains(&c) || self.use_gates.contains(&c)
     }
 
     /// The nearest standable cell to `c` within `radius` (itself if already
