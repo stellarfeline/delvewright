@@ -7769,6 +7769,17 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
 /// visible options is a terminal `minecraft:notice` (an empty `multi_action`
 /// action list crashes the 1.21.11 dialog codec at load — gap 10); otherwise a
 /// `minecraft:multi_action` whose buttons fire each option's `/trigger`.
+///
+/// **The button's `tooltip` (v0.8).** Vanilla's dialog action button is
+/// `ActionButton(CommonButtonData, Optional<DialogAction>)`, and
+/// `CommonButtonData`'s codec is exactly `label` (a text component) +
+/// `tooltip` (an *optional* text component) + `width` (default 150) — verified
+/// against the pinned 1.21.11 client jar's codec, not folklore. The client's
+/// `DialogControlSet` turns a present `tooltip` into `Tooltip.create(component)`
+/// and hangs it on the button, so it renders as an ordinary hover box (wrapped at
+/// 170 px), never on the button face. That is why `DW0331` does not reach it: a
+/// tooltip wraps, it does not scroll. An option with no `tooltip` emits no key —
+/// a pre-0.8 campaign's dialogs are byte-identical.
 fn build_node_dialog(
     npc_name: &str,
     text: &str,
@@ -7786,10 +7797,14 @@ fn build_node_dialog(
         let actions: Vec<Value> = opts
             .iter()
             .map(|o| {
-                json!({
+                let mut action = json!({
                     "label": o.label,
                     "action": { "type": "minecraft:run_command", "command": format!("/trigger {trigger_objective} set {}", o.n) }
-                })
+                });
+                if let Some(tip) = &o.tooltip {
+                    action["tooltip"] = json!(tip);
+                }
+                action
             })
             .collect();
         json!({

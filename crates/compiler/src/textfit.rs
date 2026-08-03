@@ -64,6 +64,20 @@
 //!
 //! The remedy is never a wider button — the fix is to move the content into the
 //! node's body text, which wraps, or into the NPC's reply.
+//!
+//! ### What `DW0331` deliberately does NOT measure: the option `tooltip` (v0.8)
+//!
+//! An option's `tooltip` is a *sibling* of `label` in vanilla's `CommonButtonData`
+//! codec, but it is not drawn on the button. The client's `DialogControlSet` wraps
+//! it in `Tooltip.create(…)`, and `Tooltip` splits its component with
+//! `Font.split(message, 170)` — it **wraps at 170 px into a hover box**. Wrapping
+//! is the whole difference: the failure `DW0331` exists to reject is *scrolling*,
+//! which is what `renderScrollingString` does when a caption overruns a fixed
+//! button. Nothing overruns a tooltip, so there is no budget to enforce and no
+//! diagnostic to raise — measuring one would be inventing a limit vanilla does not
+//! declare. (Both facts read off the pinned 1.21.11 client jar.) This is the
+//! authored shape of the wine-beat pattern: **button = caption, tooltip = the full
+//! line.**
 
 use std::collections::BTreeMap;
 

@@ -256,6 +256,9 @@ Rules:
   below — the translation must sound like that character.
 - Keys ending in `.opt.<n>.label` are the PLAYER's reply inside that NPC's
   dialogue tree: keep them short, first-person, and selectable at a glance.
+- Keys ending in `.opt.<n>.tooltip` are the FULL line that same reply is a
+  caption of, shown in a hover box: translate it as a whole spoken sentence,
+  and make sure it reads as the longer form of its sibling `.label`.
 - Keys under `obj.` are objective titles/hints, `quest.` are goals, `class.` are
   class names/blurbs, `npc.`/`area.`/`world.` are proper nouns and headings.
 - Reuse the glossary translations verbatim wherever those names appear.
