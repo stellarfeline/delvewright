@@ -1235,6 +1235,18 @@ pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEn
                 "pos": [e.pos[0], e.pos[1], e.pos[2]],
                 "count": e.count,
                 "respawns_on_rest": e.respawns_on_rest,
+                // task #123: the tag-census probe surface for this wave. The
+                // harness calls what the plan NAMES — `safe_local` is a compiler
+                // naming rule, and a harness that re-derived it would be exactly
+                // the downstream folklore CLAUDE.md forbids.
+                "census": {
+                    "census": format!("{ns}:wave_census_{safe}", ns = plan.namespace,
+                                      safe = crate::plan::safe_local(&e.wave_id)),
+                    "brand": format!("{ns}:wave_brand_{safe}", ns = plan.namespace,
+                                     safe = crate::plan::safe_local(&e.wave_id)),
+                    "unbrand": format!("{ns}:wave_unbrand_{safe}", ns = plan.namespace,
+                                       safe = crate::plan::safe_local(&e.wave_id)),
+                },
             });
             if let Some(cp) = e.checkpoint {
                 o["checkpoint"] = json!([cp[0], cp[1], cp[2]]);

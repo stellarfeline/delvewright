@@ -66,3 +66,91 @@ export function parseCompletionMarker(line: string): CompletionMarker | undefine
 export function markerLine(campaignId: string, token: string): string {
   return `[dw:complete ${campaignId} ${token}]`;
 }
+
+// ---------------------------------------------------------------------------
+// The wave CENSUS channel (task #123)
+// ---------------------------------------------------------------------------
+//
+// "What is standing at this encounter?" used to be answered by silhouette — every
+// entity mineflayer tracked, no distance filter, anything taller than half a
+// block. That counts a neighbouring wave's mobs and every ambush actor in
+// tracking range as members of the wave being measured, and — since they are
+// alive on both sides of a scripted death — reports them as survivors a re-seat
+// failed to remove (#230, the drowned bell's false `carried_over` findings).
+//
+// The wave TAG is the only exact answer, and only the server can see it. So the
+// compiler emits the census and the harness reads it: same sigil, same anchored
+// whole-line matching, same three unforgeability properties as the completion
+// channel. Two lines, both integers only:
+//
+//     [dw:census <campaign-id> <wave-id> <seq> <present> <branded> <damaged>]
+//     [dw:censusmob <campaign-id> <wave-id> <seq> <x> <y> <z> <health> <max>]
+//
+// `seq` counts censuses server-side, so an answer can always be told from a stale
+// one without the harness writing any delve state to ask its question. The
+// `censusmob` fields are ×100 fixed-point, so positions and health cross chat as
+// exact integers with no float formatting to parse.
+
+/** A signed integer field as it appears on the wire. */
+const INT = "(-?[0-9]+)";
+const WAVE = "(wave\\/[a-z0-9]+(?:-[a-z0-9]+)*)";
+const CAMPAIGN = "([a-z0-9]+(?:-[a-z0-9]+)*)";
+
+const CENSUS_RE = new RegExp(
+  `^\\[dw:census ${CAMPAIGN} ${WAVE} ${INT} ${INT} ${INT} ${INT}\\]$`,
+);
+const CENSUS_MOB_RE = new RegExp(
+  `^\\[dw:censusmob ${CAMPAIGN} ${WAVE} ${INT} ${INT} ${INT} ${INT} ${INT} ${INT}\\]$`,
+);
+
+/** The summary line closing one census of one wave. */
+export interface CensusSummary {
+  readonly campaignId: string;
+  readonly wave: string;
+  /** Server-side census counter; strictly increasing per census. */
+  readonly seq: number;
+  /** How many mobs carrying this wave's tag are standing. */
+  readonly present: number;
+  /** How many of those still wear the brand applied before the last death. */
+  readonly branded: number;
+  /** How many of those are below their own `max_health`. */
+  readonly damaged: number;
+}
+
+/** One mob's line inside a census. Positions and health are real units. */
+export interface CensusMob {
+  readonly campaignId: string;
+  readonly wave: string;
+  readonly seq: number;
+  readonly pos: readonly [number, number, number];
+  readonly health: number;
+  readonly maxHealth: number;
+}
+
+/** Parse one chat line as a census summary, or `undefined`. Whole-line, strict. */
+export function parseCensusSummary(line: string): CensusSummary | undefined {
+  const m = CENSUS_RE.exec(line);
+  if (!m) return undefined;
+  return {
+    campaignId: m[1]!,
+    wave: m[2]!,
+    seq: Number(m[3]),
+    present: Number(m[4]),
+    branded: Number(m[5]),
+    damaged: Number(m[6]),
+  };
+}
+
+/** Parse one chat line as a census mob line, or `undefined`. Whole-line, strict. */
+export function parseCensusMob(line: string): CensusMob | undefined {
+  const m = CENSUS_MOB_RE.exec(line);
+  if (!m) return undefined;
+  return {
+    campaignId: m[1]!,
+    wave: m[2]!,
+    seq: Number(m[3]),
+    pos: [Number(m[4]) / 100, Number(m[5]) / 100, Number(m[6]) / 100],
+    health: Number(m[7]) / 100,
+    maxHealth: Number(m[8]) / 100,
+  };
+}

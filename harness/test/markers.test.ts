@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   CAMPAIGN_TOKEN,
   markerLine,
+  parseCensusMob,
+  parseCensusSummary,
   parseCompletionMarker,
 } from "../src/markers.ts";
 
@@ -77,4 +79,51 @@ test("a campaign id is matched exactly — another campaign's marker is a differ
   // The executor compares campaignId against the running path's; this test pins that
   // the parse keeps them distinguishable rather than normalizing them together.
   assert.notEqual(other?.campaignId, "hello-world");
+});
+
+// --- the wave census channel (task #123) -------------------------------------
+
+test("a census summary parses into the server's own counts", () => {
+  assert.deepEqual(parseCensusSummary("[dw:census the-drowned-bell wave/gate-assault 7 2 1 1]"), {
+    campaignId: "the-drowned-bell",
+    wave: "wave/gate-assault",
+    seq: 7,
+    present: 2,
+    branded: 1,
+    damaged: 1,
+  });
+});
+
+test("a census mob line carries position and health as real units", () => {
+  // The wire is fixed-point ×100 so nothing has to parse a float; a negative
+  // coordinate must survive it, which is most of the bell's map.
+  assert.deepEqual(
+    parseCensusMob("[dw:censusmob the-drowned-bell wave/gate-assault 7 1250 7100 -8450 375 600]"),
+    {
+      campaignId: "the-drowned-bell",
+      wave: "wave/gate-assault",
+      seq: 7,
+      pos: [12.5, 71, -84.5],
+      health: 3.75,
+      maxHealth: 6,
+    },
+  );
+});
+
+test("the census channel is as anchored as the completion channel", () => {
+  for (const line of [
+    "[dw:census the-drowned-bell wave/gate-assault 7 2 1]", // one field short
+    "[dw:census the-drowned-bell obj/hold-the-gate 7 2 1 1]", // not a wave id
+    "[dw:census the-drowned-bell wave/gate-assault 7 2 1 1] ", // trailing space
+    " [dw:census the-drowned-bell wave/gate-assault 7 2 1 1]", // leading space
+    "look out: [dw:census the-drowned-bell wave/gate-assault 7 2 1 1]", // substring
+    "[dw:census the-drowned-bell wave/gate-assault 7 2 1 x]", // non-numeric
+    "",
+  ]) {
+    assert.equal(parseCensusSummary(line), undefined, JSON.stringify(line));
+  }
+  assert.equal(parseCensusMob("[dw:censusmob c wave/x 1 0 0 0 1]"), undefined, "one field short");
+  // The two lines never parse as each other.
+  assert.equal(parseCensusSummary("[dw:censusmob c wave/x 1 0 0 0 1 1]"), undefined);
+  assert.equal(parseCensusMob("[dw:census c wave/x 1 2 0 0]"), undefined);
 });

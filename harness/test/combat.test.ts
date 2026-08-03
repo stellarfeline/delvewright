@@ -36,6 +36,11 @@ function encounter(over: Partial<Encounter> = {}): Encounter {
     count: 1,
     respawnsOnRest: false,
     checkpoint: [97, 71, -96],
+    census: {
+      census: "the-drowned-bell:wave_census_bellkeeper",
+      brand: "the-drowned-bell:wave_brand_bellkeeper",
+      unbrand: "the-drowned-bell:wave_unbrand_bellkeeper",
+    },
     ...over,
   };
 }
@@ -54,6 +59,11 @@ const PLAN = {
       count: 2,
       respawns_on_rest: true,
       checkpoint: [34, 71, -113],
+      census: {
+        census: "the-drowned-bell:wave_census_gate_assault",
+        brand: "the-drowned-bell:wave_brand_gate_assault",
+        unbrand: "the-drowned-bell:wave_unbrand_gate_assault",
+      },
     },
   ],
 };
@@ -76,6 +86,14 @@ test("an encounter with no checkpoint yet parses with an absent one", () => {
   const { checkpoint: _dropped, ...noCheckpoint } = PLAN.encounters[0]!;
   const raw = { ...PLAN, encounters: [noCheckpoint] };
   assert.equal(parseCombatPlan(raw).encounters[0]!.checkpoint, undefined);
+});
+
+test("a plan that cannot name its census is refused, never silently silhouetted", () => {
+  // The alternative is the #230 failure mode: counting whatever the client tracks
+  // and reporting ambush actors as wave mobs a re-seat left standing. A build too
+  // old to state the probe cannot be measured by tag, and saying so beats guessing.
+  const { census: _dropped, ...noCensus } = PLAN.encounters[0]!;
+  assert.throws(() => parseCombatPlan({ ...PLAN, encounters: [noCensus] }), /census/);
 });
 
 test("an unknown tier is a parse failure, never a silent 'ordinary'", () => {
@@ -321,15 +339,43 @@ test("two completed trials per encounter is full coverage and says nothing", () 
 
 // --- re-seat fidelity, pure (owner ruling 2026-08-03, task #108) -------------
 
-function sighting(id: number, over: Partial<{ distance: number; health: number; maxHealth: number }> = {}) {
-  return { id, distance: over.distance ?? 1, health: over.health ?? 20, maxHealth: over.maxHealth ?? 20 };
+const ANCHOR = [0, 0, 0] as const;
+
+/** One census mob line, as the compiler would have printed it. */
+function mob(over: Partial<{ distance: number; health: number; maxHealth: number }> = {}) {
+  return {
+    campaignId: "c",
+    wave: "wave/x",
+    seq: 1,
+    pos: [over.distance ?? 1, 0, 0] as readonly [number, number, number],
+    health: over.health ?? 20,
+    maxHealth: over.maxHealth ?? 20,
+  };
+}
+
+/** A settled census: the server's totals plus the mob lines that closed it. */
+function census(
+  mobs: ReturnType<typeof mob>[],
+  over: Partial<{ present: number; branded: number; damaged: number }> = {},
+) {
+  return {
+    summary: {
+      campaignId: "c",
+      wave: "wave/x",
+      seq: 1,
+      present: over.present ?? mobs.length,
+      branded: over.branded ?? 0,
+      damaged: over.damaged ?? mobs.filter((m) => m.health < m.maxHealth).length,
+    },
+    mobs,
+  };
 }
 
 test("observationOf counts what came back, what carried over, and how far it strayed", () => {
   const obs = observationOf(
-    [sighting(1, { distance: 60 }), sighting(2, { health: 6 }), sighting(3)],
+    census([mob({ distance: 60 }), mob({ health: 6 }), mob()], { branded: 1 }),
     3,
-    new Set([2]),
+    [...ANCHOR],
     900,
   );
   assert.equal(obs.present, 3);
@@ -342,43 +388,42 @@ test("observationOf counts what came back, what carried over, and how far it str
   assert.equal(obs.settleMs, 900);
 });
 
-test("a mob whose health the server never published is unknown, never 'full'", () => {
-  const obs = observationOf([{ id: 1, distance: 2, health: undefined, maxHealth: undefined }], 1, new Set(), 0);
-  assert.equal(obs.healthReadable, 0);
-  assert.equal(obs.damaged, 0, "an unknown is not evidence of damage…");
-  assert.equal(
-    reseatFidelityFinding("wave/x", 1, "first-contact", obs),
-    undefined,
-    "…and cannot manufacture a red on its own",
-  );
+test("the census counts the WAVE — a bystander standing beside it cannot enter the tally", () => {
+  // The #230 shape: two ambush husks and a neighbouring wave's mob are standing
+  // where the bot is, and were standing there before it died. The server counted
+  // by tag, so the observation is of the wave alone and nothing carried over.
+  const obs = observationOf(census([mob(), mob()]), 2, [...ANCHOR], 40);
+  assert.equal(obs.present, 2, "not 4 — the bystanders never had the wave tag");
+  assert.equal(obs.carriedOver, 0);
+  assert.equal(reseatFidelityFinding("wave/x", 1, "first-contact", obs), undefined);
 });
 
 test("a faithful re-seat is silent", () => {
-  const obs = observationOf([sighting(1), sighting(2), sighting(3)], 3, new Set(), 40);
+  const obs = observationOf(census([mob(), mob(), mob()]), 3, [...ANCHOR], 40);
   assert.equal(reseatFidelityFinding("wave/x", 1, "first-contact", obs), undefined);
 });
 
 test("a survivor carried across a life outranks every other fidelity fault", () => {
   // Both wrong at once: report the carried-over mob, because that is the grind
   // the ruling forbids and it explains the missing health too.
-  const obs = observationOf([sighting(1, { health: 3 }), sighting(2)], 3, new Set([1]), 40);
+  const obs = observationOf(census([mob({ health: 3 }), mob()], { branded: 1 }), 3, [...ANCHOR], 40);
   const v = reseatFidelityFinding("wave/x", 2, "mid-fight", obs);
   assert.match(String(v), /already/);
   assert.match(String(v), /never topped up around its survivors/);
 });
 
 test("a short re-seat names the observed and declared counts", () => {
-  const obs = observationOf([sighting(1), sighting(2)], 3, new Set(), 6_000);
+  const obs = observationOf(census([mob(), mob()]), 3, [...ANCHOR], 6_000);
   assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /2 mob\(s\) standing, 3 declared/);
 });
 
 test("a whole but wounded re-seat is red on health alone", () => {
-  const obs = observationOf([sighting(1, { health: 11 }), sighting(2)], 2, new Set(), 40);
+  const obs = observationOf(census([mob({ health: 11 }), mob()]), 2, [...ANCHOR], 40);
   assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /BELOW full/);
 });
 
 test("only a re-seating wave owes fidelity — a persisting wave is judged by outcome alone", () => {
-  const wounded = observationOf([sighting(1, { health: 4 })], 2, new Set([1]), 40);
+  const wounded = observationOf(census([mob({ health: 4 })], { branded: 1 }), 2, [...ANCHOR], 40);
   assert.equal(
     trialVerdict(trial({ reseats: false, reengage: wounded, outcome: "re-engaged" })),
     undefined,

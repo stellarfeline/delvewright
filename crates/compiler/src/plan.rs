@@ -698,6 +698,22 @@ pub fn wave_tag(wave_id: &str) -> String {
     format!("dw_wave_{}", safe_local(wave_id))
 }
 
+/// The entity tag a **census brand** stamps on a wave's currently-living mobs
+/// (task #123). The harness applies it before a scripted death and reads it back
+/// after the re-seat: a mob still wearing it is, by identity and not by
+/// silhouette, one the previous life already fought.
+///
+/// Per wave rather than one shared brand, so branding one encounter can never
+/// colour a neighbouring wave's census.
+pub fn wave_brand_tag(wave_id: &str) -> String {
+    format!("dw_brand_{}", safe_local(wave_id))
+}
+
+/// Marker token for the per-wave census SUMMARY line (task #123).
+pub const MARKER_TOKEN_CENSUS: &str = "census";
+/// Marker token for one mob's line inside a census (task #123).
+pub const MARKER_TOKEN_CENSUS_MOB: &str = "censusmob";
+
 /// A stage-5 wave by id (v0.3).
 pub fn wave_of<'a>(campaign: &'a Campaign, wave_id: &str) -> Option<&'a delvewright_dsl::Wave> {
     campaign

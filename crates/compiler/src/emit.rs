@@ -2523,6 +2523,91 @@ fn emit_functions(
                 ]),
             ));
         }
+        // --- task #123: the wave CENSUS probe surface ---
+        //
+        // The live ladder used to answer "what is standing at this encounter?" by
+        // silhouette: every entity mineflayer tracked, no distance filter, any mob
+        // taller than half a block. On the drowned bell that counted five ambush
+        // actors and a neighbouring wave as members of whichever wave was being
+        // measured, and — since they were alive on both sides of a scripted death
+        // — reported them as survivors the re-seat had failed to remove (#230).
+        // The wave tag is the only exact answer to that question and the compiler
+        // owns it, so the compiler owns the census too: the harness asks these
+        // functions and reads numbers, instead of guessing from shapes.
+        //
+        // Emitted for EVERY wave — the probe is how the ladder counts any
+        // encounter, not only a re-seating one. A campaign with no waves emits
+        // nothing here and is byte-identical.
+        {
+            let safe = plan::safe_local(w.id.as_str());
+            let tag = plan::wave_tag(w.id.as_str());
+            let brand = plan::wave_brand_tag(w.id.as_str());
+            let wid = w.id.as_str();
+            // Brand / unbrand: stamp this life's mobs, and clear the stamp. The
+            // unbrand selects the BRAND, not the wave, so a mob that somehow
+            // outlived its wave tag still gets cleaned up.
+            fns.push((
+                format!("wave_brand_{safe}"),
+                lines(&[format!("tag @e[tag={tag}] add {brand}")]),
+            ));
+            fns.push((
+                format!("wave_unbrand_{safe}"),
+                lines(&[format!("tag @e[tag={brand}] remove {brand}")]),
+            ));
+            // Per-mob accumulation, run `as` each tagged mob. Health and its
+            // maximum both come from vanilla primitives — `data get entity @s
+            // Health` and `attribute @s max_health get` — so "damaged" is a fact
+            // the server states, never a table the compiler invents (DW0475) and
+            // never a value the client happened to be sent (a live 1.21.11 server
+            // does not put an unmodified max health on the wire at all, which is
+            // why the silhouette probe had to guess it from the highest health it
+            // had ever seen).
+            //
+            // Scale 100: two decimal places carried as integers, so positions and
+            // health cross the chat channel exactly, with no float formatting to
+            // parse. The holders are shared across waves, which is safe because a
+            // census is one atomic function call.
+            fns.push((
+                format!("wave_census_one_{safe}"),
+                lines(&[
+                    "scoreboard players add #wcen_n dw.sys 1".to_string(),
+                    format!(
+                        "execute if entity @s[tag={brand}] run scoreboard players add #wcen_b \
+                         dw.sys 1"
+                    ),
+                    "execute store result score #wcen_h dw.sys run data get entity @s Health 100"
+                        .to_string(),
+                    "execute store result score #wcen_m dw.sys run attribute @s \
+                     minecraft:max_health get 100"
+                        .to_string(),
+                    "execute if score #wcen_h dw.sys < #wcen_m dw.sys run scoreboard players add \
+                     #wcen_d dw.sys 1"
+                        .to_string(),
+                    "execute store result score #wcen_x dw.sys run data get entity @s Pos[0] 100"
+                        .to_string(),
+                    "execute store result score #wcen_y dw.sys run data get entity @s Pos[1] 100"
+                        .to_string(),
+                    "execute store result score #wcen_z dw.sys run data get entity @s Pos[2] 100"
+                        .to_string(),
+                    format!("tellraw @a {}", census_mob_component(ns, wid)),
+                ]),
+            ));
+            // The census itself: zero the accumulators, walk the tag, then state
+            // the totals. `#wcen_seq` counts censuses so the harness can tell this
+            // answer from a stale one — it never has to write a delve score to ask
+            // a question.
+            fns.push((
+                format!("wave_census_{safe}"),
+                lines(&[
+                    "scoreboard players add #wcen_seq dw.sys 1".to_string(),
+                    "scoreboard players set #wcen_n dw.sys 0".to_string(),
+                    "scoreboard players set #wcen_b dw.sys 0".to_string(),
+                    "scoreboard players set #wcen_d dw.sys 0".to_string(),
+                    format!("execute as @e[tag={tag}] run function {ns}:wave_census_one_{safe}"),
+                    format!("tellraw @a {}", census_summary_component(ns, wid)),
+                ]),
+            ));
+        }
         // kill reward: each slain wave mob decrements the countdown, then re-arms.
         fns.push((
             format!("k_reward_{}", plan::safe_local(w.id.as_str())),
@@ -6830,6 +6915,65 @@ fn safe_obj_fn(obj_id: &str) -> String {
     format!("o_{}", plan::safe_local(obj_id))
 }
 
+/// One `dw.sys` score, as a chat component.
+fn sys_score(holder: &str) -> Value {
+    json!({ "score": { "name": holder, "objective": "dw.sys" } })
+}
+
+/// Join a marker's prefix and its integer fields into one `tellraw` component,
+/// rendering as a single anchored line the harness parses whole (task #123).
+///
+/// The grammar is the completion channel's, one token further on:
+/// `[dw:<token> <campaign> <wave> <n> <n> …]`. It inherits the same three
+/// unforgeability properties — player chat cannot begin with the sigil, the
+/// campaign id is part of the match, and `DW0182` reserves the sigil in every
+/// player-visible string — so a census line is as much an oracle as a completion
+/// marker is.
+fn census_component(ns: &str, token: &str, wave_id: &str, holders: &[&str]) -> Value {
+    let mut extra: Vec<Value> = Vec::new();
+    for h in holders {
+        extra.push(sys_score(h));
+        extra.push(json!({ "text": " " }));
+    }
+    // The trailing separator becomes the closing bracket.
+    extra.pop();
+    extra.push(json!({ "text": "]" }));
+    json!({
+        "text": format!("[dw:{token} {ns} {wave_id} "),
+        "color": "dark_gray",
+        "extra": extra
+    })
+}
+
+/// The census SUMMARY line: sequence, how many of the wave stand, how many of
+/// those are branded (fought in a previous life), how many are below full health.
+fn census_summary_component(ns: &str, wave_id: &str) -> Value {
+    census_component(
+        ns,
+        plan::MARKER_TOKEN_CENSUS,
+        wave_id,
+        &["#wcen_seq", "#wcen_n", "#wcen_b", "#wcen_d"],
+    )
+}
+
+/// One mob's line inside a census: sequence, position and health, all ×100 so
+/// they cross the chat channel as exact integers.
+fn census_mob_component(ns: &str, wave_id: &str) -> Value {
+    census_component(
+        ns,
+        plan::MARKER_TOKEN_CENSUS_MOB,
+        wave_id,
+        &[
+            "#wcen_seq",
+            "#wcen_x",
+            "#wcen_y",
+            "#wcen_z",
+            "#wcen_h",
+            "#wcen_m",
+        ],
+    )
+}
+
 /// Per-objective "already announced" scoreboard (v0.3 objective-activation
 /// feedback, M2 fix 4). Set once the objective's title/hint has been shown so the
 /// announce fires exactly once per player.
@@ -7931,6 +8075,8 @@ fn emit_packtest(
     emit_payload_packtests(plan, out, payloads);
     // spec-0016 §1: resting at a bonfire moves the party respawn point and
     // re-seats its `respawns_on_rest` waves. Emits nothing without a bonfire.
+    // task #123: the tag census really counts the wave, and only the wave.
+    emit_wave_census_packtest(plan, out);
     emit_bonfire_packtests(plan, out);
     // spec-0016 §1 (owner ruling 2026-08-03): rest and save-only really differ.
     emit_bonfire_option_packtest(plan, out);
@@ -9048,6 +9194,91 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
 ///   which is the whole point of the sentinel.
 ///
 /// Emits nothing for a campaign with no bonfire → byte-identical.
+/// The wave census counts by TAG (task #123), proven on a live server.
+///
+/// The ladder's old probe counted silhouettes — every entity the client tracked,
+/// anything taller than half a block — so an ambush actor standing near the fight
+/// was indistinguishable from a member of it, and one alive on both sides of a
+/// scripted death was reported as a survivor the re-seat had failed to remove
+/// (#230). The fix moves the count into the datapack, where the tag lives; this
+/// template is what proves the arithmetic on the pinned server rather than in a
+/// unit test's imagination.
+///
+/// Four claims: an untagged bystander standing right there is NOT counted; a
+/// branded mob is; a mob that never wore the brand is not; and a wounded mob is
+/// reported wounded, from the server's own `Health` and `max_health`.
+///
+/// Emits nothing for a campaign with no wave → byte-identical.
+fn emit_wave_census_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some(w) = plan.campaign.quests.content.waves.first() else {
+        return;
+    };
+    // A wave the compiler could not place emits no `spawn_<wave>` to drive.
+    if plan::wave_total(w) < 1 {
+        return;
+    }
+    let safe = plan::safe_local(w.id.as_str());
+    let tag = plan::wave_tag(w.id.as_str());
+    let brand = plan::wave_brand_tag(w.id.as_str());
+    let total = plan::wave_total(w);
+    let species = &w.mobs[0].entity;
+
+    let mut b = packtest_header(&format!(
+        "{title}: the census counts wave `{}` by TAG — a bystander beside it is not in it \
+         (task #123)",
+        w.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push("kill @e[tag=dw_cen_bystander]".to_string());
+    b.push(format!("function {ns}:spawn_{safe}"));
+    // A BYSTANDER of the wave's own species, summoned on the wave's own anchor
+    // cell: everything a silhouette probe uses to decide membership, and none of
+    // what the census uses. It must not move a single count.
+    b.push(format!(
+        "execute at @e[tag={tag},limit=1] run summon {species} ~ ~ ~ \
+         {{Tags:[\"dw_cen_bystander\"],PersistenceRequired:1b}}"
+    ));
+    b.push(format!("function {ns}:wave_census_{safe}"));
+    b.push(format!("assert score #wcen_n dw.sys matches {total}"));
+    b.push("assert score #wcen_b dw.sys matches 0".to_string());
+    b.push("assert score #wcen_d dw.sys matches 0".to_string());
+    // Brand this life's mobs. The bystander is not one of them, and the brand
+    // rides the wave tag, so it cannot reach it.
+    b.push(format!("function {ns}:wave_brand_{safe}"));
+    b.push(format!("function {ns}:wave_census_{safe}"));
+    b.push(format!("assert score #wcen_b dw.sys matches {total}"));
+    b.push(format!(
+        "execute store result score #cen_by dw.sys if entity @e[tag=dw_cen_bystander,tag={brand}]"
+    ));
+    b.push("assert score #cen_by dw.sys matches 0".to_string());
+    // Wound one, and the census says so — read off the server's own Health and
+    // max_health, not a table and not whatever the client was sent.
+    b.push(format!(
+        "data modify entity @e[tag={tag},limit=1] Health set value 1.0f"
+    ));
+    b.push(format!("function {ns}:wave_census_{safe}"));
+    b.push("assert score #wcen_d dw.sys matches 1".to_string());
+    // A re-summon is a NEW mob: the brand cannot survive it, which is exactly the
+    // property the die-retry fidelity verdict rests on.
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(format!("function {ns}:spawn_{safe}"));
+    b.push(format!("function {ns}:wave_census_{safe}"));
+    b.push(format!("assert score #wcen_n dw.sys matches {total}"));
+    b.push("assert score #wcen_b dw.sys matches 0".to_string());
+    b.push("assert score #wcen_d dw.sys matches 0".to_string());
+    // Leave no residue for the shared batch (pin_dummy rule 4).
+    b.push(format!("function {ns}:wave_unbrand_{safe}"));
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push("kill @e[tag=dw_cen_bystander]".to_string());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/wave_census.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
 fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = &plan.campaign.world.content.title;
