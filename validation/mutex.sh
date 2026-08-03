@@ -32,6 +32,29 @@
 # 3. **Release only what you took.** `dw_mutex_release` no-ops unless the HOLDER
 #    is us, so a crashed script can never free someone else's lock — and no
 #    teardown trap is ever installed before acquisition succeeds.
+#
+# ## Worker isolation (the other half of the rule)
+#
+# The mutex serialises access; **isolation** is what makes a mistake survivable.
+# The default compose project plus `compose.yaml`'s pinned
+# `container_name: delvewright-server` and its `127.0.0.1:25565` binding mean
+# every caller aims at the SAME container and the SAME port — which is why one
+# stray `down -v` could reach across into a human's session at all.
+#
+# Any agent/worker live-server work MUST therefore:
+#
+# 1. run in its **own compose project** — `docker compose -p dw-worker-<unique>`
+#    (or a plain `docker run` with a unique `--name`, as the warden spike does);
+# 2. publish **no host binding on 25565** — reach the server over the compose
+#    network, via `docker exec … rcon-cli`, or on a distinct high port. 25565 is
+#    reserved for the owner's client;
+# 3. tear down **only its own project** — `docker compose -p dw-worker-<unique>
+#    down -v`, never a bare `docker compose down`, and never `docker rm` a
+#    container it did not create.
+#
+# Held together: the mutex means only one of you runs at a time, and isolation
+# means that even when someone gets it wrong, what they tear down is provably
+# their own.
 set -uo pipefail
 
 DW_MUTEX_DIR="${DW_MUTEX_DIR:-/private/tmp/delvewright-validation.lock.d}"
