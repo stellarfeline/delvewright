@@ -147,6 +147,14 @@ jobs:
       # (ubuntu-latest ships >=3.11).
       - name: DW-code catalog matches the compiler reference (both directions)
         run: python3 tools/check-dw-codes.py
+      # Merge artifacts in the docs tree: a table row duplicated under one key, a
+      # doubled heading, a stray conflict marker. Two branches appending rows at
+      # the same table anchor merge cleanly and silently, so this class is
+      # invisible to every other gate (owner finding 2026-08-03 — `shortcuts[]`
+      # and `waves[].respawns_on_rest` each twice in the stage-5 table, one copy
+      # naming the wrong diagnostic). Deterministic, offline, stdlib-only python3.
+      - name: docs tree carries no duplicate rows/headings or conflict markers
+        run: python3 tools/check-doc-dupes.py
       # --offline: check only local/internal links. The repo is private, so
       # external-link checks would fail or flake.
       - uses: lycheeverse/lychee-action@v2
