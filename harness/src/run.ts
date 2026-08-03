@@ -12,6 +12,8 @@ import { runSequence, StepExecutionError } from "./sequencer.ts";
 import { botConfigFromEnv, MineflayerExecutor } from "./executor.ts";
 import { BotDeathError } from "./death.ts";
 import { loadWaypointsForCriticalPath } from "./waypoints.ts";
+import { dieRetryFindings, loadCombatPlanForCriticalPath } from "./combat.ts";
+import { RunReport, reportPathFromEnv, writeRunReport } from "./report.ts";
 
 /**
  * Exit code for a run that failed specifically because the bot died (spec-0008),
@@ -53,6 +55,17 @@ function runTimeoutMs(env = process.env): number {
     );
   }
   return ms;
+}
+
+/**
+ * Whether the die-retry ladder stage runs (spec-0023 §1). ON whenever the build
+ * carries a combat plan: it is a REQUIRED stage, not an option — "dying is always
+ * safe" is the load-bearing property of a souls delve, and the machine has to
+ * prove it. `DELVEWRIGHT_DIE_RETRY=0` skips it for local iteration only, and the
+ * run report says so, so a skipped stage can never be mistaken for a passed one.
+ */
+function dieRetryFromEnv(env = process.env): boolean {
+  return env["DELVEWRIGHT_DIE_RETRY"] !== "0";
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -98,18 +111,88 @@ async function main(): Promise<number> {
       `using compiler-proven waypoints: ${waypoints.legs.length} walked leg(s)\n`,
     );
   }
-  try {
-    await withTimeout(
-      (async () => {
-        await executor.connect();
-        await runSequence(criticalPath, executor, {
-          retryOnDeath: retryOnDeathFromEnv(),
-        });
-      })(),
-      budgetMs,
-    );
+  // spec-0023: with the compiler's combat plan, `kill` steps become verified
+  // ENCOUNTERS — the die-retry stage proves dying is safe, and the fights run under
+  // bounded, labelled combat assist so bot fencing skill never caps how hard a
+  // delve is allowed to be. Absent → the pre-spec-0023 run, unchanged.
+  const combatPlan = await loadCombatPlanForCriticalPath(pathArg);
+  const dieRetry = combatPlan !== undefined && dieRetryFromEnv();
+  const report = new RunReport(criticalPath.campaignId, combatPlan?.difficulty ?? "unknown");
+  if (combatPlan) {
+    executor.useCombatPlan(combatPlan, dieRetry);
     process.stderr.write(
-      `critical path '${criticalPath.campaignId}' PASSED (${criticalPath.steps.length} steps)\n`,
+      `combat plan: ${combatPlan.encounters.length} mandatory encounter(s) at ` +
+        `difficulty '${combatPlan.difficulty}'; die-retry ${dieRetry ? "ON" : "SKIPPED"}\n`,
+    );
+  }
+
+  try {
+    let failure: unknown;
+    try {
+      await withTimeout(
+        (async () => {
+          await executor.connect();
+          await runSequence(criticalPath, executor, {
+            retryOnDeath: retryOnDeathFromEnv(),
+          });
+        })(),
+        budgetMs,
+      );
+    } catch (err) {
+      failure = err;
+    }
+
+    // The report is written whether the run passed or failed: a red run's assist
+    // windows and death trials are exactly what a reader needs to see.
+    const trials = executor.deathTrials();
+    const dieRetryFailures = dieRetryFindings(trials);
+    const leaked = executor.leakedAssists();
+    report.recordAssists(executor.assistWindows());
+    report.recordTrials(trials);
+    for (const f of executor.floorGateFindings()) report.recordFloorFinding(f);
+    report.stage({
+      stage: "critical-path",
+      ran: true,
+      passed: failure === undefined,
+      findings: leaked.map(
+        (w) => `assist window on ${w.wave} was never closed — harness bug, not content`,
+      ),
+      failures:
+        failure === undefined
+          ? []
+          : [failure instanceof Error ? failure.message : String(failure)],
+    });
+    report.stage({
+      stage: "die-retry",
+      ran: dieRetry,
+      passed: dieRetry && dieRetryFailures.length === 0,
+      findings: dieRetry ? [] : ["skipped via DELVEWRIGHT_DIE_RETRY=0"],
+      failures: dieRetryFailures,
+    });
+
+    const reportPath = reportPathFromEnv();
+    if (reportPath) {
+      await writeRunReport(reportPath, report);
+      process.stderr.write(`run report written to ${reportPath}\n`);
+    }
+    for (const finding of report.findings()) {
+      process.stderr.write(`[finding] ${finding}\n`);
+    }
+
+    if (failure !== undefined) throw failure;
+    // A die-retry failure is a red run in its own right: the delve may be
+    // completable and still ship a broken retry loop, which is the one thing a
+    // souls delve cannot do.
+    if (dieRetryFailures.length > 0) {
+      throw new Error(
+        `die-retry stage FAILED (${dieRetryFailures.length} finding(s)):\n` +
+          dieRetryFailures.map((f) => `  ${f}`).join("\n"),
+      );
+    }
+    process.stderr.write(
+      `critical path '${criticalPath.campaignId}' PASSED (${criticalPath.steps.length} steps` +
+        `${trials.length > 0 ? `, ${trials.length} scripted death(s) survived` : ""}` +
+        `${report.findings().length > 0 ? `, ${report.findings().length} advisory finding(s)` : ""})\n`,
     );
     return 0;
   } finally {

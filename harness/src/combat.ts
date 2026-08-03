@@ -1,0 +1,388 @@
+// Parser + rules for spec-0023's combat verification semantics: the compiler's
+// combat plan (`validation/combat-plan.json`), the combat-assist ledger, the
+// die-retry trial bookkeeping, and the inverted floor gate.
+//
+// The spec's ruling, restated because every rule here follows from it: the
+// machine no longer asserts that a fight can be WON — human skill is the
+// variable the design leaves open, deliberately. It asserts that the fight is
+// REACHABLE, RETRIABLE and STRUCTURALLY WINNABLE. So:
+//
+//   * the ladder's load-bearing combat proof is the DIE-RETRY loop — dying must
+//     always be safe (respawn → return → re-engage → complete, with no
+//     progression flag lost);
+//   * the full playthrough runs at the shipped difficulty but may take a bounded,
+//     LABELLED combat assist at each encounter, so a poor fencer of a bot never
+//     becomes the ceiling on how hard a delve is allowed to be;
+//   * and the one place bot combat still bears teeth is INVERTED — an encounter
+//     the content billed `elite`/`boss` that the unassisted bot beats on its
+//     first try is reported as too easy for its billing.
+//
+// Everything in this module is pure (no mineflayer): types, arithmetic, and
+// verdicts. The executor supplies the bot.
+
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { SUPPORTED_DSL_VERSIONS, type Vec3Tuple } from "./critical-path.ts";
+
+/** Where the combat plan sits relative to `critical-path.json`. */
+const COMBAT_PLAN_SUBPATH = ["validation", "combat-plan.json"] as const;
+
+/** What the content bills an encounter as (compiler-side `EncounterTier`). */
+export const ENCOUNTER_TIERS = ["ordinary", "elite", "boss"] as const;
+export type EncounterTier = (typeof ENCOUNTER_TIERS)[number];
+
+/**
+ * One mandatory encounter, as the compiler proved it: which wave, which
+ * objective it completes, which critical-path step index it is, what it is
+ * billed as, and — the die-retry stage's whole premise — which checkpoint
+ * governs a death at it.
+ */
+export interface Encounter {
+  readonly wave: string;
+  readonly objective: string;
+  readonly step: number;
+  readonly tier: EncounterTier;
+  readonly pos: Vec3Tuple;
+  readonly count: number;
+  readonly respawnsOnRest: boolean;
+  /** Absent when the campaign has set no checkpoint by this step (world spawn). */
+  readonly checkpoint: Vec3Tuple | undefined;
+}
+
+/** The parsed combat plan. */
+export interface CombatPlan {
+  readonly version: string;
+  readonly campaignId: string;
+  /** The declared world difficulty the run is verified AT (spec-0023 §3). */
+  readonly difficulty: string;
+  readonly encounters: readonly Encounter[];
+}
+
+export class CombatPlanParseError extends Error {
+  override readonly name = "CombatPlanParseError";
+  readonly pointer: string;
+  constructor(pointer: string, detail: string) {
+    super(`combat plan invalid at ${pointer || "/"}: ${detail}`);
+    this.pointer = pointer;
+  }
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function requirePos(v: unknown, pointer: string): Vec3Tuple {
+  if (!Array.isArray(v) || v.length !== 3) {
+    throw new CombatPlanParseError(pointer, "expected a 3-element position array");
+  }
+  const out = v.map((n, i) => {
+    if (typeof n !== "number" || !Number.isFinite(n)) {
+      throw new CombatPlanParseError(`${pointer}/${i}`, "expected a finite number");
+    }
+    return n;
+  });
+  return [out[0]!, out[1]!, out[2]!];
+}
+
+/** Parse a combat plan document (pure — the file read is the caller's). */
+export function parseCombatPlan(raw: unknown): CombatPlan {
+  if (!isRecord(raw)) throw new CombatPlanParseError("", "expected an object");
+  const version = raw["version"];
+  if (typeof version !== "string" || !SUPPORTED_DSL_VERSIONS.includes(version as never)) {
+    throw new CombatPlanParseError("/version", `unsupported dsl_version ${String(version)}`);
+  }
+  const campaignId = raw["campaign_id"];
+  if (typeof campaignId !== "string" || campaignId.length === 0) {
+    throw new CombatPlanParseError("/campaign_id", "expected a non-empty string");
+  }
+  const difficulty = raw["difficulty"];
+  if (typeof difficulty !== "string" || difficulty.length === 0) {
+    throw new CombatPlanParseError("/difficulty", "expected a non-empty string");
+  }
+  const list = raw["encounters"];
+  if (!Array.isArray(list)) throw new CombatPlanParseError("/encounters", "expected an array");
+  const encounters = list.map((e, i): Encounter => {
+    const p = `/encounters/${i}`;
+    if (!isRecord(e)) throw new CombatPlanParseError(p, "expected an object");
+    const tier = e["tier"];
+    if (typeof tier !== "string" || !ENCOUNTER_TIERS.includes(tier as EncounterTier)) {
+      throw new CombatPlanParseError(`${p}/tier`, `expected one of ${ENCOUNTER_TIERS.join("|")}`);
+    }
+    for (const key of ["wave", "objective"] as const) {
+      if (typeof e[key] !== "string" || (e[key] as string).length === 0) {
+        throw new CombatPlanParseError(`${p}/${key}`, "expected a non-empty string");
+      }
+    }
+    for (const key of ["step", "count"] as const) {
+      if (!Number.isInteger(e[key])) {
+        throw new CombatPlanParseError(`${p}/${key}`, "expected an integer");
+      }
+    }
+    return {
+      wave: e["wave"] as string,
+      objective: e["objective"] as string,
+      step: e["step"] as number,
+      tier: tier as EncounterTier,
+      pos: requirePos(e["pos"], `${p}/pos`),
+      count: e["count"] as number,
+      respawnsOnRest: e["respawns_on_rest"] === true,
+      checkpoint:
+        e["checkpoint"] === undefined ? undefined : requirePos(e["checkpoint"], `${p}/checkpoint`),
+    };
+  });
+  return { version, campaignId, difficulty, encounters };
+}
+
+/** Read the combat plan beside `criticalPathPath`; `undefined` when absent (a
+ * campaign with no mandatory combat emits none, and that is not an error). */
+export async function loadCombatPlanForCriticalPath(
+  criticalPathPath: string,
+): Promise<CombatPlan | undefined> {
+  const p = path.join(path.dirname(criticalPathPath), ...COMBAT_PLAN_SUBPATH);
+  let text: string;
+  try {
+    text = await readFile(p, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw err;
+  }
+  return parseCombatPlan(JSON.parse(text) as unknown);
+}
+
+// ---------------------------------------------------------------------------
+// Combat assist (spec-0023 §3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resistance amplifier the assist grants (amplifier 2 = Resistance III = 60%
+ * incoming-damage reduction).
+ *
+ * Deliberately NOT amplifier 4, which is total immunity: an invulnerable bot
+ * would stop proving anything about the fight at all — a wave that cannot damage
+ * it would read exactly like a wave that can. 60% is the smallest reduction that
+ * reliably survives a souls-tuned stack's opening exchange while still leaving
+ * the encounter able to kill a bot that never fights back.
+ */
+export const ASSIST_AMPLIFIER = 2;
+
+/** How long one assist window lasts, in seconds. Bounded by construction: the
+ * effect expires on its own even if the harness crashes before clearing it. */
+export const ASSIST_SECONDS = 60;
+
+/** The same window in ticks — the unit the run report states (spec-0023 §3
+ * requires every window be named with its encounter id and ticks). */
+export const ASSIST_TICKS = ASSIST_SECONDS * 20;
+
+/** The vanilla command that opens an assist window on the acting bot. */
+export function assistCommand(
+  amplifier: number = ASSIST_AMPLIFIER,
+  seconds: number = ASSIST_SECONDS,
+): string {
+  return `/effect give @s minecraft:resistance ${seconds} ${amplifier} true`;
+}
+
+/** The vanilla command that closes it. Always issued, even on a failed fight —
+ * an assist that outlives its encounter would silently help the next one. */
+export function assistClearCommand(): string {
+  return "/effect clear @s minecraft:resistance";
+}
+
+/**
+ * How an encounter is approached.
+ *
+ * `unassisted-first` is the inverted floor gate in action: a fight the content
+ * BILLED as elite/boss gets one honest, unassisted attempt, because whether the
+ * bot wins that attempt is the measurement. An `ordinary` encounter carries no
+ * such billing, so there is nothing to measure and the assist is applied from
+ * the start.
+ */
+export function assistPolicy(enc: Encounter): "unassisted-first" | "assisted" {
+  return enc.tier === "ordinary" ? "assisted" : "unassisted-first";
+}
+
+/** One opened (and, normally, closed) assist window, as the run report states it. */
+export interface AssistWindow {
+  readonly encounter: string;
+  readonly wave: string;
+  readonly tier: EncounterTier;
+  readonly amplifier: number;
+  readonly ticks: number;
+  readonly openedAtMs: number;
+  closedAtMs?: number;
+  /** Why the assist was taken — "policy" or "after an unassisted attempt failed". */
+  readonly reason: string;
+}
+
+/** The ledger the run report is built from. Every window is recorded, opened or
+ * not closed; a window the harness failed to close is a finding, not a silence. */
+export class AssistLedger {
+  private readonly opened: AssistWindow[] = [];
+
+  open(enc: Encounter, reason: string, nowMs: number): AssistWindow {
+    const w: AssistWindow = {
+      encounter: enc.objective,
+      wave: enc.wave,
+      tier: enc.tier,
+      amplifier: ASSIST_AMPLIFIER,
+      ticks: ASSIST_TICKS,
+      openedAtMs: nowMs,
+      reason,
+    };
+    this.opened.push(w);
+    return w;
+  }
+
+  close(w: AssistWindow, nowMs: number): void {
+    w.closedAtMs = nowMs;
+  }
+
+  windows(): readonly AssistWindow[] {
+    return this.opened;
+  }
+
+  /** Windows the harness opened and never closed — a bug in the harness, and one
+   * the report must show rather than swallow. */
+  leaked(): readonly AssistWindow[] {
+    return this.opened.filter((w) => w.closedAtMs === undefined);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The inverted floor gate (spec-0023 "bot as difficulty FLOOR")
+// ---------------------------------------------------------------------------
+
+/** The outcome of the unassisted attempt at a billed encounter. */
+export interface UnassistedOutcome {
+  readonly attempted: boolean;
+  readonly won: boolean;
+}
+
+/**
+ * The floor finding, or `undefined` when there is nothing to say.
+ *
+ * WARNING tier by construction — it returns prose, never a failure. A fight the
+ * bot beats cold is a design signal for the author, and spec-0023 is explicit
+ * that content decides. Ordinary encounters carry no expectation at all, so they
+ * never produce a finding however easily they fall.
+ */
+export function floorFinding(
+  enc: Encounter,
+  outcome: UnassistedOutcome,
+): string | undefined {
+  if (enc.tier === "ordinary") return undefined;
+  if (!outcome.attempted || !outcome.won) return undefined;
+  return (
+    `${enc.wave} is billed \`${enc.tier}\` and the UNASSISTED bot beat it on its first ` +
+    `attempt. The bot is a poor fencer by design — a fight it wins cold is very ` +
+    `likely too easy to carry that billing in a souls delve. Advisory: raise the ` +
+    `stack, or drop the tier to \`ordinary\`.`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The die-retry ladder stage (spec-0023 §1) — the load-bearing combat proof
+// ---------------------------------------------------------------------------
+
+/** Scripted deaths per encounter. spec-0023's default: one at first contact, one
+ * mid-fight, because the two exercise different re-seat state. */
+export const DIE_RETRY_DEATHS = 2;
+
+/** When in the fight a scripted death is taken. */
+export const DEATH_PHASES = ["first-contact", "mid-fight"] as const;
+export type DeathPhase = (typeof DEATH_PHASES)[number];
+
+/** The phases for `n` scripted deaths, cycling the two shapes. */
+export function deathPhases(n: number = DIE_RETRY_DEATHS): DeathPhase[] {
+  return Array.from({ length: n }, (_, i) => DEATH_PHASES[i % DEATH_PHASES.length]!);
+}
+
+/** The vanilla command the harness kills itself with. `/damage` rather than
+ * `/kill` so the death runs the ordinary damage path a player's death runs —
+ * `/kill` bypasses damage handling entirely and would prove a loop no player can
+ * take. */
+export function scriptedDeathCommand(): string {
+  return "/damage @s 1000 minecraft:generic";
+}
+
+/**
+ * How far from the governing checkpoint a respawn may land and still count.
+ *
+ * Vanilla's respawn search moves a player off an obstructed spawn point, so an
+ * exact match would be a false red; 8 blocks is loose enough to absorb that and
+ * far tighter than the distance to any other checkpoint a delve would set.
+ */
+export const RESPAWN_RADIUS = 8;
+
+/** Did the bot come back where the campaign said it would? */
+export function respawnedAtCheckpoint(
+  pos: Vec3Tuple,
+  checkpoint: Vec3Tuple | undefined,
+  radius: number = RESPAWN_RADIUS,
+): boolean {
+  // No declared checkpoint yet → the world spawn governs, which the harness has
+  // no independent statement of. Not a finding: there is nothing to contradict.
+  if (checkpoint === undefined) return true;
+  const dx = pos[0] - checkpoint[0];
+  const dy = pos[1] - checkpoint[1];
+  const dz = pos[2] - checkpoint[2];
+  return Math.sqrt(dx * dx + dy * dy + dz * dz) <= radius;
+}
+
+/** One scripted death and everything proved about the loop it opened. */
+export interface DeathTrial {
+  readonly encounter: string;
+  readonly wave: string;
+  readonly attempt: number;
+  readonly phase: DeathPhase;
+  /** Where the bot respawned. */
+  readonly respawnPos: Vec3Tuple | undefined;
+  /** Did it respawn at the governing checkpoint? */
+  readonly atCheckpoint: boolean;
+  /** Did it walk back to the encounter? */
+  readonly returned: boolean;
+  /** Did the encounter re-engage (hostiles present again)? */
+  readonly reEngaged: boolean;
+  /** Objectives that were complete before the death and are still complete after. */
+  readonly objectivesIntact: boolean;
+  /** Objectives that were complete before the death and were NOT after. */
+  readonly lostObjectives: readonly string[];
+}
+
+/** The verdict on one trial: a red run, or nothing. */
+export function trialVerdict(t: DeathTrial): string | undefined {
+  if (!t.atCheckpoint) {
+    return (
+      `${t.wave} death ${t.attempt} (${t.phase}): respawned at ` +
+      `${t.respawnPos ? t.respawnPos.join(",") : "an unknown position"}, which is not the ` +
+      `checkpoint governing this encounter. Dying must always be safe — an unpredictable ` +
+      `respawn point is the one thing a souls delve cannot ship.`
+    );
+  }
+  if (!t.returned) {
+    return (
+      `${t.wave} death ${t.attempt} (${t.phase}): the route from the respawn back to the ` +
+      `encounter is not walkable. The retry loop is broken: the party can die but not ` +
+      `try again.`
+    );
+  }
+  if (!t.objectivesIntact) {
+    return (
+      `${t.wave} death ${t.attempt} (${t.phase}): dying LOST completed progress ` +
+      `(${t.lostObjectives.join(", ")}). Progress is kept across death by contract ` +
+      `(spec-0016 §1) — this is state corruption, not difficulty.`
+    );
+  }
+  if (!t.reEngaged) {
+    return (
+      `${t.wave} death ${t.attempt} (${t.phase}): the encounter did not re-engage after the ` +
+      `return — no hostile was there to fight. A wave that dies with the player is a ` +
+      `fight that can only be attempted once.`
+    );
+  }
+  return undefined;
+}
+
+/** Every finding across a stage's trials, in order. */
+export function dieRetryFindings(trials: readonly DeathTrial[]): string[] {
+  return trials.map(trialVerdict).filter((v): v is string => v !== undefined);
+}
