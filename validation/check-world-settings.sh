@@ -37,6 +37,23 @@ else
   diff -u "$SCRIPT" "$tmp" || true
 fi
 
+# 1b) ...and that script must actually DERIVE each campaign-varying setting from
+#     the file. The drift check above only proves the two copies agree, so a line
+#     deleted from both passes it silently — and the itzg base then falls back to
+#     the image's own ENV, which is where `DIFFICULTY=peaceful` lives. A delve
+#     that declares `world.difficulty: "hard"` (v0.6) and boots peaceful is not
+#     merely mistuned: peaceful discards every hostile mob, so the whole cast of
+#     threats disappears. One assertion per derived key.
+for key in difficulty:DIFFICULTY level-seed:SEED level-type:LEVEL_TYPE \
+           generator-settings:GENERATOR_SETTINGS; do
+  prop="${key%%:*}"; env_var="${key##*:}"
+  if grep -q "prop $prop" "$SCRIPT" && grep -q "export $env_var=" "$SCRIPT"; then
+    pass "entrypoint derives $env_var from the build's \`$prop\`"
+  else
+    fail "entrypoint must read \`$prop\` from server.properties and export $env_var - without it the image ENV default decides, and the server boots a world the campaign never declared"
+  fi
+done
+
 # 2) The PackTest runner runs that same script as its entrypoint, over the build's
 #    server.properties. The output tree is selectable (`DELVE_OUTPUT`, so CI can run
 #    the profile a second time over a campaign whose generated templates hello-world

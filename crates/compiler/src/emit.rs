@@ -810,9 +810,25 @@ fn is_vanilla_function(path: &str) -> bool {
 /// `minecraft:`-prefixed on the server, but the bare form is accepted and matches
 /// the vendored command tree (`data/commands-1.21.11.json`), so it is what we
 /// emit and validate.
+/// The campaign's **declared** combat difficulty (`world.difficulty`, v0.6), or
+/// `None` when it declares none and the compiler's historical derivation applies.
+///
+/// Gated on the world stage's `dsl_version` exactly as the rest of the v0.6 world
+/// surface is: validation already rejects the field on an older stage
+/// (`DW0141`), and honouring the gate here too means no build path can
+/// accidentally read a field the campaign is not entitled to declare.
+fn declared_difficulty(c: &delvewright_dsl::Campaign) -> Option<delvewright_dsl::WorldDifficulty> {
+    if is_v06(c.world.dsl_version.as_str()) {
+        c.world.content.difficulty
+    } else {
+        None
+    }
+}
+
 fn sealing_commands(
     time: delvewright_dsl::WorldTime,
     weather: Option<delvewright_dsl::WorldWeather>,
+    difficulty: Option<delvewright_dsl::WorldDifficulty>,
     v06: bool,
 ) -> Vec<String> {
     let mut cmds = vec![
@@ -849,6 +865,17 @@ fn sealing_commands(
     // command and stays byte-identical to pre-v0.5 output.
     if let Some(w) = weather {
         cmds.push(format!("weather {}", w.token()));
+    }
+    // Declared combat difficulty (v0.6, owner ruling 2026-08-03). The shipped
+    // `server/server.properties` already carries it, so this line is not what
+    // makes the delve image correct — it is what makes the DATAPACK correct
+    // wherever else it is loaded (the owner's own test save, a PackTest world
+    // whose properties someone edited). `/difficulty` is idempotent — re-running
+    // it with the current value is a no-op that merely reports "did not change" —
+    // and it is emitted only when the field is declared, so a campaign that
+    // declares none is byte-identical.
+    if let Some(diff) = difficulty {
+        cmds.push(format!("difficulty {}", diff.token()));
     }
     cmds
 }
@@ -1065,10 +1092,21 @@ fn wave_equipment(entity: &str, eq: Option<&MobEquipment>) -> Option<String> {
 /// `{id:"minecraft:<attr>",base:<double>}` entry; doubles are formatted with a
 /// decimal point so SNBT reads them as doubles (ADR-0006 determinism).
 fn attributes_snbt(attrs: Option<&delvewright_dsl::MobAttributes>) -> String {
-    let Some(a) = attrs else {
-        return String::new();
-    };
+    wrap_attribute_entries(attribute_entries(attrs))
+}
+
+/// The individual `{id:…,base:…}` entries for a [`MobAttributes`] block, in the
+/// fixed schema order. Split out of [`attributes_snbt`] so the paths that add a
+/// compiler-owned attribute of their own (the `vulnerable` actor's
+/// knockback-immunity) can concatenate rather than fork the table — the DSL
+/// exposes ONE attribute surface and there is one place that renders it.
+///
+/// [`MobAttributes`]: delvewright_dsl::MobAttributes
+fn attribute_entries(attrs: Option<&delvewright_dsl::MobAttributes>) -> Vec<String> {
     let mut entries: Vec<String> = Vec::new();
+    let Some(a) = attrs else {
+        return entries;
+    };
     let mut add = |id: &str, v: Option<f64>| {
         if let Some(x) = v {
             entries.push(format!("{{id:\"minecraft:{id}\",base:{}}}", fmt_f64(x)));
@@ -1078,6 +1116,12 @@ fn attributes_snbt(attrs: Option<&delvewright_dsl::MobAttributes>) -> String {
     add("attack_damage", a.attack_damage);
     add("movement_speed", a.movement_speed);
     add("follow_range", a.follow_range);
+    entries
+}
+
+/// Wrap rendered attribute entries as the `,attributes:[…]` SNBT fragment
+/// (leading comma), or `""` when there are none.
+fn wrap_attribute_entries(entries: Vec<String>) -> String {
     if entries.is_empty() {
         String::new()
     } else {
@@ -1170,6 +1214,7 @@ fn emit_functions(
     setup.extend(sealing_commands(
         c.world.content.time.unwrap_or_default(),
         c.world.content.weather,
+        declared_difficulty(c),
         is_v06(c.world.dsl_version.as_str()),
     ));
     setup.push("scoreboard objectives add dw.class trigger".to_string());
@@ -4577,11 +4622,16 @@ fn actor_puppet_summon(a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> S
             .as_deref()
             .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)))
             .unwrap_or_default();
-        let attrs = if a.vulnerable {
-            ",attributes:[{id:\"minecraft:knockback_resistance\",base:1.0}]"
-        } else {
-            ""
-        };
+        // Compiler-owned knockback-immunity first (a `vulnerable` puppet is a
+        // damageable creep, never a shovable one), then whatever the author
+        // declared — so a puppet with no `attributes` renders exactly the
+        // pre-`attributes` string and every earlier campaign stays byte-identical.
+        let mut entries: Vec<String> = Vec::new();
+        if a.vulnerable {
+            entries.push("{id:\"minecraft:knockback_resistance\",base:1.0}".to_string());
+        }
+        entries.extend(attribute_entries(a.attributes.as_ref()));
+        let attrs = wrap_attribute_entries(entries);
         let pose = mannequin_pose_nbt(&a.entity);
         // spec-0021: actor gear rides on BOTH the puppet and the twin, so the
         // dormant elite the party circles is visibly the thing that stands up.
@@ -4676,8 +4726,13 @@ fn actor_twin_summon(a: &delvewright_dsl::Actor) -> String {
     let equip = actor_equipment(a)
         .map(|e| format!(",{e}"))
         .unwrap_or_default();
+    // The twin inherits the puppet's tuning too: the whole point of an elite's
+    // `attributes` is the body that actually fights, and unleashing replaces the
+    // body. Knockback-immunity deliberately does NOT ride along — that is the
+    // caged creep's property, not the freed elite's.
+    let attrs = attributes_snbt(a.attributes.as_ref());
     format!(
-        "summon {} ~ ~ ~ {{PersistenceRequired:1b{pose},DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{equip}}}",
+        "summon {} ~ ~ ~ {{PersistenceRequired:1b{pose},DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}}}",
         a.entity
     )
 }
@@ -7444,6 +7499,42 @@ fn emit_packtest(
         format!("packtest-datapack/data/{ns}/test/sealed_state.mcfunction"),
         lines(&sealed).into_bytes(),
     );
+
+    // Declared combat difficulty (v0.6, owner ruling 2026-08-03): prove on a live
+    // pinned server that the difficulty the campaign DECLARED is the difficulty
+    // the world runs at. Unlike the gamerules, this one has a vanilla read-back:
+    // the bare `/difficulty` query command returns `Difficulty#getId()`
+    // (peaceful 0 / easy 1 / normal 2 / hard 3), so `execute store result` reads
+    // it exactly like `time query daytime`. The assertion covers the whole chain
+    // at once — the shipped `server/server.properties` (via the compose
+    // profile's shared world-settings entrypoint) and the `/difficulty` in
+    // `setup` must agree with the declaration, so a regression in EITHER fails
+    // here. Emitted only for a campaign that declares a difficulty.
+    if let Some(diff) = declared_difficulty(c) {
+        let mut df: Vec<String> = Vec::new();
+        df.push(format!(
+            "#> {}: the world runs at the declared difficulty `{}`",
+            c.world.content.title,
+            diff.token()
+        ));
+        df.push("# @dummy".to_string());
+        df.push("# @timeout 100".to_string());
+        df.push(String::new());
+        df.push(format!("function {ns}:setup"));
+        df.push(
+            "# Bare `/difficulty` is the query form: it returns Difficulty#getId()".to_string(),
+        );
+        df.push("# (peaceful 0 / easy 1 / normal 2 / hard 3).".to_string());
+        df.push("execute store result score #difficulty dw.sys run difficulty".to_string());
+        df.push(format!(
+            "assert score #difficulty dw.sys matches {}",
+            diff.id()
+        ));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/declared_difficulty.mcfunction"),
+            lines(&df).into_bytes(),
+        );
+    }
 
     // v0.3: one focused mechanism test per gameplay verb present in the campaign,
     // plus a flag-gate test. Each drives the compiler-generated mechanic functions
@@ -10835,16 +10926,22 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
 }
 
 fn emit_server(plan: &Plan, out: &mut BuildOutput) {
-    // Combat waves (v0.3) require a non-peaceful difficulty: peaceful *removes*
-    // hostile mobs even when summoned. Wave-free campaigns stay `peaceful`
-    // (hello-world / keep-crawl byte-identical). Natural spawning is still off
-    // (`spawn-monsters=false` + gamerule `spawn_mobs false`); only the compiler's
-    // summoned wave mobs exist.
-    let difficulty = if plan.campaign.quests.content.waves.is_empty() {
-        "peaceful"
-    } else {
-        "easy"
-    };
+    // Difficulty. Declared (`world.difficulty`, v0.6) wins; absent falls back to
+    // the historical derivation, which is what keeps every pre-0.6 campaign
+    // byte-identical: combat waves (v0.3) require a non-peaceful difficulty
+    // because peaceful *removes* hostile mobs even when summoned, and wave-free
+    // campaigns stay `peaceful` (hello-world / keep-crawl unchanged). Natural
+    // spawning is off either way (`spawn-monsters=false` + gamerule `spawn_mobs
+    // false`); only the compiler's own summons exist.
+    let difficulty = declared_difficulty(plan.campaign)
+        .map(|d| d.token())
+        .unwrap_or_else(|| {
+            if plan.campaign.quests.content.waves.is_empty() {
+                "peaceful"
+            } else {
+                "easy"
+            }
+        });
     // Horizon (DSL v0.6, spec-0013). `void` (default/absent) keeps the empty-layer
     // superflat + `the_void` biome, byte-identical to v0.5. `ocean` swaps in a
     // pinned bedrock/stone/water superflat: from the -64 build floor, 1+118+8
@@ -11164,6 +11261,7 @@ mod tests {
             facing: Some(delvewright_dsl::Facing::West),
             vulnerable,
             equipment: None,
+            attributes: None,
         }
     }
 
@@ -11454,6 +11552,7 @@ mod loot_emit_tests {
             facing: None,
             vulnerable: false,
             equipment: eq,
+            attributes: None,
         }
     }
 

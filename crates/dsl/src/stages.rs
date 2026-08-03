@@ -64,6 +64,19 @@ pub struct WorldContent {
     /// thunder attenuate effective sky brightness in the assembled-light model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weather: Option<WorldWeather>,
+    /// Declared combat difficulty (DSL v0.6, owner ruling 2026-08-03). Absent =
+    /// the compiler's historical derivation — `easy` when the campaign fields any
+    /// wave, `peaceful` when it fields none — which is what keeps every campaign
+    /// written before this field byte-identical. Declaring it overrides the
+    /// derivation for **both** the shipped `server.properties` and a `/difficulty`
+    /// in the sealing baseline, so the declaration also holds when the datapack is
+    /// dropped into somebody else's world.
+    ///
+    /// `peaceful` is rejected (`DW0468`). Raising difficulty changes the damage
+    /// players take — easy halves it — so combat arithmetic tuned under the old
+    /// implicit `easy` must be redone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub difficulty: Option<WorldDifficulty>,
     /// Scenic horizon (DSL v0.6, spec-0013). Absent or `void` = the void world
     /// (byte-identical to v0.5). `ocean` swaps the world generator for a
     /// deterministic superflat sea (bedrock/stone/water, sea level y=62) and drops
@@ -180,6 +193,62 @@ impl WorldWeather {
             WorldWeather::Clear => "clear",
             WorldWeather::Rain => "rain",
             WorldWeather::Thunder => "thunder",
+        }
+    }
+}
+
+/// The declared combat difficulty of the delve (DSL v0.6, owner ruling
+/// 2026-08-03). Values are the vanilla `/difficulty` keywords.
+///
+/// Difficulty is the single largest lever on how hard a delve *feels*, and until
+/// this field existed the compiler chose it: `easy` for any campaign with a wave,
+/// `peaceful` for one without. Easy **halves incoming player damage** —
+/// `min(dmg / 2 + 1, dmg)` — so every combat number in a pre-0.6 campaign was
+/// tuned against a halved world without anyone declaring it. A campaign that
+/// raises this must redo that arithmetic.
+///
+/// [`WorldDifficulty::Peaceful`] parses but is **rejected** by validation
+/// (`DW0468`): peaceful makes the engine discard every hostile-category mob on
+/// the tick it is ticked, summoned or not, so every wave, actor and ambush in the
+/// campaign would silently vanish. It is a variant only so the compiler can say
+/// that in a diagnostic instead of a serde "unknown variant" parse error.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum WorldDifficulty {
+    /// `/difficulty easy` — the compiler's historical choice for a wave
+    /// campaign, and the default reading of an absent field. Incoming player
+    /// damage is halved (`min(dmg / 2 + 1, dmg)`).
+    #[default]
+    Easy,
+    /// `/difficulty normal` — vanilla-baseline damage. The souls-style baseline.
+    Normal,
+    /// `/difficulty hard` — amplified damage, and zombies reinforce.
+    Hard,
+    /// `/difficulty peaceful` — **always rejected** (`DW0468`). Present only so
+    /// the rejection can be a diagnostic with a rationale.
+    Peaceful,
+}
+
+impl WorldDifficulty {
+    /// The vanilla `/difficulty` keyword.
+    pub fn token(self) -> &'static str {
+        match self {
+            WorldDifficulty::Peaceful => "peaceful",
+            WorldDifficulty::Easy => "easy",
+            WorldDifficulty::Normal => "normal",
+            WorldDifficulty::Hard => "hard",
+        }
+    }
+
+    /// The vanilla `Difficulty#getId()` ordinal, which is also what the bare
+    /// `/difficulty` query command returns — the only vanilla read-back path for
+    /// the setting, and so what the generated PackTest asserts on.
+    pub fn id(self) -> i32 {
+        match self {
+            WorldDifficulty::Peaceful => 0,
+            WorldDifficulty::Easy => 1,
+            WorldDifficulty::Normal => 2,
+            WorldDifficulty::Hard => 3,
         }
     }
 }
@@ -2070,6 +2139,15 @@ pub struct Actor {
     /// wave gear and actor gear are never farmable (no-grind constitution).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub equipment: Option<MobEquipment>,
+    /// Attribute overrides, in the same shape a wave mob uses ([`MobAttributes`],
+    /// the v0.4 surface — one type, one rule set, so the two surfaces cannot
+    /// drift). Emitted into BOTH the staged puppet and the unleashed twin, so the
+    /// elite the party fights is the elite the author tuned; without it an actor
+    /// was stuck at vanilla base values while every wave mob could be tuned,
+    /// which is what blocked elite authoring. A `vulnerable` actor's
+    /// knockback-immunity is emitted first and is not authorable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attributes: Option<MobAttributes>,
 }
 
 /// A cardinal facing keyword (DSL v0.6). Emitted as the puppet's spawn yaw

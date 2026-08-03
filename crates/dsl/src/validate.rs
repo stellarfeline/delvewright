@@ -80,6 +80,7 @@ pub fn validate_campaign_with(
         timed_gate_checks(c, &mut d);
         loot_checks(c, items, anchors, &mut d);
         lane_checks(c, anchors, &mut d);
+        difficulty_checks(c, &mut d);
     }
     // DSL v0.6 stage 7 (spec-0017): the map-editor edit script. Structural
     // checks only — frame/region *resolution* happens at build time against the
@@ -1141,6 +1142,16 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     .to_string(),
             ));
         }
+        if c.world.content.difficulty.is_some() {
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "world",
+                "/content/difficulty".to_string(),
+                "world `difficulty` requires dsl_version 0.6.0 — raise this stage's `dsl_version` \
+                 to 0.6.0, or remove the construct"
+                    .to_string(),
+            ));
+        }
         for (i, a) in c.world.content.areas.iter().enumerate() {
             if a.mitigation.is_some() {
                 d.push(Diagnostic::error(
@@ -1167,6 +1178,28 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     "`min_players` = {n} is out of range — a delve is played by one party of 1–4, \
                      so set it to a value in 1..=4 (absent = 1, a party of one)"
                 ),
+            ));
+        }
+        // Declared combat difficulty (owner ruling 2026-08-03). `peaceful` is the
+        // one keyword the compiler refuses: on peaceful the server discards every
+        // hostile-category mob as it ticks it — summoned, `NoAI` and
+        // `PersistenceRequired` are all irrelevant — so a peaceful delve is one in
+        // which the entire cast of threats quietly does not exist.
+        if matches!(
+            c.world.content.difficulty,
+            Some(crate::stages::WorldDifficulty::Peaceful)
+        ) {
+            d.push(Diagnostic::error(
+                codes::DIFFICULTY_INVALID,
+                "world",
+                "/content/difficulty".to_string(),
+                "`difficulty: \"peaceful\"` is refused: on peaceful the server discards every \
+                 hostile-category mob as it ticks it — being `/summon`ed, `NoAI` or \
+                 `PersistenceRequired` does not save one — so every wave, hostile actor and \
+                 ambush in this campaign would silently cease to exist. Declare `easy`, `normal` \
+                 or `hard`; for a delve that is genuinely combat-free, simply omit `difficulty` \
+                 (a campaign with no waves already ships peaceful by derivation)"
+                    .to_string(),
             ));
         }
         // `horizon: "ocean"` without a return rule strands wanderers in an infinite sea.
@@ -1322,13 +1355,22 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
         if !c.quests.content.loot.is_empty() {
             res(d, "/content/loot".to_string(), "the `loot` section");
         }
-        // Actor `equipment` (spec-0021) likewise.
+        // Actor `equipment` (spec-0021) likewise, and actor `attributes` (owner
+        // ruling 2026-08-03) — the same v0.4 shape a wave mob's takes, fenced on
+        // the stage the actors themselves are fenced on.
         for (i, a) in c.quests.content.actors.iter().enumerate() {
             if a.equipment.is_some() {
                 res(
                     d,
                     format!("/content/actors/{i}/equipment"),
                     "actor `equipment`",
+                );
+            }
+            if a.attributes.is_some() {
+                res(
+                    d,
+                    format!("/content/actors/{i}/attributes"),
+                    "actor `attributes`",
                 );
             }
         }
@@ -5290,6 +5332,84 @@ const LANE_WEAPON_GATED: [(&str, &str); 1] = [("pillager", "minecraft:crossbow")
 /// The bare entity id (`minecraft:pillager` → `pillager`).
 fn bare_entity(id: &str) -> &str {
     id.strip_prefix("minecraft:").unwrap_or(id)
+}
+
+/// The advisory half of the difficulty surface (owner ruling 2026-08-03,
+/// `DW0469`): a campaign that stages a **fighting** actor but declares no
+/// `waves[]` and no `world.difficulty` ships the compiler's derived
+/// `difficulty=peaceful` — under which the server discards every
+/// hostile-category mob as it ticks it (`/summon`ed, `NoAI` and
+/// `PersistenceRequired` all irrelevant), so that fighter is gone on the tick it
+/// spawns and the beat that summoned it plays to an empty room.
+///
+/// "Fighting" is read off the campaign's own declarations, never guessed from
+/// the species: an `unleash-actor` (the author asking for a real-AI twin) or
+/// `vulnerable: true` (the author declaring a damageable target). Both are
+/// statements of combat intent the compiler can see. The species question — is
+/// `minecraft:sheep` a monster? — is exactly what it cannot answer, because the
+/// pinned entity registry is a membership set with no mob-category data, which
+/// is also why this is advisory rather than an error.
+///
+/// Gated with the rest of the v0.6 quests surface, where actors live —
+/// deliberately NOT on the world stage's version, so a campaign whose world
+/// stage is older still hears about it.
+fn difficulty_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    if c.world.content.difficulty.is_some() || !c.quests.content.waves.is_empty() {
+        return;
+    }
+    let mut fighters: BTreeSet<String> = c
+        .quests
+        .content
+        .actors
+        .iter()
+        .filter(|a| a.vulnerable)
+        .map(|a| a.id.as_str().to_string())
+        .collect();
+    for q in &c.quests.content.quests {
+        for_each_effect_deep(q, |_, eff| {
+            if let QuestEffect::UnleashActor { actor } = eff {
+                fighters.insert(actor.as_str().to_string());
+            }
+        });
+    }
+    for t in &c.quests.content.triggers {
+        for_each_trigger_effect_deep(t, |_, eff| {
+            if let QuestEffect::UnleashActor { actor } = eff {
+                fighters.insert(actor.as_str().to_string());
+            }
+        });
+    }
+    for t in &c.quests.content.traps {
+        for_each_trap_payload_deep(t, |_, eff| {
+            if let QuestEffect::UnleashActor { actor } = eff {
+                fighters.insert(actor.as_str().to_string());
+            }
+        });
+    }
+    if fighters.is_empty() {
+        return;
+    }
+    d.push(Diagnostic::warning(
+        codes::DIFFICULTY_UNDECLARED_ACTORS,
+        "world",
+        "/content/difficulty".to_string(),
+        format!(
+            "this campaign stages {} actor(s) meant to FIGHT ({}) — unleashed into a real-AI twin, \
+             or declared `vulnerable` — but declares no `waves[]` and no `world.difficulty`, so it \
+             ships the compiler's derived `difficulty=peaceful`. On peaceful the server discards \
+             every hostile-category mob as it ticks it, so a monster among these is gone on the \
+             tick it spawns and the beat that summoned it plays to an empty room. Declare \
+             `world.difficulty` on the world stage: `easy` reproduces the halved-damage world \
+             existing combat numbers were tuned in, `normal` is the vanilla baseline. (If every \
+             one of them is a passive species, there is nothing to fix.)",
+            fighters.len(),
+            fighters
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    ));
 }
 
 /// Validate the spec-0016 §6 wave `lane` / `summon` surface.
