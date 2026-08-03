@@ -1,7 +1,19 @@
 # spec-0011 — Traps (lethal & non-lethal environmental hazards)
 
 - **Status**: Approved (task #43, owner-initiated 2026-07-31; open decisions
-  resolved by owner in conversation, 2026-07-31)
+  resolved by owner in conversation, 2026-07-31) — **signal half superseded by
+  spec-0022** (owner directive 2026-08-03). Redstone keeps exactly one job, the
+  **trigger**; signal transmission and the consequence itself are now commands
+  (`traps[].payload`). Everything else in this spec **stands**: the trigger
+  hardware layer (pressure plate / tripwire / trapped chest at an `anchor/trap`
+  marker), the disarm affordance, the flag-gating surface (`DW0363`) and the
+  completability proof obligations (`DW0342`). The `effect: {dispense}` surface
+  below remains valid and byte-identical for existing campaigns, but new content
+  authors `payload` instead. See `docs/specs/spec-0022-traps-v2-command-driven.md`.
+  Note also that the §"Effect inventory" verdicts on **released falling blocks**
+  ("excluded — landing cell unmodeled") are superseded specifically: spec-0022's
+  `collapse` models the settled debris at compile time and re-proves the critical
+  path against it, which is what made the effect admissible.
 - **Owner framing** (paraphrased): the DSL must make room for traps — and
   the open question was whether they live as prefabs or need another
   implementation layer.
