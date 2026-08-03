@@ -148,6 +148,17 @@ services:
       # (task #102). The default here is src/run.ts's own default (20 min),
       # unchanged; compose only makes it overridable.
       DELVEWRIGHT_RUN_TIMEOUT_MS: ${DELVEWRIGHT_RUN_TIMEOUT_MS:-1200000}
+      # spec-0025 branch tier. `DELVEWRIGHT_BRANCHES` is which branches this run is
+      # ANSWERABLE for — `all` (release tier, the default), a comma-separated list
+      # of branch ids, or `from-diff` (the PR tier; refuses, see docs). Every branch
+      # it names but does not walk is listed in the run report with the reason, so a
+      # skipped branch can never read as a covered one. `DELVEWRIGHT_BRANCH` is
+      # which single branch THIS session walks: party progress only moves forward,
+      # so a second branch needs a second world, and `validation/branch-runs.sh` is
+      # the loop that gives each one a fresh server. Both unset (the default) = the
+      # ordinary single-path run, unchanged.
+      DELVEWRIGHT_BRANCHES: ${DELVEWRIGHT_BRANCHES:-all}
+      DELVEWRIGHT_BRANCH: ${DELVEWRIGHT_BRANCH:-}
     volumes:
       - ./delve-output/critical-path.json:/delve/critical-path.json:ro
       # task #38: the compiler-proven per-leg waypoint artifact

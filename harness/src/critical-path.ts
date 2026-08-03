@@ -26,6 +26,12 @@
  * sound/art, per-effect flag gating) add DSL/emission surface but leave the
  * critical-path step contract the bot consumes unchanged, so their paths parse
  * and run exactly as a v0.4 path does — the allowlist simply tracks the DSL.
+ * v0.7 (the cast ledger) and v0.8 (spec-0025 branch points, per-node
+ * `happening`, named endings) are the same kind of addition: they add
+ * VALIDATION surface — `branch-plan.json`, the chronicles, the per-branch paths —
+ * and change no step the bot walks, so a v0.8 path is walked exactly as a v0.6
+ * one is. Without them here, the first campaign to declare a branch could not be
+ * run at all, branch tier or not.
  */
 export const SUPPORTED_DSL_VERSIONS = [
   "0.2.0",
@@ -33,6 +39,8 @@ export const SUPPORTED_DSL_VERSIONS = [
   "0.4.0",
   "0.5.0",
   "0.6.0",
+  "0.7.0",
+  "0.8.0",
 ] as const;
 
 /**

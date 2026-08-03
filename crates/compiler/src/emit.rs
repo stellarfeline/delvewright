@@ -756,6 +756,20 @@ pub fn build_with_warnings(
     // has not opted in. Emitted before the manifest so its hashes cover them,
     // exactly like `critical-path-waypoints.json`.
     out.extend(crate::branch::artifacts(plan.campaign));
+    // ...and, for the harness tier, one EXECUTABLE path per reachable branch:
+    // `validation/branch-path-<branch>.json`, in the same `critical-path.json`
+    // contract the bot has always consumed. The plan artifact above says WHICH
+    // branches exist and how a player enters them; these say what the bot walks.
+    // A branch's scripted dialogue choices ride inside its own `talk-to` steps
+    // (each carries the `/trigger` line of the option belonging to that branch),
+    // which is the only player-legal way to actuate a server-driven dialog button.
+    for (slug, path) in branch_paths(plan)? {
+        put_json(
+            &mut out,
+            &format!("validation/branch-path-{slug}.json"),
+            &path,
+        );
+    }
 
     // ---- manifest (hashes of inputs + all other outputs) ----
     let manifest = emit_manifest(
@@ -11601,14 +11615,21 @@ bytes, so byte-identity (ADR-0006) covers the whole `<out>/` tree.\n",
 /// `command`, the exact chat line the "rest and save" button runs. The click is not
 /// optional: `dw.rest` is a trigger objective and is disabled until the opener
 /// enables it, so a bot that only chats the command changes nothing.
-fn with_bonfire_rest_steps(plan: &Plan, steps: Vec<Value>) -> Vec<Value> {
+///
+/// `walked` is the step list the JSON was serialized from — the exported path, or
+/// (spec-0025) one branch's path, whose indices are its own. See
+/// [`rest_step_index`] for how a `fire_step` crosses that boundary.
+fn with_bonfire_rest_steps(plan: &Plan, walked: &[plan::Step], steps: Vec<Value>) -> Vec<Value> {
     if plan.bonfires().next().is_none() {
         return steps;
     }
     let mut out: Vec<Value> = Vec::with_capacity(steps.len());
     for (i, step) in steps.into_iter().enumerate() {
         out.push(step);
-        for bf in plan.bonfires().filter(|b| b.fire_step == i) {
+        for bf in plan
+            .bonfires()
+            .filter(|b| rest_step_index(plan, walked, b.fire_step) == Some(i))
+        {
             out.push(json!({
                 "action": "rest",
                 "bonfire": bf.index,
@@ -11621,13 +11642,91 @@ fn with_bonfire_rest_steps(plan: &Plan, steps: Vec<Value>) -> Vec<Value> {
     out
 }
 
-fn emit_critical_path(plan: &Plan) -> Value {
-    let steps: Vec<Value> = plan
+/// Where bonfire `fire_step` — an index into the EXPORTED path — lands on `walked`.
+///
+/// A per-branch path (spec-0025) is a different sequence of the same steps, so the
+/// index cannot be carried across: it is translated through the **objective** the
+/// firing beat names, because a fire is armed by a beat, not by a position. A beat
+/// that does not happen on this branch arms nothing there, and the branch path
+/// carries no rest step for it. On the exported path the translation is the
+/// identity (an objective appears at exactly one step), so this emits byte-for-byte
+/// what it emitted before.
+fn rest_step_index(plan: &Plan, walked: &[plan::Step], fire_step: usize) -> Option<usize> {
+    match plan
         .critical_path
+        .get(fire_step)
+        .and_then(plan::Step::objective)
+    {
+        // `fire_step: 0` is the class-select / conservative "before everything"
+        // index (see `Plan::gate_fired_before`); it precedes every path the same way.
+        None => (fire_step < walked.len()).then_some(fire_step),
+        Some(obj) => walked.iter().position(|s| s.objective() == Some(obj)),
+    }
+}
+
+/// One executable critical path per REACHABLE enumerated branch (spec-0025 §3),
+/// as `(slug, json)` in branch-enumeration order.
+///
+/// Empty — so byte-identical — for a campaign that declares no `branch_points`.
+/// An unreachable branch contributes nothing: there is no world that plays it,
+/// which `DW0482` has already failed the build for; `branch-plan.json` still names
+/// it, so the harness reports it skipped rather than silently absent.
+fn branch_paths(plan: &Plan) -> Result<Vec<(String, Value)>, BuildFailure> {
+    let branches = crate::branch::realize(plan.campaign);
+    if branches.is_empty() {
+        return Ok(Vec::new());
+    }
+    let flow = crate::flow::Flow::new(plan.campaign);
+    let mut out = Vec::new();
+    for r in &branches {
+        let Some(w) = r.world else { continue };
+        let cp = plan
+            .branch_critical_path(&flow.playthrough_in(w))
+            .map_err(|e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: format!("branch `{}`: {}", r.branch.id, e.message),
+            })?;
+        out.push((
+            r.branch.slug.clone(),
+            critical_path_json(
+                plan,
+                &cp.steps,
+                &cp.transport_by_step,
+                &cp.sneak_by_step,
+                &cp.cutscene_by_step,
+            ),
+        ));
+    }
+    Ok(out)
+}
+
+fn emit_critical_path(plan: &Plan) -> Value {
+    critical_path_json(
+        plan,
+        &plan.critical_path,
+        &plan.critical_path_transport,
+        &plan.critical_path_sneak,
+        &plan.critical_path_cutscene,
+    )
+}
+
+/// Serialize a step list in the `critical-path.json` contract (format 2).
+///
+/// One serializer for the exported path and for every spec-0025 per-branch path:
+/// a branch run must consume a contract the harness already parses, so the branch
+/// tier cannot drift into a second, less-tested shape.
+fn critical_path_json(
+    plan: &Plan,
+    walked: &[plan::Step],
+    transports: &[Option<[i32; 3]>],
+    sneak: &[bool],
+    cutscene: &[Option<u32>],
+) -> Value {
+    let steps: Vec<Value> = walked
         .iter()
         .enumerate()
         .map(|(i, s)| {
-            let transport = &plan.critical_path_transport[i];
+            let transport = &transports[i];
             let mut step = match s {
                 Step::SelectClass { class_id, command } => json!({
                     "action": "select-class", "class": class_id, "command": command
@@ -11665,12 +11764,12 @@ fn emit_critical_path(plan: &Plan) -> Value {
             // DSL v0.4 harness hints. `sneak` is emitted ONLY when true (absent =
             // false, per the harness contract). `cutscene_seconds` is a positive
             // integer on the step whose completion triggers the cutscene.
-            if plan.critical_path_sneak[i]
+            if sneak[i]
                 && let Some(obj) = step.as_object_mut()
             {
                 obj.insert("sneak".to_string(), json!(true));
             }
-            if let Some(secs) = plan.critical_path_cutscene[i]
+            if let Some(secs) = cutscene[i]
                 && secs > 0
                 && let Some(obj) = step.as_object_mut()
             {
@@ -11679,7 +11778,7 @@ fn emit_critical_path(plan: &Plan) -> Value {
             step
         })
         .collect();
-    let steps = with_bonfire_rest_steps(plan, steps);
+    let steps = with_bonfire_rest_steps(plan, walked, steps);
     json!({
         // Campaign-derived (not the compiler's max supported version): a v0.2
         // campaign emits a v0.2 critical path, a v0.3 campaign a v0.3 one.

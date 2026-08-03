@@ -41,6 +41,18 @@
               "requires_flags": [
                 "flag/flee"
               ]
+            },
+            {
+              "type": "open-gate",
+              "anchor": "anchor/door",
+              "requires_flags": [
+                "flag/flee"
+              ],
+              "happening": {
+                "verb": "opens",
+                "text": "The party throws the bar off themselves and shoulders the gate open.",
+                "subject": "anchor/door"
+              }
             }
           ]
         },
