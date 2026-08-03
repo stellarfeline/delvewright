@@ -17,6 +17,10 @@ use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, Prefa
 use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_with};
 
 fn quests_doc(loot: &str) -> String {
+    quests_doc_with(loot, "")
+}
+
+fn quests_doc_with(loot: &str, actors: &str) -> String {
     format!(
         r#"{{
   "dsl_version": "0.6.0",
@@ -36,7 +40,8 @@ fn quests_doc(loot: &str) -> String {
         "on_complete": [ {{ "type": "campaign-complete" }} ]
       }}
     ],
-    "loot": [ {loot} ]
+    "loot": [ {loot} ],
+    "actors": [ {actors} ]
   }}
 }}"#
     )
@@ -61,7 +66,11 @@ fn parse_hw(quests: &str) -> Campaign {
 
 /// Build, returning the failure so the test can assert on its code.
 fn try_build(loot: &str) -> Result<emit::BuildOutput, emit::BuildFailure> {
-    let c = parse_hw(&quests_doc(loot));
+    try_build_doc(&quests_doc(loot))
+}
+
+fn try_build_doc(doc: &str) -> Result<emit::BuildOutput, emit::BuildFailure> {
+    let c = parse_hw(doc);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
@@ -119,5 +128,70 @@ fn no_loot_still_builds() {
     assert!(
         try_build("").is_ok(),
         "a loot-free campaign must still build"
+    );
+}
+
+/// An equipped actor: the gear reaches the emitted puppet AND the twin, and the
+/// generated PackTest asserts the handoff keeps it — the regression that would
+/// otherwise be invisible (unleash summons a fresh entity).
+#[test]
+fn an_equipped_actor_emits_gear_and_its_packtest() {
+    const ACTOR: &str = r#"{
+      "id": "actor/elite",
+      "entity": "minecraft:wither_skeleton",
+      "anchor": "anchor/keeper-stand",
+      "equipment": {
+        "head": { "item": "minecraft:netherite_helmet",
+                  "enchantments": { "minecraft:protection": 4 } },
+        "main_hand": { "item": "minecraft:netherite_sword",
+                       "enchantments": { "minecraft:sharpness": 5 } }
+      }
+    }"#;
+    let out = try_build_doc(&quests_doc_with("", ACTOR)).expect("builds");
+    let f = |p: &str| {
+        String::from_utf8(out.get(p).unwrap_or_else(|| panic!("{p} emitted")).clone()).unwrap()
+    };
+
+    let spawn = f("datapack/data/hello-world/function/spawn_actor_elite.mcfunction");
+    let unleash = f("datapack/data/hello-world/function/unleash_elite.mcfunction");
+    for (what, body) in [("puppet", &spawn), ("twin", &unleash)] {
+        assert!(
+            body.contains(
+                "mainhand:{id:\"minecraft:netherite_sword\",count:1,\
+                           components:{\"minecraft:enchantments\":{\"minecraft:sharpness\":5}}}"
+            ),
+            "{what} must carry the enchanted sword:\n{body}"
+        );
+        assert!(
+            body.contains("drop_chances:{mainhand:0.0f,head:0.0f}"),
+            "{what} must drop nothing:\n{body}"
+        );
+    }
+
+    let pt = f("packtest-datapack/data/hello-world/test/v06_actor_equipment.mcfunction");
+    assert!(
+        pt.contains("function hello-world:spawn_actor_elite"),
+        "{pt}"
+    );
+    assert!(pt.contains("function hello-world:unleash_elite"), "{pt}");
+    // Both halves of the handoff are asserted, on the puppet and on the twin.
+    assert!(
+        pt.contains("tag=dw_pup_elite") && pt.contains("tag=!dw_pup_elite"),
+        "the packtest must probe the puppet AND the twin:\n{pt}"
+    );
+    assert_eq!(
+        pt.matches("assert score").count(),
+        2,
+        "two assertions:\n{pt}"
+    );
+}
+
+/// No equipped actor -> no equipment PackTest (byte-identity for old campaigns).
+#[test]
+fn an_unequipped_campaign_emits_no_equipment_packtest() {
+    let out = try_build("").expect("builds");
+    assert!(
+        !out.keys().any(|k| k.contains("v06_actor_equipment")),
+        "the equipment packtest must only appear when an actor is equipped"
     );
 }

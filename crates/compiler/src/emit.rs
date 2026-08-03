@@ -6697,6 +6697,8 @@ fn emit_packtest(
     emit_shortcut_packtest(plan, out);
     // spec-0016 §4: the clock really alternates the gate region.
     emit_timed_gate_packtest(plan, out);
+    emit_loot_packtest(plan, out);
+    emit_actor_equipment_packtest(plan, out);
     // spec-0016 §6: the patrol NBT survives 1.21.11's strict codec, the lane
     // advances in march order, the squad is released to native AI at aggro range,
     // and an aggro-edge wave really materializes on its perception ring. Emits
@@ -7092,6 +7094,109 @@ fn emit_dialogue_trigger_packtest(plan: &Plan, out: &mut BuildOutput) {
 
     out.insert(
         format!("packtest-datapack/data/{ns}/test/dialogue_trigger_rearm.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// spec-0021 loot PackTest: after `setup`, the declared container really holds
+/// the declared stacks.
+///
+/// The contract worth proving on a real server is that `item replace block …
+/// container.<n>` LANDED — it is the command that fails silently on a
+/// non-container, and `DW0431` proves the container exists at compile time but
+/// cannot prove the fill took. Asserts the first and last slot of the first
+/// declared fill, by id, so a positional-slot regression is caught too.
+/// Emitted only for a campaign that declares `loot` (else byte-identical).
+fn emit_loot_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some(l) = plan.loot.iter().find(|l| !l.items.is_empty()) else {
+        return;
+    };
+    let c = l.cell;
+    let mut b = packtest_header(&format!(
+        "{title}: loot `{}` fills its container on init (spec-0021)",
+        l.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    // Slot 0 and the last slot: presence AND identity, so neither a dropped
+    // fill nor a shifted slot assignment can pass.
+    let checks = [
+        (0usize, &l.items[0]),
+        (l.items.len() - 1, l.items.last().unwrap()),
+    ];
+    for (n, (slot, it)) in checks.iter().enumerate() {
+        b.push(format!(
+            "execute store success score #loot{n} dw.sys if data block {} {} {} Items[{{Slot:{}b,id:\"{}\"}}]",
+            c[0], c[1], c[2], slot, it.item
+        ));
+        b.push(format!("assert score #loot{n} dw.sys matches 1"));
+    }
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/v06_loot.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// spec-0021 actor-equipment PackTest: an equipped actor's puppet spawns wearing
+/// its gear, and the unleashed twin still wears it.
+///
+/// The handoff is the part worth proving on a real server: `unleash` kills the
+/// puppet and summons a fresh entity, so gear that rode only on the puppet would
+/// vanish the instant the elite came alive — a regression invisible to any
+/// compile-time check. Emitted only for a campaign with an equipped actor.
+fn emit_actor_equipment_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some(a) = plan
+        .campaign
+        .quests
+        .content
+        .actors
+        .iter()
+        .find(|a| a.equipment.is_some() && a.skin.is_none())
+    else {
+        return;
+    };
+    // The slot the assertion reads: prefer a hand, else the first armour piece.
+    let eq = a.equipment.as_ref().expect("filtered on Some");
+    let probe: Option<(&str, &EquipItem)> = [
+        ("mainhand", eq.main_hand.as_ref()),
+        ("offhand", eq.off_hand.as_ref()),
+        ("head", eq.head.as_ref()),
+        ("chest", eq.chest.as_ref()),
+        ("legs", eq.legs.as_ref()),
+        ("feet", eq.feet.as_ref()),
+    ]
+    .into_iter()
+    .find_map(|(slot, p)| p.map(|p| (slot, p)));
+    let Some((slot, piece)) = probe else {
+        return;
+    };
+    let safe = plan::safe_local(a.id.as_str());
+    let mut b = packtest_header(&format!(
+        "{title}: actor `{}` keeps its gear across unleash (spec-0021)",
+        a.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    // Clean slate: the shared batch server may already carry this actor.
+    b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+    b.push(format!("function {ns}:spawn_actor_{safe}"));
+    b.push(format!(
+        "execute store success score #aeqp dw.sys if data entity @e[tag=dw_pup_{safe},limit=1] equipment.{slot}{{id:\"{}\"}}",
+        piece.item()
+    ));
+    b.push("assert score #aeqp dw.sys matches 1".to_string());
+    b.push(format!("function {ns}:unleash_{safe}"));
+    // The twin is the actor-tagged entity that is NOT the puppet.
+    b.push(format!(
+        "execute store success score #aeqt dw.sys if data entity @e[tag=dw_actor_{safe},tag=!dw_pup_{safe},limit=1] equipment.{slot}{{id:\"{}\"}}",
+        piece.item()
+    ));
+    b.push("assert score #aeqt dw.sys matches 1".to_string());
+    b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/v06_actor_equipment.mcfunction"),
         lines(&b).into_bytes(),
     );
 }

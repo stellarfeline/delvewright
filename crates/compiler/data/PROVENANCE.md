@@ -107,3 +107,13 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 The Mojang server jar is **never** committed (Mojang EULA, ADR-0010). It was not
 downloaded on this host (Java 21 unavailable). If a future refresh runs the
 official generator, add the jar path to `.gitignore` before generating.
+
+## Derived list vendored elsewhere
+
+- **Enchantment ids (43, 1.21.11)** — the `enchantment` registry array from the
+  same `registries/data.min.json` above, namespaced and sorted by the same
+  transform. Because it is small and stable it is **inlined** as
+  `delvewright_dsl::registry::ENCHANTMENT_IDS_1_21_11` rather than committed as
+  a data file here, matching the precedent set by `EFFECT_IDS_1_21_11`. Used by
+  `DW0433` to validate actor/wave `equipment` and stage-5 `loot` enchantments
+  (spec-0021).
