@@ -37,6 +37,16 @@ the tag is the release gate (ADR-0008).
 - **Auto-generated release notes**: campaign title/blurb (player-facing
   voice, audience-separation rule applies).
 
+**Language delivery** (owner ruling 2026-08-03, option a): v1 releases ship
+the campaign baked in its primary authored language (today's `build --lang`
+path — the island ships zh-CN as playtested). Once i18n v2 lands (translate
+keys + per-language files in this same resource pack), a release carries
+every author-declared language; the client auto-selects its own locale and
+any unsupported locale falls back to English inside the pack — no server
+setting, no extra install. v2 is unblocked by this spec (the zero-install
+premise that deferred it is gone: a pack ships regardless) but does NOT
+gate any release.
+
 ### 3. Shipped defaults (differ from dev)
 
 - `ONLINE_MODE=TRUE` — a released delve is joined by real accounts;
