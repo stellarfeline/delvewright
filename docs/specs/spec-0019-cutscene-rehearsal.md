@@ -1,9 +1,13 @@
 # spec-0019: Cutscene rehearsal + in-game shot calibration
 
-- **Status**: Draft (owner direction 2026-08-02: chose "rehearsal mode + in-game
-  calibration" over external preview tooling; triggered by island round-7 — the
-  seal cinematic shipped inside-out and every review pass over offset numbers
-  missed it)
+- **Status**: Draft, direction approved (owner 2026-08-02: chose "rehearsal mode
+  + in-game calibration" over external preview tooling, then two rulings on
+  review — rehearsal must replay the **full performance**, not camera-only,
+  because staging defects are what playtests actually catch; and shot timing is
+  **demonstrated**, not authored: the creator's own flight pace between
+  calibration marks becomes the shot's `seconds`. Triggered by island round-7 —
+  the seal cinematic shipped inside-out and every review pass over offset
+  numbers missed it)
 - **ADRs**: 0003 (overlay is tooling-side), 0012 (reports feed the agent loop)
 - **Builds on**: spec-0006 (creator overlay, `playtest` profile, harvester),
   spec-0008/0014 (the `cutscene` effect this rehearses)
@@ -22,31 +26,48 @@ never less checked.
 
 ## 1. Rehearsal mode (creator overlay, `playtest` profile only)
 
-New overlay triggers, emitted per campaign by `creator.rs` from the same shot
-data the real cutscene emission reads:
+New overlay triggers, emitted per campaign by `creator.rs` from the same
+effect-bundle data the real emission reads:
 
-- **`/trigger dw.cut set <c>`** — select cutscene `c` (1-based, campaign
-  declaration order; the overlay `say`-stamps the roster with ids on join).
-- **`/trigger dw.shot set <s>`** — play shot `s` of the selected cutscene on
-  yourself: the **exact emitted camera path** (same spectator dolly, same
-  `teleport_duration` interpolation, same easing), camera moves only — none of
-  the surrounding effect bundle (no despawns, no narrate, no flags). `set 0`
-  plays the whole cutscene's shot chain. Replay freely; story state is never
-  touched. On shot end you are restored to your prior position and gamemode.
-
-Rehearsal functions are camera-only derivations, so a cutscene that stages
-actors (walkers, sheep) rehearses against whatever is live in the world — the
-overlay does not spawn stand-ins (staging rehearsal = trigger the real beat;
-this mode is for framing and movement).
+- **`/trigger dw.beat set <b>`** — replay beat `b` — the cutscene **and its
+  entire surrounding effect bundle** (actor spawns/walks/despawns, sounds,
+  narrates, gate fills, the sequence timeline), exactly as emitted. Camera-only
+  rehearsal is explicitly rejected (owner, 2026-08-02): the island's shipped
+  defects — an actor entering from the wrong side, a flock that never moved —
+  live in the staging, and a camera-only replay cannot show them. The overlay
+  `say`-stamps the beat roster with ids on join; `dw.shot set <s>` replays a
+  single shot's camera when only framing is in question.
+- **State restore is automatic and derived at compile time.** Before the
+  replay the overlay snapshots story state (flag/objective/quest scoreboards
+  → shadow objectives); after it, a compiler-emitted **inverse function**
+  undoes the beat: replayed actors are killed by tag, NPCs the beat despawned
+  are re-summoned, `close-gate`/`open-gate` fills are re-run in reverse
+  (both are deterministic region fills), and the scoreboard snapshot is
+  restored. Every inverse is derivable statically from the bundle — no
+  runtime guessing. A beat containing an effect with no sound inverse (e.g.
+  `give-item` into a player inventory) restores state around it and
+  `say`-stamps what it could not undo.
+- **`/trigger dw.free set 1`** — detach from the cutscene dolly for the next
+  replay: the performance runs, the creator flies freely and watches from
+  outside (the vantage that catches a wrong-side entrance). Default (0)
+  rides the real emitted dolly — same spectator path, same
+  `teleport_duration` interpolation, same easing. On beat end the creator is
+  restored to prior position and gamemode.
 
 ## 2. In-game calibration
 
 - **`/trigger dw.mark set <s>`** — append the creator's current **eye position
-  + view direction** as the next waypoint of shot `s`'s *proposal* (first call
-  = path start, second = path end, further calls = intermediate waypoints).
-  `set -<s>` discards shot `s`'s proposal.
+  + view direction**, with a **gametime timestamp**, as the next waypoint of
+  shot `s`'s *proposal* (first call = path start, second = path end, further
+  calls = intermediate waypoints). `set -<s>` discards shot `s`'s proposal.
 - **`/trigger dw.aim set <s>`** — record the block the creator is currently
   looking at (raycast) as shot `s`'s proposed `look_at`.
+- **Timing is demonstrated, not authored** (owner ruling): the creator marks
+  the start, flies the path **at the pace the shot should play**, and marks
+  the end — `delvec calibrate` turns the elapsed time between a shot's first
+  and last mark into its `seconds` (rounded, clamped to 2–30s; the field
+  stays hand-editable afterwards). The camera moves at the speed the human
+  demonstrated, never a guessed number.
 
 Each mark is appended to `dw:rehearsal` data storage **and** `say`-stamped as
 one machine-readable log line (`[DelveShot] cut=<c> shot=<s> kind=mark|aim
@@ -83,20 +104,28 @@ DSL → rebuild → re-render/rehearse to confirm.
 
 ## Acceptance criteria
 
-- [ ] Overlay rehearsal functions are emitted for every declared cutscene
-      shot, byte-deterministic (ADR-0006 gate covers `creator-datapack/`),
-      and absent from the shipped image (existing tier-2 exclusion check).
-- [ ] PackTest: `dw.shot` on a fixture cutscene moves the test runner along
-      the shot (position sampled mid-flight within tolerance) and restores
-      position + gamemode at the end; story scoreboards are untouched.
+- [ ] Overlay rehearsal functions (beat replay + inverse + shot replay) are
+      emitted for every declared cutscene/beat, byte-deterministic (ADR-0006
+      gate covers `creator-datapack/`), and absent from the shipped image
+      (existing tier-2 exclusion check).
+- [ ] PackTest: `dw.beat` on a fixture beat runs the staging (actor spawned,
+      gate filled) and, after the inverse, world and story state equal the
+      pre-replay snapshot: replayed actors gone, gate region back to its
+      prior blocks, every flag/objective scoreboard restored, runner back at
+      prior position + gamemode.
+- [ ] PackTest: a beat containing a non-invertible effect still restores
+      scoreboards and stamps a machine-readable "not undone" line.
 - [ ] PackTest: `dw.mark` / `dw.aim` append records carrying `Pos` +
-      `Rotation` to `dw:rehearsal` storage and stamp a parseable
+      `Rotation` + gametime to `dw:rehearsal` storage and stamp a parseable
       `[DelveShot]` line.
 - [ ] Harvester: fixture log → `rehearsal-report.json` with versioned schema;
       unit-tested shape.
 - [ ] Converter round-trip property: a mark at a known world position yields
       `anchor + offset` that resolves back to the same block cell; an aim at a
-      known block yields a `look_at` within 1 block of it. Marks farther than
-      the snap radius from every anchor are reported, never silently snapped.
+      known block yields a `look_at` within 1 block of it; two marks N ticks
+      apart yield `seconds = N/20` rounded and clamped to 2–30. Marks farther
+      than the snap radius from every anchor are reported, never silently
+      snapped.
 - [ ] Live tier-3 check in the `playtest-note-flow.sh` pattern: scripted bot
-      fires the triggers; harvested report matches the fixture positions.
+      fires the triggers; harvested report matches the fixture positions and
+      timings.
