@@ -103,6 +103,13 @@ validation/          # docker compose: headless server + bot, same image as CI &
   regardless of CI state.
 - **Write short documents.** Specs/ADRs are owner-consumed via chat summaries;
   their long form exists for agents. Keep them as terse as correctness allows.
+- **Audience separation in docs** (owner, 2026-08-02): every document has ONE
+  target reader. Agent-facing docs (CLAUDE.md, ADRs, specs, `docs/reference/`,
+  skills) may be arbitrarily technical. User/player-facing docs (READMEs,
+  release notes, tutorials, storybooks) contain only what that reader needs to
+  act — never internal machinery such as model tiers, subagent dispatch,
+  worker roles, or pipeline plumbing. Applies to both repos, including the
+  content repo's play/hosting tutorials.
 - **Tiered testing**: unit + static analysis on every push; PackTest integration on PR;
   full bot playthrough on release candidates only.
 - **PR-based flow even solo.** GitHub Actions; repo is private for now, public when
