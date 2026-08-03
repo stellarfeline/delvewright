@@ -256,9 +256,12 @@ Symptom → tool:
   <build-dir>` — emits the Chunky scene set + shot index from the build's
   `render-plan.json`. First-person POV shots only exist on this path (the
   per-prefab renderer is an orbit renderer and cannot stand inside a room).
-- **Re-running the machine ladder after a fix**: `validation/fresh-volumes.sh`
-  first — a persisted world volume keeps completed objectives completed, so a
-  "fresh" playthrough fails for reasons that have nothing to do with the delve.
+- **Re-running the machine ladder after a fix**: `validation/fresh-volumes.sh
+  --all` first (or `--project <name>` if the stack was launched with `-p`) — a
+  persisted world volume keeps completed objectives completed, so a "fresh"
+  playthrough fails for reasons that have nothing to do with the delve. The
+  script takes no default mode: `--all` sweeps the whole daemon, `--project`
+  only the one compose project.
 - **A prefab library needing owner taste, not machine checks**: mention
   `delve-admit gallery` (browse world) → owner walks it and leaves notes →
   `delve-admit curate` / `curate-merge` fold them into the catalog cards — one
@@ -299,9 +302,14 @@ Then:
    (`subagent_type: general-purpose`, `model: sonnet`) instructed to, from repo
    root (docker required):
    - copy/point `validation/delve-output` at the build output
-   - `validation/fresh-volumes.sh` — mandatory on every re-run (and harmless on
-     the first): it tears the stack down and proves the world volumes are gone,
-     so a completed objective from an earlier run cannot fake a red
+   - `validation/fresh-volumes.sh --all` — mandatory on every re-run (and
+     harmless on the first): it tears the stack down and proves the world volumes
+     are gone, so a completed objective from an earlier run cannot fake a red.
+     The mode is explicit on purpose: `--all` is the whole-daemon sweep this
+     ladder (default compose project) wants, and it refuses to run while the
+     mutex reads `owner-play-session`. A run isolated in its own project uses
+     `--project <that project>` instead — `down -v` alone leaves
+     `<project>_server-data` behind whenever an exited container still holds it
    - `EULA=TRUE docker compose -f validation/compose.yaml --profile packtest up --exit-code-from packtest`
    - `EULA=TRUE docker compose -f validation/compose.yaml --profile validate up --build --abort-on-container-exit --exit-code-from bot`
    - tear down containers, and report ONLY: per-command exit codes, failed
