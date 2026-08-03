@@ -48,6 +48,15 @@ services:
       # Offline for frictionless local play/CI; override ONLINE_MODE=TRUE to join
       # with a real Microsoft account (spec-0003 auth-mode note).
       ONLINE_MODE: ${ONLINE_MODE:-FALSE}
+      # spec-0023: the validation bot is opped so the harness can run the two
+      # commands its combat proofs are made of — `/damage @s` for a scripted death
+      # (the die-retry stage) and `/effect give @s minecraft:resistance` for a
+      # bounded combat-assist window. Both are HARNESS actions, applied and removed
+      # by the harness and named in the run report; no delve content can reach
+      # them, and the shipped image is untouched (this is a compose env var, not a
+      # baked layer). The `play` profile shares this service, where the name simply
+      # matches nobody.
+      OPS: ${DELVEWRIGHT_BOT_USERNAME:-delve-bot}
     volumes:
       # Name the itzg `/data` world volume so `docker compose down -v` actually
       # clears it. The itzg base declares an anonymous `VOLUME /data`; anonymous
@@ -116,6 +125,15 @@ services:
       DELVEWRIGHT_MC_PORT: "25565"
       DELVEWRIGHT_MC_VERSION: "1.21.11"
       DELVEWRIGHT_MC_AUTH: offline
+      # Must match the server's OPS entry above, or the harness's assist and
+      # scripted-death commands are silently refused and every combat proof
+      # degrades into an ordinary fight.
+      DELVEWRIGHT_BOT_USERNAME: ${DELVEWRIGHT_BOT_USERNAME:-delve-bot}
+      # spec-0023 run artifact. Unset it to keep the pre-spec-0023 stderr-only run.
+      DELVEWRIGHT_RUN_REPORT: /delve/run-out/run-report.json
+      # The die-retry stage is ON whenever the build carries a combat plan; `0`
+      # skips it for local iteration, and the report records that it was skipped.
+      DELVEWRIGHT_DIE_RETRY: ${DELVEWRIGHT_DIE_RETRY:-1}
     volumes:
       - ./delve-output/critical-path.json:/delve/critical-path.json:ro
       # task #38: the compiler-proven per-leg waypoint artifact
@@ -125,6 +143,11 @@ services:
       # metadata only (never in the shipped delve image); absent → single-goal
       # fallback, so the mount is harmless for a campaign that emits none.
       - ./delve-output/validation:/delve/validation:ro
+      # spec-0023: the run report the bot writes (stage results, every combat-assist
+      # window with its ticks, every scripted death of the die-retry stage, and the
+      # inverted floor gate's findings). Writable, unlike the read-only build mounts
+      # above — this is the run's own artifact, not the build's.
+      - ./run-out:/delve/run-out
     command: ["/delve/critical-path.json"]
 
   # PackTest runner (spec-0003 PackTest tier): the delvewright-toolserver image

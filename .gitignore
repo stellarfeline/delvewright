@@ -11,6 +11,11 @@ node_modules/
 # `validation/delve-output-cast` (spec-0020's cast-ledger PackTest run).
 validation/delve-output*/
 
+# spec-0023 bot-ladder run artifact (`validation/run-out/run-report.json`): the
+# stage results, assist-window ledger, die-retry trials and floor findings the
+# `validate` profile's bot writes. A per-run artifact, never committed.
+validation/run-out/
+
 # spec-0005 server-jar cache (actions/cache in CI; primed locally). Never committed —
 # the Mojang jar is fetched by checksum, never redistributed (ADR-0010).
 validation/.jar-cache/
