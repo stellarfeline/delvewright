@@ -1042,6 +1042,26 @@ class CombatFakeBot extends InteractFakeBot {
     }, 5);
   }
 
+  /** Park a mob-shaped entity that is NOT part of the wave: an ambush actor, a
+   * neighbouring wave's straggler. Visible to `nearestEntity`, invisible to the
+   * census — exactly the drowned bell's belfry (task #124). */
+  addBystander(id: number, distance = 1): void {
+    const self = this;
+    this.entities[id] = {
+      id,
+      name: "husk",
+      height: 2,
+      metadata: { [ZOMBIE_HEALTH_IDX]: FULL_HEALTH },
+      get attributes(): Record<string, { value: number }> {
+        return { "minecraft:max_health": { value: FULL_HEALTH } };
+      },
+      get position(): FakeVec3 {
+        return new FakeVec3(distance, 64, 0);
+      },
+    } as unknown as FakeMob;
+    void self;
+  }
+
   /** Everything wearing the wave tag — the census's whole universe. */
   private waveMobs(): FakeMob[] {
     return (Object.values(this.entities) as FakeMob[]).filter((e) => e?.waveTagged === true);
@@ -1063,6 +1083,11 @@ class CombatFakeBot extends InteractFakeBot {
     return best;
   }
 
+  /** Swings a wave mob takes before it drops. 1 (one swing) unless a test wants
+   * the fight to outlast something else dying beside it. */
+  waveHitsToKill = 1;
+  private readonly hitsTaken = new Map<number, number>();
+
   attack(mob: { id: number }): void {
     this.calls.push("attack");
     // The wave wins the exchange: the bot dies mid-trade, before it ever reaches
@@ -1072,7 +1097,18 @@ class CombatFakeBot extends InteractFakeBot {
       this.killBot();
       return;
     }
+    const tagged = (this.entities[mob.id] as { waveTagged?: boolean } | undefined)?.waveTagged;
+    const need = tagged ? this.waveHitsToKill : 1;
+    const taken = (this.hitsTaken.get(mob.id) ?? 0) + 1;
+    this.hitsTaken.set(mob.id, taken);
+    if (taken < need) return;
+    const ent = this.entities[mob.id];
     delete this.entities[mob.id]; // one swing is enough in the fake world
+    // A real server announces the removal, and that announcement is what credits
+    // a confirmed kill (`entityGone` → `creditsWaveKill`). Without it the fake
+    // world could never reproduce the drowned bell's belfry, where a husk's death
+    // was credited to the Bellkeeper's wave.
+    if (ent) this.emit("entityGone", ent);
   }
 
   /** A death the harness did NOT script, delivered the way a server delivers it:
@@ -1940,4 +1976,33 @@ test("an encounter with NO governing checkpoint skips the death as an ADVISORY, 
   assert.equal(executor.dieRetryPreconditionWaves().has(KILL_STEP.wave), true);
   // The fight itself still happened — only the scripted death was skipped.
   assert.equal(executor.encounterPhase(KILL_STEP.wave), "cleared");
+});
+
+// --- the kill loop ends on the CENSUS, never on a lookalike (task #124) ------
+
+test("killing a bystander beside the fight does not clear the wave", async () => {
+  // The drowned bell's belfry, reduced: `ambush/the-rafters` puts two husks where
+  // the Bellkeeper stands, and the kill loop counted one of them as the wave —
+  // `confirmed kill: husk#232 (1/1)` — then walked away from a wither skeleton
+  // still very much alive. The objective never completed, so the quest never
+  // completed, so the NEXT quest was never armed, so the next step's `interact`
+  // click was adjudicated against an unarmed quest and spent. The click was the
+  // symptom; this is the cause.
+  const bot = new CombatFakeBot();
+  bot.seat(1); // the real wave mob, in reach
+  bot.waveHitsToKill = 3; // …and it outlives the bystander, as the Bellkeeper did
+  bot.addBystander(900, 0.5); // an ambush husk, NEARER — the bot swings at it first
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(1, false), false);
+
+  await executor.kill({ ...KILL_STEP, count: 1 });
+
+  // The step only returned once the WAVE was down; the bystander being killed
+  // first bought nothing.
+  const left = Object.values(bot.entities).filter(
+    (e) => (e as { waveTagged?: boolean }).waveTagged === true,
+  );
+  assert.equal(left.length, 0, "the wave itself is what has to die");
+  assert.equal(bot.entities[900], undefined, "the bystander died on the way, which is fine");
 });

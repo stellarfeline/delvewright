@@ -1792,7 +1792,34 @@ fn emit_functions(
     // (trigger fired + optional item) are v0.3 additions. `collect` completes via
     // its `inventory_changed` advancement AND (v0.3) a per-tick held check that
     // closes the pre-activation-pickup stall (gap 13).
-    for q in &c.quests.content.quests {
+    //
+    // ## The arming-before-adjudication invariant (task #124)
+    //
+    // This is the ONE loop whose lines can ARM a quest: a completion line runs
+    // `complete_<obj>` → `check_q_<quest>` → `complete_q_<quest>`, and that last
+    // function writes `#party dw.qa_<next>` for every quest triggered by this
+    // one's completion. Every other quest gate in the tick only READS those
+    // scores.
+    //
+    // So the loop must visit an arming quest before the quest it arms, and the
+    // guarantee has to be STRUCTURAL rather than a property declaration order
+    // happens to have. What goes wrong otherwise is silent and costs a player
+    // their click: an `interact` adjudicates under `if score #party dw.qa_<q>
+    // matches 1` and then resets the trigger UNCONDITIONALLY on the next line, so
+    // a click already pending when its quest is armed later in the same tick is
+    // consumed with no effect. A human clicks again and never knows; a validation
+    // bot clicks once and times out.
+    //
+    // The reset stays unconditional on purpose (owner ruling): a trigger fired
+    // long before its quest was armed is DISCARDED, never banked. Banking would
+    // auto-complete the objective the instant the quest armed, with no real click
+    // — a worse failure than the one it would fix, because it fabricates player
+    // input rather than losing it.
+    //
+    // `quests_in_arming_order` is a stable topological sort, so a campaign whose
+    // quests are already declared in arming order — every campaign built so far —
+    // emits byte-identically.
+    for q in quests_in_arming_order(c) {
         let area = plan.quest_area(q.id.as_str()).unwrap_or("");
         let qa = quest_active_score(q.id.as_str());
         for o in &q.objectives {
@@ -7227,6 +7254,67 @@ fn interact_objectives(c: &delvewright_dsl::Campaign) -> Vec<(String, String)> {
 /// keeps the drivers single-fire under `as @a`: vanilla evaluates the conditions
 /// per selected player in turn, so the first player's `run` sets the party score
 /// and every later player's `unless score #party …` fails in the same tick.
+/// Stage-5 quests in **arming order**: a quest whose completion arms another is
+/// visited before the quest it arms (task #124).
+///
+/// The arming graph is exactly the `Trigger::QuestComplete` edges — the only two
+/// trigger kinds are `CampaignStart` (a root, armed by `setup`) and
+/// `QuestComplete`, so this is the whole of it.
+///
+/// **Stable.** Declaration order breaks every tie and seeds the ready set, so a
+/// campaign already declared in arming order — which every campaign built so far
+/// is — comes back in exactly its declared order and emits byte-identically. It
+/// is also **total**: a cycle (already an error elsewhere; a quest cannot arm
+/// itself through any path and still be reachable) leaves an unresolved tail,
+/// which is appended in declaration order rather than dropped, because a lost
+/// quest would be a far worse failure than a badly-ordered one.
+fn quests_in_arming_order(c: &delvewright_dsl::Campaign) -> Vec<&delvewright_dsl::Quest> {
+    let quests = &c.quests.content.quests;
+    let index: BTreeMap<&str, usize> = quests
+        .iter()
+        .enumerate()
+        .map(|(i, q)| (q.id.as_str(), i))
+        .collect();
+    let mut indegree = vec![0usize; quests.len()];
+    let mut arms: Vec<Vec<usize>> = vec![Vec::new(); quests.len()];
+    for (i, q) in quests.iter().enumerate() {
+        if let Trigger::QuestComplete { quest } = &q.trigger
+            && let Some(&p) = index.get(quest.as_str())
+            && p != i
+        {
+            indegree[i] += 1;
+            arms[p].push(i);
+        }
+    }
+    // Kahn's algorithm with a declaration-ordered ready queue: among quests that
+    // become ready together, the earliest-declared is always emitted first.
+    let mut ready: Vec<usize> = (0..quests.len()).filter(|&i| indegree[i] == 0).collect();
+    let mut order: Vec<usize> = Vec::with_capacity(quests.len());
+    while !ready.is_empty() {
+        let i = ready.remove(0);
+        order.push(i);
+        for &dep in &arms[i] {
+            indegree[dep] -= 1;
+            if indegree[dep] == 0 {
+                let pos = ready.partition_point(|&r| r < dep);
+                ready.insert(pos, dep);
+            }
+        }
+    }
+    let mut seen = vec![false; quests.len()];
+    let mut out: Vec<&delvewright_dsl::Quest> = Vec::with_capacity(quests.len());
+    for i in order {
+        seen[i] = true;
+        out.push(&quests[i]);
+    }
+    for (i, q) in quests.iter().enumerate() {
+        if !seen[i] {
+            out.push(q);
+        }
+    }
+    out
+}
+
 fn pending_guard(o: &Objective, quest_active: &str) -> String {
     let p = plan::PARTY;
     let mut g = format!(" if score {p} {quest_active} matches 1");
@@ -11445,6 +11533,54 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             obj_score(id.as_str())
         ));
         write("verb_interact", b);
+
+        // A click that lands before its quest is armed is DISCARDED, and a real
+        // click afterwards still works (task #124, owner ruling).
+        //
+        // This is the runtime half of the arming invariant. The compile-time half
+        // (`tests/tick_arming.rs`) pins that the arming quest's lines precede the
+        // adjudication, so a pending click can never be lost to same-tick
+        // ordering. What a live server has to show is the other half: the
+        // unconditional reset really does SPEND a premature click rather than
+        // bank it — because a banked click would auto-complete the objective the
+        // instant the quest armed, with nobody having clicked anything.
+        let (pin, sel) = pin_dummy("dw_t_varm");
+        let trigger = plan::interact_trigger(id.as_str());
+        let obj = obj_score(id.as_str());
+        let qa = quest_active_score(qid);
+        let party = plan::PARTY;
+        let mut b = packtest_header(&format!(
+            "{}: a click before the quest is armed is spent, not banked (task #124)",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        // Baseline: objective open, quest NOT armed, and the preamble's other
+        // guards satisfied so the arming flag is the only thing standing in the
+        // way. The preamble sets the quest active, so it is cleared after it.
+        b.push(format!("scoreboard players set {party} {obj} 0"));
+        b.extend(packtest_preamble(qid, o, true, &sel));
+        b.push(format!("scoreboard players set {party} {qa} 0"));
+
+        // --- the premature click: no completion, and no banked trigger ---
+        b.push(format!("scoreboard players set {sel} {trigger} 1"));
+        b.push(format!("function {ns}:tick"));
+        b.push(format!("assert score {party} {obj} matches 0"));
+        b.push(format!(
+            "execute store result score #varm_bank dw.sys if score {sel} {trigger} matches 1.."
+        ));
+        b.push("assert score #varm_bank dw.sys matches 0".to_string());
+
+        // --- arming alone must not complete it: the click is genuinely gone ---
+        b.push(format!("scoreboard players set {party} {qa} 1"));
+        b.push(format!("function {ns}:tick"));
+        b.push(format!("assert score {party} {obj} matches 0",));
+
+        // --- and a real click, now that the quest is armed, still completes ---
+        b.push(format!("scoreboard players set {sel} {trigger} 1"));
+        b.push(format!("function {ns}:tick"));
+        b.push(format!("assert score {party} {obj} matches 1"));
+        write("verb_interact_arming", b);
     }
 
     // interact + `requires_item`: HELD, not merely carried (owner ruling,
