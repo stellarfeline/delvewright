@@ -154,6 +154,18 @@ type StealthProbe = (Vec<ZoneCell>, usize);
 /// first blocked cell.
 pub const DW_ACTOR_UNROUTABLE: &str = "DW0325";
 
+/// `DW0410`: a staged walk (`move-actor` / `move-npc`) whose path is blocked by a
+/// gate that an **earlier effect in its own timeline** sealed with `close-gate`
+/// (round-8 island playtest; see [`crate::timeline`]).
+///
+/// Distinct from `DW0325`/`DW0307` by construction: those fire when the leg is
+/// unwalkable on the open world at all, this one when the leg *is* walkable on
+/// the open world and only the timeline's own `close-gate` makes it impossible.
+/// The planner routes over the timeline-adjusted world first, so a legal
+/// alternative route around the seal is simply taken and no diagnostic is raised
+/// — this fires only when the sealed world admits no route.
+pub const DW_GATE_TIMELINE: &str = "DW0410";
+
 /// Default NPC walking speed in blocks/tick (spec-0008 §5; owner spike). Used when
 /// a `move-npc` effect omits `speed`.
 pub const DEFAULT_SPEED: f64 = 0.15;
@@ -1006,10 +1018,16 @@ impl World {
         self.find_path_fp(start, goal, &Footprint::player())
     }
 
-    /// Footprint-aware A* (spec-0014). Identical to the pre-0.6 A* for the player
-    /// footprint (so `move-npc` and critical-path routing stay byte-identical); a
-    /// wider/taller footprint prunes cells the puppet cannot occupy. Deterministic:
-    /// frontier ordered by `(f, g, cell)`, fixed neighbour order.
+    /// Footprint-aware A* (spec-0014) over the **terrain-shaped** step cost
+    /// ([`step_cost_16`]) — a wider/taller footprint additionally prunes cells the
+    /// puppet cannot occupy. Deterministic: frontier ordered by `(f, g, cell)`,
+    /// fixed neighbour order, integer costs only.
+    ///
+    /// The heuristic is horizontal Manhattan distance scaled by [`STEP_COST_16`],
+    /// the cost of a perfectly flat step. Since no step is ever cheaper than that,
+    /// `h` stays **admissible and consistent**, so A* still returns a true
+    /// minimum-cost path and never needs to reopen a closed node — the cost change
+    /// is a change of *preference among valid routes*, never of which routes exist.
     fn find_path_fp(
         &self,
         start: [i32; 3],
@@ -1022,7 +1040,8 @@ impl World {
         if !self.standable_fp(start, fp) || !self.standable_fp(goal, fp) {
             return None;
         }
-        let h = |c: [i32; 3]| ((c[0] - goal[0]).abs() + (c[2] - goal[2]).abs()) as u32;
+        let h =
+            |c: [i32; 3]| ((c[0] - goal[0]).abs() + (c[2] - goal[2]).abs()) as u32 * STEP_COST_16;
         let mut g_score: BTreeMap<[i32; 3], u32> = BTreeMap::new();
         let mut came_from: BTreeMap<[i32; 3], [i32; 3]> = BTreeMap::new();
         let mut open: BinaryHeap<Reverse<(u32, u32, [i32; 3])>> = BinaryHeap::new();
@@ -1043,8 +1062,9 @@ impl World {
             if g > *g_score.get(&cur).unwrap_or(&u32::MAX) {
                 continue;
             }
+            let here = self.feet_16_fp(cur, fp);
             for n in self.neighbors_fp(cur, fp) {
-                let tentative = g + 1;
+                let tentative = g + step_cost_16(here, self.feet_16_fp(n, fp));
                 if tentative < *g_score.get(&n).unwrap_or(&u32::MAX) {
                     came_from.insert(n, cur);
                     g_score.insert(n, tentative);
@@ -1054,6 +1074,54 @@ impl World {
         }
         None
     }
+}
+
+/// The cost of one perfectly **flat** cardinal step, in sixteenths of a block of
+/// level walking. Every A* cost is denominated in this unit so the elevation
+/// penalty below can be expressed in the same currency as horizontal distance
+/// (and so the whole cost function stays integer — ADR-0006 forbids float
+/// comparisons deciding a path).
+const STEP_COST_16: u32 = FULL_16 as u32;
+
+/// What one block of **elevation change** costs, expressed as a multiple of the
+/// same distance walked on the flat (round-8 owner playtest).
+///
+/// The defect this fixes: with a distance-only cost, every route of equal length
+/// is equally good, so the planner walked the herd and the giant along the
+/// straight line over the greenfield's bumpy 1-step terrain — bobbing up and down
+/// a block a dozen times — while the flat cleared road two columns to the side
+/// cost the same 2-step detour it always did and never won. Staged walks are
+/// *photographed*: a body that pogos over lumps reads as broken even though every
+/// step is legal, and the built road exists precisely to be walked.
+///
+/// **Why 2.** A rise past [`MAX_AUTO_STEP_16`] is a jump, and vanilla's jump arc
+/// is ≈12 ticks airborne against ≈4.6 ticks to walk one block on the flat — so
+/// clearing a 1-block rise really does cost about 2.5 blocks of walking time.
+/// Two is the integer under that: enough that the planner pays a genuine detour
+/// to stay level (a 1-block bump must be worth ~2 blocks of going around), but
+/// not so much that it invents long absurd circuits to dodge a single step. It is
+/// deliberately *under* the physical figure — the safe direction, since
+/// overpaying for flatness is what would distort routes on legitimately sloped
+/// terrain (the mountain ramp, the beach grade).
+///
+/// Measured on the island (round 8): the beach→pen walk crossed the greenfield at
+/// `x=7` with 24 blocks of cumulative elevation change; at weight 2 it moves onto
+/// the built path spine (`x=9..11`, flat at `y=63`) and the bobbing is gone. The
+/// weight is applied per sixteenth, so a slab or a `dirt_path` lip (a 1/16-15/16
+/// partial floor) costs proportionally less than a full block — the planner is
+/// not driven off intentional slab stairs by the same rule that keeps it off
+/// lumpy ground.
+const ELEV_WEIGHT: u32 = 2;
+
+/// The cost of stepping between two standing surfaces whose **true feet heights**
+/// (sixteenths, absolute — [`World::feet_16_fp`]) are `from` and `to`: one flat
+/// step plus [`ELEV_WEIGHT`] per sixteenth of height change, up or down.
+///
+/// Up and down are charged alike: the owner's complaint is *bobbing*, and a path
+/// that drops a block only to climb it back is exactly as ugly as the reverse.
+/// Never zero, so the heuristic stays admissible and A* terminates.
+fn step_cost_16(from: i64, to: i64) -> u32 {
+    STEP_COST_16 + (to - from).unsigned_abs() as u32 * ELEV_WEIGHT
 }
 
 /// The world position an entity standing in cell `c` occupies: the **horizontal
@@ -1219,7 +1287,11 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
     // single-waypoint instant teleport instead of a walk). Keyed by npc id, in
     // campaign effect order (the same deterministic order the dedup uses).
     let mut chained_start: BTreeMap<String, [i32; 3]> = BTreeMap::new();
-    for eff in all_effects(plan) {
+    // The cell route planned for each `(npc, to_anchor)` driver, so a deduped
+    // repeat occurrence can be re-checked against its own timeline's seals.
+    let mut planned: BTreeMap<(String, String), Vec<[i32; 3]>> = BTreeMap::new();
+    let mut cache = SealCache::default();
+    for (eff, seal) in crate::timeline::walk(plan) {
         let QuestEffect::MoveNpc {
             npc,
             to_anchor,
@@ -1228,6 +1300,12 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
         } = eff
         else {
             continue;
+        };
+        // The world this walk actually happens in: gates this timeline already
+        // shut are solid. Empty seal ⇒ the base world, unchanged.
+        let leg_world: &World = match cache.index_of(world, &seal) {
+            Some(i) => &cache.worlds[i],
+            None => world,
         };
         let anchor_pos =
             move_target(plan, npc.as_str(), to_anchor.as_str()).ok_or_else(|| NavError {
@@ -1239,7 +1317,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
                     npc.as_str()
                 ),
             })?;
-        let target = world
+        let target = leg_world
             .snap_standable(anchor_pos, SNAP_RADIUS)
             .ok_or_else(|| NavError {
                 code: DW_MOVE_UNROUTABLE,
@@ -1253,9 +1331,26 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
                 ),
             })?;
         let key = (npc.as_str().to_string(), to_anchor.as_str().to_string());
-        if !seen.insert(key) {
-            // Deduped (same content-keyed driver) — but the walk still ends here,
-            // so the NPC's next leg chains from this target.
+        if !seen.insert(key.clone()) {
+            // Deduped: shares the first occurrence's driver, so it walks the
+            // already-planned path — which must still be clear under THIS
+            // occurrence's timeline seals (DW0410; see `plan_actor_moves`).
+            if !seal.is_empty()
+                && let Some(cells) = planned.get(&key)
+            {
+                let sealed = seal_cells(&seal);
+                if cells.iter().any(|c| sealed.contains(c)) {
+                    return Err(gate_timeline_error(
+                        "move-npc",
+                        npc.as_str(),
+                        to_anchor.as_str(),
+                        cells[0],
+                        target,
+                        &seal,
+                    ));
+                }
+            }
+            // The walk still ends here, so the NPC's next leg chains from this target.
             chained_start.insert(npc.as_str().to_string(), target);
             continue;
         }
@@ -1273,23 +1368,41 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
                 })?;
                 // The NPC walks up to a solid affordance, not into it: snap the
                 // home endpoint to the floor cell nearest the anchor.
-                world.snap_standable(home, SNAP_RADIUS).unwrap_or(home)
+                leg_world.snap_standable(home, SNAP_RADIUS).unwrap_or(home)
             }
         };
-        let cells = world.find_path(start, target).ok_or_else(|| NavError {
-            code: DW_MOVE_UNROUTABLE,
-            message: format!(
-                "move-npc: NPC `{}` cannot walk from its last staged location {start:?} (home \
-                 anchor `{}`) to `{}` {anchor_pos:?} (floor {target:?}) — no collision-free path \
-                 over the solved geometry. Route the move within one connected area (a \
-                 wall/void/closed gate separates start and destination), or split it into shorter \
-                 reachable hops",
-                npc.as_str(),
-                plan_npc_anchor(plan, npc.as_str()),
-                to_anchor.as_str(),
-            ),
-        })?;
+        let cells = match leg_world.find_path(start, target) {
+            Some(cells) => cells,
+            // Routable open, unroutable sealed ⇒ this timeline's own `close-gate`
+            // is the cause (DW0410); otherwise the geometry never connected (DW0307).
+            None if !seal.is_empty() && world.find_path(start, target).is_some() => {
+                return Err(gate_timeline_error(
+                    "move-npc",
+                    npc.as_str(),
+                    to_anchor.as_str(),
+                    start,
+                    target,
+                    &seal,
+                ));
+            }
+            None => {
+                return Err(NavError {
+                    code: DW_MOVE_UNROUTABLE,
+                    message: format!(
+                        "move-npc: NPC `{}` cannot walk from its last staged location {start:?} \
+                         (home anchor `{}`) to `{}` {anchor_pos:?} (floor {target:?}) — no \
+                         collision-free path over the solved geometry. Route the move within one \
+                         connected area (a wall/void/closed gate separates start and \
+                         destination), or split it into shorter reachable hops",
+                        npc.as_str(),
+                        plan_npc_anchor(plan, npc.as_str()),
+                        to_anchor.as_str(),
+                    ),
+                });
+            }
+        };
         chained_start.insert(npc.as_str().to_string(), target);
+        planned.insert(key, cells.clone());
         out.push(MovePlan {
             npc: npc.as_str().to_string(),
             to_anchor: to_anchor.as_str().to_string(),
@@ -1406,6 +1519,79 @@ fn first_blocked_fp(world: &World, start: [i32; 3], target: [i32; 3], fp: &Footp
     target
 }
 
+/// The world cells a timeline's sealed gate regions fill (see [`crate::timeline`]).
+fn seal_cells(seal: &crate::timeline::GateState) -> BTreeSet<[i32; 3]> {
+    let mut cells = BTreeSet::new();
+    for &(lo, hi) in seal.keys() {
+        cells.extend(crate::assembled::region_cells(lo, hi));
+    }
+    cells
+}
+
+/// Memoized timeline-sealed views of the world.
+///
+/// A staged walk is routed over the world with the gates its own timeline has
+/// already shut forced solid ([`World::with_sealed`]). Building that view clones
+/// the whole occupancy model, and a campaign typically has many walks sharing the
+/// same handful of gate states, so views are cached by their region set. Keyed by
+/// a sorted `Vec<Region>` and stored in insertion order: deterministic, no
+/// hash-order iteration (ADR-0006).
+#[derive(Default)]
+struct SealCache {
+    index: BTreeMap<Vec<crate::timeline::Region>, usize>,
+    worlds: Vec<World>,
+}
+
+impl SealCache {
+    /// The index of the sealed view for `seal`, or `None` when nothing is sealed
+    /// (the caller then uses the base world — which is what keeps a campaign with
+    /// no `close-gate` byte-identical: no clone, no different world, same routes).
+    fn index_of(&mut self, base: &World, seal: &crate::timeline::GateState) -> Option<usize> {
+        if seal.is_empty() {
+            return None;
+        }
+        let key: Vec<crate::timeline::Region> = seal.keys().copied().collect();
+        if let Some(&i) = self.index.get(&key) {
+            return Some(i);
+        }
+        self.worlds.push(base.with_sealed(&seal_cells(seal)));
+        let i = self.worlds.len() - 1;
+        self.index.insert(key, i);
+        Some(i)
+    }
+}
+
+/// The `DW0410` diagnostic for a staged walk the timeline's own `close-gate`
+/// makes impossible: names the verb, the mover, the leg, and every gate anchor
+/// sealed ahead of it, plus the three ways out.
+fn gate_timeline_error(
+    verb: &str,
+    mover: &str,
+    to_anchor: &str,
+    start: [i32; 3],
+    target: [i32; 3],
+    seal: &crate::timeline::GateState,
+) -> NavError {
+    let gates: Vec<&str> = seal.values().map(|s| s.as_str()).collect();
+    NavError {
+        code: DW_GATE_TIMELINE,
+        message: format!(
+            "{verb}: `{mover}` cannot walk the leg {start:?} → `{to_anchor}` {target:?} — the \
+             route exists on the open world, but an EARLIER effect in this same timeline sealed \
+             gate {} with `close-gate`, and no route remains once it is shut. The walk would \
+             step through solid blocks at runtime. Move the walk before the `close-gate` (a \
+             lower `at_ticks` / earlier position in the bundle), reopen the gate with \
+             `open-gate` before the walk, or route the walk to a destination reachable on the \
+             sealed side",
+            gates
+                .iter()
+                .map(|g| format!("`{g}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
 /// Plan every `move-actor` into a walked-path [`ActorMovePlan`] over the actor's
 /// footprint, deduped by `(actor, to_anchor)` in first-seen order. `DW0325` when a
 /// move is unroutable (names actor, leg, first blocked cell). Each actor's
@@ -1418,6 +1604,13 @@ fn first_blocked_fp(world: &World, start: [i32; 3], target: [i32; 3], fp: &Footp
 /// `move-npc` (see [`plan_moves`]): the island ram's pen→mouth leg crosses the pen
 /// gate the player has just opened — through the threshold, no longer over the
 /// fence-top the full-solid model wrongly proved (task #59).
+///
+/// **Timeline gates (round 8).** Each walk is planned over the world with the
+/// gates its own timeline already sealed forced solid ([`crate::timeline`]), so a
+/// legal way around a shut gate is found when one exists, and `DW0410` is raised
+/// only when none does. A deduped repeat occurrence re-verifies the *already
+/// planned* path against its own timeline's seals — that is the path the shared
+/// driver will actually walk.
 pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>, NavError> {
     let mut out = Vec::new();
     let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
@@ -1430,7 +1623,11 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
     // walking on camera. Keyed by actor id, in campaign effect order (the same
     // deterministic order the dedup uses).
     let mut chained_start: BTreeMap<String, [i32; 3]> = BTreeMap::new();
-    for eff in all_effects(plan) {
+    // The cell route planned for each `(actor, to_anchor)` driver, so a deduped
+    // repeat occurrence can be re-checked against its own timeline's seals.
+    let mut planned: BTreeMap<(String, String), Vec<[i32; 3]>> = BTreeMap::new();
+    let mut cache = SealCache::default();
+    for (eff, seal) in crate::timeline::walk(plan) {
         let QuestEffect::MoveActor {
             actor,
             to_anchor,
@@ -1439,6 +1636,12 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         } = eff
         else {
             continue;
+        };
+        // The world this walk actually happens in: gates this timeline already
+        // shut are solid. Empty seal ⇒ the base world, unchanged.
+        let leg_world: &World = match cache.index_of(world, &seal) {
+            Some(i) => &cache.worlds[i],
+            None => world,
         };
         let a = actor_of(plan, actor.as_str()).ok_or_else(|| NavError {
             code: DW_ACTOR_UNROUTABLE,
@@ -1457,7 +1660,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                 actor.as_str()
             ),
         })?;
-        let target = world
+        let target = leg_world
             .snap_standable_fp(dest, SNAP_RADIUS, &fp)
             .ok_or_else(|| NavError {
                 code: DW_ACTOR_UNROUTABLE,
@@ -1471,9 +1674,28 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                 ),
             })?;
         let key = (actor.as_str().to_string(), to_anchor.as_str().to_string());
-        if !seen.insert(key) {
-            // Deduped (same content-keyed driver) — but the walk still ends here,
-            // so the actor's next leg chains from this target.
+        if !seen.insert(key.clone()) {
+            // Deduped: this occurrence shares the first occurrence's content-keyed
+            // driver, so the path it walks is the one already planned. It still has
+            // its OWN timeline, and a gate shut in *this* timeline would send that
+            // shared path through solid blocks — so re-check the planned route
+            // against these seals rather than waving the repeat through (DW0410).
+            if !seal.is_empty()
+                && let Some(cells) = planned.get(&key)
+            {
+                let sealed = seal_cells(&seal);
+                if cells.iter().any(|c| sealed.contains(c)) {
+                    return Err(gate_timeline_error(
+                        "move-actor",
+                        actor.as_str(),
+                        to_anchor.as_str(),
+                        cells[0],
+                        target,
+                        &seal,
+                    ));
+                }
+            }
+            // The walk still ends here, so the actor's next leg chains from this target.
             chained_start.insert(actor.as_str().to_string(), target);
             continue;
         }
@@ -1490,29 +1712,47 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                             a.anchor.as_str()
                         ),
                     })?;
-                world
+                leg_world
                     .snap_standable_fp(start_anchor, SNAP_RADIUS, &fp)
                     .unwrap_or(start_anchor)
             }
         };
-        let cells = world.find_path_fp(start, target, &fp).ok_or_else(|| {
-            let blocked = first_blocked_fp(world, start, target, &fp);
-            NavError {
-                code: DW_ACTOR_UNROUTABLE,
-                message: format!(
-                    "move-actor: actor `{}` ({}) cannot walk the leg {start:?} (last staged \
-                     location; spawn anchor `{}`) → `{}` {target:?} — no collision-free path for \
-                     its footprint over the assembled geometry (first blocked cell ~{blocked:?}). \
-                     Route the move within one connected area, widen the corridor/ceiling for \
-                     this mob, or split it into shorter reachable hops",
+        let cells = match leg_world.find_path_fp(start, target, &fp) {
+            Some(cells) => cells,
+            // Unroutable in the timeline-correct world. Which diagnostic depends on
+            // *why*: if the open world routes it, the campaign's own `close-gate` is
+            // what makes it impossible (DW0410) — otherwise the geometry simply does
+            // not connect, which is the long-standing DW0325.
+            None if !seal.is_empty() && world.find_path_fp(start, target, &fp).is_some() => {
+                return Err(gate_timeline_error(
+                    "move-actor",
                     actor.as_str(),
-                    a.entity,
-                    a.anchor.as_str(),
                     to_anchor.as_str(),
-                ),
+                    start,
+                    target,
+                    &seal,
+                ));
             }
-        })?;
+            None => {
+                let blocked = first_blocked_fp(leg_world, start, target, &fp);
+                return Err(NavError {
+                    code: DW_ACTOR_UNROUTABLE,
+                    message: format!(
+                        "move-actor: actor `{}` ({}) cannot walk the leg {start:?} (last staged \
+                         location; spawn anchor `{}`) → `{}` {target:?} — no collision-free path \
+                         for its footprint over the assembled geometry (first blocked cell \
+                         ~{blocked:?}). Route the move within one connected area, widen the \
+                         corridor/ceiling for this mob, or split it into shorter reachable hops",
+                        actor.as_str(),
+                        a.entity,
+                        a.anchor.as_str(),
+                        to_anchor.as_str(),
+                    ),
+                });
+            }
+        };
         chained_start.insert(actor.as_str().to_string(), target);
+        planned.insert(key, cells.clone());
         let waypoints = resample(&cells, speed.unwrap_or(DEFAULT_SPEED));
         let yaws = yaws_along(&waypoints);
         out.push(ActorMovePlan {
@@ -1775,48 +2015,20 @@ fn round3(p: [f64; 3]) -> [f64; 3] {
 }
 
 /// Every quest effect in the campaign (objective-complete, quest-complete, and
-/// trigger effects), matching the emitter's `all_campaign_effects` traversal.
+/// trigger effects), matching the emitter's `all_campaign_effects` traversal —
+/// each effect ahead of the ones nested in its `sequence` steps / `on_arrive`
+/// bundle (spec-0014), so nav planning sees moves and cutscenes wherever they
+/// appear. Pre-0.6 campaigns have no nesting, so the flattened list equals the
+/// shallow one and output stays byte-identical.
+///
+/// Defined as [`crate::timeline::walk`] with the per-effect gate states dropped:
+/// the two share **one** traversal, so the effect a planner is looking at and the
+/// timeline state attributed to it can never drift out of alignment.
 fn all_effects<'a>(plan: &'a Plan) -> Vec<&'a QuestEffect> {
-    let mut out = Vec::new();
-    for q in &plan.campaign.quests.content.quests {
-        for e in q
-            .on_objective_complete
-            .values()
-            .flatten()
-            .chain(&q.on_complete)
-        {
-            push_deep(e, &mut out);
-        }
-    }
-    for t in &plan.campaign.quests.content.triggers {
-        for e in &t.effects {
-            push_deep(e, &mut out);
-        }
-    }
-    out
-}
-
-/// Push `e` and, recursively, every effect nested in a `sequence` step or a
-/// `move-actor` / `move-npc` `on_arrive` (spec-0014), so nav planning sees
-/// moves/cutscenes wherever they appear. Pre-0.6 campaigns have no nesting, so
-/// the flattened list equals the shallow one — output stays byte-identical.
-fn push_deep<'a>(e: &'a QuestEffect, out: &mut Vec<&'a QuestEffect>) {
-    out.push(e);
-    match e {
-        QuestEffect::Sequence { steps } => {
-            for s in steps {
-                for inner in &s.effects {
-                    push_deep(inner, out);
-                }
-            }
-        }
-        QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
-            for inner in on_arrive {
-                push_deep(inner, out);
-            }
-        }
-        _ => {}
-    }
+    crate::timeline::walk(plan)
+        .into_iter()
+        .map(|(e, _)| e)
+        .collect()
 }
 
 /// Whether the campaign uses any verb that needs the voxel `World` (`move-npc` or
@@ -5985,5 +6197,131 @@ mod tests {
         let err = verify_boundary_safety(&voidish, &[[3, 63, 3]])
             .expect_err("under `void` the same slab coast is a void drop");
         assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
+    }
+
+    // --- terrain-shaped step cost (round-8 owner playtest) -------------------
+
+    /// An open plateau: solid floor at `y=63` over `[0,w) × [0,d)`, so the walk
+    /// plane is `y=64`. Each cell in `bumps` gets a block laid ON the floor, which
+    /// raises the standing cell there by one — the "bumpy 1-step terrain" the herd
+    /// and the giant pogo'd over on the island.
+    fn plateau(w: i32, d: i32, bumps: &[[i32; 2]]) -> World {
+        let mut solid = BTreeSet::new();
+        for x in 0..w {
+            for z in 0..d {
+                solid.insert([x, 63, z]);
+            }
+        }
+        for &[x, z] in bumps {
+            solid.insert([x, 64, z]);
+        }
+        World::from_solid_cells(solid)
+    }
+
+    /// The cost currency: a flat step is one block of level walking, and every
+    /// sixteenth of height change (either direction) costs [`ELEV_WEIGHT`] more.
+    #[test]
+    fn step_cost_prices_elevation_change_in_walking_distance() {
+        let flat = step_cost_16(64 * 16, 64 * 16);
+        assert_eq!(
+            flat, STEP_COST_16,
+            "a level step costs one block of walking"
+        );
+        // A full block up and the same block down cost alike — bobbing is bobbing.
+        let up = step_cost_16(64 * 16, 65 * 16);
+        let down = step_cost_16(65 * 16, 64 * 16);
+        assert_eq!(up, down);
+        assert_eq!(
+            up,
+            STEP_COST_16 * (1 + ELEV_WEIGHT),
+            "a 1-block rise costs one flat step plus ELEV_WEIGHT blocks of detour"
+        );
+        // A half-block (slab / path lip) costs proportionally less, so intentional
+        // slab stairs are not treated like lumpy ground.
+        assert!(step_cost_16(64 * 16, 64 * 16 + 8) < up);
+        assert!(step_cost_16(64 * 16, 64 * 16 + 8) > flat);
+    }
+
+    /// The island defect in miniature: a straight lane with one 1-block bump, and
+    /// a flat lane one column over. The flat road is two steps longer and must
+    /// still win — this is precisely what a distance-only cost could not do.
+    #[test]
+    fn a_walk_takes_a_slightly_longer_flat_lane_over_a_bump() {
+        // Lane x=0 carries a bump at z=5; lane x=1 is clear.
+        let world = plateau(4, 11, &[[0, 5]]);
+        let path = world
+            .find_path([0, 64, 0], [0, 64, 10])
+            .expect("both lanes connect the endpoints");
+        assert!(
+            !path.contains(&[0, 65, 5]),
+            "the planner must route around the bump, not over it: {path:?}"
+        );
+        assert!(
+            path.iter().any(|c| c[0] == 1),
+            "the detour uses the flat lane one column over: {path:?}"
+        );
+        // Every cell of the chosen route is level — the whole point.
+        assert!(
+            path.iter().all(|c| c[1] == 64),
+            "the flat route stays on one plane: {path:?}"
+        );
+    }
+
+    /// The other side of the constant: flatness is preferred, not bought at any
+    /// price. With the three nearest lanes all bumped, the flat lane is three
+    /// columns away (six extra steps) — more than one bump is worth — so the walk
+    /// correctly steps over the bump instead of touring the map to avoid it.
+    #[test]
+    fn a_walk_does_not_take_an_absurd_detour_to_avoid_one_bump() {
+        let world = plateau(5, 11, &[[0, 5], [1, 5], [2, 5]]);
+        let path = world
+            .find_path([0, 64, 0], [0, 64, 10])
+            .expect("the bumped lanes are still walkable");
+        assert!(
+            path.iter().any(|c| c[1] == 65),
+            "a 6-step detour costs more than one 1-block step up: {path:?}"
+        );
+        assert!(
+            !path.iter().any(|c| c[0] == 3),
+            "the far flat lane is not worth the detour: {path:?}"
+        );
+    }
+
+    /// Cost shaping changes which of several *valid* routes is chosen — never
+    /// which routes exist. A bump is still walkable when it is the only way, and
+    /// a genuinely disconnected goal is still unreachable (DW0307/DW0311 semantics
+    /// unchanged).
+    #[test]
+    fn cost_shaping_does_not_change_reachability() {
+        // A single lane, bumped: the only route climbs, and it is still found.
+        let world = plateau(1, 11, &[[0, 5]]);
+        let path = world
+            .find_path([0, 64, 0], [0, 64, 10])
+            .expect("a bump is a cost, never a wall");
+        assert!(path.contains(&[0, 65, 5]));
+        // A wall two blocks tall is still impassable.
+        let mut solid = BTreeSet::new();
+        for x in 0..1 {
+            for z in 0..11 {
+                solid.insert([x, 63, z]);
+            }
+        }
+        solid.insert([0, 64, 5]);
+        solid.insert([0, 65, 5]);
+        solid.insert([0, 66, 5]);
+        let walled = World::from_solid_cells(solid);
+        assert!(walled.find_path([0, 64, 0], [0, 64, 10]).is_none());
+    }
+
+    /// Determinism (ADR-0006): the same world and endpoints yield the identical
+    /// path every time — the frontier is ordered by `(f, g, cell)` and the costs
+    /// are integers, so no float comparison or map ordering can wobble the result.
+    #[test]
+    fn shaped_paths_are_deterministic() {
+        let world = plateau(5, 11, &[[0, 5], [2, 3], [3, 7]]);
+        let first = world.find_path([0, 64, 0], [4, 64, 10]).unwrap();
+        for _ in 0..8 {
+            assert_eq!(world.find_path([0, 64, 0], [4, 64, 10]).unwrap(), first);
+        }
     }
 }
