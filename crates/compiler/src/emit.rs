@@ -478,15 +478,30 @@ pub fn build_with_warnings(
                         }
                     })?,
                 );
-                // The bot ladder's combat plan (spec-0023 §1/§3/§4): which
-                // encounters exist, what the content bills each as, and which
-                // checkpoint governs a death at it. Validation metadata only —
-                // it lives under `validation/`, which `Dockerfile.delve`
-                // excludes, so no shipped byte moves.
+            }
+            // The bot ladder's combat plan (spec-0023 §1/§3/§4): which
+            // encounters exist, what the content bills each as, and which
+            // checkpoint governs a death at it. Validation metadata only — it
+            // lives under `validation/`, which `Dockerfile.delve` excludes, so
+            // no shipped byte moves.
+            //
+            // A tier-declaring ACTOR (task #113) is enough on its own to want
+            // this file: the set-piece souls fight is an actor, not a wave, and
+            // a campaign whose only billed elite is an actor would otherwise
+            // emit no plan at all — the exact silence spec-0023's floor gate
+            // must not be allowed to read as a pass.
+            let tiered_actors = crate::combat::actor_encounters(plan);
+            if crate::combat::has_encounters(plan) || !tiered_actors.is_empty() {
+                let mandatory = crate::combat::encounters(plan);
+                warnings.extend(crate::combat::floor_coverage_warnings(
+                    plan,
+                    &mandatory,
+                    &tiered_actors,
+                ));
                 put_json(
                     &mut out,
                     "validation/combat-plan.json",
-                    &crate::combat::combat_plan_json(plan, &crate::combat::encounters(plan)),
+                    &crate::combat::combat_plan_json(plan, &mandatory, &tiered_actors),
                 );
             }
             // spec-0016 §6: resolve and prove each TD lane polyline (DW0386). The
@@ -11846,6 +11861,7 @@ mod tests {
             vulnerable,
             equipment: None,
             attributes: None,
+            tier: None,
         }
     }
 
@@ -12138,6 +12154,7 @@ mod loot_emit_tests {
             vulnerable: false,
             equipment: eq,
             attributes: None,
+            tier: None,
         }
     }
 

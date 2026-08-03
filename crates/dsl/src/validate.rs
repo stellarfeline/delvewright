@@ -6018,8 +6018,8 @@ fn loot_checks(
 
 /// DSL v0.8 reserved-feature gating: spec-0025's stage-4 `branch_points`
 /// declaration, per-node `happening` and `campaign-complete` `ending`, plus
-/// spec-0016 §1's bonfire rest-dialog labels (stage 5) and class-kit `flask`
-/// (stage 3).
+/// spec-0016 §1's bonfire rest-dialog labels (stage 5), the class-kit `flask`
+/// (stage 3) and spec-0023's actor `tier` (stage 5).
 ///
 /// Same asymmetry the v0.7 ledger established: *declaring* any of it below 0.8.0
 /// is `DW0141`, so the version contract stays exact and a 0.6/0.7 campaign's
@@ -6040,6 +6040,22 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
         ));
     }
     if !is_v08(c.quests.dsl_version.as_str()) {
+        // spec-0023 (task #113): an actor's `tier` — the same `elite`/`boss`
+        // billing a wave declares, on the OTHER shape an elite takes.
+        for (i, a) in c.quests.content.actors.iter().enumerate() {
+            if a.tier.is_none() {
+                continue;
+            }
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "quests",
+                format!("/content/actors/{i}/tier"),
+                "an actor `tier` (`elite`/`boss` — what the validation ladder's floor gate holds \
+                 this fight to) requires dsl_version 0.8.0 — raise this stage's `dsl_version` to \
+                 0.8.0, or remove the field"
+                    .to_string(),
+            ));
+        }
         for (i, q) in c.quests.content.quests.iter().enumerate() {
             if q.happening.is_some() {
                 d.push(reserved_happening(

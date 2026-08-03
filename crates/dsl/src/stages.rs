@@ -2458,6 +2458,26 @@ pub struct Actor {
     /// knockback-immunity is emitted first and is not authorable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attributes: Option<MobAttributes>,
+    /// How hard this actor's fight is *meant* to be (DSL v0.8, spec-0023) — the
+    /// same [`EncounterTier`] vocabulary a [`Wave`] declares. Absent =
+    /// [`EncounterTier::Ordinary`], byte-identical to every pre-0.8 campaign.
+    ///
+    /// A wave is not the only shape an elite takes. The set-piece souls fight —
+    /// the armoured thing kneeling among the graves that stands up when you hit
+    /// it — is an **actor**: staged by `spawn-actor`, given AI by
+    /// `unleash-actor`, killed by hand rather than by a `kill` objective. Before
+    /// this field the validation ladder's inverted floor gate could only see
+    /// `waves[].tier`, so such a boss was *structurally invisible* to it and an
+    /// empty finding list read as a pass while covering nothing.
+    ///
+    /// Like the wave field this is a **declaration, not a knob**: the compiler
+    /// never scales an actor from it, and emission is unchanged whichever tier is
+    /// declared. What it buys is scrutiny — the actor enters
+    /// `validation/combat-plan.json`, and the compiler states, per tiered actor,
+    /// whether the floor gate can measure it and why not when it cannot
+    /// (`DW0477`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tier: Option<EncounterTier>,
 }
 
 /// A cardinal facing keyword (DSL v0.6). Emitted as the puppet's spawn yaw

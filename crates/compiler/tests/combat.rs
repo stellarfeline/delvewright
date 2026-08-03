@@ -1,4 +1,5 @@
-//! spec-0023 §2 — compile-time combat winnability (`DW0470`–`DW0475`).
+//! spec-0023 §2 — compile-time combat winnability (`DW0470`–`DW0475`), plus the
+//! floor-gate coverage ledger (`DW0477`, task #113).
 //!
 //! Every case is the `souls-bonfire` fixture (a `kill` objective on
 //! `wave/guards`, behind a bonfire) with ONE field changed, so what the
@@ -330,4 +331,233 @@ fn a_combat_free_campaign_emits_no_combat_plan() {
     )
     .expect("hello-world builds");
     assert!(!out.contains_key("validation/combat-plan.json"));
+}
+
+// ---------------------------------------------------------------------------
+// The floor gate's coverage ledger (task #113): an elite implemented as an
+// ACTOR used to be structurally invisible to the inverted floor gate, so an
+// empty finding list read as a pass over a fight nobody had.
+// ---------------------------------------------------------------------------
+
+/// The tiered actor every case below shares: a wither skeleton kneeling on the
+/// ambush anchor, billed `elite`, with the health that makes it one.
+fn barrow_warden() -> serde_json::Value {
+    serde_json::json!({
+        "id": "actor/barrow-warden",
+        "entity": "minecraft:wither_skeleton",
+        "name": "The Barrow Warden",
+        "anchor": "anchor/wave",
+        "tier": "elite",
+        "attributes": { "max_health": 60.0 }
+    })
+}
+
+/// The beat that turns the kneeling puppet into a fight: strike the keeper's
+/// body, and the thing behind you stands up.
+fn unleash_trigger() -> serde_json::Value {
+    serde_json::json!({
+        "id": "trigger/warden-answers",
+        "on": { "on": "strike-npc", "npc": "npc/keeper" },
+        "once": true,
+        "effects": [
+            { "type": "spawn-actor", "actor": "actor/barrow-warden" },
+            { "type": "unleash-actor", "actor": "actor/barrow-warden" }
+        ]
+    })
+}
+
+/// Materialize souls-bonfire with the tiered actor plus whatever `triggers`
+/// the case wants appended, and return the parsed combat plan and diagnostics.
+fn build_with_actor(
+    tmp: &TempCampaign,
+    actor: serde_json::Value,
+    extra_triggers: Vec<serde_json::Value>,
+) -> (serde_json::Value, Vec<Diagnostic>, BuildOutput) {
+    campaign_with(tmp.path(), |quests, _| {
+        quests["dsl_version"] = serde_json::json!("0.8.0");
+        quests["content"]["actors"] = serde_json::json!([actor]);
+        let triggers = quests["content"]["triggers"].as_array_mut().unwrap();
+        triggers.extend(extra_triggers);
+    });
+    let (out, diags) = build(tmp.path()).expect("a tiered actor builds");
+    let plan = out
+        .get("validation/combat-plan.json")
+        .expect("the combat plan is emitted");
+    let json: serde_json::Value = serde_json::from_slice(plan).unwrap();
+    (json, diags, out)
+}
+
+#[test]
+fn an_unleashed_tiered_actor_is_a_covered_encounter() {
+    let tmp = TempCampaign::new();
+    let (json, diags, _) = build_with_actor(&tmp, barrow_warden(), vec![unleash_trigger()]);
+
+    // It is in the plan at all — the gap this closes.
+    let a = &json["actors"][0];
+    assert_eq!(a["actor"], "actor/barrow-warden");
+    assert_eq!(a["tier"], "elite");
+    assert_eq!(a["entity"], "minecraft:wither_skeleton");
+    assert_eq!(a["anchor"], "anchor/wave");
+    assert_eq!(a["tag"], "dw_actor_barrow_warden");
+    assert_eq!(a["attributes"]["max_health"], 60.0);
+    assert!(
+        a["pos"].is_array(),
+        "the harness needs somewhere to walk: {a}"
+    );
+
+    // …with the beat that starts the fight, named well enough to fire.
+    let unleash = &a["unleashed_by"][0];
+    assert_eq!(unleash["site"], "trigger");
+    assert_eq!(unleash["owner"], "trigger/warden-answers");
+    assert_eq!(unleash["on"], "strike-npc");
+    assert_eq!(unleash["npc"], "npc/keeper");
+    assert_eq!(a["spawned_by"][0]["owner"], "trigger/warden-answers");
+
+    // …and the floor gate says out loud that it covers it.
+    assert_eq!(a["floor_gate"]["covered"], true);
+    let covered = json["floor_gate"]["covered"].as_array().unwrap();
+    assert!(
+        covered
+            .iter()
+            .any(|e| e["kind"] == "actor" && e["id"] == "actor/barrow-warden"),
+        "{json}"
+    );
+    assert!(
+        json["floor_gate"]["not_covered"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "{json}"
+    );
+    assert!(!has_code(&diags, "DW0477"), "{diags:#?}");
+}
+
+#[test]
+fn a_tiered_actor_nobody_unleashes_is_dw0477_not_silence() {
+    // The defect this task kills: the actor is billed `elite`, the run report's
+    // finding list comes back empty, and nothing anywhere says the fight was
+    // never had.
+    let tmp = TempCampaign::new();
+    let (json, diags, _) = build_with_actor(&tmp, barrow_warden(), vec![]);
+
+    assert_eq!(json["actors"][0]["floor_gate"]["covered"], false);
+    let not_covered = &json["floor_gate"]["not_covered"][0];
+    assert_eq!(not_covered["id"], "actor/barrow-warden");
+    assert_eq!(not_covered["tier"], "elite");
+    assert!(
+        not_covered["reason"]
+            .as_str()
+            .unwrap()
+            .contains("no `spawn-actor` effect"),
+        "the reason must name the missing beat: {json}"
+    );
+
+    let d = diags
+        .iter()
+        .find(|d| d.code == "DW0477")
+        .unwrap_or_else(|| panic!("expected DW0477: {diags:#?}"));
+    assert_eq!(d.severity, delvewright_dsl::Severity::Warning);
+    assert_eq!(d.path, "/content/actors/0/tier");
+    assert!(d.message.contains("not covered"), "{}", d.message);
+}
+
+#[test]
+fn a_staged_but_never_unleashed_puppet_is_scenery_not_a_fight() {
+    let tmp = TempCampaign::new();
+    let spawn_only = serde_json::json!({
+        "id": "trigger/warden-kneels",
+        "on": { "on": "strike-npc", "npc": "npc/keeper" },
+        "once": true,
+        "effects": [{ "type": "spawn-actor", "actor": "actor/barrow-warden" }]
+    });
+    let (json, diags, _) = build_with_actor(&tmp, barrow_warden(), vec![spawn_only]);
+    let reason = json["floor_gate"]["not_covered"][0]["reason"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(reason.contains("Invulnerable"), "{reason}");
+    assert!(has_code(&diags, "DW0477"), "{diags:#?}");
+
+    // …and the `vulnerable` variant gets its OWN reason: a NoAI creep cannot
+    // fight back, so a first-try win by the bot would be an artifact of the
+    // check rather than a finding about the encounter.
+    let tmp2 = TempCampaign::new();
+    let mut vulnerable = barrow_warden();
+    vulnerable["vulnerable"] = serde_json::json!(true);
+    let spawn_only2 = serde_json::json!({
+        "id": "trigger/warden-kneels",
+        "on": { "on": "strike-npc", "npc": "npc/keeper" },
+        "once": true,
+        "effects": [{ "type": "spawn-actor", "actor": "actor/barrow-warden" }]
+    });
+    let (json2, _, _) = build_with_actor(&tmp2, vulnerable, vec![spawn_only2]);
+    let reason2 = json2["floor_gate"]["not_covered"][0]["reason"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(reason2.contains("never attacks"), "{reason2}");
+}
+
+#[test]
+fn an_optional_tiered_wave_is_uncovered_too() {
+    // The same silence, on the shape that already had a `tier`: `wave/ambush`
+    // has no `kill` objective, so billing it `elite` claims something no proof
+    // ever measures.
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| {
+        quests["dsl_version"] = serde_json::json!("0.7.0");
+        quests["content"]["waves"][1]["tier"] = serde_json::json!("elite");
+    });
+    let (out, diags) = build(tmp.path()).expect("an optional tiered wave builds");
+    let json: serde_json::Value =
+        serde_json::from_slice(out.get("validation/combat-plan.json").unwrap()).unwrap();
+    let not_covered = &json["floor_gate"]["not_covered"][0];
+    assert_eq!(not_covered["kind"], "wave");
+    assert_eq!(not_covered["id"], "wave/ambush");
+    assert!(
+        not_covered["reason"]
+            .as_str()
+            .unwrap()
+            .contains("no `kill` objective"),
+        "{json}"
+    );
+    let d = diags.iter().find(|d| d.code == "DW0477").unwrap();
+    assert_eq!(d.path, "/content/waves/1/tier");
+}
+
+#[test]
+fn declaring_an_actor_tier_moves_no_shipped_byte() {
+    // The version fence exists so a tier is pure validation metadata. Compile
+    // the same campaign with and without the field and compare EVERY output
+    // outside `validation/` byte for byte (`manifest.json` indexes the whole
+    // tree, `validation/` included, so it is the one documented exception —
+    // exactly as `critical-path-waypoints.json` and the combat plan itself
+    // already are).
+    let untiered = TempCampaign::new();
+    let mut plain = barrow_warden();
+    plain.as_object_mut().unwrap().remove("tier");
+    let (_, _, out_plain) = build_with_actor(&untiered, plain, vec![unleash_trigger()]);
+
+    let tiered = TempCampaign::new();
+    let (_, _, out_tiered) = build_with_actor(&tiered, barrow_warden(), vec![unleash_trigger()]);
+
+    let shipped = |o: &BuildOutput| -> Vec<(String, Vec<u8>)> {
+        o.iter()
+            .filter(|(k, _)| !k.starts_with("validation/") && k.as_str() != "manifest.json")
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    };
+    assert_eq!(
+        shipped(&out_plain),
+        shipped(&out_tiered),
+        "an actor `tier` must not reach a shipped byte"
+    );
+    // The untiered actor is also absent from the plan entirely — an untiered
+    // actor carries no floor expectation, exactly like an untiered wave.
+    let plan_plain: serde_json::Value =
+        serde_json::from_slice(out_plain.get("validation/combat-plan.json").unwrap()).unwrap();
+    assert!(
+        plan_plain["actors"].as_array().unwrap().is_empty(),
+        "{plan_plain}"
+    );
 }
