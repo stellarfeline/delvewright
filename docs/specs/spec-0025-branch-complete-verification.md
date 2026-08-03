@@ -25,7 +25,7 @@ take.
 "Provably completable by machine" quantifies over branches, not paths: a
 campaign is verified when **every reachable narrative branch** has been proven
 — structurally by the compiler, playably by the bot, narratively by the
-generation-time review against compiler-emitted branch facts. Each layer
+generation-time review of the compiler-assembled branch chronicle. Each layer
 asserts only what it can honestly own.
 
 ## Design
@@ -41,13 +41,16 @@ an error — undeclared story fork. Enumerated branches are the product of
 declared branch points, so the set is authored and small, never a combinatorial
 sweep of all flags.
 
-Each branch point additionally REQUIRES a **branch script** (剧本): per
-branch, for every quest from the fork onward, an authored beat synopsis —
-what is true here, what the characters know, what this quest's scene is
-about on THIS branch. This is the forcing function (the spec-0020 `doing`
-pattern): a design that "never wrote the per-node script" cannot compile a
-branch point. The script is the narrative authority everything downstream
-is checked against; missing entries are build errors, not review gaps.
+Additionally, every story node — quest, objective, staging effect, wave,
+gate/ending, story-weight dialogue beat — REQUIRES a name and a
+**`happening` declaration**: one line stating what this node does to the
+story, as a structured event verb from a small vocabulary (`dies`,
+`survives`, `departs`, `arrives`, `learns`, `believes`, `gains`, `loses`,
+`opens`, `seals`, …) plus free text. This is the forcing function (the
+spec-0020 `doing` pattern generalized from NPC presence to event flow): a
+design that never got written down node by node cannot compile. The
+declaration is node-local on purpose — there is NO parallel per-branch
+script document that could itself drift from the graph.
 
 ### 2. Compile-time branch proofs (static layer)
 
@@ -65,6 +68,11 @@ assignment — reachability, cast selection, staging:
 - **Exclusive-content leakage**: content gated on branch A's flags must be
   unreachable under branch B's assignment, and vice versa — a mourning scene
   reachable on the branch with no death is a build error, not a review note.
+- **Hard event contradictions**: the structured verbs make a subset of
+  narrative errors machine-decidable per branch — an entity that `dies` and
+  later speaks/moves/`departs` on the same branch, a gate that `seals` and
+  is later walked through, an item `loses`d and later spent. Diagnostic
+  shows the branch and both chronicle lines.
 - Spec-0023 combat arithmetic runs per branch where branches change encounters
   or kits.
 
@@ -87,34 +95,36 @@ Tiering (cost honesty — a full run is ~20 min):
   one branch. The plan artifact records which branches ran and which were
   skipped — a skipped branch is named, never silent.
 
-### 4. Branch-fact sheets + narrative review (generation-time layer)
+### 4. The branch chronicle + narrative review (generation-time layer)
 
 Dialogue text carries meaning no compiler can check ("Where is Antiphos,
 Captain" is only wrong because Antiphos is alive HERE). The rubber-stamp risk
-is real: a reviewer handed one derived artifact has no way to know the
-authoritative answer for a node, and will nod. The design closes it from two
-sides:
+is real: a reviewer handed a pile of per-node data has no way to know the
+authoritative answer, and will nod. The design (owner's, 2026-08-03):
 
-- **Authority is authored, then machine-anchored.** The per-branch **fact
-  sheet** the compiler emits carries BOTH columns: the authored branch script
-  (§1 — what the author meant here) and the derived facts (what the compiled
-  world actually does: who is alive/dead/present/absent per quest, which
-  flags hold, which ending). The machine-comparable subset (presence, life
-  state, ending) is diffed compiler-side against the cast ledger and staging
-  — divergence between meant and does is a build error before any LLM reads
-  anything. The reviewer never establishes facts; it inherits facts that two
-  independent declarations already agree on.
-- **Review is a positive obligation, not a sign-off.** The `/new-delve`
-  per-branch pass must CITE, for every dialogue line, bark, and title that
-  touches branch-divergent state, the branch-script entry that licenses it —
-  uncited lines fail the pass mechanically. The artifact of record is the
-  citation table in the generation log, so "reviewed" is checkable, never
-  folklore.
+- **The compiler assembles a per-branch chronicle** (流水账): for each
+  enumerated branch, every reachable story node's `happening` line, in the
+  order the compiled graph actually plays them — a pseudo-natural-language
+  account of that storyline from first beat to ending. The SKELETON
+  (ordering, reachability, which nodes appear) is derived machine truth;
+  only the flesh (each line's text) is authored, node-locally. Emitted
+  deterministically alongside `branch-plan.json`. Narrative incoherence
+  becomes a readable contradiction in sequence: on the flee chronicle,
+  "Antiphos survives" is followed pages later by "Elpenor mourns Antiphos"
+  — visible in one linear read.
+- **Review is chronicle vs design, with citations.** The `/new-delve` skill
+  gains a mandatory pass per branch: read the chronicle end to end against
+  the campaign's DESIGN.md (the intent document that already exists and is
+  already conformance-reviewed) and against the dialogue reachable on that
+  branch. Every finding or clearance must cite chronicle lines; a dialogue
+  line touching branch-divergent state must be licensed by a chronicle line
+  or the pass fails mechanically. The citation table in the generation log
+  is the artifact of record — "reviewed" is checkable, never folklore.
 
 ## Out of scope
 
 - No semantic NLP in the compiler — text-vs-facts stays a generation-time
-  review against emitted facts.
+  review against the emitted chronicle.
 - No branch-coverage requirement on bark pools (spec-0020 exempts them: a bark
   never claims history).
 - No exhaustive flag-combination sweep — branches are declared, verified
@@ -135,12 +145,17 @@ sides:
 - [ ] Harness completes a scripted-choice branch run on a two-branch fixture;
       release tier runs all branches; PR tier runs diff-touched branches and
       the artifact names skipped ones.
-- [ ] A branch point whose branch script is missing an entry for any quest
-      from the fork onward fails the build (missing-script DW code + test);
-      divergence between the script's machine-comparable facts and the
-      derived staging facts fails the build with both columns shown.
-- [ ] Compiler emits per-branch fact sheets carrying both the authored
-      script and the derived facts; SKILL.md gains the mandatory per-branch
-      citation review (every branch-divergent line cites its licensing
-      script entry; uncited lines fail) — tooling-sync in the same PR.
+- [ ] A story node (quest, objective, staging effect, wave, gate/ending,
+      story-weight dialogue beat) without a `happening` declaration fails
+      the build (missing-happening DW code + test).
+- [ ] A hard event contradiction — `dies` then acts, `seals` then walked
+      through — on any enumerated branch fails the build with both
+      chronicle lines shown (contradiction DW code + test).
+- [ ] The compiler emits a per-branch chronicle, deterministically: every
+      reachable node's `happening` line in compiled play order, readable
+      start to ending; the r13 flee fixture's chronicle contains the
+      survives/mourns contradiction in sequence.
+- [ ] SKILL.md gains the mandatory per-branch chronicle review vs DESIGN.md
+      with a citation table in the generation log (uncited branch-divergent
+      dialogue fails the pass) — tooling-sync in the same PR.
 - [ ] Verification changes touch no shipped campaign bytes.
