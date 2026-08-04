@@ -743,7 +743,8 @@ pub fn generate_valley(
     }
     // Inner-slope blossom (task #157 round 2: the vista must show the flora
     // between the walk plane and the crest, not just past it). A second
-    // Poisson pass over the inner slopes of NON-degenerate bands, thinned
+    // Poisson pass over the inner slopes (every band carries the full rim
+    // under the band floor), thinned
     // sparse-near-the-floor → denser-upslope, every tree leaning its canopy
     // two columns toward the valley (see `stamp_tree`). Positions derive from
     // geometry + hashes only, so they are identical across floras.

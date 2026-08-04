@@ -502,7 +502,7 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
             "camera": camera(eye, look),
             "expect": [
                 "gap floor reads as walkable ground between scene edge and slope foot",
-                "no walkable ramp to the crest: terraces on the long axis, stepped cliff on a narrow axis",
+                "no walkable ramp to the crest: the same terraced rim on every axis (a band-floored axis ends full-height at its tile edge)",
                 "blossom in frame: trees on the inner slope and crest (cherry: blossoms AND sky together)",
                 "no tile seams, floating blocks or void gaps across the surround",
             ],

@@ -991,7 +991,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   player eye height, pitched up over the nearest scene edge at a point above
   the rim, so the frame composes gap floor → blossomed slope → crest → sky
   (task #157 round 2). **Blossom is in the player's view**: a second Poisson
-  pass stands trees on the inner slopes of non-degenerate bands (sparse near
+  pass stands trees on the inner slopes (sparse near
   the floor, denser upslope), each leaning its canopy two columns toward the
   valley so no leaf platform sits within hop-on/hop-off range of two upslope
   terraces — the flood proofs remain the authority. **Annulus band floor**

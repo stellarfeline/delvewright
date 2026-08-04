@@ -289,9 +289,10 @@ fn v09_open_scene_onto_gap_floor_builds_green() {
 }
 
 /// The 94×27 twin — hollow-vigil's ACTUAL proportions (task #157 round 2):
-/// the short axis is degenerate (band 20 < 30) and degrades to the cliff
-/// band; the perimeter must be unreachable cliff-top, so DW0322 stays silent
-/// without any containment invention.
+/// the short axis's proportional band (20) is under the floor, so it takes
+/// the full 30-column band (owner ruling, 2026-08-04: the valley grows to
+/// contain any scene shape); the rim profile runs unchanged on every axis
+/// and DW0322 stays silent purely by construction.
 #[test]
 fn v09_hollow_proportioned_open_scene_builds_green() {
     open_scene_builds_green("v09-hollow", 94, 27);
