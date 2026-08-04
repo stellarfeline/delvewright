@@ -1416,6 +1416,7 @@ a block's collision-box top face in sixteenths, against the 1.21.11 shapes:
 | `snow[layers=N]` | `(N-1)·2 / 16` | `layers=1` (the default) has **no** collision box; `layers=8` is 14/16 |
 | `*_carpet`, `moss_carpet` | 1/16 | `pale_moss_carpet` only when `bottom=true`, else 0 |
 | `dirt_path`, `farmland` | 15/16 | |
+| no-collision vegetation (`assembled::is_no_collision_plant`) | 0/16 | grasses/ferns, every small+tall flower, `pink_petals`/`wildflowers`/`leaf_litter`, saplings, crops, mushrooms/nether flora, kelp/seagrass, vines/`glow_lichen` — vanilla gives them an **empty** collision shape (task #157, hollow-vigil round: modelled as full cubes, a `short_grass` tuft on a valley terrace was a phantom standable cell splitting a 2-block riser into two climbable 1-block steps → false `DW0369`; worse, any proof that stood a player ON a tuft was unsound). The list is the class, not the ids one generator uses; lookalikes that DO collide (`azalea`, `big_dripleaf`, `bamboo`, `cactus`, `pointed_dripstone`, `sea_pickle`, leaves, …) deliberately stay full cubes. Fidelity consequence: plant cells no longer dam the water-flood model either (vanilla water flows into and breaks them). |
 | everything else | 16/16 | the conservative default |
 
 A block under 8/16 is **thin decoration**: its cell is passable and is never a

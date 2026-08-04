@@ -668,7 +668,33 @@ pub fn generate_valley(
                 .is_some_and(|(zone, _)| *zone != Zone::Gap)
     });
 
-    // --- 3. The by-construction un-climbability proof ---------------------
+    // --- 3. Understory decor — in the GENERATION phase, not the tile
+    // slicer, so the un-climbability proof below runs over the finished tile
+    // contents and can never diverge from what ships (task #157: the decor
+    // used to be stamped after the proof had run, which is exactly how the
+    // generator's own proof and the compiler's DW0369 came to disagree).
+    let mut decor_cells: BTreeMap<[i32; 3], &'static str> = BTreeMap::new();
+    for (&(x, z), &(zone, h)) in &columns {
+        if zone == Zone::Gap {
+            continue; // gap floor stays bare — the region-margin walk is clean
+        }
+        let surf = floor_top_y + h;
+        if !surface_is_grass(seed, &scene, params.ratio, x, z)
+            || tree_cells.contains_key(&[x, surf + 1, z])
+        {
+            continue;
+        }
+        if hash01(seed, x, surf + 1, z, SALT_DECOR_GATE) < DECOR_DENSITY {
+            let d = pick(
+                &decor[..],
+                hash01(seed, x, surf + 1, z, SALT_DECOR_PICK).min(0.999_999),
+            );
+            decor_cells.insert([x, surf + 1, z], d);
+        }
+    }
+
+    // --- 4. The by-construction un-climbability proof, over EVERYTHING the
+    // tiles will contain (terrain + trees + decor, collision-classified) -----
     assert_inner_slopes_unclimbable(
         seed,
         &scene,
@@ -676,9 +702,10 @@ pub fn generate_valley(
         floor_top_y,
         &columns,
         &tree_cells,
+        &decor_cells,
     );
 
-    // --- 4. Slice into ≤48×48×48 tiles and serialize ----------------------
+    // --- 5. Slice into ≤48×48×48 tiles and serialize ----------------------
     let tiles = build_tiles(
         seed,
         &scene,
@@ -686,7 +713,7 @@ pub fn generate_valley(
         floor_top_y,
         &columns,
         &tree_cells,
-        &decor,
+        &decor_cells,
     );
 
     // --- 5. Biome paint rects (one per band, full build-height columns) ---
@@ -789,7 +816,7 @@ fn build_tiles(
     floor_top_y: i32,
     columns: &BTreeMap<(i32, i32), (Zone, i32)>,
     tree_cells: &BTreeMap<[i32; 3], &'static str>,
-    decor: &[(&'static str, f64); 2],
+    decor_cells: &BTreeMap<[i32; 3], &'static str>,
 ) -> Vec<SurroundTile> {
     let outer = outer_rect(scene, params.ratio);
     let mut tiles = Vec::new();
@@ -808,7 +835,7 @@ fn build_tiles(
                     floor_top_y,
                     columns,
                     tree_cells,
-                    decor,
+                    decor_cells,
                     x0,
                     x1,
                     z0,
@@ -834,7 +861,7 @@ fn tile_stack(
     floor_top_y: i32,
     columns: &BTreeMap<(i32, i32), (Zone, i32)>,
     tree_cells: &BTreeMap<[i32; 3], &'static str>,
-    decor: &[(&'static str, f64); 2],
+    decor_cells: &BTreeMap<[i32; 3], &'static str>,
     x0: i32,
     x1: i32,
     z0: i32,
@@ -893,24 +920,15 @@ fn tile_stack(
                 };
                 cells.insert([x, y, z], name);
             }
-            // Understory decor on non-gap grass tops (gap floor stays bare so
-            // the region-margin walk stays clean).
-            if zone != Zone::Gap
-                && grass
-                && !tree_cells.contains_key(&[x, surf + 1, z])
-                && hash01(seed, x, surf + 1, z, SALT_DECOR_GATE) < DECOR_DENSITY
-            {
-                let d = pick(
-                    &decor[..],
-                    hash01(seed, x, surf + 1, z, SALT_DECOR_PICK).min(0.999_999),
-                );
-                cells.insert([x, surf + 1, z], d);
-            }
         }
     }
-    for (c, name) in tree_cells.range([x0, i32::MIN, z0]..=[x1, i32::MAX, z1]) {
-        if c[0] >= x0 && c[0] <= x1 && c[2] >= z0 && c[2] <= z1 {
-            cells.insert(*c, name);
+    // Trees + understory decor were produced in the GENERATION phase (so the
+    // un-climbability proof saw them); the slicer only copies its window.
+    for source in [tree_cells, decor_cells] {
+        for (c, name) in source.range([x0, i32::MIN, z0]..=[x1, i32::MAX, z1]) {
+            if c[0] >= x0 && c[0] <= x1 && c[2] >= z0 && c[2] <= z1 {
+                cells.insert(*c, name);
+            }
         }
     }
 
@@ -1043,10 +1061,17 @@ fn assert_inner_slopes_unclimbable(
     floor_top_y: i32,
     columns: &BTreeMap<(i32, i32), (Zone, i32)>,
     tree_cells: &BTreeMap<[i32; 3], &'static str>,
+    decor_cells: &BTreeMap<[i32; 3], &'static str>,
 ) {
-    // Per-column extra solids from trees.
+    // Per-column extra solids from everything stamped over the terrain —
+    // trees AND decor — classified by the one collision model the assembled
+    // world uses (task #157: a no-collision tuft must contribute nothing
+    // here, and a future decor palette with real collision must be seen).
     let mut extra: BTreeMap<(i32, i32), BTreeSet<i32>> = BTreeMap::new();
-    for c in tree_cells.keys() {
+    for (c, name) in tree_cells.iter().chain(decor_cells.iter()) {
+        if crate::assembled::is_thin_decoration(name) {
+            continue; // empty/sub-step collision: walked through, never stood on
+        }
         extra.entry((c[0], c[2])).or_default().insert(c[1]);
     }
     let is_solid = |x: i32, y: i32, z: i32| -> bool {
@@ -1315,26 +1340,36 @@ mod tests {
             max_z: 47,
         };
         let v = generate_valley(31, s, 62, &ValleyParams::default()).unwrap();
-        let mut solid: BTreeSet<[i32; 3]> = BTreeSet::new();
-        for t in &v.tiles {
-            let d: fastnbt::Value = fastnbt::from_bytes(&gunzip(&t.bytes)).unwrap();
-            let (palette, blocks) = palette_and_blocks(&d);
-            for (pos, state) in blocks {
-                let name = &palette[state as usize];
-                // Non-colliding dressing is not solid ground.
-                if name.contains("short_grass")
-                    || name.contains("fern")
-                    || name.contains("pink_petals")
-                {
-                    continue;
-                }
-                solid.insert([t.pos[0] + pos[0], t.pos[1] + pos[1], t.pos[2] + pos[2]]);
-            }
-        }
-        let world = crate::nav::World::from_solid_cells(solid);
+        // EVERY decoded cell enters the model — decor included — and the one
+        // real collision classifier (`occupancy_of`) decides what is ground
+        // (task #157 regression: a manual "skip the tufts" list here once
+        // masked the phantom-standable-plant defect; never pre-filter again).
+        let world = decoded_world(&v, &[]);
         if let Err(cell) = v.verify_unclimbable(&world) {
             panic!("gap floor escapes the valley at {cell:?}");
         }
+    }
+
+    /// Decode every serialized tile into a blocks map (plus optional doctored
+    /// extra cells), classify it with the REAL occupancy model, and wrap it as
+    /// a nav world — the exact path the compiler's DW0369 gate takes.
+    fn decoded_world(v: &ValleySurround, extra: &[([i32; 3], &str)]) -> crate::nav::World {
+        let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+        for t in &v.tiles {
+            let d: fastnbt::Value = fastnbt::from_bytes(&gunzip(&t.bytes)).unwrap();
+            let (palette, cells) = palette_and_blocks(&d);
+            for (pos, state) in cells {
+                blocks.insert(
+                    [t.pos[0] + pos[0], t.pos[1] + pos[1], t.pos[2] + pos[2]],
+                    palette[state as usize].clone(),
+                );
+            }
+        }
+        for (c, name) in extra {
+            blocks.insert(*c, name.to_string());
+        }
+        let occ = crate::assembled::occupancy_of(blocks, &BTreeSet::new());
+        crate::nav::World::from_occupancy(occ)
     }
 
     /// `DW0369` (spec-0026 §5): carving a 1-block staircase up the inner slope
@@ -1351,29 +1386,14 @@ mod tests {
             max_z: 47,
         };
         let v = generate_valley(31, s, 62, &ValleyParams::default()).unwrap();
-        let mut solid: BTreeSet<[i32; 3]> = BTreeSet::new();
-        for t in &v.tiles {
-            let d: fastnbt::Value = fastnbt::from_bytes(&gunzip(&t.bytes)).unwrap();
-            let (palette, blocks) = palette_and_blocks(&d);
-            for (pos, state) in blocks {
-                let name = &palette[state as usize];
-                if name.contains("short_grass")
-                    || name.contains("fern")
-                    || name.contains("pink_petals")
-                {
-                    continue;
-                }
-                solid.insert([t.pos[0] + pos[0], t.pos[1] + pos[1], t.pos[2] + pos[2]]);
-            }
-        }
         // The saboteur: a stone stair climbing +1 per column from the gap
         // floor straight out over the rim (what a careless edit batch or a
         // future palette with stairs could produce).
         let cz = 24;
-        for i in 0..40 {
-            solid.insert([48 + i, 62 + i, cz]);
-        }
-        let world = crate::nav::World::from_solid_cells(solid);
+        let stair: Vec<([i32; 3], &str)> = (0..40)
+            .map(|i| ([48 + i, 62 + i, cz], "minecraft:stone"))
+            .collect();
+        let world = decoded_world(&v, &stair);
         let err = v.verify_unclimbable(&world);
         assert!(
             err.is_err(),

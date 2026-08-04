@@ -271,6 +271,119 @@ fn v09_flooded_interior_without_waterline_is_dw0364() {
     build_expecting(&camp, &prefabs, &out, 3, "DW0364");
 }
 
+/// Task #157 finding 2 (the hollow-vigil staging shape): a scene that opens
+/// FULLY onto the gap floor — no walls at all — must build green. Before the
+/// no-collision-plant fix, phantom tuft-ladders made the annulus perimeter
+/// "reachable" and DW0322 fired on hundreds of outer-edge columns; with the
+/// collision model fixed, the un-climbable rim (proven by DW0369's flood)
+/// bounds the reachable set, so no reachable cell ever borders the void
+/// beyond the tiles.
+///
+/// The fixture is a synthesized 48×48 open floor plate carrying hello-room's
+/// anchors (48×48 is the smallest scene whose annulus grows a real rim:
+/// side = 36 ≥ gap 12 + slope 18), swapped into a private prefabs copy under
+/// the same prefab id.
+#[test]
+fn v09_open_scene_onto_gap_floor_builds_green() {
+    let prefabs = tmp("v09-open-prefabs");
+    common::copy_dir_all(&common::prefabs_dir(), &prefabs);
+
+    // --- synthesize the open plate: stone floor at local y=0, iron-bars
+    // door region as hello-room authors it, nothing else ---
+    #[derive(serde::Serialize, Clone, PartialEq)]
+    struct PaletteEntry {
+        #[serde(rename = "Name")]
+        name: String,
+    }
+    #[derive(serde::Serialize)]
+    struct BlockEntry {
+        pos: [i32; 3],
+        state: i32,
+    }
+    #[derive(serde::Serialize)]
+    struct Entity {}
+    #[derive(serde::Serialize)]
+    struct Structure {
+        #[serde(rename = "DataVersion")]
+        data_version: i32,
+        size: [i32; 3],
+        palette: Vec<PaletteEntry>,
+        blocks: Vec<BlockEntry>,
+        entities: Vec<Entity>,
+    }
+    let mut blocks = Vec::new();
+    for x in 0..48 {
+        for z in 0..48 {
+            blocks.push(BlockEntry {
+                pos: [x, 0, z],
+                state: 0,
+            });
+        }
+    }
+    for x in 4..=5 {
+        for y in 1..=3 {
+            blocks.push(BlockEntry {
+                pos: [x, y, 6],
+                state: 1,
+            });
+        }
+    }
+    let structure = Structure {
+        data_version: 4671,
+        size: [48, 5, 48],
+        palette: vec![
+            PaletteEntry {
+                name: "minecraft:stone".into(),
+            },
+            PaletteEntry {
+                name: "minecraft:iron_bars".into(),
+            },
+        ],
+        blocks,
+        entities: vec![],
+    };
+    let nbt = fastnbt::to_bytes(&structure).unwrap();
+    use std::io::Write as _;
+    let mut gz = flate2::GzBuilder::new()
+        .mtime(0)
+        .write(Vec::new(), flate2::Compression::new(6));
+    gz.write_all(&nbt).unwrap();
+    std::fs::write(prefabs.join("hello-room.nbt"), gz.finish().unwrap()).unwrap();
+    // Patch the metadata: same anchors/walk_y, new size, open-air lighting.
+    let meta_path = prefabs.join("hello-room.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
+    meta["structure"]["size"] = serde_json::json!([48, 5, 48]);
+    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+
+    let camp = valley_campaign("v09-open-scene", "valley");
+    let out = tmp("v09-open-scene-out");
+    let r = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&r.stdout),
+        String::from_utf8_lossy(&r.stderr)
+    );
+    assert_eq!(
+        code(&r),
+        0,
+        "an open scene over the gap floor must build green:\n{all}"
+    );
+    for dw in ["DW0322", "DW0369"] {
+        assert!(
+            !all.contains(dw),
+            "{dw} must not fire on the staging shape:\n{all}"
+        );
+    }
+}
+
 /// spec-0026 acceptance criterion 6: a same-seed cherry-valley emission
 /// differs from the valley emission ONLY in flora/palette block ids and the
 /// biome id — script-asserted by `tools/check-flora-parity.py`, the same gate
