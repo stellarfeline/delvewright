@@ -47,6 +47,13 @@ dossier: internal research, 2026-07-31.
 | [SpecificProtagonist/frightful_hobgoblin](https://github.com/SpecificProtagonist/frightful_hobgoblin) (GDMC 2024 winner) | Gay Agenda License 1.0 — MIT-derived permissive¹ | (A1) value-noise-weighted block palettes with edge-distance / height **weathering bias**; (A5) silhouette / edge **roughening** (eroded roofline crown, corner chamfer, outer-face divots); ceiling **vaulting** (A4, dome-lite) |
 | Cellular-automata cave shaping (4-5 rule) — RogueBasin / Kun / gridbugs | classic published technique | (A8) 4-5-rule CA perturbing the inner wall face into organic alcoves/bumps, replacing straight-walled interiors |
 
+### Implemented — horizon library, valley surround (`crates/compiler/src/surround.rs`, spec-0026)
+
+| Source | License (verified) | Technique we re-implemented |
+|---|---|---|
+| Bridson, *Fast Poisson Disk Sampling in Arbitrary Dimensions* (SIGGRAPH 2007 sketch) | copyrighted paper → **ideas-only** (dossier §8 row) | Blue-noise tree scatter: background-grid Poisson-disk sampling with an active list and k candidate attempts per sample. Re-implemented from the description with a seeded splitmix64 stream and trig-free ring sampling (rejection on the enclosing square) for cross-host bit-stability (ADR-0006). |
+| Musgrave, in Ebert et al., *Texturing & Modeling: A Procedural Approach* (3rd ed. 2003) | copyrighted book → **ideas-only** (dossier §2.1 row) | Ridged-multifractal rim relief (`(1 − \|2n−1\|)²`, octave weight scaled by the previous ridge) composed over the in-house position-addressed value noise for the valley mountain annulus. |
+
 ¹ **License verdict (verified 2026-07-31 against the upstream `LICENSE`).** The "Gay
 Agenda License 1.0" grants the full MIT set (use/copy/modify/merge/publish/
 distribute/sublicense/sell); it has no copyleft, no non-commercial, and no
