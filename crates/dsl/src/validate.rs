@@ -2212,8 +2212,8 @@ fn kit_potion_checks(c: &Campaign, effects: &dyn EffectRegistry, d: &mut Vec<Dia
                              *Uncraftable Potion* — a bottle with no `minecraft:potion_contents` \
                              component, which grants nothing when drunk however it is named. \
                              Declare what is in it: `\"contents\": {{\"potion\": \
-                             \"minecraft:strong_healing\"}}`, or a `\"effects\"` list \
-                             (`{{\"effect\", \"duration\", \"amplifier\"}}`). Do NOT rename the \
+                             \"minecraft:strong_healing\"}}`, or an `\"effects\"` list of \
+                             `{{\"effect\", \"duration\", \"amplifier\"}}`. Do NOT rename the \
                              bottle instead — semantics never key on player-facing text \
                              (spec-0016 §1, owner directive 2026-08-03).",
                             item.item
