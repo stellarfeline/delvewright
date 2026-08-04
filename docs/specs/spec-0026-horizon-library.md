@@ -48,7 +48,7 @@ flora:"cherry", palette:"stone-petal"}`.
 
 **Cherry-valley is a parameter row, not a base**: the compiler holds no
 cherry-specific code path; a fixture proves the emissions differ only in
-palette/flora blocks (§7.6). Backdrop stays sky-only in this spec — blending a
+palette/flora blocks (acceptance criterion 6). Backdrop stays sky-only in this spec — blending a
 valley/summit surround into a backdrop terrain is task #73's seamless
 heightfield blending (Non-goals).
 
@@ -94,7 +94,7 @@ checks **empirical geometry**, never metadata:
 - Material: a `blend_width` band straddling the scene edge dithers grass and
   scene floor palettes by seeded noise threshold (dossier §2.4); tufts scatter
   across the seam both ways. Explicitly forbidden outcome: a clean vertical
-  material wall (machine assertion §7.4).
+  material wall (machine assertion, acceptance criterion 4).
 - Boundary: spec-0013 return clock, **horizon-agnostic** (owner ruling
   2026-08-04) — the region derivation and clock never branch on horizon kind.
   Advisory (default-on, pure parameterization): scatter density thins to zero
@@ -105,7 +105,7 @@ checks **empirical geometry**, never metadata:
 
 - Multi-room sky areas assemble as **independent floating islands connected by
   narrow bridges** — never one monolithic island. Bridges are risk terrain:
-  falling = void death → PR #251 checkpoint re-seat.
+  falling = death (via the boundary catch below) → PR #251 checkpoint re-seat.
 - **Solver**: prefab metadata gains a connection class `role: room | connector`.
   In a sky area the frontier attach enforces alternation (room sockets accept
   only connectors; connector–connector allowed). First-class solver rule, not
