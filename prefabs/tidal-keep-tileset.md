@@ -76,7 +76,7 @@ Renaming an anchor without keeping the prefix reorders the keep.
 | `tk-wall-walk` | 16×16×34 | S `[7,11,33]`, N `[7,11,0]` | `lit` 15 (sky) | L1 parapet |
 | `tk-courtyard-chapel` | 46×26×46 | S `[23,11,45]`, E `[45,11,23]` | `lit` 8 | L2 hub |
 | `tk-cistern` | 42×22×40 | W `[0,11,19]`, E `[41,11,19]` | `dim` 5 | L3 undercroft |
-| `tk-bell-tower` | 26×44×26 | W `[0,11,13]` | `lit` 7 | L4 terminal |
+| `tk-bell-tower` | 26×44×36 | W `[0,11,13]` | `lit` 7 | L4 terminal |
 
 ### `tk-barrow-field` — the shore
 
@@ -225,7 +225,21 @@ Three stacked rooms around one vertical void.
   water basin beside the rope room's socket, one step from the courtyard. It is
   **one-way by geometry, not by script**: the shaft walls are sheer and nothing
   climbable is used. The stairs stay walkable both ways, so the model always has a
-  proven return and nothing can strand.
+  proven return and nothing can strand. The basin's kerb opens on its west side
+  (three cells, toward `anchor/l4-rope-foot`), so a player who takes the drop
+  steps out of the water instead of treading it — the nav model never routes
+  through the basin (water is never a floor), so the gap is a human exit, not a
+  modelled edge.
+- **The tide gate + ferry pier** (r5, the road home) — the rope room's south wall
+  carries `anchor/l4-tide-gate`, a 3×3 sea-door sealed with `iron_bars` from
+  world-load: the sea reads through it from BF3 and **no lever anywhere opens
+  it** — only the campaign finale's `open-gate` clears the region. Outside, a
+  parapet-walled sea-stair (one tread per cell, lanterned) descends the tower's
+  south face to a stone ferry pier at the shore datum (`anchor/l4-pier`, walk
+  y=3, the same waterline the barrow shore declares — `DW0344`). The piece is
+  26×44×**36**: local z 26+ is an authored sea band (seabed, two water courses,
+  seagrass) the pier stands in. Post-finale the road home is the tower interior
+  and this stair — it never re-enters the courtyard the rest re-armed.
 
 ## Anchors
 
@@ -281,7 +295,8 @@ above the plate so the climber walks into the fire)*, `anchor/l3-dart-lever`,
 `anchor/l4-perch-1..4`, `anchor/l4-ring-door`, `anchor/l4-boss`,
 `anchor/l4-ring-west`, `anchor/l4-ring-east`, `anchor/l4-outer-walk`,
 `anchor/l4-vantage`, `anchor/l4-rope-drop` *(region, `iron_bars`)*,
-`anchor/l4-bell-hang`.
+`anchor/l4-bell-hang`, `anchor/l4-tide-gate` *(region, `iron_bars`)*,
+`anchor/l4-pier`.
 
 ## Loops: why the fork lives inside a piece
 
