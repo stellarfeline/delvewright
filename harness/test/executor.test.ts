@@ -1549,7 +1549,7 @@ const SELECT_CLASS_STEP: SelectClassStep = {
 
 test("a scripted death re-arms the bot WITHOUT re-selecting the class", async () => {
   // task #120, the-drowned-bell run five. The re-arm used to replay `select-class`.
-  // The `dw.class` trigger is re-enabled for every player on every tick and
+  // The `dw.class` trigger was then re-enabled for every player on every tick and
   // `class_apply_<class>` ENDS IN `teleport @s <campaign entry point>`, so every
   // post-death re-arm silently warped the bot from the checkpoint it had just
   // respawned on back to the start of the delve — 150 blocks and eight levels away

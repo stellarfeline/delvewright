@@ -1700,7 +1700,20 @@ fn emit_functions(
     // which a relog also keeps. So the repair is its own tick clause, keyed on the
     // stuck state itself. Empty for a cutscene-less campaign → byte-identical.
     tick.extend(cutscene_repair_tick(plan));
-    tick.push("scoreboard players enable @a dw.class".to_string());
+    // The class trigger is ONE-SHOT per player (owner ruling 2026-08-04, task
+    // #121's sibling #122). `class_apply_<c>` ends in a teleport to the campaign
+    // entry point, so re-firing `/trigger dw.class` mid-run warped whoever ran
+    // it back to the start of the delve — an already-classed player included,
+    // because this line used to `enable @a` unconditionally, every tick,
+    // forever. The vanilla trigger pattern is to re-enable only what is meant to
+    // be usable, so the arming is per-player and conditional now; the guard
+    // lives inside `class_arm` rather than in this line so a PackTest can drive
+    // the real arming path as its own dummy instead of mirroring it.
+    //
+    // Per-PLAYER, not party-wide: classing is per-player (`dw.classed`), so a
+    // second player still on the class screen must keep an armed trigger while
+    // the first is sealed.
+    tick.push(format!("execute as @a run function {ns}:class_arm"));
     for npc in &plan.npcs {
         tick.push(format!(
             "scoreboard players enable @a {}",
@@ -1741,8 +1754,12 @@ fn emit_functions(
         ),
     ));
     for class in &plan.classes {
+        // The second seal (#122). The arming above is what makes the trigger
+        // unusable after a class; this makes any score that arrives by some
+        // OTHER route inert rather than a warp. Costs one condition and closes
+        // the dispatch as well as the door.
         tick.push(format!(
-            "execute as @a[scores={{dw.class={}}}] run function {ns}:class_apply_{}",
+            "execute as @a[scores={{dw.class={}}}] unless score @s dw.classed matches 1 run function {ns}:class_apply_{}",
             class.n, class.safe
         ));
     }
@@ -2024,6 +2041,33 @@ fn emit_functions(
         lines(&[
             format!("dialog show @s {ns}:class_select"),
             "scoreboard players set @s dw.dlg_shown 1".to_string(),
+        ]),
+    ));
+
+    // --- class_arm: the one-shot seal on the class trigger (#122) ---
+    //
+    // Run by `tick` as every player, every tick. `dw.class` is a `trigger`
+    // objective, and `class_apply_<c>` both consumes it (`reset` clears the
+    // score AND re-locks the trigger) and ends in a teleport to the campaign
+    // entry point. Re-enabling it unconditionally therefore left a live warp
+    // back to the start of the delve behind every already-classed player,
+    // usable by anything that can chat a command; the owner ratified sealing it
+    // here, at the compiler, rather than asking every caller to know not to.
+    //
+    // `unless score @s dw.classed matches 1` is the whole seal, and it is
+    // per-PLAYER by construction: `dw.classed` is per-player state, so a
+    // second player still on the class screen keeps an armed trigger while the
+    // first is sealed. It survives death and relog with the score.
+    //
+    // Its own function, rather than the condition inlined in the tick line, so
+    // the generated PackTest can drive the REAL arming path as its own dummy
+    // (`execute as <dummy> run function <ns>:class_arm`) instead of restating
+    // the guard and proving only its own copy.
+    fns.push((
+        "class_arm".to_string(),
+        lines(&[
+            "execute unless score @s dw.classed matches 1 run scoreboard players enable @s dw.class"
+                .to_string(),
         ]),
     ));
 
@@ -8256,6 +8300,10 @@ fn emit_packtest(
     // reachable. Emits nothing without such a pair.
     emit_shared_hitbox_packtest(plan, out);
 
+    // #122: the class trigger is one-shot per player. Emitted for every campaign
+    // that declares a class, i.e. every campaign.
+    emit_class_seal_packtest(plan, out);
+
     // v0.6: boundary return / never-move-inside (spec-0013). Emits nothing without
     // a boundary.
     emit_boundary_packtest(plan, out);
@@ -9619,6 +9667,145 @@ fn emit_night_vision_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// block-x, captured via `data get … Pos[0]`, discriminates the checkpoint from
 /// the interior cell, and is robust to teleport centering (both sides floor the
 /// same way). Emits nothing when the campaign declares no `boundary`.
+/// #122: **the class trigger is one-shot per player** — the seal, proved on a
+/// live server.
+///
+/// `class_apply_<c>` ends in `teleport @s <campaign entry point>`, so a second
+/// `/trigger dw.class` mid-run used to re-class whoever ran it AND warp them
+/// back to the start of the delve. The compiler now arms the trigger only for a
+/// player who has not classed (`class_arm`), so the seal is a property of the
+/// emitted pack rather than a rule every caller has to know.
+///
+/// The template drives the REAL arming path as its own dummy — it never restates
+/// the guard, which would prove only its own copy — and takes the one
+/// unambiguous read-back vanilla offers for "was this trigger usable": the
+/// success of the `trigger` command itself.
+///
+/// Three claims, in the order that makes them mean something:
+///
+/// 1. an UNCLASSED player's trigger is armed and works (the seal must not have
+///    weakened the first, legitimate class — a template that only proved the
+///    "no" would pass just as well against a pack where classing is broken);
+/// 2. the apply consumes the trigger and records the class;
+/// 3. after it, the arming path runs again and the trigger stays DEAD: the
+///    `trigger` command fails, `dw.class` gets no score, so the dispatch cannot
+///    fire — same class, same place, measured on the dummy's own `Pos`.
+///
+/// The dummy is parked away from the entry point before claim 3 precisely so a
+/// warp back to it would be visible.
+fn emit_class_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some(first) = plan.classes.first() else {
+        return;
+    };
+    let Some(entry) = campaign_spawn(plan) else {
+        return;
+    };
+    // A genuinely DIFFERENT class for the second attempt when the campaign has
+    // one, so "the class did not change" is a claim about identity and not only
+    // about position.
+    let second = plan.classes.get(1).unwrap_or(first);
+    // Distinct from the entry cell by construction: this is where a warp would
+    // be visible. Reading block-x back the way `emit_boundary_packtest` does
+    // makes the assertion robust to teleport centering.
+    let probe_x = entry[0] + 32;
+
+    let mut b = packtest_header(&format!(
+        "{title}: the class trigger is one-shot — a second `/trigger dw.class` cannot re-class or \
+         warp (#122)"
+    ));
+    b.push(format!("function {ns}:setup"));
+    // Own init: the batch is one shared server, so "never set" is not 0.
+    b.push("scoreboard players reset @s dw.class".to_string());
+    b.push("scoreboard players reset @s dw.classed".to_string());
+
+    // --- 1. unclassed: the trigger is armed and the class can be taken --------
+    b.push(format!("execute as @s run function {ns}:class_arm"));
+    b.push(format!(
+        "execute store success score #cls_arm1 dw.sys run trigger dw.class set {}",
+        first.n
+    ));
+    b.push("assert score #cls_arm1 dw.sys matches 1".to_string());
+
+    // --- 2. the apply consumes the trigger and records the class -------------
+    b.push(format!("function {ns}:class_apply_{}", first.safe));
+    b.push(
+        "execute store success score #cls_taken dw.sys if score @s dw.classed matches 1"
+            .to_string(),
+    );
+    b.push("assert score #cls_taken dw.sys matches 1".to_string());
+    b.push(
+        "execute store success score #cls_left dw.sys if score @s dw.class matches -2147483648.."
+            .to_string(),
+    );
+    b.push("assert score #cls_left dw.sys matches 0".to_string());
+
+    // --- 3. the seal: arm again, and the trigger stays dead ------------------
+    // Park the dummy away from the entry the apply teleported it to, so the warp
+    // this task exists to kill would move it.
+    b.push(format!("tp @s {probe_x} {} {}", entry[1], entry[2]));
+    b.push("execute store result score #cls_x dw.sys run data get entity @s Pos[0] 1".to_string());
+    // Precondition: the park really landed where it was asked to, so a later
+    // equality is a fact about the seal and not about a teleport that no-op'd.
+    b.push(format!("assert score #cls_x dw.sys matches {probe_x}"));
+    b.push(format!("execute as @s run function {ns}:class_arm"));
+    b.push(format!(
+        "execute store success score #cls_arm2 dw.sys run trigger dw.class set {}",
+        second.n
+    ));
+    b.push("assert score #cls_arm2 dw.sys matches 0".to_string());
+    b.push(
+        "execute store success score #cls_left2 dw.sys if score @s dw.class matches -2147483648.."
+            .to_string(),
+    );
+    b.push("assert score #cls_left2 dw.sys matches 0".to_string());
+    // …so the dispatch cannot fire: same class score, same place.
+    b.push(
+        "execute store success score #cls_still dw.sys if score @s dw.classed matches 1"
+            .to_string(),
+    );
+    b.push("assert score #cls_still dw.sys matches 1".to_string());
+    b.push("execute store result score #cls_x2 dw.sys run data get entity @s Pos[0] 1".to_string());
+    b.push(format!("assert score #cls_x2 dw.sys matches {probe_x}"));
+
+    // The class the player actually wears, when the campaign tags it (the flask
+    // path): still the first class, never the second.
+    if !plan.flasks().is_empty() {
+        let worn = class_tag(&first.safe);
+        b.push(format!(
+            "execute store success score #cls_worn dw.sys if entity @s[tag={worn}]"
+        ));
+        b.push("assert score #cls_worn dw.sys matches 1".to_string());
+        if second.safe != first.safe {
+            let other = class_tag(&second.safe);
+            b.push(format!(
+                "execute store success score #cls_other dw.sys if entity @s[tag={other}]"
+            ));
+            b.push("assert score #cls_other dw.sys matches 0".to_string());
+        }
+    }
+
+    // Leave no residue for the shared batch (pin_dummy rule 3/4): the party-unique
+    // kit latches this template's apply may have taken are batch-global.
+    for (k, item) in plan.campaign.classes.content.classes[0]
+        .kit
+        .iter()
+        .enumerate()
+    {
+        if matches!(item.carrier, Some(delvewright_dsl::Carrier::One)) {
+            b.push(format!(
+                "scoreboard players reset #kit_{}_{k} dw.sys",
+                first.safe
+            ));
+        }
+    }
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/class_trigger_once.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
 fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
     let Some(region) = playable_region(plan) else {
         return;
