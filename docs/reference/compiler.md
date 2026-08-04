@@ -10,10 +10,10 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   and scripts around it — `delve-schem`, `delve-admit`, `delve-render`,
   `delve-harvest`, `tools/`, `validation/` — are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 0.1.0`, `dsl 0.6.0`, `mc 1.21.11`.
-  Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`, `0.6.0`**
-  (additive supersets; `0.2.0` output stays byte-identical across the later
-  versions).
+- Versions (as of this doc): `delvec 0.1.0`, `dsl 0.8.0`, `mc 1.21.11`.
+  Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`, `0.6.0`,
+  `0.7.0`, `0.8.0`** (additive supersets; `0.2.0` output stays byte-identical
+  across the later versions).
 - v0.6 amends spec-0010's mitigation hierarchy: the night-vision mitigation is now
   the stage-1 `areas[].mitigation` **declaration** (emitting a real clocked
   `effect give`), not a class-kit display-name heuristic.
@@ -55,6 +55,14 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   `anchor/trap` prefab-hardware admission audit are deferred to follow-ups. The
   spec's reserved diagnostic numbers were stale (all taken since) and were
   renumbered off them (0197/0198/0314) to `DW0340`/`DW0341`/`DW0342`.
+- The flask's **contents** have **landed** at `dsl_version 0.8.0` (spec-0016 §1,
+  owner directive 2026-08-03): a class-kit item may declare `contents` — vanilla's
+  `minecraft:potion_contents` component (a named `potion`, an `effects[]` list, a
+  `color`) — and the bonfire replenish re-gives the poured-identical item through
+  the same helpers the class kit uses, clearing by the components rather than by
+  the bare item id. `DW0487` refuses the placeholder (a potion-bearing kit item
+  with no contents is the Uncraftable Potion), `DW0486` refuses contents 1.21.11
+  cannot pour. Absent `contents` keeps pre-0.8 output byte-identical.
 
 ---
 
@@ -192,6 +200,40 @@ a bonfire replenishes it to exactly its declared `count`. A campaign that places
 which class a resting player took, since `dw.class` is a trigger the apply resets
 and `dw.classed` records only *that* a class was taken. Both are absent from a
 campaign that declares no flask, so its class apply is byte-identical.
+
+**`contents`** (obj, DSL v0.8, spec-0016 §1, owner directive 2026-08-03; reserved
+`DW0141` pre-0.8): **what is in the bottle** — vanilla's
+`minecraft:potion_contents` component, modelled field for field:
+
+| Field | Behavior |
+|-------|----------|
+| `potion` (str, opt) | A 1.21.11 potion id (`minecraft:strong_healing`, `minecraft:long_night_vision`). Strength and duration are *part of the id* (`strong_`/`long_` prefixes) since 1.20.5 — not separate fields. Checked against the pinned `potion` registry (46 ids, inlined in `dsl::registry::POTION_IDS_1_21_11` — complete for the pinned version, so nothing is injected). |
+| `effects[]{effect,duration?,amplifier?}` (opt) | The component's `custom_effects`. `effect` is checked against the same status-effect registry wave mobs use; `duration` is in **ticks** (20 = 1 s, 1–1 000 000) and is **required** for a lasting effect, **forbidden** on the two instantaneous ones (`instant_health`/`instant_damage`, applied once on drinking — a duration there is never read); `amplifier` is 0 = level I, 0–255 (vanilla's unsigned byte). Absent `amplifier` is emitted as absent and takes vanilla's own default. |
+| `color` (str, opt) | Bottle colour override, `#rrggbb`, emitted as the packed int `custom_color`. Absent → the colour vanilla derives from the effects. |
+
+Legal only on the four items that actually carry the component
+(`minecraft:potion`, `splash_potion`, `lingering_potion`, `tipped_arrow` — read
+off the pinned `item_components` summary); anywhere else the game would discard
+it, so it is `DW0486`. At 0.8.0 one of those four items **without** `contents` is
+`DW0487`: with no component it is the *Uncraftable Potion*, which grants nothing
+however it is named — the placeholder flask, as a build error. Everything the
+component cannot express is `DW0486` (empty contents, unknown potion/effect id,
+out-of-range amplifier/duration, a missing or forbidden duration, a malformed
+colour).
+
+Emission: `class_apply_<c>`'s `give` carries
+`[custom_name=…,potion_contents={…}]` (fixed field order `potion`,
+`custom_effects`, `custom_color`, compact SNBT). **`bonfire_flask` clears and
+re-gives through the same two helpers** (`emit::kit_item_predicate` /
+`emit::kit_item_components`), so the replenished bottle is the poured-identical
+item — the clear is `clear @s <item>[potion_contents={…}]` rather than a bare item
+id, which both stops one rest from deleting an unrelated potion in the bag and
+guarantees the clear names exactly the stack the next line gives back. If the two
+sites ever disagreed the failure would be silent: the clear misses the carried
+bottle, the give adds another, and the per-rest budget becomes a stockpile. The
+`souls_bonfire_options` PackTest counts through the same predicate and asserts the
+bare-id count too, so a rest that hands over a differently-filled bottle fails on
+a live server.
 
 Reserved kit
 fields `lore`/`enchantments`/`attributes` are **not defined** → unknown-field
@@ -1783,7 +1825,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0132` | `finale` is not the convergent sink (some quest is not a transitive dependency of finale). |
 | `DW0133` | Non-mandatory quest (`mandatory:false`), reserved until M3. |
 | `DW0140` | Objective `after` cycle. |
-| `DW0141` | Reserved enum value/field for the campaign's `dsl_version`. **This row is the single enumerated list of reserved surface** — §2 deliberately does not restate it (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: area `mitigation`, `close-gate`, `damage-players`, `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, `forbids_flags` at every site, `move-npc.on_arrive`, stage-2 npc `deferred` + the `spawn-npc` effect, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, the `traps[]` section, the `bonfire` effect, wave `respawns_on_rest`, wave `equipment`, `waves[].lane` / `waves[].summon`, the `shortcuts[]` / `ambushes[]` / `timed_gates[]` sections, the `loot[]` section, actor `equipment`, and the spec-0022 trap `payload` surface + its `volley` / `collapse` effects; under pre-0.7 the v0.7 surface: the stage-5 `cast` ledger, wave `tier`; under pre-0.8 the v0.8 surface: the stage-4 `branch_points` section, the per-node `happening` on a quest / objective / dialogue option / staging-or-gate-or-ending effect, and the named `campaign-complete` `ending` (spec-0025); the class-kit `flask` and the `bonfire` rest-dialog labels (spec-0016 §1); actor `tier` (spec-0023); and the stage-6 dialogue-option `tooltip` (owner design 2026-08-04)). |
+| `DW0141` | Reserved enum value/field for the campaign's `dsl_version`. **This row is the single enumerated list of reserved surface** — §2 deliberately does not restate it (npc `vendor`/`boss`; under 0.2.0 the v0.3 verbs/effects; under pre-0.4 the v0.4 surface; under pre-0.5 the v0.5 surface: `time`/`weather`/`lighting`, `set-time`/`set-weather`; under pre-0.6 the v0.6 surface: area `mitigation`, `close-gate`, `damage-players`, `set-checkpoint`, `begin-stealth`/`end-stealth`, `horizon`/`boundary`, the `play-sound` effect + `narrate` `style: art`, per-effect `requires_flags`, `forbids_flags` at every site, `move-npc.on_arrive`, stage-2 npc `deferred` + the `spawn-npc` effect, stage-5 `actors` + `spawn`/`despawn`/`move`/`unleash-actor`, `sequence`, the `traps[]` section, the `bonfire` effect, wave `respawns_on_rest`, wave `equipment`, `waves[].lane` / `waves[].summon`, the `shortcuts[]` / `ambushes[]` / `timed_gates[]` sections, the `loot[]` section, actor `equipment`, and the spec-0022 trap `payload` surface + its `volley` / `collapse` effects; under pre-0.7 the v0.7 surface: the stage-5 `cast` ledger, wave `tier`; under pre-0.8 the v0.8 surface: the stage-4 `branch_points` section, the per-node `happening` on a quest / objective / dialogue option / staging-or-gate-or-ending effect, and the named `campaign-complete` `ending` (spec-0025); the class-kit `flask`, a kit item's potion `contents` and the `bonfire` rest-dialog labels (spec-0016 §1); actor `tier` (spec-0023); and the stage-6 dialogue-option `tooltip` (owner design 2026-08-04)). |
 | `DW0142` | Anchor not provided by the area's bound prefab. |
 | `DW0143` | Item id not in the pinned 1.21.11 registry (kit / `collect` / `interact.requires_item` / `give-item`). |
 | `DW0150` | Planned quest (stage 4) has no stage-5 expansion. |
@@ -2368,6 +2410,19 @@ pins that pairing so a future MC pin breaking it fails loudly.
 | `DW0477` | (**warning**; exit 0) **Something billed `elite`/`boss` that the inverted floor gate cannot measure** (task #113). One diagnostic per finding, at the declaring node's own pointer (`/content/actors/<i>/tier` or `/content/waves/<i>/tier`), `compiler::combat`. Three uncovered shapes, each with its own reason text, carried verbatim into `combat-plan.json`'s `floor_gate.not_covered`: a tiered **actor** no `spawn-actor` beat ever summons; one staged but never `unleash-actor`ed and not `vulnerable` (the puppet is `Invulnerable` — scenery, not a fight); one only ever staged `vulnerable` (damageable but `NoAI` and knockback-immune, so it never attacks — anything that cannot fight back is beaten cold by construction, and a floor finding derived from it would be an artifact of the check rather than a fact about the encounter); plus a tiered **wave** no critical-path `kill` objective names. Why it exists: the floor gate warns when the unassisted bot beats a billed elite first-try and says **nothing** otherwise — so an encounter that was never fought produces exactly the same silence as one that was fought and lost, and before this the bell's actor-implemented Barrow Warden made an empty finding list read as a pass over a fight nobody had. Advisory tier because an unmeasurable elite is a legitimate design (set dressing the content also chose to name); what is not legitimate is nobody knowing. Prescription: add the `unleash-actor` beat (or the `kill` objective), or drop the tier. |
 | `DW0478` | **The bonfire safe zone** (spec-0016 §1, owner ruling 2026-08-04). A rest checkpoint sits inside some hostile force's aggro range. Build-tier (exit 3), `compiler::nav::check_bonfire_safe_zone`, run after wave seating and lane resolution because it needs both. The rule: for every wave and every fighting actor, the distance from the bonfire cell to that force's occupied cells must **exceed** its `follow_range` — and for a **lane path cell**, `follow_range` **plus the measured marching drift** of 7.9 blocks (`nav::LANE_MARCH_DRIFT`; owner ruling 2026-08-04): the td-routing-spike dossier measured a marching squad as a corridor around its polyline (followers mean ≤3.2, max 7.9 blocks off-lane), so a centre-line distance understates the squad's real aggro reach — a fire can clear the polyline by 2 blocks and still be perceived, which is exactly how run nine died at 17.7 blocks from a 16-`follow_range` lane. Stationary cells (seated spawns, staging anchors) keep the plain `follow_range` term. Occupied cells are the DW0312-proven **seated spawn cells** (where the datapack really summons it, not where its anchor is), plus — for a `lane` wave — every cell of the DW0386-proven **march polyline**, because a lane wave's whole design is that it walks that corridor while the party is elsewhere. Radius: a lane's `aggro_radius` (emitted verbatim as each lane mob's `follow_range`), else the largest declared `follow_range` among the wave's mobs, else the documented default 16 — one number, never a per-species table the compiler would have to invent (`DW0475`'s rule). An **actor** counts when the campaign declares it as a fighter — `unleash-actor`ed somewhere, or staged `vulnerable` — the same declaration-based test `DW0469` uses; species is never consulted, because the pinned entity registry is a membership set with no mob-category data. Why error tier and not a §7 pacing lint: a bonfire is where the party respawns AND where every `respawns_on_rest` wave is put back on its feet, so a fire inside a perception radius delivers the party into contact on the tick they arrive — the retry loop the fire exists to make cheap becomes a soft-lock, and there is no reading of that geometry that is the authored point. The message names both sides, the closest offending cell, what kind of cell it is, and the measured distance. Prescription: move the fire out of the danger (a side room, past the threshold, beyond the end of the lane) or move the force's anchor / lane — **never** shrink `follow_range` to buy the clearance, which retunes a fight to hide a placement bug. |
 
+### DW0486/DW0487 — the flask's contents (`dsl::validate`; spec-0016 §1, DSL v0.8)
+
+The kit `flask` marker landed with no way to declare what the bottle pours, so
+every flask compiled to a `minecraft:potion` carrying no
+`minecraft:potion_contents` component — vanilla's *Uncraftable Potion*, which
+grants nothing however it is named. `contents` (§2, stage 3) closes that; these
+two keep it honest, and both are classes-stage validation at 0.8.0 only.
+
+| Code | Meaning |
+|------|---------|
+| `DW0486` | **Contents 1.21.11 cannot pour** (spec-0016 §1, owner directive 2026-08-03). A kit item's potion `contents` is not something the `minecraft:potion_contents` component can express. Validation-tier (exit 1), `dsl::validate::kit_potion_checks`, at 0.8.0 on the classes stage. Seven shapes, each at its own pointer: `contents` on an item that carries no such component (only `minecraft:potion`, `splash_potion`, `lingering_potion` and `tipped_arrow` do — anywhere else the game discards the data); contents that name no `potion` and list no `effects` (the bottle still pours nothing); a `potion` outside the pinned 1.21.11 `potion` registry (usually the pre-1.20.5 spelling — strength and duration are part of the id, `strong_healing` / `long_night_vision`, never separate fields); an unknown status-effect id; an `amplifier` past 255, the end of vanilla's unsigned byte; a `duration` of 0 or past 1 000 000 ticks (≈13.9 h, past the delve ceiling — the ceiling catches a duration typed in milliseconds); a lasting effect with **no** `duration`, which vanilla would default to zero ticks, i.e. to nothing; and its mirror, a `duration` on `instant_health`/`instant_damage`, which land once on the tick the potion is drunk and never read it — that last one exists because the author who writes it believes they have authored a heal over time. Prescription: fix the field the message names. |
+| `DW0487` | **The placeholder flask** (spec-0016 §1, owner directive 2026-08-03). A potion-bearing kit item declares no `contents` at `dsl_version` 0.8.0. Validation-tier (exit 1), `dsl::validate::kit_potion_checks`. A `minecraft:potion` with no `minecraft:potion_contents` component is vanilla's *Uncraftable Potion*: a bottle a player can drink all day for nothing, however it is named — and naming it is exactly what a campaign does when the DSL gives it no way to say what is inside, which is how every flask shipped between the `flask` marker landing and this field. The requirement fires only at 0.8.0, the version that introduced `contents`: a 0.7 campaign has no way to comply, so demanding compliance would be a version break rather than a check. Scoped to the item, not the `flask` marker — a tipped arrow with no contents is the same uncraftable item. Prescription: declare `"contents": {"potion": "minecraft:strong_healing"}` or an `effects` list. Do NOT rename the bottle instead: semantics never key on player-facing text (§4). |
+
 ### DW048x — branch-complete narrative verification (`compiler::branch`; spec-0025, DSL v0.8)
 
 "Provably completable by machine" quantifies over **branches**, not paths. The
@@ -2561,7 +2616,7 @@ this doc is current behavior).
 | Souls-mode TD lanes: wave `lane{waypoints,aggro_radius}` + `summon: aggro-edge`, the Raider-patrol clock, `DW0381`–`DW0387`, `pillager`/`vindicator` added to the armed-mob default table (v0.6) | spec-0016 §6 |
 | Souls-mode shortcut doors: stage-5 `shortcuts[]`, `DW0371`/`DW0372`/`DW0373`/`DW0374`, shortcut gates sealed for the whole completability model (v0.6) | spec-0016 §2 |
 | Souls-mode pacing lints: retry cost `DW0379`, optional-elite bypass `DW0380` (both warning tier) (v0.6) | spec-0016 §7 |
-| Souls-mode bonfires: `bonfire{anchor,on_rest?}`, wave `respawns_on_rest`, `DW0370` (v0.6); the two-option rest dialog + authored labels, the class-kit `flask` + `DW0476`, the critical path's `rest` step (v0.8, owner rulings 2026-08-03); the stationed re-seat + the bonfire safe zone `DW0478`, whose lane term includes the measured marching drift (owner rulings 2026-08-04) | spec-0016 §1 |
+| Souls-mode bonfires: `bonfire{anchor,on_rest?}`, wave `respawns_on_rest`, `DW0370` (v0.6); the two-option rest dialog + authored labels, the class-kit `flask` + `DW0476`, the flask's potion `contents` + `DW0486`/`DW0487`, the critical path's `rest` step (v0.8, owner rulings/directive 2026-08-03); the stationed re-seat + the bonfire safe zone `DW0478`, whose lane term includes the measured marching drift (owner rulings 2026-08-04) | spec-0016 §1 |
 | The map editor: stage-7 `world-edits.json`, the full L3 verb set (`select`/`fill`/`replace`/`carve`/`morph`/`scatter`/`plant`/`fragment`/`relight`), the L2 massing verbs (`swap`/`insert`/`remove`/`rewire-socket`/`reseed`; `resize` excluded — no size primitive), per-batch invariant re-proofs, `DW0162`/`DW0322`/`DW0323`/`DW0324`, `delvec edit apply|preview` (all v0.6) | spec-0017 (PRs 1–3) |
 | Map-editor audit fixes: trap-hardware integrity `DW0352`, gate-region + block-support advisories `DW0353`/`DW0354`, out-of-bbox edit-chunk load convergence + forceload release, `edit` running the full build-tier proof set, blockstate-preserving `fragment` stamps | map-editor audit (post-#145/#146/#149) |
 | Party-shared progression: the `#party` holder, party-addressed UI, `world.min_players` + lobby gate, `give-item`/kit `carrier`, the n-agent division proof and the n-dummy `party_join_<obj>` PackTests, `DW0356`/`DW0357`/`DW0358` (all v0.6) | spec-0018 (landed) |

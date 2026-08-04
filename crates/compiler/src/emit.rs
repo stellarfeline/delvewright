@@ -2034,11 +2034,12 @@ fn emit_functions(
         let mut body: Vec<String> = Vec::new();
         body.push("scoreboard players reset @s dw.class".to_string());
         for (k, item) in class.kit.iter().enumerate() {
-            let comp = match &item.name {
-                Some(n) => format!("[custom_name={}]", json!({ "text": n, "italic": false })),
-                None => String::new(),
-            };
-            let give = format!("give @s {}{} {}", item.item, comp, item.count);
+            let give = format!(
+                "give @s {}{} {}",
+                item.item,
+                kit_item_components(item),
+                item.count
+            );
             // A class kit is per-player gear by construction. `carrier: "one"`
             // (v0.6, spec-0018) marks a **party-unique** kit item — exactly one
             // copy enters the party, to the first player who takes this class —
@@ -4240,16 +4241,105 @@ const HARMFUL_EFFECTS: &[&str] = &[
     "minecraft:wither",
 ];
 
+/// The `minecraft:potion_contents` component value of a kit item that declares
+/// potion `contents` (DSL v0.8, spec-0016 §1) — compact SNBT, field order fixed
+/// (`potion`, `custom_effects`, `custom_color`) so emission is deterministic.
+///
+/// Written straight from the DSL's fields with nothing invented: a declared
+/// `duration`/`amplifier` is emitted, an absent one is left out and takes
+/// vanilla's own default. That matters beyond tidiness — the replenish path
+/// matches the flask by these exact components ([`kit_item_predicate`]), so any
+/// value the emitter made up here would have to be re-derived identically there.
+fn potion_contents_snbt(pc: &delvewright_dsl::PotionContents) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(p) = &pc.potion {
+        parts.push(format!("potion:\"{p}\""));
+    }
+    if !pc.effects.is_empty() {
+        let effects: Vec<String> = pc
+            .effects
+            .iter()
+            .map(|e| {
+                let mut f = vec![format!("id:\"{}\"", e.effect)];
+                if let Some(dur) = e.duration {
+                    f.push(format!("duration:{dur}"));
+                }
+                if let Some(amp) = e.amplifier {
+                    f.push(format!("amplifier:{amp}"));
+                }
+                format!("{{{}}}", f.join(","))
+            })
+            .collect();
+        parts.push(format!("custom_effects:[{}]", effects.join(",")));
+    }
+    if let Some(col) = &pc.color {
+        // `#rrggbb` → the packed int vanilla stores. Validation (`DW0486`)
+        // already proved the literal well-formed.
+        if let Ok(v) = u32::from_str_radix(col.trim_start_matches('#'), 16) {
+            parts.push(format!("custom_color:{v}"));
+        }
+    }
+    format!("{{{}}}", parts.join(","))
+}
+
+/// The component suffix a kit item's `give` carries: the display name and, for a
+/// potion-bearing item, its `potion_contents`. `""` for a plain unnamed item, so
+/// every campaign that declares neither is byte-identical.
+///
+/// One function for every place a kit item is handed out — the class kit and the
+/// bonfire replenish — because those two must produce the *same item*. When they
+/// disagree the rest does not refill the flask, it hands the player a second,
+/// subtly different one (the `clear` misses it) and the "per-rest budget"
+/// contract silently becomes a stockpile.
+fn kit_item_components(item: &delvewright_dsl::KitItem) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(n) = &item.name {
+        parts.push(format!(
+            "custom_name={}",
+            json!({ "text": n, "italic": false })
+        ));
+    }
+    if let Some(pc) = &item.contents {
+        parts.push(format!("potion_contents={}", potion_contents_snbt(pc)));
+    }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("[{}]", parts.join(","))
+    }
+}
+
+/// The **item predicate** that identifies this kit item for `clear` — the item id
+/// plus, when it carries potion contents, an exact `potion_contents` match.
+///
+/// Why the components belong in the predicate: a bare `clear @s minecraft:potion`
+/// takes every potion in the bag, so on a campaign whose kit holds a healing
+/// flask *and* any other brew, one rest would delete the other bottle and re-give
+/// only the flask. Matching the contents makes the clear name exactly the stack
+/// the `give` on the next line puts back.
+fn kit_item_predicate(item: &delvewright_dsl::KitItem) -> String {
+    match &item.contents {
+        Some(pc) => format!(
+            "{}[potion_contents={}]",
+            item.item,
+            potion_contents_snbt(pc)
+        ),
+        None => item.item.clone(),
+    }
+}
+
 /// The `bonfire_flask` function: refill every declared flask to its declared
 /// count, for the player it runs as.
 ///
 /// `clear` + `give` rather than `item replace`: a kit item has no fixed inventory
 /// slot (the player carries it wherever they moved it), and `item replace` needs
-/// one. Clearing by item id and re-giving the kit's exact stack is slot-free,
-/// idempotent and byte-stable — and it means "replenish to the declared count"
-/// is literally what the commands say, in both directions (a player hoarding
-/// extra flasks is brought back DOWN to the declared count, which is the souls
-/// contract: the flask is a per-rest budget, not a stockpile).
+/// one. Clearing the flask's own item predicate and re-giving the kit's exact
+/// stack is slot-free, idempotent and byte-stable — and it means "replenish to
+/// the declared count" is literally what the commands say, in both directions (a
+/// player hoarding extra flasks is brought back DOWN to the declared count, which
+/// is the souls contract: the flask is a per-rest budget, not a stockpile).
+/// Cleared and re-given through the SAME pair of helpers the class kit uses, so
+/// the refilled bottle is the poured-identical item, not a lookalike.
 ///
 /// A player's class is read off the `dw_class_<safe>` tag `class_apply_<safe>`
 /// adds — emitted only when the campaign declares a flask at all, so a campaign
@@ -4266,15 +4356,13 @@ fn emit_flask_function(plan: &Plan) -> Option<(String, String)> {
         let tag = class_tag(&plan.classes[ci].safe);
         body.push(format!(
             "execute if entity @s[tag={tag}] run clear @s {}",
-            item.item
+            kit_item_predicate(item)
         ));
-        let comp = match &item.name {
-            Some(n) => format!("[custom_name={}]", json!({ "text": n, "italic": false })),
-            None => String::new(),
-        };
         body.push(format!(
             "execute if entity @s[tag={tag}] run give @s {}{} {}",
-            item.item, comp, item.count
+            item.item,
+            kit_item_components(item),
+            item.count
         ));
     }
     Some(("bonfire_flask".to_string(), lines(&body)))
@@ -10098,6 +10186,15 @@ fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
     let item = &plan.campaign.classes.content.classes[ci].kit[ki];
     let ctag = class_tag(&plan.classes[ci].safe);
     let (pin, sel) = pin_dummy("dw_bfopt");
+    // Counting predicate: the flask's own item predicate, so on a
+    // contents-bearing flask every count below is of bottles whose
+    // `potion_contents` matches EXACTLY. That is what makes this template a
+    // proof of round-trip and not merely of arithmetic — a rest that re-gave a
+    // differently-filled bottle (or the contents-less placeholder) would leave
+    // the exact-match count at 1 while the bare-id count climbed to `count + 1`,
+    // and both halves are asserted below.
+    let pred = kit_item_predicate(item);
+    let comp = kit_item_components(item);
 
     let mut b = packtest_header(&format!(
         "{title}: save-only saves and nothing else; rest refills the flask (spec-0016 §1)"
@@ -10107,9 +10204,10 @@ fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
     // The dummy takes the flask's class, so `bonfire_flask`'s per-class guard
     // selects it — this is the same tag `class_apply_<class>` adds.
     b.push(format!("tag {sel} add {ctag}"));
-    // Baseline: exactly ONE flask in the bag (the party has spent the rest).
+    // Baseline: exactly ONE flask in the bag (the party has spent the rest),
+    // filled exactly as the class kit fills it.
     b.push(format!("clear {sel} {}", item.item));
-    b.push(format!("give {sel} {} 1", item.item));
+    b.push(format!("give {sel} {}{comp} 1", item.item));
 
     // --- save only: the checkpoint moves, the flask does NOT come back ---
     b.push("data modify storage dw:cp pos set value [0, 0, 0]".to_string());
@@ -10117,8 +10215,7 @@ fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
         "execute as {sel} run function {ns}:bonfire_pick_save_{i}"
     ));
     b.push(format!(
-        "execute store result score #bo_save dw.sys run clear {sel} {} 0",
-        item.item
+        "execute store result score #bo_save dw.sys run clear {sel} {pred} 0"
     ));
     b.push("assert score #bo_save dw.sys matches 1".to_string());
     b.push(
@@ -10131,11 +10228,20 @@ fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
         "execute as {sel} run function {ns}:bonfire_pick_rest_{i}"
     ));
     b.push(format!(
-        "execute store result score #bo_rest dw.sys run clear {sel} {} 0",
-        item.item
+        "execute store result score #bo_rest dw.sys run clear {sel} {pred} 0"
     ));
     b.push(format!(
         "assert score #bo_rest dw.sys matches {}",
+        item.count
+    ));
+    // …and nothing ELSE of that item id is in the bag: refilling by handing over
+    // a second, differently-filled bottle is the failure this catches.
+    b.push(format!(
+        "execute store result score #bo_any dw.sys run clear {sel} {} 0",
+        item.item
+    ));
+    b.push(format!(
+        "assert score #bo_any dw.sys matches {}",
         item.count
     ));
 

@@ -3,5 +3,9 @@
   "minecraft:leather_boots",
   "minecraft:bread",
   "minecraft:torch",
-  "minecraft:cooked_beef"
+  "minecraft:cooked_beef",
+  "minecraft:potion",
+  "minecraft:splash_potion",
+  "minecraft:lingering_potion",
+  "minecraft:tipped_arrow"
 ]
