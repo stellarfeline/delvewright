@@ -663,6 +663,11 @@ export interface TriggerEcho {
  *     nothing completes and nothing is broadcast (island round 13, and again here);
  *   - unanswered ⇒ the command never reached the delve at all, which is the
  *     harness's own problem, not the campaign's.
+ *
+ * The unanswered reading assumes the delve leaves `sendCommandFeedback` alone, which
+ * every compiled delve does — `setup.mcfunction`'s gamerule block never touches it.
+ * A campaign that suppressed feedback would silence the answer and read as
+ * unanswered; if that ever becomes possible, this must be told, not left to infer.
  */
 export function swallowedTriggerVerdict(echo: TriggerEcho | undefined): string {
   if (!echo) return "";
