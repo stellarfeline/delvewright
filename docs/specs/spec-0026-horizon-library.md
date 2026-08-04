@@ -198,6 +198,16 @@ checks **empirical geometry**, never metadata:
 - Valley: gap floor between scene and slopes is walkable ambient terrain
   inside the region margin; inner slopes are proven un-climbable by nav (no
   standable staircase from gap floor to crest), not by slope-angle promise.
+- **Cliff-band degradation** (amendment, task #157 round 2 — planner design
+  ruling): on any axis whose annulus band is too narrow for gap + slope
+  (band < 30 at the pinned tables), the profile keeps a walkable gap floor of
+  at least 6 and spends the remainder on a near-vertical stepped cliff to
+  full rim height, risers quantized ≥ 3 (stricter than the 2-block terraces)
+  and no outer decay — the perimeter is unreachable cliff-top, never a
+  walkable shelf over the void, so the DW0322 boundary-safety proof holds
+  without exemption. The short axis reads as a gorge wall; the long axis
+  still carries the open valley. The nav un-climbability proof runs unchanged
+  over the cliff geometry.
 - Summit ("一览众山小"): max surround surface y < scene walk plane y is a hard
   clamp verified empirically; ≥1 gorge drop ≥ `min_drop` along the vista ring;
   everything within −64..320.

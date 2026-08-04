@@ -285,7 +285,20 @@ fn v09_flooded_interior_without_waterline_is_dw0364() {
 /// the same prefab id.
 #[test]
 fn v09_open_scene_onto_gap_floor_builds_green() {
-    let prefabs = tmp("v09-open-prefabs");
+    open_scene_builds_green("v09-open", 48, 48);
+}
+
+/// The 94×27 twin — hollow-vigil's ACTUAL proportions (task #157 round 2):
+/// the short axis is degenerate (band 20 < 30) and degrades to the cliff
+/// band; the perimeter must be unreachable cliff-top, so DW0322 stays silent
+/// without any containment invention.
+#[test]
+fn v09_hollow_proportioned_open_scene_builds_green() {
+    open_scene_builds_green("v09-hollow", 94, 27);
+}
+
+fn open_scene_builds_green(name: &str, w: i32, d: i32) {
+    let prefabs = tmp(&format!("{name}-prefabs"));
     common::copy_dir_all(&common::prefabs_dir(), &prefabs);
 
     // --- synthesize the open plate: stone floor at local y=0, iron-bars
@@ -312,8 +325,8 @@ fn v09_open_scene_onto_gap_floor_builds_green() {
         entities: Vec<Entity>,
     }
     let mut blocks = Vec::new();
-    for x in 0..48 {
-        for z in 0..48 {
+    for x in 0..w {
+        for z in 0..d {
             blocks.push(BlockEntry {
                 pos: [x, 0, z],
                 state: 0,
@@ -330,7 +343,7 @@ fn v09_open_scene_onto_gap_floor_builds_green() {
     }
     let structure = Structure {
         data_version: 4671,
-        size: [48, 5, 48],
+        size: [w, 5, d],
         palette: vec![
             PaletteEntry {
                 name: "minecraft:stone".into(),
@@ -353,11 +366,11 @@ fn v09_open_scene_onto_gap_floor_builds_green() {
     let meta_path = prefabs.join("hello-room.json");
     let mut meta: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
-    meta["structure"]["size"] = serde_json::json!([48, 5, 48]);
+    meta["structure"]["size"] = serde_json::json!([w, 5, d]);
     std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
 
-    let camp = valley_campaign("v09-open-scene", "valley");
-    let out = tmp("v09-open-scene-out");
+    let camp = valley_campaign(&format!("{name}-scene"), "valley");
+    let out = tmp(&format!("{name}-scene-out"));
     let r = delvec(&[
         "build",
         camp.to_str().unwrap(),

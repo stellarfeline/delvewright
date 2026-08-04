@@ -490,15 +490,20 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
     // boundary sees (for cherry-valley: the blossom line crowning the crest).
     // Absent for surround-less horizons → shot list byte-identical.
     if let Some(surround) = &plan.surround {
-        let (eye, look) = surround.valley.vista_camera();
+        // Eye at the campaign spawn (a walkable interior cell by
+        // construction), pitched up over the nearest scene edge so the frame
+        // composes gap floor → blossomed slope → crest → sky (task #157
+        // round 2: the old edge-hugging camera framed a wall).
+        let spawn_cell = spawn_of(plan).map(|(_, pos, _)| pos);
+        let (eye, look) = surround.valley.vista_camera(spawn_cell);
         shots.push(json!({
             "id": "vista",
             "kind": "vista",
             "camera": camera(eye, look),
             "expect": [
                 "gap floor reads as walkable ground between scene edge and slope foot",
-                "inner slope rises as bare terraced rock — no walkable ramp to the crest",
-                "tree line crowns the rim silhouette (cherry: blossoms against the sky)",
+                "no walkable ramp to the crest: terraces on the long axis, stepped cliff on a narrow axis",
+                "blossom in frame: trees on the inner slope and crest (cherry: blossoms AND sky together)",
                 "no tile seams, floating blocks or void gaps across the surround",
             ],
         }));

@@ -986,12 +986,22 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   with parallel flora/palette id tables; `tools/check-flora-parity.py` asserts
   a same-seed cherry emission differs from the valley emission only in
   flora/palette block ids + the biome id (`manifest.json`, a declaration
-  mirror, is exempt). The render plan gains one `vista` shot (scene edge
-  looking outward at the rim). *Degenerate-annulus note:* a scene too small
-  for the ring to rise (annulus side < gap 12 + slope run 18) legally yields a
-  floor-only surround — no rim, no trees; the spec-0013 boundary clock (which
-  every valley campaign must declare, `DW0320`) remains the enforcement, as it
-  is for every horizon.
+  mirror, is exempt). The render plan gains one `vista` shot — eye at the
+  campaign spawn cell (walkable by construction; scene centre fallback) at
+  player eye height, pitched up over the nearest scene edge at a point above
+  the rim, so the frame composes gap floor → blossomed slope → crest → sky
+  (task #157 round 2). **Blossom is in the player's view**: a second Poisson
+  pass stands trees on the inner slopes of non-degenerate bands (sparse near
+  the floor, denser upslope), each leaning its canopy two columns toward the
+  valley so no leaf platform sits within hop-on/hop-off range of two upslope
+  terraces — the flood proofs remain the authority. **Cliff-band
+  degradation** (planner ruling, task #157): an axis whose band is under
+  gap 12 + slope 18 keeps a ≥ 6-wide walkable gap floor and spends the rest
+  on a near-vertical stepped cliff to full rim height — risers quantized ≥ 3,
+  no outer decay, quantization families separated by a 6-quantized seam strip
+  so no 1-block riser can form at a family boundary — making the perimeter
+  unreachable cliff-top (DW0322 holds with no exemption); such gorge walls
+  carry the flora as a sapling understory where whole trees cannot fit.
 - `boundary` (v0.6, spec-0013) emits, in `setup_finish`: a `dw:region bounds`
   storage mirror (readable region contract), a `dw:cp pos` init to the spawn cell
   (shared with spec-0012 checkpoints — the last-checkpoint mirror the return

@@ -48,6 +48,7 @@ DECLARATION_MIRRORS = {"manifest.json"}
 ALLOWED_PAIRS = [
     ("minecraft:oak_log", "minecraft:cherry_log"),
     ("minecraft:oak_leaves", "minecraft:cherry_leaves"),
+    ("minecraft:oak_sapling", "minecraft:cherry_sapling"),
     ("minecraft:short_grass", "minecraft:pink_petals"),
     ("minecraft:fern", "minecraft:short_grass"),
     ("minecraft:windswept_forest", "minecraft:cherry_grove"),
