@@ -2512,3 +2512,255 @@ test("killing a bystander beside the fight does not clear the wave", async () =>
   assert.equal(left.length, 0, "the wave itself is what has to die");
   assert.equal(bot.entities[900], undefined, "the bystander died on the way, which is fine");
 });
+
+// --- talk-to: the walk-then-trigger contract (task #144) ----------------------
+
+import type { TalkToStep } from "../src/critical-path.ts";
+
+/**
+ * A bot that can be driven through a whole `talk-to` step. Unlike
+ * {@link InteractFakeBot} (parked AT its anchor so the walk costs no wall time),
+ * this one starts AWAY from the NPC and its `goto` actually moves it — the walk is
+ * exactly what is under test here.
+ *
+ * `gotoFailures` makes the first N pathfinds reject the way a live transient does,
+ * so a leg that needed recovery can be told from one that walked clean.
+ */
+class TalkToFakeBot extends InteractFakeBot {
+  /** Every pathfind goal the executor asked for, in order. */
+  goals: Array<[number, number, number]> = [];
+  /** How many of the next pathfinds reject before one is allowed to land. */
+  gotoFailures = 0;
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    // Optional-parameter shape so this stays assignable to the base fake's
+    // zero-argument `goto` (the executor always passes a GoalNear).
+    goto: async (goal?: { x: number; y: number; z: number }): Promise<void> => {
+      if (!goal) throw new Error("the executor must pass a goal");
+      this.goals.push([goal.x, goal.y, goal.z]);
+      this.calls.push(`goto(${goal.x},${goal.y},${goal.z})`);
+      if (this.gotoFailures > 0) {
+        this.gotoFailures -= 1;
+        throw new Error("Path was stopped before it could be completed!");
+      }
+      this.entity.position = new FakeVec3(goal.x + 0.5, goal.y, goal.z + 0.5);
+    },
+  };
+}
+
+/** The island's own step 1: hear Eurylochus out at the beach camp. */
+function talkToStep(extra: Partial<TalkToStep> = {}): TalkToStep {
+  return {
+    action: "talk-to",
+    objective: "obj/muster",
+    npc: "npc/eurylochus",
+    pos: [7, 63, 9],
+    command: "/trigger dw.dlg_eurylochus set 4",
+    sneak: false,
+    ...extra,
+  };
+}
+
+test("talk-to walks to the NPC, THEN chats the dialog trigger", async () => {
+  // The whole step in order: a dialog option is the NPC's, so the bot stands with
+  // the NPC before it fires the `/trigger` the button would have run. A talk-to that
+  // chatted from wherever it happened to be would pass every campaign whose dialog
+  // is reach-free and silently mis-drive every campaign whose dialog is not.
+  const bot = new TalkToFakeBot();
+  bot.entity.position = new FakeVec3(24.5, 63.0, 30.5); // well outside the NPC's range
+  const executor = attach(bot);
+  executor.useCampaign("nobodys-cave-island");
+  executor.beginStep(1);
+  setTimeout(
+    () => bot.emit("messagestr", "[dw:complete nobodys-cave-island obj/muster]"),
+    20,
+  );
+
+  await executor.talkTo(talkToStep());
+
+  assert.deepEqual(bot.calls, [
+    "goto(7,63,9)",
+    "chat(/trigger dw.dlg_eurylochus set 4)",
+  ]);
+  // …and the bot really is standing at the NPC when it speaks.
+  assert.ok(
+    Math.hypot(bot.entity.position.x - 7.5, bot.entity.position.z - 9.5) <= 3,
+    `bot spoke from ${bot.entity.position.x}, ${bot.entity.position.z}`,
+  );
+});
+
+test("a talk-to fires its dialog trigger however the walk ended", async () => {
+  // task #134's completion oracle (LegSettled) ends a walk as SUCCEEDED on a failure
+  // path when the step's exported transport has already landed the bot. That must
+  // never cost the step its dialog trigger: the walk is the means, the `/trigger` IS
+  // the step. The island's obj/muster read as "no marker arrived" for a whole batch
+  // round, and "the leg was shortcut, so the trigger was never sent" was the first
+  // theory — this pins that the trigger is unconditional, so that theory can never
+  // become true.
+  const bot = new TalkToFakeBot();
+  // Standing AT the step's exported transport destination, with a hop that fails:
+  // the oracle's transport branch reads settled and ends the leg early.
+  bot.entity.position = new FakeVec3(260.5, 61.0, 4.5);
+  bot.gotoFailures = 99; // every pathfind rejects — the leg can only end via the oracle
+  const executor = attach(bot);
+  executor.useCampaign("nobodys-cave-island");
+  executor.useWaypoints(
+    parseWaypoints({
+      version: "0.6.0",
+      campaign_id: "nobodys-cave-island",
+      legs: [
+        {
+          from: [260, 61, 4],
+          to: [7, 63, 9],
+          waypoints: [
+            [200, 61, 4],
+            [100, 62, 6],
+          ],
+        },
+      ],
+    }),
+  );
+  executor.beginStep(1);
+  // The marker arrives ONLY once the trigger has been chatted — exactly as the live
+  // datapack behaves — so the leg cannot end on the oracle's marker branch. The only
+  // way this walk ends is the transport branch, and the step still has to speak.
+  const chat = bot.chat.bind(bot);
+  bot.chat = (message: string): void => {
+    chat(message);
+    if (message.includes("dlg_")) {
+      setTimeout(() => bot.emit("messagestr", "[dw:complete nobodys-cave-island obj/muster]"), 20);
+    }
+  };
+
+  await executor.talkTo(talkToStep({ transport: [260, 61, 4] }));
+
+  assert.ok(
+    bot.calls.includes("chat(/trigger dw.dlg_eurylochus set 4)"),
+    `the trigger must still be sent; calls were ${bot.calls.join(" | ")}`,
+  );
+});
+
+// --- a swallowed trigger names itself (task #144) -----------------------------
+
+import { answersTrigger, swallowedTriggerVerdict, triggerObjective } from "../src/executor.ts";
+
+test("triggerObjective names the scoreboard objective a trigger command drives", () => {
+  assert.equal(triggerObjective("/trigger dw.dlg_eurylochus set 4"), "dw.dlg_eurylochus");
+  assert.equal(triggerObjective("  /trigger dw.i_brake set 1"), "dw.i_brake");
+  // Anything that is not a trigger command has no objective — and therefore gets no
+  // verdict clause, rather than a guessed one.
+  assert.equal(triggerObjective("/damage @s 1000 minecraft:generic"), undefined);
+  assert.equal(triggerObjective("hello"), undefined);
+});
+
+test("both of vanilla's answers to a trigger are recognised", () => {
+  // Success names the objective; the refusals do not, but every one of them says
+  // "trigger". Missing the refusal shape is the expensive direction: it would report
+  // a REACHED trigger as unreachable.
+  assert.equal(
+    answersTrigger("Triggered [dw.dlg_eurylochus] (set value to 4)", "dw.dlg_eurylochus"),
+    true,
+  );
+  assert.equal(answersTrigger("You can't trigger this objective yet", "dw.dlg_eurylochus"), true);
+  assert.equal(answersTrigger("This objective is not a trigger", "dw.dlg_eurylochus"), true);
+  // Ordinary delve narration is not an answer.
+  assert.equal(answersTrigger("The surf gives up its dead.", "dw.dlg_eurylochus"), false);
+});
+
+test("a talk-to that times out says whether its trigger reached the delve", async () => {
+  // The island's obj/muster symptom, at the executor tier. The trigger IS answered by
+  // the server and the objective still does not complete — the delve's own guard
+  // consumed it (what a re-used world's already-set score does). Before this, both
+  // this and an undelivered command produced the same bare timeout, and telling them
+  // apart cost a round of misattributed red runs (round 13, then this one).
+  const bot = new TalkToFakeBot();
+  bot.entity.position = new FakeVec3(7.5, 63.0, 9.5); // at the NPC: no walk under test
+  const executor = attach(bot);
+  executor.useCampaign("nobodys-cave-island");
+  executor.beginStep(1);
+  const chat = bot.chat.bind(bot);
+  bot.chat = (message: string): void => {
+    chat(message);
+    // The server answers the trigger — and nothing else happens.
+    setTimeout(() => bot.emit("messagestr", "Triggered [dw.dlg_eurylochus] (set value to 4)"), 10);
+  };
+
+  await assert.rejects(
+    () => executor.talkTo(talkToStep()),
+    (err: Error) => {
+      assert.match(err.message, /objective obj\/muster did not complete/);
+      assert.match(err.message, /the server ANSWERED/);
+      assert.match(err.message, /Triggered \[dw\.dlg_eurylochus\]/);
+      assert.match(err.message, /fresh-volumes\.sh --project/);
+      return true;
+    },
+  );
+});
+
+test("the verdict tells a swallowed trigger from an undelivered one", () => {
+  // The fork itself, in isolation: the wiring above proves the answer is captured,
+  // and this proves what the harness concludes from it. Both texts must name the
+  // side to look at — the whole point is that a bare timeout named neither.
+  const answered = swallowedTriggerVerdict({
+    command: "/trigger dw.dlg_eurylochus set 4",
+    objective: "dw.dlg_eurylochus",
+    lines: ["Triggered [dw.dlg_eurylochus] (set value to 4)"],
+  });
+  assert.match(answered, /the server ANSWERED/);
+  assert.match(answered, /its own guard consumed it/);
+  assert.match(answered, /re-used world/);
+  assert.match(answered, /fresh-volumes\.sh --project/);
+
+  const silent = swallowedTriggerVerdict({
+    command: "/trigger dw.dlg_eurylochus set 4",
+    objective: "dw.dlg_eurylochus",
+    lines: [],
+  });
+  assert.match(silent, /the server never answered/);
+  assert.match(silent, /harness\/infrastructure failure/);
+
+  // A step that sent no trigger at all (reach, collect, kill) gets no clause —
+  // never a guessed one.
+  assert.equal(swallowedTriggerVerdict(undefined), "");
+});
+
+test("a trigger echo never leaks into the next step's failure", async () => {
+  // The echo belongs to the step that sent it. A `reach` step that times out two
+  // steps later must not quote the last talk-to's `/trigger` as if it were its own:
+  // a diagnostic pointing at the wrong command is worse than no diagnostic.
+  const bot = new TalkToFakeBot();
+  bot.entity.position = new FakeVec3(7.5, 63.0, 9.5);
+  const executor = attach(bot);
+  executor.useCampaign("nobodys-cave-island");
+  executor.beginStep(1);
+  const chat = bot.chat.bind(bot);
+  bot.chat = (message: string): void => {
+    chat(message);
+    setTimeout(() => bot.emit("messagestr", "Triggered [dw.dlg_eurylochus] (set value to 4)"), 10);
+    setTimeout(
+      () => bot.emit("messagestr", "[dw:complete nobodys-cave-island obj/muster]"),
+      20,
+    );
+  };
+  await executor.talkTo(talkToStep());
+
+  // The next step sends no trigger of its own — so its message carries no verdict.
+  executor.beginStep(2);
+  await assert.rejects(
+    () => executor.requireObjective("obj/surf", "reach anchor/surf"),
+    (err: Error) => {
+      assert.match(err.message, /objective obj\/surf did not complete/);
+      assert.doesNotMatch(err.message, /dlg_eurylochus/);
+      assert.doesNotMatch(err.message, /the server (ANSWERED|never answered)/);
+      return true;
+    },
+  );
+});

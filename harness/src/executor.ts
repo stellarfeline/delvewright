@@ -631,6 +631,80 @@ interface StepCompletion {
   readonly transport?: Transport;
 }
 
+/**
+ * A `/trigger …` a step sent, and every chat line the server answered it with
+ * (task #144). The bot is opped, so vanilla's command feedback — the success
+ * `Triggered [obj] (set value to n)` and every refusal — arrives on the same chat
+ * stream the completion markers do; capturing it is what lets a timed-out step say
+ * whether its trigger reached the delve at all.
+ */
+export interface TriggerEcho {
+  readonly command: string;
+  /** The scoreboard objective the command names, e.g. `dw.dlg_eurylochus`. */
+  readonly objective: string;
+  /** Server answers observed since the command was sent, in order. */
+  readonly lines: string[];
+}
+
+/**
+ * What the server said about a step's `/trigger`, as a clause appended to that
+ * step's objective-timeout message. Diagnostics only — it decides nothing and
+ * relaxes nothing; a step that times out still fails.
+ *
+ * Why it exists (task #144, and round 13's `requires_item` defect before it): a
+ * swallowed trigger and an undelivered one produce the identical bare 30s timeout,
+ * and telling them apart cost a full round of misattributed red runs each time. The
+ * server answers every `/trigger` — `Triggered [obj] (set value to n)` on success, a
+ * refusal otherwise — and the bot, opped, receives that answer on the same chat
+ * stream the completion markers arrive on. So the harness repeats it back:
+ *   - answered ⇒ the delve's own guard consumed the trigger without completing the
+ *     objective. The classic cause is a REUSED world: a scoreboard that already
+ *     carries the objective makes its `unless score … matches 1` guard a no-op, so
+ *     nothing completes and nothing is broadcast (island round 13, and again here);
+ *   - unanswered ⇒ the command never reached the delve at all, which is the
+ *     harness's own problem, not the campaign's.
+ */
+export function swallowedTriggerVerdict(echo: TriggerEcho | undefined): string {
+  if (!echo) return "";
+  if (echo.lines.length === 0) {
+    return (
+      `; the server never answered \`${echo.command}\` — the trigger did not reach the ` +
+      `delve (refused or undelivered), so this is a harness/infrastructure failure, ` +
+      `not a content one`
+    );
+  }
+  return (
+    `; the server ANSWERED \`${echo.command}\` with ${echo.lines.map((l) => `"${l}"`).join(", ")} ` +
+    `— the trigger reached the delve and its own guard consumed it without completing ` +
+    `the objective. The usual cause is a re-used world whose scoreboard already ` +
+    `carries this objective (its \`unless score … matches 1\` guard then completes ` +
+    `nothing): tear the stack down with \`validation/fresh-volumes.sh --project ` +
+    `<compose-project>\` and re-run on a proven-clean world`
+  );
+}
+
+/**
+ * The scoreboard objective a `/trigger <objective> …` command names, or `undefined`
+ * for anything that is not a trigger command.
+ */
+export function triggerObjective(command: string): string | undefined {
+  return /^\/trigger\s+(\S+)/.exec(command.trim())?.[1];
+}
+
+/**
+ * Whether a chat line is the server ANSWERING a `/trigger <objective>`. Two shapes,
+ * because vanilla's success and failure messages are worded independently:
+ *   - success names the objective (its display name defaults to its id):
+ *     `Triggered [dw.dlg_eurylochus] (set value to 4)`;
+ *   - the refusals do not name it, but all of them say "trigger":
+ *     `You can't trigger this objective yet`, `This objective is not a trigger`.
+ * Only ever consulted inside the window between the harness sending a trigger and
+ * that step finishing, where the only such traffic is the answer to our own command.
+ */
+export function answersTrigger(message: string, objective: string): boolean {
+  return message.includes(objective) || /trigger/i.test(message);
+}
+
 /** Try a `goto`, returning whether it arrived; a bot death still propagates. */
 async function reached(fn: () => Promise<void>): Promise<boolean> {
   try {
@@ -1052,6 +1126,9 @@ export class MineflayerExecutor implements StepExecutor {
   private readonly deathWaiters = new Set<(err: BotDeathError) => void>();
   /** Ring buffer of recent chat lines, mined for the death-cause message. */
   private readonly recentChat: string[] = [];
+  /** The `/trigger` the current step sent, and the server's answer to it (task
+   * #144). Replaced by each new trigger; see {@link swallowedTriggerVerdict}. */
+  private trigger: TriggerEcho | undefined;
   /**
    * gap 8 (task #32): the bot position captured at the previous server-forced move
    * (`forcedMove`). A forced move whose horizontal delta from this reaches
@@ -1243,6 +1320,9 @@ export class MineflayerExecutor implements StepExecutor {
     bot.on("messagestr", (message: string) => {
       this.observeMarker(message);
       this.observeCensus(message);
+      if (this.trigger && answersTrigger(message, this.trigger.objective)) {
+        this.trigger.lines.push(message);
+      }
       this.recentChat.push(message);
       if (this.recentChat.length > CHAT_BUFFER) {
         this.recentChat.shift();
@@ -1767,8 +1847,29 @@ export class MineflayerExecutor implements StepExecutor {
       `${label}: objective ${objectiveId} did not complete within ` +
         `${OBJECTIVE_TIMEOUT_MS}ms — no \`${markerLine(this.campaignId ?? "?", objectiveId)}\` ` +
         `marker arrived; bot at ${fmt(this.requireBot().entity.position)}; objectives ` +
-        `completed so far: ${seen.join(", ") || "none"}`,
+        `completed so far: ${seen.join(", ") || "none"}${swallowedTriggerVerdict(this.trigger)}`,
     );
+  }
+
+  /**
+   * Send a step's `/trigger …` command and start listening for the server's own
+   * answer to it (see {@link TriggerEcho}). Every trigger-driven step goes through
+   * here, so a step that times out can always say whether its trigger REACHED the
+   * delve — the one fact that separates a content/state failure from a harness one.
+   */
+  private chatTrigger(command: string): void {
+    this.armTrigger(command);
+    this.requireBot().chat(command);
+  }
+
+  /**
+   * Start listening for the server's answer to `command` without sending it — for
+   * the steps whose chat is issued by a helper (`interact` goes through
+   * `presentAndTrigger`, which must equip first and chat last).
+   */
+  private armTrigger(command: string): void {
+    const objective = triggerObjective(command);
+    this.trigger = objective === undefined ? undefined : { command, objective, lines: [] };
   }
 
   /**
@@ -1783,6 +1884,10 @@ export class MineflayerExecutor implements StepExecutor {
   /** Sequencer hook: the run has moved on to step `index`. Attribution only. */
   beginStep(index: number): void {
     this.currentStep = index;
+    // A trigger echo belongs to the step that sent it. Dropping it here keeps a
+    // later step's timeout from quoting the previous step's `/trigger` as if it
+    // were its own — a diagnostic that names the wrong command is worse than none.
+    this.trigger = undefined;
   }
 
   /**
@@ -1972,14 +2077,16 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   async talkTo(step: TalkToStep): Promise<void> {
-    const bot = this.requireBot();
     // Walk to the NPC first (realism; some dialog effects are reach-gated), then
-    // chat the dialog-option `/trigger` command the button would have run.
+    // chat the dialog-option `/trigger` command the button would have run. The
+    // trigger is sent HOWEVER the walk ended — arriving is the means, the trigger is
+    // the step — and `chatTrigger` records the server's answer so a step that then
+    // times out can name which side swallowed it (task #144).
     await this.walkTo(step.pos, 3, `npc ${step.npc}`, step.sneak, {
       objective: step.objective,
       transport: step.transport,
     });
-    bot.chat(step.command);
+    this.chatTrigger(step.command);
     // A dialogue that OPENED proves nothing: the option must actually complete the
     // objective this step stands for. Wait for that objective's own marker.
     await this.requireObjective(step.objective, `talk-to ${step.npc}`);
@@ -3674,6 +3781,7 @@ export class MineflayerExecutor implements StepExecutor {
       objective: step.objective,
       transport: step.transport,
     });
+    this.armTrigger(step.command);
     await presentAndTrigger<Item>(bot, step, step.anchor);
     await this.requireObjective(step.objective, `interact ${step.anchor}`);
     await delay(EFFECT_SETTLE_MS);
