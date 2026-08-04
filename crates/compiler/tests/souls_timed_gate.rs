@@ -166,6 +166,13 @@ fn waypoints_artifact_exports_the_gate_table_and_marks_the_crossing_leg() {
     assert_eq!(g["closed_ticks"], 40);
     assert_eq!(g["phase"], 0);
     assert_eq!(g["block"], "minecraft:iron_bars");
+    // task #140: `crush` is part of the exported contract — the harness must know a
+    // closing edge kills, or it walks the bot into one blind (the tide-mill death).
+    // The fixture opts into crush (see `the_clock_is_a_self_sustaining_ping_pong`).
+    assert_eq!(
+        g["crush"], true,
+        "the fixture's crushing gate exports as such: {g:#?}"
+    );
     // Canonical inclusive bbox, min ≤ max componentwise — the harness reads every
     // cell of it to observe the open/closed edge.
     let min = g["region"]["min"].as_array().expect("region min");
@@ -268,7 +275,9 @@ fn crush_false_is_inert() {
         }
     }
 
-    // The two builds differ ONLY in the closing function and the crush PackTests
+    // The two builds differ ONLY in the closing function, the crush PackTests, and
+    // the waypoints artifact's exported `crush` fact — task #140: the runtime
+    // harness must be TOLD a closing edge kills, or it walks the bot into one blind
     // (the manifest hashes those files, so it differs too — and must).
     let differing: Vec<&String> = off
         .keys()
@@ -278,6 +287,7 @@ fn crush_false_is_inert() {
     let expected = [
         format!("datapack/data/{NS}/function/tgate_close_inner_door.mcfunction"),
         format!("packtest-datapack/data/{NS}/test/souls_timed_gate_crush.mcfunction"),
+        "validation/critical-path-waypoints.json".to_string(),
         "manifest.json".to_string(),
     ];
     for path in &differing {
@@ -285,6 +295,32 @@ fn crush_false_is_inert() {
             expected.contains(path),
             "crush must not perturb `{path}` — byte-identity for every campaign \
              that does not opt in"
+        );
+    }
+}
+
+/// **`crush` is exported to the runtime rung** (task #140). The first live
+/// `crush: true` gate killed the mineflayer bot: the harness's gate machinery was
+/// purely reactive (wait for a window only AFTER a hop fails), which is safe when a
+/// closing gate merely aborts the path and lethal when it kills. The staged-entry
+/// fix needs to know WHICH gates crush — that fact is compiler-owned, so the
+/// waypoints artifact carries it (no-hack layering: export the fact, never make the
+/// harness infer a lethal mechanic from folklore).
+#[test]
+fn waypoints_artifact_exports_the_crush_fact() {
+    for crush in [false, true] {
+        let out = build_with_crush(crush);
+        let raw = out
+            .get("validation/critical-path-waypoints.json")
+            .expect("waypoints artifact emitted");
+        let v: serde_json::Value = serde_json::from_slice(raw).expect("valid JSON");
+        let gates = v["timed_gates"].as_array().expect("gate table exported");
+        assert_eq!(gates.len(), 1);
+        assert_eq!(
+            gates[0]["crush"],
+            serde_json::json!(crush),
+            "the exported fact mirrors the plan: {:#?}",
+            gates[0]
         );
     }
 }
