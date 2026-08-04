@@ -3530,7 +3530,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         QuestEffect::MoveNpc { npc, to_anchor, .. } => {
             body.push(format!(
                 "function {ns}:{}",
-                movenpc_fn(npc.as_str(), to_anchor.as_str())
+                movenpc_fn(npc.as_str(), to_anchor.as_str(), &crate::nav::gate_key(eff),)
             ));
         }
         QuestEffect::Cutscene { .. } => {
@@ -3633,7 +3633,11 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         } => {
             body.push(format!(
                 "function {ns}:{}",
-                moveactor_fn(actor.as_str(), to_anchor.as_str())
+                moveactor_fn(
+                    actor.as_str(),
+                    to_anchor.as_str(),
+                    &crate::nav::gate_key(eff),
+                )
             ));
         }
         QuestEffect::UnleashActor { actor, .. } => {
@@ -4766,9 +4770,9 @@ fn spawn_npc_fns(plan: &Plan) -> Vec<(String, String)> {
 
 /// The generated function name for a `move-npc` effect (content-derived key, so
 /// the start-caller and the generator agree without threading an index).
-fn movenpc_fn(npc: &str, to_anchor: &str) -> String {
+fn movenpc_fn(npc: &str, to_anchor: &str, gate_key: &str) -> String {
     format!(
-        "mv_{}_{}",
+        "mv_{}_{}{gate_key}",
         plan::safe_local(npc),
         plan::safe_local(to_anchor)
     )
@@ -4934,8 +4938,8 @@ fn push_effect_deep<'a>(e: &'a QuestEffect, out: &mut Vec<&'a QuestEffect>) {
 }
 
 /// The scoreboard-safe suffix shared by a move's driver functions/sentinels.
-fn movenpc_bare(npc: &str, to_anchor: &str) -> String {
-    movenpc_fn(npc, to_anchor)
+fn movenpc_bare(npc: &str, to_anchor: &str, gate_key: &str) -> String {
+    movenpc_fn(npc, to_anchor, gate_key)
         .strip_prefix("mv_")
         .unwrap_or("move")
         .to_string()
@@ -4964,8 +4968,8 @@ fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, Stri
     let ns = &plan.namespace;
     let mut out = Vec::new();
     for m in moves {
-        let start_name = movenpc_fn(&m.npc, &m.to_anchor);
-        let bare = movenpc_bare(&m.npc, &m.to_anchor);
+        let start_name = movenpc_fn(&m.npc, &m.to_anchor, &m.gate_key);
+        let bare = movenpc_bare(&m.npc, &m.to_anchor, &m.gate_key);
         let safe = plan::safe_local(&m.npc);
         let total = m.ticks();
         // The on_arrive bundle for this (npc, to_anchor) — the first-seen effect,
@@ -5326,17 +5330,17 @@ fn aggro_lock_lines(entity: &str, safe: &str) -> Vec<String> {
 }
 
 /// The generated start-function name for a `move-actor` (content key).
-fn moveactor_fn(actor: &str, to_anchor: &str) -> String {
+fn moveactor_fn(actor: &str, to_anchor: &str, gate_key: &str) -> String {
     format!(
-        "ma_{}_{}",
+        "ma_{}_{}{gate_key}",
         plan::safe_local(actor),
         plan::safe_local(to_anchor)
     )
 }
 
 /// The scoreboard-safe suffix shared by a move-actor's driver functions/sentinels.
-fn moveactor_bare(actor: &str, to_anchor: &str) -> String {
-    moveactor_fn(actor, to_anchor)
+fn moveactor_bare(actor: &str, to_anchor: &str, gate_key: &str) -> String {
+    moveactor_fn(actor, to_anchor, gate_key)
         .strip_prefix("ma_")
         .unwrap_or("move")
         .to_string()
@@ -5419,7 +5423,7 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
     // move-actor per-tick drivers.
     for m in actor_moves {
         let safe = plan::safe_local(&m.actor);
-        let bare = moveactor_bare(&m.actor, &m.to_anchor);
+        let bare = moveactor_bare(&m.actor, &m.to_anchor, &m.gate_key);
         let total = m.ticks();
         // The on_arrive bundle for this (actor, to_anchor) — the first-seen effect,
         // matching the planner's dedup order.
@@ -5444,7 +5448,10 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
             format!("scoreboard players set #at_{bare} dw.sys 0"),
             format!("schedule function {ns}:ma_tick_{bare} 1t"),
         ];
-        out.push((moveactor_fn(&m.actor, &m.to_anchor), lines(&start)));
+        out.push((
+            moveactor_fn(&m.actor, &m.to_anchor, &m.gate_key),
+            lines(&start),
+        ));
 
         let mut tick: Vec<String> = Vec::new();
         for (t, (w, y)) in m.waypoints.iter().zip(m.yaws.iter()).enumerate() {
@@ -8848,7 +8855,7 @@ fn emit_scheduled_executor_packtests(
             })
     });
     let Some((m, flag)) = arrival else { return };
-    let bare = movenpc_bare(&m.npc, &m.to_anchor);
+    let bare = movenpc_bare(&m.npc, &m.to_anchor, &m.gate_key);
     let score = plan::flag_score(&flag);
 
     // The walk is real, so the test must outlive it: the driver reschedules
@@ -8873,7 +8880,7 @@ fn emit_scheduled_executor_packtests(
     // stands still throughout; nothing here supplies it as an executor.
     t.push(format!(
         "function {ns}:{}",
-        movenpc_fn(&m.npc, &m.to_anchor)
+        movenpc_fn(&m.npc, &m.to_anchor, &m.gate_key)
     ));
     t.push(format!("await score {} {score} matches 1", plan::PARTY));
     out.insert(
@@ -10975,7 +10982,7 @@ fn emit_v06_actor_packtests(
     // that same tick) and assert the puppet is at the destination cell.
     if let Some(m) = actor_moves.first() {
         let safe = plan::safe_local(&m.actor);
-        let bare = moveactor_bare(&m.actor, &m.to_anchor);
+        let bare = moveactor_bare(&m.actor, &m.to_anchor, &m.gate_key);
         let total = m.ticks();
         let p = m.target;
         let mut b = packtest_header(&format!(
@@ -11032,7 +11039,7 @@ fn emit_v06_actor_packtests(
             .map(|n| n.tag.clone())
     {
         let safe = plan::safe_local(&m.actor);
-        let bare = moveactor_bare(&m.actor, &m.to_anchor);
+        let bare = moveactor_bare(&m.actor, &m.to_anchor, &m.gate_key);
         let total = m.ticks();
         // Every distinct gate a `close-gate` effect seals, in first-appearance
         // order (deterministic).
@@ -11404,7 +11411,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
     // is the path's real final waypoint.
     if let Some(m) = moves.first() {
         let safe = plan::safe_local(&m.npc);
-        let bare = movenpc_bare(&m.npc, &m.to_anchor);
+        let bare = movenpc_bare(&m.npc, &m.to_anchor, &m.gate_key);
         let total = m.ticks();
         let p = m.target;
         let mut b = packtest_header(&format!(
