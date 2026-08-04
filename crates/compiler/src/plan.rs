@@ -1452,6 +1452,59 @@ impl<'a> Plan<'a> {
         })
     }
 
+    /// Attach the valley MOAT (spec-0026 amendment, task #157 round 3): fill
+    /// every scene-rect column that carries zero piece-authored blocks with
+    /// ambient gap-floor ground, so the box-garden floor is continuous from
+    /// the gap floor to every piece footprint (the #157 walls-down probe
+    /// found DW0322 void exposure INSIDE the scene rect — the rect is the
+    /// blob's bounding box, not its footprint). Needs the structure bytes, so
+    /// it runs at the `read_structures` choke point every subcommand funnels
+    /// through — build, snapshot, blocking and the render plan all see the
+    /// same completed surround. Idempotent; a no-op for surround-less plans
+    /// and for scenes whose pieces author every rect column.
+    pub fn attach_valley_moat(&mut self, structures: &BTreeMap<String, Vec<u8>>) {
+        let Some(surround) = &self.surround else {
+            return;
+        };
+        if surround
+            .pieces
+            .iter()
+            .any(|p| p.prefab_id == "surround/valley-moat")
+        {
+            return; // already attached (idempotence across repeated reads)
+        }
+        // Authored columns of every placed piece, rotation-aware — a column
+        // with ANY authored block belongs to its piece (authored overhangs
+        // and voids are intentional; the moat never touches them).
+        let mut authored: BTreeSet<(i32, i32)> = BTreeSet::new();
+        for area in &self.areas {
+            for piece in &area.pieces {
+                let Some(bytes) = structures.get(&piece.structure_file) else {
+                    continue;
+                };
+                for (local, _, _) in crate::assembled::structure_cells(bytes) {
+                    let t = piece.rotation.transform(local);
+                    authored.insert((piece.pos[0] + t[0], piece.pos[2] + t[2]));
+                }
+            }
+        }
+        let surround = self.surround.as_mut().expect("checked above");
+        let (tiles, starts) = surround.valley.moat(&authored);
+        for tile in tiles {
+            let file = format!("{}.nbt", tile.structure_id);
+            surround.pieces.push(PiecePlacement {
+                prefab_id: "surround/valley-moat".to_string(),
+                structure_id: tile.structure_id,
+                structure_file: file.clone(),
+                pos: tile.pos,
+                size: tile.size,
+                rotation: Rotation::None,
+            });
+            surround.structures.insert(file, tile.bytes);
+        }
+        surround.valley.gap_floor_starts.extend(starts);
+    }
+
     /// Every piece the bootstrap must place and the world model must contain:
     /// area pieces in plan order, then the horizon surround tiles (spec-0026
     /// §5). The **placement/model** iterator — sites that derive regions,

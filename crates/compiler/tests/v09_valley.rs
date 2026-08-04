@@ -285,7 +285,18 @@ fn v09_flooded_interior_without_waterline_is_dw0364() {
 /// the same prefab id.
 #[test]
 fn v09_open_scene_onto_gap_floor_builds_green() {
-    open_scene_builds_green("v09-open", 48, 48);
+    open_scene_builds_green("v09-open", 48, 48, |_, _| true);
+}
+
+/// Task #157 round 3 (planner ruling — the void moat): a walls-down scene
+/// whose piece authors only an irregular blob INSIDE its declared rect must
+/// build green — the scene-rect columns outside the blob receive ambient
+/// gap-floor ground, so no DW0322 fires at the rect edge or in the interior.
+/// The blob is an L: the rect's other corner region (33×13 columns) is pure
+/// moat.
+#[test]
+fn v09_blob_scene_with_void_moat_builds_green() {
+    open_scene_builds_green("v09-blob", 94, 27, |x, z| x <= 60 || z <= 13);
 }
 
 /// The 94×27 twin — hollow-vigil's ACTUAL proportions (task #157 round 2):
@@ -295,10 +306,10 @@ fn v09_open_scene_onto_gap_floor_builds_green() {
 /// and DW0322 stays silent purely by construction.
 #[test]
 fn v09_hollow_proportioned_open_scene_builds_green() {
-    open_scene_builds_green("v09-hollow", 94, 27);
+    open_scene_builds_green("v09-hollow", 94, 27, |_, _| true);
 }
 
-fn open_scene_builds_green(name: &str, w: i32, d: i32) {
+fn open_scene_builds_green(name: &str, w: i32, d: i32, covered: impl Fn(i32, i32) -> bool) {
     let prefabs = tmp(&format!("{name}-prefabs"));
     common::copy_dir_all(&common::prefabs_dir(), &prefabs);
 
@@ -328,10 +339,12 @@ fn open_scene_builds_green(name: &str, w: i32, d: i32) {
     let mut blocks = Vec::new();
     for x in 0..w {
         for z in 0..d {
-            blocks.push(BlockEntry {
-                pos: [x, 0, z],
-                state: 0,
-            });
+            if covered(x, z) {
+                blocks.push(BlockEntry {
+                    pos: [x, 0, z],
+                    state: 0,
+                });
+            }
         }
     }
     for x in 4..=5 {

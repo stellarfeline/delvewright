@@ -502,6 +502,28 @@ mod tests {
         assert!((o["pitch"].as_f64().unwrap() + std::f64::consts::FRAC_PI_2).abs() < 1e-12);
     }
 
+    /// A per-shot `camera.fov` (the vista shot's derived vertical FOV, task
+    /// #157 round 3) reaches the Chunky scene verbatim; a shot without one
+    /// keeps the default — the field is never silently dropped.
+    #[test]
+    fn per_shot_fov_reaches_the_chunky_scene() {
+        let plan = br#"{"campaign_id":"c","layout_aabb":{"min":[0,64,0],"max":[1,65,1]},
+          "shots":[
+            {"id":"vista","kind":"vista","camera":{"pos":[7.5,68.62,10.5],
+             "yaw":0.0,"pitch":-20.0,"look_at":[47.5,87.0,10.5],"fov":92.75}},
+            {"id":"spawn","kind":"spawn","camera":{"pos":[7.5,68.62,10.5],
+             "yaw":0.0,"pitch":0.0,"look_at":[8.5,68.62,10.5]}}
+          ]}"#;
+        let scenes = scenes_from_plan(plan, &SceneOptions::default(), &[]).unwrap();
+        let get_fov = |name: &str| -> f64 {
+            let (_, bytes) = scenes.iter().find(|(n, _)| n == name).unwrap();
+            let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+            v["camera"]["fov"].as_f64().unwrap()
+        };
+        assert_eq!(get_fov("vista.json"), 92.75);
+        assert_eq!(get_fov("spawn.json"), DEFAULT_FOV_DEG);
+    }
+
     /// A two-shot plan: one dark-with-night-vision POV (emulated) and one lit
     /// interior (never emulated), sharing one layout.
     const DARK_PLAN: &[u8] =

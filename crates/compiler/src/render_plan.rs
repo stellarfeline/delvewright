@@ -495,11 +495,14 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
         // composes gap floor → blossomed slope → crest → sky (task #157
         // round 2: the old edge-hugging camera framed a wall).
         let spawn_cell = spawn_of(plan).map(|(_, pos, _)| pos);
-        let (eye, look) = surround.valley.vista_camera(spawn_cell);
+        let (eye, look, fov) = surround.valley.vista_camera(spawn_cell);
         shots.push(json!({
             "id": "vista",
             "kind": "vista",
-            "camera": camera(eye, look),
+            // Per-shot vertical FOV (task #157 round 3): derived from the rim
+            // geometry so floor + crest + sky share the frame; the Chunky
+            // scene emission honors `camera.fov` (delve-render `scene.rs`).
+            "camera": pov_camera(eye, look, fov),
             "expect": [
                 "gap floor reads as walkable ground between scene edge and slope foot",
                 "no walkable ramp to the crest: the same terraced rim on every axis (a band-floored axis ends full-height at its tile edge)",

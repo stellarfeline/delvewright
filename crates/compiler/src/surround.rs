@@ -165,6 +165,75 @@ impl ValleySurround {
         in_annulus(&self.scene, self.ratio, x, z)
     }
 
+    /// The scene-rect interior MOAT fill (spec-0026 amendment, task #157
+    /// round 3 — planner ruling): scene-rect columns with ZERO piece-authored
+    /// blocks receive ambient gap-floor ground at `floor_top_y` with the gap
+    /// floor's own surface treatment (the noise is world-coordinate-keyed, so
+    /// the dapple runs seamlessly from the annulus gap floor through the
+    /// moat), making the box-garden floor continuous from gap floor to every
+    /// piece footprint. Columns with ANY authored block are untouched —
+    /// pieces own their columns; authored overhangs and voids are
+    /// intentional. Emitted as row-strip tiles (`horizon/valley/m<n>`) so no
+    /// tile ever carries an air cell over a piece column (placed air would
+    /// erase authored blocks).
+    ///
+    /// Returns the strip tiles and their standable cells (extra starts for
+    /// the un-climbability flood).
+    pub fn moat(&self, authored: &BTreeSet<(i32, i32)>) -> (Vec<SurroundTile>, Vec<[i32; 3]>) {
+        let mut tiles = Vec::new();
+        let mut starts = Vec::new();
+        let mut n = 0usize;
+        let y_min = self.floor_top_y - SKIRT;
+        for z in self.scene.min_z..=self.scene.max_z {
+            let mut x = self.scene.min_x;
+            while x <= self.scene.max_x {
+                if authored.contains(&(x, z)) {
+                    x += 1;
+                    continue;
+                }
+                let run_start = x;
+                while x <= self.scene.max_x
+                    && !authored.contains(&(x, z))
+                    && (x - run_start) < TILE_XZ
+                {
+                    x += 1;
+                }
+                let x1 = x - 1;
+                let mut cells: BTreeMap<[i32; 3], &'static str> = BTreeMap::new();
+                for cx in run_start..=x1 {
+                    for y in y_min..=self.floor_top_y {
+                        let name = if y == self.floor_top_y {
+                            if value_noise(self.seed, cx, y, z, 0.16, SALT_GAP_DAPPLE) > 0.85 {
+                                "minecraft:coarse_dirt"
+                            } else {
+                                "minecraft:grass_block"
+                            }
+                        } else if self.floor_top_y - y <= 3 {
+                            "minecraft:dirt"
+                        } else {
+                            pick(
+                                &ROCK,
+                                value_noise(self.seed, cx, y, z, 0.13, SALT_ROCK_BAND),
+                            )
+                        };
+                        cells.insert([cx, y, z], name);
+                    }
+                    starts.push([cx, self.floor_top_y + 1, z]);
+                }
+                let size = [x1 - run_start + 1, SKIRT + 1, 1];
+                let bytes = serialize_tile(&cells, [run_start, y_min, z], size);
+                tiles.push(SurroundTile {
+                    structure_id: format!("horizon/valley/m{n}"),
+                    bytes,
+                    pos: [run_start, y_min, z],
+                    size,
+                });
+                n += 1;
+            }
+        }
+        (tiles, starts)
+    }
+
     /// The spec-0026 §5 empirical proof, stated over the ASSEMBLED world (the
     /// authoritative geometry, surround tiles included): a nav walk flood from
     /// the gap floor must never stand on a column outward of the crest line.
@@ -182,16 +251,21 @@ impl ValleySurround {
         Ok(())
     }
 
-    /// The establishing-vista camera for the render plan (spec-0026 §6, task
-    /// #157 round 2): eye at a WALKABLE cell inside the scene — the campaign
-    /// spawn cell when the caller has one (walkable by construction), else
-    /// the scene centre — at player eye height, looking outward over the
-    /// nearest scene edge and pitched UP at a point above the rim crest, so
-    /// the frame composes gap floor → blossomed slope → crest → sky.
-    /// Deterministic: derived from the scene bounding box, the walk plane and
-    /// the per-side band parameters; nearest side wins, ties broken in the
-    /// fixed order +x, −x, +z, −z. Returns `(eye, look_at)` world coords.
-    pub fn vista_camera(&self, spawn: Option<[i32; 3]>) -> ([f64; 3], [f64; 3]) {
+    /// The establishing-vista camera for the render plan (spec-0026 §6; task
+    /// #157 rounds 2–3): eye at a WALKABLE cell inside the scene — the
+    /// campaign spawn when the caller has one, else the scene centre — at
+    /// player eye height, aimed at MID-RIM on the nearest crest line, with a
+    /// per-shot vertical FOV derived from the geometry so the frame's bottom
+    /// edge reaches the gap floor (elevation ≤ −15°) and its top edge clears
+    /// the crest top by ≥ 8° of sky, clamped to ≤ 110° (planner ruling: a
+    /// spawn eye 40 blocks from a 48-high rim subtends ~52° — no fixed FOV
+    /// can frame floor + crest + sky). Deterministic: scene bbox + walk
+    /// plane + the pinned band tables; nearest side wins, ties in the fixed
+    /// order +x, −x, +z, −z; angles go through the same `atan2`+`round3`
+    /// idiom the render plan's `aim` already uses.
+    ///
+    /// Returns `(eye, look_at, vertical_fov_degrees)`.
+    pub fn vista_camera(&self, spawn: Option<[i32; 3]>) -> ([f64; 3], [f64; 3], f64) {
         let (cx, cz) = (
             f64::from(self.scene.min_x + self.scene.max_x) / 2.0 + 0.5,
             f64::from(self.scene.min_z + self.scene.max_z) / 2.0 + 0.5,
@@ -220,14 +294,18 @@ impl ValleySurround {
         let (dist_to_edge, ux, uz) = best;
         // The crest line sits gap + slope beyond the scene edge on every
         // side (the band floor guarantees the full rim on every axis).
-        let crest_out = dist_to_edge + GAP_WIDTH + SLOPE_RUN;
-        // Aim ABOVE the tallest possible crest so sky shares the frame.
-        let target = [
-            eye[0] + ux * (crest_out + 6.0),
-            f64::from(self.floor_top_y + self.rim_height) + 6.0,
-            eye[2] + uz * (crest_out + 6.0),
-        ];
-        (eye, target)
+        let crest_out = (dist_to_edge + GAP_WIDTH + SLOPE_RUN).max(1.0);
+        let mid_rim_y = f64::from(self.floor_top_y) + f64::from(self.rim_height) / 2.0;
+        let target = [eye[0] + ux * crest_out, mid_rim_y, eye[2] + uz * crest_out];
+        // Vertical FOV from the frame requirements (elevations in degrees,
+        // positive = up, at the crest-line distance).
+        let elev = |y: f64| ((y - eye[1]).atan2(crest_out)).to_degrees();
+        let center = elev(mid_rim_y);
+        let crest_top = elev(f64::from(self.floor_top_y + self.rim_height));
+        let need_down = center - VISTA_FLOOR_ELEV_DEG; // bottom edge ≤ −15°
+        let need_up = (crest_top + VISTA_SKY_MARGIN_DEG) - center; // top clears crest
+        let fov = (2.0 * need_down.max(need_up)).clamp(30.0, VISTA_MAX_FOV_DEG);
+        (eye, target, (fov * 1000.0).round() / 1000.0)
     }
 }
 
@@ -270,6 +348,13 @@ const POISSON_K: usize = 20;
 const TREE_CREST_MARGIN: f64 = 1.0;
 /// Understory decor density on grass cells (gap floor stays bare).
 const DECOR_DENSITY: f64 = 0.12;
+/// Vista frame requirements (task #157 round 3, planner ruling): the frame's
+/// bottom edge must reach this elevation (gap floor in frame)…
+const VISTA_FLOOR_ELEV_DEG: f64 = -15.0;
+/// …its top edge must clear the crest top by this margin of sky…
+const VISTA_SKY_MARGIN_DEG: f64 = 8.0;
+/// …and the derived vertical FOV never exceeds this.
+const VISTA_MAX_FOV_DEG: f64 = 110.0;
 /// Per-axis FLOOR on the annulus band width (owner ruling, 2026-08-04): a
 /// legal surround always contains a full gap + slope rim on every axis —
 /// `ratio` controls spaciousness above this floor, never below it. The
@@ -1645,6 +1730,99 @@ mod tests {
             v.beyond_crest(cell[0], cell[2]),
             "the reported cell {cell:?} must lie outward of the crest line"
         );
+    }
+
+    /// Task #157 round 3: the vista's derived vertical FOV frames floor AND
+    /// crest-top on the hollow-vigil proportions — asserted arithmetically
+    /// (the planner's measured failure: a spawn eye 40 blocks from a 48-high
+    /// rim subtends ~52°; no fixed FOV frames floor + crest + sky).
+    #[test]
+    fn vista_fov_frames_floor_and_crest_on_hollow_proportions() {
+        let s = SceneRect {
+            min_x: 0,
+            min_z: 0,
+            max_x: 93,
+            max_z: 26,
+        };
+        let v = generate_valley(41, s, 62, &ValleyParams::default()).unwrap();
+        let (eye, look, fov) = v.vista_camera(Some([5, 64, 5]));
+        assert!(fov <= VISTA_MAX_FOV_DEG, "fov {fov} over the clamp");
+        // Aim is MID-rim on the nearest crest line.
+        assert_eq!(look[1], 62.0 + 24.0, "aim must be mid-rim");
+        let (dx, dz) = (look[0] - eye[0], look[2] - eye[2]);
+        let dist = (dx * dx + dz * dz).sqrt();
+        let elev = |y: f64| ((y - eye[1]).atan2(dist)).to_degrees();
+        let center = elev(look[1]);
+        let crest_top = elev(62.0 + 48.0);
+        assert!(
+            center - fov / 2.0 <= VISTA_FLOOR_ELEV_DEG,
+            "frame bottom {:.1}° misses the gap floor",
+            center - fov / 2.0
+        );
+        assert!(
+            center + fov / 2.0 >= crest_top + VISTA_SKY_MARGIN_DEG,
+            "frame top {:.1}° misses crest-top {crest_top:.1}° + sky margin",
+            center + fov / 2.0
+        );
+    }
+
+    /// Task #157 round 3 (planner ruling): the scene-rect void moat — columns
+    /// with zero piece-authored blocks receive gap-floor ground; authored
+    /// columns are untouched; the surface dapple continues the gap floor's
+    /// own pattern; byte-deterministic.
+    #[test]
+    fn the_moat_fills_only_unauthored_scene_columns() {
+        let s = SceneRect {
+            min_x: 0,
+            min_z: 0,
+            max_x: 47,
+            max_z: 47,
+        };
+        let v = generate_valley(31, s, 62, &ValleyParams::default()).unwrap();
+        // An L-shaped authored blob inside the rect.
+        let mut authored: BTreeSet<(i32, i32)> = BTreeSet::new();
+        for x in 0..=47 {
+            for z in 0..=47 {
+                if x <= 30 || z <= 20 {
+                    authored.insert((x, z));
+                }
+            }
+        }
+        let (tiles, starts) = v.moat(&authored);
+        let expected_cols = (47 - 30) * (47 - 20); // 17 × 27 unauthored columns
+        assert_eq!(starts.len(), expected_cols as usize);
+        let mut filled: BTreeSet<(i32, i32)> = BTreeSet::new();
+        for t in &tiles {
+            let d: fastnbt::Value = fastnbt::from_bytes(&gunzip(&t.bytes)).unwrap();
+            let (palette, blocks) = palette_and_blocks(&d);
+            for (pos, state) in blocks {
+                let (wx, wy, wz) = (t.pos[0] + pos[0], t.pos[1] + pos[1], t.pos[2] + pos[2]);
+                assert!(
+                    !authored.contains(&(wx, wz)),
+                    "moat writes into an authored column ({wx},{wz})"
+                );
+                assert!((0..=47).contains(&wx) && (0..=47).contains(&wz));
+                assert!((58..=62).contains(&wy), "moat cell at y {wy}");
+                if wy == 62 {
+                    let name = &palette[state as usize];
+                    assert!(
+                        name == "minecraft:grass_block" || name == "minecraft:coarse_dirt",
+                        "moat surface must be the gap-floor treatment, got {name}"
+                    );
+                    filled.insert((wx, wz));
+                }
+            }
+        }
+        assert_eq!(
+            filled.len(),
+            expected_cols as usize,
+            "every column surfaced"
+        );
+        // Deterministic: a second derivation is byte-identical.
+        let (tiles2, _) = v.moat(&authored);
+        for (a, b) in tiles.iter().zip(&tiles2) {
+            assert_eq!(a.bytes, b.bytes);
+        }
     }
 
     #[test]

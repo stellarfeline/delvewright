@@ -988,9 +988,24 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   flora/palette block ids + the biome id (`manifest.json`, a declaration
   mirror, is exempt). The render plan gains one `vista` shot — eye at the
   campaign spawn cell (walkable by construction; scene centre fallback) at
-  player eye height, pitched up over the nearest scene edge at a point above
-  the rim, so the frame composes gap floor → blossomed slope → crest → sky
-  (task #157 round 2). **Blossom is in the player's view**: a second Poisson
+  player eye height, aimed at MID-rim on the nearest crest line with a
+  **per-shot vertical FOV** derived from the rim geometry (frame bottom ≤
+  −15° elevation so the gap floor is in frame, top ≥ crest-top + 8° of sky,
+  clamped ≤ 110° — task #157 round 3: a spawn eye 40 blocks from a 48-high
+  rim subtends ~52°, so no fixed FOV frames floor + crest + sky). The Chunky
+  scene emission honors `camera.fov` per shot (delve-render `scene.rs`,
+  default 70 when absent). **Scene-rect interior continuity (the moat)**:
+  scene-rect columns with zero piece-authored blocks are filled with ambient
+  gap-floor ground (same world-noise dapple, so the pattern runs seamlessly
+  from the annulus gap floor through the interior) as row-strip tiles
+  (`horizon/valley/m<n>`, never carrying an air cell over a piece column);
+  attached at the `read_structures` choke point (the authored-column set
+  needs the piece bytes), so build, snapshot, blocking and the render plan
+  all see the completed surround; the un-climbability flood seeds on the
+  moat cells too. Columns with any authored block are untouched — pieces own
+  their columns. The snapshot palette carries explicit `cherry_leaves` /
+  `cherry_log` / `pink_petals` colors (task #157 round 3: the `_leaves`
+  suffix family painted 2044 cherry cells oak-green). **Blossom is in the player's view**: a second Poisson
   pass stands trees on the inner slopes (sparse near
   the floor, denser upslope), each leaning its canopy two columns toward the
   valley so no leaf platform sits within hop-on/hop-off range of two upslope

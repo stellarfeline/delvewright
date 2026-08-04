@@ -267,8 +267,15 @@ fn exact_color(id: &str) -> Option<[u8; 3]> {
         "oxeye_daisy" => [232, 236, 226],
         "oak_leaves" => [64, 110, 46],
         "spruce_leaves" => [50, 88, 50],
+        // Cherry flora (task #157 round 3: 2044 cherry cells painted
+        // oak-green through the `_leaves` suffix family — the whole point of
+        // cherry-valley is that these read PINK in every render). Tones are
+        // 1.21.11 texture averages.
+        "cherry_leaves" => [229, 158, 187],
+        "pink_petals" => [224, 168, 190],
         // --- wood -----------------------------------------------------------
         "oak_log" => [104, 83, 50],
+        "cherry_log" => [92, 58, 58],
         "spruce_log" => [82, 60, 34],
         "stripped_oak_log" => [172, 138, 84],
         "stripped_spruce_log" => [140, 106, 66],
@@ -1613,6 +1620,47 @@ mod tests {
         let mut m = BTreeMap::new();
         m.insert([0, 0, 0], name.to_string());
         VoxelGrid::build(&m)
+    }
+
+    /// Task #157 round 3: cherry flora must resolve to its OWN pinks, never
+    /// the green `_leaves` / brown `_log` suffix families (the hollow-vigil
+    /// build painted 2044 cherry cells oak-green), and every id the valley
+    /// surround emits resolves off the magenta fallback.
+    #[test]
+    fn cherry_flora_resolves_to_its_own_pinks_not_the_suffix_families() {
+        let (leaves, _) = block_color("minecraft:cherry_leaves[persistent=true]");
+        assert_eq!(leaves, [229, 158, 187]);
+        assert_ne!(leaves, block_color("minecraft:oak_leaves").0);
+        assert_ne!(leaves, block_color("minecraft:spruce_leaves").0);
+        let (log, _) = block_color("minecraft:cherry_log[axis=y]");
+        assert_eq!(log, [92, 58, 58]);
+        assert_ne!(log, block_color("minecraft:oak_log").0);
+        let (petals, _) = block_color("minecraft:pink_petals");
+        assert_eq!(petals, [224, 168, 190]);
+        // The full valley-surround emission palette, off-fallback.
+        for id in [
+            "minecraft:andesite",
+            "minecraft:cherry_leaves",
+            "minecraft:cherry_log",
+            "minecraft:coarse_dirt",
+            "minecraft:cobblestone",
+            "minecraft:dirt",
+            "minecraft:fern",
+            "minecraft:grass_block",
+            "minecraft:mossy_cobblestone",
+            "minecraft:oak_leaves",
+            "minecraft:oak_log",
+            "minecraft:pink_petals",
+            "minecraft:short_grass",
+            "minecraft:stone",
+            "minecraft:tuff",
+        ] {
+            assert_ne!(
+                block_color(id).0,
+                FALLBACK_COLOR,
+                "{id} fell to the magenta fallback"
+            );
+        }
     }
 
     #[test]

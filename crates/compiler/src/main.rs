@@ -783,14 +783,14 @@ fn run_snapshot(
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),
     };
-    let plan = match Plan::build(&campaign, &prefabs) {
+    let mut plan = match Plan::build(&campaign, &prefabs) {
         Ok(p) => p,
         Err(e) => {
             print_build_error(e.code, &e.message, json);
             return ExitCode::from(3);
         }
     };
-    let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
+    let structures = match read_structures(&mut plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
     };
@@ -948,19 +948,12 @@ fn load_for_view(
 /// Read the `.nbt` bytes of every structure the plan places. Shared by `build`
 /// and the spec-0015 view commands so all three see the same world.
 fn read_structures(
-    plan: &Plan,
+    plan: &mut Plan,
     prefabs: &PrefabRegistry,
     prefabs_dir: &Path,
     json: bool,
 ) -> Result<BTreeMap<String, Vec<u8>>, u8> {
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    // Compiler-generated surround tiles (spec-0026 §5) first: their
-    // `structure_file` keys never exist on disk — the plan carries the bytes.
-    if let Some(surround) = &plan.surround {
-        for (file, bytes) in &surround.structures {
-            structures.insert(file.clone(), bytes.clone());
-        }
-    }
     // Placed pieces, plus any structure a stage-7 `fragment` verb stamps that
     // no piece placed (spec-0017 PR 2) — the replay needs those bytes too.
     let mut files: Vec<String> = Vec::new();
@@ -997,6 +990,20 @@ fn read_structures(
                     return Err(3);
                 }
             }
+        }
+    }
+    // The valley moat (spec-0026 amendment, task #157 round 3) needs the
+    // authored piece geometry, which only exists once the bytes are read —
+    // this is the single choke point every subcommand funnels through, so
+    // every consumer (build, snapshot, blocking, render plan) sees the same
+    // completed surround.
+    plan.attach_valley_moat(&structures);
+    // Compiler-generated surround tiles (spec-0026 §5, incl. the moat):
+    // their `structure_file` keys never exist on disk — the plan carries the
+    // bytes.
+    if let Some(surround) = &plan.surround {
+        for (file, bytes) in &surround.structures {
+            structures.insert(file.clone(), bytes.clone());
         }
     }
     Ok(structures)
@@ -1259,14 +1266,14 @@ fn run_blocking_chart(
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),
     };
-    let plan = match Plan::build(&campaign, &prefabs) {
+    let mut plan = match Plan::build(&campaign, &prefabs) {
         Ok(p) => p,
         Err(e) => {
             print_build_error(e.code, &e.message, json);
             return ExitCode::from(3);
         }
     };
-    let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
+    let structures = match read_structures(&mut plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
     };
@@ -1406,7 +1413,7 @@ fn run_build(
     }
     let build_lang = if is_english { None } else { Some(lang) };
 
-    let plan = match Plan::build(&campaign, &prefabs) {
+    let mut plan = match Plan::build(&campaign, &prefabs) {
         Ok(p) => p,
         Err(e) => {
             print_build_error(e.code, &e.message, json);
@@ -1415,7 +1422,7 @@ fn run_build(
     };
 
     // read the structure .nbt bytes referenced by placements
-    let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
+    let structures = match read_structures(&mut plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
     };
@@ -1649,14 +1656,14 @@ fn run_edit(
     if has_error(&v.diags) {
         return ExitCode::from(1);
     }
-    let plan = match Plan::build(&v.campaign, &v.prefabs) {
+    let mut plan = match Plan::build(&v.campaign, &v.prefabs) {
         Ok(p) => p,
         Err(e) => {
             print_build_error(e.code, &e.message, json);
             return ExitCode::from(3);
         }
     };
-    let structures = match read_structures(&plan, &v.prefabs, prefabs_dir, json) {
+    let structures = match read_structures(&mut plan, &v.prefabs, prefabs_dir, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
     };
