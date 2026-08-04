@@ -255,10 +255,36 @@ test("a leg's timed gates are resolved against the declared table", () => {
   assert.equal(gate.openTicks, 100);
   assert.equal(gate.closedTicks, 100);
   assert.equal(gate.phase, 0);
+  // task #140: `crush` absent (every pre-crush artifact) means the gate merely
+  // blocks — the staged-entry discipline is reserved for gates that KILL.
+  assert.equal(gate.crush, false);
   // The crossing leg carries the resolved gate; the leg beside it carries none, so
   // it can never claim the gate's licence to retry.
   assert.deepEqual(wp.legs[0]!.timedGates, [gate]);
   assert.deepEqual(wp.legs[1]!.timedGates, []);
+});
+
+test("a gate exporting crush: true parses as lethal (task #140)", () => {
+  const crushing = {
+    ...GATED,
+    timed_gates: [{ ...GATED.timed_gates[0], crush: true }],
+  };
+  const wp = parseWaypoints(crushing);
+  assert.equal(wp.timedGates[0]!.crush, true);
+});
+
+test("a non-boolean crush is a structural fault, never coerced", () => {
+  // Silently coercing (e.g. the string "false" → truthy) could blind-enter a
+  // lethal gate — refuse the artifact instead.
+  const bad = {
+    ...GATED,
+    timed_gates: [{ ...GATED.timed_gates[0], crush: "yes" }],
+  };
+  assert.throws(
+    () => parseWaypoints(bad),
+    (err: unknown) =>
+      err instanceof WaypointsParseError && err.pointer === "/timed_gates/0/crush",
+  );
 });
 
 test("nextLegWaypoints surfaces the matched leg's gates, and none when unmatched", () => {
