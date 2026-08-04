@@ -3,7 +3,12 @@
 - **Status**: Proposed (task #151; owner directive 2026-08-04: sky, flatland,
   valley, cherry-valley, summit; rulings same day: flatland enforcement =
   spec-0013 primitive, sky = archipelago of islands + bridges, sky backdrop
-  layer parameterized incl. vanilla-seed and imported maps)
+  layer parameterized incl. vanilla-seed and imported maps. Second-round
+  rulings 2026-08-04: terrain/biome/tree layering confirmed; flatland is bare
+  grass blocks — no decorative vegetation, no boundary cue (the empty surround
+  IS the cue); perf is non-gating; summit README view-distance line,
+  `fall: lethal` default, `walk_y` datum + migration round, and backdrop v1
+  tiering all approved.)
 - **ADRs**: 0003 (vanilla-first), 0004 (prefabs+jigsaw), 0006 (determinism),
   0010 (OCI — no region files, bootstrap places everything)
 - **Depends on**: spec-0013 (generalizes its horizon/boundary; **supersedes its
@@ -42,7 +47,7 @@ flora:"cherry", palette:"stone-petal"}`.
 | `void` | void superflat | none | — (unchanged) |
 | `ocean` | pinned water superflat, sea level 62 | none | — (unchanged emission; placement re-datumed per §2) |
 | `sky` | the declared **backdrop** (§4) | none; scene rooms become an island archipelago (§4) | `float_y` (walk-plane world y, default 160), `fall` (`lethal` default \| `return`), `backdrop` (default `void`), `placement {x,z}` (default 0,0) |
-| `flatland` | grass superflat whose surface tops **exactly one block under the scene walk plane** (zero height difference by datum equation) | seam blend band (§3) + advisory cue band | `blend_width` (default 6), `cue_thinning` (default on) |
+| `flatland` | grass superflat whose surface tops **exactly one block under the scene walk plane** (zero height difference by datum equation) | seam blend band (§3) | `blend_width` (default 6) |
 | `valley` | void superflat below the tile skirt | mountain annulus: total footprint `ratio`× the scene's, radial ridged-noise rim, flat gap floor between scene and slopes | `ratio` (2..=3, default 2.5), `rim_height` (default 48), `flora` (default `oak`), `palette` (default `stone-grass`) |
 | `summit` | low superflat (gorge haze floor) | flat-topped plateau under the scene + surrounding range and gorges, every surround crest **below** the scene walk plane | `plateau_y` (default 208), `vista_radius` (≥ view-distance×16, default 176), `min_drop` (≥100, default 120) |
 
@@ -51,6 +56,19 @@ cherry-specific code path; a fixture proves the emissions differ only in
 palette/flora blocks (acceptance criterion 6). Backdrop stays sky-only in this spec — blending a
 valley/summit surround into a backdrop terrain is task #73's seamless
 heightfield blending (Non-goals).
+
+**Terrain, biome, and trees are three separable layers** (owner ruling
+2026-08-04): a surround emits (i) its blocks, (ii) a **vanilla-native biome
+paint** over its columns via `/fillbiome` in the bootstrap path — the same
+channel vanilla uses for grass/foliage/water tint, ambience and sky; no
+resource pack involved — and (iii) an optional **tree layer**: seeded
+scatter (Bridson/Poisson-disk family, ideas-only; dossier §7) placing tree
+*templates* like any other blocks. Vanilla `/place feature` is rejected for
+trees — it draws on world RNG, which the determinism invariant cannot admit.
+`flora` selects biome + tree species together; with the tree layer empty,
+`flora` degrades to biome tint alone — differently-colored grass, vanilla's
+own semantics. `cherry` ⇒ `minecraft:cherry_grove` + cherry templates;
+flatland paints `minecraft:plains` and carries no tree layer.
 
 All surround generation is seeded from the campaign seed + fixed per-horizon
 stream labels (in-house position-addressed value-noise family; dossier §2). No
@@ -76,7 +94,9 @@ placed in any non-void horizon without `walk_y` metadata is a build error
 (DW0367). This alone retires the #149 class: a keep-interior area (walk plane
 local 1) gets base `63 − 1 = 62`, landing its walk plane at 63 — one block
 above sea level, dry, with no author action; the island area (`walk_y = 3`)
-keeps base 60, byte-identical to today.
+keeps base 60, byte-identical to today. `walk_y` backfill across existing
+tilesets is an in-milestone migration round (version-adoption discipline;
+owner-approved 2026-08-04).
 
 **Declarations position; proofs read reality.** After assembly the compiler
 checks **empirical geometry**, never metadata:
@@ -92,14 +112,16 @@ checks **empirical geometry**, never metadata:
 
 - Height: zero difference by construction (datum equation §2) — never blended.
 - Material: a `blend_width` band straddling the scene edge dithers grass and
-  scene floor palettes by seeded noise threshold (dossier §2.4); tufts scatter
-  across the seam both ways. Explicitly forbidden outcome: a clean vertical
-  material wall (machine assertion, acceptance criterion 4).
+  scene floor palettes by seeded noise threshold (dossier §2.4). Explicitly
+  forbidden outcome: a clean vertical material wall (machine assertion,
+  acceptance criterion 4).
+- **Bare by design** (owner ruling 2026-08-04): flatland is grass *blocks*
+  only — no decorative vegetation, tufts, or scatter of any kind.
 - Boundary: spec-0013 return clock, **horizon-agnostic** (owner ruling
   2026-08-04) — the region derivation and clock never branch on horizon kind.
-  Advisory (default-on, pure parameterization): scatter density thins to zero
-  over the last ~24 blocks before the region edge, so the meadow visibly runs
-  out (dossier §5).
+  **No visual boundary cue** (owner ruling, same day): the surround is
+  deliberately empty of content and buildings, and that emptiness is itself
+  the signal; nothing telegraphs the clock.
 
 ## 4. Sky archipelago (owner ruling 2026-08-04)
 
@@ -201,13 +223,12 @@ gate and `docs/reference/compiler.md` stay authoritative (spec-0013 precedent).
   world by construction. `check-world-settings.sh` extends to every horizon.
 - **Render tier**: `render-plan.json` gains ≥1 establishing vista shot per
   horizon build (scene edge looking outward), joining the existing shot kinds.
-- **Perf budgets** (prod = Raspberry Pi; dossier §4 + §7.5, proposals pending
-  a measured spike — owner decision): shipped surround NBT ≤ 1 MB (flatland),
-  ≤ 25 MB (valley), ≤ 60 MB (summit); first-boot delta ≤ +120 s (valley),
-  ≤ +300 s (summit); backdrop `vanilla` first-boot ≤ +240 s (spike required
-  on arm64 before binding); backdrop `imported` region files ≤ 100 MB; summit
-  ships `view-distance` 12 and its campaign README states the client
-  view-distance floor (owner decision — player-facing doc).
+- **Perf is non-gating** (owner ruling 2026-08-04: the Pi 5 comfortably ran
+  100+-mod servers; no budget table, no spike gates). CI records shipped
+  image size delta and first-boot time per horizon fixture *informationally*
+  (dossier §4 + §7.5 keep the estimation math for reference). Summit ships
+  server `view-distance` 12 and its campaign README states the client
+  view-distance floor (owner-approved player-facing line, 2026-08-04).
 
 ## Acceptance criteria (machine-checkable)
 
@@ -244,9 +265,9 @@ gate and `docs/reference/compiler.md` stay authoritative (spec-0013 precedent).
    terrain-clearance probe on the booted `vanilla` backdrop and a
    deliberately-low `float_y` fixture is red; (d) the generated backdrop
    PackTest proves no non-scripted mob on sampled backdrop surfaces.
-10. Shipped image size delta and first-boot time per horizon and backdrop
-    within the §6 budget table (CI-measured; Pi factor documented with the
-    spike).
+10. CI records shipped image size delta and first-boot time per horizon and
+    backdrop fixture (informational — no thresholds; owner ruling
+    2026-08-04).
 11. `docs/reference/compiler.md` DW rows + `tools/check-dw-codes.py` green in
     the same PR as each landing.
 
