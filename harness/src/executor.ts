@@ -26,6 +26,7 @@ import type {
   RestStep,
   SelectClassStep,
   TalkToStep,
+  Transport,
   Vec3Tuple,
 } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
@@ -127,6 +128,37 @@ const UNSTICK_ATTEMPTS = 3;
 export type Unstick = (target: GoalSpec) => Promise<number>;
 
 /**
+ * Authoritative "this leg's purpose is already fulfilled" oracle (task #134),
+ * consulted ONLY on a walk's failure path — never to shortcut a healthy hop.
+ * Returns a human-readable reason when the step the walk serves is already
+ * settled (its objective's anchored completion marker arrived, or its exported
+ * completion transport has carried the bot to the next area), `undefined`
+ * otherwise.
+ *
+ * Why it exists: an objective can complete MID-WALK — the tide-mill `reach` fires
+ * its distance check as the bot crosses a timed-gate leg, and the objective's
+ * emission teleports it to the next area (a physically one-way transport). The
+ * remaining hops of the old area's leg then fail, and without this oracle the
+ * harness read that position discontinuity as the gate blocking a leg the bot had
+ * ALREADY walked — looping gate retries and "re-centering" toward cells the
+ * one-way transport makes unreachable. Completion signals outrank position: an
+ * objective that is complete makes its leg a success, wherever the bot stands.
+ */
+export type LegSettled = () => string | undefined;
+
+/** Log-and-report helper for a {@link LegSettled} hit on a failure path. */
+function legSettledReason(settled: LegSettled | undefined, glabel: string): string | undefined {
+  const reason = settled?.();
+  if (reason !== undefined) {
+    process.stderr.write(
+      `[settled] ${glabel}: ending the leg as SUCCEEDED — ${reason}; ` +
+        `resuming from the bot's current area\n`,
+    );
+  }
+  return reason;
+}
+
+/**
  * Replay a leg's ordered goals with **stall-recovery** (task #45). Each `goto`
  * performs one verified hop (rejecting on stall / death). Extracted from `walkTo`
  * as a pure control-flow function — injecting `goto` (and an optional physics
@@ -155,6 +187,7 @@ export async function replayLegWithRecovery(
   goto: (spec: GoalSpec, label: string) => Promise<void>,
   unstick?: Unstick,
   gate?: GateAssist,
+  settled?: LegSettled,
 ): Promise<void> {
   const gates = gate?.gates ?? [];
   let lastProven: GoalSpec | undefined;
@@ -166,14 +199,33 @@ export async function replayLegWithRecovery(
       await goto(spec, glabel);
     } catch (err) {
       if (err instanceof BotDeathError) throw err;
+      // task #134: before judging the hop failed, consult the completion oracle.
+      // A step whose objective is already complete (or whose completion transport
+      // has landed) has nothing left for this leg to prove — the "failure" is the
+      // position discontinuity of a teleport the leg itself triggered. Failure
+      // path only: a healthy hop is never shortcut.
+      if (legSettledReason(settled, glabel) !== undefined) return;
       // A leg the compiler proved walks THROUGH a timed gate (spec-0016 §4) gets the
       // window wait; every other leg keeps the old behaviour exactly, so a real
       // navigation regression still fails on the first stall.
       if (gate && gates.length > 0) {
-        await crossTimedGate(spec, glabel, lastProven, gate, goto, unstick, err);
+        // A `settled` outcome ends the WHOLE leg, not just this hop: the step is
+        // already complete and the remaining hops belong to the area the (one-way)
+        // transport carried the bot out of.
+        if ((await crossTimedGate(spec, glabel, lastProven, gate, goto, unstick, err, settled)) === "settled") {
+          return;
+        }
       } else {
         if (!lastProven) throw err; // nothing proven yet — not the pocket-wedge class
-        await recoverAndRetry(spec, glabel, lastProven, goto, unstick);
+        try {
+          await recoverAndRetry(spec, glabel, lastProven, goto, unstick);
+        } catch (recoverErr) {
+          if (recoverErr instanceof BotDeathError) throw recoverErr;
+          // The settle signal can land while the recovery is in flight (a marker is
+          // a chat packet racing the position jump) — re-check before failing.
+          if (legSettledReason(settled, glabel) !== undefined) return;
+          throw recoverErr;
+        }
       }
     }
     lastProven = spec;
@@ -223,6 +275,17 @@ export interface GateAssist {
  * This is bounded patience for legs the compiler MARKED, never a blanket retry: an
  * unmarked leg is untouched, and a marked leg that is genuinely unwalkable still
  * fails — the check is not weakened, only told what a gate is.
+ *
+ * task #134: every retry decision consults the {@link LegSettled} oracle first. A
+ * step can complete AT the gate crossing (the tide-mill wheelpit: the objective's
+ * distance check fires as the bot lands the crossing, and its emission transports
+ * the bot to the next area) — the interrupted hop then looks blocked forever from
+ * a cell the one-way transport made unreachable, while the objective the leg
+ * exists to reach is already complete. Objective complete ⇒ the crossing
+ * SUCCEEDED; no standoff, window wait, or recovery may path the bot back.
+ * Returns `"crossed"` when the hop was physically completed and `"settled"` when
+ * the oracle ended it — the caller must then stop replaying the WHOLE leg, since
+ * its remaining hops belong to the area the transport carried the bot out of.
  */
 async function crossTimedGate(
   spec: GoalSpec,
@@ -232,18 +295,21 @@ async function crossTimedGate(
   goto: (spec: GoalSpec, label: string) => Promise<void>,
   unstick: Unstick | undefined,
   firstErr: unknown,
-): Promise<void> {
+  settled?: LegSettled,
+): Promise<"crossed" | "settled"> {
   const gates = gate.gates;
   const now = gate.now ?? (() => Date.now());
   const budget = gateRetryBudgetMs(gates);
   const start = now();
   let lastErr = firstErr;
   let attempt = 0;
+  const done = (): boolean => legSettledReason(settled, glabel) !== undefined;
   process.stderr.write(
     `[timed-gate] ${glabel} was interrupted by ${describeGates(gates)}; waiting for a ` +
       `window (budget ${(budget / 1_000).toFixed(1)}s, min ${GATE_MIN_ATTEMPTS} attempts)\n`,
   );
   while (attempt < GATE_MIN_ATTEMPTS || now() - start < budget) {
+    if (done()) return "settled";
     attempt++;
     if (proven && needsStandoff(gate.feetCell(), gates)) {
       process.stderr.write(
@@ -253,12 +319,16 @@ async function crossTimedGate(
       await reached(() => goto({ ...proven, range: 1 }, `${glabel} gate standoff`));
     }
     await gate.waitForWindow(gates);
+    // The window wait is long (up to a full cycle) — the settle signal may have
+    // landed during it, in which case there is no crossing left to attempt.
+    if (done()) return "settled";
     const alabel = `${glabel} gate attempt ${attempt}`;
     try {
       await goto(spec, alabel);
-      return;
+      return "crossed";
     } catch (err) {
       if (err instanceof BotDeathError) throw err;
+      if (done()) return "settled";
       lastErr = err;
       // Every attempt's own reason is logged, not just the last one: a run where the
       // bot never moved and a run where it crossed and was cut off look identical in
@@ -280,9 +350,10 @@ async function crossTimedGate(
     if (proven) {
       try {
         await recoverAndRetry(spec, alabel, proven, goto, unstick);
-        return;
+        return "crossed";
       } catch (err) {
         if (err instanceof BotDeathError) throw err;
+        if (done()) return "settled";
         lastErr = err;
         process.stderr.write(
           `[timed-gate] attempt ${attempt} physical crossing failed: ` +
@@ -294,15 +365,17 @@ async function crossTimedGate(
   // Budget spent. Before calling it a failure, give the hop the ordinary physical
   // recovery — the gate mark says a clock CAN interrupt this leg, not that every
   // failure on it is the clock's doing.
+  if (done()) return "settled";
   try {
     if (proven) {
       await recoverAndRetry(spec, glabel, proven, goto, unstick);
     } else {
       await goto(spec, glabel);
     }
-    return;
+    return "crossed";
   } catch (err) {
     if (err instanceof BotDeathError) throw err;
+    if (done()) return "settled";
     lastErr = err;
   }
   const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
@@ -312,6 +385,18 @@ async function crossTimedGate(
       `${describeGates(gates)}. The window is not the problem; this is a real ` +
       `navigation failure: ${detail}`,
   );
+}
+
+/**
+ * The completion facts of the step a walk serves (task #134): the `obj/<id>` the
+ * step proves and, when the compiler exported one, the absolute destination its
+ * completion teleports the player to (gap 8). `walkTo` turns these into the
+ * {@link LegSettled} oracle its failure paths consult — pure step-contract data
+ * from `critical-path.json`, never a harness inference.
+ */
+interface StepCompletion {
+  readonly objective: string;
+  readonly transport?: Transport;
 }
 
 /** Try a `goto`, returning whether it arrived; a bot death still propagates. */
@@ -482,6 +567,27 @@ const WAVE_UNKILLABLE_MS = 6_000;
  */
 const SCORE_SETTLE_MS = 15_000;
 const SCORE_POLL_MS = 250;
+/**
+ * Margin (ms) added on top of a path's exported `ending_tail_ticks` when sizing
+ * the completion window (task #125): the compiler schedules the ending's finale
+ * — the-wake fires `campaign-complete` 250t into its closing `sequence` — and
+ * exports that tail on the terminal step; the window must outlive the tail plus
+ * server slack. See {@link completionWindowMs}.
+ */
+const ENDING_TAIL_MARGIN_MS = 10_000;
+/** Minecraft server ticks per second (the tick → wall-clock conversion). */
+const TICKS_PER_SECOND = 20;
+
+/**
+ * How long (ms) `assertComplete` may wait for the completion marker: the default
+ * settle window, widened — never narrowed — by the path's exported
+ * scheduled-ending tail (`ending_tail_ticks` + margin). Exported for its unit
+ * test; pure arithmetic, no bot state.
+ */
+export function completionWindowMs(endingTailTicks: number | undefined): number {
+  const tailMs = ((endingTailTicks ?? 0) * 1000) / TICKS_PER_SECOND;
+  return Math.max(SCORE_SETTLE_MS, tailMs + ENDING_TAIL_MARGIN_MS);
+}
 /**
  * How long (ms) to wait for a step's OWN objective-completion marker after the bot
  * has done the thing the step asks for (AUDIT-P0). The datapack completes an
@@ -1637,7 +1743,10 @@ export class MineflayerExecutor implements StepExecutor {
     const bot = this.requireBot();
     // Walk to the NPC first (realism; some dialog effects are reach-gated), then
     // chat the dialog-option `/trigger` command the button would have run.
-    await this.walkTo(step.pos, 3, `npc ${step.npc}`, step.sneak);
+    await this.walkTo(step.pos, 3, `npc ${step.npc}`, step.sneak, {
+      objective: step.objective,
+      transport: step.transport,
+    });
     bot.chat(step.command);
     // A dialogue that OPENED proves nothing: the option must actually complete the
     // objective this step stands for. Wait for that objective's own marker.
@@ -1653,7 +1762,10 @@ export class MineflayerExecutor implements StepExecutor {
    * server's precise-position check can disagree).
    */
   async reach(step: ReachStep): Promise<void> {
-    await this.walkTo(step.pos, Math.max(1, step.radius - 1), `anchor ${step.anchor}`, step.sneak);
+    await this.walkTo(step.pos, Math.max(1, step.radius - 1), `anchor ${step.anchor}`, step.sneak, {
+      objective: step.objective,
+      transport: step.transport,
+    });
     // Standing at the anchor is NOT success (AUDIT-P0): the objective's own
     // completion marker is. A reach step whose zone check never fires — wrong cell,
     // an inactive objective, a gate the path assumed open — now fails here instead
@@ -1668,12 +1780,21 @@ export class MineflayerExecutor implements StepExecutor {
    * A `sneak` leg (gap 7) walks crouched with sprinting disabled; the crouch is
    * restored to off afterwards so a later plain leg is not left sneaking. The long
    * `goto` wait races the death latch so a death aborts it fast, not after ~60s.
+   *
+   * `completion` (task #134) names the step this walk serves: its objective id and
+   * exported transport destination, consulted on the walk's FAILURE paths only. A
+   * step can complete mid-walk — a `reach` distance check fires as the bot crosses
+   * a timed gate, and the completion emission teleports it to the next area — and
+   * the leg's remaining hops then fail on a position discontinuity that is
+   * SUCCESS, not blockage. Passed only by step handlers whose walk targets the
+   * step's own anchor; internal walks (die-retry, mob chases) carry none.
    */
   private async walkTo(
     pos: readonly [number, number, number],
     range: number,
     label: string,
     sneak = false,
+    completion?: StepCompletion,
   ): Promise<void> {
     const bot = this.requireBot();
     const r = Math.max(1, Math.floor(range));
@@ -1765,10 +1886,54 @@ export class MineflayerExecutor implements StepExecutor {
               feetCell: () => this.feetCell(),
             }
           : undefined,
+        completion ? () => this.stepSettled(completion) : undefined,
       );
     } finally {
       restoreControls();
     }
+  }
+
+  /**
+   * The {@link LegSettled} oracle for the step a walk serves (task #134): the
+   * authoritative completion signals the harness already consumes, read without
+   * asserting anything new.
+   *   - The objective's own anchored `[dw:complete …]` marker has arrived
+   *     (buffered since connect — see {@link observeMarker}); or
+   *   - the step's compiler-exported completion transport has landed: the bot
+   *     stands at/near the exported destination, a place only that teleport can
+   *     put it mid-step (areas sit ~256 blocks apart across void, and the
+   *     transport is one-way).
+   * Either ⇒ the walk's purpose is fulfilled regardless of where the leg's
+   * remaining hops point. Consulted on walk FAILURE paths only.
+   */
+  private stepSettled(completion: StepCompletion): string | undefined {
+    if (this.completedObjectives.has(completion.objective)) {
+      return `objective ${completion.objective} is complete (its marker arrived)`;
+    }
+    const dest = completion.transport;
+    if (dest && this.atTransportDest(dest)) {
+      return (
+        `the step's completion transport landed the bot at its exported ` +
+        `destination [${dest[0]}, ${dest[1]}, ${dest[2]}]`
+      );
+    }
+    return undefined;
+  }
+
+  /**
+   * Whether the bot currently stands at/near a compiler-exported transport
+   * destination — the same arrival predicate {@link awaitTransport} uses, so the
+   * mid-walk check and the post-step settle can never disagree about "arrived".
+   */
+  private atTransportDest(dest: readonly [number, number, number]): boolean {
+    const bot = this.bot;
+    if (!bot?.entity) return false;
+    const p = bot.entity.position;
+    return (
+      Math.abs(p.x - (dest[0] + 0.5)) < TRANSPORT_NEAR &&
+      Math.abs(p.z - (dest[2] + 0.5)) < TRANSPORT_NEAR &&
+      Math.abs(p.y - dest[1]) < 4
+    );
   }
 
   /**
@@ -2035,7 +2200,10 @@ export class MineflayerExecutor implements StepExecutor {
     const blacklist = new Set<number>();
     try {
       await this.equipLoadout();
-      await this.walkTo(step.pos, 3, `wave ${step.wave}`, step.sneak);
+      await this.walkTo(step.pos, 3, `wave ${step.wave}`, step.sneak, {
+        objective: step.objective,
+        transport: step.transport,
+      });
       // Give AI-enabled mobs a moment to path toward the bot after we arrive.
       await delay(1_000);
       // Diagnostic: what does the bot see near the wave anchor?
@@ -3074,7 +3242,10 @@ export class MineflayerExecutor implements StepExecutor {
   /** Collect items from the chest at the anchor: go there, open it, withdraw all. */
   async collect(step: CollectStep): Promise<void> {
     const bot = this.requireBot();
-    await this.walkTo(step.pos, 2, `chest ${step.item}`, step.sneak);
+    await this.walkTo(step.pos, 2, `chest ${step.item}`, step.sneak, {
+      objective: step.objective,
+      transport: step.transport,
+    });
     const here = bot.entity.position;
     const target = here.offset(
       step.pos[0] + 0.5 - here.x,
@@ -3109,7 +3280,10 @@ export class MineflayerExecutor implements StepExecutor {
    */
   async interact(step: InteractStep): Promise<void> {
     const bot = this.requireBot();
-    await this.walkTo(step.pos, 3, `interact ${step.anchor}`, step.sneak);
+    await this.walkTo(step.pos, 3, `interact ${step.anchor}`, step.sneak, {
+      objective: step.objective,
+      transport: step.transport,
+    });
     await presentAndTrigger<Item>(bot, step, step.anchor);
     await this.requireObjective(step.objective, `interact ${step.anchor}`);
     await delay(EFFECT_SETTLE_MS);
@@ -3139,14 +3313,7 @@ export class MineflayerExecutor implements StepExecutor {
     const bot = this.requireBot();
     const [x, y, z] = dest;
     const arrived = await this.waitFor(
-      () => {
-        const p = bot.entity.position;
-        return (
-          Math.abs(p.x - (x + 0.5)) < TRANSPORT_NEAR &&
-          Math.abs(p.z - (z + 0.5)) < TRANSPORT_NEAR &&
-          Math.abs(p.y - y) < 4
-        );
-      },
+      () => this.atTransportDest(dest),
       TRANSPORT_TIMEOUT_MS,
       REACH_POLL_MS,
     );
@@ -3254,9 +3421,12 @@ export class MineflayerExecutor implements StepExecutor {
     //      gains 1.21.11 score-packet support; currently always unset).
     // The campaign completes during the LAST objective step; the sequencer has
     // already failed the run if the marker arrived any earlier than that
-    // (assertEndgameNotReached), so reaching here means it is either due now or due
-    // within a tick or two of the last objective.
-    const deadline = Date.now() + SCORE_SETTLE_MS;
+    // (assertEndgameNotReached), so reaching here means it is either due now or —
+    // when the path exports a scheduled-ending tail (`ending_tail_ticks`, task
+    // #125: the-wake fires `campaign-complete` 250t into its closing `sequence`)
+    // — due within that tail. The window covers whichever is longer.
+    const windowMs = completionWindowMs(step.endingTailTicks);
+    const deadline = Date.now() + windowMs;
     while (Date.now() < deadline) {
       if (this.death) throw this.death;
       if (this.campaignCompleteAtStep !== undefined) {
@@ -3272,7 +3442,7 @@ export class MineflayerExecutor implements StepExecutor {
     const sidebar = board?.itemsMap[bot.username]?.value ?? "unset";
     const done = [...this.completedObjectives.keys()];
     throw new Error(
-      `campaign not complete after ${SCORE_SETTLE_MS}ms: no ` +
+      `campaign not complete after ${windowMs}ms: no ` +
         `\`${markerLine(this.campaignId ?? "?", CAMPAIGN_TOKEN)}\` marker arrived ` +
         `(objective ${step.objective} expected ${step.value}; sidebar: ${sidebar}); ` +
         `objectives completed: ${done.join(", ") || "none"}`,

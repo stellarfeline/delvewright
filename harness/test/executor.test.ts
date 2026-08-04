@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import type { Bot } from "mineflayer";
-import { MineflayerExecutor, type BotConfig } from "../src/executor.ts";
+import { MineflayerExecutor, completionWindowMs, type BotConfig } from "../src/executor.ts";
 import { BotDeathError } from "../src/death.ts";
 import type { AssertCompleteStep } from "../src/critical-path.ts";
 
@@ -89,6 +89,16 @@ test("a death event records position + likely cause and stops the pathfinder", (
   // subsequent hop, which is how a the-drowned-bell run failed a leg it had walked
   // fine the run before. The reset consumes the flag here, once.
   assert.deepEqual(bot.pathfinderCalls, ["stop", "setGoal(null)"]);
+});
+
+test("the completion window covers an exported scheduled-ending tail (task #125)", () => {
+  // No tail (synchronous ending): the historical 15s settle window.
+  assert.equal(completionWindowMs(undefined), 15_000);
+  // A short tail stays inside the default window — never narrowed.
+  assert.equal(completionWindowMs(20), 15_000); // 1s + 10s margin < 15s
+  // the-wake's 250t sequence tail: 12.5s + 10s margin — the old flat 15s
+  // window could expire while the ending was still legitimately scheduled.
+  assert.equal(completionWindowMs(250), 22_500);
 });
 
 test("a death fails an in-flight assert-complete fast with the death diagnostic", async () => {
@@ -737,6 +747,134 @@ test("a gate crossing the pathfinder cannot hold is finished by walking, inside 
   assert.equal(gate.waits, 1, "and it happened inside the FIRST window, not after the budget");
 });
 
+// --- task #134: completion signals outrank position ---------------------------
+//
+// The tide-mill wheelpit defect: `obj/wheelpit` sits right past a timed-gate
+// crossing and its completion emission teleports the player to the next area (a
+// physically one-way transport). The bot crossed the sluice, the objective
+// completed — and the leg's remaining hops then failed on the position
+// discontinuity, which the harness read as the gate blocking a leg it had already
+// walked: three gate "attempts", then a re-center toward a cell the one-way
+// transport makes unreachable. Objective complete ⇒ the leg SUCCEEDED.
+
+test("a gate-leg hop failure is SUCCESS when the step settled mid-crossing (tide-mill wheelpit)", async () => {
+  const gate = fakeGate();
+  const calls: string[] = [];
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    calls.push(label);
+    // The completion teleport landed and stopped the pathfinder mid-hop.
+    if (label.includes("waypoint 2/3")) {
+      throw new Error("Path was stopped before it could be completed!");
+    }
+  };
+  await replayLegWithRecovery(
+    [G(24, 63, 4), G(24, 63, -11), G(24, 63, -14, 3)],
+    "anchor anchor/wheelpit",
+    goto,
+    undefined,
+    gate,
+    // The oracle already reports the step settled (marker arrived / transport
+    // landed) by the time the failure is judged.
+    () => "objective obj/wheelpit is complete (its marker arrived)",
+  );
+  assert.equal(gate.waits, 0, "no window wait: there is no crossing left to make");
+  assert.ok(!calls.some((l) => l.includes("gate attempt")), calls.join(" | "));
+  assert.ok(!calls.some((l) => l.includes("standoff")), calls.join(" | "));
+  assert.ok(!calls.some((l) => l.includes("recovery")), calls.join(" | "));
+  // The replay ends with the leg: the hops after the one-way transport — which
+  // belong to the area the bot was carried out of — are never pathed.
+  assert.ok(
+    calls.every((l) => l.includes("waypoint")),
+    `the old area's final goal was never pathed: ${calls.join(" | ")}`,
+  );
+});
+
+test("a settle signal landing during the window wait ends the crossing before re-pathing", async () => {
+  // The marker is a chat packet racing the position jump — it can arrive while the
+  // gate loop is already waiting for a window. The next decision after the wait
+  // must be "settled", not another crossing attempt toward the old area.
+  const inner = fakeGate();
+  let settledNow = false;
+  const gate: GateAssist = {
+    gates: inner.gates,
+    waitForWindow: async (gates) => {
+      await inner.waitForWindow(gates);
+      settledNow = true;
+    },
+    feetCell: inner.feetCell,
+    now: inner.now,
+  };
+  const calls: string[] = [];
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    calls.push(label);
+    if (label.includes("waypoint 2/3") || label.includes("gate attempt")) {
+      throw new Error("Path was stopped before it could be completed!");
+    }
+  };
+  await replayLegWithRecovery(
+    [G(24, 63, 4), G(24, 63, -11), G(24, 63, -14, 3)],
+    "anchor anchor/wheelpit",
+    goto,
+    undefined,
+    gate,
+    () => (settledNow ? "objective obj/wheelpit is complete (its marker arrived)" : undefined),
+  );
+  assert.equal(inner.waits, 1, "one window wait, then the settle signal ended the crossing");
+  assert.ok(!calls.some((l) => l.includes("gate attempt")), calls.join(" | "));
+  assert.ok(
+    calls.every((l) => l.includes("waypoint")),
+    `no goal beyond the settled leg was pathed: ${calls.join(" | ")}`,
+  );
+});
+
+test("a non-gate leg hop failure is SUCCESS when the completion transport already landed", async () => {
+  const calls: string[] = [];
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    calls.push(label);
+    if (label.includes("waypoint 2/3")) {
+      throw new Error("No path to the goal!");
+    }
+  };
+  await replayLegWithRecovery(
+    [G(0, 65, 0), G(0, 65, 3), G(0, 65, 6, 3)],
+    "anchor anchor/next-area",
+    goto,
+    undefined,
+    undefined,
+    () => "the step's completion transport landed the bot at its exported destination [260, 61, 4]",
+  );
+  // No re-center toward the unreachable old-area cell, and no goal beyond the leg.
+  assert.ok(!calls.some((l) => l.includes("recovery")), calls.join(" | "));
+  assert.ok(
+    calls.every((l) => l.includes("waypoint")),
+    `the old area's final goal was never pathed: ${calls.join(" | ")}`,
+  );
+});
+
+test("a settle oracle that never fires leaves the gate failure verdict untouched", async () => {
+  // The oracle is not a tolerance: a genuinely blocked leg with an unsettled step
+  // fails exactly as before, naming the gate and its cycle.
+  const gate = fakeGate();
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    if (label.includes("waypoint 1/2") || label.includes("gate attempt")) {
+      throw new Error("No path to the goal!");
+    }
+  };
+  await assert.rejects(
+    () =>
+      replayLegWithRecovery(
+        [G(24, 63, -14), G(24, 63, -14, 3)],
+        "anchor anchor/l1a-ward",
+        goto,
+        undefined,
+        gate,
+        () => undefined,
+      ),
+    /timed-gate\/portcullis/,
+  );
+  assert.ok(gate.waits >= GATE_MIN_ATTEMPTS, "the full retry discipline still ran");
+});
+
 // --- interact: the mainhand contract (compiler PR #205) ----------------------
 
 import type { InteractStep } from "../src/critical-path.ts";
@@ -826,6 +964,101 @@ test("interact leaves the hand alone when the step requires no item", async () =
   setTimeout(() => bot.emit("messagestr", "[dw:complete keep-trial obj/unbar]"), 20);
   await executor.interact(interactStep(null));
   assert.deepEqual(bot.calls, ["chat(/trigger dw.i.unbar)"]);
+});
+
+// --- task #134, executor tier: reach + timed gate + completion transport ------
+
+import type { ReachStep } from "../src/critical-path.ts";
+import { parseWaypoints } from "../src/waypoints.ts";
+
+/**
+ * A bot whose every pathfind ends the tide-mill way: the objective's distance
+ * check fires as the bot lands the crossing, the datapack broadcasts the marker
+ * and teleports it to the next area, and the forced move stops the pathfinder —
+ * so the in-flight `goto` rejects with the exact live-run message.
+ */
+class TransportReachBot extends FakeBot {
+  registry = registryFor("1.21.11");
+  health = 20;
+  food = 20;
+  entities: Record<number, unknown> = {};
+  inventory = { items: (): Array<{ name: string; type: number }> => [] };
+  gotoCalls = 0;
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    goto: async (): Promise<void> => {
+      this.gotoCalls++;
+      this.entity.position = new FakeVec3(260.5, 61.0, 4.5);
+      this.emit("forcedMove");
+      this.emit("messagestr", "[dw:complete the-tide-mill obj/wheelpit]");
+      throw new Error("Path was stopped before it could be completed!");
+    },
+  };
+  setControlState(): void {}
+}
+
+test("reach: a completion transport landing mid-gate-leg is step success, not a gate failure", async () => {
+  // Six live tide-mill runs failed here: `dw.o_wheelpit = 1` on the server while the
+  // harness looped "still blocked after 3 timed-gate crossing attempt(s)" and tried
+  // to re-center across a one-way transport. The whole reach step must now pass on
+  // the authoritative signals, without a single gate retry.
+  const bot = new TransportReachBot();
+  bot.entity.position = new FakeVec3(4.5, 63.0, 0.5);
+  const executor = attach(bot);
+  executor.useCampaign("the-tide-mill");
+  executor.useWaypoints(
+    parseWaypoints({
+      version: "0.6.0",
+      campaign_id: "the-tide-mill",
+      timed_gates: [
+        {
+          id: "timed-gate/sluice",
+          region: { min: [18, 62, -30], max: [22, 64, -30] },
+          block: "minecraft:oak_fence",
+          open_ticks: 100,
+          closed_ticks: 100,
+          phase: 0,
+        },
+      ],
+      legs: [
+        {
+          from: [4, 63, 0],
+          to: [20, 63, -40],
+          waypoints: [
+            [10, 63, -10],
+            [20, 63, -30],
+          ],
+          timed_gates: ["timed-gate/sluice"],
+        },
+      ],
+    }),
+  );
+  executor.beginStep(4);
+  const step: ReachStep = {
+    action: "reach",
+    objective: "obj/wheelpit",
+    anchor: "anchor/wheelpit",
+    pos: [20, 63, -40],
+    radius: 3,
+    transport: [260, 61, 4],
+  };
+  const started = Date.now();
+  await executor.reach(step); // resolves — before the fix this looped gate retries and threw
+  // One hop, retried once by runGoto's own transient-retry — never the gate loop's
+  // window waits (each up to a full cycle + 15s margin) or its re-center recovery.
+  assert.ok(bot.gotoCalls <= 2, `no gate-loop retries: ${bot.gotoCalls} pathfinds`);
+  assert.ok(
+    Date.now() - started < 10_000,
+    "the step settled on the completion signals, not on a spent gate budget",
+  );
 });
 
 // --- the die-retry stage: the run artifact must never lose a death (task #102) ---
