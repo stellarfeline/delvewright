@@ -293,6 +293,53 @@ export async function loadWaypointsForCriticalPath(
   return parseWaypointsJson(text);
 }
 
+/**
+ * The per-branch waypoint artifact that accompanies a branch's executable path
+ * (task #117): `branch-path-<slug>.json` → `branch-waypoints-<slug>.json`, same
+ * directory. A derivation, not a search — the compiler emits both names from one
+ * slug, so the two files are one contract. Throws on a path file that is not in
+ * the `branch-path-<slug>.json` shape (that would be a branch-plan contract
+ * break, not a missing artifact).
+ */
+export function branchWaypointsFileFor(branchPathFile: string): string {
+  const base = path.basename(branchPathFile);
+  if (!base.startsWith("branch-path-") || !base.endsWith(".json")) {
+    throw new WaypointsParseError(
+      "",
+      `cannot derive a per-branch waypoints file from ${JSON.stringify(branchPathFile)} — ` +
+        `expected a branch-path-<slug>.json (the branch-plan contract)`,
+    );
+  }
+  return path.join(
+    path.dirname(branchPathFile),
+    `branch-waypoints-${base.slice("branch-path-".length)}`,
+  );
+}
+
+/**
+ * Load the per-branch waypoint artifact beside a branch's executable path
+ * (task #117). Returns `undefined` when absent — the CALLER must then fall back
+ * LOUDLY (stderr + a run-report finding), never silently: an un-waypointed branch
+ * walk is terrain-flaky where the waypointed one is deterministic, and a reader
+ * comparing runs needs to know which kind this was. Present-but-malformed throws
+ * {@link WaypointsParseError}, same stance as the critical-path artifact.
+ */
+export async function loadWaypointsForBranchPath(
+  branchPathFile: string,
+): Promise<Waypoints | undefined> {
+  const wpPath = branchWaypointsFileFor(branchPathFile);
+  let text: string;
+  try {
+    text = await readFile(wpPath, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined; // caller reports the loud fallback
+    }
+    throw err;
+  }
+  return parseWaypointsJson(text);
+}
+
 /** The result of an ordered leg match: the proven waypoint polyline to replay (or
  * `undefined` for single-goal fallback) and the advanced cursor. */
 export interface LegMatch {

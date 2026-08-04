@@ -37,6 +37,11 @@ here="validation"
 OUT="${DELVE_OUTPUT:-validation/delve-output}"
 PLAN="$OUT/validation/branch-plan.json"
 RUN_OUT="${DW_RUN_OUT:-validation/run-out}"
+# Where the compose bot actually writes its report: the `./run-out` mount in
+# compose.yaml is FIXED relative to the compose file and does not follow
+# DW_RUN_OUT. Reports are read from here and FILED under $RUN_OUT — before this
+# split, a custom DW_RUN_OUT silently lost every per-branch report (task #117).
+BOT_OUT="$here/run-out"
 PROJECT="${DW_COMPOSE_PROJECT:-}"
 TIER="${DELVEWRIGHT_BRANCHES:-all}"
 
@@ -61,9 +66,9 @@ if [ -z "$selected" ]; then
 fi
 echo "==> selected: $(echo "$selected" | tr '\n' ' ')"
 
-mkdir -p "$RUN_OUT"
+mkdir -p "$RUN_OUT" "$BOT_OUT"
 MERGED="$RUN_OUT/branch-runs.json"
-rm -f "$MERGED" "$RUN_OUT/run-report.json"
+rm -f "$MERGED" "$BOT_OUT/run-report.json"
 
 cleanup() {
   if [ -n "$PROJECT" ]; then
@@ -76,11 +81,16 @@ trap cleanup EXIT
 
 status=0
 reports=()
+# Branches whose compose run exited without writing ANY run report — an INFRA
+# failure (server never booted, bot never connected, mount broken), which is a
+# different fact from a red run and from a tier skip, and must render as one
+# (task #117). Entries are `branch=exit-code`.
+infra=()
 while IFS= read -r branch; do
   [ -n "$branch" ] || continue
   slug="$(printf '%s' "$branch" | tr '/' '-')"
   report="$RUN_OUT/run-report-$slug.json"
-  rm -f "$report" "$RUN_OUT/run-report.json"
+  rm -f "$report" "$BOT_OUT/run-report.json"
 
   echo
   echo "==> ${branch}: fresh world"
@@ -97,11 +107,13 @@ while IFS= read -r branch; do
   rc=$?
   set -e
 
-  # The bot writes into the mounted ./run-out; keep this branch's copy under its
-  # own name so the merge can read them all back.
-  if [ -f "$RUN_OUT/run-report.json" ]; then
-    mv "$RUN_OUT/run-report.json" "$report"
+  # The bot writes into the compose-mounted $BOT_OUT; file this branch's copy
+  # under its own name in $RUN_OUT so the merge can read them all back.
+  if [ -f "$BOT_OUT/run-report.json" ]; then
+    mv "$BOT_OUT/run-report.json" "$report"
     reports+=("$report")
+  else
+    infra+=("$branch=$rc")
   fi
 
   if [ "$rc" -ne 0 ]; then
@@ -120,11 +132,21 @@ echo "==> merging per-branch reports into $MERGED"
 # array's `[@]` expansion as an unbound variable under `set -u`. A run where every
 # branch failed before writing a report must still reach the merge and SAY so —
 # crashing here would hide the very thing this artifact exists to show.
+# `DW_INFRA` carries the attempted-but-reportless branches (`branch=exit-code`
+# lines): those rows must render as INFRA failures — distinct from a red run
+# (the bot walked and failed a step) and from a tier skip (never attempted) —
+# and no other session's "skipped" row may paper over them (task #117).
+DW_INFRA="$(printf '%s\n' ${infra[@]+"${infra[@]}"})" \
 python3 - "$MERGED" "$PLAN" ${reports[@]+"${reports[@]}"} <<'PY'
-import json, sys
+import json, os, sys
 
 merged_path, plan_path, *report_paths = sys.argv[1:]
 plan = json.load(open(plan_path))
+infra = dict(
+    line.split("=", 1)
+    for line in os.environ.get("DW_INFRA", "").splitlines()
+    if "=" in line
+)
 # Start from the PLAN, not from the reports: a branch whose run produced no report
 # at all must still appear. An absent branch is the exact failure mode spec-0025
 # exists to end — coverage you cannot see is coverage you do not have.
@@ -140,6 +162,14 @@ rows = {
     }
     for b in plan["branches"]
 }
+for branch, rc in infra.items():
+    if branch in rows:
+        rows[branch]["infra_failed"] = True
+        rows[branch]["reason"] = (
+            f"INFRA FAILURE: the compose run exited {rc} without writing a run "
+            f"report — the server or bot never produced a result, so this is a "
+            f"validation-infrastructure fault, not a branch verdict"
+        )
 tier = "all"
 for p in report_paths:
     report = json.load(open(p))
@@ -149,8 +179,10 @@ for p in report_paths:
     tier = section.get("tier", tier)
     for row in section["outcomes"]:
         # Only the session that DROVE a branch may claim it; every other session
-        # lists it as unrun, and those rows must not overwrite the real result.
-        if row["ran"] or not rows[row["branch"]]["ran"]:
+        # lists it as unrun, and those rows must not overwrite the real result —
+        # nor an infra-failure row, whose absence of a report is the finding.
+        current = rows[row["branch"]]
+        if row["ran"] or (not current["ran"] and not current.get("infra_failed")):
             rows[row["branch"]] = row
 
 merged = {"version": 1, "campaign_id": plan["campaign_id"], "tier": tier,
@@ -160,7 +192,14 @@ with open(merged_path, "w") as fh:
     fh.write("\n")
 
 for row in merged["branches"]:
-    state = "RAN/passed" if row["passed"] else ("RAN/FAILED" if row["ran"] else "skipped")
+    if row["passed"]:
+        state = "RAN/passed"
+    elif row["ran"]:
+        state = "RAN/FAILED"
+    elif row.get("infra_failed"):
+        state = "INFRA-FAILED"
+    else:
+        state = "skipped"
     print(f"  {row['branch']}: {state}" + ("" if row["ran"] else f" — {row['reason']}"))
 PY
 
