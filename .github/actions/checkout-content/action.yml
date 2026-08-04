@@ -8,6 +8,16 @@ description: >
 
   The content repo is PUBLIC (owner, 2026-07-30), so the checkout is tokenless.
 
+inputs:
+  lfs:
+    description: >
+      Materialize the git-lfs payloads (the prefab `.nbt` bodies). Default true —
+      anything that BUILDS needs them. A job that only reads the content repo's
+      text (campaign JSON, storybook markdown) sets this to "false" and gets LFS
+      pointers instead, which is the same text at a fraction of the transfer.
+    required: false
+    default: "true"
+
 runs:
   using: composite
   steps:
@@ -33,4 +43,4 @@ runs:
         repository: ${{ steps.pin.outputs.repo }}
         ref: ${{ steps.pin.outputs.sha }}
         path: campaigns
-        lfs: true
+        lfs: ${{ inputs.lfs == 'true' }}
