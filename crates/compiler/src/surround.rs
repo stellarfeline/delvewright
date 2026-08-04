@@ -156,6 +156,36 @@ impl ValleySurround {
     pub fn in_annulus(&self, x: i32, z: i32) -> bool {
         in_annulus(&self.scene, self.ratio, x, z)
     }
+
+    /// The spec-0026 §5 empirical proof, stated over the ASSEMBLED world (the
+    /// authoritative geometry, surround tiles included): a nav walk flood from
+    /// the gap floor must never stand on a column outward of the crest line.
+    /// Not a slope-angle promise — if any palette/tree/settle change ever
+    /// grows a standable staircase, this is the check that turns red.
+    ///
+    /// Returns the first escaped cell (for the caller's DW diagnostic).
+    pub fn verify_unclimbable(&self, world: &crate::nav::World) -> Result<(), [i32; 3]> {
+        let reached = world.reachable_walkable(&self.gap_floor_starts);
+        for cell in reached {
+            if self.beyond_crest(cell[0], cell[2]) {
+                return Err(cell);
+            }
+        }
+        Ok(())
+    }
+
+    /// The establishing-vista camera for the render plan (spec-0026 §6: one
+    /// vista shot per horizon build, scene edge looking outward): eye on the
+    /// +X scene edge at head height over the walk plane, looking at the rim
+    /// crest across the gap. Returns `(eye, look_at)` in world coordinates.
+    pub fn vista_camera(&self) -> ([f64; 3], [f64; 3]) {
+        let cz = f64::from(self.scene.min_z + self.scene.max_z) / 2.0;
+        let eye_x = f64::from(self.scene.max_x) + 1.5;
+        let eye_y = f64::from(self.floor_top_y) + 3.0;
+        let crest_x = f64::from(self.scene.max_x) + GAP_WIDTH + SLOPE_RUN;
+        let crest_y = f64::from(self.floor_top_y) + 24.0; // mid-rim: crests + sky
+        ([eye_x, eye_y, cz + 0.5], [crest_x + 8.0, crest_y, cz + 0.5])
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -190,10 +220,11 @@ const TILE_Y: i32 = 48;
 const TREE_SPACING: f64 = 7.0;
 /// Bridson candidate attempts per active sample.
 const POISSON_K: usize = 20;
-/// Trees keep this much radial margin outward of the crest line, so no canopy
-/// (radius 2) overhangs the inner slope — trees live on the mountains, never
-/// where they could shorten the un-climbable wall.
-const TREE_CREST_MARGIN: f64 = 3.0;
+/// Radial margin outward of the crest line that every cell of a tree's canopy
+/// footprint must keep — trees live on the mountains, never where they could
+/// shorten the un-climbable inner wall. Checked per canopy cell (exact),
+/// not per trunk with a guessed slack.
+const TREE_CREST_MARGIN: f64 = 1.0;
 /// Understory decor density on grass cells (gap floor stays bare).
 const DECOR_DENSITY: f64 = 0.12;
 /// MC 1.21.11 build range (dossier §3).
@@ -597,9 +628,19 @@ pub fn generate_valley(
         if !in_annulus(&scene, params.ratio, x, z) {
             return false;
         }
-        let dw = warped_distance(seed, &scene, x, z);
-        if dw < GAP_WIDTH + SLOPE_RUN + TREE_CREST_MARGIN {
-            return false;
+        // The WHOLE canopy footprint (radius 2) must clear the crest line —
+        // exact, per-cell, so no fixed margin has to out-guess the domain
+        // warp's gradient and no canopy is ever sheared by a clip.
+        for dx in -2..=2 {
+            for dz in -2..=2 {
+                let dw = warped_distance(seed, &scene, x + dx, z + dz);
+                if dw <= GAP_WIDTH + SLOPE_RUN + TREE_CREST_MARGIN {
+                    return false;
+                }
+                if !in_annulus(&scene, params.ratio, x + dx, z + dz) {
+                    return false;
+                }
+            }
         }
         // Grass shoulders only (surface material is flora-independent, so the
         // domain — and thus tree POSITIONS — is identical across floras).
@@ -682,10 +723,12 @@ fn surface_is_grass(seed: u64, scene: &SceneRect, ratio: f64, x: i32, z: i32) ->
         let s = ((dw - GAP_WIDTH) / SLOPE_RUN).clamp(0.0, 1.0);
         value_noise(seed, x, 0, z, 0.11, SALT_ROCK_SPECKLE) > 0.30 + 0.55 * s
     } else {
-        // Crest band mixed, outer face increasingly grassy (tree country).
+        // Crest band already tree country (the silhouette the scene sees —
+        // for cherry-valley the blossoms must crown the rim), outer face
+        // increasingly grassy.
         let p = annulus_progress(scene, ratio, x, z);
         let o = ((p - DECAY_START) / (1.0 - DECAY_START)).clamp(0.0, 1.0);
-        value_noise(seed, x, 0, z, 0.11, SALT_ROCK_SPECKLE) > 0.55 - 0.35 * o
+        value_noise(seed, x, 0, z, 0.11, SALT_ROCK_SPECKLE) > 0.40 - 0.22 * o
     }
 }
 
@@ -1246,11 +1289,44 @@ mod tests {
                     assert!(v.in_annulus(wx, wz), "tree cell outside annulus");
                     let dw = warped_distance(17, &scene(), wx, wz);
                     assert!(
-                        dw >= GAP_WIDTH + SLOPE_RUN + TREE_CREST_MARGIN - 2.0 - 1.0,
-                        "tree cell at ({wx},{wz}) reaches the inner slope (d {dw:.1})"
+                        dw > GAP_WIDTH + SLOPE_RUN,
+                        "tree cell at ({wx},{wz}) reaches the inner slope or gap (d {dw:.1})"
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn nav_flood_from_gap_floor_never_crosses_the_crest() {
+        // The compiler-side statement of the spec §5 proof, over the
+        // SERIALIZED tiles (decode → solid set → nav world → flood).
+        let s = SceneRect {
+            min_x: 0,
+            min_z: 0,
+            max_x: 47,
+            max_z: 47,
+        };
+        let v = generate_valley(31, s, 62, &ValleyParams::default()).unwrap();
+        let mut solid: BTreeSet<[i32; 3]> = BTreeSet::new();
+        for t in &v.tiles {
+            let d: fastnbt::Value = fastnbt::from_bytes(&gunzip(&t.bytes)).unwrap();
+            let (palette, blocks) = palette_and_blocks(&d);
+            for (pos, state) in blocks {
+                let name = &palette[state as usize];
+                // Non-colliding dressing is not solid ground.
+                if name.contains("short_grass")
+                    || name.contains("fern")
+                    || name.contains("pink_petals")
+                {
+                    continue;
+                }
+                solid.insert([t.pos[0] + pos[0], t.pos[1] + pos[1], t.pos[2] + pos[2]]);
+            }
+        }
+        let world = crate::nav::World::from_solid_cells(solid);
+        if let Err(cell) = v.verify_unclimbable(&world) {
+            panic!("gap floor escapes the valley at {cell:?}");
         }
     }
 
