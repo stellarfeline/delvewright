@@ -159,6 +159,118 @@ fn v09_valley_builds_byte_identical_and_ships_surround() {
     );
 }
 
+/// A private, mutable copy of the prefab library with `prefab/hello-room`'s
+/// metadata JSON transformed (the real `campaigns/prefabs` is the content-repo
+/// checkout and is never written by a test).
+fn doctored_prefabs(name: &str, f: impl Fn(&mut serde_json::Value)) -> std::path::PathBuf {
+    let dir = tmp(name);
+    common::copy_dir_all(&common::prefabs_dir(), &dir);
+    let meta_path = dir.join("hello-room.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
+    f(&mut meta);
+    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+    dir
+}
+
+fn build_expecting(camp: &Path, prefabs: &Path, out: &Path, exit: i32, code_str: &str) {
+    let r = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&r.stdout),
+        String::from_utf8_lossy(&r.stderr)
+    );
+    assert_eq!(
+        code(&r),
+        exit,
+        "expected exit {exit} with {code_str}:\n{all}"
+    );
+    assert!(all.contains(code_str), "expected {code_str}:\n{all}");
+}
+
+/// spec-0026 acceptance criterion 2 (`DW0366` by code): a horizon param out of
+/// its spec range is a validation error (exit 1).
+#[test]
+fn v09_out_of_range_ratio_is_dw0366() {
+    let camp = tmp("v09-dw0366");
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
+    let world = r#"{
+  "dsl_version": "0.9.0",
+  "campaign_id": "hello-world",
+  "stage": "world",
+  "content": {
+    "title": "The Keeper's Door",
+    "theme": "A lonely keep at the edge of the moor.",
+    "premise": "One locked door stands between you and the road home.",
+    "seed": 20260729,
+    "target_minutes": 5,
+    "horizon": { "base": "valley", "ratio": 5.0 },
+    "boundary": { "margin": 20 },
+    "areas": [
+      { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
+    ]
+  }
+}"#;
+    std::fs::write(camp.join("world.json"), world).unwrap();
+    let out = tmp("v09-dw0366-out");
+    build_expecting(&camp, &common::prefabs_dir(), &out, 1, "DW0366");
+}
+
+/// spec-0026 acceptance criterion 2 (`DW0367` by code): a piece placed under a
+/// non-void horizon whose prefab metadata declares no `walk_y` is a build
+/// error — the per-area datum has nothing to compute from.
+#[test]
+fn v09_missing_walk_y_is_dw0367() {
+    let camp = valley_campaign("v09-dw0367", "valley");
+    let prefabs = doctored_prefabs("v09-dw0367-prefabs", |meta| {
+        meta.as_object_mut().unwrap().remove("walk_y");
+    });
+    let out = tmp("v09-dw0367-out");
+    build_expecting(&camp, &prefabs, &out, 3, "DW0367");
+}
+
+/// spec-0026 acceptance criterion 2 (`DW0364` by code) — the #149-shaped
+/// fixture: an interior piece whose walk plane lands below sea level and which
+/// declares NO `waterline_y` is red. A lying `walk_y` (5, real walk plane
+/// local 1) places the base at 63−5=58, landing the standable cells at 59 —
+/// four blocks under the ocean; the old `DW0344` exemption would have looked
+/// away, the empirical flood proof does not.
+#[test]
+fn v09_flooded_interior_without_waterline_is_dw0364() {
+    let camp = tmp("v09-dw0364");
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
+    let world = r#"{
+  "dsl_version": "0.9.0",
+  "campaign_id": "hello-world",
+  "stage": "world",
+  "content": {
+    "title": "The Keeper's Door",
+    "theme": "A lonely keep at the edge of the moor.",
+    "premise": "One locked door stands between you and the road home.",
+    "seed": 20260729,
+    "target_minutes": 5,
+    "horizon": "ocean",
+    "boundary": { "margin": 20 },
+    "areas": [
+      { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
+    ]
+  }
+}"#;
+    std::fs::write(camp.join("world.json"), world).unwrap();
+    let prefabs = doctored_prefabs("v09-dw0364-prefabs", |meta| {
+        meta["walk_y"] = serde_json::json!(5);
+    });
+    let out = tmp("v09-dw0364-out");
+    build_expecting(&camp, &prefabs, &out, 3, "DW0364");
+}
+
 /// spec-0026 acceptance criterion 6: a same-seed cherry-valley emission
 /// differs from the valley emission ONLY in flora/palette block ids and the
 /// biome id — script-asserted by `tools/check-flora-parity.py`, the same gate
