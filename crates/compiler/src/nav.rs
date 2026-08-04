@@ -176,7 +176,7 @@ pub const DW_ACTOR_UNROUTABLE: &str = "DW0325";
 /// — this fires only when the sealed world admits no route.
 pub const DW_GATE_TIMELINE: &str = "DW0410";
 
-/// `DW0486`: one content-keyed walk driver is shared by occurrences that do not
+/// `DW0488`: one content-keyed walk driver is shared by occurrences that do not
 /// stand in the same place when they fire, so the shared driver's first waypoint
 /// is the wrong cell for at least one of them and that occurrence opens with a
 /// teleport.
@@ -193,7 +193,7 @@ pub const DW_GATE_TIMELINE: &str = "DW0410";
 /// Distinct from [`DW_MOVE_UNROUTABLE`]/[`DW_ACTOR_UNROUTABLE`], which fire when
 /// a leg has no route at all: here every leg is perfectly routable and the defect
 /// is that they cannot share one route.
-pub const DW_MOVE_ORIGIN_SHARED: &str = "DW0486";
+pub const DW_MOVE_ORIGIN_SHARED: &str = "DW0488";
 
 /// The branch condition a staging effect fires under: the per-effect
 /// `requires_flags` / `forbids_flags` gate (DSL v0.6).
@@ -347,7 +347,7 @@ fn record_staging(
         .push(Staging { gate, pos, yaw });
 }
 
-/// `DW0486` for a deduped occurrence whose branch-correct origin is not the one
+/// `DW0488` for a deduped occurrence whose branch-correct origin is not the one
 /// the shared driver was planned from.
 fn shared_origin_error(
     verb: &str,
@@ -1590,7 +1590,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
     let mut planned_end_yaw: BTreeMap<(String, String, String), i32> = BTreeMap::new();
     // The origin each driver was planned from, and the branch of the occurrence
     // that planned it — so a deduped occurrence standing somewhere else is
-    // `DW0486` instead of a silent teleport.
+    // `DW0488` instead of a silent teleport.
     let mut planned_origin: BTreeMap<(String, String, String), ([i32; 3], BranchGate)> =
         BTreeMap::new();
     let mut cache = SealCache::default();
@@ -1661,7 +1661,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
             }
             // This occurrence walks the driver the FIRST occurrence planned, so
             // it starts at that driver's origin — which is only correct if this
-            // occurrence's own branch leaves the body there too (`DW0486`).
+            // occurrence's own branch leaves the body there too (`DW0488`).
             if let Some((planned_from, planned_gate)) = planned_origin.get(&key) {
                 let here = chained_staging(&history, npc.as_str(), &gate).map(|s| s.pos);
                 if let Some(here) = here
@@ -2017,7 +2017,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
     // The yaw each planned driver ends on, so a deduped repeat chains it forward.
     let mut planned_end_yaw: BTreeMap<(String, String, String), i32> = BTreeMap::new();
     // The origin each driver was planned from + the branch that planned it, for
-    // `DW0486`.
+    // `DW0488`.
     let mut planned_origin: BTreeMap<(String, String, String), ([i32; 3], BranchGate)> =
         BTreeMap::new();
     let mut cache = SealCache::default();

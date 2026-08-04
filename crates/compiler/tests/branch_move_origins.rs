@@ -1,4 +1,4 @@
-//! Branch-aware walk-origin chaining (`DW0486`, island round 16).
+//! Branch-aware walk-origin chaining (`DW0488`, island round 16).
 //!
 //! A scripted walk starts where the body's *previous* walk left it. That chain
 //! used to be one flat sequence per body, walked in campaign effect order with
@@ -349,14 +349,14 @@ fn branch_keyed_driver_names_are_deterministic() {
 /// The residual case the branch key cannot separate, and therefore reports:
 /// two occurrences on the **same** branch walk one body to one mark from two
 /// different places. They share a driver by construction, so one of them would
-/// open with a teleport — `DW0486` refuses to ship it.
+/// open with a teleport — `DW0488` refuses to ship it.
 ///
 /// This is the island's `anchor/gangplank` shape with the branch gates removed:
 /// keeper walks to `anchor/exit`, then to `anchor/door`, then to `anchor/exit`
 /// again. The third leg stands at the door; the driver was planned from the
 /// keeper's stand.
 #[test]
-fn two_origins_on_one_branch_is_dw0486() {
+fn two_origins_on_one_branch_is_dw0488() {
     const QUESTS: &str = r#"{
   "dsl_version": "0.6.0",
   "campaign_id": "hello-world",
@@ -407,7 +407,7 @@ fn two_origins_on_one_branch_is_dw0486() {
     .expect_err("a shared driver with two origins must not build");
     match err {
         emit::BuildFailure::Diagnostic { code, message } => {
-            assert_eq!(code, "DW0486", "message was: {message}");
+            assert_eq!(code, "DW0488", "message was: {message}");
             assert!(
                 message.contains("npc/keeper") && message.contains("anchor/exit"),
                 "the diagnostic names the body and the mark: {message}"
