@@ -61,7 +61,8 @@ Campaigns do not live in this repo (CLAUDE.md forbidden zone) — they live in t
 **`delvewright-campaigns` git repo** (symlinked at `campaigns/`, real path
 `../delvewright-campaigns/`; override: `$DELVEWRIGHT_CAMPAIGNS_DIR`). Create
 `campaigns/campaigns/<campaign-id>/` with the six stage JSONs, a
-`GENERATION.md` (prompt verbatim, date, dsl_version, decisions made), and a
+`GENERATION.md` (prompt verbatim, date, dsl_version, decisions made, and the
+campaign's **posture note** — see *Writing craft* §B), and a
 `DESIGN.md` (the authoritative design record: layout, dramaturgy beats,
 branch/ending table); build
 output goes beside them (gitignored there). After validation passes, **commit the
@@ -80,6 +81,156 @@ report any deviation the user did not request instead of shipping it. Drift
 discovered during review is restored to the design or escalated — never
 silently kept.
 
+## Writing craft — pattern warnings, not technique bans
+
+Everything a player reads is prose: dialogue, objective titles and hints,
+narration beats, item and area names, the storybook. This section is the craft
+checklist for all of it. **Hand it to the dev subagent verbatim with every
+stage-5 and stage-6 brief**, and run section A over every line before a stage is
+called done.
+
+These are **pattern warnings, not technique bans.** They govern *automatic*
+writing — the phrasing that arrives before you have decided anything, the hand
+reaching before the mind does — not the device itself. A simile is not
+forbidden; the simile you did not choose is. Banning a technique outright
+produces stilted avoidance, which is its own tell.
+
+### A. Automatic-phrasing tells
+
+1. **Observation + verdict.** A line, then the text grading it — "*…, more
+   statement than question*", "*…, and it was not a request*". The verdict
+   instructs the player how to hear what they just read. Cut the verdict; if the
+   line cannot stand without it, the line is wrong.
+2. **Standalone simile fragments.** "*Like a blow to the chest.*" — a comparison
+   set alone as though it were the feeling. Test every simile: does it make the
+   player see the **thing** more sharply, or make them notice the author? The
+   second kind goes.
+3. **Stock intensity moves.** The air growing thick or heavy; time slowing;
+   silence stretching; words left hanging in the air; a breath the character
+   did not know they were holding. These are the default gestures at "this
+   moment matters", and every generated delve reaches for them unprompted.
+4. **Repetition as intensity.** Saying it again, louder — "*more than tired:
+   hollow*"; three-beat lists where two beats carry all the meaning.
+5. **Correction pairs.** Naming a false label in order to knock it down — "*not
+   a warning, a promise*"; "*it stopped being a door and became a mouth*". Once
+   per campaign is a rhetorical choice; three times is a signature.
+6. **Purposeless gesture.** A nod, a tightening jaw, a hand moving to a hilt,
+   costing nothing to delete. A gesture signifies by contrast with what that
+   character usually does. If it can be cut with no loss, cut it.
+7. **Explaining your own subtext.** An NPC says the hard thing, then the next
+   line paraphrases what it meant. Trust the player; they have already read it.
+
+Applies hardest where our text is shortest: `hint`, `title`, bark pools, and
+`missing_item_hint` have no room to recover from a wasted clause.
+
+### B. Convergence is the real tell — vary the posture per campaign
+
+StoryScope (arXiv:2604.03136) separates human from AI fiction at **93.2%
+macro-F1 from narrative structure alone, with every stylistic signal withheld**,
+and span-level style editing of the prose moves that number by 1.6 points. So
+the AI tell is not a phrase you can scrub. It is **convergence**: five different
+models occupy one tight region of narrative space while human stories are
+dispersed around it (mean rarity 0.49 vs 0.71). Section A is hygiene; this
+section is the actual defence.
+
+Measured gaps worth authoring against (AI vs human in that corpus):
+
+| axis | the machine default |
+|---|---|
+| thematic explicitness | the narrator states the story's point — 77% vs 52% |
+| emotion rendering | somatic: tight chest, cold sweat — 81% vs 38%. **Humans name the feeling outright 29% of the time; AI 8%.** |
+| plot shape | no subplots 79% vs 57%; protagonist-driven resolution 69% vs 46% |
+| resolution | closes on internal understanding or acceptance, 47% vs 27% |
+| time order | strictly chronological; humans jump, flash back, withhold |
+| morality | morally ambivalent protagonist 38% vs 59% |
+| address | humans break the fourth wall (67% vs 39%) and address the audience (28% vs 7%) |
+
+**Claude specifically** — us — is the most distinctive of the models measured,
+and its fingerprint is restraint: *the flattest event escalation of any source*,
+the most uniform narrative voice, epilogues over avalanche endings, and
+reverence toward genre convention rather than subversion (62% vs 39–56%). Read
+that as a standing instruction: **our default delve escalates too evenly and
+ends too quietly.** Give a campaign a beat that is disproportionate to what came
+before, and let at least one thing end badly or unresolved.
+
+Operationally, per campaign:
+
+- Pick **at least three** axes above and push them off the default *for this
+  campaign* — a delve told out of order; a cast whose antagonist is right; an
+  ending that refuses to explain itself; an NPC who names their fear in plain
+  words instead of clenching a fist.
+- Record the choice as a one-line **posture note** in `GENERATION.md`: which
+  three axes, and how. It is a design commitment, not a report.
+- Vary them **between** campaigns. A fixed counter-recipe applied every time
+  just builds a second cluster — dispersion is the human signal, not any
+  particular pole.
+- Corollary, and it inverts the usual advice: **"show, don't tell" is a machine
+  default here.** Somatic rendering is what the pole looks like. Sometimes let a
+  character say they are afraid.
+
+### C. HARD RULE — dialogue options are labels, not sentences
+
+Owner ruling, 2026-08-03. **A dialogue option is a button caption.** Vanilla
+draws each option as a fixed-width button; a label wider than the button
+*scrolls* rather than wrapping or shrinking, and a shelf of scrolling captions is
+a miserable thing to read and pick from. This is not a style preference — it is
+the widget.
+
+The geometry, so the budget is arithmetic and not taste. The compiler emits each
+node as a `minecraft:multi_action` dialog with `columns: 1` and **no `width`
+override**, so every option button is vanilla's default **150 GUI px**, leaving
+roughly **146 px** for the label after the widget's inset. Dialog buttons draw at
+pose scale ×1, so one font pixel is one GUI pixel — unlike `narrate` titles,
+which `DW0330` budgets at ×4/×2 (`crates/compiler/src/textfit.rs`).
+
+Mirror that module's reasoning: **width is measured in font pixels, not
+characters**, because `i` and `W` differ by 3× and a Han glyph (advance 9) is 1.5×
+a Latin one (typical advance 6), so any character count is unfair to whichever
+script it was not tuned for. Character counts below are the authoring rule of
+thumb derived from those advances — the pixel budget is the real rule:
+
+| | scroll threshold | **author to** |
+|---|---|---|
+| English | ~24 characters (146 px ÷ ~6 px average advance) | **≤ 20 characters** |
+| Chinese (`zh-*`) | ~16 characters (146 px ÷ 9 px Han advance) | **≤ 12 characters** |
+
+Author to the target, not the threshold: the English is the source a translation
+grows from, and a label at the English limit has nowhere to go in `zh-cn`.
+
+```
+BAD   "I don't know — are you sure there isn't another way out of the cave?"
+GOOD  "Another way out?"
+
+BAD   "我不太确定，你是说这座洞窟还有别的出口吗？"     (20 chars ≈ 180 px — scrolls)
+GOOD  "还有别的出口吗？"                              (8 chars ≈ 72 px)
+```
+
+The content that does not fit belongs in the node's body text, which wraps
+normally, or in the NPC's reply — not in the button. This applies to every
+`.opt.<n>.label`, in the English source **and** in every l10n sidecar; the
+localization stage's critique pass already checks that translated labels stay
+short and scannable.
+
+A compiler diagnostic for this is being added separately (engine task #110), on
+the same font-pixel measurement `DW0330` uses. Until it lands the rule is
+enforced here, by you, at authoring time — and when it lands it will be telling
+you the same thing this section does.
+
+### D. Plain-prose baseline (Strunk 1918, public domain)
+
+Two rules carry most of the load for text rendered into a chat line:
+
+- Rule 12, "Use definite, specific, concrete language" — the objective hint that
+  names a landmark beats the one that names a mood.
+- Rule 13, "Omit needless words": *"Vigorous writing is concise. A sentence
+  should contain no unnecessary words, a paragraph no unnecessary sentences…"*
+  His substitutions are still live — `owing to the fact that` → since, `in spite
+  of the fact that` → though, `he is a man who` → he, `in a hasty manner` →
+  hastily. And: *"In especial the expression `the fact that` should be revised
+  out of every sentence in which it occurs."*
+
+Concision is not the same as flatness. Cut the padding, keep the beat.
+
 ## The loop
 
 For each stage in order — world → npcs → classes → quest-plan → quests → dialogue:
@@ -90,6 +241,9 @@ For each stage in order — world → npcs → classes → quest-plan → quests
    subagent** (see *Execution architecture*): hand it this stage's creative brief +
    the schema command; it returns valid JSON and a summary of choices. The brief you
    hand it carries these craft constraints:
+   - **Prose**: the *Writing craft* section above, verbatim, on every stage that
+     writes player-facing text (5 and 6 above all) — plus this campaign's posture
+     note, so the subagent writes toward the three axes you committed to.
    - Areas: prefer `prefab_pool` (stone-keep tileset) for real layouts; check
      `campaigns/prefabs/pools.json` + prefab metadata for available pools/anchors/lighting
      profiles. Respect the lighting contract — darkness only as declared design
@@ -113,7 +267,8 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      the button still has to be readable on its own, since a player on a
      controller or reading fast never hovers. Needs `dsl_version 0.8.0` on the
      dialogue stage, and it translates under its own key
-     (`dlg.<npc>.<node>.opt.<i>.tooltip`).
+     (`dlg.<npc>.<node>.opt.<i>.tooltip`). Full geometry rationale: *Writing
+     craft* §C.
    - **Stage 6: re-derive every node's option list from that node's situation.**
      (Owner ruling, 2026-08-03.) Never carry an option list forward from an
      earlier node. Before shipping a node, check each option for semantic fit
@@ -325,15 +480,23 @@ non-English language **and asks for localized in-game text** (中文文本 etc.)
    `en` is implicit/canonical and is **never** listed). Stage docs stay English.
 2. **Who translates** — if the repo's `delvewright.toml`/`delvewright.local.toml`
    has an `[i18n]` section AND the env var it names (`api_key_env`) is set, run
-   `python3 tools/i18n-translate.py <campaign-dir> --lang <code>` (external LLM
-   API; it writes and validates the sidecar for you, then go to step 4).
+   `python3 tools/i18n-translate.py <campaign-dir> --lang <code> --reflect`
+   (external LLM API; `--reflect` is the three-step translate → critique →
+   revise pass and is where translationese actually dies — always pass it. It
+   writes and validates the sidecar for you, then go to step 4).
    Otherwise translate in-agent, steps 3–4. Generation-time only either way —
    shipped delves never call an LLM. See `docs/reference/i18n.md`.
 3. In-agent: `delvec l10n-inventory <campaign-dir> --lang <code>` gives the exact
    key inventory as JSON (key, English, speaking NPC, existing translation).
    **Translate FROM the finished English** (never author a language natively) —
    honor each NPC's `persona.speech_style`, keep a Minecraft-appropriate register,
-   cover the inventory **exactly**. Write `l10n/<code>.json`:
+   cover the inventory **exactly**. Run the **same three-step pass the tool
+   runs** (`docs/reference/i18n.md`): draft, then re-read draft against English
+   and write down what is wrong on accuracy / fluency (incl. the target
+   language's translationese habits — for zh: 名词化, 弱动词, 的的不休,
+   over-marked 被, front-loaded modifiers) / style-register / terminology, then
+   revise — leaving lines that were already right byte-identical. Write
+   `l10n/<code>.json`:
    `{ dsl_version, campaign_id, kind: "l10n", lang: "<code>", content: { <key>: … } }`.
 4. Re-`validate` until zero `DW0180`/`DW0181`. The default build stays English;
    `delvec build --lang <code>` emits the localized delve (same layout, strings

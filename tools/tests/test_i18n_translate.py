@@ -204,6 +204,143 @@ def test_system_prompt_states_the_player_reply_rule():
     assert "JSON" in msgs[0]["content"]
 
 
+# --------------------------------------------------- reflection prompt pass --
+
+
+def test_translationese_guidance_is_language_scoped():
+    assert "翻译腔" in t.translationese_guidance("zh-cn")
+    assert t.translationese_guidance("zh-cn") == t.translationese_guidance("ZH-TW")
+    assert t.translationese_guidance("zh") == t.translationese_guidance("zh-cn")
+    assert t.translationese_guidance("ja") == "", "no checklist beats a wrong checklist"
+    assert t.translationese_guidance("de") == ""
+
+
+def test_zh_system_prompt_carries_the_translationese_checklist():
+    system = t.build_messages(inventory(), inventory().entries[:1], "zh-cn")[0]["content"]
+    for rule in ("的的不休", "名词化", "信达雅"):
+        assert rule in system
+    assert "的的不休" not in t.build_messages(inventory(), inventory().entries[:1], "ja")[0]["content"]
+
+
+def test_reflection_prompt_names_all_four_critique_axes():
+    inv = inventory()
+    batch = inv.pending()
+    msgs = t.build_reflection_messages(inv, batch, "zh-cn", {"dlg.keeper.greet.text": "你来了。"})
+    system, user = msgs[0]["content"], msgs[1]["content"]
+    for axis in ("ACCURACY", "FLUENCY", "STYLE / REGISTER", "TERMINOLOGY"):
+        assert axis in system
+    assert "翻译腔" in system, "the zh checklist replaces a generic fluency criterion"
+    assert "no change" in system, "an unchanged line must be an expected verdict"
+    assert "你来了。" in user, "the critique step sees the draft"
+    assert "You came. Good." in user, "and the English beside it"
+    assert "clipped, soldierly" in user, "and the persona it must sound like"
+
+
+def test_option_label_button_budget_reaches_both_prompts():
+    """Owner ruling 2026-08-03: an over-long option label scrolls on its
+    fixed-width button. The budget must survive translation, so it is stated in
+    the translate step AND checked in the critique step."""
+    inv = inventory()
+    batch = inv.pending()
+    translate = t.build_messages(inv, batch, "zh-cn")[0]["content"]
+    critique = t.build_reflection_messages(inv, batch, "zh-cn", {})[0]["content"]
+    for prompt in (translate, critique):
+        assert "12 Han" in prompt and "20 Latin" in prompt
+        assert "scroll" in prompt.lower()
+
+
+def test_reflection_step_does_not_ask_for_json():
+    system = t.build_reflection_messages(inventory(), inventory().pending(), "zh-cn", {})[0][
+        "content"
+    ]
+    assert "only diagnoses" in system
+    assert "corrected translation" in system
+
+
+def test_improvement_prompt_carries_critique_draft_and_anti_churn_rule():
+    inv = inventory()
+    batch = inv.pending()
+    draft = {e.key: "草稿:" + e.en for e in batch}
+    msgs = t.build_improvement_messages(inv, batch, "zh-cn", draft, "  line 3 is too literal  ")
+    system, user = msgs[0]["content"], msgs[1]["content"]
+    assert "BYTE-IDENTICAL" in system, "a reflection pass must not churn good lines"
+    assert "ONE JSON object" in system
+    assert "line 3 is too literal" in user
+    for e in batch:
+        assert e.key in user and draft[e.key] in user
+
+
+def test_require_keys_rejects_a_reply_with_holes():
+    chunk = inventory().pending()
+    full = {e.key: "x" for e in chunk}
+    assert t.require_keys({**full, "bogus": "y"}, chunk, "batch 1") == full
+    with pytest.raises(t.TranslateError, match="omitted"):
+        t.require_keys({chunk[0].key: "x"}, chunk, "batch 1")
+
+
+def test_reflect_config_key_defaults_off_and_is_settable(tmp_path):
+    write_config(tmp_path / t.CONFIG_FILE, CONFIG)
+    assert t.load_config(root=tmp_path).reflect is False
+    write_config(tmp_path / t.LOCAL_CONFIG_FILE, "[i18n]\nreflect = true\n")
+    assert t.load_config(root=tmp_path).reflect is True
+
+
+def test_translate_batch_single_pass_makes_one_call(tmp_path, monkeypatch):
+    cfg = config(tmp_path)
+    inv, calls = inventory(), []
+
+    def poster(url, body, headers, timeout):
+        calls.append(body["messages"][0]["content"])
+        return {"choices": [{"message": {"content": '{"quest.greet.goal": "去见守关人。"}'}}]}
+
+    monkeypatch.setattr(t, "post_json", poster)
+    chunk = [e for e in inv.entries if e.key == "quest.greet.goal"]
+    assert t.translate_batch(cfg, inv, chunk, "zh-cn", "secret-value") == {
+        "quest.greet.goal": "去见守关人。"
+    }
+    assert len(calls) == 1
+
+
+def test_translate_batch_reflect_runs_three_steps_and_keeps_the_revision(tmp_path, monkeypatch):
+    cfg = config(tmp_path)
+    inv, seen = inventory(), []
+    replies = [
+        '{"quest.greet.goal": "去和守关人进行对话。"}',  # draft: 弱动词 进行
+        "quest.greet.goal: 进行对话 is a weak-verb construction; say 对话.",
+        '{"quest.greet.goal": "去和守关人对话。"}',
+    ]
+
+    def poster(url, body, headers, timeout):
+        seen.append(body["messages"][0]["content"])
+        return {"choices": [{"message": {"content": replies[len(seen) - 1]}}]}
+
+    monkeypatch.setattr(t, "post_json", poster)
+    chunk = [e for e in inv.entries if e.key == "quest.greet.goal"]
+    out = t.translate_batch(cfg, inv, chunk, "zh-cn", "secret-value", reflect=True)
+
+    assert out == {"quest.greet.goal": "去和守关人对话。"}
+    assert len(seen) == 3, "translate -> reflect -> improve"
+    assert "professional video-game localizer" in seen[0]
+    assert "senior localization editor" in seen[1]
+    assert "revising your own draft" in seen[2]
+
+
+def test_reflect_run_that_drops_a_key_fails_instead_of_writing_a_hole(tmp_path, monkeypatch):
+    cfg = config(tmp_path)
+    inv = inventory()
+    replies = ['{"quest.greet.goal": "去见守关人。"}', "no change", "{}"]
+    seen = []
+
+    def poster(url, body, headers, timeout):
+        seen.append(1)
+        return {"choices": [{"message": {"content": replies[len(seen) - 1]}}]}
+
+    monkeypatch.setattr(t, "post_json", poster)
+    chunk = [e for e in inv.entries if e.key == "quest.greet.goal"]
+    with pytest.raises(t.TranslateError, match="improve"):
+        t.translate_batch(cfg, inv, chunk, "zh-cn", "secret-value", reflect=True)
+
+
 # ------------------------------------------------------------------ request --
 
 
@@ -412,6 +549,80 @@ def test_full_run_writes_only_missing_keys_then_validates(tmp_path, monkeypatch,
     assert content["dlg.keeper.greet.text"] == "译:You came. Good."
     assert set(content) == {e.key for e in inventory().entries}
     assert "coverage: `delvec validate` passed" in capsys.readouterr().out
+
+
+def test_dry_run_shows_all_three_steps_only_when_reflecting(tmp_path, monkeypatch, capsys):
+    _no_network(monkeypatch)
+    monkeypatch.setattr(t, "fetch_inventory", lambda *a, **k: inventory())
+    cfg_path = write_config(tmp_path / "cfg.toml", CONFIG)
+    argv = [str(tmp_path), "--lang", "zh-cn", "--config", str(cfg_path), "--dry-run"]
+
+    assert t.main(argv) == 0
+    plain = capsys.readouterr().out
+    assert "reflect=False" in plain
+    assert "step: reflect" not in plain
+
+    assert t.main([*argv, "--reflect"]) == 0
+    out = capsys.readouterr().out
+    assert "reflect=True" in out
+    assert "step: reflect" in out and "step: improve" in out
+    assert "senior localization editor" in out, "the critique prompt is reviewable dry"
+    assert "<step-1 draft, filled at call time>" in out
+
+
+def test_reflect_and_no_reflect_together_are_refused(tmp_path, monkeypatch, capsys):
+    _no_network(monkeypatch)
+    cfg_path = write_config(tmp_path / "cfg.toml", CONFIG)
+    rc = t.main(
+        [str(tmp_path), "--lang", "zh-cn", "--config", str(cfg_path), "--reflect", "--no-reflect"]
+    )
+    assert rc == 2
+    assert "mutually exclusive" in capsys.readouterr().err
+
+
+def test_no_reflect_overrides_the_config(tmp_path, monkeypatch, capsys):
+    _no_network(monkeypatch)
+    monkeypatch.setattr(t, "fetch_inventory", lambda *a, **k: inventory())
+    cfg_path = write_config(tmp_path / "cfg.toml", CONFIG + "reflect = true\n")
+    rc = t.main(
+        [str(tmp_path), "--lang", "zh-cn", "--config", str(cfg_path), "--dry-run", "--no-reflect"]
+    )
+    assert rc == 0
+    assert "reflect=False" in capsys.readouterr().out
+
+
+def test_full_reflect_run_writes_the_revised_text(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(t, "fetch_inventory", lambda *a, **k: inventory())
+    monkeypatch.setenv("TEST_I18N_KEY", "secret-value")
+    cfg_path = write_config(tmp_path / "cfg.toml", CONFIG)
+    steps = []
+
+    def poster(url, body, headers, timeout):
+        system = body["messages"][0]["content"]
+        if "senior localization editor" in system:
+            steps.append("reflect")
+            return {"choices": [{"message": {"content": "tighten dlg.keeper.greet.text"}}]}
+        keys = [e.key for e in inventory().pending()]
+        stage = "improve" if "revising your own draft" in system else "translate"
+        steps.append(stage)
+        prefix = "终:" if stage == "improve" else "初:"
+        return {"choices": [{"message": {"content": json.dumps({k: prefix + k for k in keys})}}]}
+
+    monkeypatch.setattr(t, "post_json", poster)
+    monkeypatch.setattr(
+        t,
+        "run_delvec",
+        lambda args, delvec: __import__("subprocess").CompletedProcess(args, 0, "", ""),
+    )
+
+    rc = t.main([str(tmp_path), "--lang", "zh-cn", "--config", str(cfg_path), "--reflect"])
+    assert rc == 0
+    assert steps == ["translate", "reflect", "improve"]
+
+    content = json.loads(t.sidecar_path(tmp_path, "zh-cn").read_text("utf-8"))["content"]
+    assert content["dlg.keeper.greet.text"] == "终:dlg.keeper.greet.text", "the revision ships"
+    assert content["npc.keeper.name"] == "守关人", "existing translations are still untouched"
+    assert "translate -> reflect -> improve" in capsys.readouterr().out
 
 
 def test_incomplete_reply_fails_loudly(tmp_path, monkeypatch, capsys):
