@@ -2247,9 +2247,7 @@ fn collect_ambushes(
 }
 
 /// Collect one [`SealHintPlan`] per gate anchor that any `close-gate` seals (DSL
-/// v0.8, task #142), in first-firing order — the same deterministic traversal
-/// [`collect_gate_events`] uses, descending every nested effect list so a
-/// `close-gate` buried in a `sequence` step is registered like a top-level one.
+/// v0.8, task #142), in first-firing order.
 ///
 /// A repeat of an anchor already collected is dropped: the seal is a **place**,
 /// so its hitboxes and its answer belong to the anchor, not to each firing. When
@@ -2263,48 +2261,150 @@ fn collect_seal_hints(
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
 ) -> Vec<SealHintPlan> {
     let mut out: Vec<SealHintPlan> = Vec::new();
-    for eff in all_campaign_effects_ordered(campaign) {
-        eff.visit_deep(&mut |e| {
-            let Some(anchor) = e.close_gate_anchor() else {
-                return;
-            };
-            let name = anchor.as_str();
-            if out.iter().any(|s| s.anchor == name) {
-                return;
-            }
-            let Some((from, to, block)) = gate_region_block_any(anchors, name) else {
-                return;
-            };
-            out.push(SealHintPlan {
-                anchor: name.to_string(),
-                safe: safe_local(name),
-                region: (from, to),
-                block,
-                text: e
-                    .close_gate_sealed_hint()
-                    .unwrap_or(SEAL_HINT_DEFAULT)
-                    .to_string(),
-            });
+    for_each_gate_effect(campaign, &mut |_site, e| {
+        let Some(anchor) = e.close_gate_anchor() else {
+            return;
+        };
+        let name = anchor.as_str();
+        if out.iter().any(|s| s.anchor == name) {
+            return;
+        }
+        let Some((from, to, block)) = gate_region_block_any(anchors, name) else {
+            return;
+        };
+        out.push(SealHintPlan {
+            anchor: name.to_string(),
+            safe: safe_local(name),
+            region: (from, to),
+            block,
+            text: e
+                .close_gate_sealed_hint()
+                .unwrap_or(SEAL_HINT_DEFAULT)
+                .to_string(),
         });
-    }
+    });
     out
 }
 
-/// Every quest/trigger effect of the campaign in one fixed order — quest
-/// `on_objective_complete` (a `BTreeMap`, so key-ordered), then `on_complete`,
-/// then environment triggers. Top-level only; callers descend nesting themselves.
-fn all_campaign_effects_ordered(campaign: &Campaign) -> Vec<&QuestEffect> {
-    let mut out = Vec::new();
-    for q in &campaign.quests.content.quests {
-        for effs in q.on_objective_complete.values() {
-            out.extend(effs.iter());
+/// Where an effect was declared: which stage document, and the JSON pointer
+/// inside it. Carried so a diagnostic can name the exact firing site.
+pub(crate) struct GateSite {
+    /// The stage document the effect lives in (`quests` or `dialogue`).
+    pub stage: &'static str,
+    /// JSON pointer to the effect within that document.
+    pub path: String,
+}
+
+/// Visit **every effect the compiler can lower to a gate command**, at every
+/// nesting depth, in one fixed deterministic order.
+///
+/// This is deliberately wider than `dsl::for_each_campaign_effect`, and the width
+/// is the point: an effect list is a gate site if `emit::emit_quest_effect` can
+/// reach it, not if the quests stage happens to own it. Four roots do:
+///
+/// 1. quest `on_objective_complete` (a `BTreeMap`, so key-ordered), then
+/// 2. quest `on_complete`,
+/// 3. environment `triggers[].effects`,
+/// 4. `traps[].payload` (spec-0022 — a payload is an effect root),
+/// 5. and a **dialogue option's** `set-checkpoint` `on_respawn` bundle, which is
+///    a plain `Vec<QuestEffect>` hanging off the dialogue stage. `DialogueEffect`
+///    itself carries no gate verb, which is why the older gate scans stop at the
+///    quests stage — but that reasoning misses this bundle, and a `close-gate`
+///    inside it really does emit its `fill` (into `cp_on_respawn_<i>`). A seal the
+///    compiler fills but never arms is exactly the silence task #142 exists to
+///    close, so the seal scan reaches it.
+///
+/// Known adjacent blind spots, reported rather than widened here because they are
+/// pre-existing and belong to other proofs: [`collect_gate_events`] (the `DW0311`
+/// completability model) and `dsl::l10n::each_string` (the translation inventory)
+/// both stop at roots 1–3.
+pub(crate) fn for_each_gate_effect<'a>(
+    campaign: &'a Campaign,
+    f: &mut dyn FnMut(&GateSite, &'a QuestEffect),
+) {
+    fn deep<'a>(
+        eff: &'a QuestEffect,
+        stage: &'static str,
+        path: &str,
+        f: &mut dyn FnMut(&GateSite, &'a QuestEffect),
+    ) {
+        f(
+            &GateSite {
+                stage,
+                path: path.to_string(),
+            },
+            eff,
+        );
+        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            for (j, inner) in list.iter().enumerate() {
+                deep(inner, stage, &format!("{path}/{pseg}/{j}"), f);
+            }
         }
-        out.extend(q.on_complete.iter());
     }
-    for t in &campaign.quests.content.triggers {
-        out.extend(t.effects.iter());
+    for (qi, q) in campaign.quests.content.quests.iter().enumerate() {
+        for (oid, effs) in &q.on_objective_complete {
+            for (i, eff) in effs.iter().enumerate() {
+                deep(
+                    eff,
+                    "quests",
+                    &format!(
+                        "/content/quests/{qi}/on_objective_complete/{}/{i}",
+                        oid.as_str()
+                    ),
+                    f,
+                );
+            }
+        }
+        for (i, eff) in q.on_complete.iter().enumerate() {
+            deep(
+                eff,
+                "quests",
+                &format!("/content/quests/{qi}/on_complete/{i}"),
+                f,
+            );
+        }
     }
-    out
+    for (ti, t) in campaign.quests.content.triggers.iter().enumerate() {
+        for (i, eff) in t.effects.iter().enumerate() {
+            deep(
+                eff,
+                "quests",
+                &format!("/content/triggers/{ti}/effects/{i}"),
+                f,
+            );
+        }
+    }
+    for (pi, trap) in campaign.quests.content.traps.iter().enumerate() {
+        for (i, eff) in trap.payload.iter().enumerate() {
+            deep(
+                eff,
+                "quests",
+                &format!("/content/traps/{pi}/payload/{i}"),
+                f,
+            );
+        }
+    }
+    for (di, tree) in campaign.dialogue.content.dialogues.iter().enumerate() {
+        for (ni, node) in tree.nodes.iter().enumerate() {
+            for (oi, opt) in node.options.iter().enumerate() {
+                for (ei, de) in opt.effects.iter().enumerate() {
+                    let Some((_anchor, on_respawn)) = de.set_checkpoint() else {
+                        continue;
+                    };
+                    for (i, eff) in on_respawn.iter().enumerate() {
+                        deep(
+                            eff,
+                            "dialogue",
+                            &format!(
+                                "/content/dialogues/{di}/nodes/{ni}/options/{oi}/effects/{ei}/on_respawn/{i}"
+                            ),
+                            f,
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// The absolute gate region **and fill block** a gate anchor resolves to. `None`

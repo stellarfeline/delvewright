@@ -114,14 +114,21 @@ pub fn check_close_gates(c: &Campaign, prefabs: &PrefabRegistry) -> Vec<Diagnost
 /// A firing that authors no hint is compatible with anything: it asks for the
 /// compiler's canonical English, which any authored wording refines. Only two
 /// *authored* and *different* lines conflict.
+///
+/// Walks [`crate::plan::for_each_gate_effect`] — the **same** traversal the seal
+/// planner uses, so the check and the emission can never disagree about which
+/// firings exist. `dsl::for_each_campaign_effect` is deliberately not used: it
+/// stops at the quests stage and would miss a `close-gate` inside a dialogue
+/// option's `set-checkpoint` `on_respawn` bundle, which really does emit a fill.
 pub fn check_seal_hints(c: &Campaign) -> Vec<Diagnostic> {
     let mut d = Vec::new();
     // anchor → (first authored wording, its path)
     let mut seen: std::collections::BTreeMap<String, (String, String)> = Default::default();
-    delvewright_dsl::for_each_campaign_effect(c, &mut |path, _site, e| {
+    crate::plan::for_each_gate_effect(c, &mut |site, e| {
         let (Some(anchor), Some(hint)) = (e.close_gate_anchor(), e.close_gate_sealed_hint()) else {
             return;
         };
+        let path = &site.path;
         let key = anchor.as_str().to_string();
         match seen.get(&key) {
             None => {
@@ -130,7 +137,7 @@ pub fn check_seal_hints(c: &Campaign) -> Vec<Diagnostic> {
             Some((first, first_path)) if first != hint => {
                 d.push(Diagnostic::error(
                     DW_SEAL_HINT_CONFLICT,
-                    "quests",
+                    site.stage,
                     format!("{path}/sealed_hint"),
                     format!(
                         "gate anchor `{}` is sealed with two different `sealed_hint` lines — \

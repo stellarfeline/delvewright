@@ -1520,6 +1520,20 @@ exactly while the gate is sealed. Everything *else* holding a hitbox inside the
 region is rejected (`DW0422`), and two firings that disagree about the wording are
 rejected (`DW0423`).
 
+**Every site that can FILL a gate must also ARM it.** The seal planner walks its
+own traversal (`plan::for_each_gate_effect`), deliberately wider than
+`dsl::for_each_campaign_effect`: an effect list is a gate site if
+`emit::emit_quest_effect` can reach it, not if the quests stage happens to own it.
+Five roots do — quest `on_objective_complete`, quest `on_complete`,
+`triggers[].effects`, `traps[].payload` (spec-0022: a payload is an effect root),
+and a **dialogue option's `set-checkpoint` `on_respawn` bundle**. That last one is
+the trap: `DialogueEffect` carries no gate verb, so the older gate scans stop at
+the quests stage — but `on_respawn` is a plain `Vec<QuestEffect>` and a
+`close-gate` inside it really is lowered, into `cp_on_respawn_<i>`. A seal the
+compiler fills but never arms is the finding again, one effect root further out.
+`DW0423` walks the same traversal, so the check and the emission can never
+disagree about which firings exist.
+
 **Wording.** `sealed_hint` is optional; unauthored, the compiler bakes
 `The way is sealed.` (English-first, like `world.boundary.message`) and puts no key
 in the l10n inventory. Authored, the line is inventoried at
@@ -2686,6 +2700,19 @@ this doc is current behavior).
   for a bigger party — one agent can always walk what n can divide. Running
   `min_players` bots is harness work, tracked as a follow-up, not a gap in this
   layer's contract.
+- **Quest/trigger-only gate scans (pre-existing, found while building the v0.8
+  seal answers).** Two consumers still stop at three effect roots (quest
+  `on_objective_complete` / `on_complete` / `triggers[].effects`) where emission
+  reaches five: `plan::collect_gate_events`, which feeds the `close-gate`
+  completability model (`DW0311`/`DW0315`/`DW0342`/`DW0410`), and
+  `dsl::l10n::each_string`, which builds the translation inventory. So a gate
+  effect inside a `traps[].payload` or a dialogue option's `set-checkpoint`
+  `on_respawn` bundle is emitted but not modelled by the nav proof, and a
+  `narrate` in a dialogue-nested `on_respawn` ships English-only in a translated
+  build. The seal planner works around both by walking
+  `plan::for_each_gate_effect` (see §4 "The seal answers"); fixing the two
+  consumers themselves is separate work — each changes a different proof's
+  verdict and wants its own red→green.
 - **Sky attenuation constants** (`crate::light::effective_sky`, spec-0010): the
   stored sky-light baseline (15 at a sky-open cell) and the `time`/`weather` set
   commands are live-verified (1.21.11 itzg VANILLA); the per-state *effective*

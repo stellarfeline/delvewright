@@ -58,8 +58,84 @@ fn quests_doc_with(version: &str, on_complete: &str, triggers: &str) -> String {
     )
 }
 
+/// A hello-world `quests` doc whose ONLY `close-gate` lives in a `traps[]`
+/// payload — an effect root the quests stage owns but the older gate scans skip.
+fn quests_doc_trap_payload() -> String {
+    r#"{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+            "radius": 2, "after": ["obj/talk"] }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [ { "type": "open-gate", "anchor": "anchor/door" } ]
+        },
+        "on_complete": [ { "type": "campaign-complete" } ]
+      }
+    ],
+    "traps": [
+      {
+        "id": "trap/spring-the-door",
+        "at": "anchor/exit",
+        "trigger": "trapped-chest",
+        "lethality": "harmful",
+        "payload": [ { "type": "close-gate", "anchor": "anchor/door" } ]
+      }
+    ]
+  }
+}"#
+    .to_string()
+}
+
+/// A hello-world `dialogue` doc whose ONLY `close-gate` lives in a dialogue
+/// option's `set-checkpoint` `on_respawn` bundle — a `Vec<QuestEffect>` hanging
+/// off the *dialogue* stage, which `emit_quest_effect` really does lower (into
+/// `cp_on_respawn_<i>`).
+const DIALOGUE_SEALS_ON_RESPAWN: &str = r#"{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "dialogue",
+  "content": {
+    "dialogues": [
+      { "npc": "npc/keeper", "root": "dlg/greeting", "nodes": [
+        { "id": "dlg/greeting",
+          "text": "Halt, traveler. This keep is mine to guard, and the door stays shut.",
+          "options": [
+            { "label": "Open the door, please.",
+              "effects": [
+                { "type": "complete-objective", "objective": "obj/talk" },
+                { "type": "set-checkpoint", "anchor": "anchor/exit",
+                  "on_respawn": [ { "type": "close-gate", "anchor": "anchor/door" } ] }
+              ] }
+          ] }
+      ] }
+    ]
+  }
+}"#;
+
 fn read_hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
+}
+
+fn parse_hw_with_dialogue(quests: &str, dialogue: &str) -> Campaign {
+    let raw = RawCampaign {
+        world: read_hw("world.json"),
+        npcs: read_hw("npcs.json"),
+        classes: read_hw("classes.json"),
+        quest_plan: read_hw("quest-plan.json"),
+        quests: quests.to_string(),
+        dialogue: dialogue.to_string(),
+        world_edits: None,
+    };
+    parse_campaign(&raw).expect("campaign parses")
 }
 
 fn parse_hw(quests: &str) -> Campaign {
@@ -352,6 +428,97 @@ fn one_wording_repeated_is_not_a_conflict() {
                             "happening": { "verb": "seals", "text": "It stays shut." } } ] }"#,
     ));
     assert!(gates::check_seal_hints(&c).is_empty());
+}
+
+// --- every site that can FILL a gate must also ARM it ----------------------
+//
+// A seal the compiler fills but never arms is the finding again, one effect root
+// further out. These two roots emit a `close-gate` fill but are invisible to the
+// older quest/trigger-only gate scans, so the seal planner walks its own, wider
+// traversal (`plan::for_each_gate_effect`) and these pin it.
+
+/// A `close-gate` in a **trap payload** (spec-0022 — a payload is an effect root)
+/// arms the seal like any other firing.
+#[test]
+fn a_trap_payload_seal_is_armed() {
+    let c = parse_hw(&quests_doc_trap_payload());
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let out = build(&c, &prefabs);
+    let all = all_functions(&out);
+    assert!(
+        all.lines()
+            .any(|l| l.starts_with("fill ") && l.ends_with(" minecraft:iron_bars")),
+        "the trap payload must still seal the gate: {all}"
+    );
+    assert!(
+        all.contains(
+            "execute unless entity @e[tag=dw_seal_door] run function hello-world:seal_arm_door"
+        ),
+        "…and a filled seal must be an armed seal: {all}"
+    );
+    assert!(
+        function(&out, "seal_arm_door").contains("summon minecraft:interaction"),
+        "the seal's hitboxes must exist"
+    );
+}
+
+/// …and so does one inside a **dialogue option's** `set-checkpoint` `on_respawn`
+/// bundle. `DialogueEffect` carries no gate verb of its own — which is why the
+/// quests-stage-only scans stop short — but this bundle is a plain
+/// `Vec<QuestEffect>` and its `close-gate` really is lowered, into
+/// `cp_on_respawn_<i>`.
+#[test]
+fn a_dialogue_nested_seal_is_armed() {
+    let quests = quests_doc("0.6.0", r#"{ "type": "campaign-complete" }"#);
+    let c = parse_hw_with_dialogue(&quests, DIALOGUE_SEALS_ON_RESPAWN);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let out = build(&c, &prefabs);
+    let respawn = function(&out, "cp_on_respawn_0");
+    assert!(
+        respawn
+            .lines()
+            .any(|l| l.starts_with("fill ") && l.ends_with(" minecraft:iron_bars")),
+        "the dialogue-nested close-gate must still seal the gate: {respawn}"
+    );
+    assert!(
+        respawn.contains(
+            "execute unless entity @e[tag=dw_seal_door] run function hello-world:seal_arm_door"
+        ),
+        "…and a filled seal must be an armed seal: {respawn}"
+    );
+}
+
+/// `DW0423` sees the same sites the planner does: a dialogue-nested wording that
+/// disagrees with the quest-stage one is a conflict, reported at its dialogue
+/// path rather than silently dropped.
+#[test]
+fn dw0423_reaches_a_dialogue_nested_wording() {
+    let quests = quests_doc(
+        "0.8.0",
+        r#"{ "type": "close-gate", "anchor": "anchor/door",
+             "sealed_hint": "The bars will not lift.",
+             "happening": { "verb": "seals", "text": "The bars come down." } },
+           { "type": "campaign-complete",
+             "happening": { "verb": "survives", "text": "The party is out." } }"#,
+    );
+    let dialogue = DIALOGUE_SEALS_ON_RESPAWN
+        .replacen("\"0.6.0\"", "\"0.8.0\"", 1)
+        .replace(
+            r#"{ "type": "close-gate", "anchor": "anchor/door" }"#,
+            r#"{ "type": "close-gate", "anchor": "anchor/door",
+                 "sealed_hint": "Nothing you do moves it.",
+                 "happening": { "verb": "seals", "text": "It stays shut." } }"#,
+        );
+    let c = parse_hw_with_dialogue(&quests, &dialogue);
+    let d = gates::check_seal_hints(&c);
+    assert_eq!(d.len(), 1, "exactly one conflict: {d:#?}");
+    assert_eq!(d[0].code, "DW0423");
+    assert_eq!(d[0].stage, "dialogue", "reported at its real stage");
+    assert!(
+        d[0].path.contains("/on_respawn/"),
+        "…and its real path: {}",
+        d[0].path
+    );
 }
 
 /// A campaign that seals no gate emits none of this machinery at all.
