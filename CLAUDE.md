@@ -101,6 +101,19 @@ validation/          # docker compose: headless server + bot, same image as CI &
   Exception (owner, 2026-07-31): a PR that weakens, disables, or skips any
   check, test, or threshold is **never mechanical** — always owner-review,
   regardless of CI state.
+  Amendment (owner, 2026-08-04): **CI green is admission to verification, not
+  grounds to merge.** A fix PR merges only after the fix is demonstrated
+  effective against the scenario that motivated it: compile-layer bugs → the
+  motivating campaign rebuilds and proves it; runtime/bot bugs → the
+  validation-ladder re-run of the original failure goes red→green;
+  owner-reported player-experience issues → the owner's playtest confirms,
+  **in batches, never per-PR** (refined same day): fixes accumulate into the
+  campaign; the planner hands the owner one round summary — what was fixed,
+  what to look for per item; she tests once and reports. Items she does not
+  flag are confirmed — their PRs merge; items she flags stay open and the fix
+  continues on the same PR into the next round. Until its proof exists a fix
+  PR stays open. Unit/CI tests alone prove the change broke nothing, not that
+  it fixed the target.
 - **Write short documents.** Specs/ADRs are owner-consumed via chat summaries;
   their long form exists for agents. Keep them as terse as correctness allows.
 - **Audience separation in docs** (owner, 2026-08-02): every document has ONE
