@@ -34,3 +34,4 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0023](spec-0023-combat-verification-semantics.md) | Combat verification semantics — the machine proves the loop, not the win | Accepted |
 | [spec-0024](spec-0024-release-pipeline.md) | Release pipeline — from green campaign branch to joinable delve | Approved |
 | [spec-0025](spec-0025-branch-complete-verification.md) | Branch-complete narrative verification | Approved |
+| [spec-0026](spec-0026-horizon-library.md) | Horizon library — five pseudo-open-world bases | Proposed |
