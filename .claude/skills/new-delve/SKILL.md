@@ -465,6 +465,14 @@ Symptom → tool:
   playthrough fails for reasons that have nothing to do with the delve. The
   script takes no default mode: `--all` sweeps the whole daemon, `--project`
   only the one compose project.
+- **A `talk-to` / `interact` step that times out with "objective … did not
+  complete"**: read the rest of that line before touching the campaign. The bot
+  now reports the server's own answer to the `/trigger` it sent — *the server
+  ANSWERED …* means the trigger reached the delve and a datapack guard consumed
+  it (a re-used world whose scoreboard already carries the objective does
+  exactly this: run `fresh-volumes.sh --project` and re-run before believing the
+  content is at fault), while *the server never answered …* means the command
+  never got there and the failure is the harness's, not the delve's.
 - **A prefab library needing owner taste, not machine checks**: mention
   `delve-admit gallery` (browse world) → owner walks it and leaves notes →
   `delve-admit curate` / `curate-merge` fold them into the catalog cards — one
