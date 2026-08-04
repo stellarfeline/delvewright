@@ -155,9 +155,8 @@ impl ValleySurround {
     /// the un-climbability proof (uses the same warped distance the heightfield
     /// used, so the line is exactly the generated geometry's crest).
     pub fn beyond_crest(&self, x: i32, z: i32) -> bool {
-        let rp = radial_params(&self.scene, self.ratio, x, z);
-        let d = warped_distance(self.seed, &self.scene, self.ratio, x, z);
-        d > rp.gap + rp.run
+        let d = warped_distance(self.seed, &self.scene, x, z);
+        d > GAP_WIDTH + SLOPE_RUN
     }
 
     /// Whether a column is inside the annulus (outside the scene rect, inside
@@ -219,13 +218,9 @@ impl ValleySurround {
             }
         }
         let (dist_to_edge, ux, uz) = best;
-        // The chosen side's band parameters (pure-axis: band = that side's
-        // annulus half-extent), for the crest distance beyond the edge.
-        let (sx, sz) = annulus_sides(&self.scene, self.ratio);
-        let band = if ux != 0.0 { sx } else { sz };
-        let gap = (band - SLOPE_RUN).clamp(GAP_FLOOR_MIN, GAP_WIDTH);
-        let run = (band - gap).clamp(1.0, SLOPE_RUN);
-        let crest_out = dist_to_edge + gap + run;
+        // The crest line sits gap + slope beyond the scene edge on every
+        // side (the band floor guarantees the full rim on every axis).
+        let crest_out = dist_to_edge + GAP_WIDTH + SLOPE_RUN;
         // Aim ABOVE the tallest possible crest so sky shares the frame.
         let target = [
             eye[0] + ux * (crest_out + 6.0),
@@ -275,20 +270,15 @@ const POISSON_K: usize = 20;
 const TREE_CREST_MARGIN: f64 = 1.0;
 /// Understory decor density on grass cells (gap floor stays bare).
 const DECOR_DENSITY: f64 = 0.12;
-/// Sapling understory density on cliff-band inner slopes (task #157 round 2:
-/// blossom presence where the band is too narrow for whole trees).
-const SAPLING_DENSITY: f64 = 0.10;
-/// Below this local band width the axis is DEGENERATE (cannot fit gap + full
-/// slope) and the profile degrades to the cliff band (planner ruling, task
-/// #157): a walkable gap floor of at least [`GAP_FLOOR_MIN`], then a
-/// near-vertical stepped cliff to full rim height with risers quantized ≥ 3.
-const DEGENERATE_BAND: f64 = GAP_WIDTH + SLOPE_RUN;
-/// Width (in local band units) of the seam strip between the cliff-band and
-/// normal profiles, quantized to 6 (a common multiple of 2 and 3) so no
-/// 1-block riser can form where the two quantizations meet.
-const SEAM_BAND: f64 = 6.0;
-/// The walkable gap floor never narrows below this (cliff-band ruling).
-const GAP_FLOOR_MIN: f64 = 6.0;
+/// Per-axis FLOOR on the annulus band width (owner ruling, 2026-08-04): a
+/// legal surround always contains a full gap + slope rim on every axis —
+/// `ratio` controls spaciousness above this floor, never below it. The
+/// valley simply grows to contain any scene shape (hollow-vigil's 94×27
+/// short axis gets the floor while the long axis keeps its proportional
+/// band; asymmetry is accepted and expected), so the rim profile runs
+/// unchanged on every axis and the DW0322/DW0369 proofs hold purely by
+/// construction — no degraded geometry, no second proof path.
+const ANNULUS_BAND_FLOOR: f64 = GAP_WIDTH + SLOPE_RUN;
 /// MC 1.21.11 build range (dossier §3).
 const WORLD_MIN_Y: i32 = -64;
 const WORLD_MAX_Y: i32 = 319;
@@ -304,7 +294,6 @@ const SALT_DECOR_GATE: u64 = 151;
 const SALT_DECOR_PICK: u64 = 155;
 const SALT_TREE_HEIGHT: u64 = 43;
 const SALT_TREE_KEEP: u64 = 45;
-const SALT_SAPLING: u64 = 47;
 
 // ---------------------------------------------------------------------------
 // Flora / palette tables (parallel by construction — criterion 6)
@@ -314,10 +303,6 @@ struct FloraTable {
     biome: &'static str,
     log: &'static str,
     leaves: &'static str,
-    /// Cliff-band understory (task #157 round 2): where the band is too
-    /// narrow for whole trees, saplings carry the species identity. A
-    /// no-collision plant — zero proof impact by the shared collision model.
-    sapling: &'static str,
 }
 
 fn flora_table(flora: Flora) -> FloraTable {
@@ -326,13 +311,11 @@ fn flora_table(flora: Flora) -> FloraTable {
             biome: "minecraft:windswept_forest",
             log: "minecraft:oak_log[axis=y]",
             leaves: "minecraft:oak_leaves[persistent=true]",
-            sapling: "minecraft:oak_sapling",
         },
         Flora::Cherry => FloraTable {
             biome: "minecraft:cherry_grove",
             log: "minecraft:cherry_log[axis=y]",
             leaves: "minecraft:cherry_leaves[persistent=true]",
-            sapling: "minecraft:cherry_sapling",
         },
     }
 }
@@ -392,11 +375,16 @@ fn rect_distance(scene: &SceneRect, x: i32, z: i32) -> f64 {
     (dx * dx + dz * dz).sqrt()
 }
 
-/// Half-extents of the annulus per axis: `(ratio − 1)/2 ×` the scene extent.
+/// Half-extents of the annulus per axis: `(ratio − 1)/2 ×` the scene extent,
+/// floored at [`ANNULUS_BAND_FLOOR`] (owner ruling, 2026-08-04) so every
+/// axis carries the full gap + slope rim regardless of the scene's shape.
 fn annulus_sides(scene: &SceneRect, ratio: f64) -> (f64, f64) {
     let w = (scene.max_x - scene.min_x + 1) as f64;
     let d = (scene.max_z - scene.min_z + 1) as f64;
-    ((ratio - 1.0) / 2.0 * w, (ratio - 1.0) / 2.0 * d)
+    (
+        ((ratio - 1.0) / 2.0 * w).max(ANNULUS_BAND_FLOOR),
+        ((ratio - 1.0) / 2.0 * d).max(ANNULUS_BAND_FLOOR),
+    )
 }
 
 /// The outer rectangle (inclusive) of the annulus.
@@ -426,65 +414,14 @@ fn annulus_progress(scene: &SceneRect, ratio: f64, x: i32, z: i32) -> f64 {
     (dx * dx + dz * dz).sqrt()
 }
 
-/// Per-column radial profile parameters, derived from the LOCAL band width
-/// `B = d / p` — the distance from the scene edge to the outer edge along
-/// this column's ray (exactly the axis side length on the four faces, a
-/// smooth blend at the corners). The cliff-band degradation (planner ruling,
-/// task #157) lives here:
-///
-/// - `B ≥ 30` (gap 12 + slope 18): the normal open-valley profile.
-/// - `B < 30`: the axis cannot fit the valley — keep a walkable gap floor of
-///   `clamp(B − 18, 6, 12)` and spend the remainder on a near-vertical
-///   stepped CLIFF to full rim height, risers quantized ≥ 3 (stricter than
-///   the 2-block terraces; un-climbable by construction) and no outer decay
-///   (the cliff top runs to the tile edge, so the perimeter is unreachable
-///   cliff-top, never a walkable shelf over the void). The short axis reads
-///   as a gorge wall; the long axis still carries the open valley.
-/// - the seam strip `30 ≤ B < 36` quantizes to 6 — a common multiple of 2
-///   and 3 — so the two quantization families can never abut with a 1-block
-///   riser between them.
-///
-/// The domain-warp amplitude shrinks with the gap (`clamp(gap − 4, 1, 5)`)
-/// so a 6-wide cliff-band floor cannot be warp-pinched shut.
-struct RadialParams {
-    gap: f64,
-    run: f64,
-    quantum: i32,
-    degenerate: bool,
-    warp_amp: f64,
-}
-
-fn radial_params(scene: &SceneRect, ratio: f64, x: i32, z: i32) -> RadialParams {
-    let d = rect_distance(scene, x, z);
-    let p = annulus_progress(scene, ratio, x, z);
-    let band = if p > 1e-9 { d / p } else { f64::MAX };
-    let gap = (band - SLOPE_RUN).clamp(GAP_FLOOR_MIN, GAP_WIDTH);
-    let run = (band - gap).clamp(1.0, SLOPE_RUN);
-    let (quantum, degenerate) = if band < DEGENERATE_BAND {
-        (3, true)
-    } else if band < DEGENERATE_BAND + SEAM_BAND {
-        (6, false)
-    } else {
-        (2, false)
-    };
-    RadialParams {
-        gap,
-        run,
-        quantum,
-        degenerate,
-        warp_amp: (gap - 4.0).clamp(1.0, WARP_AMP),
-    }
-}
-
 /// The domain-warped radial distance the whole profile keys on.
-fn warped_distance(seed: u64, scene: &SceneRect, ratio: f64, x: i32, z: i32) -> f64 {
+fn warped_distance(seed: u64, scene: &SceneRect, x: i32, z: i32) -> f64 {
     let d = rect_distance(scene, x, z);
     if d <= 0.0 {
         return 0.0; // inside the scene: never warped into the annulus
     }
-    let rp = radial_params(scene, ratio, x, z);
     let w = 2.0 * value_noise(seed, x, 0, z, WARP_FREQ, SALT_WARP) - 1.0;
-    (d + rp.warp_amp * w).max(0.0)
+    (d + WARP_AMP * w).max(0.0)
 }
 
 /// Ridged multifractal in [0, 1] (Musgrave-style ridge composition,
@@ -532,28 +469,34 @@ fn column_profile(
     x: i32,
     z: i32,
 ) -> (Zone, i32) {
-    let rp = radial_params(scene, ratio, x, z);
-    let dw = warped_distance(seed, scene, ratio, x, z);
-    if dw < rp.gap {
+    let dw = warped_distance(seed, scene, x, z);
+    if dw < GAP_WIDTH {
         return (Zone::Gap, 0);
     }
-    let zone = if dw <= rp.gap + rp.run {
+    let zone = if dw <= GAP_WIDTH + SLOPE_RUN {
         Zone::Inner
     } else {
         Zone::Outer
     };
-    let s = smoothstep01((dw - rp.gap) / rp.run);
+    let s = smoothstep01((dw - GAP_WIDTH) / SLOPE_RUN);
     let r = RIDGE_FLOOR + (1.0 - RIDGE_FLOOR) * ridged(seed, x, z);
-    let decay = if rp.degenerate {
-        1.0 // the cliff runs at full height to the tile edge — no outer shelf
-    } else {
-        let p = annulus_progress(scene, ratio, x, z);
-        let o = ((p - DECAY_START) / (1.0 - DECAY_START)).clamp(0.0, 1.0);
+    // Outer decay keys on how far BEYOND the crest the column sits, relative
+    // to the band remaining past it. A band-floored axis (owner ruling,
+    // 2026-08-04) has no room past the crest, so its rim ends full-height at
+    // the tile edge — the perimeter is unreachable crest-top, never a
+    // walkable shelf over the void.
+    let d = rect_distance(scene, x, z);
+    let p = annulus_progress(scene, ratio, x, z);
+    let band = if p > 1e-9 { d / p } else { f64::MAX };
+    let crest = GAP_WIDTH + SLOPE_RUN;
+    let decay = if band > crest + 1.0 {
+        let o = ((dw - crest) / (band - crest)).clamp(0.0, 1.0);
         1.0 - (1.0 - OUTER_KEEP) * smoothstep01(o)
+    } else {
+        1.0
     };
     let h = (f64::from(rim_height) * s * r * decay).max(0.0);
-    let q = f64::from(rp.quantum);
-    let hq = rp.quantum * (h / q).floor() as i32;
+    let hq = 2 * (h / 2.0).floor() as i32;
     (zone, hq.max(0))
 }
 
@@ -778,9 +721,8 @@ pub fn generate_valley(
         // warp's gradient and no canopy is ever sheared by a clip.
         for dx in -2..=2 {
             for dz in -2..=2 {
-                let rp = radial_params(&scene, params.ratio, x + dx, z + dz);
-                let dw = warped_distance(seed, &scene, params.ratio, x + dx, z + dz);
-                if dw <= rp.gap + rp.run + TREE_CREST_MARGIN {
+                let dw = warped_distance(seed, &scene, x + dx, z + dz);
+                if dw <= GAP_WIDTH + SLOPE_RUN + TREE_CREST_MARGIN {
                     return false;
                 }
                 if !in_annulus(&scene, params.ratio, x + dx, z + dz) {
@@ -810,16 +752,12 @@ pub fn generate_valley(
         if !in_annulus(&scene, params.ratio, x, z) {
             return false;
         }
-        let rp = radial_params(&scene, params.ratio, x, z);
-        if rp.degenerate {
-            return false; // cliff bands get the sapling understory instead
-        }
-        let dw = warped_distance(seed, &scene, params.ratio, x, z);
-        if dw < rp.gap + 6.0 || dw > rp.gap + rp.run - 1.0 {
+        let dw = warped_distance(seed, &scene, x, z);
+        if !(GAP_WIDTH + 6.0..=GAP_WIDTH + SLOPE_RUN - 1.0).contains(&dw) {
             return false;
         }
         // Density ramp: sparse near the floor, denser upslope.
-        let sl = ((dw - rp.gap) / rp.run).clamp(0.0, 1.0);
+        let sl = ((dw - GAP_WIDTH) / SLOPE_RUN).clamp(0.0, 1.0);
         if hash01(seed, x, 9, z, SALT_TREE_KEEP) > 0.30 + 0.60 * sl {
             return false;
         }
@@ -832,8 +770,7 @@ pub fn generate_valley(
                 if !in_annulus(&scene, params.ratio, nx, nz) {
                     return false;
                 }
-                let nrp = radial_params(&scene, params.ratio, nx, nz);
-                if warped_distance(seed, &scene, params.ratio, nx, nz) <= nrp.gap + 1.0 {
+                if warped_distance(seed, &scene, nx, nz) <= GAP_WIDTH + 1.0 {
                     return false;
                 }
             }
@@ -889,14 +826,6 @@ pub fn generate_valley(
                 hash01(seed, x, surf + 1, z, SALT_DECOR_PICK).min(0.999_999),
             );
             decor_cells.insert([x, surf + 1, z], d);
-        } else if zone == Zone::Inner
-            && radial_params(&scene, params.ratio, x, z).degenerate
-            && hash01(seed, x, surf + 1, z, SALT_SAPLING) < SAPLING_DENSITY
-        {
-            // Cliff-band blossom (task #157 round 2): the gorge wall is too
-            // narrow for whole trees, so the species shows as a sapling
-            // understory on its grass ledges.
-            decor_cells.insert([x, surf + 1, z], flora.sapling);
         }
     }
 
@@ -956,18 +885,15 @@ pub fn generate_valley(
 /// the surface painter and the tree domain; deliberately flora-independent
 /// (identical across floras, so tree positions and surface ids never fork).
 fn surface_is_grass(seed: u64, scene: &SceneRect, ratio: f64, x: i32, z: i32) -> bool {
-    let rp = radial_params(scene, ratio, x, z);
-    let dw = warped_distance(seed, scene, ratio, x, z);
-    if dw < rp.gap {
+    let dw = warped_distance(seed, scene, x, z);
+    if dw < GAP_WIDTH {
         return true;
     }
-    if dw <= rp.gap + rp.run {
+    if dw <= GAP_WIDTH + SLOPE_RUN {
         // Rockier as the wall climbs: grassy foot, crag top. Softened for the
-        // blossom round (#157: the inner slope carries trees now), except on
-        // cliff bands, which stay crag-faced.
-        let s = ((dw - rp.gap) / rp.run).clamp(0.0, 1.0);
-        let bias = if rp.degenerate { 0.55 } else { 0.35 };
-        value_noise(seed, x, 0, z, 0.11, SALT_ROCK_SPECKLE) > 0.30 + bias * s
+        // blossom round (#157: the inner slope carries trees now).
+        let s = ((dw - GAP_WIDTH) / SLOPE_RUN).clamp(0.0, 1.0);
+        value_noise(seed, x, 0, z, 0.11, SALT_ROCK_SPECKLE) > 0.30 + 0.35 * s
     } else {
         // Crest band already tree country (the silhouette the scene sees —
         // for cherry-valley the blossoms must crown the rim), outer face
@@ -1336,10 +1262,9 @@ fn assert_inner_slopes_unclimbable(
                 if ny > y + 1 || !seen.insert([nx, ny, nz]) {
                     continue;
                 }
-                let rp = radial_params(scene, ratio, nx, nz);
-                let dw = warped_distance(seed, scene, ratio, nx, nz);
+                let dw = warped_distance(seed, scene, nx, nz);
                 assert!(
-                    dw <= rp.gap + rp.run,
+                    dw <= GAP_WIDTH + SLOPE_RUN,
                     "valley surround invariant: gap floor reaches beyond the crest line at \
                      [{nx}, {ny}, {nz}] (warped d {dw:.1}) — the inner slope grew a standable \
                      staircase; the even-step quantization or the tree clip regressed \
@@ -1422,8 +1347,8 @@ mod tests {
     fn no_one_block_riser_exists_and_ridge_never_opens() {
         // The by-construction invariant behind DW0369: no two adjacent
         // annulus columns may ever differ by exactly 1 (the only riser a
-        // vanilla step/jump climbs). Quantization families (2 / 6 / 3 across
-        // the cliff-band seam) are designed so this holds at every boundary.
+        // vanilla step/jump climbs) — every surface height is quantized to
+        // even steps.
         let s = scene();
         let heights = |x: i32, z: i32| -> Option<i32> {
             in_annulus(&s, 2.5, x, z).then(|| column_profile(9, &s, 2.5, 48, x, z).1)
@@ -1451,9 +1376,8 @@ mod tests {
                 if !in_annulus(&s, 2.5, x, z) {
                     continue;
                 }
-                let rp = radial_params(&s, 2.5, x, z);
-                let dw = warped_distance(9, &s, 2.5, x, z);
-                if (dw - (rp.gap + rp.run)).abs() <= 1.0 {
+                let dw = warped_distance(9, &s, x, z);
+                if (dw - (GAP_WIDTH + SLOPE_RUN)).abs() <= 1.0 {
                     let (_, h) = column_profile(9, &s, 2.5, 48, x, z);
                     min_crest = min_crest.min(h);
                 }
@@ -1465,65 +1389,60 @@ mod tests {
         );
     }
 
-    /// Task #157 round 2, the hollow-vigil proportions (94×27): the short
-    /// axis cannot fit gap + slope, so it degrades to the cliff band — a
-    /// walkable gap floor survives, risers on the cliff quantize ≥ 3, the
-    /// cliff runs at full height to the tile edge (no walkable shelf over the
-    /// void), and the whole surround still holds the nav-flood proof over its
-    /// serialized tiles (decor and saplings included).
+    /// The annulus band floor (owner ruling, 2026-08-04), on hollow-vigil's
+    /// proportions (94×27): the short axis's proportional band (20) is under
+    /// gap + slope, so it takes the floor (30) and carries the SAME full rim
+    /// as every other axis — walkable gap floor, rising slope, crest — and
+    /// the whole surround holds the nav-flood proof over its serialized
+    /// tiles. `ratio` controls spaciousness above the floor, never below.
     #[test]
-    fn degenerate_axis_degrades_to_an_unclimbable_cliff_band() {
+    fn short_axis_band_floors_at_the_full_rim() {
         let s = SceneRect {
             min_x: 0,
             min_z: 0,
             max_x: 93,
             max_z: 26,
         };
-        let v = generate_valley(41, s, 62, &ValleyParams::default()).unwrap();
-        // Mid-scene column, marching outward across the short (+z) band.
-        let x = 47;
-        let band = annulus_sides(&s, 2.5).1; // 0.75 × 27 ≈ 20 < 30 → degenerate
+        let (sx, sz) = annulus_sides(&s, 2.5);
         assert!(
-            band < DEGENERATE_BAND,
-            "fixture must be degenerate ({band})"
+            (sx - 0.75 * 94.0).abs() < 1.0,
+            "the long axis keeps its proportional band (got {sx})"
         );
+        assert!(
+            (sz - ANNULUS_BAND_FLOOR).abs() < f64::EPSILON,
+            "the short axis takes the band floor (got {sz})"
+        );
+        let v = generate_valley(41, s, 62, &ValleyParams::default()).unwrap();
+        // Mid-scene column, marching outward across the short (+z) band: the
+        // full profile appears — gap floor, then a crest at real height.
+        let x = 47;
         let o = outer_rect(&s, 2.5);
-        let mut prev = None;
         let mut saw_gap_floor = false;
-        let mut edge_h = 0;
+        let mut max_h = 0;
         for z in (s.max_z + 1)..=o.max_z {
             let (zone, h) = column_profile(41, &s, 2.5, 48, x, z);
             if zone == Zone::Gap {
                 saw_gap_floor = true;
             }
-            if let Some(ph) = prev {
-                let d: i32 = h - ph;
-                assert!(
-                    d <= 0 || d >= 3,
-                    "cliff riser {d} at ({x},{z}) — the ruling demands ≥ 3"
-                );
-            }
-            prev = Some(h);
-            edge_h = h;
+            max_h = max_h.max(h);
         }
         assert!(saw_gap_floor, "the walkable gap floor must survive");
         assert!(
-            edge_h >= 12,
-            "the cliff must run at full height to the tile edge (got {edge_h}) — \
-             a low outer shelf is the DW0322 void-drop exposure"
+            max_h >= 10,
+            "the short axis must carry a real rim (crest {max_h})"
         );
         // The empirical proof over the finished, serialized surround.
         let world = decoded_world(&v, &[]);
         if let Err(cell) = v.verify_unclimbable(&world) {
-            panic!("gap floor escapes the cliff-band valley at {cell:?}");
+            panic!("gap floor escapes the floored-band valley at {cell:?}");
         }
     }
 
     /// Task #157 round 2: blossom must be IN the player's view — trees stand
     /// on the inner slopes (between walk plane and crest), not only past the
-    /// crest, and the cliff bands carry the species as sapling understory.
+    /// crest.
     #[test]
-    fn blossom_reaches_the_inner_slope_and_cliff_bands() {
+    fn blossom_reaches_the_inner_slope() {
         let s = scene();
         let v = generate_valley(
             17,
@@ -1550,34 +1469,6 @@ mod tests {
             inner_tree_cells >= 60,
             "the inner slopes must carry visible blossom (got {inner_tree_cells} tree cells)"
         );
-        // Cliff bands: the hollow proportions, sapling understory present.
-        let narrow = SceneRect {
-            min_x: 0,
-            min_z: 0,
-            max_x: 93,
-            max_z: 26,
-        };
-        let nv = generate_valley(
-            41,
-            narrow,
-            62,
-            &params(Flora::Cherry, SurroundPalette::StonePetal),
-        )
-        .unwrap();
-        let mut saplings = 0usize;
-        for t in &nv.tiles {
-            let d: fastnbt::Value = fastnbt::from_bytes(&gunzip(&t.bytes)).unwrap();
-            let (palette, blocks) = palette_and_blocks(&d);
-            for (_, state) in blocks {
-                if palette[state as usize].contains("cherry_sapling") {
-                    saplings += 1;
-                }
-            }
-        }
-        assert!(
-            saplings >= 5,
-            "cliff bands must carry the species as sapling understory (got {saplings})"
-        );
     }
 
     #[test]
@@ -1602,7 +1493,6 @@ mod tests {
         let map = |name: &str| -> String {
             name.replace("minecraft:cherry_log", "minecraft:oak_log")
                 .replace("minecraft:cherry_leaves", "minecraft:oak_leaves")
-                .replace("minecraft:cherry_sapling", "minecraft:oak_sapling")
                 .replace("minecraft:pink_petals", "minecraft:short_grass")
                 // stone-petal decor slot 2 is short_grass where stone-grass
                 // has fern — positional palette parity, asserted structurally
@@ -1708,7 +1598,11 @@ mod tests {
             }
         }
         for (c, name) in extra {
-            blocks.insert(*c, name.to_string());
+            if *name == "minecraft:air" {
+                blocks.remove(c); // a doctored carve — the edit-batch shape
+            } else {
+                blocks.insert(*c, name.to_string());
+            }
         }
         let occ = crate::assembled::occupancy_of(blocks, &BTreeSet::new());
         crate::nav::World::from_occupancy(occ)
@@ -1728,13 +1622,17 @@ mod tests {
             max_z: 47,
         };
         let v = generate_valley(31, s, 62, &ValleyParams::default()).unwrap();
-        // The saboteur: a stone stair climbing +1 per column from the gap
-        // floor straight out over the rim (what a careless edit batch or a
-        // future palette with stairs could produce).
+        // The saboteur: a staircase CARVED through the rim — stone steps with
+        // air headroom, climbing +1 per column from the gap floor out past
+        // the crest (exactly what a careless stage-7 edit batch could do).
         let cz = 24;
-        let stair: Vec<([i32; 3], &str)> = (0..40)
-            .map(|i| ([48 + i, 62 + i, cz], "minecraft:stone"))
-            .collect();
+        let mut stair: Vec<([i32; 3], &str)> = Vec::new();
+        for i in 0..40 {
+            stair.push(([48 + i, 62 + i, cz], "minecraft:stone"));
+            for dy in 1..=3 {
+                stair.push(([48 + i, 62 + i + dy, cz], "minecraft:air"));
+            }
+        }
         let world = decoded_world(&v, &stair);
         let err = v.verify_unclimbable(&world);
         assert!(

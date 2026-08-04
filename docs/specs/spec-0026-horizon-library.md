@@ -198,16 +198,17 @@ checks **empirical geometry**, never metadata:
 - Valley: gap floor between scene and slopes is walkable ambient terrain
   inside the region margin; inner slopes are proven un-climbable by nav (no
   standable staircase from gap floor to crest), not by slope-angle promise.
-- **Cliff-band degradation** (amendment, task #157 round 2 — planner design
-  ruling): on any axis whose annulus band is too narrow for gap + slope
-  (band < 30 at the pinned tables), the profile keeps a walkable gap floor of
-  at least 6 and spends the remainder on a near-vertical stepped cliff to
-  full rim height, risers quantized ≥ 3 (stricter than the 2-block terraces)
-  and no outer decay — the perimeter is unreachable cliff-top, never a
-  walkable shelf over the void, so the DW0322 boundary-safety proof holds
-  without exemption. The short axis reads as a gorge wall; the long axis
-  still carries the open valley. The nav un-climbability proof runs unchanged
-  over the cliff geometry.
+- **Annulus band floor** (amendment, owner ruling 2026-08-04): the surround
+  band width never scales below what the rim physically needs. Per axis:
+  band = max((ratio−1)/2 × scene_axis, gap + slope) — a hard floor of 30
+  columns at the pinned tables. A legal surround always contains a full
+  gap + slope rim on every axis; `ratio` controls spaciousness above that
+  floor, never below it. The valley simply grows to contain any scene shape
+  (a 94×27 scene gets the floor on its short axis while the long axis keeps
+  its proportional band — asymmetry accepted and expected); the one rim
+  profile runs unchanged on every axis, a band-floored axis ends full-height
+  at its tile edge (no walkable shelf over the void), and DW0322/DW0369 hold
+  purely by construction.
 - Summit ("一览众山小"): max surround surface y < scene walk plane y is a hard
   clamp verified empirically; ≥1 gorge drop ≥ `min_drop` along the vista ring;
   everything within −64..320.

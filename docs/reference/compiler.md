@@ -994,14 +994,15 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   pass stands trees on the inner slopes of non-degenerate bands (sparse near
   the floor, denser upslope), each leaning its canopy two columns toward the
   valley so no leaf platform sits within hop-on/hop-off range of two upslope
-  terraces — the flood proofs remain the authority. **Cliff-band
-  degradation** (planner ruling, task #157): an axis whose band is under
-  gap 12 + slope 18 keeps a ≥ 6-wide walkable gap floor and spends the rest
-  on a near-vertical stepped cliff to full rim height — risers quantized ≥ 3,
-  no outer decay, quantization families separated by a 6-quantized seam strip
-  so no 1-block riser can form at a family boundary — making the perimeter
-  unreachable cliff-top (DW0322 holds with no exemption); such gorge walls
-  carry the flora as a sapling understory where whole trees cannot fit.
+  terraces — the flood proofs remain the authority. **Annulus band floor**
+  (owner ruling, 2026-08-04): per axis, the band is
+  max((ratio−1)/2 × scene_axis, gap 12 + slope 18) — the surround always
+  contains the full rim on every axis (`ratio` buys spaciousness above the
+  floor, never below it), so a narrow scene simply grows an asymmetric
+  valley. The outer decay keys on the band remaining past the crest, so a
+  band-floored axis ends full-height at its tile edge — the perimeter is
+  unreachable crest-top, never a walkable shelf over the void, and DW0322
+  holds with no exemption.
 - `boundary` (v0.6, spec-0013) emits, in `setup_finish`: a `dw:region bounds`
   storage mirror (readable region contract), a `dw:cp pos` init to the spawn cell
   (shared with spec-0012 checkpoints — the last-checkpoint mirror the return
