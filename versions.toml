@@ -118,16 +118,17 @@ mineflayer = "4.37.1"
 # content `main` tip in a normal follow-up PR.
 repo = "stellarfeline/delvewright-campaigns"
 # The spec-0026 **walk_y backfill** (content branch
-# `worker/spec-0026-walk-y-backfill`, off content main incl. the drowned-bell
-# round-2 merge): every prefab metadata file declares its tileset walk-plane
-# convention (`walk_y` — keep 1, cave 2, island/tk-shore 3, tk-plinth 11; each
-# verified empirically from the .nbt geometry), which the compiler's per-area
-# placement datum consumes (base = walk_ref_y − walk_y, spec-0026 §2, DW0367).
-# The engine and content changes land as a pair: this delvec cannot place a
-# non-void horizon against a library without walk_y.
+# `worker/spec-0026-walk-y-backfill`, one commit over content main 4992b4f):
+# every prefab metadata file declares its tileset walk-plane convention
+# (`walk_y` — keep 1, cave 2, island 3; each verified empirically from the
+# .nbt geometry), which the compiler's per-area placement datum consumes
+# (base = walk_ref_y − walk_y, spec-0026 §2, DW0367). The engine and content
+# changes land as a pair: this delvec cannot place a non-void horizon against
+# a library without walk_y. (Also advances the pin over the island set-piece
+# and terrain merges, content #11/#12, which the old pin predated.)
 # RE-PIN to the content `main` tip once the paired content PR merges (RE-PIN
 # CONVENTION above).
-sha = "eae3a65e365235f86968ad3b42d51dd3783a5733"
+sha = "a63d1a08eb9fc29945fe8405f80b582a0b25d6f9"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders

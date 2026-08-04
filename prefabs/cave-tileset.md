@@ -19,6 +19,16 @@ pieces mate with the same machinery as keep pieces. `connectors[]` in each
 metadata JSON records `local_pos`, `facing`, `opening`, `joint`. The stair
 (`cave-descent`) carries the low/high y-offset sockets exactly like `keep-stair`.
 
+**Walk-plane datum (spec-0026 §2)**: the cave convention is substrate + floor
+top local y=1, feet at local **y=2** — declared as `walk_y: 2` in every piece's
+metadata (generator-emitted; `DW0367` without it in a non-void horizon).
+`cave-shore`'s beach walks flush at local 2 with its authored water topping at
+the same y (an ankle-deep wading shore) — under an ocean horizon its datum
+places that walk plane at 63, one above sea level, and its authored pond then
+sits one block above the world sea; it declares no `waterline_y`, so `DW0344`
+does not demand sea mating (the piece predates the island convention and no
+tracked ocean campaign binds it).
+
 > Known solver interaction: unmated sockets are sealed by the solver with
 > `minecraft:stone_bricks` (hard-coded in `solver.rs`), so an unused cave doorway
 > gets a smooth stone-brick patch at assembly. Per-piece renders are unaffected;

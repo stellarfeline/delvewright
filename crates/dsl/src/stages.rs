@@ -577,10 +577,7 @@ pub fn horizon_base(horizon: &Option<Horizon>) -> HorizonBase {
 /// The resolved view of an optional stage-1 `horizon` field (defaults for
 /// absent).
 pub fn resolved_horizon(horizon: &Option<Horizon>) -> ResolvedHorizon {
-    horizon
-        .as_ref()
-        .map(|h| h.resolved())
-        .unwrap_or_default()
+    horizon.as_ref().map(|h| h.resolved()).unwrap_or_default()
 }
 
 /// The default boundary `margin` (blocks of horizontal breathing room added

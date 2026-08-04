@@ -30,10 +30,9 @@ fn version_line() {
     assert_eq!(code(&out), 0);
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.contains("delvec 0.1.0"), "{s}");
-    // spec-0025 raised the implemented DSL to 0.8.0 (declared branch points, the
-    // per-node `happening`, named endings); spec-0016 §1's bonfire rulings add
-    // the rest interaction's authorable labels + the class-kit `flask` to it.
-    assert!(s.contains("dsl 0.8.0"), "{s}");
+    // spec-0026 raised the implemented DSL to 0.9.0 (the horizon library's
+    // stage-1 object form + new bases over spec-0025's 0.8.0 surface).
+    assert!(s.contains("dsl 0.9.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 
@@ -1441,11 +1440,16 @@ fn v06_actor_datapack_emits_the_mechanics() {
     );
 }
 
-/// spec-0013 sea-level datum: an `ocean` world places its areas at
-/// `sea_level - island waterline` (y=60) so the island tileset's authored
-/// waterline (local y=2) meets the world ocean (y=62) and its walk plane (local
-/// y=3) is the vanilla-normal one block above the sea. A `void` world is
+/// spec-0026 per-area datum (superseding spec-0013's global y=60): an `ocean`
+/// world places each area at `walk_ref_y (63) − walk_y`, the tileset's declared
+/// walk-plane convention. `hello-room` declares `walk_y: 1` (interior floor at
+/// local 0, feet at 1), so its base is y=62 and its walk plane lands at 63 —
+/// one block above the sea, DRY. Under the old island-constant datum (y=60) the
+/// same piece's walk plane sat at 61, one block UNDER sea level: the #149
+/// flooded-interior class, live in this very fixture. A `void` world is
 /// unchanged at y=64 — the byte-identity guarantee for every existing campaign.
+/// (The island tileset's own `walk_y: 3` → base 60, byte-identical to the old
+/// datum — asserted in `spec0026_horizon.rs`.)
 #[test]
 fn ocean_areas_sit_on_the_sea_level_datum_void_unchanged() {
     let pf = common::prefabs_dir();
@@ -1483,8 +1487,8 @@ fn ocean_areas_sit_on_the_sea_level_datum_void_unchanged() {
 
     let ocean = place_line(Some("ocean"), "datum-ocean");
     assert!(
-        ocean.contains("place template hello-world:hello-room 0 60 0"),
-        "ocean areas must sit at sea_level-2 (y=60):\n{ocean}"
+        ocean.contains("place template hello-world:hello-room 0 62 0"),
+        "ocean areas must sit on the per-area datum (walk_ref 63 − walk_y 1 = 62):\n{ocean}"
     );
     let void = place_line(None, "datum-void");
     assert!(
@@ -1538,9 +1542,10 @@ fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
     let stdout = String::from_utf8_lossy(&b.stdout);
     assert!(stdout.contains("DW0344"), "expected DW0344:\n{stdout}");
 
-    // The same piece declaring the island convention (local y=2) lands its
-    // waterline exactly at sea level and builds clean.
-    meta["waterline_y"] = serde_json::json!(2);
+    // The same piece declaring the waterline consistent with its own datum
+    // (spec-0026: `waterline_y = walk_y − 1`; hello-room declares walk_y 1, so
+    // waterline 0 → base 62 + 0 = sea level) builds clean.
+    meta["waterline_y"] = serde_json::json!(0);
     std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
     let out_ok = tmp("dw0344-out-ok");
     let ok = delvec(&[

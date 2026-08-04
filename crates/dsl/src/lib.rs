@@ -46,7 +46,6 @@ pub use registry::{
 };
 pub use schema::stage_schema;
 pub use stages::for_each_campaign_effect;
-pub use stages::{ResolvedHorizon, horizon_base, horizon_defaults, resolved_horizon};
 pub use stages::{
     Actor, Ambush, Area, AreaLighting, AreaMitigation, BONFIRE_PROMPT_EN, BONFIRE_REST_LABEL_EN,
     BONFIRE_SAVE_LABEL_EN, BonfireLabels, Boundary, BranchDecl, BranchPoint, CameraShot,
@@ -55,15 +54,16 @@ pub use stages::{
     DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EffectSite,
     EnchantedItem, EncounterTier, EnvTrigger, EquipItem, Facing, Fixture, Happening, HappeningVerb,
     Horizon, HorizonBase, HorizonFall, HorizonFlora, HorizonName, HorizonPalette, HorizonSpec,
-    KitItem, Lethality, Loot, LootItem, MobAttributes, MobEffect, MobEquipment,
-    NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces, PlannedQuest,
-    Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep,
-    Shortcut, ShotStyle, SkinModel, SoundAt, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect,
-    TrapReset, TrapTrigger, Trigger, TriggerOn, Wave, WaveLane, WaveMob, WaveSummon, WorldContent,
+    KitItem, Lethality, Loot, LootItem, MobAttributes, MobEffect, MobEquipment, NarrateStyle, Npc,
+    NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces, PlannedQuest, Prop, Quest,
+    QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep, Shortcut,
+    ShotStyle, SkinModel, SoundAt, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset,
+    TrapTrigger, Trigger, TriggerOn, Wave, WaveLane, WaveMob, WaveSummon, WorldContent,
     WorldDifficulty, WorldTime, WorldWeather,
 };
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,
     SocketState, TreeKind, WorldEdit, WorldEditsContent,
 };
+pub use stages::{ResolvedHorizon, horizon_base, horizon_defaults, resolved_horizon};
 pub use validate::{validate_campaign, validate_campaign_with};

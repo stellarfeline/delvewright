@@ -1207,13 +1207,21 @@ fn horizon_rules(c: &Campaign, d: &mut Vec<Diagnostic>) {
         let foreign: &[(&str, bool, HorizonBase)] = &[
             ("float_y", s.float_y.is_some(), HorizonBase::Sky),
             ("fall", s.fall.is_some(), HorizonBase::Sky),
-            ("blend_width", s.blend_width.is_some(), HorizonBase::Flatland),
+            (
+                "blend_width",
+                s.blend_width.is_some(),
+                HorizonBase::Flatland,
+            ),
             ("ratio", s.ratio.is_some(), HorizonBase::Valley),
             ("rim_height", s.rim_height.is_some(), HorizonBase::Valley),
             ("flora", s.flora.is_some(), HorizonBase::Valley),
             ("palette", s.palette.is_some(), HorizonBase::Valley),
             ("plateau_y", s.plateau_y.is_some(), HorizonBase::Summit),
-            ("vista_radius", s.vista_radius.is_some(), HorizonBase::Summit),
+            (
+                "vista_radius",
+                s.vista_radius.is_some(),
+                HorizonBase::Summit,
+            ),
             ("min_drop", s.min_drop.is_some(), HorizonBase::Summit),
         ];
         for (name, present, owner) in foreign {
@@ -1344,7 +1352,6 @@ fn horizon_rules(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// and the actor staging verbs; gated on the quests stage). The per-effect
 /// `requires_flags` gate is handled separately in [`reserved_v06_effect_flags`].
 fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
-
     // --- Stage 1: horizon / boundary (spec-0013), gated on the world stage ---
     if !is_v06(c.world.dsl_version.as_str()) {
         if c.world.content.horizon.is_some() {
