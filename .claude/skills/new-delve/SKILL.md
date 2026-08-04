@@ -666,6 +666,12 @@ Then:
 
 - Persist the DSL workspace before validation, not after — a crash must never
   lose the campaign.
+- **Open-air by default** (owner directive 2026-08-04): stage scenes in the
+  open unless a beat NEEDS enclosure (a cave passage, an interior puzzle,
+  a reveal). The horizon — surround terrain, sky, backdrop (spec-0026) — is
+  part of the composition; a campaign of enclosed boxes wastes it. When an
+  enclosed beat is necessary, prefer routing the player back into the open
+  between beats over chaining interiors.
 - Every player-visible string in the **stage docs stays English** — always. Other
   languages are delivered as `l10n/<code>.json` sidecars (the Localization stage
   above), never by writing non-English into the stage docs. Owner prompts in
