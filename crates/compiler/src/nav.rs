@@ -2883,6 +2883,17 @@ pub fn plan_lanes(plan: &Plan, world: &World) -> Result<LaneRoutes, NavError> {
     Ok(out)
 }
 
+/// The measured off-lane drift of a marching TD squad, in blocks — the constraint
+/// source is the td-routing-spike dossier (`docs/notes/td-routing-spike.md`,
+/// "Lane fidelity": followers deviate mean ≤3.2, **max 7.9** blocks off the lane
+/// polyline, 116 samples). A marching squad is a CORRIDOR around its polyline,
+/// not a line: a placement can clear the centre-line by 2 blocks and still stand
+/// inside the marching mobs' real aggro reach — run nine's live death at 17.7
+/// blocks from a 16-`follow_range` lane. `DW0478`'s lane term is therefore
+/// `follow_range + LANE_MARCH_DRIFT` (owner ruling 2026-08-04); stationary
+/// spawn/staging cells keep the plain `follow_range` term.
+pub const LANE_MARCH_DRIFT: f64 = 7.9;
+
 /// One hostile force as the bonfire safe-zone proof (`DW0478`) sees it: a
 /// perception radius plus every cell the force provably occupies.
 #[derive(Clone, Debug)]
@@ -2895,8 +2906,11 @@ pub struct AggroSource {
     pub radius: f64,
     /// Why this radius is the number it is, for the message.
     pub radius_source: &'static str,
-    /// Every occupied cell, each labelled with what it is.
-    pub cells: Vec<(&'static str, [i32; 3])>,
+    /// Every occupied cell: what it is, where it is, and the extra reach margin
+    /// added on top of `radius` — `0.0` for a stationary cell (seated spawn,
+    /// staging anchor), [`LANE_MARCH_DRIFT`] for a lane path cell, because the
+    /// squad marches a corridor around the polyline, not the polyline itself.
+    pub cells: Vec<(&'static str, [i32; 3], f64)>,
 }
 
 /// `DW0478`: **no bonfire may sit inside any hostile's aggro range** (spec-0016
@@ -2905,7 +2919,10 @@ pub struct AggroSource {
 /// The rule, verbatim: for every wave / actor hostile, the distance from the
 /// bonfire cell to that hostile's spawn cell — or to any cell of its lane path —
 /// must EXCEED that hostile's `follow_range` (the declared attribute; the
-/// documented default when undeclared).
+/// documented default when undeclared). For a **lane path cell** the term is
+/// `follow_range + `[`LANE_MARCH_DRIFT`] (owner ruling 2026-08-04): the squad
+/// marches a measured corridor around the polyline, so the centre-line distance
+/// understates its real aggro reach. Stationary cells keep the plain term.
 ///
 /// What "occupies" means per force:
 /// * a plain wave — its DW0312-proven seated spawn cells (where the datapack
@@ -2914,9 +2931,11 @@ pub struct AggroSource {
 /// * a **lane** wave — those cells PLUS the marched polyline: every cell of every
 ///   A*-proven leg from the form-up point through the waypoints, because a lane
 ///   wave's whole design is that it walks that corridor while the party is
-///   elsewhere. This is the shape that killed the drowned bell's ladder bot: a
-///   re-seated gate squad marched its lane, and the lane ended a couple of blocks
-///   outside a bonfire the party had just rested at;
+///   elsewhere — and each of those cells carries the [`LANE_MARCH_DRIFT`]
+///   margin, because the squad's measured march is a corridor around the
+///   polyline, not the polyline. This is the shape that killed the drowned
+///   bell's ladder bot: a re-seated gate squad marched its lane, and the lane
+///   ended a couple of blocks outside a bonfire the party had just rested at;
 /// * an **actor** the campaign declares as a fighter — `unleash-actor`ed
 ///   somewhere, or staged `vulnerable` — at its staging anchor. Fighter-ness is
 ///   read off the campaign's own declarations and never guessed from the species:
@@ -2955,11 +2974,11 @@ fn aggro_sources(
     let c = plan.campaign;
     let mut out = Vec::new();
     for w in &c.quests.content.waves {
-        let mut cells: Vec<(&'static str, [i32; 3])> = placements
+        let mut cells: Vec<(&'static str, [i32; 3], f64)> = placements
             .get(w.id.as_str())
             .into_iter()
             .flatten()
-            .map(|p| ("seated spawn cell", *p))
+            .map(|p| ("seated spawn cell", *p, 0.0))
             .collect();
         let (radius, radius_source) = match &w.lane {
             Some(l) => (f64::from(l.aggro_radius), "the lane's `aggro_radius`"),
@@ -2980,7 +2999,7 @@ fn aggro_sources(
             cells.extend(
                 lane_march_cells(plan, world, w, wps)
                     .into_iter()
-                    .map(|p| ("lane path cell", p)),
+                    .map(|p| ("lane path cell", p, LANE_MARCH_DRIFT)),
             );
         }
         if cells.is_empty() {
@@ -3011,7 +3030,7 @@ fn aggro_sources(
             id: a.id.as_str().to_string(),
             radius,
             radius_source,
-            cells: vec![("staging anchor", pos)],
+            cells: vec![("staging anchor", pos, 0.0)],
         });
     }
     out
@@ -3083,11 +3102,11 @@ fn verify_bonfire_safe_zone(
 ) -> Result<(), NavError> {
     for (anchor, pos) in bonfires {
         for src in sources {
-            let Some((what, cell, dist)) = src
+            let Some((what, cell, dist, drift)) = src
                 .cells
                 .iter()
-                .map(|(what, cell)| (*what, *cell, cell_distance(*pos, *cell)))
-                .filter(|(_, _, d)| *d <= src.radius)
+                .map(|(what, cell, drift)| (*what, *cell, cell_distance(*pos, *cell), *drift))
+                .filter(|(_, _, d, drift)| *d <= src.radius + drift)
                 // Nearest first, then by cell, so the message is deterministic.
                 .min_by(|a, b| {
                     a.2.partial_cmp(&b.2)
@@ -3097,23 +3116,37 @@ fn verify_bonfire_safe_zone(
             else {
                 continue;
             };
+            let reach = if drift > 0.0 {
+                format!(
+                    "the {reach:.1}-block reach: the {radius:.1}-block perception radius \
+                     ({radius_source}) plus the {drift:.1}-block measured marching drift — a \
+                     lane squad marches a corridor around its polyline, not the line itself \
+                     (td-routing-spike dossier)",
+                    reach = src.radius + drift,
+                    radius = src.radius,
+                    radius_source = src.radius_source,
+                )
+            } else {
+                format!(
+                    "the {radius:.1}-block perception radius ({radius_source})",
+                    radius = src.radius,
+                    radius_source = src.radius_source,
+                )
+            };
             return Err(NavError {
                 code: DW_BONFIRE_IN_AGGRO,
                 message: format!(
                     "bonfire `{anchor}` ({pos:?}) sits INSIDE the aggro range of `{id}`: its \
-                     {what} {cell:?} is {dist:.1} blocks away, within the {radius:.1}-block \
-                     perception radius ({radius_source}). A bonfire is where the party respawns \
-                     and where every `respawns_on_rest` wave is put back on its feet — with a \
-                     hostile already perceiving that cell, resting and dying both deliver the \
-                     party into contact on the tick they arrive, and the retry loop the fire \
-                     exists to make cheap becomes a soft-lock (spec-0016 §1, owner ruling \
-                     2026-08-04). Move the fire out of the danger — into a side room, behind the \
-                     threshold, past the end of the lane — or move the force's anchor / lane. Do \
-                     NOT shrink `follow_range` to buy the clearance: that retunes the fight to \
-                     hide a placement bug.",
+                     {what} {cell:?} is {dist:.1} blocks away, within {reach}. A bonfire is \
+                     where the party respawns and where every `respawns_on_rest` wave is put \
+                     back on its feet — with a hostile already perceiving that cell, resting \
+                     and dying both deliver the party into contact on the tick they arrive, and \
+                     the retry loop the fire exists to make cheap becomes a soft-lock \
+                     (spec-0016 §1, owner ruling 2026-08-04). Move the fire out of the danger \
+                     — into a side room, behind the threshold, past the end of the lane — or \
+                     move the force's anchor / lane. Do NOT shrink `follow_range` to buy the \
+                     clearance: that retunes the fight to hide a placement bug.",
                     id = src.id,
-                    radius = src.radius,
-                    radius_source = src.radius_source,
                 ),
             });
         }
@@ -4981,13 +5014,25 @@ mod tests {
         floored(w, d, y, &walls)
     }
 
-    /// A hostile force for the `DW0478` proof.
+    /// A hostile force for the `DW0478` proof. A "lane path cell" carries the
+    /// [`LANE_MARCH_DRIFT`] margin exactly as [`aggro_sources`] assigns it;
+    /// every stationary cell carries none.
     fn src(id: &str, radius: f64, cells: &[(&'static str, [i32; 3])]) -> AggroSource {
         AggroSource {
             id: id.to_string(),
             radius,
             radius_source: "the wave's declared `follow_range`",
-            cells: cells.to_vec(),
+            cells: cells
+                .iter()
+                .map(|(what, cell)| {
+                    let drift = if *what == "lane path cell" {
+                        LANE_MARCH_DRIFT
+                    } else {
+                        0.0
+                    };
+                    (*what, *cell, drift)
+                })
+                .collect(),
         }
     }
 
@@ -5043,6 +5088,52 @@ mod tests {
             err.message.contains("lane path cell"),
             "the message must say it is the MARCH that reaches the fire, not the seating: {}",
             err.message
+        );
+    }
+
+    /// The DRIFT half of the lane term (owner ruling 2026-08-04): a fire that
+    /// clears the centre-line polyline by less than the measured marching drift
+    /// is still inside the squad's real aggro reach, because the squad marches a
+    /// corridor around the polyline (td-routing-spike dossier: followers max 7.9
+    /// blocks off-lane). This is the drowned bell's chapel fire — 18.0 blocks
+    /// from a 16-`follow_range` lane, and run nine died to it live at 17.7.
+    #[test]
+    fn a_bonfire_clearing_the_centre_line_but_not_the_march_corridor_is_dw0478() {
+        let bonfires = vec![("anchor/chapel".to_string(), [18, 64, 0])];
+        let sources = vec![src(
+            "wave/bell-siege",
+            16.0,
+            &[("lane path cell", [0, 64, 0])],
+        )];
+        let err = verify_bonfire_safe_zone(&bonfires, &sources)
+            .expect_err("18.0 blocks clears follow_range 16 but not 16 + 7.9 drift");
+        assert_eq!(err.code, DW_BONFIRE_IN_AGGRO); // DW0478
+        assert!(
+            err.message.contains("marching drift") && err.message.contains("td-routing-spike"),
+            "the message must name the drift term and its constraint source: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("23.9"),
+            "the message states the full reach (16 + 7.9): {}",
+            err.message
+        );
+    }
+
+    /// The drift margin belongs to the MARCH alone: a stationary seated cell at
+    /// the same 18.0 blocks from the same 16-block radius is legal, because a
+    /// force that never walks has no corridor around a polyline it never marches.
+    #[test]
+    fn a_stationary_cell_at_the_same_distance_carries_no_drift_margin() {
+        let bonfires = vec![("anchor/chapel".to_string(), [18, 64, 0])];
+        let sources = vec![src(
+            "wave/bell-siege",
+            16.0,
+            &[("seated spawn cell", [0, 64, 0])],
+        )];
+        assert!(
+            verify_bonfire_safe_zone(&bonfires, &sources).is_ok(),
+            "the drift term is specifically for lane-marching squads"
         );
     }
 
