@@ -410,6 +410,35 @@ test("accepts the 0.5.0 and 0.6.0 dsl versions (additive; same path contract)", 
   }
 });
 
+test("parses an optional ending_tail_ticks on assert-complete (task #125)", () => {
+  const raw = validRaw();
+  (raw["steps"] as Array<Record<string, unknown>>)[3]!["ending_tail_ticks"] = 250;
+  const done = parseCriticalPath(raw).steps[3];
+  assert.deepEqual(done, {
+    action: "assert-complete",
+    objective: "dw.campaign",
+    value: 1,
+    endingTailTicks: 250,
+  });
+  // ...and its absence stays absent (a synchronous ending exports no field).
+  const plain = parseCriticalPath(validRaw()).steps[3] as unknown as Record<string, unknown>;
+  assert.ok(!("endingTailTicks" in plain));
+});
+
+test("rejects a non-positive or non-integer ending_tail_ticks", () => {
+  for (const bad of [0, -20, 12.5, "250"]) {
+    const raw = validRaw();
+    (raw["steps"] as Array<Record<string, unknown>>)[3]!["ending_tail_ticks"] = bad;
+    assert.throws(
+      () => parseCriticalPath(raw),
+      (err: unknown) =>
+        err instanceof CriticalPathParseError &&
+        err.pointer === "/steps/3/ending_tail_ticks" &&
+        /must be a positive integer/.test(err.message),
+    );
+  }
+});
+
 test("rejects a non-integer assert-complete scoreboard value", () => {
   const raw = validRaw();
   (raw["steps"] as Array<Record<string, unknown>>)[3]!["scoreboard"] = {

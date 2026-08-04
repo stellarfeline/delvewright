@@ -377,3 +377,60 @@ jobs:
           DELVE_OUTPUT: ./delve-output-keeptrial
           PACKTEST_CONTAINER: delvewright-packtest-keeptrial
         run: docker compose -p dw-keeptrial -f validation/compose.yaml --profile packtest down -v --remove-orphans || true
+
+      # spec-0016 §1 — the whole souls RETRY LOOP was shape-verified in Rust and
+      # never actually RUN. hello-world has no bonfire, so `souls_bonfire_rest`,
+      # `souls_bonfire_reseat`, `souls_bonfire_options`, `souls_reseat_stationed`
+      # and `wave_census` existed as generated files nothing executed. The
+      # stationed-re-seat ruling (owner, 2026-08-04) is a claim about what a live
+      # server does with a re-summoned wave, so it is proven on one. Same cost
+      # profile as the two passes above: one extra toolserver boot, no new pull,
+      # no new compile.
+      - name: build the souls-bonfire delve output (spec-0016 §1)
+        run: |
+          cargo run -p delvewright-compiler --bin delvec -- \
+            build crates/compiler/tests/fixtures/souls-bonfire \
+            -o validation/delve-output-bonfire --prefabs campaigns/prefabs
+
+      - name: PackTest suite — souls-bonfire (rest, re-seat, stationed re-seat)
+        env:
+          DELVE_OUTPUT: ./delve-output-bonfire
+          PACKTEST_CONTAINER: delvewright-packtest-bonfire
+        run: |
+          docker compose -p dw-bonfire -f validation/compose.yaml --profile packtest up \
+            --abort-on-container-exit --exit-code-from packtest
+      - name: tear down (souls-bonfire)
+        if: always()
+        env:
+          DELVE_OUTPUT: ./delve-output-bonfire
+          PACKTEST_CONTAINER: delvewright-packtest-bonfire
+        run: docker compose -p dw-bonfire -f validation/compose.yaml --profile packtest down -v --remove-orphans || true
+
+      # spec-0016 §6 — same gap on the other half of the ruling. The TD-lane
+      # templates (`souls_td_patrol_nbt`, `souls_td_lane_march`,
+      # `souls_td_lane_release`, `souls_td_lane_reseat`, `souls_td_aggro_edge`)
+      # are emitted only for a campaign that HAS a lane, and no fixture with one
+      # was ever booted — including the codec-trap test, whose entire reason to
+      # exist is that a wrong `patrol_target` key is invisible to every static
+      # proof. A bonfire cannot legally stand beside a lane in this corridor
+      # tileset (`DW0478`), so the lane half of the stationed re-seat is proven
+      # here, on the re-summon itself, rather than through a rest.
+      - name: build the souls-td-lanes delve output (spec-0016 §6)
+        run: |
+          cargo run -p delvewright-compiler --bin delvec -- \
+            build crates/compiler/tests/fixtures/souls-td-lanes \
+            -o validation/delve-output-lanes --prefabs campaigns/prefabs
+
+      - name: PackTest suite — souls-td-lanes (patrol NBT, march, release, re-seat)
+        env:
+          DELVE_OUTPUT: ./delve-output-lanes
+          PACKTEST_CONTAINER: delvewright-packtest-lanes
+        run: |
+          docker compose -p dw-lanes -f validation/compose.yaml --profile packtest up \
+            --abort-on-container-exit --exit-code-from packtest
+      - name: tear down (souls-td-lanes)
+        if: always()
+        env:
+          DELVE_OUTPUT: ./delve-output-lanes
+          PACKTEST_CONTAINER: delvewright-packtest-lanes
+        run: docker compose -p dw-lanes -f validation/compose.yaml --profile packtest down -v --remove-orphans || true

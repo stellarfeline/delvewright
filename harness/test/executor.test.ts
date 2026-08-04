@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import type { Bot } from "mineflayer";
-import { MineflayerExecutor, type BotConfig } from "../src/executor.ts";
+import { MineflayerExecutor, completionWindowMs, type BotConfig } from "../src/executor.ts";
 import { BotDeathError } from "../src/death.ts";
 import type { AssertCompleteStep } from "../src/critical-path.ts";
 
@@ -89,6 +89,16 @@ test("a death event records position + likely cause and stops the pathfinder", (
   // subsequent hop, which is how a the-drowned-bell run failed a leg it had walked
   // fine the run before. The reset consumes the flag here, once.
   assert.deepEqual(bot.pathfinderCalls, ["stop", "setGoal(null)"]);
+});
+
+test("the completion window covers an exported scheduled-ending tail (task #125)", () => {
+  // No tail (synchronous ending): the historical 15s settle window.
+  assert.equal(completionWindowMs(undefined), 15_000);
+  // A short tail stays inside the default window — never narrowed.
+  assert.equal(completionWindowMs(20), 15_000); // 1s + 10s margin < 15s
+  // the-wake's 250t sequence tail: 12.5s + 10s margin — the old flat 15s
+  // window could expire while the ending was still legitimately scheduled.
+  assert.equal(completionWindowMs(250), 22_500);
 });
 
 test("a death fails an in-flight assert-complete fast with the death diagnostic", async () => {

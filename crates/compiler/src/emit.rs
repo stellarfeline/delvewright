@@ -508,6 +508,13 @@ pub fn build_with_warnings(
             // proven cells are what `patrol_target` carries, so the squad is only
             // ever sent somewhere it can stand and walk to.
             let lanes = crate::nav::plan_lanes(plan, &world)?;
+            // spec-0016 §1 (owner ruling 2026-08-04): the bonfire SAFE ZONE
+            // (DW0478). Runs here because it needs both halves of where the
+            // hostiles actually are — the seated spawn cells above and the lane
+            // polylines just resolved — measured against every rest point. A
+            // bonfire inside a hostile's aggro range is a soft-lock: rest and
+            // death both deliver the party into contact on arrival.
+            crate::nav::check_bonfire_safe_zone(plan, &world, &waves, &lanes)?;
             // spec-0022: resolve and prove every `volley` / `collapse`. Volley
             // coverage is proven by construction (one shot per standable
             // kill-zone cell, or DW0442 naming the cell it cannot reach), and a
@@ -671,8 +678,11 @@ pub fn build_with_warnings(
         &mut out,
         &moves,
         &actor_moves,
-        &lane_routes,
-        &wave_rings,
+        &WaveGeometry {
+            placements: &wave_placements,
+            lanes: &lane_routes,
+            rings: &wave_rings,
+        },
         &payload_plans,
     );
 
@@ -687,7 +697,11 @@ pub fn build_with_warnings(
     emit_server(plan, &mut out);
 
     // ---- critical path ----
-    put_json(&mut out, "critical-path.json", &emit_critical_path(plan));
+    put_json(
+        &mut out,
+        "critical-path.json",
+        &emit_critical_path(plan, &moves, &actor_moves),
+    );
 
     // ---- visual-tier render plan (spec-0003 / spec-0007) ----
     // Deterministic camera + expect-checklist shot list for the visual tier;
@@ -763,7 +777,7 @@ pub fn build_with_warnings(
     // A branch's scripted dialogue choices ride inside its own `talk-to` steps
     // (each carries the `/trigger` line of the option belonging to that branch),
     // which is the only player-legal way to actuate a server-driven dialog button.
-    for (slug, path) in branch_paths(plan)? {
+    for (slug, path) in branch_paths(plan, &moves, &actor_moves)? {
         put_json(
             &mut out,
             &format!("validation/branch-path-{slug}.json"),
@@ -2724,6 +2738,20 @@ type WavePlacements = BTreeMap<String, Vec<[i32; 3]>>;
 /// generated PackTest asserts ring distance against exactly this cell, so the
 /// runtime check and the compile-time placement share one origin.
 type WaveRings = BTreeMap<String, [i32; 3]>;
+
+/// Where every wave actually IS in the assembled world: the three products of
+/// wave planning, which always travel together into the generated PackTests.
+/// Bundled because a template that asks "did the re-seat put them back?" needs
+/// all three — the seated cells, the lane polyline, and the aggro-edge ring
+/// centre — to say where "back" is.
+struct WaveGeometry<'a> {
+    /// DW0312-proven seated spawn cells, per wave.
+    placements: &'a WavePlacements,
+    /// DW0386-proven lane polylines, per lane wave.
+    lanes: &'a crate::nav::LaneRoutes,
+    /// The snapped ring centre of each `summon: aggro-edge` wave.
+    rings: &'a WaveRings,
+}
 
 // --- spec-0016 §6: TD lanes -------------------------------------------------
 
@@ -7985,8 +8013,7 @@ fn emit_packtest(
     out: &mut BuildOutput,
     moves: &[crate::nav::MovePlan],
     actor_moves: &[crate::nav::ActorMovePlan],
-    lane_routes: &crate::nav::LaneRoutes,
-    wave_rings: &WaveRings,
+    waves: &WaveGeometry<'_>,
     payloads: &PayloadPlans,
 ) {
     let ns = &plan.namespace;
@@ -8020,50 +8047,119 @@ fn emit_packtest(
     // proves the compiler's objective -> quest -> campaign chain end to end
     // without needing dialog-UI clicks or bot movement (verified live: passes on
     // Fabric + PackTest 2.4.0).
+    //
+    // Two structural facts of the campaign shape the template (task #125, the-wake):
+    //
+    //   * `campaign-complete` may sit at any nesting depth (spec-0025 / DW0481) —
+    //     the-wake schedules it 250t into its closing `sequence`. A same-tick
+    //     `assert` after the drive is then structurally unreachable ("got 0 on
+    //     tick 0"), so a campaign whose ending has a scheduled tail must AWAIT
+    //     the completion objective, with the timeout sized by the tail the
+    //     emitter itself scheduled.
+    //   * Declared `branch_points` make some terminal objectives mutually
+    //     exclusive: driving every objective in one pass reaches a state no
+    //     playthrough can (both endings fired in one tick). A branch campaign
+    //     therefore drives one coherent per-branch path per phase, serialized
+    //     through the vanilla scheduler.
+    //
+    // Campaigns with no branch points and a synchronous ending keep the original
+    // single-tick template byte for byte.
     let (pin, sel) = pin_dummy("dw_t_camp");
-    let mut body: Vec<String> = Vec::new();
-    body.push(format!(
-        "#> {}: objective completions set {comp_obj} (Delvewright mechanism test)",
-        c.world.content.title
-    ));
-    body.push("# @dummy".to_string());
-    body.push("# @timeout 100".to_string());
-    body.push(String::new());
-    body.push(format!("function {ns}:setup"));
-    // Pin this test's own dummy and drive the whole chain on it alone (see
-    // `pin_dummy`): `@a`-wide quest/objective writes would land on every
-    // sibling test's dummy in the batch, and the closing `@p` assert could read
-    // a foreign one.
-    body.push(pin);
-    // Actively establish the asserted baseline — on the shared-batch server
-    // "never set" is not 0. spec-0018: the whole chain is PARTY state, so the
-    // baseline, the activation and the assert all address `#party`; the dummy is
-    // still what DRIVES it (`execute as {sel} run …`), which is exactly the
-    // multiplayer claim — one player's action advances the party.
     let party = plan::PARTY;
-    body.push(format!("scoreboard players set {party} {comp_obj} 0"));
-    for qid in campaign_start_quests(c) {
-        body.push(format!(
-            "scoreboard players set {party} {} 1",
-            quest_active_score(qid)
-        ));
-    }
-    for q in &c.quests.content.quests {
-        for o in &q.objectives {
-            body.push(format!(
-                "execute as {sel} run function {ns}:complete_{}",
-                safe_obj_fn(o.id().as_str())
+    let branches: Vec<crate::branch::RealizedBranch> = crate::branch::realize(c)
+        .into_iter()
+        .filter(|r| r.world.is_some())
+        .collect();
+    if branches.is_empty() {
+        // No declared branch points (or nothing reachable — already DW0482):
+        // one coherent drive over every objective, exactly as before.
+        let quests: BTreeSet<&str> = c
+            .quests
+            .content
+            .quests
+            .iter()
+            .map(|q| q.id.as_str())
+            .collect();
+        let tail = quests_ending_tail(c, &quests, moves, actor_moves);
+        // Baseline + drive. Actively establish the asserted baseline — on the
+        // shared-batch server "never set" is not 0. spec-0018: the whole chain is
+        // PARTY state, so the baseline, the activation and the assert all address
+        // `#party`; the dummy is still what DRIVES it (`execute as {sel} run …`),
+        // which is exactly the multiplayer claim — one player's action advances
+        // the party.
+        let mut drive: Vec<String> = Vec::new();
+        drive.push(format!("scoreboard players set {party} {comp_obj} 0"));
+        for qid in campaign_start_quests(c) {
+            drive.push(format!(
+                "scoreboard players set {party} {} 1",
+                quest_active_score(qid)
             ));
         }
+        for q in &c.quests.content.quests {
+            for o in &q.objectives {
+                drive.push(format!(
+                    "execute as {sel} run function {ns}:complete_{}",
+                    safe_obj_fn(o.id().as_str())
+                ));
+            }
+        }
+        let mut body: Vec<String> = Vec::new();
+        body.push(format!(
+            "#> {}: objective completions set {comp_obj} (Delvewright mechanism test)",
+            c.world.content.title
+        ));
+        body.push("# @dummy".to_string());
+        if tail == 0 {
+            body.push("# @timeout 100".to_string());
+            body.push(String::new());
+            body.push(format!("function {ns}:setup"));
+            // Pin this test's own dummy and drive the whole chain on it alone (see
+            // `pin_dummy`): `@a`-wide quest/objective writes would land on every
+            // sibling test's dummy in the batch, and the closing `@p` assert could
+            // read a foreign one.
+            body.push(pin);
+            body.extend(drive);
+            body.push(format!(
+                "assert score {party} {comp_obj} matches {comp_val}"
+            ));
+        } else {
+            // Scheduled ending: the ending lands `tail` ticks after the terminal
+            // drive, so the template awaits it (never a weaker assert — `await`
+            // fails the test at timeout exactly as `assert` fails it on the
+            // spot). The template now spans ticks, so its body may touch no
+            // `#party` score a sibling template also touches
+            // (`tests/packtest_batch.rs::party_state_across_ticks_is_owned`):
+            // the baseline + drive — shared quest/flag state, written and
+            // consumed atomically within one tick, exactly as in the single-tick
+            // form — is hoisted into `pt_camp_drive`, leaving the awaited
+            // completion objective (owned by this template alone) as the
+            // template's only cross-tick surface.
+            body.push(format!("# @timeout {}", 100 + tail));
+            body.push(String::new());
+            body.push(format!("function {ns}:setup"));
+            body.push(pin);
+            body.push(format!("function {ns}:pt_camp_drive"));
+            body.push(format!("await score {party} {comp_obj} matches {comp_val}"));
+            out.insert(
+                format!("packtest-datapack/data/{ns}/function/pt_camp_drive.mcfunction"),
+                lines(&drive).into_bytes(),
+            );
+        }
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/campaign.mcfunction"),
+            lines(&body).into_bytes(),
+        );
+    } else {
+        emit_branch_campaign_packtest(
+            plan,
+            out,
+            &branches,
+            moves,
+            actor_moves,
+            (&comp_obj, comp_val),
+            (&pin, &sel),
+        );
     }
-    body.push(format!(
-        "assert score {party} {comp_obj} matches {comp_val}"
-    ));
-
-    out.insert(
-        format!("packtest-datapack/data/{ns}/test/campaign.mcfunction"),
-        lines(&body).into_bytes(),
-    );
 
     // Sealed-state test: prove the environment-sealing baseline (spec-0002) is
     // applied on boot. What PackTest / vanilla 1.21.11 lets us assert in-test:
@@ -8181,6 +8277,11 @@ fn emit_packtest(
     // task #123: the tag census really counts the wave, and only the wave.
     emit_wave_census_packtest(plan, out);
     emit_bonfire_packtests(plan, out);
+    // spec-0016 §1 (owner ruling 2026-08-04): a re-seated wave comes back
+    // STATIONED — at its lane start / anchor, in its routed state, with no trace
+    // of the previous life's feral release. Emits nothing without a bonfire and
+    // a `respawns_on_rest` wave.
+    emit_reseat_stationed_packtest(plan, out, waves.placements, waves.lanes);
     // spec-0016 §1 (owner ruling 2026-08-03): rest and save-only really differ.
     emit_bonfire_option_packtest(plan, out);
     // spec-0016 §2: the shortcut really opens, and opens exactly once.
@@ -8193,7 +8294,7 @@ fn emit_packtest(
     // advances in march order, the squad is released to native AI at aggro range,
     // and an aggro-edge wave really materializes on its perception ring. Emits
     // nothing for a campaign with no lane and no aggro-edge wave.
-    emit_td_lane_packtests(plan, out, lane_routes, wave_rings);
+    emit_td_lane_packtests(plan, out, waves.lanes, waves.rings);
 
     // The scheduled-executor contract (AUDIT-P0): a function reached through
     // `schedule` still lands per-player state on real players.
@@ -8201,6 +8302,256 @@ fn emit_packtest(
 
     // spec-0018: one n-dummy division-of-labour test per AND-join.
     emit_party_join_packtests(plan, out);
+}
+
+/// Ticks between one PackTest campaign phase's ending window closing and its
+/// verdict being taken — slack for the scheduler landing the ending's last
+/// function plus the completion write itself.
+const CAMPAIGN_PHASE_MARGIN_TICKS: u32 = 20;
+
+/// The branch-aware campaign mechanism test (task #125): ONE template that
+/// drives each reachable branch's coherent path as its own phase, serialized
+/// through the vanilla scheduler, and awaits one verdict per phase.
+///
+/// Why one template rather than one per branch: every phase's verdict is the
+/// shared completion objective, and a template that spans ticks must be the sole
+/// owner of every `#party` score it depends on across ticks
+/// (`tests/packtest_batch.rs::party_state_across_ticks_is_owned`) — two
+/// concurrently-running branch templates zeroing and awaiting `dw.campaign`
+/// would hand each other false verdicts in an order the compiler does not
+/// control. Phases are strictly ordered by construction: phase *i*'s scheduled
+/// check is what starts phase *i + 1*.
+///
+/// Each phase (`pt_camp_run_<i>`) re-baselines the WHOLE progression surface
+/// (completion objective, every flag, every quest active/complete score, every
+/// objective score — a fresh coherent run; a prior phase's terminal quest would
+/// otherwise stay `dw.q_* = 1` and its completion-guarded `on_complete` never
+/// re-fire), sets the campaign-start quests active, then drives ONLY this
+/// branch's path in play order. A `talk-to` step whose branch-scripted option
+/// sets flags has those flags emulated immediately before its drive — the
+/// option handler is UI-bound, and this is where the real playthrough sets
+/// them. The phase's verdict is taken `tail + margin` ticks later
+/// (`pt_camp_check_<i>`): completion objective at its expected value counts the
+/// phase into `#camp_phase`, and the template's single closing `await` demands
+/// every phase counted. A missed ending leaves the count short and the await
+/// times out red — never weaker than the old assert, and now quantified over
+/// branches.
+#[allow(clippy::too_many_arguments)]
+fn emit_branch_campaign_packtest(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    branches: &[crate::branch::RealizedBranch],
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+    (comp_obj, comp_val): (&str, i32),
+    (pin, sel): (&str, &str),
+) {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let party = plan::PARTY;
+    let n = branches.len();
+    let mut timeout: u32 = 100;
+    for (i, r) in branches.iter().enumerate() {
+        let quests: BTreeSet<&str> = r.path.iter().map(|s| s.quest.as_str()).collect();
+        let tail = quests_ending_tail(c, &quests, moves, actor_moves);
+        let wait = tail + CAMPAIGN_PHASE_MARGIN_TICKS;
+        timeout += wait;
+        let mut run: Vec<String> = Vec::new();
+        run.push(format!(
+            "# Phase {i}: branch `{}` — full progression re-baseline, then this branch's",
+            r.branch.id
+        ));
+        run.push(
+            "# coherent path only (its scripted dialogue choices emulated as the flags".to_string(),
+        );
+        run.push("# those options set, at their real path positions).".to_string());
+        run.push(format!("scoreboard players set {party} {comp_obj} 0"));
+        for f in declared_flags(c) {
+            run.push(format!(
+                "scoreboard players set {party} {} 0",
+                plan::flag_score(&f)
+            ));
+        }
+        for q in &c.quests.content.quests {
+            run.push(format!(
+                "scoreboard players set {party} {} 0",
+                quest_score(q.id.as_str())
+            ));
+            run.push(format!(
+                "scoreboard players set {party} {} 0",
+                quest_active_score(q.id.as_str())
+            ));
+            for o in &q.objectives {
+                run.push(format!(
+                    "scoreboard players set {party} {} 0",
+                    obj_score(o.id().as_str())
+                ));
+            }
+        }
+        for qid in campaign_start_quests(c) {
+            run.push(format!(
+                "scoreboard players set {party} {} 1",
+                quest_active_score(qid)
+            ));
+        }
+        for step in &r.path {
+            if let Some(opt) = step.talk_option {
+                for f in option_sets_flags(plan, &step.objective, opt) {
+                    run.push(format!(
+                        "scoreboard players set {party} {} 1",
+                        plan::flag_score(f)
+                    ));
+                }
+            }
+            run.push(format!(
+                "execute as {sel} run function {ns}:complete_{}",
+                safe_obj_fn(&step.objective)
+            ));
+        }
+        run.push(format!("schedule function {ns}:pt_camp_check_{i} {wait}t"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/function/pt_camp_run_{i}.mcfunction"),
+            lines(&run).into_bytes(),
+        );
+
+        let mut chk = vec![format!(
+            "execute if score {party} {comp_obj} matches {comp_val} run \
+             scoreboard players add #camp_phase dw.sys 1"
+        )];
+        if i + 1 < n {
+            chk.push(format!("function {ns}:pt_camp_run_{}", i + 1));
+        }
+        out.insert(
+            format!("packtest-datapack/data/{ns}/function/pt_camp_check_{i}.mcfunction"),
+            lines(&chk).into_bytes(),
+        );
+    }
+
+    let mut body: Vec<String> = Vec::new();
+    body.push(format!(
+        "#> {}: each branch's coherent path sets {comp_obj} (Delvewright mechanism test)",
+        c.world.content.title
+    ));
+    body.push("# @dummy".to_string());
+    body.push(format!("# @timeout {timeout}"));
+    body.push(String::new());
+    body.push(format!("function {ns}:setup"));
+    body.push(pin.to_string());
+    // Own init for the phase counter — on the shared batch server "never set"
+    // is not 0, and `#camp_phase` belongs to this template alone.
+    body.push("scoreboard players set #camp_phase dw.sys 0".to_string());
+    // The phase chain: pt_camp_run_0 -> pt_camp_check_0 -> pt_camp_run_1 -> …
+    // (each check is scheduled by its run and starts the next run).
+    body.push(format!("function {ns}:pt_camp_run_0"));
+    body.push(format!("await score #camp_phase dw.sys matches {n}"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/campaign.mcfunction"),
+        lines(&body).into_bytes(),
+    );
+}
+
+/// The flags the branch-scripted dialogue option at flat index `n` (1-based, per
+/// the NPC the `talk-to` objective names) sets when chosen — what the campaign
+/// phase drive emulates in place of a UI click. Empty when the objective is not
+/// a `talk-to` or names no such option.
+fn option_sets_flags<'p>(plan: &'p Plan, objective: &str, n: usize) -> &'p [String] {
+    let npc = plan
+        .campaign
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| &q.objectives)
+        .find_map(|o| match o {
+            Objective::TalkTo { id, npc, .. } if id.as_str() == objective => Some(npc.as_str()),
+            _ => None,
+        });
+    npc.and_then(|npc_id| plan.npcs.iter().find(|p| p.npc_id == npc_id))
+        .and_then(|p| p.options.iter().find(|o| o.n == n as i32))
+        .map(|o| o.sets_flags.as_slice())
+        .unwrap_or(&[])
+}
+
+/// The scheduled tail (ticks) between firing `effs` and a `campaign-complete`
+/// nested anywhere inside it — `None` when the bundle reaches none (task #125).
+///
+/// spec-0025 / DW0481 admit the ending at any nesting depth (the-wake schedules
+/// its finale 250t into the closing `sequence`), so every consumer that waits
+/// for the ending — the campaign PackTest, the harness completion window — must
+/// wait out the tail the emitter itself scheduled. `sequence` steps add their
+/// `at_ticks`; a `move-npc` / `move-actor` `on_arrive` adds the planned walk
+/// duration. Reaction bundles (`on_respawn` / `on_rest` / `on_caught`) are
+/// skipped: driving objective completions never fires them, and `DW0204` proves
+/// the path's ending does not live exclusively there. Flag gates are ignored —
+/// a gated ending yields an upper bound, and waiting longer can only wait,
+/// never wrongly pass.
+fn campaign_complete_tail(
+    effs: &[QuestEffect],
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+) -> Option<u32> {
+    effs.iter()
+        .filter_map(|e| match e {
+            QuestEffect::CampaignComplete { .. } => Some(0),
+            QuestEffect::Sequence { steps } => steps
+                .iter()
+                .filter_map(|s| {
+                    campaign_complete_tail(&s.effects, moves, actor_moves).map(|t| s.at_ticks + t)
+                })
+                .max(),
+            QuestEffect::MoveNpc {
+                npc,
+                to_anchor,
+                on_arrive,
+                ..
+            } => campaign_complete_tail(on_arrive, moves, actor_moves).map(|t| {
+                t + moves
+                    .iter()
+                    .find(|m| m.npc == npc.as_str() && m.to_anchor == to_anchor.as_str())
+                    .map(|m| m.ticks() as u32)
+                    .unwrap_or(0)
+            }),
+            QuestEffect::MoveActor {
+                actor,
+                to_anchor,
+                on_arrive,
+                ..
+            } => campaign_complete_tail(on_arrive, moves, actor_moves).map(|t| {
+                t + actor_moves
+                    .iter()
+                    .find(|m| m.actor == actor.as_str() && m.to_anchor == to_anchor.as_str())
+                    .map(|m| m.ticks() as u32)
+                    .unwrap_or(0)
+            }),
+            _ => None,
+        })
+        .max()
+}
+
+/// The ending tail a driven run of `quest_ids` can schedule: the max
+/// [`campaign_complete_tail`] over those quests' `on_objective_complete` bundles
+/// and `on_complete`. `0` when the ending is synchronous (which keeps every
+/// pre-task-#125 campaign's emission byte-identical).
+fn quests_ending_tail(
+    c: &delvewright_dsl::Campaign,
+    quest_ids: &BTreeSet<&str>,
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+) -> u32 {
+    c.quests
+        .content
+        .quests
+        .iter()
+        .filter(|q| quest_ids.contains(q.id.as_str()))
+        .flat_map(|q| {
+            q.on_objective_complete
+                .values()
+                .map(|effs| effs.as_slice())
+                .chain(std::iter::once(q.on_complete.as_slice()))
+        })
+        .filter_map(|effs| campaign_complete_tail(effs, moves, actor_moves))
+        .max()
+        .unwrap_or(0)
 }
 
 /// The AND-joins of a campaign: every objective with **two or more** `after`
@@ -8606,6 +8957,50 @@ fn emit_dialogue_trigger_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// dialog to. The `"none"` test is the exception and drives `talk_<npc>` itself,
 /// precisely because a silent scene emits no `dialog show`: that is what makes
 /// "the record is written and consumed, and nothing opens" directly assertable.
+/// Pin every branch-gate flag an NPC's cast ledger reads to the value that
+/// selects `clause`: its `requires_flags` to 1, every other flag any clause
+/// reads to 0 (task #133, island r15).
+///
+/// The generated cast templates zero every `dw.qa_*` their dispatch reads but
+/// used to leave the ledger's `requires_flags`/`forbids_flags` to whatever the
+/// batch had: three sibling templates (`verb_flag_gate`, `verb_interact`,
+/// `verb_interact_arming`) legitimately end with a campaign flag set to 1, so
+/// whichever ran first poisoned `cast_root_swap`'s later assert — the flee
+/// clause overrode the expected scene (expected `dw.cast 2`, got 3) purely by
+/// batch order. Pinning at the CONSUMER is the generator-side defense: it holds
+/// against any future flag-setting template, rather than trusting each one to
+/// clean up. It is also what makes a `requires_flags`-gated clause assertable
+/// at all — "never set" is not 1 on the shared server any more than it is 0.
+/// Emits nothing for a ledger with no branch-gated clause, so pre-#133
+/// campaigns are byte-identical.
+fn pin_cast_clause_flags(
+    b: &mut Vec<String>,
+    cast: &crate::cast::NpcCast,
+    clause: &crate::cast::CastClause,
+) {
+    let flags: BTreeSet<&str> = cast
+        .by_quest
+        .iter()
+        .flat_map(|cl| cl.requires_flags.iter().chain(cl.forbids_flags.iter()))
+        .map(|s| s.as_str())
+        .collect();
+    if flags.is_empty() {
+        return;
+    }
+    b.push("# Branch-gate flags are batch state a sibling template may have".to_string());
+    b.push("# left set (island r15: a verb template ended with its flag at 1".to_string());
+    b.push("# and the sibling clause overrode this assert). Pin every flag the".to_string());
+    b.push("# ledger reads to the value that selects the asserted scene.".to_string());
+    for f in flags {
+        let v = i32::from(clause.requires_flags.iter().any(|r| r == f));
+        b.push(format!(
+            "scoreboard players set {} {} {v}",
+            plan::PARTY,
+            plan::flag_score(f)
+        ));
+    }
+}
+
 fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
     use crate::cast::SceneAction;
     let ns = &plan.namespace;
@@ -8629,13 +9024,11 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
         // The two quests whose scenes those are, in ledger order.
         let first = cast.by_quest.iter().find(|c| c.scene == roots[0].0)?;
         let later = cast.by_quest.iter().find(|c| c.scene == roots[1].0)?;
-        Some((
-            npc,
-            (first.quest.clone(), first.scene),
-            (later.quest.clone(), later.scene),
-        ))
+        Some((npc, first.clone(), later.clone()))
     });
-    if let Some((npc, (q_first, i_first), (q_later, i_later))) = swapper {
+    if let Some((npc, first, later)) = swapper {
+        let (q_first, i_first) = (first.quest.clone(), first.scene);
+        let (q_later, i_later) = (later.quest.clone(), later.scene);
         let (pin, sel) = pin_dummy("dw_t_castswap");
         let mut b = packtest_header(&format!(
             "{title}: npc `{}` right-click swaps root as the story advances (cast ledger)",
@@ -8651,6 +9044,7 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
                 quest_active_score(&cl.quest)
             ));
         }
+        pin_cast_clause_flags(&mut b, &casts[&npc.npc_id], &first);
         b.push(format!(
             "scoreboard players set {} {} 1",
             plan::PARTY,
@@ -8664,6 +9058,7 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
         b.push("# The later beat begins. `dw.qa_*` is never cleared, so BOTH are".to_string());
         b.push("# now set — and the later scene must win, retiring the earlier".to_string());
         b.push("# root. That is the whole retirement mechanism.".to_string());
+        pin_cast_clause_flags(&mut b, &casts[&npc.npc_id], &later);
         b.push(format!(
             "scoreboard players set {} {} 1",
             plan::PARTY,
@@ -8726,9 +9121,10 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
             .iter()
             .find(|s| s.action == SceneAction::Silent)?;
         let cl = cast.by_quest.iter().find(|c| c.scene == scene.index)?;
-        Some((npc, scene.index, cl.quest.clone()))
+        Some((npc, scene.index, cl.clone()))
     });
-    if let Some((npc, idx, qid)) = silent {
+    if let Some((npc, idx, cl)) = silent {
+        let qid = cl.quest.clone();
         let (pin, sel) = pin_dummy("dw_t_castnone");
         let mut b = packtest_header(&format!(
             "{title}: npc `{}`'s `\"none\"` scene consumes the interaction and opens nothing",
@@ -8736,13 +9132,14 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin);
-        for cl in &casts[&npc.npc_id].by_quest {
+        for c in &casts[&npc.npc_id].by_quest {
             b.push(format!(
                 "scoreboard players set {} {} 0",
                 plan::PARTY,
-                quest_active_score(&cl.quest)
+                quest_active_score(&c.quest)
             ));
         }
+        pin_cast_clause_flags(&mut b, &casts[&npc.npc_id], &cl);
         b.push(format!(
             "scoreboard players set {} {} 1",
             plan::PARTY,
@@ -9477,6 +9874,196 @@ fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
     );
 }
 
+/// spec-0016 §1 (owner ruling 2026-08-04): **a re-seated wave comes back
+/// STATIONED.**
+///
+/// The souls loop stands — a beaten `respawns_on_rest` wave does return on a rest
+/// and on a death-respawn — but it returns to the state it was FIRST seated in,
+/// never to the state the party last left it in. A lane wave re-enters its routed
+/// patrol from the lane start (`Patrolling:1b` re-applied, `patrol_target` back on
+/// waypoint 0, the march clock back to index 0); a non-lane wave stands at its
+/// anchor under vanilla-local AI with no patrol NBT at all. Nothing re-seated may
+/// pursue across the map.
+///
+/// The engine already satisfies this by construction — the re-seat re-enters
+/// through the wave's own `spawn_<wave>`, and every piece of stationed state is
+/// written there — but "by construction" is folklore until a server says so. This
+/// template makes it a live claim, and it is deliberately driven from the WORST
+/// state the wave can be in: dragged off its lane onto the party, released to
+/// native AI by the real lane clock, its march clock run down the lane, and every
+/// mob branded so a survivor cannot hide inside a correct-looking count. Then it
+/// runs the REAL `bonfire_rest_<i>` and demands four things:
+///
+/// 1. the authored count is standing;
+/// 2. **not one mob of the previous life is** — the brand is gone, so this is a
+///    fresh squad, not the chased one topped up;
+/// 3. every mob is back at its seating footing, within the compiler-known spread
+///    of the wave's own first seated cell (this is the anti-pursuit claim: the
+///    mobs were 0 blocks from the player a moment ago);
+/// 4. the routed state is re-asserted (lane) or absent (non-lane).
+///
+/// Emits nothing without both a bonfire and a `respawns_on_rest` wave →
+/// byte-identical.
+fn emit_reseat_stationed_packtest(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    wave_placements: &WavePlacements,
+    lane_routes: &crate::nav::LaneRoutes,
+) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some(bf) = plan.bonfires().next() else {
+        return;
+    };
+    let reseat = plan.reseat_waves();
+    // Prefer a LANE wave when the campaign has one: its stationed state is the
+    // richer claim (the routed half), and the plain-anchor half is a subset of it.
+    let Some(w) = reseat
+        .iter()
+        .find(|w| lane_routes.contains_key(w.id.as_str()))
+        .or_else(|| reseat.first())
+        .copied()
+    else {
+        return;
+    };
+    let Some(cells) = wave_placements.get(w.id.as_str()) else {
+        return;
+    };
+    let Some(&seat) = cells.first() else {
+        return;
+    };
+    let total = plan::wave_total(w);
+    if total < 1 {
+        return;
+    }
+    let i = bf.index;
+    let safe = plan::safe_local(w.id.as_str());
+    let tag = plan::wave_tag(w.id.as_str());
+    let brand = plan::wave_brand_tag(w.id.as_str());
+    let lane = lane_routes.get(w.id.as_str());
+    // How far the wave's own seating spreads from its first cell, rounded up: the
+    // exact radius the compiler placed this wave inside, so the proximity claim is
+    // as tight as the geometry allows rather than a guessed slack.
+    let spread = cells
+        .iter()
+        .map(|c| {
+            (0..3)
+                .map(|k| f64::from(c[k] - seat[k]).powi(2))
+                .sum::<f64>()
+                .sqrt()
+        })
+        .fold(0.0_f64, f64::max)
+        .ceil()
+        .max(1.0) as i64;
+    let (pin, sel) = pin_dummy("dw_rsst");
+
+    let mut b = packtest_header(&format!(
+        "{title}: a bonfire re-seat returns wave `{}` to its STATIONED state, never to the \
+         chase (spec-0016 §1)",
+        w.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(pin);
+    // A rest re-seats EVERY met wave, so this template owns the whole re-seat
+    // board: clear each one's entities and its seated sentinel first, and put
+    // both back at the end (pin_dummy rule 4).
+    for r in &reseat {
+        b.push(format!("kill @e[tag={}]", plan::wave_tag(r.id.as_str())));
+        b.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            wave_seated_holder(r.id.as_str())
+        ));
+    }
+    // Meet the wave.
+    b.push(format!("function {ns}:spawn_{safe}"));
+    b.push(format!(
+        "assert score {} dw.sys matches 1",
+        wave_seated_holder(w.id.as_str())
+    ));
+    // Now put it in the state the drowned bell's ladder actually died to: the
+    // squad on top of the party, off its lane, feral.
+    b.push(format!("execute at {sel} run tp @e[tag={tag}] ~ ~ ~"));
+    if let Some(wps) = lane {
+        b.push(format!("function {ns}:lane_tick_{safe}"));
+        b.push(format!(
+            "execute store result score #f_rsst dw.sys if entity @e[tag={tag},nbt={{Patrolling:0b}}]"
+        ));
+        b.push(format!("assert score #f_rsst dw.sys matches {total}"));
+        // …and its march clock run down the lane, so a re-seat that forgot to
+        // reset it would send the fresh squad at the lane's far end.
+        b.push(format!(
+            "scoreboard players set {} dw.sys {}",
+            lane_index_holder(w.id.as_str()),
+            wps.len().saturating_sub(1)
+        ));
+    }
+    // Brand this life. `spawn_<wave>` writes the authored NBT and nothing else,
+    // so no re-summon can carry the stamp: identity, not arithmetic.
+    b.push(format!("function {ns}:wave_brand_{safe}"));
+
+    // --- the re-seat, through the real rest function ---
+    b.push(format!("function {ns}:bonfire_rest_{i}"));
+    b.push(format!(
+        "execute store result score #n_rsst dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push(format!("assert score #n_rsst dw.sys matches {total}"));
+    b.push(format!(
+        "execute store result score #b_rsst dw.sys if entity @e[tag={brand}]"
+    ));
+    b.push("assert score #b_rsst dw.sys matches 0".to_string());
+    // Back on their footing — the anti-pursuit claim.
+    let c = ent_xyz(seat);
+    b.push(format!(
+        "execute positioned {} {} {} store result score #d_rsst dw.sys if entity \
+         @e[tag={tag},distance=..{spread}]",
+        c[0], c[1], c[2]
+    ));
+    b.push(format!("assert score #d_rsst dw.sys matches {total}"));
+    match lane {
+        Some(wps) => {
+            b.push(format!(
+                "execute store result score #p_rsst dw.sys if entity \
+                 @e[tag={tag},nbt={{Patrolling:1b}}]"
+            ));
+            b.push(format!("assert score #p_rsst dw.sys matches {total}"));
+            b.push(format!(
+                "execute store result score #t_rsst dw.sys if entity \
+                 @e[tag={tag},nbt={{patrol_target:[I;{},{},{}]}}]",
+                wps[0][0], wps[0][1], wps[0][2]
+            ));
+            b.push(format!("assert score #t_rsst dw.sys matches {total}"));
+            b.push(format!(
+                "assert score {} dw.sys matches 0",
+                lane_index_holder(w.id.as_str())
+            ));
+        }
+        None => {
+            // Vanilla-local AI only: a non-lane wave is never routed, so patrol
+            // NBT must not appear on it — not on the first summon and not on a
+            // re-seat.
+            b.push(format!(
+                "execute store result score #p_rsst dw.sys if entity \
+                 @e[tag={tag},nbt={{Patrolling:1b}}]"
+            ));
+            b.push("assert score #p_rsst dw.sys matches 0".to_string());
+        }
+    }
+
+    b.push(format!("function {ns}:wave_unbrand_{safe}"));
+    for r in &reseat {
+        b.push(format!("kill @e[tag={}]", plan::wave_tag(r.id.as_str())));
+        b.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            wave_seated_holder(r.id.as_str())
+        ));
+    }
+    b.push(format!("tag {sel} remove dw_rsst"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_reseat_stationed.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
 /// spec-0016 §1 (owner ruling 2026-08-03): the **two options really differ**.
 ///
 /// The owner's ruling is that right-clicking a bonfire offers exactly *rest and
@@ -9896,6 +10483,55 @@ fn emit_td_lane_packtests(
         b.push(format!("kill @e[tag={tag}]"));
         b.push(format!("tag {sel} remove dw_pt_tdrel"));
         write("souls_td_lane_release", b);
+
+        // --- the re-summon re-stations the squad (owner ruling 2026-08-04) ---
+        //
+        // A wave re-seat is `kill` + the wave's own `spawn_<wave>`, and the whole
+        // stationed-re-seat ruling rests on that second half putting the squad
+        // back on the lane exactly as the first summon did. This drives the same
+        // two commands from the far side of the mechanism's worst state — the
+        // squad hauled onto the party, released to native AI by the real clock,
+        // its march clock at the END of the lane — and demands the fresh squad is
+        // routed from waypoint 0 again with the release gone. Emitted for every
+        // lane wave, bonfire or not, so a campaign that ships lanes proves it
+        // without having to ship a rest point next to one.
+        let (pin, sel) = pin_dummy("dw_pt_tdrst");
+        let mut b = packtest_header(&format!(
+            "{title}: re-summoning lane `{}` re-stations it — the feral release does not survive \
+             (spec-0016 §1/§6)",
+            w.id
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("function {ns}:spawn_{safe}"));
+        b.push(format!("execute at {sel} run tp @e[tag={tag}] ~ ~ ~"));
+        b.push(format!("function {ns}:lane_tick_{safe}"));
+        b.push(format!(
+            "execute store result score #f_tdrst dw.sys if entity @e[tag={tag},nbt={{Patrolling:0b}}]"
+        ));
+        b.push(format!("assert score #f_tdrst dw.sys matches {total}"));
+        b.push(format!(
+            "scoreboard players set {idx} dw.sys {}",
+            wps.len().saturating_sub(1)
+        ));
+        // The re-seat body, verbatim.
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("function {ns}:spawn_{safe}"));
+        b.push(format!(
+            "execute store result score #n_tdrst dw.sys if entity @e[tag={tag},nbt={{Patrolling:1b}}]"
+        ));
+        b.push(format!("assert score #n_tdrst dw.sys matches {total}"));
+        b.push(format!(
+            "execute store result score #t_tdrst dw.sys if entity \
+             @e[tag={tag},nbt={{patrol_target:[I;{},{},{}]}}]",
+            t0[0], t0[1], t0[2]
+        ));
+        b.push(format!("assert score #t_tdrst dw.sys matches {total}"));
+        b.push(format!("assert score {idx} dw.sys matches 0"));
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("tag {sel} remove dw_pt_tdrst"));
+        write("souls_td_lane_reseat", b);
         let _ = r;
     }
 
@@ -12053,7 +12689,11 @@ fn rest_step_index(plan: &Plan, walked: &[plan::Step], fire_step: usize) -> Opti
 /// An unreachable branch contributes nothing: there is no world that plays it,
 /// which `DW0482` has already failed the build for; `branch-plan.json` still names
 /// it, so the harness reports it skipped rather than silently absent.
-fn branch_paths(plan: &Plan) -> Result<Vec<(String, Value)>, BuildFailure> {
+fn branch_paths(
+    plan: &Plan,
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+) -> Result<Vec<(String, Value)>, BuildFailure> {
     let branches = crate::branch::realize(plan.campaign);
     if branches.is_empty() {
         return Ok(Vec::new());
@@ -12076,19 +12716,27 @@ fn branch_paths(plan: &Plan) -> Result<Vec<(String, Value)>, BuildFailure> {
                 &cp.transport_by_step,
                 &cp.sneak_by_step,
                 &cp.cutscene_by_step,
+                moves,
+                actor_moves,
             ),
         ));
     }
     Ok(out)
 }
 
-fn emit_critical_path(plan: &Plan) -> Value {
+fn emit_critical_path(
+    plan: &Plan,
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+) -> Value {
     critical_path_json(
         plan,
         &plan.critical_path,
         &plan.critical_path_transport,
         &plan.critical_path_sneak,
         &plan.critical_path_cutscene,
+        moves,
+        actor_moves,
     )
 }
 
@@ -12103,7 +12751,26 @@ fn critical_path_json(
     transports: &[Option<[i32; 3]>],
     sneak: &[bool],
     cutscene: &[Option<u32>],
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
 ) -> Value {
+    // Scheduled-ending tail for THIS path's quests (task #125): exported on the
+    // terminal `assert-complete` step as `ending_tail_ticks`, so the harness
+    // completion window covers a `sequence`-scheduled finale (the-wake: 250t)
+    // exactly as it already covers `cutscene_seconds`. Omitted when 0, keeping
+    // every synchronous-ending path byte-identical.
+    let path_quests: BTreeSet<&str> = {
+        let objs: BTreeSet<&str> = walked.iter().filter_map(plan::Step::objective).collect();
+        plan.campaign
+            .quests
+            .content
+            .quests
+            .iter()
+            .filter(|q| q.objectives.iter().any(|o| objs.contains(o.id().as_str())))
+            .map(|q| q.id.as_str())
+            .collect()
+    };
+    let ending_tail = quests_ending_tail(plan.campaign, &path_quests, moves, actor_moves);
     let steps: Vec<Value> = walked
         .iter()
         .enumerate()
@@ -12133,9 +12800,17 @@ fn critical_path_json(
                     "action": "interact", "objective": objective_id, "anchor": anchor_id,
                     "pos": pos, "command": command, "requires_item": requires_item
                 }),
-                Step::AssertComplete { objective, value } => json!({
-                    "action": "assert-complete", "scoreboard": { "objective": objective, "value": value }
-                }),
+                Step::AssertComplete { objective, value } => {
+                    let mut v = json!({
+                        "action": "assert-complete", "scoreboard": { "objective": objective, "value": value }
+                    });
+                    if ending_tail > 0
+                        && let Some(obj) = v.as_object_mut()
+                    {
+                        obj.insert("ending_tail_ticks".to_string(), json!(ending_tail));
+                    }
+                    v
+                }
             };
             // gap 8: mark a step whose completion teleports the player to another
             // area with the absolute destination, so the harness waits for the
