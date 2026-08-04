@@ -204,6 +204,15 @@ jobs:
       # (ubuntu-latest ships >=3.11).
       - name: DW-code catalog matches the compiler reference (both directions)
         run: python3 tools/check-dw-codes.py
+      # The bot tier's dsl_version allowlist (harness/src/critical-path.ts) must
+      # never trail the compiler's own SUPPORTED_DSL_VERSION ceiling
+      # (crates/dsl/src/envelope.rs) — nothing else in the repo relates the two
+      # files, so a compiler version bump landed with zero signal to the harness
+      # and the bot tier refused every campaign at the newest dsl_version, after
+      # the server booted and the bot connected (task #157). Deterministic,
+      # offline, stdlib-only python3.
+      - name: harness dsl_version allowlist covers the compiler ceiling
+        run: python3 tools/check-harness-dsl-version.py
       # Merge artifacts in the docs tree: a table row duplicated under one key, a
       # doubled heading, a stray conflict marker. Two branches appending rows at
       # the same table anchor merge cleanly and silently, so this class is

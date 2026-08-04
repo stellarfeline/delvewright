@@ -293,6 +293,12 @@ pub fn build_with_warnings(
     // the routes + the assembled occupancy for the DW0724 clear-eye self-check);
     // empty for a campaign with no walked leg, so its render plan stays byte-identical.
     let mut pov_shots: Vec<crate::render_plan::PovShot> = Vec::new();
+    // spec-0025 per-branch waypoint artifacts (task #117): one
+    // `validation/branch-waypoints-<branch>.json` per reachable branch, filled
+    // inside the world block below (they need the assembled occupancy) and
+    // emitted alongside the branch paths. Empty for a campaign with no declared
+    // branch points, so nothing moves for anybody who has not opted in.
+    let mut branch_waypoints: Vec<(String, Value)> = Vec::new();
 
     // Every anchor-bearing effect, at every nesting depth, must resolve to a real
     // world position or the build stops (DW0360). This runs FIRST among the
@@ -441,6 +447,66 @@ pub fn build_with_warnings(
                     .map(|s| (s.id.clone(), s.eye_cell()))
                     .collect();
                 crate::nav::verify_pov_cameras(&world, &eyes)?;
+                // spec-0025 branch navigation, made first-class (task #117). The
+                // DW0311 proof above quantifies over the DEFAULT playthrough
+                // only, and the waypoint export followed it — so a branch run
+                // walked its fork-divergent legs with no proof behind them and
+                // no waypoints under them (single-goal navigation, which is
+                // terrain-flaky exactly where the proven path is deterministic).
+                // Here every REACHABLE branch's exported path gets both halves:
+                // its own DW0311 (each walked leg routed over this same
+                // assembled world, under the BRANCH's own causal gate seals, in
+                // its own step space — `Plan::branch_gate_model`; default-path
+                // indices belong to a different sequence and must never be
+                // inherited) and its own waypoint artifact, derived from those
+                // proven routes exactly as the critical path's is (same
+                // thinning, same DW0314 standability self-check, same JSON
+                // shape — `waypoints_json`). Deterministic: branches enumerate
+                // in declaration-order (ADR-0006).
+                let realized = crate::branch::realize(plan.campaign);
+                if !realized.is_empty() {
+                    let flow = crate::flow::Flow::new(plan.campaign);
+                    for r in &realized {
+                        let Some(widx) = r.world else { continue };
+                        let cp = plan
+                            .branch_critical_path(&flow.playthrough_in(widx))
+                            .map_err(|e| BuildFailure::Diagnostic {
+                                code: e.code,
+                                message: format!("branch `{}`: {}", r.branch.id, e.message),
+                            })?;
+                        let (gate_events, ancestors) = plan.branch_gate_model(&cp);
+                        let ancestor = |g: usize, s: usize| {
+                            g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g))
+                        };
+                        let label = |e: crate::nav::NavError| crate::nav::NavError {
+                            code: e.code,
+                            message: format!("branch `{}`: {}", r.branch.id, e.message),
+                        };
+                        crate::nav::check_branch_path(
+                            &world,
+                            &cp.steps,
+                            &cp.transport_by_step,
+                            &gate_events,
+                            &ancestor,
+                        )
+                        .map_err(label)?;
+                        let branch_routes = crate::nav::branch_path_routes(
+                            &world,
+                            &cp.steps,
+                            &cp.transport_by_step,
+                            &gate_events,
+                            &ancestor,
+                        );
+                        crate::nav::verify_exported_routes(&world, &branch_routes)
+                            .map_err(label)?;
+                        if !branch_routes.is_empty() {
+                            branch_waypoints.push((
+                                r.branch.slug.clone(),
+                                crate::waypoints::waypoints_json(plan, &branch_routes),
+                            ));
+                        }
+                    }
+                }
                 (m, am)
             } else {
                 (Vec::new(), Vec::new())
@@ -782,6 +848,17 @@ pub fn build_with_warnings(
             &mut out,
             &format!("validation/branch-path-{slug}.json"),
             &path,
+        );
+    }
+    // ...and each reachable branch's own waypoint artifact (task #117), derived
+    // in the world block above from the same assembled model its per-branch
+    // DW0311 proof ran over. The harness derives the name from the branch's
+    // `branch-path-<slug>.json`, so the two files are one contract.
+    for (slug, wp) in &branch_waypoints {
+        put_json(
+            &mut out,
+            &format!("validation/branch-waypoints-{slug}.json"),
+            wp,
         );
     }
 
