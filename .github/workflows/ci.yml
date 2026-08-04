@@ -226,6 +226,31 @@ jobs:
           args: "--offline --no-progress './**/*.md'"
           fail: true
 
+  storybook-version:
+    # A campaign's storybook is what a server host reads before running the
+    # delve, and the ONE piece of internal machinery it may carry (owner ruling,
+    # task #147) is which engine the delve needs. That is a hand-typed number, so
+    # it goes stale the moment the campaign adopts a new `dsl_version` — and a
+    # stale one is worse than none: it waves a host on an old engine through.
+    # This gate re-derives it from the campaign's own stage documents.
+    #
+    # Its own job, not a step in `docs`: `docs` runs lychee over `./**/*.md`, and
+    # checking the content repo out into that job's tree would silently widen the
+    # link check to content-repo markdown (and `docs (local link check)` is a
+    # required status context — its name may not move).
+    name: campaign storybooks (engine-version marker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Text-only gate — the campaign JSON and the storybooks, never the .nbt
+      # bodies, so LFS stays off and the checkout is a few hundred KB.
+      - uses: ./.github/actions/checkout-content
+        with:
+          lfs: "false"
+      # Deterministic, offline, stdlib-only python3.
+      - name: every campaign storybook carries a TRUE engine-version marker
+        run: python3 tools/check-storybook-version.py
+
   # ------------------------------------------------------------------ tier 2 --
   # spec-0004 tier 2 (every PR): build the delve, prove it loads with zero errors
   # on the pinned vanilla server, and run the generated PackTest suite headless.

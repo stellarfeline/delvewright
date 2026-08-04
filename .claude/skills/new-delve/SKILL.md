@@ -657,6 +657,29 @@ Then:
    Localized `README.<code>.md` per declared language. The render-set images are
    the default — the author may later replace them with hand-crafted shots
    (shaders, staged compositions); media ships with the campaign PR.
+
+   **Every edition opens with the engine-version marker**, on its own line
+   directly under the title (task #147). This is the ONE piece of internal
+   machinery a storybook may carry — it is what a server host needs before
+   running the delve — so it stays in this exact host-facing form and nothing
+   else internal joins it:
+
+   ```
+   > **Requires delve engine <max per-stage dsl_version> or newer** — last verified with delvec <version>.
+   ```
+
+   The first number is the MAX `dsl_version` over the campaign's six stage
+   documents; the second is `delvec --version`'s, from the build that just went
+   green. The line is byte-identical in every localized edition — it is a
+   version stamp, not prose; a translated gloss may follow on the next line.
+   Then prove it:
+
+   ```
+   python3 tools/check-storybook-version.py --campaigns campaigns/campaigns
+   ```
+
+   Green before you report. A stale marker waves a host on an old engine
+   straight into a delve their engine cannot run.
 11. Report to the user: campaign summary, playtime estimate, validation results,
     and the two commands they care about:
     - play: `EULA=TRUE docker compose -f validation/compose.yaml --profile play up`
