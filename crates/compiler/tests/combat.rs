@@ -1,4 +1,5 @@
-//! spec-0023 §2 — compile-time combat winnability (`DW0470`–`DW0475`).
+//! spec-0023 §2 — compile-time combat winnability (`DW0470`–`DW0475`), plus the
+//! floor-gate coverage ledger (`DW0477`, task #113).
 //!
 //! Every case is the `souls-bonfire` fixture (a `kill` objective on
 //! `wave/guards`, behind a bonfire) with ONE field changed, so what the
@@ -291,9 +292,15 @@ fn the_combat_plan_is_validation_only_and_names_the_tier() {
     let json: serde_json::Value = serde_json::from_slice(plan).unwrap();
     assert_eq!(json["encounters"][0]["tier"], "boss");
     assert_eq!(json["encounters"][0]["wave"], "wave/guards");
+    // No `checkpoint`: souls-bonfire's only rest point is armed by `obj/slay`'s
+    // OWN completion — the very kill this encounter is — so nothing governs a
+    // death during the fight. See
+    // `a_checkpoint_armed_by_the_encounters_own_step_does_not_govern_it`, which
+    // pins that shape deliberately; this assertion used to read the opposite and
+    // was encoding the off-by-one.
     assert!(
-        json["encounters"][0]["checkpoint"].is_array(),
-        "the bonfire governs a death at this encounter: {json}"
+        json["encounters"][0]["checkpoint"].is_null(),
+        "nothing is armed yet at this encounter: {json}"
     );
     // Validation metadata only — nothing under `datapack/` may mention it.
     assert!(
@@ -330,4 +337,459 @@ fn a_combat_free_campaign_emits_no_combat_plan() {
     )
     .expect("hello-world builds");
     assert!(!out.contains_key("validation/combat-plan.json"));
+}
+
+// ---------------------------------------------------------------------------
+// The floor gate's coverage ledger (task #113): an elite implemented as an
+// ACTOR used to be structurally invisible to the inverted floor gate, so an
+// empty finding list read as a pass over a fight nobody had.
+// ---------------------------------------------------------------------------
+
+/// The tiered actor every case below shares: a wither skeleton kneeling on the
+/// ambush anchor, billed `elite`, with the health that makes it one.
+fn barrow_warden() -> serde_json::Value {
+    serde_json::json!({
+        "id": "actor/barrow-warden",
+        "entity": "minecraft:wither_skeleton",
+        "name": "The Barrow Warden",
+        "anchor": "anchor/wave",
+        "tier": "elite",
+        "attributes": { "max_health": 60.0 }
+    })
+}
+
+/// The beat that turns the kneeling puppet into a fight: strike the keeper's
+/// body, and the thing behind you stands up.
+fn unleash_trigger() -> serde_json::Value {
+    serde_json::json!({
+        "id": "trigger/warden-answers",
+        "on": { "on": "strike-npc", "npc": "npc/keeper" },
+        "once": true,
+        "effects": [
+            { "type": "spawn-actor", "actor": "actor/barrow-warden" },
+            { "type": "unleash-actor", "actor": "actor/barrow-warden" }
+        ]
+    })
+}
+
+/// Materialize souls-bonfire with the tiered actor plus whatever `triggers`
+/// the case wants appended, and return the parsed combat plan and diagnostics.
+fn build_with_actor(
+    tmp: &TempCampaign,
+    actor: serde_json::Value,
+    extra_triggers: Vec<serde_json::Value>,
+) -> (serde_json::Value, Vec<Diagnostic>, BuildOutput) {
+    campaign_with(tmp.path(), |quests, _| {
+        quests["dsl_version"] = serde_json::json!("0.8.0");
+        quests["content"]["actors"] = serde_json::json!([actor]);
+        let triggers = quests["content"]["triggers"].as_array_mut().unwrap();
+        triggers.extend(extra_triggers);
+    });
+    let (out, diags) = build(tmp.path()).expect("a tiered actor builds");
+    let plan = out
+        .get("validation/combat-plan.json")
+        .expect("the combat plan is emitted");
+    let json: serde_json::Value = serde_json::from_slice(plan).unwrap();
+    (json, diags, out)
+}
+
+#[test]
+fn an_unleashed_tiered_actor_is_a_covered_encounter() {
+    let tmp = TempCampaign::new();
+    let (json, diags, _) = build_with_actor(&tmp, barrow_warden(), vec![unleash_trigger()]);
+
+    // It is in the plan at all — the gap this closes.
+    let a = &json["actors"][0];
+    assert_eq!(a["actor"], "actor/barrow-warden");
+    assert_eq!(a["tier"], "elite");
+    assert_eq!(a["entity"], "minecraft:wither_skeleton");
+    assert_eq!(a["anchor"], "anchor/wave");
+    assert_eq!(a["tag"], "dw_actor_barrow_warden");
+    assert_eq!(a["attributes"]["max_health"], 60.0);
+    assert!(
+        a["pos"].is_array(),
+        "the harness needs somewhere to walk: {a}"
+    );
+
+    // …with the beat that starts the fight, named well enough to fire.
+    let unleash = &a["unleashed_by"][0];
+    assert_eq!(unleash["site"], "trigger");
+    assert_eq!(unleash["owner"], "trigger/warden-answers");
+    assert_eq!(unleash["on"], "strike-npc");
+    assert_eq!(unleash["npc"], "npc/keeper");
+    assert_eq!(a["spawned_by"][0]["owner"], "trigger/warden-answers");
+
+    // …and the floor gate says out loud that it covers it.
+    assert_eq!(a["floor_gate"]["covered"], true);
+    let covered = json["floor_gate"]["covered"].as_array().unwrap();
+    assert!(
+        covered
+            .iter()
+            .any(|e| e["kind"] == "actor" && e["id"] == "actor/barrow-warden"),
+        "{json}"
+    );
+    assert!(
+        json["floor_gate"]["not_covered"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "{json}"
+    );
+    assert!(!has_code(&diags, "DW0477"), "{diags:#?}");
+}
+
+#[test]
+fn a_tiered_actor_nobody_unleashes_is_dw0477_not_silence() {
+    // The defect this task kills: the actor is billed `elite`, the run report's
+    // finding list comes back empty, and nothing anywhere says the fight was
+    // never had.
+    let tmp = TempCampaign::new();
+    let (json, diags, _) = build_with_actor(&tmp, barrow_warden(), vec![]);
+
+    assert_eq!(json["actors"][0]["floor_gate"]["covered"], false);
+    let not_covered = &json["floor_gate"]["not_covered"][0];
+    assert_eq!(not_covered["id"], "actor/barrow-warden");
+    assert_eq!(not_covered["tier"], "elite");
+    assert!(
+        not_covered["reason"]
+            .as_str()
+            .unwrap()
+            .contains("no `spawn-actor` effect"),
+        "the reason must name the missing beat: {json}"
+    );
+
+    let d = diags
+        .iter()
+        .find(|d| d.code == "DW0477")
+        .unwrap_or_else(|| panic!("expected DW0477: {diags:#?}"));
+    assert_eq!(d.severity, delvewright_dsl::Severity::Warning);
+    assert_eq!(d.path, "/content/actors/0/tier");
+    assert!(d.message.contains("not covered"), "{}", d.message);
+}
+
+#[test]
+fn a_staged_but_never_unleashed_puppet_is_scenery_not_a_fight() {
+    let tmp = TempCampaign::new();
+    let spawn_only = serde_json::json!({
+        "id": "trigger/warden-kneels",
+        "on": { "on": "strike-npc", "npc": "npc/keeper" },
+        "once": true,
+        "effects": [{ "type": "spawn-actor", "actor": "actor/barrow-warden" }]
+    });
+    let (json, diags, _) = build_with_actor(&tmp, barrow_warden(), vec![spawn_only]);
+    let reason = json["floor_gate"]["not_covered"][0]["reason"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(reason.contains("Invulnerable"), "{reason}");
+    assert!(has_code(&diags, "DW0477"), "{diags:#?}");
+
+    // …and the `vulnerable` variant gets its OWN reason: a NoAI creep cannot
+    // fight back, so a first-try win by the bot would be an artifact of the
+    // check rather than a finding about the encounter.
+    let tmp2 = TempCampaign::new();
+    let mut vulnerable = barrow_warden();
+    vulnerable["vulnerable"] = serde_json::json!(true);
+    let spawn_only2 = serde_json::json!({
+        "id": "trigger/warden-kneels",
+        "on": { "on": "strike-npc", "npc": "npc/keeper" },
+        "once": true,
+        "effects": [{ "type": "spawn-actor", "actor": "actor/barrow-warden" }]
+    });
+    let (json2, _, _) = build_with_actor(&tmp2, vulnerable, vec![spawn_only2]);
+    let reason2 = json2["floor_gate"]["not_covered"][0]["reason"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(reason2.contains("never attacks"), "{reason2}");
+}
+
+#[test]
+fn an_optional_tiered_wave_is_uncovered_too() {
+    // The same silence, on the shape that already had a `tier`: `wave/ambush`
+    // has no `kill` objective, so billing it `elite` claims something no proof
+    // ever measures.
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| {
+        quests["dsl_version"] = serde_json::json!("0.7.0");
+        quests["content"]["waves"][1]["tier"] = serde_json::json!("elite");
+    });
+    let (out, diags) = build(tmp.path()).expect("an optional tiered wave builds");
+    let json: serde_json::Value =
+        serde_json::from_slice(out.get("validation/combat-plan.json").unwrap()).unwrap();
+    let not_covered = &json["floor_gate"]["not_covered"][0];
+    assert_eq!(not_covered["kind"], "wave");
+    assert_eq!(not_covered["id"], "wave/ambush");
+    assert!(
+        not_covered["reason"]
+            .as_str()
+            .unwrap()
+            .contains("no `kill` objective"),
+        "{json}"
+    );
+    let d = diags.iter().find(|d| d.code == "DW0477").unwrap();
+    assert_eq!(d.path, "/content/waves/1/tier");
+}
+
+#[test]
+fn declaring_an_actor_tier_moves_no_shipped_byte() {
+    // The version fence exists so a tier is pure validation metadata. Compile
+    // the same campaign with and without the field and compare EVERY output
+    // outside `validation/` byte for byte (`manifest.json` indexes the whole
+    // tree, `validation/` included, so it is the one documented exception —
+    // exactly as `critical-path-waypoints.json` and the combat plan itself
+    // already are).
+    let untiered = TempCampaign::new();
+    let mut plain = barrow_warden();
+    plain.as_object_mut().unwrap().remove("tier");
+    let (_, _, out_plain) = build_with_actor(&untiered, plain, vec![unleash_trigger()]);
+
+    let tiered = TempCampaign::new();
+    let (_, _, out_tiered) = build_with_actor(&tiered, barrow_warden(), vec![unleash_trigger()]);
+
+    let shipped = |o: &BuildOutput| -> Vec<(String, Vec<u8>)> {
+        o.iter()
+            .filter(|(k, _)| !k.starts_with("validation/") && k.as_str() != "manifest.json")
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    };
+    assert_eq!(
+        shipped(&out_plain),
+        shipped(&out_tiered),
+        "an actor `tier` must not reach a shipped byte"
+    );
+    // The untiered actor is also absent from the plan entirely — an untiered
+    // actor carries no floor expectation, exactly like an untiered wave.
+    let plan_plain: serde_json::Value =
+        serde_json::from_slice(out_plain.get("validation/combat-plan.json").unwrap()).unwrap();
+    assert!(
+        plan_plain["actors"].as_array().unwrap().is_empty(),
+        "{plan_plain}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The governing checkpoint, and the one coordinate system (#221 follow-up).
+// ---------------------------------------------------------------------------
+
+/// Parse both harness documents out of one build.
+fn path_and_plan(out: &BuildOutput) -> (serde_json::Value, serde_json::Value) {
+    let path: serde_json::Value =
+        serde_json::from_slice(out.get("critical-path.json").expect("path exported")).unwrap();
+    let plan: serde_json::Value = serde_json::from_slice(
+        out.get("validation/combat-plan.json")
+            .expect("plan emitted"),
+    )
+    .unwrap();
+    (path, plan)
+}
+
+#[test]
+fn a_checkpoint_armed_by_the_encounters_own_step_does_not_govern_it() {
+    // souls-bonfire's exact shape, and the reason this is a defect rather than a
+    // taste: the bonfire is fired by `obj/slay`'s completion — the completion of
+    // the very kill the encounter IS — so at any death DURING that fight the
+    // fire has not been armed, let alone rested at, and the party returns to
+    // world spawn. `fire_step <= i` handed the encounter a respawn point one
+    // beat in its own future.
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    let (out, _) = build(tmp.path()).expect("the untouched fixture builds");
+    let (path, plan) = path_and_plan(&out);
+
+    let enc = &plan["encounters"][0];
+    assert_eq!(enc["wave"], "wave/guards");
+    assert!(
+        enc["checkpoint"].is_null(),
+        "a checkpoint armed by this encounter's own step must not govern it: {plan}"
+    );
+
+    // …and this really is the same-step case, not merely a campaign with no
+    // checkpoints: the exported path rests at the bonfire on the step directly
+    // AFTER the kill, which is what "armed by the kill's own completion" looks
+    // like from the outside.
+    let steps = path["steps"].as_array().unwrap();
+    let kill = enc["step"].as_u64().unwrap() as usize;
+    assert_eq!(steps[kill]["action"], "kill");
+    assert_eq!(steps[kill + 1]["action"], "rest", "{path}");
+}
+
+#[test]
+fn a_checkpoint_armed_earlier_governs_the_encounter() {
+    // The same fixture with the bonfire moved one beat earlier — armed by
+    // `obj/talk` instead of `obj/slay`. Now it IS armed before the fight, so it
+    // governs, which is what proves the rule is `< i` and not "never".
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| {
+        let slay = quests["content"]["quests"][1]["on_objective_complete"]["obj/slay"]
+            .as_array_mut()
+            .unwrap();
+        let at = slay
+            .iter()
+            .position(|e| e["type"] == "bonfire")
+            .expect("the fixture's bonfire");
+        let bonfire = slay.remove(at);
+        quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap()
+            .push(bonfire);
+    });
+    let (out, _) = build(tmp.path()).expect("the moved bonfire builds");
+    let (_, plan) = path_and_plan(&out);
+    assert!(
+        plan["encounters"][0]["checkpoint"].is_array(),
+        "a checkpoint armed strictly before the encounter governs it: {plan}"
+    );
+}
+
+#[test]
+fn the_combat_plan_step_indexes_the_exported_path() {
+    // One coordinate system for every harness document. `plan.critical_path` and
+    // the exported `critical-path.json` drift by one per bonfire armed earlier
+    // (spec-0016 §1 splices a `rest` step after each arming beat), and the combat
+    // plan's `step` claimed to be an exported index while being an internal one.
+    // Proven against the real emitted documents, not against the arithmetic:
+    // whatever the splice does, the step the plan points at must BE the
+    // encounter's kill.
+    //
+    // The bonfire is moved to `obj/talk` so the two coordinates genuinely differ
+    // — with the fixture's own placement they coincide, and a test that cannot
+    // fail proves nothing.
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| {
+        let slay = quests["content"]["quests"][1]["on_objective_complete"]["obj/slay"]
+            .as_array_mut()
+            .unwrap();
+        let at = slay.iter().position(|e| e["type"] == "bonfire").unwrap();
+        let bonfire = slay.remove(at);
+        quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap()
+            .push(bonfire);
+    });
+    let (out, _) = build(tmp.path()).expect("builds");
+    let (path, plan) = path_and_plan(&out);
+    let steps = path["steps"].as_array().unwrap();
+
+    // The splice really did move things: a `rest` step sits before the kill.
+    let rest_at = steps
+        .iter()
+        .position(|s| s["action"] == "rest")
+        .expect("a rest step");
+    let kill_at = steps
+        .iter()
+        .position(|s| s["action"] == "kill")
+        .expect("a kill step");
+    assert!(rest_at < kill_at, "{path}");
+
+    for enc in plan["encounters"].as_array().unwrap() {
+        let i = enc["step"].as_u64().unwrap() as usize;
+        assert_eq!(
+            steps[i]["action"], "kill",
+            "step {i} is not the kill: {path}"
+        );
+        assert_eq!(steps[i]["wave"], enc["wave"], "{path}");
+        assert_eq!(steps[i]["objective"], enc["objective"], "{path}");
+    }
+    // …and the internal index it came from is genuinely a different number, so
+    // this test would have failed before the reconciliation.
+    assert_eq!(kill_at, 3, "{path}");
+}
+
+// --- the wave census probe (task #123, #230) --------------------------------
+
+/// The ladder used to answer "what is standing at this encounter?" by silhouette
+/// — every entity the client tracked, no distance filter, anything taller than
+/// half a block. That set is not the wave: on the drowned bell it swept in two
+/// ambush husks 57 blocks away and a neighbouring wave, so a 2-mob wave read as 4
+/// standing, and those bystanders — alive on both sides of a scripted death —
+/// were reported as survivors the re-seat had failed to remove. The re-seat was
+/// innocent.
+///
+/// Only the server can see the wave tag, so the compiler owns the census. These
+/// three functions are the whole probe surface, and the plan NAMES them so the
+/// harness never re-derives `safe_local`.
+#[test]
+fn every_wave_carries_a_tag_census_probe() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    let (out, _) = build(tmp.path()).expect("the reference campaign builds");
+
+    let body = |name: &str| -> String {
+        let path = format!("datapack/data/{NS}/function/{name}.mcfunction");
+        String::from_utf8(
+            out.get(&path)
+                .unwrap_or_else(|| panic!("missing {name}"))
+                .clone(),
+        )
+        .unwrap()
+    };
+
+    // Brand / unbrand ride the wave's own tag, so a stamp can only ever land on
+    // this wave. The unbrand selects the BRAND, so a mob that somehow outlived
+    // its wave tag is still cleaned up.
+    assert_eq!(
+        body("wave_brand_guards").trim(),
+        "tag @e[tag=dw_wave_guards] add dw_brand_guards"
+    );
+    assert_eq!(
+        body("wave_unbrand_guards").trim(),
+        "tag @e[tag=dw_brand_guards] remove dw_brand_guards"
+    );
+
+    // The census walks the TAG — never a type, a radius or a silhouette.
+    let census = body("wave_census_guards");
+    assert!(
+        census.contains("execute as @e[tag=dw_wave_guards] run function"),
+        "the census iterates the wave tag: {census}"
+    );
+    assert!(
+        census.contains("scoreboard players add #wcen_seq dw.sys 1"),
+        "each census takes a sequence number, so a stale answer is tellable: {census}"
+    );
+    for zeroed in ["#wcen_n", "#wcen_b", "#wcen_d"] {
+        assert!(
+            census.contains(&format!("scoreboard players set {zeroed} dw.sys 0")),
+            "every accumulator is zeroed before the walk: {census}"
+        );
+    }
+    assert!(
+        census.contains("[dw:census ") && census.contains("wave/guards"),
+        "the totals are stated on the anchored marker channel: {census}"
+    );
+
+    // Health comes from vanilla's own commands — never a table the compiler
+    // refuses to invent (DW0475), and never a value the client happened to be
+    // sent (an unmodified max health is not on the wire at all).
+    let one = body("wave_census_one_guards");
+    assert!(
+        one.contains("run data get entity @s Health 100")
+            && one.contains("run attribute @s minecraft:max_health get 100")
+            && one.contains("execute if score #wcen_h dw.sys < #wcen_m dw.sys"),
+        "damaged is decided from the server's own health and maximum: {one}"
+    );
+    assert!(
+        one.contains("execute if entity @s[tag=dw_brand_guards]"),
+        "carried-over is decided by the brand, by identity: {one}"
+    );
+    assert!(
+        one.contains("[dw:censusmob "),
+        "each mob states its own position and health: {one}"
+    );
+}
+
+/// The harness calls what the plan names. `safe_local` is a compiler naming rule,
+/// and a harness that re-derived it would be exactly the downstream folklore
+/// CLAUDE.md forbids — so the probe's three function ids travel in the plan.
+#[test]
+fn the_combat_plan_names_the_census_probe() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    let (out, _) = build(tmp.path()).expect("the reference campaign builds");
+    let json: serde_json::Value =
+        serde_json::from_slice(out.get("validation/combat-plan.json").unwrap()).unwrap();
+    let c = &json["encounters"][0]["census"];
+    assert_eq!(c["census"], format!("{NS}:wave_census_guards"));
+    assert_eq!(c["brand"], format!("{NS}:wave_brand_guards"));
+    assert_eq!(c["unbrand"], format!("{NS}:wave_unbrand_guards"));
 }

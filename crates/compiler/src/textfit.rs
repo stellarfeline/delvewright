@@ -1,4 +1,6 @@
-//! On-screen narrate text that overruns the screen (`DW0330`).
+//! On-screen text that does not fit what draws it: narrate titles that overrun the
+//! screen (`DW0330`) and dialogue option labels that overrun their button
+//! (`DW0331`).
 //!
 //! Vanilla draws a `title`, a `subtitle` and an art title **centred, on one line,
 //! with no wrapping and no shrink-to-fit**: text wider than the screen simply runs
@@ -34,16 +36,66 @@
 //! diagnostic and shows up in `--json`, but does not fail `validate`/`analyze`/
 //! `build`. It is the first warning-tier code in the compiler; `delvec` exits
 //! non-zero only on `Severity::Error`.
+//!
+//! ## Dialogue option labels (`DW0331`) — the same measurement, a harder limit
+//!
+//! Owner directive, 2026-08-03. A dialogue option is a **button caption**, not a
+//! sentence. [`crate::emit`]'s `build_node_dialog` emits each node as a
+//! `minecraft:multi_action` dialog with `columns: 1` and **no `width` override**, so
+//! every option button is vanilla's default [`DIALOG_BUTTON_WIDTH`]. Vanilla draws a
+//! button's label with `AbstractWidget::renderScrollingString`, inset
+//! [`BUTTON_LABEL_INSET`] px on each side: a label wider than what is left does not
+//! wrap and does not shrink — it **scrolls back and forth**, and a shelf of sliding
+//! captions is unreadable to pick from.
+//!
+//! Two things make this a stricter check than `DW0330`, not a copy of it:
+//!
+//! - **Pose scale ×1.** A dialog button draws at the identity pose, so one font pixel
+//!   is one GUI pixel — no ×4/×2 division as for titles.
+//! - **Error tier, not advisory.** `DW0330` warns because [`REF_GUI_WIDTH`] is a
+//!   guess about the *player's window*, which the compiler cannot know; rejecting a
+//!   build on a guess dresses a judgement call as a certainty. That reasoning does
+//!   not transfer. A dialog button is 150 GUI px because the compiler emitted no
+//!   `width`, on every window at every GUI scale — the widget's own geometry, fixed
+//!   by the datapack this compiler writes. `width > 146` therefore *is* "this label
+//!   scrolls in game", a fact, so `DW0331` rejects. Following the precedent means
+//!   following its **reason** (warn about what you cannot know, reject what you
+//!   emitted), not copying its tier.
+//!
+//! The remedy is never a wider button — the fix is to move the content into the
+//! node's body text, which wraps, or into the NPC's reply.
+//!
+//! ### What `DW0331` deliberately does NOT measure: the option `tooltip` (v0.8)
+//!
+//! An option's `tooltip` is a *sibling* of `label` in vanilla's `CommonButtonData`
+//! codec, but it is not drawn on the button. The client's `DialogControlSet` wraps
+//! it in `Tooltip.create(…)`, and `Tooltip` splits its component with
+//! `Font.split(message, 170)` — it **wraps at 170 px into a hover box**. Wrapping
+//! is the whole difference: the failure `DW0331` exists to reject is *scrolling*,
+//! which is what `renderScrollingString` does when a caption overruns a fixed
+//! button. Nothing overruns a tooltip, so there is no budget to enforce and no
+//! diagnostic to raise — measuring one would be inventing a limit vanilla does not
+//! declare. (Both facts read off the pinned 1.21.11 client jar.) This is the
+//! authored shape of the wine-beat pattern: **button = caption, tooltip = the full
+//! line.**
 
 use std::collections::BTreeMap;
 
-use delvewright_dsl::{Campaign, Diagnostic, L10nDoc, NarrateStyle, on_screen_narrates};
+use delvewright_dsl::{
+    Campaign, Diagnostic, L10nDoc, NarrateStyle, OptionLabel, bonfire_option_labels,
+    dialogue_option_labels, on_screen_narrates,
+};
 
 use crate::atmos::{ART_GLYPH_ADVANCE, ART_SPACE_ADVANCE};
 
 /// `DW0330`: an on-screen `narrate` string (`title` / `subtitle` / `art`), in the
 /// English source or a sidecar translation, is wider than the screen renders.
 pub const DW_TEXT_OVERRUNS_SCREEN: &str = "DW0330";
+
+/// `DW0331`: a dialogue option label, in the English source or a sidecar
+/// translation, is wider than the dialog button vanilla draws it on, so the caption
+/// scrolls instead of sitting still.
+pub const DW_OPTION_LABEL_SCROLLS: &str = "DW0331";
 
 // ---------------------------------------------------------------------------
 // Screen geometry
@@ -85,6 +137,26 @@ fn style_scale(style: NarrateStyle) -> u32 {
 pub fn budget(style: NarrateStyle) -> u32 {
     USABLE_WIDTH / style_scale(style)
 }
+
+/// The width, in GUI pixels, of one dialog action button.
+///
+/// Vanilla's dialog action codec defaults `width` to 150 (range 1..=1024), and
+/// [`crate::emit`]'s `build_node_dialog` emits no `width` — so this is the width of
+/// every button this compiler ships, on every window at every GUI scale. Unlike
+/// [`REF_GUI_WIDTH`] this is not a reference point: it is a property of the datapack
+/// the compiler writes, which is why `DW0331` can reject rather than advise.
+pub const DIALOG_BUTTON_WIDTH: u32 = 150;
+
+/// The horizontal inset, per side, between a button's edge and its label.
+/// `AbstractButton::renderWidget` calls `renderScrollingString(…, this.getX() + 2, …,
+/// this.getX() + this.width - 2, …)`: two pixels of padding at each end, and the
+/// helper *scrolls* whatever does not fit between them.
+const BUTTON_LABEL_INSET: u32 = 2;
+
+/// The usable label width on a dialog button, in font pixels. Buttons draw at the
+/// identity pose (×1), so a font pixel is a GUI pixel and no scale divides this —
+/// contrast [`budget`], where the ×4 title pose costs three quarters of the screen.
+pub const BUTTON_LABEL_BUDGET: u32 = DIALOG_BUTTON_WIDTH - 2 * BUTTON_LABEL_INSET;
 
 // ---------------------------------------------------------------------------
 // Font metrics
@@ -290,6 +362,80 @@ fn over_budget(stage: &str, path: String, style: NarrateStyle, text: &str) -> Op
 /// `budget/width` as a rounded percentage, for the remediation hint.
 fn percent_of(budget: u32, width: u32) -> String {
     format!("{}%", budget * 100 / width)
+}
+
+// ---------------------------------------------------------------------------
+// Dialogue option labels (DW0331)
+// ---------------------------------------------------------------------------
+
+/// Check every dialogue option label — the canonical English source **and** every
+/// declared-language sidecar rendition — against the dialog button it is drawn on
+/// (`DW0331`). Sidecar findings name the locale and the l10n key, so a `zh-cn` label
+/// that overflows where its English source fits points at the string to shorten.
+///
+/// Error tier: see the module docs. The budget is the widget's geometry, not a guess
+/// about the player's screen.
+pub fn check_option_labels(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<Diagnostic> {
+    let mut d = Vec::new();
+    // spec-0016 §1 (owner ruling 2026-08-03): a bonfire's two rest options are
+    // drawn on exactly the same 150-GUI-px `multi_action` button, so they carry
+    // exactly the same budget. The check follows the widget, not the stage the
+    // string happened to be authored in.
+    let labels: Vec<(&str, OptionLabel)> = dialogue_option_labels(c)
+        .into_iter()
+        .map(|l| ("dialogue", l))
+        .chain(bonfire_option_labels(c).into_iter().map(|l| ("quests", l)))
+        .collect();
+    for (stage, l) in &labels {
+        if let Some(diag) = label_over_budget(stage, l.path.clone(), &l.text) {
+            d.push(diag);
+        }
+    }
+    // Translations: only the declared languages, in a fixed order.
+    for lang in &c.world.content.languages {
+        let Some(doc) = sidecars.get(lang) else {
+            continue; // absence is DW0180's job, not ours.
+        };
+        for (_, l) in &labels {
+            if let Some(translated) = doc.content.get(&l.key)
+                && let Some(diag) = label_over_budget(
+                    "l10n",
+                    format!("l10n/{lang}.json#/content/{}", l.key),
+                    translated,
+                )
+            {
+                d.push(diag);
+            }
+        }
+    }
+    d
+}
+
+/// The `DW0331` diagnostic for an option `label`, or `None` if it fits its button.
+fn label_over_budget(stage: &str, path: String, text: &str) -> Option<Diagnostic> {
+    let width = default_font_width(text);
+    if width <= BUTTON_LABEL_BUDGET {
+        return None;
+    }
+    Some(Diagnostic::error(
+        DW_OPTION_LABEL_SCROLLS,
+        stage,
+        path,
+        format!(
+            "dialogue option label renders {width} font px wide, over the \
+             {BUTTON_LABEL_BUDGET} px a dialog button fits ({DIALOG_BUTTON_WIDTH} GUI px, \
+             vanilla's default since the compiler sets no `width`, less \
+             {BUTTON_LABEL_INSET} px of inset each side; buttons draw at pose scale ×1, \
+             so a font px is a GUI px). Vanilla neither wraps nor shrinks an over-wide \
+             caption — it SCROLLS it back and forth, on every window at every GUI scale, \
+             and a shelf of sliding captions is unreadable to choose from. An option is a \
+             button caption, not a sentence: cut it to about {} of its width (roughly \
+             {BUTTON_LABEL_BUDGET} px ≈ 24 Latin or 16 Han characters, so author to ~20 / \
+             ~12 to leave a translation room to grow) and move what it was carrying into \
+             the node's body text, which wraps, or into the NPC's reply. Label: `{text}`",
+            percent_of(BUTTON_LABEL_BUDGET, width),
+        ),
+    ))
 }
 
 #[cfg(test)]

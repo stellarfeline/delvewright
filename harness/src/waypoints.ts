@@ -42,6 +42,13 @@ export interface TimedGate {
   readonly closedTicks: number;
   /** Ticks after world init before the first open window. */
   readonly phase: number;
+  /**
+   * Whether the closing edge KILLS a player caught inside the region (spec-0016 §4
+   * addendum — the portcullis judgement, unsurvivable by gearing). A crush gate must
+   * never be entered blind: the harness stages at the edge and enters only on an
+   * observed fresh window with full margin. `false` for every pre-crush artifact.
+   */
+  readonly crush: boolean;
 }
 
 /** One walked critical-path leg: the ordered waypoint polyline connecting `from` to
@@ -168,6 +175,13 @@ function parseTimedGates(raw: Record<string, unknown>): TimedGate[] {
       // the wait below would have no window to wait for, so refuse it here.
       fail(pointer, "open_ticks and closed_ticks must both be positive (a clock, not a static gate)");
     }
+    // `crush` is optional for compatibility with pre-crush artifacts (absent →
+    // false, a gate whose closing edge merely blocks). Present-but-non-boolean is a
+    // structural fault: silently coercing it could blind-enter a lethal gate.
+    const crushValue = entry["crush"];
+    if (crushValue !== undefined && typeof crushValue !== "boolean") {
+      fail(`${pointer}/crush`, `must be a boolean, got ${describe(crushValue)}`);
+    }
     return {
       id: requireString(entry, "id", pointer),
       min,
@@ -176,6 +190,7 @@ function parseTimedGates(raw: Record<string, unknown>): TimedGate[] {
       openTicks,
       closedTicks,
       phase: requireTicks(entry, "phase", pointer),
+      crush: crushValue ?? false,
     };
   });
 }

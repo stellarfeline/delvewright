@@ -178,7 +178,7 @@ test("rejects an unknown action with the closed enum in the message", () => {
     (err: unknown) =>
       err instanceof CriticalPathParseError &&
       err.pointer === "/steps/1/action" &&
-      /select-class, talk-to, reach, kill, collect, interact, assert-complete/.test(err.message),
+      /select-class, talk-to, reach, kill, collect, interact, rest, assert-complete/.test(err.message),
   );
 });
 
@@ -410,6 +410,35 @@ test("accepts the 0.5.0 and 0.6.0 dsl versions (additive; same path contract)", 
   }
 });
 
+test("parses an optional ending_tail_ticks on assert-complete (task #125)", () => {
+  const raw = validRaw();
+  (raw["steps"] as Array<Record<string, unknown>>)[3]!["ending_tail_ticks"] = 250;
+  const done = parseCriticalPath(raw).steps[3];
+  assert.deepEqual(done, {
+    action: "assert-complete",
+    objective: "dw.campaign",
+    value: 1,
+    endingTailTicks: 250,
+  });
+  // ...and its absence stays absent (a synchronous ending exports no field).
+  const plain = parseCriticalPath(validRaw()).steps[3] as unknown as Record<string, unknown>;
+  assert.ok(!("endingTailTicks" in plain));
+});
+
+test("rejects a non-positive or non-integer ending_tail_ticks", () => {
+  for (const bad of [0, -20, 12.5, "250"]) {
+    const raw = validRaw();
+    (raw["steps"] as Array<Record<string, unknown>>)[3]!["ending_tail_ticks"] = bad;
+    assert.throws(
+      () => parseCriticalPath(raw),
+      (err: unknown) =>
+        err instanceof CriticalPathParseError &&
+        err.pointer === "/steps/3/ending_tail_ticks" &&
+        /must be a positive integer/.test(err.message),
+    );
+  }
+});
+
 test("rejects a non-integer assert-complete scoreboard value", () => {
   const raw = validRaw();
   (raw["steps"] as Array<Record<string, unknown>>)[3]!["scoreboard"] = {
@@ -484,4 +513,59 @@ test("rejects a malformed objective id with a precise pointer", () => {
       bad,
     );
   }
+});
+
+// --- rest steps (compiler #220) ---------------------------------------------
+
+test("a rest step parses with its bonfire index, anchor, pos and command", () => {
+  const raw = validRaw();
+  (raw["steps"] as unknown[]).splice(1, 0, {
+    action: "rest",
+    bonfire: 2,
+    anchor: "anchor/beach-fire",
+    pos: [12, 63, -8],
+    command: "/trigger dw.rest set 2",
+  });
+  const path = parseCriticalPath(raw);
+  const step = path.steps[1]!;
+  assert.equal(step.action, "rest");
+  assert.deepEqual(step, {
+    action: "rest",
+    bonfire: 2,
+    anchor: "anchor/beach-fire",
+    pos: [12, 63, -8],
+    command: "/trigger dw.rest set 2",
+  });
+});
+
+test("a rest step carries no objective — it proves none, it performs the loop", () => {
+  const raw = validRaw();
+  (raw["steps"] as unknown[]).splice(1, 0, {
+    action: "rest",
+    bonfire: 0,
+    anchor: "anchor/fire",
+    pos: [1, 2, 3],
+    command: "/trigger dw.rest set 2",
+    objective: "obj/nope",
+  });
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) => err instanceof CriticalPathParseError && /objective/.test(err.message),
+  );
+});
+
+test("a rest step with a negative bonfire index is rejected", () => {
+  const raw = validRaw();
+  (raw["steps"] as unknown[]).splice(1, 0, {
+    action: "rest",
+    bonfire: -1,
+    anchor: "anchor/fire",
+    pos: [1, 2, 3],
+    command: "/trigger dw.rest set 2",
+  });
+  assert.throws(
+    () => parseCriticalPath(raw),
+    (err: unknown) =>
+      err instanceof CriticalPathParseError && err.pointer === "/steps/1/bonfire",
+  );
 });

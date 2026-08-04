@@ -226,6 +226,26 @@ impl DivisionFailure {
     }
 }
 
+/// One step of a branch's compiled play order (spec-0025), with the state
+/// transition it caused.
+#[derive(Clone, Debug)]
+pub struct JournalStep {
+    /// The quest the objective belongs to.
+    pub quest: String,
+    /// The objective completed at this step.
+    pub objective: String,
+    /// For a `talk-to`, the flat dialogue option index taken.
+    pub talk_option: Option<usize>,
+    /// Quests that became active at this step.
+    pub opened: Vec<String>,
+    /// Quests that completed at this step.
+    pub completed: Vec<String>,
+    /// Flags held when the step began.
+    pub flags_before: BTreeSet<String>,
+    /// Flags held once the step's bundles have fired.
+    pub flags_after: BTreeSet<String>,
+}
+
 /// Why a playthrough's step sequence is not a legal playthrough.
 #[derive(Clone, Debug)]
 pub struct ReplayFailure {
@@ -366,6 +386,34 @@ impl<'a> Flow<'a> {
             .iter()
             .map(|w| self.solve(w))
             .find(|s| s.completed.contains(finale));
+        self.playthrough_from(sol, false)
+    }
+
+    /// How many branch worlds the model enumerated.
+    pub fn world_count(&self) -> usize {
+        self.worlds.len()
+    }
+
+    /// The flags producible in world `i` (spec-0025: the branch-assignment
+    /// consistency test reads this).
+    pub fn world_flags(&self, i: usize) -> BTreeSet<String> {
+        self.solve(&self.worlds[i]).flags
+    }
+
+    /// The quests that complete in world `i`.
+    pub fn world_completed(&self, i: usize) -> BTreeSet<String> {
+        self.solve(&self.worlds[i]).completed
+    }
+
+    /// [`Self::playthrough`] restricted to one enumerated world — the branch's
+    /// own critical path (spec-0025). Unlike `playthrough` it does not search for
+    /// a finale-completing world: the caller has already chosen the world that
+    /// realizes the branch's declared flag assignment.
+    pub fn playthrough_in(&self, i: usize) -> Playthrough {
+        self.playthrough_from(Some(self.solve(&self.worlds[i])), true)
+    }
+
+    fn playthrough_from(&self, sol: Option<Solution>, whole_world: bool) -> Playthrough {
         let degenerate = sol.is_none();
         let keep: BTreeSet<String> = match &sol {
             Some(s) => s.completed.clone(),
@@ -378,7 +426,16 @@ impl<'a> Flow<'a> {
                 .map(|q| q.id.as_str().to_string())
                 .collect(),
         };
-        let (order, cyclic) = finale_order(self.c, &keep);
+        // The exported critical path is rooted at the finale (everything the
+        // ending depends on). A **branch** playthrough is rooted at the branch
+        // instead: a branch that runs to its own ending never completes the
+        // stage-4 `finale`, so rooting there would say the branch plays nothing
+        // at all (spec-0025).
+        let (order, cyclic) = if whole_world {
+            dag_order(self.c, &keep)
+        } else {
+            finale_order(self.c, &keep)
+        };
         let mut steps = Vec::new();
         for qid in &order {
             let Some(q) = self.quest(qid) else { continue };
@@ -401,6 +458,38 @@ impl<'a> Flow<'a> {
             cyclic,
             degenerate,
         }
+    }
+
+    /// Replay `p` and record, per step, the quests that opened, the quests that
+    /// completed, and the flag state on either side of it — the **compiled play
+    /// order** the per-branch chronicle and the contradiction proof are assembled
+    /// from (spec-0025).
+    ///
+    /// It is deliberately the SAME state machine [`Self::replay`] proves against
+    /// (one [`Self::advance`], one [`Self::fire`]), so the chronicle can never
+    /// describe an order the replay does not admit.
+    pub fn journal(&self, p: &Playthrough) -> Vec<JournalStep> {
+        let mut st = self.initial_state();
+        let mut complete_at: Option<(usize, String)> = None;
+        let mut out: Vec<JournalStep> = Vec::new();
+        for (i, step) in p.steps.iter().enumerate() {
+            let before = st.clone();
+            self.advance(&mut st, step, i + 1, &mut complete_at);
+            out.push(JournalStep {
+                quest: step.quest.clone(),
+                objective: step.objective.clone(),
+                talk_option: step.talk_option,
+                opened: st.active.difference(&before.active).cloned().collect(),
+                completed: st
+                    .done_quest
+                    .difference(&before.done_quest)
+                    .cloned()
+                    .collect(),
+                flags_before: before.flags,
+                flags_after: st.flags.clone(),
+            });
+        }
+        out
     }
 
     /// Replay `p`'s step sequence through the flag/objective/quest state machine.
@@ -806,7 +895,7 @@ impl<'a> Flow<'a> {
                 QuestEffect::SetFlag { flag, .. } => {
                     flags.insert(flag.as_str().to_string());
                 }
-                QuestEffect::CampaignComplete => {
+                QuestEffect::CampaignComplete { .. } => {
                     if complete_at.is_none() {
                         *complete_at = Some((pos, objective.to_string()));
                     }
@@ -1221,6 +1310,59 @@ fn finale_order(c: &Campaign, keep: &BTreeSet<String>) -> (Vec<String>, bool) {
         }
     }
 
+    let mut indeg: BTreeMap<&str, usize> = needed.iter().map(|q| (*q, 0)).collect();
+    for q in &needed {
+        if let Some(ds) = deps.get(q) {
+            for d in ds {
+                if needed.contains(d) {
+                    *indeg.get_mut(q).unwrap() += 1;
+                }
+            }
+        }
+    }
+    let mut queue: VecDeque<&str> = indeg
+        .iter()
+        .filter(|&(_, &d)| d == 0)
+        .map(|(q, _)| *q)
+        .collect();
+    let mut order = Vec::new();
+    while let Some(q) = queue.pop_front() {
+        order.push(q.to_string());
+        for r in &needed {
+            if deps.get(r).is_some_and(|ds| ds.contains(&q)) {
+                let e = indeg.get_mut(*r).unwrap();
+                *e -= 1;
+                if *e == 0 {
+                    queue.push_back(r);
+                }
+            }
+        }
+    }
+    let cyclic = order.len() != needed.len();
+    (order, cyclic)
+}
+
+/// Topologically order **every** quest in `keep` by `depends_on` (Kahn), rather
+/// than only the finale's dependency closure — the branch playthrough's ordering
+/// (spec-0025). Same algorithm as [`finale_order`], different root set.
+fn dag_order(c: &Campaign, keep: &BTreeSet<String>) -> (Vec<String>, bool) {
+    let plan = &c.quest_plan.content;
+    let deps: BTreeMap<&str, Vec<&str>> = plan
+        .quests
+        .iter()
+        .map(|q| {
+            (
+                q.id.as_str(),
+                q.depends_on.iter().map(|d| d.as_str()).collect(),
+            )
+        })
+        .collect();
+    let needed: BTreeSet<&str> = plan
+        .quests
+        .iter()
+        .map(|q| q.id.as_str())
+        .filter(|q| keep.contains(*q))
+        .collect();
     let mut indeg: BTreeMap<&str, usize> = needed.iter().map(|q| (*q, 0)).collect();
     for q in &needed {
         if let Some(ds) = deps.get(q) {

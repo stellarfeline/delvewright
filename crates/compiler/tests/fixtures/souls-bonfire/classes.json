@@ -1,5 +1,5 @@
 {
-  "dsl_version": "0.4.0",
+  "dsl_version": "0.8.0",
   "campaign_id": "souls-bonfire",
   "stage": "classes",
   "content": {
@@ -15,6 +15,7 @@
           { "item": "minecraft:iron_leggings", "count": 1 },
           { "item": "minecraft:iron_boots", "count": 1 },
           { "item": "minecraft:cooked_beef", "count": 8 },
+          { "item": "minecraft:potion", "count": 3, "name": "Ashen Flask", "flask": true },
           { "item": "minecraft:torch", "count": 8 }
         ]
       }

@@ -31,8 +31,10 @@
 //! | `obj.<quest>.<obj>.missing_item_hint` | a stage-5 `interact`'s `missing_item_hint` (v0.7, only if set) |
 //! | `dlg.<npc>.<node>.text` | each stage-6 dialogue node `text` |
 //! | `dlg.<npc>.<node>.opt.<i>.label` | each dialogue option `label` |
+//! | `dlg.<npc>.<node>.opt.<i>.tooltip` | that option's hover `tooltip` (v0.8, only if set) |
 //! | `wave.<wave>.mob.<i>.name` | a wave mob's custom `name` (only if set) |
 //! | `fx.…​.narrate` / `fx.…​.give` | a `narrate` line / named `give-item` in an effect list |
+//! | `fx.…​.rest_prompt` / `.rest_label` / `.save_label` | a `bonfire`'s authored rest-dialog strings (v0.8, only if set) |
 //!
 //! ## Nested effects (DSL v0.6)
 //!
@@ -68,6 +70,27 @@ fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, 
     match eff {
         QuestEffect::Narrate { text, .. } => f(&format!("{keybase}.narrate"), text),
         QuestEffect::GiveItem { name: Some(n), .. } => f(&format!("{keybase}.give"), n),
+        // spec-0016 §1 (owner ruling 2026-08-03): the bonfire's rest dialog is
+        // read by the player like any other on-screen line, so its authored
+        // strings translate like any other. Unauthored fields are absent from the
+        // inventory — the compiler bakes its canonical English, exactly as
+        // `world.boundary.message` does.
+        QuestEffect::Bonfire {
+            prompt,
+            rest_label,
+            save_label,
+            ..
+        } => {
+            if let Some(p) = prompt.as_mut() {
+                f(&format!("{keybase}.rest_prompt"), p);
+            }
+            if let Some(r) = rest_label.as_mut() {
+                f(&format!("{keybase}.rest_label"), r);
+            }
+            if let Some(s) = save_label.as_mut() {
+                f(&format!("{keybase}.save_label"), s);
+            }
+        }
         _ => {}
     }
 }
@@ -293,6 +316,13 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             f(&format!("dlg.{np}.{nd}.text"), &mut node.text);
             for (i, opt) in node.options.iter_mut().enumerate() {
                 f(&format!("dlg.{np}.{nd}.opt.{i}.label"), &mut opt.label);
+                // v0.8: the button's hover tooltip. A player reads it exactly as
+                // they read the caption, so it translates exactly like one; an
+                // unauthored tooltip is absent from the inventory (no key, no
+                // coverage obligation), like every other `only if set` string.
+                if let Some(tip) = opt.tooltip.as_mut() {
+                    f(&format!("dlg.{np}.{nd}.opt.{i}.tooltip"), tip);
+                }
             }
         }
     }
@@ -414,6 +444,78 @@ pub fn on_screen_narrates(c: &Campaign) -> Vec<ScreenNarrate> {
                 style,
                 text: text.to_string(),
             });
+        }
+    });
+    out
+}
+
+/// One dialogue option label — the caption vanilla draws on a fixed-width dialog
+/// button — with its stage-doc path, its l10n inventory key and the canonical
+/// English text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OptionLabel {
+    /// JSON-pointer-ish path within the `dialogue` stage doc.
+    pub path: String,
+    /// The l10n inventory key (`dlg.<npc>.<node>.opt.<i>.label`).
+    pub key: String,
+    /// The canonical English text.
+    pub text: String,
+}
+
+/// Every dialogue option label, in a fixed deterministic order (declaration order:
+/// tree, then node, then option). Each `key` is derived by the **same** keying as
+/// [`inventory`]/[`each_string`], so the compiler's button-width check (`DW0331`)
+/// can look every label up in each declared-language sidecar and report an
+/// overflowing translation under its own locale and key.
+///
+/// Every option label is emitted as a button caption exactly once per node variant
+/// (`emit::build_node_dialog`); display gating (`requires_flags`/`forbids_flags`)
+/// only decides *whether* a variant shows it, never how wide it renders, so gated
+/// and ungated options carry the same budget and are all visited here.
+pub fn dialogue_option_labels(c: &Campaign) -> Vec<OptionLabel> {
+    let mut out = Vec::new();
+    for (ti, tree) in c.dialogue.content.dialogues.iter().enumerate() {
+        let np = local(tree.npc.as_str());
+        for (ni, node) in tree.nodes.iter().enumerate() {
+            let nd = local(node.id.as_str());
+            for (oi, opt) in node.options.iter().enumerate() {
+                out.push(OptionLabel {
+                    path: format!("/content/dialogues/{ti}/nodes/{ni}/options/{oi}/label"),
+                    key: format!("dlg.{np}.{nd}.opt.{oi}.label"),
+                    text: opt.label.clone(),
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Every **authored** bonfire rest-dialog label (spec-0016 §1, owner ruling
+/// 2026-08-03), in the same fixed effect order the inventory uses. A bonfire's
+/// two options are drawn on exactly the same 150-GUI-px `multi_action` button a
+/// dialogue option is, so they carry exactly the same width budget (`DW0331`) —
+/// the check follows the widget, not the stage the string was authored in.
+///
+/// Unauthored labels are absent by construction: the compiler's canonical English
+/// (`Rest and save` / `Save only` / `Bonfire`) is measured once by a compiler unit
+/// test rather than re-measured per campaign, since it cannot vary.
+pub fn bonfire_option_labels(c: &Campaign) -> Vec<OptionLabel> {
+    let mut out = Vec::new();
+    each_effect_ref(c, &mut |path, keybase, eff| {
+        let Some(l) = eff.bonfire_labels() else {
+            return;
+        };
+        for (text, field, key) in [
+            (l.rest_label, "rest_label", "rest_label"),
+            (l.save_label, "save_label", "save_label"),
+        ] {
+            if let Some(text) = text {
+                out.push(OptionLabel {
+                    path: format!("{path}/{field}"),
+                    key: format!("{keybase}.{key}"),
+                    text: text.to_string(),
+                });
+            }
         }
     });
     out

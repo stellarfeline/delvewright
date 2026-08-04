@@ -23,31 +23,52 @@ import type {
   InteractStep,
   KillStep,
   ReachStep,
+  RestStep,
   SelectClassStep,
   TalkToStep,
+  Transport,
   Vec3Tuple,
 } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError, likelyDeathCause } from "./death.ts";
 import {
   AssistLedger,
+  actorExercise,
+  actorFloorFinding,
   assistClearCommand,
   assistCommand,
   assistPolicy,
   deathPhases,
   floorFinding,
+  checkpointPrecondition,
+  observationOf,
   openTrial,
   respawnedAtCheckpoint,
+  retryOutcome,
   scriptedDeathCommand,
+  type ActorEncounter,
+  type ActorOutcome,
+  type ActorTrial,
   type AssistWindow,
   type CombatPlan,
   type DeathTrial,
   type DeathTrialRecord,
   type Encounter,
   type EncounterPhase,
+  type PerformedRest,
+  type ReengageObservation,
+  type WaveCensus,
 } from "./combat.ts";
 import { presentAndTrigger } from "./held-item.ts";
-import { CAMPAIGN_TOKEN, markerLine, parseCompletionMarker } from "./markers.ts";
+import {
+  CAMPAIGN_TOKEN,
+  markerLine,
+  parseCensusMob,
+  parseCensusSummary,
+  parseCompletionMarker,
+  type CensusMob,
+  type CensusSummary,
+} from "./markers.ts";
 import { allowNonCollidingEntities, configureLeg } from "./movement.ts";
 import {
   nextLegWaypoints,
@@ -60,11 +81,16 @@ import {
 import {
   GATE_MIN_ATTEMPTS,
   GATE_POLL_MS,
+  crossingEstimateMs,
   describeGates,
   gateRegionCells,
   gateRetryBudgetMs,
   gateWindowWaitMs,
+  gatesCrossedByHop,
+  insideGate,
+  nearCell,
   needsStandoff,
+  openMs,
 } from "./timed-gate.ts";
 import type { Item } from "prismarine-item";
 import {
@@ -98,6 +124,25 @@ import {
 const UNSTICK_ATTEMPTS = 3;
 
 /**
+ * How far (squared horizontal blocks) the bot may sit from its gate staging cell
+ * before the station-keep drives it back (task #140). 0.4 blocks: tight enough
+ * that a window always opens with the bot ON the compiler-pinned mouth, loose
+ * enough that the per-poll correction is not a permanent jitter.
+ */
+const GATE_HOLD_SLACK_SQ = 0.4 * 0.4;
+
+/** Re-aim cadence of the raw crush-gate crossing dash (task #140). Faster than
+ * the physics would meaningfully change; slow enough not to spam look packets. */
+const GATE_DASH_TICK_MS = 50;
+
+/** Squared horizontal arrival radius of the dash at the far mouth cell. */
+const GATE_DASH_ARRIVE_SQ = 0.75 * 0.75;
+
+/** Bound on the dash's emergency raw retreat out of the fill (with the corridor
+ * current behind it, clearing one or two cells takes a fraction of this). */
+const GATE_DASH_RETREAT_MS = 1_500;
+
+/**
  * A raw, pathfinder-free nudge toward `target` to dislodge a physically wedged bot
  * (a concave corner beside a wall the A* pathfinder cannot escape). Returns how far
  * (blocks) the bot actually moved, so the caller can adapt the aim when a burst is
@@ -105,6 +150,37 @@ const UNSTICK_ATTEMPTS = 3;
  * injected so the recovery control flow stays unit-testable.
  */
 export type Unstick = (target: GoalSpec) => Promise<number>;
+
+/**
+ * Authoritative "this leg's purpose is already fulfilled" oracle (task #134),
+ * consulted ONLY on a walk's failure path — never to shortcut a healthy hop.
+ * Returns a human-readable reason when the step the walk serves is already
+ * settled (its objective's anchored completion marker arrived, or its exported
+ * completion transport has carried the bot to the next area), `undefined`
+ * otherwise.
+ *
+ * Why it exists: an objective can complete MID-WALK — the tide-mill `reach` fires
+ * its distance check as the bot crosses a timed-gate leg, and the objective's
+ * emission teleports it to the next area (a physically one-way transport). The
+ * remaining hops of the old area's leg then fail, and without this oracle the
+ * harness read that position discontinuity as the gate blocking a leg the bot had
+ * ALREADY walked — looping gate retries and "re-centering" toward cells the
+ * one-way transport makes unreachable. Completion signals outrank position: an
+ * objective that is complete makes its leg a success, wherever the bot stands.
+ */
+export type LegSettled = () => string | undefined;
+
+/** Log-and-report helper for a {@link LegSettled} hit on a failure path. */
+function legSettledReason(settled: LegSettled | undefined, glabel: string): string | undefined {
+  const reason = settled?.();
+  if (reason !== undefined) {
+    process.stderr.write(
+      `[settled] ${glabel}: ending the leg as SUCCEEDED — ${reason}; ` +
+        `resuming from the bot's current area\n`,
+    );
+  }
+  return reason;
+}
 
 /**
  * Replay a leg's ordered goals with **stall-recovery** (task #45). Each `goto`
@@ -135,6 +211,7 @@ export async function replayLegWithRecovery(
   goto: (spec: GoalSpec, label: string) => Promise<void>,
   unstick?: Unstick,
   gate?: GateAssist,
+  settled?: LegSettled,
 ): Promise<void> {
   const gates = gate?.gates ?? [];
   let lastProven: GoalSpec | undefined;
@@ -142,18 +219,68 @@ export async function replayLegWithRecovery(
     const spec = goalsList[g]!;
     const last = g === goalsList.length - 1;
     const glabel = last ? label : `${label} waypoint ${g + 1}/${goalsList.length}`;
+    // task #140: a `crush: true` gate must never be entered blind. The reactive flow
+    // below waits for a window only AFTER a hop fails — and on a crush gate the
+    // first failure is the closing edge killing the bot inside the fill (an instant,
+    // gear-independent kill the compiler emits at close). So a hop whose straight
+    // mouth-to-mouth segment crosses a crush gate is STAGED proactively: the bot
+    // holds at the gate edge (the compiler-pinned mouth cell it is already standing
+    // on), observes a fresh closed→open edge, checks the crossing fits the window
+    // with margin, and only then enters. Non-crush gates keep the proven reactive
+    // flow — their worst case is a path abort, which is information, not damage.
+    if (gate && gates.some((tg) => tg.crush)) {
+      const origin: Vec3Tuple | undefined = lastProven
+        ? [lastProven.x, lastProven.y, lastProven.z]
+        : gate.feetCell();
+      const crushCrossed = gatesCrossedByHop(origin, [spec.x, spec.y, spec.z], gates).filter(
+        (tg) => tg.crush,
+      );
+      if (crushCrossed.length > 0) {
+        process.stderr.write(
+          `[timed-gate] ${glabel}: crush gate ahead — staging at the edge of ` +
+            `${describeGates(crushCrossed)} for a fresh window\n`,
+        );
+        if (
+          (await crossTimedGate(spec, glabel, lastProven, gate, goto, unstick, undefined, settled, crushCrossed)) ===
+          "settled"
+        ) {
+          return;
+        }
+        lastProven = spec;
+        continue;
+      }
+    }
     try {
       await goto(spec, glabel);
     } catch (err) {
       if (err instanceof BotDeathError) throw err;
+      // task #134: before judging the hop failed, consult the completion oracle.
+      // A step whose objective is already complete (or whose completion transport
+      // has landed) has nothing left for this leg to prove — the "failure" is the
+      // position discontinuity of a teleport the leg itself triggered. Failure
+      // path only: a healthy hop is never shortcut.
+      if (legSettledReason(settled, glabel) !== undefined) return;
       // A leg the compiler proved walks THROUGH a timed gate (spec-0016 §4) gets the
       // window wait; every other leg keeps the old behaviour exactly, so a real
       // navigation regression still fails on the first stall.
       if (gate && gates.length > 0) {
-        await crossTimedGate(spec, glabel, lastProven, gate, goto, unstick, err);
+        // A `settled` outcome ends the WHOLE leg, not just this hop: the step is
+        // already complete and the remaining hops belong to the area the (one-way)
+        // transport carried the bot out of.
+        if ((await crossTimedGate(spec, glabel, lastProven, gate, goto, unstick, err, settled)) === "settled") {
+          return;
+        }
       } else {
         if (!lastProven) throw err; // nothing proven yet — not the pocket-wedge class
-        await recoverAndRetry(spec, glabel, lastProven, goto, unstick);
+        try {
+          await recoverAndRetry(spec, glabel, lastProven, goto, unstick);
+        } catch (recoverErr) {
+          if (recoverErr instanceof BotDeathError) throw recoverErr;
+          // The settle signal can land while the recovery is in flight (a marker is
+          // a chat packet racing the position jump) — re-check before failing.
+          if (legSettledReason(settled, glabel) !== undefined) return;
+          throw recoverErr;
+        }
       }
     }
     lastProven = spec;
@@ -169,12 +296,49 @@ export interface GateAssist {
   readonly gates: readonly TimedGate[];
   /**
    * Block (bounded) until `gates` are observed to go from closed to OPEN, so the
-   * crossing begins at the top of a window rather than its tail. Resolves early if
-   * the edge cannot be observed — the caller then simply tries the hop.
+   * crossing begins at the top of a window rather than its tail. Returns `true`
+   * when the fresh edge was actually OBSERVED and `false` when the wait gave up
+   * (region blocks unreadable). On `false` a non-crush caller may still try the
+   * hop; a crush-gate caller must NOT — blind entry is the lethal defect (#140).
+   *
+   * `hold`, when given, is a feet cell the bot must actively KEEP during the wait
+   * (a passive idle is not a stance: the tide-mill gate corridor is flowing water,
+   * and the current carried the idle bot 8 blocks off the mouth while it watched
+   * for the edge — a human holds a movement key against the tide).
+   *
+   * `press`, when given (crush staging), is the crossing target to LEAN toward
+   * whenever the gates provably read CLOSED: the shut gate is a solid wall, so
+   * driving at it parks the bot pressed against the plane with forward momentum —
+   * and the open edge releases it THROUGH, contact-started. Measured live: from a
+   * standing start at the mouth the tide-mill pour is a wall (the wade covered
+   * less than 1.5 blocks in the whole 1.8 s window); the press is how a player
+   * rides a portcullis. Only applied while the gates read closed — leaning into an
+   * OPEN gate outside a fresh window is the blind entry this file forbids.
    */
-  readonly waitForWindow: (gates: readonly TimedGate[]) => Promise<void>;
+  readonly waitForWindow: (
+    gates: readonly TimedGate[],
+    hold?: Vec3Tuple,
+    press?: Vec3Tuple,
+  ) => Promise<boolean>;
   /** The bot's current feet cell, or `undefined` when it cannot be read. */
   readonly feetCell: () => Vec3Tuple | undefined;
+  /**
+   * Raw-control crossing burst for a `crush: true` entry (task #140): drive
+   * straight from the near mouth `from` toward the far mouth `to`, through
+   * `through`'s regions, within `budgetMs`; if the budget runs out while still
+   * inside a region, retreat raw toward `from` rather than lingering. Returns
+   * `true` iff the bot cleared the region on the far side. The pathfinder is the
+   * wrong tool for this span (measured live: its start latency plus mid-water
+   * replans lost a 1.8 s window and the closing edge killed the bot mid-crossing);
+   * a raw look-and-walk is the same mechanism task #45's unstick and the
+   * drowned-bell crossing burst already trust.
+   */
+  readonly dash?: (
+    through: readonly TimedGate[],
+    from: Vec3Tuple,
+    to: Vec3Tuple,
+    budgetMs: number,
+  ) => Promise<boolean>;
   /** Injectable clock (tests). */
   readonly now?: () => number;
 }
@@ -203,6 +367,37 @@ export interface GateAssist {
  * This is bounded patience for legs the compiler MARKED, never a blanket retry: an
  * unmarked leg is untouched, and a marked leg that is genuinely unwalkable still
  * fails — the check is not weakened, only told what a gate is.
+ *
+ * task #134: every retry decision consults the {@link LegSettled} oracle first. A
+ * step can complete AT the gate crossing (the tide-mill wheelpit: the objective's
+ * distance check fires as the bot lands the crossing, and its emission transports
+ * the bot to the next area) — the interrupted hop then looks blocked forever from
+ * a cell the one-way transport made unreachable, while the objective the leg
+ * exists to reach is already complete. Objective complete ⇒ the crossing
+ * SUCCEEDED; no standoff, window wait, or recovery may path the bot back.
+ * Returns `"crossed"` when the hop was physically completed and `"settled"` when
+ * the oracle ended it — the caller must then stop replaying the WHOLE leg, since
+ * its remaining hops belong to the area the transport carried the bot out of.
+ *
+ * task #140 (`crush: true` — the portcullis judgement): a crush gate's closing edge
+ * KILLS a player caught inside the region, so the discipline above gains three hard
+ * rules whenever any staged gate crushes:
+ *   1. **no blind entry** — an attempt is made only after the closed→open edge was
+ *      actually OBSERVED (`waitForWindow` returning `true`); "crossing anyway" when
+ *      the region cannot be read is fine for a gate that merely blocks, and lethal
+ *      for one that crushes;
+ *   2. **full margin** — the crossing estimate (entry latency + mouth-to-mouth walk,
+ *      {@link crossingEstimateMs}) must fit inside the freshly opened window, and
+ *      the within-window escalation re-checks the REMAINING window before running;
+ *   3. **no post-budget blind recovery** — the final "maybe it was never the clock"
+ *      recovery paths straight through the gate at an arbitrary clock position, so
+ *      a crush-staged crossing fails loudly instead.
+ * The caller (`replayLegWithRecovery`) invokes this PROACTIVELY for a hop whose
+ * straight mouth-to-mouth segment crosses a crush gate (`crossing`), staging the
+ * entry before the first attempt — the reactive path only ever sees a crush gate
+ * after something already went wrong, and with an instant kill there is no
+ * afterwards. Checks are not weakened anywhere: refusal to enter still burns the
+ * same bounded budget and still ends in the same loud failure.
  */
 async function crossTimedGate(
   spec: GoalSpec,
@@ -212,33 +407,138 @@ async function crossTimedGate(
   goto: (spec: GoalSpec, label: string) => Promise<void>,
   unstick: Unstick | undefined,
   firstErr: unknown,
-): Promise<void> {
+  settled?: LegSettled,
+  crossing?: readonly TimedGate[],
+): Promise<"crossed" | "settled"> {
   const gates = gate.gates;
+  // The gates this hop physically crosses (staged wait/standoff target); the whole
+  // leg's table when the caller could not tell (reactive path).
+  const staged = crossing && crossing.length > 0 ? crossing : gates;
+  const lethal = staged.some((g) => g.crush);
   const now = gate.now ?? (() => Date.now());
-  const budget = gateRetryBudgetMs(gates);
+  const budget = gateRetryBudgetMs(staged);
   const start = now();
   let lastErr = firstErr;
   let attempt = 0;
+  const done = (): boolean => legSettledReason(settled, glabel) !== undefined;
   process.stderr.write(
-    `[timed-gate] ${glabel} was interrupted by ${describeGates(gates)}; waiting for a ` +
-      `window (budget ${(budget / 1_000).toFixed(1)}s, min ${GATE_MIN_ATTEMPTS} attempts)\n`,
+    firstErr === undefined
+      ? `[timed-gate] ${glabel}: staged crossing of ${describeGates(staged)} (budget ` +
+          `${(budget / 1_000).toFixed(1)}s, min ${GATE_MIN_ATTEMPTS} attempts)\n`
+      : `[timed-gate] ${glabel} was interrupted by ${describeGates(staged)}; waiting for a ` +
+          `window (budget ${(budget / 1_000).toFixed(1)}s, min ${GATE_MIN_ATTEMPTS} attempts)\n`,
   );
+  // The staging cell for a lethal crossing: the last proven waypoint, which for a
+  // marked crossing hop is the compiler-pinned gate MOUTH (waypoints.rs
+  // `gate_mouth_cells`) — one cell outside the fill, flanking the span DW0378
+  // charges. Entry margin is judged from here, so the bot must actually BE here.
+  const staging: Vec3Tuple | undefined = proven ? [proven.x, proven.y, proven.z] : undefined;
   while (attempt < GATE_MIN_ATTEMPTS || now() - start < budget) {
+    if (done()) return "settled";
     attempt++;
-    if (proven && needsStandoff(gate.feetCell(), gates)) {
+    if (proven && needsStandoff(gate.feetCell(), staged)) {
       process.stderr.write(
         `[timed-gate] standing off to [${proven.x}, ${proven.y}, ${proven.z}] — the bot ` +
           `is inside the gate's fill\n`,
       );
       await reached(() => goto({ ...proven, range: 1 }, `${glabel} gate standoff`));
     }
-    await gate.waitForWindow(gates);
+    // Re-stage a lethal crossing whose bot is off-station (tide-mill: the corridor
+    // current carried the idle bot 8 blocks back to the pool between attempts).
+    // The mouth is where the margin proof lives; entering from anywhere else is
+    // exactly the unproven dash the margin check below refuses.
+    if (lethal && proven && staging && !nearCell(gate.feetCell(), staging)) {
+      process.stderr.write(
+        `[timed-gate] re-staging at the gate mouth [${staging.join(", ")}] — the bot ` +
+          `drifted off it\n`,
+      );
+      await reached(() => goto({ ...proven, range: 1 }, `${glabel} gate re-stage`));
+    }
+    // Hold the pre-wait stance (post-standoff/re-stage) through the wait: waiting
+    // where you stand is the rule (task #204 — never retreat needlessly), and in a
+    // current "where you stand" requires actively standing there. Never hold a
+    // cell inside the fill (a range-1 arrival can land one cell into the region;
+    // holding there through a crush close is the death itself) — fall back to the
+    // proven mouth.
+    const feetNow = gate.feetCell();
+    const holdCell =
+      feetNow && !staged.some((g) => insideGate(feetNow, g)) ? feetNow : staging;
+    const observed = await gate.waitForWindow(
+      staged,
+      holdCell,
+      lethal ? [spec.x, spec.y, spec.z] : undefined,
+    );
+    const openedAt = now();
+    // The window wait is long (up to a full cycle) — the settle signal may have
+    // landed during it, in which case there is no crossing left to attempt.
+    if (done()) return "settled";
+    if (lethal && !observed) {
+      // Rule 1: a crush gate is never entered on faith. The refusal consumes a
+      // bounded wait, so the loop still terminates on the same budget and the
+      // failure below still names the gate.
+      lastErr = new Error(
+        `the gate's closed→open edge could not be observed and ` +
+          `${describeGates(staged.filter((g) => g.crush))} crushes — refusing blind entry`,
+      );
+      process.stderr.write(`[timed-gate] attempt ${attempt}: ${(lastErr as Error).message}\n`);
+      continue;
+    }
+    let crushWindowMs: number | undefined;
+    if (lethal) {
+      // Rule 2: the crossing must fit the fresh window with margin. The crossing
+      // is judged from where the bot actually stands (fallback: the proven mouth),
+      // against the SHORTEST open half among the crushing gates.
+      const from = gate.feetCell() ?? staging;
+      const windowMs = Math.min(...staged.filter((g) => g.crush).map((g) => openMs(g)));
+      crushWindowMs = windowMs;
+      const estimate = from ? crossingEstimateMs(from, [spec.x, spec.y, spec.z]) : undefined;
+      if (estimate !== undefined && estimate >= windowMs) {
+        // A failed margin from OFF the mouth is a stance problem, not a design
+        // problem: the hold/re-stage above lost to whatever moved the bot (the
+        // tide-mill current) — take another attempt, which re-stages first. Only
+        // a failed margin from ON the compiler-pinned mouth is terminal: DW0378
+        // proves every shipped window admits its designed crossing, so that
+        // firing means the artifact disagrees with the world, and entering would
+        // gamble the bot's life on a proof that no longer applies.
+        if (staging && !nearCell(gate.feetCell(), staging)) {
+          lastErr = new Error(
+            `drifted off the staging mouth [${staging.join(", ")}] to ` +
+              `[${from!.join(", ")}] during the window wait — re-staging`,
+          );
+          process.stderr.write(
+            `[timed-gate] attempt ${attempt}: ${(lastErr as Error).message}\n`,
+          );
+          continue;
+        }
+        throw new Error(
+          `${glabel}: crossing estimate ${(estimate / 1_000).toFixed(1)}s from ` +
+            `[${from!.join(", ")}] does not fit the ${(windowMs / 1_000).toFixed(1)}s open ` +
+            `window of crushing ${describeGates(staged.filter((g) => g.crush))} — refusing ` +
+            `to enter a crush gate without full margin (DW0378 proves the designed ` +
+            `crossing fits from the pinned mouth, where the bot is staged)`,
+        );
+      }
+    }
     const alabel = `${glabel} gate attempt ${attempt}`;
     try {
+      // A crush entry crosses RAW first (zero pathfinder latency — the flood
+      // through the freshly opened plane outruns a pathfinder start), then the
+      // ordinary goto merely verifies/finishes the arrival from outside the fill.
+      if (lethal && gate.dash && staging && crushWindowMs !== undefined) {
+        const dashBudget = crushWindowMs - (now() - openedAt);
+        const cleared = await gate.dash(staged, staging, [spec.x, spec.y, spec.z], dashBudget);
+        if (!cleared) {
+          throw new Error(
+            `the raw crossing dash did not clear the gate within its ` +
+              `${(Math.max(0, dashBudget) / 1_000).toFixed(1)}s window`,
+          );
+        }
+      }
       await goto(spec, alabel);
-      return;
+      return "crossed";
     } catch (err) {
       if (err instanceof BotDeathError) throw err;
+      if (done()) return "settled";
       lastErr = err;
       // Every attempt's own reason is logged, not just the last one: a run where the
       // bot never moved and a run where it crossed and was cut off look identical in
@@ -257,12 +557,31 @@ async function crossTimedGate(
     // the ordinary task-#45 stall escalation (pathfind → look-and-walk burst →
     // re-path), reused verbatim — plain movement a human player makes, still
     // bounded, and it still has to physically get through an open gate.
+    //
+    // Crush addendum (rule 2): the escalation is only run while the REMAINING
+    // window still fits the crossing — bursting into a crush gate as it closes is
+    // exactly the death this function exists to prevent. Out of margin ⇒ take the
+    // next fresh window instead (the loop's next iteration).
     if (proven) {
+      if (lethal) {
+        const from = gate.feetCell() ?? ([proven.x, proven.y, proven.z] as Vec3Tuple);
+        const windowMs = Math.min(...staged.filter((g) => g.crush).map((g) => openMs(g)));
+        const remaining = windowMs - (now() - openedAt);
+        if (crossingEstimateMs(from, [spec.x, spec.y, spec.z]) >= remaining) {
+          process.stderr.write(
+            `[timed-gate] attempt ${attempt}: remaining window ` +
+              `${(Math.max(0, remaining) / 1_000).toFixed(1)}s is too short to escalate into a ` +
+              `crush gate — waiting for the next fresh window\n`,
+          );
+          continue;
+        }
+      }
       try {
         await recoverAndRetry(spec, alabel, proven, goto, unstick);
-        return;
+        return "crossed";
       } catch (err) {
         if (err instanceof BotDeathError) throw err;
+        if (done()) return "settled";
         lastErr = err;
         process.stderr.write(
           `[timed-gate] attempt ${attempt} physical crossing failed: ` +
@@ -273,25 +592,43 @@ async function crossTimedGate(
   }
   // Budget spent. Before calling it a failure, give the hop the ordinary physical
   // recovery — the gate mark says a clock CAN interrupt this leg, not that every
-  // failure on it is the clock's doing.
-  try {
-    if (proven) {
-      await recoverAndRetry(spec, glabel, proven, goto, unstick);
-    } else {
-      await goto(spec, glabel);
+  // failure on it is the clock's doing. NOT for a crush-staged crossing (rule 3):
+  // this recovery paths straight through the gate at an arbitrary clock position,
+  // which on a crushing gate is the lethal blind entry itself.
+  if (done()) return "settled";
+  if (!lethal) {
+    try {
+      if (proven) {
+        await recoverAndRetry(spec, glabel, proven, goto, unstick);
+      } else {
+        await goto(spec, glabel);
+      }
+      return "crossed";
+    } catch (err) {
+      if (err instanceof BotDeathError) throw err;
+      if (done()) return "settled";
+      lastErr = err;
     }
-    return;
-  } catch (err) {
-    if (err instanceof BotDeathError) throw err;
-    lastErr = err;
   }
   const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
   throw new Error(
     `${glabel}: still blocked after ${attempt} timed-gate crossing attempt(s) over ` +
       `${((now() - start) / 1_000).toFixed(1)}s — more than two full cycles of ` +
-      `${describeGates(gates)}. The window is not the problem; this is a real ` +
+      `${describeGates(staged)}. The window is not the problem; this is a real ` +
       `navigation failure: ${detail}`,
   );
+}
+
+/**
+ * The completion facts of the step a walk serves (task #134): the `obj/<id>` the
+ * step proves and, when the compiler exported one, the absolute destination its
+ * completion teleports the player to (gap 8). `walkTo` turns these into the
+ * {@link LegSettled} oracle its failure paths consult — pure step-contract data
+ * from `critical-path.json`, never a harness inference.
+ */
+interface StepCompletion {
+  readonly objective: string;
+  readonly transport?: Transport;
 }
 
 /** Try a `goto`, returning whether it arrived; a bot death still propagates. */
@@ -411,6 +748,28 @@ const REACH_POLL_MS = 250;
 const KILL_TIMEOUT_MS = 90_000;
 /** Attack cadence (ms) — roughly the vanilla sword cooldown. */
 const ATTACK_INTERVAL_MS = 400;
+
+/**
+ * How far from its anchor cell an actor's unleashed body may be and still be
+ * recognised as that actor (#114). Generous but local: `unleash-actor` replaces
+ * the puppet with a real-AI twin at the same cell, and the twin then MOVES — it
+ * charges the bot — so a radius tight enough to be an identity check would lose
+ * the fight it just started. Nothing else of that entity type exists nearby: the
+ * delve world is sealed (`spawn_mobs false`), so every living body is
+ * compiler-summoned.
+ */
+const ACTOR_MATCH_RADIUS = 24;
+
+/** How long to wait for the unleashed twin to exist and reach entity tracking. */
+const ACTOR_SETTLE_MS = 6_000;
+
+/**
+ * Budget for one unassisted actor attempt. Shorter than the wave `kill` budget on
+ * purpose: nothing downstream waits on this fight, and a bot that has not killed
+ * a single body in half a minute of swinging has already answered the only
+ * question the floor gate asks.
+ */
+const ACTOR_FIGHT_TIMEOUT_MS = 45_000;
 /**
  * How long (ms) the die-retry stage trades blows before taking its `mid-fight`
  * scripted death (spec-0023 §1). Short on purpose: the point is that the wave has
@@ -440,6 +799,27 @@ const WAVE_UNKILLABLE_MS = 6_000;
  */
 const SCORE_SETTLE_MS = 15_000;
 const SCORE_POLL_MS = 250;
+/**
+ * Margin (ms) added on top of a path's exported `ending_tail_ticks` when sizing
+ * the completion window (task #125): the compiler schedules the ending's finale
+ * — the-wake fires `campaign-complete` 250t into its closing `sequence` — and
+ * exports that tail on the terminal step; the window must outlive the tail plus
+ * server slack. See {@link completionWindowMs}.
+ */
+const ENDING_TAIL_MARGIN_MS = 10_000;
+/** Minecraft server ticks per second (the tick → wall-clock conversion). */
+const TICKS_PER_SECOND = 20;
+
+/**
+ * How long (ms) `assertComplete` may wait for the completion marker: the default
+ * settle window, widened — never narrowed — by the path's exported
+ * scheduled-ending tail (`ending_tail_ticks` + margin). Exported for its unit
+ * test; pure arithmetic, no bot state.
+ */
+export function completionWindowMs(endingTailTicks: number | undefined): number {
+  const tailMs = ((endingTailTicks ?? 0) * 1000) / TICKS_PER_SECOND;
+  return Math.max(SCORE_SETTLE_MS, tailMs + ENDING_TAIL_MARGIN_MS);
+}
 /**
  * How long (ms) to wait for a step's OWN objective-completion marker after the bot
  * has done the thing the step asks for (AUDIT-P0). The datapack completes an
@@ -512,6 +892,57 @@ const RESPAWN_TIMEOUT_MS = 15_000;
 
 /** How often the respawn wait re-reads the spawn counter. */
 const SPAWN_POLL_MS = 50;
+
+/**
+ * How long the die-retry re-engage probe waits for the encounter to show itself
+ * before concluding nothing is there.
+ *
+ * The probe used to be ONE instantaneous sample taken the moment the walk back
+ * resolved, and that is a sampling bug, not an observation: a client learns about
+ * an entity when the server sends it, which takes ticks after arrival —
+ * `fightWave` has always slept a second on arrival for exactly this reason. On
+ * nobodys-cave-island r14 three demonstrably-alive drowned (feral, follow_range
+ * 48, wandered off the anchor after killing the bot) read as "no hostile was
+ * there to fight" and reddened both trials of a healthy encounter.
+ *
+ * Generous on purpose, and it costs nothing on a healthy run: the probe returns
+ * the instant the declared wave is standing. Since task #123 the probe asks the
+ * SERVER, by tag, so what it settles on is the wave itself — client tracking range
+ * no longer bounds the answer, and nothing standing nearby can enter it.
+ */
+const REENGAGE_SETTLE_MS = 6_000;
+
+/**
+ * How long one census may take to come back (task #123).
+ *
+ * A census is a `/function` call whose answer arrives on the chat channel within
+ * a tick or two; this is the "the command was refused" deadline, not a settle.
+ * The census returns `undefined` on expiry — never a zero, which would read as
+ * "the wave is gone" and turn an unopped bot into a false `stranded` verdict.
+ */
+const CENSUS_TIMEOUT_MS = 3_000;
+
+/** How many censuses' mob lines stay addressable. Only the newest is ever asked
+ * for; the rest are kept so a late line cannot grow the map without bound. */
+const CENSUS_HISTORY = 4;
+
+/**
+ * How long the post-respawn re-arm waits for the kept kit to arrive on the wire.
+ *
+ * A respawn keeps the kit — the compiler seals `gamerule keep_inventory true` in
+ * every build — but the inventory is re-sent to the client a few ticks after the
+ * spawn packet, so an immediate read sees an empty bag that is only empty yet.
+ * The wait returns the instant an item shows up; only a bag still empty at the
+ * deadline is a bag that lost its kit.
+ */
+const KIT_SETTLE_MS = 3_000;
+
+/** How far from a rest step's anchor cell its `interaction` affordance may sit. */
+const AFFORDANCE_RADIUS = 3;
+
+/** Grace between the bonfire click and the trigger command: the opener runs as an
+ * advancement reward, so `dw.rest` is enabled a tick or two after the click. */
+const REST_OPEN_SETTLE_MS = 500;
 /** Recent chat lines retained for death-cause diagnosis. */
 const CHAT_BUFFER = 16;
 /**
@@ -657,14 +1088,43 @@ export class MineflayerExecutor implements StepExecutor {
   /** Waves the die-retry stage entered, whether or not it finished with them.
    * Engagement without records is the silence the run report must not keep. */
   private readonly dieRetryEngaged = new Set<string>();
+  /** Every `rest` step the PATH declares, and which of them the bot performed —
+   * the die-retry precondition reads both (compiler #220). Declared up front
+   * rather than accumulated as they run, so "the route passed this fire without
+   * resting" is a statement the check can actually make. */
+  private restSteps: readonly PerformedRest[] = [];
+  private readonly restedBonfires = new Set<number>();
+  /** Encounters whose scripted deaths were SKIPPED because the checkpoint the
+   * stage would measure against was never armed — the RUN's own gap, and red. */
+  private readonly preconditionFindings: string[] = [];
+  /** Encounters whose scripted deaths were skipped because the campaign fires NO
+   * checkpoint before them — a content fact, reported and not graded (#223). */
+  private readonly preconditionAdvisories: string[] = [];
+  private readonly preconditionWaves = new Set<string>();
+  /** The newest census summary the chat channel has delivered, and the mob lines
+   * that closed each census, keyed by the server's own sequence number (task
+   * #123). `censusSeq` is how a fresh answer is told from a stale one without the
+   * harness ever writing a delve score to ask its question. */
+  private censusSummary: CensusSummary | undefined;
+  private censusSeq = 0;
+  private readonly censusMobs = new Map<number, CensusMob[]>();
   /** How far `kill()` got with each encounter — the reading key for an empty
    * `assist_windows` array (spec-0023 takes no assist while deliberately dying,
    * nor on a billed encounter's honest first attempt). */
   private readonly encounterPhases = new Map<string, EncounterPhase>();
   /** Inverted floor gate findings: billed fights the unassisted bot beat cold. */
   private readonly floorFindings: string[] = [];
-  /** The last `select-class` step, replayed to re-arm after a scripted death. */
-  private lastSelectClass: SelectClassStep | undefined;
+  /** Actor fights this run attempted (#114) — one entry per engagement, won or lost. */
+  private readonly actorTrials: ActorTrial[] = [];
+  /** Actors already engaged, so an objective marker re-broadcast cannot re-fight one. */
+  private readonly actorsEngaged = new Set<string>();
+  /** Whether the actor floor gate runs at all (`DELVEWRIGHT_ACTOR_FLOOR=0` skips). */
+  private actorFloorGate = true;
+  /** Objectives the compiled path proves — decides which actor fights are reachable. */
+  private pathObjectives: ReadonlySet<string> = new Set();
+  /** How many items the bot was carrying the last time it was known to be alive
+   * and kitted. The baseline `keep_inventory` is judged against after a death. */
+  private itemsBeforeDeath = 0;
   /**
    * task #38: how many walked legs have been consumed. Legs are matched in lockstep
    * path order (not by destination coordinate), so an anchor visited more than once
@@ -782,6 +1242,7 @@ export class MineflayerExecutor implements StepExecutor {
     // stream feeds the recent-chat ring the death diagnostic mines for a cause.
     bot.on("messagestr", (message: string) => {
       this.observeMarker(message);
+      this.observeCensus(message);
       this.recentChat.push(message);
       if (this.recentChat.length > CHAT_BUFFER) {
         this.recentChat.shift();
@@ -1275,6 +1736,16 @@ export class MineflayerExecutor implements StepExecutor {
    * pathfinder and a real chest.
    */
   async requireObjective(objectiveId: string, label: string): Promise<void> {
+    await this.awaitObjectiveMarker(objectiveId, label);
+    // spec-0023's floor gate, on the OTHER shape an elite takes (#222/#114): an
+    // actor fight has no `kill` step, so the only moment the harness can know it
+    // starts is the completion of the objective that unleashes it. Runs here, once
+    // per actor, after the objective it hangs off is proven — never before.
+    await this.actorFloorGateAfter(objectiveId);
+  }
+
+  /** The completion wait itself — see {@link requireObjective}. */
+  private async awaitObjectiveMarker(objectiveId: string, label: string): Promise<void> {
     const alreadyDone = this.completedObjectives.get(objectiveId);
     if (alreadyDone !== undefined && alreadyDone < this.currentStep) {
       // Not a failure — the objective did complete — but the path claims THIS step
@@ -1456,10 +1927,11 @@ export class MineflayerExecutor implements StepExecutor {
 
   async selectClass(step: SelectClassStep): Promise<void> {
     const bot = this.requireBot();
-    // Remembered so the die-retry stage can re-arm after a scripted death: a
-    // respawn drops the whole kit, and a bare-handed bot proves nothing about
-    // the fight it is about to re-engage (spec-0023 §1).
-    this.lastSelectClass = step;
+    // Deliberately NOT remembered for replay. `class_apply_<class>` ends in
+    // `teleport @s <campaign entry point>`, so re-running this after a death moves
+    // the bot off the very respawn point the die-retry stage exists to measure
+    // (task #120). The post-death re-arm is `rearmAfterRespawn`, which only puts
+    // the kept kit back on.
     // The class-selection dialog button runs `step.command` (a `/trigger`); the
     // bot fires the same command directly. The per-tick handler then applies the
     // kit and teleports the player to the campaign spawn.
@@ -1469,6 +1941,9 @@ export class MineflayerExecutor implements StepExecutor {
     // Equip the kit (sword + armor) so the bot can fight v0.3 combat waves. A
     // no-op for kits without those items.
     await this.equipLoadout();
+    // The baseline every later `keep_inventory` judgement is made against: what a
+    // living, kitted bot carries.
+    this.itemsBeforeDeath = bot.inventory.items().length;
   }
 
   /**
@@ -1500,7 +1975,10 @@ export class MineflayerExecutor implements StepExecutor {
     const bot = this.requireBot();
     // Walk to the NPC first (realism; some dialog effects are reach-gated), then
     // chat the dialog-option `/trigger` command the button would have run.
-    await this.walkTo(step.pos, 3, `npc ${step.npc}`, step.sneak);
+    await this.walkTo(step.pos, 3, `npc ${step.npc}`, step.sneak, {
+      objective: step.objective,
+      transport: step.transport,
+    });
     bot.chat(step.command);
     // A dialogue that OPENED proves nothing: the option must actually complete the
     // objective this step stands for. Wait for that objective's own marker.
@@ -1516,7 +1994,10 @@ export class MineflayerExecutor implements StepExecutor {
    * server's precise-position check can disagree).
    */
   async reach(step: ReachStep): Promise<void> {
-    await this.walkTo(step.pos, Math.max(1, step.radius - 1), `anchor ${step.anchor}`, step.sneak);
+    await this.walkTo(step.pos, Math.max(1, step.radius - 1), `anchor ${step.anchor}`, step.sneak, {
+      objective: step.objective,
+      transport: step.transport,
+    });
     // Standing at the anchor is NOT success (AUDIT-P0): the objective's own
     // completion marker is. A reach step whose zone check never fires — wrong cell,
     // an inactive objective, a gate the path assumed open — now fails here instead
@@ -1531,12 +2012,21 @@ export class MineflayerExecutor implements StepExecutor {
    * A `sneak` leg (gap 7) walks crouched with sprinting disabled; the crouch is
    * restored to off afterwards so a later plain leg is not left sneaking. The long
    * `goto` wait races the death latch so a death aborts it fast, not after ~60s.
+   *
+   * `completion` (task #134) names the step this walk serves: its objective id and
+   * exported transport destination, consulted on the walk's FAILURE paths only. A
+   * step can complete mid-walk — a `reach` distance check fires as the bot crosses
+   * a timed gate, and the completion emission teleports it to the next area — and
+   * the leg's remaining hops then fail on a position discontinuity that is
+   * SUCCESS, not blockage. Passed only by step handlers whose walk targets the
+   * step's own anchor; internal walks (die-retry, mob chases) carry none.
    */
   private async walkTo(
     pos: readonly [number, number, number],
     range: number,
     label: string,
     sneak = false,
+    completion?: StepCompletion,
   ): Promise<void> {
     const bot = this.requireBot();
     const r = Math.max(1, Math.floor(range));
@@ -1624,14 +2114,66 @@ export class MineflayerExecutor implements StepExecutor {
         legGates.length > 0
           ? {
               gates: legGates,
-              waitForWindow: (gates) => this.waitForGateWindow(gates),
+              // Both raw phases race the death signal (task #140 round 5): a bot
+              // that dies mid-wait or mid-dash respawns at world spawn, and an
+              // un-raced loop reads that as "clear of the fill" and marches the
+              // machinery on from the wrong end of the map. Death is terminal for
+              // the run — surface it, never walk it off.
+              waitForWindow: (gates, hold, press) =>
+                this.raceDeath(this.waitForGateWindow(gates, hold, press)),
               feetCell: () => this.feetCell(),
+              dash: (through, from, to, budgetMs) =>
+                this.raceDeath(this.dashThroughGate(through, from, to, budgetMs)),
             }
           : undefined,
+        completion ? () => this.stepSettled(completion) : undefined,
       );
     } finally {
       restoreControls();
     }
+  }
+
+  /**
+   * The {@link LegSettled} oracle for the step a walk serves (task #134): the
+   * authoritative completion signals the harness already consumes, read without
+   * asserting anything new.
+   *   - The objective's own anchored `[dw:complete …]` marker has arrived
+   *     (buffered since connect — see {@link observeMarker}); or
+   *   - the step's compiler-exported completion transport has landed: the bot
+   *     stands at/near the exported destination, a place only that teleport can
+   *     put it mid-step (areas sit ~256 blocks apart across void, and the
+   *     transport is one-way).
+   * Either ⇒ the walk's purpose is fulfilled regardless of where the leg's
+   * remaining hops point. Consulted on walk FAILURE paths only.
+   */
+  private stepSettled(completion: StepCompletion): string | undefined {
+    if (this.completedObjectives.has(completion.objective)) {
+      return `objective ${completion.objective} is complete (its marker arrived)`;
+    }
+    const dest = completion.transport;
+    if (dest && this.atTransportDest(dest)) {
+      return (
+        `the step's completion transport landed the bot at its exported ` +
+        `destination [${dest[0]}, ${dest[1]}, ${dest[2]}]`
+      );
+    }
+    return undefined;
+  }
+
+  /**
+   * Whether the bot currently stands at/near a compiler-exported transport
+   * destination — the same arrival predicate {@link awaitTransport} uses, so the
+   * mid-walk check and the post-step settle can never disagree about "arrived".
+   */
+  private atTransportDest(dest: readonly [number, number, number]): boolean {
+    const bot = this.bot;
+    if (!bot?.entity) return false;
+    const p = bot.entity.position;
+    return (
+      Math.abs(p.x - (dest[0] + 0.5)) < TRANSPORT_NEAR &&
+      Math.abs(p.z - (dest[2] + 0.5)) < TRANSPORT_NEAR &&
+      Math.abs(p.y - dest[1]) < 4
+    );
   }
 
   /**
@@ -1695,10 +2237,27 @@ export class MineflayerExecutor implements StepExecutor {
    * edge — so an unreadable region (chunk not loaded) can never hang the run; the
    * wait simply gives up and the caller tries the hop anyway.
    *
+   * Returns `true` iff the fresh closed→open edge was actually OBSERVED (both
+   * phases succeeded). `false` means the caller knows nothing about the clock —
+   * safe to try on a gate that merely blocks, forbidden on one that crushes (#140).
+   *
+   * `hold` (task #140): a feet cell to actively KEEP while watching. The tide-mill
+   * gate corridor is flowing water; a bot that merely idles is carried off the
+   * staging mouth by the current (observed: 8 blocks back to the pool during one
+   * 4-second wait), and every drifted block must be re-walked inside the open
+   * window. A dynamic pathfinder goal pinned to the cell is the bot's equivalent
+   * of a player holding a movement key against the tide. Cleared before returning,
+   * so the crossing `goto` starts from clean pathfinder state.
+   *
    * This is navigation, not game logic: the harness reads the world only to TIME a
    * movement the compiler already proved possible. It asserts nothing about the gate.
    */
-  private async waitForGateWindow(gates: readonly TimedGate[]): Promise<void> {
+  private async waitForGateWindow(
+    gates: readonly TimedGate[],
+    hold?: Vec3Tuple,
+    press?: Vec3Tuple,
+  ): Promise<boolean> {
+    const bot = this.requireBot();
     const cap = gateWindowWaitMs(gates);
     const allOpen = (): boolean | undefined => {
       let known = true;
@@ -1709,10 +2268,55 @@ export class MineflayerExecutor implements StepExecutor {
       }
       return known ? true : undefined;
     };
+    // Station-keeping with RAW controls, once per poll. A dynamic pathfinder goal
+    // was tried first and lost ~4 blocks per wait: the pathfinder "arrives", clears
+    // its controls, the current takes the idle bot, and the re-solve lags the
+    // drift. Raw look-and-walk is the mechanism this file already trusts against
+    // clocked geometry (task #45's unstick, the-drowned-bell's crossing burst):
+    // face the station, hold forward while off it, release on it. Drift downstream
+    // is corrected against the current the same way the proven approach hops walk
+    // it; an overshoot past the mouth is carried back by the very current that
+    // caused it (and the shut gate is a solid wall — the region cannot be entered
+    // while it matters).
+    //
+    // With `press` (crush staging), a gate that provably reads CLOSED upgrades the
+    // stance: lean INTO the shut plane toward the crossing target, so the open
+    // edge releases a bot that is already in contact and already moving. Solid
+    // blocks make the lean safe; the moment the state is open (or unknown), the
+    // stance falls back to holding the mouth.
+    const keepStation = async (): Promise<void> => {
+      if (press && allOpen() === false) {
+        const p = bot.entity.position;
+        try {
+          await bot.lookAt(p.offset(press[0]! + 0.5 - p.x, 0, press[2]! + 0.5 - p.z), true);
+        } catch {
+          // best effort — a look failure must not abort the watch
+        }
+        bot.setControlState("sprint", true);
+        bot.setControlState("forward", true);
+        return;
+      }
+      if (!hold) return;
+      const p = bot.entity.position;
+      const dx = hold[0]! + 0.5 - p.x;
+      const dz = hold[2]! + 0.5 - p.z;
+      if (dx * dx + dz * dz > GATE_HOLD_SLACK_SQ) {
+        try {
+          await bot.lookAt(p.offset(dx, 0, dz), true);
+        } catch {
+          // best effort — a look failure must not abort the watch
+        }
+        bot.setControlState("forward", true);
+      } else {
+        bot.setControlState("forward", false);
+        bot.setControlState("sprint", false);
+      }
+    };
     const watch = async (want: boolean, phase: string): Promise<boolean> => {
       const deadline = Date.now() + cap;
       while (Date.now() < deadline) {
         if (allOpen() === want) return true;
+        await keepStation();
         await delay(GATE_POLL_MS);
       }
       process.stderr.write(
@@ -1721,10 +2325,98 @@ export class MineflayerExecutor implements StepExecutor {
       );
       return false;
     };
-    if (!(await watch(false, "closed"))) return;
-    process.stderr.write(`[timed-gate] gate is shut; waiting for it to open\n`);
-    if (await watch(true, "open")) {
-      process.stderr.write(`[timed-gate] window open — crossing now\n`);
+    try {
+      if (!(await watch(false, "closed"))) return false;
+      process.stderr.write(`[timed-gate] gate is shut; waiting for it to open\n`);
+      if (await watch(true, "open")) {
+        process.stderr.write(`[timed-gate] window open — crossing now\n`);
+        return true;
+      }
+      return false;
+    } finally {
+      if (hold || press) {
+        bot.clearControlStates();
+      }
+    }
+  }
+
+  /**
+   * Raw-control crossing dash for a `crush: true` gate entry (task #140, see
+   * {@link GateAssist.dash}). Face the far mouth and drive forward (sprinting)
+   * from the near mouth until the far mouth is reached, re-aiming every
+   * {@link GATE_DASH_TICK_MS}. No pathfinder anywhere: the tide-mill corridor
+   * floods through the freshly opened plane, and a pathfinder start (plus its
+   * mid-water replans) measured slower than the 1.8 s window — while raw forward
+   * drive is exactly how the proven approach hops already beat the same current.
+   *
+   * Bounded by `budgetMs`: if it expires with the bot still inside a gate region,
+   * the dash REVERSES raw toward `from` (the current helps — it points out the
+   * near side) so the closing edge finds the bot outside the fill, and reports
+   * failure for the caller to take the next window. Never a check weakened: a
+   * dash that cannot clear still fails its attempt loudly.
+   */
+  private async dashThroughGate(
+    through: readonly TimedGate[],
+    from: Vec3Tuple,
+    to: Vec3Tuple,
+    budgetMs: number,
+  ): Promise<boolean> {
+    const bot = this.requireBot();
+    const inside = (): boolean => {
+      const feet = this.feetCell();
+      return feet !== undefined && through.some((g) => insideGate(feet, g));
+    };
+    const driveToward = async (cell: Vec3Tuple): Promise<void> => {
+      const p = bot.entity.position;
+      try {
+        await bot.lookAt(p.offset(cell[0]! + 0.5 - p.x, 0, cell[2]! + 0.5 - p.z), true);
+      } catch {
+        // best effort — a look failure must not abort the dash
+      }
+      bot.setControlState("sprint", true);
+      bot.setControlState("forward", true);
+      // Deliberately NO jump: measured live in the tide-mill race (1–2 deep
+      // flowing water), holding jump turns the drive into an upward swim that
+      // lifted the bot into the fill plane at head height — slower AND lethal.
+      // The press stance (see waitForGateWindow) is what buys the crossing time.
+    };
+    try {
+      bot.clearControlStates();
+      const deadline = Date.now() + Math.max(GATE_DASH_TICK_MS * 4, budgetMs);
+      while (Date.now() < deadline) {
+        const p = bot.entity.position;
+        const dx = to[0]! + 0.5 - p.x;
+        const dz = to[2]! + 0.5 - p.z;
+        // Arrived on the far mouth, out of the fill: crossed.
+        if (dx * dx + dz * dz <= GATE_DASH_ARRIVE_SQ && !inside()) {
+          return true;
+        }
+        await driveToward(to);
+        await delay(GATE_DASH_TICK_MS);
+      }
+      if (!inside()) {
+        // Out of budget but already clear of every region — let the caller's goto
+        // finish (or fail) the hop; nothing here is in the fill's path.
+        process.stderr.write(
+          `[timed-gate] dash out of window at ${fmt(bot.entity.position)} (clear of the ` +
+            `fill; aiming for [${to.join(", ")}])\n`,
+        );
+        return false;
+      }
+      // Emergency: still inside the fill with the window spent. Reverse OUT the
+      // near side — with the corridor current, retreat is downhill.
+      process.stderr.write(
+        `[timed-gate] dash out of window while inside the gate — retreating raw to ` +
+          `[${from.join(", ")}]\n`,
+      );
+      const retreatDeadline = Date.now() + GATE_DASH_RETREAT_MS;
+      while (Date.now() < retreatDeadline && inside()) {
+        await driveToward(from);
+        await delay(GATE_DASH_TICK_MS);
+      }
+      return false;
+    } finally {
+      bot.clearControlStates();
     }
   }
 
@@ -1898,7 +2590,10 @@ export class MineflayerExecutor implements StepExecutor {
     const blacklist = new Set<number>();
     try {
       await this.equipLoadout();
-      await this.walkTo(step.pos, 3, `wave ${step.wave}`, step.sneak);
+      await this.walkTo(step.pos, 3, `wave ${step.wave}`, step.sneak, {
+        objective: step.objective,
+        transport: step.transport,
+      });
       // Give AI-enabled mobs a moment to path toward the bot after we arrive.
       await delay(1_000);
       // Diagnostic: what does the bot see near the wave anchor?
@@ -1918,11 +2613,16 @@ export class MineflayerExecutor implements StepExecutor {
       let clearedStreak = 0;
       let engagedId: number | undefined;
       let engagedSince = 0;
+      // The wave's own census (task #124): every "the fight is over" test below is
+      // a guess made from SHAPES, and the server can simply be asked. See
+      // `waveStillStands`.
+      const enc = this.encounterFor(step.wave);
       while (Date.now() < deadline) {
         // Fail fast if a mob killed the bot mid-fight (gap 7) rather than looping.
         if (this.death) throw this.death;
-        // The whole wave is confirmed down — done, wherever the bot happens to stand.
-        if (engagement.killed >= step.count) return;
+        // The whole wave is confirmed down — done, wherever the bot happens to
+        // stand — unless the server says otherwise.
+        if (engagement.killed >= step.count && !(await this.waveStillStands(step, enc))) return;
         // Eat between exchanges when hurt and nothing is in reach (no-op otherwise).
         await this.maybeEat(`wave ${step.wave}`);
         const wave = bot.nearestEntity((e) => isWaveMob(e, bot.entity) && !blacklist.has(e.id));
@@ -1959,12 +2659,19 @@ export class MineflayerExecutor implements StepExecutor {
           })
         ) {
           if (++clearedStreak >= WAVE_CLEAR_STREAK) {
-            process.stderr.write(
-              `[kill ${step.wave}] every mob this fight engaged is down ` +
-                `(${engagement.killed} confirmed near the anchor) and no hostile is within ` +
-                `${WAVE_ENGAGE_NEAR} blocks — wave cleared\n`,
-            );
-            return;
+            if (!(await this.waveStillStands(step, enc))) {
+              process.stderr.write(
+                `[kill ${step.wave}] every mob this fight engaged is down ` +
+                  `(${engagement.killed} confirmed near the anchor) and no hostile is within ` +
+                  `${WAVE_ENGAGE_NEAR} blocks — wave cleared\n`,
+              );
+              return;
+            }
+            // The census overruled the guess. Start the streak over rather than
+            // asking again on the next poll: a census is a server round-trip, and
+            // a wave that is standing somewhere unreachable would otherwise be
+            // interrogated several times a second until the budget ran out.
+            clearedStreak = 0;
           }
           await delay(REACH_POLL_MS);
           continue;
@@ -1972,8 +2679,20 @@ export class MineflayerExecutor implements StepExecutor {
         clearedStreak = 0;
         if (!mob) {
           // No eligible wave mob remains (every real mob dead; any unkillable actor
-          // blacklisted) → wave cleared.
-          if (++emptyStreak >= WAVE_CLEAR_STREAK) return;
+          // blacklisted) → wave cleared, unless the census can still see it. When it
+          // can, there is nothing this loop can do about it — the survivor is out of
+          // reach or unkillable — so the step still ends, but it ends having SAID so,
+          // instead of reporting a clearance the objective will contradict.
+          if (++emptyStreak >= WAVE_CLEAR_STREAK) {
+            if (await this.waveStillStands(step, enc)) {
+              process.stderr.write(
+                `[kill ${step.wave}] nothing eligible is left to attack, but the wave census ` +
+                  `still counts mobs alive — leaving the fight unfinished rather than claiming ` +
+                  `it won\n`,
+              );
+            }
+            return;
+          }
           await delay(REACH_POLL_MS);
           continue;
         }
@@ -2055,9 +2774,21 @@ export class MineflayerExecutor implements StepExecutor {
    * a delve may be, and a billed `elite`/`boss` gets one honest unassisted attempt
    * so the inverted floor gate has something to measure.
    */
-  useCombatPlan(plan: CombatPlan, dieRetry: boolean): void {
+  useCombatPlan(plan: CombatPlan, dieRetry: boolean, actorFloorGate = true): void {
     this.combatPlan = plan;
     this.dieRetry = dieRetry;
+    this.actorFloorGate = actorFloorGate;
+  }
+
+  /** The objectives the compiled path proves — what decides which actor fights
+   * this run can reach at all. Set by the entrypoint before the run starts. */
+  usePathObjectives(objectives: Iterable<string>): void {
+    this.pathObjectives = new Set(objectives);
+  }
+
+  /** Every actor fight this run attempted, for the run report. */
+  actorFightTrials(): readonly ActorTrial[] {
+    return this.actorTrials;
   }
 
   /** Every assist window this run opened, for the run report. */
@@ -2146,6 +2877,150 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
+   * The actor floor gate (#114), fired once per actor after the objective that
+   * unleashes it completes.
+   *
+   * Telemetry, never a gate: nothing on the critical path depends on the outcome,
+   * so every failure mode here — the body never appearing, a lost fight, a
+   * timeout, even the bot dying — is RECORDED and the run continues. An actor
+   * fight blocks no objective, which is also why it takes **no assist**: the
+   * assist exists to stop bot fencing skill capping how hard a delve may be on a
+   * fight the run must finish, and there is no such obligation here. Losing is a
+   * perfectly good souls answer.
+   */
+  private async actorFloorGateAfter(objectiveId: string): Promise<void> {
+    const actors = this.combatPlan?.actors ?? [];
+    if (actors.length === 0) return;
+    for (const a of actors) {
+      if (this.actorsEngaged.has(a.actor)) continue;
+      const decision = actorExercise(a, this.pathObjectives);
+      if (decision.kind !== "exercise" || decision.afterObjective !== objectiveId) continue;
+      this.actorsEngaged.add(a.actor);
+      if (!this.actorFloorGate) {
+        process.stderr.write(
+          `[actor] ${a.actor}: skipped via DELVEWRIGHT_ACTOR_FLOOR=0 — the report records it ` +
+            `as skipped, never as measured\n`,
+        );
+        continue;
+      }
+      const trial = await this.fightActor(a, objectiveId);
+      this.actorTrials.push(trial);
+      const finding = actorFloorFinding(trial);
+      if (finding) {
+        this.floorFindings.push(finding);
+        process.stderr.write(`[floor] ${finding}\n`);
+      }
+    }
+  }
+
+  /**
+   * One honest, unassisted attempt at a tiered actor's unleashed body.
+   *
+   * The body is identified the way the plan describes it — the actor's own entity
+   * type, near the anchor cell the compiler resolved, preferring the one wearing
+   * its custom name. Entity TAGS are the compiler's real identity for it, but a
+   * client cannot read tags, so this is the closest a bot can honestly get; a
+   * body it cannot find is reported as `body-not-found` rather than counted as a
+   * win, because "nothing was there" and "I beat it" must never share a row.
+   */
+  private async fightActor(a: ActorEncounter, afterObjective: string): Promise<ActorTrial> {
+    const started = Date.now();
+    let swings = 0;
+    const record = (outcome: ActorOutcome, detail?: string): ActorTrial => ({
+      actor: a.actor,
+      tier: a.tier,
+      afterObjective,
+      outcome,
+      swings,
+      elapsedMs: Date.now() - started,
+      detail,
+    });
+    const pos = a.pos!;
+    process.stderr.write(
+      `[actor] ${a.actor} is billed \`${a.tier}\` (${a.entity}` +
+        `${a.maxHealth !== undefined ? `, ${a.maxHealth} hp` : ""}) and \`${afterObjective}\` ` +
+        `unleashed it — one unassisted attempt at ${pos.join(",")}\n`,
+    );
+    try {
+      await this.walkTo(pos, 3, `actor ${a.actor}`);
+      const bot = this.requireBot();
+      const body = await this.findActorBody(a);
+      if (body === undefined) {
+        const why =
+          `no live \`${a.entity}\` within ${ACTOR_MATCH_RADIUS} blocks of ${pos.join(",")} ` +
+          `after ${ACTOR_SETTLE_MS}ms — the unleash beat may not have fired, or the twin was ` +
+          `summoned elsewhere`;
+        process.stderr.write(`[actor] ${a.actor}: ${why}\n`);
+        return record("body-not-found", why);
+      }
+      const id = body.id;
+      const deadline = Date.now() + ACTOR_FIGHT_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        if (this.death) throw this.death;
+        const live = bot.entities[id];
+        if (!live?.position) {
+          process.stderr.write(
+            `[actor] ${a.actor}: DOWN after ${swings} swing(s) — the unassisted bot won cold\n`,
+          );
+          return record("won-first-try");
+        }
+        await this.maybeEat(`actor ${a.actor}`);
+        const dist = bot.entity.position.distanceTo(live.position);
+        if (dist > 3) {
+          await this.walkTo(
+            [Math.floor(live.position.x), Math.floor(live.position.y), Math.floor(live.position.z)],
+            2,
+            `actor ${a.actor}`,
+          );
+          continue;
+        }
+        await bot.lookAt(live.position.offset(0, (live.height ?? 1) * 0.5, 0), true);
+        bot.attack(live);
+        swings += 1;
+        await delay(ATTACK_INTERVAL_MS);
+      }
+      const why = `still standing after ${ACTOR_FIGHT_TIMEOUT_MS}ms and ${swings} swing(s)`;
+      process.stderr.write(`[actor] ${a.actor}: ${why}\n`);
+      return record("timed-out", why);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[actor] ${a.actor}: the unassisted attempt ended — ${detail}\n`);
+      // A death here is the encounter doing its job, not a failed run: recover the
+      // bot the same way a lost wave attempt does and let the path carry on.
+      if (this.death) await this.respawnAndRearm();
+      return record("lost", detail);
+    }
+  }
+
+  /**
+   * The actor's live body: the nearest entity of its declared type within
+   * {@link ACTOR_MATCH_RADIUS} of the anchor cell, waiting up to
+   * {@link ACTOR_SETTLE_MS} for the summon to land and entity tracking to catch up.
+   * A custom-named actor prefers the body wearing that name.
+   */
+  private async findActorBody(a: ActorEncounter): Promise<{ id: number } | undefined> {
+    const bot = this.requireBot();
+    const want = a.entity.replace(/^minecraft:/, "");
+    const pos = a.pos!;
+    const deadline = Date.now() + ACTOR_SETTLE_MS;
+    for (;;) {
+      const near = Object.values(bot.entities)
+        .filter((e) => e?.position && e.name === want)
+        .map((e) => ({
+          id: e.id,
+          named: displayNameOf(e) === a.name,
+          d: Math.hypot(e.position.x - pos[0], e.position.y - pos[1], e.position.z - pos[2]),
+        }))
+        .filter((e) => e.d <= ACTOR_MATCH_RADIUS)
+        .sort((x, y) => Number(y.named) - Number(x.named) || x.d - y.d);
+      const best = near[0];
+      if (best) return { id: best.id };
+      if (Date.now() >= deadline) return undefined;
+      await delay(REACH_POLL_MS);
+    }
+  }
+
+  /**
    * One honest, unassisted attempt at a billed encounter. Returns whether the bot
    * cleared it; a death or a timeout is a normal `false`, not a failed run — the
    * bot losing a souls fight is the DESIGN, and spec-0023 downgraded bot melee
@@ -2202,8 +3077,47 @@ export class MineflayerExecutor implements StepExecutor {
     // encounter is a finding. `dieRetryCoverageFailures` turns an engagement with
     // no completed trial into a red stage, so a run that dies on the way in can
     // never report a passed die-retry (task #102).
+    // PRECONDITION (compiler #220, refined by #223): the loop this stage proves is
+    // "death → respawn at the governing checkpoint → walk back". Two ways that
+    // premise can be false, and they are different kinds of fact:
+    //   * the checkpoint exists but was never ARMED (a bonfire the route walked
+    //     past) — the harness's own gap, and every measurement below would
+    //     describe it rather than the delve. Red;
+    //   * the campaign fires NO checkpoint before this fight at all — a content
+    //     fact: every death here is a full restart. Advisory, because the
+    //     compiler's retry-cost and checkpoint rules are what judge that.
+    // Either way: take NO death. A scripted death would blame the campaign for a
+    // proof that was never in a position to be made.
+    const precondition = checkpointPrecondition(
+      enc,
+      this.restSteps,
+      this.restedBonfires,
+      this.currentStep,
+    );
+    if (precondition !== undefined) {
+      (precondition.reds ? this.preconditionFindings : this.preconditionAdvisories).push(
+        precondition.finding,
+      );
+      this.preconditionWaves.add(enc.wave);
+      process.stderr.write(`[die-retry] ${precondition.finding}\n`);
+      return;
+    }
     this.dieRetryEngaged.add(enc.wave);
-    await this.walkTo(step.pos, 3, `die-retry approach ${step.wave}`, step.sneak);
+    // ASSISTED (task #121). The approach walks the bot to within 3 blocks of a
+    // LIVE encounter — melee range — and until now it did so with nothing on. That
+    // made bot fencing skill the gate on whether this stage could run at all,
+    // which is exactly what spec-0023 downgraded to telemetry: the die-retry stage
+    // asks "is dying safe here", not "can this bot win". On the-drowned-bell run
+    // six two vindicators killed the bot on the way in, `dieRetryAt` threw before
+    // scripting death 1, and the stage reported 0/2 with no windows at all.
+    //
+    // Every segment where the bot must SURVIVE to make a measurement is assisted;
+    // the scripted death itself deliberately is not (see below). Each window is
+    // opened, logged and closed on its own, so the artifact names exactly when the
+    // bot was protected — spec-0023 §3 asks for disclosure, not for one window.
+    await this.withAssist(enc, "die-retry: approach into melee range", () =>
+      this.walkTo(step.pos, 3, `die-retry approach ${step.wave}`, step.sneak),
+    );
     const phases = deathPhases();
     for (const [i, phase] of phases.entries()) {
       const attempt = i + 1;
@@ -2220,10 +3134,39 @@ export class MineflayerExecutor implements StepExecutor {
       // "mid-fight" means the bot has traded blows first; "first-contact" is the
       // moment of arrival. Both are the same command, taken at different times —
       // what differs is the wave state the respawn has to restore.
+      //
+      // Assisted, for the same reason the approach is: the point of the trade is
+      // to put the wave in its mid-fight state before a SCRIPTED death, and a bot
+      // the wave kills mid-trade takes an unscripted one instead — a death at
+      // roughly the right moment, but not the one this trial asked for.
       if (phase === "mid-fight") {
-        await this.tradeBlows(step);
+        await this.withAssist(enc, "die-retry: trading blows before the scripted death", () =>
+          this.tradeBlows(step),
+        );
+        // ...and if the trade ended in a real death anyway, clear it here rather
+        // than script a second one on top of it. Without this the `deathSeq` read
+        // below already carries the accidental death, so the trial would wait for
+        // a death that has to happen AGAIN — crediting the loop to a life the
+        // harness never opened (the first-contact/mid-fight race, task #121).
+        if (this.death) {
+          process.stderr.write(
+            `[die-retry] the wave killed the bot during the trade — recovering before ` +
+              `taking the scripted death, so the death this trial records is the one it asked for\n`,
+          );
+          await this.respawnAndRearm();
+          await this.withAssist(enc, "die-retry: re-approach after an unscripted death", () =>
+            this.walkTo(step.pos, 3, `die-retry re-approach ${step.wave}`, step.sneak),
+          );
+        }
       }
       const before = new Set(this.completedObjectives.keys());
+      // BRAND the mobs this life fought (task #123). A re-seat must replace every
+      // one of them; a mob still wearing the brand in the next life IS the chipped
+      // survivor the owner ruling forbids (2026-08-03). The stamp rides the wave's
+      // own tag, so it can only ever land on this wave — the mistake the previous
+      // id-based baseline made, which branded whatever the client happened to be
+      // tracking (#230).
+      this.brandWave(enc);
       process.stderr.write(
         `[die-retry] ${step.wave} death ${attempt}/${phases.length} (${phase})\n`,
       );
@@ -2234,6 +3177,9 @@ export class MineflayerExecutor implements StepExecutor {
       this.trials.push(trial);
       try {
         const seq = this.deathSeq;
+        // What the bot carries INTO the death — the baseline `keep_inventory` is
+        // judged against on the way out.
+        this.itemsBeforeDeath = bot.inventory.items().length;
         bot.chat(scriptedDeathCommand());
         if (!(await this.awaitDeathAfter(seq, RESPAWN_TIMEOUT_MS))) {
           // The bot is opped for exactly this command; if no death followed, the
@@ -2245,23 +3191,69 @@ export class MineflayerExecutor implements StepExecutor {
           throw new Error(`die-retry: ${trial.abortedWith}`);
         }
         trial.cause = this.death?.likelyCause;
-        trial.respawnPos = await this.respawnAndRearm();
+        const respawn = await this.respawnAndRearm();
+        trial.respawnPos = respawn.pos;
+        trial.kitKept = respawn.kitKept;
         trial.atCheckpoint = respawnedAtCheckpoint(trial.respawnPos ?? [0, 0, 0], enc.checkpoint);
-        try {
-          await this.walkTo(step.pos, 3, `die-retry return ${step.wave}`, step.sneak);
-          trial.returned = true;
-        } catch (err) {
-          const detail = err instanceof Error ? err.message : String(err);
-          process.stderr.write(`[die-retry] return leg failed: ${detail}\n`);
-        }
-        const after = new Set(this.completedObjectives.keys());
-        trial.lostObjectives = [...before].filter((o) => !after.has(o));
-        trial.objectivesIntact = trial.lostObjectives.length === 0;
-        // Re-engageable: a wave mob is standing here again. `respawns_on_rest`
-        // re-seats the room on a rest; without it the survivors are simply still
-        // there. Either way, something must be left to fight — a wave that dies
-        // with the player is a fight that can only be attempted once.
-        trial.reEngaged = Boolean(bot.nearestEntity((e) => isWaveMob(e, bot.entity)));
+        process.stderr.write(
+          `[die-retry] ${step.wave} death ${attempt}: respawned at ` +
+            `${trial.respawnPos ? trial.respawnPos.join(",") : "an unknown position"}` +
+            `${trial.atCheckpoint ? "" : ` — NOT the governing checkpoint ${enc.checkpoint?.join(",") ?? "(none)"}`}\n`,
+        );
+        // The walk back ends INSIDE the re-seated wave, and the probe then stands
+        // there for the whole settle — so both are assisted, for the same reason
+        // the approach is. Whether the ROUTE is walkable is the measurement; a bot
+        // cut down on the last block would answer "no" for a reason that has
+        // nothing to do with the route (task #121).
+        await this.withAssist(enc, "die-retry: walk back and re-engage probe", async () => {
+          try {
+            await this.walkTo(step.pos, 3, `die-retry return ${step.wave}`, step.sneak);
+            trial.returned = true;
+          } catch (err) {
+            const detail = err instanceof Error ? err.message : String(err);
+            process.stderr.write(`[die-retry] return leg failed: ${detail}\n`);
+          }
+          const after = new Set(this.completedObjectives.keys());
+          trial.lostObjectives = [...before].filter((o) => !after.has(o));
+          trial.objectivesIntact = trial.lostObjectives.length === 0;
+          trial.objectiveComplete = this.completedObjectives.has(enc.objective);
+          // Two observations, one verdict (see RetryOutcome). A wave mob standing
+          // here again means the fight is retriable. Nothing left to fight is only
+          // a failure if the encounter's objective is ALSO unfinished — then the
+          // party can neither complete it nor re-fight it, which is a soft lock.
+          // A wave already beaten before the death is a won fight staying won.
+          //
+          // Observed ONLY when the bot got back (task #120). The probe reads the
+          // entities the CLIENT tracks, so a bot standing 150 blocks from the fight
+          // is not observing the encounter at all — it is observing wherever it is
+          // stuck. Reporting that as `re_engaged` produced the run-five artifact in
+          // which one trial said "the route back is not walkable" and "the fight
+          // re-engaged" at once. A trial that never returned leaves `re_engaged`
+          // false, `reengage` null and its outcome `unproven`: not looked at is not
+          // the same fact as looked at and empty, and neither is a pass.
+          if (trial.returned) {
+            const obs = await this.awaitReengage(enc);
+            trial.reengage = obs;
+            trial.reEngaged = obs.present > 0;
+            trial.outcome = retryOutcome(trial.reEngaged, trial.objectiveComplete);
+            process.stderr.write(
+              `[die-retry] ${step.wave} death ${attempt}: ${obs.present}/${obs.declared} wave mob(s) ` +
+                `after ${obs.settleMs}ms` +
+                `${obs.nearest !== undefined ? `, ${obs.nearest.toFixed(1)}–${obs.farthest!.toFixed(1)} blocks from the anchor` : ""}` +
+                `${obs.carriedOver > 0 ? `, ${obs.carriedOver} carried over from a previous life` : ""}` +
+                `${obs.healthReadable > 0 ? `, ${obs.damaged}/${obs.healthReadable} damaged` : ""}\n`,
+            );
+          } else {
+            process.stderr.write(
+              `[die-retry] ${step.wave} death ${attempt}: the bot never got back to the ` +
+                `encounter, so re-engagement was NOT observed (outcome stays \`unproven\`)\n`,
+            );
+          }
+        });
+        process.stderr.write(
+          `[die-retry] ${step.wave} death ${attempt}: ${trial.outcome}` +
+            `${trial.outcome === "cleared-before-retry" ? ` (\`${enc.objective}\` was already complete — the death cost no progress)` : ""}\n`,
+        );
         trial.completed = true;
       } catch (err) {
         trial.abortedWith ??= err instanceof Error ? err.message : String(err);
@@ -2269,6 +3261,11 @@ export class MineflayerExecutor implements StepExecutor {
           `[die-retry] ${step.wave} death ${attempt} loop abandoned: ${trial.abortedWith}\n`,
         );
         throw err;
+      } finally {
+        // Clear the brand however the trial ended, so the NEXT death brands a
+        // clean slate and a stale stamp can never be read as a survivor. In the
+        // `finally` because an abandoned trial leaves mobs standing too.
+        this.unbrandWave(enc);
       }
     }
   }
@@ -2291,6 +3288,144 @@ export class MineflayerExecutor implements StepExecutor {
       if (Date.now() >= deadline) return false;
       await delay(SCORE_POLL_MS);
     }
+  }
+
+  /**
+   * Ask the server what is standing at this encounter — BY TAG (task #123).
+   *
+   * The old probe answered by silhouette: every entity the client tracked, no
+   * distance filter, anything taller than half a block. That set is not the wave.
+   * On the drowned bell it swept in two ambush husks 57 blocks away at the cistern
+   * and whichever neighbouring wave had just been re-seated, so a 2-mob wave read
+   * as 4 standing — and because those bystanders were alive on both sides of a
+   * scripted death, they were reported as survivors the re-seat had failed to
+   * remove. The re-seat was innocent; the ruler was wrong (#230).
+   *
+   * Only the server can see the wave tag, so the compiler emits the census and
+   * this reads it: counts of standing / branded / damaged, plus one line per mob
+   * with its position and health. Everything the fidelity verdict consumes is the
+   * server's own answer about entities carrying `dw_wave_<id>`, and nothing else
+   * can enter it.
+   *
+   * Returns `undefined` if no answer arrives — never a zero, which would read as
+   * "the wave is gone".
+   */
+  private async census(enc: Encounter): Promise<WaveCensus | undefined> {
+    const bot = this.requireBot();
+    const before = this.censusSeq;
+    bot.chat(`/function ${enc.census.census}`);
+    const deadline = Date.now() + CENSUS_TIMEOUT_MS;
+    for (;;) {
+      const sum = this.censusSummary;
+      if (sum && sum.seq > before && sum.wave === enc.wave) {
+        return { summary: sum, mobs: this.censusMobs.get(sum.seq) ?? [] };
+      }
+      if (Date.now() >= deadline) return undefined;
+      await delay(SCORE_POLL_MS);
+    }
+  }
+
+  /**
+   * Does the wave still stand? Asks the SERVER, by tag (task #124).
+   *
+   * Every terminal condition in `fightWave` is a guess made from shapes — "a mob
+   * the bot hit winked out near the anchor", "everything it engaged is down and
+   * nothing hostile is close". None of them can tell a wave mob from any other
+   * mob, because the client cannot see the wave tag. On the drowned bell that
+   * cost the campaign a whole round: at the belfry the bot killed one of
+   * `ambush/the-rafters`' husks, counted it as the Bellkeeper (`confirmed kill:
+   * husk#232 (1/1)`), and walked away from a wither skeleton that was still very
+   * much alive. `obj/the-keeper` therefore never completed, `quest/the-keeper`
+   * never completed, `quest/ring-it-home` was never armed — and the next step's
+   * `interact` click was adjudicated against an unarmed quest and spent. The
+   * click was the SYMPTOM; this was the cause.
+   *
+   * So the guesses now only get to END the fight with the server's agreement.
+   * They are still what drives it — the bot can only swing at what it can see —
+   * but "the wave is down" is a fact, and facts come from the census.
+   *
+   * `false` when there is no census to ask (a wave outside the combat plan, or a
+   * census that did not answer): the pre-census terminal conditions then stand
+   * exactly as they did, because refusing to end the fight on a broken probe
+   * would hang the step instead of failing it.
+   */
+  private async waveStillStands(step: KillStep, enc: Encounter | undefined): Promise<boolean> {
+    if (!enc) return false;
+    const census = await this.census(enc);
+    if (!census) {
+      process.stderr.write(
+        `[kill ${step.wave}] the wave census did not answer; falling back to what the client ` +
+          `can see\n`,
+      );
+      return false;
+    }
+    return census.summary.present > 0;
+  }
+
+  /** Stamp this life's wave mobs so the next census can name the survivors. */
+  private brandWave(enc: Encounter): void {
+    this.requireBot().chat(`/function ${enc.census.brand}`);
+  }
+
+  /** Clear the stamp, so the next trial brands a clean slate. */
+  private unbrandWave(enc: Encounter): void {
+    this.requireBot().chat(`/function ${enc.census.unbrand}`);
+  }
+
+  /**
+   * Buffer a census line. Mob lines arrive before the summary that closes them
+   * (one atomic function call, in emission order), so by the time a summary is
+   * observed its mobs are already collected under the same sequence number.
+   */
+  private observeCensus(message: string): void {
+    const mob = parseCensusMob(message);
+    if (mob) {
+      if (mob.campaignId !== this.campaignId) return;
+      const at = this.censusMobs.get(mob.seq) ?? [];
+      at.push(mob);
+      this.censusMobs.set(mob.seq, at);
+      // Bounded: only the newest few censuses can still be asked about.
+      while (this.censusMobs.size > CENSUS_HISTORY) {
+        const oldest = Math.min(...this.censusMobs.keys());
+        this.censusMobs.delete(oldest);
+      }
+      return;
+    }
+    const sum = parseCensusSummary(message);
+    if (!sum || sum.campaignId !== this.campaignId) return;
+    this.censusSummary = sum;
+    this.censusSeq = Math.max(this.censusSeq, sum.seq);
+  }
+
+  /**
+   * Wait for the encounter to show itself, then describe what came back.
+   *
+   * Returns the moment the declared wave is standing, so a healthy run pays
+   * nothing; otherwise it settles for {@link REENGAGE_SETTLE_MS} before
+   * concluding. A single instantaneous sample was the island-r14 false negative:
+   * entity tracking lags arrival by ticks, and three living drowned read as an
+   * empty room.
+   */
+  private async awaitReengage(enc: Encounter): Promise<ReengageObservation> {
+    const started = Date.now();
+    const deadline = started + REENGAGE_SETTLE_MS;
+    let census = await this.census(enc);
+    for (;;) {
+      // Enough is standing to answer every question this observation feeds.
+      if (census && census.summary.present >= enc.count) break;
+      if (Date.now() >= deadline) break;
+      await delay(REACH_POLL_MS);
+      census = (await this.census(enc)) ?? census;
+    }
+    if (!census) {
+      // No census came back at all. That is a broken probe, not an empty room, and
+      // the run must say so rather than report a `stranded` the delve never caused.
+      throw new Error(
+        `die-retry: the wave census \`${enc.census.census}\` never answered within ` +
+          `${CENSUS_TIMEOUT_MS}ms — the bot must be opped to call it`,
+      );
+    }
+    return observationOf(census, enc.count, enc.pos, Date.now() - started);
   }
 
   /** Melee whatever wave mob is closest for a moment, so the next scripted death
@@ -2320,26 +3455,187 @@ export class MineflayerExecutor implements StepExecutor {
     }
   }
 
-  /** Wait out a death, note WHERE the bot came back, then replay `select-class` so
-   * it is armed again. The position is read before the re-selection, because the
-   * class trigger teleports — the respawn point is what the checkpoint contract is
-   * about, and it must be measured while it is still observable. */
-  private async respawnAndRearm(): Promise<Vec3Tuple | undefined> {
+  /**
+   * Wait out a death, note WHERE the bot came back, and ready it to fight again
+   * **without moving it**.
+   *
+   * The re-arm used to replay `select-class`, on the premise that "a respawn drops
+   * class state". That premise is false and the replay was destructive (task #120,
+   * the-drowned-bell run five):
+   *
+   *   * false, because the compiler seals `gamerule keep_inventory true` in every
+   *     build — the kit survives the death — and class state lives in scoreboard
+   *     values and player tags, which survive it too;
+   *   * destructive, because `class_apply_<class>` ends in
+   *     `teleport @s <campaign entry point>` and the `dw.class` trigger is
+   *     re-enabled for every player on every tick. Chatting it again therefore
+   *     teleported the bot off the checkpoint it had just respawned on, back to the
+   *     start of the delve — 150 blocks and eight levels away on the bell — and the
+   *     "walk back to the encounter" leg then measured a route no dying player ever
+   *     walks. Every trial recorded a truthful `respawn_pos` at the bonfire and then
+   *     immediately made it a lie.
+   *
+   * So: measure the position, then re-equip what the player kept. Nothing here may
+   * move the bot — the respawn point IS the thing under test.
+   */
+  private async respawnAndRearm(): Promise<{ pos: Vec3Tuple | undefined; kitKept: boolean }> {
     const bot = this.requireBot();
     await this.recoverFromDeath();
     const p = bot.entity?.position;
-    const respawnPos: Vec3Tuple | undefined =
+    const pos: Vec3Tuple | undefined =
       p === undefined ? undefined : [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)];
-    if (this.lastSelectClass) {
-      await this.selectClass(this.lastSelectClass);
+    const kitKept = await this.rearmAfterRespawn();
+    return { pos, kitKept };
+  }
+
+  /**
+   * Ready the bot to fight again after a respawn, without teleporting it.
+   *
+   * `keep_inventory` means the kit is still in the bag; what a respawn does clear
+   * is the *equipped* state a client tracks, so the loadout is put back on. Returns
+   * whether the kit survived: a bag that carried items into the death and is still
+   * empty {@link KIT_SETTLE_MS} after the respawn lost them, which breaks the retry
+   * loop for a human player exactly as it breaks it for the bot.
+   */
+  async rearmAfterRespawn(): Promise<boolean> {
+    const kept = await this.awaitKeptKit();
+    if (!kept) {
+      process.stderr.write(
+        `[death] the bot came back EMPTY-HANDED: it carried items into the death and the ` +
+          `bag is still empty ${KIT_SETTLE_MS}ms after the respawn. The delve seals ` +
+          `\`gamerule keep_inventory true\`, so a lost kit means that seal is not in force\n`,
+      );
     }
-    return respawnPos;
+    await this.equipLoadout();
+    return kept;
+  }
+
+  /**
+   * Wait for the kept inventory to arrive, bounded. `true` the moment an item is
+   * visible (and immediately for a bot that carried nothing into the death — there
+   * is nothing to keep, so nothing was lost).
+   */
+  private async awaitKeptKit(): Promise<boolean> {
+    const bot = this.requireBot();
+    if (this.itemsBeforeDeath === 0) return true;
+    const deadline = Date.now() + KIT_SETTLE_MS;
+    for (;;) {
+      if (bot.inventory.items().length > 0) return true;
+      if (Date.now() >= deadline) return false;
+      await delay(SPAWN_POLL_MS);
+    }
+  }
+
+  /**
+   * Rest at a bonfire (compiler #220) — the player loop every later proof depends on.
+   *
+   * Two acts, in this order, and the order is the whole thing:
+   *
+   *   1. **right-click the `dw_bonfire_<i>` interaction**. This is not flavour. The
+   *      click is what fires the `player_interacted_with_entity` advancement whose
+   *      reward opens the dialog AND `enable`s the `dw.rest` trigger. Until then the
+   *      trigger is DISABLED and the chat line below is a silent no-op.
+   *   2. **chat the step's command** — the exact line the "rest and save" button runs.
+   *
+   * Why not click the dialog button: a `dialog show` is rendered client-side and
+   * mineflayer models no dialog at all, so there is no button to press. The button's
+   * command is the primitive the compiler exports precisely so a headless client can
+   * perform the same loop; `/trigger` is also the only command form a non-operator
+   * player may run, so this is the player's own path, not an op shortcut.
+   *
+   * The affordance is found by POSITION, not by tag: entity `Tags` are server-side
+   * and never reach a client. The compiler puts the interaction on the step's own
+   * anchor cell, so the nearest `interaction` entity to it is the fire.
+   *
+   * Actuation only. Nothing here asserts the checkpoint moved — the next die-retry
+   * trial's respawn position is what proves that, and it proves it the way a player
+   * would find out.
+   */
+  async rest(step: RestStep): Promise<void> {
+    const bot = this.requireBot();
+    await this.walkTo(step.pos, 2, `bonfire ${step.anchor}`, step.sneak);
+    const fire = this.affordanceAt(step.pos);
+    if (!fire) {
+      throw new Error(
+        `no \`interaction\` affordance within ${AFFORDANCE_RADIUS} blocks of bonfire ` +
+          `${step.bonfire} at [${step.pos.join(", ")}] — the bot is standing at the fire ` +
+          `and there is nothing to right-click, so the rest can never be performed ` +
+          `(bot at ${fmt(bot.entity.position)})`,
+      );
+    }
+    process.stderr.write(
+      `[rest] bonfire ${step.bonfire} (${step.anchor}): right-clicking the affordance, ` +
+        `then \`${step.command}\`\n`,
+    );
+    await bot.activateEntity(fire);
+    // The opener runs through an advancement reward, so the trigger is enabled a
+    // tick or two after the click lands — chatting inside the same tick would be
+    // refused exactly as chatting without clicking is.
+    await delay(REST_OPEN_SETTLE_MS);
+    bot.chat(step.command);
+    await delay(EFFECT_SETTLE_MS);
+    this.restedBonfires.add(step.bonfire);
+  }
+
+  /** The nearest `minecraft:interaction` affordance to `pos`, if one is tracked. */
+  private affordanceAt(pos: Vec3Tuple): Entity | undefined {
+    const bot = this.requireBot();
+    let best: Entity | undefined;
+    let bestDist = AFFORDANCE_RADIUS;
+    for (const e of Object.values(bot.entities)) {
+      if (e?.name !== "interaction" || !e.position) continue;
+      const d = Math.sqrt(
+        (e.position.x - (pos[0] + 0.5)) ** 2 +
+          (e.position.y - pos[1]) ** 2 +
+          (e.position.z - (pos[2] + 0.5)) ** 2,
+      );
+      if (d <= bestDist) {
+        best = e;
+        bestDist = d;
+      }
+    }
+    return best;
+  }
+
+  /** Adopt the rest steps the exported critical path carries (compiler #220), with
+   * their EXPORTED indices — the coordinate system the precondition compares in. */
+  useRestSteps(rests: readonly PerformedRest[]): void {
+    this.restSteps = rests;
+  }
+
+  /** Rests this run performed, and the bonfires among them. For the run report. */
+  performedRests(): readonly PerformedRest[] {
+    return this.restSteps.filter((r) => this.restedBonfires.has(r.bonfire));
+  }
+
+  /** Encounters whose scripted deaths were skipped for want of an ARMED
+   * checkpoint — the run's own gap, so these red the stage. */
+  dieRetryPreconditionFindings(): readonly string[] {
+    return this.preconditionFindings;
+  }
+
+  /** Encounters whose scripted deaths were skipped because the campaign fires no
+   * governing checkpoint before them (#223). Advisory: the retry loop there went
+   * unproven, and whether that staging is acceptable is the compiler's call, not
+   * this stage's. Reported, never graded — and never silent. */
+  dieRetryPreconditionAdvisories(): readonly string[] {
+    return this.preconditionAdvisories;
+  }
+
+  /** The waves those findings name. Coverage stays silent about them: the
+   * precondition already says why they are unproven, and "never reached this
+   * encounter" would be plainly untrue — the bot stood in the room and declined. */
+  dieRetryPreconditionWaves(): ReadonlySet<string> {
+    return this.preconditionWaves;
   }
 
   /** Collect items from the chest at the anchor: go there, open it, withdraw all. */
   async collect(step: CollectStep): Promise<void> {
     const bot = this.requireBot();
-    await this.walkTo(step.pos, 2, `chest ${step.item}`, step.sneak);
+    await this.walkTo(step.pos, 2, `chest ${step.item}`, step.sneak, {
+      objective: step.objective,
+      transport: step.transport,
+    });
     const here = bot.entity.position;
     const target = here.offset(
       step.pos[0] + 0.5 - here.x,
@@ -2374,7 +3670,10 @@ export class MineflayerExecutor implements StepExecutor {
    */
   async interact(step: InteractStep): Promise<void> {
     const bot = this.requireBot();
-    await this.walkTo(step.pos, 3, `interact ${step.anchor}`, step.sneak);
+    await this.walkTo(step.pos, 3, `interact ${step.anchor}`, step.sneak, {
+      objective: step.objective,
+      transport: step.transport,
+    });
     await presentAndTrigger<Item>(bot, step, step.anchor);
     await this.requireObjective(step.objective, `interact ${step.anchor}`);
     await delay(EFFECT_SETTLE_MS);
@@ -2404,14 +3703,7 @@ export class MineflayerExecutor implements StepExecutor {
     const bot = this.requireBot();
     const [x, y, z] = dest;
     const arrived = await this.waitFor(
-      () => {
-        const p = bot.entity.position;
-        return (
-          Math.abs(p.x - (x + 0.5)) < TRANSPORT_NEAR &&
-          Math.abs(p.z - (z + 0.5)) < TRANSPORT_NEAR &&
-          Math.abs(p.y - y) < 4
-        );
-      },
+      () => this.atTransportDest(dest),
       TRANSPORT_TIMEOUT_MS,
       REACH_POLL_MS,
     );
@@ -2519,9 +3811,12 @@ export class MineflayerExecutor implements StepExecutor {
     //      gains 1.21.11 score-packet support; currently always unset).
     // The campaign completes during the LAST objective step; the sequencer has
     // already failed the run if the marker arrived any earlier than that
-    // (assertEndgameNotReached), so reaching here means it is either due now or due
-    // within a tick or two of the last objective.
-    const deadline = Date.now() + SCORE_SETTLE_MS;
+    // (assertEndgameNotReached), so reaching here means it is either due now or —
+    // when the path exports a scheduled-ending tail (`ending_tail_ticks`, task
+    // #125: the-wake fires `campaign-complete` 250t into its closing `sequence`)
+    // — due within that tail. The window covers whichever is longer.
+    const windowMs = completionWindowMs(step.endingTailTicks);
+    const deadline = Date.now() + windowMs;
     while (Date.now() < deadline) {
       if (this.death) throw this.death;
       if (this.campaignCompleteAtStep !== undefined) {
@@ -2537,7 +3832,7 @@ export class MineflayerExecutor implements StepExecutor {
     const sidebar = board?.itemsMap[bot.username]?.value ?? "unset";
     const done = [...this.completedObjectives.keys()];
     throw new Error(
-      `campaign not complete after ${SCORE_SETTLE_MS}ms: no ` +
+      `campaign not complete after ${windowMs}ms: no ` +
         `\`${markerLine(this.campaignId ?? "?", CAMPAIGN_TOKEN)}\` marker arrived ` +
         `(objective ${step.objective} expected ${step.value}; sidebar: ${sidebar}); ` +
         `objectives completed: ${done.join(", ") || "none"}`,
@@ -2547,6 +3842,29 @@ export class MineflayerExecutor implements StepExecutor {
 
 function fmt(p: { x: number; y: number; z: number }): string {
   return `[${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}]`;
+}
+
+/**
+ * An entity's custom name as plain text, or `undefined` when it has none.
+ *
+ * mineflayer surfaces a custom name in several shapes across versions — a plain
+ * string, a chat component with `toString`, or `{ text }` — so this reads all of
+ * them and gives up quietly rather than throwing. Used only to PREFER the right
+ * body among candidates of the same entity type (#114); identity never rests on
+ * it, because a client cannot read the entity tag the compiler actually uses.
+ */
+export function displayNameOf(e: unknown): string | undefined {
+  const ent = e as { displayName?: unknown; customName?: unknown };
+  for (const raw of [ent.customName, ent.displayName]) {
+    if (typeof raw === "string" && raw.length > 0) return raw;
+    if (raw && typeof raw === "object") {
+      const o = raw as { text?: unknown; toString?: () => string };
+      if (typeof o.text === "string" && o.text.length > 0) return o.text;
+      const s = typeof o.toString === "function" ? o.toString() : "";
+      if (s && s !== "[object Object]") return s;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -2589,10 +3907,18 @@ const NON_WAVE_ENTITIES = new Set<string>([
 ]);
 
 /**
- * True if `e` is a slayable wave mob: not the bot, not a player/NPC/display/
- * dropped object, and tall enough to be a living mob (excludes small dropped
- * entities). Classified by name (reliable across mineflayer versions) rather than
+ * True if `e` is something the bot could swing at: not the bot, not a
+ * player/NPC/display/dropped object, and tall enough to be a living mob.
+ * Classified by name (reliable across mineflayer versions) rather than
  * `type`/`kind`, which vary.
+ *
+ * **This is a TARGETING predicate, never a measurement one** (task #123). The bot
+ * can only attack what its client can see, so picking a swing target by shape is
+ * the only thing it could do — but ANSWERING a question about the wave that way
+ * is how the drowned bell's ambush husks were reported as wave mobs a re-seat had
+ * failed to remove (#230). Every count that reaches a verdict or the run report
+ * now comes from the compiler's tag census instead; nothing here may be used to
+ * decide what is standing at an encounter.
  */
 export function isWaveMob(e: unknown, self: unknown): boolean {
   if (!e || e === self) return false;

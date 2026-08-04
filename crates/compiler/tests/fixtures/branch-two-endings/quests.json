@@ -1,0 +1,220 @@
+{
+  "dsl_version": "0.8.0",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/decide",
+        "trigger": {
+          "type": "campaign-start"
+        },
+        "happening": {
+          "verb": "arrives",
+          "text": "The party reaches the Keeper's door with the moor at their backs.",
+          "subject": "npc/keeper"
+        },
+        "objectives": [
+          {
+            "type": "talk-to",
+            "id": "obj/decide",
+            "npc": "npc/keeper",
+            "happening": {
+              "verb": "learns",
+              "text": "The Keeper tells them the road is drowned, and asks whether they hold or run.",
+              "subject": "npc/keeper"
+            }
+          }
+        ],
+        "on_objective_complete": {
+          "obj/decide": [
+            {
+              "type": "set-flag",
+              "flag": "flag/wait",
+              "requires_flags": [
+                "flag/wait"
+              ]
+            },
+            {
+              "type": "set-flag",
+              "flag": "flag/flee",
+              "requires_flags": [
+                "flag/flee"
+              ]
+            },
+            {
+              "type": "open-gate",
+              "anchor": "anchor/door",
+              "requires_flags": [
+                "flag/flee"
+              ],
+              "happening": {
+                "verb": "opens",
+                "text": "The party throws the bar off themselves and shoulders the gate open.",
+                "subject": "anchor/door"
+              }
+            }
+          ]
+        },
+        "on_complete": [],
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "doing": "barring the door with one arm, listening to the moor",
+            "dialogue": "dlg/greeting"
+          }
+        }
+      },
+      {
+        "id": "quest/bolt",
+        "trigger": {
+          "type": "quest-complete",
+          "quest": "quest/decide"
+        },
+        "happening": {
+          "verb": "departs",
+          "text": "The party abandons the watch and runs for the moor road."
+        },
+        "objectives": [
+          {
+            "type": "reach-anchor",
+            "id": "obj/bolt",
+            "anchor": "anchor/exit",
+            "radius": 2,
+            "requires_flags": [
+              "flag/flee"
+            ],
+            "happening": {
+              "verb": "departs",
+              "text": "They push past the Keeper and are gone before he can answer."
+            }
+          }
+        ],
+        "on_objective_complete": {
+          "obj/bolt": [
+            {
+              "type": "narrate",
+              "text": "You run. The Keeper does not call after you."
+            },
+            {
+              "type": "campaign-complete",
+              "ending": "ending/abandoned",
+              "happening": {
+                "verb": "loses",
+                "text": "The delve ends with the gate still shut and the watch unstood."
+              }
+            }
+          ]
+        },
+        "on_complete": [],
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "doing": "watching the road you took, saying nothing",
+            "dialogue": {
+              "barks": [
+                "Go on, then.",
+                "The moor keeps what it is given."
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": "quest/hold",
+        "trigger": {
+          "type": "quest-complete",
+          "quest": "quest/decide"
+        },
+        "happening": {
+          "verb": "survives",
+          "text": "The party stands the night watch beside the Keeper and the moor keeps its distance.",
+          "subject": "npc/keeper"
+        },
+        "objectives": [
+          {
+            "type": "talk-to",
+            "id": "obj/watch",
+            "npc": "npc/keeper",
+            "requires_flags": [
+              "flag/wait"
+            ],
+            "happening": {
+              "verb": "survives",
+              "text": "Dawn comes; the Keeper is alive and the watch is stood.",
+              "subject": "npc/keeper"
+            }
+          },
+          {
+            "type": "reach-anchor",
+            "id": "obj/walk-out",
+            "anchor": "anchor/exit",
+            "radius": 2,
+            "after": [
+              "obj/watch"
+            ],
+            "requires_flags": [
+              "flag/wait"
+            ],
+            "happening": {
+              "verb": "departs",
+              "text": "The party walks out of the keep by the front door, earned."
+            }
+          }
+        ],
+        "on_objective_complete": {
+          "obj/watch": [
+            {
+              "type": "open-gate",
+              "anchor": "anchor/door",
+              "happening": {
+                "verb": "opens",
+                "text": "The Keeper draws the bar and the gate swings wide.",
+                "subject": "anchor/door"
+              }
+            }
+          ],
+          "obj/walk-out": [
+            {
+              "type": "narrate",
+              "text": "The hinge gives. The road is yours."
+            },
+            {
+              "type": "campaign-complete",
+              "ending": "ending/held",
+              "happening": {
+                "verb": "gains",
+                "text": "The delve ends with the gate open and the Keeper's post relieved."
+              }
+            }
+          ]
+        },
+        "on_complete": [],
+        "cast": {
+          "npc/keeper": [
+            {
+              "at": "anchor/keeper-stand",
+              "doing": "standing the last hour of the watch with you",
+              "dialogue": "dlg/watch",
+              "requires_flags": [
+                "flag/wait"
+              ]
+            },
+            {
+              "at": "anchor/keeper-stand",
+              "doing": "alone at the door you left him at",
+              "dialogue": {
+                "barks": [
+                  "Still here."
+                ]
+              },
+              "requires_flags": [
+                "flag/flee"
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

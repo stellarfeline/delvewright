@@ -14,8 +14,12 @@ import {
   dieRetryFindings,
   floorFinding,
   openTrial,
+  checkpointPrecondition,
+  observationOf,
   parseCombatPlan,
+  reseatFidelityFinding,
   respawnedAtCheckpoint,
+  retryOutcome,
   scriptedDeathCommand,
   trialVerdict,
   type DeathTrial,
@@ -32,6 +36,11 @@ function encounter(over: Partial<Encounter> = {}): Encounter {
     count: 1,
     respawnsOnRest: false,
     checkpoint: [97, 71, -96],
+    census: {
+      census: "the-drowned-bell:wave_census_bellkeeper",
+      brand: "the-drowned-bell:wave_brand_bellkeeper",
+      unbrand: "the-drowned-bell:wave_unbrand_bellkeeper",
+    },
     ...over,
   };
 }
@@ -50,6 +59,11 @@ const PLAN = {
       count: 2,
       respawns_on_rest: true,
       checkpoint: [34, 71, -113],
+      census: {
+        census: "the-drowned-bell:wave_census_gate_assault",
+        brand: "the-drowned-bell:wave_brand_gate_assault",
+        unbrand: "the-drowned-bell:wave_unbrand_gate_assault",
+      },
     },
   ],
 };
@@ -72,6 +86,14 @@ test("an encounter with no checkpoint yet parses with an absent one", () => {
   const { checkpoint: _dropped, ...noCheckpoint } = PLAN.encounters[0]!;
   const raw = { ...PLAN, encounters: [noCheckpoint] };
   assert.equal(parseCombatPlan(raw).encounters[0]!.checkpoint, undefined);
+});
+
+test("a plan that cannot name its census is refused, never silently silhouetted", () => {
+  // The alternative is the #230 failure mode: counting whatever the client tracks
+  // and reporting ambush actors as wave mobs a re-seat left standing. A build too
+  // old to state the probe cannot be measured by tag, and saying so beats guessing.
+  const { census: _dropped, ...noCensus } = PLAN.encounters[0]!;
+  assert.throws(() => parseCombatPlan({ ...PLAN, encounters: [noCensus] }), /census/);
 });
 
 test("an unknown tier is a parse failure, never a silent 'ordinary'", () => {
@@ -169,11 +191,16 @@ function trial(over: Partial<DeathTrial> = {}): DeathTrial {
     wave: "wave/bellkeeper",
     attempt: 1,
     phase: "first-contact",
+    outcome: "re-engaged",
     cause: undefined,
     respawnPos: [97, 71, -96],
     atCheckpoint: true,
+    kitKept: true,
     returned: true,
     reEngaged: true,
+    objectiveComplete: false,
+    reseats: false,
+    reengage: undefined,
     objectivesIntact: true,
     lostObjectives: [],
     completed: true,
@@ -204,15 +231,49 @@ test("losing a completed objective to a death is state corruption, not difficult
   assert.match(String(v), /obj\/hold-the-gate/);
 });
 
-test("an encounter that does not re-engage is a one-shot fight", () => {
-  assert.match(String(trialVerdict(trial({ reEngaged: false }))), /only be attempted once/);
+// --- what was waiting at the end of the loop (planner ruling 2026-08-03) ------
+
+test("a re-engaged encounter is the ordinary pass", () => {
+  assert.equal(trialVerdict(trial({ outcome: "re-engaged", reEngaged: true })), undefined);
 });
 
-test("the corruption check outranks the re-engage check", () => {
+test("a fight already won before the death is a PASS, not a broken retry loop", () => {
+  // The sacred property is that dying is safe for PROGRESSION, not that the fight
+  // must still be standing. A player who dies to the last mob's parting hit has
+  // won; so has the bot. Reading this as red made the verdict depend on whether
+  // the bot's timed melee happened to finish the wave — the keep-trial fixture
+  // went red then green on consecutive live runs.
+  const v = trialVerdict(
+    trial({ outcome: "cleared-before-retry", reEngaged: false, objectiveComplete: true }),
+  );
+  assert.equal(v, undefined);
+});
+
+test("nothing to fight AND an unfinished objective is a soft lock, loudly", () => {
+  const v = trialVerdict(
+    trial({ outcome: "stranded", reEngaged: false, objectiveComplete: false }),
+  );
+  assert.match(String(v), /STRANDED/);
+  assert.match(String(v), /soft lock/);
+  assert.match(String(v), /obj\/the-keeper/, "the unfinished objective is named");
+});
+
+test("a loop that never established either is unproven, never a pass", () => {
+  assert.match(String(trialVerdict(trial({ outcome: "unproven" }))), /Nothing was proved/);
+});
+
+test("retryOutcome maps the two observations onto the three outcomes", () => {
+  assert.equal(retryOutcome(true, false), "re-engaged");
+  assert.equal(retryOutcome(true, true), "re-engaged", "a live mob outranks a done objective");
+  assert.equal(retryOutcome(false, true), "cleared-before-retry");
+  assert.equal(retryOutcome(false, false), "stranded");
+});
+
+test("the corruption check outranks the stranded check", () => {
   // Both broken at once: report the one that means the delve ate progress, which
   // is the more serious and the more confusing to debug from the other's message.
   const v = trialVerdict(
-    trial({ reEngaged: false, objectivesIntact: false, lostObjectives: ["obj/x"] }),
+    trial({ outcome: "stranded", reEngaged: false, objectivesIntact: false, lostObjectives: ["obj/x"] }),
   );
   assert.match(String(v), /LOST completed progress/);
 });
@@ -274,4 +335,160 @@ test("two completed trials per encounter is full coverage and says nothing", () 
     trial({ wave: "wave/gate-assault", attempt: 2 }),
   ];
   assert.deepEqual(dieRetryCoverageFailures(plan, new Set(["wave/gate-assault"]), trials), []);
+});
+
+// --- re-seat fidelity, pure (owner ruling 2026-08-03, task #108) -------------
+
+const ANCHOR = [0, 0, 0] as const;
+
+/** One census mob line, as the compiler would have printed it. */
+function mob(over: Partial<{ distance: number; health: number; maxHealth: number }> = {}) {
+  return {
+    campaignId: "c",
+    wave: "wave/x",
+    seq: 1,
+    pos: [over.distance ?? 1, 0, 0] as readonly [number, number, number],
+    health: over.health ?? 20,
+    maxHealth: over.maxHealth ?? 20,
+  };
+}
+
+/** A settled census: the server's totals plus the mob lines that closed it. */
+function census(
+  mobs: ReturnType<typeof mob>[],
+  over: Partial<{ present: number; branded: number; damaged: number }> = {},
+) {
+  return {
+    summary: {
+      campaignId: "c",
+      wave: "wave/x",
+      seq: 1,
+      present: over.present ?? mobs.length,
+      branded: over.branded ?? 0,
+      damaged: over.damaged ?? mobs.filter((m) => m.health < m.maxHealth).length,
+    },
+    mobs,
+  };
+}
+
+test("observationOf counts what came back, what carried over, and how far it strayed", () => {
+  const obs = observationOf(
+    census([mob({ distance: 60 }), mob({ health: 6 }), mob()], { branded: 1 }),
+    3,
+    [...ANCHOR],
+    900,
+  );
+  assert.equal(obs.present, 3);
+  assert.equal(obs.declared, 3);
+  assert.equal(obs.carriedOver, 1);
+  assert.equal(obs.damaged, 1);
+  assert.equal(obs.healthReadable, 3);
+  assert.equal(obs.nearest, 1);
+  assert.equal(obs.farthest, 60);
+  assert.equal(obs.settleMs, 900);
+});
+
+test("the census counts the WAVE — a bystander standing beside it cannot enter the tally", () => {
+  // The #230 shape: two ambush husks and a neighbouring wave's mob are standing
+  // where the bot is, and were standing there before it died. The server counted
+  // by tag, so the observation is of the wave alone and nothing carried over.
+  const obs = observationOf(census([mob(), mob()]), 2, [...ANCHOR], 40);
+  assert.equal(obs.present, 2, "not 4 — the bystanders never had the wave tag");
+  assert.equal(obs.carriedOver, 0);
+  assert.equal(reseatFidelityFinding("wave/x", 1, "first-contact", obs), undefined);
+});
+
+test("a faithful re-seat is silent", () => {
+  const obs = observationOf(census([mob(), mob(), mob()]), 3, [...ANCHOR], 40);
+  assert.equal(reseatFidelityFinding("wave/x", 1, "first-contact", obs), undefined);
+});
+
+test("a survivor carried across a life outranks every other fidelity fault", () => {
+  // Both wrong at once: report the carried-over mob, because that is the grind
+  // the ruling forbids and it explains the missing health too.
+  const obs = observationOf(census([mob({ health: 3 }), mob()], { branded: 1 }), 3, [...ANCHOR], 40);
+  const v = reseatFidelityFinding("wave/x", 2, "mid-fight", obs);
+  assert.match(String(v), /already/);
+  assert.match(String(v), /never topped up around its survivors/);
+});
+
+test("a short re-seat names the observed and declared counts", () => {
+  const obs = observationOf(census([mob(), mob()]), 3, [...ANCHOR], 6_000);
+  assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /2 mob\(s\) standing, 3 declared/);
+});
+
+test("a whole but wounded re-seat is red on health alone", () => {
+  const obs = observationOf(census([mob({ health: 11 }), mob()]), 2, [...ANCHOR], 40);
+  assert.match(String(reseatFidelityFinding("wave/x", 1, "first-contact", obs)), /BELOW full/);
+});
+
+test("only a re-seating wave owes fidelity — a persisting wave is judged by outcome alone", () => {
+  const wounded = observationOf(census([mob({ health: 4 })], { branded: 1 }), 2, [...ANCHOR], 40);
+  assert.equal(
+    trialVerdict(trial({ reseats: false, reengage: wounded, outcome: "re-engaged" })),
+    undefined,
+    "survivors ARE the design when the wave does not re-seat",
+  );
+  assert.match(
+    String(trialVerdict(trial({ reseats: true, reengage: wounded, outcome: "re-engaged" }))),
+    /previous life/,
+  );
+});
+
+// --- die-retry precondition: an armed checkpoint (compiler #220) -------------
+
+const FIRE = { bonfire: 1, anchor: "anchor/beach-fire", pos: [97, 71, -96] as const, step: 4 };
+
+test("a governing checkpoint on a bonfire the bot rested at is armed", () => {
+  assert.equal(checkpointPrecondition(encounter(), [FIRE], new Set([1]), 16), undefined);
+});
+
+test("a bonfire the route walked past leaves the checkpoint unarmed", () => {
+  // Bell round 3: a fire only ARMS on arrival; the respawn point moves when the
+  // party RESTS. Every fire walked past, so both trials respawned at world spawn.
+  const v = checkpointPrecondition(encounter(), [FIRE], new Set(), 16);
+  assert.equal(v?.kind, "unarmed");
+  // The RUN's own gap, so it reds the stage: every measurement after it would
+  // describe the harness's skipped rest rather than the delve.
+  assert.equal(v?.reds, true);
+  assert.match(String(v?.finding), /no checkpoint armed/);
+  assert.match(String(v?.finding), /passed bonfire 1 \(anchor\/beach-fire\) without resting/);
+  assert.match(String(v?.finding), /No death was taken/);
+});
+
+test("a checkpoint that is no bonfire arms itself — nothing to contradict", () => {
+  // An ordinary `set-checkpoint` fires with its beat. Only a bonfire needs a rest.
+  assert.equal(checkpointPrecondition(encounter(), [], new Set(), 16), undefined);
+});
+
+test("an encounter with NO governing checkpoint is named, skipped, and not graded", () => {
+  // Post-#223 this is the truthful reading of souls-bonfire's encounter: with
+  // `fire_step < i`, a checkpoint armed by the encounter's OWN kill step is
+  // correctly not its governing one, so the plan names none. A death there
+  // respawns at world spawn — the retry loop is a full restart of the delve.
+  //
+  // That is a CONTENT fact about where the campaign puts its rest points, and in
+  // a souls campaign a design smell; but the compiler's retry-cost and checkpoint
+  // rules own that judgement, so the harness states it and declines to grade it.
+  // What it must never do is take the death anyway (it would measure the delve
+  // against world spawn) or say nothing (the loop went unproven).
+  const v = checkpointPrecondition(encounter({ checkpoint: undefined }), [FIRE], new Set(), 16);
+  assert.equal(v?.kind, "no-checkpoint");
+  assert.equal(v?.reds, false, "advisory — the compiler owns this judgement, not the stage");
+  assert.match(String(v?.finding), /no governing checkpoint/);
+  assert.match(String(v?.finding), /die-retry cannot prove safe death here/);
+  assert.match(String(v?.finding), /full restart/);
+  assert.match(String(v?.finding), /No death was taken/);
+  assert.match(String(v?.finding), /DW0379/);
+});
+
+test("a governing bonfire the path only rests at LATER is still unarmed now", () => {
+  // The souls-bonfire fixture's real shape: the fire is armed by the very beat the
+  // encounter completes, so the plan hands the encounter a checkpoint whose rest
+  // step sits AFTER it. The respawn point has not moved when the death would be
+  // scripted, whatever the path does afterwards.
+  const v = checkpointPrecondition(encounter(), [{ ...FIRE, step: 40 }], new Set(), 16);
+  assert.equal(v?.reds, true);
+  assert.match(String(v?.finding), /does not rest at bonfire 1 \(anchor\/beach-fire\) until AFTER/);
+  assert.match(String(v?.finding), /path step 40/);
 });

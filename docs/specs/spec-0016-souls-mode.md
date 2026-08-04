@@ -24,6 +24,49 @@ non-bonfire checkpoints (island-style). Proofs: bonfire placement inherits
 DW0316 (standable) + DW0315 (no stranding); a wave marked respawns_on_rest
 on the critical path re-runs its completability proof post-rest.
 
+Owner rulings (2026-08-03, from the bell first playtest — the campfire must
+be a real interaction, never a lazy "arrive" objective):
+
+- **Right-clicking the bonfire opens exactly two options**: *rest and save*
+  vs *save only*. Save-only sets the checkpoint and nothing else. Rest does
+  the full loop: player fully restored, flask refilled, `on_rest[]` fired
+  (non-boss waves re-seat; stage bosses never respawn on rest).
+- **The flask (estus equivalent)**: a souls-mode class kit MUST carry
+  declared recovery potions; resting replenishes them to the declared
+  count. Compile proof: a souls campaign whose kit declares no flask is a
+  build error.
+- **Re-seat fidelity**: a re-seated wave is REMOVED and re-summoned
+  identical — full count, full health, both sides reset. Grinding a wave
+  down one hit per life is never a valid path; the die-retry stage asserts
+  count + health at re-engagement (task #108).
+
+Owner rulings (2026-08-04, from the round-nine ladder run — a re-seated gate
+squad marched its lane and killed the bot beside a fire it had just rested at):
+
+- **Stationed re-seat.** Beaten `respawns_on_rest` waves DO return, on rest and
+  on death-respawn — the souls loop stands — but a re-seated wave returns to its
+  **initial stationed state**: lane waves re-enter their routed patrol from the
+  lane start (`Patrolling:1b` re-applied, `patrol_target` reset), non-lane waves
+  stand at their anchors with vanilla-local AI only. **No re-seated mob may
+  pursue across the map.** (Supersedes the retire-the-seat proposal: a wave you
+  have beaten still comes back — the fire is not a progress ratchet.)
+- **Bonfire safe zone.** A bonfire may not sit inside ANY hostile's aggro range:
+  for every wave/actor hostile, `distance(bonfire, spawn cell or lane path)` must
+  exceed that hostile's `follow_range` (the declared value; the default if
+  undeclared). **Error tier** — a bonfire inside aggro range is a
+  soft-lock/despair machine, because you respawn into combat. Amendment (owner
+  decision 2026-08-04): a lane's distance term is `follow_range` + the measured
+  marching drift (7.9 blocks, td-routing-spike dossier max off-lane deviation) —
+  a marching squad is a corridor around its polyline, not a line; stationary
+  spawn/staging cells keep the plain term.
+
+Proofs: the stationed re-seat holds because the re-seat re-enters through the
+wave's own `spawn_<wave>`, which is where every piece of stationed state is
+written — pinned by tests on that identity and by generated PackTests
+(`souls_reseat_stationed`, `souls_td_lane_reseat`) that drive a re-seat from the
+squad hauled onto the party and released to native AI. The safe zone is
+`DW0478`, measured against the seated spawn cells and the proven lane polyline.
+
 ### 2. Shortcut doors ("the door does not open from this side")
 The owner's definition of the pattern (2026-08-02), which this section is
 now built around: between two bonfires there are TWO routes — a **short

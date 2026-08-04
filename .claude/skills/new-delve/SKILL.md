@@ -46,7 +46,9 @@ visual-review judgment. The **mechanical writing of each stage's JSON and the
 creative brief for the stage plus the schema command (`delvec schema --stage <n>`);
 it returns valid stage JSON and a short summary of the choices it made, which you
 fold into your stage summary. The **validation ladder** stays on a **test
-subagent** (step 7).
+subagent** (step 8). The **branch chronicle review** (step 7) is the authoring
+agent's own: it is narrative judgment against `DESIGN.md`, and delegating it
+would hand the design's intent to somebody who never held it.
 
 Model policy for subagents: **dev subagents run `opus`; test / validation subagents
 run `sonnet`.** A subagent must **NEVER run a higher tier than the main agent
@@ -249,9 +251,24 @@ For each stage in order — world → npcs → classes → quest-plan → quests
    - NPCs: personas per schema (archetype/speech_style/motivation required);
      honor them in every stage-6 line. Dialogue: branching options; flavor NPCs
      get real trees too.
-   - **Stage 6: every option label fits its button** — ≤20 Latin / ≤12 Han
-     characters, *Writing craft* §C. A long label scrolls; move the content into
-     the node body or the NPC's reply.
+   - **Stage 6: an option label is a button caption, not a sentence** — the
+     compiler rejects over-long ones (`DW0331`, error). Vanilla draws each option
+     on a fixed 150-GUI-px button and *scrolls* a label that does not fit. The
+     budget is 146 font px ≈ 24 Latin / 16 Han characters; author to **≤20 Latin,
+     ≤12 Han** so a translation has room to grow (a `zh-cn` sidecar is checked
+     under its own key). What does not fit belongs in the node's body text, which
+     wraps, in the option's `tooltip`, or in the NPC's reply — never in the button.
+   - **Stage 6: `button = caption, tooltip = the full line.`** (Owner design,
+     2026-08-04.) When the caption cannot carry what the character actually
+     says — the wine beat, where "Pour it out." stands for a whole sentence —
+     author the option's optional `tooltip`: vanilla shows it in a hover box
+     beside the button. It **wraps** (no `DW0331`, no width budget), so it takes
+     a full sentence. Use it for the *said line*, not for hints or mechanics;
+     the button still has to be readable on its own, since a player on a
+     controller or reading fast never hovers. Needs `dsl_version 0.8.0` on the
+     dialogue stage, and it translates under its own key
+     (`dlg.<npc>.<node>.opt.<i>.tooltip`). Full geometry rationale: *Writing
+     craft* §C.
    - **Stage 6: re-derive every node's option list from that node's situation.**
      (Owner ruling, 2026-08-03.) Never carry an option list forward from an
      earlier node. Before shipping a node, check each option for semantic fit
@@ -306,6 +323,35 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      seconds of reading before the first step is taken. The motivating playtest
      defect: the flock the player was told to follow left while they were still
      reading the instruction, and the beat then failed them for it.
+   - **Stage 4: declare every story fork** (spec-0025, DSL v0.8). If a choice
+     forks who lives, where the party ends up, or which ending plays, it is a
+     `branch_points` entry: `{id, opens_at, forks_on:[flags], branches:[{id,
+     flags, leads_to}]}`. `leads_to` is one field — a `quest/…` the branches
+     converge at, or an `ending/…` this branch runs to (the id prefix says
+     which). Name each ending on the `campaign-complete` that fires it
+     (`"ending": "ending/<slug>"`). A flag that gates casts, staging or quest
+     structure and is *not* set on every playthrough must belong to a declared
+     point, or the build fails (`DW0480`). Every declared branch must reach an
+     ending (`DW0482`) and must be exclusive: no sibling's flag may be producible
+     on it (`DW0484`).
+   - **Every story node declares a `happening`** (spec-0025). One line saying
+     what the node does to the story: `{verb, text, subject?}`, where `verb` is
+     one of `dies` / `survives` / `departs` / `arrives` / `learns` / `believes` /
+     `gains` / `loses` / `opens` / `seals`. Required on every quest, every
+     objective, every staging / wave / gate / `campaign-complete` effect, and
+     every dialogue option that sets a flag — a missing one is `DW0481`. It is
+     the event-flow twin of the cast ledger's `doing`: you cannot fill it without
+     deciding what the beat *is*. Keep `subject` accurate (`npc/…`, `actor/…`,
+     `wave/…`, `anchor/…`, or an `item/…` label) — the compiler reads only the
+     verb and the subject, and uses them to catch a dead character who later acts
+     or a sealed gate later walked through, per branch (`DW0485`).
+   - **Post-fork casts are per branch, every quest.** After a fork opens, an
+     NPC whose situation differs by branch declares a **list** of placements,
+     each gated by the flags of the branch it belongs to — in *every* later
+     quest, not just the first. Leaving one ungated as a fallback is `DW0483`:
+     later declarations win, so the fallback keeps governing the branch that
+     already has its own. This is the island round-13 defect ("the fork moved the
+     ledger but never moved the bodies").
    - **Stage 5: write the `cast` block FIRST, before the objectives** (spec-0020).
      Every quest declares, for every NPC live in it, `{at, doing, dialogue}` —
      position first, story second. `at` is an anchor (or `"offstage"`/`"dead"`,
@@ -461,7 +507,50 @@ Then:
 5. `delvec analyze <campaign-dir>` — reachability/deadlock/dark-mitigation. Fix in
    the DSL (never by weakening the campaign; a dead quest is a design bug).
 6. `delvec build <campaign-dir> -o <workspace>/out` — must exit 0.
-7. Machine validation ladder — **delegate to a `sonnet` subagent** (owner policy
+7. **Branch chronicle review (spec-0025 §4) — MANDATORY, per branch, whenever the
+   stage-4 plan declares `branch_points`.** Yours, not a subagent's: this is
+   narrative judgment. Skip it and the campaign is not verified, however green the
+   ladder is.
+
+   The compiler has compiled the DSL **back into natural language**:
+   `<workspace>/out/validation/branch-chronicle-<branch>.md` is one branch's
+   storyline in compiled play order — every reachable node's `happening` line,
+   first beat to ending — and `validation/branch-plan.json` lists the branches.
+   Whether the DSL matches the design is not something you can check by simulating
+   compilation in your head, so you compare like with like: NL against NL (the
+   decompilation principle, spec-0025). Dialogue text carries meaning no compiler
+   can check — "Where is Antiphos, Captain" is wrong only because Antiphos is
+   alive HERE.
+
+   For **each** branch in `branch-plan.json`:
+   a. Read its chronicle **end to end, in order, in one pass.** Do not skim and do
+      not sample: what this catches are contradictions in SEQUENCE ("Antiphos
+      survives" at line 12, "Elpenor mourns Antiphos" at line 31).
+   b. Read it against `DESIGN.md` — the intent document, already conformance-
+      reviewed. Every beat the design promises on this branch must appear in the
+      chronicle; every beat in the chronicle must be one the design licenses on
+      this branch.
+   c. Read it against the dialogue **reachable on that branch** (the stage-5 cast
+      ledger's roots for this branch, and the trees they reach under its flags).
+      **Every dialogue line touching branch-divergent state — who is alive, who is
+      where, what was sealed, opened, lost or gained — must be LICENSED by a
+      chronicle line of that branch.** An unlicensed line is a finding, not a
+      matter of taste.
+   d. Write the **citation table into `GENERATION.md`** — it is the artifact of
+      record, and "reviewed" is checkable, never folklore. Every finding AND every
+      clearance cites chronicle lines by number:
+
+      | branch | claim reviewed (dialogue/design beat) | chronicle line(s) | verdict |
+      |---|---|---|---|
+      | `branch/flee` | Elpenor: "We lost him at the mouth." | 14 `departs` | cleared |
+      | `branch/flee` | Kalliope: "Antiphos is dead." | — | **FINDING** — no chronicle line licenses a death on this branch |
+
+   The pass **fails** if any branch-divergent dialogue line has no citation, if a
+   branch has no table rows at all, or if any row's verdict is a finding. A
+   finding is fixed in the DSL (move the line behind the right flag, swap the
+   cast's dialogue root for that branch, or fix the branch the beat is on) and the
+   review re-run — never argued away, and never left for the owner's QA hour.
+8. Machine validation ladder — **delegate to a `sonnet` subagent** (owner policy
    2026-07-30: execution is mechanical, no creativity needed; also keeps long
    server logs out of the authoring context). Spawn an Agent
    (`subagent_type: general-purpose`, `model: sonnet`) instructed to, from repo
@@ -487,12 +576,41 @@ Then:
      window, every death trial, and any inverted-floor-gate finding. An EMPTY
      `assist_windows` is not evidence of anything on its own — read the
      `encounters` block beside it, which states each encounter's assist policy
-     and the phase the run actually reached (no assist is taken while the
-     die-retry stage is deliberately dying, nor on a billed fight's honest first
-     attempt). A red
+     and the phase the run actually reached (no assist is taken on a billed
+     fight's honest first attempt, nor for the scripted death itself). Expect
+     SEVERAL windows per encounter: the die-retry stage is assisted into melee
+     range and back out again, so bot fencing skill never decides whether that
+     stage can run — only the death loop is under test there. **Read the
+     `floor_gate` block every time**: it is the compiler's
+     coverage ledger, and `not_covered` names each fight the delve bills
+     `elite`/`boss` that the gate cannot measure, with the reason — an empty
+     findings list over an uncovered elite is silence, not a pass. The `actors[]`
+     block beside it does the same for tier-declaring stage-5 actors: one row per
+     actor, fought (with its outcome) or not (with why). An actor unleashed only
+     by an ambient trigger is reported unexercised by design — if you want the
+     ladder to measure that fight, unleash it from an objective on the critical
+     path, and stage it where the party already stands (an actor anchored inside a
+     later objective's zone completes that objective during the fight). A red
      `die-retry` stage is a CONTENT bug of the most serious kind — the delve is
      completable but dying is not safe. Never set `DELVEWRIGHT_DIE_RETRY=0` to
      get green; the report records a skipped stage as skipped, not as passed.
+     Reading one trial: `respawn_pos` is where the bot actually came back and
+     `at_checkpoint` is derived from it; `returned` is the walk back from exactly
+     there. `re_engaged` and `outcome` are observed ONLY when `returned` — a trial
+     that never got back reads `outcome: unproven`, which means the loop was never
+     in a position to be judged, not that the fight vanished; fix the route from
+     that checkpoint first. `kit_kept: false` means the kit did not survive the
+     death, which is a broken world seal, not a difficulty knob.
+   - **branch runs (spec-0025 §3) — required whenever the build emitted
+     `validation/branch-plan.json`.** One critical-path run proves ONE storyline;
+     a campaign that forks must have EVERY branch walked. Run
+     `EULA=TRUE validation/branch-runs.sh` (release tier: every enumerated
+     branch, each in its own fresh world — party progress only moves forward, so
+     a second branch needs a second world). It writes
+     `validation/run-out/branch-runs.json`: per branch, ran/skipped-with-reason
+     and the result. `DELVEWRIGHT_BRANCHES=<ids>` narrows the tier for local
+     iteration; a narrowed run is NOT a validated campaign, and the report says
+     which branches it skipped. `from-diff` is not available yet and refuses.
    - tear down containers, and report ONLY: per-command exit codes, failed
      PackTest names, the bot's failed step (if any), any die-retry finding, and
      ≤20 relevant log lines.
@@ -506,7 +624,7 @@ Then:
      the bug, never weaken a check or reroll a seed to get green. A workaround
      that turns a toolchain bug green is itself a quality defect: it ships the
      bug to every future campaign. Escalating is success.
-8. Visual review (spec-0003 visual tier) — **you** (the authoring agent, not a
+9. Visual review (spec-0003 visual tier) — **you** (the authoring agent, not a
    subagent; visual judgment is the point). The build output already contains
    `render-plan.json` (deterministic shots + per-shot `expect` checklists derived
    from the DSL). Render the per-prefab sets with Nucleation and read them against
@@ -522,7 +640,7 @@ Then:
      hand-edit output. Whole-scene and player-POV shots come from
      `validation/render-shots.sh <build-dir>` (`delve-render scene` + `index`);
      actually path-tracing those scenes with Chunky stays manual/CI-future.
-9. **Storybook** (spec-0007): write `campaigns/campaigns/<id>/README.md` — the
+10. **Storybook** (spec-0007): write `campaigns/campaigns/<id>/README.md` — the
    reader-facing intro. Background/setting ONLY: premise, lore, public NPC
    introductions (never persona `secret`), classes, playtime, build/play
    commands. NO puzzle solutions, quest structure, or endings. Images (relative
@@ -531,7 +649,7 @@ Then:
    Localized `README.<code>.md` per declared language. The render-set images are
    the default — the author may later replace them with hand-crafted shots
    (shaders, staged compositions); media ships with the campaign PR.
-10. Report to the user: campaign summary, playtime estimate, validation results,
+11. Report to the user: campaign summary, playtime estimate, validation results,
     and the two commands they care about:
     - play: `EULA=TRUE docker compose -f validation/compose.yaml --profile play up`
     - playtest with notes: same with `--profile playtest` (+ `CREATOR_NAME=<mc name>`)
@@ -588,21 +706,72 @@ Then:
      publishes no per-entity default attributes, so an undeclared stack gets no
      numeric bound at all and the build warns `DW0475`. A souls campaign wants
      the arithmetic proven, so declare the health you tuned against.
-  3. *The die-retry ladder stage*: the bot deliberately dies twice at every
-     encounter and proves respawn at the governing checkpoint -> the route back
-     -> the fight re-engages -> no completed objective was lost. Author with
-     that in mind: every encounter needs a checkpoint/bonfire that governs it,
-     and a wave the party must be able to re-fight wants `respawns_on_rest`.
+  3. *The die-retry ladder stage*: the bot rests at every bonfire on the path
+     (a fire only ARMS on arrival — the respawn point moves when the party
+     RESTS), then deliberately dies twice at every encounter and proves respawn
+     at the governing checkpoint -> the route back
+     -> the encounter is still finishable -> no completed objective was lost.
+     Author with that in mind: every encounter needs a checkpoint/bonfire that
+     governs it, and a wave the party must be able to re-fight wants
+     `respawns_on_rest`. Leaving it off is legitimate — a won fight stays won,
+     and the stage records that as `cleared-before-retry` and passes it. What it
+     reds is `stranded`: nothing left to fight AND the objective unfinished, so
+     the party can neither complete the encounter nor re-fight it. Turning
+     `respawns_on_rest` ON buys a stricter check: the wave must come back WHOLE
+     — declared count, all-new mobs, full health — because a retry must never let
+     the party grind a fight down one swing per death.
   4. *The inverted floor gate*: mark a set-piece fight `tier: "elite"` or
-     `"boss"` (DSL v0.7, on the wave). The ladder then gives it one UNASSISTED
-     bot attempt; if the bot — a poor fencer by design — wins cold, the run
-     reports the fight as too easy for its billing. Leave ordinary pressure
-     waves unmarked: they carry no such expectation. Marking is how you opt
-     into the scrutiny, so mark honestly.
+     `"boss"` — on the **wave** (DSL v0.7) or on the **actor** (DSL v0.8), same
+     three keywords. The ladder then gives it one UNASSISTED bot attempt; if the
+     bot — a poor fencer by design — wins cold, the run reports the fight as too
+     easy for its billing. Leave ordinary pressure waves unmarked: they carry no
+     such expectation. Marking is how you opt into the scrutiny, so mark
+     honestly. **Mark the actor when the elite IS an actor** — the kneeling
+     armoured thing that stands up when struck is a `spawn-actor` +
+     `unleash-actor` beat, not a wave, and an unmarked one is a boss no proof
+     ever looks at.
+  5. *A tier the gate cannot measure is said out loud, not swallowed*: the gate
+     warns on a first-try win and is silent otherwise, so an encounter nobody
+     fought would look exactly like one that was fought and lost. The compiler
+     therefore warns `DW0477` — and records `floor-gate: not covered (reason)`
+     in `validation/combat-plan.json` — for a tiered actor no `unleash-actor`
+     beat ever wakes (an `Invulnerable` puppet is scenery; a `vulnerable` one is
+     `NoAI` and never swings back), and for a tiered wave no critical-path
+     `kill` objective names. If you meant it as a fight, add the unleash or the
+     `kill` objective; if you meant it as set dressing, drop the tier.
   Ordinary fights run the ladder under a bounded, logged combat assist, so bot
   fencing skill never caps how hard the delve is allowed to be — read
   `validation/run-out/run-report.json` after a `validate` run for the assist
   windows, the death trials and any floor findings.
+- **Bonfires owe the party a flask.** Right-clicking a `bonfire` opens exactly
+  two options — *rest and save* (full restore: health, hunger, negative effects
+  cleared, flask refilled, checkpoint moved, `respawns_on_rest` waves re-seated,
+  `on_rest[]` fired) and *save only* (the checkpoint, nothing else). The
+  replenished item is a class-kit entry marked `"flask": true`, and **every
+  class kit in a campaign that places a bonfire must declare one** — a bonfire
+  campaign with a flaskless kit is the build error `DW0476`. Author it as a real
+  recovery consumable (a healing potion, a golden apple) with the per-rest
+  budget you tuned against as its `count`: resting sets the stack back to exactly
+  that number, up or down, so the flask is a budget and never a stockpile. The
+  bonfire's three dialog strings default to canonical English; author
+  `prompt`/`rest_label`/`save_label` only when the fiction wants its own words,
+  and keep the two labels button captions (`DW0331`: ~20 Latin / ~12 Han).
+  Both the flask and the labels need `dsl_version 0.8.0` on their stage.
+- **Place a bonfire OUT of every hostile's reach.** A rest point is where the
+  party respawns and where every `respawns_on_rest` wave is put back on its
+  feet, so a fire inside a hostile's `follow_range` delivers the party straight
+  into combat on arrival — the build error `DW0478`. The clearance is measured
+  against where the force actually IS: a wave's seated spawn cells, and for a
+  `lane` wave the whole marched polyline (a lane wave walks its corridor while
+  you are elsewhere, so a fire beside the far end of a lane is a fire in the
+  lane). Fighting actors — anything `unleash-actor`ed, or staged `vulnerable` —
+  count too, at their staging anchor. Put fires in side rooms, past the
+  threshold, or beyond the end of the lane; never buy the clearance by
+  shrinking `follow_range`, which retunes the fight to hide the placement.
+  A re-seated wave always comes back **stationed** — a lane wave at its lane
+  start, a plain wave at its anchor — so the safe zone stays true across every
+  rest and every death.
+
 - **Wave tuning**: `follow_range` below ~16 means distant wave mobs never
   engage; a kill objective whose mobs idle is unfinishable-in-practice even
   though machine-valid. Undead waves burn in daylight — the RIGHT fix (owner

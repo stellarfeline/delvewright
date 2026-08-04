@@ -478,21 +478,43 @@ pub fn build_with_warnings(
                         }
                     })?,
                 );
-                // The bot ladder's combat plan (spec-0023 §1/§3/§4): which
-                // encounters exist, what the content bills each as, and which
-                // checkpoint governs a death at it. Validation metadata only —
-                // it lives under `validation/`, which `Dockerfile.delve`
-                // excludes, so no shipped byte moves.
+            }
+            // The bot ladder's combat plan (spec-0023 §1/§3/§4): which
+            // encounters exist, what the content bills each as, and which
+            // checkpoint governs a death at it. Validation metadata only — it
+            // lives under `validation/`, which `Dockerfile.delve` excludes, so
+            // no shipped byte moves.
+            //
+            // A tier-declaring ACTOR (task #113) is enough on its own to want
+            // this file: the set-piece souls fight is an actor, not a wave, and
+            // a campaign whose only billed elite is an actor would otherwise
+            // emit no plan at all — the exact silence spec-0023's floor gate
+            // must not be allowed to read as a pass.
+            let tiered_actors = crate::combat::actor_encounters(plan);
+            if crate::combat::has_encounters(plan) || !tiered_actors.is_empty() {
+                let mandatory = crate::combat::encounters(plan);
+                warnings.extend(crate::combat::floor_coverage_warnings(
+                    plan,
+                    &mandatory,
+                    &tiered_actors,
+                ));
                 put_json(
                     &mut out,
                     "validation/combat-plan.json",
-                    &crate::combat::combat_plan_json(plan, &crate::combat::encounters(plan)),
+                    &crate::combat::combat_plan_json(plan, &mandatory, &tiered_actors),
                 );
             }
             // spec-0016 §6: resolve and prove each TD lane polyline (DW0386). The
             // proven cells are what `patrol_target` carries, so the squad is only
             // ever sent somewhere it can stand and walk to.
             let lanes = crate::nav::plan_lanes(plan, &world)?;
+            // spec-0016 §1 (owner ruling 2026-08-04): the bonfire SAFE ZONE
+            // (DW0478). Runs here because it needs both halves of where the
+            // hostiles actually are — the seated spawn cells above and the lane
+            // polylines just resolved — measured against every rest point. A
+            // bonfire inside a hostile's aggro range is a soft-lock: rest and
+            // death both deliver the party into contact on arrival.
+            crate::nav::check_bonfire_safe_zone(plan, &world, &waves, &lanes)?;
             // spec-0022: resolve and prove every `volley` / `collapse`. Volley
             // coverage is proven by construction (one shot per standable
             // kill-zone cell, or DW0442 naming the cell it cannot reach), and a
@@ -656,8 +678,11 @@ pub fn build_with_warnings(
         &mut out,
         &moves,
         &actor_moves,
-        &lane_routes,
-        &wave_rings,
+        &WaveGeometry {
+            placements: &wave_placements,
+            lanes: &lane_routes,
+            rings: &wave_rings,
+        },
         &payload_plans,
     );
 
@@ -672,7 +697,11 @@ pub fn build_with_warnings(
     emit_server(plan, &mut out);
 
     // ---- critical path ----
-    put_json(&mut out, "critical-path.json", &emit_critical_path(plan));
+    put_json(
+        &mut out,
+        "critical-path.json",
+        &emit_critical_path(plan, &moves, &actor_moves),
+    );
 
     // ---- visual-tier render plan (spec-0003 / spec-0007) ----
     // Deterministic camera + expect-checklist shot list for the visual tier;
@@ -730,6 +759,31 @@ pub fn build_with_warnings(
         );
         Some(sha1)
     };
+
+    // spec-0025 validation metadata: `branch-plan.json` (the branch set, each
+    // one's flag assignment, its critical path and the dialogue choices that
+    // enter it — what the harness scripts its per-branch runs from) and one
+    // `branch-chronicle-<branch>.md` per branch for the generation-time
+    // narrative review. Both are pure functions of the campaign document, so
+    // they are byte-identical across builds (ADR-0006), and both are EMPTY for a
+    // campaign that declares no branch points — nothing moves for anybody who
+    // has not opted in. Emitted before the manifest so its hashes cover them,
+    // exactly like `critical-path-waypoints.json`.
+    out.extend(crate::branch::artifacts(plan.campaign));
+    // ...and, for the harness tier, one EXECUTABLE path per reachable branch:
+    // `validation/branch-path-<branch>.json`, in the same `critical-path.json`
+    // contract the bot has always consumed. The plan artifact above says WHICH
+    // branches exist and how a player enters them; these say what the bot walks.
+    // A branch's scripted dialogue choices ride inside its own `talk-to` steps
+    // (each carries the `/trigger` line of the option belonging to that branch),
+    // which is the only player-legal way to actuate a server-driven dialog button.
+    for (slug, path) in branch_paths(plan, &moves, &actor_moves)? {
+        put_json(
+            &mut out,
+            &format!("validation/branch-path-{slug}.json"),
+            &path,
+        );
+    }
 
     // ---- manifest (hashes of inputs + all other outputs) ----
     let manifest = emit_manifest(
@@ -1245,6 +1299,14 @@ fn emit_functions(
     setup.push("scoreboard objectives add dw.class trigger".to_string());
     setup.push("scoreboard objectives add dw.classed dummy".to_string());
     setup.push("scoreboard objectives add dw.dlg_shown dummy".to_string());
+    // spec-0016 §1 (owner ruling 2026-08-03): the bonfire's two-option answer
+    // channel. `dw.rest` is a *trigger* because a dialog button runs its command
+    // as the clicking player, and `/trigger` is the one command a non-operator
+    // player may run. Absent for a campaign with no bonfire → byte-identical.
+    if plan.bonfires().next().is_some() {
+        setup.push("scoreboard objectives add dw.rest trigger".to_string());
+        setup.push("scoreboard objectives add dw.rest_at dummy".to_string());
+    }
     for npc in &plan.npcs {
         setup.push(format!(
             "scoreboard objectives add {} trigger",
@@ -1744,7 +1806,34 @@ fn emit_functions(
     // (trigger fired + optional item) are v0.3 additions. `collect` completes via
     // its `inventory_changed` advancement AND (v0.3) a per-tick held check that
     // closes the pre-activation-pickup stall (gap 13).
-    for q in &c.quests.content.quests {
+    //
+    // ## The arming-before-adjudication invariant (task #124)
+    //
+    // This is the ONE loop whose lines can ARM a quest: a completion line runs
+    // `complete_<obj>` → `check_q_<quest>` → `complete_q_<quest>`, and that last
+    // function writes `#party dw.qa_<next>` for every quest triggered by this
+    // one's completion. Every other quest gate in the tick only READS those
+    // scores.
+    //
+    // So the loop must visit an arming quest before the quest it arms, and the
+    // guarantee has to be STRUCTURAL rather than a property declaration order
+    // happens to have. What goes wrong otherwise is silent and costs a player
+    // their click: an `interact` adjudicates under `if score #party dw.qa_<q>
+    // matches 1` and then resets the trigger UNCONDITIONALLY on the next line, so
+    // a click already pending when its quest is armed later in the same tick is
+    // consumed with no effect. A human clicks again and never knows; a validation
+    // bot clicks once and times out.
+    //
+    // The reset stays unconditional on purpose (owner ruling): a trigger fired
+    // long before its quest was armed is DISCARDED, never banked. Banking would
+    // auto-complete the objective the instant the quest armed, with no real click
+    // — a worse failure than the one it would fix, because it fabricates player
+    // input rather than losing it.
+    //
+    // `quests_in_arming_order` is a stable topological sort, so a campaign whose
+    // quests are already declared in arming order — every campaign built so far —
+    // emits byte-identically.
+    for q in quests_in_arming_order(c) {
         let area = plan.quest_area(q.id.as_str()).unwrap_or("");
         let qa = quest_active_score(q.id.as_str());
         for o in &q.objectives {
@@ -1964,6 +2053,14 @@ fn emit_functions(
             } else {
                 body.push(give);
             }
+        }
+        // spec-0016 §1: a bonfire rest refills the resting player's OWN flask, so
+        // the pack has to remember which class they took — `dw.class` is a trigger
+        // this function resets and `dw.classed` records only that a class was
+        // taken. Emitted only when the campaign declares a flask, so every other
+        // campaign's class apply is byte-identical.
+        if !plan.flasks().is_empty() {
+            body.push(format!("tag @s add {}", class_tag(&plan_class.safe)));
         }
         body.push("scoreboard players set @s dw.classed 1".to_string());
         // Party state (spec-0018): the campaign-start quests activate for the
@@ -2467,6 +2564,91 @@ fn emit_functions(
                 ]),
             ));
         }
+        // --- task #123: the wave CENSUS probe surface ---
+        //
+        // The live ladder used to answer "what is standing at this encounter?" by
+        // silhouette: every entity mineflayer tracked, no distance filter, any mob
+        // taller than half a block. On the drowned bell that counted five ambush
+        // actors and a neighbouring wave as members of whichever wave was being
+        // measured, and — since they were alive on both sides of a scripted death
+        // — reported them as survivors the re-seat had failed to remove (#230).
+        // The wave tag is the only exact answer to that question and the compiler
+        // owns it, so the compiler owns the census too: the harness asks these
+        // functions and reads numbers, instead of guessing from shapes.
+        //
+        // Emitted for EVERY wave — the probe is how the ladder counts any
+        // encounter, not only a re-seating one. A campaign with no waves emits
+        // nothing here and is byte-identical.
+        {
+            let safe = plan::safe_local(w.id.as_str());
+            let tag = plan::wave_tag(w.id.as_str());
+            let brand = plan::wave_brand_tag(w.id.as_str());
+            let wid = w.id.as_str();
+            // Brand / unbrand: stamp this life's mobs, and clear the stamp. The
+            // unbrand selects the BRAND, not the wave, so a mob that somehow
+            // outlived its wave tag still gets cleaned up.
+            fns.push((
+                format!("wave_brand_{safe}"),
+                lines(&[format!("tag @e[tag={tag}] add {brand}")]),
+            ));
+            fns.push((
+                format!("wave_unbrand_{safe}"),
+                lines(&[format!("tag @e[tag={brand}] remove {brand}")]),
+            ));
+            // Per-mob accumulation, run `as` each tagged mob. Health and its
+            // maximum both come from vanilla primitives — `data get entity @s
+            // Health` and `attribute @s max_health get` — so "damaged" is a fact
+            // the server states, never a table the compiler invents (DW0475) and
+            // never a value the client happened to be sent (a live 1.21.11 server
+            // does not put an unmodified max health on the wire at all, which is
+            // why the silhouette probe had to guess it from the highest health it
+            // had ever seen).
+            //
+            // Scale 100: two decimal places carried as integers, so positions and
+            // health cross the chat channel exactly, with no float formatting to
+            // parse. The holders are shared across waves, which is safe because a
+            // census is one atomic function call.
+            fns.push((
+                format!("wave_census_one_{safe}"),
+                lines(&[
+                    "scoreboard players add #wcen_n dw.sys 1".to_string(),
+                    format!(
+                        "execute if entity @s[tag={brand}] run scoreboard players add #wcen_b \
+                         dw.sys 1"
+                    ),
+                    "execute store result score #wcen_h dw.sys run data get entity @s Health 100"
+                        .to_string(),
+                    "execute store result score #wcen_m dw.sys run attribute @s \
+                     minecraft:max_health get 100"
+                        .to_string(),
+                    "execute if score #wcen_h dw.sys < #wcen_m dw.sys run scoreboard players add \
+                     #wcen_d dw.sys 1"
+                        .to_string(),
+                    "execute store result score #wcen_x dw.sys run data get entity @s Pos[0] 100"
+                        .to_string(),
+                    "execute store result score #wcen_y dw.sys run data get entity @s Pos[1] 100"
+                        .to_string(),
+                    "execute store result score #wcen_z dw.sys run data get entity @s Pos[2] 100"
+                        .to_string(),
+                    format!("tellraw @a {}", census_mob_component(ns, wid)),
+                ]),
+            ));
+            // The census itself: zero the accumulators, walk the tag, then state
+            // the totals. `#wcen_seq` counts censuses so the harness can tell this
+            // answer from a stale one — it never has to write a delve score to ask
+            // a question.
+            fns.push((
+                format!("wave_census_{safe}"),
+                lines(&[
+                    "scoreboard players add #wcen_seq dw.sys 1".to_string(),
+                    "scoreboard players set #wcen_n dw.sys 0".to_string(),
+                    "scoreboard players set #wcen_b dw.sys 0".to_string(),
+                    "scoreboard players set #wcen_d dw.sys 0".to_string(),
+                    format!("execute as @e[tag={tag}] run function {ns}:wave_census_one_{safe}"),
+                    format!("tellraw @a {}", census_summary_component(ns, wid)),
+                ]),
+            ));
+        }
         // kill reward: each slain wave mob decrements the countdown, then re-arms.
         fns.push((
             format!("k_reward_{}", plan::safe_local(w.id.as_str())),
@@ -2556,6 +2738,20 @@ type WavePlacements = BTreeMap<String, Vec<[i32; 3]>>;
 /// generated PackTest asserts ring distance against exactly this cell, so the
 /// runtime check and the compile-time placement share one origin.
 type WaveRings = BTreeMap<String, [i32; 3]>;
+
+/// Where every wave actually IS in the assembled world: the three products of
+/// wave planning, which always travel together into the generated PackTests.
+/// Bundled because a template that asks "did the re-seat put them back?" needs
+/// all three — the seated cells, the lane polyline, and the aggro-edge ring
+/// centre — to say where "back" is.
+struct WaveGeometry<'a> {
+    /// DW0312-proven seated spawn cells, per wave.
+    placements: &'a WavePlacements,
+    /// DW0386-proven lane polylines, per lane wave.
+    lanes: &'a crate::nav::LaneRoutes,
+    /// The snapped ring centre of each `summon: aggro-edge` wave.
+    rings: &'a WaveRings,
+}
 
 // --- spec-0016 §6: TD lanes -------------------------------------------------
 
@@ -3273,7 +3469,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 }
             }
         }
-        QuestEffect::CampaignComplete => {
+        QuestEffect::CampaignComplete { .. } => {
             body.push(format!("function {ns}:campaign_complete"));
         }
         QuestEffect::GiveItem {
@@ -3376,7 +3572,9 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         QuestEffect::SetCheckpoint { anchor, on_respawn } => {
             emit_set_checkpoint(plan, anchor.as_str(), on_respawn, body);
         }
-        QuestEffect::Bonfire { anchor, on_rest } => {
+        QuestEffect::Bonfire {
+            anchor, on_rest, ..
+        } => {
             // Arm the rest affordance (spec-0016 §1): summon the interaction
             // entity the party right-clicks to rest. Guarded on absence so a
             // re-fired beat never stacks a second affordance (and so a `bonfire`
@@ -3421,13 +3619,13 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             body.push(format!("function {ns}:{}", collapse_fn(eff)));
         }
         // --- DSL v0.6 actor staging effects (spec-0014) ---
-        QuestEffect::SpawnActor { actor } => {
+        QuestEffect::SpawnActor { actor, .. } => {
             body.push(format!(
                 "function {ns}:spawn_actor_{}",
                 plan::safe_local(actor.as_str())
             ));
         }
-        QuestEffect::DespawnActor { actor, style } => {
+        QuestEffect::DespawnActor { actor, style, .. } => {
             emit_despawn_actor(actor.as_str(), *style, body);
         }
         QuestEffect::MoveActor {
@@ -3438,7 +3636,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 moveactor_fn(actor.as_str(), to_anchor.as_str())
             ));
         }
-        QuestEffect::UnleashActor { actor } => {
+        QuestEffect::UnleashActor { actor, .. } => {
             body.push(format!(
                 "function {ns}:unleash_{}",
                 plan::safe_local(actor.as_str())
@@ -3447,7 +3645,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         QuestEffect::Sequence { steps } => {
             body.push(format!("function {ns}:{}", sequence_fn(steps)));
         }
-        QuestEffect::SpawnNpc { npc } => {
+        QuestEffect::SpawnNpc { npc, .. } => {
             body.push(format!("function {ns}:{}", spawn_npc_fn(npc.as_str())));
         }
     }
@@ -3692,6 +3890,16 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
         let mut body: Vec<String> = Vec::new();
         if c.rest {
             body.extend(reseat.iter().cloned());
+            // spec-0016 §1 (owner ruling 2026-08-03), read forward: death respawns
+            // the party at the last-rested bonfire with the same hooks, and vanilla
+            // already returns the dead player at full health and hunger. What it
+            // does NOT restore is the flask — so without this a player who dies
+            // arrives empty-handed at the very bonfire they respawned on and must
+            // rest again before they can play. Retry has to be cheap, so a respawn
+            // at a bonfire refills the flask exactly as a rest does.
+            if !plan.flasks().is_empty() {
+                body.push(format!("function {ns}:bonfire_flask"));
+            }
         }
         body.extend(emit_effect_bundle(plan, &c.on_respawn, Audience::Solo));
         fns.push((format!("cp_on_respawn_{}", c.index), lines(&body)));
@@ -3969,25 +4177,144 @@ fn bonfire_reseat_lines(plan: &Plan) -> Vec<String> {
         .collect()
 }
 
-/// Per-tick bonfire rest detection (spec-0016 §1), reusing the same
-/// interaction-entity `use` primitive as the trap disarm: when a player
-/// right-clicks a bonfire's affordance, the party rests. Unlike the disarm this
-/// is deliberately **repeatable** — a bonfire is rested at many times over a
-/// delve, and every rest re-runs the scene reset. Empty for a campaign with no
-/// bonfire → byte-identical.
+/// Per-tick bonfire **choice** dispatch (spec-0016 §1, owner ruling 2026-08-03).
+///
+/// Right-clicking a bonfire no longer rests: it opens a two-option dialog
+/// (`bonfire_open_<i>`, run as the clicking player by the vanilla
+/// `player_interacted_with_entity` advancement — the same primitive every
+/// interact objective uses). The buttons write the player's answer into the
+/// `dw.rest` **trigger** objective, which is the only command surface a
+/// non-operator player has, and this tick turns that answer into the chosen
+/// function. `dw.rest_at` carries WHICH bonfire the player opened, so a campaign
+/// with several bonfires routes each answer to its own rest point.
+///
+/// `1` = *save only* (move the checkpoint, nothing else), `2` = *rest and save*
+/// (the full loop). Empty for a campaign with no bonfire → byte-identical.
 fn bonfire_tick(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
     for bf in plan.bonfires() {
         let i = bf.index;
         out.push(format!(
-            "execute if entity @e[tag=dw_bonfire_{i},nbt={{interaction:{{}}}}] run function {ns}:bonfire_rest_{i}"
+            "execute as @a[scores={{dw.rest=1,dw.rest_at={i}}}] run function {ns}:bonfire_pick_save_{i}"
         ));
         out.push(format!(
-            "execute as @e[tag=dw_bonfire_{i}] run data remove entity @s interaction"
+            "execute as @a[scores={{dw.rest=2,dw.rest_at={i}}}] run function {ns}:bonfire_pick_rest_{i}"
         ));
     }
     out
+}
+
+/// The player-local restore a **rest** performs (spec-0016 §1, owner ruling
+/// 2026-08-03): health, hunger/saturation, negative status effects, flask.
+///
+/// **Audience (reported ambiguity).** spec-0018 makes the checkpoint party state
+/// and the flask/inventory per-player state; spec-0016 §1 says "player fully
+/// restored" in the singular. This restores the player who chose to rest, and
+/// only them — a party member elsewhere in the map keeps their wounds. The
+/// checkpoint half of the same rest is still party-wide.
+///
+/// **Effect clearing is enumerated, never `effect clear @s`.** A bare clear would
+/// also strip the per-area night-vision mitigation clock (`DW0322`'s emission)
+/// and any beneficial effect the story granted, turning a rest into a debuff.
+/// The list is the pinned 1.21.11 harmful set, sorted, so the emission is
+/// deterministic.
+const HARMFUL_EFFECTS: &[&str] = &[
+    "minecraft:bad_omen",
+    "minecraft:blindness",
+    "minecraft:darkness",
+    "minecraft:hunger",
+    "minecraft:infested",
+    "minecraft:levitation",
+    "minecraft:mining_fatigue",
+    "minecraft:nausea",
+    "minecraft:oozing",
+    "minecraft:poison",
+    "minecraft:raid_omen",
+    "minecraft:slowness",
+    "minecraft:trial_omen",
+    "minecraft:unluck",
+    "minecraft:weakness",
+    "minecraft:weaving",
+    "minecraft:wind_charged",
+    "minecraft:wither",
+];
+
+/// The `bonfire_flask` function: refill every declared flask to its declared
+/// count, for the player it runs as.
+///
+/// `clear` + `give` rather than `item replace`: a kit item has no fixed inventory
+/// slot (the player carries it wherever they moved it), and `item replace` needs
+/// one. Clearing by item id and re-giving the kit's exact stack is slot-free,
+/// idempotent and byte-stable — and it means "replenish to the declared count"
+/// is literally what the commands say, in both directions (a player hoarding
+/// extra flasks is brought back DOWN to the declared count, which is the souls
+/// contract: the flask is a per-rest budget, not a stockpile).
+///
+/// A player's class is read off the `dw_class_<safe>` tag `class_apply_<safe>`
+/// adds — emitted only when the campaign declares a flask at all, so a campaign
+/// without one is byte-identical down to the class-apply function.
+fn emit_flask_function(plan: &Plan) -> Option<(String, String)> {
+    let flasks = plan.flasks();
+    if flasks.is_empty() {
+        return None;
+    }
+    let classes = &plan.campaign.classes.content.classes;
+    let mut body: Vec<String> = Vec::new();
+    for (ci, ki) in flasks {
+        let item = &classes[ci].kit[ki];
+        let tag = class_tag(&plan.classes[ci].safe);
+        body.push(format!(
+            "execute if entity @s[tag={tag}] run clear @s {}",
+            item.item
+        ));
+        let comp = match &item.name {
+            Some(n) => format!("[custom_name={}]", json!({ "text": n, "italic": false })),
+            None => String::new(),
+        };
+        body.push(format!(
+            "execute if entity @s[tag={tag}] run give @s {}{} {}",
+            item.item, comp, item.count
+        ));
+    }
+    Some(("bonfire_flask".to_string(), lines(&body)))
+}
+
+/// The per-player tag marking which class a player took — the only thing that
+/// tells a bonfire rest which flask to refill (`dw.class` is a trigger the class
+/// apply resets, and `dw.classed` records only *that* a class was taken).
+fn class_tag(class_safe: &str) -> String {
+    format!("dw_class_{class_safe}")
+}
+
+/// The `bonfire_restore` function: the full player restore of a *rest*.
+/// Emitted only for a campaign with a bonfire → byte-identical otherwise.
+///
+/// Healing is `instant_health`, feeding is `saturation`: vanilla exposes no
+/// `/health` or `/food` command and `/data merge entity` refuses players, so
+/// these two effects ARE the primitive (CLAUDE.md no-hacks: use the intended one,
+/// do not invent a workaround). Both are instant/1-second and leave nothing
+/// behind.
+fn emit_restore_function(plan: &Plan) -> Option<(String, String)> {
+    plan.bonfires().next()?;
+    let ns = &plan.namespace;
+    let mut body: Vec<String> = vec![
+        // Amplifier 9 heals 2 × 2^10 half-hearts — past any `max_health` a kit
+        // can reach, so "full" needs no health arithmetic.
+        "effect give @s minecraft:instant_health 1 9 true".to_string(),
+        // Saturation adds food + saturation every tick it runs; one second at
+        // amplifier 9 pins both bars at full.
+        "effect give @s minecraft:saturation 1 9 true".to_string(),
+    ];
+    body.extend(
+        HARMFUL_EFFECTS
+            .iter()
+            .map(|e| format!("effect clear @s {e}")),
+    );
+    if !plan.flasks().is_empty() {
+        body.push(format!("function {ns}:bonfire_flask"));
+    }
+    Some(("bonfire_restore".to_string(), lines(&body)))
 }
 
 /// The `bonfire_rest_<i>` functions (spec-0016 §1). Resting is the party-wide
@@ -4005,25 +4332,81 @@ fn bonfire_tick(plan: &Plan) -> Vec<String> {
 /// idempotent: it is the world's single answer to both a rest and a death, read
 /// at two different audiences.
 fn emit_bonfire_functions(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
     let mut fns: Vec<(String, String)> = Vec::new();
     for bf in plan.bonfires() {
-        let mut body: Vec<String> = Vec::new();
+        let i = bf.index;
         let pos = bf.pos;
-        body.push(format!("spawnpoint @a {} {} {}", pos[0], pos[1], pos[2]));
-        body.push(format!(
-            "data modify storage dw:cp pos set value [{}, {}, {}]",
-            pos[0], pos[1], pos[2]
+        // The three lines a `set-checkpoint` writes: vanilla's respawn point, the
+        // `dw:cp` mirror every other feature reads, and the active-checkpoint
+        // marker that selects the respawn hook. This IS "save".
+        let save: Vec<String> = {
+            let mut s = vec![
+                format!("spawnpoint @a {} {} {}", pos[0], pos[1], pos[2]),
+                format!(
+                    "data modify storage dw:cp pos set value [{}, {}, {}]",
+                    pos[0], pos[1], pos[2]
+                ),
+            ];
+            if plan.any_checkpoint_on_respawn() {
+                s.push(format!("scoreboard players set #cp dw.sys {i}"));
+            }
+            s
+        };
+
+        // --- the choice dialog opener (run AS the clicking player) ---
+        // The advancement re-arms itself so a bonfire can be opened again and
+        // again; `dw.rest` is reset before it is enabled so a stale answer from
+        // an earlier rest can never fire the moment the dialog opens.
+        fns.push((
+            format!("bonfire_open_{i}"),
+            lines(&[
+                format!("advancement revoke @s only {ns}:bf_{i}"),
+                format!("scoreboard players set @s dw.rest_at {i}"),
+                "scoreboard players reset @s dw.rest".to_string(),
+                "scoreboard players enable @s dw.rest".to_string(),
+                format!("dialog show @s {ns}:bonfire_{i}"),
+            ]),
         ));
-        if plan.any_checkpoint_on_respawn() {
-            body.push(format!("scoreboard players set #cp dw.sys {}", bf.index));
-        }
+
+        // --- option 1: save only. The checkpoint moves; NOTHING else happens. ---
+        fns.push((format!("bonfire_save_{i}"), lines(&save)));
+        fns.push((
+            format!("bonfire_pick_save_{i}"),
+            lines(&[
+                "scoreboard players reset @s dw.rest".to_string(),
+                format!("function {ns}:bonfire_save_{i}"),
+            ]),
+        ));
+
+        // --- option 2: rest and save. Restore the resting player, then the
+        // party-wide save + scene reset. ---
+        fns.push((
+            format!("bonfire_pick_rest_{i}"),
+            lines(&[
+                "scoreboard players reset @s dw.rest".to_string(),
+                format!("function {ns}:bonfire_restore"),
+                format!("function {ns}:bonfire_rest_{i}"),
+            ]),
+        ));
+
+        // `bonfire_rest_<i>` stays exactly what it was: the party-wide half of a
+        // rest. The respawn path and the generated PackTests both drive it
+        // directly, so it must remain callable with no player restore attached.
+        let mut body = save;
         body.extend(bonfire_reseat_lines(plan));
         body.extend(emit_effect_bundle(
             plan,
             &bf.on_respawn,
             Audience::Scheduled,
         ));
-        fns.push((format!("bonfire_rest_{}", bf.index), lines(&body)));
+        fns.push((format!("bonfire_rest_{i}"), lines(&body)));
+    }
+    if let Some(f) = emit_restore_function(plan) {
+        fns.push(f);
+    }
+    if let Some(f) = emit_flask_function(plan) {
+        fns.push(f);
     }
     fns
 }
@@ -6587,6 +6970,65 @@ fn safe_obj_fn(obj_id: &str) -> String {
     format!("o_{}", plan::safe_local(obj_id))
 }
 
+/// One `dw.sys` score, as a chat component.
+fn sys_score(holder: &str) -> Value {
+    json!({ "score": { "name": holder, "objective": "dw.sys" } })
+}
+
+/// Join a marker's prefix and its integer fields into one `tellraw` component,
+/// rendering as a single anchored line the harness parses whole (task #123).
+///
+/// The grammar is the completion channel's, one token further on:
+/// `[dw:<token> <campaign> <wave> <n> <n> …]`. It inherits the same three
+/// unforgeability properties — player chat cannot begin with the sigil, the
+/// campaign id is part of the match, and `DW0182` reserves the sigil in every
+/// player-visible string — so a census line is as much an oracle as a completion
+/// marker is.
+fn census_component(ns: &str, token: &str, wave_id: &str, holders: &[&str]) -> Value {
+    let mut extra: Vec<Value> = Vec::new();
+    for h in holders {
+        extra.push(sys_score(h));
+        extra.push(json!({ "text": " " }));
+    }
+    // The trailing separator becomes the closing bracket.
+    extra.pop();
+    extra.push(json!({ "text": "]" }));
+    json!({
+        "text": format!("[dw:{token} {ns} {wave_id} "),
+        "color": "dark_gray",
+        "extra": extra
+    })
+}
+
+/// The census SUMMARY line: sequence, how many of the wave stand, how many of
+/// those are branded (fought in a previous life), how many are below full health.
+fn census_summary_component(ns: &str, wave_id: &str) -> Value {
+    census_component(
+        ns,
+        plan::MARKER_TOKEN_CENSUS,
+        wave_id,
+        &["#wcen_seq", "#wcen_n", "#wcen_b", "#wcen_d"],
+    )
+}
+
+/// One mob's line inside a census: sequence, position and health, all ×100 so
+/// they cross the chat channel as exact integers.
+fn census_mob_component(ns: &str, wave_id: &str) -> Value {
+    census_component(
+        ns,
+        plan::MARKER_TOKEN_CENSUS_MOB,
+        wave_id,
+        &[
+            "#wcen_seq",
+            "#wcen_x",
+            "#wcen_y",
+            "#wcen_z",
+            "#wcen_h",
+            "#wcen_m",
+        ],
+    )
+}
+
 /// Per-objective "already announced" scoreboard (v0.3 objective-activation
 /// feedback, M2 fix 4). Set once the objective's title/hint has been shown so the
 /// announce fires exactly once per player.
@@ -6840,6 +7282,67 @@ fn interact_objectives(c: &delvewright_dsl::Campaign) -> Vec<(String, String)> {
 /// keeps the drivers single-fire under `as @a`: vanilla evaluates the conditions
 /// per selected player in turn, so the first player's `run` sets the party score
 /// and every later player's `unless score #party …` fails in the same tick.
+/// Stage-5 quests in **arming order**: a quest whose completion arms another is
+/// visited before the quest it arms (task #124).
+///
+/// The arming graph is exactly the `Trigger::QuestComplete` edges — the only two
+/// trigger kinds are `CampaignStart` (a root, armed by `setup`) and
+/// `QuestComplete`, so this is the whole of it.
+///
+/// **Stable.** Declaration order breaks every tie and seeds the ready set, so a
+/// campaign already declared in arming order — which every campaign built so far
+/// is — comes back in exactly its declared order and emits byte-identically. It
+/// is also **total**: a cycle (already an error elsewhere; a quest cannot arm
+/// itself through any path and still be reachable) leaves an unresolved tail,
+/// which is appended in declaration order rather than dropped, because a lost
+/// quest would be a far worse failure than a badly-ordered one.
+fn quests_in_arming_order(c: &delvewright_dsl::Campaign) -> Vec<&delvewright_dsl::Quest> {
+    let quests = &c.quests.content.quests;
+    let index: BTreeMap<&str, usize> = quests
+        .iter()
+        .enumerate()
+        .map(|(i, q)| (q.id.as_str(), i))
+        .collect();
+    let mut indegree = vec![0usize; quests.len()];
+    let mut arms: Vec<Vec<usize>> = vec![Vec::new(); quests.len()];
+    for (i, q) in quests.iter().enumerate() {
+        if let Trigger::QuestComplete { quest } = &q.trigger
+            && let Some(&p) = index.get(quest.as_str())
+            && p != i
+        {
+            indegree[i] += 1;
+            arms[p].push(i);
+        }
+    }
+    // Kahn's algorithm with a declaration-ordered ready queue: among quests that
+    // become ready together, the earliest-declared is always emitted first.
+    let mut ready: Vec<usize> = (0..quests.len()).filter(|&i| indegree[i] == 0).collect();
+    let mut order: Vec<usize> = Vec::with_capacity(quests.len());
+    while !ready.is_empty() {
+        let i = ready.remove(0);
+        order.push(i);
+        for &dep in &arms[i] {
+            indegree[dep] -= 1;
+            if indegree[dep] == 0 {
+                let pos = ready.partition_point(|&r| r < dep);
+                ready.insert(pos, dep);
+            }
+        }
+    }
+    let mut seen = vec![false; quests.len()];
+    let mut out: Vec<&delvewright_dsl::Quest> = Vec::with_capacity(quests.len());
+    for i in order {
+        seen[i] = true;
+        out.push(&quests[i]);
+    }
+    for (i, q) in quests.iter().enumerate() {
+        if !seen[i] {
+            out.push(q);
+        }
+    }
+    out
+}
+
 fn pending_guard(o: &Objective, quest_active: &str) -> String {
     let p = plan::PARTY;
     let mut g = format!(" if score {p} {quest_active} matches 1");
@@ -7194,6 +7697,31 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
         }),
     ));
 
+    // spec-0016 §1 (owner ruling 2026-08-03): one bonfire dialog per bonfire,
+    // offering EXACTLY two options — rest and save, or save only. Nothing else
+    // may appear here: the ruling is that a campfire is a real interaction with a
+    // real choice, not a one-click "arrive" objective. Emitted only for a campaign
+    // with a bonfire → byte-identical otherwise.
+    for bf in plan.bonfires() {
+        let i = bf.index;
+        dialogs.push((
+            format!("bonfire_{i}"),
+            json!({
+                "type": "minecraft:multi_action",
+                "title": bf.prompt,
+                "columns": 1,
+                "can_close_with_escape": true,
+                "after_action": "close",
+                "actions": [
+                    { "label": bf.rest_label,
+                      "action": { "type": "minecraft:run_command", "command": "/trigger dw.rest set 2" } },
+                    { "label": bf.save_label,
+                      "action": { "type": "minecraft:run_command", "command": "/trigger dw.rest set 1" } }
+                ]
+            }),
+        ));
+    }
+
     // per-npc dialogue nodes (stage 6) → one dialog each
     for npc in &plan.npcs {
         let dsl_npc = c
@@ -7269,6 +7797,17 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
 /// visible options is a terminal `minecraft:notice` (an empty `multi_action`
 /// action list crashes the 1.21.11 dialog codec at load — gap 10); otherwise a
 /// `minecraft:multi_action` whose buttons fire each option's `/trigger`.
+///
+/// **The button's `tooltip` (v0.8).** Vanilla's dialog action button is
+/// `ActionButton(CommonButtonData, Optional<DialogAction>)`, and
+/// `CommonButtonData`'s codec is exactly `label` (a text component) +
+/// `tooltip` (an *optional* text component) + `width` (default 150) — verified
+/// against the pinned 1.21.11 client jar's codec, not folklore. The client's
+/// `DialogControlSet` turns a present `tooltip` into `Tooltip.create(component)`
+/// and hangs it on the button, so it renders as an ordinary hover box (wrapped at
+/// 170 px), never on the button face. That is why `DW0331` does not reach it: a
+/// tooltip wraps, it does not scroll. An option with no `tooltip` emits no key —
+/// a pre-0.8 campaign's dialogs are byte-identical.
 fn build_node_dialog(
     npc_name: &str,
     text: &str,
@@ -7286,10 +7825,14 @@ fn build_node_dialog(
         let actions: Vec<Value> = opts
             .iter()
             .map(|o| {
-                json!({
+                let mut action = json!({
                     "label": o.label,
                     "action": { "type": "minecraft:run_command", "command": format!("/trigger {trigger_objective} set {}", o.n) }
-                })
+                });
+                if let Some(tip) = &o.tooltip {
+                    action["tooltip"] = json!(tip);
+                }
+                action
             })
             .collect();
         json!({
@@ -7308,6 +7851,33 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
     let mut advs = Vec::new();
+
+    // spec-0016 §1 (owner ruling 2026-08-03): one advancement per bonfire, so a
+    // right-click opens the rest dialog AS the player who clicked. The interaction
+    // entity's own `interaction` record cannot do this — it names no player the
+    // `dialog show` could target — and this is the same vanilla criterion every
+    // `interact` objective already runs on. `bonfire_open_<i>` revokes it, so the
+    // bonfire is re-openable forever (a rest point is used, never consumed).
+    for bf in plan.bonfires() {
+        let i = bf.index;
+        advs.push((
+            format!("bf_{i}"),
+            json!({
+                "criteria": {
+                    "interact": {
+                        "trigger": "minecraft:player_interacted_with_entity",
+                        "conditions": {
+                            "entity": {
+                                "type": "minecraft:interaction",
+                                "nbt": format!("{{Tags:[\"dw_bonfire_{i}\"]}}")
+                            }
+                        }
+                    }
+                },
+                "rewards": { "function": format!("{ns}:bonfire_open_{i}") }
+            }),
+        ));
+    }
 
     // one interaction advancement per NPC
     for npc in &plan.npcs {
@@ -7443,8 +8013,7 @@ fn emit_packtest(
     out: &mut BuildOutput,
     moves: &[crate::nav::MovePlan],
     actor_moves: &[crate::nav::ActorMovePlan],
-    lane_routes: &crate::nav::LaneRoutes,
-    wave_rings: &WaveRings,
+    waves: &WaveGeometry<'_>,
     payloads: &PayloadPlans,
 ) {
     let ns = &plan.namespace;
@@ -7478,50 +8047,119 @@ fn emit_packtest(
     // proves the compiler's objective -> quest -> campaign chain end to end
     // without needing dialog-UI clicks or bot movement (verified live: passes on
     // Fabric + PackTest 2.4.0).
+    //
+    // Two structural facts of the campaign shape the template (task #125, the-wake):
+    //
+    //   * `campaign-complete` may sit at any nesting depth (spec-0025 / DW0481) —
+    //     the-wake schedules it 250t into its closing `sequence`. A same-tick
+    //     `assert` after the drive is then structurally unreachable ("got 0 on
+    //     tick 0"), so a campaign whose ending has a scheduled tail must AWAIT
+    //     the completion objective, with the timeout sized by the tail the
+    //     emitter itself scheduled.
+    //   * Declared `branch_points` make some terminal objectives mutually
+    //     exclusive: driving every objective in one pass reaches a state no
+    //     playthrough can (both endings fired in one tick). A branch campaign
+    //     therefore drives one coherent per-branch path per phase, serialized
+    //     through the vanilla scheduler.
+    //
+    // Campaigns with no branch points and a synchronous ending keep the original
+    // single-tick template byte for byte.
     let (pin, sel) = pin_dummy("dw_t_camp");
-    let mut body: Vec<String> = Vec::new();
-    body.push(format!(
-        "#> {}: objective completions set {comp_obj} (Delvewright mechanism test)",
-        c.world.content.title
-    ));
-    body.push("# @dummy".to_string());
-    body.push("# @timeout 100".to_string());
-    body.push(String::new());
-    body.push(format!("function {ns}:setup"));
-    // Pin this test's own dummy and drive the whole chain on it alone (see
-    // `pin_dummy`): `@a`-wide quest/objective writes would land on every
-    // sibling test's dummy in the batch, and the closing `@p` assert could read
-    // a foreign one.
-    body.push(pin);
-    // Actively establish the asserted baseline — on the shared-batch server
-    // "never set" is not 0. spec-0018: the whole chain is PARTY state, so the
-    // baseline, the activation and the assert all address `#party`; the dummy is
-    // still what DRIVES it (`execute as {sel} run …`), which is exactly the
-    // multiplayer claim — one player's action advances the party.
     let party = plan::PARTY;
-    body.push(format!("scoreboard players set {party} {comp_obj} 0"));
-    for qid in campaign_start_quests(c) {
-        body.push(format!(
-            "scoreboard players set {party} {} 1",
-            quest_active_score(qid)
-        ));
-    }
-    for q in &c.quests.content.quests {
-        for o in &q.objectives {
-            body.push(format!(
-                "execute as {sel} run function {ns}:complete_{}",
-                safe_obj_fn(o.id().as_str())
+    let branches: Vec<crate::branch::RealizedBranch> = crate::branch::realize(c)
+        .into_iter()
+        .filter(|r| r.world.is_some())
+        .collect();
+    if branches.is_empty() {
+        // No declared branch points (or nothing reachable — already DW0482):
+        // one coherent drive over every objective, exactly as before.
+        let quests: BTreeSet<&str> = c
+            .quests
+            .content
+            .quests
+            .iter()
+            .map(|q| q.id.as_str())
+            .collect();
+        let tail = quests_ending_tail(c, &quests, moves, actor_moves);
+        // Baseline + drive. Actively establish the asserted baseline — on the
+        // shared-batch server "never set" is not 0. spec-0018: the whole chain is
+        // PARTY state, so the baseline, the activation and the assert all address
+        // `#party`; the dummy is still what DRIVES it (`execute as {sel} run …`),
+        // which is exactly the multiplayer claim — one player's action advances
+        // the party.
+        let mut drive: Vec<String> = Vec::new();
+        drive.push(format!("scoreboard players set {party} {comp_obj} 0"));
+        for qid in campaign_start_quests(c) {
+            drive.push(format!(
+                "scoreboard players set {party} {} 1",
+                quest_active_score(qid)
             ));
         }
+        for q in &c.quests.content.quests {
+            for o in &q.objectives {
+                drive.push(format!(
+                    "execute as {sel} run function {ns}:complete_{}",
+                    safe_obj_fn(o.id().as_str())
+                ));
+            }
+        }
+        let mut body: Vec<String> = Vec::new();
+        body.push(format!(
+            "#> {}: objective completions set {comp_obj} (Delvewright mechanism test)",
+            c.world.content.title
+        ));
+        body.push("# @dummy".to_string());
+        if tail == 0 {
+            body.push("# @timeout 100".to_string());
+            body.push(String::new());
+            body.push(format!("function {ns}:setup"));
+            // Pin this test's own dummy and drive the whole chain on it alone (see
+            // `pin_dummy`): `@a`-wide quest/objective writes would land on every
+            // sibling test's dummy in the batch, and the closing `@p` assert could
+            // read a foreign one.
+            body.push(pin);
+            body.extend(drive);
+            body.push(format!(
+                "assert score {party} {comp_obj} matches {comp_val}"
+            ));
+        } else {
+            // Scheduled ending: the ending lands `tail` ticks after the terminal
+            // drive, so the template awaits it (never a weaker assert — `await`
+            // fails the test at timeout exactly as `assert` fails it on the
+            // spot). The template now spans ticks, so its body may touch no
+            // `#party` score a sibling template also touches
+            // (`tests/packtest_batch.rs::party_state_across_ticks_is_owned`):
+            // the baseline + drive — shared quest/flag state, written and
+            // consumed atomically within one tick, exactly as in the single-tick
+            // form — is hoisted into `pt_camp_drive`, leaving the awaited
+            // completion objective (owned by this template alone) as the
+            // template's only cross-tick surface.
+            body.push(format!("# @timeout {}", 100 + tail));
+            body.push(String::new());
+            body.push(format!("function {ns}:setup"));
+            body.push(pin);
+            body.push(format!("function {ns}:pt_camp_drive"));
+            body.push(format!("await score {party} {comp_obj} matches {comp_val}"));
+            out.insert(
+                format!("packtest-datapack/data/{ns}/function/pt_camp_drive.mcfunction"),
+                lines(&drive).into_bytes(),
+            );
+        }
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/campaign.mcfunction"),
+            lines(&body).into_bytes(),
+        );
+    } else {
+        emit_branch_campaign_packtest(
+            plan,
+            out,
+            &branches,
+            moves,
+            actor_moves,
+            (&comp_obj, comp_val),
+            (&pin, &sel),
+        );
     }
-    body.push(format!(
-        "assert score {party} {comp_obj} matches {comp_val}"
-    ));
-
-    out.insert(
-        format!("packtest-datapack/data/{ns}/test/campaign.mcfunction"),
-        lines(&body).into_bytes(),
-    );
 
     // Sealed-state test: prove the environment-sealing baseline (spec-0002) is
     // applied on boot. What PackTest / vanilla 1.21.11 lets us assert in-test:
@@ -7636,7 +8274,16 @@ fn emit_packtest(
     emit_payload_packtests(plan, out, payloads);
     // spec-0016 §1: resting at a bonfire moves the party respawn point and
     // re-seats its `respawns_on_rest` waves. Emits nothing without a bonfire.
+    // task #123: the tag census really counts the wave, and only the wave.
+    emit_wave_census_packtest(plan, out);
     emit_bonfire_packtests(plan, out);
+    // spec-0016 §1 (owner ruling 2026-08-04): a re-seated wave comes back
+    // STATIONED — at its lane start / anchor, in its routed state, with no trace
+    // of the previous life's feral release. Emits nothing without a bonfire and
+    // a `respawns_on_rest` wave.
+    emit_reseat_stationed_packtest(plan, out, waves.placements, waves.lanes);
+    // spec-0016 §1 (owner ruling 2026-08-03): rest and save-only really differ.
+    emit_bonfire_option_packtest(plan, out);
     // spec-0016 §2: the shortcut really opens, and opens exactly once.
     emit_shortcut_packtest(plan, out);
     // spec-0016 §4: the clock really alternates the gate region.
@@ -7647,7 +8294,7 @@ fn emit_packtest(
     // advances in march order, the squad is released to native AI at aggro range,
     // and an aggro-edge wave really materializes on its perception ring. Emits
     // nothing for a campaign with no lane and no aggro-edge wave.
-    emit_td_lane_packtests(plan, out, lane_routes, wave_rings);
+    emit_td_lane_packtests(plan, out, waves.lanes, waves.rings);
 
     // The scheduled-executor contract (AUDIT-P0): a function reached through
     // `schedule` still lands per-player state on real players.
@@ -7655,6 +8302,256 @@ fn emit_packtest(
 
     // spec-0018: one n-dummy division-of-labour test per AND-join.
     emit_party_join_packtests(plan, out);
+}
+
+/// Ticks between one PackTest campaign phase's ending window closing and its
+/// verdict being taken — slack for the scheduler landing the ending's last
+/// function plus the completion write itself.
+const CAMPAIGN_PHASE_MARGIN_TICKS: u32 = 20;
+
+/// The branch-aware campaign mechanism test (task #125): ONE template that
+/// drives each reachable branch's coherent path as its own phase, serialized
+/// through the vanilla scheduler, and awaits one verdict per phase.
+///
+/// Why one template rather than one per branch: every phase's verdict is the
+/// shared completion objective, and a template that spans ticks must be the sole
+/// owner of every `#party` score it depends on across ticks
+/// (`tests/packtest_batch.rs::party_state_across_ticks_is_owned`) — two
+/// concurrently-running branch templates zeroing and awaiting `dw.campaign`
+/// would hand each other false verdicts in an order the compiler does not
+/// control. Phases are strictly ordered by construction: phase *i*'s scheduled
+/// check is what starts phase *i + 1*.
+///
+/// Each phase (`pt_camp_run_<i>`) re-baselines the WHOLE progression surface
+/// (completion objective, every flag, every quest active/complete score, every
+/// objective score — a fresh coherent run; a prior phase's terminal quest would
+/// otherwise stay `dw.q_* = 1` and its completion-guarded `on_complete` never
+/// re-fire), sets the campaign-start quests active, then drives ONLY this
+/// branch's path in play order. A `talk-to` step whose branch-scripted option
+/// sets flags has those flags emulated immediately before its drive — the
+/// option handler is UI-bound, and this is where the real playthrough sets
+/// them. The phase's verdict is taken `tail + margin` ticks later
+/// (`pt_camp_check_<i>`): completion objective at its expected value counts the
+/// phase into `#camp_phase`, and the template's single closing `await` demands
+/// every phase counted. A missed ending leaves the count short and the await
+/// times out red — never weaker than the old assert, and now quantified over
+/// branches.
+#[allow(clippy::too_many_arguments)]
+fn emit_branch_campaign_packtest(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    branches: &[crate::branch::RealizedBranch],
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+    (comp_obj, comp_val): (&str, i32),
+    (pin, sel): (&str, &str),
+) {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let party = plan::PARTY;
+    let n = branches.len();
+    let mut timeout: u32 = 100;
+    for (i, r) in branches.iter().enumerate() {
+        let quests: BTreeSet<&str> = r.path.iter().map(|s| s.quest.as_str()).collect();
+        let tail = quests_ending_tail(c, &quests, moves, actor_moves);
+        let wait = tail + CAMPAIGN_PHASE_MARGIN_TICKS;
+        timeout += wait;
+        let mut run: Vec<String> = Vec::new();
+        run.push(format!(
+            "# Phase {i}: branch `{}` — full progression re-baseline, then this branch's",
+            r.branch.id
+        ));
+        run.push(
+            "# coherent path only (its scripted dialogue choices emulated as the flags".to_string(),
+        );
+        run.push("# those options set, at their real path positions).".to_string());
+        run.push(format!("scoreboard players set {party} {comp_obj} 0"));
+        for f in declared_flags(c) {
+            run.push(format!(
+                "scoreboard players set {party} {} 0",
+                plan::flag_score(&f)
+            ));
+        }
+        for q in &c.quests.content.quests {
+            run.push(format!(
+                "scoreboard players set {party} {} 0",
+                quest_score(q.id.as_str())
+            ));
+            run.push(format!(
+                "scoreboard players set {party} {} 0",
+                quest_active_score(q.id.as_str())
+            ));
+            for o in &q.objectives {
+                run.push(format!(
+                    "scoreboard players set {party} {} 0",
+                    obj_score(o.id().as_str())
+                ));
+            }
+        }
+        for qid in campaign_start_quests(c) {
+            run.push(format!(
+                "scoreboard players set {party} {} 1",
+                quest_active_score(qid)
+            ));
+        }
+        for step in &r.path {
+            if let Some(opt) = step.talk_option {
+                for f in option_sets_flags(plan, &step.objective, opt) {
+                    run.push(format!(
+                        "scoreboard players set {party} {} 1",
+                        plan::flag_score(f)
+                    ));
+                }
+            }
+            run.push(format!(
+                "execute as {sel} run function {ns}:complete_{}",
+                safe_obj_fn(&step.objective)
+            ));
+        }
+        run.push(format!("schedule function {ns}:pt_camp_check_{i} {wait}t"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/function/pt_camp_run_{i}.mcfunction"),
+            lines(&run).into_bytes(),
+        );
+
+        let mut chk = vec![format!(
+            "execute if score {party} {comp_obj} matches {comp_val} run \
+             scoreboard players add #camp_phase dw.sys 1"
+        )];
+        if i + 1 < n {
+            chk.push(format!("function {ns}:pt_camp_run_{}", i + 1));
+        }
+        out.insert(
+            format!("packtest-datapack/data/{ns}/function/pt_camp_check_{i}.mcfunction"),
+            lines(&chk).into_bytes(),
+        );
+    }
+
+    let mut body: Vec<String> = Vec::new();
+    body.push(format!(
+        "#> {}: each branch's coherent path sets {comp_obj} (Delvewright mechanism test)",
+        c.world.content.title
+    ));
+    body.push("# @dummy".to_string());
+    body.push(format!("# @timeout {timeout}"));
+    body.push(String::new());
+    body.push(format!("function {ns}:setup"));
+    body.push(pin.to_string());
+    // Own init for the phase counter — on the shared batch server "never set"
+    // is not 0, and `#camp_phase` belongs to this template alone.
+    body.push("scoreboard players set #camp_phase dw.sys 0".to_string());
+    // The phase chain: pt_camp_run_0 -> pt_camp_check_0 -> pt_camp_run_1 -> …
+    // (each check is scheduled by its run and starts the next run).
+    body.push(format!("function {ns}:pt_camp_run_0"));
+    body.push(format!("await score #camp_phase dw.sys matches {n}"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/campaign.mcfunction"),
+        lines(&body).into_bytes(),
+    );
+}
+
+/// The flags the branch-scripted dialogue option at flat index `n` (1-based, per
+/// the NPC the `talk-to` objective names) sets when chosen — what the campaign
+/// phase drive emulates in place of a UI click. Empty when the objective is not
+/// a `talk-to` or names no such option.
+fn option_sets_flags<'p>(plan: &'p Plan, objective: &str, n: usize) -> &'p [String] {
+    let npc = plan
+        .campaign
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| &q.objectives)
+        .find_map(|o| match o {
+            Objective::TalkTo { id, npc, .. } if id.as_str() == objective => Some(npc.as_str()),
+            _ => None,
+        });
+    npc.and_then(|npc_id| plan.npcs.iter().find(|p| p.npc_id == npc_id))
+        .and_then(|p| p.options.iter().find(|o| o.n == n as i32))
+        .map(|o| o.sets_flags.as_slice())
+        .unwrap_or(&[])
+}
+
+/// The scheduled tail (ticks) between firing `effs` and a `campaign-complete`
+/// nested anywhere inside it — `None` when the bundle reaches none (task #125).
+///
+/// spec-0025 / DW0481 admit the ending at any nesting depth (the-wake schedules
+/// its finale 250t into the closing `sequence`), so every consumer that waits
+/// for the ending — the campaign PackTest, the harness completion window — must
+/// wait out the tail the emitter itself scheduled. `sequence` steps add their
+/// `at_ticks`; a `move-npc` / `move-actor` `on_arrive` adds the planned walk
+/// duration. Reaction bundles (`on_respawn` / `on_rest` / `on_caught`) are
+/// skipped: driving objective completions never fires them, and `DW0204` proves
+/// the path's ending does not live exclusively there. Flag gates are ignored —
+/// a gated ending yields an upper bound, and waiting longer can only wait,
+/// never wrongly pass.
+fn campaign_complete_tail(
+    effs: &[QuestEffect],
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+) -> Option<u32> {
+    effs.iter()
+        .filter_map(|e| match e {
+            QuestEffect::CampaignComplete { .. } => Some(0),
+            QuestEffect::Sequence { steps } => steps
+                .iter()
+                .filter_map(|s| {
+                    campaign_complete_tail(&s.effects, moves, actor_moves).map(|t| s.at_ticks + t)
+                })
+                .max(),
+            QuestEffect::MoveNpc {
+                npc,
+                to_anchor,
+                on_arrive,
+                ..
+            } => campaign_complete_tail(on_arrive, moves, actor_moves).map(|t| {
+                t + moves
+                    .iter()
+                    .find(|m| m.npc == npc.as_str() && m.to_anchor == to_anchor.as_str())
+                    .map(|m| m.ticks() as u32)
+                    .unwrap_or(0)
+            }),
+            QuestEffect::MoveActor {
+                actor,
+                to_anchor,
+                on_arrive,
+                ..
+            } => campaign_complete_tail(on_arrive, moves, actor_moves).map(|t| {
+                t + actor_moves
+                    .iter()
+                    .find(|m| m.actor == actor.as_str() && m.to_anchor == to_anchor.as_str())
+                    .map(|m| m.ticks() as u32)
+                    .unwrap_or(0)
+            }),
+            _ => None,
+        })
+        .max()
+}
+
+/// The ending tail a driven run of `quest_ids` can schedule: the max
+/// [`campaign_complete_tail`] over those quests' `on_objective_complete` bundles
+/// and `on_complete`. `0` when the ending is synchronous (which keeps every
+/// pre-task-#125 campaign's emission byte-identical).
+fn quests_ending_tail(
+    c: &delvewright_dsl::Campaign,
+    quest_ids: &BTreeSet<&str>,
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+) -> u32 {
+    c.quests
+        .content
+        .quests
+        .iter()
+        .filter(|q| quest_ids.contains(q.id.as_str()))
+        .flat_map(|q| {
+            q.on_objective_complete
+                .values()
+                .map(|effs| effs.as_slice())
+                .chain(std::iter::once(q.on_complete.as_slice()))
+        })
+        .filter_map(|effs| campaign_complete_tail(effs, moves, actor_moves))
+        .max()
+        .unwrap_or(0)
 }
 
 /// The AND-joins of a campaign: every objective with **two or more** `after`
@@ -8060,6 +8957,50 @@ fn emit_dialogue_trigger_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// dialog to. The `"none"` test is the exception and drives `talk_<npc>` itself,
 /// precisely because a silent scene emits no `dialog show`: that is what makes
 /// "the record is written and consumed, and nothing opens" directly assertable.
+/// Pin every branch-gate flag an NPC's cast ledger reads to the value that
+/// selects `clause`: its `requires_flags` to 1, every other flag any clause
+/// reads to 0 (task #133, island r15).
+///
+/// The generated cast templates zero every `dw.qa_*` their dispatch reads but
+/// used to leave the ledger's `requires_flags`/`forbids_flags` to whatever the
+/// batch had: three sibling templates (`verb_flag_gate`, `verb_interact`,
+/// `verb_interact_arming`) legitimately end with a campaign flag set to 1, so
+/// whichever ran first poisoned `cast_root_swap`'s later assert — the flee
+/// clause overrode the expected scene (expected `dw.cast 2`, got 3) purely by
+/// batch order. Pinning at the CONSUMER is the generator-side defense: it holds
+/// against any future flag-setting template, rather than trusting each one to
+/// clean up. It is also what makes a `requires_flags`-gated clause assertable
+/// at all — "never set" is not 1 on the shared server any more than it is 0.
+/// Emits nothing for a ledger with no branch-gated clause, so pre-#133
+/// campaigns are byte-identical.
+fn pin_cast_clause_flags(
+    b: &mut Vec<String>,
+    cast: &crate::cast::NpcCast,
+    clause: &crate::cast::CastClause,
+) {
+    let flags: BTreeSet<&str> = cast
+        .by_quest
+        .iter()
+        .flat_map(|cl| cl.requires_flags.iter().chain(cl.forbids_flags.iter()))
+        .map(|s| s.as_str())
+        .collect();
+    if flags.is_empty() {
+        return;
+    }
+    b.push("# Branch-gate flags are batch state a sibling template may have".to_string());
+    b.push("# left set (island r15: a verb template ended with its flag at 1".to_string());
+    b.push("# and the sibling clause overrode this assert). Pin every flag the".to_string());
+    b.push("# ledger reads to the value that selects the asserted scene.".to_string());
+    for f in flags {
+        let v = i32::from(clause.requires_flags.iter().any(|r| r == f));
+        b.push(format!(
+            "scoreboard players set {} {} {v}",
+            plan::PARTY,
+            plan::flag_score(f)
+        ));
+    }
+}
+
 fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
     use crate::cast::SceneAction;
     let ns = &plan.namespace;
@@ -8083,13 +9024,11 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
         // The two quests whose scenes those are, in ledger order.
         let first = cast.by_quest.iter().find(|c| c.scene == roots[0].0)?;
         let later = cast.by_quest.iter().find(|c| c.scene == roots[1].0)?;
-        Some((
-            npc,
-            (first.quest.clone(), first.scene),
-            (later.quest.clone(), later.scene),
-        ))
+        Some((npc, first.clone(), later.clone()))
     });
-    if let Some((npc, (q_first, i_first), (q_later, i_later))) = swapper {
+    if let Some((npc, first, later)) = swapper {
+        let (q_first, i_first) = (first.quest.clone(), first.scene);
+        let (q_later, i_later) = (later.quest.clone(), later.scene);
         let (pin, sel) = pin_dummy("dw_t_castswap");
         let mut b = packtest_header(&format!(
             "{title}: npc `{}` right-click swaps root as the story advances (cast ledger)",
@@ -8105,6 +9044,7 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
                 quest_active_score(&cl.quest)
             ));
         }
+        pin_cast_clause_flags(&mut b, &casts[&npc.npc_id], &first);
         b.push(format!(
             "scoreboard players set {} {} 1",
             plan::PARTY,
@@ -8118,6 +9058,7 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
         b.push("# The later beat begins. `dw.qa_*` is never cleared, so BOTH are".to_string());
         b.push("# now set — and the later scene must win, retiring the earlier".to_string());
         b.push("# root. That is the whole retirement mechanism.".to_string());
+        pin_cast_clause_flags(&mut b, &casts[&npc.npc_id], &later);
         b.push(format!(
             "scoreboard players set {} {} 1",
             plan::PARTY,
@@ -8180,9 +9121,10 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
             .iter()
             .find(|s| s.action == SceneAction::Silent)?;
         let cl = cast.by_quest.iter().find(|c| c.scene == scene.index)?;
-        Some((npc, scene.index, cl.quest.clone()))
+        Some((npc, scene.index, cl.clone()))
     });
-    if let Some((npc, idx, qid)) = silent {
+    if let Some((npc, idx, cl)) = silent {
+        let qid = cl.quest.clone();
         let (pin, sel) = pin_dummy("dw_t_castnone");
         let mut b = packtest_header(&format!(
             "{title}: npc `{}`'s `\"none\"` scene consumes the interaction and opens nothing",
@@ -8190,13 +9132,14 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin);
-        for cl in &casts[&npc.npc_id].by_quest {
+        for c in &casts[&npc.npc_id].by_quest {
             b.push(format!(
                 "scoreboard players set {} {} 0",
                 plan::PARTY,
-                quest_active_score(&cl.quest)
+                quest_active_score(&c.quest)
             ));
         }
+        pin_cast_clause_flags(&mut b, &casts[&npc.npc_id], &cl);
         b.push(format!(
             "scoreboard players set {} {} 1",
             plan::PARTY,
@@ -8751,6 +9694,91 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
 ///   which is the whole point of the sentinel.
 ///
 /// Emits nothing for a campaign with no bonfire → byte-identical.
+/// The wave census counts by TAG (task #123), proven on a live server.
+///
+/// The ladder's old probe counted silhouettes — every entity the client tracked,
+/// anything taller than half a block — so an ambush actor standing near the fight
+/// was indistinguishable from a member of it, and one alive on both sides of a
+/// scripted death was reported as a survivor the re-seat had failed to remove
+/// (#230). The fix moves the count into the datapack, where the tag lives; this
+/// template is what proves the arithmetic on the pinned server rather than in a
+/// unit test's imagination.
+///
+/// Four claims: an untagged bystander standing right there is NOT counted; a
+/// branded mob is; a mob that never wore the brand is not; and a wounded mob is
+/// reported wounded, from the server's own `Health` and `max_health`.
+///
+/// Emits nothing for a campaign with no wave → byte-identical.
+fn emit_wave_census_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some(w) = plan.campaign.quests.content.waves.first() else {
+        return;
+    };
+    // A wave the compiler could not place emits no `spawn_<wave>` to drive.
+    if plan::wave_total(w) < 1 {
+        return;
+    }
+    let safe = plan::safe_local(w.id.as_str());
+    let tag = plan::wave_tag(w.id.as_str());
+    let brand = plan::wave_brand_tag(w.id.as_str());
+    let total = plan::wave_total(w);
+    let species = &w.mobs[0].entity;
+
+    let mut b = packtest_header(&format!(
+        "{title}: the census counts wave `{}` by TAG — a bystander beside it is not in it \
+         (task #123)",
+        w.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push("kill @e[tag=dw_cen_bystander]".to_string());
+    b.push(format!("function {ns}:spawn_{safe}"));
+    // A BYSTANDER of the wave's own species, summoned on the wave's own anchor
+    // cell: everything a silhouette probe uses to decide membership, and none of
+    // what the census uses. It must not move a single count.
+    b.push(format!(
+        "execute at @e[tag={tag},limit=1] run summon {species} ~ ~ ~ \
+         {{Tags:[\"dw_cen_bystander\"],PersistenceRequired:1b}}"
+    ));
+    b.push(format!("function {ns}:wave_census_{safe}"));
+    b.push(format!("assert score #wcen_n dw.sys matches {total}"));
+    b.push("assert score #wcen_b dw.sys matches 0".to_string());
+    b.push("assert score #wcen_d dw.sys matches 0".to_string());
+    // Brand this life's mobs. The bystander is not one of them, and the brand
+    // rides the wave tag, so it cannot reach it.
+    b.push(format!("function {ns}:wave_brand_{safe}"));
+    b.push(format!("function {ns}:wave_census_{safe}"));
+    b.push(format!("assert score #wcen_b dw.sys matches {total}"));
+    b.push(format!(
+        "execute store result score #cen_by dw.sys if entity @e[tag=dw_cen_bystander,tag={brand}]"
+    ));
+    b.push("assert score #cen_by dw.sys matches 0".to_string());
+    // Wound one, and the census says so — read off the server's own Health and
+    // max_health, not a table and not whatever the client was sent.
+    b.push(format!(
+        "data modify entity @e[tag={tag},limit=1] Health set value 1.0f"
+    ));
+    b.push(format!("function {ns}:wave_census_{safe}"));
+    b.push("assert score #wcen_d dw.sys matches 1".to_string());
+    // A re-summon is a NEW mob: the brand cannot survive it, which is exactly the
+    // property the die-retry fidelity verdict rests on.
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(format!("function {ns}:spawn_{safe}"));
+    b.push(format!("function {ns}:wave_census_{safe}"));
+    b.push(format!("assert score #wcen_n dw.sys matches {total}"));
+    b.push("assert score #wcen_b dw.sys matches 0".to_string());
+    b.push("assert score #wcen_d dw.sys matches 0".to_string());
+    // Leave no residue for the shared batch (pin_dummy rule 4).
+    b.push(format!("function {ns}:wave_unbrand_{safe}"));
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push("kill @e[tag=dw_cen_bystander]".to_string());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/wave_census.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
 fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = &plan.campaign.world.content.title;
@@ -8816,11 +9844,306 @@ fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
         "execute store result score #br_bfs dw.sys if entity @e[tag={tag}]"
     ));
     b.push(format!("assert score #br_bfs dw.sys matches {total}"));
+    // --- the SURVIVOR case (owner's no-chip-through ruling, 2026-08-03) ---
+    // A wiped wave coming back proves the count. It does not prove the thing the
+    // ruling is actually about: grinding a wave down one hit per life must never
+    // be a valid path, so a survivor the party chipped has to be REMOVED and
+    // replaced, not topped up and not left standing. Chip one mob to a sliver,
+    // brand it with a tag no re-summon can carry (`spawn_<wave>` writes the
+    // authored NBT and nothing else), rest, and demand the brand is gone while the
+    // wave stands at full count. Identity, not just arithmetic.
+    b.push(format!(
+        "data modify entity @e[tag={tag},limit=1] Health set value 1.0f"
+    ));
+    b.push(format!("tag @e[tag={tag},limit=1] add dw_bfchip"));
+    b.push("execute store result score #bp_bfs dw.sys if entity @e[tag=dw_bfchip]".to_string());
+    b.push("assert score #bp_bfs dw.sys matches 1".to_string());
+    b.push(format!("function {ns}:bonfire_rest_{i}"));
+    b.push("execute store result score #bc_bfs dw.sys if entity @e[tag=dw_bfchip]".to_string());
+    b.push("assert score #bc_bfs dw.sys matches 0".to_string());
+    b.push(format!(
+        "execute store result score #bf_bfs dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push(format!("assert score #bf_bfs dw.sys matches {total}"));
     // Leave no residue for the rest of the batch (pin_dummy rule 4).
     b.push(format!("kill @e[tag={tag}]"));
     b.push(format!("scoreboard players set {seated} dw.sys 0"));
     out.insert(
         format!("packtest-datapack/data/{ns}/test/souls_bonfire_reseat.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// spec-0016 §1 (owner ruling 2026-08-04): **a re-seated wave comes back
+/// STATIONED.**
+///
+/// The souls loop stands — a beaten `respawns_on_rest` wave does return on a rest
+/// and on a death-respawn — but it returns to the state it was FIRST seated in,
+/// never to the state the party last left it in. A lane wave re-enters its routed
+/// patrol from the lane start (`Patrolling:1b` re-applied, `patrol_target` back on
+/// waypoint 0, the march clock back to index 0); a non-lane wave stands at its
+/// anchor under vanilla-local AI with no patrol NBT at all. Nothing re-seated may
+/// pursue across the map.
+///
+/// The engine already satisfies this by construction — the re-seat re-enters
+/// through the wave's own `spawn_<wave>`, and every piece of stationed state is
+/// written there — but "by construction" is folklore until a server says so. This
+/// template makes it a live claim, and it is deliberately driven from the WORST
+/// state the wave can be in: dragged off its lane onto the party, released to
+/// native AI by the real lane clock, its march clock run down the lane, and every
+/// mob branded so a survivor cannot hide inside a correct-looking count. Then it
+/// runs the REAL `bonfire_rest_<i>` and demands four things:
+///
+/// 1. the authored count is standing;
+/// 2. **not one mob of the previous life is** — the brand is gone, so this is a
+///    fresh squad, not the chased one topped up;
+/// 3. every mob is back at its seating footing, within the compiler-known spread
+///    of the wave's own first seated cell (this is the anti-pursuit claim: the
+///    mobs were 0 blocks from the player a moment ago);
+/// 4. the routed state is re-asserted (lane) or absent (non-lane).
+///
+/// Emits nothing without both a bonfire and a `respawns_on_rest` wave →
+/// byte-identical.
+fn emit_reseat_stationed_packtest(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    wave_placements: &WavePlacements,
+    lane_routes: &crate::nav::LaneRoutes,
+) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some(bf) = plan.bonfires().next() else {
+        return;
+    };
+    let reseat = plan.reseat_waves();
+    // Prefer a LANE wave when the campaign has one: its stationed state is the
+    // richer claim (the routed half), and the plain-anchor half is a subset of it.
+    let Some(w) = reseat
+        .iter()
+        .find(|w| lane_routes.contains_key(w.id.as_str()))
+        .or_else(|| reseat.first())
+        .copied()
+    else {
+        return;
+    };
+    let Some(cells) = wave_placements.get(w.id.as_str()) else {
+        return;
+    };
+    let Some(&seat) = cells.first() else {
+        return;
+    };
+    let total = plan::wave_total(w);
+    if total < 1 {
+        return;
+    }
+    let i = bf.index;
+    let safe = plan::safe_local(w.id.as_str());
+    let tag = plan::wave_tag(w.id.as_str());
+    let brand = plan::wave_brand_tag(w.id.as_str());
+    let lane = lane_routes.get(w.id.as_str());
+    // How far the wave's own seating spreads from its first cell, rounded up: the
+    // exact radius the compiler placed this wave inside, so the proximity claim is
+    // as tight as the geometry allows rather than a guessed slack.
+    let spread = cells
+        .iter()
+        .map(|c| {
+            (0..3)
+                .map(|k| f64::from(c[k] - seat[k]).powi(2))
+                .sum::<f64>()
+                .sqrt()
+        })
+        .fold(0.0_f64, f64::max)
+        .ceil()
+        .max(1.0) as i64;
+    let (pin, sel) = pin_dummy("dw_rsst");
+
+    let mut b = packtest_header(&format!(
+        "{title}: a bonfire re-seat returns wave `{}` to its STATIONED state, never to the \
+         chase (spec-0016 §1)",
+        w.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(pin);
+    // A rest re-seats EVERY met wave, so this template owns the whole re-seat
+    // board: clear each one's entities and its seated sentinel first, and put
+    // both back at the end (pin_dummy rule 4).
+    for r in &reseat {
+        b.push(format!("kill @e[tag={}]", plan::wave_tag(r.id.as_str())));
+        b.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            wave_seated_holder(r.id.as_str())
+        ));
+    }
+    // Meet the wave.
+    b.push(format!("function {ns}:spawn_{safe}"));
+    b.push(format!(
+        "assert score {} dw.sys matches 1",
+        wave_seated_holder(w.id.as_str())
+    ));
+    // Now put it in the state the drowned bell's ladder actually died to: the
+    // squad on top of the party, off its lane, feral.
+    b.push(format!("execute at {sel} run tp @e[tag={tag}] ~ ~ ~"));
+    if let Some(wps) = lane {
+        b.push(format!("function {ns}:lane_tick_{safe}"));
+        b.push(format!(
+            "execute store result score #f_rsst dw.sys if entity @e[tag={tag},nbt={{Patrolling:0b}}]"
+        ));
+        b.push(format!("assert score #f_rsst dw.sys matches {total}"));
+        // …and its march clock run down the lane, so a re-seat that forgot to
+        // reset it would send the fresh squad at the lane's far end.
+        b.push(format!(
+            "scoreboard players set {} dw.sys {}",
+            lane_index_holder(w.id.as_str()),
+            wps.len().saturating_sub(1)
+        ));
+    }
+    // Brand this life. `spawn_<wave>` writes the authored NBT and nothing else,
+    // so no re-summon can carry the stamp: identity, not arithmetic.
+    b.push(format!("function {ns}:wave_brand_{safe}"));
+
+    // --- the re-seat, through the real rest function ---
+    b.push(format!("function {ns}:bonfire_rest_{i}"));
+    b.push(format!(
+        "execute store result score #n_rsst dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push(format!("assert score #n_rsst dw.sys matches {total}"));
+    b.push(format!(
+        "execute store result score #b_rsst dw.sys if entity @e[tag={brand}]"
+    ));
+    b.push("assert score #b_rsst dw.sys matches 0".to_string());
+    // Back on their footing — the anti-pursuit claim.
+    let c = ent_xyz(seat);
+    b.push(format!(
+        "execute positioned {} {} {} store result score #d_rsst dw.sys if entity \
+         @e[tag={tag},distance=..{spread}]",
+        c[0], c[1], c[2]
+    ));
+    b.push(format!("assert score #d_rsst dw.sys matches {total}"));
+    match lane {
+        Some(wps) => {
+            b.push(format!(
+                "execute store result score #p_rsst dw.sys if entity \
+                 @e[tag={tag},nbt={{Patrolling:1b}}]"
+            ));
+            b.push(format!("assert score #p_rsst dw.sys matches {total}"));
+            b.push(format!(
+                "execute store result score #t_rsst dw.sys if entity \
+                 @e[tag={tag},nbt={{patrol_target:[I;{},{},{}]}}]",
+                wps[0][0], wps[0][1], wps[0][2]
+            ));
+            b.push(format!("assert score #t_rsst dw.sys matches {total}"));
+            b.push(format!(
+                "assert score {} dw.sys matches 0",
+                lane_index_holder(w.id.as_str())
+            ));
+        }
+        None => {
+            // Vanilla-local AI only: a non-lane wave is never routed, so patrol
+            // NBT must not appear on it — not on the first summon and not on a
+            // re-seat.
+            b.push(format!(
+                "execute store result score #p_rsst dw.sys if entity \
+                 @e[tag={tag},nbt={{Patrolling:1b}}]"
+            ));
+            b.push("assert score #p_rsst dw.sys matches 0".to_string());
+        }
+    }
+
+    b.push(format!("function {ns}:wave_unbrand_{safe}"));
+    for r in &reseat {
+        b.push(format!("kill @e[tag={}]", plan::wave_tag(r.id.as_str())));
+        b.push(format!(
+            "scoreboard players set {} dw.sys 0",
+            wave_seated_holder(r.id.as_str())
+        ));
+    }
+    b.push(format!("tag {sel} remove dw_rsst"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_reseat_stationed.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// spec-0016 §1 (owner ruling 2026-08-03): the **two options really differ**.
+///
+/// The owner's ruling is that right-clicking a bonfire offers exactly *rest and
+/// save* and *save only*, and that save-only does nothing but move the
+/// checkpoint. That is a runtime claim about two functions, and this drives both
+/// on a live server through the flask — the one restored resource a PackTest
+/// dummy can actually observe.
+///
+/// **Why the flask and not health.** PackTest fake players are immune to
+/// `/damage` (measured on the pinned toolserver, 2026-08-03: `Health` stays at
+/// 20.0 through `damage @s 1000`), so a dummy can never be *hurt* and therefore
+/// never be seen to be *healed* — an assertion on health would be permanently
+/// red no matter how correct the engine is. Inventory has no such problem:
+/// `clear <player> <item> 0` counts matching items without removing them, so the
+/// template can spend the flask down to one, drive each option, and read the
+/// count back. The heal/feed/cure half of a rest is proven where it can be proven
+/// honestly — compiler unit tests assert the exact `effect` commands and their
+/// order inside `bonfire_restore`.
+///
+/// Emits nothing for a campaign without both a bonfire and a flask, which
+/// `DW0476` makes the same thing as "no bonfire" → byte-identical.
+fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some(bf) = plan.bonfires().next() else {
+        return;
+    };
+    let Some(&(ci, ki)) = plan.flasks().first() else {
+        return;
+    };
+    let i = bf.index;
+    let item = &plan.campaign.classes.content.classes[ci].kit[ki];
+    let ctag = class_tag(&plan.classes[ci].safe);
+    let (pin, sel) = pin_dummy("dw_bfopt");
+
+    let mut b = packtest_header(&format!(
+        "{title}: save-only saves and nothing else; rest refills the flask (spec-0016 §1)"
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(pin);
+    // The dummy takes the flask's class, so `bonfire_flask`'s per-class guard
+    // selects it — this is the same tag `class_apply_<class>` adds.
+    b.push(format!("tag {sel} add {ctag}"));
+    // Baseline: exactly ONE flask in the bag (the party has spent the rest).
+    b.push(format!("clear {sel} {}", item.item));
+    b.push(format!("give {sel} {} 1", item.item));
+
+    // --- save only: the checkpoint moves, the flask does NOT come back ---
+    b.push("data modify storage dw:cp pos set value [0, 0, 0]".to_string());
+    b.push(format!(
+        "execute as {sel} run function {ns}:bonfire_pick_save_{i}"
+    ));
+    b.push(format!(
+        "execute store result score #bo_save dw.sys run clear {sel} {} 0",
+        item.item
+    ));
+    b.push("assert score #bo_save dw.sys matches 1".to_string());
+    b.push(
+        "execute store result score #bo_cp dw.sys run data get storage dw:cp pos[0]".to_string(),
+    );
+    b.push(format!("assert score #bo_cp dw.sys matches {}", bf.pos[0]));
+
+    // --- rest and save: the flask is replenished to its declared count ---
+    b.push(format!(
+        "execute as {sel} run function {ns}:bonfire_pick_rest_{i}"
+    ));
+    b.push(format!(
+        "execute store result score #bo_rest dw.sys run clear {sel} {} 0",
+        item.item
+    ));
+    b.push(format!(
+        "assert score #bo_rest dw.sys matches {}",
+        item.count
+    ));
+
+    // Leave no residue for the shared batch (pin_dummy rule 4).
+    b.push(format!("clear {sel} {}", item.item));
+    b.push(format!("tag {sel} remove {ctag}"));
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_bonfire_options.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
@@ -9160,6 +10483,55 @@ fn emit_td_lane_packtests(
         b.push(format!("kill @e[tag={tag}]"));
         b.push(format!("tag {sel} remove dw_pt_tdrel"));
         write("souls_td_lane_release", b);
+
+        // --- the re-summon re-stations the squad (owner ruling 2026-08-04) ---
+        //
+        // A wave re-seat is `kill` + the wave's own `spawn_<wave>`, and the whole
+        // stationed-re-seat ruling rests on that second half putting the squad
+        // back on the lane exactly as the first summon did. This drives the same
+        // two commands from the far side of the mechanism's worst state — the
+        // squad hauled onto the party, released to native AI by the real clock,
+        // its march clock at the END of the lane — and demands the fresh squad is
+        // routed from waypoint 0 again with the release gone. Emitted for every
+        // lane wave, bonfire or not, so a campaign that ships lanes proves it
+        // without having to ship a rest point next to one.
+        let (pin, sel) = pin_dummy("dw_pt_tdrst");
+        let mut b = packtest_header(&format!(
+            "{title}: re-summoning lane `{}` re-stations it — the feral release does not survive \
+             (spec-0016 §1/§6)",
+            w.id
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("function {ns}:spawn_{safe}"));
+        b.push(format!("execute at {sel} run tp @e[tag={tag}] ~ ~ ~"));
+        b.push(format!("function {ns}:lane_tick_{safe}"));
+        b.push(format!(
+            "execute store result score #f_tdrst dw.sys if entity @e[tag={tag},nbt={{Patrolling:0b}}]"
+        ));
+        b.push(format!("assert score #f_tdrst dw.sys matches {total}"));
+        b.push(format!(
+            "scoreboard players set {idx} dw.sys {}",
+            wps.len().saturating_sub(1)
+        ));
+        // The re-seat body, verbatim.
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("function {ns}:spawn_{safe}"));
+        b.push(format!(
+            "execute store result score #n_tdrst dw.sys if entity @e[tag={tag},nbt={{Patrolling:1b}}]"
+        ));
+        b.push(format!("assert score #n_tdrst dw.sys matches {total}"));
+        b.push(format!(
+            "execute store result score #t_tdrst dw.sys if entity \
+             @e[tag={tag},nbt={{patrol_target:[I;{},{},{}]}}]",
+            t0[0], t0[1], t0[2]
+        ));
+        b.push(format!("assert score #t_tdrst dw.sys matches {total}"));
+        b.push(format!("assert score {idx} dw.sys matches 0"));
+        b.push(format!("kill @e[tag={tag}]"));
+        b.push(format!("tag {sel} remove dw_pt_tdrst"));
+        write("souls_td_lane_reseat", b);
         let _ = r;
     }
 
@@ -10812,6 +12184,54 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             obj_score(id.as_str())
         ));
         write("verb_interact", b);
+
+        // A click that lands before its quest is armed is DISCARDED, and a real
+        // click afterwards still works (task #124, owner ruling).
+        //
+        // This is the runtime half of the arming invariant. The compile-time half
+        // (`tests/tick_arming.rs`) pins that the arming quest's lines precede the
+        // adjudication, so a pending click can never be lost to same-tick
+        // ordering. What a live server has to show is the other half: the
+        // unconditional reset really does SPEND a premature click rather than
+        // bank it — because a banked click would auto-complete the objective the
+        // instant the quest armed, with nobody having clicked anything.
+        let (pin, sel) = pin_dummy("dw_t_varm");
+        let trigger = plan::interact_trigger(id.as_str());
+        let obj = obj_score(id.as_str());
+        let qa = quest_active_score(qid);
+        let party = plan::PARTY;
+        let mut b = packtest_header(&format!(
+            "{}: a click before the quest is armed is spent, not banked (task #124)",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        // Baseline: objective open, quest NOT armed, and the preamble's other
+        // guards satisfied so the arming flag is the only thing standing in the
+        // way. The preamble sets the quest active, so it is cleared after it.
+        b.push(format!("scoreboard players set {party} {obj} 0"));
+        b.extend(packtest_preamble(qid, o, true, &sel));
+        b.push(format!("scoreboard players set {party} {qa} 0"));
+
+        // --- the premature click: no completion, and no banked trigger ---
+        b.push(format!("scoreboard players set {sel} {trigger} 1"));
+        b.push(format!("function {ns}:tick"));
+        b.push(format!("assert score {party} {obj} matches 0"));
+        b.push(format!(
+            "execute store result score #varm_bank dw.sys if score {sel} {trigger} matches 1.."
+        ));
+        b.push("assert score #varm_bank dw.sys matches 0".to_string());
+
+        // --- arming alone must not complete it: the click is genuinely gone ---
+        b.push(format!("scoreboard players set {party} {qa} 1"));
+        b.push(format!("function {ns}:tick"));
+        b.push(format!("assert score {party} {obj} matches 0",));
+
+        // --- and a real click, now that the quest is armed, still completes ---
+        b.push(format!("scoreboard players set {sel} {trigger} 1"));
+        b.push(format!("function {ns}:tick"));
+        b.push(format!("assert score {party} {obj} matches 1"));
+        write("verb_interact_arming", b);
     }
 
     // interact + `requires_item`: HELD, not merely carried (owner ruling,
@@ -11182,13 +12602,180 @@ bytes, so byte-identity (ADR-0006) covers the whole `<out>/` tree.\n",
     );
 }
 
-fn emit_critical_path(plan: &Plan) -> Value {
-    let steps: Vec<Value> = plan
+/// Splice a **`rest`** step into the exported critical path after the beat that
+/// arms each bonfire (spec-0016 §1; bell round-3 finding, 2026-08-03).
+///
+/// A bonfire arms an affordance and moves nothing until the party rests — which is
+/// souls-correct and was also invisible to the validation ladder: the proven path
+/// walked past every bonfire without touching it, so the checkpoint never moved,
+/// and a die-retry trial respawned the bot at world spawn (the beach) instead of
+/// at the fire it had just walked past. The walk-back budget blew, and the run
+/// judged the *campaign* for a *proof* that never performed the player loop.
+///
+/// Resting is the intended loop, so the proven path performs it: after the step
+/// that arms bonfire `i` (its `fire_step` — the earliest tick at which a rest is
+/// possible, the same index `DW0315` roots the no-stranding proof at), the path
+/// gains one `rest` step choosing **rest and save**. Several bonfires armed by the
+/// same beat are spliced in bonfire order, so the emission is deterministic.
+///
+/// This is a *path export* change only: `plan.critical_path` is untouched, so
+/// every `fire_step` index, every nav proof and every other consumer sees exactly
+/// what it saw before. Emits nothing for a campaign with no bonfire →
+/// byte-identical.
+///
+/// **Step shape** (the harness contract; execution lands in a follow-up):
+/// ```json
+/// { "action": "rest", "bonfire": 0, "anchor": "anchor/keeper-stand",
+///   "pos": [44, 65, 2], "command": "/trigger dw.rest set 2" }
+/// ```
+/// The bot walks to `pos`, right-clicks the `dw_bonfire_<bonfire>` interaction —
+/// which is what opens the dialog and what *enables* the trigger — and then sends
+/// `command`, the exact chat line the "rest and save" button runs. The click is not
+/// optional: `dw.rest` is a trigger objective and is disabled until the opener
+/// enables it, so a bot that only chats the command changes nothing.
+///
+/// `walked` is the step list the JSON was serialized from — the exported path, or
+/// (spec-0025) one branch's path, whose indices are its own. See
+/// [`rest_step_index`] for how a `fire_step` crosses that boundary.
+fn with_bonfire_rest_steps(plan: &Plan, walked: &[plan::Step], steps: Vec<Value>) -> Vec<Value> {
+    if plan.bonfires().next().is_none() {
+        return steps;
+    }
+    let mut out: Vec<Value> = Vec::with_capacity(steps.len());
+    for (i, step) in steps.into_iter().enumerate() {
+        out.push(step);
+        for bf in plan
+            .bonfires()
+            .filter(|b| rest_step_index(plan, walked, b.fire_step) == Some(i))
+        {
+            out.push(json!({
+                "action": "rest",
+                "bonfire": bf.index,
+                "anchor": bf.anchor,
+                "pos": bf.pos,
+                "command": "/trigger dw.rest set 2"
+            }));
+        }
+    }
+    out
+}
+
+/// Where bonfire `fire_step` — an index into the EXPORTED path — lands on `walked`.
+///
+/// A per-branch path (spec-0025) is a different sequence of the same steps, so the
+/// index cannot be carried across: it is translated through the **objective** the
+/// firing beat names, because a fire is armed by a beat, not by a position. A beat
+/// that does not happen on this branch arms nothing there, and the branch path
+/// carries no rest step for it. On the exported path the translation is the
+/// identity (an objective appears at exactly one step), so this emits byte-for-byte
+/// what it emitted before.
+fn rest_step_index(plan: &Plan, walked: &[plan::Step], fire_step: usize) -> Option<usize> {
+    match plan
         .critical_path
+        .get(fire_step)
+        .and_then(plan::Step::objective)
+    {
+        // `fire_step: 0` is the class-select / conservative "before everything"
+        // index (see `Plan::gate_fired_before`); it precedes every path the same way.
+        None => (fire_step < walked.len()).then_some(fire_step),
+        Some(obj) => walked.iter().position(|s| s.objective() == Some(obj)),
+    }
+}
+
+/// One executable critical path per REACHABLE enumerated branch (spec-0025 §3),
+/// as `(slug, json)` in branch-enumeration order.
+///
+/// Empty — so byte-identical — for a campaign that declares no `branch_points`.
+/// An unreachable branch contributes nothing: there is no world that plays it,
+/// which `DW0482` has already failed the build for; `branch-plan.json` still names
+/// it, so the harness reports it skipped rather than silently absent.
+fn branch_paths(
+    plan: &Plan,
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+) -> Result<Vec<(String, Value)>, BuildFailure> {
+    let branches = crate::branch::realize(plan.campaign);
+    if branches.is_empty() {
+        return Ok(Vec::new());
+    }
+    let flow = crate::flow::Flow::new(plan.campaign);
+    let mut out = Vec::new();
+    for r in &branches {
+        let Some(w) = r.world else { continue };
+        let cp = plan
+            .branch_critical_path(&flow.playthrough_in(w))
+            .map_err(|e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: format!("branch `{}`: {}", r.branch.id, e.message),
+            })?;
+        out.push((
+            r.branch.slug.clone(),
+            critical_path_json(
+                plan,
+                &cp.steps,
+                &cp.transport_by_step,
+                &cp.sneak_by_step,
+                &cp.cutscene_by_step,
+                moves,
+                actor_moves,
+            ),
+        ));
+    }
+    Ok(out)
+}
+
+fn emit_critical_path(
+    plan: &Plan,
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+) -> Value {
+    critical_path_json(
+        plan,
+        &plan.critical_path,
+        &plan.critical_path_transport,
+        &plan.critical_path_sneak,
+        &plan.critical_path_cutscene,
+        moves,
+        actor_moves,
+    )
+}
+
+/// Serialize a step list in the `critical-path.json` contract (format 2).
+///
+/// One serializer for the exported path and for every spec-0025 per-branch path:
+/// a branch run must consume a contract the harness already parses, so the branch
+/// tier cannot drift into a second, less-tested shape.
+fn critical_path_json(
+    plan: &Plan,
+    walked: &[plan::Step],
+    transports: &[Option<[i32; 3]>],
+    sneak: &[bool],
+    cutscene: &[Option<u32>],
+    moves: &[crate::nav::MovePlan],
+    actor_moves: &[crate::nav::ActorMovePlan],
+) -> Value {
+    // Scheduled-ending tail for THIS path's quests (task #125): exported on the
+    // terminal `assert-complete` step as `ending_tail_ticks`, so the harness
+    // completion window covers a `sequence`-scheduled finale (the-wake: 250t)
+    // exactly as it already covers `cutscene_seconds`. Omitted when 0, keeping
+    // every synchronous-ending path byte-identical.
+    let path_quests: BTreeSet<&str> = {
+        let objs: BTreeSet<&str> = walked.iter().filter_map(plan::Step::objective).collect();
+        plan.campaign
+            .quests
+            .content
+            .quests
+            .iter()
+            .filter(|q| q.objectives.iter().any(|o| objs.contains(o.id().as_str())))
+            .map(|q| q.id.as_str())
+            .collect()
+    };
+    let ending_tail = quests_ending_tail(plan.campaign, &path_quests, moves, actor_moves);
+    let steps: Vec<Value> = walked
         .iter()
         .enumerate()
         .map(|(i, s)| {
-            let transport = &plan.critical_path_transport[i];
+            let transport = &transports[i];
             let mut step = match s {
                 Step::SelectClass { class_id, command } => json!({
                     "action": "select-class", "class": class_id, "command": command
@@ -11213,9 +12800,17 @@ fn emit_critical_path(plan: &Plan) -> Value {
                     "action": "interact", "objective": objective_id, "anchor": anchor_id,
                     "pos": pos, "command": command, "requires_item": requires_item
                 }),
-                Step::AssertComplete { objective, value } => json!({
-                    "action": "assert-complete", "scoreboard": { "objective": objective, "value": value }
-                }),
+                Step::AssertComplete { objective, value } => {
+                    let mut v = json!({
+                        "action": "assert-complete", "scoreboard": { "objective": objective, "value": value }
+                    });
+                    if ending_tail > 0
+                        && let Some(obj) = v.as_object_mut()
+                    {
+                        obj.insert("ending_tail_ticks".to_string(), json!(ending_tail));
+                    }
+                    v
+                }
             };
             // gap 8: mark a step whose completion teleports the player to another
             // area with the absolute destination, so the harness waits for the
@@ -11226,12 +12821,12 @@ fn emit_critical_path(plan: &Plan) -> Value {
             // DSL v0.4 harness hints. `sneak` is emitted ONLY when true (absent =
             // false, per the harness contract). `cutscene_seconds` is a positive
             // integer on the step whose completion triggers the cutscene.
-            if plan.critical_path_sneak[i]
+            if sneak[i]
                 && let Some(obj) = step.as_object_mut()
             {
                 obj.insert("sneak".to_string(), json!(true));
             }
-            if let Some(secs) = plan.critical_path_cutscene[i]
+            if let Some(secs) = cutscene[i]
                 && secs > 0
                 && let Some(obj) = step.as_object_mut()
             {
@@ -11240,6 +12835,7 @@ fn emit_critical_path(plan: &Plan) -> Value {
             step
         })
         .collect();
+    let steps = with_bonfire_rest_steps(plan, walked, steps);
     json!({
         // Campaign-derived (not the compiler's max supported version): a v0.2
         // campaign emits a v0.2 critical path, a v0.3 campaign a v0.3 one.
@@ -11421,6 +13017,7 @@ mod tests {
             vulnerable,
             equipment: None,
             attributes: None,
+            tier: None,
         }
     }
 
@@ -11580,6 +13177,7 @@ mod tests {
             at_ticks: t,
             effects: vec![delvewright_dsl::QuestEffect::UnleashActor {
                 actor: delvewright_dsl::ActorId("actor/giant".to_string()),
+                happening: None,
             }],
         };
         let a = vec![step(0), step(40)];
@@ -11712,6 +13310,7 @@ mod loot_emit_tests {
             vulnerable: false,
             equipment: eq,
             attributes: None,
+            tier: None,
         }
     }
 

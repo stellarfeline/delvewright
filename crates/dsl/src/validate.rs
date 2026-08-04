@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
     Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06,
-    is_v07,
+    is_v07, is_v08,
 };
 use crate::ids::is_kebab;
 use crate::registry::{
@@ -88,6 +88,15 @@ pub fn validate_campaign_with(
     if c.world_edits.is_some() {
         let blocks = ItemBackedBlockRegistry::new(items);
         world_edits_checks(c, &blocks, &mut d);
+    }
+    // DSL v0.8 (spec-0025): the declared story forks and the per-node
+    // `happening`. Structural only — the branch proofs themselves (`DW048x`) are
+    // compiler-tier, because they need the branch/flag flow model.
+    if is_v08(c.quest_plan.dsl_version.as_str()) {
+        branch_point_checks(c, &mut d);
+    }
+    if is_v08(c.quests.dsl_version.as_str()) || is_v08(c.dialogue.dsl_version.as_str()) {
+        happening_subject_checks(c, &mut d);
     }
 
     d
@@ -945,6 +954,7 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v05(c, d);
     reserved_v06(c, d);
     reserved_v07(c, d);
+    reserved_v08(c, d);
 }
 
 /// DSL v0.7 reserved-feature gating (spec-0020): the per-quest `cast` ledger,
@@ -2120,6 +2130,46 @@ fn v06_checks(
                     ),
                 ));
             }
+        }
+    }
+
+    // spec-0016 §1 (owner ruling 2026-08-03): a campaign that places a bonfire is
+    // a souls campaign, and a souls campaign owes the party a flask. Resting
+    // replenishes every `flask` kit entry to its declared count — with none
+    // declared, "rest and save" and "save only" collapse into the same button and
+    // the recovery economy the bonfire exists to serve does not exist (`DW0476`).
+    // Campaign-global on purpose: the flask is per-class gear, and one class
+    // without a flask is as broken as none, so the requirement is on EVERY class.
+    if has_bonfire {
+        let flaskless: Vec<&str> = c
+            .classes
+            .content
+            .classes
+            .iter()
+            .filter(|cl| !cl.kit.iter().any(|k| k.flask))
+            .map(|cl| cl.id.as_str())
+            .collect();
+        if !flaskless.is_empty() {
+            d.push(Diagnostic::error(
+                codes::BONFIRE_NO_FLASK,
+                "classes",
+                "/content/classes".to_string(),
+                format!(
+                    "this campaign places a `bonfire` but {} no `flask` kit item: {}. \
+                     Resting at a bonfire replenishes every kit entry marked `\"flask\": true` to \
+                     its declared `count` — with none, the rest option recovers nothing and the \
+                     souls loop has no consumable to spend (spec-0016 §1, owner ruling \
+                     2026-08-03). Add a recovery item to each class kit and mark it \
+                     `\"flask\": true` (this needs `dsl_version` 0.8.0 on the classes stage). Do \
+                     NOT drop the bonfire to silence this — the rest point is the design.",
+                    if flaskless.len() == 1 {
+                        "one class declares".to_string()
+                    } else {
+                        format!("{} classes declare", flaskless.len())
+                    },
+                    flaskless.join(", ")
+                ),
+            ));
         }
     }
 }
@@ -3580,7 +3630,7 @@ fn check_effect_v04(
         // `move-npc` family: an unknown npc id is the same `DW0112` dangling ref.
         QuestEffect::DespawnNpc { npc, .. }
         | QuestEffect::MoveNpc { npc, .. }
-        | QuestEffect::SpawnNpc { npc }
+        | QuestEffect::SpawnNpc { npc, .. }
             if !npc_ids.contains(npc.as_str()) =>
         {
             let verb = eff
@@ -5443,21 +5493,21 @@ fn difficulty_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         .collect();
     for q in &c.quests.content.quests {
         for_each_effect_deep(q, |_, eff| {
-            if let QuestEffect::UnleashActor { actor } = eff {
+            if let QuestEffect::UnleashActor { actor, .. } = eff {
                 fighters.insert(actor.as_str().to_string());
             }
         });
     }
     for t in &c.quests.content.triggers {
         for_each_trigger_effect_deep(t, |_, eff| {
-            if let QuestEffect::UnleashActor { actor } = eff {
+            if let QuestEffect::UnleashActor { actor, .. } = eff {
                 fighters.insert(actor.as_str().to_string());
             }
         });
     }
     for t in &c.quests.content.traps {
         for_each_trap_payload_deep(t, |_, eff| {
-            if let QuestEffect::UnleashActor { actor } = eff {
+            if let QuestEffect::UnleashActor { actor, .. } = eff {
                 fighters.insert(actor.as_str().to_string());
             }
         });
@@ -5959,4 +6009,484 @@ fn loot_checks(
             );
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// DSL v0.8 — branch points, happenings, named endings (spec-0025);
+// the bonfire rest interaction + the class-kit flask (spec-0016 §1)
+// ---------------------------------------------------------------------------
+
+/// DSL v0.8 reserved-feature gating: spec-0025's stage-4 `branch_points`
+/// declaration, per-node `happening` and `campaign-complete` `ending`, plus
+/// spec-0016 §1's bonfire rest-dialog labels (stage 5), the class-kit `flask`
+/// (stage 3) and spec-0023's actor `tier` (stage 5).
+///
+/// Same asymmetry the v0.7 ledger established: *declaring* any of it below 0.8.0
+/// is `DW0141`, so the version contract stays exact and a 0.6/0.7 campaign's
+/// datapack cannot move by a byte. What fires only **at** 0.8.0 is the
+/// requirement side — `DW0481` (a story node with no `happening`) and `DW0480`
+/// (a fork nobody declared).
+fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    if !is_v08(c.quest_plan.dsl_version.as_str()) && !c.quest_plan.content.branch_points.is_empty()
+    {
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            "quest-plan",
+            "/content/branch_points".to_string(),
+            "the stage-4 `branch_points` declaration (which flags fork the story, where the fork \
+             opens, and what each branch runs to) requires dsl_version 0.8.0 — raise this stage's \
+             `dsl_version` to 0.8.0, or remove the section"
+                .to_string(),
+        ));
+    }
+    if !is_v08(c.quests.dsl_version.as_str()) {
+        // spec-0023 (task #113): an actor's `tier` — the same `elite`/`boss`
+        // billing a wave declares, on the OTHER shape an elite takes.
+        for (i, a) in c.quests.content.actors.iter().enumerate() {
+            if a.tier.is_none() {
+                continue;
+            }
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "quests",
+                format!("/content/actors/{i}/tier"),
+                "an actor `tier` (`elite`/`boss` — what the validation ladder's floor gate holds \
+                 this fight to) requires dsl_version 0.8.0 — raise this stage's `dsl_version` to \
+                 0.8.0, or remove the field"
+                    .to_string(),
+            ));
+        }
+        for (i, q) in c.quests.content.quests.iter().enumerate() {
+            if q.happening.is_some() {
+                d.push(reserved_happening(
+                    "quests",
+                    format!("/content/quests/{i}/happening"),
+                ));
+            }
+            for (j, o) in q.objectives.iter().enumerate() {
+                if o.happening().is_some() {
+                    d.push(reserved_happening(
+                        "quests",
+                        format!("/content/quests/{i}/objectives/{j}/happening"),
+                    ));
+                }
+            }
+        }
+        crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+            if effect_happening(eff).is_some() {
+                d.push(reserved_happening("quests", format!("{path}/happening")));
+            }
+            if let QuestEffect::CampaignComplete {
+                ending: Some(_), ..
+            } = eff
+            {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("{path}/ending"),
+                    "a named `campaign-complete` `ending` requires dsl_version 0.8.0 — raise this \
+                     stage's `dsl_version` to 0.8.0, or remove the field"
+                        .to_string(),
+                ));
+            }
+        });
+    }
+    // spec-0016 §1 (owner rulings 2026-08-03): the class-kit `flask` a bonfire
+    // rest replenishes, and the bonfire's authorable rest-dialog labels.
+    if !is_v08(c.classes.dsl_version.as_str()) {
+        for (i, cl) in c.classes.content.classes.iter().enumerate() {
+            for (k, item) in cl.kit.iter().enumerate() {
+                if !item.flask {
+                    continue;
+                }
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "classes",
+                    format!("/content/classes/{i}/kit/{k}/flask"),
+                    "a class kit `flask` (the recovery item a bonfire rest replenishes) requires \
+                     dsl_version 0.8.0 — raise this stage's `dsl_version` to 0.8.0, or remove the \
+                     field"
+                        .to_string(),
+                ));
+            }
+        }
+    }
+    if !is_v08(c.quests.dsl_version.as_str()) {
+        crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+            let Some(l) = eff.bonfire_labels() else {
+                return;
+            };
+            for (present, field) in [
+                (l.prompt.is_some(), "prompt"),
+                (l.rest_label.is_some(), "rest_label"),
+                (l.save_label.is_some(), "save_label"),
+            ] {
+                if !present {
+                    continue;
+                }
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("{path}/{field}"),
+                    format!(
+                        "a `bonfire` `{field}` (an authored label on the two-option rest dialog) \
+                         requires dsl_version 0.8.0 — raise this stage's `dsl_version` to 0.8.0, \
+                         or remove the field and take the compiler's canonical English"
+                    ),
+                ));
+            }
+        });
+    }
+    if !is_v08(c.dialogue.dsl_version.as_str()) {
+        for (i, t) in c.dialogue.content.dialogues.iter().enumerate() {
+            for (j, n) in t.nodes.iter().enumerate() {
+                for (k, o) in n.options.iter().enumerate() {
+                    if o.happening.is_some() {
+                        d.push(reserved_happening(
+                            "dialogue",
+                            format!("/content/dialogues/{i}/nodes/{j}/options/{k}/happening"),
+                        ));
+                    }
+                    // Owner design 2026-08-04: the button's hover tooltip — the
+                    // full line the caption stands for.
+                    if o.tooltip.is_some() {
+                        d.push(Diagnostic::error(
+                            codes::RESERVED,
+                            "dialogue",
+                            format!("/content/dialogues/{i}/nodes/{j}/options/{k}/tooltip"),
+                            "a dialogue option `tooltip` (the full line vanilla shows in a hover \
+                             box while the button keeps the caption) requires dsl_version 0.8.0 \
+                             — raise this stage's `dsl_version` to 0.8.0, or remove the field"
+                                .to_string(),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn reserved_happening(stage: &str, path: String) -> Diagnostic {
+    Diagnostic::error(
+        codes::RESERVED,
+        stage,
+        path,
+        "a `happening` declaration (what this node does to the story, as a structured event verb \
+         plus one line of prose) requires dsl_version 0.8.0 — raise this stage's `dsl_version` to \
+         0.8.0, or remove the field"
+            .to_string(),
+    )
+}
+
+/// The `happening` of an effect, for the eleven story-node verbs that carry one.
+pub(crate) fn effect_happening(eff: &QuestEffect) -> Option<&crate::stages::Happening> {
+    match eff {
+        QuestEffect::OpenGate { happening, .. }
+        | QuestEffect::CloseGate { happening, .. }
+        | QuestEffect::CampaignComplete { happening, .. }
+        | QuestEffect::SpawnWave { happening, .. }
+        | QuestEffect::DespawnNpc { happening, .. }
+        | QuestEffect::MoveNpc { happening, .. }
+        | QuestEffect::SpawnNpc { happening, .. }
+        | QuestEffect::SpawnActor { happening, .. }
+        | QuestEffect::DespawnActor { happening, .. }
+        | QuestEffect::MoveActor { happening, .. }
+        | QuestEffect::UnleashActor { happening, .. } => happening.as_ref(),
+        _ => None,
+    }
+}
+
+/// Structural validation of the stage-4 `branch_points` declaration (spec-0025).
+///
+/// Everything here reuses the DSL's existing structural codes on purpose — a
+/// branch point is an ordinary declaration with ordinary ids, so a malformed id
+/// is `DW0110`, a repeated one `DW0111`, and a reference to something that does
+/// not exist `DW0112`. The `DW048x` block is reserved for what is genuinely new:
+/// proofs *about* branches.
+fn branch_point_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let quests: BTreeSet<&str> = c
+        .quest_plan
+        .content
+        .quests
+        .iter()
+        .map(|q| q.id.as_str())
+        .collect();
+    let endings: BTreeSet<String> = declared_endings(c);
+    let flags: BTreeSet<String> = produced_flags(c);
+    let mut seen_points: BTreeSet<&str> = BTreeSet::new();
+    let mut seen_branches: BTreeSet<&str> = BTreeSet::new();
+
+    for (i, bp) in c.quest_plan.content.branch_points.iter().enumerate() {
+        let base = format!("/content/branch_points/{i}");
+        if !bp.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::ID_SYNTAX,
+                "quest-plan",
+                format!("{base}/id"),
+                format!(
+                    "`{}` is not a valid branch-point id — use `branch-point/<kebab-case>`",
+                    bp.id.as_str()
+                ),
+            ));
+        } else if !seen_points.insert(bp.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ID_DUPLICATE,
+                "quest-plan",
+                format!("{base}/id"),
+                format!("duplicate branch-point id `{}`", bp.id.as_str()),
+            ));
+        }
+        if !quests.contains(bp.opens_at.as_str()) {
+            d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                "quest-plan",
+                format!("{base}/opens_at"),
+                format!(
+                    "branch point `{}` opens at `{}`, which is not a planned quest — name the \
+                     quest at which the story actually forks",
+                    bp.id.as_str(),
+                    bp.opens_at.as_str()
+                ),
+            ));
+        }
+        for (j, f) in bp.forks_on.iter().enumerate() {
+            if !flags.contains(f.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::FLAG_UNKNOWN,
+                    "quest-plan",
+                    format!("{base}/forks_on/{j}"),
+                    format!(
+                        "branch point `{}` forks on `{}`, which no `set-flag` effect produces — a \
+                         fork nothing can set is not a fork",
+                        bp.id.as_str(),
+                        f.as_str()
+                    ),
+                ));
+            }
+        }
+        let fork_set: BTreeSet<&str> = bp.forks_on.iter().map(|f| f.as_str()).collect();
+        for (j, b) in bp.branches.iter().enumerate() {
+            let bpath = format!("{base}/branches/{j}");
+            if !b.id.is_valid_syntax() {
+                d.push(Diagnostic::error(
+                    codes::ID_SYNTAX,
+                    "quest-plan",
+                    format!("{bpath}/id"),
+                    format!(
+                        "`{}` is not a valid branch id — use `branch/<kebab-case>`",
+                        b.id.as_str()
+                    ),
+                ));
+            } else if !seen_branches.insert(b.id.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::ID_DUPLICATE,
+                    "quest-plan",
+                    format!("{bpath}/id"),
+                    format!(
+                        "duplicate branch id `{}` — branch ids are campaign-wide unique because \
+                         each one names an emitted `validation/branch-chronicle-<id>.md`",
+                        b.id.as_str()
+                    ),
+                ));
+            }
+            for (k, f) in b.flags.iter().enumerate() {
+                if !fork_set.contains(f.as_str()) {
+                    d.push(Diagnostic::error(
+                        codes::DANGLING_REF,
+                        "quest-plan",
+                        format!("{bpath}/flags/{k}"),
+                        format!(
+                            "branch `{}` holds `{}`, which its branch point does not list in \
+                             `forks_on` — a branch may only pin flags its own fork owns",
+                            b.id.as_str(),
+                            f.as_str()
+                        ),
+                    ));
+                }
+            }
+            match (b.converges_at(), b.ending()) {
+                (Some(q), _) => {
+                    if !quests.contains(q.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::DANGLING_REF,
+                            "quest-plan",
+                            format!("{bpath}/leads_to"),
+                            format!(
+                                "branch `{}` converges at `{}`, which is not a planned quest",
+                                b.id.as_str(),
+                                q.as_str()
+                            ),
+                        ));
+                    }
+                }
+                (None, Some(e)) => {
+                    if !endings.contains(e.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::DANGLING_REF,
+                            "quest-plan",
+                            format!("{bpath}/leads_to"),
+                            format!(
+                                "branch `{}` runs to `{}`, which no `campaign-complete` effect \
+                                 declares — name the ending on the `campaign-complete` that ends \
+                                 this branch",
+                                b.id.as_str(),
+                                e.as_str()
+                            ),
+                        ));
+                    }
+                }
+                (None, None) => d.push(Diagnostic::error(
+                    codes::ID_SYNTAX,
+                    "quest-plan",
+                    format!("{bpath}/leads_to"),
+                    format!(
+                        "`{}` is neither a `quest/<kebab>` (the branches converge there) nor an \
+                         `ending/<kebab>` (this branch runs to it) — the prefix is what says which \
+                         one a branch leads to",
+                        b.leads_to
+                    ),
+                )),
+            }
+        }
+    }
+}
+
+/// Dangling-subject check for every `happening` (spec-0025). A subject naming an
+/// `npc/`, `actor/`, `wave/` or `anchor/` id must resolve; an `item/<kebab>`
+/// label is a free namespace for a story token the campaign tracks by hand, and
+/// anything else is a malformed id.
+fn happening_subject_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let npcs: BTreeSet<&str> = c.npcs.content.npcs.iter().map(|n| n.id.as_str()).collect();
+    let actors: BTreeSet<&str> = c
+        .quests
+        .content
+        .actors
+        .iter()
+        .map(|a| a.id.as_str())
+        .collect();
+    let waves: BTreeSet<&str> = c
+        .quests
+        .content
+        .waves
+        .iter()
+        .map(|w| w.id.as_str())
+        .collect();
+    let check = |subject: &str, stage: &str, path: String, d: &mut Vec<Diagnostic>| {
+        let known = match subject.split_once('/') {
+            Some(("npc", _)) => npcs.contains(subject),
+            Some(("actor", _)) => actors.contains(subject),
+            Some(("wave", _)) => waves.contains(subject),
+            // Anchors resolve against prefab metadata far downstream (pool areas
+            // are drawn at build time), so the DSL only polices the namespace.
+            Some(("anchor", _)) | Some(("item", _)) => true,
+            _ => false,
+        };
+        if !known {
+            d.push(Diagnostic::error(
+                codes::DANGLING_REF,
+                stage,
+                path,
+                format!(
+                    "`happening.subject` names `{subject}`, which is not a declared `npc/`, \
+                     `actor/` or `wave/` id (`anchor/` and `item/` labels are also accepted). A \
+                     subject the compiler cannot resolve cannot be reasoned about, so the \
+                     contradiction proof would silently skip this beat"
+                ),
+            ));
+        }
+    };
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        if let Some(h) = &q.happening
+            && let Some(s) = &h.subject
+        {
+            check(
+                s,
+                "quests",
+                format!("/content/quests/{i}/happening/subject"),
+                d,
+            );
+        }
+        for (j, o) in q.objectives.iter().enumerate() {
+            if let Some(h) = o.happening()
+                && let Some(s) = &h.subject
+            {
+                check(
+                    s,
+                    "quests",
+                    format!("/content/quests/{i}/objectives/{j}/happening/subject"),
+                    d,
+                );
+            }
+        }
+    }
+    let mut effect_subjects: Vec<(String, String)> = Vec::new();
+    crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        if let Some(h) = effect_happening(eff)
+            && let Some(s) = &h.subject
+        {
+            effect_subjects.push((format!("{path}/happening/subject"), s.clone()));
+        }
+    });
+    for (path, s) in effect_subjects {
+        check(&s, "quests", path, d);
+    }
+    for (i, t) in c.dialogue.content.dialogues.iter().enumerate() {
+        for (j, n) in t.nodes.iter().enumerate() {
+            for (k, o) in n.options.iter().enumerate() {
+                if let Some(h) = &o.happening
+                    && let Some(s) = &h.subject
+                {
+                    check(
+                        s,
+                        "dialogue",
+                        format!("/content/dialogues/{i}/nodes/{j}/options/{k}/happening/subject"),
+                        d,
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Every ending id some `campaign-complete` declares. There is no separate
+/// declaration list — the same rule flags follow.
+pub fn declared_endings(c: &Campaign) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    crate::stages::for_each_campaign_effect(c, &mut |_p, _site, eff| {
+        if let QuestEffect::CampaignComplete {
+            ending: Some(e), ..
+        } = eff
+        {
+            out.insert(e.as_str().to_string());
+        }
+    });
+    out
+}
+
+/// Every flag some `set-flag` (quest, trigger, nested bundle, dialogue option or
+/// trap disarm) produces.
+pub fn produced_flags(c: &Campaign) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    crate::stages::for_each_campaign_effect(c, &mut |_p, _site, eff| {
+        if let QuestEffect::SetFlag { flag, .. } = eff {
+            out.insert(flag.as_str().to_string());
+        }
+    });
+    for t in &c.dialogue.content.dialogues {
+        for n in &t.nodes {
+            for o in &n.options {
+                for e in &o.effects {
+                    if let crate::stages::DialogueEffect::SetFlag { flag } = e {
+                        out.insert(flag.as_str().to_string());
+                    }
+                }
+            }
+        }
+    }
+    for trap in &c.quests.content.traps {
+        if let Some(dis) = &trap.disarm {
+            out.insert(dis.sets_flag.as_str().to_string());
+        }
+    }
+    out
 }

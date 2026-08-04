@@ -272,6 +272,9 @@ Rules:
   a broken-looking UI — so a label is a caption, never a sentence. Budget: about
   146 font pixels, i.e. roughly 20 Latin characters or 12 Han characters. Being
   shorter than the English here is correct, not a loss.
+- Keys ending in `.opt.<n>.tooltip` are the FULL line that same reply is a
+  caption of, shown in a hover box: translate it as a whole spoken sentence,
+  and make sure it reads as the longer form of its sibling `.label`.
 - Keys under `obj.` are objective titles/hints, `quest.` are goals, `class.` are
   class names/blurbs, `npc.`/`area.`/`world.` are proper nouns and headings.
 - Reuse the glossary translations verbatim wherever those names appear.

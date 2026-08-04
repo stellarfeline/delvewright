@@ -93,6 +93,38 @@ jobs:
       - name: bot adjusts a shot, stamps it, and the harvest is asserted
         run: bash validation/rehearsal-flow.sh
 
+  # ---- branch runs (spec-0025 §3, release tier) ------------------------------
+  # "Provably completable by machine" quantifies over BRANCHES, not paths: the
+  # release tier walks every enumerated branch, each in its own fresh world (party
+  # progress only moves forward, so a second branch needs a second world). Tier 3
+  # for the same reason as the jobs above — one full server + bot per branch.
+  # Tier 1 already proves the plan/tier/skip-naming logic (harness unit tests) and
+  # the per-branch path emission + byte-identity (compiler tests); this job proves
+  # the live thing: the bot takes the scripted dialogue choice at the fork and each
+  # branch reaches its own ending.
+  branch-runs:
+    name: branch runs (spec-0025)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/checkout-content
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: harness/package-lock.json
+      - name: build the two-branch fixture
+        run: |
+          cargo run -p delvewright-compiler --bin delvec -- \
+            build crates/compiler/tests/fixtures/branch-two-endings \
+            -o validation/delve-output --prefabs campaigns/prefabs
+      - name: every enumerated branch is walked to its own ending
+        run: bash validation/branch-runs.sh
+      - name: the branch report
+        if: always()
+        run: cat validation/run-out/branch-runs.json || true
+
   # ---- multi-arch delve image → GHCR (only after the playthrough is green) ----
   publish-image:
     name: multi-arch delve image → GHCR

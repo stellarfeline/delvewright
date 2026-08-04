@@ -14,7 +14,7 @@
             "options": [
               { "label": "What lies within?", "next": "dlg/lore" },
               {
-                "label": "I ask leave to enter the keep.",
+                "label": "I ask leave to enter.",
                 "effects": [
                   { "type": "complete-objective", "objective": "obj/talk" }
                 ]

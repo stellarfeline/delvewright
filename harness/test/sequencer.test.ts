@@ -7,6 +7,7 @@ import type {
   InteractStep,
   KillStep,
   ReachStep,
+  RestStep,
   SelectClassStep,
   Step,
   TalkToStep,
@@ -307,24 +308,47 @@ class DyingExecutor extends RecordingExecutor {
     this.calls.push("recover");
     return Promise.resolve();
   }
+
+  rearmAfterRespawn(): Promise<boolean> {
+    this.calls.push("rearm");
+    return Promise.resolve(true);
+  }
 }
 
-test("retryOnDeath recovers, re-selects class, and retries the dead step once", async () => {
+test("retryOnDeath recovers, re-arms where the bot stands, and retries the dead step once", async () => {
   const executor = new DyingExecutor(1);
   await runSequence(
     path([selectClass, reach, assertComplete]),
     executor,
     { retryOnDeath: true },
   );
-  // reach dies → recover → re-select-class → reach passes → assert-complete.
+  // reach dies → recover → re-arm → reach passes → assert-complete.
   assert.deepEqual(executor.calls, [
     "select-class",
     "reach", // died here
     "recover",
-    "select-class", // respawn dropped class state → re-selected
+    "rearm", // kit back on, bot NOT moved
     "reach", // retried and passed
     "assert-complete",
   ]);
+});
+
+test("the death retry never re-selects the class — that would teleport the bot away", async () => {
+  // task #120. `class_apply_<class>` ends in `teleport @s <campaign entry point>`
+  // and the `dw.class` trigger is re-enabled for every player on every tick, so a
+  // second `/trigger dw.class` after a death silently warps the bot back to the
+  // start of the delve. The whole retry path — and every die-retry measurement
+  // taken through it — is about where the player RESPAWNS, so nothing on it may
+  // move the bot.
+  const executor = new DyingExecutor(1);
+  await runSequence(path([selectClass, reach, assertComplete]), executor, {
+    retryOnDeath: true,
+  });
+  assert.equal(
+    executor.calls.filter((c) => c === "select-class").length,
+    1,
+    "the class is selected once, at the start of the run, and never again",
+  );
 });
 
 test("default (fail-fast) surfaces a death as a StepExecutionError without retrying", async () => {
@@ -404,4 +428,61 @@ test("runSequence announces each step index to the executor before dispatching i
   })();
   await runSequence(path([selectClass, talkTo, reach, assertComplete]), executor);
   assert.deepEqual(begun, [0, 1, 2, 3]);
+});
+
+// --- rest steps (compiler #220) ---------------------------------------------
+
+const rest: RestStep = {
+  action: "rest",
+  bonfire: 1,
+  anchor: "anchor/beach-fire",
+  pos: [4, 64, 4],
+  command: "/trigger dw.rest set 2",
+};
+
+test("a rest step is dispatched to the executor like any other", async () => {
+  const executor = new (class extends RecordingExecutor {
+    rest(_step: RestStep): Promise<void> {
+      this.calls.push("rest");
+      return Promise.resolve();
+    }
+  })();
+  await runSequence(path([selectClass, rest, kill, assertComplete]), executor);
+  assert.deepEqual(executor.calls, ["select-class", "rest", "kill", "assert-complete"]);
+});
+
+test("a path with rest steps against an executor that cannot rest fails loudly", async () => {
+  // Never a silent skip: an unperformed rest leaves the checkpoint at world spawn
+  // and every later proof runs against the wrong respawn point.
+  const executor = new RecordingExecutor();
+  await assert.rejects(
+    () => runSequence(path([selectClass, rest, kill, assertComplete]), executor),
+    (err: unknown) => err instanceof StepExecutionError && /cannot rest/.test(err.message),
+  );
+});
+
+test("a rest step is never mistaken for the beat the campaign marker is due at", async () => {
+  // A fire rested at just before the finale would otherwise become the
+  // `finalObjectiveIndex`, and the real last objective's marker would trip the
+  // endgame check on the step that legitimately completes the campaign.
+  const checked: Array<[number, number]> = [];
+  const executor = new (class extends RecordingExecutor {
+    rest(_step: RestStep): Promise<void> {
+      this.calls.push("rest");
+      return Promise.resolve();
+    }
+    assertEndgameNotReached(stepIndex: number, finalObjectiveIndex: number): void {
+      checked.push([stepIndex, finalObjectiveIndex]);
+    }
+  })();
+  // steps: 0 select-class, 1 talk-to, 2 kill (last OBJECTIVE), 3 rest, 4 assert
+  await runSequence(path([selectClass, talkTo, kill, rest, assertComplete]), executor);
+  assert.deepEqual(
+    checked,
+    [
+      [0, 2],
+      [1, 2],
+    ],
+    "the last objective is the kill at index 2, not the rest at index 3",
+  );
 });

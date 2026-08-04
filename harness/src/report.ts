@@ -14,7 +14,36 @@
 // runs of the same delve diff cleanly.
 
 import { writeFile } from "node:fs/promises";
-import type { AssistWindow, DeathTrial, EncounterPhase, EncounterTier } from "./combat.ts";
+import type {
+  ActorTrial,
+  AssistWindow,
+  DeathTrial,
+  EncounterPhase,
+  EncounterTier,
+  FloorLedger,
+  PerformedRest,
+} from "./combat.ts";
+
+/**
+ * One tiered actor, and what this run did about it (#114).
+ *
+ * Every actor in the plan gets a row, fought or not — an actor missing from the
+ * report is the silence the floor-gate ledger exists to end. A row that did not
+ * run always carries the reason it did not.
+ */
+export interface ActorReport {
+  readonly actor: string;
+  readonly tier: EncounterTier;
+  readonly entity: string;
+  readonly anchor: string;
+  /** The compiler's own coverage verdict, carried through verbatim. */
+  readonly covered: boolean;
+  readonly exercised: boolean;
+  /** Why this run did not fight it. `undefined` only when it did. */
+  readonly reason?: string;
+  /** The engagement, when there was one. */
+  readonly trial?: ActorTrial;
+}
 
 /**
  * One planned encounter, and how the run actually approached it.
@@ -36,8 +65,32 @@ export interface EncounterReport {
   readonly assistWindows: number;
 }
 
+/**
+ * One enumerated branch, and what this run did about it (spec-0025 §3).
+ *
+ * `ran: false` is always accompanied by a `reason`: the spec's rule is that a
+ * skipped branch is NAMED, never silent — a branch list that quietly omitted the
+ * branches nobody walked would read exactly like full coverage.
+ */
+export interface BranchOutcome {
+  readonly branch: string;
+  readonly ran: boolean;
+  /** Meaningful only when `ran`; a branch that did not run passed nothing. */
+  readonly passed: boolean;
+  /** Why it did not run. `undefined` only when it did. */
+  readonly reason?: string;
+  /** The executable path file walked, when one was. */
+  readonly pathFile?: string;
+  /** The per-branch chronicle the generation-time narrative review reads. */
+  readonly chronicle: string;
+  /** The chat lines that took the branching choices, when the branch ran. */
+  readonly entryCommands: readonly string[];
+  /** The endings the compiler proved fire on this branch. */
+  readonly endings: readonly string[];
+}
+
 /** The ladder's labelled stages. */
-export const STAGES = ["critical-path", "die-retry"] as const;
+export const STAGES = ["branch-run", "critical-path", "die-retry"] as const;
 export type StageName = (typeof STAGES)[number];
 
 /** One stage's outcome. `findings` are advisory; `failures` are why it went red. */
@@ -58,6 +111,12 @@ export class RunReport {
   private readonly trials: DeathTrial[] = [];
   private readonly floor: string[] = [];
   private readonly encounters: EncounterReport[] = [];
+  private readonly rests: PerformedRest[] = [];
+  private branches: BranchOutcome[] | undefined;
+  private branchTier: string | undefined;
+  private drivenBranch: string | undefined;
+  private readonly actors: ActorReport[] = [];
+  private floorLedger: FloorLedger | undefined;
 
   constructor(campaignId: string, difficulty: string) {
     this.campaignId = campaignId;
@@ -84,15 +143,73 @@ export class RunReport {
     this.encounters.push(...entries);
   }
 
+  recordRests(entries: readonly PerformedRest[]): void {
+    this.rests.push(...entries);
+  }
+
+  /**
+   * Record the branch tier and every enumerated branch's outcome (spec-0025 §3).
+   *
+   * Called only for a build that HAS a branch plan, so a campaign with no declared
+   * fork produces exactly the report it produced before — no empty section that
+   * would have to be read as "no branches" rather than "no branch machinery".
+   */
+  /**
+   * Record the compiler's floor-gate ledger and every tiered actor's outcome
+   * (#222 emission, #114 surfacing).
+   *
+   * The ledger is printed VERBATIM, both sides: what the inverted floor gate
+   * covers, and what it cannot with the reason. Before this the ladder's only
+   * surfacing of an unmeasurable elite was a build-time `DW0477` warning, so a
+   * reader holding a green run report had no way to learn that its empty findings
+   * list covered a fight nobody ever had.
+   */
+  recordCombatCoverage(ledger: FloorLedger, actors: readonly ActorReport[]): void {
+    this.floorLedger = ledger;
+    this.actors.push(...actors);
+  }
+
+  recordBranches(tier: string, driven: string | undefined, outcomes: readonly BranchOutcome[]): void {
+    this.branchTier = tier;
+    this.drivenBranch = driven;
+    this.branches = [...outcomes];
+  }
+
   /** Every advisory the run produced, for the one-line stderr summary. */
   findings(): string[] {
     return [...this.floor, ...[...this.stages.values()].flatMap((s) => [...s.findings])];
   }
 
   toJSON(): Record<string, unknown> {
+    // spec-0025 §3: the branch set, what this run was answerable for, and what it
+    // did about each branch. Present only when the build declares branches, so a
+    // single-path delve's report is byte-identical to the pre-spec-0025 one.
+    const branches =
+      this.branches === undefined
+        ? {}
+        : {
+            branches: {
+              // The tier as the environment named it, so a reader can tell a
+              // deliberate one-branch PR run from a release run that lost coverage.
+              tier: this.branchTier ?? "all",
+              // Which branch THIS session walked (one per world, by construction).
+              driven: this.drivenBranch ?? null,
+              outcomes: this.branches.map((b) => ({
+                branch: b.branch,
+                ran: b.ran,
+                passed: b.ran && b.passed,
+                reason: b.reason ?? null,
+                path: b.pathFile ?? null,
+                chronicle: b.chronicle,
+                entry_commands: [...b.entryCommands],
+                endings: [...b.endings],
+              })),
+            },
+          };
     return {
       version: 1,
       campaign_id: this.campaignId,
+      ...branches,
       // The difficulty the run was verified AT: spec-0023 §3 proves orchestration
       // end-to-end at the SHIPPED difficulty, so the number it ran under belongs
       // in the artifact next to the assists that made it survivable.
@@ -107,6 +224,15 @@ export class RunReport {
           failures: [...r.failures],
         };
       }),
+      // The bonfires the bot actually RESTED at (compiler #220). A bonfire only
+      // arms an affordance; the respawn point moves when the party rests, so this
+      // list is what makes every `at_checkpoint` below mean anything.
+      rests: this.rests.map((r) => ({
+        bonfire: r.bonfire,
+        anchor: r.anchor,
+        pos: [...r.pos],
+        step: r.step,
+      })),
       // Every encounter the compiler put in the plan, with the assist policy it
       // is approached under and the phase the run actually reached. Without this
       // an empty `assist_windows` says nothing: it is the expected reading for a
@@ -122,6 +248,41 @@ export class RunReport {
       })),
       // spec-0023 §3: "the run artifact names every assist window (encounter id,
       // ticks)". Loudly, and including any the harness failed to close.
+      // The compiler's floor-gate ledger, verbatim (#222/#114). `present: false`
+      // means the build shipped NO ledger — a plan from a delvec older than the
+      // ledger — which is a different fact from a campaign that bills nothing
+      // hard, and the two must never be read as one. `not_covered` carries the
+      // compiler's own reason per entry: this is the line that stops an empty
+      // findings list being mistaken for a pass over fights nobody had.
+      floor_gate: {
+        present: this.floorLedger?.present ?? false,
+        covered: (this.floorLedger?.covered ?? []).map((e) => ({
+          kind: e.kind,
+          id: e.id,
+          tier: e.tier,
+        })),
+        not_covered: (this.floorLedger?.notCovered ?? []).map((e) => ({
+          kind: e.kind,
+          id: e.id,
+          tier: e.tier,
+          reason: e.reason ?? null,
+        })),
+      },
+      // Every tiered actor the plan declares, fought or not — and when not, why.
+      actors: this.actors.map((a) => ({
+        actor: a.actor,
+        tier: a.tier,
+        entity: a.entity,
+        anchor: a.anchor,
+        covered: a.covered,
+        exercised: a.exercised,
+        reason: a.reason ?? null,
+        outcome: a.trial?.outcome ?? null,
+        after_objective: a.trial?.afterObjective ?? null,
+        swings: a.trial?.swings ?? null,
+        elapsed_ms: a.trial?.elapsedMs ?? null,
+        detail: a.trial?.detail ?? null,
+      })),
       assist_windows: this.assists.map((w) => ({
         encounter: w.encounter,
         wave: w.wave,
@@ -137,11 +298,40 @@ export class RunReport {
         wave: t.wave,
         attempt: t.attempt,
         phase: t.phase,
+        // What was waiting at the end of the loop: `re-engaged`,
+        // `cleared-before-retry` (both passes), `stranded` (a soft lock) or
+        // `unproven` (the loop never got into a position to look).
+        outcome: t.outcome,
         cause: t.cause ?? null,
+        // MEASURED, never planned: the bot's own position read the moment the
+        // respawn settled, before anything else could move it (task #120).
+        // `at_checkpoint` is derived from it and from nothing else.
         respawn_pos: t.respawnPos ?? null,
         at_checkpoint: t.atCheckpoint,
+        kit_kept: t.kitKept,
         returned: t.returned,
+        // Observed ONLY when `returned`. A trial that never walked back reports
+        // `re_engaged: false`, `reengage: null` and `outcome: "unproven"` — it did
+        // not look, which is not the same as looking and finding nothing.
         re_engaged: t.reEngaged,
+        objective_complete: t.objectiveComplete,
+        reseats_on_rest: t.reseats,
+        // What the settled probe actually saw. `settle_ms` is the reading key for
+        // a `present: 0`: a probe that answered instantly saw an empty room, one
+        // that spent its whole budget waited for a room that never filled.
+        reengage:
+          t.reengage === undefined
+            ? null
+            : {
+                present: t.reengage.present,
+                declared: t.reengage.declared,
+                carried_over: t.reengage.carriedOver,
+                health_readable: t.reengage.healthReadable,
+                damaged: t.reengage.damaged,
+                nearest_blocks: t.reengage.nearest ?? null,
+                farthest_blocks: t.reengage.farthest ?? null,
+                settle_ms: t.reengage.settleMs,
+              },
         objectives_intact: t.objectivesIntact,
         lost_objectives: [...t.lostObjectives],
         // A trial the run abandoned half-way is still IN this array — that is the

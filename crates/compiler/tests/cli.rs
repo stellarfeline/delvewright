@@ -30,8 +30,10 @@ fn version_line() {
     assert_eq!(code(&out), 0);
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.contains("delvec 0.1.0"), "{s}");
-    // spec-0020 raised the implemented DSL to 0.7.0 (the per-quest cast ledger).
-    assert!(s.contains("dsl 0.7.0"), "{s}");
+    // spec-0025 raised the implemented DSL to 0.8.0 (declared branch points, the
+    // per-node `happening`, named endings); spec-0016 §1's bonfire rulings add
+    // the rest interaction's authorable labels + the class-kit `flask` to it.
+    assert!(s.contains("dsl 0.8.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 
@@ -1875,4 +1877,225 @@ fn a_missing_skin_png_is_dw0309() {
         "expected DW0309 for a missing skin PNG:\nstderr: {stderr}\nstdout: {stdout}"
     );
     assert_ne!(code(&out), 0, "a missing skin PNG must fail the build");
+}
+
+// ---------------------------------------------------------------------------
+// spec-0025 — the branch artifacts, and the v0.8 emission fence
+// ---------------------------------------------------------------------------
+
+/// The two-branch fixture builds, emits both spec-0025 artifacts under
+/// `validation/`, hashes them into the manifest like every other output, and is
+/// byte-identical across runs (ADR-0006).
+#[test]
+fn branch_artifacts_are_emitted_hashed_and_byte_identical() {
+    let fx = common::compiler_fixtures_dir().join("branch-two-endings");
+    let pf = common::prefabs_dir();
+    let out_a = tmp("branch-a");
+    let out_b = tmp("branch-b");
+    for out in [&out_a, &out_b] {
+        let r = delvec(&[
+            "build",
+            fx.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--prefabs",
+            pf.to_str().unwrap(),
+        ]);
+        assert_eq!(code(&r), 0, "build: {}", String::from_utf8_lossy(&r.stderr));
+    }
+    let a = read_tree(&out_a);
+    let b = read_tree(&out_b);
+    assert_eq!(a.keys().collect::<Vec<_>>(), b.keys().collect::<Vec<_>>());
+    for (path, bytes) in &a {
+        assert_eq!(bytes, &b[path], "byte mismatch in {path}");
+    }
+    for f in [
+        "validation/branch-plan.json",
+        "validation/branch-chronicle-hold.md",
+        "validation/branch-chronicle-bolt.md",
+    ] {
+        assert!(a.contains_key(f), "missing {f}: {:?}", a.keys());
+    }
+    // Validation metadata, never shipped gameplay: nothing under `datapack/`.
+    assert!(!a.keys().any(|k| k.starts_with("datapack/branch")));
+    // Listed in the manifest like `critical-path-waypoints.json`.
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&a["manifest.json"]).expect("manifest parses");
+    let outputs = manifest["outputs"].as_object().expect("outputs map");
+    for f in [
+        "validation/branch-plan.json",
+        "validation/branch-chronicle-hold.md",
+    ] {
+        assert!(outputs.contains_key(f), "manifest does not hash {f}");
+    }
+}
+
+/// **The harness tier's input** (spec-0025 §3): one EXECUTABLE path per reachable
+/// branch, in the ordinary `critical-path.json` contract, with the branch's
+/// scripted dialogue choice inside its own `talk-to` step.
+///
+/// The identity that makes a branch run mean something: the branch the exported
+/// path already walks gets a byte-identical file, so "branch coverage" is coverage
+/// of the same contract the ladder has always proven — not of a second, less
+/// tested one. The sibling branch differs in exactly the two ways the story does:
+/// the option it takes at the fork, and the objectives it reaches afterwards.
+#[test]
+fn each_branch_gets_an_executable_path_in_the_critical_path_contract() {
+    let fx = common::compiler_fixtures_dir().join("branch-two-endings");
+    let pf = common::prefabs_dir();
+    let out = tmp("branch-paths");
+    let r = delvec(&[
+        "build",
+        fx.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    assert_eq!(code(&r), 0, "build: {}", String::from_utf8_lossy(&r.stderr));
+    let tree = read_tree(&out);
+
+    // The exported branch's path IS the exported path.
+    assert_eq!(
+        tree["validation/branch-path-hold.json"], tree["critical-path.json"],
+        "the branch the critical path already walks must get the same bytes"
+    );
+
+    let bolt: serde_json::Value =
+        serde_json::from_slice(&tree["validation/branch-path-bolt.json"]).unwrap();
+    // Same contract the harness parses — the version fields the bot checks first.
+    assert_eq!(bolt["format_version"], 2);
+    assert_eq!(bolt["campaign_id"], "hello-world");
+    let steps = bolt["steps"].as_array().unwrap();
+    // The scripted choice rides inside the step: the bolt branch takes the option
+    // the hold branch does not, and a dialog button is unclickable by a bot, so
+    // the `/trigger` line the button runs is what the harness sends.
+    let talk = steps
+        .iter()
+        .find(|s| s["action"] == "talk-to")
+        .expect("a talk-to step");
+    assert_eq!(talk["objective"], "obj/decide");
+    assert_eq!(talk["command"], "/trigger dw.dlg_keeper set 3");
+    // ...and the storyline after the fork is the bolt branch's, not the hold
+    // branch's — the whole point of walking it.
+    let objectives: Vec<&str> = steps
+        .iter()
+        .filter_map(|s| s["objective"].as_str())
+        .collect();
+    assert!(objectives.contains(&"obj/bolt"), "{objectives:?}");
+    assert!(!objectives.contains(&"obj/watch"), "{objectives:?}");
+    assert!(!objectives.contains(&"obj/walk-out"), "{objectives:?}");
+    // Terminal step: the branch ends the campaign, like every proven path.
+    assert_eq!(steps.last().unwrap()["action"], "assert-complete");
+
+    // Validation metadata, hashed like the rest — never shipped gameplay.
+    let manifest: serde_json::Value = serde_json::from_slice(&tree["manifest.json"]).unwrap();
+    for f in [
+        "validation/branch-path-hold.json",
+        "validation/branch-path-bolt.json",
+    ] {
+        assert!(
+            manifest["outputs"].as_object().unwrap().contains_key(f),
+            "manifest does not hash {f}"
+        );
+    }
+    assert!(!tree.keys().any(|k| k.starts_with("datapack/branch")));
+}
+
+/// A campaign that declares no branch point emits no branch path — the whole
+/// harness tier is opt-in, and hello-world's output is untouched by spec-0025.
+#[test]
+fn a_campaign_without_branches_emits_no_branch_path() {
+    let out = tmp("no-branch-paths");
+    let r = delvec(&[
+        "build",
+        common::hello_world_dir().to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ]);
+    assert_eq!(code(&r), 0, "build: {}", String::from_utf8_lossy(&r.stderr));
+    let tree = read_tree(&out);
+    assert!(
+        !tree.keys().any(|k| k.starts_with("validation/branch-")),
+        "{:?}",
+        tree.keys().collect::<Vec<_>>()
+    );
+}
+
+/// **The version fence, proven on bytes.** The v0.8 surface — `branch_points`,
+/// every `happening`, the named `ending` — is validation metadata with no
+/// emission of its own: stripping all of it and dropping the campaign back to
+/// `dsl_version 0.7.0` produces a **byte-identical `datapack/`**. That is the
+/// guarantee that a 0.6/0.7 campaign cannot move by one byte because spec-0025
+/// landed.
+#[test]
+fn the_v08_surface_changes_no_datapack_byte() {
+    let fx = common::compiler_fixtures_dir().join("branch-two-endings");
+    let pf = common::prefabs_dir();
+
+    let stripped = tmp("branch-stripped-src");
+    for f in common::STAGE_FILES {
+        let mut v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(fx.join(f)).unwrap()).unwrap();
+        if v["dsl_version"] == "0.8.0" {
+            v["dsl_version"] = serde_json::Value::from("0.7.0");
+        }
+        strip_v08(&mut v);
+        std::fs::write(stripped.join(f), serde_json::to_string_pretty(&v).unwrap()).unwrap();
+    }
+
+    let with = tmp("branch-with");
+    let without = tmp("branch-without");
+    for (src, out) in [(&fx, &with), (&stripped, &without)] {
+        let r = delvec(&[
+            "build",
+            src.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--prefabs",
+            pf.to_str().unwrap(),
+        ]);
+        assert_eq!(code(&r), 0, "build: {}", String::from_utf8_lossy(&r.stderr));
+    }
+    let a = read_tree(&with);
+    let b = read_tree(&without);
+    let pack = |t: &BTreeMap<String, Vec<u8>>| -> BTreeMap<String, Vec<u8>> {
+        t.iter()
+            .filter(|(k, _)| k.starts_with("datapack/"))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    };
+    let (pa, pb) = (pack(&a), pack(&b));
+    assert!(!pa.is_empty());
+    assert_eq!(
+        pa.keys().collect::<Vec<_>>(),
+        pb.keys().collect::<Vec<_>>(),
+        "the v0.8 surface must not add or remove a datapack file"
+    );
+    for (path, bytes) in &pa {
+        assert_eq!(bytes, &pb[path], "the v0.8 surface moved bytes in {path}");
+    }
+    // …and the artifacts exist only on the declaring side.
+    assert!(a.contains_key("validation/branch-plan.json"));
+    assert!(!b.contains_key("validation/branch-plan.json"));
+}
+
+/// Recursively drop every DSL v0.8 field from a stage document.
+fn strip_v08(v: &mut serde_json::Value) {
+    match v {
+        serde_json::Value::Object(map) => {
+            map.remove("happening");
+            map.remove("branch_points");
+            if map.get("type").and_then(|t| t.as_str()) == Some("campaign-complete") {
+                map.remove("ending");
+            }
+            for (_, child) in map.iter_mut() {
+                strip_v08(child);
+            }
+        }
+        serde_json::Value::Array(items) => items.iter_mut().for_each(strip_v08),
+        _ => {}
+    }
 }

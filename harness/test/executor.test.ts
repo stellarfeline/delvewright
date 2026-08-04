@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import type { Bot } from "mineflayer";
-import { MineflayerExecutor, type BotConfig } from "../src/executor.ts";
+import { MineflayerExecutor, completionWindowMs, type BotConfig } from "../src/executor.ts";
 import { BotDeathError } from "../src/death.ts";
 import type { AssertCompleteStep } from "../src/critical-path.ts";
 
@@ -89,6 +89,16 @@ test("a death event records position + likely cause and stops the pathfinder", (
   // subsequent hop, which is how a the-drowned-bell run failed a leg it had walked
   // fine the run before. The reset consumes the flag here, once.
   assert.deepEqual(bot.pathfinderCalls, ["stop", "setGoal(null)"]);
+});
+
+test("the completion window covers an exported scheduled-ending tail (task #125)", () => {
+  // No tail (synchronous ending): the historical 15s settle window.
+  assert.equal(completionWindowMs(undefined), 15_000);
+  // A short tail stays inside the default window — never narrowed.
+  assert.equal(completionWindowMs(20), 15_000); // 1s + 10s margin < 15s
+  // the-wake's 250t sequence tail: 12.5s + 10s margin — the old flat 15s
+  // window could expire while the ending was still legitimately scheduled.
+  assert.equal(completionWindowMs(250), 22_500);
 });
 
 test("a death fails an in-flight assert-complete fast with the death diagnostic", async () => {
@@ -552,27 +562,51 @@ const PORTCULLIS: TimedGate = {
   openTicks: 100,
   closedTicks: 100,
   phase: 0,
+  crush: false,
 };
 
 /** A GateAssist with a virtual clock, so the bounded wait costs no wall time. */
 function fakeGate(
-  opts: { feet?: () => [number, number, number] | undefined } = {},
-): GateAssist & { waits: number; clock: { t: number } } {
+  opts: {
+    feet?: () => [number, number, number] | undefined;
+    gates?: readonly TimedGate[];
+    /** Whether the closed→open edge is OBSERVED by each wait (default yes). */
+    observed?: () => boolean;
+    /** Event hook so a test can assert wait-vs-goto ordering. */
+    onWait?: () => void;
+    /** Optional raw-dash stub (crush entries use it when present). */
+    dash?: GateAssist["dash"];
+  } = {},
+): GateAssist & {
+  waits: number;
+  clock: { t: number };
+  holds: Array<readonly number[] | undefined>;
+  presses: Array<readonly number[] | undefined>;
+} {
   const clock = { t: 0 };
   const state = { waits: 0 };
+  const holds: Array<readonly number[] | undefined> = [];
+  const presses: Array<readonly number[] | undefined> = [];
   return {
-    gates: [PORTCULLIS],
+    gates: opts.gates ?? [PORTCULLIS],
     // Each wait advances the virtual clock by one full cycle.
-    waitForWindow: async () => {
+    waitForWindow: async (_gates, hold, press) => {
       state.waits++;
       clock.t += 10_000;
+      holds.push(hold);
+      presses.push(press);
+      opts.onWait?.();
+      return opts.observed?.() ?? true;
     },
     feetCell: opts.feet ?? (() => [24, 63, -9]),
+    dash: opts.dash,
     now: () => clock.t,
     get waits() {
       return state.waits;
     },
     clock,
+    holds,
+    presses,
   };
 }
 
@@ -737,6 +771,383 @@ test("a gate crossing the pathfinder cannot hold is finished by walking, inside 
   assert.equal(gate.waits, 1, "and it happened inside the FIRST window, not after the budget");
 });
 
+// --- task #140: `crush: true` gates are staged, never entered blind -----------
+//
+// The tide-mill death: `timed-gate/tide` (36t open / 84t closed, phase 55, crush)
+// killed the bot on the FIRST live crush-gate encounter, at [261, 62, 13] inside
+// the gate corridor. Root cause: the gate machinery above is reactive — it waits
+// for a window only AFTER a hop fails. A non-crush gate's worst case is a path
+// abort (information); a crush gate's closing edge is an instant, gear-independent
+// kill, so the first "failure" is the bot's death and no retry ever runs. A hop
+// whose straight mouth-to-mouth segment crosses a crush gate must therefore be
+// STAGED: hold at the compiler-pinned mouth cell, observe a fresh closed→open
+// edge, check the crossing fits the window with margin, and only then enter.
+
+/** The tide-mill crusher, as the live artifact exported it (short window, phase
+ * offset — the phase is metadata; entry timing is OBSERVED, never computed). */
+const TIDE: TimedGate = {
+  id: "timed-gate/tide",
+  min: [258, 61, 13],
+  max: [262, 63, 14],
+  block: "minecraft:polished_deepslate",
+  openTicks: 36,
+  closedTicks: 84,
+  phase: 55,
+  crush: true,
+};
+
+/** The tide leg: mouth cell before the region, mouth cell after, then the anchor. */
+const TIDE_GOALS = [G(260, 61, 12), G(260, 61, 15), G(260, 61, 24, 3)];
+
+test("a crush-gate crossing is staged: fresh window observed BEFORE any entry", async () => {
+  const events: string[] = [];
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => [260, 61, 12], // staged at the near mouth, fully outside the fill
+    onWait: () => events.push("wait"),
+  });
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    events.push(label);
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  assert.equal(gate.waits, 1, "one fresh window for the one crossing hop");
+  const wait = events.indexOf("wait");
+  const entry = events.findIndex((e) => e.includes("waypoint 2/3"));
+  assert.ok(entry >= 0, `the crossing hop ran: ${events.join(" | ")}`);
+  assert.ok(wait >= 0 && wait < entry, `window precedes entry: ${events.join(" | ")}`);
+  assert.ok(
+    events[entry]!.includes("gate attempt"),
+    `the crossing entry is a staged gate attempt, never a plain hop: ${events.join(" | ")}`,
+  );
+  // The approach and the post-gate hop are ordinary hops — staging is scoped to
+  // the crossing, not smeared over the leg.
+  assert.equal(events[0], "interact anchor/objective waypoint 1/3");
+  assert.ok(!events[0]!.includes("gate attempt"));
+  assert.equal(events[events.length - 1], "interact anchor/objective");
+  // The wait HOLDS the staging stance (the live tide-mill lesson: the corridor
+  // current carried an idle bot 8 blocks off the mouth during one 4 s wait).
+  assert.deepEqual(gate.holds, [[260, 61, 12]], "the wait pins the bot to the mouth cell");
+  // …and PRESSES into the shut plane toward the crossing target, so the open edge
+  // releases a contact-started bot (from a standing start the pour is a wall).
+  assert.deepEqual(gate.presses, [[260, 61, 15]], "the wait leans into the closed gate");
+});
+
+test("a crush entry crosses RAW: the dash runs mouth-to-mouth before any pathfinder hop", async () => {
+  // The live lesson, round 3: even a fresh-edge pathfinder entry lost the 1.8 s
+  // window (start latency + mid-water replans against the flood through the
+  // opened plane) and the closing edge killed the bot mid-crossing. The crossing
+  // span itself is raw physics; the pathfinder only finishes the arrival.
+  const events: string[] = [];
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => [260, 61, 12],
+    dash: async (through, from, to) => {
+      events.push(`dash [${from.join(",")}] -> [${to.join(",")}] through ${through[0]!.id}`);
+      return true;
+    },
+  });
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    events.push(label);
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  const dash = events.findIndex((e) => e.startsWith("dash "));
+  const entry = events.findIndex((e) => e.includes("gate attempt"));
+  assert.ok(dash >= 0, `the raw dash ran: ${events.join(" | ")}`);
+  assert.ok(dash < entry, `dash precedes the pathfinder arrival hop: ${events.join(" | ")}`);
+  assert.equal(
+    events[dash],
+    "dash [260,61,12] -> [260,61,15] through timed-gate/tide",
+    "the dash is the staged mouth-to-mouth crossing",
+  );
+});
+
+test("a dash that cannot clear fails its attempt and takes the NEXT window — never lingers", async () => {
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => [260, 61, 12],
+    dash: undefined, // set below, needs the clock
+  });
+  let dashes = 0;
+  (gate as { dash?: GateAssist["dash"] }).dash = async () => {
+    dashes++;
+    gate.clock.t += 3_000; // the failed dash consumed the whole window
+    return dashes > 1; // second window's dash clears
+  };
+  const labels: string[] = [];
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    labels.push(label);
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  assert.equal(dashes, 2, "one failed dash, one clean one");
+  assert.equal(gate.waits, 2, "the retry waited for its own fresh window");
+  assert.ok(
+    !labels.some((l) => l.includes("recovery")),
+    `no pathfinder escalation into the spent window: ${labels.join(" | ")}`,
+  );
+});
+
+test("a bot the current carried off the mouth is re-staged, never margin-failed from the drift", async () => {
+  // The live tide-mill failure mode after staging landed: the corridor is flowing
+  // water, the idle bot drifted from the mouth [260,61,12] back to the pool at
+  // [260,61,4] during the window wait, and the margin check — honestly — refused
+  // an 8-block dash through a 1.8 s window. A drifted margin read is a stance
+  // problem: walk back to the mouth and take the next window. The hard margin
+  // failure is reserved for a bot verifiably ON the pinned mouth.
+  let feet: [number, number, number] = [260, 61, 12];
+  let drifted = false;
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => feet,
+    onWait: () => {
+      if (!drifted) {
+        drifted = true;
+        feet = [260, 61, 4]; // the tide won the first wait
+      }
+    },
+  });
+  const labels: string[] = [];
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    labels.push(label);
+    if (label.includes("re-stage")) feet = [260, 61, 12]; // walked back to the mouth
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  assert.ok(
+    labels.some((l) => l.includes("gate re-stage")),
+    `the drifted bot was walked back to the mouth: ${labels.join(" | ")}`,
+  );
+  assert.equal(gate.waits, 2, "the re-staged attempt waited for its own fresh window");
+  assert.ok(
+    labels.some((l) => l.includes("gate attempt 2")),
+    `the crossing then ran from the mouth: ${labels.join(" | ")}`,
+  );
+});
+
+test("a crush gate whose window edge cannot be observed is never entered blind", async () => {
+  // The lethal defect inverted: when the harness cannot SEE a fresh window it must
+  // refuse the crossing and fail loudly — "crossing anyway" is only survivable on
+  // gates that merely block.
+  const attempts: string[] = [];
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => [260, 61, 12],
+    observed: () => false,
+  });
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    if (label.includes("waypoint 2/3")) attempts.push(label);
+  };
+  await assert.rejects(
+    () => replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.match(err.message, /timed-gate\/tide/);
+      assert.match(err.message, /refusing blind entry/);
+      return true;
+    },
+  );
+  assert.equal(attempts.length, 0, `no entry was ever attempted: ${attempts.join(" | ")}`);
+  assert.ok(gate.waits >= GATE_MIN_ATTEMPTS, "the refusal still burned the bounded budget");
+});
+
+test("a bot caught inside a crush gate's cells stands off BEFORE waiting — no dwell in the fill", async () => {
+  const events: string[] = [];
+  // The bot reaches the mouth, then drifts INTO the region (range-1 tolerance) —
+  // the one place the closing fill kills. The staged crossing must pull it out
+  // before any waiting or entering happens.
+  let feet: [number, number, number] = [260, 61, 12];
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => feet,
+    onWait: () => events.push("wait"),
+  });
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    events.push(label);
+    if (label.includes("waypoint 1/3")) feet = [260, 61, 13]; // drifted into the fill
+    if (label.includes("standoff")) feet = [260, 61, 12]; // the standoff pulls it out
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  const standoff = events.findIndex((e) => e.includes("standoff"));
+  const wait = events.indexOf("wait");
+  const entry = events.findIndex((e) => e.includes("gate attempt"));
+  assert.ok(standoff >= 0, `stood off out of the fill: ${events.join(" | ")}`);
+  assert.ok(standoff < wait && wait < entry, `standoff → wait → enter: ${events.join(" | ")}`);
+});
+
+test("a fresh window too short for the crossing is refused loudly, not gambled", async () => {
+  // DW0378 proves every shipped window admits its crossing, so this can only fire
+  // when the bot is staged off the proven mouth or the artifact disagrees with the
+  // world — entering would gamble the bot's life on a proof that no longer applies.
+  const sliver: TimedGate = { ...TIDE, id: "timed-gate/sliver", openTicks: 2 };
+  const entries: string[] = [];
+  const gate = fakeGate({ gates: [sliver], feet: () => [260, 61, 12] });
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    if (label.includes("waypoint 2/3")) entries.push(label);
+  };
+  await assert.rejects(
+    () => replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.match(err.message, /timed-gate\/sliver/);
+      assert.match(err.message, /full margin/);
+      return true;
+    },
+  );
+  assert.equal(entries.length, 0, "the too-short window was never entered");
+});
+
+test("a failed crush entry does not escalate into a stale window — it takes the next fresh one", async () => {
+  // The within-window walking escalation (the-drowned-bell lesson) stays available,
+  // but never into a crush gate whose remaining window no longer fits the crossing:
+  // bursting into a closing crusher is exactly the death this staging prevents.
+  const gate = fakeGate({ gates: [TIDE], feet: () => [260, 61, 12] });
+  const labels: string[] = [];
+  let failedOnce = false;
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    labels.push(label);
+    if (label.includes("gate attempt 1") && !failedOnce) {
+      failedOnce = true;
+      // The failed attempt consumed more than the 1.8s window.
+      gate.clock.t += 3_000;
+      throw new Error("Path was stopped before it could be completed!");
+    }
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  assert.equal(gate.waits, 2, "the retry waited for the NEXT fresh window");
+  assert.ok(
+    !labels.some((l) => l.includes("recovery")),
+    `no recovery re-path into the stale window: ${labels.join(" | ")}`,
+  );
+  assert.ok(labels.some((l) => l.includes("gate attempt 2")), labels.join(" | "));
+});
+
+// --- task #134: completion signals outrank position ---------------------------
+//
+// The tide-mill wheelpit defect: `obj/wheelpit` sits right past a timed-gate
+// crossing and its completion emission teleports the player to the next area (a
+// physically one-way transport). The bot crossed the sluice, the objective
+// completed — and the leg's remaining hops then failed on the position
+// discontinuity, which the harness read as the gate blocking a leg it had already
+// walked: three gate "attempts", then a re-center toward a cell the one-way
+// transport makes unreachable. Objective complete ⇒ the leg SUCCEEDED.
+
+test("a gate-leg hop failure is SUCCESS when the step settled mid-crossing (tide-mill wheelpit)", async () => {
+  const gate = fakeGate();
+  const calls: string[] = [];
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    calls.push(label);
+    // The completion teleport landed and stopped the pathfinder mid-hop.
+    if (label.includes("waypoint 2/3")) {
+      throw new Error("Path was stopped before it could be completed!");
+    }
+  };
+  await replayLegWithRecovery(
+    [G(24, 63, 4), G(24, 63, -11), G(24, 63, -14, 3)],
+    "anchor anchor/wheelpit",
+    goto,
+    undefined,
+    gate,
+    // The oracle already reports the step settled (marker arrived / transport
+    // landed) by the time the failure is judged.
+    () => "objective obj/wheelpit is complete (its marker arrived)",
+  );
+  assert.equal(gate.waits, 0, "no window wait: there is no crossing left to make");
+  assert.ok(!calls.some((l) => l.includes("gate attempt")), calls.join(" | "));
+  assert.ok(!calls.some((l) => l.includes("standoff")), calls.join(" | "));
+  assert.ok(!calls.some((l) => l.includes("recovery")), calls.join(" | "));
+  // The replay ends with the leg: the hops after the one-way transport — which
+  // belong to the area the bot was carried out of — are never pathed.
+  assert.ok(
+    calls.every((l) => l.includes("waypoint")),
+    `the old area's final goal was never pathed: ${calls.join(" | ")}`,
+  );
+});
+
+test("a settle signal landing during the window wait ends the crossing before re-pathing", async () => {
+  // The marker is a chat packet racing the position jump — it can arrive while the
+  // gate loop is already waiting for a window. The next decision after the wait
+  // must be "settled", not another crossing attempt toward the old area.
+  const inner = fakeGate();
+  let settledNow = false;
+  const gate: GateAssist = {
+    gates: inner.gates,
+    waitForWindow: async (gates) => {
+      const observed = await inner.waitForWindow(gates);
+      settledNow = true;
+      return observed;
+    },
+    feetCell: inner.feetCell,
+    now: inner.now,
+  };
+  const calls: string[] = [];
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    calls.push(label);
+    if (label.includes("waypoint 2/3") || label.includes("gate attempt")) {
+      throw new Error("Path was stopped before it could be completed!");
+    }
+  };
+  await replayLegWithRecovery(
+    [G(24, 63, 4), G(24, 63, -11), G(24, 63, -14, 3)],
+    "anchor anchor/wheelpit",
+    goto,
+    undefined,
+    gate,
+    () => (settledNow ? "objective obj/wheelpit is complete (its marker arrived)" : undefined),
+  );
+  assert.equal(inner.waits, 1, "one window wait, then the settle signal ended the crossing");
+  assert.ok(!calls.some((l) => l.includes("gate attempt")), calls.join(" | "));
+  assert.ok(
+    calls.every((l) => l.includes("waypoint")),
+    `no goal beyond the settled leg was pathed: ${calls.join(" | ")}`,
+  );
+});
+
+test("a non-gate leg hop failure is SUCCESS when the completion transport already landed", async () => {
+  const calls: string[] = [];
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    calls.push(label);
+    if (label.includes("waypoint 2/3")) {
+      throw new Error("No path to the goal!");
+    }
+  };
+  await replayLegWithRecovery(
+    [G(0, 65, 0), G(0, 65, 3), G(0, 65, 6, 3)],
+    "anchor anchor/next-area",
+    goto,
+    undefined,
+    undefined,
+    () => "the step's completion transport landed the bot at its exported destination [260, 61, 4]",
+  );
+  // No re-center toward the unreachable old-area cell, and no goal beyond the leg.
+  assert.ok(!calls.some((l) => l.includes("recovery")), calls.join(" | "));
+  assert.ok(
+    calls.every((l) => l.includes("waypoint")),
+    `the old area's final goal was never pathed: ${calls.join(" | ")}`,
+  );
+});
+
+test("a settle oracle that never fires leaves the gate failure verdict untouched", async () => {
+  // The oracle is not a tolerance: a genuinely blocked leg with an unsettled step
+  // fails exactly as before, naming the gate and its cycle.
+  const gate = fakeGate();
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    if (label.includes("waypoint 1/2") || label.includes("gate attempt")) {
+      throw new Error("No path to the goal!");
+    }
+  };
+  await assert.rejects(
+    () =>
+      replayLegWithRecovery(
+        [G(24, 63, -14), G(24, 63, -14, 3)],
+        "anchor anchor/l1a-ward",
+        goto,
+        undefined,
+        gate,
+        () => undefined,
+      ),
+    /timed-gate\/portcullis/,
+  );
+  assert.ok(gate.waits >= GATE_MIN_ATTEMPTS, "the full retry discipline still ran");
+});
+
 // --- interact: the mainhand contract (compiler PR #205) ----------------------
 
 import type { InteractStep } from "../src/critical-path.ts";
@@ -828,9 +1239,104 @@ test("interact leaves the hand alone when the step requires no item", async () =
   assert.deepEqual(bot.calls, ["chat(/trigger dw.i.unbar)"]);
 });
 
+// --- task #134, executor tier: reach + timed gate + completion transport ------
+
+import type { ReachStep } from "../src/critical-path.ts";
+import { parseWaypoints } from "../src/waypoints.ts";
+
+/**
+ * A bot whose every pathfind ends the tide-mill way: the objective's distance
+ * check fires as the bot lands the crossing, the datapack broadcasts the marker
+ * and teleports it to the next area, and the forced move stops the pathfinder —
+ * so the in-flight `goto` rejects with the exact live-run message.
+ */
+class TransportReachBot extends FakeBot {
+  registry = registryFor("1.21.11");
+  health = 20;
+  food = 20;
+  entities: Record<number, unknown> = {};
+  inventory = { items: (): Array<{ name: string; type: number }> => [] };
+  gotoCalls = 0;
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    goto: async (): Promise<void> => {
+      this.gotoCalls++;
+      this.entity.position = new FakeVec3(260.5, 61.0, 4.5);
+      this.emit("forcedMove");
+      this.emit("messagestr", "[dw:complete the-tide-mill obj/wheelpit]");
+      throw new Error("Path was stopped before it could be completed!");
+    },
+  };
+  setControlState(): void {}
+}
+
+test("reach: a completion transport landing mid-gate-leg is step success, not a gate failure", async () => {
+  // Six live tide-mill runs failed here: `dw.o_wheelpit = 1` on the server while the
+  // harness looped "still blocked after 3 timed-gate crossing attempt(s)" and tried
+  // to re-center across a one-way transport. The whole reach step must now pass on
+  // the authoritative signals, without a single gate retry.
+  const bot = new TransportReachBot();
+  bot.entity.position = new FakeVec3(4.5, 63.0, 0.5);
+  const executor = attach(bot);
+  executor.useCampaign("the-tide-mill");
+  executor.useWaypoints(
+    parseWaypoints({
+      version: "0.6.0",
+      campaign_id: "the-tide-mill",
+      timed_gates: [
+        {
+          id: "timed-gate/sluice",
+          region: { min: [18, 62, -30], max: [22, 64, -30] },
+          block: "minecraft:oak_fence",
+          open_ticks: 100,
+          closed_ticks: 100,
+          phase: 0,
+        },
+      ],
+      legs: [
+        {
+          from: [4, 63, 0],
+          to: [20, 63, -40],
+          waypoints: [
+            [10, 63, -10],
+            [20, 63, -30],
+          ],
+          timed_gates: ["timed-gate/sluice"],
+        },
+      ],
+    }),
+  );
+  executor.beginStep(4);
+  const step: ReachStep = {
+    action: "reach",
+    objective: "obj/wheelpit",
+    anchor: "anchor/wheelpit",
+    pos: [20, 63, -40],
+    radius: 3,
+    transport: [260, 61, 4],
+  };
+  const started = Date.now();
+  await executor.reach(step); // resolves — before the fix this looped gate retries and threw
+  // One hop, retried once by runGoto's own transient-retry — never the gate loop's
+  // window waits (each up to a full cycle + 15s margin) or its re-center recovery.
+  assert.ok(bot.gotoCalls <= 2, `no gate-loop retries: ${bot.gotoCalls} pathfinds`);
+  assert.ok(
+    Date.now() - started < 10_000,
+    "the step settled on the completion signals, not on a spent gate budget",
+  );
+});
+
 // --- the die-retry stage: the run artifact must never lose a death (task #102) ---
 
-import type { KillStep } from "../src/critical-path.ts";
+import type { KillStep, SelectClassStep } from "../src/critical-path.ts";
 import {
   dieRetryCoverageFailures,
   dieRetryFindings,
@@ -838,55 +1344,286 @@ import {
   type CombatPlan,
 } from "../src/combat.ts";
 
+/** How a test asks the fake server to re-seat the wave. */
+interface ReseatSpec {
+  count?: number;
+  /** Health every freshly summoned mob arrives with (default: full). */
+  health?: number;
+  /** Entity ids the re-seat failed to clear — the survivors. */
+  keepIds?: number[];
+  /** Health those survivors kept from the last life. */
+  survivorHealth?: number;
+  /** Blocks from the encounter anchor. */
+  distance?: number;
+}
+
+/** One wave mob as the fake server publishes it to a client. */
+interface FakeMob {
+  id: number;
+  name: string;
+  height: number;
+  position: FakeVec3;
+  metadata: Record<number, unknown>;
+  attributes: Record<string, { value: number }>;
+  /** Stands in for the compiler's `dw_wave_<id>` tag: only a mob the wave itself
+   * summoned carries it, so the census can never count a bonfire affordance, an
+   * ambush actor or a neighbouring wave (task #123). */
+  waveTagged: true;
+}
+
+/** Where the pinned registry puts `health` in a zombie's metadata. Resolved by
+ * NAME, exactly as the harness does — neither side hardcodes the index. */
+const ZOMBIE_HEALTH_IDX = (
+  registryFor("1.21.11") as unknown as {
+    entitiesByName: Record<string, { metadataKeys: string[] }>;
+  }
+).entitiesByName["zombie"]!.metadataKeys.indexOf("health");
+
+const FULL_HEALTH = 20;
+
 /**
  * A FakeBot that can be driven through a whole `kill` step with the die-retry
  * stage on.
  *
- * The fake server does two things a real one does: it kills the bot when the
- * harness `/damage`s itself (then respawns it), and it re-seats the wave mob on
- * respawn — `respawns_on_rest` in miniature. `attack` puts the mob down, so both
- * `tradeBlows` and `fightWave` terminate in a poll or two instead of burning
- * their real budgets.
+ * The fake server does what a real one does: it kills the bot when the harness
+ * `/damage`s itself, respawns it, and re-seats the wave on that respawn — with
+ * whatever fidelity the test asks for. Wave mobs live in `entities`, because the
+ * re-seat check reads the whole tracked SET, not a nearest hit.
  */
 class CombatFakeBot extends InteractFakeBot {
   /** Whether `/damage @s` actually kills the bot (the bot is opped for it). */
   scriptedDeathsLand = true;
-  /** Injected fault: the re-engage probe throws, standing in for ANY unexpected
-   * fault after the death has been taken. The shipped one was the death-aware
-   * wait throwing on the very death it was waiting for. */
+  /** Injected fault, armed only AFTER a death so it lands on the re-engage probe:
+   * stands in for ANY unexpected fault once the death has been taken. The shipped
+   * one was the death-aware wait throwing on the very death it waited for. */
   failReEngageProbe = false;
-  /** The live wave mob, or `undefined` once it is down. */
-  mob: { id: number; name: string; height: number; position: FakeVec3 } | undefined = {
-    id: 7,
-    name: "vindicator",
-    height: 2,
-    position: new FakeVec3(1, 64, 0),
+  /** Where the server puts the bot on respawn. `undefined` = it never moves — the
+   * default, which keeps every other test's geometry exactly as it was. */
+  respawnAt: [number, number, number] | undefined;
+  /** The route back from the respawn is not walkable — the bell run-five symptom. */
+  failReturnLeg = false;
+  /** The server did NOT keep the inventory across the death (a broken
+   * `gamerule keep_inventory true` seal). */
+  loseKitOnDeath = false;
+  /** The wave kills the bot the first time it swings, mid-trade — before the
+   * harness gets to script the death this trial asked for (task #121). */
+  killBotOnTrade = false;
+  /** How the respawn re-seats the wave. `undefined` = do not re-seat at all. */
+  reSeat: ReseatSpec | undefined = { count: 1 };
+  /** Delay before the re-seated wave becomes visible to the client — entity
+   * tracking lags arrival, which is the island-r14 false negative. */
+  reSeatVisibleAfterMs = 0;
+  private died = false;
+  private nextId = 100;
+  /** Server-side census state: which mobs wear the brand, and how many censuses
+   * have been answered (the sequence the harness tells fresh from stale by). */
+  private readonly branded = new Set<number>();
+  private censusSeq = 0;
+
+  constructor() {
+    super();
+    this.seat(1);
+  }
+
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    goto: async (): Promise<void> => {
+      this.calls.push("goto");
+      // A route walkable on the way in and not on the way back: exactly what a
+      // respawn dumped somewhere unreachable looks like to the bot.
+      if (this.failReturnLeg && this.died) {
+        throw new Error("no path to the encounter from here");
+      }
+    },
   };
+
+  /** Replace the tracked wave with `count` fresh mobs. */
+  seat(count: number, opts: ReseatSpec | Omit<ReseatSpec, "count"> = {}): void {
+    this.entities = {};
+    for (const id of opts.keepIds ?? []) this.entities[id] = this.makeMob(id, opts);
+    const fresh = count - (opts.keepIds?.length ?? 0);
+    for (let i = 0; i < fresh; i++) {
+      this.entities[this.nextId] = this.makeMob(this.nextId, opts);
+      this.nextId += 1;
+    }
+  }
+
+  private makeMob(id: number, opts: Omit<ReseatSpec, "count">): FakeMob {
+    const d = opts.distance ?? 1;
+    // A survivor the re-seat failed to clear keeps the damage the last life dealt
+    // it; a freshly summoned mob is whole unless the test says otherwise.
+    const survivor = (opts.keepIds ?? []).includes(id);
+    const health = survivor
+      ? (opts.survivorHealth ?? opts.health ?? FULL_HEALTH)
+      : (opts.health ?? FULL_HEALTH);
+    const self = this;
+    return {
+      id,
+      name: "zombie",
+      height: 2,
+      waveTagged: true,
+      metadata: { [ZOMBIE_HEALTH_IDX]: health },
+      get attributes(): Record<string, { value: number }> {
+        return { "minecraft:max_health": { value: FULL_HEALTH } };
+      },
+      get position(): FakeVec3 {
+        return new FakeVec3(d, 64, 0);
+      },
+    };
+  }
+
   override chat(message: string): void {
     this.calls.push(`chat(${message})`);
+    // The fake server answers the census the way a real one does: by TAG (task
+    // #123). Only mobs in `entities` carry the wave tag here, so anything a test
+    // parks beside the encounter is invisible to it — which is the whole point.
+    if (message.startsWith("/function ")) {
+      const fn = message.slice("/function ".length);
+      if (fn.includes(":wave_brand_")) {
+        for (const m of this.waveMobs()) this.branded.add(m.id);
+        return;
+      }
+      if (fn.includes(":wave_unbrand_")) {
+        this.branded.clear();
+        return;
+      }
+      if (fn.includes(":wave_census_")) {
+        if (this.failReEngageProbe && this.died) return; // the probe never answers
+        this.censusSeq += 1;
+        const mobs = this.waveMobs();
+        for (const m of mobs) {
+          const p = m.position;
+          const h = Math.round(this.healthOf(m) * 100);
+          this.emit(
+            "messagestr",
+            `[dw:censusmob the-drowned-bell wave/gate-assault ${this.censusSeq} ` +
+              `${Math.round(p.x * 100)} ${Math.round(p.y * 100)} ${Math.round(p.z * 100)} ` +
+              `${h} ${FULL_HEALTH * 100}]`,
+          );
+        }
+        const branded = mobs.filter((m) => this.branded.has(m.id)).length;
+        const damaged = mobs.filter((m) => this.healthOf(m) < FULL_HEALTH).length;
+        this.emit(
+          "messagestr",
+          `[dw:census the-drowned-bell wave/gate-assault ${this.censusSeq} ` +
+            `${mobs.length} ${branded} ${damaged}]`,
+        );
+        return;
+      }
+      return;
+    }
     if (!message.startsWith("/damage") || !this.scriptedDeathsLand) return;
     setTimeout(() => {
+      this.died = true;
       this.emit("messagestr", "delve-bot was slain by Vindicator");
       this.emit("death");
-      // The wave is re-seated by the respawn, as `respawns_on_rest` would. The
-      // respawn lands FAST, as a real server's does — faster than the harness can
-      // poll the death latch and arm a wait, which is exactly the race the spawn
+      // The respawn lands FAST, as a real server's does — faster than the harness
+      // can poll the death latch and arm a wait, which is the race the spawn
       // counter exists for.
       setTimeout(() => {
-        this.mob = { id: 7, name: "vindicator", height: 2, position: new FakeVec3(1, 64, 0) };
+        this.entities = {};
+        // `gamerule keep_inventory true` is what a delve seals; a server without
+        // it hands the player back an empty bag.
+        if (this.loseKitOnDeath) this.carried = [];
+        // A respawn puts the player at their spawn point, which is somewhere else.
+        if (this.respawnAt) {
+          this.entity.position = new FakeVec3(...this.respawnAt);
+        }
+        const reseat = this.reSeat;
+        if (reseat) {
+          const apply = (): void => this.seat(reseat.count ?? 0, reseat);
+          if (this.reSeatVisibleAfterMs > 0) setTimeout(apply, this.reSeatVisibleAfterMs);
+          else apply();
+        }
         this.emit("spawn");
       }, 10);
     }, 5);
   }
 
-  nearestEntity(): unknown {
-    if (this.failReEngageProbe) throw new Error("mineflayer blew up probing the re-engage");
-    return this.mob;
+  /** Park a mob-shaped entity that is NOT part of the wave: an ambush actor, a
+   * neighbouring wave's straggler. Visible to `nearestEntity`, invisible to the
+   * census — exactly the drowned bell's belfry (task #124). */
+  addBystander(id: number, distance = 1): void {
+    const self = this;
+    this.entities[id] = {
+      id,
+      name: "husk",
+      height: 2,
+      metadata: { [ZOMBIE_HEALTH_IDX]: FULL_HEALTH },
+      get attributes(): Record<string, { value: number }> {
+        return { "minecraft:max_health": { value: FULL_HEALTH } };
+      },
+      get position(): FakeVec3 {
+        return new FakeVec3(distance, 64, 0);
+      },
+    } as unknown as FakeMob;
+    void self;
   }
 
-  attack(): void {
+  /** Everything wearing the wave tag — the census's whole universe. */
+  private waveMobs(): FakeMob[] {
+    return (Object.values(this.entities) as FakeMob[]).filter((e) => e?.waveTagged === true);
+  }
+
+  private healthOf(m: FakeMob): number {
+    const raw = m.metadata?.[ZOMBIE_HEALTH_IDX];
+    return typeof raw === "number" ? raw : FULL_HEALTH;
+  }
+
+  nearestEntity(match: (e: unknown) => boolean = () => true): unknown {
+    let best: FakeMob | undefined;
+    for (const e of Object.values(this.entities) as FakeMob[]) {
+      if (!match(e)) continue;
+      if (!best || e.position.distanceTo(this.entity.position) < best.position.distanceTo(this.entity.position)) {
+        best = e;
+      }
+    }
+    return best;
+  }
+
+  /** Swings a wave mob takes before it drops. 1 (one swing) unless a test wants
+   * the fight to outlast something else dying beside it. */
+  waveHitsToKill = 1;
+  private readonly hitsTaken = new Map<number, number>();
+
+  attack(mob: { id: number }): void {
     this.calls.push("attack");
-    this.mob = undefined; // one swing is enough in the fake world
+    // The wave wins the exchange: the bot dies mid-trade, before it ever reaches
+    // the line that scripts its own death (task #121). Armed once.
+    if (this.killBotOnTrade) {
+      this.killBotOnTrade = false;
+      this.killBot();
+      return;
+    }
+    const tagged = (this.entities[mob.id] as { waveTagged?: boolean } | undefined)?.waveTagged;
+    const need = tagged ? this.waveHitsToKill : 1;
+    const taken = (this.hitsTaken.get(mob.id) ?? 0) + 1;
+    this.hitsTaken.set(mob.id, taken);
+    if (taken < need) return;
+    const ent = this.entities[mob.id];
+    delete this.entities[mob.id]; // one swing is enough in the fake world
+    // A real server announces the removal, and that announcement is what credits
+    // a confirmed kill (`entityGone` → `creditsWaveKill`). Without it the fake
+    // world could never reproduce the drowned bell's belfry, where a husk's death
+    // was credited to the Bellkeeper's wave.
+    if (ent) this.emit("entityGone", ent);
+  }
+
+  /** A death the harness did NOT script, delivered the way a server delivers it:
+   * the death, then a fast auto-respawn. */
+  private killBot(): void {
+    this.died = true;
+    this.emit("messagestr", "delve-bot was slain by Vindicator");
+    this.emit("death");
+    setTimeout(() => this.emit("spawn"), 10);
   }
 
   async lookAt(): Promise<void> {}
@@ -911,9 +1648,14 @@ const ENCOUNTER = {
   count: 1,
   respawns_on_rest: true,
   checkpoint: [0, 64, 0] as [number, number, number],
+  census: {
+    census: "the-drowned-bell:wave_census_gate_assault",
+    brand: "the-drowned-bell:wave_brand_gate_assault",
+    unbrand: "the-drowned-bell:wave_unbrand_gate_assault",
+  },
 };
 
-function combatPlan(): CombatPlan {
+function combatPlan(count = 1, respawnsOnRest = true): CombatPlan {
   return {
     version: "0.6.0",
     campaignId: "the-drowned-bell",
@@ -925,13 +1667,117 @@ function combatPlan(): CombatPlan {
         step: ENCOUNTER.step,
         tier: ENCOUNTER.tier,
         pos: ENCOUNTER.pos,
-        count: ENCOUNTER.count,
-        respawnsOnRest: true,
+        count,
+        respawnsOnRest,
+        census: ENCOUNTER.census,
         checkpoint: ENCOUNTER.checkpoint,
       },
     ],
+    // No tiered actor and an empty (but PRESENT) ledger: this fixture's campaign
+    // bills nothing the wave gate does not already cover.
+    actors: [],
+    floorGate: { present: true, covered: [], notCovered: [] },
   };
 }
+
+const ASSIST_ON = "chat(/effect give @s minecraft:resistance 60 2 true)";
+const ASSIST_OFF = "chat(/effect clear @s minecraft:resistance)";
+const SCRIPTED_DEATH = "chat(/damage @s 1000 minecraft:generic)";
+
+test("the die-retry stage is assisted into melee range, and takes its death bare", async () => {
+  // the-drowned-bell run six (task #121). The die-retry stage walked to within 3
+  // blocks of a LIVE encounter with nothing on, so two vindicators killed the bot
+  // before it could script death 1: `dieRetryAt` threw, `kill` never reached its
+  // own assisted phase, and the artifact showed 0/2 trials beside
+  // `assist_windows: []`. Bot fencing skill was deciding whether the stage could
+  // run at all — the exact thing spec-0023 downgraded from gate to telemetry.
+  //
+  // The ordering below IS the fix, and each half of it matters:
+  //   * assist ON before the bot is ever in melee range, and again before the walk
+  //     back — the segments where it must SURVIVE to make a measurement;
+  //   * assist OFF before every scripted death — so `/damage @s 1000` needs no
+  //     argument about resistance arithmetic to be lethal.
+  const bot = new CombatFakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+  await executor.kill(KILL_STEP);
+
+  const combat = bot.calls.filter(
+    (c) => c === ASSIST_ON || c === ASSIST_OFF || c === SCRIPTED_DEATH,
+  );
+  const deaths = combat.filter((c) => c === SCRIPTED_DEATH).length;
+  assert.equal(deaths, 2, "two scripted deaths were taken");
+  for (const [i, call] of combat.entries()) {
+    if (call !== SCRIPTED_DEATH) continue;
+    assert.equal(
+      combat[i - 1],
+      ASSIST_OFF,
+      `the scripted death is taken with no assist in force: ${combat.join(" | ")}`,
+    );
+    assert.equal(
+      combat[i + 1],
+      ASSIST_ON,
+      `and the walk back is assisted again immediately after: ${combat.join(" | ")}`,
+    );
+  }
+  assert.equal(
+    combat[0],
+    ASSIST_ON,
+    `the very first combat act of the stage is arming the assist — before the ` +
+      `approach walks into melee range: ${combat.join(" | ")}`,
+  );
+});
+
+test("die-retry assist windows are named in the ledger, not taken silently", async () => {
+  // spec-0023 §3 asks for disclosure, not for a single window. Each segment the
+  // stage protects is opened, logged and closed on its own, so `assist_windows`
+  // says exactly when the bot was helped.
+  const bot = new CombatFakeBot();
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+  await executor.kill(KILL_STEP);
+
+  const windows = executor.assistWindows();
+  const dieRetry = windows.filter((w) => w.reason.startsWith("die-retry:"));
+  assert.ok(
+    dieRetry.length >= 4,
+    `each approach and each walk back is its own named window: ${windows.map((w) => w.reason).join(" | ")}`,
+  );
+  assert.ok(
+    dieRetry.every((w) => w.encounter === "obj/hold-the-gate" && w.closedAtMs !== undefined),
+    "every die-retry window names its encounter and is closed",
+  );
+  assert.deepEqual(executor.leakedAssists(), [], "and none of them leaked");
+});
+
+test("a wave that kills the bot mid-trade does not get credited as the scripted death", async () => {
+  // The first-contact/mid-fight race (task #121). `tradeBlows` deliberately stands
+  // in melee; if the wave wins that exchange the bot is already dead when the
+  // harness reads `deathSeq` and chats `/damage`, so the trial would wait for a
+  // death that has to happen a SECOND time and credit its loop to a life the
+  // harness never opened. The accidental death is now recovered from first.
+  const bot = new CombatFakeBot();
+  bot.killBotOnTrade = true;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+  await executor.kill(KILL_STEP);
+
+  const trials = executor.deathTrials();
+  assert.equal(trials.length, 2, "still exactly the two scripted deaths spec-0023 asks for");
+  assert.ok(
+    trials.every((t) => t.completed),
+    "and both loops still reached a verdict",
+  );
+  assert.equal(
+    bot.calls.filter((c) => c === SCRIPTED_DEATH).length,
+    2,
+    "one scripted death per trial — the accidental one did not stand in for either",
+  );
+  assert.deepEqual(dieRetryFindings(trials), []);
+});
 
 test("the die-retry stage survives its OWN scripted death and records both trials", async () => {
   // The shipped defect (the-drowned-bell round 3): the stage waited for its
@@ -957,9 +1803,103 @@ test("the die-retry stage survives its OWN scripted death and records both trial
     "both loops reached a verdict",
   );
   assert.deepEqual(dieRetryFindings(trials), [], "and every verdict was clean");
+  assert.deepEqual(
+    trials.map((t) => t.outcome),
+    ["re-engaged", "re-engaged"],
+    "hostiles were standing there again both times",
+  );
   assert.equal(trials[0]!.cause, "delve-bot was slain by Vindicator");
   // The bot really did chat the death command, twice — not a bookkeeping-only pass.
   assert.equal(bot.calls.filter((c) => c === "chat(/damage @s 1000 minecraft:generic)").length, 2);
+});
+
+/** The class step the die-retry stage used to replay after every death. */
+const SELECT_CLASS_STEP: SelectClassStep = {
+  action: "select-class",
+  class: "class/warden",
+  command: "/trigger dw.class set 1",
+};
+
+test("a scripted death re-arms the bot WITHOUT re-selecting the class", async () => {
+  // task #120, the-drowned-bell run five. The re-arm used to replay `select-class`.
+  // The `dw.class` trigger is re-enabled for every player on every tick and
+  // `class_apply_<class>` ENDS IN `teleport @s <campaign entry point>`, so every
+  // post-death re-arm silently warped the bot from the checkpoint it had just
+  // respawned on back to the start of the delve — 150 blocks and eight levels away
+  // on the bell. `respawn_pos` was measured correctly at the bonfire and made a lie
+  // one second later, and the walk back then measured a route no dying player walks.
+  const bot = new CombatFakeBot();
+  bot.carried = [{ name: "iron_sword", type: 1 }];
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+  await executor.selectClass(SELECT_CLASS_STEP);
+  await executor.kill(KILL_STEP);
+
+  assert.equal(
+    bot.calls.filter((c) => c === `chat(${SELECT_CLASS_STEP.command})`).length,
+    1,
+    "the class trigger is chatted once, at the start of the run, and never after a death",
+  );
+  // What a respawn DOES need: the kept kit back on. `keep_inventory` is sealed by
+  // the compiler, so re-equipping is the whole of a legitimate re-arm.
+  assert.ok(
+    bot.calls.filter((c) => c === "equip(iron_sword,hand)").length >= 3,
+    `the kit goes back on after each of the two deaths: ${bot.calls.join(",")}`,
+  );
+  assert.ok(
+    executor.deathTrials().every((t) => t.kitKept),
+    "and the kit survived every death",
+  );
+});
+
+test("a kit lost across a death reds the trial — keep_inventory is the seal", async () => {
+  const bot = new CombatFakeBot();
+  bot.carried = [{ name: "iron_sword", type: 1 }];
+  bot.loseKitOnDeath = true;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(), true);
+  await executor.selectClass(SELECT_CLASS_STEP);
+  await executor.kill(KILL_STEP);
+
+  const trials = executor.deathTrials();
+  assert.ok(trials.length > 0);
+  assert.equal(trials[0]!.kitKept, false);
+  assert.match(String(trialVerdict(trials[0]!)), /EMPTY-HANDED/);
+});
+
+test("a trial that never walked back reports NO re-engagement observation", async () => {
+  // The run-five artifact carried, in ONE trial: `returned: false` ("the route from
+  // the respawn back to the encounter is not walkable"), `re_engaged: true` and
+  // `completed: true`. The probe reads the entities the CLIENT tracks, so a bot
+  // stuck 150 blocks away was reporting on wherever it stood, not on the fight.
+  // "Did not look" and "looked and found nothing" are different facts and neither
+  // is a pass.
+  // The delve's own shape: the checkpoint (a bonfire) is a long way from the fight,
+  // the respawn lands ON it — the loop's premise holds — and the route back is
+  // broken. That is a real content failure and it must read as exactly one.
+  const bot = new CombatFakeBot();
+  bot.respawnAt = [60, 64, 0];
+  bot.failReturnLeg = true;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  const plan = combatPlan();
+  const encounter = { ...plan.encounters[0]!, checkpoint: [60, 64, 0] as [number, number, number] };
+  executor.useCombatPlan({ ...plan, encounters: [encounter] }, true);
+  await assert.rejects(() => executor.kill(KILL_STEP));
+
+  const trials = executor.deathTrials();
+  assert.ok(trials.length > 0);
+  for (const t of trials) {
+    assert.deepEqual(t.respawnPos, [60, 64, 0], "the respawn point is MEASURED, not assumed");
+    assert.equal(t.atCheckpoint, true);
+    assert.equal(t.returned, false);
+    assert.equal(t.reEngaged, false, "no re-engagement is claimed from a fight never reached");
+    assert.equal(t.reengage, undefined, "and no observation is fabricated for the artifact");
+    assert.equal(t.outcome, "unproven");
+  }
+  assert.match(String(trialVerdict(trials[0]!)), /not walkable/);
 });
 
 test("a loop abandoned after the death still carries the death in the artifact", async () => {
@@ -967,18 +1907,23 @@ test("a loop abandoned after the death still carries the death in the artifact",
   // it happens, however the run ends. Before this, the trial was appended only
   // after the whole loop succeeded, so an abort discarded it — and the stage, with
   // nothing recorded and therefore no findings, read `passed: true`.
+  //
+  // The fault is now a census that never answers (task #123) — the shape a refused
+  // `/function` takes on an unopped bot. It must abort the trial, never return an
+  // empty count: a silent zero would read as `stranded` and blame the delve for
+  // the harness's own broken probe.
   const bot = new CombatFakeBot();
   bot.failReEngageProbe = true;
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
   executor.useCombatPlan(combatPlan(), true);
 
-  await assert.rejects(() => executor.kill(KILL_STEP), /blew up probing the re-engage/);
+  await assert.rejects(() => executor.kill(KILL_STEP), /census .* never answered/);
 
   const trials = executor.deathTrials();
   assert.equal(trials.length, 1, "the death that happened is recorded");
   assert.equal(trials[0]!.completed, false);
-  assert.match(String(trials[0]!.abortedWith), /blew up probing the re-engage/);
+  assert.match(String(trials[0]!.abortedWith), /census .* never answered/);
   // …and it reads RED, not silent: an unfinished trial is never a passed one.
   assert.match(String(trialVerdict(trials[0]!)), /ABANDONED/);
   const failures = [
@@ -1016,4 +1961,554 @@ test("an encounter the stage entered but never died at is engaged, not silent", 
   );
   assert.equal(failures.length, 1);
   assert.match(failures[0]!, /ENGAGED this encounter but proved only 0\/2/);
+});
+
+// --- what was waiting at the end of the loop (planner ruling 2026-08-03) ------
+
+test("a wave already beaten before the death records cleared-before-retry, and passes", async () => {
+  // `respawns_on_rest: false` is a legitimate design — a won fight stays won —
+  // so the wave is simply gone when the bot walks back. With the encounter's
+  // objective COMPLETE, the party that died here can still finish the delve:
+  // the loop worked. Before this, the same fixture went red or green depending
+  // on whether the bot's timed melee happened to finish the wave first.
+  const bot = new CombatFakeBot();
+  bot.seat(0); // the fight was won before the scripted death
+  bot.reSeat = undefined; // `respawns_on_rest: false` — a won fight stays won
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(1, false), true);
+  bot.emit("messagestr", "[dw:complete the-drowned-bell obj/hold-the-gate]");
+
+  await executor.kill(KILL_STEP);
+
+  const trials = executor.deathTrials();
+  assert.equal(trials.length, 2);
+  assert.deepEqual(
+    trials.map((t) => t.outcome),
+    ["cleared-before-retry", "cleared-before-retry"],
+  );
+  assert.ok(trials.every((t) => t.objectiveComplete && !t.reEngaged));
+  assert.deepEqual(dieRetryFindings(trials), [], "a won fight staying won is not a finding");
+  assert.deepEqual(
+    dieRetryCoverageFailures(
+      combatPlan(1, false).encounters,
+      executor.dieRetryEngagements(),
+      trials,
+    ),
+    [],
+    "and it counts as full coverage — these are proved trials, not skipped ones",
+  );
+});
+
+test("a wave that vanishes with its objective UNFINISHED is a soft lock, loudly", async () => {
+  // The failure the stage exists to catch, and the one the old uniform
+  // "did not re-engage" red could not tell apart from a won fight: the party can
+  // neither finish the encounter nor fight it again.
+  const bot = new CombatFakeBot();
+  bot.seat(0);
+  bot.reSeat = undefined;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(1, false), true);
+  // …and no completion marker for obj/hold-the-gate ever arrives.
+
+  await executor.kill(KILL_STEP);
+
+  const trials = executor.deathTrials();
+  assert.deepEqual(
+    trials.map((t) => t.outcome),
+    ["stranded", "stranded"],
+  );
+  assert.ok(trials.every((t) => !t.objectiveComplete && !t.reEngaged));
+  const findings = dieRetryFindings(trials);
+  assert.equal(findings.length, 2, "every stranded trial is a red finding");
+  assert.match(findings[0]!, /STRANDED/);
+  assert.match(findings[0]!, /obj\/hold-the-gate/);
+});
+
+// --- re-seat fidelity + the wandered-mob false negative (task #108) ----------
+
+async function dieRetryAgainst(bot: CombatFakeBot, count: number): Promise<MineflayerExecutor> {
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(count, true), true);
+  await executor.kill({ ...KILL_STEP, count });
+  return executor;
+}
+
+test("a wave that re-seats whole — fresh entities, full health, authored count — passes", async () => {
+  const bot = new CombatFakeBot();
+  bot.seat(3);
+  bot.reSeat = { count: 3 };
+  const executor = await dieRetryAgainst(bot, 3);
+
+  const trials = executor.deathTrials();
+  assert.deepEqual(
+    trials.map((t) => t.outcome),
+    ["re-engaged", "re-engaged"],
+  );
+  assert.deepEqual(dieRetryFindings(trials), [], "a faithful re-seat is silent");
+  for (const t of trials) {
+    assert.equal(t.reengage!.present, 3);
+    assert.equal(t.reengage!.carriedOver, 0, "every mob is a NEW entity");
+    assert.equal(t.reengage!.damaged, 0);
+    assert.equal(t.reengage!.healthReadable, 3, "health was readable via the pinned registry");
+  }
+});
+
+test("a re-seat that comes back SHORT is red", async () => {
+  const bot = new CombatFakeBot();
+  bot.seat(3);
+  bot.reSeat = { count: 2 }; // one mob never came back
+  const executor = await dieRetryAgainst(bot, 3);
+
+  const findings = dieRetryFindings(executor.deathTrials());
+  assert.equal(findings.length, 2);
+  assert.match(findings[0]!, /came back SHORT — 2 mob\(s\) standing, 3 declared/);
+  assert.equal(executor.deathTrials()[0]!.reengage!.present, 2);
+});
+
+test("a damaged survivor carried across a life is red — the owner's grind rule", async () => {
+  // 打一半的怪要移除重新生成一模一样的: a half-fought mob is REMOVED and regenerated.
+  // Here the re-seat tops the wave up AROUND the survivor the last life chipped,
+  // which is exactly how a party grinds a boss down one swing per death.
+  const bot = new CombatFakeBot();
+  bot.seat(3);
+  const survivor = Object.values(bot.entities as Record<number, { id: number }>)[0]!.id;
+  bot.reSeat = { count: 3, keepIds: [survivor], survivorHealth: 6 };
+  const executor = await dieRetryAgainst(bot, 3);
+
+  const trials = executor.deathTrials();
+  const findings = dieRetryFindings(trials);
+  assert.equal(findings.length, 2);
+  assert.match(findings[0]!, /the bot already\s+fought in a previous life/);
+  assert.match(findings[0]!, /never topped up around its survivors/);
+  assert.equal(trials[0]!.reengage!.carriedOver, 1);
+  assert.equal(trials[0]!.reengage!.damaged, 1, "exactly the survivor is the wounded one");
+});
+
+test("a wave that comes back whole but WOUNDED is red", async () => {
+  // No carried-over entity — the re-seat did replace them — but they arrived
+  // below full health. The player respawns whole; so must the wave.
+  const bot = new CombatFakeBot();
+  bot.seat(3);
+  bot.reSeat = { count: 3, health: 11 };
+  const executor = await dieRetryAgainst(bot, 3);
+
+  const findings = dieRetryFindings(executor.deathTrials());
+  assert.equal(findings.length, 2);
+  assert.match(findings[0]!, /came back BELOW full/);
+  assert.equal(executor.deathTrials()[0]!.reengage!.damaged, 3);
+});
+
+test("wave mobs that WANDERED off the anchor are re-engaged, never stranded", async () => {
+  // The island-r14 false negative: three feral drowned (follow_range 48) wander
+  // off the anchor after killing the bot. They are alive and will come — the bot
+  // cleared 3/3 moments later — but both trials reported "no hostile was there to
+  // fight" and went red. There is no distance filter: anything the client tracks
+  // is inside vanilla's 128-block monster range, well beyond any follow_range.
+  const bot = new CombatFakeBot();
+  bot.seat(3, { distance: 60 });
+  bot.reSeat = { count: 3, distance: 60 };
+  const executor = await dieRetryAgainst(bot, 3);
+
+  const trials = executor.deathTrials();
+  assert.deepEqual(
+    trials.map((t) => t.outcome),
+    ["re-engaged", "re-engaged"],
+    "alive-but-wandered is the fight still existing",
+  );
+  assert.deepEqual(dieRetryFindings(trials), []);
+  assert.ok(trials[0]!.reengage!.farthest! > 48, "and how far they had strayed is recorded");
+});
+
+test("the re-engage probe SETTLES instead of sampling the instant it arrives", async () => {
+  // The other half of r14: a client learns about an entity when the server sends
+  // it, which takes ticks after arrival. One instantaneous sample read an empty
+  // room; the probe now waits for the room to fill.
+  const bot = new CombatFakeBot();
+  bot.seat(2);
+  bot.reSeat = { count: 2 };
+  bot.reSeatVisibleAfterMs = 900; // tracking catches up well after the walk back
+  const executor = await dieRetryAgainst(bot, 2);
+
+  const trials = executor.deathTrials();
+  assert.deepEqual(
+    trials.map((t) => t.outcome),
+    ["re-engaged", "re-engaged"],
+  );
+  assert.ok(trials[0]!.reengage!.settleMs >= 500, "the probe waited rather than guessed");
+  assert.equal(trials[0]!.reengage!.present, 2);
+});
+
+// --- bonfire rest steps + the die-retry precondition (compiler #220) ---------
+
+import type { RestStep } from "../src/critical-path.ts";
+
+/** A CombatFakeBot that also publishes a bonfire's `interaction` affordance. */
+class BonfireFakeBot extends CombatFakeBot {
+  /** Whether the compiler's affordance is actually there to click. */
+  affordance = true;
+  activated: number[] = [];
+
+  constructor() {
+    super();
+    this.seat(0);
+    this.reSeat = undefined;
+  }
+
+  /** The affordance is an entity like any other, so it lives in `entities`.
+   * Re-published after every re-seat: a bonfire is rested at, never used up. */
+  armBonfire(id: number, pos: FakeVec3): void {
+    if (!this.affordance) return;
+    this.bonfires ??= new Map();
+    this.bonfires.set(id, { id, name: "interaction", height: 0, position: pos });
+    this.entities[id] = this.bonfires.get(id)!;
+  }
+  // Declared without an initialiser on purpose: the BASE constructor calls `seat`,
+  // which runs this override before a subclass field initialiser would have run.
+  private bonfires?: Map<number, unknown>;
+
+  override seat(count: number, opts: Parameters<CombatFakeBot["seat"]>[1] = {}): void {
+    super.seat(count, opts);
+    for (const [id, e] of this.bonfires ?? []) this.entities[id] = e;
+  }
+
+  async activateEntity(e: { id: number }): Promise<void> {
+    this.activated.push(e.id);
+    this.calls.push(`activateEntity(${e.id})`);
+  }
+}
+
+const REST_STEP: RestStep = {
+  action: "rest",
+  bonfire: 1,
+  anchor: "anchor/beach-fire",
+  pos: [0, 64, 0],
+  command: "/trigger dw.rest set 2",
+};
+
+test("a rest CLICKS the bonfire affordance before it chats the trigger", async () => {
+  // Order is the whole step. The click fires the `player_interacted_with_entity`
+  // advancement whose reward ENABLES `dw.rest`; until then the trigger is disabled
+  // and the chat line is a silent no-op — which is how bell round 3 walked past
+  // every fire and still respawned on the beach.
+  const bot = new BonfireFakeBot();
+  bot.armBonfire(55, new FakeVec3(0.5, 64, 0.5));
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+
+  await executor.rest(REST_STEP);
+
+  assert.deepEqual(bot.calls.filter((c) => c.startsWith("activateEntity") || c.startsWith("chat")), [
+    "activateEntity(55)",
+    "chat(/trigger dw.rest set 2)",
+  ]);
+  assert.deepEqual(bot.activated, [55], "the affordance was right-clicked, not just chatted at");
+});
+
+test("a bonfire with no affordance to click fails the step loudly", async () => {
+  // Nothing to right-click means the rest can never be performed — and a silently
+  // skipped rest is exactly the failure this step exists to prevent.
+  const bot = new BonfireFakeBot();
+  bot.affordance = false;
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+
+  await assert.rejects(() => executor.rest(REST_STEP), /nothing to right-click/);
+  assert.deepEqual(bot.activated, []);
+});
+
+test("the die-retry precondition proceeds once the governing bonfire has been rested", async () => {
+  const bot = new BonfireFakeBot();
+  bot.seat(1); // `seat` re-publishes the tracked set, so the fire is armed after it
+  bot.armBonfire(55, new FakeVec3(0.5, 64, 0.5));
+  bot.reSeat = { count: 1 };
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useRestSteps([{ bonfire: 1, anchor: "anchor/beach-fire", pos: [0, 64, 0], step: 2 }]);
+  const plan = combatPlan(1, true);
+  const withCp: CombatPlan = {
+    ...plan,
+    encounters: [{ ...plan.encounters[0]!, checkpoint: [0, 64, 0] }],
+  };
+  executor.useCombatPlan(withCp, true);
+
+  executor.beginStep(3);
+  await executor.rest(REST_STEP); // the party rests at the fire…
+  executor.beginStep(9);
+  await executor.kill(KILL_STEP); // …so the death loop measures something real
+
+  assert.equal(executor.deathTrials().length, 2, "both scripted deaths were taken");
+  assert.deepEqual(executor.dieRetryPreconditionFindings(), []);
+  assert.equal(executor.performedRests().length, 1);
+});
+
+test("an unrested bonfire skips the scripted death and reports the gap", async () => {
+  // Bell round 3: every fire walked past, both trials respawned at world spawn on
+  // the far beach, and a 60s walk-back budget judged the CAMPAIGN for a proof that
+  // never performed the player loop. No death is taken now — the run still goes
+  // red, but on the harness's gap rather than the delve's difficulty.
+  const bot = new BonfireFakeBot();
+  bot.seat(1);
+  bot.reSeat = { count: 1 };
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useRestSteps([{ bonfire: 1, anchor: "anchor/beach-fire", pos: [0, 64, 0], step: 2 }]);
+  const plan = combatPlan(1, true);
+  executor.useCombatPlan(
+    { ...plan, encounters: [{ ...plan.encounters[0]!, checkpoint: [0, 64, 0] }] },
+    true,
+  );
+
+  executor.beginStep(9); // …and the rest step at index 2 was never performed
+  await executor.kill(KILL_STEP);
+
+  assert.equal(executor.deathTrials().length, 0, "no death was scripted");
+  assert.equal(
+    bot.calls.filter((c) => c === "chat(/damage @s 1000 minecraft:generic)").length,
+    0,
+  );
+  const findings = executor.dieRetryPreconditionFindings();
+  assert.equal(findings.length, 1);
+  assert.match(findings[0]!, /no checkpoint armed/);
+  assert.match(findings[0]!, /passed bonfire 1 \(anchor\/beach-fire\) without resting/);
+});
+
+// ---------------------------------------------------------------------------
+// The actor floor gate (#114): the other shape an elite takes
+// ---------------------------------------------------------------------------
+
+import type { ActorEncounter, CombatPlan as CP } from "../src/combat.ts";
+import { displayNameOf } from "../src/executor.ts";
+
+/** The body an `unleash-actor` beat leaves standing: a real-AI twin of the actor's
+ * entity type, at the actor's anchor cell, wearing its custom name. */
+class ActorFakeBot extends InteractFakeBot {
+  /** Swings needed before the body goes down — the fight's whole difficulty here. */
+  hitsToKill = 1;
+  private hits = 0;
+
+  seatBody(id = 500, pos: [number, number, number] = [1, 64, 0]): void {
+    this.entities[id] = {
+      id,
+      name: "wither_skeleton",
+      height: 2.4,
+      customName: "Barrow Warden",
+      position: new FakeVec3(pos[0], pos[1], pos[2]),
+    };
+  }
+
+  attack(mob: { id: number }): void {
+    this.calls.push("attack");
+    if (++this.hits >= this.hitsToKill) delete this.entities[mob.id];
+  }
+
+  async lookAt(): Promise<void> {}
+  nearestEntity(): unknown {
+    return undefined;
+  }
+}
+
+const BARROW_WARDEN: ActorEncounter = {
+  actor: "actor/barrow-warden",
+  entity: "minecraft:wither_skeleton",
+  name: "Barrow Warden",
+  tier: "elite",
+  anchor: "anchor/wave",
+  pos: [0, 64, 0],
+  tag: "dw_actor_barrow_warden",
+  vulnerable: false,
+  spawnedBy: [],
+  unleashedBy: [
+    {
+      site: "objective",
+      owner: "quest/the-barrow",
+      objective: "obj/hold-the-gate",
+      path: "/content/quests/0/on_objective_complete/obj~1hold-the-gate/1",
+    },
+  ],
+  floorGate: { covered: true },
+  maxHealth: 60,
+};
+
+function actorPlan(actors: ActorEncounter[] = [BARROW_WARDEN]): CP {
+  return {
+    version: "0.8.0",
+    campaignId: "souls-bonfire",
+    difficulty: "normal",
+    encounters: [],
+    actors,
+    floorGate: { present: true, covered: [], notCovered: [] },
+  };
+}
+
+/** Drive an objective to completion with the actor gate armed. */
+async function completeObjective(
+  bot: ActorFakeBot,
+  env: Record<string, string | undefined> = {},
+  actors: ActorEncounter[] = [BARROW_WARDEN],
+): Promise<MineflayerExecutor> {
+  const executor = attach(bot, env);
+  executor.useCampaign("souls-bonfire");
+  executor.usePathObjectives(["obj/hold-the-gate"]);
+  executor.useCombatPlan(actorPlan(actors), false, env["DELVEWRIGHT_ACTOR_FLOOR"] !== "0");
+  executor.beginStep(3);
+  bot.emit("messagestr", "[dw:complete souls-bonfire obj/hold-the-gate]");
+  await executor.requireObjective("obj/hold-the-gate", "test");
+  return executor;
+}
+
+test("the objective that unleashes a billed actor starts one unassisted fight", async () => {
+  const bot = new ActorFakeBot();
+  bot.seatBody();
+  const executor = await completeObjective(bot);
+
+  const trials = executor.actorFightTrials();
+  assert.equal(trials.length, 1);
+  assert.equal(trials[0]!.actor, "actor/barrow-warden");
+  assert.equal(trials[0]!.afterObjective, "obj/hold-the-gate");
+  assert.equal(trials[0]!.outcome, "won-first-try");
+  assert.ok(trials[0]!.swings >= 1);
+  // …and beating a billed fight cold is the advisory the inverted gate exists for.
+  const findings = executor.floorGateFindings();
+  assert.equal(findings.length, 1);
+  assert.match(findings[0]!, /billed `elite`/);
+  // NO assist window was opened: nothing downstream waits on an actor fight, so
+  // there is no obligation to win it and nothing to unblock (spec-0023's assist
+  // exists for fights the run must finish).
+  assert.deepEqual([...executor.assistWindows()], []);
+});
+
+test("a body that never appears is `body-not-found`, never a win", async () => {
+  // The silence this closes: an unleash beat that did not fire looks exactly like
+  // a fight won instantly if the outcome is inferred from an empty room.
+  const bot = new ActorFakeBot(); // no body seated
+  const executor = await completeObjective(bot);
+  const trial = executor.actorFightTrials()[0]!;
+  assert.equal(trial.outcome, "body-not-found");
+  assert.equal(trial.swings, 0);
+  assert.match(trial.detail!, /no live `minecraft:wither_skeleton`/);
+  assert.deepEqual([...executor.floorGateFindings()], []);
+});
+
+test("the actor gate fires once per actor, however often the marker is re-broadcast", async () => {
+  const bot = new ActorFakeBot();
+  bot.seatBody();
+  const executor = await completeObjective(bot);
+  bot.seatBody(501);
+  await executor.requireObjective("obj/hold-the-gate", "test again");
+  assert.equal(executor.actorFightTrials().length, 1);
+});
+
+test("DELVEWRIGHT_ACTOR_FLOOR=0 skips the fight and records no measurement", async () => {
+  const bot = new ActorFakeBot();
+  bot.seatBody();
+  const executor = await completeObjective(bot, { DELVEWRIGHT_ACTOR_FLOOR: "0" });
+  assert.deepEqual([...executor.actorFightTrials()], []);
+  assert.deepEqual([...executor.floorGateFindings()], []);
+  assert.equal(bot.calls.includes("attack"), false);
+});
+
+test("an actor no on-path objective unleashes is never engaged", async () => {
+  const bot = new ActorFakeBot();
+  bot.seatBody();
+  const ambient: ActorEncounter = {
+    ...BARROW_WARDEN,
+    unleashedBy: [
+      {
+        site: "trigger",
+        owner: "trigger/warden-answers",
+        path: "/content/triggers/0/effects/1",
+        on: "strike-npc",
+        npc: "npc/keeper",
+      },
+    ],
+  };
+  const executor = await completeObjective(bot, {}, [ambient]);
+  assert.deepEqual([...executor.actorFightTrials()], []);
+  assert.equal(bot.calls.includes("attack"), false);
+});
+
+test("a custom name is read from every shape mineflayer hands it back in", () => {
+  assert.equal(displayNameOf({ customName: "Barrow Warden" }), "Barrow Warden");
+  assert.equal(displayNameOf({ displayName: { text: "Barrow Warden" } }), "Barrow Warden");
+  assert.equal(
+    displayNameOf({ displayName: { toString: () => "Barrow Warden" } }),
+    "Barrow Warden",
+  );
+  assert.equal(displayNameOf({}), undefined);
+  assert.equal(displayNameOf({ displayName: {} }), undefined);
+});
+
+test("an encounter with NO governing checkpoint skips the death as an ADVISORY, not a red", async () => {
+  // Post-#223 (`fire_step < i`) souls-bonfire's encounter truthfully reports no
+  // governing checkpoint: the only fire is armed by the very kill this encounter
+  // IS, so nothing is armed when a mid-fight death would land. A death here
+  // respawns at world spawn and the retry loop is a full restart of the delve.
+  //
+  // Three things must all hold, and the third is the one worth pinning: the death
+  // is NOT taken (it would measure the delve against world spawn), the gap is
+  // NAMED (an unproven loop must never be silent), and it lands in the ADVISORY
+  // channel — where the campaign puts its rest points is a content staging
+  // judgement the compiler's DW0379/DW0315 rules own, not this stage's.
+  const bot = new CombatFakeBot();
+  bot.seat(1);
+  const executor = attach(bot);
+  executor.useCampaign("souls-bonfire");
+  const plan = combatPlan(1, false);
+  executor.useCombatPlan(
+    { ...plan, encounters: [{ ...plan.encounters[0]!, checkpoint: undefined }] },
+    true,
+  );
+
+  executor.beginStep(9);
+  await executor.kill(KILL_STEP);
+
+  assert.equal(executor.deathTrials().length, 0, "no death was scripted");
+  assert.equal(
+    bot.calls.filter((c) => c === "chat(/damage @s 1000 minecraft:generic)").length,
+    0,
+  );
+  // Advisory, not a failure: nothing here reds the stage.
+  assert.deepEqual([...executor.dieRetryPreconditionFindings()], []);
+  const advisories = executor.dieRetryPreconditionAdvisories();
+  assert.equal(advisories.length, 1);
+  assert.match(advisories[0]!, /no governing checkpoint/);
+  assert.match(advisories[0]!, /die-retry cannot prove safe death here/);
+  // …and coverage stays silent about it, exactly as for the unarmed case: the
+  // advisory already says why the loop is unproven, and "never reached this
+  // encounter" would be plainly untrue.
+  assert.equal(executor.dieRetryPreconditionWaves().has(KILL_STEP.wave), true);
+  // The fight itself still happened — only the scripted death was skipped.
+  assert.equal(executor.encounterPhase(KILL_STEP.wave), "cleared");
+});
+
+// --- the kill loop ends on the CENSUS, never on a lookalike (task #124) ------
+
+test("killing a bystander beside the fight does not clear the wave", async () => {
+  // The drowned bell's belfry, reduced: `ambush/the-rafters` puts two husks where
+  // the Bellkeeper stands, and the kill loop counted one of them as the wave —
+  // `confirmed kill: husk#232 (1/1)` — then walked away from a wither skeleton
+  // still very much alive. The objective never completed, so the quest never
+  // completed, so the NEXT quest was never armed, so the next step's `interact`
+  // click was adjudicated against an unarmed quest and spent. The click was the
+  // symptom; this is the cause.
+  const bot = new CombatFakeBot();
+  bot.seat(1); // the real wave mob, in reach
+  bot.waveHitsToKill = 3; // …and it outlives the bystander, as the Bellkeeper did
+  bot.addBystander(900, 0.5); // an ambush husk, NEARER — the bot swings at it first
+  const executor = attach(bot);
+  executor.useCampaign("the-drowned-bell");
+  executor.useCombatPlan(combatPlan(1, false), false);
+
+  await executor.kill({ ...KILL_STEP, count: 1 });
+
+  // The step only returned once the WAVE was down; the bystander being killed
+  // first bought nothing.
+  const left = Object.values(bot.entities).filter(
+    (e) => (e as { waveTagged?: boolean }).waveTagged === true,
+  );
+  assert.equal(left.length, 0, "the wave itself is what has to die");
+  assert.equal(bot.entities[900], undefined, "the bystander died on the way, which is fine");
 });

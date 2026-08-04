@@ -43,6 +43,7 @@ pub mod analyze;
 pub mod assembled;
 pub mod atmos;
 pub mod blocking;
+pub mod branch;
 pub mod calibrate;
 pub mod camera;
 pub mod cast;

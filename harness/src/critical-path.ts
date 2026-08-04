@@ -26,6 +26,12 @@
  * sound/art, per-effect flag gating) add DSL/emission surface but leave the
  * critical-path step contract the bot consumes unchanged, so their paths parse
  * and run exactly as a v0.4 path does — the allowlist simply tracks the DSL.
+ * v0.7 (the cast ledger) and v0.8 (spec-0025 branch points, per-node
+ * `happening`, named endings) are the same kind of addition: they add
+ * VALIDATION surface — `branch-plan.json`, the chronicles, the per-branch paths —
+ * and change no step the bot walks, so a v0.8 path is walked exactly as a v0.6
+ * one is. Without them here, the first campaign to declare a branch could not be
+ * run at all, branch tier or not.
  */
 export const SUPPORTED_DSL_VERSIONS = [
   "0.2.0",
@@ -33,6 +39,8 @@ export const SUPPORTED_DSL_VERSIONS = [
   "0.4.0",
   "0.5.0",
   "0.6.0",
+  "0.7.0",
+  "0.8.0",
 ] as const;
 
 /**
@@ -61,6 +69,7 @@ export const STEP_ACTIONS = [
   "kill",
   "collect",
   "interact",
+  "rest",
   "assert-complete",
 ] as const;
 
@@ -166,12 +175,42 @@ export interface InteractStep extends PresentationMarkers {
   readonly transport?: Transport;
 }
 
+/**
+ * Rest at bonfire `bonfire` (spec-0016 §1, compiler #220). A path EXPORT step: it
+ * proves no objective of its own, it performs the player loop the steps after it
+ * are proven under.
+ *
+ * A bonfire only ARMS an affordance; the respawn point moves when the party
+ * actually rests. A ladder that walked past every fire without touching one left
+ * the checkpoint at world spawn, so a die-retry trial respawned on the beach and
+ * blew the walk-back budget — judging the campaign for a proof that never
+ * performed the loop (bell round 3).
+ */
+export interface RestStep extends PresentationMarkers {
+  readonly action: "rest";
+  /** Which bonfire, by the compiler's index — names the fire in every diagnostic. */
+  readonly bonfire: number;
+  readonly anchor: string;
+  readonly pos: Vec3Tuple;
+  /** The exact chat line the "rest and save" dialog button runs. */
+  readonly command: string;
+}
+
 /** Assert the campaign-completion scoreboard objective holds `value` (terminal step). */
 export interface AssertCompleteStep {
   readonly action: "assert-complete";
   /** The sidebar-displayed objective the bot reads. */
   readonly objective: string;
   readonly value: number;
+  /**
+   * Scheduled-ending tail (task #125): the compiler-computed maximum tick offset
+   * between the terminal objective completing and `campaign-complete` firing —
+   * a `sequence`-scheduled finale (the-wake: 250t) or a `move-npc`/`move-actor`
+   * arrival bundle. The completion window must cover it: the window becomes
+   * `max(default settle, tail + margin)`. Absent (undefined) for a synchronous
+   * ending, which keeps pre-#125 paths byte-identical.
+   */
+  readonly endingTailTicks?: number;
 }
 
 export type Step =
@@ -181,6 +220,7 @@ export type Step =
   | KillStep
   | CollectStep
   | InteractStep
+  | RestStep
   | AssertCompleteStep;
 
 export interface CriticalPath {
@@ -499,13 +539,42 @@ function parseStep(value: unknown, pointer: string): Step {
         ...presentationFields(obj, pointer),
       };
     }
+    case "rest": {
+      rejectUnknownKeys(
+        obj,
+        ["action", "bonfire", "anchor", "pos", "command", "sneak", "cutscene_seconds"],
+        pointer,
+      );
+      const bonfire = obj["bonfire"];
+      if (!Number.isInteger(bonfire) || (bonfire as number) < 0) {
+        fail(`${pointer}/bonfire`, `must be a non-negative integer, got ${describe(bonfire)}`);
+      }
+      return {
+        action: "rest",
+        bonfire: bonfire as number,
+        anchor: requireString(obj, "anchor", pointer),
+        pos: requirePos(obj, pointer),
+        command: requireString(obj, "command", pointer),
+        ...presentationFields(obj, pointer),
+      };
+    }
     case "assert-complete": {
-      rejectUnknownKeys(obj, ["action", "scoreboard"], pointer);
+      rejectUnknownKeys(obj, ["action", "scoreboard", "ending_tail_ticks"], pointer);
       const board = requireScoreboard(obj, pointer);
+      const tail = obj["ending_tail_ticks"];
+      if (tail !== undefined) {
+        if (typeof tail !== "number" || !Number.isInteger(tail) || tail <= 0) {
+          fail(
+            `${pointer}/ending_tail_ticks`,
+            `must be a positive integer, got ${describe(tail)}`,
+          );
+        }
+      }
       return {
         action: "assert-complete",
         objective: board.objective,
         value: board.value,
+        ...(tail !== undefined ? { endingTailTicks: tail as number } : {}),
       };
     }
     default:

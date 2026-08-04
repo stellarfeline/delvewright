@@ -102,6 +102,14 @@ pub struct CheckpointPlan {
     /// party rests at the affordance, not when the effect fires. `false` for a
     /// plain `set-checkpoint` (spec-0012), which is immediate.
     pub rest: bool,
+    /// The bonfire rest dialog's three strings, already resolved against the
+    /// compiler's canonical English (owner ruling 2026-08-03). Meaningless for a
+    /// plain `set-checkpoint`, which shows no dialog.
+    pub prompt: String,
+    /// The **rest and save** button label.
+    pub rest_label: String,
+    /// The **save only** button label.
+    pub save_label: String,
 }
 
 /// A resolved stage-5 `shortcut` (spec-0016 §2), collected in deterministic
@@ -463,6 +471,10 @@ pub struct OptionPlan {
     pub node_id: String,
     /// Button label.
     pub label: String,
+    /// The button's hover tooltip (DSL v0.8) — the full line the label captions.
+    /// `None` emits no `tooltip` key at all, so a campaign that authors none is
+    /// byte-identical to a pre-0.8 build.
+    pub tooltip: Option<String>,
     /// Navigation target node, if any.
     pub next: Option<String>,
     /// Objectives this option completes.
@@ -571,6 +583,23 @@ pub enum Step {
     },
 }
 
+impl Step {
+    /// The `obj/<id>` this step proves, when it stands for a DSL objective.
+    ///
+    /// `None` for the two path-frame steps (`select-class`, `assert-complete`),
+    /// which prove no objective of their own.
+    pub fn objective(&self) -> Option<&str> {
+        match self {
+            Step::TalkTo { objective_id, .. }
+            | Step::Reach { objective_id, .. }
+            | Step::Kill { objective_id, .. }
+            | Step::Collect { objective_id, .. }
+            | Step::Interact { objective_id, .. } => Some(objective_id.as_str()),
+            Step::SelectClass { .. } | Step::AssertComplete { .. } => None,
+        }
+    }
+}
+
 /// The **party holder** (spec-0018): the single fake player that carries every
 /// shared progression score.
 ///
@@ -672,6 +701,22 @@ pub fn wave_counter(wave_id: &str) -> String {
 pub fn wave_tag(wave_id: &str) -> String {
     format!("dw_wave_{}", safe_local(wave_id))
 }
+
+/// The entity tag a **census brand** stamps on a wave's currently-living mobs
+/// (task #123). The harness applies it before a scripted death and reads it back
+/// after the re-seat: a mob still wearing it is, by identity and not by
+/// silhouette, one the previous life already fought.
+///
+/// Per wave rather than one shared brand, so branding one encounter can never
+/// colour a neighbouring wave's census.
+pub fn wave_brand_tag(wave_id: &str) -> String {
+    format!("dw_brand_{}", safe_local(wave_id))
+}
+
+/// Marker token for the per-wave census SUMMARY line (task #123).
+pub const MARKER_TOKEN_CENSUS: &str = "census";
+/// Marker token for one mob's line inside a census (task #123).
+pub const MARKER_TOKEN_CENSUS_MOB: &str = "censusmob";
 
 /// A stage-5 wave by id (v0.3).
 pub fn wave_of<'a>(campaign: &'a Campaign, wave_id: &str) -> Option<&'a delvewright_dsl::Wave> {
@@ -1091,7 +1136,12 @@ impl<'a> Plan<'a> {
             .collect::<Vec<_>>();
 
         // ---- critical path + inter-area transport ----
-        let cp = build_critical_path(campaign, &anchors, &npcs)?;
+        let cp = build_critical_path(
+            campaign,
+            &anchors,
+            &npcs,
+            &crate::flow::Flow::new(campaign).playthrough(),
+        )?;
 
         // ---- v0.6 checkpoints + stealth beats (spec-0012 / spec-0014) ----
         let (checkpoints, stealth_beats) = collect_v06_effects(campaign, &anchors, &cp.obj_step);
@@ -1173,6 +1223,27 @@ impl<'a> Plan<'a> {
             strict_ancestor_steps,
             massing_bounds,
         })
+    }
+
+    /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).
+    ///
+    /// The same [`build_critical_path`] the exported `critical-path.json` is made
+    /// of, driven by the playthrough of the world that realizes a branch instead
+    /// of the default one. That identity is the point: a branch run must walk
+    /// steps of exactly the shape the ladder already proves, or "branch coverage"
+    /// would mean coverage of a second, less-tested contract. The branch's
+    /// **scripted dialogue choices are inside the result** — each `talk-to` step
+    /// carries the `/trigger` line of the option that belongs to THIS branch,
+    /// which is the only player-legal way to actuate a server-driven dialog
+    /// button (mineflayer cannot click one).
+    ///
+    /// Not called for an unreachable branch: there is no world to walk, and
+    /// `DW0482` has already failed the build.
+    pub fn branch_critical_path(
+        &self,
+        path: &crate::flow::Playthrough,
+    ) -> Result<CriticalPath, PlanError> {
+        build_critical_path(self.campaign, &self.anchors, &self.npcs, path)
     }
 
     /// Whether a gate firing at critical-path step `g` is guaranteed to have fired
@@ -1303,6 +1374,61 @@ impl<'a> Plan<'a> {
     /// Every collected bonfire (spec-0016 §1), content-ordered.
     pub fn bonfires(&self) -> impl Iterator<Item = &CheckpointPlan> {
         self.checkpoints.iter().filter(|c| c.rest)
+    }
+
+    /// Translate a [`Self::critical_path`] index into the index the SAME step
+    /// carries in the **exported** `critical-path.json`.
+    ///
+    /// Two coordinate systems came into existence the moment spec-0016 §1's rest
+    /// splice landed: `critical_path` is the compiler's own list — what every
+    /// `CheckpointPlan::fire_step`, every nav proof and every internal index
+    /// means — while the exported path additionally carries one `rest` step
+    /// after the beat that arms each bonfire. They drift by exactly one per
+    /// bonfire armed strictly earlier, and a consumer that mixed them read the
+    /// wrong step (the combat plan's `step` claimed to be a `critical-path.json`
+    /// index while being a `critical_path` one).
+    ///
+    /// **Every artifact a harness reads states EXPORTED coordinates**, and this
+    /// is where that translation lives for the MAIN path.
+    ///
+    /// **Scope — the main `critical-path.json` only.** spec-0025's per-branch
+    /// paths are a different *sequence* of the same steps, so an index cannot be
+    /// carried across at all; `emit::rest_step_index` is the general translation
+    /// and goes through the **objective** the arming beat names, because a fire
+    /// is armed by a beat rather than by a position. On the main path that
+    /// translation is the identity (an objective appears at exactly one step),
+    /// which is precisely what makes the count below correct here and nowhere
+    /// else. A branch-path consumer must use `rest_step_index`, never this.
+    ///
+    /// The arithmetic mirrors `emit::with_bonfire_rest_steps` by construction —
+    /// a rest for bonfire `b` is pushed after the step at `b.fire_step`, so a
+    /// step at index `i` is preceded by one rest per bonfire with
+    /// `fire_step < i`. That agreement is not left to inspection:
+    /// `the_combat_plan_step_indexes_the_exported_path` pins the two together
+    /// against the real emitted documents (the step the plan points at must BE
+    /// the encounter's kill), so a future change to the splice fails the test
+    /// rather than silently desynchronising this.
+    ///
+    /// Identity for a campaign with no bonfire.
+    pub fn exported_step(&self, step: usize) -> usize {
+        step + self.bonfires().filter(|b| b.fire_step < step).count()
+    }
+
+    /// Every class-kit **flask** (DSL v0.8, spec-0016 §1): `(class index, kit
+    /// index)` pairs in declaration order — the recovery stacks a bonfire rest
+    /// replenishes to their declared `count`. Empty for a campaign that declares
+    /// none, which is exactly the campaigns whose emission stays byte-identical
+    /// (`DW0476` guarantees a bonfire campaign is never in that set).
+    pub fn flasks(&self) -> Vec<(usize, usize)> {
+        let mut out = Vec::new();
+        for (i, class) in self.campaign.classes.content.classes.iter().enumerate() {
+            for (k, item) in class.kit.iter().enumerate() {
+                if item.flask {
+                    out.push((i, k));
+                }
+            }
+        }
+        out
     }
 
     /// The collected stealth beat matching a `begin-stealth` effect (by zone
@@ -1510,6 +1636,7 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
                 n,
                 node_id: node.id.as_str().to_string(),
                 label: opt.label.clone(),
+                tooltip: opt.tooltip.clone(),
                 next: opt
                     .next
                     .as_ref()
@@ -1544,16 +1671,16 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
 }
 
 /// The computed critical path and its per-step metadata.
-struct CriticalPath {
-    steps: Vec<Step>,
-    transport: TransportMap,
-    transport_by_step: Vec<Option<[i32; 3]>>,
-    sneak_by_step: Vec<bool>,
-    cutscene_by_step: Vec<Option<u32>>,
+pub struct CriticalPath {
+    pub steps: Vec<Step>,
+    pub(crate) transport: TransportMap,
+    pub transport_by_step: Vec<Option<[i32; 3]>>,
+    pub sneak_by_step: Vec<bool>,
+    pub cutscene_by_step: Vec<Option<u32>>,
     /// Objective id → its `critical_path` step index (v0.6): roots the checkpoint
     /// no-stranding proof (DW0315) and the stealth-zone reachability proof
     /// (DW0327) at the beat that fires the effect.
-    obj_step: BTreeMap<String, usize>,
+    pub(crate) obj_step: BTreeMap<String, usize>,
 }
 
 /// Build the critical path: select first class, then each objective of the
@@ -1573,6 +1700,7 @@ fn build_critical_path(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     npcs: &[NpcPlan],
+    path: &crate::flow::Playthrough,
 ) -> Result<CriticalPath, PlanError> {
     let mut steps = Vec::new();
     // (objective id, physical area, step index) in critical-path order, for the
@@ -1589,9 +1717,11 @@ fn build_critical_path(
 
     // The branch-coherent playthrough: one world's completing quests in
     // `depends_on` order, their objectives in `after` order, and the dialogue
-    // option each `talk-to` takes on that branch.
-    let flow = crate::flow::Flow::new(campaign);
-    let path = flow.playthrough();
+    // option each `talk-to` takes on that branch. Supplied by the caller so the
+    // same builder serves the exported path (the default playthrough) and the
+    // spec-0025 per-branch paths (the playthrough of the world realizing a
+    // branch) — one code path, so a branch run walks steps built exactly like
+    // the ones the ladder has always walked.
     if path.cyclic {
         return Err(PlanError::new(
             DW_BUILD,
@@ -1926,7 +2056,7 @@ fn collect_v06_effects(
             for opt in &node.options {
                 for eff in &opt.effects {
                     if let Some((anchor, on_respawn)) = eff.set_checkpoint() {
-                        c.push_checkpoint(anchor.as_str(), on_respawn, step, false);
+                        c.push_checkpoint(anchor.as_str(), on_respawn, step, false, None);
                     }
                 }
             }
@@ -2334,8 +2464,14 @@ impl V06Collector<'_> {
         on_respawn: &[QuestEffect],
         fire_step: usize,
         rest: bool,
+        labels: Option<delvewright_dsl::BonfireLabels<'_>>,
     ) {
         if let Some(pos) = point_any(self.anchors, anchor) {
+            let labels = labels.unwrap_or(delvewright_dsl::BonfireLabels {
+                prompt: None,
+                rest_label: None,
+                save_label: None,
+            });
             self.checkpoints.push(CheckpointPlan {
                 index: self.checkpoints.len(),
                 anchor: anchor.to_string(),
@@ -2343,6 +2479,9 @@ impl V06Collector<'_> {
                 on_respawn: on_respawn.to_vec(),
                 fire_step,
                 rest,
+                prompt: labels.prompt_or_default().to_string(),
+                rest_label: labels.rest_or_default().to_string(),
+                save_label: labels.save_or_default().to_string(),
             });
         }
     }
@@ -2375,12 +2514,18 @@ impl V06Collector<'_> {
 
     fn handle(&mut self, eff: &QuestEffect, fire_step: usize) {
         if let Some((anchor, on_respawn)) = eff.set_checkpoint() {
-            self.push_checkpoint(anchor.as_str(), on_respawn, fire_step, false);
+            self.push_checkpoint(anchor.as_str(), on_respawn, fire_step, false, None);
         } else if let Some((anchor, on_rest)) = eff.bonfire() {
             // A bonfire IS a checkpoint (spec-0016 §1) — it inherits DW0315 /
             // DW0316 by being collected here. It is rooted at the arming step,
             // the earliest beat a rest can happen.
-            self.push_checkpoint(anchor.as_str(), on_rest, fire_step, true);
+            self.push_checkpoint(
+                anchor.as_str(),
+                on_rest,
+                fire_step,
+                true,
+                eff.bonfire_labels(),
+            );
         } else if let Some((zones, on_caught, grace)) = eff.begin_stealth() {
             self.push_stealth(zones, on_caught, grace, fire_step);
         } else if matches!(eff, QuestEffect::EndStealth) {

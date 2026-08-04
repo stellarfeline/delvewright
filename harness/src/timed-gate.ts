@@ -43,6 +43,95 @@ export const PLAYER_OCCUPANCY = 2;
 /** Poll interval when watching a gate region's blocks for an open/closed edge. */
 export const GATE_POLL_MS = 100;
 
+/**
+ * Walking pace assumed when charging a crossing against an open window, in ms per
+ * block. Vanilla walking covers a block in ~232 ms (4.317 b/s) and the pathfinder
+ * sprints where it can; 250 ms/block is deliberately the SLOW estimate, so the
+ * margin check under-promises — a window judged wide enough really is.
+ */
+export const WALK_MS_PER_BLOCK = 250;
+
+/**
+ * Fixed latency charged against an open window before the bot is assumed to be
+ * moving: the {@link GATE_POLL_MS} edge-detection lag plus pathfinder spin-up for
+ * the (short, mouth-to-mouth) crossing hop.
+ */
+export const GATE_ENTRY_LATENCY_MS = 500;
+
+/** The open half of `gate`'s cycle, in milliseconds. */
+export function openMs(gate: TimedGate): number {
+  return (gate.openTicks / TICKS_PER_SECOND) * 1_000;
+}
+
+/**
+ * Conservative wall-clock cost of crossing from feet cell `from` to feet cell `to`:
+ * entry latency plus the straight-line distance at a walking pace. Both cells are
+ * gate-mouth cells the compiler pinned flanking the region (waypoints.rs
+ * `gate_mouth_cells`), so the distance IS the span the open window must admit —
+ * approach hops before the mouth are never charged against the window.
+ */
+export function crossingEstimateMs(from: Vec3Tuple, to: Vec3Tuple): number {
+  const dist = Math.hypot(to[0]! - from[0]!, to[1]! - from[1]!, to[2]! - from[2]!);
+  return Math.ceil(GATE_ENTRY_LATENCY_MS + dist * WALK_MS_PER_BLOCK);
+}
+
+/**
+ * Whether the straight feet-cell segment `from` → `to` puts the player's body inside
+ * `gate`'s region at any point — i.e. whether this HOP is the crossing. The segment
+ * between cell centers is sampled at sub-block resolution (deterministic), and each
+ * sampled feet cell is tested with the same body-occupancy model the compiler marks
+ * crossings with ({@link insideGate} / waypoints.rs `occupies_gate`).
+ *
+ * The straight segment is the honest model here: the compiler force-keeps the two
+ * cells flanking every crossing (the gate "mouth") as waypoints, and consecutive
+ * kept cells stay a straight constant-delta run — so the hop that crosses a gate is
+ * exactly the straight mouth-to-mouth hop. A hop this reports `false` for can still
+ * be handled by the reactive retry path; it just is not STAGED.
+ */
+export function hopCrossesGate(from: Vec3Tuple, to: Vec3Tuple, gate: TimedGate): boolean {
+  const dx = to[0]! - from[0]!;
+  const dy = to[1]! - from[1]!;
+  const dz = to[2]! - from[2]!;
+  const steps = 4 * Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz))));
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const cell: Vec3Tuple = [
+      Math.floor(from[0]! + 0.5 + dx * t),
+      Math.floor(from[1]! + dy * t),
+      Math.floor(from[2]! + 0.5 + dz * t),
+    ];
+    if (insideGate(cell, gate)) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether feet cell `cell` counts as AT `target` — the same tolerance a range-1
+ * hop arrival has (horizontal `dx² + dz² ≤ 2`, `|dy| ≤ 2`). Used to detect a bot
+ * that DRIFTED off its gate staging cell while waiting for a window: the tide-mill
+ * corridor is flowing water, and an idle bot in a current is carried away from the
+ * mouth the compiler pinned (a walking bot fights the current; an idle one does
+ * not). `false` for an unknown position — an unverifiable station is not a station.
+ */
+export function nearCell(cell: Vec3Tuple | undefined, target: Vec3Tuple): boolean {
+  if (!cell) return false;
+  const dx = cell[0]! - target[0]!;
+  const dy = cell[1]! - target[1]!;
+  const dz = cell[2]! - target[2]!;
+  return dx * dx + dz * dz <= 2 && Math.abs(dy) <= 2;
+}
+
+/** The subset of `gates` whose straight segment `from` → `to` crosses (see
+ * {@link hopCrossesGate}). Order-preserving; empty when `from` is unknown. */
+export function gatesCrossedByHop(
+  from: Vec3Tuple | undefined,
+  to: Vec3Tuple,
+  gates: readonly TimedGate[],
+): readonly TimedGate[] {
+  if (!from) return [];
+  return gates.filter((g) => hopCrossesGate(from, to, g));
+}
+
 /** One full open+closed cycle of `gate`, in ticks. */
 export function cycleTicks(gate: TimedGate): number {
   return gate.openTicks + gate.closedTicks;

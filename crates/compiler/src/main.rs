@@ -541,6 +541,14 @@ fn validate_loaded(
             diags.extend(delvewright_compiler::textfit::check_text_fits(
                 &campaign, &sidecars,
             ));
+            // Dialogue option labels that overrun their dialog button (DW0331).
+            // Error tier, unlike DW0330: the 150-GUI-px button is the geometry of
+            // the dialog this compiler emits, not a guess about the player's
+            // window, so an over-wide caption provably scrolls in game. Runs over
+            // the English source and every declared-language sidecar rendition.
+            diags.extend(delvewright_compiler::textfit::check_option_labels(
+                &campaign, &sidecars,
+            ));
             // v0.6 `close-gate` gate-block declaration (DW0343): the fill block is
             // prefab metadata, so this compiler-side check runs here (validation
             // tier). No-op for a campaign that uses no `close-gate`.
@@ -560,6 +568,12 @@ fn validate_loaded(
             // effect history. Error tier, except the pre-0.7 deprecation window
             // (DW0465) and the staleness lint (DW0467), which warn.
             diags.extend(delvewright_compiler::cast::check_cast(&campaign));
+            // spec-0025 (DSL v0.8): branch-complete narrative verification. Every
+            // declared branch is enumerated and every static proof re-run under
+            // its flag assignment — terminality, cast continuity, exclusive-content
+            // leakage, hard event contradictions — plus the forcing function that
+            // every story node says what it does to the story. No-op below 0.8.0.
+            diags.extend(delvewright_compiler::branch::check_branches(&campaign));
             print_diags(&diags, json);
             Ok(Validated {
                 campaign,
