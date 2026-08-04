@@ -400,6 +400,15 @@ Load-bearing patterns proven on real runs — reuse rather than rediscover:
   crosses areas — the player *cannot* walk back, so "the boulder seals the cave" is
   enforced by geometry, not merely asserted. The return trip is the same mechanism
   in reverse.
+- **A sealed gate answers a right-click by itself — never build the hint by hand.**
+  `close-gate` arms the sealed region so pressing it puts a line on the presser's
+  actionbar; `sealed_hint` on the effect is only the *wording* (unauthored, the
+  compiler says "The way is sealed."). Do **not** add a `use` trigger on the gate
+  anchor to get this — that is the co-located second hitbox the compiler now
+  rejects (`DW0422`). A `strike`/`use` trigger anchored on the gate anchor is still
+  legitimate for a *different* line (it rides the seal's own hitboxes and is live
+  only while the gate is sealed); two `close-gate`s on one anchor must agree on the
+  wording (`DW0423`).
 
 ### Authoring tools (know these exist; reach for them by symptom)
 

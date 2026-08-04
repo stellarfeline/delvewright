@@ -2754,6 +2754,19 @@ pub enum QuestEffect {
         /// never move because a beat gained a line of prose.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         happening: Option<Happening>,
+        /// What the seal *says* when a player right-clicks it (DSL v0.8; reserved
+        /// `DW0141` earlier). A sealed gate is a wall the party will walk back to
+        /// and press: the compiler answers that press on the actionbar. Absent, the
+        /// compiler's canonical English is baked in (`The way is sealed.`) exactly
+        /// as `world.boundary.message` does; authored, the line is l10n-inventoried
+        /// under `<effect-key>.sealed_hint` and translates like every other
+        /// player-visible string.
+        ///
+        /// Unlike `happening`, this **does** print in the hand-written `Debug`
+        /// below when present — it changes emission, so two otherwise-identical
+        /// sequences that differ only in their seal's answer are different content.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sealed_hint: Option<String>,
     },
     /// Marks the campaign complete (final advancement + credits). Terminal — not
     /// flag-gatable (gating the campaign's own completion is a deadlock footgun),
@@ -3346,14 +3359,23 @@ impl std::fmt::Debug for QuestEffect {
                 anchor,
                 requires_flags,
                 forbids_flags,
+                sealed_hint,
                 ..
-            } => ff(
-                f.debug_struct("CloseGate")
-                    .field("anchor", anchor)
-                    .field("requires_flags", requires_flags),
-                forbids_flags,
-            )
-            .finish(),
+            } => {
+                let mut s = f.debug_struct("CloseGate");
+                let d = ff(
+                    s.field("anchor", anchor)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                );
+                // Prints only when authored (the additive-field rule): a campaign
+                // that takes the compiler's canonical seal line renders exactly as
+                // the pre-0.8 derive did, so no existing `seq_<hash>` moves.
+                match sealed_hint {
+                    Some(h) => d.field("sealed_hint", h).finish(),
+                    None => d.finish(),
+                }
+            }
             QuestEffect::CampaignComplete { .. } => f.write_str("CampaignComplete"),
             QuestEffect::GiveItem {
                 item,
@@ -4102,6 +4124,16 @@ impl QuestEffect {
     pub fn close_gate_anchor(&self) -> Option<&AnchorId> {
         match self {
             QuestEffect::CloseGate { anchor, .. } => Some(anchor),
+            _ => None,
+        }
+    }
+
+    /// The authored `sealed_hint` if this is a `close-gate` that declares one (DSL
+    /// v0.8). `None` for every other effect **and** for a `close-gate` that takes
+    /// the compiler's canonical English seal line.
+    pub fn close_gate_sealed_hint(&self) -> Option<&str> {
+        match self {
+            QuestEffect::CloseGate { sealed_hint, .. } => sealed_hint.as_deref(),
             _ => None,
         }
     }

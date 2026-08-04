@@ -35,6 +35,7 @@
 //! | `wave.<wave>.mob.<i>.name` | a wave mob's custom `name` (only if set) |
 //! | `fx.…​.narrate` / `fx.…​.give` | a `narrate` line / named `give-item` in an effect list |
 //! | `fx.…​.rest_prompt` / `.rest_label` / `.save_label` | a `bonfire`'s authored rest-dialog strings (v0.8, only if set) |
+//! | `fx.…​.sealed_hint` | a `close-gate`'s authored answer to a right-click on the seal (v0.8, only if set) |
 //!
 //! ## Nested effects (DSL v0.6)
 //!
@@ -91,6 +92,14 @@ fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, 
                 f(&format!("{keybase}.save_label"), s);
             }
         }
+        // DSL v0.8: what a sealed gate answers when the party right-clicks it. Read
+        // off the actionbar exactly like a `narrate`, so it translates like one. An
+        // unauthored hint is absent from the inventory — the compiler bakes its
+        // canonical English, exactly as `world.boundary.message` does.
+        QuestEffect::CloseGate {
+            sealed_hint: Some(h),
+            ..
+        } => f(&format!("{keybase}.sealed_hint"), h),
         _ => {}
     }
 }

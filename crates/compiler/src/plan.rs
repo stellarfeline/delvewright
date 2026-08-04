@@ -136,6 +136,65 @@ pub struct ShortcutPlan {
     pub on_unlock: Vec<QuestEffect>,
 }
 
+/// The compiler's canonical English answer a sealed gate gives a right-click
+/// when the `close-gate` authors no `sealed_hint` (English-first, CLAUDE.md
+/// language policy — baked at emit time exactly as the boundary return message
+/// is, so it is not l10n-inventoried).
+///
+/// The owner's island finding #34: a sealed boulder answered a right-click with
+/// SILENCE. There is no such thing as a seal with nothing to say, so the answer
+/// is the compiler's obligation and the authored line is only the wording.
+pub const SEAL_HINT_DEFAULT: &str = "The way is sealed.";
+
+/// A gate anchor that some `close-gate` seals, and the line the seal answers a
+/// right-click with (DSL v0.8, task #142). One entry per **anchor**: the seal is
+/// a place, not an event, so two `close-gate`s on one anchor share its hitboxes
+/// and must agree on the wording (`DW0423`).
+#[derive(Clone, Debug)]
+pub struct SealHintPlan {
+    /// The gate anchor name (`anchor/boulder`).
+    pub anchor: String,
+    /// The function/tag-safe local id, used for `dw_seal_<safe>`.
+    pub safe: String,
+    /// The gate region's inclusive corners (absolute world coords).
+    pub region: ([i32; 3], [i32; 3]),
+    /// The block the region is filled with while sealed (the generated PackTest
+    /// stages and un-stages the seal with it).
+    pub block: String,
+    /// The line the seal answers with — authored, or [`SEAL_HINT_DEFAULT`].
+    pub text: String,
+}
+
+impl SealHintPlan {
+    /// The **shell** cells of the seal: every region cell with at least one
+    /// axis-neighbour outside the region, in ascending `(x, y, z)` order.
+    ///
+    /// A cell buried inside the region has six sealed neighbours, so no face of
+    /// it can ever be in a player's crosshair — giving it a hitbox would ship an
+    /// entity nothing can reach. The shell is exactly the clickable surface, and
+    /// for the thin slab a gate anchor usually is (a doorway one block deep) it
+    /// is the whole region.
+    pub fn shell_cells(&self) -> Vec<[i32; 3]> {
+        let (a, b) = self.region;
+        let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
+        let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
+        let mut out = Vec::new();
+        for x in lo[0]..=hi[0] {
+            for y in lo[1]..=hi[1] {
+                for z in lo[2]..=hi[2] {
+                    let interior = (lo[0] < x && x < hi[0])
+                        && (lo[1] < y && y < hi[1])
+                        && (lo[2] < z && z < hi[2]);
+                    if !interior {
+                        out.push([x, y, z]);
+                    }
+                }
+            }
+        }
+        out
+    }
+}
+
 /// A resolved stage-5 `timed-gate` (spec-0016 §4), in declared order.
 #[derive(Clone, Debug)]
 pub struct TimedGatePlan {
@@ -347,6 +406,10 @@ pub struct Plan<'a> {
     pub ambushes: Vec<AmbushPlan>,
     /// Resolved timed gates (spec-0016 §4), declaration-ordered.
     pub timed_gates: Vec<TimedGatePlan>,
+    /// One entry per gate anchor some `close-gate` seals (DSL v0.8, task #142),
+    /// in first-firing order — the seal the party can press for an answer. Empty
+    /// for a campaign that never seals a gate.
+    pub seal_hints: Vec<SealHintPlan>,
     /// Resolved gate open/close firings (DSL v0.6), content-ordered — drives the
     /// `close-gate` completability model in `crate::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
@@ -1181,6 +1244,9 @@ impl<'a> Plan<'a> {
             })
             .collect();
 
+        // ---- v0.8 seal hints (task #142): what a sealed gate answers ----
+        let seal_hints = collect_seal_hints(campaign, &anchors);
+
         // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
         let mut gate_events = collect_gate_events(campaign, &anchors, &objective_steps);
         // A shortcut gate is sealed from world-load and is opened only by an
@@ -1219,6 +1285,7 @@ impl<'a> Plan<'a> {
             loot,
             ambushes,
             timed_gates,
+            seal_hints,
             gate_events,
             strict_ancestor_steps,
             massing_bounds,
@@ -2175,6 +2242,67 @@ fn collect_ambushes(
             at,
             actor_cells,
         });
+    }
+    out
+}
+
+/// Collect one [`SealHintPlan`] per gate anchor that any `close-gate` seals (DSL
+/// v0.8, task #142), in first-firing order — the same deterministic traversal
+/// [`collect_gate_events`] uses, descending every nested effect list so a
+/// `close-gate` buried in a `sequence` step is registered like a top-level one.
+///
+/// A repeat of an anchor already collected is dropped: the seal is a **place**,
+/// so its hitboxes and its answer belong to the anchor, not to each firing. When
+/// two firings disagree about the wording, `gates::check_seal_hints` (`DW0423`)
+/// has already rejected the campaign — here the first-firing text wins.
+///
+/// A `close-gate` whose anchor is not a resolvable gate region carries no entry
+/// (`DW0343` owns that).
+fn collect_seal_hints(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+) -> Vec<SealHintPlan> {
+    let mut out: Vec<SealHintPlan> = Vec::new();
+    for eff in all_campaign_effects_ordered(campaign) {
+        eff.visit_deep(&mut |e| {
+            let Some(anchor) = e.close_gate_anchor() else {
+                return;
+            };
+            let name = anchor.as_str();
+            if out.iter().any(|s| s.anchor == name) {
+                return;
+            }
+            let Some((from, to, block)) = gate_region_block_any(anchors, name) else {
+                return;
+            };
+            out.push(SealHintPlan {
+                anchor: name.to_string(),
+                safe: safe_local(name),
+                region: (from, to),
+                block,
+                text: e
+                    .close_gate_sealed_hint()
+                    .unwrap_or(SEAL_HINT_DEFAULT)
+                    .to_string(),
+            });
+        });
+    }
+    out
+}
+
+/// Every quest/trigger effect of the campaign in one fixed order — quest
+/// `on_objective_complete` (a `BTreeMap`, so key-ordered), then `on_complete`,
+/// then environment triggers. Top-level only; callers descend nesting themselves.
+fn all_campaign_effects_ordered(campaign: &Campaign) -> Vec<&QuestEffect> {
+    let mut out = Vec::new();
+    for q in &campaign.quests.content.quests {
+        for effs in q.on_objective_complete.values() {
+            out.extend(effs.iter());
+        }
+        out.extend(q.on_complete.iter());
+    }
+    for t in &campaign.quests.content.triggers {
+        out.extend(t.effects.iter());
     }
     out
 }

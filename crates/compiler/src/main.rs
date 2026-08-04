@@ -555,6 +555,9 @@ fn validate_loaded(
             diags.extend(delvewright_compiler::gates::check_close_gates(
                 &campaign, &prefabs,
             ));
+            // v0.8 seal answers (DW0423): one gate anchor, one `sealed_hint`
+            // wording. No-op for a campaign that authors none.
+            diags.extend(delvewright_compiler::gates::check_seal_hints(&campaign));
             // NPC location-continuity lint (DW0351). Advisory tier — a warning
             // names a staging discontinuity (an NPC materializing or vanishing
             // away from where it was last staged) but never fails the run:
