@@ -6868,6 +6868,67 @@ const NIGHT_VISION_PERIOD_TICKS: u32 = 20;
 /// for other reasons.
 const NIGHT_VISION_SECONDS: u32 = 12;
 
+/// Vanilla's night-vision wind-down, in **seconds**. `GameRenderer` ramps the
+/// brightness down once the remaining duration drops below 200 ticks, so an
+/// effect that has less than this left is *already* visibly flickering even
+/// though it has not expired.
+const NIGHT_VISION_FLICKER_SECONDS: u32 = 10;
+
+/// The lease every `effect give` hands out, in seconds.
+///
+/// **The camera-coverage guarantee** (owner ruling, island round 16): a vision
+/// effect the compiler grants must outlast any authored camera it can overlap,
+/// with vanilla's flicker window to spare.
+///
+/// The mitigation is declared per area and re-applied by a 1 s clock to the
+/// players *inside that area's box*. A player who leaves the box keeps whatever
+/// is left of their lease — and the island's ending does exactly that: boarding
+/// transports the party from the mitigated island to `area/open-sea` at x=256
+/// and immediately plays a 15-second cutscene. They arrived holding at most 12 s,
+/// so the ramp began ~1.5 s in and the effect died mid-shot. Owner playtest:
+/// "the night-vision effect expires mid-ending-cutscene and flickers."
+///
+/// **Why the lease, and not a re-grant at the cutscene.** Re-applying the effect
+/// from the cutscene driver would light up *every* player in *every* cutscene,
+/// including ones who were never granted sight and cameras the author framed as
+/// bright — a spectator on a night ocean would be handed cave vision. Vanilla has
+/// no "extend only if present" primitive to do it selectively. Lengthening the
+/// lease changes **who** has the effect not at all; it only makes the lease a
+/// leaving player already holds long enough that no camera can outlive it.
+///
+/// **Why the campaign's longest camera.** The compiler cannot know which cutscene
+/// a player who steps out of a mitigated area will land in, so the only sound
+/// bound is the longest one the campaign authors. Sized to that plus the flicker
+/// window plus one clock period, so the remaining duration is still above the
+/// ramp threshold when the last shot ends.
+///
+/// The cost is stated rather than hidden: sight trails a player out of a
+/// mitigated area for this long. That is the deliberate trade the pre-existing
+/// 12 s already made for the same reason (no vanilla primitive strips an effect
+/// on region exit without also stripping effects the story granted); this only
+/// moves the number, and only for a campaign that authors a longer camera than
+/// the floor.
+fn night_vision_seconds(plan: &Plan) -> u32 {
+    // Measured from the ticks the camera driver really runs for
+    // (`camera::shot_ticks` resolves `shot_style` defaults and applies vanilla's
+    // per-shot clamp), so the bound is the emitted reality, not the authored
+    // intent. Rounded up to whole seconds, which is the unit `effect give` takes.
+    let longest_camera_ticks: i32 = all_campaign_effects(plan.campaign)
+        .into_iter()
+        .filter_map(|e| e.cutscene_shots())
+        .map(|shots| {
+            shots
+                .iter()
+                .map(|s| crate::camera::shot_ticks(s.resolved_seconds()))
+                .sum::<i32>()
+        })
+        .max()
+        .unwrap_or(0);
+    let longest_camera = (longest_camera_ticks.max(0) as u32).div_ceil(20);
+    NIGHT_VISION_SECONDS
+        .max(longest_camera + NIGHT_VISION_FLICKER_SECONDS + NIGHT_VISION_PERIOD_TICKS.div_ceil(20))
+}
+
 /// The v0.6 night-vision mitigation clock: for every area declaring
 /// `mitigation: "night-vision"`, a self-rescheduling 1 s function that gives
 /// `minecraft:night_vision` to the players inside **that area's placed bounds**.
@@ -6882,6 +6943,7 @@ const NIGHT_VISION_SECONDS: u32 = 12;
 /// no mitigation, keeping pre-0.6 output byte-identical.
 fn night_vision_fns(plan: &Plan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
+    let seconds = night_vision_seconds(plan);
     let mut gives: Vec<String> = Vec::new();
     for area in &plan.areas {
         let declared = plan
@@ -6897,7 +6959,7 @@ fn night_vision_fns(plan: &Plan) -> Vec<(String, String)> {
         }
         let (min, max) = area.bounds();
         gives.push(format!(
-            "effect give @a[x={},dx={},y={},dy={},z={},dz={}] minecraft:night_vision {NIGHT_VISION_SECONDS} 0 true",
+            "effect give @a[x={},dx={},y={},dy={},z={},dz={}] minecraft:night_vision {seconds} 0 true",
             min[0],
             max[0] - min[0] + 1,
             min[1],
