@@ -995,15 +995,23 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   rim subtends ~52°, so no fixed FOV frames floor + crest + sky). The Chunky
   scene emission honors `camera.fov` per shot (delve-render `scene.rs`,
   default 70 when absent). **Scene-rect interior continuity (the moat)**:
-  scene-rect columns with zero piece-authored blocks are filled with ambient
-  gap-floor ground (same world-noise dapple, so the pattern runs seamlessly
-  from the annulus gap floor through the interior) as row-strip tiles
-  (`horizon/valley/m<n>`, never carrying an air cell over a piece column);
-  attached at the `read_structures` choke point (the authored-column set
-  needs the piece bytes), so build, snapshot, blocking and the render plan
-  all see the completed surround; the un-climbability flood seeds on the
-  moat cells too. Columns with any authored block are untouched — pieces own
-  their columns. The snapshot palette carries explicit `cherry_leaves` /
+  scene-rect columns no piece FLOORS are filled with ambient gap-floor ground
+  (same world-noise dapple, so the pattern runs seamlessly from the annulus
+  gap floor through the interior) as row-strip tiles (`horizon/valley/m<n>`,
+  never carrying an air cell over a floored column); attached at the
+  `read_structures` choke point (the floored-column set needs the piece
+  bytes), so build, snapshot, blocking and the render plan all see the
+  completed surround; the un-climbability flood seeds on the moat cells too.
+  A column is **floored** when a placed piece authors a block there at or
+  below the gap-floor top — rotation-aware, the same transform the voxel
+  model and vanilla `place template … <rotation>` apply. Floored columns are
+  untouched: the piece owns its ground, holes and basements included. A
+  column whose piece content is entirely ABOVE the gap floor is NOT floored
+  and IS filled (task #157 round 4): a vertical scene lifts later pieces
+  above the datum, and reading "authors anything anywhere in this column" as
+  ownership left the gap-floor plane void under every elevated footprint —
+  `DW0322` along each seam where filled ground met it (hollow-vigil
+  walls-down: 476 void columns, 159 bordering, 165 violations). The snapshot palette carries explicit `cherry_leaves` /
   `cherry_log` / `pink_petals` colors (task #157 round 3: the `_leaves`
   suffix family painted 2044 cherry cells oak-green). **Blossom is in the player's view**: a second Poisson
   pass stands trees on the inner slopes (sparse near

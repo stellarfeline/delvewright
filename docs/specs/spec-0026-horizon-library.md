@@ -209,15 +209,20 @@ checks **empirical geometry**, never metadata:
   profile runs unchanged on every axis, a band-floored axis ends full-height
   at its tile edge (no walkable shelf over the void), and DW0322/DW0369 hold
   purely by construction.
-- **Scene-rect interior continuity** (amendment, task #157 round 3 — planner
-  ruling): scene-rect columns with ZERO piece-authored blocks receive ambient
+- **Scene-rect interior continuity** (amendment, task #157 rounds 3–4 —
+  planner ruling): scene-rect columns no piece FLOORS receive ambient
   gap-floor ground at the gap-floor level with the gap floor's surface
   treatment, so the box-garden floor is continuous from gap floor to every
   piece footprint (the rect is the layout's bounding box, not its footprint —
   an irregular blob otherwise leaves a void moat inside its own rect).
-  Columns with any piece-authored block are untouched: pieces own their
-  columns; authored overhangs and voids are intentional. The empirical
-  containment proofs run over the filled cells.
+  A column is floored when a piece authors a block there **at or below the
+  gap-floor top**; floored columns are untouched (pieces own their ground,
+  holes and basements included). Round 4 correction: a column whose piece
+  content is entirely ABOVE the gap floor is NOT floored and IS filled — a
+  vertical scene lifts later pieces above the datum, and the round-3 reading
+  ("any authored block anywhere in the column") left the gap-floor plane void
+  under every elevated footprint. The empirical containment proofs run over
+  the filled cells.
 - Summit ("一览众山小"): max surround surface y < scene walk plane y is a hard
   clamp verified empirically; ≥1 gorge drop ≥ `min_drop` along the vista ring;
   everything within −64..320.
