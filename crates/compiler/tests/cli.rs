@@ -2002,6 +2002,116 @@ fn each_branch_gets_an_executable_path_in_the_critical_path_contract() {
     assert!(!tree.keys().any(|k| k.starts_with("datapack/branch")));
 }
 
+/// task #117: every REACHABLE branch gets its own waypoint artifact
+/// (`validation/branch-waypoints-<slug>.json`) in the `critical-path-waypoints`
+/// shape, derived from the branch's OWN path over the same assembled world its
+/// per-branch DW0311 proof ran over.
+///
+/// Two identities pin the derivation: the branch the exported path already walks
+/// gets **byte-identical** waypoints (same routes, same thinning), and a
+/// fork-divergent sibling gets waypoints whose leg destinations are ITS OWN step
+/// positions — never the exported path's, which is a different sequence whose
+/// origins/indices must not be inherited (the same trap `Plan::branch_gate_model`
+/// documents for gate fire-steps).
+#[test]
+fn each_reachable_branch_gets_its_own_waypoint_artifact() {
+    let fx = common::compiler_fixtures_dir().join("branch-two-endings");
+    let pf = common::prefabs_dir();
+    let out = tmp("branch-waypoints");
+    let r = delvec(&[
+        "build",
+        fx.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    assert_eq!(code(&r), 0, "build: {}", String::from_utf8_lossy(&r.stderr));
+    let tree = read_tree(&out);
+
+    // The branch the exported path walks: same routes, same bytes.
+    assert_eq!(
+        tree["validation/branch-waypoints-hold.json"],
+        tree["validation/critical-path-waypoints.json"],
+        "the branch the critical path already walks must get identical waypoints"
+    );
+
+    // The fork-divergent sibling: its legs follow ITS path, not the exported one.
+    assert_ne!(
+        tree["validation/branch-waypoints-bolt.json"],
+        tree["validation/critical-path-waypoints.json"],
+        "a fork-divergent branch must not inherit the exported path's legs"
+    );
+    let leg_destinations = |wp: &serde_json::Value| -> Vec<Vec<i64>> {
+        wp["legs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| {
+                l["to"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|n| n.as_i64().unwrap())
+                    .collect()
+            })
+            .collect()
+    };
+    let step_positions = |cp: &serde_json::Value| -> Vec<Vec<i64>> {
+        cp["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|s| s.get("pos"))
+            .map(|p| {
+                p.as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|n| n.as_i64().unwrap())
+                    .collect()
+            })
+            .collect()
+    };
+    for slug in ["hold", "bolt"] {
+        let wp: serde_json::Value =
+            serde_json::from_slice(&tree[&format!("validation/branch-waypoints-{slug}.json")])
+                .unwrap();
+        let cp: serde_json::Value =
+            serde_json::from_slice(&tree[&format!("validation/branch-path-{slug}.json")]).unwrap();
+        assert_eq!(wp["campaign_id"], "hello-world");
+        let legs = leg_destinations(&wp);
+        assert!(
+            !legs.is_empty(),
+            "{slug}: a branch with walked legs exports them"
+        );
+        let positions = step_positions(&cp);
+        for to in &legs {
+            assert!(
+                positions.contains(to),
+                "{slug}: leg destination {to:?} is not one of ITS OWN path's step \
+                 positions {positions:?} — the legs must follow the branch's own path"
+            );
+        }
+        // Every leg carries a non-empty proven polyline (the harness contract).
+        for l in wp["legs"].as_array().unwrap() {
+            assert!(!l["waypoints"].as_array().unwrap().is_empty());
+        }
+    }
+
+    // Validation metadata, hashed like the rest — never shipped gameplay.
+    let manifest: serde_json::Value = serde_json::from_slice(&tree["manifest.json"]).unwrap();
+    for f in [
+        "validation/branch-waypoints-hold.json",
+        "validation/branch-waypoints-bolt.json",
+    ] {
+        assert!(
+            manifest["outputs"].as_object().unwrap().contains_key(f),
+            "manifest does not hash {f}"
+        );
+    }
+    assert!(!tree.keys().any(|k| k.starts_with("datapack/branch")));
+}
+
 /// A campaign that declares no branch point emits no branch path — the whole
 /// harness tier is opt-in, and hello-world's output is untouched by spec-0025.
 #[test]

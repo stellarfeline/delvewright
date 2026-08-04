@@ -73,7 +73,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 7 | Assemble world model (placed pieces → voxel grid; ocean sea-level datum check) | `compiler::plan` | `DW030x`/`DW0344` (exit 3) |
 | 8 | Replay the stage-7 edit script over the assembled model (spec-0017; per-batch invariant re-proofs — trap-hardware integrity, gravity, relight, walkability, boundary safety, block support; plus the advisory gate-region check). Skipped entirely for a campaign without one (byte-identical). | `compiler::edit` | `DW0322`/`DW0323`/`DW0352`/`DW0354` + reused invariant codes, batch-attributed (tier per code); advisory `DW0353`/`DW0354` |
 | 9 | Assembled-light + relight (measure, place fixtures; over the **edited** model when a script exists) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
-| 10 | Nav checks (A* `move-npc`/`move-actor` (footprint-aware, each walk routed over its **own timeline's** gate state), cutscene clip (authored polyline + rendered keyframe chords) + angular budget, critical-path walkability — incl. relight fixtures + water flood; talk-to endpoint snap; waypoint self-check; POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone/onset + trap completability proofs; spec-0016 §6 TD lane polylines; spec-0016 §1 bonfire safe zone) — all over the **edited** model when a script exists | `compiler::nav` + `compiler::timeline` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0325`/`DW0327`/`DW0342`/`DW0347`/`DW0355`/`DW0386`/`DW0410`/`DW0430`/`DW0478`/`DW0724` (exit 3; `DW0342` → exit 2) |
+| 10 | Nav checks (A* `move-npc`/`move-actor` (footprint-aware, each walk routed over its **own timeline's** gate state), cutscene clip (authored polyline + rendered keyframe chords) + angular budget, critical-path walkability — incl. relight fixtures + water flood, and **per reachable branch** over each branch's own path under its own gate-seal step space (task #117); talk-to endpoint snap; waypoint self-check (critical path + per branch); POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone/onset + trap completability proofs; spec-0016 §6 TD lane polylines; spec-0016 §1 bonfire safe zone) — all over the **edited** model when a script exists | `compiler::nav` + `compiler::timeline` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0325`/`DW0327`/`DW0342`/`DW0347`/`DW0355`/`DW0386`/`DW0410`/`DW0430`/`DW0478`/`DW0724` (exit 3; `DW0342` → exit 2) |
 | 11 | Referential + placement seals inside emission: every anchor-bearing effect resolves (`DW0360`), no generated name collides (`DW0361`), no body eclipses an interaction affordance (`DW0359`, `compiler::eclipse`), no body occupies block geometry at its anchor or on any walked leg (`DW0450`/`DW0451`, `compiler::clearance`) | `compiler::emit` | `DW0359`/`DW0360`/`DW0361`/`DW0450` (exit 3); advisory `DW0451` |
 | 12 | Emit (datapack incl. the `world_edits` function, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
 
@@ -1110,6 +1110,29 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   for a campaign that declares `branch_points`, so nobody who has not opted in
   gains a file. Full description in §5 "DW048x — branch-complete narrative
   verification".
+- `<out>/validation/branch-waypoints-<branch>.json` (task #117): per REACHABLE
+  branch, the branch's own waypoint artifact, in exactly the
+  `critical-path-waypoints.json` shape (same corner thinning, same `use_gates`
+  force-keeps, same `timed_gates` table/marks) — its legs follow the branch's
+  **own** exported path, in that path's step order. Backed by a **per-branch
+  `DW0311`**: every walked leg of every reachable branch path is routed over the
+  assembled world under the branch's own causal gate seals before export, with
+  `gate_events` fire-steps and the strict-ancestor relation recomputed in the
+  branch path's own step space (`Plan::branch_gate_model`) — a branch path is a
+  different sequence, so default-path step indices are never carried across (the
+  same trap `emit::rest_step_index` documents for bonfires). Each branch's
+  routes also pass the `DW0314` standability self-check. Branch diagnostics are
+  prefixed ``branch `<id>`:``. The harness derives the filename from the
+  branch's `branch-path-<slug>.json` (one slug, one contract) and reports
+  **loudly** — stderr + a run-report finding — when a branch must walk without
+  it (single-goal fallback, terrain-flaky where waypointed navigation is
+  deterministic: the failure mode that broke 3 of 4 island branch runs).
+  Emitted only when the branch has walked legs and the campaign builds an
+  occupancy model, so everything else stays byte-identical. Remaining per-branch
+  proof scope (deliberately not yet quantified over branches): checkpoint
+  no-stranding (`DW0315`/`DW0316`), stealth (`DW0327`/`DW0355`), traps
+  (`DW0342`), shortcuts/ambush/timed-gate (`DW0373`–`DW0378`), stair
+  orientation (`DW0430`) — these still run on the default path only.
 - `<out>/validation/combat-plan.json` (spec-0023): the bot ladder's encounter
   table — one entry per **mandatory** encounter (a wave a `kill` step on the
   compiled critical path names), in path order, carrying `wave`, `objective`,
