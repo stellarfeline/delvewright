@@ -62,8 +62,10 @@ pub fn base_of(campaign: &Campaign) -> HorizonBase {
 /// unimplemented base as unreachable-after-validation.
 pub fn base_implemented(base: HorizonBase) -> bool {
     match base {
-        HorizonBase::Void | HorizonBase::Ocean | HorizonBase::Flatland => true,
-        HorizonBase::Sky | HorizonBase::Valley | HorizonBase::Summit => false,
+        HorizonBase::Void | HorizonBase::Ocean | HorizonBase::Flatland | HorizonBase::Valley => {
+            true
+        }
+        HorizonBase::Sky | HorizonBase::Summit => false,
     }
 }
 
@@ -100,6 +102,16 @@ pub const OCEAN_WALK_REF_Y: i32 = SEA_LEVEL + 1;
 /// every area — flatland relocates nothing, it just fills the world in.
 pub const FLATLAND_WALK_REF_Y: i32 = FLATLAND_SURFACE_Y + 1;
 
+/// The `valley` gap floor's top solid block (spec-0026 §1: the flat floor
+/// between the scene edge and the inner slopes). The valley ambient is void,
+/// so the floor y is a free convention — pinned to the flatland relationship
+/// (one block under `plan::BASE_Y`) so a valley, like flatland, relocates
+/// nothing relative to a `void` build; only the surround tiles differ.
+pub const VALLEY_GAP_FLOOR_TOP_Y: i32 = 63;
+
+/// The `valley` walk reference (spec-0026 §2): gap floor + 1.
+pub const VALLEY_WALK_REF_Y: i32 = VALLEY_GAP_FLOOR_TOP_Y + 1;
+
 /// The world y a placed piece's walk plane must land at under this horizon
 /// (spec-0026 §2), or `None` for `void` — the one base with no physical
 /// reference plane, where areas keep the historical `plan::BASE_Y` origin.
@@ -113,10 +125,10 @@ pub fn walk_ref_y(h: &ResolvedHorizon) -> Option<i32> {
         HorizonBase::Ocean => Some(OCEAN_WALK_REF_Y),
         HorizonBase::Flatland => Some(FLATLAND_WALK_REF_Y),
         HorizonBase::Sky => Some(h.float_y),
-        // Valley: gap floor + 1; Summit: plateau top + 1. The gap floor /
-        // plateau shell land with their surround generators (W-B/W-C); until
-        // then validation refuses these bases (`base_implemented`).
-        HorizonBase::Valley | HorizonBase::Summit => None,
+        HorizonBase::Valley => Some(VALLEY_WALK_REF_Y),
+        // Summit: plateau top + 1 — lands with its surround generator (W-C);
+        // until then validation refuses the base (`base_implemented`).
+        HorizonBase::Summit => None,
     }
 }
 

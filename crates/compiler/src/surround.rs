@@ -118,8 +118,15 @@ pub struct SurroundTile {
     pub size: [i32; 3],
 }
 
+/// `DW0369` (build, exit 3): the valley's inner slopes grew a standable
+/// staircase — a nav walk flood from the gap floor reached a column outward of
+/// the crest line, so the surround no longer bounds the delve. Proven over the
+/// assembled world (spec-0026 §5: empirical, never a slope-angle promise).
+pub const DW_VALLEY_CLIMB: &str = "DW0369";
+
 /// A biome-paint rectangle for the bootstrap `/fillbiome` pass (vanilla-native
 /// tint/ambience channel; spec-0026 §1 layering paragraph).
+#[derive(Clone)]
 pub struct BiomeRect {
     pub min: [i32; 3],
     pub max: [i32; 3],
@@ -1328,6 +1335,55 @@ mod tests {
         if let Err(cell) = v.verify_unclimbable(&world) {
             panic!("gap floor escapes the valley at {cell:?}");
         }
+    }
+
+    /// `DW0369` (spec-0026 §5): carving a 1-block staircase up the inner slope
+    /// is caught by the empirical nav flood — the check reads assembled
+    /// geometry, so a post-generation change (an edit batch, a settle) cannot
+    /// sneak a climbable wall past the even-step construction.
+    #[test]
+    fn a_carved_staircase_up_the_inner_slope_is_dw0369() {
+        assert_eq!(DW_VALLEY_CLIMB, "DW0369");
+        let s = SceneRect {
+            min_x: 0,
+            min_z: 0,
+            max_x: 47,
+            max_z: 47,
+        };
+        let v = generate_valley(31, s, 62, &ValleyParams::default()).unwrap();
+        let mut solid: BTreeSet<[i32; 3]> = BTreeSet::new();
+        for t in &v.tiles {
+            let d: fastnbt::Value = fastnbt::from_bytes(&gunzip(&t.bytes)).unwrap();
+            let (palette, blocks) = palette_and_blocks(&d);
+            for (pos, state) in blocks {
+                let name = &palette[state as usize];
+                if name.contains("short_grass")
+                    || name.contains("fern")
+                    || name.contains("pink_petals")
+                {
+                    continue;
+                }
+                solid.insert([t.pos[0] + pos[0], t.pos[1] + pos[1], t.pos[2] + pos[2]]);
+            }
+        }
+        // The saboteur: a stone stair climbing +1 per column from the gap
+        // floor straight out over the rim (what a careless edit batch or a
+        // future palette with stairs could produce).
+        let cz = 24;
+        for i in 0..40 {
+            solid.insert([48 + i, 62 + i, cz]);
+        }
+        let world = crate::nav::World::from_solid_cells(solid);
+        let err = v.verify_unclimbable(&world);
+        assert!(
+            err.is_err(),
+            "the carved staircase must be caught (would ship as {DW_VALLEY_CLIMB})"
+        );
+        let cell = err.unwrap_err();
+        assert!(
+            v.beyond_crest(cell[0], cell[2]),
+            "the reported cell {cell:?} must lie outward of the crest line"
+        );
     }
 
     #[test]

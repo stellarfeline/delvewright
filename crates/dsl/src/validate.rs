@@ -1150,11 +1150,11 @@ fn reserved_v06_effect_flags(c: &Campaign, d: &mut Vec<Diagnostic>) {
 ///
 /// 1. **v0.9 fence**: the object form and every base/shorthand beyond
 ///    `"void"`/`"ocean"` are `DW0141` below 0.9.0.
-/// 2. **Not-yet-landed bases**: `valley`/`summit`/`sky` (and the
-///    `cherry-valley` shorthand) parse at 0.9.0 but their surround generators
-///    have not landed in this delvec slice — `DW0141`, per the reserved-value
-///    precedent (npc `vendor`/`boss`), so the surface is reserved rather than
-///    silently mis-emitted. The follow-up slices delete these arms.
+/// 2. **Not-yet-landed bases**: `summit`/`sky` parse at 0.9.0 but their
+///    surround generators have not landed in this delvec slice — `DW0141`,
+///    per the reserved-value precedent (npc `vendor`/`boss`), so the surface
+///    is reserved rather than silently mis-emitted. The follow-up slices
+///    delete these arms (`valley`/`cherry-valley` landed with the W-B slice).
 /// 3. **`DW0366`**: params foreign to the declared base, and params out of
 ///    their spec-0026 range.
 /// 4. **`DW0320` generalized** (spec-0026 §5): every non-void base has an
@@ -1182,20 +1182,17 @@ fn horizon_rules(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let r = h.resolved();
 
     // Bases whose surround generator has not landed in this engine slice.
-    if matches!(
-        r.base,
-        HorizonBase::Sky | HorizonBase::Valley | HorizonBase::Summit
-    ) {
+    if matches!(r.base, HorizonBase::Sky | HorizonBase::Summit) {
         d.push(Diagnostic::error(
             codes::RESERVED,
             "world",
             path.clone(),
             format!(
-                "horizon base `{}` is reserved and not implemented in this delvec yet — the \
-                 spec-0026 foundation ships `void`, `ocean` and `flatland`; the \
-                 `valley`/`cherry-valley`, `summit` and `sky` surround generators land in \
-                 following slices. Use a landed base, or hold this campaign until the engine \
-                 ships the base (raising `dsl_version` further will not enable it)",
+                "horizon base `{}` is reserved and not implemented in this delvec yet — this \
+                 engine ships `void`, `ocean`, `flatland` and `valley` (incl. the \
+                 `cherry-valley` shorthand); the `summit` and `sky` surround generators land \
+                 in following slices. Use a landed base, or hold this campaign until the \
+                 engine ships the base (raising `dsl_version` further will not enable it)",
                 r.base.token()
             ),
         ));

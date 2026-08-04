@@ -954,9 +954,44 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 - The horizon model lives in **`compiler::horizon`** (spec-0026): resolved
   params, `walk_ref_y`, `flood_level`, the pinned `generator-settings`
   literals, and the slice status (`base_implemented`) that keys the DSL-layer
-  reserved-base rejection. Surround generators (valley/cherry, summit, sky
-  archipelago, flatland seam band) plug in per its module-doc contract; until
-  a base's generator lands, validation refuses the base (`DW0141` reserved).
+  reserved-base rejection. Surround generators (summit, sky archipelago,
+  flatland seam band) plug in per its module-doc contract; until a base's
+  generator lands, validation refuses the base (`DW0141` reserved). The
+  valley/cherry-valley generator landed with the W-B slice (below).
+- **`horizon: valley` / `cherry-valley` (v0.9, spec-0026 W-B).** The ambient is
+  the void superflat; the world the player sees is a **compiler-generated
+  surround**: a mountain annulus of total footprint `ratio`× the scene's union
+  XZ bounds (`ratio` 2..=3, default 2.5), with a flat walkable **gap floor**
+  (top y=63, so the valley walk reference is 64 — like flatland, a valley
+  relocates nothing relative to `void`), a domain-warped ridged-multifractal
+  rim (`rim_height` above the gap floor, default 48), and a seeded tree layer
+  (Bridson-family Poisson disk, trees only outward of the crest line — 树在山上,
+  never in the gap floor or scene). Generation is `compiler::surround`, seeded
+  from the campaign seed via stream `horizon/valley`; tiles are ≤48×48 XZ
+  (sliced ≤48 high), emitted as datapack structures under
+  `structure/horizon/valley/t<n>` and placed by the same
+  `forceload`/`place_all`/`place_verify` bootstrap as scene pieces, so the
+  assembled voxel model (nav, DW0322, gravity, snapshots) contains them. They
+  are **not** an `AreaPlacement`: boundary-region derivation, lighting scope,
+  anchors and analysis read `plan.areas` and never see the surround
+  (`Plan::placed_pieces` is the explicit placement/model iterator). The
+  **biome layer** paints the annulus per band in `setup_finish` via
+  `/fillbiome` (vanilla's own tint/ambience channel; `flora: oak` ⇒
+  `minecraft:windswept_forest`, `cherry` ⇒ `minecraft:cherry_grove`), wrapping
+  the pass in `gamerule max_block_modifications <largest band volume>` and
+  restoring the 32768 default after. **Un-climbability is proven, not
+  promised**: every surround surface is quantized to 2-block steps and a nav
+  flood from the gap floor must never stand outward of the crest line
+  (`DW0369`). **Cherry-valley is a parameter row, not a base**: one code path
+  with parallel flora/palette id tables; `tools/check-flora-parity.py` asserts
+  a same-seed cherry emission differs from the valley emission only in
+  flora/palette block ids + the biome id (`manifest.json`, a declaration
+  mirror, is exempt). The render plan gains one `vista` shot (scene edge
+  looking outward at the rim). *Degenerate-annulus note:* a scene too small
+  for the ring to rise (annulus side < gap 12 + slope run 18) legally yields a
+  floor-only surround — no rim, no trees; the spec-0013 boundary clock (which
+  every valley campaign must declare, `DW0320`) remains the enforcement, as it
+  is for every horizon.
 - `boundary` (v0.6, spec-0013) emits, in `setup_finish`: a `dw:region bounds`
   storage mirror (readable region contract), a `dw:cp pos` init to the spawn cell
   (shared with spec-0012 checkpoints — the last-checkpoint mirror the return
@@ -2263,6 +2298,8 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0362` | A dialogue node declares more than `MAX_GATED_DIALOGUE_OPTIONS` (10) conditionally-visible options (`requires_flags` / `forbids_flags` / a `complete-objective` effect). Vanilla cannot hide a `dialog` option, so the compiler encodes visibility by precomputing **every combination**: `n` gated options emit `2^n` dialog JSONs plus a `2^n`-clause dispatcher keyed on a `dw.dmask` bitmask. Ten is 1024 variants for one node — already an order of magnitude past anything authorable (the largest node in any shipped campaign gates four), and the point past which pack size rather than the author decides what the delve is. Behind the soft cap is a hard wall: the mask is built with `1u32 << i` (a debug-build **panic** at 32 — the original symptom) and compared against a Minecraft scoreboard, i.e. an `i32`. Build-tier (exit 3), `compiler::emit`; the message names the node and npc. Prescription: split the node into a short chain, or move some gating onto the objective that reaches it. |
 | `DW0363` | A trap declares a flag gate (`requires_flags` / `forbids_flags`) whose trigger hardware the compiler cannot remove and restore. Trap flag-gating is a **physical** gate: the trigger block leaves the world while the gate is shut and is put back verbatim (blockstate and all) when it opens, so it is only sound for a trigger whose entire state is the block — a pressure plate or a tripwire. A `trapped-chest` trigger carries a block entity with an inventory that removal would destroy, and a gated trap whose `anchor/trap` metadata declares no `trigger_block` names nothing the compiler could put back. Rejecting the gating surface for those cases is deliberate: the alternative is shipping the documented behaviour as folklore, which is exactly what happened before (the flag lists were planned and `DW0172`-checked but read by **no** emission site, so "inactive while the flag is set" did not exist). Build-tier (exit 3), `compiler::emit`. Prescription: declare the plate/tripwire as `trigger_block` on the anchor's prefab metadata (with its blockstate, as a gate anchor declares its fill `block`), switch the trap to a `pressure-plate`/`tripwire` trigger, or gate the story beat that arms the trap instead. |
 | `DW0359` | An NPC or actor **body** stands on, or immediately in front of, an interaction affordance the party has to click (owner island QA, round 7). Bodies are boxes: a mannequin wears its `base_entity`'s standing hitbox (`nav::entity_dims` — one dims table, shared with actor-footprint routing), or the player model's 0.6 × 1.8 when it declares a `skin`; every affordance the compiler summons is a `minecraft:interaction` of `width:1.0f,height:2.0f`, i.e. exactly its anchor cell's column two blocks tall. Five affordance sources, one shape: `interact` objectives, `use`/`strike` triggers, `bonfire` rest points, `shortcut` unlocks and trap `disarm` affordances. **Two tiers, one code**: **error (exit 3)** when the boxes overlap in all three axes — the client's ray-pick reaches the invulnerable body and the affordance can never be clicked, so a required objective is unreachable and the delve soft-locks; **advisory (exit 0)** when they are apart but within 1 block horizontally (Chebyshev) with overlapping vertical spans, because whether a neighbouring body actually shadows the crosshair depends on the approach angle the player takes, which the compiler cannot know. `compiler::eclipse`, run with the referential seals before any occupancy model (pure box arithmetic over resolved cells). This is the geometric statement of `DW0350`, which is symbolic (same anchor *name*) and sees only `use` triggers — an NPC body over an *objective's* affordance, or a 1.95-wide ravager's shoulder reaching into the cell next door, passed silently. It is the check the round-7 island needed: `npc/polyphemus`, a 0.9 × 2.9 warden on `anchor/fire-pit`, hid `obj/harden` and `obj/blind` behind itself. Two exemptions, both about not inventing certainty: a `strike` trigger on an NPC's own anchor summons **no** entity (it rides the NPC's hitbox — nothing to eclipse), and a body the campaign ever **moves** (`move-npc`/`move-actor`, any depth) is skipped, because a declared anchor is only a walker's starting mark and deciding "is it still there when the affordance goes live?" needs a timeline the compiler will not guess (known blind spot: a body walked *onto* an affordance, which wants a destination rule of its own). Prescription: move the body's anchor or the interaction's anchor 2+ blocks apart — **never** make the body intangible, which trades a dead objective for a character the party cannot talk to. |
+
+| `DW0369` | The valley horizon's inner slope grew a **standable staircase**: a nav walk flood seeded on every gap-floor cell stands on a column outward of the crest line, so the mountain annulus no longer bounds the delve (spec-0026 §5 — un-climbability is proven *empirically* over the assembled world, never promised by slope angle). The generator makes this impossible by construction — every surround surface height is quantized to 2-block steps (no 1-block riser exists anywhere on the annulus, and a player cannot step or jump 2) and trees are planted only outward of the crest line — so a red here means something *after* generation re-introduced a climb: a stage-7 edit batch carving steps into the slope, a gravity settle, or a future surround palette admitting stairs/slabs. Runs off the **edited** model when a stage-7 script exists. Build-tier (exit 3), `compiler::emit` (proof in `compiler::surround`). Prescription: move the offending edit off the surround, or break the riser chain it created (the message names the first escaped cell). |
 
 ### DW039x — shot calibration (`delvec calibrate`; spec-0019)
 

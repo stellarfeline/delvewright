@@ -954,6 +954,13 @@ fn read_structures(
     json: bool,
 ) -> Result<BTreeMap<String, Vec<u8>>, u8> {
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    // Compiler-generated surround tiles (spec-0026 §5) first: their
+    // `structure_file` keys never exist on disk — the plan carries the bytes.
+    if let Some(surround) = &plan.surround {
+        for (file, bytes) in &surround.structures {
+            structures.insert(file.clone(), bytes.clone());
+        }
+    }
     // Placed pieces, plus any structure a stage-7 `fragment` verb stamps that
     // no piece placed (spec-0017 PR 2) — the replay needs those bytes too.
     let mut files: Vec<String> = Vec::new();

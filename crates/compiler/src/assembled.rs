@@ -572,6 +572,29 @@ fn placed_blocks(
             }
         }
     }
+    // Horizon surround tiles (spec-0026 §5): placed pieces like any other —
+    // the voxel model, gravity settle, nav and every downstream proof see
+    // them. Unrotated, sealless, and outside every scene AABB by construction.
+    if let Some(surround) = &plan.surround {
+        for piece in &surround.pieces {
+            let Some(bytes) = structures.get(&piece.structure_file) else {
+                continue;
+            };
+            for (local, name, open) in structure_cells_stateful(bytes) {
+                let cell = [
+                    piece.pos[0] + local[0],
+                    piece.pos[1] + local[1],
+                    piece.pos[2] + local[2],
+                ];
+                if is_fence_gate(&name) && open == Some(true) {
+                    open_gates.insert(cell);
+                } else {
+                    open_gates.remove(&cell);
+                }
+                blocks.insert(cell, name);
+            }
+        }
+    }
     // Gate thresholds are passable (an open-gate effect fills them with air).
     for resolved in plan.anchors.values() {
         if let ResolvedAnchor::Gate { from, to, .. } = resolved {
