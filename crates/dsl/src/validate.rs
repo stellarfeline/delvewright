@@ -1298,6 +1298,23 @@ fn horizon_rules(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     ),
                 );
             }
+            // spec-0026 amendment (PR #261): vista_radius is measured outward
+            // from the scene bounding-box edge, and its floor is the shipped
+            // summit view-distance in blocks (12 × 16) — anything shorter puts
+            // the fog line past the generated peaks and they pop out of
+            // existence at the horizon.
+            if r.vista_radius < 192 {
+                range(
+                    "vista_radius",
+                    format!(
+                        "`vista_radius` = {} is under the 192-block floor (the shipped summit \
+                         `view-distance` 12 × 16, measured outward from the scene bounding-box \
+                         edge) — peaks would pop out at the fog line (default {})",
+                        r.vista_radius,
+                        horizon_defaults::VISTA_RADIUS
+                    ),
+                );
+            }
         }
         HorizonBase::Sky => {
             if !(-63..=319).contains(&r.float_y) {
@@ -1312,7 +1329,25 @@ fn horizon_rules(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 );
             }
         }
-        HorizonBase::Void | HorizonBase::Ocean | HorizonBase::Flatland => {}
+        HorizonBase::Flatland => {
+            // spec-0026 amendment (PR #261): 0 dithers nothing — a clean
+            // vertical material wall, the exact outcome the flatland
+            // interpenetration ruling forbids (§3's machine assertion would
+            // red it later anyway; refuse it at the declaration).
+            if !(1..=16).contains(&r.blend_width) {
+                range(
+                    "blend_width",
+                    format!(
+                        "`blend_width` = {} is out of range 1..=16 — 0 is a hard material \
+                         edge (the forbidden no-pedestal wall), and past 16 the dither band \
+                         outgrows the seam it blends (default {})",
+                        r.blend_width,
+                        horizon_defaults::BLEND_WIDTH
+                    ),
+                );
+            }
+        }
+        HorizonBase::Void | HorizonBase::Ocean => {}
     }
 
     // DW0320 generalized (spec-0026 §5): any horizon whose ambient is

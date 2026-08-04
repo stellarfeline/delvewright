@@ -415,7 +415,9 @@ pub struct HorizonSpec {
     /// `sky`: consequence of falling below the region floor (default `lethal`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fall: Option<HorizonFall>,
-    /// `flatland`: width of the seam material-dither band (default 6).
+    /// `flatland`: width of the seam material-dither band (`1..=16`, default
+    /// 6; else `DW0366` — 0 is a hard material wall, the outcome the
+    /// interpenetration ruling forbids).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blend_width: Option<u16>,
     /// `valley`: total surround footprint as a multiple of the scene's
@@ -434,7 +436,11 @@ pub struct HorizonSpec {
     /// `summit`: world y of the plateau top (default 208).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plateau_y: Option<i32>,
-    /// `summit`: radius of the generated vista ring (default 176).
+    /// `summit`: how far the generated vista terrain extends, measured
+    /// outward from the scene's bounding-box edge (spec-0026 amendment,
+    /// PR #261). Floor 192 = the shipped summit `view-distance` (12) × 16, so
+    /// peaks never pop out at the fog line; default 208; below the floor is
+    /// `DW0366`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vista_radius: Option<i32>,
     /// `summit`: minimum gorge drop along the vista ring (≥ 100, default 120;
@@ -456,8 +462,10 @@ pub mod horizon_defaults {
     pub const RIM_HEIGHT: i32 = 48;
     /// `summit.plateau_y`.
     pub const PLATEAU_Y: i32 = 208;
-    /// `summit.vista_radius`.
-    pub const VISTA_RADIUS: i32 = 176;
+    /// `summit.vista_radius` — measured outward from the scene bounding-box
+    /// edge (spec-0026 amendment, PR #261); one chunk of margin over the
+    /// 192-block floor (shipped summit view-distance 12 × 16).
+    pub const VISTA_RADIUS: i32 = 208;
     /// `summit.min_drop`.
     pub const MIN_DROP: i32 = 120;
 }
