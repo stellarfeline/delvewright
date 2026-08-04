@@ -103,7 +103,11 @@ pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
 /// One exported `timed-gate` (spec-0016 §4): the region its clock fills/clears in
 /// absolute world coordinates, plus the clock itself. `phase` is the ticks after
 /// world init before the first open, so a harness can reason about the schedule
-/// without re-deriving it from the emitted functions.
+/// without re-deriving it from the emitted functions. `crush` (spec-0016 §4
+/// addendum) is whether the closing edge kills players caught inside the region —
+/// the runtime bot must stage such a crossing at the gate mouth and enter only on
+/// an observed fresh window, never blind (task #140); withholding the fact would
+/// force the harness to guess at a lethal mechanic the compiler emitted.
 fn timed_gate_json(g: &TimedGatePlan, (min, max): ([i32; 3], [i32; 3])) -> Value {
     json!({
         "id": g.id,
@@ -112,6 +116,7 @@ fn timed_gate_json(g: &TimedGatePlan, (min, max): ([i32; 3], [i32; 3])) -> Value
         "open_ticks": g.open_ticks,
         "closed_ticks": g.closed_ticks,
         "phase": g.phase,
+        "crush": g.crush,
     })
 }
 

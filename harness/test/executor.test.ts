@@ -562,27 +562,51 @@ const PORTCULLIS: TimedGate = {
   openTicks: 100,
   closedTicks: 100,
   phase: 0,
+  crush: false,
 };
 
 /** A GateAssist with a virtual clock, so the bounded wait costs no wall time. */
 function fakeGate(
-  opts: { feet?: () => [number, number, number] | undefined } = {},
-): GateAssist & { waits: number; clock: { t: number } } {
+  opts: {
+    feet?: () => [number, number, number] | undefined;
+    gates?: readonly TimedGate[];
+    /** Whether the closed→open edge is OBSERVED by each wait (default yes). */
+    observed?: () => boolean;
+    /** Event hook so a test can assert wait-vs-goto ordering. */
+    onWait?: () => void;
+    /** Optional raw-dash stub (crush entries use it when present). */
+    dash?: GateAssist["dash"];
+  } = {},
+): GateAssist & {
+  waits: number;
+  clock: { t: number };
+  holds: Array<readonly number[] | undefined>;
+  presses: Array<readonly number[] | undefined>;
+} {
   const clock = { t: 0 };
   const state = { waits: 0 };
+  const holds: Array<readonly number[] | undefined> = [];
+  const presses: Array<readonly number[] | undefined> = [];
   return {
-    gates: [PORTCULLIS],
+    gates: opts.gates ?? [PORTCULLIS],
     // Each wait advances the virtual clock by one full cycle.
-    waitForWindow: async () => {
+    waitForWindow: async (_gates, hold, press) => {
       state.waits++;
       clock.t += 10_000;
+      holds.push(hold);
+      presses.push(press);
+      opts.onWait?.();
+      return opts.observed?.() ?? true;
     },
     feetCell: opts.feet ?? (() => [24, 63, -9]),
+    dash: opts.dash,
     now: () => clock.t,
     get waits() {
       return state.waits;
     },
     clock,
+    holds,
+    presses,
   };
 }
 
@@ -747,6 +771,254 @@ test("a gate crossing the pathfinder cannot hold is finished by walking, inside 
   assert.equal(gate.waits, 1, "and it happened inside the FIRST window, not after the budget");
 });
 
+// --- task #140: `crush: true` gates are staged, never entered blind -----------
+//
+// The tide-mill death: `timed-gate/tide` (36t open / 84t closed, phase 55, crush)
+// killed the bot on the FIRST live crush-gate encounter, at [261, 62, 13] inside
+// the gate corridor. Root cause: the gate machinery above is reactive — it waits
+// for a window only AFTER a hop fails. A non-crush gate's worst case is a path
+// abort (information); a crush gate's closing edge is an instant, gear-independent
+// kill, so the first "failure" is the bot's death and no retry ever runs. A hop
+// whose straight mouth-to-mouth segment crosses a crush gate must therefore be
+// STAGED: hold at the compiler-pinned mouth cell, observe a fresh closed→open
+// edge, check the crossing fits the window with margin, and only then enter.
+
+/** The tide-mill crusher, as the live artifact exported it (short window, phase
+ * offset — the phase is metadata; entry timing is OBSERVED, never computed). */
+const TIDE: TimedGate = {
+  id: "timed-gate/tide",
+  min: [258, 61, 13],
+  max: [262, 63, 14],
+  block: "minecraft:polished_deepslate",
+  openTicks: 36,
+  closedTicks: 84,
+  phase: 55,
+  crush: true,
+};
+
+/** The tide leg: mouth cell before the region, mouth cell after, then the anchor. */
+const TIDE_GOALS = [G(260, 61, 12), G(260, 61, 15), G(260, 61, 24, 3)];
+
+test("a crush-gate crossing is staged: fresh window observed BEFORE any entry", async () => {
+  const events: string[] = [];
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => [260, 61, 12], // staged at the near mouth, fully outside the fill
+    onWait: () => events.push("wait"),
+  });
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    events.push(label);
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  assert.equal(gate.waits, 1, "one fresh window for the one crossing hop");
+  const wait = events.indexOf("wait");
+  const entry = events.findIndex((e) => e.includes("waypoint 2/3"));
+  assert.ok(entry >= 0, `the crossing hop ran: ${events.join(" | ")}`);
+  assert.ok(wait >= 0 && wait < entry, `window precedes entry: ${events.join(" | ")}`);
+  assert.ok(
+    events[entry]!.includes("gate attempt"),
+    `the crossing entry is a staged gate attempt, never a plain hop: ${events.join(" | ")}`,
+  );
+  // The approach and the post-gate hop are ordinary hops — staging is scoped to
+  // the crossing, not smeared over the leg.
+  assert.equal(events[0], "interact anchor/objective waypoint 1/3");
+  assert.ok(!events[0]!.includes("gate attempt"));
+  assert.equal(events[events.length - 1], "interact anchor/objective");
+  // The wait HOLDS the staging stance (the live tide-mill lesson: the corridor
+  // current carried an idle bot 8 blocks off the mouth during one 4 s wait).
+  assert.deepEqual(gate.holds, [[260, 61, 12]], "the wait pins the bot to the mouth cell");
+  // …and PRESSES into the shut plane toward the crossing target, so the open edge
+  // releases a contact-started bot (from a standing start the pour is a wall).
+  assert.deepEqual(gate.presses, [[260, 61, 15]], "the wait leans into the closed gate");
+});
+
+test("a crush entry crosses RAW: the dash runs mouth-to-mouth before any pathfinder hop", async () => {
+  // The live lesson, round 3: even a fresh-edge pathfinder entry lost the 1.8 s
+  // window (start latency + mid-water replans against the flood through the
+  // opened plane) and the closing edge killed the bot mid-crossing. The crossing
+  // span itself is raw physics; the pathfinder only finishes the arrival.
+  const events: string[] = [];
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => [260, 61, 12],
+    dash: async (through, from, to) => {
+      events.push(`dash [${from.join(",")}] -> [${to.join(",")}] through ${through[0]!.id}`);
+      return true;
+    },
+  });
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    events.push(label);
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  const dash = events.findIndex((e) => e.startsWith("dash "));
+  const entry = events.findIndex((e) => e.includes("gate attempt"));
+  assert.ok(dash >= 0, `the raw dash ran: ${events.join(" | ")}`);
+  assert.ok(dash < entry, `dash precedes the pathfinder arrival hop: ${events.join(" | ")}`);
+  assert.equal(
+    events[dash],
+    "dash [260,61,12] -> [260,61,15] through timed-gate/tide",
+    "the dash is the staged mouth-to-mouth crossing",
+  );
+});
+
+test("a dash that cannot clear fails its attempt and takes the NEXT window — never lingers", async () => {
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => [260, 61, 12],
+    dash: undefined, // set below, needs the clock
+  });
+  let dashes = 0;
+  (gate as { dash?: GateAssist["dash"] }).dash = async () => {
+    dashes++;
+    gate.clock.t += 3_000; // the failed dash consumed the whole window
+    return dashes > 1; // second window's dash clears
+  };
+  const labels: string[] = [];
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    labels.push(label);
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  assert.equal(dashes, 2, "one failed dash, one clean one");
+  assert.equal(gate.waits, 2, "the retry waited for its own fresh window");
+  assert.ok(
+    !labels.some((l) => l.includes("recovery")),
+    `no pathfinder escalation into the spent window: ${labels.join(" | ")}`,
+  );
+});
+
+test("a bot the current carried off the mouth is re-staged, never margin-failed from the drift", async () => {
+  // The live tide-mill failure mode after staging landed: the corridor is flowing
+  // water, the idle bot drifted from the mouth [260,61,12] back to the pool at
+  // [260,61,4] during the window wait, and the margin check — honestly — refused
+  // an 8-block dash through a 1.8 s window. A drifted margin read is a stance
+  // problem: walk back to the mouth and take the next window. The hard margin
+  // failure is reserved for a bot verifiably ON the pinned mouth.
+  let feet: [number, number, number] = [260, 61, 12];
+  let drifted = false;
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => feet,
+    onWait: () => {
+      if (!drifted) {
+        drifted = true;
+        feet = [260, 61, 4]; // the tide won the first wait
+      }
+    },
+  });
+  const labels: string[] = [];
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    labels.push(label);
+    if (label.includes("re-stage")) feet = [260, 61, 12]; // walked back to the mouth
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  assert.ok(
+    labels.some((l) => l.includes("gate re-stage")),
+    `the drifted bot was walked back to the mouth: ${labels.join(" | ")}`,
+  );
+  assert.equal(gate.waits, 2, "the re-staged attempt waited for its own fresh window");
+  assert.ok(
+    labels.some((l) => l.includes("gate attempt 2")),
+    `the crossing then ran from the mouth: ${labels.join(" | ")}`,
+  );
+});
+
+test("a crush gate whose window edge cannot be observed is never entered blind", async () => {
+  // The lethal defect inverted: when the harness cannot SEE a fresh window it must
+  // refuse the crossing and fail loudly — "crossing anyway" is only survivable on
+  // gates that merely block.
+  const attempts: string[] = [];
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => [260, 61, 12],
+    observed: () => false,
+  });
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    if (label.includes("waypoint 2/3")) attempts.push(label);
+  };
+  await assert.rejects(
+    () => replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.match(err.message, /timed-gate\/tide/);
+      assert.match(err.message, /refusing blind entry/);
+      return true;
+    },
+  );
+  assert.equal(attempts.length, 0, `no entry was ever attempted: ${attempts.join(" | ")}`);
+  assert.ok(gate.waits >= GATE_MIN_ATTEMPTS, "the refusal still burned the bounded budget");
+});
+
+test("a bot caught inside a crush gate's cells stands off BEFORE waiting — no dwell in the fill", async () => {
+  const events: string[] = [];
+  // The bot reaches the mouth, then drifts INTO the region (range-1 tolerance) —
+  // the one place the closing fill kills. The staged crossing must pull it out
+  // before any waiting or entering happens.
+  let feet: [number, number, number] = [260, 61, 12];
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => feet,
+    onWait: () => events.push("wait"),
+  });
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    events.push(label);
+    if (label.includes("waypoint 1/3")) feet = [260, 61, 13]; // drifted into the fill
+    if (label.includes("standoff")) feet = [260, 61, 12]; // the standoff pulls it out
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  const standoff = events.findIndex((e) => e.includes("standoff"));
+  const wait = events.indexOf("wait");
+  const entry = events.findIndex((e) => e.includes("gate attempt"));
+  assert.ok(standoff >= 0, `stood off out of the fill: ${events.join(" | ")}`);
+  assert.ok(standoff < wait && wait < entry, `standoff → wait → enter: ${events.join(" | ")}`);
+});
+
+test("a fresh window too short for the crossing is refused loudly, not gambled", async () => {
+  // DW0378 proves every shipped window admits its crossing, so this can only fire
+  // when the bot is staged off the proven mouth or the artifact disagrees with the
+  // world — entering would gamble the bot's life on a proof that no longer applies.
+  const sliver: TimedGate = { ...TIDE, id: "timed-gate/sliver", openTicks: 2 };
+  const entries: string[] = [];
+  const gate = fakeGate({ gates: [sliver], feet: () => [260, 61, 12] });
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    if (label.includes("waypoint 2/3")) entries.push(label);
+  };
+  await assert.rejects(
+    () => replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.match(err.message, /timed-gate\/sliver/);
+      assert.match(err.message, /full margin/);
+      return true;
+    },
+  );
+  assert.equal(entries.length, 0, "the too-short window was never entered");
+});
+
+test("a failed crush entry does not escalate into a stale window — it takes the next fresh one", async () => {
+  // The within-window walking escalation (the-drowned-bell lesson) stays available,
+  // but never into a crush gate whose remaining window no longer fits the crossing:
+  // bursting into a closing crusher is exactly the death this staging prevents.
+  const gate = fakeGate({ gates: [TIDE], feet: () => [260, 61, 12] });
+  const labels: string[] = [];
+  let failedOnce = false;
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    labels.push(label);
+    if (label.includes("gate attempt 1") && !failedOnce) {
+      failedOnce = true;
+      // The failed attempt consumed more than the 1.8s window.
+      gate.clock.t += 3_000;
+      throw new Error("Path was stopped before it could be completed!");
+    }
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  assert.equal(gate.waits, 2, "the retry waited for the NEXT fresh window");
+  assert.ok(
+    !labels.some((l) => l.includes("recovery")),
+    `no recovery re-path into the stale window: ${labels.join(" | ")}`,
+  );
+  assert.ok(labels.some((l) => l.includes("gate attempt 2")), labels.join(" | "));
+});
+
 // --- task #134: completion signals outrank position ---------------------------
 //
 // The tide-mill wheelpit defect: `obj/wheelpit` sits right past a timed-gate
@@ -798,8 +1070,9 @@ test("a settle signal landing during the window wait ends the crossing before re
   const gate: GateAssist = {
     gates: inner.gates,
     waitForWindow: async (gates) => {
-      await inner.waitForWindow(gates);
+      const observed = await inner.waitForWindow(gates);
       settledNow = true;
+      return observed;
     },
     feetCell: inner.feetCell,
     now: inner.now,

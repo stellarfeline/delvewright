@@ -1058,8 +1058,17 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   A campaign with `timed_gates[]` (spec-0016 §4) additionally carries a top-level
   `timed_gates` table — one entry per declared gate, in declared order, with
   `id`, `region: {min, max}` (inclusive, canonical world-coordinate bbox),
-  `block`, `open_ticks`, `closed_ticks`, `phase` — and every leg whose proven
-  route walks through one carries `timed_gates: [<id>, …]`. A leg **crosses** a
+  `block`, `open_ticks`, `closed_ticks`, `phase`, `crush` — and every leg whose
+  proven route walks through one carries `timed_gates: [<id>, …]`. `crush`
+  (task #140) exports the §4-addendum fact that the closing edge KILLS a player
+  caught inside the region: the first live crush gate (tide-mill's 36t/84t
+  `timed-gate/tide`) killed the harness bot because its gate machinery was
+  reactive — wait for a window only after a hop fails — which is safe when a
+  closing gate merely aborts the path and lethal when it crushes. The harness
+  stages a crush crossing at the compiler-pinned mouth cell and enters only on
+  an observed fresh closed→open edge with full margin; that decision needs to
+  know WHICH gates crush, and the fact is compiler-owned (no-hack layering:
+  export it, never make the harness infer a lethal mechanic). A leg **crosses** a
   gate iff at some cell of its full A* route the player's own 2-block occupancy
   (feet cell or the cell above) lies inside the region — i.e. closing the gate
   would land the fill on the walk. The test is stated over the *unthinned* route
