@@ -11,7 +11,7 @@ use crate::stages::{
 };
 
 /// The latest `dsl_version` this crate implements (identity / tooling default).
-pub const SUPPORTED_DSL_VERSION: &str = "0.8.0";
+pub const SUPPORTED_DSL_VERSION: &str = "0.9.0";
 
 /// Every `dsl_version` this crate accepts. Each version is an **additive
 /// superset** of the previous: v0.3 added the stage-5 verbs/waves/flags; v0.4
@@ -28,11 +28,14 @@ pub const SUPPORTED_DSL_VERSION: &str = "0.8.0";
 /// (spec-0025) adds declared stage-4 `branch_points`, the per-node `happening`
 /// declaration and the named `campaign-complete` `ending`, and (spec-0016 §1
 /// owner rulings) the bonfire rest interaction — the `bonfire` effect's
-/// authorable option strings and the class-kit `flask`.
+/// authorable option strings and the class-kit `flask`; v0.9 (spec-0026) adds
+/// the horizon-library stage-1 surface — the `horizon` object form
+/// `{base, …params}` and the new base/shorthand names (`sky`, `flatland`,
+/// `valley`, `summit`, `cherry-valley`).
 /// Older campaigns remain valid and compile byte-identically. A construct
 /// introduced in a later version is rejected with `DW0141` in an earlier one.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
-    "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0",
+    "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0",
 ];
 
 /// True if `version` is a `dsl_version` this crate accepts.
@@ -57,6 +60,7 @@ fn ordinal(version: &str) -> u32 {
         "0.6.0" => 6,
         "0.7.0" => 7,
         "0.8.0" => 8,
+        "0.9.0" => 9,
         _ => 0,
     }
 }
@@ -119,6 +123,17 @@ pub fn is_v07(version: &str) -> bool {
 /// datapack byte-for-byte unchanged.
 pub fn is_v08(version: &str) -> bool {
     ordinal(version) >= 8
+}
+
+/// True if `version` enables the DSL v0.9 surface (spec-0026, horizon library):
+/// the stage-1 `horizon` **object form** `{base, …params}` and the new
+/// base/shorthand names (`sky`, `flatland`, `valley`, `summit`,
+/// `cherry-valley`). The two v0.6 string shorthands (`"void"`, `"ocean"`) stay
+/// valid at 0.6.0+ and byte-identical. Additive over v0.8 — a campaign
+/// declaring none of the new surface compiles byte-identically, and any use of
+/// it in an earlier campaign is rejected with `DW0141`.
+pub fn is_v09(version: &str) -> bool {
+    ordinal(version) >= 9
 }
 
 /// Which stage a document belongs to.

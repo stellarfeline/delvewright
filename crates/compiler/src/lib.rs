@@ -57,6 +57,7 @@ pub mod edit;
 pub mod emit;
 pub mod flow;
 pub mod gates;
+pub mod horizon;
 pub mod light;
 pub mod load;
 pub mod loot;

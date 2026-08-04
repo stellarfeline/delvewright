@@ -25,7 +25,7 @@ pub use canonical::to_canonical_string;
 pub use diagnostic::{Diagnostic, Severity, codes};
 pub use envelope::{
     Campaign, Envelope, RawCampaign, SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage,
-    check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08,
+    check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
     parse_campaign,
 };
 pub use ids::{
@@ -46,6 +46,7 @@ pub use registry::{
 };
 pub use schema::stage_schema;
 pub use stages::for_each_campaign_effect;
+pub use stages::{ResolvedHorizon, horizon_base, horizon_defaults, resolved_horizon};
 pub use stages::{
     Actor, Ambush, Area, AreaLighting, AreaMitigation, BONFIRE_PROMPT_EN, BONFIRE_REST_LABEL_EN,
     BONFIRE_SAVE_LABEL_EN, BonfireLabels, Boundary, BranchDecl, BranchPoint, CameraShot,
@@ -53,7 +54,8 @@ pub use stages::{
     CastDialogueKeyword, CastEntry, CastPlace, CastPlacement, Class, ClassesContent, DamageKind,
     DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EffectSite,
     EnchantedItem, EncounterTier, EnvTrigger, EquipItem, Facing, Fixture, Happening, HappeningVerb,
-    Horizon, KitItem, Lethality, Loot, LootItem, MobAttributes, MobEffect, MobEquipment,
+    Horizon, HorizonBase, HorizonFall, HorizonFlora, HorizonName, HorizonPalette, HorizonSpec,
+    KitItem, Lethality, Loot, LootItem, MobAttributes, MobEffect, MobEquipment,
     NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces, PlannedQuest,
     Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep,
     Shortcut, ShotStyle, SkinModel, SoundAt, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect,
