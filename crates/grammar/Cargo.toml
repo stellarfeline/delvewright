@@ -1,0 +1,28 @@
+[package]
+name = "delvewright-grammar"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# `delvewright-grammar` (spec-0027 phase 1): Box-Split Grammars — the prefab
+# back end whose input is a grammar *program* (typed JSON IR) rather than
+# freehand geometry. A deterministic interpreter subdivides an integer voxel box
+# with `split` / `reorient` / probabilistic constrained rules and fills leaves
+# with full block states.
+#
+# Ported from `yawgmoth/GDMC25` (BSD-3-Clause; see LICENSE-GDMC25 in this
+# directory and docs/ACKNOWLEDGEMENTS.md), which implements Eger, *Box-Split
+# Grammars* (FDG '22, DOI 10.1145/3555858.3555865).
+#
+# Phase 1 is a library only: expansion + the ported temple/castle/church rule
+# libraries. `.nbt` export, provenance rows and the craft-rule diagnostics of
+# spec-0027 §4 are later phases.
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# The grammar program is a typed JSON IR (spec-0027 §3), like every other DSL
+# stage. Both MIT/Apache-2.0.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
