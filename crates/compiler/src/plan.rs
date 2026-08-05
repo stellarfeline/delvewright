@@ -343,6 +343,9 @@ pub struct Plan<'a> {
     pub shortcuts: Vec<ShortcutPlan>,
     /// Resolved container fills (spec-0021), declaration-ordered.
     pub loot: Vec<LootPlan>,
+    /// Resolved `collect` container adoptions (DSL v0.8, task #95), campaign-
+    /// ordered. Empty for a campaign whose collects keep the compiler's chest.
+    pub collect_fills: Vec<CollectFillPlan>,
     /// Resolved ambushes (spec-0016 §3), declaration-ordered.
     pub ambushes: Vec<AmbushPlan>,
     /// Resolved timed gates (spec-0016 §4), declaration-ordered.
@@ -1156,6 +1159,9 @@ impl<'a> Plan<'a> {
         // ---- container fills (spec-0021) ----
         let loot = collect_loot(campaign, &anchors);
 
+        // ---- `collect` container adoption (DSL v0.8, task #95) ----
+        let collect_fills = collect_collect_fills(campaign, &anchors);
+
         // ---- ambushes (spec-0016 §3) ----
         let ambushes = collect_ambushes(campaign, &anchors);
 
@@ -1217,6 +1223,7 @@ impl<'a> Plan<'a> {
             traps,
             shortcuts,
             loot,
+            collect_fills,
             ambushes,
             timed_gates,
             gate_events,
@@ -1244,6 +1251,36 @@ impl<'a> Plan<'a> {
         path: &crate::flow::Playthrough,
     ) -> Result<CriticalPath, PlanError> {
         build_critical_path(self.campaign, &self.anchors, &self.npcs, path)
+    }
+
+    /// The gate/seal model of ONE branch's exported path (spec-0025, task #117):
+    /// the campaign's `open-gate`/`close-gate` firings with `fire_step` indices in
+    /// the **branch path's own step space**, plus the strict DAG-ancestor relation
+    /// over that space — exactly the model [`Plan::build`] computes for the
+    /// exported path (`gate_events` / `strict_ancestor_steps`), driven by the
+    /// branch's own objective→step map instead of the default playthrough's.
+    ///
+    /// A branch path is a *different sequence* of steps, so the default path's
+    /// step indices cannot be carried across (the same trap `rest_step_index`
+    /// documents for bonfires): a seal attributed through the default indices
+    /// would inherit another branch's ordering. Shortcut gates are sealed from
+    /// world-load (`fire_step: 0`) here for the same reason they are in
+    /// [`Plan::build`] — the branch must be walkable the long way too.
+    ///
+    /// Deterministic: both halves are pure functions of the campaign and the
+    /// branch's own `CriticalPath` (ADR-0006).
+    pub fn branch_gate_model(
+        &self,
+        cp: &CriticalPath,
+    ) -> (Vec<GateEvent>, BTreeMap<usize, BTreeSet<usize>>) {
+        let mut gate_events = collect_gate_events(self.campaign, &self.anchors, &cp.obj_step);
+        gate_events.extend(self.shortcuts.iter().map(|sc| GateEvent {
+            region: sc.gate_region,
+            closes: true,
+            fire_step: 0,
+        }));
+        let ancestors = compute_strict_ancestor_steps(self.campaign, &cp.obj_step);
+        (gate_events, ancestors)
     }
 
     /// Whether a gate firing at critical-path step `g` is guaranteed to have fired
@@ -1328,6 +1365,16 @@ impl<'a> Plan<'a> {
     /// stay byte-identical (DSL v0.6, spec-0012).
     pub fn any_checkpoint_on_respawn(&self) -> bool {
         self.checkpoints.iter().any(|c| !c.on_respawn.is_empty()) || !self.reseat_waves().is_empty()
+    }
+
+    /// Whether the campaign declares **any** checkpoint at all (spec-0012 /
+    /// spec-0016 §1). Gates the respawn **re-seat** machinery: the delve's own
+    /// promise is "die and resume at the last checkpoint", and vanilla's
+    /// `/spawnpoint` is only a hint — it silently falls back to the world spawn
+    /// whenever the recorded cell is not a legal respawn position (task #145).
+    /// A campaign with no checkpoint keeps the pre-0.6 emission byte-for-byte.
+    pub fn any_checkpoint(&self) -> bool {
+        !self.checkpoints.is_empty()
     }
 
     /// The waves a bonfire rest / bonfire respawn re-seats (spec-0016 §1), in
@@ -1484,6 +1531,13 @@ fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> Vec<String> 
                 // by the `spawn-wave` effect (the true spawn site) rather than the
                 // `kill` objective — so a kill-less live-threat wave is placed too.
                 Objective::Kill { .. } | Objective::TalkTo { .. } => {}
+            }
+            // v0.8 (task #95): an adopted container is a piece of hardware the
+            // objective cannot do without — a pool draw that omits its carrier
+            // leaves the collect with nothing to fill, so it joins the required
+            // set exactly as a lane waypoint does. Absent field adds nothing.
+            if let Some(cont) = o.collect_container() {
+                set.insert(cont.as_str().to_string());
             }
         }
         for e in q
@@ -1864,9 +1918,24 @@ fn build_critical_path(
                     item,
                     count,
                     anchor,
+                    container,
                     ..
                 } => {
-                    let pos = point_of(anchors, area, anchor.as_str())?;
+                    // The step position is the CONTAINER the bot opens: the
+                    // adopted prefab chest/barrel when the objective declares one
+                    // (DSL v0.8), else the chest the compiler places at `anchor`.
+                    // The harness walks to this cell and opens the block standing
+                    // there, so pointing it at the objective anchor while the items
+                    // sit in a barrel three blocks away is a guaranteed bot stall.
+                    // An unresolvable container anchor falls back to the objective
+                    // anchor; the DSL tier reports it (`DW0142`).
+                    let pos = match container
+                        .as_ref()
+                        .and_then(|cont| point_any(anchors, cont.as_str()))
+                    {
+                        Some(cell) => cell,
+                        None => point_of(anchors, area, anchor.as_str())?,
+                    };
                     steps.push(Step::Collect {
                         objective_id: id.as_str().to_string(),
                         item: item.clone(),
@@ -2362,6 +2431,54 @@ pub struct LootItemPlan {
     pub name: Option<String>,
     /// Enchantment id → level.
     pub enchantments: BTreeMap<String, u32>,
+}
+
+/// A `collect` objective that ADOPTS a prefab-placed container (DSL v0.8, task
+/// #95), resolved to the container's world cell.
+///
+/// One resolution, one cell: the build-tier container proof (`DW0438`), the
+/// activation-time fill and the critical-path step the bot opens all read THIS
+/// value, so the cell the compiler proves is provably the cell it fills and the
+/// cell the bot walks to. Resolving the anchor separately at each site is how a
+/// proof and its emission drift apart.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CollectFillPlan {
+    /// The `collect` objective's id.
+    pub objective_id: String,
+    /// The anchor named by `container`.
+    pub anchor: String,
+    /// The world cell of the container to fill.
+    pub cell: [i32; 3],
+    /// How many slots the fill occupies: the objective's own stack plus
+    /// `fill_count` padding stacks.
+    pub slots: usize,
+}
+
+/// Resolve every `collect` objective's adopted `container` (DSL v0.8) to a world
+/// cell, in campaign order. An unresolvable anchor is skipped here and reported
+/// by the DSL tier (`DW0142`) — the same policy [`collect_loot`] follows.
+fn collect_collect_fills(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+) -> Vec<CollectFillPlan> {
+    let mut out = Vec::new();
+    for q in &campaign.quests.content.quests {
+        for o in &q.objectives {
+            let Some(cont) = o.collect_container() else {
+                continue;
+            };
+            let Some(cell) = point_any(anchors, cont.as_str()) else {
+                continue;
+            };
+            out.push(CollectFillPlan {
+                objective_id: o.id().as_str().to_string(),
+                anchor: cont.as_str().to_string(),
+                cell,
+                slots: 1 + o.collect_fill_count() as usize,
+            });
+        }
+    }
+    out
 }
 
 /// Resolve every stage-5 `loot` declaration to a world cell. An unresolvable

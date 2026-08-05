@@ -15,7 +15,11 @@ Pipeline:
 2. Batch the untranslated rows into persona-aware chat-completions requests
    (temperature low, JSON-object replies, a glossary of already-translated proper
    nouns for cross-batch consistency).
-3. Merge, write the sidecar (keys sorted; exactly the inventory, so no orphans),
+3. With `--reflect`, run each batch as three steps — translate, criticise the
+   draft on accuracy / fluency / style-register / terminology (plus the target
+   language's translationese checklist), then revise with the critique in hand,
+   returning already-good lines byte-identical.
+4. Merge, write the sidecar (keys sorted; exactly the inventory, so no orphans),
    then run `delvec validate` and report coverage.
 
 Idempotent: a re-run translates only the keys the sidecar is missing (`--force`
@@ -60,6 +64,12 @@ DEFAULT_BATCH_SIZE = 40
 DEFAULT_TIMEOUT_S = 120
 DEFAULT_MAX_RETRIES = 3
 
+#: Whether to run the three-step translate -> reflect -> improve pass. Off by
+#: default because it triples the request count; the `/new-delve` localization
+#: stage turns it on (`--reflect`), and `[i18n] reflect = true` makes that the
+#: standing behaviour for a repo. See `docs/reference/i18n.md`.
+DEFAULT_REFLECT = False
+
 #: Keys whose translations are proper nouns worth pinning across batches: the
 #: world title, NPC and area names, class names (never blurbs or prose).
 GLOSSARY_PREFIXES = ("npc.", "area.")
@@ -96,6 +106,7 @@ class I18nConfig:
     batch_size: int = DEFAULT_BATCH_SIZE
     timeout_seconds: int = DEFAULT_TIMEOUT_S
     max_retries: int = DEFAULT_MAX_RETRIES
+    reflect: bool = DEFAULT_REFLECT
 
     @property
     def endpoint(self) -> str:
@@ -163,6 +174,7 @@ def load_config(
         batch_size=int(merged.get("batch_size", DEFAULT_BATCH_SIZE)),
         timeout_seconds=int(merged.get("timeout_seconds", DEFAULT_TIMEOUT_S)),
         max_retries=int(merged.get("max_retries", DEFAULT_MAX_RETRIES)),
+        reflect=bool(merged.get("reflect", DEFAULT_REFLECT)),
     )
 
 
@@ -255,7 +267,11 @@ Rules:
 - Each item may name a `speaker`: that NPC's persona and speech style are given
   below — the translation must sound like that character.
 - Keys ending in `.opt.<n>.label` are the PLAYER's reply inside that NPC's
-  dialogue tree: keep them short, first-person, and selectable at a glance.
+  dialogue tree, drawn on a FIXED-WIDTH BUTTON: keep them short, first-person,
+  and selectable at a glance. A label too wide for the button scrolls, which is
+  a broken-looking UI — so a label is a caption, never a sentence. Budget: about
+  146 font pixels, i.e. roughly 20 Latin characters or 12 Han characters. Being
+  shorter than the English here is correct, not a loss.
 - Keys ending in `.opt.<n>.tooltip` are the FULL line that same reply is a
   caption of, shown in a hover box: translate it as a whole spoken sentence,
   and make sure it reads as the longer form of its sibling `.label`.
@@ -265,11 +281,95 @@ Rules:
 - Preserve any placeholder, symbol, or formatting sequence exactly as given.
 - Keep strings roughly as short as the English: they render in chat lines,
   item names, and title cards.
-"""
+{translationese}"""
+
+#: Target-language-specific translationese guidance, appended to every prompt in
+#: the three-step pass. Re-derived in our own words from the standard Chinese
+#: translation-criticism tradition (the 余光中 / 思果 lineage of 翻译腔 critique) —
+#: those texts are copyrighted and the prompt collections that circulate them are
+#: unlicensed, so nothing here is quoted from either. See `docs/ACKNOWLEDGEMENTS.md`.
+ZH_TRANSLATIONESE = """\
+- Guard against 翻译腔 (English grammar wearing Chinese words). The governing
+  rule: exhaust the constructions Chinese already has before importing one.
+  Specifically:
+  - 名词化: restore the verb — 作出决定 → 决定, 进行讨论 → 讨论.
+  - 弱动词: 进行 / 加以 / 作出 / 予以 + noun is almost always one plain verb.
+  - 的的不休: strings of 的. Chinese carries most modification by word order.
+  - 被: Chinese marks the passive rarely, and mostly for things done TO someone
+    against their interest. Prefer an active subject, or no marker at all.
+  - Front-loaded modifiers: an English relative clause transplanted whole in
+    front of the noun. Split it into a second clause.
+  - 地 on every adverb, 们 on every plural, 当……的时候 for every temporal clause,
+    a possessive pronoun before every body part — all English habits.
+- 信达雅, read as a precedence: 信 first (say what the English says), then 达
+  (a Chinese reader takes it in at one pass), then 雅 — and 雅 here means the
+  register the scene actually calls for, not ornament. A soldier's clipped line
+  stays clipped."""
+
+TRANSLATIONESE_BY_LANG = {"zh": ZH_TRANSLATIONESE}
 
 
-def build_messages(inv: Inventory, batch: Sequence[Entry], lang: str) -> list[dict[str, str]]:
-    """The chat messages for one batch: rules, campaign/persona context, keys."""
+def translationese_guidance(lang: str) -> str:
+    """Language-specific translationese guidance, or `""` when we have none.
+
+    Matched on the primary subtag, so `zh`, `zh-cn` and `zh-tw` share a block.
+    An unknown language simply gets the general rules — never a wrong checklist.
+    """
+    return TRANSLATIONESE_BY_LANG.get(lang.split("-")[0].lower(), "")
+
+
+#: Step 2 of the three-step pass: criticise the draft before rewriting it. The
+#: model must write the defect down, which is what makes step 3 more than a
+#: re-roll. Structure and the four critique axes follow `andrewyng/translation-agent`
+#: (MIT, (c) 2024 Andrew Ng); the axes are extended with our own domain criteria
+#: (persona, key-kind conventions, render width) and the translationese block.
+REFLECTION_PROMPT = """\
+You are a senior localization editor reviewing a draft translation of a Minecraft
+adventure map's player-facing strings, English into {lang}.
+
+Read the source and the draft side by side and write specific, constructive
+criticism. One suggestion per problem, each naming the key it applies to. Do NOT
+write a corrected translation — this step only diagnoses.
+
+Judge on four axes:
+1. ACCURACY — additions, mistranslations, omissions, untranslated leftovers;
+   placeholders, symbols and formatting sequences altered or dropped.
+2. FLUENCY — grammar, punctuation and idiom of {lang}; unnecessary repetition;
+   anything a native reader would have to re-read.
+3. STYLE / REGISTER — does the line sound like the speaking NPC's persona and
+   speech style, and like a hand-made fantasy adventure map rather than a
+   product manual? Does the string still fit a chat line, item name or title
+   card? `.opt.<n>.label` lines are drawn on a fixed-width button and SCROLL if
+   they overrun — flag any that exceed roughly 20 Latin or 12 Han characters,
+   and say how to cut it to a caption.
+4. TERMINOLOGY — glossary proper nouns reproduced verbatim; one English term
+   rendered the same way at every key; consistent with the source's domain.
+
+Say so plainly when a line is already accurate and natural — "no change" is a
+valid and expected verdict, and most lines should get it. Do not invent
+improvements to lines that do not need any.
+{translationese}"""
+
+#: Step 3: apply the critique. Same output contract as step 1, plus an explicit
+#: anti-churn rule — an unconditional rewrite pass degrades text that was fine.
+IMPROVEMENT_PROMPT = """\
+You are the localizer again, revising your own draft with an editor's critique in
+hand. Target language: {lang}.
+
+- Reply with ONE JSON object mapping EVERY given key to its final string. No
+  prose, no explanation, no markdown fences, no extra or missing keys.
+- Apply the critique where it is right. Where you judge it wrong, keep your draft
+  — you are the translator, not a patch applier.
+- Where a draft line is already accurate and natural, return it BYTE-IDENTICAL.
+  Rewriting a good line for the sake of motion is a defect, not an improvement.
+- Every rule from the original brief still binds: persona voice, glossary
+  verbatim, placeholders preserved, lengths close to the English, and the
+  `.opt.<n>.label` keys are the player's own reply.
+{translationese}"""
+
+
+def _context(inv: Inventory, batch: Sequence[Entry], lang: str) -> dict[str, Any]:
+    """Campaign, speaking personas and glossary for one batch."""
     speakers = {e.speaker for e in batch if e.speaker}
     personas = [n for n in inv.npcs if n.get("id") in speakers]
     glossary = inv.glossary()
@@ -283,23 +383,82 @@ def build_messages(inv: Inventory, batch: Sequence[Entry], lang: str) -> list[di
         context["speakers"] = personas
     if glossary:
         context["glossary_en_to_target"] = glossary
+    return context
 
-    items = [
+
+def _draft_rows(batch: Sequence[Entry], draft: dict[str, str]) -> list[dict[str, str]]:
+    """Source and draft side by side — what steps 2 and 3 reason over."""
+    rows = []
+    for e in batch:
+        row = {"key": e.key, "en": e.en, "draft": draft.get(e.key, "")}
+        if e.speaker:
+            row["speaker"] = e.speaker
+        rows.append(row)
+    return rows
+
+
+def _items(batch: Sequence[Entry]) -> list[dict[str, str]]:
+    return [
         {k: v for k, v in (("key", e.key), ("en", e.en), ("speaker", e.speaker)) if v}
         for e in batch
     ]
+
+
+def _system(prompt: str, lang: str) -> dict[str, str]:
+    return {
+        "role": "system",
+        "content": prompt.format(lang=lang, translationese=translationese_guidance(lang)),
+    }
+
+
+def build_messages(inv: Inventory, batch: Sequence[Entry], lang: str) -> list[dict[str, str]]:
+    """Step 1 — translate. Rules, campaign/persona context, keys."""
     user = (
         "Context:\n"
-        + json.dumps(context, ensure_ascii=False, indent=2, sort_keys=True)
+        + json.dumps(_context(inv, batch, lang), ensure_ascii=False, indent=2, sort_keys=True)
         + "\n\nTranslate these strings into "
         + lang
         + " and reply with the JSON object of key -> translation:\n"
-        + json.dumps(items, ensure_ascii=False, indent=2)
+        + json.dumps(_items(batch), ensure_ascii=False, indent=2)
     )
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT.format(lang=lang)},
-        {"role": "user", "content": user},
-    ]
+    return [_system(SYSTEM_PROMPT, lang), {"role": "user", "content": user}]
+
+
+def build_reflection_messages(
+    inv: Inventory, batch: Sequence[Entry], lang: str, draft: dict[str, str]
+) -> list[dict[str, str]]:
+    """Step 2 — critique the draft. Free-text reply, not JSON."""
+    rows = _draft_rows(batch, draft)
+    user = (
+        "Context:\n"
+        + json.dumps(_context(inv, batch, lang), ensure_ascii=False, indent=2, sort_keys=True)
+        + "\n\nSource and draft translation:\n"
+        + json.dumps(rows, ensure_ascii=False, indent=2)
+        + "\n\nWrite your critique."
+    )
+    return [_system(REFLECTION_PROMPT, lang), {"role": "user", "content": user}]
+
+
+def build_improvement_messages(
+    inv: Inventory,
+    batch: Sequence[Entry],
+    lang: str,
+    draft: dict[str, str],
+    critique: str,
+) -> list[dict[str, str]]:
+    """Step 3 — apply the critique and emit the final JSON object."""
+    rows = _draft_rows(batch, draft)
+    user = (
+        "Context:\n"
+        + json.dumps(_context(inv, batch, lang), ensure_ascii=False, indent=2, sort_keys=True)
+        + "\n\nSource and draft translation:\n"
+        + json.dumps(rows, ensure_ascii=False, indent=2)
+        + "\n\nEditor's critique:\n"
+        + critique.strip()
+        + "\n\nReply with the JSON object of key -> final translation:\n"
+        + json.dumps([r["key"] for r in rows], ensure_ascii=False)
+    )
+    return [_system(IMPROVEMENT_PROMPT, lang), {"role": "user", "content": user}]
 
 
 def build_request(
@@ -475,6 +634,53 @@ def _iter_batches(
         yield i, chunk, build_messages(inv, chunk, lang)
 
 
+def require_keys(got: dict[str, str], chunk: Sequence[Entry], label: str) -> dict[str, str]:
+    """The reply restricted to the batch's keys — a reply that dropped any of
+    them fails the run rather than writing a hole into the sidecar."""
+    wanted = {e.key for e in chunk}
+    missing = sorted(wanted - got.keys())
+    if missing:
+        raise TranslateError(
+            f"{label} reply omitted {len(missing)} key(s): {missing[:5]}"
+        )
+    return {k: v for k, v in got.items() if k in wanted}
+
+
+def translate_batch(
+    cfg: I18nConfig,
+    inv: Inventory,
+    chunk: Sequence[Entry],
+    lang: str,
+    api_key: str,
+    reflect: bool = False,
+    label: str = "batch",
+) -> dict[str, str]:
+    """One batch, translated. With `reflect`, the three-step pass:
+
+    1. translate,
+    2. criticise the draft against accuracy / fluency / style / terminology
+       (plus the language's translationese checklist),
+    3. revise with the critique in hand — returning unrevised lines unchanged.
+
+    Step 2's reply is free text on purpose: forcing the model to *write the
+    defect down* is what makes step 3 more than a second roll of the dice.
+    """
+    draft = require_keys(
+        parse_translations(chat_once(cfg, build_messages(inv, chunk, lang), api_key)),
+        chunk,
+        label,
+    )
+    if not reflect:
+        return draft
+    critique = chat_once(cfg, build_reflection_messages(inv, chunk, lang, draft), api_key)
+    final = parse_translations(
+        chat_once(
+            cfg, build_improvement_messages(inv, chunk, lang, draft, critique), api_key
+        )
+    )
+    return require_keys(final, chunk, f"{label} (improve)")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="i18n-translate.py",
@@ -487,6 +693,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--delvec", default=None, help="delvec invocation (default: $DELVEC or cargo run)")
     p.add_argument("--batch-size", type=int, default=None, help="override [i18n] batch_size")
     p.add_argument("--dry-run", action="store_true", help="print prompts and keys; make no API call")
+    p.add_argument(
+        "--reflect",
+        action="store_true",
+        help="three-step pass: translate, critique the draft, revise (3x the requests)",
+    )
+    p.add_argument(
+        "--no-reflect", action="store_true", help="single-pass translation, overriding [i18n] reflect"
+    )
     p.add_argument("--force", action="store_true", help="retranslate keys that already have a translation")
     p.add_argument("--no-validate", action="store_true", help="skip the closing `delvec validate`")
     args = p.parse_args(argv)
@@ -505,6 +719,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if args.batch_size:
         cfg = dataclasses.replace(cfg, batch_size=args.batch_size)
+    if args.reflect and args.no_reflect:
+        print("error: --reflect and --no-reflect are mutually exclusive", file=sys.stderr)
+        return 2
+    reflect = cfg.reflect
+    if args.reflect:
+        reflect = True
+    if args.no_reflect:
+        reflect = False
 
     api_key = cfg.api_key()
     if api_key is None and not args.dry_run:
@@ -539,31 +761,39 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.dry_run:
         for i, chunk, messages in _iter_batches(inv, pending, cfg, args.lang):
             print(f"\n===== batch {i} ({len(chunk)} keys) -> {cfg.endpoint} model={cfg.model} "
-                  f"temperature={cfg.temperature} =====")
+                  f"temperature={cfg.temperature} reflect={reflect} =====")
             for m in messages:
                 print(f"--- {m['role']} ---\n{m['content']}")
+            if reflect:
+                sample = {e.key: "<step-1 draft, filled at call time>" for e in chunk}
+                for step, msgs in (
+                    ("reflect", build_reflection_messages(inv, chunk, args.lang, sample)),
+                    (
+                        "improve",
+                        build_improvement_messages(
+                            inv, chunk, args.lang, sample, "<step-2 critique, filled at call time>"
+                        ),
+                    ),
+                ):
+                    print(f"\n----- batch {i} step: {step} -----")
+                    for m in msgs:
+                        print(f"--- {m['role']} ---\n{m['content']}")
         print(f"\ndry run: no request sent (key would come from ${cfg.api_key_env})")
         return 0
 
     translated: dict[str, str] = {}
     assert api_key is not None
-    for i, chunk, messages in _iter_batches(inv, pending, cfg, args.lang):
-        print(f"batch {i}: {len(chunk)} keys -> {cfg.model} ...", flush=True)
+    steps = "translate -> reflect -> improve" if reflect else "translate"
+    for i, chunk, _messages in _iter_batches(inv, pending, cfg, args.lang):
+        print(f"batch {i}: {len(chunk)} keys -> {cfg.model} ({steps}) ...", flush=True)
         try:
-            reply = chat_once(cfg, messages, api_key)
-            got = parse_translations(reply)
+            got = translate_batch(
+                cfg, inv, chunk, args.lang, api_key, reflect=reflect, label=f"batch {i}"
+            )
         except TranslateError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
-        wanted = {e.key for e in chunk}
-        missing = sorted(wanted - got.keys())
-        if missing:
-            print(
-                f"error: batch {i} reply omitted {len(missing)} key(s): {missing[:5]}",
-                file=sys.stderr,
-            )
-            return 1
-        translated.update({k: v for k, v in got.items() if k in wanted})
+        translated.update(got)
 
     path = sidecar_path(args.campaign_dir, args.lang)
     write_sidecar(path, inv, merge_content(inv, translated))

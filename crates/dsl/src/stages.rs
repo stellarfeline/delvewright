@@ -2411,7 +2411,13 @@ pub enum Objective {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         happening: Option<Happening>,
     },
-    /// Completed when `count` of `item` have been collected from `anchor` (v0.3).
+    /// Completed when `count` of `item` have been collected (v0.3).
+    ///
+    /// The items are provided in a container: the compiler's own chest at
+    /// `anchor` by default, or — since DSL v0.8 — the prefab's existing
+    /// chest/barrel at [`Objective::Collect::container`], optionally carrying an
+    /// [`Objective::Collect::item_name`] and padded to read full with
+    /// [`Objective::Collect::fill_count`].
     Collect {
         /// Objective id.
         id: ObjectiveId,
@@ -2427,6 +2433,52 @@ pub enum Objective {
         count: u32,
         /// The anchor items are provided at (chest / pickup).
         anchor: AnchorId,
+        /// **Adopt the container the prefab already placed** (DSL v0.8, task #95;
+        /// reserved `DW0141` earlier): the anchor whose assembled-world cell holds
+        /// a `chest` / `trapped_chest` / `barrel` this collect fills instead of
+        /// conjuring its own chest at [`Objective::Collect::anchor`].
+        ///
+        /// Same division of labour a `loot` entry and a trap's dispenser already
+        /// keep with the prefab: furniture belongs in the piece. A beach camp's
+        /// barrel is scenery the player has been walking past since minute one —
+        /// having the compiler `setblock` a *second*, floating chest beside it to
+        /// hold the quest item is exactly the downstream workaround the no-hack
+        /// rule forbids. A `container` whose cell holds no container is a build
+        /// error (`DW0438`), never a silent fill into a wall.
+        ///
+        /// The critical-path step's position follows the container (the bot opens
+        /// *this* block), and no chest is placed at `anchor` when it is set.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        container: Option<AnchorId>,
+        /// Display name for the collected item (DSL v0.8, task #95; reserved
+        /// `DW0141` earlier), emitted as the vanilla `custom_name` item component.
+        ///
+        /// A quest item is a *named thing* in the story ("Cheese", "Tide
+        /// Ledger"), and a player who opens the barrel must read that name — an
+        /// unnamed `minecraft:pumpkin_pie` says nothing about what the quest asked
+        /// for. Player-visible, so it enters the l10n string inventory
+        /// (`obj.<quest>.<obj>.item_name`) and translates like any other line.
+        ///
+        /// Naming changes nothing about adjudication: the completion advancement
+        /// and the per-tick held check both match on the ITEM ID, which a named
+        /// stack still carries.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item_name: Option<String>,
+        /// Padding stacks that make the container **read full** (DSL v0.8, task
+        /// #95; reserved `DW0141` earlier). Default `0` = the single required
+        /// stack, exactly as every pre-0.8 campaign emits.
+        ///
+        /// A barrel of cheese that opens on one lonely wheel reads as a bug, and
+        /// vanilla's notion of "full" is *occupied slots*, not stack size — so
+        /// this counts SLOTS: the objective's own stack lands in `container.0` and
+        /// each padding stack repeats it in `container.1`, `container.2`, … Slot
+        /// assignment is positional and total, the same determinism story `loot`
+        /// tells (ADR-0006): no RNG, no loot tables, nothing to reseed.
+        ///
+        /// The padding is the same item, so taking the whole barrel still
+        /// completes the objective and never over- or under-counts it.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        fill_count: u32,
         /// Prerequisite objectives.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         after: Vec<ObjectiveId>,
@@ -2767,6 +2819,26 @@ impl Objective {
             | Objective::Kill { stealth, .. }
             | Objective::Collect { stealth, .. }
             | Objective::Interact { stealth, .. } => *stealth,
+        }
+    }
+
+    /// The container this objective ADOPTS (DSL v0.8), if it is a `collect` that
+    /// declares one: the anchor whose prefab-placed chest/barrel it fills instead
+    /// of conjuring its own chest. `None` on every other objective and on a
+    /// `collect` that keeps the compiler-placed chest.
+    pub fn collect_container(&self) -> Option<&AnchorId> {
+        match self {
+            Objective::Collect { container, .. } => container.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// The padding-stack count of a `collect` (DSL v0.8); `0` for every other
+    /// objective and for a `collect` that fills the single required stack only.
+    pub fn collect_fill_count(&self) -> u32 {
+        match self {
+            Objective::Collect { fill_count, .. } => *fill_count,
+            _ => 0,
         }
     }
 

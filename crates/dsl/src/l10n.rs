@@ -29,6 +29,7 @@
 //! | `quest.<quest>.goal` | each stage-4 planned-quest `goal` |
 //! | `obj.<quest>.<obj>.title` / `.hint` | a stage-5 objective's `title`/`hint` (only if set) |
 //! | `obj.<quest>.<obj>.missing_item_hint` | a stage-5 `interact`'s `missing_item_hint` (v0.7, only if set) |
+//! | `obj.<quest>.<obj>.item_name` | a stage-5 `collect`'s `item_name` (v0.8, only if set) |
 //! | `dlg.<npc>.<node>.text` | each stage-6 dialogue node `text` |
 //! | `dlg.<npc>.<node>.opt.<i>.label` | each dialogue option `label` |
 //! | `dlg.<npc>.<node>.opt.<i>.tooltip` | that option's hover `tooltip` (v0.8, only if set) |
@@ -270,6 +271,17 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             } = o
             {
                 f(&format!("obj.{ql}.{ol}.missing_item_hint"), m);
+            }
+            // Stage 5 — v0.8 `collect.item_name` (task #95): the display name the
+            // collected item carries as a `custom_name` component. A player reads
+            // it off the stack in the barrel and off their own hotbar, so it is as
+            // player-visible as a `title` and translates like one. Absent on every
+            // pre-0.8 objective → inventory unchanged.
+            if let crate::stages::Objective::Collect {
+                item_name: Some(n), ..
+            } = o
+            {
+                f(&format!("obj.{ql}.{ol}.item_name"), n);
             }
         }
         // Stage 5 — v0.4 effect strings: `narrate` text + named `give-item`
