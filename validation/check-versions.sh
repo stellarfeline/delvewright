@@ -96,14 +96,17 @@ echo "== Content repo pin (spec-0007 [content]) =="
 # (.github/actions/checkout-content) checks it out at this SHA and the compiler
 # stamps it into manifest.json. Guard the shape so a malformed pin fails tier 1
 # rather than at checkout/build time.
-if printf '%s' "$CONTENT_REPO" | grep -qE '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'; then
+# Shape tests use bash's own `=~`, never `printf | grep -q`: grep exits at the
+# match and SIGPIPEs printf, which `pipefail` reads as NO MATCH — a well-formed
+# pin would fail its own guard (tools/check-shell-pipe-shortcircuit.py).
+if [[ $CONTENT_REPO =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
   pass "content.repo is a valid owner/name ($CONTENT_REPO)"
 else
   fail "content.repo '$CONTENT_REPO' is not a valid GitHub owner/name slug"
 fi
 # A pinned commit must be a full 40-hex SHA (determinism: ADR-0006). "unpinned" or
 # a short/branch ref is a mistake — CI would build against a moving target.
-if printf '%s' "$CONTENT_SHA" | grep -qE '^[0-9a-f]{40}$'; then
+if [[ $CONTENT_SHA =~ ^[0-9a-f]{40}$ ]]; then
   pass "content.sha is a full 40-hex commit ($CONTENT_SHA)"
 else
   fail "content.sha '$CONTENT_SHA' is not a full 40-hex commit SHA"
@@ -112,7 +115,7 @@ fi
 echo "== Render layer ([render], spec-0007) =="
 # Nucleation is pinned by git REV; the compiler-independent render crate must pin
 # exactly this rev, and a rev must be a full 40-hex commit (determinism/repro).
-if printf '%s' "$NUCLEATION_REV" | grep -qE '^[0-9a-f]{40}$'; then
+if [[ $NUCLEATION_REV =~ ^[0-9a-f]{40}$ ]]; then
   pass "render.nucleation_rev is a full 40-hex commit ($NUCLEATION_REV)"
 else
   fail "render.nucleation_rev '$NUCLEATION_REV' is not a full 40-hex commit SHA"
@@ -124,7 +127,7 @@ else
   fail "crates/render/Cargo.toml missing (cannot verify the render dep pin)"
 fi
 # Chunky is a snapshot core (1.21.x needs it); assert the pin looks like one.
-if printf '%s' "$CHUNKY_CORE" | grep -qE '^chunky-core-.*SNAPSHOT'; then
+if [[ $CHUNKY_CORE =~ ^chunky-core-.*SNAPSHOT ]]; then
   pass "render.chunky_core is a snapshot build ($CHUNKY_CORE)"
 else
   fail "render.chunky_core '$CHUNKY_CORE' is not a chunky-core snapshot build"
