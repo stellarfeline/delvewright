@@ -32,8 +32,8 @@ impl AnchorRegistry for ForceDark<'_> {
     fn lighting_for(&self, _prefab: &PrefabId) -> Option<Lighting> {
         Some(Lighting {
             profile: LightingProfile::Dark,
-            measured_min_light: 0,
-            measured: "2026-07-30".to_string(),
+            measured_min_light: Some(0),
+            measured: Some("2026-07-30".to_string()),
             rationale: Some("a deliberately unlit crypt".to_string()),
             method: None,
         })

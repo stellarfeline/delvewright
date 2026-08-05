@@ -36,6 +36,19 @@ pub enum EvalError {
     },
 }
 
+impl std::fmt::Display for EvalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EvalError::DivideByZero => write!(f, "division or remainder by zero"),
+            EvalError::UnknownParam { name } => {
+                write!(f, "parameter {name:?} is not declared by this program")
+            }
+        }
+    }
+}
+
+impl std::error::Error for EvalError {}
+
 impl<'a> Scope<'a> {
     /// Measure one dimension, in blocks.
     pub fn dim(&self, dim: DimRef) -> i64 {

@@ -525,6 +525,7 @@ dependencies = [
  "clap",
  "crc32fast",
  "delvewright-dsl",
+ "delvewright-grammar",
  "fastnbt",
  "flate2",
  "serde",
@@ -546,8 +547,10 @@ dependencies = [
 name = "delvewright-grammar"
 version = "0.0.0"
 dependencies = [
+ "delvewright-schem",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]
