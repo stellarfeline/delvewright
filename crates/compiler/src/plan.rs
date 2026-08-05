@@ -2325,13 +2325,39 @@ fn collect_seal_hints(
     out
 }
 
-/// Where an effect was declared: which stage document, and the JSON pointer
-/// inside it. Carried so a diagnostic can name the exact firing site.
-pub(crate) struct GateSite {
+/// Which of the five effect roots a visited effect hangs off — the part of a
+/// [`GateSite`] that decides **when** the firing happens and **whether the player
+/// is forced to cause it**, which is all the completability model needs on top of
+/// the effect itself.
+#[derive(Clone, Copy)]
+pub(crate) enum GateRoot<'a> {
+    /// A quest's `on_objective_complete[<objective>]` — fires at that objective's
+    /// `critical_path` step. Forced: completing the objective is the mainline.
+    ObjectiveComplete(&'a str),
+    /// A quest's `on_complete` — fires at the quest's completion step. Forced.
+    QuestComplete(&'a Quest),
+    /// An environment `triggers[].effects` — proximity/interaction-fired, so it has
+    /// no step of its own; conservatively rooted at step 0.
+    Trigger,
+    /// A `traps[].payload` (spec-0022) — proximity/interaction-fired exactly like a
+    /// trigger, and **optional**: the party may never trip it.
+    TrapPayload,
+    /// A dialogue option's `set-checkpoint` `on_respawn` bundle — re-run on death
+    /// while that checkpoint is active, so it is optional too (nobody is forced to
+    /// die).
+    DialogueRespawn,
+}
+
+/// Where an effect was declared: which stage document, the JSON pointer inside it,
+/// and which root it hangs off. Carried so a diagnostic can name the exact firing
+/// site and so a consumer can reason about *when* the firing happens.
+pub(crate) struct GateSite<'a> {
     /// The stage document the effect lives in (`quests` or `dialogue`).
     pub stage: &'static str,
     /// JSON pointer to the effect within that document.
     pub path: String,
+    /// The effect root this firing hangs off.
+    pub root: GateRoot<'a>,
 }
 
 /// Visit **every effect the compiler can lower to a gate command**, at every
@@ -2339,7 +2365,7 @@ pub(crate) struct GateSite {
 ///
 /// This is deliberately wider than `dsl::for_each_campaign_effect`, and the width
 /// is the point: an effect list is a gate site if `emit::emit_quest_effect` can
-/// reach it, not if the quests stage happens to own it. Four roots do:
+/// reach it, not if the quests stage happens to own it. Five roots do:
 ///
 /// 1. quest `on_objective_complete` (a `BTreeMap`, so key-ordered), then
 /// 2. quest `on_complete`,
@@ -2353,30 +2379,39 @@ pub(crate) struct GateSite {
 ///    compiler fills but never arms is exactly the silence task #142 exists to
 ///    close, so the seal scan reaches it.
 ///
-/// Known adjacent blind spots, reported rather than widened here because they are
-/// pre-existing and belong to other proofs: [`collect_gate_events`] (the `DW0311`
-/// completability model) and `dsl::l10n::each_string` (the translation inventory)
-/// both stop at roots 1–3.
+/// Each visit carries a [`GateRoot`] naming which of the five it came from, so a
+/// consumer that needs *when* a firing happens (the completability model) reads it
+/// off the site instead of re-deriving it from a second, drift-prone walk.
+///
+/// Every consumer that reasons about emitted gate commands walks THIS: the seal
+/// planner ([`collect_seal_hints`]), the wording check (`gates::check_seal_hints`,
+/// `DW0423`) and the completability model ([`collect_gate_events`], which feeds
+/// `DW0311`/`DW0315`/`DW0342`/`DW0410`). Sharing the traversal is what makes the
+/// checks and the emission unable to disagree about which firings exist — the
+/// three-of-five drift this closed (tasks #142, #167) was exactly that
+/// disagreement.
 pub(crate) fn for_each_gate_effect<'a>(
     campaign: &'a Campaign,
-    f: &mut dyn FnMut(&GateSite, &'a QuestEffect),
+    f: &mut dyn FnMut(&GateSite<'a>, &'a QuestEffect),
 ) {
     fn deep<'a>(
         eff: &'a QuestEffect,
         stage: &'static str,
         path: &str,
-        f: &mut dyn FnMut(&GateSite, &'a QuestEffect),
+        root: GateRoot<'a>,
+        f: &mut dyn FnMut(&GateSite<'a>, &'a QuestEffect),
     ) {
         f(
             &GateSite {
                 stage,
                 path: path.to_string(),
+                root,
             },
             eff,
         );
         for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
             for (j, inner) in list.iter().enumerate() {
-                deep(inner, stage, &format!("{path}/{pseg}/{j}"), f);
+                deep(inner, stage, &format!("{path}/{pseg}/{j}"), root, f);
             }
         }
     }
@@ -2390,6 +2425,7 @@ pub(crate) fn for_each_gate_effect<'a>(
                         "/content/quests/{qi}/on_objective_complete/{}/{i}",
                         oid.as_str()
                     ),
+                    GateRoot::ObjectiveComplete(oid.as_str()),
                     f,
                 );
             }
@@ -2399,6 +2435,7 @@ pub(crate) fn for_each_gate_effect<'a>(
                 eff,
                 "quests",
                 &format!("/content/quests/{qi}/on_complete/{i}"),
+                GateRoot::QuestComplete(q),
                 f,
             );
         }
@@ -2409,6 +2446,7 @@ pub(crate) fn for_each_gate_effect<'a>(
                 eff,
                 "quests",
                 &format!("/content/triggers/{ti}/effects/{i}"),
+                GateRoot::Trigger,
                 f,
             );
         }
@@ -2419,6 +2457,7 @@ pub(crate) fn for_each_gate_effect<'a>(
                 eff,
                 "quests",
                 &format!("/content/traps/{pi}/payload/{i}"),
+                GateRoot::TrapPayload,
                 f,
             );
         }
@@ -2437,6 +2476,7 @@ pub(crate) fn for_each_gate_effect<'a>(
                             &format!(
                                 "/content/dialogues/{di}/nodes/{ni}/options/{oi}/effects/{ei}/on_respawn/{i}"
                             ),
+                            GateRoot::DialogueRespawn,
                             f,
                         );
                     }
@@ -2478,57 +2518,70 @@ fn gate_region_any(
     None
 }
 
-/// Collect every `open-gate` / `close-gate` firing (DSL v0.6) in deterministic
-/// content order — quest `on_objective_complete`, then `on_complete`, then
-/// environment triggers (conservative fire step 0, like `collect_v06_effects`),
-/// then dialogue options — resolving each anchor to its gate region and rooting it
-/// at its firing step. Descends every nested effect list so a gate effect inside a
-/// `sequence` step / lifecycle bundle is registered at the same firing step. An
-/// effect whose anchor is not a resolvable gate is skipped (a point anchor / bad
-/// close-gate is a validation concern, `DW0142`/`DW0343`). Feeds the `close-gate`
-/// completability model in `crate::nav`. Gates are a quest/trigger-effect surface
-/// only (the `DialogueEffect` enum carries no gate verb), so dialogue is not
-/// scanned.
+/// Collect every `open-gate` / `close-gate` firing (DSL v0.6) that emission can
+/// lower, resolving each anchor to its gate region and rooting it at its firing
+/// step. Feeds the `close-gate` completability model in `crate::nav`
+/// (`DW0311`/`DW0315`/`DW0342`/`DW0410`).
+///
+/// Walks [`for_each_gate_effect`] — the **same** traversal the seal planner and
+/// `gates::check_seal_hints` walk — so the model and the emission cannot disagree
+/// about which firings exist (task #167; before this, the model saw three of the
+/// five roots emission reaches, and a `close-gate` in a `traps[].payload` or a
+/// dialogue option's `on_respawn` bundle was filled in the datapack while every nav
+/// proof believed the wall was open). Nesting is descended by that traversal, so a
+/// gate effect inside a `sequence` step / lifecycle bundle is registered at its
+/// root's firing step. An effect whose anchor is not a resolvable gate is skipped
+/// (a point anchor / bad close-gate is a validation concern, `DW0142`/`DW0343`).
+///
+/// **When** a firing happens is read off the site's [`GateRoot`]:
+///
+/// - a quest `on_objective_complete` fires at that objective's step, an
+///   `on_complete` at the quest's completion step — the player is *forced* through
+///   both, so both directions are modelled;
+/// - an environment trigger, a trap payload and a dialogue-hosted `on_respawn`
+///   bundle have no step of their own (proximity, a sprung trap, a death), so all
+///   three are rooted conservatively at step 0, which precedes every leg.
+///
+/// The two **optional** roots — a trap the party may never trip, a death nobody is
+/// forced to suffer — register their `close-gate`s only. An unguaranteed firing may
+/// be assumed to have happened exactly when assuming so is conservative: it can
+/// seal a region (the proof must survive the seal), it can never unseal one (the
+/// proof may not lean on a wall the player might never open). That is the same rule
+/// a shortcut gate already obeys — sealed for the whole model, because the delve
+/// must be finishable the long way. Environment triggers keep their older
+/// both-directions treatment unchanged; narrowing that is a different proof's
+/// verdict and is not this function's call to make.
 fn collect_gate_events(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     obj_step: &BTreeMap<String, usize>,
 ) -> Vec<GateEvent> {
     let mut out = Vec::new();
-    let handle = |eff: &QuestEffect, fire_step: usize, out: &mut Vec<GateEvent>| {
-        eff.visit_deep(&mut |e| {
-            let gate = e
-                .open_gate_anchor()
-                .map(|a| (a, false))
-                .or_else(|| e.close_gate_anchor().map(|a| (a, true)));
-            if let Some((anchor, closes)) = gate
-                && let Some(region) = gate_region_any(anchors, anchor.as_str())
-            {
-                out.push(GateEvent {
-                    region,
-                    closes,
-                    fire_step,
-                });
-            }
-        });
-    };
-    for q in &campaign.quests.content.quests {
-        for (obj_id, effs) in &q.on_objective_complete {
-            let step = obj_step.get(obj_id.as_str()).copied().unwrap_or(0);
-            for eff in effs {
-                handle(eff, step, &mut out);
-            }
+    for_each_gate_effect(campaign, &mut |site, e| {
+        let (fire_step, forced) = match site.root {
+            GateRoot::ObjectiveComplete(oid) => (obj_step.get(oid).copied().unwrap_or(0), true),
+            GateRoot::QuestComplete(q) => (quest_complete_step(q, obj_step), true),
+            GateRoot::Trigger => (0, true),
+            GateRoot::TrapPayload | GateRoot::DialogueRespawn => (0, false),
+        };
+        let gate = e
+            .open_gate_anchor()
+            .map(|a| (a, false))
+            .or_else(|| e.close_gate_anchor().map(|a| (a, true)));
+        let Some((anchor, closes)) = gate else {
+            return;
+        };
+        if !closes && !forced {
+            return; // an optional firing may seal, never unseal
         }
-        let done_step = quest_complete_step(q, obj_step);
-        for eff in &q.on_complete {
-            handle(eff, done_step, &mut out);
+        if let Some(region) = gate_region_any(anchors, anchor.as_str()) {
+            out.push(GateEvent {
+                region,
+                closes,
+                fire_step,
+            });
         }
-    }
-    for t in &campaign.quests.content.triggers {
-        for eff in &t.effects {
-            handle(eff, 0, &mut out);
-        }
-    }
+    });
     out
 }
 
