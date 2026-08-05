@@ -555,9 +555,15 @@ pub fn build_with_warnings(
             // this file: the set-piece souls fight is an actor, not a wave, and
             // a campaign whose only billed elite is an actor would otherwise
             // emit no plan at all — the exact silence spec-0023's floor gate
-            // must not be allowed to read as a pass.
+            // must not be allowed to read as a pass. An UNTIERED hostile actor
+            // (task #121) is enough for the same reason and one step further
+            // out: it is a fight nothing bills, so without the ledger line
+            // naming it there is no artifact anywhere that says it existed.
             let tiered_actors = crate::combat::actor_encounters(plan);
-            if crate::combat::has_encounters(plan) || !tiered_actors.is_empty() {
+            if crate::combat::has_encounters(plan)
+                || !tiered_actors.is_empty()
+                || crate::combat::has_untiered_hostile_actors(plan)
+            {
                 let mandatory = crate::combat::encounters(plan);
                 warnings.extend(crate::combat::floor_coverage_warnings(
                     plan,
