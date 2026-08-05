@@ -865,10 +865,17 @@ Then:
 
 - **Wave tuning**: `follow_range` below ~16 means distant wave mobs never
   engage; a kill objective whose mobs idle is unfinishable-in-practice even
-  though machine-valid. Undead waves burn in daylight — the RIGHT fix (owner
-  ruling) is a helmet on the mob (wave `equipment` field, pending task #65);
-  until that field exists, a `set-time` ordered BEFORE `spawn-wave` in the
-  same effect list is the interim. Never route wave mobs like actors: waves
+  though machine-valid. Undead waves burn in daylight — the ONLY sanctioned fix
+  (owner ruling) is a helmet on the mob: `equipment.head`, any head item, on
+  every burning stack the party is asked to fight. **Never `set-time`**; the
+  delve's hour is a pacing decision, and moving it to save a mob spends a beat.
+  The compiler enforces this now (`DW0496`): a species in vanilla's
+  `#minecraft:burn_in_daylight` staged for a `kill`-adjudicated fight whose
+  walkable ground reaches open sky, under a pinned clear daytime hour, with an
+  empty head slot, is a build error naming the sunlit cell. Roofing the arena
+  clears it too. One species the helmet does not save — a phantom burns through
+  it — so an open-air phantom fight has to be roofed or restaged.
+  Never route wave mobs like actors: waves
   are native AI; if a future beat needs lane-then-fight movement, that is the
   routed-then-feral primitive (M4, task #66), not a follow_range trick.
 - **Player-POV review is live**: the build's `render-plan.json` POV shots
