@@ -63,6 +63,18 @@ pub const DW_WAVE_NO_ROOM: &str = "DW0312";
 /// proof green.
 pub const DW_AGGRO_EDGE_NO_RING: &str = "DW0387";
 
+/// `DW0494`: completing ONE objective would cross into two different areas —
+/// one destination on the exported path, another on a branch (task #186).
+///
+/// The crossing is emitted into the objective's own completion bundle, so the
+/// two destinations would be two teleports in one function body, and which one
+/// the party lands on would depend on command order rather than on the branch
+/// they are actually playing. There is no runtime distinction to gate on either:
+/// the exported path's crossing is unconditional by construction. The content
+/// fix is to split the objective — one crossing objective per branch, each
+/// gated by that branch's own flags.
+pub const DW_BRANCH_TRANSPORT_DIVERGES: &str = "DW0494";
+
 impl From<crate::nav::NavError> for BuildFailure {
     fn from(e: crate::nav::NavError) -> Self {
         BuildFailure::Diagnostic {
@@ -751,6 +763,9 @@ pub fn build_with_warnings(
     // Trap flag gating (DSL v0.6): resolve the authored trigger hardware for every
     // gated trap, rejecting a trigger the compiler cannot restore (DW0363).
     let trap_gates = trap_gate_hardware(plan, prefabs)?;
+    // Task #186: the inter-area crossings that exist only on a branch. Computed
+    // here so `DW0494` fails the build before a single function is emitted.
+    let branch_transport = branch_transport_overlay(plan)?;
 
     let functions = emit_functions(
         plan,
@@ -766,6 +781,7 @@ pub fn build_with_warnings(
         }),
         &trap_gates,
         &payload_plans,
+        &branch_transport,
     );
     for (name, body) in &functions {
         insert_unique(
@@ -1543,6 +1559,7 @@ fn emit_functions(
     edit_bounds: &[([i32; 3], [i32; 3])],
     trap_gates: &BTreeMap<String, String>,
     payloads: &PayloadPlans,
+    branch_transport: &BranchTransportOverlay,
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -2642,6 +2659,43 @@ fn emit_functions(
             // after gate effects so the destination area is already unlocked.
             if let Some(pos) = plan.transport.get(oid) {
                 body.push(format!("teleport @s {} {} {}", pos[0], pos[1], pos[2]));
+            }
+            // Task #186: a crossing that happens only on ONE branch. The exported
+            // path never walks it, so it cannot be unconditional — it is gated on
+            // exactly the flag assignment that selects its branch, the same
+            // `#party` predicate a branch-gated dialogue option uses. Prefix
+            // conditions do not rebind `@s`, so the acting player is still the
+            // one carried. Empty for every campaign whose branches cross only
+            // where the exported path already does (byte-identity).
+            let mut emitted: BTreeSet<String> = BTreeSet::new();
+            for row in branch_transport.get(oid).into_iter().flatten() {
+                let tp = format!("teleport @s {} {} {}", row.pos[0], row.pos[1], row.pos[2]);
+                let mut cmd = String::new();
+                for f in &row.set {
+                    cmd.push_str(&format!(
+                        " if score {} {} matches 1",
+                        plan::PARTY,
+                        plan::flag_score(f)
+                    ));
+                }
+                for f in &row.unset {
+                    cmd.push_str(&format!(
+                        " unless score {} {} matches 1",
+                        plan::PARTY,
+                        plan::flag_score(f)
+                    ));
+                }
+                // A branch that pins no flags at all is indistinguishable at
+                // runtime: there is nothing to condition on, so the crossing is
+                // simply unconditional.
+                let line = if cmd.is_empty() {
+                    tp
+                } else {
+                    format!("execute{cmd} run {tp}")
+                };
+                if emitted.insert(line.clone()) {
+                    body.push(line);
+                }
             }
             body.push(format!(
                 "function {ns}:check_q_{}",
@@ -11807,6 +11861,21 @@ fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// the machine-checkable half of "a deterministic clock over the gate region";
 /// the *timing* half is the compile-time `DW0378` proof, which needs no server.
 /// Emits nothing for a campaign with no timed gate.
+/// Pin the jam score a disarmable gate's clock is guarded by, so a template never
+/// runs against a jam a sibling left behind.
+///
+/// PackTest shares one server across every generated template and gives no
+/// ordering guarantee, so a persistent score is shared mutable state between
+/// tests. `souls_timed_gate_disarm` deliberately ends DISARMED — that is its
+/// subject — and any sibling that calls `tgate_close_` afterwards finds the call
+/// swallowed by the jam guard. Emitting nothing for a gate with no `disarm` keeps
+/// those campaigns byte-identical.
+fn pin_tgdis(b: &mut Vec<String>, g: &crate::plan::TimedGatePlan) {
+    if g.disarm.is_some() {
+        b.push(format!("scoreboard players set #tgdis_{} dw.sys 0", g.safe));
+    }
+}
+
 fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = &plan.campaign.world.content.title;
@@ -11826,6 +11895,13 @@ fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
         "fill {} {} {} {} {} {} {}",
         from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
     ));
+    // …and un-jam, for the same reason the fill exists. `souls_timed_gate_disarm`
+    // ends with the gate DISARMED and never restores it, `#tgdis_<id>` persists on
+    // the shared server, and PackTest does not order siblings — so whenever disarm
+    // runs first, this template's `tgate_close_` is swallowed by its own jam guard
+    // and the re-seal assertion reads air. A template never inherits the state a
+    // sibling left (the flag-leak class of PR #237); it pins what it depends on.
+    pin_tgdis(&mut b, g);
     b.push(format!(
         "execute store success score #tg_sealed dw.sys if block {} {} {} {}",
         probe[0], probe[1], probe[2], g.gate_block
@@ -11984,6 +12060,10 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
         g.id
     ));
     b.push(format!("function {ns}:setup"));
+    // Un-jam first, for the same reason the base template does: a jam left by
+    // `souls_timed_gate_disarm` swallows the `tgate_close_` this test crushes
+    // with, and the crush that never happens reads as a lethality failure.
+    pin_tgdis(&mut b, g);
     // Open first: a mistimed crossing leaves the player standing in an open
     // gateway, which is the position the judgement must catch.
     b.push(format!("function {ns}:tgate_open_{}", g.safe));
@@ -14611,6 +14691,93 @@ fn rest_step_index(plan: &Plan, walked: &[plan::Step], fire_step: usize) -> Opti
 /// An unreachable branch contributes nothing: there is no world that plays it,
 /// which `DW0482` has already failed the build for; `branch-plan.json` still names
 /// it, so the harness reports it skipped rather than silently absent.
+/// One branch-only inter-area crossing: where to set the party down, and the
+/// flag assignment that identifies the branch it belongs to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BranchTransport {
+    /// Flags pinned SET on the branch this crossing belongs to.
+    pub set: BTreeSet<String>,
+    /// Flags pinned UNSET on that branch.
+    pub unset: BTreeSet<String>,
+    /// The branch's slug — the row's deterministic sort key, and the name of the
+    /// `branch-path-<slug>.json` this crossing is the datapack half of.
+    pub slug: String,
+    /// The destination area's `spawn` anchor, in world coordinates.
+    pub pos: [i32; 3],
+}
+
+/// Objective id → the branch-only crossings completing it must perform.
+pub type BranchTransportOverlay = BTreeMap<String, Vec<BranchTransport>>;
+
+/// The crossings that exist on a BRANCH but not on the exported path (task #186).
+///
+/// [`crate::plan::build_critical_path`] derives an inter-area transport map for
+/// whatever playthrough it is handed, so every branch's map already exists via
+/// [`Plan::branch_critical_path`] — and `branch-path-<slug>.json` publishes it to
+/// the harness. Emission, however, reads only `plan.transport`, the **exported**
+/// path's map. A campaign whose branch alone leaves the starting area therefore
+/// promised the harness a crossing the datapack never performed, and the branch
+/// run stranded where the teleport should have been (island round 21).
+///
+/// This is that difference, ready to be emitted as flag-gated teleports beside
+/// the unconditional one. A crossing the exported path already performs is
+/// omitted: it is emitted unconditionally, which is stronger. A crossing whose
+/// destination *contradicts* the exported path's is [`DW_BRANCH_TRANSPORT_DIVERGES`]
+/// — one objective cannot land the party in two areas.
+///
+/// Empty — so byte-identical to the pre-task emission — for a campaign with no
+/// `branch_points`, and for one whose branches cross only where the exported path
+/// already does. Deterministic: `BTreeMap` keys, rows sorted by branch slug
+/// (ADR-0006).
+pub fn branch_transport_overlay(plan: &Plan) -> Result<BranchTransportOverlay, BuildFailure> {
+    let mut out: BranchTransportOverlay = BTreeMap::new();
+    let branches = crate::branch::realize(plan.campaign);
+    if branches.is_empty() {
+        return Ok(out);
+    }
+    let flow = crate::flow::Flow::new(plan.campaign);
+    for r in &branches {
+        // An unreachable branch has no world to walk — `DW0482` has already
+        // failed the build for it (same skip as `branch_paths`).
+        let Some(w) = r.world else { continue };
+        let cp = plan
+            .branch_critical_path(&flow, &flow.playthrough_in(w))
+            .map_err(|e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: format!("branch `{}`: {}", r.branch.id, e.message),
+            })?;
+        for (oid, pos) in &cp.transport {
+            match plan.transport.get(oid) {
+                // Already emitted unconditionally by the exported path.
+                Some(d) if d == pos => continue,
+                Some(d) => {
+                    return Err(BuildFailure::Diagnostic {
+                        code: DW_BRANCH_TRANSPORT_DIVERGES,
+                        message: format!(
+                            "objective `{oid}` crosses to {d:?} on the exported path but to \
+                             {pos:?} on branch `{}`; completing it can only put the party in \
+                             one place — split the crossing into one objective per branch, \
+                             each gated by that branch's flags",
+                            r.branch.id
+                        ),
+                    });
+                }
+                None => {}
+            }
+            out.entry(oid.clone()).or_default().push(BranchTransport {
+                set: r.branch.set.clone(),
+                unset: r.branch.unset.clone(),
+                slug: r.branch.slug.clone(),
+                pos: *pos,
+            });
+        }
+    }
+    for rows in out.values_mut() {
+        rows.sort_by(|a, b| a.slug.cmp(&b.slug));
+    }
+    Ok(out)
+}
+
 fn branch_paths(
     plan: &Plan,
     moves: &[crate::nav::MovePlan],

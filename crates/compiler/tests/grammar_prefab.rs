@@ -13,13 +13,18 @@ use std::collections::BTreeMap;
 
 use delvewright_compiler::registry::PrefabRegistry;
 use delvewright_dsl::{AnchorRegistry, LightingProfile, PrefabId};
-use delvewright_grammar::library::{castle, cliff_path, temple, watch_bay};
+use delvewright_grammar::library::{
+    ambush_door, castle, cliff_path, rafter_hall, store_room, temple, watch_bay,
+};
 use delvewright_grammar::{Box3, ExpandOptions, export_prefab};
 
 const REGION: Box3 = Box3::at_origin([13, 14, 21]);
 const CASTLE_REGION: Box3 = Box3::at_origin([41, 14, 25]);
 const CLIFF_REGION: Box3 = Box3::at_origin([3, 6, 30]);
 const PASSAGE_REGION: Box3 = Box3::at_origin([7, 7, 24]);
+const HALL_REGION: Box3 = Box3::at_origin([13, 6, 25]);
+const DOOR_REGION: Box3 = Box3::at_origin([11, 5, 13]);
+const STORE_REGION: Box3 = Box3::at_origin([7, 5, 14]);
 
 fn library_dir(tag: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("dw-grammar-prefab-{}-{tag}", std::process::id()));
@@ -140,11 +145,11 @@ fn an_anchor_a_rule_marked_comes_back_out_of_the_registry() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
-/// The staging vocabulary (spec-0027 W1) is the first thing to put *many*
+/// The staging vocabulary (spec-0027 W1 and W2) is the first thing to put *many*
 /// anchors through this seam, and indexed ones at that. `anchor/niche-1`,
-/// `anchor/niche-watch-1`, … are generated names — no one hand-lists them — so
-/// the seam has to carry a set it was never told the size of, and the engine has
-/// to hand every one of them back as a name the DSL can bind an actor to.
+/// `anchor/perch-7`, … are generated names — no one hand-lists them — so the
+/// seam has to carry a set it was never told the size of, and the engine has to
+/// hand every one of them back as a name the DSL can bind an actor to.
 #[test]
 fn the_staging_rules_indexed_anchors_all_reach_the_registry() {
     for (name, program, region, expected) in [
@@ -159,6 +164,24 @@ fn the_staging_rules_indexed_anchors_all_reach_the_registry() {
             watch_bay(),
             PASSAGE_REGION,
             vec!["anchor/watch", "anchor/gate"],
+        ),
+        (
+            "grammar-rafter-hall",
+            rafter_hall(),
+            HALL_REGION,
+            vec!["anchor/hall-door", "anchor/perch-1", "anchor/perch-7"],
+        ),
+        (
+            "grammar-ambush-door",
+            ambush_door(),
+            DOOR_REGION,
+            vec!["anchor/alcove", "anchor/threshold"],
+        ),
+        (
+            "grammar-store-room",
+            store_room(),
+            STORE_REGION,
+            vec!["anchor/store-line", "anchor/tell"],
         ),
     ] {
         let dir = library_dir(name);

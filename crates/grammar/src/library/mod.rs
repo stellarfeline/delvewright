@@ -10,12 +10,14 @@
 //! Each port is faithful to its source's rule structure; where a rule's shape
 //! changed, the module says so at the rule.
 //!
-//! **The staging vocabulary.** [`cliff_path`] and [`watch_bay`] are *original*
-//! Delvewright rules — no upstream, nothing ported, licence `original`. They are
-//! the W1 family of the drowned-bell remake's grammar vocabulary: not buildings
-//! but *encounters*, box grammars whose reason to exist is a machine gate about
-//! how the space plays. Both share one local frame, and it is worth stating once
-//! because every derived anchor facing depends on it:
+//! **The staging vocabulary.** [`cliff_path`], [`watch_bay`], [`rafter_hall`],
+//! [`ambush_door`] and [`store_room`] are *original* Delvewright rules — no
+//! upstream, nothing ported, licence `original`. They are the W1 (path and
+//! hazard geometry) and W2 (interior ambush) families of the drowned-bell
+//! remake's grammar vocabulary: not buildings but *encounters*, box grammars
+//! whose reason to exist is a machine gate about how the space plays. They share
+//! one local frame, and it is worth stating once because every derived anchor
+//! facing depends on it:
 //!
 //! > **Local `Y` is up. Local `Z`-max is the approach end, and travel runs
 //! > toward local `Z`-min.**
@@ -34,22 +36,28 @@
 //! the style controls, so one program yields a family of models rather than one
 //! building.
 
+pub mod ambush_door;
 pub mod castle;
 pub mod church;
 pub mod cliff_path;
+pub mod rafter_hall;
+pub mod store_room;
 pub mod temple;
 pub mod watch_bay;
 
+pub use ambush_door::ambush_door;
 pub use castle::castle;
 pub use church::church;
 pub use cliff_path::cliff_path;
+pub use rafter_hall::rafter_hall;
+pub use store_room::store_room;
 pub use temple::temple;
 pub use watch_bay::watch_bay;
 
 use crate::geom::Axis;
 use crate::ir::{
-    Alternative, ArithOp, CmpOp, Cond, DimRef, Expr, Mark, MarkAt, Node, Reorient, Rounding, Size,
-    Split,
+    Alternative, ArithOp, CmpOp, Cond, DimRef, Expr, Mark, MarkAt, Node, Reorient, Rounding, Side,
+    Size, Split,
 };
 
 // ---------------------------------------------------------------------------
@@ -179,6 +187,13 @@ fn marked_each(anchor: &str, at: MarkAt, body: Node) -> Node {
 /// corner.
 fn at_offset(x: Expr, y: Expr, z: Expr) -> MarkAt {
     MarkAt::Offset { x, y, z }
+}
+
+/// The centre of one face: the given **local** axis pinned to an end, the other
+/// two centred. What a rule wants when the anchor belongs at one end of a run —
+/// the inner tip of a corbel, the near end of a barrel row.
+fn face(axis: Axis, side: Side) -> MarkAt {
+    MarkAt::FaceCenter { axis, side }
 }
 
 /// A local dimension.
