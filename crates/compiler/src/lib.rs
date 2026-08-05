@@ -52,6 +52,7 @@ pub mod combat;
 pub mod commands;
 pub mod continuity;
 pub mod creator;
+pub mod crosshair;
 pub mod eclipse;
 pub mod edit;
 pub mod emit;
