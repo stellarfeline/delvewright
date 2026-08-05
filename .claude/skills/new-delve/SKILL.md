@@ -638,7 +638,14 @@ Then:
      `floor_gate` block every time**: it is the compiler's
      coverage ledger, and `not_covered` names each fight the delve bills
      `elite`/`boss` that the gate cannot measure, with the reason — an empty
-     findings list over an uncovered elite is silence, not a pass. The `actors[]`
+     findings list over an uncovered elite is silence, not a pass. **`covered`,
+     `not_covered` and `actors[]` all empty is the worst case, not the best**: it
+     means no body in the campaign declares a tier, so the gate examined nothing
+     and would have been green no matter what you shipped. The island's floor
+     gate sat in exactly that state, green, for nineteen rounds. A campaign with
+     hostile bodies and no tiered actor or wave has an **unbound** gate — report
+     it as unbound, never as a pass, and fix it by tiering the fight
+     (`docs/reference/playtest-methodology.md`, rule 1). The `actors[]`
      block beside it does the same for tier-declaring stage-5 actors: one row per
      actor, fought (with its outcome) or not (with why). An actor unleashed only
      by an ambient trigger is reported unexercised by design — if you want the
@@ -748,10 +755,63 @@ Then:
       publishes `localhost:25565`; the base compose file publishes nothing
     - playtest with notes: same with `--profile playtest` (+ `CREATOR_NAME=<mc name>`)
 
+## Playtest rounds (iterating with the owner)
+
+Generation is round 1. Everything after it is an iteration round against the
+owner's findings, and the owner's playtest hour is the scarcest resource in the
+pipeline. Full derivation from the 22-round island run:
+`docs/reference/playtest-methodology.md`. Mandatory here:
+
+1. **Keep a findings ledger in `GENERATION.md`** — one row per owner finding:
+   number, her wording, the round it was reported, status. Status is `fixed@rN`,
+   `open`, `engine` (blocked on a capability gap), or `ruled` (she closed it with
+   no code change). This table is the campaign's memory; a finding that lives
+   only in chat is a finding that will be reported to you twice.
+2. **Triage every finding the day it arrives**, as *content* or *capability gap*.
+   A capability gap — the DSL has no way to express what she asked for — is
+   never patched downstream (CLAUDE.md forbids it) and is therefore a **staging
+   blocker**: either the engine work lands before the next playtest, or the round
+   summary tells her, per item, that it is still open and not to test it. Every
+   island finding that survived more than one round was a capability gap, and
+   staging builds while those rows were open is what made her see the same
+   defect twice.
+3. **Close each finding twice: the instance, and the general form.** After fixing
+   the instance, ask what rule it is an instance *of*, and file that rule as a
+   diagnostic (planner mints the DW code — never mint one yourself). When the
+   diagnostic exists, **re-run it against the current build**: that sweep is the
+   deliverable, not the code. `DW0489` found a second live instance the moment it
+   landed — one the owner had already lost a click to. Where no diagnostic is
+   possible, write that down; it becomes a risk item at the next staging review.
+4. **Audit the FULL ledger from round 1 before staging any build** — never from
+   the last round. Nothing she has reported may survive into a build you hand
+   her.
+5. **Pre-flight, in this order, before the invitation**: full ladder green
+   (PackTest → bot critical path + die-retry → every branch run) → ledger audit →
+   localized builds + double-build byte-identical → server boots and self-checks
+   → then invite. Not "the build compiled, come look".
+6. **Update `DESIGN.md` in the same round and run its conformance review.** The
+   island's design record went eight rounds unupdated and the audit that caught
+   up found seven changes no one had asked for.
+7. **Close the round in `GENERATION.md` with its machine record**, not just
+   prose: how many validation-loop iterations it took to reach green, and every
+   DW code the round hit **with its count** (`DW0205 x3, DW0483 x3, DW0450 x1`).
+   Write it even when the count is zero — a round that hit nothing is the
+   datum that says the gates had nothing to say. This is the campaign's own
+   record of where its difficulty lives, and it is the only source from which
+   rounds-to-green can be read afterwards; a round summarised in prose alone
+   is a round whose cost cannot be recovered.
+
 ## Hard rules
 
 - Persist the DSL workspace before validation, not after — a crash must never
   lose the campaign.
+- **Apply an owner ruling at the scope it was given.** If a wider rule seems
+  right, propose it in one line and wait — generalizing a ruling is a design
+  decision, not an inference to make silently. (A one-beat pacing ruling was
+  read as a campaign-wide ceiling and had to be corrected the next day.)
+- **Unrequested change is a rejection cause on its own**, independent of whether
+  the change is good. Author what the round asked for; anything else you believe
+  the campaign needs is a proposal in the round summary.
 - **Open-air by default** (owner directive 2026-08-04): stage scenes in the
   open unless a beat NEEDS enclosure (a cave passage, an interior puzzle,
   a reveal). The horizon — surround terrain, sky, backdrop (spec-0026) — is
