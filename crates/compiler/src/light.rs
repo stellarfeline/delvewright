@@ -437,7 +437,12 @@ impl LightModel {
     /// Whether a cell has open sky above it: no opaque block anywhere in its
     /// column from just above it to the top of the world AABB (cells above the
     /// AABB are open sky). Geometric — the sky-exposure test (spec-0010).
-    fn sky_open(&self, c: [i32; 3]) -> bool {
+    ///
+    /// Public because the daylight-burn proof ([`crate::daylight`], `DW0496`)
+    /// asks the same question of the same assembled world: "the sky is above this
+    /// cell" must have exactly one definition in the compiler, or the light model
+    /// and the burn model can disagree about the same roof.
+    pub fn sky_open(&self, c: [i32; 3]) -> bool {
         let mut y = c[1] + 1;
         while y <= self.max[1] {
             if self.opaque([c[0], y, c[2]]) {
@@ -575,11 +580,34 @@ pub fn effective_sky(time: WorldTime, weather: WorldWeather) -> u8 {
 /// Time and weather switch independently, so this is `effective_sky(darkest
 /// reachable time, darkest reachable weather)`.
 pub fn darkest_effective_sky(c: &Campaign) -> u8 {
+    let (times, weathers) = reachable_time_weather(c);
+    let mut darkest = 15u8;
+    for &t in &times {
+        for &w in &weathers {
+            darkest = darkest.min(effective_sky(t, w));
+        }
+    }
+    darkest
+}
+
+/// Every `(time, weather)` state the campaign can be in: the declared initial
+/// state plus every reachable `set-time` / `set-weather` target, as two
+/// independent sets (they switch independently).
+///
+/// The single scan behind both [`darkest_effective_sky`] (spec-0010's darkness
+/// gate, which takes the worst of them) and [`crate::daylight::daylight_is_pinned`]
+/// (`DW0496`, which asks whether they ALL burn). One reader of the campaign's
+/// clock, so the two proofs can never disagree about what hours a delve reaches.
+///
+/// Deterministic (ADR-0006): collected through `BTreeSet`s keyed on a stable
+/// discriminant, so the returned order is the declaration order of the enums and
+/// never hash order.
+pub fn reachable_time_weather(c: &Campaign) -> (Vec<WorldTime>, Vec<WorldWeather>) {
     let mut times: BTreeSet<u8> = BTreeSet::new(); // discriminant via token order
     let mut weathers: BTreeSet<u8> = BTreeSet::new();
     // Exhaustive both ways (no wildcard arm): adding a `WorldTime` variant fails to
     // compile until it is given a discriminant HERE and a case in `time_of` below,
-    // so the darkest-reachable scan can never silently skip a new time state.
+    // so the reachable-state scan can never silently skip a new time state.
     let add_t = |t: WorldTime, set: &mut BTreeSet<u8>| {
         set.insert(match t {
             WorldTime::Day => 0,
@@ -653,13 +681,10 @@ pub fn darkest_effective_sky(c: &Campaign) -> u8 {
         1 => WorldWeather::Rain,
         _ => WorldWeather::Thunder,
     };
-    let mut darkest = 15u8;
-    for &t in &times {
-        for &w in &weathers {
-            darkest = darkest.min(effective_sky(time_of(t), weather_of(w)));
-        }
-    }
-    darkest
+    (
+        times.into_iter().map(time_of).collect(),
+        weathers.into_iter().map(weather_of).collect(),
+    )
 }
 
 // ---------------------------------------------------------------------------

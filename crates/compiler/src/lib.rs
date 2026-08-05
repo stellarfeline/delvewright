@@ -53,6 +53,7 @@ pub mod commands;
 pub mod continuity;
 pub mod creator;
 pub mod crosshair;
+pub mod daylight;
 pub mod eclipse;
 pub mod edit;
 pub mod emit;

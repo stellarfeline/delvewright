@@ -47,6 +47,30 @@ It deliberately does *not* inherit the wave path's armed-mob default table: an
 actor is a directed set piece that wears exactly what was declared, which also
 keeps every campaign written before this field byte-identical.
 
+### Amendment (2026-08-05, owner-approved, task #189) — `equipment.head` is enforced, not merely offered
+
+`equipment.head` carries an owner ruling recorded on the DSL field itself: it is
+**the** sanctioned answer to daylight-burning undead, and `set-time` never is.
+Until now that ruling was advice — nothing checked it, and `hollow-vigil` shipped
+a wave that burned to death before the party could fight it, with the whole
+machine ladder green (owner playtest, 2026-08-05).
+
+`DW0496` makes the ruling a compile-time obligation on **both** surfaces this
+spec governs, since they share one type: a wave stack a `kill` objective
+adjudicates, and an actor the party can damage (`vulnerable`, or unleashed).
+The rule fires when the species is in vanilla's own `#minecraft:burn_in_daylight`
+tag and is not fire-immune, the delve is pinned to a clear daytime hour for its
+whole length, open sky stands on walkable ground within one aggro radius of where
+the body is staged, and the head slot is empty. Prescription: `equipment.head`,
+or roof the arena. **Never `set-time`** — the diagnostic says so in as many
+words.
+
+One exception is part of the rule: a phantom burns *through* a helmet
+(minecraft.wiki/w/Phantom), so for that species the head slot is no exemption and
+the prescription names roofing instead. The species list is Mojang's tag,
+vendored, never a table the compiler wrote (`data/PROVENANCE.md`); the full
+behavior record is `docs/reference/compiler.md`'s `DW0496` row.
+
 ### Enchantments
 
 Each equipped piece and each loot stack is either a bare item id or
@@ -86,3 +110,11 @@ it.
 9. A `loot` item `name` enters the l10n inventory as
    `loot.<id>.item.<i>.name`.
 10. Both surfaces are reserved (`DW0141`) under a pre-0.6 quests version.
+11. (Amendment, task #189) A daylight-burning species staged for a fight whose
+    walkable ground reaches open sky within one aggro radius, in a delve pinned
+    to a clear daytime hour, fails the build with `DW0496` naming the encounter,
+    the species and the sunlit cell. Adding `equipment.head` clears it; so does
+    roofing the arena. A husk (not in `#minecraft:burn_in_daylight`), a wither
+    skeleton (in the tag, fire-immune), a night or rained-on delve, and a roofed
+    arena each build clean. A phantom is `DW0496` **with** a helmet, and its
+    message prescribes roofing rather than the head slot.
