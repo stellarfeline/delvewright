@@ -209,7 +209,7 @@ The metadata is the hand-built shape, minus what expansion cannot know:
   "structure": { "file": "grammar-temple.nbt", "id": "grammar-temple",
                  "size": [13, 14, 21], "data_version": 4671,
                  "generator": "crates/grammar" },
-  "anchors": { "anchor/courtyard": { "pos": [20, 0, 12], "facing": "north" } },
+  "anchors": {},
   "lighting": { "profile": "unmeasured" },
   "license": { "source": "original", "spdx": "GPL-3.0-or-later",
                "note": "…", "provenance": "…",
@@ -225,7 +225,10 @@ The metadata is the hand-built shape, minus what expansion cannot know:
   in the hand-built `{pos, facing}` shape with `pos` local to the structure.
   Nothing infers one from the block pattern afterwards — that is precisely the
   downstream folklore the no-hack rule forbids — so a program that marks nothing
-  exports `{}`, and an anchorless prefab loads and indexes normally.
+  exports `{}`, as the temple above does, and an anchorless prefab loads and
+  indexes normally. The castle, which marks, exports
+  `"anchors": { "anchor/courtyard": { "pos": [20, 0, 12], "facing": "north" } }`
+  over its 41×14×25 region.
 - **No `connectors` key.** Jigsaw socketing of grammar prefabs waits on the
   tileset conventions; a guessed socket is worse than none.
 - **`"profile": "unmeasured"`.** A lighting profile is a *measurement*, taken by
