@@ -31,7 +31,15 @@
  * VALIDATION surface — `branch-plan.json`, the chronicles, the per-branch paths —
  * and change no step the bot walks, so a v0.8 path is walked exactly as a v0.6
  * one is. Without them here, the first campaign to declare a branch could not be
- * run at all, branch tier or not.
+ * run at all, branch tier or not. v0.9 (spec-0026) adds the stage-1
+ * horizon-library surface (`horizon` object form, new base/shorthand names) —
+ * world-generation input the compiler consumes to build the map, not a change
+ * to the step contract, so a v0.9 path is walked exactly as a v0.8 one is.
+ *
+ * This allowlist must never trail the compiler's own `SUPPORTED_DSL_VERSION`
+ * ceiling (`crates/dsl/src/envelope.rs`) — `tools/check-harness-dsl-version.py`
+ * enforces that in CI (task #157: a v0.9.0 campaign was refused at this gate,
+ * server booted and bot connected, because this list still ended at 0.8.0).
  */
 export const SUPPORTED_DSL_VERSIONS = [
   "0.2.0",
@@ -41,6 +49,7 @@ export const SUPPORTED_DSL_VERSIONS = [
   "0.6.0",
   "0.7.0",
   "0.8.0",
+  "0.9.0",
 ] as const;
 
 /**

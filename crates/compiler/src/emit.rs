@@ -1865,6 +1865,57 @@ fn emit_functions(
             }
         }
     }
+    // Wave liveness reconciliation, BEFORE any completion check reads the
+    // countdown (task #178).
+    //
+    // ## The softlock this closes
+    //
+    // `#<wave> dw.wave` used to be a tally of PLAYER KILL CREDITS: `spawn_<wave>`
+    // set it to the wave's size and the `player_killed_entity` advancement
+    // decremented it once per credited kill. But a `kill` objective's real
+    // requirement is "the wave is DOWN", and a mob has many ways to die that no
+    // player is credited for — burning in daylight, falling out of the world,
+    // drowning, another mob. Every such death removed a mob from the world while
+    // leaving the tally stuck above zero, and the party was then asked to kill an
+    // entity that no longer existed. Unrecoverable: no rest, no retry, no route
+    // brings the mob back. hollow-vigil shipped exactly that (owner playtest
+    // 2026-08-05) — its opening beat's roof and two walls come off for the
+    // open-air rule, the world is pinned at `time set noon`, and the first wave's
+    // zombies burned in the yard they chased the party into. The delve stopped
+    // there forever, with the whole validation ladder green (see below).
+    //
+    // The fix is to stop modelling the countdown on kill ATTRIBUTION and model it
+    // on the only thing the objective actually cares about: how many of the wave's
+    // mobs are still in the world. Vanilla answers that directly — `execute store
+    // result … if entity @e[tag=…]` stores the match COUNT — so this needs no new
+    // primitive and no bookkeeping the compiler has to keep honest (the same idiom
+    // the census probe and its generated PackTest already rely on).
+    //
+    // `matches 1..` is the whole guard, and it does two jobs at once:
+    //   * before `spawn_<wave>` has ever run the counter is UNSET, so the line is
+    //     skipped and an empty `@e[tag=…]` can never read as "wave cleared"; and
+    //   * once the countdown has legitimately reached 0 the line stops firing, so
+    //     a completed wave stays completed and a `respawns_on_rest` re-seat (which
+    //     re-sets the counter through `spawn_<wave>`) re-arms it cleanly.
+    //
+    // The advancement's decrement in `k_reward_<wave>` STAYS. It is what keeps the
+    // final blow instantaneous — a mob killed by the player is still animating its
+    // death for ~20 ticks and is still matched by `@e`, so the census alone would
+    // hold the last mob's completion for a second. The census overwrites the tally
+    // with the truth on the next tick either way, so the two can never double-count:
+    // one is a fast path, the other is the authority.
+    //
+    // Emitted only for waves a `kill` objective actually adjudicates, so a campaign
+    // whose waves are pure ambushes (spec-0016 `unleash`, no kill objective) is
+    // byte-identical.
+    for wid in kill_objective_waves(c) {
+        tick.push(format!(
+            "execute if score {ctr} {obj} matches 1.. store result score {ctr} {obj} if entity @e[tag={tag}]",
+            ctr = plan::wave_counter(&wid),
+            obj = plan::WAVE_OBJECTIVE,
+            tag = plan::wave_tag(&wid),
+        ));
+    }
     // Per-tick objective completion checks. `reach-anchor` (proximity) is
     // unchanged for v0.2; `kill` (wave countdown reached zero) and `interact`
     // (trigger fired + optional item) are v0.3 additions. `collect` completes via
@@ -2713,7 +2764,13 @@ fn emit_functions(
                 ]),
             ));
         }
-        // kill reward: each slain wave mob decrements the countdown, then re-arms.
+        // kill reward: each PLAYER-CREDITED wave kill decrements the countdown,
+        // then re-arms. Task #178: this is a fast path, not the authority — the
+        // authority is the per-tick liveness census in `tick`, which reconciles the
+        // countdown with the mobs actually left in the world however they died. The
+        // decrement stays because a mob the player just killed is still animating
+        // its death (~20 ticks) and still matched by `@e`, so without it the final
+        // blow of a wave would land a second before the objective noticed.
         fns.push((
             format!("k_reward_{}", plan::safe_local(w.id.as_str())),
             lines(&[
@@ -7324,6 +7381,28 @@ fn interact_objectives(c: &delvewright_dsl::Campaign) -> Vec<(String, String)> {
         for o in &q.objectives {
             if matches!(o, Objective::Interact { .. }) {
                 out.push((o.id().as_str().to_string(), q.id.as_str().to_string()));
+            }
+        }
+    }
+    out
+}
+
+/// Every wave some `kill` objective adjudicates, in first-mention order and
+/// deduplicated (task #178). These — and only these — get the per-tick liveness
+/// reconciliation in `tick`: a wave nothing adjudicates has no countdown anyone
+/// reads, so reconciling it would be output no campaign's behavior depends on.
+///
+/// Declaration order, never a set's iteration order: emission is byte-stable
+/// (ADR-0006).
+fn kill_objective_waves(c: &delvewright_dsl::Campaign) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for q in &c.quests.content.quests {
+        for o in &q.objectives {
+            if let Objective::Kill { wave, .. } = o {
+                let w = wave.as_str().to_string();
+                if !out.contains(&w) {
+                    out.push(w);
+                }
             }
         }
     }
@@ -12184,6 +12263,61 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             obj_score(id.as_str())
         ));
         write("verb_kill", b);
+    }
+
+    // kill, UNCREDITED (task #178): the same wave, wiped the same way — but with
+    // no player ever credited for it. This is `verb_kill` minus the hand-fed
+    // `k_reward_<wave>` calls, and that one missing line is the whole point: it is
+    // the difference between the game the machine used to prove and the game the
+    // party plays.
+    //
+    // Every earlier proof of a `kill` objective supplied the player-kill credits
+    // itself — the generated `verb_kill` calls `k_reward_<wave>` once per mob by
+    // hand, and the critical-path bot fights every wave to death with its own
+    // sword and then graded the step on its own census, never on the objective's
+    // completion marker. So neither could see what a delve does when a wave mob
+    // dies with nobody to credit: burning in daylight, falling out of the world,
+    // drowning, another mob. hollow-vigil shipped that softlock past a fully green
+    // ladder (owner playtest 2026-08-05) — the first wave's zombies burned in the
+    // roofless gate yard the open-air rule had just carved, the countdown stayed
+    // above zero with no mob left to kill, and the key that unlocks the rest of the
+    // campaign was never placed.
+    //
+    // `kill` is the exact shape of that death: the entity leaves the world and no
+    // `player_killed_entity` advancement ever fires. The objective must complete
+    // anyway. Atomic like its twin (one tick, no `await`), so the batch model's
+    // interleaving rules hold with nothing new to reason about.
+    if let Some((qid, o)) = first_kill
+        && let Objective::Kill { id, wave, .. } = o
+        && plan::wave_of(c, wave.as_str()).is_some()
+    {
+        let ws = plan::safe_local(wave.as_str());
+        let (pin, sel) = pin_dummy("dw_t_kunc");
+        let mut b = packtest_header(&format!(
+            "{}: a wave death with NO player credit still completes `{id}` (task #178)",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.push(format!(
+            "scoreboard players set {} {} 0",
+            plan::PARTY,
+            obj_score(id.as_str())
+        ));
+        b.extend(packtest_preamble(qid, o, true, &sel));
+        // Sibling residue first, then a fresh wave — same opening as `verb_kill`.
+        b.push(format!("kill @e[tag={}]", plan::wave_tag(wave.as_str())));
+        b.push(format!("function {ns}:spawn_{ws}"));
+        // Wipe it with no credit to anyone. NOT followed by `k_reward_<wave>`:
+        // that omission is the test.
+        b.push(format!("kill @e[tag={}]", plan::wave_tag(wave.as_str())));
+        b.push(format!("function {ns}:tick"));
+        b.push(format!(
+            "assert score {} {} matches 1",
+            plan::PARTY,
+            obj_score(id.as_str())
+        ));
+        write("kill_uncredited", b);
     }
 
     // collect: satisfy guards + hold the item, run the collect reward, assert.
