@@ -1642,7 +1642,15 @@ model (`plan::collect_gate_events`, feeding `DW0311`/`DW0315`/`DW0342`/`DW0410`)
 all walk it, so the checks, the proofs and the emission can never disagree about
 which firings exist.
 
-**When a firing happens** comes off the site's `GateRoot`. A quest
+Since task #169 the five roots themselves are enumerated exactly once, in
+`plan::for_each_effect_root` (which yields each top-level effect *list*).
+`for_each_gate_effect` is that enumeration flattened; `timeline::walk_campaign`
+(→ `DW0410`, `nav::all_effects`) and `emit::all_campaign_effects` (→ the
+generated functions) are the other two consumers. A root can no longer be added
+to one walk and forgotten in another, which is the only reason this class of
+finding kept coming back.
+
+**When a firing happens** comes off the site's `EffectRoot`. A quest
 `on_objective_complete`/`on_complete` fires at its objective's / the quest's
 completion step — the player is *forced* through both, so both gate directions are
 modelled. An environment trigger, a trap payload and a dialogue-hosted `on_respawn`
@@ -1774,11 +1782,25 @@ doubt — nothing was looking.
 
 `timeline::walk` replays each timeline and pairs every effect with the gate
 regions an **earlier effect in that same timeline** provably sealed. A timeline is
-one `on_objective_complete[obj]` bundle, one `on_complete` bundle, or one
-trigger's `effects` (declared order, one tick, so effect *j* finishes before
+one **effect root** — every list `plan::for_each_effect_root` enumerates, i.e. all
+five emission can lower: `on_objective_complete[obj]`, `on_complete`, a trigger's
+`effects`, a `traps[].payload` and a dialogue option's `set-checkpoint`
+`on_respawn` bundle (declared order, one tick, so effect *j* finishes before
 *i > j* starts); a `sequence`, ordered by `(at_ticks, declaration index)` — real
 elapsed time, which is exactly what the island defect turned on; or an `on_arrive`
 bundle, which inherits the state as of its move.
+
+**Optional roots need no special case** (task #169). Two of the five have no
+guaranteed firing — the party may never trip a trap, nobody is forced to die at a
+checkpoint — and the DAG-causal model above has to rule on that (an unguaranteed
+firing registers its `close-gate` only). The staged walk does not, and the
+asymmetry is deliberate: that model reasons *across* bundles about the route the
+player is **forced** to walk, so whether a firing happens is load-bearing, while
+this one reasons only *within* one bundle and its claim is conditional from the
+start — *if this bundle runs, this walk starts after that seal landed*. A trap
+that never springs never runs the walk either, so optionality cancels on both
+sides of the implication. A payload's walk must be legal in the world its own
+payload has already made, which is exactly what it must be whenever it fires.
 
 Both walk planners (`plan_actor_moves`, `plan_moves`) then **route over that
 timeline-adjusted world**, so a legal way around a shut gate is simply taken and
@@ -1787,7 +1809,13 @@ nothing is reported. `DW0410` fires only when the sealed world admits no route
 (unwalkable on the open world at all). A deduped repeat occurrence re-checks the
 already-planned route against its own timeline's seals, since that is the path the
 shared content-keyed driver actually walks. `nav::all_effects` is defined as this
-same walk with the states dropped, so effect and attributed state cannot drift.
+same walk with the states dropped, so effect and attributed state cannot drift —
+and the walk itself is defined over `plan::for_each_effect_root`, the **one**
+enumeration of effect roots, which `plan::for_each_gate_effect` (the gate scans)
+and `emit::all_campaign_effects` (the generated functions) also walk. Four
+consumers, one root list: what the emitter lowers and what the proofs check are
+the same set by construction, which is what ends the three-of-five drift this
+class kept re-growing (tasks #142, #167, #168, #169).
 
 **No false certainty** (the `compiler::continuity` stance): cross-bundle order is
 never guessed — every timeline starts from "nothing provably sealed"; a
@@ -2517,7 +2545,7 @@ between bundles; this reasons about position within a bundle).
 
 | Code | Meaning |
 |------|---------|
-| `DW0410` | A staged walk (`move-actor` / `move-npc`) whose path is blocked by a gate an **earlier effect in its own timeline** sealed with `close-gate`. The round-8 island defect exactly: a `sequence` closed the boulder at `at_ticks: 460` and walked the giant across that region at `at_ticks: 700`; the walk was planned on the open world (gate regions are modelled passable), so the build shipped green and the actor stepped through solid basalt on the live server. Timelines are one `on_objective_complete`/`on_complete` bundle, one trigger's `effects` (declared order, one tick), a `sequence` ordered by `(at_ticks, declaration index)`, or an `on_arrive` bundle inheriting its move's state — see §4 "Close-gate solidity for staged walks". **The planner routes over the timeline-adjusted world first**, so a legal detour around a shut gate is simply taken and nothing is reported; this fires only when the sealed world admits no route *and* the open world does — which is precisely what distinguishes it from `DW0325`/`DW0307` (unwalkable on the open world at all). Build-tier (exit 3), `compiler::nav`; the message names the verb, the mover, the leg and every gate anchor sealed ahead of it. Prescription: move the walk before the `close-gate` (a lower `at_ticks`, or an earlier position in the bundle), reopen the gate with `open-gate` before the walk, or retarget the walk to a destination reachable on the sealed side — commonly the walk belongs *before* the seal, since the staging beat is "the walker crosses, then the boulder comes down behind it". Never silence it by deleting the `close-gate`: the seal is the point-of-no-return the staging wants. |
+| `DW0410` | A staged walk (`move-actor` / `move-npc`) whose path is blocked by a gate an **earlier effect in its own timeline** sealed with `close-gate`. The round-8 island defect exactly: a `sequence` closed the boulder at `at_ticks: 460` and walked the giant across that region at `at_ticks: 700`; the walk was planned on the open world (gate regions are modelled passable), so the build shipped green and the actor stepped through solid basalt on the live server. Timelines are **every effect root** `plan::for_each_effect_root` enumerates — an `on_objective_complete`/`on_complete` bundle, a trigger's `effects`, a `traps[].payload`, a dialogue option's `set-checkpoint` `on_respawn` bundle (each declared order, one tick) — plus a `sequence` ordered by `(at_ticks, declaration index)` and an `on_arrive` bundle inheriting its move's state. The last two roots were added in task #169: the model saw three of the five roots emission reaches, so a walk in a payload or an `on_respawn` bundle was lowered, never proven, and (through `nav::all_effects`) never even planned — its `function <ns>:ma_…` call had no driver behind it. The two are **optional** roots (the trap may never spring), which needs no special case here: this proof is conditional on its own bundle running, so a firing that never happens never runs the walk either — see §4 "Close-gate solidity for staged walks". **The planner routes over the timeline-adjusted world first**, so a legal detour around a shut gate is simply taken and nothing is reported; this fires only when the sealed world admits no route *and* the open world does — which is precisely what distinguishes it from `DW0325`/`DW0307` (unwalkable on the open world at all). Build-tier (exit 3), `compiler::nav`; the message names the verb, the mover, the leg and every gate anchor sealed ahead of it. Prescription: move the walk before the `close-gate` (a lower `at_ticks`, or an earlier position in the bundle), reopen the gate with `open-gate` before the walk, or retarget the walk to a destination reachable on the sealed side — commonly the walk belongs *before* the seal, since the staging beat is "the walker crosses, then the boulder comes down behind it". Never silence it by deleting the `close-gate`: the seal is the point-of-no-return the staging wants. |
 
 ### DW043x — geometry & container proofs (stair orientation; spec-0021 loot; v0.8 `collect` container adoption)
 
@@ -2894,18 +2922,6 @@ this doc is current behavior).
   for a bigger party — one agent can always walk what n can divide. Running
   `min_players` bots is harness work, tracked as a follow-up, not a gap in this
   layer's contract.
-- **The staged-walk timeline still stops at three effect roots** (pre-existing;
-  the last of the three-of-five family, the other two closed by tasks
-  #167/#168). `compiler::timeline::walk_campaign` — the `DW0410` model, and by
-  construction `nav::all_effects` — enumerates quest `on_objective_complete` /
-  `on_complete` / `triggers[].effects`, where emission reaches five (see §4
-  "The seal answers"). So a `move-actor`/`move-npc` inside a `traps[].payload`
-  or a dialogue option's `set-checkpoint` `on_respawn` bundle is lowered but
-  not timeline-checked. Deliberately not widened here: it changes a *third*
-  proof's verdict (`DW0410`, and the staged-walk routing that rides
-  `all_effects`) and wants its own red→green, exactly as `collect_gate_events`
-  and `each_string` each did. The gate walk it should converge on is
-  `plan::for_each_gate_effect`.
 - **Sky attenuation constants** (`crate::light::effective_sky`, spec-0010): the
   stored sky-light baseline (15 at a sky-open cell) and the `time`/`weather` set
   commands are live-verified (1.21.11 itzg VANILLA); the per-state *effective*
