@@ -380,7 +380,6 @@ pub fn build_with_warnings(
             message: e.message,
         })?,
     );
-    let has_waves = !plan.campaign.quests.content.waves.is_empty();
     let (moves, actor_moves, wave_placements, wave_rings, lane_routes, payload_plans): (
         Vec<crate::nav::MovePlan>,
         Vec<crate::nav::ActorMovePlan>,
@@ -388,7 +387,7 @@ pub fn build_with_warnings(
         WaveRings,
         crate::nav::LaneRoutes,
         PayloadPlans,
-    ) = if crate::nav::needs_world(plan) || has_waves || crate::clearance::has_bodies(plan) {
+    ) = if assembles_world(plan) {
         {
             // spec-0022 payload verbs need the block map (a `collapse` settles
             // real blocks), not just the occupancy view.
@@ -3587,11 +3586,26 @@ fn json_bytes(value: &Value) -> Vec<u8> {
 /// the assembled world knows which anchors actually exist.
 pub const DW_EFFECT_ANCHOR_UNRESOLVED: &str = "DW0360";
 
-/// Fail the build if any quest/trigger effect — **at any nesting depth** — names an
-/// anchor that resolves to no world position (`DW0360`). This is the single
-/// resolved-anchor-or-diagnostic seal over the whole anchor-bearing effect surface
-/// ([`QuestEffect::anchor_refs`], the nesting-aware sibling of
-/// [`QuestEffect::nested_effect_lists`]).
+/// Whether [`build`] assembles the voxel world — and therefore whether every
+/// proof that needs it actually runs, including [`plan_payload_verbs`] and its
+/// `DW0447`.
+///
+/// Extracted so the world block and [`check_effect_anchors`] read **one**
+/// predicate. A check that defers to another check must know whether that other
+/// check runs at all, and a second hand-copied answer to "does this campaign
+/// assemble a world" would be exactly the drift this task exists to end, one
+/// question further out.
+fn assembles_world(plan: &Plan) -> bool {
+    crate::nav::needs_world(plan)
+        || !plan.campaign.quests.content.waves.is_empty()
+        || crate::clearance::has_bodies(plan)
+}
+
+/// Fail the build if any campaign effect — at **every effect root**, at **any
+/// nesting depth** — names an anchor that resolves to no world position
+/// (`DW0360`). This is the single resolved-anchor-or-diagnostic seal over the
+/// whole anchor-bearing effect surface ([`QuestEffect::anchor_refs`], the
+/// nesting-aware sibling of [`QuestEffect::nested_effect_lists`]).
 ///
 /// It exists because every anchor consumer in [`emit_quest_effect`] fails *open*:
 /// `open-gate`/`close-gate` scan `plan.anchors` for a name match and simply fall
@@ -3603,17 +3617,52 @@ pub const DW_EFFECT_ANCHOR_UNRESOLVED: &str = "DW0360";
 /// but it only sees an area's declared anchor set (pool areas and cross-area
 /// camera anchors are deferred to here), so this is the backstop that makes the
 /// rule total.
+///
+/// **Total means total** (task #24). The roots come from
+/// [`crate::plan::for_each_effect_root`] — the one enumeration
+/// [`all_campaign_effects`], the staged-walk timeline and both halves of
+/// `compiler::flow` also walk. This walk used to hand-list three of the five, so a
+/// typo'd anchor in a `traps[].payload` or a dialogue option's `set-checkpoint`
+/// `on_respawn` bundle was never asked the question at all: the build stayed
+/// green, `trap_fire_<trap>.mcfunction` shipped with the `open-gate` simply
+/// absent, and the delve the owner played had a trap that springs and does
+/// nothing. A backstop that reaches four fifths of the surface is exactly the
+/// silent-drop class it was written to end, so the roots are now inherited rather
+/// than re-listed and a sixth root cannot be forgotten here.
 fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
     let c = plan.campaign;
     // (json pointer, effect verb, anchor) for every anchor reference in the
     // campaign, deep, in deterministic content order.
     let mut refs: Vec<(String, &'static str, String)> = Vec::new();
-    let collect = |base: String, eff: &QuestEffect, refs: &mut Vec<_>| {
-        fn descend(
-            path: String,
-            eff: &QuestEffect,
-            refs: &mut Vec<(String, &'static str, String)>,
-        ) {
+    // This seal covers the verbs that fail OPEN — the ones whose anchor consumer
+    // shrugs and emits nothing. The spec-0022 payload verbs (`volley`,
+    // `collapse`) fail CLOSED instead: `plan_payload_verbs` resolves their volumes
+    // with `?` and reports `DW0447`, naming the verb, the volume and the anchor.
+    // Widening this walk to R4/R5 (task #24) put those anchors in reach of the
+    // generic message for the first time, which would have preempted the specific
+    // one for no gain — so where `DW0447` runs, the fail-closed verbs keep it.
+    //
+    // **Only where it runs.** `plan_payload_verbs` lives inside the world block,
+    // so it is reached only when the campaign assembles a world. A payload verb
+    // does NOT imply that: nothing confines `volley`/`collapse` to
+    // `traps[].payload` — `dsl::validate` reaches them via
+    // `for_each_trap_payload_deep` inside the traps loop, which validates them
+    // where they are rather than forbidding them elsewhere, and they are ordinary
+    // variants of the shared effect enum. A `volley` on a quest's `on_complete` in
+    // a campaign with no traps, no waves, no bodies and no walkable critical leg
+    // therefore reaches emission with `DW0447` unreachable. Deferring there would
+    // trade a specific message for SILENCE, so the deferral is conditional on the
+    // proof actually running and this seal keeps that corner itself.
+    let payload_verbs_are_proven = assembles_world(plan);
+    fn descend(
+        path: String,
+        eff: &QuestEffect,
+        payload_verbs_are_proven: bool,
+        refs: &mut Vec<(String, &'static str, String)>,
+    ) {
+        let defer_to_dw0447 =
+            payload_verbs_are_proven && (eff.volley().is_some() || eff.collapse().is_some());
+        if !defer_to_dw0447 {
             for (suffix, anchor) in eff.anchor_refs() {
                 refs.push((
                     format!("{path}/{suffix}"),
@@ -3621,41 +3670,28 @@ fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
                     anchor.as_str().to_string(),
                 ));
             }
-            for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
-                for (j, inner) in list.iter().enumerate() {
-                    descend(format!("{path}/{pseg}/{j}"), inner, refs);
-                }
-            }
         }
-        descend(base, eff, refs);
-    };
-    for (qi, q) in c.quests.content.quests.iter().enumerate() {
-        for (oid, effs) in &q.on_objective_complete {
-            for (i, eff) in effs.iter().enumerate() {
-                let base = format!(
-                    "/content/quests/{qi}/on_objective_complete/{}/{i}",
-                    oid.as_str()
+        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            for (j, inner) in list.iter().enumerate() {
+                descend(
+                    format!("{path}/{pseg}/{j}"),
+                    inner,
+                    payload_verbs_are_proven,
+                    refs,
                 );
-                collect(base, eff, &mut refs);
             }
         }
-        for (i, eff) in q.on_complete.iter().enumerate() {
-            collect(
-                format!("/content/quests/{qi}/on_complete/{i}"),
+    }
+    crate::plan::for_each_effect_root(c, &mut |site, effs| {
+        for (i, eff) in effs.iter().enumerate() {
+            descend(
+                format!("{}/{i}", site.path),
                 eff,
+                payload_verbs_are_proven,
                 &mut refs,
             );
         }
-    }
-    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
-        for (i, eff) in t.effects.iter().enumerate() {
-            collect(
-                format!("/content/triggers/{ti}/effects/{i}"),
-                eff,
-                &mut refs,
-            );
-        }
-    }
+    });
     for (path, verb, anchor) in refs {
         if anchor_point_any(plan, &anchor).is_some() {
             continue;

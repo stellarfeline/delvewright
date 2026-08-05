@@ -2869,8 +2869,18 @@ fn v03_checks(
     }
     // v0.4: flags/waves may also come from dialogue `set-flag` effects and
     // environment-trigger effects. Empty for v0.2/v0.3 campaigns (no such
-    // constructs), so their flag resolution is unchanged. Dialogue effects are a
-    // flat list (no nesting), so a direct scan suffices there.
+    // constructs), so their flag resolution is unchanged.
+    //
+    // The `DialogueEffect` list itself has no nesting, so the direct scan below is
+    // right for it — but the dialogue STAGE is not exhausted by that list, and the
+    // comment here used to claim otherwise (corrected, task #24). A dialogue
+    // option's `set-checkpoint` carries an `on_respawn` bundle that is a
+    // `Vec<QuestEffect>`, and a `set-flag` inside one really is emitted (into
+    // `cp_on_respawn_<i>`) while this inventory does not see it — the fifth root
+    // `compiler::plan::for_each_effect_root` enumerates. It is pinned by
+    // `flow_effect_roots::a_dialogue_respawn_bundle_is_still_never_a_producer`,
+    // which asserts the resulting `DW0172`. See "Known spec ↔ code drift" in
+    // `docs/reference/compiler.md`.
     for tree in &c.dialogue.content.dialogues {
         for node in &tree.nodes {
             for opt in &node.options {
