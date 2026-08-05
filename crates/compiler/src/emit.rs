@@ -8493,34 +8493,40 @@ fn completion_cleanup(o: &Objective) -> Vec<String> {
 /// The flags any `set-flag` effect produces (sorted, deduped) — quest effects,
 /// plus (DSL v0.4) dialogue `set-flag` effects and environment-trigger effects.
 /// Empty extra sources for v0.2/v0.3, keeping their scoreboard setup identical.
+///
+/// **This is emission, not a lint** (task #24). A `set-flag` whose `dw.f_<flag>`
+/// objective is missing from `setup` writes to nothing: vanilla answers
+/// `scoreboard players set … <undeclared> 1` with a command error and carries on,
+/// so there is no crash, nothing a bot observes, and every gate on that flag
+/// simply never opens. It is the `DW0497` shape — a call with no callee —
+/// reproduced one layer down, at the scoreboard.
+///
+/// The roots therefore come from [`crate::plan::for_each_effect_root`], the one
+/// enumeration [`all_campaign_effects`] itself walks, so the declaration walk and
+/// the write walk cannot disagree about where a `set-flag` may live. This
+/// inventory used to hand-list three of the five, and a `set-flag` in a
+/// `traps[].payload` or a dialogue option's `set-checkpoint` `on_respawn` bundle
+/// emitted its write against an objective nothing had created.
+///
+/// Depth was never the blind spot — `visit_deep` already descended `sequence`
+/// steps and lifecycle bundles — so the fix is which lists the descent starts
+/// from, and it is inherited rather than re-listed.
+///
+/// The sources below the walk are the ones that are **not** effect roots and so
+/// cannot come from it: a trap's and a timed gate's `disarm.sets_flag`, the flat
+/// `DialogueEffect::SetFlag` list (a `DialogueEffect` is not a `QuestEffect`), and
+/// the cast ledger's flag *reads*.
 fn declared_flags(c: &delvewright_dsl::Campaign) -> std::collections::BTreeSet<String> {
     let mut out = std::collections::BTreeSet::new();
-    // Descend the whole effect tree: a `set-flag` nested in a `sequence` step (or an
-    // `on_respawn`/`on_caught`/`on_arrive` bundle) still emits a `dw.f_<flag>` write,
-    // so its scoreboard objective must be initialized here — else the nested
-    // `set-flag` writes to an uninitialized objective at runtime.
-    let note = |eff: &QuestEffect, out: &mut std::collections::BTreeSet<String>| {
-        eff.visit_deep(&mut |e| {
-            if let Some(f) = e.set_flag() {
-                out.insert(f.as_str().to_string());
-            }
-        });
-    };
-    for q in &c.quests.content.quests {
-        for eff in q
-            .on_objective_complete
-            .values()
-            .flatten()
-            .chain(&q.on_complete)
-        {
-            note(eff, &mut out);
+    crate::plan::for_each_effect_root(c, &mut |_site, effs| {
+        for eff in effs {
+            eff.visit_deep(&mut |e| {
+                if let Some(f) = e.set_flag() {
+                    out.insert(f.as_str().to_string());
+                }
+            });
         }
-    }
-    for t in &c.quests.content.triggers {
-        for eff in &t.effects {
-            note(eff, &mut out);
-        }
-    }
+    });
     // v0.6 traps (spec-0011): a disarm's `sets_flag` needs its own scoreboard.
     for t in &c.quests.content.traps {
         if let Some(dis) = &t.disarm {
