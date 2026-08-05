@@ -19,7 +19,10 @@ One line, near the top of the README, in exactly this form:
 - **`last verified with delvec <Y>`** is the compiler build the campaign last
   went green on. It is an author claim about a ladder run, so this check can
   only falsify it: a version NEWER than the engine's own `DELVEC_VERSION` names
-  a compiler that does not exist.
+  a compiler that does not exist. `DELVEC_VERSION` is `env!("CARGO_PKG_VERSION")`
+  at compile time, so this script reads the identical number straight from
+  `crates/compiler/Cargo.toml`'s `[package] version` — one source, never a
+  second hand-typed copy.
 
 The marker is the ONE piece of internal machinery allowed in a player-facing
 README (owner ruling, task #147) — hence the host-facing phrasing. It is
@@ -58,7 +61,8 @@ they resolve through the local `campaigns` symlink and through CI's
 `.github/actions/checkout-content`. The content repo's own campaign CI (task
 #137) can run this same script against a pinned engine checkout, exactly as
 `.github/workflows/prefab-audit.yml` there already builds `delve-admit` from
-one; nothing here reads engine state other than `DELVEC_VERSION`.
+one; nothing here reads engine state other than `crates/compiler/Cargo.toml`'s
+`[package] version` (== `DELVEC_VERSION`).
 
 Exit 0 = every storybook marker present and true, 1 = missing/mismatched marker
 (see stderr), 2 = usage/IO error.
@@ -72,7 +76,7 @@ import sys
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_CAMPAIGNS_ROOT = REPO_ROOT / "campaigns" / "campaigns"
-COMPILER_LIB = REPO_ROOT / "crates" / "compiler" / "src" / "lib.rs"
+COMPILER_CARGO_TOML = REPO_ROOT / "crates" / "compiler" / "Cargo.toml"
 
 # The six staged DSL documents (ADR-0002). `world.json` is also the marker of a
 # campaign directory — a directory without one is not a campaign.
@@ -117,9 +121,7 @@ MARKER_RE = re.compile(
     r"— last verified with delvec (?P<delvec>\d+\.\d+\.\d+)\.$"
 )
 
-DELVEC_VERSION_RE = re.compile(
-    r'const\s+DELVEC_VERSION\s*:\s*&(?:\'static\s+)?str\s*=\s*"([^"]+)"'
-)
+CARGO_VERSION_RE = re.compile(r'(?m)^version\s*=\s*"([^"]+)"')
 
 SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
@@ -134,13 +136,16 @@ def version_key(version: str) -> tuple[int, ...]:
 
 
 def delvec_version() -> str:
-    """`DELVEC_VERSION` as the compiler crate declares it (the one source)."""
-    text = COMPILER_LIB.read_text(encoding="utf-8")
-    match = DELVEC_VERSION_RE.search(text)
+    """The compiler's release version, read from `crates/compiler/Cargo.toml`'s
+    `[package] version` — the same single source `DELVEC_VERSION` derives from
+    (`env!("CARGO_PKG_VERSION")`), so this script never carries its own copy."""
+    text = COMPILER_CARGO_TOML.read_text(encoding="utf-8")
+    match = CARGO_VERSION_RE.search(text)
     if match is None:
         raise SystemExit(
-            f"could not read DELVEC_VERSION from {COMPILER_LIB} — the constant "
-            "moved or changed shape; fix this check, do not drop the gate"
+            f"could not read `version` from {COMPILER_CARGO_TOML} — the "
+            "[package] version field moved or changed shape; fix this check, "
+            "do not drop the gate"
         )
     return match.group(1)
 
