@@ -340,6 +340,15 @@ pub fn build_with_warnings(
             message: e.message,
         }
     })?);
+
+    // …and no OTHER affordance may contest the hitboxes a sealed gate arms to
+    // answer a right-click (DW0422, task #142). Same box arithmetic, same tier:
+    // two interaction entities in one cell is a ray-pick tie the client resolves
+    // by iteration order, so one of them silently stops receiving clicks.
+    crate::eclipse::check_seal_collisions(plan).map_err(|e| BuildFailure::Diagnostic {
+        code: e.code,
+        message: e.message,
+    })?;
     let has_waves = !plan.campaign.quests.content.waves.is_empty();
     let (moves, actor_moves, wave_placements, wave_rings, lane_routes, payload_plans): (
         Vec<crate::nav::MovePlan>,
@@ -2864,6 +2873,9 @@ fn emit_functions(
     fns.extend(collapse_fns(plan, payloads));
     fns.extend(boundary_fns(plan));
     fns.extend(night_vision_fns(plan));
+    // v0.8 seal answers (task #142). Empty for a campaign that seals no gate.
+    fns.extend(seal_fns(plan));
+    fns.extend(seal_hint_fns(plan));
 
     fns.sort_by(|a, b| a.0.cmp(&b.0));
     fns
@@ -3588,6 +3600,14 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                         "fill {} {} {} {} {} {} minecraft:air replace {}",
                         from[0], from[1], from[2], to[0], to[1], to[2], block
                     ));
+                    // …and take the seal's answer down with the seal (task #142).
+                    // The hitboxes exist exactly while the region is solid: an
+                    // opened threshold that still says "the way is sealed" is a
+                    // lie, and an invisible box left standing in a doorway
+                    // swallows right-clicks aimed through it.
+                    if let Some(s) = seal_hint_for(plan, anchor.as_str()) {
+                        body.push(format!("kill @e[tag=dw_seal_{}]", s.safe));
+                    }
                     return;
                 }
             }
@@ -3605,6 +3625,17 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                         "fill {} {} {} {} {} {} {}",
                         from[0], from[1], from[2], to[0], to[1], to[2], block
                     ));
+                    // Arm the seal's answer (task #142, owner island finding #34):
+                    // a wall the party walks back to and presses must say
+                    // something. Guarded on absence, so a re-fired `close-gate`
+                    // never stacks a second set of hitboxes.
+                    if let Some(s) = seal_hint_for(plan, anchor.as_str()) {
+                        body.push(format!(
+                            "execute unless entity @e[tag=dw_seal_{}] run function {ns}:{}",
+                            s.safe,
+                            seal_arm_fn(&s.safe)
+                        ));
+                    }
                     return;
                 }
             }
@@ -4303,6 +4334,230 @@ fn affordance_hardware(pos: [String; 3], tag: &str, item: &str) -> String {
         pos[2],
         crate::affordance::hardware_tag(tag)
     )
+}
+
+// ---------------------------------------------------------------------------
+// The seal answers (DSL v0.8, task #142 — owner island finding #34)
+// ---------------------------------------------------------------------------
+
+/// How far a seal's answer hitbox protrudes past the sealed block, on every side.
+///
+/// **This margin is the whole mechanism.** A `minecraft:interaction` whose box
+/// exactly coincides with the block it stands in loses the client's ray-pick:
+/// vanilla takes the entity only when it is *strictly* nearer the eye than the
+/// block hit, and a coincident box is hit at exactly the same distance. One
+/// centimetre of protrusion makes the entity strictly nearer from every approach
+/// angle, so pressing any face of the seal reaches the entity — while a hundredth
+/// of a block never reaches into a neighbouring cell's own affordances.
+pub const SEAL_MARGIN: f64 = 0.01;
+
+/// The seal-answer entity's box size, as the `width`/`height` NBT floats: one
+/// block plus [`SEAL_MARGIN`] on each side.
+const SEAL_BOX_SIZE: &str = "1.02f";
+
+/// Render a signed count of hundredths as a decimal coordinate: `6899` →
+/// `68.99`, `-4450` → `-44.5`, `700` → `7.0`. Integer-only, so the emitted text
+/// is exactly what it reads as (no binary-float rounding in the datapack).
+fn fmt_centi(v: i64) -> String {
+    let sign = if v < 0 { "-" } else { "" };
+    let a = v.unsigned_abs();
+    let (whole, frac) = (a / 100, a % 100);
+    if frac == 0 {
+        format!("{sign}{whole}.0")
+    } else if frac.is_multiple_of(10) {
+        format!("{sign}{whole}.{}", frac / 10)
+    } else {
+        format!("{sign}{whole}.{frac:02}")
+    }
+}
+
+/// The seal plan for a gate anchor, if the campaign ever seals it.
+fn seal_hint_for<'a>(plan: &'a Plan, anchor: &str) -> Option<&'a plan::SealHintPlan> {
+    plan.seal_hints.iter().find(|s| s.anchor == anchor)
+}
+
+/// The `seal_arm_<safe>` function name: what a `close-gate` calls to give the
+/// stone a voice.
+fn seal_arm_fn(safe: &str) -> String {
+    format!("seal_arm_{safe}")
+}
+
+/// The `dw_trig_<id>` tags every click trigger anchored **on this gate** rides,
+/// in campaign declaration order (deterministic).
+///
+/// The round-6 rule, one layer out: one cell, one hitbox. A `strike`/`use`
+/// trigger whose `at` is the gate anchor is asking the player to hit *the gate* —
+/// and once the gate is sealed the gate's own hitboxes are what a click reaches.
+/// Summoning the trigger a second, co-located entity is the exact ray-pick tie
+/// that made the island's boulder unshippable, so the trigger's tag rides these
+/// entities and [`env_trigger_setup`] summons nothing for it. The consequence is
+/// also its meaning: such a trigger is live exactly while the gate is sealed.
+fn seal_rider_tags(plan: &Plan, anchor: &str) -> Vec<String> {
+    use delvewright_dsl::TriggerOn;
+    plan.campaign
+        .quests
+        .content
+        .triggers
+        .iter()
+        .filter(|t| !matches!(t.on, TriggerOn::Approach { .. }))
+        .filter(|t| t.at_anchor() == Some(anchor))
+        .map(|t| format!("dw_trig_{}", plan::safe_local(t.id.as_str())))
+        .collect()
+}
+
+/// Whether this trigger rides a seal's hitboxes rather than summoning its own.
+fn trigger_rides_seal(plan: &Plan, at: &str) -> bool {
+    plan.seal_hints.iter().any(|s| s.anchor == at)
+}
+
+/// The `seal_arm_<safe>` functions (task #142): one `minecraft:interaction` per
+/// clickable cell of each sealed region, so the wall answers a press wherever the
+/// party presses it.
+///
+/// Only the region's **shell** is armed ([`plan::SealHintPlan::shell_cells`]) —
+/// a cell buried inside the seal has no face a crosshair can reach. Each entity
+/// is one block plus [`SEAL_MARGIN`], positioned so its box brackets its cell on
+/// every axis; see that constant for why the margin is not cosmetic.
+///
+/// Empty for a campaign that never seals a gate → byte-identical output.
+fn seal_fns(plan: &Plan) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for s in &plan.seal_hints {
+        let mut tags = vec![format!("dw_seal_{}", s.safe)];
+        tags.extend(seal_rider_tags(plan, &s.anchor));
+        let tag_list = tags
+            .iter()
+            .map(|t| format!("\"{t}\""))
+            .collect::<Vec<_>>()
+            .join(",");
+        let body: Vec<String> = s
+            .shell_cells()
+            .into_iter()
+            .map(|c| {
+                // Positions are built from integer hundredths, never from f64
+                // arithmetic: the datapack text is part of the byte-identity
+                // contract (ADR-0006) and `y - 0.01` in binary floating point is
+                // not the decimal `.99` a reader (or a diff) expects.
+                //
+                // x/z are the cell CENTRE (the box is width-symmetric about the
+                // position); y is the box's FLOOR, dropped one margin so the box
+                // brackets the cell below as well as above.
+                let x = fmt_centi(c[0] as i64 * 100 + 50);
+                let y = fmt_centi(c[1] as i64 * 100 - 1);
+                let z = fmt_centi(c[2] as i64 * 100 + 50);
+                format!(
+                    "summon minecraft:interaction {x} {y} {z} \
+                     {{width:{SEAL_BOX_SIZE},height:{SEAL_BOX_SIZE},response:1b,Invulnerable:1b,Tags:[{tag_list}]}}"
+                )
+            })
+            .collect();
+        out.push((seal_arm_fn(&s.safe), lines(&body)));
+    }
+    out
+}
+
+/// The `seal_hint_<safe>` reward functions (task #142): the answer itself.
+///
+/// Dispatched by a `player_interacted_with_entity` advancement, which is the one
+/// vanilla primitive that runs a function **as the player who right-clicked** —
+/// the same criterion every `interact` objective, NPC dialogue and bonfire rest
+/// already runs on. The interaction entity's own `interaction` NBT record names
+/// no player a command could target, and reading it would also *consume* the
+/// press that a co-located `use` trigger is entitled to see (round-8: adjudicate
+/// conditionally, consume unconditionally). An advancement observes without
+/// consuming, so the seal's answer can never eat another consumer's click.
+///
+/// The advancement is revoked immediately, so the stone answers every press, not
+/// only the first.
+fn seal_hint_fns(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    plan.seal_hints
+        .iter()
+        .map(|s| {
+            (
+                format!("seal_hint_{}", s.safe),
+                lines(&[
+                    format!("advancement revoke @s only {ns}:seal_{}", s.safe),
+                    format!("title @s actionbar {}", json!({ "text": s.text.clone() })),
+                ]),
+            )
+        })
+        .collect()
+}
+
+/// Generated `v08_seal_answers` PackTest (task #142): on a live pinned server,
+/// a gate that is sealed carries the hitboxes its answer rides, arming is
+/// idempotent, and re-opening it takes them away again.
+///
+/// What this proves and what it deliberately does not: the **presence** contract
+/// is fully machine-checkable here, and it is the half that failed — the island's
+/// sealed boulder had no hitbox at all, so a press reached nothing. The
+/// press-to-actionbar half rides `player_interacted_with_entity`, which no
+/// PackTest can fire (it needs a real client's right-click); that primitive is
+/// the one every NPC dialogue and bonfire rest already runs on, and the harness
+/// bot exercises it there.
+///
+/// Batch model (#140): the fixture stages the seal itself and hands the world
+/// back exactly as it found it — region cleared, hitboxes killed.
+fn emit_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let Some(s) = plan.seal_hints.first() else {
+        return;
+    };
+    let (from, to) = s.region;
+    let n = s.shell_cells().len();
+    let tag = format!("dw_seal_{}", s.safe);
+    let count = |score: &str| {
+        format!(
+            "execute store result score #{score} dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
+        )
+    };
+    let mut b = packtest_header(&format!(
+        "{}: the sealed gate `{}` carries an answer the party can press",
+        plan.campaign.world.content.title, s.anchor
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(
+        "# Batch model (#140): a sibling test may have driven the campaign past its".to_string(),
+    );
+    b.push("# own seal, so stage a known-OPEN gate rather than assuming one.".to_string());
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(format!(
+        "fill {} {} {} {} {} {} minecraft:air replace {}",
+        from[0], from[1], from[2], to[0], to[1], to[2], s.block
+    ));
+    b.push("# An open gate is nothing to press: nothing armed.".to_string());
+    b.push(count("seal_before"));
+    b.push("assert score #seal_before dw.sys matches 0".to_string());
+    b.push(format!(
+        "fill {} {} {} {} {} {} {}",
+        from[0], from[1], from[2], to[0], to[1], to[2], s.block
+    ));
+    b.push(format!(
+        "execute unless entity @e[tag={tag}] run function {ns}:{}",
+        seal_arm_fn(&s.safe)
+    ));
+    b.push(count("seal_armed"));
+    b.push(format!("assert score #seal_armed dw.sys matches {n}"));
+    b.push("# A re-fired seal must not stack a second, co-located set.".to_string());
+    b.push(format!(
+        "execute unless entity @e[tag={tag}] run function {ns}:{}",
+        seal_arm_fn(&s.safe)
+    ));
+    b.push(count("seal_again"));
+    b.push(format!("assert score #seal_again dw.sys matches {n}"));
+    b.push("# Re-opening takes the answer down with the stone (no residue).".to_string());
+    b.push(format!(
+        "fill {} {} {} {} {} {} minecraft:air replace {}",
+        from[0], from[1], from[2], to[0], to[1], to[2], s.block
+    ));
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(count("seal_after"));
+    b.push("assert score #seal_after dw.sys matches 0".to_string());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/v08_seal_answers.mcfunction"),
+        lines(&b).into_bytes(),
+    );
 }
 
 /// Per-tick shortcut unlock detection (spec-0016 §2). Fires **once** — the
@@ -6166,6 +6421,14 @@ fn env_trigger_setup(plan: &Plan) -> Vec<String> {
             continue;
         };
         if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
+            continue;
+        }
+        // Same rule, one layer out (task #142): a click trigger anchored on a gate
+        // the campaign SEALS rides that seal's own hitboxes — `seal_arm_<safe>`
+        // summons them wearing this trigger's tag. A second entity here would be
+        // exactly co-located with them, and the ray-pick tie is what killed the
+        // island's boulder hint (`DESIGN.md` round 13). One cell, one hitbox.
+        if trigger_rides_seal(plan, at) {
             continue;
         }
         if let Some(p) = anchor_point_any(plan, at) {
@@ -8287,6 +8550,29 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
         ));
     }
 
+    // Task #142: one advancement per sealed gate, so a right-click on the stone
+    // runs the answer AS the player who pressed it. `seal_hint_<safe>` revokes it,
+    // so the seal answers every press — a wall is not consumed by being asked.
+    for s in &plan.seal_hints {
+        advs.push((
+            format!("seal_{}", s.safe),
+            json!({
+                "criteria": {
+                    "interact": {
+                        "trigger": "minecraft:player_interacted_with_entity",
+                        "conditions": {
+                            "entity": {
+                                "type": "minecraft:interaction",
+                                "nbt": format!("{{Tags:[\"dw_seal_{}\"]}}", s.safe)
+                            }
+                        }
+                    }
+                },
+                "rewards": { "function": format!("{ns}:seal_hint_{}", s.safe) }
+            }),
+        ));
+    }
+
     // one interaction advancement per NPC
     for npc in &plan.npcs {
         advs.push((
@@ -8667,6 +8953,10 @@ fn emit_packtest(
     // #122: the class trigger is one-shot per player. Emitted for every campaign
     // that declares a class, i.e. every campaign.
     emit_class_seal_packtest(plan, out);
+
+    // task #142: a sealed gate carries the hitboxes its right-click answer rides.
+    // Emits nothing for a campaign that seals no gate.
+    emit_seal_packtest(plan, out);
 
     // v0.6: boundary return / never-move-inside (spec-0013). Emits nothing without
     // a boundary.

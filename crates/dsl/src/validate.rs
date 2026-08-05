@@ -6448,6 +6448,22 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
     }
     if !is_v08(c.quests.dsl_version.as_str()) {
+        // Task #142 (owner island finding #34): the line a sealed gate answers a
+        // right-click with. A pre-0.8 campaign still gets the answer — the
+        // compiler's canonical English — it just cannot author the wording.
+        crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+            if eff.close_gate_sealed_hint().is_some() {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("{path}/sealed_hint"),
+                    "a `close-gate` `sealed_hint` (the line the sealed gate answers a right-click \
+                     with) requires dsl_version 0.8.0 — raise this stage's `dsl_version` to 0.8.0, \
+                     or remove the field and take the compiler's canonical English"
+                        .to_string(),
+                ));
+            }
+        });
         crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
             let Some(l) = eff.bonfire_labels() else {
                 return;
