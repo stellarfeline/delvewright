@@ -1766,7 +1766,9 @@ generated functions), — since task #170 — **both halves of `compiler::flow`*
 (the producer scan and `flow::gate_flags`, → `DW0201`/`DW0202`/`DW0203`/`DW0204`/
 `DW0205` and the exported critical path) and — since task #24 —
 `emit::check_effect_anchors` (→ `DW0360`, the resolved-anchor seal over exactly
-what those generated functions emit) are the other consumers. A root can no
+what those generated functions emit) and `emit::declared_flags` (→ the
+`dw.f_<flag>` scoreboard objectives `setup` creates for the writes those
+functions perform) are the other consumers. A root can no
 longer be added to one walk and forgotten in another, which is the only reason
 this class of finding kept coming back.
 
@@ -3155,19 +3157,20 @@ this doc is current behavior).
   task #24).** Tasks #142, #167, #168, #169, #170 and #24 each fixed one walker
   that claimed campaign-wide effect coverage while enumerating three or four of
   the **five** roots `plan::for_each_effect_root` names. A full workspace sweep
-  after #170 found the class is far larger than "one more": the six fixed walkers
+  after #170 found the class is far larger than "one more": the seven fixed walkers
   (`for_each_gate_effect`, `timeline::walk_campaign`, `emit::all_campaign_effects`,
-  `dsl::l10n`'s inventory, `compiler::flow`, `emit::check_effect_anchors`) are
-  joined by the following, which are **not** fixed and each need their own
-  proof-carrying round. **Eight rows, fourteen distinct walkers** — the count is
-  by row, and several rows name a family. Listed worst first; roots noted as
-  **R1** `on_objective_complete`, **R2** `on_complete`, **R3**
-  `triggers[].effects`, **R4** `traps[].payload`, **R5** dialogue-option
+  `dsl::l10n`'s inventory, `compiler::flow`, `emit::check_effect_anchors`,
+  `emit::declared_flags`) are joined by the following, which are **not** fixed and
+  each need their own proof-carrying round. **Seven rows, thirteen distinct
+  walkers** — the count is by row, and several rows name a family. Both **latent
+  emission/runtime defects** on the list are now closed (task #24); everything
+  below is an imprecise diagnostic or proof, not a shipped defect. Listed worst
+  first; roots noted as **R1** `on_objective_complete`, **R2** `on_complete`,
+  **R3** `triggers[].effects`, **R4** `traps[].payload`, **R5** dialogue-option
   `set-checkpoint.on_respawn`.
 
   | Walker | Feeds | Has | Consequence of the gap |
   |---|---|---|---|
-  | `emit::declared_flags` | `dw.f_<flag>` scoreboard creation | R1–R3 + `disarm.sets_flag` + flat `DialogueEffect::SetFlag` | Not a missing lint but a **runtime** defect: a `set-flag` in a `traps[].payload` writes to an objective that was never created. |
   | `emit::check_wave_spawns` | `DW0310` | R1–R3, and **shallow** (no `visit_deep`) | A `spawn-wave` in a `sequence` step / R4 / R5 emits the dangling `function <ns>:spawn_<wave>` the check exists to stop. |
   | `gates::check_close_gates` | `DW0343` | R1–R3 | Its own file's `check_seal_hints` (`DW0423`, 20 lines below) already carries the corrected reasoning; it was never back-ported. |
   | `dsl::validate` flag-producer set, ×3: the inline scan in the main pass, `collect_declared_flags`, `produced_flags` | `DW0172`, ending/flag reference checks | R1–R4 / R1–R3 shallow / R1–R4 | Three independent, mutually disagreeing answers to "what flags does this campaign produce". All miss R5 — pinned by `flow_effect_roots::a_dialogue_respawn_bundle_is_still_never_a_producer`, which asserts the resulting `DW0172`. |
@@ -3185,6 +3188,21 @@ this doc is current behavior).
   dialogue **option's** `set_checkpoint().1` is a `Vec<QuestEffect>`, not a
   `DialogueEffect`. Behaviour there is unchanged; the reasoning is what was
   reproducing the bug.
+
+  `emit::declared_flags` was the second, closed by the same task. It decides which
+  `dw.f_<flag>` objectives `setup` creates, which makes it emission rather than a
+  lint: a `set-flag` whose objective was never declared writes to nothing —
+  vanilla answers an undeclared objective with a command error and carries on, so
+  there is no crash, nothing a bot observes, and every gate on that flag simply
+  never opens. That is the `DW0497` shape (a call with no callee) one layer down,
+  at the scoreboard. A `set-flag` in a `traps[].payload` or a dialogue
+  `on_respawn` bundle emitted its write against an objective nothing created. The
+  roots now come from `plan::for_each_effect_root`; the non-root sources beside it
+  (trap and timed-gate `disarm.sets_flag`, the flat `DialogueEffect::SetFlag`
+  list, the cast ledger's flag reads) are unchanged, because none of them is an
+  effect root. Pinned by `flag_objective_roots`, whose every assertion locates the
+  **write** in the shipped pack before demanding the declaration — the declaration
+  alone would stay green if the root stopped being lowered at all.
 
   `emit::check_effect_anchors` (`DW0360`) was the first of the two **latent
   emission defects** on that list, closed by task #24. Its own doc called it "the
