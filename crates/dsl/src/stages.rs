@@ -1537,6 +1537,41 @@ pub struct TimedGate {
     /// existed compiles byte-identically; a delve opts its portcullis in.
     #[serde(default, skip_serializing_if = "is_false")]
     pub crush: bool,
+    /// Optional **disarm** affordance (task #184, souls dossier §5.2): the third
+    /// rung of the hazard ladder — readable, avoidable, and finally *disable-able*.
+    /// The real games' best timed hazards can be removed for good (Smouldering
+    /// Lake's ballista, the Fringefolk chariot); a clock the party can only ever
+    /// dance with is one rung short of the vocabulary.
+    ///
+    /// Interacting with the affordance suppresses the clock **permanently, with
+    /// the gate resting OPEN** — a jammed portcullis stays up. Permanence is
+    /// structural exactly as a `shortcut`'s is: no emitted function ever re-arms
+    /// the clock, and `DW0389` refuses a campaign that spells a re-seal.
+    ///
+    /// **Defaults to absent**, so every campaign authored before this field
+    /// existed compiles byte-identically; a delve opts its portcullis in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disarm: Option<TimedGateDisarm>,
+}
+
+/// A [`TimedGate`]'s disarm affordance (task #184, souls dossier §5.2) — the
+/// exact shape a trap's [`TrapDisarm`] takes, and deliberately so: one affordance
+/// grammar for every mechanism the party can switch off.
+///
+/// The player acts on the `via` anchor (a compiler-emitted interaction entity
+/// plus its visible hardware, `DW0420`) to jam the gate. The clock stops with the
+/// span cleared, `sets_flag` is raised party-wide, and nothing in the delve can
+/// put the gate back.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TimedGateDisarm {
+    /// The anchor the player interacts with to jam the gate. Must be an anchor
+    /// some area's prefab provides, and never the gate anchor itself — the
+    /// mechanism belongs beside the doorway, not inside the span that crushes.
+    pub via: AnchorId,
+    /// The flag set when the gate is disarmed (a new flag this gate produces;
+    /// other objectives/triggers may read it via `requires_flags`).
+    pub sets_flag: FlagId,
 }
 
 /// serde `skip_serializing_if` helper: skip a `0`.

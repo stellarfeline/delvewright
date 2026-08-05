@@ -82,6 +82,18 @@ pub const DW_TIMED_GATE_COIN_FLIP: &str = "DW0378";
 /// measures the ratio — the dossier's own verdict is that if only one of the two
 /// proofs can be afforded it should be this one, not the 20%.
 pub const DW_HAZARD_UNOBSERVABLE: &str = "DW0388";
+/// `DW0393`: a `timed-gate`'s `disarm` affordance (task #184) is not usable
+/// **before** the gate is committed to — its cell has no standable footing, or is
+/// walkable from the campaign entry only through the gate span itself.
+///
+/// The disarm is the third rung of the souls hazard ladder (dossier §5.2):
+/// readable, avoidable, and finally *disable-able*. A jam lever the party can
+/// only pull after surviving the crossing disables nothing — it is a reward for
+/// having already beaten the hazard, dressed as counterplay. This is the same
+/// clause `DW0373` puts on a shortcut's unlock and `DW0342` puts on a trap's
+/// disarm, stated once for the gate: the affordance must be reachable while the
+/// hazard is still ahead of you.
+pub const DW_TIMED_GATE_DISARM_UNREACHABLE: &str = "DW0393";
 /// `DW0376`: an `ambush` (spec-0016 §3) with no counterplay — with every
 /// ambusher standing where it will stand, no rest point (a checkpoint, a bonfire,
 /// or the campaign entry) is walkable from the trigger cell any more. The player
@@ -2899,6 +2911,68 @@ const TIMED_GATE_MIN_ADMIT_PERCENT: u32 = 20;
 /// double-reported here.
 pub fn check_timed_gates(plan: &Plan, world: &World) -> Result<(), NavError> {
     verify_timed_gates(world, &plan.timed_gates)
+}
+
+/// Prove every `timed-gate` `disarm` affordance can be reached before the gate is
+/// crossed — [`DW_TIMED_GATE_DISARM_UNREACHABLE`] (`DW0393`), task #184.
+///
+/// One clause, the same one `DW0373` puts on a shortcut's unlock: the `via` cell
+/// must be walkable from the campaign entry over the world with the gate span
+/// **SEALED**. Searching the open world would "prove" a lever whose only approach
+/// is through the portcullis — precisely the fake third rung this exists to
+/// refuse.
+///
+/// Vacuous where another proof owns the ground: no entry (`DW0345`), an
+/// unstandable entry or `via` cell (the anchor checks), a gate with no `disarm`.
+pub fn check_timed_gate_disarms(
+    plan: &Plan,
+    world: &World,
+    entry: Option<[i32; 3]>,
+) -> Result<(), NavError> {
+    verify_timed_gate_disarms(world, &plan.timed_gates, entry)
+}
+
+/// The pure core of [`check_timed_gate_disarms`] (unit-testable against a
+/// synthetic [`World`]).
+fn verify_timed_gate_disarms(
+    world: &World,
+    gates: &[crate::plan::TimedGatePlan],
+    entry: Option<[i32; 3]>,
+) -> Result<(), NavError> {
+    let Some(entry) = entry else {
+        return Ok(());
+    };
+    for g in gates {
+        let Some(dis) = &g.disarm else {
+            continue;
+        };
+        let cells: BTreeSet<[i32; 3]> =
+            crate::assembled::region_cells(g.gate_region.0, g.gate_region.1).collect();
+        let sealed = world.with_sealed(&cells);
+        let start = sealed.snap_standable(entry, SNAP_RADIUS);
+        let goal = sealed.snap_standable(dis.via_cell, SNAP_RADIUS);
+        let (Some(start), Some(goal)) = (start, goal) else {
+            continue; // an unstandable entry or lever cell is another proof's concern
+        };
+        if sealed.find_path(start, goal).is_some() {
+            continue;
+        }
+        return Err(NavError {
+            code: DW_TIMED_GATE_DISARM_UNREACHABLE,
+            message: format!(
+                "timed gate `{}`: its disarm affordance at `{}` ({:?}) is not walkable from the \
+                 campaign entry while gate `{}` is closed, so the only way to the jam lever is \
+                 THROUGH the portcullis. A disarm the party can reach only by first surviving the \
+                 hazard disables nothing — it is a trophy for having beaten it, not the third rung \
+                 of the ladder (task #184, souls dossier §5.2: readable, avoidable, disable-able). \
+                 Put the lever on ground the approach already touches — the stair head above the \
+                 run, the alcove beside the doorway — or drop the `disarm` and let the clock \
+                 stand. Do NOT leave the gate open at world-load to silence this.",
+                g.id, dis.via_anchor, dis.via_cell, g.gate_anchor
+            ),
+        });
+    }
+    Ok(())
 }
 
 /// The pure core of [`check_timed_gates`] (unit-testable against a synthetic
@@ -7084,7 +7158,75 @@ mod tests {
             // The DW0378 window proof is about geometry and timing, not the
             // penalty for mistiming it — crush changes neither.
             crush: false,
+            // …nor does a disarm: `DW0393` is its own proof below.
+            disarm: None,
         }
+    }
+
+    /// The same gate with a jam lever at `via`.
+    fn timed_gate_with_disarm(
+        region: ([i32; 3], [i32; 3]),
+        via: [i32; 3],
+    ) -> crate::plan::TimedGatePlan {
+        let mut g = timed_gate(region, 60, 40);
+        g.disarm = Some(crate::plan::TimedGateDisarmPlan {
+            via_anchor: "anchor/jam-lever".to_string(),
+            via_cell: via,
+            sets_flag: "flag/gate-jammed".to_string(),
+        });
+        g
+    }
+
+    // --- timed-gate disarm reachability (task #184, DW0393) ---
+
+    /// The jam lever on the ENTRY side of the barred doorway: the party walks up
+    /// to the portcullis, sees the clock, and can pull the lever without ever
+    /// stepping into the span. The third rung, working.
+    #[test]
+    fn timed_gate_disarm_on_the_approach_side_passes() {
+        let world = shortcut_world(12, 9, 65, 4, 1, None);
+        let g = timed_gate_with_disarm(([1, 65, 4], [1, 66, 4]), [3, 65, 2]);
+        verify_timed_gate_disarms(&world, &[g], Some([1, 65, 1]))
+            .expect("a lever on the near side of the gate is reachable before the crossing");
+    }
+
+    /// The same lever moved past the doorway, with the gate the only hole in the
+    /// wall: the only route to it is through the portcullis, so the "disarm"
+    /// rewards a crossing the party already survived. `DW0393`.
+    #[test]
+    fn timed_gate_disarm_behind_its_own_gate_is_dw0393() {
+        let world = shortcut_world(12, 9, 65, 4, 1, None);
+        let g = timed_gate_with_disarm(([1, 65, 4], [1, 66, 4]), [3, 65, 7]);
+        let err = verify_timed_gate_disarms(&world, &[g], Some([1, 65, 1]))
+            .expect_err("a lever only reachable through the gate must fail");
+        assert_eq!(err.code, DW_TIMED_GATE_DISARM_UNREACHABLE); // DW0393
+        assert!(
+            err.message.contains("timed-gate/piston-hall"),
+            "{}",
+            err.message
+        );
+        assert!(err.message.contains("anchor/jam-lever"), "{}", err.message);
+    }
+
+    /// …and with a bypass hole in the same wall, that far-side lever is reachable
+    /// the long way round while the gate is shut, so the same geometry passes. The
+    /// proof is about pre-commitment, not about which side of a wall a cell is on.
+    #[test]
+    fn timed_gate_disarm_behind_the_gate_but_reachable_the_long_way_passes() {
+        let world = shortcut_world(12, 9, 65, 4, 1, Some(10));
+        let g = timed_gate_with_disarm(([1, 65, 4], [1, 66, 4]), [3, 65, 7]);
+        verify_timed_gate_disarms(&world, &[g], Some([1, 65, 1]))
+            .expect("a detour around the gate makes the lever pre-commitment ground");
+    }
+
+    /// A gate with no `disarm` is not judged at all — the whole proof is vacuous
+    /// for every campaign authored before the field existed.
+    #[test]
+    fn timed_gate_without_a_disarm_is_not_judged() {
+        let world = shortcut_world(12, 9, 65, 4, 1, None);
+        let g = timed_gate(([1, 65, 4], [1, 66, 4]), 60, 40);
+        verify_timed_gate_disarms(&world, &[g], Some([1, 65, 1]))
+            .expect("no disarm, nothing to prove");
     }
 
     /// A generous window: crossing a 1-cell doorway costs a handful of ticks and

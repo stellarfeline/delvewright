@@ -37,8 +37,8 @@
 //!   `minecraft:interaction` with `width:1.0f,height:2.0f` at a cell centre, so
 //!   its box is *exactly* the anchor cell's column, two blocks tall. Five
 //!   sources, one shape: `interact` objectives, `use`/`strike` env triggers,
-//!   `bonfire` rest affordances, `shortcut` unlock affordances, and trap
-//!   `disarm` affordances.
+//!   `bonfire` rest affordances, `shortcut` unlock affordances, and trap /
+//!   `timed-gate` `disarm` affordances.
 //! * **Eclipse — error.** The two boxes overlap in all three axes. The
 //!   affordance is inside the body; nothing the player can do with a crosshair
 //!   reaches it.
@@ -413,6 +413,16 @@ fn affordances(plan: &Plan) -> Vec<Affordance> {
             out.push(Affordance {
                 kind: "trap disarm",
                 id: tr.id.clone(),
+                anchor: d.via_anchor.clone(),
+                pos: d.via_cell,
+            });
+        }
+    }
+    for g in &plan.timed_gates {
+        if let Some(d) = &g.disarm {
+            out.push(Affordance {
+                kind: "timed-gate disarm",
+                id: g.id.clone(),
                 anchor: d.via_anchor.clone(),
                 pos: d.via_cell,
             });

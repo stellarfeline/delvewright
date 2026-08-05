@@ -308,8 +308,17 @@ pub mod codes {
     /// `closed_ticks` of 0 (a gate that never opens, or never closes — neither is
     /// a timing gate), a `phase` at or beyond the full cycle, or a gate another
     /// `timed-gate` or a `shortcut` already owns (two clocks fighting over one
-    /// region, or a clock fighting a permanent open).
+    /// region, or a clock fighting a permanent open), or a `disarm.via` anchor no
+    /// area's prefab provides / one that IS the gate anchor (the jam lever cannot
+    /// live inside the span it stops).
     pub const TIMED_GATE_INVALID: &str = "DW0377";
+    /// (task #184) A `close-gate` effect targets the gate of a `timed-gate` that
+    /// declares a `disarm`. A disarm suppresses the clock **permanently with the
+    /// gate resting open** — a jammed portcullis stays up — so, exactly like a
+    /// `shortcut` (`DW0372`), its permanence is structural: there is no verb that
+    /// can re-arm it. Use a different gate for the beat that must re-seal, or drop
+    /// the `disarm`.
+    pub const TIMED_GATE_REARMED: &str = "DW0389";
     /// (spec-0016 §6) A wave's TD `lane` / `summon` declaration is structurally
     /// invalid or internally contradictory: an empty `waypoints` list, a
     /// waypoint anchor no area's prefab provides, a repeated consecutive

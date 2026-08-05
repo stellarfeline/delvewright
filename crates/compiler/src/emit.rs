@@ -433,6 +433,10 @@ pub fn build_with_warnings(
                 // timing is the point; one that punishes every timing is a slot
                 // machine. At least 20% of the cycle must admit a crossing.
                 crate::nav::check_timed_gates(plan, &world)?;
+                // task #184: the third rung. A gate's `disarm` lever must be
+                // reachable while the gate is still SHUT — a jam you can only
+                // pull after surviving the crossing disables nothing (DW0393).
+                crate::nav::check_timed_gate_disarms(plan, &world, campaign_spawn(plan))?;
                 // spec-0016 §4 addendum — hazard observability (DW0388). The
                 // dossier's strongest finding: what makes a periodic hazard fair
                 // is not its ratio but that you can stand somewhere safe and
@@ -2250,6 +2254,9 @@ fn emit_functions(
     // spec-0016 §2: shortcut unlock detection. Empty without a shortcut →
     // byte-identical.
     tick.extend(shortcut_tick(plan));
+    // task #184: timed-gate disarm detection. Empty without a jammable gate →
+    // byte-identical.
+    tick.extend(timed_gate_tick(plan));
     // v0.6 checkpoints (spec-0012): per-player respawn detection via the vanilla
     // `deathCount` criterion — the respawn re-seat (task #145) and the active
     // checkpoint's `on_respawn`. Emitted for every campaign with a checkpoint.
@@ -4343,22 +4350,68 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
 // ---------------------------------------------------------------------------
 
 /// `setup_finish` commands for timed gates (spec-0016 §4): start each gate's
-/// clock. The gate is physically sealed by the prefab at world-load, so the
-/// clock's first act is always an OPEN — a `phase` of 0 opens immediately, a
+/// clock, and — task #184 — summon the disarm affordance of any gate that
+/// declares one. The gate is physically sealed by the prefab at world-load, so
+/// the clock's first act is always an OPEN — a `phase` of 0 opens immediately, a
 /// larger one holds the gate shut that many ticks first. Empty for a campaign
 /// with no timed gate → byte-identical.
+///
+/// The affordance is the same pair a shortcut unlock and a trap disarm emit: an
+/// invisible `minecraft:interaction` hitbox **plus** compiler-owned visible
+/// hardware, because a hitbox alone is a lever the player cannot see — the
+/// drowned-bell soft-lock class `DW0420` exists to make impossible.
 fn timed_gate_setup(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
-    plan.timed_gates
-        .iter()
-        .map(|g| {
-            if g.phase == 0 {
-                format!("function {ns}:tgate_open_{}", g.safe)
-            } else {
-                format!("schedule function {ns}:tgate_open_{} {}t", g.safe, g.phase)
-            }
-        })
-        .collect()
+    let mut out = Vec::new();
+    for g in &plan.timed_gates {
+        if g.phase == 0 {
+            out.push(format!("function {ns}:tgate_open_{}", g.safe));
+        } else {
+            out.push(format!(
+                "schedule function {ns}:tgate_open_{} {}t",
+                g.safe, g.phase
+            ));
+        }
+    }
+    for g in &plan.timed_gates {
+        let Some(dis) = &g.disarm else {
+            continue;
+        };
+        let v = ent_xyz(dis.via_cell);
+        out.push(format!(
+            "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_tgdis_{}\"]}}",
+            v[0], v[1], v[2], g.safe
+        ));
+        out.push(affordance_hardware(
+            v,
+            &format!("dw_tgdis_{}", g.safe),
+            "minecraft:lever",
+        ));
+    }
+    out
+}
+
+/// Per-tick disarm detection for jammable timed gates (task #184), reusing the
+/// v0.4 interaction-entity `use` primitive exactly as a trap disarm and a
+/// shortcut unlock do. The `#tgdis_<id>` sentinel makes the jam fire **once**;
+/// after it, there is nothing left to dispatch. Empty for a campaign with no
+/// disarmable gate → byte-identical.
+fn timed_gate_tick(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for g in &plan.timed_gates {
+        if g.disarm.is_none() {
+            continue;
+        }
+        let id = &g.safe;
+        out.push(format!(
+            "execute unless score #tgdis_{id} dw.sys matches 1 if entity @e[tag=dw_tgdis_{id},nbt={{interaction:{{}}}}] run function {ns}:tgate_disarm_{id}"
+        ));
+        out.push(format!(
+            "execute as @e[tag=dw_tgdis_{id}] run data remove entity @s interaction"
+        ));
+    }
+    out
 }
 
 /// Half-hearts dealt by a `crush: true` timed gate's closing edge (spec-0016 §4
@@ -4405,14 +4458,42 @@ fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
     for g in &plan.timed_gates {
         let id = &g.safe;
         let (from, to) = g.gate_region;
+        // task #184: the jam guard. A disarmable gate's clock lines are prefixed
+        // with `execute unless score #tgdis_<id> dw.sys matches 1` — the same
+        // score-guard shape a gated trap's payload uses. A gate with no `disarm`
+        // emits no guard at all, so its output is byte-identical to before.
+        let guard = if g.disarm.is_some() {
+            Some(format!("execute unless score #tgdis_{id} dw.sys matches 1"))
+        } else {
+            None
+        };
+        // `<guard> run <cmd>` when jammable, else `<cmd>` verbatim.
+        let guarded = |cmd: String| match &guard {
+            Some(g) => format!("{g} run {cmd}"),
+            None => cmd,
+        };
+        // …and the `execute` form, for a line that is already an `execute`: its
+        // subcommands splice straight onto the guard rather than nesting.
+        let guarded_exec = |rest: &str, cmd: &str| match &guard {
+            Some(g) => format!("{g} {rest} run {cmd}"),
+            None => format!("execute {rest} run {cmd}"),
+        };
         out.push((
             format!("tgate_open_{id}"),
             lines(&[
+                // The open itself is NEVER guarded: a jam that lands while the
+                // gate is shut leaves one already-scheduled open in flight, and
+                // that open is exactly what parks the portcullis in its resting
+                // position. Suppressing it would freeze the gate CLOSED, which
+                // is the opposite of a disarm.
                 format!(
                     "fill {} {} {} {} {} {} minecraft:air replace {}",
                     from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
                 ),
-                format!("schedule function {ns}:tgate_close_{id} {}t", g.open_ticks),
+                guarded(format!(
+                    "schedule function {ns}:tgate_close_{id} {}t",
+                    g.open_ticks
+                )),
             ]),
         ));
         let mut close = Vec::new();
@@ -4422,21 +4503,72 @@ fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
         // and vanilla's own suffocation would be the thing killing them, which
         // is slow, gear-dependent and escapable. Costs nothing per tick: this
         // rides the closing tick of the schedule ping-pong that already exists.
+        //
+        // task #184: the judgement sits INSIDE the suppressed clock, so a
+        // disarmed gate can never crush — there is no closing tick left to be
+        // caught by. That is not a second rule, it is the same guard.
         if g.crush {
-            close.push(format!(
-                "execute as @a[{}] run damage @s {CRUSH_DAMAGE} minecraft:generic",
-                region_selector(from, to)
+            close.push(guarded_exec(
+                &format!("as @a[{}]", region_selector(from, to)),
+                &format!("damage @s {CRUSH_DAMAGE} minecraft:generic"),
             ));
         }
-        close.push(format!(
+        close.push(guarded(format!(
             "fill {} {} {} {} {} {} {}",
             from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
-        ));
-        close.push(format!(
+        )));
+        close.push(guarded(format!(
             "schedule function {ns}:tgate_open_{id} {}t",
             g.closed_ticks
-        ));
+        )));
         out.push((format!("tgate_close_{id}"), lines(&close)));
+    }
+    out.extend(emit_timed_gate_disarm_functions(plan));
+    out
+}
+
+/// The `tgate_disarm_<id>` functions (task #184): jam the gate for good.
+///
+/// Four commands, and the ORDER is the semantics:
+/// 1. latch `#tgdis_<id>` — from this instant every guarded clock line is inert,
+///    including the crush;
+/// 2. raise the disarm flag party-wide, so the rest of the campaign can read
+///    "the party switched it off" (`requires_flags`, a dialogue gate, a quest);
+/// 3. clear the span **once** — the jammed portcullis comes to rest OPEN, which
+///    is what a disarm means and what a player who pulls a lever expects to see;
+/// 4. retire the affordance's visible hardware. This is the ONE function allowed
+///    to do that — `DW0421` fails the build if anything else reaches it.
+///
+/// There is deliberately **no** `schedule clear`. A close already in flight fires
+/// into the guard and does nothing — including not scheduling the next open — so
+/// the ping-pong dies of its own accord within one hop, and the gate is left open
+/// by step 3. Clearing a schedule that may not exist would be a command that
+/// fails at runtime for no gain.
+fn emit_timed_gate_disarm_functions(plan: &Plan) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for g in &plan.timed_gates {
+        let Some(dis) = &g.disarm else {
+            continue;
+        };
+        let id = &g.safe;
+        let (from, to) = g.gate_region;
+        let body = vec![
+            format!("scoreboard players set #tgdis_{id} dw.sys 1"),
+            format!(
+                "scoreboard players set {} {} 1",
+                plan::PARTY,
+                plan::flag_score(&dis.sets_flag)
+            ),
+            format!(
+                "fill {} {} {} {} {} {} minecraft:air replace {}",
+                from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
+            ),
+            format!(
+                "kill @e[tag={}]",
+                crate::affordance::hardware_tag(&format!("dw_tgdis_{id}"))
+            ),
+        ];
+        out.push((format!("tgate_disarm_{id}"), lines(&body)));
     }
     out
 }
@@ -4470,6 +4602,17 @@ fn affordances(plan: &Plan) -> Vec<crate::affordance::Affordance> {
                 tag: format!("dw_trapdis_{}", t.safe),
                 // Throwing the lever spends the affordance.
                 retired_by: Some(format!("trap_disarm_{}", t.safe)),
+            });
+        }
+    }
+    for g in &plan.timed_gates {
+        if g.disarm.is_some() {
+            out.push(crate::affordance::Affordance {
+                id: g.id.clone(),
+                kind: "timed-gate disarm",
+                tag: format!("dw_tgdis_{}", g.safe),
+                // Jamming the gate spends the affordance.
+                retired_by: Some(format!("tgate_disarm_{}", g.safe)),
             });
         }
     }
@@ -8185,6 +8328,12 @@ fn declared_flags(c: &delvewright_dsl::Campaign) -> std::collections::BTreeSet<S
             out.insert(dis.sets_flag.as_str().to_string());
         }
     }
+    // task #184: a timed gate's disarm sets a flag exactly as a trap's does.
+    for g in &c.quests.content.timed_gates {
+        if let Some(dis) = &g.disarm {
+            out.insert(dis.sets_flag.as_str().to_string());
+        }
+    }
     for tree in &c.dialogue.content.dialogues {
         for node in &tree.nodes {
             for opt in &node.options {
@@ -11590,6 +11739,88 @@ fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
         lines(&b).into_bytes(),
     );
     emit_timed_gate_crush_packtest(plan, g, out);
+    emit_timed_gate_disarm_packtest(plan, g, out);
+}
+
+/// task #184 PackTest: a **disarmed** gate stays open across several former cycle
+/// boundaries, and its closing edge never fires again.
+///
+/// A fake player cannot wait out a `schedule`, so the template does what the
+/// timed-gate template already does — drives the REAL clock functions directly,
+/// which IS the clock's body. The proof is that after `tgate_disarm_<id>` runs,
+/// calling `tgate_close_<id>` (the exact function the schedule would have
+/// re-entered) leaves the span air, three former boundaries in a row. If the
+/// guard were missing, the very first one would re-seal it.
+///
+/// A `crush: true` gate gets the sharper form for free: the same guarded body
+/// carries the judgement, so a close that cannot fill also cannot damage — which
+/// is why the compiler unit test asserts the damage line is *inside* the guard
+/// rather than beside it.
+///
+/// Emits nothing unless the gate declares a `disarm`, so every other campaign's
+/// PackTest suite is byte-identical.
+fn emit_timed_gate_disarm_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mut BuildOutput) {
+    if g.disarm.is_none() {
+        return;
+    }
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let (from, to) = g.gate_region;
+    let probe = from;
+    let id = &g.safe;
+    let mut b = packtest_header(&format!(
+        "{title}: timed gate `{}` stays open once disarmed (task #184)",
+        g.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    // A sibling template shares this world: re-arm and re-seal so the fixture
+    // starts from a running, shut clock whatever ran before it.
+    b.push(format!("scoreboard players set #tgdis_{id} dw.sys 0"));
+    b.push(format!(
+        "fill {} {} {} {} {} {} {}",
+        from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
+    ));
+    // The clock is still live: a close really does seal.
+    b.push(format!("function {ns}:tgate_open_{id}"));
+    b.push(format!("function {ns}:tgate_close_{id}"));
+    b.push(format!(
+        "execute store success score #tgd_armed dw.sys if block {} {} {} {}",
+        probe[0], probe[1], probe[2], g.gate_block
+    ));
+    b.push("assert score #tgd_armed dw.sys matches 1".to_string());
+    // Pull the lever: the span clears and the sentinel latches.
+    b.push(format!("function {ns}:tgate_disarm_{id}"));
+    b.push(format!(
+        "execute store success score #tgd_jam dw.sys if block {} {} {} minecraft:air",
+        probe[0], probe[1], probe[2]
+    ));
+    b.push("assert score #tgd_jam dw.sys matches 1".to_string());
+    b.push(format!("assert score #tgdis_{id} dw.sys matches 1"));
+    // Three former cycle boundaries. The assertion lands immediately after the
+    // CLOSE — before the open half runs — because that is the only place the
+    // guard is load-bearing: an unguarded close re-seals here, and an assertion
+    // taken after the following open would be satisfied either way and prove
+    // nothing (measured: the template that asserted after the open passed
+    // against a deliberately unguarded build).
+    for n in 1..=3 {
+        b.push(format!("function {ns}:tgate_close_{id}"));
+        b.push(format!(
+            "execute store success score #tgd_c{n} dw.sys if block {} {} {} minecraft:air",
+            probe[0], probe[1], probe[2]
+        ));
+        b.push(format!("assert score #tgd_c{n} dw.sys matches 1"));
+        // …and the open half of the dead ping-pong is a harmless no-op.
+        b.push(format!("function {ns}:tgate_open_{id}"));
+        b.push(format!(
+            "execute store success score #tgd_o{n} dw.sys if block {} {} {} minecraft:air",
+            probe[0], probe[1], probe[2]
+        ));
+        b.push(format!("assert score #tgd_o{n} dw.sys matches 1"));
+    }
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_timed_gate_disarm.mcfunction"),
+        lines(&b).into_bytes(),
+    );
 }
 
 /// spec-0016 §4 addendum PackTest: a `crush: true` gate's closing edge selects

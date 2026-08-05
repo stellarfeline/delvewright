@@ -77,7 +77,7 @@ pub fn validate_campaign_with(
         v06_trap_checks(c, items, entities, anchors, &mut d);
         shortcut_checks(c, anchors, &mut d);
         ambush_checks(c, &mut d);
-        timed_gate_checks(c, &mut d);
+        timed_gate_checks(c, anchors, &mut d);
         loot_checks(c, items, anchors, &mut d);
         lane_checks(c, anchors, &mut d);
         difficulty_checks(c, &mut d);
@@ -3619,6 +3619,14 @@ fn collect_declared_flags(c: &Campaign) -> BTreeSet<&str> {
             flags.insert(dis.sets_flag.as_str());
         }
     }
+    // task #184: a timed gate's disarm produces a first-class flag exactly as a
+    // trap's does — the party jammed the portcullis, and the rest of the campaign
+    // may read that fact.
+    for g in &c.quests.content.timed_gates {
+        if let Some(dis) = &g.disarm {
+            flags.insert(dis.sets_flag.as_str());
+        }
+    }
     for tree in &c.dialogue.content.dialogues {
         for node in &tree.nodes {
             for opt in &node.options {
@@ -5669,18 +5677,40 @@ fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 // spec-0016 §4 — timed gates
 // ---------------------------------------------------------------------------
 
-/// Validate the stage-5 `timed_gates` section (spec-0016 §4), `DW0377`.
+/// Validate the stage-5 `timed_gates` section (spec-0016 §4), `DW0377` /
+/// `DW0389`.
 ///
 /// The structural half only: ids, a cycle that actually cycles, a phase inside
-/// the cycle, and one owner per gate region. The *design* half — that the gate is
-/// a timing read and not a coin flip — needs the nav model's crossing time and
-/// lives in `compiler::nav` (`DW0378`). The fill-block requirement is `DW0343`,
-/// the same rule `close-gate` and `shortcut` obey.
-fn timed_gate_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+/// the cycle, one owner per gate region, and — task #184 — a `disarm.via` that
+/// resolves to a real anchor outside the span it jams. The *design* half — that
+/// the gate is a timing read and not a coin flip — needs the nav model's crossing
+/// time and lives in `compiler::nav` (`DW0378`). The fill-block requirement is
+/// `DW0343`, the same rule `close-gate` and `shortcut` obey.
+///
+/// `DW0389` is the permanence rule, and it is the exact mirror of a shortcut's
+/// `DW0372`: a disarmed gate rests OPEN forever, so no `close-gate` anywhere may
+/// name it. Making that structural is cheaper and safer than trusting every
+/// author never to reach for the re-seal verb.
+///
+/// Anchor resolution stays lenient for pool areas the compiler resolves later —
+/// the same policy as the trap and shortcut checks.
+fn timed_gate_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
     let quests = &c.quests.content;
     if quests.timed_gates.is_empty() {
         return;
     }
+    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
+    let mut has_pool_area = false;
+    for a in &c.world.content.areas {
+        if let Some(prefab) = &a.prefab {
+            if let Some(set) = anchors.anchors_for(prefab) {
+                known_anchor.extend(set.iter().map(String::as_str));
+            }
+        } else if a.prefab_pool.is_some() {
+            has_pool_area = true;
+        }
+    }
+    let resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
     let shortcut_gates: BTreeSet<&str> = quests.shortcuts.iter().map(|s| s.gate.as_str()).collect();
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     let mut driven: BTreeSet<&str> = BTreeSet::new();
@@ -5770,6 +5800,84 @@ fn timed_gate_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 d,
             );
         }
+        // task #184 — the disarm affordance, the same two rules a trap's obeys.
+        if let Some(dis) = &g.disarm {
+            if !resolvable(dis.via.as_str()) {
+                err(
+                    format!("/content/timed_gates/{i}/disarm/via"),
+                    format!(
+                        "timed-gate `disarm.via` anchor `{}` is not provided by any area's prefab \
+                         — use an anchor some area's prefab exposes for the jam affordance \
+                         (anchor names come from prefab metadata; do NOT invent one)",
+                        dis.via
+                    ),
+                    d,
+                );
+            }
+            if dis.via == g.gate {
+                err(
+                    format!("/content/timed_gates/{i}/disarm/via"),
+                    format!(
+                        "timed gate `{}` puts its `disarm.via` on its own gate anchor `{}` — the \
+                         jam lever would stand inside the span the portcullis closes on (and, \
+                         with `crush`, kills in). The affordance belongs on ground the player \
+                         can reach and hold WITHOUT gambling on the clock, which is the entire \
+                         point of the third rung.",
+                        g.id, g.gate
+                    ),
+                    d,
+                );
+            }
+        }
+    }
+
+    // `close-gate` may never target a disarmable timed gate: a disarm leaves the
+    // portcullis jammed OPEN forever, so permanence is structural (`DW0389`, the
+    // mirror of a shortcut's `DW0372`).
+    let disarmed: BTreeSet<&str> = quests
+        .timed_gates
+        .iter()
+        .filter(|g| g.disarm.is_some())
+        .map(|g| g.gate.as_str())
+        .collect();
+    if disarmed.is_empty() {
+        return;
+    }
+    let report = |path: String, anchor: &str, d: &mut Vec<Diagnostic>| {
+        d.push(Diagnostic::error(
+            codes::TIMED_GATE_REARMED,
+            "quests",
+            path,
+            format!(
+                "`close-gate` targets `{anchor}`, the gate of a `timed-gate` that declares a \
+                 `disarm` — a disarmed gate rests OPEN permanently (task #184, souls dossier \
+                 §5.2: a hazard the party has switched off stays off), so nothing may re-arm \
+                 its clock. Use a different gate for the beat that must re-seal, or drop the \
+                 `disarm` and keep the clock running."
+            ),
+        ));
+    };
+    for (qi, q) in quests.quests.iter().enumerate() {
+        for_each_effect_deep(q, |path, eff| {
+            if let Some(a) = eff.close_gate_anchor()
+                && disarmed.contains(a.as_str())
+            {
+                report(format!("/content/quests/{qi}/{path}/anchor"), a.as_str(), d);
+            }
+        });
+    }
+    for (ti, t) in quests.triggers.iter().enumerate() {
+        for_each_trigger_effect_deep(t, |path, eff| {
+            if let Some(a) = eff.close_gate_anchor()
+                && disarmed.contains(a.as_str())
+            {
+                report(
+                    format!("/content/triggers/{ti}/{path}/anchor"),
+                    a.as_str(),
+                    d,
+                );
+            }
+        });
     }
 }
 
