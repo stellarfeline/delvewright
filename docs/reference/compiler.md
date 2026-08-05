@@ -2722,6 +2722,26 @@ does not occupy the same space as an *affordance*.
 |------|---------|
 | `DW0498` | **A pool draw seats the same anchor-bearing prefab more than once, so every anchor that prefab declares has more than one carrier** (recovered owner-queue item, task #187). An anchor name belongs to a *prefab*, not to a placement: seat the prefab twice and the name stops picking out a place in the world. The compiler already refused the sharp end of that — `DW0305` fails the build when a campaign-referenced anchor resolves to two placed pieces — but `DW0305` fires **per anchor, at the use site**, and only over the anchors the solver is required to guarantee (NPC stands, `reach-anchor`/`collect`/`interact` targets, `open-gate`/`close-gate`/`set-block`/`move-npc` anchors, wave spawns, lane waypoints, cutscene subjects). Everything else — a `spawn-actor`, a `move-actor` destination, a block or light edit — resolves silently to the **first** carrier in placement order (`Plan::build`'s `or_insert_with`) and leaves the other copy empty. The pool that caused all of it said nothing at all, so a campaign author discovered the constraint one blocked placement at a time. The motivating case ships: on the island, `pool/island` (4 members: 1 `entry`, 2 `connector`, 1 `terminal`) at `pieces {min:4,max:4}` seats `prefab/island-greenfield` **twice**, which makes all nine of its anchors (`anchor/fold` … `anchor/meadow`) ambiguous and unusable for wave or reach placement. **What it asserts:** facts about *this build's assembled draw* — the pieces the pinned seed actually seated (ADR-0006), read **after** stage-7 massing so what is reported is the layout the player gets. It never claims a pool "always" repeats; the same pool at a different budget or member set may not, which is exactly why the prescription is to change the pool and never to reroll the seed. **Anchorless fillers are excluded by construction**: repeating an anchorless connector is *how* a jigsaw pool spans its `pieces` budget (`pool/stone-keep`'s corridors exist to be drawn over and over), and a prefab that declares no anchors can make no anchor ambiguous — warning on every campaign that uses fillers would be noise, not information. **Severity: advisory (warning, exit 0), deliberately.** A repeat with no ambiguous-anchor *use* is legal and shipping content relies on it, so this never turns a green campaign red; when such an anchor IS referenced, `DW0305` still fails the build at the use site and this warning is printed with it as the pool-level explanation (carried on `PlanError::warnings`). `compiler::pool`, run in `Plan::build` right after the solver and massing; reported through `Plan::warnings` → `emit::build_with_warnings`. **Boundary:** one diagnostic per pool area, naming every repeated anchor-bearing prefab and every anchor each one makes ambiguous. It says nothing about two *different* prefabs that happen to declare the same anchor name — that ambiguity exists at a single draw and is `DW0305`'s alone. Prescription: give the pool more DISTINCT variant members in the repeated role (same sockets, different prefab) so a draw of this size never has to reuse one piece, or accept those anchors as unusable and keep every placement off them. **Never reroll the seed** to change the draw. |
 
+### DW0494 — branch-aware inter-area transport (`compiler::emit`; error)
+
+`build_critical_path` derives an inter-area transport map for whatever
+playthrough it is handed, so every branch already has one
+(`Plan::branch_critical_path`), and `validation/branch-path-<slug>.json`
+publishes it to the harness. Emission carries them too (task #186): the
+**exported** path's crossings are emitted unconditionally in the objective's
+`complete_<obj>` bundle, and every crossing that exists only on a BRANCH is
+emitted beside them, gated on exactly that branch's flag assignment (`if score
+#party dw.f_<set> matches 1` / `unless … dw.f_<unset> …`). Before this, a
+branch-only crossing was promised by the artifact and performed by nothing — the
+island round-21 branch run walked to a deck it was never carried to. The overlay
+is empty, and the emission byte-identical, for a campaign with no `branch_points`
+or one whose branches cross only where the exported path already does
+(`emit::branch_transport_overlay`).
+
+| Code | Meaning |
+|------|---------|
+| `DW0494` | **One objective, two destinations.** Completing a single objective would cross into a different area on the exported path than on a branch. Build-tier (exit 3), `compiler::emit::branch_transport_overlay`, raised before any function is emitted. The crossing lives in that objective's own completion bundle, so the two teleports would sit in one function body and command order — not the branch the party is actually playing — would decide where they land; and there is nothing to gate on, because the exported path's crossing is unconditional by construction. The message names the objective, both destinations and the branch that disagrees. Prescription: split the crossing into one objective per branch, each gated by that branch's flags (which is what the two branches' beats already are, everywhere else). Do NOT move the branch's destination onto the exported path to silence it — that ships the branch to the wrong area. |
+
 ### DW046x — the NPC scene ledger (`compiler::cast`; spec-0020, DSL v0.7)
 
 The `cast` block declares, per quest, where every live NPC is, what they are
@@ -2969,7 +2989,10 @@ like `critical-path-waypoints.json` — **never** part of the shipped datapack.
   same NPC at different anchors get two different cells for the same beat. A bonfire's `fire_step` (an index into the exported
   path) is translated onto a branch path through the **objective** its firing
   beat names, because a fire is armed by a beat and not by a position; a beat
-  that does not happen on a branch arms nothing there. Not emitted for an
+  that does not happen on a branch arms nothing there. A step's `transport` is a
+  **contract with the datapack**, not just a harness hint: emission carries every
+  branch-only crossing as a flag-gated `teleport` in that objective's
+  `complete_<obj>` bundle (task #186, `DW0494` above). Not emitted for an
   unreachable branch — there is no world that plays it, and `DW0482` has already
   failed the build. **Waypoints are not yet per-branch**:
   `critical-path-waypoints.json` legs are consumed in lockstep with the exported
