@@ -1360,6 +1360,16 @@ impl<'a> Plan<'a> {
         self.checkpoints.iter().any(|c| !c.on_respawn.is_empty()) || !self.reseat_waves().is_empty()
     }
 
+    /// Whether the campaign declares **any** checkpoint at all (spec-0012 /
+    /// spec-0016 §1). Gates the respawn **re-seat** machinery: the delve's own
+    /// promise is "die and resume at the last checkpoint", and vanilla's
+    /// `/spawnpoint` is only a hint — it silently falls back to the world spawn
+    /// whenever the recorded cell is not a legal respawn position (task #145).
+    /// A campaign with no checkpoint keeps the pre-0.6 emission byte-for-byte.
+    pub fn any_checkpoint(&self) -> bool {
+        !self.checkpoints.is_empty()
+    }
+
     /// The waves a bonfire rest / bonfire respawn re-seats (spec-0016 §1), in
     /// content order. Empty unless the campaign declares BOTH a `bonfire` and at
     /// least one wave with `respawns_on_rest` — `DW0370` rejects the half that
