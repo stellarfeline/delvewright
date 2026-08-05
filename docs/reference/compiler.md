@@ -1348,6 +1348,27 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     that difference is the whole entry. **No `DW0477`** for these: that
     diagnostic is about a *billing* the gate cannot hold, and nothing was billed
     — the ledger line is the whole record.
+  - `floor_gate.examined` / `.unbound` / `.reason`, and a sibling top-level
+    `actors_gate` (`{examined, unbound, reason?}`) — the **binding counts**
+    (playtest-methodology.md rule 1, task following the island's round-20
+    finding). Purely additive, no new DW code: `nobodys-cave-island` shipped a
+    green combat floor gate that examined zero enemies for nineteen rounds
+    because `floor_gate.covered`, `.not_covered` **and** `actors[]` were all
+    empty at once and nothing said so — an unbound gate and a satisfied gate
+    are indistinguishable to a reader who is not counting. `floor_gate.examined`
+    is `covered.len() + not_covered.len()`; `unbound` is `examined == 0`, with
+    `reason` present exactly then, in prose naming what zero means here. This is
+    reporting, not diagnosis — an empty ledger is often the honest answer (an
+    all-`ordinary` delve binds nothing, on purpose), so nothing here fails a
+    build. `actors_gate` states the SAME shape for `actors[]` itself, and it is
+    a genuinely different question: `actors[]` holds every actor declaring ANY
+    tier (`ordinary` included), while the floor ledger only ever holds
+    `elite`/`boss` — so a campaign with one `ordinary`-tiered actor and nothing
+    billed hard is `actors_gate.unbound: false` and `floor_gate.unbound: true`
+    at once. `actors_gate`'s zero-reason points a reader at
+    `floor_gate.not_covered`, because an untiered *hostile* actor (task #121)
+    never appears in `actors[]` at all — it is invisible there by design, so
+    `actors_gate.unbound` does not by itself mean "no hostile actor exists".
   **Validation metadata, not shipped gameplay** — excluded from the delve image
   like `critical-path-waypoints.json`, and emitted when the campaign has a
   mandatory encounter, a tier-declaring actor **or** an untiered hostile actor (a

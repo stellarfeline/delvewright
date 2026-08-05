@@ -161,6 +161,76 @@ test("a build with no ledger reports it ABSENT, not as an empty ledger", () => {
   assert.equal(json.floor_gate.present, false);
 });
 
+test("an unbound floor gate's binding count is printed, never left to an empty pair", () => {
+  // playtest-methodology.md rule 1: the exact defect the island shipped for
+  // nineteen rounds. A reader must see `unbound: true` and the reason —
+  // never have to notice `covered`/`not_covered` are both empty to learn it.
+  const report = new RunReport("souls-bonfire", "easy");
+  report.recordCombatCoverage(
+    {
+      present: true,
+      covered: [],
+      notCovered: [],
+      binding: {
+        examined: 0,
+        unbound: true,
+        reason: "no wave or actor in this campaign is billed `elite`/`boss`",
+      },
+    },
+    [],
+  );
+  const json = report.toJSON() as {
+    floor_gate: { examined: number | null; unbound: boolean | null; reason: string | null };
+  };
+  assert.equal(json.floor_gate.examined, 0);
+  assert.equal(json.floor_gate.unbound, true);
+  assert.match(String(json.floor_gate.reason), /billed/);
+});
+
+test("a bound floor gate's binding count is printed with no reason", () => {
+  const report = new RunReport("souls-bonfire", "easy");
+  report.recordCombatCoverage(
+    {
+      present: true,
+      covered: [{ kind: "wave", id: "wave/bellkeeper", tier: "boss" }],
+      notCovered: [],
+      binding: { examined: 1, unbound: false },
+    },
+    [],
+  );
+  const json = report.toJSON() as {
+    floor_gate: { examined: number | null; unbound: boolean | null; reason: string | null };
+  };
+  assert.equal(json.floor_gate.examined, 1);
+  assert.equal(json.floor_gate.unbound, false);
+  assert.equal(json.floor_gate.reason, null);
+});
+
+test("a plan predating the binding count reports it as null, never a fabricated zero", () => {
+  const report = new RunReport("hello-world", "peaceful");
+  const json = report.toJSON() as {
+    floor_gate: { examined: number | null; unbound: boolean | null };
+    actors_gate: unknown;
+  };
+  assert.equal(json.floor_gate.examined, null);
+  assert.equal(json.floor_gate.unbound, null);
+  assert.equal(json.actors_gate, null);
+});
+
+test("the actors[] binding count is a SEPARATE question from the floor gate's", () => {
+  // An all-`ordinary` actor binds `actors_gate` while leaving `floor_gate`
+  // empty — two different counts, and the report must not conflate them.
+  const report = new RunReport("souls-bonfire", "easy");
+  report.recordCombatCoverage({ present: true, covered: [], notCovered: [] }, []);
+  report.recordActorsGate({ examined: 1, unbound: false });
+  const json = report.toJSON() as {
+    floor_gate: { examined: number | null };
+    actors_gate: { examined: number; unbound: boolean; reason: string | null } | null;
+  };
+  assert.equal(json.floor_gate.examined, null);
+  assert.deepEqual(json.actors_gate, { examined: 1, unbound: false, reason: null });
+});
+
 test("every tiered actor gets a row — fought with its outcome, or skipped with a reason", () => {
   const report = new RunReport("souls-bonfire", "normal");
   report.recordCombatCoverage({ present: true, covered: [], notCovered: [] }, [

@@ -686,6 +686,106 @@ fn declaring_an_actor_tier_moves_no_shipped_byte() {
 }
 
 // ---------------------------------------------------------------------------
+// Binding counts (playtest-methodology.md rule 1): a ledger that examined zero
+// objects must say so, additively, never by leaving `covered`/`not_covered`
+// (or `actors[]`) merely empty.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn an_empty_floor_gate_and_actor_gate_state_their_own_zero() {
+    // The exact defect class rule 1 names: `souls-bonfire`, UNMODIFIED, has a
+    // real mandatory encounter (`wave/guards`, a `kill` step on the critical
+    // path) that nothing bills `elite`/`boss`, and no actor at all — the same
+    // shape `nobodys-cave-island` shipped green for nineteen rounds. Before
+    // this task, `floor_gate` was `{covered: [], not_covered: []}` with no way
+    // to tell "examined and found nothing wrong" from "examined nothing".
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    let (out, _) = build(tmp.path()).expect("the untouched fixture builds");
+    let json: serde_json::Value =
+        serde_json::from_slice(out.get("validation/combat-plan.json").unwrap()).unwrap();
+
+    assert_eq!(json["floor_gate"]["examined"], 0, "{json}");
+    assert_eq!(json["floor_gate"]["unbound"], true, "{json}");
+    assert!(
+        json["floor_gate"]["covered"].as_array().unwrap().is_empty(),
+        "{json}"
+    );
+    assert!(
+        json["floor_gate"]["not_covered"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "{json}"
+    );
+    let floor_reason = json["floor_gate"]["reason"].as_str().expect("{json}");
+    assert!(
+        floor_reason.contains("nothing to hold"),
+        "the reason must say what zero means: {floor_reason}"
+    );
+
+    assert_eq!(json["actors_gate"]["examined"], 0, "{json}");
+    assert_eq!(json["actors_gate"]["unbound"], true, "{json}");
+    let actors_reason = json["actors_gate"]["reason"].as_str().expect("{json}");
+    assert!(
+        actors_reason.contains("floor_gate.not_covered"),
+        "the reason must point a reader at the OTHER ledger untiered hostiles \
+         actually land in: {actors_reason}"
+    );
+}
+
+#[test]
+fn a_covered_floor_gate_states_its_nonzero_binding_and_carries_no_reason() {
+    // The green case, for contrast: an actual `elite` fight the gate covers
+    // reports `examined: 1`, `unbound: false`, and NO `reason` key at all — the
+    // key exists exactly to explain a zero, and its presence on a bound gate
+    // would be the same noise the ledger exists to avoid.
+    let tmp = TempCampaign::new();
+    let (json, _, _) = build_with_actor(&tmp, barrow_warden(), vec![unleash_trigger()]);
+
+    assert_eq!(json["floor_gate"]["examined"], 1, "{json}");
+    assert_eq!(json["floor_gate"]["unbound"], false, "{json}");
+    assert!(json["floor_gate"].get("reason").is_none(), "{json}");
+
+    assert_eq!(json["actors_gate"]["examined"], 1, "{json}");
+    assert_eq!(json["actors_gate"]["unbound"], false, "{json}");
+    assert!(json["actors_gate"].get("reason").is_none(), "{json}");
+}
+
+#[test]
+fn an_all_ordinary_actor_binds_the_actor_gate_but_not_the_floor_gate() {
+    // The two counts are DIFFERENT QUESTIONS, not two spellings of one fact.
+    // `actors[]` holds every actor that declares ANY tier, `ordinary` included;
+    // the floor gate only ever holds `elite`/`boss`. A tier declared
+    // `ordinary` is a statement (spec-0023) — it binds the actor ledger while
+    // leaving the floor gate with nothing to hold.
+    let tmp = TempCampaign::new();
+    let mut ordinary = barrow_warden();
+    ordinary["tier"] = serde_json::json!("ordinary");
+    let (json, diags, _) = build_with_actor(&tmp, ordinary, vec![unleash_trigger()]);
+
+    assert_eq!(json["actors_gate"]["examined"], 1, "{json}");
+    assert_eq!(json["actors_gate"]["unbound"], false, "{json}");
+
+    assert_eq!(json["floor_gate"]["examined"], 0, "{json}");
+    assert_eq!(json["floor_gate"]["unbound"], true, "{json}");
+    assert!(
+        json["floor_gate"]["covered"].as_array().unwrap().is_empty(),
+        "{json}"
+    );
+    assert!(
+        json["floor_gate"]["not_covered"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "{json}"
+    );
+    // An `ordinary`-billed actor is not a `DW0477` finding either — nothing was
+    // billed hard, so there is nothing the floor gate failed to hold.
+    assert!(!has_code(&diags, "DW0477"), "{diags:#?}");
+}
+
+// ---------------------------------------------------------------------------
 // The governing checkpoint, and the one coordinate system (#221 follow-up).
 // ---------------------------------------------------------------------------
 
