@@ -1,11 +1,24 @@
 //! Chunky scene emission (spec-0007 whole-scene renders / spec-0003 visual tier).
 //!
 //! Converts the compiler's `render-plan.json` into **Chunky** scene description
-//! JSONs — one per shot. Chunky itself is **not** bundled (GPLv3, out-of-process,
-//! headless under xvfb; the snapshot-core version verified by the spike is pinned
-//! in `versions.toml [render]` + the README). Actually *running* Chunky stays
-//! manual / CI-future; emitting correct scenes is the deliverable here, pinned by
-//! a golden-file test.
+//! JSONs — one per shot. Chunky itself is **not** bundled (GPL-3.0; the pinned
+//! snapshot core lives in `versions.toml [render]`) — it is the project's official
+//! renderer, invoked as a separate program (`docs/reference/tools.md` §4a).
+//! Emitting correct scenes is the deliverable here, pinned by a golden-file test.
+//!
+//! ## One stem per scene
+//!
+//! Every emitted file is named after the scene's own Chunky `name`
+//! ([`scene_file_stem`]) — because Chunky treats `name` as the scene's identity
+//! and will re-save a loaded scene, and key its caches, under it. See that
+//! function's docs; [`crate::cache`] is the other half.
+//!
+//! ## Ocean horizons
+//!
+//! A campaign that declares `horizon: ocean` states the fact in
+//! `render-plan.json`, and every scene of it gets Chunky's ambient water plane
+//! ([`water_world`]) — the shipped world save holds only the layout's chunks, so
+//! the sea is not in it.
 //!
 //! ## Camera convention
 //!
@@ -86,6 +99,36 @@ pub const REVIEW_POLICY: &str = "night-vision-emulated — review only";
 /// emitters (the camp fire pit) still stand out.
 pub const REVIEW_EMITTANCE: f64 = 0.05;
 
+/// How far below a water cell's top face the rendered surface sits, in blocks.
+/// Vanilla draws a full source block 1/8 short of the cell top; Chunky matches
+/// it (`Water.TOP_BLOCK_GAP` in the pinned core). So the surface of the water
+/// block at `y` is at `y + 1 - 0.125`, and a plane anywhere else meets the
+/// authored block water in a visible two-tone seam.
+pub const WATER_SURFACE_GAP: f64 = 0.125;
+
+/// Chunky's ambient "water world" plane — the sea a delve's world save does not
+/// contain (see [`water_world`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct WaterWorld {
+    /// Absolute Y of the rendered water surface.
+    pub(crate) height: f64,
+}
+
+/// The water plane for a plan's declared horizon: `Some` **iff** the campaign
+/// declares `horizon: ocean` (spec-0013), never inferred from blocks.
+///
+/// A delve's world save holds only the chunks its layout occupies — the sea
+/// around an island is the level generator's, so a scene loading that save
+/// renders void past the shoreline. Chunky's water-world plane supplies it, and
+/// its surface must land on the block-water surface ([`WATER_SURFACE_GAP`]) or
+/// the two waters meet in a two-tone seam. A void horizon has no ambient sea and
+/// gets no keys at all, so those scenes stay byte-identical.
+pub(crate) fn water_world(horizon: Option<Horizon>) -> Option<WaterWorld> {
+    horizon.map(|Horizon::Ocean { sea_level }| WaterWorld {
+        height: sea_level as f64 + 1.0 - WATER_SURFACE_GAP,
+    })
+}
+
 /// Options for scene emission.
 #[derive(Debug, Clone)]
 pub struct SceneOptions {
@@ -114,16 +157,37 @@ impl Default for SceneOptions {
 // ---- render-plan.json (input) -------------------------------------------------
 
 #[derive(Debug, Deserialize)]
-struct RenderPlan {
-    campaign_id: String,
-    layout_aabb: Aabb,
+pub(crate) struct RenderPlan {
+    pub(crate) campaign_id: String,
+    pub(crate) layout_aabb: Aabb,
+    /// The world-generator horizon the compiler declared (spec-0013). Absent =
+    /// `void`: no ambient sea, nothing to add under the frame.
+    #[serde(default)]
+    pub(crate) horizon: Option<Horizon>,
     shots: Vec<Shot>,
 }
 
 #[derive(Debug, Deserialize)]
-struct Aabb {
-    min: [i32; 3],
-    max: [i32; 3],
+pub(crate) struct Aabb {
+    pub(crate) min: [i32; 3],
+    pub(crate) max: [i32; 3],
+}
+
+/// The `horizon` fact `render-plan.json` carries (compiler `render_plan::
+/// horizon_fact`). Only the ambients that change what a renderer must draw are
+/// spelled out; `void` is the absent case.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum Horizon {
+    /// A superflat sea backdrop. `sea_level` is the Y of the topmost ambient
+    /// water block (the compiler's `plan::SEA_LEVEL`).
+    Ocean { sea_level: i32 },
+}
+
+/// Parse a `render-plan.json` (shared by scene and panorama emission).
+pub(crate) fn parse_plan(plan_json: &[u8]) -> Result<RenderPlan, Diagnostic> {
+    serde_json::from_slice(plan_json)
+        .map_err(|e| Diagnostic::error(DW_INPUT, format!("parse render-plan.json: {e}")))
 }
 
 #[derive(Debug, Deserialize)]
@@ -179,77 +243,144 @@ const DEFAULT_FOV_DEG: f64 = 70.0;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ChunkyScene {
-    sdf_version: u32,
-    name: String,
-    width: u32,
-    height: u32,
-    y_clip_min: i32,
-    y_clip_max: i32,
-    exposure: f64,
-    postprocess: &'static str,
-    output_mode: &'static str,
-    render_time: u64,
-    spp: u32,
-    spp_target: u32,
-    ray_depth: u32,
-    path_trace: bool,
-    dump_frequency: u32,
-    save_snapshots: bool,
-    emitters_enabled: bool,
-    emitter_intensity: f64,
-    sun_enabled: bool,
-    still_water: bool,
+pub(crate) struct ChunkyScene {
+    pub(crate) sdf_version: u32,
+    pub(crate) name: String,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) y_clip_min: i32,
+    pub(crate) y_clip_max: i32,
+    pub(crate) exposure: f64,
+    pub(crate) postprocess: &'static str,
+    pub(crate) output_mode: &'static str,
+    pub(crate) render_time: u64,
+    pub(crate) spp: u32,
+    pub(crate) spp_target: u32,
+    pub(crate) ray_depth: u32,
+    pub(crate) path_trace: bool,
+    pub(crate) dump_frequency: u32,
+    pub(crate) save_snapshots: bool,
+    pub(crate) emitters_enabled: bool,
+    pub(crate) emitter_intensity: f64,
+    pub(crate) sun_enabled: bool,
+    pub(crate) still_water: bool,
+    /// Ocean horizons only ([`water_world`]): Chunky's ambient water plane, so
+    /// the sea the world save does not contain is still in frame. All four keys
+    /// are written together — `waterWorldHeightOffsetEnabled` in particular
+    /// defaults to `true` in the pinned core and would silently drop the plane
+    /// 0.125 below the block-water surface. Absent (not `null`) on void
+    /// horizons, keeping those scenes byte-identical.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) water_world_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) water_world_height: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) water_world_height_offset_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) water_world_clip_enabled: Option<bool>,
+    /// An explicitly placed sun (the panorama's key light). Absent on review
+    /// scenes, which keep Chunky's default sun.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) sun: Option<ChunkySun>,
     /// REVIEW POLICY (night-vision emulation) only: per-block material
     /// overrides making the scene's structural palette faintly self-emitting.
     /// Absent (not `null`) on every non-emulated scene, so those stay
     /// byte-identical to the pre-policy emission.
     #[serde(skip_serializing_if = "Option::is_none")]
-    materials: Option<BTreeMap<String, MaterialOverride>>,
+    pub(crate) materials: Option<BTreeMap<String, MaterialOverride>>,
     /// Set to [`REVIEW_POLICY`] on emulated scenes. Chunky ignores unknown
     /// scene keys (verified against the pinned core), so this is a pure marker
     /// for humans and review tooling.
     #[serde(skip_serializing_if = "Option::is_none")]
-    delvewright_review_policy: Option<&'static str>,
-    world: WorldRef,
-    camera: ChunkyCamera,
-    chunk_list: Vec<[i32; 2]>,
+    pub(crate) delvewright_review_policy: Option<&'static str>,
+    pub(crate) world: WorldRef,
+    pub(crate) camera: ChunkyCamera,
+    pub(crate) chunk_list: Vec<[i32; 2]>,
+}
+
+impl ChunkyScene {
+    /// Attach `water` (if any) as the four `waterWorld*` keys.
+    pub(crate) fn with_water_world(mut self, water: Option<WaterWorld>) -> Self {
+        if let Some(w) = water {
+            self.water_world_enabled = Some(true);
+            self.water_world_height = Some(w.height);
+            // Chunky's default subtracts 0.125 from the stored height; say so
+            // explicitly rather than pre-compensating for a default.
+            self.water_world_height_offset_enabled = Some(false);
+            // Clip the plane to the unloaded chunks, so it never doubles up
+            // with the layout's own authored water.
+            self.water_world_clip_enabled = Some(true);
+        }
+        self
+    }
+
+    /// Serialize to the emitted scene bytes: fixed field order, 2-space pretty,
+    /// trailing newline.
+    pub(crate) fn to_bytes(&self) -> Result<Vec<u8>, Diagnostic> {
+        let mut bytes = serde_json::to_vec_pretty(self)
+            .map_err(|e| Diagnostic::error(DW_INPUT, format!("serialize scene: {e}")))?;
+        bytes.push(b'\n');
+        Ok(bytes)
+    }
 }
 
 /// A Chunky per-material override (the subset the review policy sets).
 #[derive(Debug, Serialize)]
-struct MaterialOverride {
+pub(crate) struct MaterialOverride {
     emittance: f64,
 }
 
+/// Chunky's sun, in its own convention: `altitude`/`azimuth` **radians**, where
+/// the direction toward the sun is
+/// `(cos azimuth · cos altitude, sin altitude, sin azimuth · cos altitude)` —
+/// azimuth `0` is +X (east) and grows toward +Z (south), the opposite turn from
+/// the render-plan yaw convention. Verified against the pinned core's
+/// `Sun.initSun`.
 #[derive(Debug, Serialize)]
-struct WorldRef {
-    path: String,
-    dimension: i32,
+pub struct ChunkySun {
+    pub altitude: f64,
+    pub azimuth: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct WorldRef {
+    pub(crate) path: String,
+    pub(crate) dimension: i32,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ChunkyCamera {
-    name: &'static str,
-    position: Xyz,
-    orientation: Orientation,
-    projection_mode: &'static str,
-    fov: f64,
+pub(crate) struct ChunkyCamera {
+    pub(crate) name: &'static str,
+    pub(crate) position: Xyz,
+    pub(crate) orientation: Orientation,
+    pub(crate) projection_mode: &'static str,
+    pub(crate) fov: f64,
 }
 
 #[derive(Debug, Serialize)]
-struct Xyz {
-    x: f64,
-    y: f64,
-    z: f64,
+pub(crate) struct Xyz {
+    pub(crate) x: f64,
+    pub(crate) y: f64,
+    pub(crate) z: f64,
 }
 
 #[derive(Debug, Serialize)]
-struct Orientation {
-    roll: f64,
-    pitch: f64,
-    yaw: f64,
+pub(crate) struct Orientation {
+    pub(crate) roll: f64,
+    pub(crate) pitch: f64,
+    pub(crate) yaw: f64,
+}
+
+/// Render-plan (Minecraft) camera degrees → Chunky camera radians. **Not** a
+/// straight deg→rad: Chunky's camera basis needs a `−π/2` pitch and `+π` yaw
+/// offset (see the module header for the derivation).
+pub(crate) fn chunky_orientation(yaw_deg: f64, pitch_deg: f64) -> Orientation {
+    Orientation {
+        roll: 0.0,
+        pitch: pitch_deg.to_radians() - std::f64::consts::FRAC_PI_2,
+        yaw: yaw_deg.to_radians() + std::f64::consts::PI,
+    }
 }
 
 /// Sanitize a shot id into a filesystem-safe scene name (`/` → `_`).
@@ -257,9 +388,29 @@ pub fn scene_name(shot_id: &str) -> String {
     shot_id.replace(['/', ':', ' '], "_")
 }
 
+/// The scene's identity: its Chunky `name`, its `<stem>.json` file name, the
+/// `<stem>.png` a render produces, and the stem its caches are keyed on — **one
+/// string, four uses**.
+///
+/// Chunky treats the scene's `name` field as the scene's real identity: loading
+/// `foo.json` whose `name` is `bar` makes it write `bar.json`, `bar.octree2` and
+/// `bar.dump` into the scene directory. Emitting a file under any other name
+/// therefore left a second, diverging scene description on disk and — worse —
+/// put every cache on a stem re-emission would never invalidate, which is
+/// exactly the stale-render trap [`crate::cache`] exists to close. Verified
+/// against the pinned core by rendering a panorama (2026-08-06).
+pub fn scene_file_stem(campaign_id: &str, shot_id: &str) -> String {
+    format!("{}_{}", scene_name(campaign_id), scene_name(shot_id))
+}
+
 /// Chunk column range `[[cx,cz], …]` covering an inclusive block AABB (16-block
 /// chunks, floor-divided), row-major (`cx` outer, `cz` inner) for determinism.
-fn chunk_list(min: [i32; 3], max: [i32; 3]) -> Vec<[i32; 2]> {
+///
+/// The layout's own chunks and **nothing more**: on an ocean horizon the sea is
+/// Chunky's ambient plane ([`water_world`]), and loading the surrounding
+/// pure-ocean chunks from the save puts block water beside plane water — a
+/// visible two-tone seam right where the frame is emptiest.
+pub(crate) fn chunk_list(min: [i32; 3], max: [i32; 3]) -> Vec<[i32; 2]> {
     let cxr = min[0].div_euclid(16)..=max[0].div_euclid(16);
     let czr = min[2].div_euclid(16)..=max[2].div_euclid(16);
     let mut out = Vec::new();
@@ -347,16 +498,17 @@ pub fn scenes_from_plan(
     opts: &SceneOptions,
     world_palette: &[String],
 ) -> Result<Vec<(String, Vec<u8>)>, Diagnostic> {
-    let plan: RenderPlan = serde_json::from_slice(plan_json)
-        .map_err(|e| Diagnostic::error(DW_INPUT, format!("parse render-plan.json: {e}")))?;
+    let plan = parse_plan(plan_json)?;
 
     let chunks = chunk_list(plan.layout_aabb.min, plan.layout_aabb.max);
+    let water = water_world(plan.horizon);
     // Y clip with a small margin around the layout so path traces are not culled.
     let y_clip_min = (plan.layout_aabb.min[1] - 8).max(-64);
     let y_clip_max = (plan.layout_aabb.max[1] + 16).min(320);
 
     let mut out = Vec::with_capacity(plan.shots.len());
     for shot in &plan.shots {
+        let stem = scene_file_stem(&plan.campaign_id, &shot.id);
         let emulate = needs_emulation(shot.lighting.as_ref());
         let materials = if emulate {
             let overrides = emulation_overrides(world_palette);
@@ -379,7 +531,7 @@ pub fn scenes_from_plan(
         };
         let scene = ChunkyScene {
             sdf_version: 9,
-            name: format!("{}_{}", plan.campaign_id, scene_name(&shot.id)),
+            name: stem.clone(),
             width: opts.width,
             height: opts.height,
             y_clip_min,
@@ -398,6 +550,11 @@ pub fn scenes_from_plan(
             emitter_intensity: 13.0,
             sun_enabled: true,
             still_water: false,
+            water_world_enabled: None,
+            water_world_height: None,
+            water_world_height_offset_enabled: None,
+            water_world_clip_enabled: None,
+            sun: None,
             materials,
             delvewright_review_policy: emulate.then_some(REVIEW_POLICY),
             world: WorldRef {
@@ -411,23 +568,14 @@ pub fn scenes_from_plan(
                     y: shot.camera.pos[1],
                     z: shot.camera.pos[2],
                 },
-                orientation: Orientation {
-                    roll: 0.0,
-                    // render-plan (MC) degrees → Chunky camera radians. NOT a
-                    // straight deg→rad: Chunky's basis needs a −π/2 pitch and +π
-                    // yaw offset (see module header for the derivation).
-                    pitch: shot.camera.pitch.to_radians() - std::f64::consts::FRAC_PI_2,
-                    yaw: shot.camera.yaw.to_radians() + std::f64::consts::PI,
-                },
+                orientation: chunky_orientation(shot.camera.yaw, shot.camera.pitch),
                 projection_mode: "PINHOLE",
                 fov: shot.camera.fov.unwrap_or(DEFAULT_FOV_DEG),
             },
             chunk_list: chunks.clone(),
-        };
-        let mut bytes = serde_json::to_vec_pretty(&scene)
-            .map_err(|e| Diagnostic::error(DW_INPUT, format!("serialize scene: {e}")))?;
-        bytes.push(b'\n');
-        out.push((format!("{}.json", scene_name(&shot.id)), bytes));
+        }
+        .with_water_world(water);
+        out.push((format!("{stem}.json"), scene.to_bytes()?));
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(out)
@@ -466,7 +614,7 @@ mod tests {
     fn camera_degrees_map_to_chunky_orientation() {
         use std::f64::consts::{FRAC_PI_2, PI};
         let scenes = scenes_from_plan(FIXTURE, &SceneOptions::default(), &[]).unwrap();
-        let (_, bytes) = scenes.iter().find(|(n, _)| n == "spawn.json").unwrap();
+        let (_, bytes) = scenes.iter().find(|(n, _)| n == "mini_spawn.json").unwrap();
         let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
         let o = &v["camera"]["orientation"];
         // Spawn shot: MC yaw −90°, pitch 15.945°. Chunky = yaw_deg+π, pitch_deg−π/2.
@@ -536,7 +684,7 @@ mod tests {
         let scenes = scenes_from_plan(DARK_PLAN, &SceneOptions::default(), &palette()).unwrap();
         let (_, bytes) = scenes
             .iter()
-            .find(|(n, _)| n == "pov_leg0_wp0.json")
+            .find(|(n, _)| n == "cave_pov_leg0_wp0.json")
             .unwrap();
         let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
         // Marked as review-only emulation.
@@ -569,7 +717,7 @@ mod tests {
         let scenes = scenes_from_plan(DARK_PLAN, &SceneOptions::default(), &palette()).unwrap();
         let (_, lit) = scenes
             .iter()
-            .find(|(n, _)| n == "interior_cave_0.json")
+            .find(|(n, _)| n == "cave_interior_cave_0.json")
             .unwrap();
         let v: serde_json::Value = serde_json::from_slice(lit).unwrap();
         assert!(
@@ -604,7 +752,10 @@ mod tests {
         let a = scenes_from_plan(DARK_PLAN, &SceneOptions::default(), &palette()).unwrap();
         let b = scenes_from_plan(DARK_PLAN, &SceneOptions::default(), &reversed).unwrap();
         assert_eq!(a, b, "palette order must not affect scene bytes");
-        let (_, bytes) = a.iter().find(|(n, _)| n == "pov_leg0_wp0.json").unwrap();
+        let (_, bytes) = a
+            .iter()
+            .find(|(n, _)| n == "cave_pov_leg0_wp0.json")
+            .unwrap();
         let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
         let keys: Vec<&String> = v["materials"].as_object().unwrap().keys().collect();
         let mut sorted = keys.clone();
@@ -612,11 +763,63 @@ mod tests {
         assert_eq!(keys, sorted, "materials keys are sorted");
     }
 
+    /// The invariant Chunky forces: a scene's file stem IS its `name`. Chunky
+    /// re-saves a loaded scene under its `name` field and keys `<name>.octree2`
+    /// / `<name>.dump` on it, so any other file name leaves a second, diverging
+    /// scene description on disk and puts the caches on a stem re-emission
+    /// cannot invalidate (verified against the pinned core, 2026-08-06).
+    #[test]
+    fn every_scenes_file_stem_is_its_chunky_name() {
+        for plan in [FIXTURE, DARK_PLAN, OCEAN_FIXTURE] {
+            let scenes = scenes_from_plan(plan, &SceneOptions::default(), &palette()).unwrap();
+            assert!(!scenes.is_empty());
+            for (file, bytes) in &scenes {
+                let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+                let stem = file.strip_suffix(".json").unwrap();
+                assert_eq!(v["name"], stem, "{file} disagrees with its scene name");
+            }
+        }
+    }
+
+    const OCEAN_FIXTURE: &[u8] = include_bytes!("../tests/fixtures/render-plan-ocean.json");
+
+    #[test]
+    fn ocean_horizon_scenes_stand_on_the_water_world_plane() {
+        // The world save only holds chunks near the layout; without Chunky's
+        // ambient water plane every ocean-horizon frame shows void past the
+        // shoreline. The plane's surface must sit flush with block water.
+        let scenes = scenes_from_plan(OCEAN_FIXTURE, &SceneOptions::default(), &[]).unwrap();
+        let (_, bytes) = &scenes[0];
+        let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        assert_eq!(v["waterWorldEnabled"], serde_json::json!(true));
+        assert_eq!(v["waterWorldHeight"], serde_json::json!(62.875));
+        // Chunky's default subtracts 0.125 from the stored height; the emission
+        // must not depend on that default.
+        assert_eq!(
+            v["waterWorldHeightOffsetEnabled"],
+            serde_json::json!(false),
+            "the plane height must be absolute, not offset by a Chunky default"
+        );
+        assert_eq!(v["waterWorldClipEnabled"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn void_horizon_scenes_have_no_water_world_plane() {
+        let scenes = scenes_from_plan(FIXTURE, &SceneOptions::default(), &[]).unwrap();
+        for (name, bytes) in &scenes {
+            let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+            assert!(
+                v.get("waterWorldEnabled").is_none(),
+                "{name} must carry no water-world keys"
+            );
+        }
+    }
+
     #[test]
     fn golden_scene_matches() {
         let scenes = scenes_from_plan(FIXTURE, &SceneOptions::default(), &[]).unwrap();
         let golden = include_bytes!("../tests/fixtures/golden/spawn.json");
-        let (_, spawn) = scenes.iter().find(|(n, _)| n == "spawn.json").unwrap();
+        let (_, spawn) = scenes.iter().find(|(n, _)| n == "mini_spawn.json").unwrap();
         assert_eq!(
             std::str::from_utf8(spawn).unwrap(),
             std::str::from_utf8(golden).unwrap(),

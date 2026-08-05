@@ -494,6 +494,13 @@ Symptom → tool:
   <build-dir>` — emits the Chunky scene set + shot index from the build's
   `render-plan.json`. First-person POV shots only exist on this path (the
   per-prefab renderer is an orbit renderer and cannot stand inside a room).
+  Chunky is the official renderer for these frames; render + extract commands,
+  the pinned core and the parallel/tiered-SPP doctrine are in
+  `docs/reference/tools.md` §4a.
+- **A picture of the whole map** (storybook hero image, release asset):
+  `delve-render panorama <build-dir> -o <dir> [--bearing se|sw|ne|nw] [--spp N]`
+  — a 45° oblique scene framing the entire layout, computed from the plan. Never
+  hand-edit a scene JSON to get one.
 - **Re-running the machine ladder after a fix**: the ladder entry scripts
   (`validation/bot-run.sh` / `packtest-run.sh` / `branch-runs.sh`, all
   `--project <id>`) fresh-volume their own project before and after every run,
@@ -693,7 +700,8 @@ Then:
      (lighting profile, anchor, NPC facing, name string) and rebuild; never
      hand-edit output. Whole-scene and player-POV shots come from
      `validation/render-shots.sh <build-dir>` (`delve-render scene` + `index`);
-     actually path-tracing those scenes with Chunky stays manual/CI-future.
+     path-tracing those scenes is Chunky, run as a separate process
+     (`docs/reference/tools.md` §4a) — not wired into CI.
 10. **Storybook** (spec-0007): write `campaigns/campaigns/<id>/README.md` — the
    reader-facing intro. Background/setting ONLY: premise, lore, public NPC
    introductions (never persona `secret`), classes, playtime, build/play
@@ -703,6 +711,20 @@ Then:
    Localized `README.<code>.md` per declared language. The render-set images are
    the default — the author may later replace them with hand-crafted shots
    (shaders, staged compositions); media ships with the campaign PR.
+
+   **Storybook art is Chunky, in two passes** (owner decision, 2026-08-06).
+   Draft with `delvec snapshot` — fast, disposable, for judging *layout*: is the
+   right thing in frame, from the right side, at the right distance. Then produce
+   the shipped image with Chunky: emit the scene set with
+   `validation/render-shots.sh <build-dir>` and pick your scene, plus
+   `delve-render panorama <build-dir> -o <dir>` for the whole-map hero shot every
+   release owes (`--bearing` picks the corner). Render each scene as its own
+   `java -jar ChunkyLauncher.jar … -render` process — parallel, `-target 64` for
+   a look, ~300 for the shipped frame — then `-snapshot <scene> <out>.png`;
+   commands, the pinned core and the cache/water/progress gotchas are in
+   `docs/reference/tools.md` §4a. Never hand-edit a scene JSON: if the frame you
+   want is not emittable, that is a `delve-render` gap to report, not a file to
+   patch.
 
    **Every edition opens with the engine-version marker**, on its own line
    directly under the title (task #147). This is the ONE piece of internal

@@ -144,12 +144,17 @@ nucleation_repo = "https://github.com/Schem-at/Nucleation"
 nucleation_rev = "dbc8fe02ce4ddac90a58423dd5d441d067e87baf"
 nucleation_license = "MIT"
 
-# Chunky (whole-scene path tracer, GPLv3, out-of-process — NOT bundled; run
-# headless under xvfb). 1.21.x needs a snapshot core (stable stops at 1.20.4);
-# this is the snapshot the spike verified. Fetch from chunkyupdate.lemaik.de.
-# Consumed by: crates/render (scene emission targets this scene format) + README.
+# Chunky (whole-scene path tracer, GPL-3.0, out-of-process — NOT bundled). The
+# OFFICIAL renderer for review frames, storybook art and the release panorama
+# (owner decision 2026-08-06); invoked as a separate program, never linked.
+# 1.21.x needs a snapshot core (stable stops at 1.20.4); this is the snapshot the
+# spike verified. `java -jar ChunkyLauncher.jar --update snapshot` self-installs
+# it into ~/.chunky/lib.
+# Consumed by: crates/render (scene emission targets this scene format) + README
+# + docs/reference/tools.md §4a.
 chunky_core = "chunky-core-2.5.0-SNAPSHOT.474.g156e2bb"
 chunky_update_url = "https://chunkyupdate.lemaik.de"
+chunky_launcher_url = "https://chunkyupdate.lemaik.de/ChunkyLauncher.jar"
 chunky_license = "GPL-3.0"
 
 # Textures come from the pinned 1.21.11 client jar (the same MC version as

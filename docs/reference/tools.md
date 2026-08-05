@@ -98,11 +98,98 @@ delve-render piece <nbt> -o <dir>            # deterministic multi-angle set for
 delve-render batch <prefab-dir> -o <dir>     # the same for a whole library
 delve-render fidelity-gate [-o <dir>]        # FAIL if any missing-texture placeholder renders
 delve-render scene <build-dir> -o <dir> [--world world]   # Chunky scene JSONs from render-plan.json
+delve-render panorama <build-dir> -o <dir> [--world world] [--bearing se|sw|ne|nw] [--spp 300]
+                                             # the whole-map 45° oblique release panorama
 delve-render index <build-dir> -o <file>     # image <-> expect pairs for a reviewing agent
 ```
 
 Global: `--json`, `--textures <path>`, `--size 1024`. Exit codes and the dark-shot
 review policy: [`compiler.md` §5](compiler.md).
+
+`panorama` computes its camera from `render-plan.json`'s `layout_aabb`: a 45°
+oblique on a corner bearing (`se` default), solved back until every corner of the
+layout is in frame with a 12% margin, sun at 50° altitude 40° off the camera
+bearing, chunk list = the layout's own chunks, and — iff the plan states
+`horizon: ocean` — Chunky's ambient water plane at the compiler's sea level. One
+scene per bearing (`<campaign>_panorama_<bearing>.json`), so four bearings coexist
+in one scene dir.
+
+## 4a. Chunky — the official renderer (external process) · agent + human
+
+Chunky (GPL-3.0) is the renderer for every Delvewright frame that has to look
+like Minecraft: whole-scene review shots, storybook scene illustrations, and the
+per-release whole-map panorama. It is **never linked or vendored** — `delve-render`
+writes scene JSON, `ChunkyLauncher.jar` renders it as a separate program.
+Attribution: [`../ACKNOWLEDGEMENTS.md`](../ACKNOWLEDGEMENTS.md).
+
+Install (once per machine):
+
+```sh
+curl -LO https://chunkyupdate.lemaik.de/ChunkyLauncher.jar
+java -jar ChunkyLauncher.jar --update snapshot     # self-installs the pinned core
+```
+
+The launcher self-installs cores into `~/.chunky/lib`. The pinned one is
+`chunky-core-2.5.0-SNAPSHOT.474.g156e2bb` (`versions.toml [render]`,
+`scene::CHUNKY_CORE`) — 1.21.x needs a snapshot core; the stable line stops at
+1.20.4.
+
+**Textures come from the creator's own client jar** and are never redistributed:
+Chunky reads `~/.chunky/resources/minecraft.jar` (or `--textures <jar>`), the
+same EULA-gated jar `delve-render` resolves.
+
+Render + extract:
+
+```sh
+delve-render scene <build-dir> -o scenes --world ./world      # or: panorama
+java -jar ChunkyLauncher.jar -scene-dir scenes -render <scene-name> -f
+java -jar ChunkyLauncher.jar -scene-dir scenes -snapshot <scene-name> out.png
+```
+
+`<scene-name>` is the file stem, without `.json`. Every emitted file is named
+after the scene's own Chunky `name`, campaign-qualified — `hello-world_spawn`,
+`hello-world_pov_leg0_wp1`, `hello-world_panorama_se` — and that same stem names
+its caches and its rendered `.png`.
+
+Operational facts, paid for in a debugging session (2026-08-06):
+
+1. **Chunky caches loaded chunks** in `<scene>.octree2` and `<scene>.dump` (plus
+   `.dump.backup`, `.emittergrid`) beside the scene — keyed on the scene's `name`
+   field, **not** its file name. Chunky treats `name` as the scene's identity: load
+   `foo.json` whose `name` is `bar` and it writes `bar.json` and `bar.*` caches
+   next to it, so a re-emitted `foo.json` never invalidates them and `-render bar`
+   silently serves the old scene. `delve-render` therefore emits every file under
+   its own scene name, which makes the two agree by construction. Re-rendering after a change
+   to `chunkList`, camera, sun or water settings **silently reuses the stale
+   cache** — no warning, wrong frame. This is automated away: any `delve-render`
+   scene or panorama emission deletes exactly those siblings for the scenes it
+   writes (`render::cache`). Hand-edit a scene JSON and you own the deletion:
+   Chunky's own `-reload-chunks` re-reads the world but does **not** reset the
+   accumulated `.dump`, so the new frame keeps averaging in the old samples.
+2. **Ocean-horizon delves need the water-world plane, and only the layout's
+   chunks.** The shipped world save holds only the chunks the layout occupies, so
+   the sea must come from Chunky (`waterWorldEnabled: true`, `waterWorldHeight:
+   62.875` = sea level 62 + the 0.875 block-water surface, with
+   `waterWorldHeightOffsetEnabled: false` — the default `true` would silently drop
+   the plane 0.125). `waterWorldClipEnabled` keeps the plane out of the loaded
+   chunks, so widening `chunkList` to the surrounding pure-ocean chunks only adds
+   more of the save's own block water beside it — and the two read at visibly
+   different tones, a seam across the emptiest part of the frame. Trimming to the
+   layout's chunks shrinks that seam to the layout's own chunk footprint (a small
+   layout inside a 16x16 chunk still shows the ring; a layout that fills its
+   chunks shows none). Emission handles all of it from the plan's `horizon` fact;
+   nothing to set by hand.
+3. **The progress counter `(N of <image height>)` counts scanlines, not
+   samples** — a 1024px render reads `(512 of 1,024)` at half a *pass*. Watch
+   `spp` / the target, not that number.
+
+Speed doctrine: the core is **CPU-only** — the official OpenCL plugin is WIP and
+effectively unavailable on Apple Silicon, so there is no GPU path; do not wait for
+one. Go wide instead: one `java -jar ChunkyLauncher.jar … -render` **process per
+scene**, run in parallel (give each `-threads <n>` so they do not all claim every
+core), and tier the sample budget with `-target` — ~64 for a draft you only need
+to judge framing on, ~300 for final art (`delve-render panorama --spp`'s default),
+500 for the review scene set (`scene`'s `sppTarget`).
 
 ## 5. `delve-harvest` — playtest note harvester (`crates/orchestrator`, package `delvewright-orchestrator`) · human
 
@@ -168,7 +255,7 @@ Shell entry points:
 | `validation/ephemeral-port.yaml` | agent | an EPHEMERAL loopback publish for the flows that drive a bot from the HOST (`playtest-note-flow.sh`, `rehearsal-flow.sh`). Docker picks the number; read it back with `docker compose -p <id> … port <service> 25565`, never assume it |
 | `validation/warden-probe.sh` | agent (spike) | `[POLL_SECONDS=n] [WATCH_SECONDS=n] [CONTAINER=name] validation/warden-probe.sh` — measures what a summoned 1.21.11 warden actually does (dig-down timing, `dig_cooldown`/`anger` NBT, difficulty effects) against a **throwaway** pinned server, never the shared stack. Refuses to run while the mutex reads `owner-play-session` |
 | `validation/fresh-volumes.sh` | agent | `validation/fresh-volumes.sh --project <compose-project>` — tear ONE compose project down and **prove** its containers and volumes are gone. `--project` is REQUIRED (task #185): no default, and `COMPOSE_PROJECT_NAME` is deliberately not honoured, because an invisible default's cost is somebody else's live world. The old daemon-wide `--all` is GONE — it matched `server-data$` across every project and force-removed the pinned `delvewright-*` names, i.e. an outage rather than a teardown. It additionally refuses a project whose container publishes host 25565 (an owner-facing session, human possibly inside). Run it before any re-run of the bot ladder — the entry scripts do it for you: `docker compose -p <proj> … down -v` silently leaves `<proj>_server-data` behind whenever an exited container of that project still holds it, and the stale volume carries the scoreboard, so the re-run starts with objectives already complete and the bot reports a **false CONTENT failure** (three misattributed red runs, island round 13) |
-| `validation/render-shots.sh <build-dir> [out-dir]` | agent | turn a build output into the Chunky scene set + shot index (`delve-render scene` + `index`), including the first-person POV shots |
+| `validation/render-shots.sh <build-dir> [out-dir]` | agent | turn a build output into the Chunky scene set + shot index (`delve-render scene` + `panorama` + `index`), including the first-person POV shots and the whole-map release panorama (`<campaign>_panorama_se`) |
 | `validation/playtest-note-flow.sh` | CI (tier 3) | `EULA=TRUE validation/playtest-note-flow.sh` — drives the whole spec-0006 note loop non-interactively and asserts the report. Runs in a per-invocation compose project (`dw-noteflow-$$`, override with `DW_COMPOSE_PROJECT`) on an ephemeral host port, so it needs no lock |
 | `validation/rehearsal-flow.sh` | CI (tier 3) | `EULA=TRUE validation/rehearsal-flow.sh` — drives the whole spec-0019 calibration loop (`dw.aim`/`dw.faster`/`dw.mark`/`dw.done` → harvest → `delvec calibrate`) and asserts the patch resolves back to the cell the bot marked. Per-invocation compose project (`dw-rehearsal-$$`) on an ephemeral host port, like note-flow |
 | `validation/branch-runs.sh` | agent (**required for a branching campaign**) + CI (tier 3) | `EULA=TRUE [DELVEWRIGHT_BRANCHES=…] validation/branch-runs.sh --project dw-<id> [--out <dir>]` (`--project`, or `DW_COMPOSE_PROJECT`, is REQUIRED — task #185) — spec-0025 §3 branch runs: walk every branch the tier selects, **each in its own fresh world** (party progress only moves forward, so a second branch needs a second world), and merge the per-branch run reports into `validation/run-out/<project>/branch-runs.json` — per branch: ran/skipped-with-reason/**INFRA-FAILED** and the result (an attempted branch whose compose run exited without writing any run report renders as an infra failure — a validation-infrastructure fault, distinct from a red run and from a tier skip; task #117). `--out` / `DW_RUN_OUT` relocates the merged + per-branch reports; the bot's own report is read from the compose mount, which is now project-scoped too (`DW_BOT_OUT`, so two loops from one checkout cannot overwrite each other's reports) and FILED under the out dir. The branch set and the selection come from the build's `validation/branch-plan.json` via `harness/src/branch-select.ts`, i.e. the same code the run uses, so a tier can never select a branch the run then refuses. Isolation is by construction: own compose project, no pinned container name, no host port, teardown via `fresh-volumes.sh --project`. One critical-path run proves ONE storyline; this is what makes "provably completable" quantify over branches |
