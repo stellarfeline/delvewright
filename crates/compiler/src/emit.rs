@@ -2742,9 +2742,11 @@ fn emit_functions(
             fns.push(lane_tick_fn(ns, w, l, wps));
         }
         // spec-0016 §1: the re-seat — clear survivors, then re-run the wave's own
-        // spawn (same authored composition, same proven cells). Emitted only for a
-        // `respawns_on_rest` wave.
-        if w.respawns_on_rest {
+        // spawn (same authored composition, same proven cells). Emitted for a
+        // `respawns_on_rest` wave and for a billed elite/boss wave (whose rest
+        // dispatch is guarded on the wave still standing — the undefeated
+        // refresh), and for nothing else → byte-identical.
+        if w.respawns_on_rest || plan.undefeated_reseat_waves().iter().any(|u| u.id == w.id) {
             let safe = plan::safe_local(w.id.as_str());
             fns.push((
                 format!("wave_reseat_{safe}"),
@@ -4657,12 +4659,37 @@ fn wave_seated_holder(wave_id: &str) -> String {
     format!("#wseat_{}", plan::safe_local(wave_id))
 }
 
-/// The wave re-seat lines a bonfire runs on every rest and on every respawn at
-/// it (spec-0016 §1), in content order. Empty unless the campaign declares both
-/// a bonfire and a `respawns_on_rest` wave → byte-identical.
+/// The re-seat lines a bonfire runs on every rest and on every respawn at it
+/// (spec-0016 §1), in a fixed order: the `respawns_on_rest` waves, then the
+/// **undefeated** refresh — billed elite/boss waves, then hostile actors. Empty
+/// for a campaign that declares none of that surface → byte-identical.
+///
+/// Two different questions are being asked here, and they take two different
+/// primitives.
+///
+/// * *Has the party MET this wave?* — a scoreboard sentinel
+///   ([`wave_seated_holder`]), written by the wave's own `spawn_<wave>`. A
+///   `respawns_on_rest` wave comes back whether the party beat it or fled it, so
+///   "met" is the only gate, and a wave the delve has not staged yet must not be
+///   conjured by a rest.
+/// * *Is this thing still STANDING?* — the presence of its own body
+///   (`execute if entity`). That is the undefeated test, and it needs no state at
+///   all: a boss the party killed leaves no body, so it stays dead by
+///   construction (spec-0016 §1), and one they merely chipped is still there, so
+///   it is wiped and re-seated whole. `despawn-actor` leaves none either, so a
+///   scripted vanish is equally final.
+///
+/// An actor's line asks the body question twice, because an actor has two
+/// postures and only one of them can have been damaged or dragged. A caged
+/// puppet (`dw_pup_<id>`) is `NoAI` and knockback-immune — combat cannot move it,
+/// and re-seating it would only undo authored `move-actor` staging — so it is
+/// left exactly where the campaign put it. An **unleashed twin** is the elite the
+/// party is actually fighting: it wears `dw_actor_<id>` and no puppet marker, and
+/// the rest deletes it and stands a fresh one on its origin anchor.
 fn bonfire_reseat_lines(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
-    plan.reseat_waves()
+    let mut out: Vec<String> = plan
+        .reseat_waves()
         .iter()
         .map(|w| {
             format!(
@@ -4671,7 +4698,22 @@ fn bonfire_reseat_lines(plan: &Plan) -> Vec<String> {
                 plan::safe_local(w.id.as_str())
             )
         })
-        .collect()
+        .collect();
+    for w in plan.undefeated_reseat_waves() {
+        out.push(format!(
+            "execute if entity @e[tag={}] run function {ns}:wave_reseat_{}",
+            plan::wave_tag(w.id.as_str()),
+            plan::safe_local(w.id.as_str())
+        ));
+    }
+    for a in plan.reseat_actors() {
+        let safe = plan::safe_local(a.id.as_str());
+        out.push(format!(
+            "execute unless entity @e[tag=dw_pup_{safe}] if entity @e[tag=dw_actor_{safe}] \
+             run function {ns}:actor_restand_{safe}"
+        ));
+    }
+    out
 }
 
 /// Per-tick bonfire **choice** dispatch (spec-0016 §1, owner ruling 2026-08-03).
@@ -5720,16 +5762,22 @@ fn spawn_finalize_nbt(entity: &str) -> &'static str {
     }
 }
 
-/// The `/summon` command (relative coords, run `execute at` the puppet) for an
-/// actor's real-AI twin (spec-0014 `unleash`): the real `entity` with AI enabled,
-/// same name and body tag (`dw_actor` + `dw_actor_<id>`), but **no** `dw_pup_<id>`
-/// marker — so killing the puppet by its marker leaves the twin fighting.
+/// The `/summon` command for an actor's real-AI twin (spec-0014 `unleash`): the
+/// real `entity` with AI enabled, same name and body tag (`dw_actor` +
+/// `dw_actor_<id>`), but **no** `dw_pup_<id>` marker — so killing the puppet by
+/// its marker leaves the twin fighting.
+///
+/// `at` is the position argument: `~ ~ ~` for the unleash (run `execute at` the
+/// puppet, so the twin stands up exactly where the puppet knelt), or the actor's
+/// absolute origin cell for the bonfire's undefeated re-seat, which has no puppet
+/// left to stand at. One string, so the two paths can never drift into two
+/// different bodies.
 ///
 /// The twin is the compiler's only *free-AI* summon, so it is where
 /// [`spawn_finalize_nbt`] matters: a caged puppet is `NoAI`, and a `NoAI` mob never
 /// runs `customServerAiStep`, which is why the island's herdsman warden could stand
 /// in the meadow indefinitely while the unleashed one burrowed away.
-fn actor_twin_summon(a: &delvewright_dsl::Actor) -> String {
+fn actor_twin_summon(a: &delvewright_dsl::Actor, at: &str) -> String {
     let safe = plan::safe_local(a.id.as_str());
     let name = a
         .name
@@ -5749,7 +5797,7 @@ fn actor_twin_summon(a: &delvewright_dsl::Actor) -> String {
     // caged creep's property, not the freed elite's.
     let attrs = attributes_snbt(a.attributes.as_ref());
     format!(
-        "summon {} ~ ~ ~ {{PersistenceRequired:1b{pose},DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}}}",
+        "summon {} {at} {{PersistenceRequired:1b{pose},DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}}}",
         a.entity
     )
 }
@@ -5979,7 +6027,7 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
         let mut unleash = vec![
             format!(
                 "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
-                actor_twin_summon(a)
+                actor_twin_summon(a, "~ ~ ~")
             ),
             format!("kill @e[tag=dw_pup_{safe}]"),
         ];
@@ -5987,6 +6035,37 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
             unleash.extend(aggro_lock_lines(&a.entity, &safe));
         }
         out.push((format!("unleash_{safe}"), lines(&unleash)));
+        // spec-0016 §1 (owner ruling 2026-08-05): the UNDEFEATED re-seat. A rest
+        // (and a death-respawn at the same fire) deletes the elite the party is
+        // still fighting and stands a FRESH body on its origin anchor: full
+        // health, no accumulated chip damage, and — the reported regression — back
+        // where it belongs instead of wherever the chase left it.
+        //
+        // Deliberately not `unleash_<id>`: there is no puppet to stand up from,
+        // and re-caging one would be worse than doing nothing, because an
+        // `unleash-actor` beat fires from a one-shot trigger the engine never
+        // re-arms — a re-caged elite would be dormant, `Invulnerable` scenery for
+        // the rest of the delve. It comes back as what it was: a freed body on its
+        // own ground.
+        //
+        // The striker aggro lock is deliberately NOT re-applied. Nobody has
+        // provoked this body yet, and spec-0016 §1's stationed rule is that
+        // nothing a rest puts back may pursue across the map: it stands on its
+        // anchor under vanilla-local AI, inside the `follow_range` `DW0478`
+        // measured the bonfire against.
+        //
+        // Emitted only for an actor the campaign unleashes AND a campaign with a
+        // bonfire ([`Plan::reseat_actors`]) → byte-identical everywhere else.
+        if plan.reseat_actors().iter().any(|r| r.id == a.id) {
+            let p = ent_xyz(pos);
+            out.push((
+                format!("actor_restand_{safe}"),
+                lines(&[
+                    format!("kill @e[tag=dw_actor_{safe}]"),
+                    actor_twin_summon(a, &format!("{} {} {}", p[0], p[1], p[2])),
+                ]),
+            ));
+        }
     }
     // move-actor per-tick drivers.
     for m in actor_moves {
@@ -9013,6 +9092,11 @@ fn emit_packtest(
     // of the previous life's feral release. Emits nothing without a bonfire and
     // a `respawns_on_rest` wave.
     emit_reseat_stationed_packtest(plan, out, waves.placements, waves.lanes);
+    // spec-0016 §1 (owner ruling 2026-08-05): the UNDEFEATED re-seat — an elite
+    // the party is still fighting is deleted and stood up fresh on its origin;
+    // one they finished stays finished. Emits nothing without a bonfire and a
+    // hostile actor / billed wave.
+    emit_reseat_undefeated_packtests(plan, out);
     // spec-0016 §1 (owner ruling 2026-08-03): rest and save-only really differ.
     emit_bonfire_option_packtest(plan, out);
     // spec-0016 §2: the shortcut really opens, and opens exactly once.
@@ -10930,6 +11014,192 @@ fn emit_reseat_stationed_packtest(
     b.push(format!("tag {sel} remove dw_rsst"));
     out.insert(
         format!("packtest-datapack/data/{ns}/test/souls_reseat_stationed.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+/// spec-0016 §1 (owner ruling 2026-08-05): **an undefeated elite is put back;
+/// a defeated one stays dead.**
+///
+/// The bell's round-five playtest found the half of the souls loop nothing was
+/// driving. `respawns_on_rest` waves came back correctly — and the barrow-warden,
+/// an actor elite the party had woken, wounded and run away from, stayed exactly
+/// where the chase ended, at exactly the health the chase left it. So did the
+/// ambushers in the sewer and up in the rafters. A rest refreshed the scene
+/// around them and not them.
+///
+/// The two templates here are that scenario, run on the pinned server, in the
+/// order it happens: meet the fight, damage it, drag it off its ground, rest —
+/// then demand
+///
+/// 1. it is standing again, exactly one body / the authored count;
+/// 2. **not the same body**: every mob of the previous life is branded with a tag
+///    no summon can carry, and the brand is gone (identity, not arithmetic — the
+///    anti-chip claim);
+/// 3. it is back on its own ground, not where combat left it;
+/// 4. an actor is put back FREED, never re-caged — a re-caged elite would be
+///    dormant scenery for the rest of the delve, because the `unleash-actor` beat
+///    that woke it fires from a one-shot trigger;
+/// 5. and once actually killed, a rest does NOT bring it back.
+///
+/// Emits nothing without a bonfire, and nothing for a campaign with no hostile
+/// actor and no billed elite/boss wave → byte-identical.
+fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some(bf) = plan.bonfires().next() else {
+        return;
+    };
+    let i = bf.index;
+    // A rest re-seats every MET `respawns_on_rest` wave too, so both templates own
+    // the whole re-seat board: clear each one's entities and its seated sentinel
+    // on entry and on exit (pin_dummy rule 4).
+    let board: Vec<String> = plan
+        .reseat_waves()
+        .iter()
+        .flat_map(|r| {
+            [
+                format!("kill @e[tag={}]", plan::wave_tag(r.id.as_str())),
+                format!(
+                    "scoreboard players set {} dw.sys 0",
+                    wave_seated_holder(r.id.as_str())
+                ),
+            ]
+        })
+        .collect();
+
+    // --- the actor elite (the barrow-warden's defect) ---
+    if let Some(a) = plan
+        .reseat_actors()
+        .into_iter()
+        .find(|a| anchor_point_any(plan, a.anchor.as_str()).is_some())
+    {
+        let safe = plan::safe_local(a.id.as_str());
+        let origin = ent_xyz(anchor_point_any(plan, a.anchor.as_str()).unwrap());
+        let (pin, sel) = pin_dummy("dw_rsua");
+        let mut b = packtest_header(&format!(
+            "{title}: a rest re-seats the undefeated elite `{}` at its origin, and never \
+             resurrects a defeated one (spec-0016 §1)",
+            a.id
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.extend(board.iter().cloned());
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        b.push("kill @e[tag=dw_rsua_brand]".to_string());
+        // Meet the fight: stage the puppet, then turn it loose exactly as the
+        // campaign's own beat does.
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!("function {ns}:unleash_{safe}"));
+        b.push(format!(
+            "execute store result score #n_rsua dw.sys if entity @e[tag=dw_actor_{safe}]"
+        ));
+        b.push("assert score #n_rsua dw.sys matches 1".to_string());
+        b.push(format!(
+            "execute store result score #q_rsua dw.sys if entity @e[tag=dw_pup_{safe}]"
+        ));
+        b.push("assert score #q_rsua dw.sys matches 0".to_string());
+        // The fight the owner had: the elite chases the party off its ground and
+        // is chipped on the way.
+        b.push(format!(
+            "execute at {sel} run tp @e[tag=dw_actor_{safe}] ~ ~ ~"
+        ));
+        b.push(format!(
+            "data modify entity @e[tag=dw_actor_{safe},limit=1] Health set value 1.0f"
+        ));
+        b.push(format!("tag @e[tag=dw_actor_{safe}] add dw_rsua_brand"));
+        // The rest, through the REAL generated rest function.
+        b.push(format!("function {ns}:bonfire_rest_{i}"));
+        b.push(format!(
+            "execute store result score #a_rsua dw.sys if entity @e[tag=dw_actor_{safe}]"
+        ));
+        b.push("assert score #a_rsua dw.sys matches 1".to_string());
+        b.push(
+            "execute store result score #b_rsua dw.sys if entity @e[tag=dw_rsua_brand]".to_string(),
+        );
+        b.push("assert score #b_rsua dw.sys matches 0".to_string());
+        b.push(format!(
+            "execute positioned {} {} {} store result score #d_rsua dw.sys if entity \
+             @e[tag=dw_actor_{safe},distance=..2]",
+            origin[0], origin[1], origin[2]
+        ));
+        b.push("assert score #d_rsua dw.sys matches 1".to_string());
+        // Freed, not re-caged.
+        b.push(format!(
+            "execute store result score #c_rsua dw.sys if entity @e[tag=dw_pup_{safe}]"
+        ));
+        b.push("assert score #c_rsua dw.sys matches 0".to_string());
+        // Defeated stays dead: no body, nothing to put back.
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        b.push(format!("function {ns}:bonfire_rest_{i}"));
+        b.push(format!(
+            "execute store result score #k_rsua dw.sys if entity @e[tag=dw_actor_{safe}]"
+        ));
+        b.push("assert score #k_rsua dw.sys matches 0".to_string());
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        b.extend(board.iter().cloned());
+        b.push(format!("tag {sel} remove dw_rsua"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/souls_reseat_actor.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+
+    // --- the billed elite/boss wave (the anti-chip half) ---
+    let Some(w) = plan
+        .undefeated_reseat_waves()
+        .into_iter()
+        .find(|w| plan::wave_total(w) >= 1)
+    else {
+        return;
+    };
+    let safe = plan::safe_local(w.id.as_str());
+    let tag = plan::wave_tag(w.id.as_str());
+    let brand = plan::wave_brand_tag(w.id.as_str());
+    let total = plan::wave_total(w);
+    let mut b = packtest_header(&format!(
+        "{title}: a rest re-seats the undefeated boss wave `{}` whole, and never resurrects a \
+         beaten one (spec-0016 §1)",
+        w.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.extend(board.iter().cloned());
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(format!("function {ns}:wave_unbrand_{safe}"));
+    // Meet it, and grind it down to a sliver — the path the ruling forbids.
+    b.push(format!("function {ns}:spawn_{safe}"));
+    b.push(format!("function {ns}:wave_brand_{safe}"));
+    if total > 1 {
+        b.push(format!("kill @e[tag={tag},limit={}]", total - 1));
+    }
+    b.push(format!(
+        "data modify entity @e[tag={tag},limit=1] Health set value 1.0f"
+    ));
+    b.push(format!(
+        "execute store result score #s_rsuw dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push("assert score #s_rsuw dw.sys matches 1".to_string());
+    b.push(format!("function {ns}:bonfire_rest_{i}"));
+    b.push(format!(
+        "execute store result score #n_rsuw dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push(format!("assert score #n_rsuw dw.sys matches {total}"));
+    b.push(format!(
+        "execute store result score #b_rsuw dw.sys if entity @e[tag={brand}]"
+    ));
+    b.push("assert score #b_rsuw dw.sys matches 0".to_string());
+    // Beaten stays beaten: the boss the party actually killed is not conjured back.
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(format!("function {ns}:bonfire_rest_{i}"));
+    b.push(format!(
+        "execute store result score #k_rsuw dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push("assert score #k_rsuw dw.sys matches 0".to_string());
+    b.push(format!("function {ns}:wave_unbrand_{safe}"));
+    b.push(format!("kill @e[tag={tag}]"));
+    b.extend(board.iter().cloned());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_reseat_undefeated.mcfunction"),
         lines(&b).into_bytes(),
     );
 }
@@ -14149,7 +14419,7 @@ mod tests {
     #[test]
     fn twin_summon_has_ai_and_no_puppet_marker() {
         let a = mk_actor("actor/giant", "minecraft:warden", false);
-        let s = actor_twin_summon(&a);
+        let s = actor_twin_summon(&a, "~ ~ ~");
         assert!(s.starts_with("summon minecraft:warden ~ ~ ~ "));
         assert!(!s.contains("NoAI"), "the twin has real AI");
         assert!(s.contains("dw_actor_giant") && !s.contains("dw_pup"));
@@ -14422,7 +14692,7 @@ mod loot_emit_tests {
         assert_eq!(actor_equipment(&a), None);
         let puppet = actor_puppet_summon(&a, [1, 2, 3], 0);
         assert!(!puppet.contains("equipment:"), "{puppet}");
-        assert!(!actor_twin_summon(&a).contains("equipment:"));
+        assert!(!actor_twin_summon(&a, "~ ~ ~").contains("equipment:"));
     }
 
     /// The gear rides on BOTH bodies — the dormant puppet and the twin that
@@ -14431,7 +14701,7 @@ mod loot_emit_tests {
     fn equipment_lands_on_both_the_puppet_and_the_twin() {
         let a = actor_with(Some(full_kit()));
         let puppet = actor_puppet_summon(&a, [1, 2, 3], 0);
-        let twin = actor_twin_summon(&a);
+        let twin = actor_twin_summon(&a, "~ ~ ~");
         for s in [&puppet, &twin] {
             assert!(
                 s.contains(
