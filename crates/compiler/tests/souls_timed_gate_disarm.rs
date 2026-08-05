@@ -311,3 +311,49 @@ fn a_gate_without_a_disarm_is_untouched() {
         "…and no disarm PackTest"
     );
 }
+
+/// Every generated template pins the jam score it depends on, because PackTest
+/// shares one server across siblings and orders none of them.
+///
+/// The motivating failure, seen three times in CI on 2026-08-05 (twice on an
+/// unrelated grammar PR, once on a DOCS-ONLY PR whose emitted bytes were
+/// identical to main): `souls_timed_gate` failed its re-seal assertion with
+/// `Expected #tg_shut dw.sys to match 1, but got 0`. `souls_timed_gate_disarm`
+/// ends with the gate DISARMED — that is its whole subject — and `#tgdis_<id>`
+/// persists on the shared server, so whichever sibling ran afterwards had its
+/// `tgate_close_` swallowed by the clock's own jam guard and read air where it
+/// expected stone. Nothing was wrong with the gate; the test inherited state.
+///
+/// Asserted on the FAMILY, not on the one template that happened to fail: any
+/// generated template that calls a guarded clock line must pin the guard first.
+#[test]
+fn every_generated_template_pins_the_jam_it_could_inherit() {
+    let out = build_fixture();
+    // Prefix, not the fixture's gate id: the obligation is on the family.
+    let pin = "scoreboard players set #tgdis_";
+
+    for name in [
+        "souls_timed_gate",
+        "souls_timed_gate_crush",
+        "souls_timed_gate_disarm",
+    ] {
+        let path = format!("packtest-datapack/data/{NS}/test/{name}.mcfunction");
+        let body = std::str::from_utf8(
+            out.get(&path)
+                .unwrap_or_else(|| panic!("missing template {path}")),
+        )
+        .unwrap();
+        let pin_at = body
+            .find(pin)
+            .unwrap_or_else(|| panic!("{name} never pins the jam score it inherits:\n{body}"));
+
+        // The pin is worthless after the fact: it must land before the first call
+        // into the clock, which is what the guard swallows.
+        if let Some(call_at) = body.find(":tgate_") {
+            assert!(
+                pin_at < call_at,
+                "{name} pins the jam AFTER it has already called the clock:\n{body}"
+            );
+        }
+    }
+}
