@@ -152,25 +152,37 @@ pub fn call_sites(ns: &str, body: &str) -> Vec<CallSite> {
     out
 }
 
+/// The name a `function <ns>:<name>` call would use to reach this artifact, or
+/// `None` if the artifact is not a callable function.
+///
+/// Callable bodies live under `data/<ns>/function/**`; a PackTest `test/` body is
+/// a *caller* the test runner drives, never something another function can call.
+fn callable_name(path: &str) -> Option<&str> {
+    path.rsplit_once("/function/")?
+        .1
+        .strip_suffix(".mcfunction")
+}
+
 /// Prove the emitted call graph is closed (`DW0497`).
 ///
-/// `functions` maps the name a function answers to inside the namespace
-/// (`spawn_ambush`, `creator/tp`) to `(artifact path, body)`. This is the
+/// `functions` maps an emitted `.mcfunction` **artifact path** to its body — the
+/// build output's own key, so nothing can collide and be silently dropped (which
+/// would be this very defect class, inside its own check). This is the
 /// unit-testable core: [`check_tree`] is it, applied to a finished build.
 ///
 /// Iteration is over `BTreeMap`/`BTreeSet` throughout, so the reported fix list
 /// is byte-stable across runs (ADR-0006).
 pub fn check_functions(
     ns: &str,
-    functions: &BTreeMap<String, (String, String)>,
+    functions: &BTreeMap<String, String>,
 ) -> Result<(), IntegrityError> {
     // The callable set per tier, keyed by the name a `function ns:<name>` uses.
     let mut emitted: BTreeMap<Tier, BTreeSet<&str>> = BTreeMap::new();
-    for (name, (path, _)) in functions {
+    for path in functions.keys() {
         if let Some(tier) = Tier::of(path)
-            && path.contains("/function/")
+            && let Some(name) = callable_name(path)
         {
-            emitted.entry(tier).or_default().insert(name.as_str());
+            emitted.entry(tier).or_default().insert(name);
         }
     }
     let resolves = |from: Tier, target: &str| {
@@ -180,7 +192,7 @@ pub fn check_functions(
     };
 
     let mut dangling: Vec<String> = Vec::new();
-    for (path, body) in functions.values() {
+    for (path, body) in functions {
         let Some(tier) = Tier::of(path) else {
             continue;
         };
@@ -225,7 +237,7 @@ pub fn check_functions(
 /// the very machinery that was missing) — and resolves against every emitted
 /// `<tier>/data/<ns>/function/**` name.
 pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<(), IntegrityError> {
-    let mut functions: BTreeMap<String, (String, String)> = BTreeMap::new();
+    let mut functions: BTreeMap<String, String> = BTreeMap::new();
     for (path, bytes) in out {
         if !path.ends_with(".mcfunction") || Tier::of(path).is_none() {
             continue;
@@ -233,14 +245,7 @@ pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<(), Integ
         let Ok(body) = std::str::from_utf8(bytes) else {
             continue;
         };
-        // The callable name is the path under `/function/`; a `test/` body is a
-        // caller but never a callee, and is keyed by its own path so two tiers
-        // can never collide in this map.
-        let key = match path.rsplit_once("/function/") {
-            Some((_, tail)) => tail.strip_suffix(".mcfunction").unwrap_or(tail).to_string(),
-            None => path.clone(),
-        };
-        functions.insert(key, (path.clone(), body.to_string()));
+        functions.insert(path.clone(), body.to_string());
     }
     check_functions(ns, &functions)
 }
@@ -249,71 +254,83 @@ pub fn check_tree(ns: &str, out: &BTreeMap<String, Vec<u8>>) -> Result<(), Integ
 mod tests {
     use super::*;
 
-    fn one(name: &str, path: &str, body: &str) -> BTreeMap<String, (String, String)> {
-        let mut m = BTreeMap::new();
-        m.insert(name.to_string(), (path.to_string(), body.to_string()));
-        m
+    fn tree(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
+        entries
+            .iter()
+            .map(|(p, b)| (p.to_string(), b.to_string()))
+            .collect()
     }
 
     #[test]
     fn a_closed_graph_passes() {
-        let mut m = one(
-            "tick",
-            "datapack/data/isle/function/tick.mcfunction",
-            "execute as @a run function isle:cp_respawn_check\n",
-        );
-        m.insert(
-            "cp_respawn_check".to_string(),
+        let m = tree(&[
             (
-                "datapack/data/isle/function/cp_respawn_check.mcfunction".to_string(),
-                "say ok\n".to_string(),
+                "datapack/data/isle/function/tick.mcfunction",
+                "execute as @a run function isle:cp_respawn_check\n",
             ),
-        );
+            (
+                "datapack/data/isle/function/cp_respawn_check.mcfunction",
+                "say ok\n",
+            ),
+        ]);
         assert!(check_functions("isle", &m).is_ok());
     }
 
     #[test]
     fn a_shipped_function_may_not_call_the_packtest_overlay() {
-        let mut m = one(
-            "tick",
-            "datapack/data/isle/function/tick.mcfunction",
-            "function isle:pt_camp_drive\n",
-        );
-        m.insert(
-            "pt_camp_drive".to_string(),
+        let m = tree(&[
             (
-                "packtest-datapack/data/isle/function/pt_camp_drive.mcfunction".to_string(),
-                "say fixture\n".to_string(),
+                "datapack/data/isle/function/tick.mcfunction",
+                "function isle:pt_camp_drive\n",
             ),
-        );
+            (
+                "packtest-datapack/data/isle/function/pt_camp_drive.mcfunction",
+                "say fixture\n",
+            ),
+        ]);
         let e = check_functions("isle", &m).expect_err("the shipped pack ships alone");
         assert_eq!(e.code, "DW0497");
     }
 
     #[test]
     fn a_packtest_function_may_call_the_shipped_pack() {
-        let mut m = one(
-            "spawn_x",
-            "datapack/data/isle/function/spawn_x.mcfunction",
-            "say mobs\n",
-        );
-        m.insert(
-            "wave_census".to_string(),
+        let m = tree(&[
             (
-                "packtest-datapack/data/isle/test/wave_census.mcfunction".to_string(),
-                "function isle:spawn_x\n".to_string(),
+                "datapack/data/isle/function/spawn_x.mcfunction",
+                "say mobs\n",
             ),
-        );
+            (
+                "packtest-datapack/data/isle/test/wave_census.mcfunction",
+                "function isle:spawn_x\n",
+            ),
+        ]);
         assert!(check_functions("isle", &m).is_ok());
+    }
+
+    /// A PackTest `test/` body is a caller, never a callee: nothing may reach it
+    /// with `function <ns>:<name>`, because it is not registered as a function.
+    #[test]
+    fn a_packtest_test_body_is_not_callable() {
+        let m = tree(&[
+            (
+                "packtest-datapack/data/isle/function/pt_drive.mcfunction",
+                "function isle:wave_census\n",
+            ),
+            (
+                "packtest-datapack/data/isle/test/wave_census.mcfunction",
+                "say fixture\n",
+            ),
+        ]);
+        let e = check_functions("isle", &m).expect_err("a test body is not a function");
+        assert_eq!(e.code, "DW0497");
     }
 
     #[test]
     fn a_comment_naming_a_function_is_not_a_call() {
-        let m = one(
-            "tick",
+        let m = tree(&[(
             "datapack/data/isle/function/tick.mcfunction",
             "# function isle:not_a_call\n",
-        );
+        )]);
         assert!(check_functions("isle", &m).is_ok());
     }
 }

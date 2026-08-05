@@ -54,10 +54,12 @@ fn build(campaign: &Campaign) -> Result<BuildOutput, BuildFailure> {
     )
 }
 
-fn synthetic(entries: &[(&str, &str, &str)]) -> BTreeMap<String, (String, String)> {
+/// An emitted-tree slice: artifact path → body, exactly the shape `emit::build`
+/// produces.
+fn synthetic(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
     entries
         .iter()
-        .map(|(name, path, body)| (name.to_string(), (path.to_string(), body.to_string())))
+        .map(|(path, body)| (path.to_string(), body.to_string()))
         .collect()
 }
 
@@ -69,7 +71,6 @@ fn synthetic(entries: &[(&str, &str, &str)]) -> BTreeMap<String, (String, String
 #[test]
 fn dangling_internal_call_is_dw0497() {
     let fns = synthetic(&[(
-        "seq_under_ram_0",
         "datapack/data/isle/function/seq_under_ram_0.mcfunction",
         "say the ram grinds\nfunction isle:spawn_storm_shore\n",
     )]);
@@ -96,7 +97,6 @@ fn dangling_internal_call_is_dw0497() {
 #[test]
 fn foreign_namespaces_and_function_tags_are_not_dw0497() {
     let fns = synthetic(&[(
-        "tick",
         "datapack/data/isle/function/tick.mcfunction",
         "function minecraft:other_pack_entry\nfunction #isle:some_group\n",
     )]);
@@ -119,11 +119,7 @@ fn every_emitted_call_form_is_a_call_site() {
         "return run function isle:missing_target",
     ] {
         let body = format!("{line}\n");
-        let fns = synthetic(&[(
-            "caller",
-            "datapack/data/isle/function/caller.mcfunction",
-            &body,
-        )]);
+        let fns = synthetic(&[("datapack/data/isle/function/caller.mcfunction", &body)]);
         match integrity::check_functions("isle", &fns) {
             Err(e) => assert_eq!(e.code, "DW0497", "wrong code for `{line}`: {}", e.message),
             Ok(()) => panic!("`{line}` must be seen as a call site"),
