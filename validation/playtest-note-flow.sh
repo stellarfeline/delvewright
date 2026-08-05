@@ -51,12 +51,17 @@ echo "==> waiting for the server to finish starting"
 # ask compose for its id (robust vs. compose-service log quirks, same as before).
 CID="$($COMPOSE ps -q playtest)"
 [ -n "$CID" ] || { echo "::error:: the playtest container did not start"; exit 1; }
+STARTED=0
 for _ in $(seq 1 90); do
-  if docker logs "$CID" 2>&1 | grep -qE 'Done \([0-9]'; then break; fi
+  # Capture, then test. `docker logs | grep -q` exits at the first match and
+  # SIGPIPEs `docker logs`; under pipefail that reads as NO MATCH, so a server
+  # that started is reported as never started (tools/check-shell-pipe-shortcircuit.py).
+  BOOT_LOG="$(docker logs "$CID" 2>&1 || true)"
+  if [[ $BOOT_LOG == *"Done ("[0-9]* ]]; then STARTED=1; break; fi
   if [ "$(docker inspect -f '{{.State.Status}}' "$CID" 2>/dev/null)" = "exited" ]; then break; fi
   sleep 5
 done
-if ! docker logs "$CID" 2>&1 | grep -qE 'Done \([0-9]'; then
+if [ "$STARTED" != 1 ]; then
   echo "::error:: server never finished starting"; docker logs "$CID" 2>&1 | tail -n 30; exit 1
 fi
 

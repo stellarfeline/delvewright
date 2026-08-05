@@ -74,8 +74,14 @@ fi
 # ---- up ---------------------------------------------------------------------
 [ -n "$CAMPAIGN" ] || die "up needs a campaign dir"
 [ -d "$CAMPAIGN" ] || die "no such campaign dir: $CAMPAIGN"
-docker ps --format '{{.Names}}' | grep -qx "$NAME" && die "$NAME already running — 'down' first"
-docker ps --format '{{.Ports}}' | grep -qE ':25565->' && die "host 25565 already bound by another container"
+# Capture, then test — never `cmd | grep -q`. Under `set -o pipefail` grep exits at
+# the first match, `docker ps` dies of SIGPIPE (141), and pipefail promotes that to
+# the pipeline: the guard silently fails to fire *because* it matched. CI keeps this
+# out of the tree (tools/check-shell-pipe-shortcircuit.py).
+RUNNING="$(docker ps --format '{{.Names}}' || true)"
+if [[ $'\n'"$RUNNING"$'\n' == *$'\n'"$NAME"$'\n'* ]]; then die "$NAME already running — 'down' first"; fi
+BOUND_PORTS="$(docker ps --format '{{.Ports}}' || true)"
+if [[ $BOUND_PORTS == *":25565->"* ]]; then die "host 25565 already bound by another container"; fi
 # Claim the port before building anything: if a human is already playing, this
 # session must not start at all. Nothing is torn down before the lock is ours.
 dw_mutex_acquire "owner-play-session" || die "another 25565 session holds the mutex"
@@ -112,16 +118,20 @@ docker run -d --name "$NAME" -p 25565:25565 \
   -v "$STAGE:/data" itzg/minecraft-server:latest >/dev/null
 
 echo "waiting for world generation…"
+READY=0
 for _ in $(seq 1 60); do
   sleep 10
-  if docker logs "$NAME" 2>&1 | grep -q 'Done ('; then break; fi
+  BOOT_LOG="$(docker logs "$NAME" 2>&1 || true)"
+  if [[ $BOOT_LOG == *"Done ("* ]]; then READY=1; break; fi
 done
-docker logs "$NAME" 2>&1 | grep -q 'Done (' || die "server did not come up — docker logs $NAME"
+[ "$READY" = 1 ] || die "server did not come up — docker logs $NAME"
 
 # rcon verification: campaign objectives present, at least one campaign NPC,
 # sidebar cleared. Any failure here means the datapack did not actually load.
-rcon "scoreboard objectives list" | grep -q 'dw\.' || die "no dw.* objectives — datapack not loaded"
-rcon "execute if entity @e[tag=dw_npc]" | grep -q 'Test passed' || die "no dw_npc entities found"
+OBJECTIVES="$(rcon "scoreboard objectives list")"
+[[ $OBJECTIVES == *"dw."* ]] || die "no dw.* objectives — datapack not loaded"
+NPC_PROBE="$(rcon "execute if entity @e[tag=dw_npc]")"
+[[ $NPC_PROBE == *"Test passed"* ]] || die "no dw_npc entities found"
 rcon "scoreboard objectives setdisplay sidebar" >/dev/null || true
 
 PACK_NOTE="no resource pack in this build"
