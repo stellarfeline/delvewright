@@ -1304,6 +1304,13 @@ fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
         "actionbar message missing: {ret}"
     );
 
+    // The render layer must be TOLD the horizon, never guess it from blocks:
+    // an ocean-horizon delve's frames need Chunky's ambient water plane, and its
+    // height is the compiler's sea-level datum.
+    let rp: serde_json::Value = serde_json::from_slice(&a["render-plan.json"]).unwrap();
+    assert_eq!(rp["horizon"]["kind"], "ocean", "render plan horizon: {rp}");
+    assert_eq!(rp["horizon"]["sea_level"], 62);
+
     // Boundary PackTests emitted.
     assert!(
         a.contains_key("packtest-datapack/data/hello-world/test/v06_boundary_return.mcfunction"),
@@ -1346,6 +1353,10 @@ fn v06_absent_fields_keep_void_output_unchanged() {
         !tree.contains_key("datapack/data/hello-world/function/boundary_tick.mcfunction"),
         "no boundary function without a declared boundary"
     );
+    // A void horizon emits no `horizon` key at all, so the render plan of a
+    // campaign that declares nothing stays byte-identical.
+    let rp: serde_json::Value = serde_json::from_slice(&tree["render-plan.json"]).unwrap();
+    assert!(rp.get("horizon").is_none(), "void must not stamp a horizon");
 }
 
 /// A routable v0.6 campaign (patched hello-world) builds cleanly and the emitted

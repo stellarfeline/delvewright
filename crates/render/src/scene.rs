@@ -612,6 +612,40 @@ mod tests {
         assert_eq!(keys, sorted, "materials keys are sorted");
     }
 
+    const OCEAN_FIXTURE: &[u8] = include_bytes!("../tests/fixtures/render-plan-ocean.json");
+
+    #[test]
+    fn ocean_horizon_scenes_stand_on_the_water_world_plane() {
+        // The world save only holds chunks near the layout; without Chunky's
+        // ambient water plane every ocean-horizon frame shows void past the
+        // shoreline. The plane's surface must sit flush with block water.
+        let scenes = scenes_from_plan(OCEAN_FIXTURE, &SceneOptions::default(), &[]).unwrap();
+        let (_, bytes) = &scenes[0];
+        let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        assert_eq!(v["waterWorldEnabled"], serde_json::json!(true));
+        assert_eq!(v["waterWorldHeight"], serde_json::json!(62.875));
+        // Chunky's default subtracts 0.125 from the stored height; the emission
+        // must not depend on that default.
+        assert_eq!(
+            v["waterWorldHeightOffsetEnabled"],
+            serde_json::json!(false),
+            "the plane height must be absolute, not offset by a Chunky default"
+        );
+        assert_eq!(v["waterWorldClipEnabled"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn void_horizon_scenes_have_no_water_world_plane() {
+        let scenes = scenes_from_plan(FIXTURE, &SceneOptions::default(), &[]).unwrap();
+        for (name, bytes) in &scenes {
+            let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+            assert!(
+                v.get("waterWorldEnabled").is_none(),
+                "{name} must carry no water-world keys"
+            );
+        }
+    }
+
     #[test]
     fn golden_scene_matches() {
         let scenes = scenes_from_plan(FIXTURE, &SceneOptions::default(), &[]).unwrap();
