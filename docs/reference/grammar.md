@@ -162,7 +162,7 @@ Consequence for authors: a region too small for a program's absolute sizes is an
 error, not a building with pieces outside its box. Each library program documents
 its minimum region.
 
-## 5. Rule library
+## 5. Rule library — ported buildings
 
 Ported from `yawgmoth/GDMC25` (BSD-3-Clause; see
 [`ACKNOWLEDGEMENTS.md`](../ACKNOWLEDGEMENTS.md)) and reachable as
@@ -185,6 +185,97 @@ Two library claims are pinned by arithmetic rather than prose, because prose
 rots: the temple's colonnade really does follow the box, and a nine-deep box at
 `column_size` 1 really does give upstream's four columns
 (`tests/library.rs`).
+
+## 5b. Staging vocabulary — original rules with gates
+
+`library::{cliff_path, watch_bay}` are **original Delvewright content** (licence
+`original`; nothing ported, no ledger entry owed). They are the W1 family of the
+drowned-bell remake's grammar vocabulary, and they are a different kind of rule
+from §5: a temple is judged by looking at it, these are judged by a **machine
+gate about how the space plays**. Every gate below is an assertion in
+`crates/grammar/tests/staging.rs` over the expanded model, and each has been
+shown to go red when the geometry is wrong.
+
+### The W1 local frame
+
+Both rules share one frame, and it is not arbitrary:
+
+> **Local `Y` is up. Local `Z`-max is the approach end; travel runs toward local
+> `Z`-min.** Length is turned onto the box's longer horizontal axis.
+
+A `mark` with no explicit `facing` derives one, and the derived facing is
+*always* the negative direction of the world axis the scope calls local `Z`
+(§2b) — a rule can only aim an anchor down-axis. Travel is defined that way so
+every derived facing points at the thing its anchor is about. The price is that
+**indexed anchors number against travel** (a split visits its pieces low to
+high, so declaration order is fixed by the axis while the facing points the
+other way down it): `anchor/niche-1` is the *last* niche the player meets. With
+`mark` as it stands the two cannot both follow travel, and a wrong facing is
+wrong *data* where a numbering convention is only documentation. See §7 for the
+primitive that would remove the trade-off.
+
+### `cliff_path` — the knockback niche
+
+A one-wide ledge along a drop face, with 1-deep × 2-high recesses cut into the
+inner wall every `spacing_min ..= spacing_min + 3` cells (a uniform seeded draw
+over whichever of the four spacings the remaining path has room for).
+
+| | |
+|---|---|
+| Controls | `spacing_min` (6), `niche_height` (2), `watch_back` (3); roles `rock`, `corpse` |
+| Smallest region | 3 × (`niche_height` + 2) × 3, and at least as long as it is wide |
+| Anchors | `anchor/niche-<i>` — inside each recess, facing the ledge (derived through a `reorient` that names the across-path axis as local `Z`; this is why the ledge is at local `X`-min). `anchor/niche-watch-<i>` — a ledge cell `watch_back` up-path, facing down-path. |
+| Variants | weighted alternatives per slot: teach (2) — one recess with a corpse prop, no occupant; test (3) — one empty recess; twist (1) — two adjacent recesses, each with its own anchor pair |
+
+Gates:
+
+1. **The recess is exactly one deep** — air at the anchor cell and the cell
+   above, backing wall immediately behind, floor below, lintel above, ledge in
+   front. An occupant's hitbox sits inside it and a swing from the ledge reaches
+   it; one deeper and the niche becomes a room the player must enter.
+2. **The ledge is the only route** — the standable-cell graph connects the two
+   ends, and with the `X`-min lane deleted it does *not*. A recess beside a wide
+   path is decoration. The test also asserts every standable cell is either the
+   lane or a declared recess, so the lane is one wide by measurement.
+3. **Each watch cell sees its niche's mouth** — the same sightline walk as
+   `watch_bay` below, to the ledge cell the recess opens onto. Deliberately
+   *not* into the recess: a 1-deep recess off a 1-wide ledge is geometrically
+   invisible from anywhere down the path, which is precisely what makes it an
+   ambush. The legible thing is the contested ground.
+
+### `watch_bay` — observability hardware
+
+A gated passage whose approach end carries a roofed 2×2 bay, walled on three
+sides, open only toward the hazard span, with the lane running past it.
+
+| | |
+|---|---|
+| Controls | `approach` (8), `span` (3), `head` (4), `bay_height` (2), `obstruct` (0 — a test knob) ; role `stone` |
+| Smallest region | 6 × (`head` + 2) × (`approach` + `span` + 4) |
+| Anchors | `anchor/watch` — the bay cell nearest its open face, facing the span. `anchor/gate` — the span's floor centre, for the campaign's `timed-gate` / `volley`. |
+
+Gates:
+
+1. **Standoff** — `approach` ≥ 6 is enforced *by the rule*: the plan has one
+   guarded alternative and no `otherwise`, so a shorter approach is a
+   `NoApplicableRule` refusal, not a quietly smaller bay. Measured watch-to-span
+   Chebyshev distance is `approach + 1`.
+2. **Sightline to every standable span cell**, walked with the same
+   Amanatides–Woo traversal and the same eye/centre-mass heights the compiler's
+   `DW0388` uses (1.62 / 1.0, both endpoint cells exempt). Deliberately stronger
+   than `DW0388`, which asks for sight to *some* cell at 5: the point of
+   generating the bay is that the campaign-level proof cannot then fail. That
+   proof still runs later, on the assembled world with real hazard declarations
+   — what this rule guarantees is that the bay it places **can** satisfy it.
+3. **The gate has teeth** — `obstruct = 1` stands one pillar in the bay's own
+   column of the approach and the sightline check must go red, while the passage
+   stays walkable (so what was caught is blindness, not impassability).
+
+Both programs are in the generic library suites too: structural validity, JSON
+round trip, palette-swap-moves-no-block, and the double-expand determinism gate
+over model bytes *and* anchors (`tests/library.rs`, `tests/determinism.rs`).
+Their anchors — including generated `-<i>` names nobody hand-listed — round-trip
+through `PrefabRegistry` (`crates/compiler/tests/grammar_prefab.rs`).
 
 ## 6. Export — freezing an expansion as a prefab
 
@@ -258,3 +349,17 @@ front of the IR, and the contact-sheet/curation loop. Later phases of spec-0027.
 trap anchors (`dispenser`, `trigger_block`) and the entry names the engine
 treats specially (`spawn`, `entry`) are expressible in prefab metadata but not
 yet by a rule — each needs its own declaration, not a widened `mark`.
+
+**A facing a rule cannot ask for.** A derived facing is the negative direction of
+the world axis the scope calls local `Z`, and an explicit `facing` is a *world*
+cardinal, so a rule that is reused under rotation cannot say "look the way my
+local `+X` points". Since a split also always visits its pieces low-to-high
+along that same axis, "anchors numbered in travel order **and** facing along
+travel" is not expressible — §5b pays for the facings with the numbering. The
+smallest primitive that would remove the trade-off is a **local-direction facing
+spec** on `Mark::facing` (`local_x_min` / `local_x_max` / `local_z_min` /
+`local_z_max`, resolved through the scope's orientation at expansion, exactly as
+`AxisSpec` already resolves an axis name). It is additive, needs no new node
+kind, and would let a rule aim an anchor in any of the four cardinals whichever
+way the piece was turned. Not built: W1 shipped without it, and one worked
+example is a thinner case than two.

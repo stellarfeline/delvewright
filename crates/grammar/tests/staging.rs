@@ -75,9 +75,14 @@ fn standable_cells(model: &VoxelModel) -> BTreeSet<[i32; 3]> {
 
 /// Can a walker get from any cell of `from` to any cell of `to`, moving one
 /// cell horizontally at a time and stepping at most one block up or down?
-fn connected(cells: &BTreeSet<[i32; 3]>, from: &BTreeSet<[i32; 3]>, to: &BTreeSet<[i32; 3]>) -> bool {
+fn connected(
+    cells: &BTreeSet<[i32; 3]>,
+    from: &BTreeSet<[i32; 3]>,
+    to: &BTreeSet<[i32; 3]>,
+) -> bool {
     let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
-    let mut queue: VecDeque<[i32; 3]> = from.iter().copied().filter(|c| cells.contains(c)).collect();
+    let mut queue: VecDeque<[i32; 3]> =
+        from.iter().copied().filter(|c| cells.contains(c)).collect();
     seen.extend(queue.iter().copied());
     while let Some([x, y, z]) = queue.pop_front() {
         if to.contains(&[x, y, z]) {
@@ -326,7 +331,9 @@ fn every_niche_watch_sees_the_mouth_of_its_niche() {
         let mouth = [0, niche[1], niche[2]];
         assert!(standable(model, mouth), "the recess mouth {mouth:?}");
         if let Err(blocker) = sees(model, *watch, mouth) {
-            panic!("{watch:?} cannot see the mouth {mouth:?} of {niche:?}: {blocker:?} is in the way");
+            panic!(
+                "{watch:?} cannot see the mouth {mouth:?} of {niche:?}: {blocker:?} is in the way"
+            );
         }
     }
 }
@@ -500,7 +507,12 @@ fn a_pillar_in_the_line_reds_the_sightline_gate() {
 fn an_approach_under_the_standoff_is_refused_not_shortened() {
     let mut cramped = watch_bay();
     cramped.set_param("approach", 4).unwrap();
-    let err = expand(&cramped, PASSAGE_REGION, &ExpandOptions::seeded(PASSAGE_SEED)).unwrap_err();
+    let err = expand(
+        &cramped,
+        PASSAGE_REGION,
+        &ExpandOptions::seeded(PASSAGE_SEED),
+    )
+    .unwrap_err();
     assert!(
         err.to_string().contains("no alternative of rule"),
         "expected a refusal, got: {err}"
@@ -512,8 +524,12 @@ fn an_approach_under_the_standoff_is_refused_not_shortened() {
 #[test]
 fn the_documented_minimum_regions_are_the_real_ones() {
     fn check(name: &str, program: &Program, smallest: [u32; 3], too_small: &[[u32; 3]]) {
-        expand(program, Box3::at_origin(smallest), &ExpandOptions::seeded(1))
-            .unwrap_or_else(|e| panic!("{name} should expand at its documented minimum: {e}"));
+        expand(
+            program,
+            Box3::at_origin(smallest),
+            &ExpandOptions::seeded(1),
+        )
+        .unwrap_or_else(|e| panic!("{name} should expand at its documented minimum: {e}"));
         for &size in too_small {
             assert!(
                 expand(program, Box3::at_origin(size), &ExpandOptions::seeded(1)).is_err(),
@@ -521,12 +537,14 @@ fn the_documented_minimum_regions_are_the_real_ones() {
             );
         }
     }
-    // cliff_path: 3 across, 1 + niche_height + 1 tall, 1 long.
+    // cliff_path: 3 across, 1 + niche_height + 1 tall, and at least as long as
+    // it is wide — the rule turns its length onto the longer horizontal axis,
+    // so a box narrower than 3 on its *shorter* side has no ledge to build.
     check(
         "cliff_path",
         &cliff_path(),
-        [3, 4, 1],
-        &[[2, 4, 1], [3, 3, 1]],
+        [3, 4, 3],
+        &[[2, 4, 3], [3, 3, 3], [3, 4, 2]],
     );
     // watch_bay: 6 across, head + 2 tall, approach + span + 4 long.
     check(
