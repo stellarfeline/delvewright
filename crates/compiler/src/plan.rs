@@ -22,8 +22,8 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_dsl::{
-    Campaign, DialogueEffect, DialogueId, Lethality, Npc, NpcDialogue, Objective, Quest,
-    QuestEffect, TrapReset, TrapTrigger, Trigger,
+    Campaign, DialogueEffect, DialogueId, EnvTrigger, Lethality, Npc, NpcDialogue, Objective,
+    Quest, QuestEffect, Trap, TrapReset, TrapTrigger, Trigger,
 };
 
 use crate::flow::objectives_in_order;
@@ -2326,9 +2326,13 @@ fn collect_seal_hints(
 }
 
 /// Which of the five effect roots a visited effect hangs off — the part of a
-/// site that decides **when** the firing happens and **whether the player is
-/// forced to cause it**, which is all the completability model needs on top of
-/// the effect itself.
+/// site that decides **when** the firing happens, **whether the player is
+/// forced to cause it**, and **what gates the firing as a whole**, which is all
+/// the completability model needs on top of the effect itself.
+///
+/// The three roots that have an owner carry it: a consumer that must gate or
+/// date a firing reads the owner off the site instead of re-deriving it from a
+/// second, drift-prone walk (that is the whole point of the enumeration).
 #[derive(Clone, Copy)]
 pub(crate) enum EffectRoot<'a> {
     /// A quest's `on_objective_complete[<objective>]` — fires at that objective's
@@ -2337,11 +2341,13 @@ pub(crate) enum EffectRoot<'a> {
     /// A quest's `on_complete` — fires at the quest's completion step. Forced.
     QuestComplete(&'a Quest),
     /// An environment `triggers[].effects` — proximity/interaction-fired, so it has
-    /// no step of its own; conservatively rooted at step 0.
-    Trigger,
+    /// no step of its own; conservatively rooted at step 0. Carries the trigger,
+    /// whose `requires_flags` gate the whole bundle.
+    Trigger(&'a EnvTrigger),
     /// A `traps[].payload` (spec-0022) — proximity/interaction-fired exactly like a
-    /// trigger, and **optional**: the party may never trip it.
-    TrapPayload,
+    /// trigger, and **optional**: the party may never trip it. Carries the trap,
+    /// whose `requires_flags` gate the whole payload.
+    TrapPayload(&'a Trap),
     /// A dialogue option's `set-checkpoint` `on_respawn` bundle — re-run on death
     /// while that checkpoint is active, so it is optional too (nobody is forced to
     /// die).
@@ -2434,7 +2440,7 @@ pub(crate) fn for_each_effect_root<'a>(
         visit(
             "quests",
             format!("/content/triggers/{ti}/effects"),
-            EffectRoot::Trigger,
+            EffectRoot::Trigger(t),
             &t.effects,
         );
     }
@@ -2442,7 +2448,7 @@ pub(crate) fn for_each_effect_root<'a>(
         visit(
             "quests",
             format!("/content/traps/{pi}/payload"),
-            EffectRoot::TrapPayload,
+            EffectRoot::TrapPayload(trap),
             &trap.payload,
         );
     }
@@ -2583,8 +2589,8 @@ fn collect_gate_events(
         let (fire_step, forced) = match site.root {
             EffectRoot::ObjectiveComplete(oid) => (obj_step.get(oid).copied().unwrap_or(0), true),
             EffectRoot::QuestComplete(q) => (quest_complete_step(q, obj_step), true),
-            EffectRoot::Trigger => (0, true),
-            EffectRoot::TrapPayload | EffectRoot::DialogueRespawn => (0, false),
+            EffectRoot::Trigger(_) => (0, true),
+            EffectRoot::TrapPayload(_) | EffectRoot::DialogueRespawn => (0, false),
         };
         let gate = e
             .open_gate_anchor()

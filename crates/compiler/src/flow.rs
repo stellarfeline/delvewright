@@ -39,8 +39,19 @@
 //! | `set-flag` in a quest's `on_complete` | that quest completes, same gate rule |
 //! | `set-flag` on a dialogue option | the option is reachable from its tree root through takeable options, and is the world's selected alternative of its group |
 //! | `set-flag` in an environment trigger's effects | the trigger's own `requires_flags` are satisfied (a `strike`/`use`/`approach` trigger is player-initiated: ambient, no DAG position) |
+//! | `set-flag` in a `traps[].payload` | the trap's `requires_flags` are satisfied (ambient, same reasoning: the party can always walk over and spring it) |
 //! | a trap's `disarm.sets_flag` | the trap's `requires_flags` are satisfied (ambient, same reasoning) |
-//! | `set-flag` in an `on_respawn` / `on_caught` reaction bundle | **never** — reaction bundles fire at statically unknowable times, so they are not producers (the conservative stance [`crate::continuity`] already takes) |
+//! | `set-flag` in an `on_respawn` / `on_caught` reaction bundle | **never** — reaction bundles fire at statically unknowable times, so they are not producers (the conservative stance [`crate::continuity`] already takes), whether the bundle is rooted in the quests stage or hung off a dialogue option's `set-checkpoint` |
+//!
+//! Which effect **lists** those rows range over is not this module's to decide:
+//! both the producer scan in [`Flow::new`] and the reader inventory
+//! ([`gate_flags`]) walk [`crate::plan::for_each_effect_root`], the single
+//! enumeration of the five roots emission can lower an effect from. Before task
+//! #170 each of them hand-listed three, so a `set-flag` in a `traps[].payload`
+//! was not a producer *anywhere* in the proof while the emitted
+//! `trap_fire_<trap>.mcfunction` set it, and a `requires_flags` inside such a
+//! payload never entered the branch model. The table above is a **policy** per
+//! root; the roots themselves are inherited.
 //!
 //! A quest/objective is reported unreachable only when it is unreachable in
 //! **every** world, so the branch model can only ever make `DW0202`/`DW0203`
@@ -437,40 +448,58 @@ impl<'a> Flow<'a> {
         let trees = flatten_trees(c);
         let (groups, opt_group) = choice_groups(&trees);
         let mut ambient = Vec::new();
-        for t in &c.quests.content.triggers {
-            let gate: Vec<String> = t.requires_flags.iter().map(|f| f.as_str().into()).collect();
-            collect_flags(&t.effects, &gate, &mut ambient);
-        }
+        let mut obj_flags: BTreeMap<String, Vec<GatedFlag>> = BTreeMap::new();
+        let mut quest_flags: BTreeMap<String, Vec<GatedFlag>> = BTreeMap::new();
+        // The producer model, root by root. The roots come from
+        // `plan::for_each_effect_root` — the ONE enumeration of what emission can
+        // lower — so the proof cannot believe in fewer firings than the datapack
+        // performs (task #170). What each root means is the policy stated here,
+        // once, and the match is exhaustive: a sixth root cannot be added without
+        // this file deciding what it is.
+        let gate_of = |fs: &[delvewright_dsl::FlagId]| -> Vec<String> {
+            fs.iter().map(|f| f.as_str().into()).collect()
+        };
+        crate::plan::for_each_effect_root(c, &mut |site, effs| match site.root {
+            // Dated by the DAG: credited when that objective / quest is proven
+            // reachable, under the gates on its own effect chain.
+            crate::plan::EffectRoot::ObjectiveComplete(oid) => {
+                let mut out = Vec::new();
+                collect_flags(effs, &[], &mut out);
+                if !out.is_empty() {
+                    obj_flags.entry(oid.to_string()).or_default().extend(out);
+                }
+            }
+            crate::plan::EffectRoot::QuestComplete(q) => {
+                let mut out = Vec::new();
+                collect_flags(effs, &[], &mut out);
+                if !out.is_empty() {
+                    quest_flags.insert(q.id.as_str().to_string(), out);
+                }
+            }
+            // Ambient: player-initiated, no DAG position. A trap payload joins the
+            // environment trigger and the trap `disarm` it already sits beside —
+            // the party can always walk over and spring it, which is the same
+            // reason `strike`/`use`/`approach` are producers.
+            crate::plan::EffectRoot::Trigger(t) => {
+                collect_flags(effs, &gate_of(&t.requires_flags), &mut ambient);
+            }
+            crate::plan::EffectRoot::TrapPayload(trap) => {
+                collect_flags(effs, &gate_of(&trap.requires_flags), &mut ambient);
+            }
+            // A reaction bundle: it fires only when somebody dies, at a time no
+            // static model can name, so nothing inside it is a producer. Exactly
+            // what `collect_flags` already refuses for the identical bundle rooted
+            // in the quests stage — reached here, not credited here.
+            crate::plan::EffectRoot::DialogueRespawn => {}
+        });
+        // `disarm.sets_flag` is a field, not an effect list, so it has no root of
+        // its own; same ambient reasoning, same gate.
         for trap in &c.quests.content.traps {
             if let Some(d) = &trap.disarm {
                 ambient.push(GatedFlag {
                     flag: d.sets_flag.as_str().to_string(),
-                    requires: trap
-                        .requires_flags
-                        .iter()
-                        .map(|f| f.as_str().into())
-                        .collect(),
+                    requires: gate_of(&trap.requires_flags),
                 });
-            }
-        }
-
-        let mut obj_flags: BTreeMap<String, Vec<GatedFlag>> = BTreeMap::new();
-        let mut quest_flags: BTreeMap<String, Vec<GatedFlag>> = BTreeMap::new();
-        for q in &c.quests.content.quests {
-            for (oid, effs) in &q.on_objective_complete {
-                let mut out = Vec::new();
-                collect_flags(effs, &[], &mut out);
-                if !out.is_empty() {
-                    obj_flags
-                        .entry(oid.as_str().to_string())
-                        .or_default()
-                        .extend(out);
-                }
-            }
-            let mut out = Vec::new();
-            collect_flags(&q.on_complete, &[], &mut out);
-            if !out.is_empty() {
-                quest_flags.insert(q.id.as_str().to_string(), out);
             }
         }
 
@@ -1064,7 +1093,7 @@ impl<'a> Flow<'a> {
     // -- internals ---------------------------------------------------------
 
     /// The replay's starting state: campaign-start quests active, ambient
-    /// (trigger / trap-disarm) flags saturated.
+    /// (trigger / trap payload / trap-disarm) flags saturated.
     fn initial_state(&self) -> ReplayState {
         let mut st = ReplayState::default();
         for q in &self.c.quests.content.quests {
@@ -1324,8 +1353,8 @@ impl<'a> Flow<'a> {
         })
     }
 
-    /// Add every ambient (trigger / trap-disarm) flag whose gate is satisfied,
-    /// to fixpoint.
+    /// Add every ambient (trigger / trap payload / trap-disarm) flag whose gate
+    /// is satisfied, to fixpoint.
     fn saturate_ambient(&self, flags: &mut BTreeSet<String>) {
         loop {
             let mut changed = false;
@@ -1666,10 +1695,24 @@ fn choice_groups(trees: &[TreeModel]) -> (Vec<ChoiceGroup>, BTreeMap<(String, us
     (groups, map)
 }
 
-/// Every flag read by a gate anywhere in the campaign — objectives, effects
-/// (deep, including reaction bundles), dialogue options, triggers, traps. A
-/// choice group none of whose flags is read cannot change any reachability
-/// verdict, so it never participates in world enumeration.
+/// Every flag read by a gate anywhere in the campaign: the `requires_flags` /
+/// `forbids_flags` of every objective, dialogue option, environment trigger and
+/// trap, plus those of **every effect the compiler can lower**, at every nesting
+/// depth.
+///
+/// A choice group none of whose flags is read cannot change any reachability
+/// verdict, so it never participates in world enumeration
+/// ([`enumerate_worlds`]) — which makes this an inventory that must be
+/// **complete or the model is imprecise**: a group whose flags are read only at a
+/// root this misses stays unconstrained, and one world then holds two mutually
+/// exclusive branch flags at once (a false green, in the union direction).
+///
+/// The effect half therefore walks [`crate::plan::for_each_effect_root`], the one
+/// enumeration of the five roots emission lowers from, rather than a second
+/// hand-maintained list of three (task #170). Unlike the producer model above
+/// this needs no per-root policy: whether a firing is guaranteed does not change
+/// whether its gate reads a flag, and the compiler emits that gate at all five
+/// roots alike.
 pub fn gate_flags(c: &Campaign) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     let eat = |fs: &[delvewright_dsl::FlagId], out: &mut BTreeSet<String>| {
