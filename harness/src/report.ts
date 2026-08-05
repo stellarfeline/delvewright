@@ -17,6 +17,7 @@ import { writeFile } from "node:fs/promises";
 import type {
   ActorTrial,
   AssistWindow,
+  BindingCount,
   DeathTrial,
   EncounterPhase,
   EncounterTier,
@@ -119,6 +120,7 @@ export class RunReport {
   private drivenBranch: string | undefined;
   private readonly actors: ActorReport[] = [];
   private floorLedger: FloorLedger | undefined;
+  private actorsGate: BindingCount | undefined;
 
   constructor(campaignId: string, difficulty: string) {
     this.campaignId = campaignId;
@@ -180,6 +182,16 @@ export class RunReport {
   recordCombatCoverage(ledger: FloorLedger, actors: readonly ActorReport[]): void {
     this.floorLedger = ledger;
     this.actors.push(...actors);
+  }
+
+  /**
+   * Record `actors[]`'s own binding count (playtest-methodology.md rule 1):
+   * how many actors this build's tier machinery tracked at all, distinct from
+   * `floorGate`'s count — an all-`ordinary` actor binds this one and not that
+   * one. `undefined` for a plan from a delvec that predates the field.
+   */
+  recordActorsGate(gate: BindingCount | undefined): void {
+    this.actorsGate = gate;
   }
 
   recordBranches(tier: string, driven: string | undefined, outcomes: readonly BranchOutcome[]): void {
@@ -295,7 +307,26 @@ export class RunReport {
           tier: e.tier ?? null,
           reason: e.reason ?? null,
         })),
+        // playtest-methodology.md rule 1: the ledger's own binding count,
+        // carried through verbatim. `null` when the plan predates the field
+        // (same reason `present` can be `false`) — never a substitute for
+        // reading `covered`/`not_covered`, only a REPORTED statement of what
+        // they add up to, so an unbound gate cannot be mistaken for a pass.
+        examined: this.floorLedger?.binding?.examined ?? null,
+        unbound: this.floorLedger?.binding?.unbound ?? null,
+        reason: this.floorLedger?.binding?.reason ?? null,
       },
+      // `actors[]`'s own binding count (rule 1): distinct question from
+      // `floor_gate`'s — an all-`ordinary` actor binds this one and not that
+      // one. `null` when the plan predates the field.
+      actors_gate:
+        this.actorsGate === undefined
+          ? null
+          : {
+              examined: this.actorsGate.examined,
+              unbound: this.actorsGate.unbound,
+              reason: this.actorsGate.reason ?? null,
+            },
       // Every tiered actor the plan declares, fought or not — and when not, why.
       actors: this.actors.map((a) => ({
         actor: a.actor,
