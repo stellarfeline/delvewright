@@ -7,9 +7,37 @@
 //! gate hashes it.
 
 use std::collections::BTreeMap;
+use std::fmt;
 
 use crate::block::BlockState;
 use crate::geom::Box3;
+
+/// How many distinct block states one model can hold: cells are `u16` palette
+/// indices, so index `u16::MAX` is the last usable one.
+pub const MAX_PALETTE: usize = u16::MAX as usize + 1;
+
+/// A write needed a palette slot the `u16` cell encoding cannot address.
+///
+/// Reaching this is an authoring accident (a per-cell mix over tens of thousands
+/// of distinct states), not a physical impossibility — so it is an error value
+/// the expander turns into [`crate::ExpandError::PaletteFull`], never a panic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PaletteFull {
+    /// The palette size that cannot be exceeded.
+    pub limit: usize,
+}
+
+impl fmt::Display for PaletteFull {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "the model already holds {} distinct block states, the most a u16 cell can index",
+            self.limit
+        )
+    }
+}
+
+impl std::error::Error for PaletteFull {}
 
 /// A dense grid of block states over an integer box.
 ///
@@ -52,24 +80,42 @@ impl VoxelModel {
         Some(&self.palette[self.cells[index] as usize])
     }
 
-    /// Write a block at a world position. Positions outside the region are
-    /// ignored — expansion never produces one, and the model is the boundary
-    /// that guarantees it.
-    pub fn set(&mut self, pos: [i32; 3], block: &BlockState) {
+    /// Write a block at a world position.
+    ///
+    /// The model is the boundary that guarantees expansion stays inside its box,
+    /// so a position outside the region is a **defect in the caller**, not an
+    /// input: a debug build asserts, and a release build drops the write rather
+    /// than wrapping it into an unrelated cell. [`VoxelModel::try_set`] is the
+    /// same write without the assertion, for the boundary's own tests.
+    pub fn set(&mut self, pos: [i32; 3], block: &BlockState) -> Result<(), PaletteFull> {
+        let landed = self.try_set(pos, block)?;
+        debug_assert!(
+            landed,
+            "wrote {pos:?} outside the model region {:?} — expansion must never leave its box",
+            self.region
+        );
+        Ok(())
+    }
+
+    /// [`VoxelModel::set`] without the in-region assertion, reporting whether the
+    /// write landed. Private: the only caller that may legitimately aim outside
+    /// the region is the test that pins what happens when something does.
+    fn try_set(&mut self, pos: [i32; 3], block: &BlockState) -> Result<bool, PaletteFull> {
         let Some(index) = self.offset(pos) else {
-            return;
+            return Ok(false);
         };
         let id = match self.index_of.get(block) {
             Some(id) => *id,
             None => {
                 let id = u16::try_from(self.palette.len())
-                    .expect("a grammar model cannot need more than 65536 distinct block states");
+                    .map_err(|_| PaletteFull { limit: MAX_PALETTE })?;
                 self.palette.push(block.clone());
                 self.index_of.insert(block.clone(), id);
                 id
             }
         };
         self.cells[index] = id;
+        Ok(true)
     }
 
     /// How many cells hold something other than air.
@@ -129,7 +175,7 @@ mod tests {
         assert_eq!(m.filled_cells(), 0);
         assert_eq!(m.get([-2, 0, 5]), Some(&BlockState::air()));
         let stone = BlockState::simple("stone");
-        m.set([-1, 2, 6], &stone);
+        m.set([-1, 2, 6], &stone).unwrap();
         assert_eq!(m.get([-1, 2, 6]), Some(&stone));
         assert_eq!(m.filled_cells(), 1);
         assert_eq!(m.palette(), &[BlockState::air(), stone]);
@@ -138,10 +184,51 @@ mod tests {
     #[test]
     fn writes_outside_the_region_are_dropped_not_wrapped() {
         let mut m = VoxelModel::new(Box3::at_origin([2, 2, 2]));
-        m.set([9, 9, 9], &BlockState::simple("stone"));
-        m.set([-1, 0, 0], &BlockState::simple("stone"));
+        assert_eq!(
+            m.try_set([9, 9, 9], &BlockState::simple("stone")),
+            Ok(false)
+        );
+        assert_eq!(
+            m.try_set([-1, 0, 0], &BlockState::simple("stone")),
+            Ok(false)
+        );
         assert_eq!(m.filled_cells(), 0);
         assert_eq!(m.get([9, 9, 9]), None);
+    }
+
+    /// ...and in a debug build the same write is a *bug*, not a no-op: nothing
+    /// in expansion may aim outside its box, so the boundary says so loudly
+    /// where a developer will see it (PR #266 review).
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "outside the model region")]
+    fn a_write_outside_the_region_trips_a_debug_assert() {
+        let mut m = VoxelModel::new(Box3::at_origin([2, 2, 2]));
+        let _ = m.set([9, 9, 9], &BlockState::simple("stone"));
+    }
+
+    /// A `u16` cell cannot index past 65536 states. Upstream of this the code
+    /// `expect`ed, i.e. a grammar could crash the tool; now the boundary reports
+    /// and the expander turns it into an `ExpandError`.
+    #[test]
+    fn a_palette_past_the_u16_ceiling_is_an_error_not_a_panic() {
+        // 65536 cells: air + 65535 distinct states fills the palette exactly.
+        let mut m = VoxelModel::new(Box3::at_origin([256, 1, 257]));
+        for i in 0..MAX_PALETTE - 1 {
+            let block = BlockState::with("stone", [("n", &*i.to_string())]);
+            let pos = [(i / 257) as i32, 0, (i % 257) as i32];
+            m.set(pos, &block).expect("still inside the u16 ceiling");
+        }
+        assert_eq!(m.palette().len(), MAX_PALETTE);
+        // One more distinct state has nowhere to go.
+        let overflow = BlockState::with("stone", [("n", "overflow")]);
+        assert_eq!(
+            m.set([255, 0, 256], &overflow),
+            Err(PaletteFull { limit: MAX_PALETTE })
+        );
+        // ...but a state already in the palette still writes.
+        let known = BlockState::with("stone", [("n", "0")]);
+        assert_eq!(m.set([255, 0, 256], &known), Ok(()));
     }
 
     #[test]
@@ -149,9 +236,9 @@ mod tests {
         let mut a = VoxelModel::new(Box3::at_origin([2, 2, 2]));
         let mut b = VoxelModel::new(Box3::at_origin([2, 2, 2]));
         assert_eq!(a.canonical_bytes(), b.canonical_bytes());
-        a.set([0, 0, 0], &BlockState::simple("stone"));
+        a.set([0, 0, 0], &BlockState::simple("stone")).unwrap();
         assert_ne!(a.canonical_bytes(), b.canonical_bytes());
-        b.set([0, 0, 0], &BlockState::simple("stone"));
+        b.set([0, 0, 0], &BlockState::simple("stone")).unwrap();
         assert_eq!(a.canonical_bytes(), b.canonical_bytes());
     }
 
@@ -160,8 +247,8 @@ mod tests {
         let mut m = VoxelModel::new(Box3::at_origin([2, 1, 1]));
         let east = BlockState::with("oak_stairs", [("facing", "east")]);
         let west = BlockState::with("oak_stairs", [("facing", "west")]);
-        m.set([0, 0, 0], &east);
-        m.set([1, 0, 0], &west);
+        m.set([0, 0, 0], &east).unwrap();
+        m.set([1, 0, 0], &west).unwrap();
         assert_eq!(m.palette().len(), 3, "air + two states of the same block");
         assert_ne!(m.get([0, 0, 0]), m.get([1, 0, 0]));
     }

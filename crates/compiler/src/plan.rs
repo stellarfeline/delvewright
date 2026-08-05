@@ -217,6 +217,22 @@ pub struct TimedGatePlan {
     /// Whether the closing edge kills players caught inside the region
     /// (spec-0016 §4 addendum).
     pub crush: bool,
+    /// The resolved disarm affordance (task #184), if declared. A gate whose
+    /// `disarm.via` anchor does not resolve carries `None` — the DSL tier's
+    /// `DW0377` reports that, and no half-built affordance reaches emission.
+    pub disarm: Option<TimedGateDisarmPlan>,
+}
+
+/// A resolved `timed-gate` disarm affordance (task #184) — the same shape a
+/// trap's [`TrapDisarmPlan`] takes.
+#[derive(Clone, Debug)]
+pub struct TimedGateDisarmPlan {
+    /// The anchor name the player interacts with.
+    pub via_anchor: String,
+    /// Its resolved absolute cell.
+    pub via_cell: [i32; 3],
+    /// The flag jamming the gate sets, party-wide.
+    pub sets_flag: String,
 }
 
 /// A resolved stage-5 `ambush` (spec-0016 §3), collected in declared order —
@@ -621,7 +637,8 @@ pub enum Step {
         /// Total mob count.
         count: i32,
     },
-    /// Collect `count` of `item` from a chest at `pos` (v0.3).
+    /// Collect `count` of `item` from a chest at `pos` (v0.3) — or, when
+    /// `dropped` is set, off the ground where that wave died (DSL v0.9).
     Collect {
         /// The `obj/<id>` this step proves complete.
         objective_id: String,
@@ -629,8 +646,14 @@ pub enum Step {
         item: String,
         /// Required count.
         count: i32,
-        /// Absolute chest-anchor position.
+        /// Absolute chest-anchor position — or, for a dropped collect, the wave
+        /// anchor whose floor the item lands on.
         pos: [i32; 3],
+        /// The wave whose declared drop provides the item (DSL v0.9), when the
+        /// objective is drop-gated. There is no container at `pos`: the harness
+        /// walks the fight's ground and waits for the pickup instead of opening
+        /// a block that is not there.
+        dropped: Option<String>,
     },
     /// Interact at `pos`: goto, then chat `command` (the same `/trigger` the
     /// interaction advancement fires). `requires_item` gates completion (v0.3).
@@ -816,6 +839,26 @@ fn quest_area_of<'a>(campaign: &'a Campaign, quest_id: &str) -> Option<&'a str> 
         .map(|q| q.area.as_str())
 }
 
+/// Does any effect in `effs`, or anywhere in the trees nested under them, fire a
+/// `spawn-wave` for `wave_id`?
+///
+/// Descends through [`QuestEffect::visit_deep`], so `sequence` steps,
+/// `set-checkpoint` `on_respawn`, `bonfire` `on_rest`, `begin-stealth`
+/// `on_caught` and `move-npc`/`move-actor` `on_arrive` are all spawn sites — as
+/// they already are for emission. A verb the emitter compiles from a nesting site
+/// is a verb every consumer scan must see from the same site.
+fn fires_wave<'a>(effs: impl IntoIterator<Item = &'a QuestEffect>, wave_id: &str) -> bool {
+    let mut found = false;
+    for e in effs {
+        e.visit_deep(&mut |x| {
+            if matches!(x.spawn_wave(), Some(w) if w.as_str() == wave_id) {
+                found = true;
+            }
+        });
+    }
+    found
+}
+
 /// The area a wave's mobs spawn in — resolved from the wave's **spawn site**, not
 /// from any `kill` objective. A `spawn-wave` effect (on a quest step, on a quest's
 /// completion, or on an environment trigger) is what makes a wave appear; its
@@ -825,34 +868,58 @@ fn quest_area_of<'a>(campaign: &'a Campaign, quest_id: &str) -> Option<&'a str> 
 /// flock) resolves a spawn position exactly like a wave that is later slain.
 ///
 /// Resolution order: the quest that fires the `spawn-wave` (`on_objective_complete`
-/// or `on_complete`); else, in a single-area campaign, an environment trigger that
-/// fires it (triggers are global — their sole possible area is the one area); else
-/// a quest whose `kill` objective references the wave (defensive fallback for a
-/// wave declared with a kill but no explicit spawn). `None` if nothing spawns it.
+/// or `on_complete`); else, in a single-area campaign, an environment trigger or a
+/// trap payload that fires it (both are global — their sole possible area is the
+/// one area); else a quest whose `kill` objective references the wave (defensive
+/// fallback for a wave declared with a kill but no explicit spawn). `None` if
+/// nothing spawns it.
+///
+/// **Every root is walked DEEP** ([`fires_wave`]), through
+/// [`QuestEffect::nested_effect_lists`] — the DSL's single authority on effect
+/// nesting, and the same authority `emit::all_campaign_effects` walks to decide
+/// what to compile. A wave the emitter writes a `function <ns>:spawn_<wave>` call
+/// for is therefore always a wave this function resolves an area for, and so
+/// always a wave whose support machinery is emitted: the agreement is structural,
+/// not two walks that have to remember each other.
+///
+/// It used to be a shallow scan of the top-level chains only, and the island's
+/// round-21 build is what that cost: `wave/storm-shore` and `wave/storm-fire` were
+/// fired from step 7 of a `sequence`, resolved no area, got no `spawn_…`, no
+/// census, no brand and no kill reward — while `seq_under_ram` still shipped the
+/// call. Two of three storm waves never spawned (`DW0497` is now the standing
+/// proof that this class cannot ship again).
 pub fn wave_area<'a>(campaign: &'a Campaign, wave_id: &str) -> Option<&'a str> {
-    let spawns_wave = |e: &QuestEffect| matches!(e.spawn_wave(), Some(w) if w.as_str() == wave_id);
-    // 1. A quest whose effects fire `spawn-wave` for this wave — the true spawn site.
+    // 1. A quest whose effect TREE fires `spawn-wave` for this wave — the true
+    //    spawn site.
     for q in &campaign.quests.content.quests {
-        if q.on_objective_complete
-            .values()
-            .flatten()
-            .chain(&q.on_complete)
-            .any(&spawns_wave)
-        {
+        if fires_wave(
+            q.on_objective_complete
+                .values()
+                .flatten()
+                .chain(&q.on_complete),
+            wave_id,
+        ) {
             return quest_area_of(campaign, q.id.as_str());
         }
     }
-    // 2. An environment trigger that fires it. Triggers are global; in a
-    //    single-area campaign the sole area is unambiguous. (Multi-area
-    //    trigger-only waves are not resolvable here and surface as a build
-    //    diagnostic rather than a silent dangling spawn.)
+    // 2. An environment trigger or trap payload that fires it. Both are global
+    //    effect roots carrying no area of their own; in a single-area campaign the
+    //    sole area is unambiguous. (Multi-area trigger-only waves are not
+    //    resolvable here and surface as a build diagnostic rather than a silent
+    //    dangling spawn.)
     if campaign.world.content.areas.len() == 1
-        && campaign
+        && (campaign
             .quests
             .content
             .triggers
             .iter()
-            .any(|t| t.effects.iter().any(&spawns_wave))
+            .any(|t| fires_wave(&t.effects, wave_id))
+            || campaign
+                .quests
+                .content
+                .traps
+                .iter()
+                .any(|t| fires_wave(&t.payload, wave_id)))
     {
         return campaign.world.content.areas.first().map(|a| a.id.as_str());
     }
@@ -1302,6 +1369,13 @@ impl<'a> Plan<'a> {
                     closed_ticks: g.closed_ticks,
                     phase: g.phase,
                     crush: g.crush,
+                    disarm: g.disarm.as_ref().and_then(|dis| {
+                        point_any(&anchors, dis.via.as_str()).map(|via_cell| TimedGateDisarmPlan {
+                            via_anchor: dis.via.as_str().to_string(),
+                            via_cell,
+                            sets_flag: dis.sets_flag.as_str().to_string(),
+                        })
+                    }),
                 })
             })
             .collect();
@@ -1493,7 +1567,10 @@ impl<'a> Plan<'a> {
     /// vanilla respawn-detection machinery so checkpoint-free / hook-free campaigns
     /// stay byte-identical (DSL v0.6, spec-0012).
     pub fn any_checkpoint_on_respawn(&self) -> bool {
-        self.checkpoints.iter().any(|c| !c.on_respawn.is_empty()) || !self.reseat_waves().is_empty()
+        self.checkpoints.iter().any(|c| !c.on_respawn.is_empty())
+            || !self.reseat_waves().is_empty()
+            || !self.undefeated_reseat_waves().is_empty()
+            || !self.reseat_actors().is_empty()
     }
 
     /// Whether the campaign declares **any** checkpoint at all (spec-0012 /
@@ -1522,6 +1599,53 @@ impl<'a> Plan<'a> {
             .iter()
             .filter(|w| w.respawns_on_rest)
             .collect()
+    }
+
+    /// The waves a bonfire refreshes **only while they are undefeated**
+    /// (spec-0016 §1, owner ruling 2026-08-05): every `elite`/`boss`-tier wave
+    /// that does NOT declare `respawns_on_rest`, in content order.
+    ///
+    /// The distinction from [`Self::reseat_waves`] is the whole ruling. A
+    /// `respawns_on_rest` wave comes back *whether or not* the party beat it —
+    /// the fire is not a progress ratchet. A billed elite/boss does not: beat it
+    /// and it stays beaten (spec-0016 §1, "stage bosses never respawn on rest").
+    /// But while it is still standing, chipping it down one hit per life is never
+    /// a valid path, so a rest wipes what is left of it and re-seats the authored
+    /// wave at full count and full health. The two sets are disjoint by
+    /// construction here, so no wave can be re-seated twice by one rest;
+    /// `DW0499` forbids the `boss` + `respawns_on_rest` combination outright.
+    ///
+    /// Empty without a bonfire, and empty for every campaign that bills no
+    /// encounter → byte-identical emission.
+    pub fn undefeated_reseat_waves(&self) -> Vec<&delvewright_dsl::Wave> {
+        if !self.checkpoints.iter().any(|c| c.rest) {
+            return Vec::new();
+        }
+        self.campaign
+            .quests
+            .content
+            .waves
+            .iter()
+            .filter(|w| !w.respawns_on_rest)
+            .filter(|w| {
+                w.tier
+                    .is_some_and(delvewright_dsl::EncounterTier::has_floor_expectation)
+            })
+            .collect()
+    }
+
+    /// The actors a bonfire refreshes while they are undefeated (spec-0016 §1,
+    /// owner ruling 2026-08-05), in declaration order: every actor the campaign
+    /// `unleash-actor`s — the compiler's one definition of an actor that is a
+    /// *fight* ([`crate::combat::hostile_actors`]).
+    ///
+    /// Empty without a bonfire, and empty for every campaign whose actors are all
+    /// scenery → byte-identical emission.
+    pub fn reseat_actors(&self) -> Vec<&delvewright_dsl::Actor> {
+        if !self.checkpoints.iter().any(|c| c.rest) {
+            return Vec::new();
+        }
+        crate::combat::hostile_actors(self.campaign)
     }
 
     /// The collected checkpoint matching a `set-checkpoint` effect (by anchor +
@@ -2101,6 +2225,7 @@ fn build_critical_path(
                     count,
                     anchor,
                     container,
+                    dropped_by,
                     ..
                 } => {
                     // The step position is the CONTAINER the bot opens: the
@@ -2111,10 +2236,23 @@ fn build_critical_path(
                     // sit in a barrel three blocks away is a guaranteed bot stall.
                     // An unresolvable container anchor falls back to the objective
                     // anchor; the DSL tier reports it (`DW0142`).
-                    let pos = match container
-                        .as_ref()
-                        .and_then(|cont| point_any(anchors, cont.as_str()))
-                    {
+                    // v0.9 (task #179): a drop-gated collect has no container at
+                    // all — the item is on the floor the wave died on, so the
+                    // step points at that wave's own anchor.
+                    let dropped_at = dropped_by.as_ref().and_then(|w| {
+                        campaign
+                            .quests
+                            .content
+                            .waves
+                            .iter()
+                            .find(|wv| wv.id.as_str() == w.as_str())
+                            .and_then(|wv| point_any(anchors, wv.anchor.as_str()))
+                    });
+                    let pos = match dropped_at.or_else(|| {
+                        container
+                            .as_ref()
+                            .and_then(|cont| point_any(anchors, cont.as_str()))
+                    }) {
                         Some(cell) => cell,
                         None => point_of(anchors, area, anchor.as_str())?,
                     };
@@ -2123,6 +2261,7 @@ fn build_critical_path(
                         item: item.clone(),
                         count: *count as i32,
                         pos,
+                        dropped: dropped_by.as_ref().map(|w| w.as_str().to_string()),
                     });
                     obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }

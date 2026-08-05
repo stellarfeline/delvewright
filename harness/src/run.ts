@@ -12,6 +12,7 @@ import { parseCriticalPathJson } from "./critical-path.ts";
 import { runSequence, StepExecutionError } from "./sequencer.ts";
 import { botConfigFromEnv, MineflayerExecutor } from "./executor.ts";
 import { BotDeathError } from "./death.ts";
+import { classifyNamedEntityDeaths } from "./teardown.ts";
 import {
   branchWaypointsFileFor,
   loadWaypointsForBranchPath,
@@ -367,6 +368,11 @@ async function main(): Promise<number> {
       report.recordCombatCoverage(combatPlan.floorGate, actorReports);
     }
     report.recordRests(executor.performedRests());
+    // Reclassify, never suppress (2026-08-06 island triage): a `despawn-actor
+    // style: vanish` broadcasts the same "<name> died" line a real combat loss
+    // does, and this run has no wired `min_y` to derive an exact depth cutoff
+    // from — see teardown.ts for the fallback heuristic.
+    report.recordNamedEntityDeaths(classifyNamedEntityDeaths(executor.namedEntityDeaths()));
     for (const f of executor.floorGateFindings()) report.recordFloorFinding(f);
     // spec-0025 §3: every enumerated branch appears here — the one this session
     // walked with its result, and each of the others with the reason it did not.

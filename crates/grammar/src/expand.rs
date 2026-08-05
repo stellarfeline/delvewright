@@ -20,13 +20,17 @@
 //!   applies; here it is [`ExpandError::NoApplicableRule`], because a silently
 //!   missing wing is exactly the defect the machine gates exist to catch.
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::block::BlockState;
 use crate::eval::{EvalError, Scope};
-use crate::geom::{Box3, Orientation};
-use crate::ir::{Alternative, Cond, Material, Node, Paint, Program, ProgramError, Size, Split};
-use crate::model::VoxelModel;
+use crate::geom::{Axis, Box3, Orientation};
+use crate::ir::{
+    Alternative, Cond, Facing, Mark, MarkAt, Material, Node, Paint, Program, ProgramError, Side,
+    Size, Split,
+};
+use crate::model::{PaletteFull, VoxelModel};
 use crate::orient::{OrientError, reorient};
 use crate::rng::Rng;
 use crate::split::{ResolvedSize, SplitError, make_split};
@@ -40,6 +44,15 @@ pub struct Limits {
     pub max_depth: u32,
     /// Maximum number of scopes visited.
     pub max_scopes: u64,
+    /// Maximum cells in the region a program may be expanded over.
+    ///
+    /// The model is a dense grid allocated **before** the first rule runs, so
+    /// an absurd region is not a slow expansion — it is an allocation the
+    /// process may not survive, and a killed process reports nothing. The
+    /// budget turns it into an [`ExpandError::VolumeLimit`] naming both
+    /// numbers. It is never silently clamped: a caller that means to build
+    /// something enormous raises the limit and says so.
+    pub max_volume: u64,
 }
 
 impl Default for Limits {
@@ -47,6 +60,10 @@ impl Default for Limits {
         Limits {
             max_depth: 256,
             max_scopes: 2_000_000,
+            // 2^24 cells ≈ 32 MiB of cell indices. Comfortably above anything a
+            // prefab needs (the vanilla structure cap is 48³ = 110 592) and far
+            // below what a 64-bit `Box3` can ask for.
+            max_volume: 16_777_216,
         }
     }
 }
@@ -90,11 +107,37 @@ pub struct Stats {
     pub rules_applied: u64,
 }
 
+/// One anchor a rule declared with [`Node::Mark`].
+///
+/// The position is **local to the expansion region**, already rebased off its
+/// origin, because that is what a structure template's metadata means by a
+/// position — and because it keeps the ADR-0006 promise that moving the box
+/// moves nothing in the output.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Anchor {
+    /// Local cell `[x, y, z]`.
+    pub pos: [i32; 3],
+    /// The facing, declared or derived.
+    pub facing: Facing,
+    /// The rule that declared it. Provenance for review, and the other half of
+    /// a collision report.
+    pub declared_by: String,
+}
+
 /// The result of expanding a program.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Expansion {
     /// The blocks.
     pub model: VoxelModel,
+    /// The anchors the rules declared, by exported name.
+    ///
+    /// They live here rather than on the [`VoxelModel`] because a mark writes no
+    /// blocks: the model is the block grid whose `canonical_bytes` is the
+    /// block-level determinism form, and folding metadata into it would both
+    /// change what that hash means and make "a mark changed nothing about the
+    /// building" untestable. [`Expansion`] is already the record of what an
+    /// expansion did beyond the blocks it wrote.
+    pub anchors: BTreeMap<String, Anchor>,
     /// The derivation's shape.
     pub stats: Stats,
 }
@@ -147,6 +190,50 @@ pub enum ExpandError {
         /// The budget.
         limit: u64,
     },
+    /// The region is larger than the model the budget allows.
+    VolumeLimit {
+        /// Cells the region covers.
+        volume: u64,
+        /// The budget.
+        limit: u64,
+    },
+    /// A `mark` aimed at a cell outside the scope the rule was given.
+    MarkOutsideScope {
+        /// The rule being expanded.
+        symbol: String,
+        /// The anchor stem.
+        anchor: String,
+        /// The cell it asked for, world space.
+        cell: [i64; 3],
+        /// The scope's minimum corner.
+        origin: [i32; 3],
+        /// The scope's extents.
+        size: [u32; 3],
+    },
+    /// A `mark` with no explicit facing sat in a scope whose local `Z` is the
+    /// vertical axis, so there is no cardinal direction to derive.
+    MarkFacingNotCardinal {
+        /// The rule being expanded.
+        symbol: String,
+        /// The anchor stem.
+        anchor: String,
+    },
+    /// Two marks produced the same anchor name.
+    AnchorCollision {
+        /// The name both produced.
+        anchor: String,
+        /// The rule that declared it first.
+        first: String,
+        /// The rule that declared it again.
+        second: String,
+    },
+    /// A fill needed a 65537th distinct block state.
+    PaletteFull {
+        /// The rule being expanded.
+        symbol: String,
+        /// The failure.
+        error: PaletteFull,
+    },
 }
 
 impl fmt::Display for ExpandError {
@@ -157,7 +244,7 @@ impl fmt::Display for ExpandError {
                 f,
                 "no alternative of rule {symbol:?} applies to this scope, and none is `otherwise`"
             ),
-            ExpandError::Eval { symbol, error } => write!(f, "rule {symbol:?}: {error:?}"),
+            ExpandError::Eval { symbol, error } => write!(f, "rule {symbol:?}: {error}"),
             ExpandError::Split { symbol, error } => match error {
                 SplitError::Overflow { absolute, extent } => write!(
                     f,
@@ -169,7 +256,7 @@ impl fmt::Display for ExpandError {
                     "rule {symbol:?}: a repeating split whose pattern consumes nothing"
                 ),
             },
-            ExpandError::Orient { symbol, error } => write!(f, "rule {symbol:?}: {error:?}"),
+            ExpandError::Orient { symbol, error } => write!(f, "rule {symbol:?}: {error}"),
             ExpandError::BadSize { symbol, value } => {
                 write!(f, "rule {symbol:?}: {value} is not a usable split size")
             }
@@ -179,6 +266,49 @@ impl fmt::Display for ExpandError {
             ExpandError::ScopeLimit { limit } => {
                 write!(f, "expansion exceeded the scope limit of {limit}")
             }
+            ExpandError::VolumeLimit { volume, limit } => write!(
+                f,
+                "the region covers {volume} cells but the volume limit is {limit} — raise \
+                 `Limits::max_volume` deliberately if a model that large is really wanted"
+            ),
+            ExpandError::MarkOutsideScope {
+                symbol,
+                anchor,
+                cell,
+                origin,
+                size,
+            } => write!(
+                f,
+                "rule {symbol:?} marks the anchor {anchor:?} at {},{},{}, which is outside its \
+                 own scope (corner {},{},{}, {}x{}x{}) — a rule may only name cells of the box \
+                 it was given",
+                cell[0],
+                cell[1],
+                cell[2],
+                origin[0],
+                origin[1],
+                origin[2],
+                size[0],
+                size[1],
+                size[2]
+            ),
+            ExpandError::MarkFacingNotCardinal { symbol, anchor } => write!(
+                f,
+                "rule {symbol:?} marks the anchor {anchor:?} in a scope whose local Z is the \
+                 vertical axis, so there is no cardinal facing to derive — declare `facing` on \
+                 the mark"
+            ),
+            ExpandError::AnchorCollision {
+                anchor,
+                first,
+                second,
+            } => write!(
+                f,
+                "the anchor {anchor:?} is declared twice: first by rule {first:?}, then by rule \
+                 {second:?}. One name is one place; use an indexed mark if the rule is meant to \
+                 declare an anchor per expansion"
+            ),
+            ExpandError::PaletteFull { symbol, error } => write!(f, "rule {symbol:?}: {error}"),
         }
     }
 }
@@ -201,9 +331,19 @@ pub fn expand(
     options: &ExpandOptions,
 ) -> Result<Expansion, ExpandError> {
     program.validate()?;
+    // Before the model is allocated, not after: the grid is dense.
+    let volume = region.volume();
+    if volume > options.limits.max_volume {
+        return Err(ExpandError::VolumeLimit {
+            volume,
+            limit: options.limits.max_volume,
+        });
+    }
     let mut expander = Expander {
         program,
         model: VoxelModel::new(region),
+        anchors: BTreeMap::new(),
+        marks_seen: BTreeMap::new(),
         rng: Rng::new(options.seed),
         limits: options.limits,
         stats: Stats::default(),
@@ -218,6 +358,7 @@ pub fn expand(
     )?;
     Ok(Expansion {
         model: expander.model,
+        anchors: expander.anchors,
         stats: expander.stats,
     })
 }
@@ -232,6 +373,10 @@ struct ScopeState {
 struct Expander<'a> {
     program: &'a Program,
     model: VoxelModel,
+    anchors: BTreeMap<String, Anchor>,
+    /// Per-stem occurrence counter, so [`crate::ir::MarkIndex::Auto`] numbers in
+    /// expansion order.
+    marks_seen: BTreeMap<String, u32>,
     rng: Rng,
     limits: Limits,
     stats: Stats,
@@ -332,7 +477,12 @@ impl<'a> Expander<'a> {
             Node::Void => {
                 let air = BlockState::air();
                 for pos in state.region.positions() {
-                    self.model.set(pos, &air);
+                    self.model
+                        .set(pos, &air)
+                        .map_err(|error| ExpandError::PaletteFull {
+                            symbol: symbol.to_string(),
+                            error,
+                        })?;
                 }
                 Ok(())
             }
@@ -345,11 +495,15 @@ impl<'a> Expander<'a> {
                         .expect("validate() proved every role is bound"),
                     Material::Inline(paint) => paint,
                 };
+                let full = |error| ExpandError::PaletteFull {
+                    symbol: symbol.to_string(),
+                    error,
+                };
                 match paint {
                     Paint::Block(block) => {
                         let block = block.clone();
                         for pos in state.region.positions() {
-                            self.model.set(pos, &block);
+                            self.model.set(pos, &block).map_err(full)?;
                         }
                     }
                     Paint::Mix(mix) => {
@@ -361,7 +515,7 @@ impl<'a> Expander<'a> {
                                 .rng
                                 .weighted(&weights)
                                 .expect("validate() proved every weight is positive");
-                            self.model.set(pos, &blocks[pick]);
+                            self.model.set(pos, &blocks[pick]).map_err(full)?;
                         }
                     }
                 }
@@ -382,8 +536,127 @@ impl<'a> Expander<'a> {
                 };
                 self.run_node(symbol, body, &child, depth + 1)
             }
+            Node::Mark { mark, body } => {
+                // The mark first, so a nested mark of the same stem numbers
+                // after it: expansion order is reading order.
+                self.declare(symbol, mark, state)?;
+                self.run_node(symbol, body, state, depth + 1)
+            }
             Node::Split(split) => self.run_split(symbol, split, state, depth),
         }
+    }
+
+    /// Resolve one [`Node::Mark`] against the scope it sits on and record it.
+    fn declare(
+        &mut self,
+        symbol: &str,
+        mark: &Mark,
+        state: &ScopeState,
+    ) -> Result<(), ExpandError> {
+        let cell = self.mark_cell(symbol, mark, state)?;
+        let facing = match mark.facing {
+            Some(f) => f,
+            // A permutation cannot mirror, so a derived facing is always the
+            // negative direction of the world axis the scope calls local Z.
+            None => match state.orient.get(Axis::Z) {
+                Axis::Z => Facing::North,
+                Axis::X => Facing::West,
+                Axis::Y => {
+                    return Err(ExpandError::MarkFacingNotCardinal {
+                        symbol: symbol.to_string(),
+                        anchor: mark.anchor.clone(),
+                    });
+                }
+            },
+        };
+
+        let seen = self.marks_seen.entry(mark.anchor.clone()).or_insert(0);
+        *seen += 1;
+        let name = mark.name(*seen);
+
+        let origin = self.model.region().origin;
+        let anchor = Anchor {
+            pos: [
+                cell[0] - origin[0],
+                cell[1] - origin[1],
+                cell[2] - origin[2],
+            ],
+            facing,
+            declared_by: symbol.to_string(),
+        };
+        if let Some(first) = self.anchors.get(&name) {
+            return Err(ExpandError::AnchorCollision {
+                anchor: name,
+                first: first.declared_by.clone(),
+                second: symbol.to_string(),
+            });
+        }
+        self.anchors.insert(name, anchor);
+        Ok(())
+    }
+
+    /// The world cell a mark names, refused if it is not one of the scope's own.
+    fn mark_cell(
+        &self,
+        symbol: &str,
+        mark: &Mark,
+        state: &ScopeState,
+    ) -> Result<[i32; 3], ExpandError> {
+        let size = state.region.size;
+        // Centre of an extent, rounding down; 0 for a degenerate axis, which the
+        // bounds check below then reports.
+        let mid = |axis: Axis| (size[axis.index()].saturating_sub(1) / 2) as i64;
+
+        // Offsets from the scope's minimum corner, per WORLD axis.
+        let mut delta = [0i64; 3];
+        match &mark.at {
+            MarkAt::CornerMin => {}
+            MarkAt::FloorCenter => {
+                delta[Axis::X.index()] = mid(Axis::X);
+                delta[Axis::Y.index()] = 0;
+                delta[Axis::Z.index()] = mid(Axis::Z);
+            }
+            MarkAt::FaceCenter { axis, side } => {
+                let pinned = state.orient.get(*axis);
+                for world in Axis::ALL {
+                    delta[world.index()] = if world == pinned {
+                        match side {
+                            Side::Min => 0,
+                            Side::Max => (size[world.index()].saturating_sub(1)) as i64,
+                        }
+                    } else {
+                        mid(world)
+                    };
+                }
+            }
+            MarkAt::Offset { x, y, z } => {
+                let scope = self.scope(state);
+                for (local, expr) in [(Axis::X, x), (Axis::Y, y), (Axis::Z, z)] {
+                    let value = scope.eval(expr).map_err(|error| ExpandError::Eval {
+                        symbol: symbol.to_string(),
+                        error,
+                    })?;
+                    delta[state.orient.get(local).index()] = value;
+                }
+            }
+        }
+
+        let cell = [
+            state.region.origin[0] as i64 + delta[0],
+            state.region.origin[1] as i64 + delta[1],
+            state.region.origin[2] as i64 + delta[2],
+        ];
+        let inside = (0..3).all(|a| delta[a] >= 0 && delta[a] < size[a] as i64);
+        if !inside {
+            return Err(ExpandError::MarkOutsideScope {
+                symbol: symbol.to_string(),
+                anchor: mark.anchor.clone(),
+                cell,
+                origin: state.region.origin,
+                size,
+            });
+        }
+        Ok([cell[0] as i32, cell[1] as i32, cell[2] as i32])
     }
 
     fn run_split(

@@ -22,7 +22,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::block::BlockState;
-use crate::geom::Axis;
+use crate::geom::{Axis, Orientation};
 
 // ---------------------------------------------------------------------------
 // Expressions and constraints
@@ -419,6 +419,187 @@ impl Material {
 }
 
 // ---------------------------------------------------------------------------
+// Anchors
+// ---------------------------------------------------------------------------
+
+/// Which end of an axis a [`MarkAt::FaceCenter`] means.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Side {
+    /// The low end of the axis.
+    Min,
+    /// The high end.
+    Max,
+}
+
+/// A cardinal direction an anchor can face, as prefab metadata spells it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Facing {
+    /// `-Z`.
+    North,
+    /// `+Z`.
+    South,
+    /// `-X`.
+    West,
+    /// `+X`.
+    East,
+}
+
+impl Facing {
+    /// The metadata keyword.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Facing::North => "north",
+            Facing::South => "south",
+            Facing::West => "west",
+            Facing::East => "east",
+        }
+    }
+}
+
+impl fmt::Display for Facing {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Which cell of the current scope a [`Mark`] lands on.
+///
+/// The named positions are the ones a staging anchor actually wants, so that a
+/// rule need not recompute `(size - 1) / 2` by hand — and so that the *intent*
+/// survives into review. Centres round down on an even extent (the lower-middle
+/// cell), which is a choice, not an accident: it has to be one of the two, and
+/// it has to be the same one every time (ADR-0006).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "at", rename_all = "snake_case")]
+pub enum MarkAt {
+    /// The centre of the scope's **world** floor: lowest world `Y`, centred on
+    /// world `X` and `Z`. Gravity is a world fact, so this one position ignores
+    /// the scope's local axis names — an NPC stands on the floor however the
+    /// rule chose to call its axes.
+    FloorCenter,
+    /// The scope's minimum corner. A permutation cannot mirror, so the local
+    /// minimum corner and the world one are the same cell.
+    CornerMin,
+    /// The centre of one face: the given **local** axis pinned to `side`, the
+    /// other two centred.
+    FaceCenter {
+        /// The local axis to pin.
+        axis: Axis,
+        /// Which end of it.
+        side: Side,
+    },
+    /// An explicit offset in **local** cells from the scope's minimum corner.
+    Offset {
+        /// Along the local `X`.
+        x: Expr,
+        /// Along the local `Y`.
+        y: Expr,
+        /// Along the local `Z`.
+        z: Expr,
+    },
+}
+
+impl MarkAt {
+    /// A literal local offset from the scope's minimum corner.
+    pub fn offset(x: i64, y: i64, z: i64) -> MarkAt {
+        MarkAt::Offset {
+            x: Expr::int(x),
+            y: Expr::int(y),
+            z: Expr::int(z),
+        }
+    }
+}
+
+/// How a [`Mark`]'s anchor name is completed when the rule runs more than once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MarkIndex {
+    /// The name is exactly `anchor/<anchor>`. A second mark producing the same
+    /// name is an error — one name, one place.
+    #[default]
+    Unique,
+    /// The name is `anchor/<anchor>-<n>`, `n` counting from 1 per stem in
+    /// expansion order. This is how a rule that expands once per tower gives
+    /// every tower its own anchor without knowing how many towers there are.
+    Auto,
+}
+
+/// An anchor declaration: a named position the prefab offers the campaign.
+///
+/// Anchors are **metadata**, not geometry: no composition of `fill` / `split`
+/// can express "this cell is where the boss stands", and reading one back out of
+/// the block pattern afterwards is a guess. So the rule that shapes the space
+/// says so while it has the box in hand (spec-0027 phase 2b).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Mark {
+    /// The anchor name stem, kebab-case. The exported key is `anchor/<stem>`
+    /// (plus the index suffix when [`MarkIndex::Auto`]), which is the DSL's
+    /// `anchor/<kebab>` id grammar — a mark cannot name an anchor the DSL could
+    /// not reference.
+    pub anchor: String,
+    /// Which cell of the scope. Flattened, so the authoring form reads
+    /// `{"anchor": "bay", "at": "floor_center"}` rather than nesting a second
+    /// object under a key of the same name.
+    #[serde(flatten)]
+    pub at: MarkAt,
+    /// The facing to declare. Omitted, it is derived from the scope's
+    /// orientation: the negative direction of the world axis the scope calls
+    /// local `Z` (`north` when that is world `Z`, `west` when it is world `X`).
+    /// A scope whose local `Z` is vertical has no cardinal facing to derive, and
+    /// says so rather than guessing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub facing: Option<Facing>,
+    /// Name completion.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub index: MarkIndex,
+}
+
+impl Mark {
+    /// A uniquely-named mark with a derived facing.
+    pub fn new(anchor: &str, at: MarkAt) -> Mark {
+        Mark {
+            anchor: anchor.to_string(),
+            at,
+            facing: None,
+            index: MarkIndex::Unique,
+        }
+    }
+
+    /// Declare the facing explicitly instead of deriving it.
+    pub fn facing(mut self, facing: Facing) -> Mark {
+        self.facing = Some(facing);
+        self
+    }
+
+    /// Number this mark per expansion instead of requiring a unique name.
+    pub fn indexed(mut self) -> Mark {
+        self.index = MarkIndex::Auto;
+        self
+    }
+
+    /// The exported anchor name for occurrence `n` (1-based) of this stem.
+    pub fn name(&self, n: u32) -> String {
+        match self.index {
+            MarkIndex::Unique => format!("anchor/{}", self.anchor),
+            MarkIndex::Auto => format!("anchor/{}-{n}", self.anchor),
+        }
+    }
+}
+
+/// True for a kebab-case anchor stem: the `<kebab>` of the DSL's
+/// `anchor/<kebab>` ids.
+fn is_kebab(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && !s.starts_with('-')
+        && !s.ends_with('-')
+        && !s.contains("--")
+}
+
+// ---------------------------------------------------------------------------
 // Rule bodies
 // ---------------------------------------------------------------------------
 
@@ -448,6 +629,18 @@ pub enum Node {
         /// The requested axis mapping.
         orient: Reorient,
         /// What to expand under it.
+        body: Box<Node>,
+    },
+    /// Declare an anchor in this scope, then expand `body`.
+    ///
+    /// A wrapper rather than a statement because a rule body is one node: this
+    /// way a mark can sit on any piece of any split — the courtyard child, the
+    /// tower child — and annotate exactly the box that piece owns. `body` is
+    /// [`Node::Skip`] when the mark is all that is wanted.
+    Mark {
+        /// The declaration.
+        mark: Mark,
+        /// What to expand in the same scope.
         body: Box<Node>,
     },
 }
@@ -592,6 +785,22 @@ pub enum ProgramError {
         /// The rule.
         symbol: String,
     },
+    /// A `mark` names an anchor stem that is not kebab-case, so the exported
+    /// key would not be a DSL `anchor/<kebab>` id.
+    BadAnchorName {
+        /// The rule.
+        symbol: String,
+        /// The stem as written.
+        anchor: String,
+    },
+    /// A [`Cond::Orientation`] guard names an axis mapping that is not a
+    /// permutation, so no scope can ever satisfy it.
+    OrientationCondNotAPermutation {
+        /// The rule.
+        symbol: String,
+        /// The mapping as written, local `X`/`Y`/`Z` to world axis.
+        axes: [Axis; 3],
+    },
 }
 
 impl fmt::Display for ProgramError {
@@ -647,6 +856,18 @@ impl fmt::Display for ProgramError {
             ProgramError::SplitAxisOutsideSplit { symbol } => {
                 write!(f, "rule {symbol:?} uses `split_axis` outside a split")
             }
+            ProgramError::BadAnchorName { symbol, anchor } => write!(
+                f,
+                "rule {symbol:?} marks the anchor {anchor:?}, which is not kebab-case; an \
+                 exported anchor is named `anchor/<kebab>` because that is the id the DSL \
+                 resolves, so a stem the DSL could never name is refused here"
+            ),
+            ProgramError::OrientationCondNotAPermutation { symbol, axes } => write!(
+                f,
+                "rule {symbol:?} guards on the orientation {axes:?}, which is not a permutation \
+                 of the three world axes — no scope can ever match it, so the alternative is \
+                 dead code"
+            ),
         }
     }
 }
@@ -795,6 +1016,20 @@ impl Program {
                 self.check_orient(symbol, orient, in_split)?;
                 self.check_node(symbol, body, in_split)
             }
+            Node::Mark { mark, body } => {
+                if !is_kebab(&mark.anchor) {
+                    return Err(ProgramError::BadAnchorName {
+                        symbol: symbol.to_string(),
+                        anchor: mark.anchor.clone(),
+                    });
+                }
+                if let MarkAt::Offset { x, y, z } = &mark.at {
+                    self.check_expr(symbol, x)?;
+                    self.check_expr(symbol, y)?;
+                    self.check_expr(symbol, z)?;
+                }
+                self.check_node(symbol, body, in_split)
+            }
             Node::Split(split) => {
                 if split.sizes.is_empty() || split.children.is_empty() {
                     return Err(ProgramError::EmptySplit {
@@ -851,7 +1086,23 @@ impl Program {
 
     fn check_cond(&self, symbol: &str, cond: &Cond) -> Result<(), ProgramError> {
         match cond {
-            Cond::Always | Cond::Otherwise | Cond::Orientation { .. } => Ok(()),
+            Cond::Always | Cond::Otherwise => Ok(()),
+            // An orientation is a permutation by definition (`geom::Orientation`),
+            // but the guard spells one out field by field, so `{x: z, y: z, z: z}`
+            // is expressible. It matches nothing, ever — which at expansion time
+            // surfaces as a baffling `NoApplicableRule` about a *different*
+            // alternative. Refuse it where it was written (PR #266 review).
+            Cond::Orientation { x, y, z } => {
+                let axes = [*x, *y, *z];
+                if Orientation::from_axes(axes).is_permutation() {
+                    Ok(())
+                } else {
+                    Err(ProgramError::OrientationCondNotAPermutation {
+                        symbol: symbol.to_string(),
+                        axes,
+                    })
+                }
+            }
             Cond::Cmp { lhs, rhs, .. } => {
                 self.check_expr(symbol, lhs)?;
                 self.check_expr(symbol, rhs)

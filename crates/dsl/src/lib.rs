@@ -25,7 +25,7 @@ pub use canonical::to_canonical_string;
 pub use diagnostic::{Diagnostic, Severity, codes};
 pub use envelope::{
     Campaign, Envelope, RawCampaign, SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage,
-    check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08,
+    check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
     parse_campaign,
 };
 pub use ids::{
@@ -52,14 +52,14 @@ pub use stages::{
     CameraSubject, CameraTarget, CameraWaypoint, Carrier, CastAbsence, CastBarks, CastDialogue,
     CastDialogueKeyword, CastEntry, CastPlace, CastPlacement, Class, ClassesContent, DamageKind,
     DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EffectSite,
-    EnchantedItem, EncounterTier, EnvTrigger, EquipItem, Facing, Fixture, Happening, HappeningVerb,
-    Horizon, KitItem, Lethality, Loot, LootItem, MAX_POTION_AMPLIFIER, MAX_POTION_DURATION_TICKS,
-    MobAttributes, MobEffect, MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent,
-    Objective, Persona, Pieces, PlannedQuest, PotionContents, PotionEffect, Prop, Quest,
-    QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep, Shortcut,
-    ShotStyle, SkinModel, SoundAt, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset,
-    TrapTrigger, Trigger, TriggerOn, Wave, WaveLane, WaveMob, WaveSummon, WorldContent,
-    WorldDifficulty, WorldTime, WorldWeather, is_potion_bearing_item,
+    EnchantedItem, EncounterTier, EnvTrigger, EquipItem, EquipSlot, Facing, Fixture, Happening,
+    HappeningVerb, Horizon, ItemDrop, KitItem, Lethality, Loot, LootItem, MAX_POTION_AMPLIFIER,
+    MAX_POTION_DURATION_TICKS, MobAttributes, MobDrop, MobEffect, MobEquipment, NarrateStyle, Npc,
+    NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces, PlannedQuest, PotionContents,
+    PotionEffect, Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role,
+    SequenceStep, Shortcut, ShotStyle, SkinModel, SlotDrop, SoundAt, StealthZone, TimedGate, Trap,
+    TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerOn, Wave, WaveLane, WaveMob,
+    WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather, is_potion_bearing_item,
 };
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,

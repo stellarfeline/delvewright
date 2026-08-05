@@ -27,7 +27,8 @@ pub use temple::temple;
 
 use crate::geom::Axis;
 use crate::ir::{
-    Alternative, ArithOp, CmpOp, Cond, DimRef, Expr, Node, Reorient, Rounding, Size, Split,
+    Alternative, ArithOp, CmpOp, Cond, DimRef, Expr, Mark, MarkAt, Node, Reorient, Rounding, Size,
+    Split,
 };
 
 // ---------------------------------------------------------------------------
@@ -108,6 +109,14 @@ fn fill(role: &str) -> Node {
 /// Write air.
 fn void() -> Node {
     Node::Void
+}
+
+/// Declare an anchor on this scope, then expand `body`.
+fn marked(anchor: &str, at: MarkAt, body: Node) -> Node {
+    Node::Mark {
+        mark: Mark::new(anchor, at),
+        body: Box::new(body),
+    }
 }
 
 /// A local dimension.

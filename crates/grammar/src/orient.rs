@@ -28,6 +28,20 @@ pub enum OrientError {
     },
 }
 
+impl std::fmt::Display for OrientError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OrientError::Conflict { axis } => write!(
+                f,
+                "the reorientation names the parent's local {axis:?} axis twice; \
+                 an orientation is a permutation, so each axis may be claimed once"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for OrientError {}
+
 /// Complete `request` into a full permutation.
 ///
 /// `current` is the parent's local-to-world mapping, `size` its world-space

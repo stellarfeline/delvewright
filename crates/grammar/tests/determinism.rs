@@ -92,8 +92,23 @@ fn expanding_twice_gives_the_same_bytes() {
                 program.name
             );
             assert_eq!(a.stats, b.stats, "{}", program.name);
+            // Anchors are output too: same program, same seed, same names on the
+            // same cells — including the per-stem numbering, which is a fact
+            // about the derivation and not about the run.
+            assert_eq!(
+                a.anchors, b.anchors,
+                "{}'s anchors are not reproducible at seed {seed}",
+                program.name
+            );
         }
     }
+    assert!(
+        !expand(&castle(), CASTLE_REGION, &ExpandOptions::seeded(0))
+            .unwrap()
+            .anchors
+            .is_empty(),
+        "the castle declares an anchor, so the assertion above is not vacuous"
+    );
 }
 
 #[test]

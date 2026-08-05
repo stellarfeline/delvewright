@@ -362,3 +362,29 @@ test("a die-retry entry publishes what the settled re-engage probe saw", () => {
   assert.equal(re["farthest_blocks"], 61.25, "how far a feral mob strayed is evidence");
   assert.equal(re["settle_ms"], 750);
 });
+
+test("named-entity deaths carry their scripted_teardown/combat classification, never dropped", () => {
+  // The island run's report surfaced five named-entity deaths with no way to tell
+  // which two were the compiler's despawn-actor vanishes and which three were
+  // real losses. `kind` is the fix: reclassified, both sides always present.
+  const report = new RunReport("nobodys-cave-island", "normal");
+  report.recordNamedEntityDeaths([
+    { name: "Hollow Gate-Warder", entityId: 1, position: [10, 63, -4], kind: "combat" },
+    { name: "island-herdsman", entityId: 4, position: [10, -128, 9], kind: "scripted_teardown" },
+  ]);
+  const json = report.toJSON() as { named_entity_deaths: Record<string, unknown>[] };
+  assert.equal(json["named_entity_deaths"].length, 2);
+  assert.equal(json["named_entity_deaths"][0]!["name"], "Hollow Gate-Warder");
+  assert.equal(json["named_entity_deaths"][0]!["kind"], "combat");
+  assert.equal(json["named_entity_deaths"][1]!["name"], "island-herdsman");
+  assert.equal(json["named_entity_deaths"][1]!["kind"], "scripted_teardown");
+  assert.deepEqual(json["named_entity_deaths"][1]!["position"], [10, -128, 9]);
+});
+
+test("a report with no named-entity deaths still carries an empty (not absent) array", () => {
+  // Unlike `branches`, this section is always present — its absence would have
+  // to be read as "the harness cannot see any deaths", not "there were none".
+  const report = new RunReport("hello-world", "easy");
+  const json = report.toJSON() as { named_entity_deaths: unknown[] };
+  assert.deepEqual(json["named_entity_deaths"], []);
+});

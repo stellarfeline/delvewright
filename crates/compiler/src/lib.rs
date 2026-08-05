@@ -20,6 +20,9 @@
 //!   body may occupy the same space as block geometry, at its spawn anchor or at
 //!   any tick of any walked leg.
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
+//! - [`integrity`]: the emitted call graph is closed (`DW0497`) — a
+//!   `function <ns>:<name>` the compiler writes must point at a function the
+//!   compiler wrote, whatever feature emitted either half.
 //! - [`waypoints`]: export the DW0311-proven critical-path routes as validation
 //!   metadata (`validation/critical-path-waypoints.json`) for leg-by-leg bot nav.
 //! - [`creator`]: the playtest-only creator overlay (`creator-datapack/`, spec-0006).
@@ -59,6 +62,7 @@ pub mod edit;
 pub mod emit;
 pub mod flow;
 pub mod gates;
+pub mod integrity;
 pub mod light;
 pub mod load;
 pub mod loot;

@@ -34,6 +34,8 @@
 //! | `dlg.<npc>.<node>.opt.<i>.label` | each dialogue option `label` |
 //! | `dlg.<npc>.<node>.opt.<i>.tooltip` | that option's hover `tooltip` (v0.8, only if set) |
 //! | `wave.<wave>.mob.<i>.name` | a wave mob's custom `name` (only if set) |
+//! | `wave.<wave>.mob.<i>.drop.<n>.name` | a declared quest-item drop's display `name` (v0.9, only if set) |
+//! | `actor.<actor>.drop.<n>.name` | an actor's declared quest-item drop `name` (v0.9, only if set) |
 //! | `fx.…​.narrate` / `fx.…​.give` | a `narrate` line / named `give-item` in an effect list |
 //! | `fx.…​.rest_prompt` / `.rest_label` / `.save_label` | a `bonfire`'s authored rest-dialog strings (v0.8, only if set) |
 //! | `fx.…​.sealed_hint` | a `close-gate`'s authored answer to a right-click on the seal (v0.8, only if set) |
@@ -334,6 +336,25 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
         for (i, mob) in w.mobs.iter_mut().enumerate() {
             if let Some(name) = mob.name.as_mut() {
                 f(&format!("wave.{wl}.mob.{i}.name"), name);
+            }
+            // Stage 5 — v0.9 declared quest-item drops (task #179). The name
+            // rides the dropped stack's `custom_name`, so the player reads it off
+            // the ground and off their own hotbar: as player-visible as a wave
+            // mob's own name, and translated like one.
+            for (n, dr) in mob.drops.iter_mut().enumerate() {
+                if let Some(name) = dr.name_mut() {
+                    f(&format!("wave.{wl}.mob.{i}.drop.{n}.name"), name);
+                }
+            }
+        }
+    }
+    // Stage 5 — v0.9 actor drops (task #179), keyed off the actor id exactly as
+    // a wave mob's drop is keyed off its wave.
+    for a in &mut c.quests.content.actors {
+        let al = local(a.id.as_str()).to_string();
+        for (n, dr) in a.drops.iter_mut().enumerate() {
+            if let Some(name) = dr.name_mut() {
+                f(&format!("actor.{al}.drop.{n}.name"), name);
             }
         }
     }
