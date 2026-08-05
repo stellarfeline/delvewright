@@ -3579,13 +3579,18 @@ export class MineflayerExecutor implements StepExecutor {
    *     build — the kit survives the death — and class state lives in scoreboard
    *     values and player tags, which survive it too;
    *   * destructive, because `class_apply_<class>` ends in
-   *     `teleport @s <campaign entry point>` and the `dw.class` trigger is
-   *     re-enabled for every player on every tick. Chatting it again therefore
+   *     `teleport @s <campaign entry point>` and the `dw.class` trigger was, at the
+   *     time, re-enabled for every player on every tick. Chatting it again therefore
    *     teleported the bot off the checkpoint it had just respawned on, back to the
    *     start of the delve — 150 blocks and eight levels away on the bell — and the
    *     "walk back to the encounter" leg then measured a route no dying player ever
    *     walks. Every trial recorded a truthful `respawn_pos` at the bonfire and then
    *     immediately made it a lie.
+   *
+   * The compiler now seals that warp shut (#122): the class trigger is armed only
+   * for a player who has not classed, so a replay would fail rather than teleport.
+   * The rule here is unchanged and does not lean on it — a harness that re-classes
+   * is stating something false about the run whether or not the pack lets it.
    *
    * So: measure the position, then re-equip what the player kept. Nothing here may
    * move the bot — the respawn point IS the thing under test.

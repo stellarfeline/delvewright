@@ -86,6 +86,15 @@ from the sea, so `DW0322` has its step). Four sealed burial mounds, driftwood, a
 stone fire-ring, and a leaning banner pole beside the mound the elite sleeps
 against.
 
+**BF1 stands far down the western strand**, not beside the landing. The fire is
+where the party respawns, so `DW0478` forbids it inside any hostile's aggro
+range — and the elite kneels near the centre of the field with the documented
+16-block default reach. The tide bounds the piece at local z=33, so no cell on
+the centre line is more than 17 blocks from the kneel: clearing 16 with margin
+needs the lateral run west, and that is why the fire is where it is (19.8 blocks;
+owner ruling 2026-08-04, task #132). The driftwood spar moved off local x=11 with
+it — a log lying on the rest cell is a rest cell the anchor cannot stand on.
+
 The piece exists to stage the **optional elite**. Its legibility is geometry, not
 signage: the field is deliberately wide and empty on both flanks, and the
 generator *proves* it — `assert_field_open` rejects any mound that comes within
@@ -141,6 +150,24 @@ and the undercroft socket opens straight out of it — "the stair down is in the
 chapel" is true in geometry, not just in prose. Inside: the hearth (BF2, the
 regroup/dialogue stage), the cracked bell on a stone-and-timber frame with its
 spill of shattered masonry, and the altar.
+
+**BF2 sits in the south wall at the east end of the nave, beside the undercroft
+door** — the last fire before the way down. Same `DW0478` constraint as BF1, and
+here it is binding rather than comfortable: a lane's reach is its `aggro_radius`
+plus the measured 7.9-block march drift, so a fire beside a 16-block lane must
+clear its polyline by more than 23.9 blocks. The gate lane ends out in the yard,
+and the nave's two **east corners** are the only cells far enough — they top out
+near 26.9 blocks and the hearth's rest cell makes 25.7. A campaign that gives
+this piece a wider siege lane has no room left in the chapel and must move the
+lane, not the fire.
+
+Why no generator assert pins that: which anchors are hostile, and whether a
+`l2-lane-*` chain is a marched lane or an unused waypoint, is a **campaign**
+fact — this tileset ships six lane anchors and the drowned bell marches only
+three of them. A tileset-level rule would have to guess, and guessing is what
+`DW0475` forbids. `DW0478` owns the judgement because it is the layer that can
+see the campaign; the tileset's job is to keep the geometry that lets the answer
+exist.
 
 ### `tk-cistern` — the undercroft and the loop
 

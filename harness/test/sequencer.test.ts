@@ -335,11 +335,12 @@ test("retryOnDeath recovers, re-arms where the bot stands, and retries the dead 
 
 test("the death retry never re-selects the class — that would teleport the bot away", async () => {
   // task #120. `class_apply_<class>` ends in `teleport @s <campaign entry point>`
-  // and the `dw.class` trigger is re-enabled for every player on every tick, so a
-  // second `/trigger dw.class` after a death silently warps the bot back to the
-  // start of the delve. The whole retry path — and every die-retry measurement
-  // taken through it — is about where the player RESPAWNS, so nothing on it may
-  // move the bot.
+  // and the `dw.class` trigger was then re-enabled for every player on every tick,
+  // so a second `/trigger dw.class` after a death silently warped the bot back to
+  // the start of the delve. The compiler seals that shut now (#122), but the rule
+  // here does not lean on it: the whole retry path — and every die-retry
+  // measurement taken through it — is about where the player RESPAWNS, so nothing
+  // on it may move the bot.
   const executor = new DyingExecutor(1);
   await runSequence(path([selectClass, reach, assertComplete]), executor, {
     retryOnDeath: true,
