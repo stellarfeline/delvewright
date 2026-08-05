@@ -63,12 +63,13 @@ const STORE_REGION: Box3 = Box3::at_origin([7, 5, 14]);
 
 /// Cells a body and a sightline pass through.
 ///
-/// The grammar's terminals in these two programs are stone and a floor skull.
-/// A skull is neither a barrier nor an occluder, and saying so matters: the
-/// teaching niche has one on the exact cell its anchor names, so a naive
-/// "not air means solid" predicate would report that niche as unreachable and
-/// invisible. Outside the region counts as blocking — a ray that leaves the
-/// prefab has left the thing being proved.
+/// The grammar's terminals in these programs are stone, timber, barrels and a
+/// floor skull. A skull is neither a barrier nor an occluder, and saying so
+/// matters: the teaching niche has one on the exact cell its anchor names, so a
+/// naive "not air means solid" predicate would report that niche as unreachable
+/// and invisible. Everything else is a full block, barrels included — a body
+/// stands on top of a barrel, not inside it. Outside the region counts as
+/// blocking: a ray that leaves the prefab has left the thing being proved.
 fn passable(model: &VoxelModel, pos: [i32; 3]) -> bool {
     match model.get(pos) {
         None => false,
@@ -687,7 +688,11 @@ fn the_rafters_are_geometry_a_body_can_stand_on() {
             [x, y - 1, z]
         );
         // The beam runs on into the wall, so there is a rafter to walk out along.
-        let inward = if x < HALL_REGION.size[0] as i32 / 2 { -1 } else { 1 };
+        let inward = if x < HALL_REGION.size[0] as i32 / 2 {
+            -1
+        } else {
+            1
+        };
         let along = [x + inward, y, z];
         assert!(
             standable(model, along),
@@ -908,11 +913,7 @@ fn the_barrel_line_holds_exactly_one_tell() {
         let model = &out.model;
         let tells: Vec<[i32; 3]> = STORE_REGION
             .positions()
-            .filter(|&p| {
-                model
-                    .get(p)
-                    .is_some_and(|b| b.name.starts_with(TELL_BLOCK))
-            })
+            .filter(|&p| model.get(p).is_some_and(|b| b.name.starts_with(TELL_BLOCK)))
             .collect();
         assert_eq!(tells.len(), 1, "seed {seed} laid {tells:?}");
 
