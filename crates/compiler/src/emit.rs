@@ -571,6 +571,20 @@ pub fn build_with_warnings(
             // room only (DW0312 if the room lacks the footing) — or, for a
             // `summon: aggro-edge` wave, on its perception ring (DW0387).
             let (waves, rings) = plan_wave_spawns(plan, &world)?;
+            // …and prove the sun is not going to fight the party's battle for it
+            // (DW0496, task #189). Runs HERE because it needs the seated cells:
+            // the question is whether open sky stands within one aggro radius of
+            // where the mobs actually land, on ground they can walk to — not of
+            // an anchor they stand around. The hollow-vigil gate yard is the
+            // motivating case: roof and two walls carved off, noon pinned, and
+            // two of three footmen dead to sunlight before the party could
+            // engage them, with every other proof green.
+            crate::daylight::check_daylight_staging(plan, &world, &blocks, &waves).map_err(
+                |e| BuildFailure::Diagnostic {
+                    code: e.code,
+                    message: e.message,
+                },
+            )?;
             // spec-0023 §2: the winnability arithmetic. Runs here because it
             // needs the SEATED spawn cells (the exact cells the datapack will
             // summon on) as well as the campaign's declarations — a hostile the

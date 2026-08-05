@@ -1,0 +1,21 @@
+{
+  "dsl_version": "0.6.0",
+  "campaign_id": "daylight-yard",
+  "stage": "quest-plan",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/hold-the-yard",
+        "goal": "Muster with the Keeper and put the garrison down.",
+        "area": "area/keep",
+        "npcs": [
+          "npc/keeper"
+        ],
+        "depends_on": [],
+        "mandatory": true,
+        "act": 1
+      }
+    ],
+    "finale": "quest/hold-the-yard"
+  }
+}
