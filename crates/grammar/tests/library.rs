@@ -2,7 +2,9 @@
 
 use delvewright_grammar::block::BlockState;
 use delvewright_grammar::ir::{Paint, Program, WeightedBlock};
-use delvewright_grammar::library::{castle, church, cliff_path, temple, watch_bay};
+use delvewright_grammar::library::{
+    ambush_door, castle, church, cliff_path, rafter_hall, store_room, temple, watch_bay,
+};
 use delvewright_grammar::{Box3, ExpandOptions, expand};
 
 /// Regions each program is comfortably sized for. Sizes below these are a
@@ -10,10 +12,13 @@ use delvewright_grammar::{Box3, ExpandOptions, expand};
 const TEMPLE_REGION: Box3 = Box3::at_origin([13, 14, 21]);
 const CASTLE_REGION: Box3 = Box3::at_origin([41, 14, 25]);
 const CHURCH_REGION: Box3 = Box3::at_origin([15, 16, 30]);
-/// The two original staging rules (spec-0027 W1) travel with the ports: they
+/// The original staging rules (spec-0027 W1 and W2) travel with the ports: they
 /// owe the same structural validity, JSON round trip and determinism.
 const CLIFF_REGION: Box3 = Box3::at_origin([3, 6, 30]);
 const PASSAGE_REGION: Box3 = Box3::at_origin([7, 7, 24]);
+const HALL_REGION: Box3 = Box3::at_origin([13, 6, 25]);
+const DOOR_REGION: Box3 = Box3::at_origin([11, 5, 13]);
+const STORE_REGION: Box3 = Box3::at_origin([7, 5, 14]);
 
 fn programs() -> Vec<(Program, Box3)> {
     vec![
@@ -22,6 +27,9 @@ fn programs() -> Vec<(Program, Box3)> {
         (church(), CHURCH_REGION),
         (cliff_path(), CLIFF_REGION),
         (watch_bay(), PASSAGE_REGION),
+        (rafter_hall(), HALL_REGION),
+        (ambush_door(), DOOR_REGION),
+        (store_room(), STORE_REGION),
     ]
 }
 

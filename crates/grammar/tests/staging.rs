@@ -1,11 +1,15 @@
-//! The W1 staging vocabulary: the knockback niche (`cliff_path`) and the watch
-//! bay (`watch_bay`).
+//! The staging vocabulary's gates: W1 — the knockback niche (`cliff_path`) and
+//! the watch bay (`watch_bay`) — and W2 — the rafter perch (`rafter_hall`), the
+//! corner-ambush alcove (`ambush_door`) and the container tell (`store_room`).
 //!
-//! These two rules exist for their **gates**, not for their prettiness. A niche
-//! is only a knockback test if the recess is shallow enough to swing into and
-//! the ledge is the only way past; a bay is only observability hardware if you
-//! can actually see the hazard from it. Both claims are geometry, so both are
-//! asserted here against the expanded model rather than described in prose.
+//! These rules exist for their **gates**, not for their prettiness. A niche is
+//! only a knockback test if the recess is shallow enough to swing into and the
+//! ledge is the only way past; a bay is only observability hardware if you can
+//! actually see the hazard from it; a rafter is only fair if the doorway can see
+//! it, and an alcove is only an ambush if the doorway cannot. Every one of those
+//! claims is geometry, so every one is asserted here against the expanded model
+//! rather than described in prose — and every one is shown going red, because a
+//! gate nobody has watched fail proves nothing.
 //!
 //! The sightline walk below is deliberately the same shape as the compiler's
 //! `DW0388` proof (`crates/compiler/src/nav.rs`: eye at 1.62 over the watch
@@ -19,7 +23,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_grammar::block::BlockState;
 use delvewright_grammar::ir::Program;
-use delvewright_grammar::library::{cliff_path, watch_bay};
+use delvewright_grammar::library::rafter_hall::FLOOR_CELLS_PER_PERCH;
+use delvewright_grammar::library::{ambush_door, cliff_path, rafter_hall, store_room, watch_bay};
 use delvewright_grammar::{Anchor, Box3, ExpandOptions, Expansion, VoxelModel, expand};
 
 /// The cliff path fixture: three block wide (ledge, recess lane, backing),
@@ -33,6 +38,24 @@ const PASSAGE_REGION: Box3 = Box3::at_origin([7, 7, 24]);
 /// The seed the passage fixture is pinned to. `watch_bay` has no probabilistic
 /// rule, so the seed only has to be *stated*, not chosen.
 const PASSAGE_SEED: u64 = 1;
+
+/// The rafter hall fixture: eleven cells of nave between the side walls, exactly
+/// tall enough for the truss, long enough to carry seven of them.
+const HALL_REGION: Box3 = Box3::at_origin([13, 6, 25]);
+/// The same box one course shorter — under `TRUSS_MIN_HEIGHT`, so the hall is
+/// legal and has no rafters in it.
+const SHORT_HALL_REGION: Box3 = Box3::at_origin([13, 5, 25]);
+/// `rafter_hall` has no probabilistic rule; the seed is stated, not chosen.
+const HALL_SEED: u64 = 1;
+
+/// The threshold fixture. Longer than it is wide so the frame's `Largest` puts
+/// travel on world `Z`, which is what the module diagram draws.
+const DOOR_REGION: Box3 = Box3::at_origin([11, 5, 13]);
+/// `ambush_door` has no probabilistic rule either.
+const DOOR_SEED: u64 = 1;
+
+/// The storeroom fixture: a fourteen-barrel row.
+const STORE_REGION: Box3 = Box3::at_origin([7, 5, 14]);
 
 // ---------------------------------------------------------------------------
 // Reading the expanded model the way a player meets it
@@ -519,8 +542,459 @@ fn an_approach_under_the_standoff_is_refused_not_shortened() {
     );
 }
 
-/// Both programs state a smallest region they expand in. Documented numbers
-/// drift; this holds them to the code from both sides.
+// ---------------------------------------------------------------------------
+// R — the rafter perch
+// ---------------------------------------------------------------------------
+
+/// Every cell of the model at the same height as `anchor/perch-1`, which is the
+/// perch course: the layer the truss's standable cells live in.
+fn perch_course_y(anchors: &BTreeMap<String, Anchor>) -> i32 {
+    indexed(anchors, "perch")
+        .first()
+        .expect("the trussed hall declares perches")[1]
+}
+
+/// The fixture: seven rafters over a nave, byte-identical on a second
+/// expansion, anchors and all.
+#[test]
+fn a_rafter_hall_expands_deterministically() {
+    let program = rafter_hall();
+    let a = expand_at(&program, HALL_REGION, HALL_SEED);
+    let b = expand_at(&program, HALL_REGION, HALL_SEED);
+    assert_eq!(a.model.canonical_bytes(), b.model.canonical_bytes());
+    assert_eq!(a.anchors, b.anchors);
+
+    let perches = indexed(&a.anchors, "perch");
+    assert_eq!(perches.len(), 7, "the pinned fixture is a seven-perch hall");
+    assert!(
+        a.anchors.contains_key("anchor/hall-door"),
+        "the hall names the cell its fairness is measured from: {:#?}",
+        a.anchors
+    );
+    // Sides alternate, so the truss is not a row of shelves down one wall — the
+    // dossier's monoculture complaint applies within a rule as well as across a
+    // level.
+    let xs: BTreeSet<i32> = perches.iter().map(|p| p[0]).collect();
+    assert_eq!(xs.len(), 2, "perches sit on both walls: {perches:?}");
+}
+
+/// The gate the entry exists for: standing in the doorway, you can see every
+/// rafter. Fairness in the souls grammar is carried by silhouette
+/// (`docs/notes/souls-design-language.md` §4.3), and a silhouette you cannot
+/// see is not a telegraph.
+#[test]
+fn every_perch_is_visible_from_the_hall_door() {
+    let out = expand_at(&rafter_hall(), HALL_REGION, HALL_SEED);
+    let model = &out.model;
+    let door = out.anchors["anchor/hall-door"].pos;
+    assert!(standable(model, door), "the door cell {door:?}");
+
+    let perches = indexed(&out.anchors, "perch");
+    assert!(!perches.is_empty());
+    for perch in &perches {
+        if let Err(blocker) = sees(model, door, *perch) {
+            panic!(
+                "the doorway {door:?} cannot see the perch {perch:?}: {blocker:?} is in the way \
+                 — a rafter the player cannot read from the door is an ambush with no telegraph"
+            );
+        }
+    }
+}
+
+/// ...and the gate has teeth. `span_beams = 1` builds the *obvious* truss —
+/// timbers spanning wall to wall — and the same check must go red, because an
+/// eye on the floor is below the beam plane and a perch is above it, so the ray
+/// has to cross the plane and past a few cells of hall some nearer beam is
+/// always in the crossing. That is the whole reason this rule's rafters are
+/// corbels with an open centre span.
+#[test]
+fn a_full_span_truss_blinds_the_perches() {
+    let mut blinded = rafter_hall();
+    blinded.set_param("span_beams", 1).unwrap();
+    let out = expand_at(&blinded, HALL_REGION, HALL_SEED);
+    let model = &out.model;
+    let door = out.anchors["anchor/hall-door"].pos;
+
+    let blind: Vec<[i32; 3]> = indexed(&out.anchors, "perch")
+        .into_iter()
+        .filter(|p| sees(model, door, *p).is_err())
+        .collect();
+    assert!(
+        !blind.is_empty(),
+        "the truss was closed across the nave and the doorway still saw every \
+         perch — the sightline gate proves nothing"
+    );
+
+    // The timbers are a ceiling, not a wall: the nave stays walkable end to end,
+    // so what the gate caught is blindness and not a severed hall.
+    let cells = standable_cells(model);
+    let far = HALL_REGION.size[2] as i32 - 1;
+    let entry: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == far).collect();
+    let exit: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == 0).collect();
+    assert!(connected(&cells, &entry, &exit));
+}
+
+/// The second gate: at most one perch per 24 floor cells. The Cathedral's
+/// documented failure is ambush *monoculture*, and a density cap is the smallest
+/// machine-checkable form of "not every space is the same trick".
+#[test]
+fn the_perch_density_stays_under_the_cap() {
+    let out = expand_at(&rafter_hall(), HALL_REGION, HALL_SEED);
+    let perches = indexed(&out.anchors, "perch").len() as i64;
+    let floor = nave_floor_cells(&out);
+    assert!(
+        perches * FLOOR_CELLS_PER_PERCH <= floor,
+        "{perches} perches over {floor} floor cells is denser than one per \
+         {FLOOR_CELLS_PER_PERCH}"
+    );
+
+    // ...and the cap is what the rule refuses on, not something the fixture
+    // happens to satisfy. Rafter spacing runs *along* the hall, so a narrower
+    // hall of the same length carries the same seven rafters over less floor.
+    // Eight across is the width at which that genuinely breaks the cap — and it
+    // is the width at which the rule declines to build.
+    const NARROW_WIDTH: u32 = 8;
+    let narrow = Box3::at_origin([NARROW_WIDTH, 6, HALL_REGION.size[2]]);
+    let narrow_floor = (NARROW_WIDTH as i64 - 2) * HALL_REGION.size[2] as i64;
+    assert!(
+        perches * FLOOR_CELLS_PER_PERCH > narrow_floor,
+        "the narrower hall would not have broken the cap ({perches} perches over \
+         {narrow_floor} floor cells), so refusing it proves nothing"
+    );
+    let err = expand(&rafter_hall(), narrow, &ExpandOptions::seeded(HALL_SEED)).unwrap_err();
+    assert!(
+        err.to_string().contains("no alternative of rule"),
+        "expected a refusal on the density cap, got: {err}"
+    );
+}
+
+/// The third gate: a rafter is geometry, not a coordinate. Every perch is a cell
+/// a body stands in, on timber, with headroom — and so is the rest of the corbel
+/// it sits on, because an occupant that can only exist on one cell is a spawn
+/// point wearing a beam's name.
+#[test]
+fn the_rafters_are_geometry_a_body_can_stand_on() {
+    let out = expand_at(&rafter_hall(), HALL_REGION, HALL_SEED);
+    let model = &out.model;
+    let perches = indexed(&out.anchors, "perch");
+    assert!(!perches.is_empty());
+    for perch in &perches {
+        let [x, y, z] = *perch;
+        assert!(standable(model, *perch), "the perch cell {perch:?}");
+        assert!(
+            solid(model, [x, y - 1, z]),
+            "{:?} is not timber — the perch has nothing under it",
+            [x, y - 1, z]
+        );
+        // The beam runs on into the wall, so there is a rafter to walk out along.
+        let inward = if x < HALL_REGION.size[0] as i32 / 2 { -1 } else { 1 };
+        let along = [x + inward, y, z];
+        assert!(
+            standable(model, along),
+            "{along:?}, the next cell of the same beam, is not standable"
+        );
+    }
+
+    // The red side: the perch course is *mostly* not standable. If it were, the
+    // assertion above would hold over any hall with a floor at that height and
+    // would be saying nothing about rafters at all.
+    let y = perch_course_y(&out.anchors);
+    let mid = HALL_REGION.size[0] as i32 / 2;
+    assert!(
+        !standable(model, [mid, y, perches[0][2]]),
+        "the centre of the nave is standable at rafter height — the truss is not \
+         a truss, it is a floor"
+    );
+
+    // And a rafter is not a mezzanine: nothing walks up to it from the ground.
+    let cells = standable_cells(model);
+    let floor: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[1] < y).collect();
+    let up: BTreeSet<[i32; 3]> = perches.iter().copied().collect();
+    assert!(
+        !connected(&cells, &floor, &up),
+        "a perch is reachable on foot from the nave — that is a ledge, not a rafter"
+    );
+}
+
+/// A hall too short for the truss layer emits none, and is still a hall: same
+/// shell, same door anchor, nothing missing and nothing refused. Both shapes are
+/// asserted, because "optional" is a claim about two outputs.
+#[test]
+fn a_hall_under_six_tall_is_a_hall_without_rafters() {
+    let tall = expand_at(&rafter_hall(), HALL_REGION, HALL_SEED);
+    let short = expand_at(&rafter_hall(), SHORT_HALL_REGION, HALL_SEED);
+
+    assert!(!indexed(&tall.anchors, "perch").is_empty());
+    assert!(
+        indexed(&short.anchors, "perch").is_empty(),
+        "a five-tall hall grew rafters: {:#?}",
+        short.anchors
+    );
+    assert!(
+        short.anchors.contains_key("anchor/hall-door"),
+        "the short hall still names its doorway"
+    );
+    // It is a room, not a solid block: the nave is walkable end to end.
+    let cells = standable_cells(&short.model);
+    let far = SHORT_HALL_REGION.size[2] as i32 - 1;
+    let entry: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == far).collect();
+    let exit: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == 0).collect();
+    assert!(!entry.is_empty());
+    assert!(connected(&cells, &entry, &exit));
+}
+
+/// Floor cells of the nave — the denominator the density cap is stated over.
+/// Measured off the model rather than computed from the region, because the side
+/// walls are not floor anybody stands on.
+fn nave_floor_cells(out: &Expansion) -> i64 {
+    let region = out.model.region();
+    let y = region.origin[1] + 1;
+    region
+        .positions()
+        .filter(|&p| p[1] == y && standable(&out.model, p))
+        .count() as i64
+}
+
+// ---------------------------------------------------------------------------
+// A — the corner-ambush alcove
+// ---------------------------------------------------------------------------
+
+/// The wall's Z, read off the geometry rather than recomputed from parameters:
+/// the one plane between the alcove and the approach that is solid everywhere
+/// except the doorway.
+fn wall_plane(out: &Expansion) -> i32 {
+    let alcove = out.anchors["anchor/alcove"].pos;
+    let threshold = out.anchors["anchor/threshold"].pos;
+    assert_eq!(
+        alcove[1], threshold[1],
+        "the alcove and the doorway share a floor"
+    );
+    threshold[2]
+}
+
+/// The gate this entry exists for, and the first one in the vocabulary that runs
+/// backwards: from **no** standable cell of the approach can the alcove be seen.
+/// Asserted cell by cell — a single counter-example is the ambush stopping being
+/// one.
+#[test]
+fn the_alcove_is_blind_from_every_approach_cell() {
+    let out = expand_at(&ambush_door(), DOOR_REGION, DOOR_SEED);
+    let model = &out.model;
+    let alcove = out.anchors["anchor/alcove"].pos;
+    let wall = wall_plane(&out);
+    assert!(standable(model, alcove), "the alcove cell {alcove:?}");
+
+    let approach: Vec<[i32; 3]> = standable_cells(model)
+        .into_iter()
+        .filter(|c| c[2] > wall)
+        .collect();
+    assert!(
+        approach.len() > 20,
+        "the fixture has an approach worth checking: {}",
+        approach.len()
+    );
+    for cell in &approach {
+        if sees(model, *cell, alcove).is_ok() {
+            panic!(
+                "the alcove {alcove:?} is visible from the approach cell {cell:?} — a corner \
+                 ambush the player can read through the door is a corner ambush that will not \
+                 happen"
+            );
+        }
+    }
+}
+
+/// ...and the gate has teeth. `expose = 1` widens the opening over the alcove's
+/// own lane, which is the one mistake that turns the pocket into a lit stage,
+/// and the same check must go red.
+#[test]
+fn a_widened_doorway_exposes_the_alcove() {
+    let mut exposed = ambush_door();
+    exposed.set_param("expose", 1).unwrap();
+    let out = expand_at(&exposed, DOOR_REGION, DOOR_SEED);
+    let alcove = out.anchors["anchor/alcove"].pos;
+    let wall = wall_plane(&out);
+
+    let seen: Vec<[i32; 3]> = standable_cells(&out.model)
+        .into_iter()
+        .filter(|c| c[2] > wall && sees(&out.model, *c, alcove).is_ok())
+        .collect();
+    assert!(
+        !seen.is_empty(),
+        "the doorway was widened straight over the alcove and the blindness check \
+         still reported it hidden from every approach cell — the gate proves nothing"
+    );
+}
+
+/// The second gate: the alcove is *one swing* from the cell the player lands in.
+/// A blind pocket three cells away is a room the ambusher has to cross, which is
+/// a different (and much weaker) encounter.
+#[test]
+fn the_alcove_is_one_swing_from_the_doorways_inside_cell() {
+    // Swept over `door_offset`, because an adjacency that only holds at the
+    // default is an adjacency nobody arranged.
+    for offset in [1i64, 2, 4] {
+        let mut program = ambush_door();
+        program.set_param("door_offset", offset).unwrap();
+        let out = expand_at(&program, DOOR_REGION, DOOR_SEED);
+        let model = &out.model;
+        let alcove = out.anchors["anchor/alcove"].pos;
+        let threshold = out.anchors["anchor/threshold"].pos;
+        let inside = [threshold[0], threshold[1], threshold[2] - 1];
+
+        assert!(
+            standable(model, inside),
+            "offset {offset}: the cell inside the doorway {inside:?}"
+        );
+        let step = (0..3).map(|i| (alcove[i] - inside[i]).abs()).sum::<i32>();
+        assert_eq!(
+            step, 1,
+            "offset {offset}: the alcove {alcove:?} is not adjacent to the doorway's \
+             inside cell {inside:?}"
+        );
+        assert_ne!(alcove[2], threshold[2], "the alcove is not in the wall");
+        // The anchor really did move with the door — the fixture is not agreeing
+        // with two hard-coded numbers that happen to differ by one.
+        assert_eq!(threshold[0], offset as i32 + 1);
+    }
+}
+
+/// The third gate, the same shape as `cliff_path`'s: the doorway is the **only**
+/// way through. A wall with a second hole in it is scenery, and an ambush beside
+/// scenery is optional.
+#[test]
+fn the_doorway_is_the_only_route_through_the_wall() {
+    let out = expand_at(&ambush_door(), DOOR_REGION, DOOR_SEED);
+    let cells = standable_cells(&out.model);
+    let wall = wall_plane(&out);
+    let threshold = out.anchors["anchor/threshold"].pos;
+
+    let approach: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] > wall).collect();
+    let inside: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] < wall).collect();
+    assert!(!approach.is_empty() && !inside.is_empty());
+    assert!(
+        connected(&cells, &approach, &inside),
+        "the doorway does not go anywhere"
+    );
+
+    let cut: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .copied()
+        .filter(|c| c[0] != threshold[0] || c[2] != wall)
+        .collect();
+    assert!(
+        !connected(&cut, &approach, &inside),
+        "with the doorway plugged the wall still lets a walker through — there is \
+         a second way round, so passing the alcove is optional"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// C — the container tell
+// ---------------------------------------------------------------------------
+
+/// The odd barrel's block, and the plain one's.
+const TELL_BLOCK: &str = "minecraft:spruce_log";
+const BARREL_BLOCK: &str = "minecraft:barrel";
+
+/// The first gate: **exactly** one tell, every time, and the anchor is on it.
+/// The count is read off the blocks, not off the anchors — an anchor that names
+/// a plain barrel would satisfy any assertion about anchors alone.
+#[test]
+fn the_barrel_line_holds_exactly_one_tell() {
+    let program = store_room();
+    for seed in 0..12u64 {
+        let out = expand_at(&program, STORE_REGION, seed);
+        let model = &out.model;
+        let tells: Vec<[i32; 3]> = STORE_REGION
+            .positions()
+            .filter(|&p| {
+                model
+                    .get(p)
+                    .is_some_and(|b| b.name.starts_with(TELL_BLOCK))
+            })
+            .collect();
+        assert_eq!(tells.len(), 1, "seed {seed} laid {tells:?}");
+
+        let anchor = out.anchors["anchor/tell"].pos;
+        assert_eq!(anchor, tells[0], "seed {seed}: the anchor is off the tell");
+
+        // ...and it is one *among* barrels: the rest of the row is the plain
+        // variant, so "exactly one" is not because the row is one cell long.
+        let barrels: Vec<[i32; 3]> = STORE_REGION
+            .positions()
+            .filter(|&p| {
+                model
+                    .get(p)
+                    .is_some_and(|b| b.name.starts_with(BARREL_BLOCK))
+            })
+            .collect();
+        assert_eq!(
+            barrels.len(),
+            STORE_REGION.size[2] as usize - 1,
+            "seed {seed}: the row is not full of plain barrels"
+        );
+    }
+}
+
+/// The second gate: the tell is *in* the line — a barrel beside it on at least
+/// one side. The mimic's tell works because the chest is standing where chests
+/// stand (`docs/notes/souls-design-language.md` §2.3); one odd barrel off on its
+/// own is a prop, not a tell.
+#[test]
+fn the_tell_stands_in_the_line_it_is_odd_against() {
+    let program = store_room();
+    for seed in 0..12u64 {
+        let out = expand_at(&program, STORE_REGION, seed);
+        let model = &out.model;
+        let [x, y, z] = out.anchors["anchor/tell"].pos;
+        let neighbours = [[x, y, z - 1], [x, y, z + 1]]
+            .into_iter()
+            .filter(|&p| {
+                model
+                    .get(p)
+                    .is_some_and(|b| b.name.starts_with(BARREL_BLOCK))
+            })
+            .count();
+        assert!(
+            neighbours >= 1,
+            "seed {seed}: the tell at {:?} has no barrel beside it",
+            [x, y, z]
+        );
+        // The line runs the whole lane, so the tell is inside a row and not at
+        // the end of a stub the rule stopped building.
+        let line_start = out.anchors["anchor/store-line"].pos;
+        assert_eq!([line_start[0], line_start[1]], [x, y]);
+        assert_eq!(
+            line_start[2],
+            STORE_REGION.size[2] as i32 - 1,
+            "the line's near end is the approach end"
+        );
+    }
+}
+
+/// The tell's position is the seed's, not the rule's: twelve seeds must not all
+/// put it in the same place, or the "ambush tell" is a fixed landmark players
+/// learn once and never look for again.
+#[test]
+fn the_tell_moves_with_the_seed() {
+    let program = store_room();
+    let places: BTreeSet<[i32; 3]> = (0..12u64)
+        .map(|seed| expand_at(&program, STORE_REGION, seed).anchors["anchor/tell"].pos)
+        .collect();
+    assert!(
+        places.len() >= 3,
+        "12 seeds put the tell in {} places: {places:?}",
+        places.len()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Shared promises
+// ---------------------------------------------------------------------------
+
+/// Every staging program states a smallest region it expands in. Documented
+/// numbers drift; this holds them to the code from both sides.
 #[test]
 fn the_documented_minimum_regions_are_the_real_ones() {
     fn check(name: &str, program: &Program, smallest: [u32; 3], too_small: &[[u32; 3]]) {
@@ -553,31 +1027,84 @@ fn the_documented_minimum_regions_are_the_real_ones() {
         [6, 6, 15],
         &[[5, 6, 15], [6, 5, 15], [6, 6, 14]],
     );
+    // rafter_hall, trussed: the density cap ties width to length, so the
+    // smallest trussed hall is a point on a curve rather than a triple. At 12
+    // long, 10 across is it — and one cell off either horizontal breaks the cap.
+    // (Height is *not* in the list: a shorter box is the rafterless variant, not
+    // an error, which `a_hall_under_six_tall_is_a_hall_without_rafters` asserts.)
+    check(
+        "rafter_hall",
+        &rafter_hall(),
+        [10, 6, 12],
+        &[[9, 6, 12], [10, 6, 11]],
+    );
+    // ambush_door: door_offset + 5 across, head + 2 tall, and at least as long
+    // as it is wide (the frame turns length onto the longer horizontal).
+    check(
+        "ambush_door",
+        &ambush_door(),
+        [7, 5, 7],
+        &[[6, 5, 7], [7, 4, 7], [7, 5, 6]],
+    );
+    // store_room: 5 across (wall, floor, barrels, wall — and a floor worth
+    // standing on), 5 tall (floor, barrels, headroom, ceiling), 3 of row.
+    check(
+        "store_room",
+        &store_room(),
+        [5, 5, 5],
+        &[[4, 5, 5], [5, 4, 5], [5, 5, 4]],
+    );
 }
 
-/// A palette swap restyles both programs without moving a block — the same
-/// promise the ported library makes, asserted for the original rules too.
+/// A palette swap restyles every staging program without moving a block — the
+/// same promise the ported library makes, asserted for the original rules too.
+///
+/// Every role of every program, not one hand-picked role each: `store_room`'s
+/// whole point is that a campaign can restyle the barrels *and* the tell and
+/// still have a tell, which is only true if both roles are style and neither is
+/// geometry.
 #[test]
 fn the_staging_rules_restyle_without_moving_a_block() {
-    for (mut program, base, region) in [
-        (cliff_path(), cliff_path(), CLIFF_REGION),
-        (watch_bay(), watch_bay(), PASSAGE_REGION),
+    const SWATCH: &[&str] = &[
+        "deepslate_bricks",
+        "polished_blackstone",
+        "cracked_nether_bricks",
+        "warped_planks",
+    ];
+    for (base, region) in [
+        (cliff_path(), CLIFF_REGION),
+        (watch_bay(), PASSAGE_REGION),
+        (rafter_hall(), HALL_REGION),
+        (ambush_door(), DOOR_REGION),
+        (store_room(), STORE_REGION),
     ] {
-        let role = if program.palette.contains_key("rock") {
-            "rock"
-        } else {
-            "stone"
-        };
-        program
-            .set_role(
-                role,
-                delvewright_grammar::ir::Paint::Block(BlockState::simple("deepslate_bricks")),
-            )
-            .unwrap();
+        let mut restyled = base.clone();
+        let roles: Vec<String> = base.palette.keys().cloned().collect();
+        assert!(!roles.is_empty(), "{} binds no roles", base.name);
+        for (i, role) in roles.iter().enumerate() {
+            restyled
+                .set_role(
+                    role,
+                    delvewright_grammar::ir::Paint::Block(BlockState::simple(
+                        SWATCH[i % SWATCH.len()],
+                    )),
+                )
+                .unwrap();
+        }
         let plain = expand_at(&base, region, 3);
-        let dark = expand_at(&program, region, 3);
-        assert_eq!(plain.model.filled_cells(), dark.model.filled_cells());
-        assert_eq!(plain.anchors, dark.anchors);
-        assert_ne!(plain.model.canonical_bytes(), dark.model.canonical_bytes());
+        let dark = expand_at(&restyled, region, 3);
+        assert_eq!(
+            plain.model.filled_cells(),
+            dark.model.filled_cells(),
+            "{} moved a block when it was restyled",
+            base.name
+        );
+        assert_eq!(plain.anchors, dark.anchors, "{}", base.name);
+        assert_ne!(
+            plain.model.canonical_bytes(),
+            dark.model.canonical_bytes(),
+            "{}'s restyle changed nothing — the roles do not reach the blocks",
+            base.name
+        );
     }
 }
