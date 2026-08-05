@@ -520,7 +520,7 @@ dependencies = [
 
 [[package]]
 name = "delvewright-compiler"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "clap",
  "crc32fast",

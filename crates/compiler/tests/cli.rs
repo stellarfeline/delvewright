@@ -29,7 +29,10 @@ fn version_line() {
     let out = delvec(&["--version"]);
     assert_eq!(code(&out), 0);
     let s = String::from_utf8_lossy(&out.stdout);
-    assert!(s.contains("delvec 0.1.0"), "{s}");
+    assert!(
+        s.contains(&format!("delvec {}", env!("CARGO_PKG_VERSION"))),
+        "{s}"
+    );
     // Task #179 raised the implemented DSL to 0.9.0: declared drops on an
     // elite/boss (`drops[]`) and the `collect` `dropped_by` that sources a quest
     // item off a body instead of out of a box.
