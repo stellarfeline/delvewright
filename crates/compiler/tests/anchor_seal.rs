@@ -348,3 +348,144 @@ fn typod_anchor_in_a_dialogue_respawn_bundle_is_dw0360() {
         "typo'd set-block anchor in a dialogue on_respawn bundle",
     );
 }
+
+// ---------------------------------------------------------------------------
+// The deferral to `DW0447` is conditional on `DW0447` running
+// ---------------------------------------------------------------------------
+//
+// The seal defers the spec-0022 payload verbs (`volley`, `collapse`) to
+// `DW0447`, which says more. But `plan_payload_verbs` lives inside the world
+// block, so it runs only when the campaign assembles a world — and a payload verb
+// does not imply that. Nothing confines `volley`/`collapse` to `traps[].payload`:
+// `dsl::validate` reaches them through `for_each_trap_payload_deep` inside the
+// traps loop, which validates them where they are rather than forbidding them
+// elsewhere, and they are ordinary variants of the shared effect enum.
+//
+// So a `volley` on a quest's `on_complete`, in a campaign with no traps, no
+// waves, no bodies and no walkable critical leg, reaches emission with `DW0447`
+// unreachable. An unconditional deferral would trade a specific message for
+// SILENCE exactly where this seal claims to be total.
+
+/// A campaign that assembles NO world: no NPCs (so no bodies), no actors, no
+/// traps, no waves, no checkpoints, no stealth beats, no `move-npc`/`cutscene`,
+/// and a single objective — so `critical_positions().windows(2)` is empty and
+/// there is no walkable critical leg either. `nav::needs_world` is false on every
+/// count, which is what makes `DW0447` unreachable here.
+fn worldless_campaign(volley_anchor: &str) -> Campaign {
+    let quests = format!(
+        r#"{{
+  "dsl_version": "0.6.0", "campaign_id": "hello-world", "stage": "quests",
+  "content": {{
+    "quests": [ {{
+      "id": "quest/open-the-door",
+      "trigger": {{ "type": "campaign-start" }},
+      "objectives": [
+        {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2 }}
+      ],
+      "on_objective_complete": {{}},
+      "on_complete": [
+        {{ "type": "volley", "from_anchor": "{volley_anchor}",
+           "kill_zone": {{ "anchor": "{volley_anchor}", "extent": [1, 0, 1] }} }},
+        {{ "type": "campaign-complete" }}
+      ]
+    }} ]
+  }}
+}}"#
+    );
+    parse_campaign(&RawCampaign {
+        world: r#"{
+  "dsl_version": "0.6.0", "campaign_id": "hello-world", "stage": "world",
+  "content": {
+    "title": "The Keeper's Door",
+    "theme": "A lonely keep at the edge of the moor.",
+    "premise": "One locked door stands between you and the road home.",
+    "seed": 20260729, "target_minutes": 5,
+    "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
+  }
+}"#
+        .to_string(),
+        npcs: r#"{
+  "dsl_version": "0.6.0", "campaign_id": "hello-world", "stage": "npcs",
+  "content": { "npcs": [] }
+}"#
+        .to_string(),
+        classes: read_hw("classes.json"),
+        quest_plan: r#"{
+  "dsl_version": "0.6.0", "campaign_id": "hello-world", "stage": "quest-plan",
+  "content": {
+    "quests": [ { "id": "quest/open-the-door", "goal": "Leave the keep.",
+      "area": "area/keep", "npcs": [], "depends_on": [], "mandatory": true, "act": 1 } ],
+    "finale": "quest/open-the-door"
+  }
+}"#
+        .to_string(),
+        quests,
+        dialogue: r#"{
+  "dsl_version": "0.6.0", "campaign_id": "hello-world", "stage": "dialogue",
+  "content": { "dialogues": [] }
+}"#
+        .to_string(),
+        world_edits: None,
+    })
+    .expect("campaign parses")
+}
+
+fn build_worldless(volley_anchor: &str) -> Result<BuildOutput, BuildFailure> {
+    let campaign = worldless_campaign(volley_anchor);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
+            structures.insert(piece.structure_file.clone(), bytes);
+        }
+    }
+    emit::build(
+        &plan,
+        &BTreeMap::new(),
+        &structures,
+        &CommandTree::v1_21_11(),
+        &prefabs,
+        None,
+        "unpinned",
+        &BTreeMap::new(),
+    )
+}
+
+/// The premise the deferral rests on, pinned as a fact rather than left as prose:
+/// this campaign really does skip the world block, so `DW0447` really is
+/// unreachable for it. If a future change makes every campaign assemble a world,
+/// this fails and the conditional deferral can be simplified deliberately rather
+/// than by accident.
+#[test]
+fn the_worldless_fixture_really_does_skip_the_payload_proof() {
+    let campaign = worldless_campaign("anchor/exit");
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    assert!(
+        !delvewright_compiler::nav::needs_world(&plan),
+        "fixture must not need a world, or the corner it probes does not exist"
+    );
+    assert!(
+        plan.campaign.quests.content.waves.is_empty(),
+        "fixture must declare no waves"
+    );
+    assert!(
+        !delvewright_compiler::clearance::has_bodies(&plan),
+        "fixture must carry no NPC or actor body"
+    );
+}
+
+/// A typo'd `volley` anchor in a campaign that assembles no world is `DW0360`.
+///
+/// `DW0447` cannot run here, so the seal keeps the corner itself. A generic
+/// message is a smaller defect than silence — and silence is what an
+/// unconditional deferral would have shipped.
+#[test]
+fn typod_volley_anchor_without_a_world_is_dw0360() {
+    assert_dw0360(
+        build_worldless("anchor/nope"),
+        "typo'd volley anchor in a world-less campaign",
+    );
+}

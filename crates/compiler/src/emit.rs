@@ -380,7 +380,6 @@ pub fn build_with_warnings(
             message: e.message,
         })?,
     );
-    let has_waves = !plan.campaign.quests.content.waves.is_empty();
     let (moves, actor_moves, wave_placements, wave_rings, lane_routes, payload_plans): (
         Vec<crate::nav::MovePlan>,
         Vec<crate::nav::ActorMovePlan>,
@@ -388,7 +387,7 @@ pub fn build_with_warnings(
         WaveRings,
         crate::nav::LaneRoutes,
         PayloadPlans,
-    ) = if crate::nav::needs_world(plan) || has_waves || crate::clearance::has_bodies(plan) {
+    ) = if assembles_world(plan) {
         {
             // spec-0022 payload verbs need the block map (a `collapse` settles
             // real blocks), not just the occupancy view.
@@ -3587,6 +3586,21 @@ fn json_bytes(value: &Value) -> Vec<u8> {
 /// the assembled world knows which anchors actually exist.
 pub const DW_EFFECT_ANCHOR_UNRESOLVED: &str = "DW0360";
 
+/// Whether [`build`] assembles the voxel world — and therefore whether every
+/// proof that needs it actually runs, including [`plan_payload_verbs`] and its
+/// `DW0447`.
+///
+/// Extracted so the world block and [`check_effect_anchors`] read **one**
+/// predicate. A check that defers to another check must know whether that other
+/// check runs at all, and a second hand-copied answer to "does this campaign
+/// assemble a world" would be exactly the drift this task exists to end, one
+/// question further out.
+fn assembles_world(plan: &Plan) -> bool {
+    crate::nav::needs_world(plan)
+        || !plan.campaign.quests.content.waves.is_empty()
+        || crate::clearance::has_bodies(plan)
+}
+
 /// Fail the build if any campaign effect — at **every effect root**, at **any
 /// nesting depth** — names an anchor that resolves to no world position
 /// (`DW0360`). This is the single resolved-anchor-or-diagnostic seal over the
@@ -3620,20 +3634,35 @@ fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
     // (json pointer, effect verb, anchor) for every anchor reference in the
     // campaign, deep, in deterministic content order.
     let mut refs: Vec<(String, &'static str, String)> = Vec::new();
-    fn descend(path: String, eff: &QuestEffect, refs: &mut Vec<(String, &'static str, String)>) {
-        // This seal covers the verbs that fail OPEN — the ones whose anchor
-        // consumer shrugs and emits nothing. The spec-0022 payload verbs
-        // (`volley`, `collapse`) fail CLOSED instead: `plan_payload_verbs`
-        // resolves their volumes with `?` and reports `DW0447`, naming the verb,
-        // the volume and the anchor. Widening this walk to R4/R5 (task #24) put
-        // those anchors in reach of the generic message for the first time, which
-        // would have preempted the specific one for no gain — so the fail-closed
-        // verbs keep their own diagnostic. Nothing is unguarded either way:
-        // `plan_payload_verbs` walks `all_campaign_effects`, i.e. all five roots
-        // deep, and a campaign carrying a payload verb necessarily carries a trap,
-        // which is itself one of `nav::needs_world`'s conditions — so its proof
-        // always runs.
-        if eff.volley().is_none() && eff.collapse().is_none() {
+    // This seal covers the verbs that fail OPEN — the ones whose anchor consumer
+    // shrugs and emits nothing. The spec-0022 payload verbs (`volley`,
+    // `collapse`) fail CLOSED instead: `plan_payload_verbs` resolves their volumes
+    // with `?` and reports `DW0447`, naming the verb, the volume and the anchor.
+    // Widening this walk to R4/R5 (task #24) put those anchors in reach of the
+    // generic message for the first time, which would have preempted the specific
+    // one for no gain — so where `DW0447` runs, the fail-closed verbs keep it.
+    //
+    // **Only where it runs.** `plan_payload_verbs` lives inside the world block,
+    // so it is reached only when the campaign assembles a world. A payload verb
+    // does NOT imply that: nothing confines `volley`/`collapse` to
+    // `traps[].payload` — `dsl::validate` reaches them via
+    // `for_each_trap_payload_deep` inside the traps loop, which validates them
+    // where they are rather than forbidding them elsewhere, and they are ordinary
+    // variants of the shared effect enum. A `volley` on a quest's `on_complete` in
+    // a campaign with no traps, no waves, no bodies and no walkable critical leg
+    // therefore reaches emission with `DW0447` unreachable. Deferring there would
+    // trade a specific message for SILENCE, so the deferral is conditional on the
+    // proof actually running and this seal keeps that corner itself.
+    let payload_verbs_are_proven = assembles_world(plan);
+    fn descend(
+        path: String,
+        eff: &QuestEffect,
+        payload_verbs_are_proven: bool,
+        refs: &mut Vec<(String, &'static str, String)>,
+    ) {
+        let defer_to_dw0447 =
+            payload_verbs_are_proven && (eff.volley().is_some() || eff.collapse().is_some());
+        if !defer_to_dw0447 {
             for (suffix, anchor) in eff.anchor_refs() {
                 refs.push((
                     format!("{path}/{suffix}"),
@@ -3644,13 +3673,23 @@ fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
         }
         for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
             for (j, inner) in list.iter().enumerate() {
-                descend(format!("{path}/{pseg}/{j}"), inner, refs);
+                descend(
+                    format!("{path}/{pseg}/{j}"),
+                    inner,
+                    payload_verbs_are_proven,
+                    refs,
+                );
             }
         }
     }
     crate::plan::for_each_effect_root(c, &mut |site, effs| {
         for (i, eff) in effs.iter().enumerate() {
-            descend(format!("{}/{i}", site.path), eff, &mut refs);
+            descend(
+                format!("{}/{i}", site.path),
+                eff,
+                payload_verbs_are_proven,
+                &mut refs,
+            );
         }
     });
     for (path, verb, anchor) in refs {
