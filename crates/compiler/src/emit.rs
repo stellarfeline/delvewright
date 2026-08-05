@@ -349,6 +349,19 @@ pub fn build_with_warnings(
         code: e.code,
         message: e.message,
     })?;
+
+    // …and no two bodies the party CLICKS may stand close enough that the
+    // crosshair cannot tell them apart (DW0489). `DW0359` above compares a body
+    // against an affordance and skips every walker; this reads the v0.7 cast
+    // ledger, which states beat by beat who is on stage together, and measures
+    // the pairs it names. It is the proof the island's terminal finding needed —
+    // two crew NPCs declared on one cell at the cave mouth.
+    warnings.extend(
+        crate::crosshair::check_crosshair_contests(plan).map_err(|e| BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        })?,
+    );
     let has_waves = !plan.campaign.quests.content.waves.is_empty();
     let (moves, actor_moves, wave_placements, wave_rings, lane_routes, payload_plans): (
         Vec<crate::nav::MovePlan>,

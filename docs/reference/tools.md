@@ -189,6 +189,24 @@ npm --prefix harness start              # node src/run.ts <critical-path.json>  
 `harness/src/note-bot.ts` is driven by `validation/playtest-note-flow.sh` and
 `harness/src/rehearsal-bot.ts` by `validation/rehearsal-flow.sh`, never by hand.
 
+**Crosshair acquisition (`harness/src/crosshair.ts`).** Every interaction step —
+`talk-to`, `interact`, `rest` — now proves the click was *available to a player*
+before it acts. It casts the entity-pick ray vanilla casts (eye → box, nearest
+hit wins, reach 3.0, pick radius 0) at every aim point on the target's hitbox,
+from every standable cell the step's walk goal allows, and fails the step naming
+**both** bodies if the target is unreachable from all of them. The trigger it
+guards is still a chat command — a 1.21.11 dialog button is client-drawn and
+mineflayer has no client, so actuation cannot change — but the bot may no longer
+*aim* by entity id. This closes the divergence that let the owner's island
+soft-lock past a green ladder: two NPCs on one cell are indistinguishable to a
+crosshair and were invisible to a bot that targeted by id. Targeting by id
+survives only in the combat paths, where no crosshair is modelled at all. The
+compiler half of the same defect is `DW0489` (`compiler::crosshair`), which
+proves the staging from the cast ledger at build time; the two are complementary,
+not redundant — the compiler sees every scene the player can click in, the bot
+sees only what the scripted path clicks, and only the bot sees actors and wave
+mobs.
+
 Run-shaping environment (all read by `src/run.ts`; the compose `validate` profile
 forwards every one of them, so they can be set on the `docker compose` command line):
 
