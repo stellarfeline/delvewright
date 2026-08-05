@@ -307,6 +307,20 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      at that anchor — the compiler fills furniture, it never places it
      (`DW0431`). Elites and set-piece actors take `equipment` in the same shape
      wave mobs use, enchantments included.
+   - **A `collect` takes its item from the room's own furniture, and the item has
+     a name.** (Owner ruling, island playtest rounds 1-2.) Point the objective's
+     `container` at the anchor of a chest/barrel the prefab already placed — the
+     compiler then fills THAT container and places no chest of its own; a floating
+     chest conjured beside the barrel the player has been walking past is the
+     defect this replaced. Give the item an `item_name` ("Cheese", "Tide Ledger"):
+     it is what the player reads on the stack, it translates like every other
+     player-visible string, and an unnamed generic item says nothing about what
+     the quest asked for. Set `fill_count` so the container reads plausibly full
+     (it counts padding SLOTS after the objective's own stack — a barrel with one
+     lonely wheel of cheese in it reads as a bug); `1 + fill_count` must fit the
+     container's 27 slots. The container must really be there in the piece
+     (`DW0438`), must not also be filled by a `loot` entry or another `collect`
+     (`DW0435`), and the fields need `dsl_version` 0.8.0 on the quests stage.
    - Hint wording: give landmark-relative directions from places the player already
      knows (the entrance hall, the gate, a named NPC) — never room-shape jargon
      ("corner room", "L-shaped hall") or solver-internal terms (anchor/piece/socket
@@ -400,6 +414,15 @@ Load-bearing patterns proven on real runs — reuse rather than rediscover:
   crosses areas — the player *cannot* walk back, so "the boulder seals the cave" is
   enforced by geometry, not merely asserted. The return trip is the same mechanism
   in reverse.
+- **A sealed gate answers a right-click by itself — never build the hint by hand.**
+  `close-gate` arms the sealed region so pressing it puts a line on the presser's
+  actionbar; `sealed_hint` on the effect is only the *wording* (unauthored, the
+  compiler says "The way is sealed."). Do **not** add a `use` trigger on the gate
+  anchor to get this — that is the co-located second hitbox the compiler now
+  rejects (`DW0422`). A `strike`/`use` trigger anchored on the gate anchor is still
+  legitimate for a *different* line (it rides the seal's own hitboxes and is live
+  only while the gate is sealed); two `close-gate`s on one anchor must agree on the
+  wording (`DW0423`).
 
 ### Authoring tools (know these exist; reach for them by symptom)
 
@@ -787,9 +810,34 @@ Then:
   replenished item is a class-kit entry marked `"flask": true`, and **every
   class kit in a campaign that places a bonfire must declare one** — a bonfire
   campaign with a flaskless kit is the build error `DW0476`. Author it as a real
-  recovery consumable (a healing potion, a golden apple) with the per-rest
-  budget you tuned against as its `count`: resting sets the stack back to exactly
-  that number, up or down, so the flask is a budget and never a stockpile. The
+  recovery consumable with the per-rest budget you tuned against as its `count`:
+  resting sets the stack back to exactly that number, up or down, so the flask is
+  a budget and never a stockpile.
+  **A potion must say what is in it.** A `minecraft:potion` (or splash/lingering
+  potion, or tipped arrow) with no `contents` is vanilla's *Uncraftable Potion* —
+  it heals nothing however you name it — so at 0.8.0 declaring one is the build
+  error `DW0487`. Either name a vanilla brew or list the effects:
+
+  ```json
+  { "item": "minecraft:potion", "count": 5, "name": "Ashen Flask", "flask": true,
+    "contents": { "potion": "minecraft:strong_healing" } }
+
+  { "item": "minecraft:potion", "count": 5, "name": "Ashen Flask", "flask": true,
+    "contents": {
+      "effects": [
+        { "effect": "minecraft:instant_health", "amplifier": 1 },
+        { "effect": "minecraft:regeneration", "duration": 200, "amplifier": 0 }
+      ],
+      "color": "#ff9c30"
+    } }
+  ```
+
+  `potion` is a 1.21.11 potion id, where strength and duration are part of the id
+  (`minecraft:strong_healing`, `minecraft:long_night_vision`) rather than separate
+  fields. `duration` is in **ticks** (20 = one second) and is required for every
+  lasting effect — and forbidden on the instantaneous ones
+  (`instant_health`/`instant_damage`), which land once on drinking. `amplifier` is
+  0 = level I. Anything vanilla cannot pour is `DW0486`. The
   bonfire's three dialog strings default to canonical English; author
   `prompt`/`rest_label`/`save_label` only when the fiction wants its own words,
   and keep the two labels button captions (`DW0331`: ~20 Latin / ~12 Han).

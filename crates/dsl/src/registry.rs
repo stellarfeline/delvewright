@@ -100,7 +100,11 @@ pub struct VendoredItemRegistry {
 }
 
 impl VendoredItemRegistry {
-    /// The v0 subset of the 1.21.11 item registry used by the M1 fixtures.
+    /// The v0 subset of the 1.21.11 item registry used by the M1 fixtures, plus
+    /// the four [`crate::stages::POTION_BEARING_ITEMS`] — a kit item's potion
+    /// `contents` is DSL surface with its own rules (`DW0486`/`DW0487`), so the
+    /// crate's own tests must be able to name the items those rules are about
+    /// without the compiler's full injected registry.
     pub fn v1_21_11() -> Self {
         let raw = include_str!("../data/items-1.21.11.json");
         let ids: Vec<String> =
@@ -246,8 +250,80 @@ impl EnchantmentRegistry for VendoredEnchantmentRegistry {
     }
 }
 
+/// The complete 1.21.11 **potion** id list — the `potion` registry a
+/// `minecraft:potion_contents` component's `potion` field names
+/// (`minecraft:strong_healing`, …). 46 ids, extracted from the same
+/// misode/mcmeta 1.21.11 registries summary the item/entity/enchantment lists
+/// come from (SHA-256
+/// `7efb184902cfef62b431bc9826ebcbcde2c23746e5624326ffcf922e15cf28f9`, pinned in
+/// `crates/compiler/data/PROVENANCE.md`) — Mojang's own generated data.
+///
+/// Complete and stable for the pinned version, so unlike the item/entity
+/// registries there is **nothing for the compiler to inject**: this const IS the
+/// registry, and [`is_potion_id`] is the whole membership test (same treatment as
+/// [`TECHNICAL_BLOCK_IDS`]).
+pub const POTION_IDS_1_21_11: &[&str] = &[
+    "minecraft:awkward",
+    "minecraft:fire_resistance",
+    "minecraft:harming",
+    "minecraft:healing",
+    "minecraft:infested",
+    "minecraft:invisibility",
+    "minecraft:leaping",
+    "minecraft:long_fire_resistance",
+    "minecraft:long_invisibility",
+    "minecraft:long_leaping",
+    "minecraft:long_night_vision",
+    "minecraft:long_poison",
+    "minecraft:long_regeneration",
+    "minecraft:long_slow_falling",
+    "minecraft:long_slowness",
+    "minecraft:long_strength",
+    "minecraft:long_swiftness",
+    "minecraft:long_turtle_master",
+    "minecraft:long_water_breathing",
+    "minecraft:long_weakness",
+    "minecraft:luck",
+    "minecraft:mundane",
+    "minecraft:night_vision",
+    "minecraft:oozing",
+    "minecraft:poison",
+    "minecraft:regeneration",
+    "minecraft:slow_falling",
+    "minecraft:slowness",
+    "minecraft:strength",
+    "minecraft:strong_harming",
+    "minecraft:strong_healing",
+    "minecraft:strong_leaping",
+    "minecraft:strong_poison",
+    "minecraft:strong_regeneration",
+    "minecraft:strong_slowness",
+    "minecraft:strong_strength",
+    "minecraft:strong_swiftness",
+    "minecraft:strong_turtle_master",
+    "minecraft:swiftness",
+    "minecraft:thick",
+    "minecraft:turtle_master",
+    "minecraft:water",
+    "minecraft:water_breathing",
+    "minecraft:weakness",
+    "minecraft:weaving",
+    "minecraft:wind_charged",
+];
+
+/// True if `id` (optionally un-namespaced) is a 1.21.11 potion id.
+pub fn is_potion_id(id: &str) -> bool {
+    let norm = if id.contains(':') {
+        id.to_string()
+    } else {
+        format!("minecraft:{id}")
+    };
+    POTION_IDS_1_21_11.contains(&norm.as_str())
+}
+
 /// Membership test for vanilla status-effect ids (`minecraft:slowness`, …),
-/// used to validate DSL v0.4 wave-mob `effects` (`DW0192`).
+/// used to validate DSL v0.4 wave-mob `effects` (`DW0192`) and a kit item's
+/// potion `contents` effects (`DW0486`).
 pub trait EffectRegistry {
     /// True if `effect_id` is a known status effect in the pinned MC version.
     fn contains(&self, effect_id: &str) -> bool;
@@ -296,6 +372,12 @@ pub const EFFECT_IDS_1_21_11: &[&str] = &[
     "minecraft:weaving",
     "minecraft:oozing",
     "minecraft:infested",
+    // Registry-fidelity fix (2026-08-03): the pinned 1.21.11 `mob_effect`
+    // registry has 40 entries and this list had 39 — the one 1.21.11 addition
+    // was missing, so a campaign naming it was rejected as unknown by a check
+    // that was simply out of date. Re-derived from the same pinned summary
+    // (SHA-256 `7efb1849…`) the potion list above comes from.
+    "minecraft:breath_of_the_nautilus",
 ];
 
 /// Technical / fluid blocks that are NOT items but are valid `set-block` targets
