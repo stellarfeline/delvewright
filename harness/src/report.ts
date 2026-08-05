@@ -23,6 +23,7 @@ import type {
   FloorLedger,
   PerformedRest,
 } from "./combat.ts";
+import type { ClassifiedDeath } from "./teardown.ts";
 
 /**
  * One tiered actor, and what this run did about it (#114).
@@ -112,6 +113,7 @@ export class RunReport {
   private readonly floor: string[] = [];
   private readonly encounters: EncounterReport[] = [];
   private readonly rests: PerformedRest[] = [];
+  private readonly namedEntityDeaths: ClassifiedDeath[] = [];
   private branches: BranchOutcome[] | undefined;
   private branchTier: string | undefined;
   private drivenBranch: string | undefined;
@@ -145,6 +147,17 @@ export class RunReport {
 
   recordRests(entries: readonly PerformedRest[]): void {
     this.rests.push(...entries);
+  }
+
+  /**
+   * Record every named-entity death this run observed, already classified
+   * scripted-teardown vs combat (teardown.ts). The island run's report surfaced
+   * five such deaths with no way to tell which two were the compiler's
+   * `despawn-actor` vanishes and which three were real losses — this array is
+   * the fix: reclassified, never suppressed, so both kinds stay visible.
+   */
+  recordNamedEntityDeaths(entries: readonly ClassifiedDeath[]): void {
+    this.namedEntityDeaths.push(...entries);
   }
 
   /**
@@ -232,6 +245,17 @@ export class RunReport {
         anchor: r.anchor,
         pos: [...r.pos],
         step: r.step,
+      })),
+      // Every NAMED entity death this run observed, classified `scripted_teardown`
+      // (a `despawn-actor style: vanish` reads as an ordinary death on purpose — see
+      // teardown.ts) or `combat` (everything else). Reclassified, never dropped: a
+      // reader must be able to tell the two apart at a glance without re-deriving it
+      // from raw Y coordinates themselves.
+      named_entity_deaths: this.namedEntityDeaths.map((d) => ({
+        name: d.name,
+        entity_id: d.entityId,
+        position: [...d.position],
+        kind: d.kind,
       })),
       // Every encounter the compiler put in the plan, with the assist policy it
       // is approached under and the phase the run actually reached. Without this
