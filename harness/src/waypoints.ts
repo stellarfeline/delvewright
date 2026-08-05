@@ -42,6 +42,13 @@ export interface TimedGate {
   readonly closedTicks: number;
   /** Ticks after world init before the first open window. */
   readonly phase: number;
+  /**
+   * Whether the closing edge KILLS a player caught inside the region (spec-0016 §4
+   * addendum — the portcullis judgement, unsurvivable by gearing). A crush gate must
+   * never be entered blind: the harness stages at the edge and enters only on an
+   * observed fresh window with full margin. `false` for every pre-crush artifact.
+   */
+  readonly crush: boolean;
 }
 
 /** One walked critical-path leg: the ordered waypoint polyline connecting `from` to
@@ -168,6 +175,13 @@ function parseTimedGates(raw: Record<string, unknown>): TimedGate[] {
       // the wait below would have no window to wait for, so refuse it here.
       fail(pointer, "open_ticks and closed_ticks must both be positive (a clock, not a static gate)");
     }
+    // `crush` is optional for compatibility with pre-crush artifacts (absent →
+    // false, a gate whose closing edge merely blocks). Present-but-non-boolean is a
+    // structural fault: silently coercing it could blind-enter a lethal gate.
+    const crushValue = entry["crush"];
+    if (crushValue !== undefined && typeof crushValue !== "boolean") {
+      fail(`${pointer}/crush`, `must be a boolean, got ${describe(crushValue)}`);
+    }
     return {
       id: requireString(entry, "id", pointer),
       min,
@@ -176,6 +190,7 @@ function parseTimedGates(raw: Record<string, unknown>): TimedGate[] {
       openTicks,
       closedTicks,
       phase: requireTicks(entry, "phase", pointer),
+      crush: crushValue ?? false,
     };
   });
 }
@@ -272,6 +287,53 @@ export async function loadWaypointsForCriticalPath(
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
       return undefined; // no artifact → fall back to single-goal navigation
+    }
+    throw err;
+  }
+  return parseWaypointsJson(text);
+}
+
+/**
+ * The per-branch waypoint artifact that accompanies a branch's executable path
+ * (task #117): `branch-path-<slug>.json` → `branch-waypoints-<slug>.json`, same
+ * directory. A derivation, not a search — the compiler emits both names from one
+ * slug, so the two files are one contract. Throws on a path file that is not in
+ * the `branch-path-<slug>.json` shape (that would be a branch-plan contract
+ * break, not a missing artifact).
+ */
+export function branchWaypointsFileFor(branchPathFile: string): string {
+  const base = path.basename(branchPathFile);
+  if (!base.startsWith("branch-path-") || !base.endsWith(".json")) {
+    throw new WaypointsParseError(
+      "",
+      `cannot derive a per-branch waypoints file from ${JSON.stringify(branchPathFile)} — ` +
+        `expected a branch-path-<slug>.json (the branch-plan contract)`,
+    );
+  }
+  return path.join(
+    path.dirname(branchPathFile),
+    `branch-waypoints-${base.slice("branch-path-".length)}`,
+  );
+}
+
+/**
+ * Load the per-branch waypoint artifact beside a branch's executable path
+ * (task #117). Returns `undefined` when absent — the CALLER must then fall back
+ * LOUDLY (stderr + a run-report finding), never silently: an un-waypointed branch
+ * walk is terrain-flaky where the waypointed one is deterministic, and a reader
+ * comparing runs needs to know which kind this was. Present-but-malformed throws
+ * {@link WaypointsParseError}, same stance as the critical-path artifact.
+ */
+export async function loadWaypointsForBranchPath(
+  branchPathFile: string,
+): Promise<Waypoints | undefined> {
+  const wpPath = branchWaypointsFileFor(branchPathFile);
+  let text: string;
+  try {
+    text = await readFile(wpPath, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined; // caller reports the loud fallback
     }
     throw err;
   }
