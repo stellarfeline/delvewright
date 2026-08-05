@@ -2326,11 +2326,11 @@ fn collect_seal_hints(
 }
 
 /// Which of the five effect roots a visited effect hangs off — the part of a
-/// [`GateSite`] that decides **when** the firing happens and **whether the player
-/// is forced to cause it**, which is all the completability model needs on top of
+/// site that decides **when** the firing happens and **whether the player is
+/// forced to cause it**, which is all the completability model needs on top of
 /// the effect itself.
 #[derive(Clone, Copy)]
-pub(crate) enum GateRoot<'a> {
+pub(crate) enum EffectRoot<'a> {
     /// A quest's `on_objective_complete[<objective>]` — fires at that objective's
     /// `critical_path` step. Forced: completing the objective is the mainline.
     ObjectiveComplete(&'a str),
@@ -2357,15 +2357,29 @@ pub(crate) struct GateSite<'a> {
     /// JSON pointer to the effect within that document.
     pub path: String,
     /// The effect root this firing hangs off.
-    pub root: GateRoot<'a>,
+    pub root: EffectRoot<'a>,
 }
 
-/// Visit **every effect the compiler can lower to a gate command**, at every
-/// nesting depth, in one fixed deterministic order.
+/// Where a top-level effect **list** was declared: which stage document, the JSON
+/// pointer to the list itself, and which root it is.
+pub(crate) struct EffectRootSite<'a> {
+    /// The stage document the list lives in (`quests` or `dialogue`).
+    pub stage: &'static str,
+    /// JSON pointer to the **list** within that document (an element's pointer is
+    /// this plus `/<index>`).
+    pub path: String,
+    /// Which root this list is.
+    pub root: EffectRoot<'a>,
+}
+
+/// Visit **every top-level effect list the compiler can lower**, in one fixed
+/// deterministic order. This is the single enumeration of effect roots; every
+/// walk that claims to see "what emission sees" is defined in terms of it, so no
+/// two of them can disagree about which roots exist.
 ///
-/// This is deliberately wider than `dsl::for_each_campaign_effect`, and the width
-/// is the point: an effect list is a gate site if `emit::emit_quest_effect` can
-/// reach it, not if the quests stage happens to own it. Five roots do:
+/// It is deliberately wider than `dsl::for_each_campaign_effect`, and the width is
+/// the point: a list is a root if `emit::emit_quest_effect` can reach it, not if
+/// the quests stage happens to own it. Five roots do:
 ///
 /// 1. quest `on_objective_complete` (a `BTreeMap`, so key-ordered), then
 /// 2. quest `on_complete`,
@@ -2373,23 +2387,95 @@ pub(crate) struct GateSite<'a> {
 /// 4. `traps[].payload` (spec-0022 — a payload is an effect root),
 /// 5. and a **dialogue option's** `set-checkpoint` `on_respawn` bundle, which is
 ///    a plain `Vec<QuestEffect>` hanging off the dialogue stage. `DialogueEffect`
-///    itself carries no gate verb, which is why the older gate scans stop at the
-///    quests stage — but that reasoning misses this bundle, and a `close-gate`
-///    inside it really does emit its `fill` (into `cp_on_respawn_<i>`). A seal the
-///    compiler fills but never arms is exactly the silence task #142 exists to
-///    close, so the seal scan reaches it.
+///    itself carries no gate or movement verb, which is why the older scans stop
+///    at the quests stage — but that reasoning misses this bundle, and what is
+///    inside it really is lowered (into `cp_on_respawn_<i>`).
 ///
-/// Each visit carries a [`GateRoot`] naming which of the five it came from, so a
+/// Each visit carries an [`EffectRoot`] naming which of the five it is, so a
 /// consumer that needs *when* a firing happens (the completability model) reads it
 /// off the site instead of re-deriving it from a second, drift-prone walk.
+///
+/// Roots 1–3 keep their prior order, so every consumer's output on a campaign that
+/// uses only them is unchanged; 4 and 5 are additive.
+///
+/// Consumers: [`for_each_gate_effect`] (→ the seal planner, `gates::check_seal_hints`
+/// and the completability model), [`crate::timeline::walk_campaign`] (→ the
+/// `DW0410` staged-walk model and, defined as it, `nav::all_effects`) and
+/// `emit::all_campaign_effects` (→ the generated functions themselves). The
+/// three-of-five drift this class kept re-growing (tasks #142, #167, #168, #169)
+/// was exactly these walks enumerating roots by hand, one copy each.
+pub(crate) fn for_each_effect_root<'a>(
+    campaign: &'a Campaign,
+    f: &mut dyn FnMut(&EffectRootSite<'a>, &'a [QuestEffect]),
+) {
+    let mut visit = |stage, path: String, root, effs: &'a [QuestEffect]| {
+        f(&EffectRootSite { stage, path, root }, effs);
+    };
+    for (qi, q) in campaign.quests.content.quests.iter().enumerate() {
+        for (oid, effs) in &q.on_objective_complete {
+            visit(
+                "quests",
+                format!(
+                    "/content/quests/{qi}/on_objective_complete/{}",
+                    oid.as_str()
+                ),
+                EffectRoot::ObjectiveComplete(oid.as_str()),
+                effs,
+            );
+        }
+        visit(
+            "quests",
+            format!("/content/quests/{qi}/on_complete"),
+            EffectRoot::QuestComplete(q),
+            &q.on_complete,
+        );
+    }
+    for (ti, t) in campaign.quests.content.triggers.iter().enumerate() {
+        visit(
+            "quests",
+            format!("/content/triggers/{ti}/effects"),
+            EffectRoot::Trigger,
+            &t.effects,
+        );
+    }
+    for (pi, trap) in campaign.quests.content.traps.iter().enumerate() {
+        visit(
+            "quests",
+            format!("/content/traps/{pi}/payload"),
+            EffectRoot::TrapPayload,
+            &trap.payload,
+        );
+    }
+    for (di, tree) in campaign.dialogue.content.dialogues.iter().enumerate() {
+        for (ni, node) in tree.nodes.iter().enumerate() {
+            for (oi, opt) in node.options.iter().enumerate() {
+                for (ei, de) in opt.effects.iter().enumerate() {
+                    let Some((_anchor, on_respawn)) = de.set_checkpoint() else {
+                        continue;
+                    };
+                    visit(
+                        "dialogue",
+                        format!(
+                            "/content/dialogues/{di}/nodes/{ni}/options/{oi}/effects/{ei}/on_respawn"
+                        ),
+                        EffectRoot::DialogueRespawn,
+                        on_respawn,
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Visit **every effect the compiler can lower to a gate command**, at every
+/// nesting depth: [`for_each_effect_root`] flattened, each root's list walked in
+/// declaration order and each effect yielded ahead of its own nested lists.
 ///
 /// Every consumer that reasons about emitted gate commands walks THIS: the seal
 /// planner ([`collect_seal_hints`]), the wording check (`gates::check_seal_hints`,
 /// `DW0423`) and the completability model ([`collect_gate_events`], which feeds
 /// `DW0311`/`DW0315`/`DW0342`/`DW0410`). Sharing the traversal is what makes the
-/// checks and the emission unable to disagree about which firings exist — the
-/// three-of-five drift this closed (tasks #142, #167) was exactly that
-/// disagreement.
+/// checks and the emission unable to disagree about which firings exist.
 pub(crate) fn for_each_gate_effect<'a>(
     campaign: &'a Campaign,
     f: &mut dyn FnMut(&GateSite<'a>, &'a QuestEffect),
@@ -2398,7 +2484,7 @@ pub(crate) fn for_each_gate_effect<'a>(
         eff: &'a QuestEffect,
         stage: &'static str,
         path: &str,
-        root: GateRoot<'a>,
+        root: EffectRoot<'a>,
         f: &mut dyn FnMut(&GateSite<'a>, &'a QuestEffect),
     ) {
         f(
@@ -2415,75 +2501,11 @@ pub(crate) fn for_each_gate_effect<'a>(
             }
         }
     }
-    for (qi, q) in campaign.quests.content.quests.iter().enumerate() {
-        for (oid, effs) in &q.on_objective_complete {
-            for (i, eff) in effs.iter().enumerate() {
-                deep(
-                    eff,
-                    "quests",
-                    &format!(
-                        "/content/quests/{qi}/on_objective_complete/{}/{i}",
-                        oid.as_str()
-                    ),
-                    GateRoot::ObjectiveComplete(oid.as_str()),
-                    f,
-                );
-            }
+    for_each_effect_root(campaign, &mut |site, effs| {
+        for (i, eff) in effs.iter().enumerate() {
+            deep(eff, site.stage, &format!("{}/{i}", site.path), site.root, f);
         }
-        for (i, eff) in q.on_complete.iter().enumerate() {
-            deep(
-                eff,
-                "quests",
-                &format!("/content/quests/{qi}/on_complete/{i}"),
-                GateRoot::QuestComplete(q),
-                f,
-            );
-        }
-    }
-    for (ti, t) in campaign.quests.content.triggers.iter().enumerate() {
-        for (i, eff) in t.effects.iter().enumerate() {
-            deep(
-                eff,
-                "quests",
-                &format!("/content/triggers/{ti}/effects/{i}"),
-                GateRoot::Trigger,
-                f,
-            );
-        }
-    }
-    for (pi, trap) in campaign.quests.content.traps.iter().enumerate() {
-        for (i, eff) in trap.payload.iter().enumerate() {
-            deep(
-                eff,
-                "quests",
-                &format!("/content/traps/{pi}/payload/{i}"),
-                GateRoot::TrapPayload,
-                f,
-            );
-        }
-    }
-    for (di, tree) in campaign.dialogue.content.dialogues.iter().enumerate() {
-        for (ni, node) in tree.nodes.iter().enumerate() {
-            for (oi, opt) in node.options.iter().enumerate() {
-                for (ei, de) in opt.effects.iter().enumerate() {
-                    let Some((_anchor, on_respawn)) = de.set_checkpoint() else {
-                        continue;
-                    };
-                    for (i, eff) in on_respawn.iter().enumerate() {
-                        deep(
-                            eff,
-                            "dialogue",
-                            &format!(
-                                "/content/dialogues/{di}/nodes/{ni}/options/{oi}/effects/{ei}/on_respawn/{i}"
-                            ),
-                            GateRoot::DialogueRespawn,
-                            f,
-                        );
-                    }
-                }
-            }
-        }
-    }
+    });
 }
 
 /// The absolute gate region **and fill block** a gate anchor resolves to. `None`
@@ -2533,7 +2555,7 @@ fn gate_region_any(
 /// root's firing step. An effect whose anchor is not a resolvable gate is skipped
 /// (a point anchor / bad close-gate is a validation concern, `DW0142`/`DW0343`).
 ///
-/// **When** a firing happens is read off the site's [`GateRoot`]:
+/// **When** a firing happens is read off the site's [`EffectRoot`]:
 ///
 /// - a quest `on_objective_complete` fires at that objective's step, an
 ///   `on_complete` at the quest's completion step — the player is *forced* through
@@ -2559,10 +2581,10 @@ fn collect_gate_events(
     let mut out = Vec::new();
     for_each_gate_effect(campaign, &mut |site, e| {
         let (fire_step, forced) = match site.root {
-            GateRoot::ObjectiveComplete(oid) => (obj_step.get(oid).copied().unwrap_or(0), true),
-            GateRoot::QuestComplete(q) => (quest_complete_step(q, obj_step), true),
-            GateRoot::Trigger => (0, true),
-            GateRoot::TrapPayload | GateRoot::DialogueRespawn => (0, false),
+            EffectRoot::ObjectiveComplete(oid) => (obj_step.get(oid).copied().unwrap_or(0), true),
+            EffectRoot::QuestComplete(q) => (quest_complete_step(q, obj_step), true),
+            EffectRoot::Trigger => (0, true),
+            EffectRoot::TrapPayload | EffectRoot::DialogueRespawn => (0, false),
         };
         let gate = e
             .open_gate_anchor()

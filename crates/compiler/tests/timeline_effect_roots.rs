@@ -280,3 +280,97 @@ fn a_trap_payload_walk_is_planned_and_emitted() {
         "the payload calls `{f}` — it must be generated, not dangle"
     );
 }
+
+// --- the enumeration itself ---------------------------------------------------
+
+/// A campaign exercising **all five** roots at once, each carrying one `narrate`
+/// whose text names its root, so the walk's own output states which roots it
+/// reached.
+const FIVE_ROOT_QUESTS: &str = r#"{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "triggers": [
+      { "id": "trigger/wake", "at": "anchor/keeper-stand", "on": { "on": "approach", "range": 3 },
+        "effects": [ { "type": "narrate", "style": "chat", "text": "root: trigger" } ] }
+    ],
+    "traps": [
+      { "id": "trap/chest", "at": "anchor/exit", "trigger": "trapped-chest", "lethality": "harmful",
+        "payload": [ { "type": "narrate", "style": "chat", "text": "root: trap payload" } ] }
+    ],
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+            "radius": 2, "after": ["obj/talk"] }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [
+            { "type": "open-gate", "anchor": "anchor/door" },
+            { "type": "narrate", "style": "chat", "text": "root: objective complete" }
+          ]
+        },
+        "on_complete": [
+          { "type": "narrate", "style": "chat", "text": "root: quest complete" },
+          { "type": "campaign-complete" }
+        ]
+      }
+    ]
+  }
+}"#;
+
+const FIVE_ROOT_DIALOGUE: &str = r#"{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "dialogue",
+  "content": {
+    "dialogues": [
+      { "npc": "npc/keeper", "root": "dlg/greeting", "nodes": [
+        { "id": "dlg/greeting",
+          "text": "Halt, traveler. This keep is mine to guard, and the door stays shut.",
+          "options": [
+            { "label": "Open the door, please.",
+              "effects": [
+                { "type": "complete-objective", "objective": "obj/talk" },
+                { "type": "set-checkpoint", "anchor": "anchor/exit",
+                  "on_respawn": [
+                    { "type": "narrate", "style": "chat", "text": "root: dialogue respawn" }
+                  ] }
+              ] }
+          ] }
+      ] }
+    ]
+  }
+}"#;
+
+/// The staged walk reaches every root emission does, in the one order
+/// `plan::for_each_effect_root` fixes. This is the pin that would have caught the
+/// gap: it reads the roots off the walk's own output, so a root dropped or
+/// reordered is a diff here, not a silent proof hole three consumers deep.
+#[test]
+fn the_walk_reaches_all_five_roots_in_the_fixed_order() {
+    let c = parse_hw(FIVE_ROOT_QUESTS, Some(FIVE_ROOT_DIALOGUE));
+    assert_validates(&c);
+    let plan = Plan::build(&c, &prefabs()).expect("plan builds");
+    let roots: Vec<&str> = delvewright_compiler::timeline::walk(&plan)
+        .into_iter()
+        .filter_map(|(e, _)| match e {
+            delvewright_dsl::QuestEffect::Narrate { text, .. } => text.strip_prefix("root: "),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        roots,
+        vec![
+            "objective complete",
+            "quest complete",
+            "trigger",
+            "trap payload",
+            "dialogue respawn",
+        ]
+    );
+}

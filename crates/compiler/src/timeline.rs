@@ -18,13 +18,35 @@
 //! regions an **earlier effect in the same timeline** provably sealed. A
 //! timeline is:
 //!
-//! * one quest `on_objective_complete[obj]` bundle, or one `on_complete` bundle,
-//!   or one trigger's `effects` — effects run in declared order, in one tick, so
-//!   effect *j* has finished before effect *i > j* begins;
+//! * one **effect root** — every list [`crate::plan::for_each_effect_root`]
+//!   enumerates, i.e. the five emission can lower: a quest's
+//!   `on_objective_complete[obj]` bundle, its `on_complete`, a trigger's
+//!   `effects`, a `traps[].payload`, and a dialogue option's `set-checkpoint`
+//!   `on_respawn` bundle. Effects run in declared order, in one tick, so effect
+//!   *j* has finished before effect *i > j* begins;
 //! * a `sequence`, whose steps are ordered by `(at_ticks, declaration index)` —
 //!   real elapsed time, which is exactly what the island defect turned on;
 //! * a `move-actor` / `move-npc` `on_arrive` bundle, which inherits the state as
 //!   of its move and is itself an ordered list.
+//!
+//! ## Optional roots need no special case (task #169)
+//!
+//! Two of the five have no guaranteed firing: the party may never trip a trap,
+//! and nobody is forced to die at a checkpoint. The completability model has to
+//! rule on that (task #167: an unguaranteed firing registers its `close-gate`
+//! only, because assuming a seal happened is the conservative direction) —
+//! **this model does not**, and the asymmetry is not an oversight.
+//!
+//! `collect_gate_events` reasons *across* bundles about the route the player is
+//! forced to walk, so whether a firing happens is load-bearing. The staged walk
+//! reasons only *within* one bundle, about a walk that bundle itself orders, and
+//! its claim is conditional from the start: **if this bundle runs, this walk
+//! starts after that seal landed**. A trap that never springs never contradicts
+//! it, because it never runs the walk either. Optionality therefore cancels on
+//! both sides of the implication, and the two new roots are ordinary timelines —
+//! no `EffectRoot` arm, no weakening. A payload's walk must be legal in the world
+//! its own payload has already made, which is exactly what it must be whenever it
+//! fires.
 //!
 //! ## No false certainty
 //!
@@ -72,12 +94,13 @@ pub type GateState = BTreeMap<Region, String>;
 /// gate state **as of that effect** — the regions an earlier effect in its own
 /// timeline provably sealed.
 ///
-/// The traversal order is the compiler's canonical effect pre-order: per quest,
-/// each `on_objective_complete` bundle (map order) then `on_complete`, then each
-/// trigger's effects; each effect is yielded before its own nested effects.
+/// The traversal order is the compiler's canonical effect pre-order:
+/// [`crate::plan::for_each_effect_root`]'s five roots in their fixed order, each
+/// list in declaration order, each effect yielded before its own nested effects.
 /// [`crate::nav::all_effects`] is defined as this walk with the states dropped,
 /// so the two can never drift apart — the alignment is structural, not a
-/// convention two functions have to remember.
+/// convention two functions have to remember. Sharing the root enumeration
+/// upward buys the same guarantee against the gate scans and the emitter.
 pub fn walk<'a>(plan: &'a Plan) -> Vec<(&'a QuestEffect, GateState)> {
     walk_campaign(plan.campaign, &plan.anchors)
 }
@@ -89,18 +112,13 @@ pub fn walk_campaign<'a>(
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
 ) -> Vec<(&'a QuestEffect, GateState)> {
     let mut out = Vec::new();
-    for q in &c.quests.content.quests {
-        // Each objective bundle is its own timeline; so is `on_complete`. They
-        // are concatenated in this order to match the canonical pre-order, but
-        // no seal crosses from one into the next.
-        for effs in q.on_objective_complete.values() {
-            walk_list(effs, &GateState::new(), anchors, &mut out);
-        }
-        walk_list(&q.on_complete, &GateState::new(), anchors, &mut out);
-    }
-    for t in &c.quests.content.triggers {
-        walk_list(&t.effects, &GateState::new(), anchors, &mut out);
-    }
+    // Every root is its own timeline, in the one order
+    // [`crate::plan::for_each_effect_root`] fixes. They are concatenated to match
+    // the canonical pre-order, but no seal crosses from one into the next — which
+    // is why the enumeration needs no per-root reasoning here at all.
+    crate::plan::for_each_effect_root(c, &mut |_site, effs| {
+        walk_list(effs, &GateState::new(), anchors, &mut out);
+    });
     out
 }
 
