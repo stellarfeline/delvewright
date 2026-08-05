@@ -1725,30 +1725,10 @@ pub fn gate_flags(c: &Campaign) -> BTreeSet<String> {
             eat(o.requires_flags(), &mut out);
             eat(o.forbids_flags(), &mut out);
         }
-        let deep = |effs: &[QuestEffect], out: &mut BTreeSet<String>| {
-            for e in effs {
-                e.visit_deep(&mut |x| {
-                    for f in x.requires_flags().iter().chain(x.forbids_flags()) {
-                        out.insert(f.as_str().to_string());
-                    }
-                });
-            }
-        };
-        for effs in q.on_objective_complete.values() {
-            deep(effs, &mut out);
-        }
-        deep(&q.on_complete, &mut out);
     }
     for t in &c.quests.content.triggers {
         eat(&t.requires_flags, &mut out);
         eat(&t.forbids_flags, &mut out);
-        for e in &t.effects {
-            e.visit_deep(&mut |x| {
-                for f in x.requires_flags().iter().chain(x.forbids_flags()) {
-                    out.insert(f.as_str().to_string());
-                }
-            });
-        }
     }
     for t in &c.quests.content.traps {
         eat(&t.requires_flags, &mut out);
@@ -1762,6 +1742,15 @@ pub fn gate_flags(c: &Campaign) -> BTreeSet<String> {
             }
         }
     }
+    crate::plan::for_each_effect_root(c, &mut |_site, effs| {
+        for e in effs {
+            e.visit_deep(&mut |x| {
+                for f in x.requires_flags().iter().chain(x.forbids_flags()) {
+                    out.insert(f.as_str().to_string());
+                }
+            });
+        }
+    });
     out
 }
 

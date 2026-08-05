@@ -16,11 +16,13 @@
 //! flag; and a `requires_flags` inside a payload was invisible too, so a branch
 //! choice that only such a gate reads never split the worlds.
 //!
-//! The two halves interlock, which is why they land together: the reader half is
-//! inert on its own (nothing downstream of a payload was modelled at all), and
-//! the producer half **alone** would turn the last fixture below into a *false
-//! green* — one unconstrained world holding both mutually exclusive branch flags
-//! at once, so the payload produces both and the finale "completes".
+//! The two halves interlock, which is why they land together. The reader half is
+//! inert on its own — before the producer half, nothing downstream of a payload
+//! was modelled at all — and the producer half **alone** makes the branch
+//! fixture below worse than it started: one unconstrained world holds both
+//! mutually exclusive branch flags at once, the payload produces both, the
+//! finale "completes", and the real finding (two endings that cannot both be
+//! played) resurfaces as a `DW0204` complaint about the exported path.
 //!
 //! Policy per root is stated once, in `Flow::new`, and follows the precedents
 //! `flow` already had:
@@ -308,8 +310,8 @@ const BRANCHED_PAYLOAD_DIALOGUE: &str = r#"{
 /// | model | verdict |
 /// |---|---|
 /// | `origin/main` | `DW0203` ×2 + `DW0201` — right answer, wrong reason (the payload produced nothing at all) |
-/// | producer half only | **clean** — the false green |
-/// | both halves | `DW0201` alone: each objective is completable, on its own branch; the finale needs both |
+/// | producer half only | `DW0204` — the finale is believed completable, a path is exported, and the replay then chokes on it: the finding misdiagnosed as an export defect |
+/// | both halves | `DW0201` alone: each objective IS completable, on its own branch; the finale needs both, and no branch has both |
 #[test]
 fn a_payload_gate_splits_the_branch_worlds() {
     let c = parse_hw(BRANCHED_PAYLOAD_QUESTS, Some(BRANCHED_PAYLOAD_DIALOGUE));
