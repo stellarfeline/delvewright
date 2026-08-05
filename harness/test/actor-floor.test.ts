@@ -116,6 +116,45 @@ test("the floor-gate ledger parses both sides, each not-covered entry with its r
   assert.match(ledger.notCovered[0]!.reason!, /no `spawn-actor`/);
 });
 
+test("an UNTIERED hostile parses as a not-covered entry with no tier at all", () => {
+  // Task #121: the campaign unleashes a real-AI body and bills the fight
+  // nothing, so the compiler writes `tier: null`. An empty ledger reads as
+  // "everything is covered"; this entry is how the run report says "nothing was
+  // even assessed" instead.
+  const json = planJson({
+    floor_gate: {
+      covered: [],
+      not_covered: [
+        {
+          kind: "actor",
+          id: "actor/barrow-warden",
+          tier: null,
+          reason: "`actor/barrow-warden` is UNTIERED: the campaign `unleash-actor`s it",
+        },
+      ],
+    },
+  });
+  const ledger = parseCombatPlan(json).floorGate;
+  assert.equal(ledger.present, true);
+  assert.equal(ledger.notCovered[0]!.id, "actor/barrow-warden");
+  assert.equal(ledger.notCovered[0]!.tier, undefined);
+  assert.match(ledger.notCovered[0]!.reason!, /UNTIERED/);
+});
+
+test("a ledger entry whose tier is a typo is still rejected, never read as untiered", () => {
+  const json = planJson({
+    floor_gate: {
+      covered: [],
+      not_covered: [{ kind: "actor", id: "actor/x", tier: "elight", reason: "why" }],
+    },
+  });
+  assert.throws(
+    () => parseCombatPlan(json),
+    (err: unknown) =>
+      err instanceof CombatPlanParseError && err.pointer === "/floor_gate/not_covered/0/tier",
+  );
+});
+
 test("a not-covered entry with no reason is rejected — that silence is the bug", () => {
   const json = planJson({
     floor_gate: {

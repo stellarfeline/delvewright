@@ -2214,9 +2214,17 @@ struct VisitedPos {
 }
 
 fn critical_positions(plan: &Plan) -> Vec<VisitedPos> {
+    positions_of(&plan.critical_path, &plan.critical_path_transport)
+}
+
+/// [`critical_positions`] over an arbitrary exported step list — the shared core,
+/// split out (task #117) so a spec-0025 **branch path** (a different sequence of
+/// the same step shapes, with its own transport markers) yields its own visited
+/// positions in its own step space. `src_step` indices are indices into `steps`.
+fn positions_of(steps: &[Step], transports: &[Option<[i32; 3]>]) -> Vec<VisitedPos> {
     let mut out = Vec::new();
     let mut transport_pending = false;
-    for (i, step) in plan.critical_path.iter().enumerate() {
+    for (i, step) in steps.iter().enumerate() {
         let pos = match step {
             Step::TalkTo { pos, .. }
             | Step::Reach { pos, .. }
@@ -2237,12 +2245,7 @@ fn critical_positions(plan: &Plan) -> Vec<VisitedPos> {
         // A transport marker on step `i` teleports the player when that step's
         // objective completes — i.e. before the *next* visited position is reached,
         // so the move INTO that next position is a ride, not a walk to validate.
-        if plan
-            .critical_path_transport
-            .get(i)
-            .and_then(|t| *t)
-            .is_some()
-        {
+        if transports.get(i).and_then(|t| *t).is_some() {
             transport_pending = true;
         }
     }
@@ -3943,6 +3946,56 @@ pub struct LegRoute {
 /// has passed).
 pub fn critical_path_routes(plan: &Plan, world: &World) -> Vec<LegRoute> {
     world.walked_legs(plan)
+}
+
+/// Per-branch `DW0311` (spec-0025, task #117): prove every walked leg of ONE
+/// branch's exported path is routable over the assembled geometry, under the
+/// branch's own causal gate seals.
+///
+/// [`check_critical_path`] quantifies over the DEFAULT playthrough only; a
+/// branch-divergent leg — one the fork adds or resequences — was walked by the
+/// harness with no compile-time proof behind it. This is the same
+/// [`route_visited`] core over the branch's own step list, with `gate_events` /
+/// `ancestor` in the **branch path's step space**
+/// ([`Plan::branch_gate_model`]) — never the default path's indices, which
+/// belong to a different sequence.
+pub fn check_branch_path(
+    world: &World,
+    steps: &[Step],
+    transports: &[Option<[i32; 3]>],
+    gate_events: &[GateEvent],
+    ancestor: &dyn Fn(usize, usize) -> bool,
+) -> Result<(), NavError> {
+    route_visited(
+        world,
+        &positions_of(steps, transports),
+        gate_events,
+        ancestor,
+    )
+}
+
+/// The proven A* cell routes of one branch's walked legs — the branch
+/// counterpart of [`critical_path_routes`], for export as that branch's waypoint
+/// artifact (`validation/branch-waypoints-<branch>.json`, task #117). Same leg
+/// selection, endpoint snapping and per-leg gate seals as [`check_branch_path`];
+/// call it only after that check has succeeded (a leg that fails to snap or
+/// route is omitted, which cannot occur once the check has passed).
+pub fn branch_path_routes(
+    world: &World,
+    steps: &[Step],
+    transports: &[Option<[i32; 3]>],
+    gate_events: &[GateEvent],
+    ancestor: &dyn Fn(usize, usize) -> bool,
+) -> Vec<LegRoute> {
+    route_walked_legs(
+        world,
+        &positions_of(steps, transports),
+        gate_events,
+        ancestor,
+    )
+    .into_iter()
+    .map(|(leg, _)| leg)
+    .collect()
 }
 
 /// `DW0314`: an exported critical-path waypoint is not standable in the FINAL

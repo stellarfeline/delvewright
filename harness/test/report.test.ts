@@ -125,6 +125,34 @@ test("the run report prints the compiler's floor-gate ledger, both sides, verbat
   assert.match(String(json.floor_gate.not_covered[0]!["reason"]), /never unleashed/);
 });
 
+test("an untiered hostile is printed with an explicit null tier, never a dropped key", () => {
+  // Task #121: the row exists precisely because nothing was declared, so the
+  // report must SHOW the absence. A key that vanishes from the JSON would be the
+  // same silence one layer down.
+  const report = new RunReport("souls-bonfire", "normal");
+  report.recordCombatCoverage(
+    {
+      present: true,
+      covered: [],
+      notCovered: [
+        {
+          kind: "actor",
+          id: "actor/barrow-warden",
+          reason: "`actor/barrow-warden` is UNTIERED: the campaign `unleash-actor`s it",
+        },
+      ],
+    },
+    [],
+  );
+  const json = report.toJSON() as {
+    floor_gate: { not_covered: Record<string, unknown>[] };
+  };
+  const row = json.floor_gate.not_covered[0]!;
+  assert.ok("tier" in row, "the tier key must be present and null");
+  assert.equal(row["tier"], null);
+  assert.match(String(row["reason"]), /UNTIERED/);
+});
+
 test("a build with no ledger reports it ABSENT, not as an empty ledger", () => {
   // "This campaign bills nothing hard" and "this build cannot tell you" are
   // different facts, and only one of them is reassuring.

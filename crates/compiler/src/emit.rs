@@ -293,6 +293,12 @@ pub fn build_with_warnings(
     // the routes + the assembled occupancy for the DW0724 clear-eye self-check);
     // empty for a campaign with no walked leg, so its render plan stays byte-identical.
     let mut pov_shots: Vec<crate::render_plan::PovShot> = Vec::new();
+    // spec-0025 per-branch waypoint artifacts (task #117): one
+    // `validation/branch-waypoints-<branch>.json` per reachable branch, filled
+    // inside the world block below (they need the assembled occupancy) and
+    // emitted alongside the branch paths. Empty for a campaign with no declared
+    // branch points, so nothing moves for anybody who has not opted in.
+    let mut branch_waypoints: Vec<(String, Value)> = Vec::new();
 
     // Every anchor-bearing effect, at every nesting depth, must resolve to a real
     // world position or the build stops (DW0360). This runs FIRST among the
@@ -441,6 +447,66 @@ pub fn build_with_warnings(
                     .map(|s| (s.id.clone(), s.eye_cell()))
                     .collect();
                 crate::nav::verify_pov_cameras(&world, &eyes)?;
+                // spec-0025 branch navigation, made first-class (task #117). The
+                // DW0311 proof above quantifies over the DEFAULT playthrough
+                // only, and the waypoint export followed it — so a branch run
+                // walked its fork-divergent legs with no proof behind them and
+                // no waypoints under them (single-goal navigation, which is
+                // terrain-flaky exactly where the proven path is deterministic).
+                // Here every REACHABLE branch's exported path gets both halves:
+                // its own DW0311 (each walked leg routed over this same
+                // assembled world, under the BRANCH's own causal gate seals, in
+                // its own step space — `Plan::branch_gate_model`; default-path
+                // indices belong to a different sequence and must never be
+                // inherited) and its own waypoint artifact, derived from those
+                // proven routes exactly as the critical path's is (same
+                // thinning, same DW0314 standability self-check, same JSON
+                // shape — `waypoints_json`). Deterministic: branches enumerate
+                // in declaration-order (ADR-0006).
+                let realized = crate::branch::realize(plan.campaign);
+                if !realized.is_empty() {
+                    let flow = crate::flow::Flow::new(plan.campaign);
+                    for r in &realized {
+                        let Some(widx) = r.world else { continue };
+                        let cp = plan
+                            .branch_critical_path(&flow.playthrough_in(widx))
+                            .map_err(|e| BuildFailure::Diagnostic {
+                                code: e.code,
+                                message: format!("branch `{}`: {}", r.branch.id, e.message),
+                            })?;
+                        let (gate_events, ancestors) = plan.branch_gate_model(&cp);
+                        let ancestor = |g: usize, s: usize| {
+                            g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g))
+                        };
+                        let label = |e: crate::nav::NavError| crate::nav::NavError {
+                            code: e.code,
+                            message: format!("branch `{}`: {}", r.branch.id, e.message),
+                        };
+                        crate::nav::check_branch_path(
+                            &world,
+                            &cp.steps,
+                            &cp.transport_by_step,
+                            &gate_events,
+                            &ancestor,
+                        )
+                        .map_err(label)?;
+                        let branch_routes = crate::nav::branch_path_routes(
+                            &world,
+                            &cp.steps,
+                            &cp.transport_by_step,
+                            &gate_events,
+                            &ancestor,
+                        );
+                        crate::nav::verify_exported_routes(&world, &branch_routes)
+                            .map_err(label)?;
+                        if !branch_routes.is_empty() {
+                            branch_waypoints.push((
+                                r.branch.slug.clone(),
+                                crate::waypoints::waypoints_json(plan, &branch_routes),
+                            ));
+                        }
+                    }
+                }
                 (m, am)
             } else {
                 (Vec::new(), Vec::new())
@@ -489,9 +555,15 @@ pub fn build_with_warnings(
             // this file: the set-piece souls fight is an actor, not a wave, and
             // a campaign whose only billed elite is an actor would otherwise
             // emit no plan at all — the exact silence spec-0023's floor gate
-            // must not be allowed to read as a pass.
+            // must not be allowed to read as a pass. An UNTIERED hostile actor
+            // (task #121) is enough for the same reason and one step further
+            // out: it is a fight nothing bills, so without the ledger line
+            // naming it there is no artifact anywhere that says it existed.
             let tiered_actors = crate::combat::actor_encounters(plan);
-            if crate::combat::has_encounters(plan) || !tiered_actors.is_empty() {
+            if crate::combat::has_encounters(plan)
+                || !tiered_actors.is_empty()
+                || crate::combat::has_untiered_hostile_actors(plan)
+            {
                 let mandatory = crate::combat::encounters(plan);
                 warnings.extend(crate::combat::floor_coverage_warnings(
                     plan,
@@ -782,6 +854,17 @@ pub fn build_with_warnings(
             &mut out,
             &format!("validation/branch-path-{slug}.json"),
             &path,
+        );
+    }
+    // ...and each reachable branch's own waypoint artifact (task #117), derived
+    // in the world block above from the same assembled model its per-branch
+    // DW0311 proof ran over. The harness derives the name from the branch's
+    // `branch-path-<slug>.json`, so the two files are one contract.
+    for (slug, wp) in &branch_waypoints {
+        put_json(
+            &mut out,
+            &format!("validation/branch-waypoints-{slug}.json"),
+            wp,
         );
     }
 
@@ -1392,10 +1475,11 @@ fn emit_functions(
         setup.push(format!("scoreboard objectives add {COLLECT_HOLD} dummy"));
     }
     // v0.6 checkpoints (spec-0012): the active-checkpoint marker + the vanilla
-    // `deathCount` respawn-detection scores. Emitted only when a checkpoint carries
-    // an `on_respawn` hook (the only consumer of the marker), so pre-0.6 campaigns —
-    // and checkpoint campaigns without hooks — stay byte-identical here.
-    if plan.any_checkpoint_on_respawn() {
+    // `deathCount` respawn-detection scores. Emitted for EVERY campaign that
+    // declares a checkpoint — the marker now also drives the respawn **re-seat**
+    // (task #145), not just the `on_respawn` dispatch. Pre-0.6 / checkpoint-free
+    // campaigns stay byte-identical here.
+    if plan.any_checkpoint() {
         setup.push("scoreboard players set #cp dw.sys -1".to_string());
         setup.push("scoreboard objectives add dw.deaths deathCount".to_string());
         setup.push("scoreboard objectives add dw.death_ack dummy".to_string());
@@ -1970,9 +2054,9 @@ fn emit_functions(
     // byte-identical.
     tick.extend(shortcut_tick(plan));
     // v0.6 checkpoints (spec-0012): per-player respawn detection via the vanilla
-    // `deathCount` criterion, dispatching the active checkpoint's `on_respawn`.
-    // Only when a checkpoint carries an `on_respawn` hook.
-    if plan.any_checkpoint_on_respawn() {
+    // `deathCount` criterion — the respawn re-seat (task #145) and the active
+    // checkpoint's `on_respawn`. Emitted for every campaign with a checkpoint.
+    if plan.any_checkpoint() {
         tick.push(format!("execute as @a run function {ns}:cp_respawn_check"));
     }
     // v0.6 stealth (spec-0014): while a beat is active, run its per-tick judge.
@@ -3823,7 +3907,7 @@ fn emit_set_checkpoint(
             "data modify storage dw:cp pos set value [{}, {}, {}]",
             pos[0], pos[1], pos[2]
         ));
-        if plan.any_checkpoint_on_respawn() {
+        if plan.any_checkpoint() {
             let idx = plan
                 .checkpoint_for(anchor, on_respawn)
                 .map(|c| c.index)
@@ -3831,6 +3915,15 @@ fn emit_set_checkpoint(
             body.push(format!("scoreboard players set #cp dw.sys {idx}"));
         }
     }
+}
+
+/// The centre of a block cell on a horizontal axis, as the compiler writes it into
+/// a `tp`. Vanilla's own respawn lands a player at `cell + 0.5` on X/Z, so the
+/// re-seat has to agree with it or a correct respawn would visibly twitch. Written
+/// through `f64` (not string concatenation) because `-16` centres on `-15.5`, not
+/// `-16.5`; the value is exactly representable, so the text is deterministic.
+fn center(cell: i32) -> String {
+    format!("{:.1}", cell as f64 + 0.5)
 }
 
 /// Generate the checkpoint respawn-dispatch functions (DSL v0.6, spec-0012).
@@ -3842,19 +3935,59 @@ fn emit_set_checkpoint(
 fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut fns: Vec<(String, String)> = Vec::new();
-    if !plan.any_checkpoint_on_respawn() {
+    if !plan.any_checkpoint() {
         return fns;
     }
     // cp_respawn_check (as @s): fire on the death-count edge, then acknowledge.
+    //
+    // `deathCount` ticks up the moment the player DIES, while they are still on
+    // the death screen — a corpse, not a respawned player. Both the re-seat and
+    // the authored `on_respawn` bundle belong to the player who has actually come
+    // back, so the whole edge (fire AND acknowledge) is held until the player is
+    // alive again: a dead player reads `Health: 0.0f`, and holding the ack keeps
+    // the edge armed instead of burning it on the corpse (task #145).
+    let alive = "unless data entity @s {Health:0.0f}";
     fns.push((
         "cp_respawn_check".to_string(),
         lines(&[
             format!(
-                "execute if score @s dw.deaths > @s dw.death_ack run function {ns}:cp_respawn_fire"
+                "execute {alive} if score @s dw.deaths > @s dw.death_ack run function \
+                 {ns}:cp_respawn_fire"
             ),
-            "scoreboard players operation @s dw.death_ack = @s dw.deaths".to_string(),
+            format!(
+                "execute {alive} run scoreboard players operation @s dw.death_ack = @s dw.deaths"
+            ),
         ]),
     ));
+    // cp_seat_<i> (as @s): put the respawned player ON the checkpoint cell.
+    //
+    // Why this exists (owner playtest, task #145). `set-checkpoint` records the
+    // party's respawn with vanilla's `spawnpoint @a <cell>`, but `/spawnpoint` is
+    // a *hint*: on death vanilla re-validates the recorded cell and, when the cell
+    // or the cell above it is solid or liquid, silently discards it and respawns
+    // the player at the WORLD spawn — the campaign entrance. Measured live on
+    // 1.21.11: a spawnpoint on a dry cell respawns at `cell + (0.5, 0.1, 0.5)`, the
+    // same spawnpoint on a water cell respawns at `setworldspawn`. Past a one-way
+    // transport that is not a lost checkpoint, it is an unrecoverable softlock.
+    //
+    // So the delve stops delegating its own promise. `#cp dw.sys` already names
+    // the checkpoint the party last armed; the re-seat teleports the respawned
+    // player onto that cell's centre unconditionally. When vanilla honoured the
+    // spawnpoint the player is already standing there and the teleport is a no-op
+    // they cannot see; when vanilla dropped it, this is the only thing that puts
+    // them back. Coordinates are compiled in — no macro, no storage read, so the
+    // re-seat cannot itself fail on a malformed mirror.
+    for c in &plan.checkpoints {
+        fns.push((
+            format!("cp_seat_{}", c.index),
+            lines(&[format!(
+                "tp @s {} {} {}",
+                center(c.pos[0]),
+                c.pos[1],
+                center(c.pos[2])
+            )]),
+        ));
+    }
     // cp_respawn_fire (as @s): dispatch on the active checkpoint.
     let reseat = bonfire_reseat_lines(plan);
     // A bonfire owes the respawning party the same scene reset a rest gives them
@@ -3864,6 +3997,14 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
         !c.on_respawn.is_empty() || (c.rest && !reseat.is_empty())
     };
     let mut fire: Vec<String> = Vec::new();
+    // The re-seat runs FIRST and for every checkpoint: an `on_respawn` beat that
+    // narrates "you wake at the mark" must be read by a player who is on it.
+    for c in &plan.checkpoints {
+        fire.push(format!(
+            "execute if score #cp dw.sys matches {} run function {ns}:cp_seat_{}",
+            c.index, c.index
+        ));
+    }
     for c in &plan.checkpoints {
         if !dispatches(c) {
             continue;
@@ -4348,7 +4489,7 @@ fn emit_bonfire_functions(plan: &Plan) -> Vec<(String, String)> {
                     pos[0], pos[1], pos[2]
                 ),
             ];
-            if plan.any_checkpoint_on_respawn() {
+            if plan.any_checkpoint() {
                 s.push(format!("scoreboard players set #cp dw.sys {i}"));
             }
             s
@@ -10699,6 +10840,84 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
             format!("packtest-datapack/data/{ns}/test/v06_checkpoint_respawn.mcfunction"),
             lines(&t).into_bytes(),
         );
+
+        // --- the environmental-death variant (task #145) ---
+        //
+        // The template above proves the RECORD; this one proves the LANDING, which
+        // is the half the owner's tide-mill playtest found missing. `spawnpoint` is
+        // only a hint: vanilla re-validates the recorded cell on death and silently
+        // respawns at the world spawn when it is solid or liquid. Nothing about
+        // that is specific to how the player died — a crush gate's
+        // `damage @s 1000 minecraft:generic` leaves exactly the same `deathCount`
+        // edge a mob kill does — so the test drives that edge directly, from the
+        // worst starting position (the campaign entrance, where vanilla's fallback
+        // drops them), and asserts the player ends on the checkpoint cell.
+        //
+        // Second half: the re-seat must be EDGE-triggered. A leash that re-seated
+        // every tick would pin the party to the checkpoint and make the delve
+        // unplayable, so the test walks the dummy away again, re-runs the check
+        // with no new death, and asserts it stayed away.
+        if let Some(entry) = campaign_spawn(plan) {
+            let (pin, sel) = pin_dummy("dw_t_cpseat");
+            let mut t = packtest_header(&format!(
+                "{title}: an environmental death re-seats the player ON the checkpoint, once \
+                 (spec-0012, task #145)"
+            ));
+            t.push(format!("function {ns}:setup"));
+            t.push(pin);
+            t.push(format!("scoreboard players set #cp dw.sys {}", cp.index));
+            t.push(format!("scoreboard players set {sel} dw.death_ack 0"));
+            t.push(format!("scoreboard players set {sel} dw.deaths 1"));
+            t.push(format!(
+                "tp {sel} {} {} {}",
+                center(entry[0]),
+                entry[1],
+                center(entry[2])
+            ));
+            t.push(format!(
+                "execute as {sel} run function {ns}:cp_respawn_check"
+            ));
+            for (i, axis) in ["x", "y", "z"].iter().enumerate() {
+                t.push(format!(
+                    "execute store result score #{axis}_cpseat dw.sys run data get entity {sel} \
+                     Pos[{i}] 100"
+                ));
+            }
+            t.push(format!(
+                "assert score #x_cpseat dw.sys matches {}",
+                cp.pos[0] * 100 + 50
+            ));
+            t.push(format!(
+                "assert score #y_cpseat dw.sys matches {}",
+                cp.pos[1] * 100
+            ));
+            t.push(format!(
+                "assert score #z_cpseat dw.sys matches {}",
+                cp.pos[2] * 100 + 50
+            ));
+            t.push(format!("assert score {sel} dw.death_ack matches 1"));
+            // …and no second re-seat without a second death.
+            t.push(format!(
+                "tp {sel} {} {} {}",
+                center(entry[0]),
+                entry[1],
+                center(entry[2])
+            ));
+            t.push(format!(
+                "execute as {sel} run function {ns}:cp_respawn_check"
+            ));
+            t.push(format!(
+                "execute store result score #x2_cpseat dw.sys run data get entity {sel} Pos[0] 100"
+            ));
+            t.push(format!(
+                "assert score #x2_cpseat dw.sys matches {}",
+                entry[0] * 100 + 50
+            ));
+            out.insert(
+                format!("packtest-datapack/data/{ns}/test/v06_checkpoint_reseat.mcfunction"),
+                lines(&t).into_bytes(),
+            );
+        }
     }
 
     if let Some(beat) = plan.stealth_beats.first() {

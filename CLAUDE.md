@@ -101,19 +101,27 @@ validation/          # docker compose: headless server + bot, same image as CI &
   Exception (owner, 2026-07-31): a PR that weakens, disables, or skips any
   check, test, or threshold is **never mechanical** — always owner-review,
   regardless of CI state.
-  Amendment (owner, 2026-08-04): **CI green is admission to verification, not
-  grounds to merge.** A fix PR merges only after the fix is demonstrated
-  effective against the scenario that motivated it: compile-layer bugs → the
-  motivating campaign rebuilds and proves it; runtime/bot bugs → the
-  validation-ladder re-run of the original failure goes red→green;
-  owner-reported player-experience issues → the owner's playtest confirms,
-  **in batches, never per-PR** (refined same day): fixes accumulate into the
-  campaign; the planner hands the owner one round summary — what was fixed,
-  what to look for per item; she tests once and reports. Items she does not
-  flag are confirmed — their PRs merge; items she flags stay open and the fix
-  continues on the same PR into the next round. Until its proof exists a fix
-  PR stays open. Unit/CI tests alone prove the change broke nothing, not that
-  it fixed the target.
+  Amendment (owner, 2026-08-04, corrected same day): **CI green is admission
+  to verification, not grounds to merge.** Two gates by what the change can
+  touch:
+  - **Validator-only fixes** — player-facing output byte-identical (harness,
+    PackTest templates' test half, CI tooling): merge on a machine red→green
+    demonstration of the motivating scenario; the owner does not personally
+    review these.
+  - **Everything the player can experience** — engine emission, DSL surface,
+    campaign content: the owner's own playtest is the merge gate, **in
+    batches, never per-PR**: fixes accumulate into the campaign; the planner
+    hands the owner one round summary — what was fixed, what to look for per
+    item; she tests once and reports. Items she does not flag are confirmed —
+    their PRs merge; flagged items stay open and the fix continues on the
+    same PR into the next round. Machine red→green on the motivating scenario
+    is still REQUIRED first — it admits the fix into her batch, it never
+    replaces her.
+  - **New campaigns** merge to content-repo main only after the owner has
+    played them; machine-ladder green alone is not a merge gate (it remains
+    the prerequisite).
+  Until its gate is passed a PR stays open. Unit/CI tests alone prove the
+  change broke nothing, not that it fixed the target.
 - **Write short documents.** Specs/ADRs are owner-consumed via chat summaries;
   their long form exists for agents. Keep them as terse as correctness allows.
 - **Audience separation in docs** (owner, 2026-08-02): every document has ONE
@@ -123,6 +131,14 @@ validation/          # docker compose: headless server + bot, same image as CI &
   act — never internal machinery such as model tiers, subagent dispatch,
   worker roles, or pipeline plumbing. Applies to both repos, including the
   content repo's play/hosting tutorials.
+- **Version-adoption discipline** (owner, 2026-08-04): whenever a `dsl_version`
+  introduces new obligations, adoption rounds for every ACTIVE campaign are
+  scheduled within the same milestone — never left to accumulate (the island
+  ran four rounds behind the branch-declaration obligations before anyone
+  scheduled it). Dormant campaigns are marked upgrade-on-next-touch. A version
+  upgrade is always its own explicit, proof-carrying round. Old versions keep
+  compiling (per-stage fences); released delves reproduce via their pinned
+  engine (`versions.toml` + OCI), not via eternal byte-stable emission.
 - **Tiered testing**: unit + static analysis on every push; PackTest integration on PR;
   full bot playthrough on release candidates only.
 - **PR-based flow even solo.** GitHub Actions; repo is private for now, public when
