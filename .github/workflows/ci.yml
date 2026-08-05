@@ -230,6 +230,16 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: validation compose carries no Docker-global name or port
         run: python3 tools/check-compose-isolation.py
+      # `cmd | grep -q` under `set -o pipefail` is a coin flip that reports FAILURE
+      # *because* the match succeeded: grep exits at the first hit, the producer
+      # dies of SIGPIPE (141), and pipefail promotes 141 to the pipeline. Measured
+      # on a live server that was up and had logged `Done (`: 28 false negatives in
+      # 30 runs. It cost two owner playtest stagings ("server did not come up") and
+      # it silently disarmed the 25565 guards — the same shape decides whether the
+      # owner's mutex may be released while a human is playing (task #173/#16).
+      # Deterministic, offline, stdlib-only python3.
+      - name: no early-exit consumer on the right of a pipe (SIGPIPE + pipefail)
+        run: python3 tools/check-shell-pipe-shortcircuit.py
       # --offline: check only local/internal links. The repo is private, so
       # external-link checks would fail or flake.
       - uses: lycheeverse/lychee-action@v2

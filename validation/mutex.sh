@@ -68,9 +68,15 @@ dw_mutex_holder() {
 # actually up. Name-independent on purpose: `owner-play.yaml` and
 # `tools/playtest-server.sh` use different container names, and what matters is
 # the PORT, not who bound it.
+# Capture, then test — a `| grep -q` here is a coin flip: grep exits at the first
+# match, `docker ps` dies of SIGPIPE, and the caller's `pipefail` turns the match
+# into a FALSE. This function decides whether the sacred 25565 mutex may be
+# released, so a false negative frees the lock while a human is playing.
 dw_mutex_port_bound() {
   command -v docker >/dev/null 2>&1 || return 1
-  docker ps --format '{{.Ports}}' 2>/dev/null | grep -qE ':25565->'
+  local ports
+  ports="$(docker ps --format '{{.Ports}}' 2>/dev/null || true)"
+  [[ $ports == *":25565->"* ]]
 }
 
 # Hard stop before binding 25565: refuse while a human is playing.

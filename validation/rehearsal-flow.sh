@@ -64,12 +64,17 @@ echo "==> waiting for the server to finish starting"
 # No pinned container name (task #185) — ask compose for this project's id.
 CID="$($COMPOSE ps -q playtest)"
 [ -n "$CID" ] || { echo "::error:: the playtest container did not start"; exit 1; }
+STARTED=0
 for _ in $(seq 1 90); do
-  if docker logs "$CID" 2>&1 | grep -qE 'Done \([0-9]'; then break; fi
+  # Capture, then test. `docker logs | grep -q` exits at the first match and
+  # SIGPIPEs `docker logs`; under pipefail that reads as NO MATCH, so a server
+  # that started is reported as never started (tools/check-shell-pipe-shortcircuit.py).
+  BOOT_LOG="$(docker logs "$CID" 2>&1 || true)"
+  if [[ $BOOT_LOG == *"Done ("[0-9]* ]]; then STARTED=1; break; fi
   if [ "$(docker inspect -f '{{.State.Status}}' "$CID" 2>/dev/null)" = "exited" ]; then break; fi
   sleep 5
 done
-if ! docker logs "$CID" 2>&1 | grep -qE 'Done \([0-9]'; then
+if [ "$STARTED" != 1 ]; then
   echo "::error:: server never finished starting"; docker logs "$CID" 2>&1 | tail -n 30; exit 1
 fi
 
@@ -86,7 +91,11 @@ DELVEWRIGHT_MC_PORT="$MC_PORT" \
 DELVEWRIGHT_BOT_USERNAME=delve-creator \
   node harness/src/rehearsal-bot.ts | tee "$BOT_OUT"
 
-MARKED="$(grep -oE 'MARKED_CELL=[-0-9,]+' "$BOT_OUT" | head -1 | cut -d= -f2)"
+# Capture every match, then take the first with a parameter expansion. `| head -1`
+# would SIGPIPE grep the moment the bot reported a second cell, and pipefail turns
+# that into a non-zero `$(...)` — `set -e` then kills the run for succeeding.
+MARKED_ALL="$(grep -oE 'MARKED_CELL=[-0-9,]+' "$BOT_OUT" || true)"
+MARKED="${MARKED_ALL%%$'\n'*}"; MARKED="${MARKED#*=}"
 [ -n "$MARKED" ] || { echo "::error:: the bot did not report the cell it marked"; exit 1; }
 echo "==> the bot marked cell $MARKED"
 
