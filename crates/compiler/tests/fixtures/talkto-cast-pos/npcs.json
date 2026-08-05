@@ -1,0 +1,22 @@
+{
+  "dsl_version": "0.7.0",
+  "campaign_id": "talkto-cast-pos",
+  "stage": "npcs",
+  "content": {
+    "npcs": [
+      {
+        "id": "npc/keeper",
+        "name": "The Keeper",
+        "role": "quest-giver",
+        "area": "area/keep",
+        "anchor": "anchor/keeper-stand",
+        "base_entity": "minecraft:villager",
+        "persona": {
+          "archetype": "stoic gatekeeper",
+          "speech_style": "Terse, formal, archaic.",
+          "motivation": "Keep the gate shut until someone asks well."
+        }
+      }
+    ]
+  }
+}

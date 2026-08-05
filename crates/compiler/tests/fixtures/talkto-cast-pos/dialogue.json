@@ -1,0 +1,49 @@
+{
+  "dsl_version": "0.7.0",
+  "campaign_id": "talkto-cast-pos",
+  "stage": "dialogue",
+  "content": {
+    "dialogues": [
+      {
+        "npc": "npc/keeper",
+        "root": "dlg/greeting",
+        "nodes": [
+          {
+            "id": "dlg/greeting",
+            "text": "Halt, traveler. The inner door stays shut.",
+            "options": [
+              {
+                "label": "Lift the gate, please.",
+                "effects": [
+                  {
+                    "type": "complete-objective",
+                    "objective": "obj/ask"
+                  }
+                ]
+              },
+              {
+                "label": "What waits beyond it?",
+                "next": "dlg/farewell"
+              }
+            ]
+          },
+          {
+            "id": "dlg/farewell",
+            "text": "The road is yours. Do not look back.",
+            "options": [
+              {
+                "label": "Thank you, Keeper.",
+                "effects": [
+                  {
+                    "type": "complete-objective",
+                    "objective": "obj/farewell"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
