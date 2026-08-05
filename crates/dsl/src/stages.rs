@@ -1808,13 +1808,22 @@ pub struct Wave {
     /// is how the author opts into that scrutiny; the alternative — inferring
     /// "elite" from how tuned a stack looks — is exactly the downstream folklore
     /// CLAUDE.md's no-hack rule forbids.
+    ///
+    /// **It does reach emission in exactly one place** (spec-0016 §1, owner
+    /// ruling 2026-08-05): in a campaign with a `bonfire`, a billed `elite`/
+    /// `boss` wave that does not declare `respawns_on_rest` is refreshed by a
+    /// rest *while it is still standing* — deleted and re-seated at full count
+    /// and full health, so chipping it down one life at a time is never a path.
+    /// Beat it and it stays beaten. `DW0499` forbids billing a wave `boss` and
+    /// `respawns_on_rest` at once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<EncounterTier>,
 }
 
 /// What a wave is billed as (DSL v0.7, spec-0023). Consumed by the validation
-/// ladder (the run's combat plan), never by emission — the shipped datapack is
-/// byte-identical whichever tier a wave declares.
+/// ladder (the run's combat plan) and — since spec-0016 §1's undefeated re-seat
+/// — by one emission site: a bonfire refreshes a billed wave that is still
+/// standing. Nothing about the encounter itself is scaled from it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum EncounterTier {

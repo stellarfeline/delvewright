@@ -1493,7 +1493,10 @@ impl<'a> Plan<'a> {
     /// vanilla respawn-detection machinery so checkpoint-free / hook-free campaigns
     /// stay byte-identical (DSL v0.6, spec-0012).
     pub fn any_checkpoint_on_respawn(&self) -> bool {
-        self.checkpoints.iter().any(|c| !c.on_respawn.is_empty()) || !self.reseat_waves().is_empty()
+        self.checkpoints.iter().any(|c| !c.on_respawn.is_empty())
+            || !self.reseat_waves().is_empty()
+            || !self.undefeated_reseat_waves().is_empty()
+            || !self.reseat_actors().is_empty()
     }
 
     /// Whether the campaign declares **any** checkpoint at all (spec-0012 /
@@ -1522,6 +1525,53 @@ impl<'a> Plan<'a> {
             .iter()
             .filter(|w| w.respawns_on_rest)
             .collect()
+    }
+
+    /// The waves a bonfire refreshes **only while they are undefeated**
+    /// (spec-0016 §1, owner ruling 2026-08-05): every `elite`/`boss`-tier wave
+    /// that does NOT declare `respawns_on_rest`, in content order.
+    ///
+    /// The distinction from [`Self::reseat_waves`] is the whole ruling. A
+    /// `respawns_on_rest` wave comes back *whether or not* the party beat it —
+    /// the fire is not a progress ratchet. A billed elite/boss does not: beat it
+    /// and it stays beaten (spec-0016 §1, "stage bosses never respawn on rest").
+    /// But while it is still standing, chipping it down one hit per life is never
+    /// a valid path, so a rest wipes what is left of it and re-seats the authored
+    /// wave at full count and full health. The two sets are disjoint by
+    /// construction here, so no wave can be re-seated twice by one rest;
+    /// `DW0499` forbids the `boss` + `respawns_on_rest` combination outright.
+    ///
+    /// Empty without a bonfire, and empty for every campaign that bills no
+    /// encounter → byte-identical emission.
+    pub fn undefeated_reseat_waves(&self) -> Vec<&delvewright_dsl::Wave> {
+        if !self.checkpoints.iter().any(|c| c.rest) {
+            return Vec::new();
+        }
+        self.campaign
+            .quests
+            .content
+            .waves
+            .iter()
+            .filter(|w| !w.respawns_on_rest)
+            .filter(|w| {
+                w.tier
+                    .is_some_and(delvewright_dsl::EncounterTier::has_floor_expectation)
+            })
+            .collect()
+    }
+
+    /// The actors a bonfire refreshes while they are undefeated (spec-0016 §1,
+    /// owner ruling 2026-08-05), in declaration order: every actor the campaign
+    /// `unleash-actor`s — the compiler's one definition of an actor that is a
+    /// *fight* ([`crate::combat::hostile_actors`]).
+    ///
+    /// Empty without a bonfire, and empty for every campaign whose actors are all
+    /// scenery → byte-identical emission.
+    pub fn reseat_actors(&self) -> Vec<&delvewright_dsl::Actor> {
+        if !self.checkpoints.iter().any(|c| c.rest) {
+            return Vec::new();
+        }
+        crate::combat::hostile_actors(self.campaign)
     }
 
     /// The collected checkpoint matching a `set-checkpoint` effect (by anchor +
