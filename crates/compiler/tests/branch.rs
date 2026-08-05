@@ -547,3 +547,91 @@ fn an_entry_choice_is_resolved_against_its_own_speaker() {
         assert_eq!(choices[0]["npc"], "npc/keeper");
     }
 }
+
+// ---------------------------------------------------------------------------
+// DW0205 per branch (task #174)
+// ---------------------------------------------------------------------------
+
+/// The green fixture is clean of `DW0205`: nothing on either branch offers a
+/// button that walks past a load-bearing beat.
+#[test]
+fn green_fixture_has_no_branch_skip() {
+    assert!(
+        !codes(&green()).contains(&"DW0205".to_string()),
+        "{:?}",
+        codes(&green())
+    );
+}
+
+/// Optionality interacts with branches. The bolt branch gets a second beat
+/// (throw the bar off) and a `talk-to` that ends the delve, and the Keeper wears
+/// a dialogue scene during it — so the ending button is on screen the moment
+/// `flag/flee` is set, before the bar is off. The campaign's OWN critical path is
+/// the hold branch and never walks `quest/bolt`, so this skip exists only under
+/// one branch's flag assignment: exactly what the per-branch pass is for, and the
+/// message names the branch.
+#[test]
+fn a_branch_only_skip_reds_and_names_its_branch() {
+    let c = campaign_with(|_, quests, dialogue| {
+        let bolt = quests["content"]["quests"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|q| q["id"] == "quest/bolt")
+            .unwrap();
+        bolt["objectives"] = serde_json::json!([
+            {
+                "type": "reach-anchor", "id": "obj/cut-bar", "anchor": "anchor/keeper-stand",
+                "radius": 2, "requires_flags": ["flag/flee"],
+                "happening": { "verb": "opens", "text": "They throw the bar off the keep gate on the way past." }
+            },
+            {
+                "type": "talk-to", "id": "obj/shove-off", "npc": "npc/keeper",
+                "after": ["obj/cut-bar"], "requires_flags": ["flag/flee"],
+                "happening": { "verb": "departs", "text": "They tell the Keeper they are gone, and go." }
+            }
+        ]);
+        bolt["on_objective_complete"] = serde_json::json!({
+            "obj/cut-bar": [{
+                "type": "open-gate", "anchor": "anchor/door",
+                "happening": { "verb": "opens", "text": "The keep gate swings for the last time." }
+            }],
+            "obj/shove-off": [{
+                "type": "campaign-complete", "ending": "ending/abandoned",
+                "happening": { "verb": "loses", "text": "The delve ends with the watch unstood." }
+            }]
+        });
+        bolt["cast"]["npc/keeper"] = serde_json::json!({
+            "at": "anchor/keeper-stand",
+            "doing": "watching the road you took, saying nothing",
+            "dialogue": "dlg/greeting"
+        });
+        // `quest/hold` opens on the same trigger, so its flee-branch cast is the
+        // last clause governing the Keeper's right-click on this branch: give it
+        // a tree too, or the ledger legitimately retires him to barks and there
+        // is no button to press (which is exactly what the green fixture does).
+        let hold = quests["content"]["quests"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|q| q["id"] == "quest/hold")
+            .unwrap();
+        hold["cast"]["npc/keeper"][1]["dialogue"] = serde_json::json!("dlg/greeting");
+        dialogue["content"]["dialogues"][0]["nodes"][0]["options"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "label": "Shove off.",
+                "requires_flags": ["flag/flee"],
+                "effects": [{ "type": "complete-objective", "objective": "obj/shove-off" }]
+            }));
+    });
+    let hit = find(branch::check_branches(&c), "DW0205");
+    assert!(hit.message.contains("obj/shove-off"), "{}", hit.message);
+    assert!(hit.message.contains("obj/cut-bar"), "{}", hit.message);
+    assert!(
+        hit.message.contains("on branch `branch/bolt`"),
+        "the branch must be named: {}",
+        hit.message
+    );
+}
