@@ -770,6 +770,14 @@ pipeline. Full derivation from the 22-round island run:
 6. **Update `DESIGN.md` in the same round and run its conformance review.** The
    island's design record went eight rounds unupdated and the audit that caught
    up found seven changes no one had asked for.
+7. **Close the round in `GENERATION.md` with its machine record**, not just
+   prose: how many validation-loop iterations it took to reach green, and every
+   DW code the round hit **with its count** (`DW0205 x3, DW0483 x3, DW0450 x1`).
+   Write it even when the count is zero — a round that hit nothing is the
+   datum that says the gates had nothing to say. This is the campaign's own
+   record of where its difficulty lives, and it is the only source from which
+   rounds-to-green can be read afterwards; a round summarised in prose alone
+   is a round whose cost cannot be recovered.
 
 ## Hard rules
 
