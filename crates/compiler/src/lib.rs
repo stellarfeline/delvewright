@@ -66,6 +66,7 @@ pub mod massing;
 pub mod nav;
 pub mod plan;
 pub mod png;
+pub mod pool;
 pub mod raster;
 pub mod registry;
 pub mod rehearsal;
