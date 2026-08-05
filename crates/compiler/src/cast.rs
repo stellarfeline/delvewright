@@ -195,6 +195,75 @@ pub fn npc_casts(c: &Campaign) -> BTreeMap<String, NpcCast> {
     out
 }
 
+/// Whether a placement's branch gate holds under `flags`.
+///
+/// This is the emitted `cast_<npc>` selector's own gate, spelled once: the
+/// clause it writes is `if <quest active> [if/unless each flag] run set <scene>`.
+/// [`crate::branch`]'s `DW0483` and [`station`] both read it, so "which
+/// placement governs this branch" has exactly one answer in the compiler.
+pub fn selects(p: &CastPlacement, flags: &BTreeSet<String>) -> bool {
+    p.requires_flags.iter().all(|f| flags.contains(f.as_str()))
+        && !p.forbids_flags.iter().any(|f| flags.contains(f.as_str()))
+}
+
+/// Where the ledger stations one NPC at one beat, once a branch's flags are
+/// known.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Station<'a> {
+    /// On stage at this anchor.
+    At(&'a str),
+    /// Declared out of the world (`"offstage"` / `"dead"`).
+    Absent(CastAbsence),
+}
+
+/// The cast row that governs `npc` while the party plays `upto_quest`, under the
+/// flags held at that moment — the ledger's answer to "where is this body?".
+///
+/// Resolution mirrors the emitted selector exactly (`cast_selector_fn`), because
+/// a second model is how the static anchor and the ledger came to disagree in
+/// the first place:
+///
+/// * clauses accumulate in [`quest_dag_order`] and **later declarations win** —
+///   `dw.qa_<quest>` is set when a quest starts and never cleared, so an earlier
+///   quest's row keeps governing until a later one replaces it;
+/// * only quests that `begun` on this playthrough contribute (a branch never
+///   activates the sibling branch's quests, so their clauses never fire);
+/// * within one quest, the LAST placement whose gate holds wins — which is what
+///   the emitted clause ladder does, and what `DW0483`'s message says it does.
+///
+/// `None` when no begun quest up to `upto_quest` declares this NPC at all: a
+/// pre-0.7 campaign with no ledger, whose callers keep their old behavior.
+pub fn station<'a>(
+    c: &'a Campaign,
+    npc: &str,
+    upto_quest: &str,
+    begun: &BTreeSet<String>,
+    flags: &BTreeSet<String>,
+) -> Option<Station<'a>> {
+    let mut out = None;
+    for qid in quest_dag_order(c) {
+        if begun.contains(&qid)
+            && let Some(q) = quest(c, &qid)
+            && let Some((_, entry)) = q.cast.iter().find(|(k, _)| k.as_str() == npc)
+        {
+            if let Some(absence) = entry.absence() {
+                out = Some(Station::Absent(absence));
+            } else if let Some(p) = entry.placements().into_iter().rfind(|p| selects(p, flags)) {
+                out = Some(match (p.at.anchor(), p.at.absence()) {
+                    (Some(a), _) => Station::At(a.as_str()),
+                    (None, Some(absence)) => Station::Absent(absence),
+                    // `CastPlace` is an anchor or an absence; nothing else exists.
+                    (None, None) => unreachable!("a cast place is an anchor or an absence"),
+                });
+            }
+        }
+        if qid == upto_quest {
+            break;
+        }
+    }
+    out
+}
+
 /// The placement that carries a quest's declaration for the whole-story lints
 /// (`DW0466`/`DW0467`): the flat form, or the first per-branch placement. Those
 /// lints ask "did this NPC's dialogue advance between beats?", which is a

@@ -1262,12 +1262,8 @@ impl<'a> Plan<'a> {
             .collect::<Vec<_>>();
 
         // ---- critical path + inter-area transport ----
-        let cp = build_critical_path(
-            campaign,
-            &anchors,
-            &npcs,
-            &crate::flow::Flow::new(campaign).playthrough(),
-        )?;
+        let flow = crate::flow::Flow::new(campaign);
+        let cp = build_critical_path(campaign, &anchors, &npcs, &flow, &flow.playthrough())?;
 
         // ---- v0.6 checkpoints + stealth beats (spec-0012 / spec-0014) ----
         let (checkpoints, stealth_beats) = collect_v06_effects(campaign, &anchors, &cp.obj_step);
@@ -1374,11 +1370,16 @@ impl<'a> Plan<'a> {
     ///
     /// Not called for an unreachable branch: there is no world to walk, and
     /// `DW0482` has already failed the build.
+    ///
+    /// `flow` is the model `path` came out of: the builder reads the flag state
+    /// this branch holds at each step from its journal, which is how a `talk-to`
+    /// step lands on the cast row THIS branch declares (`crate::cast::station`).
     pub fn branch_critical_path(
         &self,
+        flow: &crate::flow::Flow<'_>,
         path: &crate::flow::Playthrough,
     ) -> Result<CriticalPath, PlanError> {
-        build_critical_path(self.campaign, &self.anchors, &self.npcs, path)
+        build_critical_path(self.campaign, &self.anchors, &self.npcs, flow, path)
     }
 
     /// The gate/seal model of ONE branch's exported path (spec-0025, task #117):
@@ -1882,6 +1883,7 @@ fn build_critical_path(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     npcs: &[NpcPlan],
+    flow: &crate::flow::Flow<'_>,
     path: &crate::flow::Playthrough,
 ) -> Result<CriticalPath, PlanError> {
     let mut steps = Vec::new();
@@ -1920,7 +1922,19 @@ fn build_critical_path(
         .map(|q| (q.id.as_str(), q))
         .collect();
 
-    for st in &path.steps {
+    // The flag state the party holds as it walks up to each step, and the quests
+    // this playthrough ever activates. Together they are what selects a `talk-to`
+    // NPC's cast row — the same journal `crate::branch`'s `DW0483` reads, so the
+    // placement the ladder walks to and the placement the proofs check are chosen
+    // by ONE model (see [`crate::cast::station`]).
+    let flags_at: Vec<BTreeSet<String>> = flow
+        .journal(path)
+        .into_iter()
+        .map(|s| s.flags_before)
+        .collect();
+    let begun: BTreeSet<String> = path.quests.iter().cloned().collect();
+
+    for (si, st) in path.steps.iter().enumerate() {
         let qid = st.quest.as_str();
         let Some(quest) = stage5.get(qid) else {
             continue;
@@ -1977,35 +1991,75 @@ fn build_critical_path(
                                  stop and escalate"
                             ))
                         })?;
-                    // NPC position: its declared anchor within its area.
-                    let npc_anchor = campaign
+                    // NPC position: where the CAST LEDGER stations the body for
+                    // THIS beat, on THIS path — not the stage-2 anchor.
+                    //
+                    // The stage-2 anchor is only where the NPC is first summoned;
+                    // a `move-npc` walks him away from it and the ledger records
+                    // where he then stands (`DW0461` proves the record equals the
+                    // effect history). Reading the anchor here made the bot
+                    // contract a second, staler source of truth: on the island,
+                    // `npc/perimedes` is declared at `anchor/mouth` and cast at
+                    // `anchor/alcove-2` for his stone beat, and the eye-ray bot
+                    // walked to the mouth — where the sealed boulder region's
+                    // wall of interaction entities stands — and could not acquire
+                    // him. The emitted cast was right the whole time.
+                    let decl = campaign
                         .npcs
                         .content
                         .npcs
                         .iter()
-                        .find(|nn| nn.id.as_str() == npc.as_str())
-                        .map(|nn| nn.anchor.as_str())
-                        .unwrap_or("");
-                    let npc_area = campaign
-                        .npcs
-                        .content
-                        .npcs
-                        .iter()
-                        .find(|nn| nn.id.as_str() == npc.as_str())
-                        .map(|nn| nn.area.as_str())
-                        .unwrap_or(area);
-                    let pos = point_of(anchors, npc_area, npc_anchor)?;
+                        .find(|nn| nn.id.as_str() == npc.as_str());
+                    let home_area = decl.map(|nn| nn.area.as_str()).unwrap_or(area);
+                    let (npc_area, pos) = match crate::cast::station(
+                        campaign,
+                        npc.as_str(),
+                        qid,
+                        &begun,
+                        flags_at.get(si).unwrap_or(&BTreeSet::new()),
+                    ) {
+                        Some(crate::cast::Station::At(anchor)) => {
+                            cast_point(anchors, home_area, anchor).ok_or_else(|| {
+                                PlanError::new(
+                                    DW_BUILD,
+                                    format!(
+                                        "internal invariant violation: quest `{qid}` casts npc \
+                                     `{npc}` at `{anchor}`, which resolves to no world position \
+                                     at build time — `DW0464` (dangling cast anchor) / `DW0142` \
+                                     should have named it in validation. This is a compiler bug; \
+                                     stop and escalate"
+                                    ),
+                                )
+                            })?
+                        }
+                        Some(crate::cast::Station::Absent(kind)) => {
+                            return Err(PlanError::new(
+                                DW_BUILD,
+                                format!(
+                                    "internal invariant violation: `talk-to` objective `{id}` needs a \
+                                 body to click, but quest `{qid}`'s cast ledger declares npc \
+                                 `{npc}` `\"{}\"` for this beat — `DW0195` (talk-to on an NPC a \
+                                 prerequisite despawned) / `DW0461` (a declared absence that \
+                                 contradicts the effect history) should have refused this in \
+                                 validation. This is a compiler bug; stop and escalate",
+                                    kind.token()
+                                ),
+                            ));
+                        }
+                        // No ledger row anywhere up to this beat: a pre-0.7
+                        // campaign. Keep the stage-2 anchor, byte for byte.
+                        None => {
+                            let anchor = decl.map(|nn| nn.anchor.as_str()).unwrap_or("");
+                            (home_area.to_string(), point_of(anchors, home_area, anchor)?)
+                        }
+                    };
                     steps.push(Step::TalkTo {
                         objective_id: id.as_str().to_string(),
                         npc_id: npc.as_str().to_string(),
                         pos,
                         command: format!("/trigger {} set {}", npc_plan.trigger_objective, opt.n),
                     });
-                    obj_areas.push((
-                        id.as_str().to_string(),
-                        npc_area.to_string(),
-                        steps.len() - 1,
-                    ));
+                    obj_areas.push((id.as_str().to_string(), npc_area, steps.len() - 1));
                 }
                 Objective::ReachAnchor {
                     id, anchor, radius, ..
@@ -2151,6 +2205,32 @@ fn build_critical_path(
         cutscene_by_step,
         obj_step,
     })
+}
+
+/// Resolve a **cast-ledger** anchor to `(area, cell)`: the NPC's own area first,
+/// then by name across areas.
+///
+/// The two-step lookup is [`crate::crosshair`]'s, over the same ledger and for
+/// the same reason: a `move-npc` may station a body in an area the NPC was never
+/// declared in, and the ledger is allowed to say so. Returning the area the
+/// anchor actually resolved in — not the NPC's home area — is what keeps the
+/// inter-area transport map coherent with the position the step now carries.
+fn cast_point(
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    home_area: &str,
+    anchor: &str,
+) -> Option<(String, [i32; 3])> {
+    let cell = |r: &ResolvedAnchor| match r {
+        ResolvedAnchor::Point { pos, .. } => *pos,
+        ResolvedAnchor::Gate { from, .. } => *from,
+    };
+    if let Some(r) = anchors.get(&(home_area.to_string(), anchor.to_string())) {
+        return Some((home_area.to_string(), cell(r)));
+    }
+    anchors
+        .iter()
+        .find(|((_, n), _)| n == anchor)
+        .map(|((a, _), r)| (a.clone(), cell(r)))
 }
 
 /// Resolve an anchor name to a point cell by scanning every area's resolved
