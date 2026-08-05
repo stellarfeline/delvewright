@@ -19,12 +19,12 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
+use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
 use delvewright_compiler::load::load_campaign_dir;
 use delvewright_compiler::plan::{self, Plan};
 use delvewright_compiler::registry::PrefabRegistry;
 use delvewright_dsl::parse_campaign;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// The galley's `spawn` anchor in world coordinates — the destination the bolt
 /// branch's crossing has to land on. Asserted against the exported branch path
@@ -35,7 +35,7 @@ fn fixture_dir() -> std::path::PathBuf {
     common::compiler_fixtures_dir().join("branch-transport")
 }
 
-fn build_campaign(dir: &Path) -> BuildOutput {
+fn try_build_campaign(dir: &Path) -> Result<BuildOutput, BuildFailure> {
     let loaded = load_campaign_dir(dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
@@ -58,7 +58,65 @@ fn build_campaign(dir: &Path) -> BuildOutput {
         "unpinned",
         &BTreeMap::new(),
     )
-    .expect("emission succeeds")
+}
+
+fn build_campaign(dir: &Path) -> BuildOutput {
+    try_build_campaign(dir).expect("emission succeeds")
+}
+
+/// Run `f` over a campaign's plan (the overlay's only input besides the plan's
+/// own campaign).
+fn with_plan<T>(dir: &Path, f: impl FnOnce(&Plan) -> T) -> T {
+    let loaded = load_campaign_dir(dir).unwrap();
+    let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    f(&plan)
+}
+
+/// A scratch campaign directory under the system temp dir, removed on drop.
+/// (`tempfile` is not a dependency of this crate — same reasoning as `combat.rs`.)
+struct TempCampaign(std::path::PathBuf);
+
+impl TempCampaign {
+    fn new(tag: &str) -> Self {
+        let base = std::env::temp_dir().join(format!(
+            "delvewright-branch-transport-{tag}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        common::copy_dir_all(&fixture_dir(), &base);
+        TempCampaign(base)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+
+    /// Rewrite one stage document in place.
+    fn patch(&self, stage: &str, edit: impl FnOnce(&mut Value)) {
+        let file = self.0.join(format!("{stage}.json"));
+        let mut doc: Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        edit(&mut doc);
+        std::fs::write(&file, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+    }
+}
+
+impl Drop for TempCampaign {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// A quest of a stage document's `content.quests`, by id.
+fn quest<'a>(doc: &'a mut Value, id: &str) -> &'a mut Value {
+    doc["content"]["quests"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|q| q["id"] == id)
+        .unwrap_or_else(|| panic!("no quest {id}"))
 }
 
 fn text<'a>(out: &'a BuildOutput, path: &str) -> &'a str {
@@ -166,5 +224,120 @@ fn the_branch_path_json_and_the_emission_agree() {
                 plan::safe_local(oid)
             );
         }
+    }
+}
+
+/// `DW0494`: the exported path and a branch cross into DIFFERENT areas at the
+/// SAME objective. Completing it can only put the party in one place, and the
+/// exported path's crossing is unconditional, so there is nothing to gate on —
+/// the build fails rather than emitting two teleports and letting command order
+/// decide which one wins.
+///
+/// The variant: the hold branch gains a shore beat (`area/shore`) immediately
+/// after `obj/decide`, while the bolt branch's own next beat moves into
+/// `area/galley` — so `obj/decide` carries two contradictory crossings.
+#[test]
+fn a_shared_crossing_with_divergent_destinations_is_dw0494() {
+    let tmp = TempCampaign::new("dw0494");
+    tmp.patch("world", |w| {
+        w["content"]["areas"].as_array_mut().unwrap().push(json!({
+            "id": "area/shore",
+            "name": "The Shore",
+            "prefab": "prefab/cave-shore"
+        }));
+    });
+    tmp.patch("quest-plan", |p| {
+        // The bolt branch's next beat is already out at the galley.
+        quest(p, "quest/bolt")["area"] = json!("area/galley");
+        quest(p, "quest/hold")["depends_on"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("quest/beacon"));
+        p["content"]["quests"].as_array_mut().unwrap().push(json!({
+            "id": "quest/beacon",
+            "goal": "Light the shore beacon so the watch can be seen from the moor.",
+            "area": "area/shore",
+            "npcs": [],
+            "depends_on": ["quest/decide"],
+            "mandatory": true,
+            "act": 2
+        }));
+    });
+    tmp.patch("quests", |q| {
+        quest(q, "quest/bolt")["objectives"][0]["anchor"] = json!("anchor/deck");
+        q["content"]["quests"].as_array_mut().unwrap().push(json!({
+            "id": "quest/beacon",
+            "trigger": { "type": "quest-complete", "quest": "quest/decide" },
+            "happening": {
+                "verb": "arrives",
+                "text": "The party climbs down to the shore where the old beacon still stands."
+            },
+            "objectives": [{
+                "type": "reach-anchor",
+                "id": "obj/beacon",
+                "anchor": "anchor/exit",
+                "radius": 2,
+                "requires_flags": ["flag/wait"],
+                "happening": {
+                    "verb": "arrives",
+                    "text": "They reach the beacon and the moor answers with nothing at all."
+                }
+            }],
+            "on_objective_complete": {},
+            "on_complete": [],
+            "cast": {
+                "npc/keeper": {
+                    "at": "anchor/keeper-stand",
+                    "doing": "holding the door while you go down to the water",
+                    "dialogue": { "barks": ["Be quick."] }
+                }
+            }
+        }));
+    });
+
+    match try_build_campaign(tmp.path()) {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0494", "wrong diagnostic: {message}");
+            assert!(
+                message.contains("obj/decide"),
+                "the diagnostic must name the objective that cannot cross twice: {message}"
+            );
+        }
+        Err(other) => panic!("expected DW0494, got {other:?}"),
+        Ok(_) => panic!("expected DW0494: obj/decide crosses into two different areas"),
+    }
+}
+
+/// Byte-identity: a campaign whose branches cross nowhere the exported path does
+/// not already cross gets an EMPTY overlay, so the new emission block is a
+/// provable no-op and its datapack bytes are untouched by this task.
+#[test]
+fn a_campaign_without_branch_only_crossings_gets_an_empty_overlay() {
+    for dir in [
+        common::compiler_fixtures_dir().join("branch-two-endings"),
+        common::hello_world_dir(),
+        common::keep_crawl_dir(),
+        common::keep_trial_dir(),
+    ] {
+        let overlay = with_plan(&dir, |plan| {
+            emit::branch_transport_overlay(plan).expect("overlay computes")
+        });
+        assert!(
+            overlay.is_empty(),
+            "{} must gain no branch-only crossing, got {overlay:?}",
+            dir.display()
+        );
+    }
+    // And the no-branch reference emits no conditional teleport at all.
+    let out = build_campaign(&common::compiler_fixtures_dir().join("branch-two-endings"));
+    for (path, bytes) in &out {
+        if !path.ends_with(".mcfunction") {
+            continue;
+        }
+        let body = std::str::from_utf8(bytes).unwrap();
+        assert!(
+            !body.contains("run teleport @s"),
+            "{path} gained a flag-gated crossing:\n{body}"
+        );
     }
 }
