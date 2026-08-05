@@ -2,7 +2,7 @@
 
 use delvewright_grammar::block::BlockState;
 use delvewright_grammar::ir::{Paint, Program, WeightedBlock};
-use delvewright_grammar::library::{castle, church, temple};
+use delvewright_grammar::library::{castle, church, cliff_path, temple, watch_bay};
 use delvewright_grammar::{Box3, ExpandOptions, expand};
 
 /// Regions each program is comfortably sized for. Sizes below these are a
@@ -10,12 +10,18 @@ use delvewright_grammar::{Box3, ExpandOptions, expand};
 const TEMPLE_REGION: Box3 = Box3::at_origin([13, 14, 21]);
 const CASTLE_REGION: Box3 = Box3::at_origin([41, 14, 25]);
 const CHURCH_REGION: Box3 = Box3::at_origin([15, 16, 30]);
+/// The two original staging rules (spec-0027 W1) travel with the ports: they
+/// owe the same structural validity, JSON round trip and determinism.
+const CLIFF_REGION: Box3 = Box3::at_origin([3, 6, 30]);
+const PASSAGE_REGION: Box3 = Box3::at_origin([7, 7, 24]);
 
 fn programs() -> Vec<(Program, Box3)> {
     vec![
         (temple(), TEMPLE_REGION),
         (castle(), CASTLE_REGION),
         (church(), CHURCH_REGION),
+        (cliff_path(), CLIFF_REGION),
+        (watch_bay(), PASSAGE_REGION),
     ]
 }
 

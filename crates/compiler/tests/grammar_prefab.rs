@@ -13,11 +13,13 @@ use std::collections::BTreeMap;
 
 use delvewright_compiler::registry::PrefabRegistry;
 use delvewright_dsl::{AnchorRegistry, LightingProfile, PrefabId};
-use delvewright_grammar::library::{castle, temple};
+use delvewright_grammar::library::{castle, cliff_path, temple, watch_bay};
 use delvewright_grammar::{Box3, ExpandOptions, export_prefab};
 
 const REGION: Box3 = Box3::at_origin([13, 14, 21]);
 const CASTLE_REGION: Box3 = Box3::at_origin([41, 14, 25]);
+const CLIFF_REGION: Box3 = Box3::at_origin([3, 6, 30]);
+const PASSAGE_REGION: Box3 = Box3::at_origin([7, 7, 24]);
 
 fn library_dir(tag: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("dw-grammar-prefab-{}-{tag}", std::process::id()));
@@ -136,6 +138,68 @@ fn an_anchor_a_rule_marked_comes_back_out_of_the_registry() {
     );
 
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The staging vocabulary (spec-0027 W1) is the first thing to put *many*
+/// anchors through this seam, and indexed ones at that. `anchor/niche-1`,
+/// `anchor/niche-watch-1`, … are generated names — no one hand-lists them — so
+/// the seam has to carry a set it was never told the size of, and the engine has
+/// to hand every one of them back as a name the DSL can bind an actor to.
+#[test]
+fn the_staging_rules_indexed_anchors_all_reach_the_registry() {
+    for (name, program, region, expected) in [
+        (
+            "grammar-cliff-path",
+            cliff_path(),
+            CLIFF_REGION,
+            vec!["anchor/niche-1", "anchor/niche-watch-1"],
+        ),
+        (
+            "grammar-gate-passage",
+            watch_bay(),
+            PASSAGE_REGION,
+            vec!["anchor/watch", "anchor/gate"],
+        ),
+    ] {
+        let dir = library_dir(name);
+        let export = export_prefab(&program, region, &ExpandOptions::seeded(4), name).unwrap();
+        export.write_to_dir(&dir).unwrap();
+
+        let registry = PrefabRegistry::load_dir(&dir).unwrap();
+        assert!(
+            registry.load_diagnostics().is_empty(),
+            "{name}: the engine refused the exported metadata: {:#?}",
+            registry.load_diagnostics()
+        );
+        let meta = registry.get(&format!("prefab/{name}")).expect("indexed");
+        let names = registry
+            .anchors_for(&PrefabId(format!("prefab/{name}")))
+            .expect("a marked prefab is a known prefab");
+
+        for want in expected {
+            let anchor = meta
+                .anchors
+                .get(want)
+                .unwrap_or_else(|| panic!("{name} lost {want}: {:#?}", meta.anchors));
+            let pos = anchor.pos.expect("a staging anchor names a cell");
+            assert!(
+                (0..3).all(|i| pos[i] >= 0 && pos[i] < meta.structure.size[i]),
+                "{name}/{want} sits at {pos:?}, outside the {:?} structure",
+                meta.structure.size
+            );
+            assert!(anchor.facing.is_some(), "{name}/{want} has no facing");
+            assert!(
+                names.contains(want),
+                "{name}: {want} not bindable: {names:?}"
+            );
+        }
+        // ...and nothing else crept in: every exported anchor is one the rules
+        // declared, under a name the DSL's `anchor/<kebab>` grammar accepts.
+        assert_eq!(meta.anchors.len(), names.len());
+        assert!(meta.anchors.keys().all(|k| k.starts_with("anchor/")));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }
 
 /// The exporter must not be able to hand the engine metadata the engine would
