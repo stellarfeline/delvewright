@@ -419,6 +419,18 @@ authored), `wave.<w>.mob.<i>.name`) plus effect strings
 and a `close-gate`'s authored `fx.….sealed_hint` (all v0.8; unauthored ones are
 absent because the compiler bakes its canonical English, the
 `world.boundary.message` precedent).
+**Every effect root emission can lower** is inventoried, not just the quests
+stage's three (task #168): `fx.trap.<trap>.<i>.…` for a `traps[].payload`
+(spec-0022 — a trap that narrates is ordinary now that a trap's consequence is
+commands) and `fx.dlg.<npc>.<node>.<opt>.<eff>.respawn.<j>.…` for a dialogue
+option's `set-checkpoint` `on_respawn` bundle. A string in either used to be
+neither demanded of a translator nor swapped at build time, i.e. it shipped
+English-only in a translated build, silently. `dsl::l10n::effect_roots` (immutable,
+for the glyph/text-fit/sound consumer scans) and `effect_roots_mut` (for
+`each_string`, hence `inventory` + `localize`) enumerate the same five roots, so
+what is measured and what is translated cannot drift; each ref carries the `stage`
+it was authored in, so a dialogue-rooted `DW0326`/`DW0328`/`DW0330` names
+`dialogue` rather than `quests`.
 **Nested effects** (DSL v0.6): a `narrate`/`give-item` inside a `sequence` step or
 an `on_respawn`/`on_caught`/`on_arrive` bundle is inventoried and localized too,
 under a position-derived child key = parent `fx.…` key + a stable segment
@@ -1614,19 +1626,34 @@ exactly while the gate is sealed. Everything *else* holding a hitbox inside the
 region is rejected (`DW0422`), and two firings that disagree about the wording are
 rejected (`DW0423`).
 
-**Every site that can FILL a gate must also ARM it.** The seal planner walks its
-own traversal (`plan::for_each_gate_effect`), deliberately wider than
-`dsl::for_each_campaign_effect`: an effect list is a gate site if
-`emit::emit_quest_effect` can reach it, not if the quests stage happens to own it.
-Five roots do — quest `on_objective_complete`, quest `on_complete`,
+**Every site that can FILL a gate must also ARM it — and must be MODELLED.**
+`plan::for_each_gate_effect` is the one traversal every gate consumer walks,
+deliberately wider than `dsl::for_each_campaign_effect`: an effect list is a gate
+site if `emit::emit_quest_effect` can reach it, not if the quests stage happens to
+own it. Five roots do — quest `on_objective_complete`, quest `on_complete`,
 `triggers[].effects`, `traps[].payload` (spec-0022: a payload is an effect root),
 and a **dialogue option's `set-checkpoint` `on_respawn` bundle**. That last one is
-the trap: `DialogueEffect` carries no gate verb, so the older gate scans stop at
+the trap: `DialogueEffect` carries no gate verb, so the older gate scans stopped at
 the quests stage — but `on_respawn` is a plain `Vec<QuestEffect>` and a
 `close-gate` inside it really is lowered, into `cp_on_respawn_<i>`. A seal the
 compiler fills but never arms is the finding again, one effect root further out.
-`DW0423` walks the same traversal, so the check and the emission can never
-disagree about which firings exist.
+The seal planner, `DW0423` and — since task #167 — the `close-gate` completability
+model (`plan::collect_gate_events`, feeding `DW0311`/`DW0315`/`DW0342`/`DW0410`)
+all walk it, so the checks, the proofs and the emission can never disagree about
+which firings exist.
+
+**When a firing happens** comes off the site's `GateRoot`. A quest
+`on_objective_complete`/`on_complete` fires at its objective's / the quest's
+completion step — the player is *forced* through both, so both gate directions are
+modelled. An environment trigger, a trap payload and a dialogue-hosted `on_respawn`
+bundle have no step of their own (proximity, a sprung trap, a death), so all three
+root conservatively at step 0, which precedes every leg. The two **optional** roots
+— trap payload and `on_respawn` — register their `close-gate`s **only**: an
+unguaranteed firing may be assumed to have happened exactly when assuming so is
+conservative, so it can seal a region but never unseal one. That is the rule a
+shortcut gate already obeys (sealed for the whole model, because the delve must be
+finishable the long way). A later `open-gate` from a forced root still wins the
+region, so the widening reads as a seal the proof must survive, never as a veto.
 
 **Wording.** `sealed_hint` is optional; unauthored, the compiler bakes
 `The way is sealed.` (English-first, like `world.boundary.message`) and puts no key
@@ -2001,7 +2028,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0171` | A killed wave is never spawned by any `spawn-wave`. |
 | `DW0172` | `requires_flags` references a flag no `set-flag` produces. The producer scan descends every nested effect list (`sequence` steps, `on_respawn`/`on_caught`/`on_arrive`), so a `set-flag` nested in a timeline still counts as a producer (no spurious fire). |
 | `DW0173` | Wave-mob `entity` is not a known vanilla entity id. |
-| `DW0180` | l10n sidecar absent / inconsistent envelope / under-covers inventory (also if `en` is declared). Compiler-level. |
+| `DW0180` | l10n sidecar absent / inconsistent envelope / under-covers inventory (also if `en` is declared). Compiler-level. The inventory it demands coverage of spans **every effect root emission can lower** — including `traps[].payload` and a dialogue option's `set-checkpoint` `on_respawn` bundle (task #168); a string in either used to ship English-only in a translated build, uncovered. |
 | `DW0181` | l10n sidecar has an orphan key (over-coverage). Compiler-level. |
 | `DW0182` | A player-visible string — authored English (the whole l10n inventory) or any sidecar translation — contains the reserved completion-marker sigil `[dw:complete`. That chat sequence is the validation bot's completion oracle (§4 "The completion-marker channel"); content carrying it could forge a passing critical-path step, so the sigil is **reserved**, not merely discouraged. Reword the line. |
 | `DW0190` | Mannequin `skin.texture_id` malformed or duplicated. |
@@ -2432,7 +2459,7 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0308` | `cutscene` camera dolly clips a solid block (checked per shot; the message names the shot and segment). Checked over **both** the authored waypoint polyline and the client-rendered keyframe chord path (`compiler::camera` — the client tweens straight between emitted keyframes, so a chord can cut up to 0.25 blocks inside an authored corner; the chord message names the keyframe pair). |
 | `DW0309` | Mannequin NPC declares `skin.texture_id` but no `skins/<id>.png` to bake. |
 | `DW0310` | `spawn-wave` references a wave whose spawn anchor resolves in no assembled area (dangling spawn). |
-| `DW0311` | Critical path has a consecutive visited-anchor pair with no walkable A* connection and no inter-area transport (player stranded). Routed over the collision-classified occupancy (task #59), so a required anchor sealed behind an unbroken 1.5-tall fence/wall ring with no fence-gate opening fails here — the full-solid model wrongly proved such pens by standing the player on a fence-top. |
+| `DW0311` | Critical path has a consecutive visited-anchor pair with no walkable A* connection and no inter-area transport (player stranded). Routed over the collision-classified occupancy (task #59), so a required anchor sealed behind an unbroken 1.5-tall fence/wall ring with no fence-gate opening fails here — the full-solid model wrongly proved such pens by standing the player on a fence-top. Each leg is routed under the `close-gate` seal state from `plan::collect_gate_events`, which since task #167 walks **all five** effect roots emission fills a gate from (§4 "The seal answers"): a seal fired from a `traps[].payload` or a dialogue-hosted `on_respawn` bundle used to be filled in the datapack and open in this proof. |
 | `DW0312` | A `spawn-wave` needs more standable spawn cells near its anchor than the anchor's own room provides (task #41). **Analysis-tier: exit 2**, like `DW02xx` — a content-design capacity mistake (shrink the wave or use a larger room), not a geometry defect; the message names the wave, area, and needed-vs-found count. |
 | `DW0313` | A placed gravity block (`sand`/`gravel`/`concrete_powder`/anvil/`dragon_egg`) despawns into the void at placement — an unsupported gravity floor over the `the_void` world falls out on the first block update, holing the shipped map even off the critical path (task #42). The authoritative gravity-settle gate (`crate::assembled`), not a downstream DW0311/DW0312 side effect. **Analysis-tier: exit 2** — a prefab/generator defect; the message attributes despawned cells+counts per piece and prescribes a non-falling substrate. Blocks that fall but **land on support** are faithfully modelled by the settle pass (no diagnostic): the shipped geometry is exact for every consumer, and the generator's own zero-unsupported invariant catches an *unintended* fall at authoring. Anti-dodge: swapping the floor palette to non-falling blocks to silence this is explicitly rejected — gravity floors are a first-class content need; add the substrate. |
 | `DW0314` | An exported critical-path waypoint is not standable in the FINAL assembled world (settled + water-flooded + relight fixtures) — the build-time self-check that makes the water-flow / post-nav-mutation divergence class structurally impossible to ship (task #45). Routes come from A* over that same world, so this fires only if a later pass mutates a cell nav relied on or an endpoint resolves off the walkable set; the message names the offending cell and leg. Fix the prefab/water or the assembly — never nudge the waypoint. |
@@ -2861,19 +2888,18 @@ this doc is current behavior).
   for a bigger party — one agent can always walk what n can divide. Running
   `min_players` bots is harness work, tracked as a follow-up, not a gap in this
   layer's contract.
-- **Quest/trigger-only gate scans (pre-existing, found while building the v0.8
-  seal answers).** Two consumers still stop at three effect roots (quest
-  `on_objective_complete` / `on_complete` / `triggers[].effects`) where emission
-  reaches five: `plan::collect_gate_events`, which feeds the `close-gate`
-  completability model (`DW0311`/`DW0315`/`DW0342`/`DW0410`), and
-  `dsl::l10n::each_string`, which builds the translation inventory. So a gate
-  effect inside a `traps[].payload` or a dialogue option's `set-checkpoint`
-  `on_respawn` bundle is emitted but not modelled by the nav proof, and a
-  `narrate` in a dialogue-nested `on_respawn` ships English-only in a translated
-  build. The seal planner works around both by walking
-  `plan::for_each_gate_effect` (see §4 "The seal answers"); fixing the two
-  consumers themselves is separate work — each changes a different proof's
-  verdict and wants its own red→green.
+- **The staged-walk timeline still stops at three effect roots** (pre-existing;
+  the last of the three-of-five family, the other two closed by tasks
+  #167/#168). `compiler::timeline::walk_campaign` — the `DW0410` model, and by
+  construction `nav::all_effects` — enumerates quest `on_objective_complete` /
+  `on_complete` / `triggers[].effects`, where emission reaches five (see §4
+  "The seal answers"). So a `move-actor`/`move-npc` inside a `traps[].payload`
+  or a dialogue option's `set-checkpoint` `on_respawn` bundle is lowered but
+  not timeline-checked. Deliberately not widened here: it changes a *third*
+  proof's verdict (`DW0410`, and the staged-walk routing that rides
+  `all_effects`) and wants its own red→green, exactly as `collect_gate_events`
+  and `each_string` each did. The gate walk it should converge on is
+  `plan::for_each_gate_effect`.
 - **Sky attenuation constants** (`crate::light::effective_sky`, spec-0010): the
   stored sky-light baseline (15 at a sky-open cell) and the `time`/`weather` set
   commands are live-verified (1.21.11 itzg VANILLA); the per-state *effective*

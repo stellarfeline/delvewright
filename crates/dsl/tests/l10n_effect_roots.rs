@@ -14,8 +14,8 @@ mod common;
 use std::collections::BTreeMap;
 
 use delvewright_dsl::{
-    Campaign, L10nDoc, L10nKind, RawCampaign, l10n_inventory, localize, parse_campaign,
-    validate_l10n,
+    Campaign, L10nDoc, L10nKind, RawCampaign, l10n_inventory, localize, on_screen_narrates,
+    parse_campaign, validate_l10n,
 };
 
 /// The trap-payload narrate's inventory key (`fx.trap.<trap>.<i>`, keyed exactly
@@ -75,7 +75,7 @@ fn trap_with_narrate() -> String {
   "at": "anchor/exit",
   "trigger": "trapped-chest",
   "lethality": "harmful",
-  "payload": [ {{ "type": "narrate", "text": "{TRAP_NARRATE_EN}" }} ]
+  "payload": [ {{ "type": "narrate", "style": "title", "text": "{TRAP_NARRATE_EN}" }} ]
 }}"#
     )
 }
@@ -98,7 +98,7 @@ fn dialogue_doc() -> String {
                     "type": "set-checkpoint",
                     "anchor": "anchor/exit",
                     "on_respawn": [
-                      {{ "type": "narrate", "text": "{RESPAWN_NARRATE_EN}" }}
+                      {{ "type": "narrate", "style": "title", "text": "{RESPAWN_NARRATE_EN}" }}
                     ]
                   }}"#
         ),
@@ -153,7 +153,10 @@ fn sidecar_for(c: &Campaign) -> BTreeMap<String, L10nDoc> {
 fn a_complete_sidecar_is_clean() {
     let c = campaign_with_new_roots();
     let d = validate_l10n(&c, &sidecar_for(&c));
-    assert!(d.is_empty(), "self-covering sidecar must validate clean: {d:#?}");
+    assert!(
+        d.is_empty(),
+        "self-covering sidecar must validate clean: {d:#?}"
+    );
 }
 
 /// A `narrate` in a `traps[].payload` and one in a dialogue option's
@@ -214,4 +217,44 @@ fn the_new_roots_are_localized_too() {
         after.get(RESPAWN_KEY).map(String::as_str),
         Some("[zh] respawn")
     );
+}
+
+/// The inventory ([`each_string`]) and the consumer scan the glyph/text-fit checks
+/// walk (`on_screen_narrates` and its siblings) enumerate the **same** five roots.
+/// They are hand-written mirrors — one mutable, one not — so this pins that they
+/// agree: every string the checks measure is a string the inventory demands a
+/// translation for, on a campaign that exercises all five roots at once.
+#[test]
+fn the_consumer_scan_and_the_inventory_agree_on_every_root() {
+    let c = campaign_with_new_roots();
+    let inv = l10n_inventory(&c);
+    let narrates = on_screen_narrates(&c);
+
+    let trap = narrates
+        .iter()
+        .find(|n| n.key == TRAP_KEY)
+        .expect("a trap payload's on-screen narrate must be measurable");
+    assert_eq!(trap.stage, "quests");
+    assert_eq!(trap.path, "/content/traps/0/payload/0/text");
+
+    let respawn = narrates
+        .iter()
+        .find(|n| n.key == RESPAWN_KEY)
+        .expect("a dialogue-nested on_respawn narrate must be measurable");
+    assert_eq!(
+        respawn.stage, "dialogue",
+        "…and reported at its real stage, not mislabelled `quests`"
+    );
+    assert_eq!(
+        respawn.path,
+        "/content/dialogues/0/nodes/0/options/1/effects/1/on_respawn/0/text"
+    );
+
+    for n in &narrates {
+        assert!(
+            inv.contains_key(&n.key),
+            "`{}` is measured but never inventoried — the two walks have drifted",
+            n.key
+        );
+    }
 }

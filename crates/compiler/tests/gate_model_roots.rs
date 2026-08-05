@@ -145,8 +145,7 @@ fn a_trap_payload_close_gate_is_modelled() {
     let c = parse_hw(&quests_doc(TRAP_SEALS_THE_DOOR), None);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let err = try_build(&c, &prefabs)
-        .err()
-        .expect("a trap payload that seals the forced path must fail the nav proof");
+        .expect_err("a trap payload that seals the forced path must fail the nav proof");
     let (code, message) = failure_code(err);
     assert_eq!(code, "DW0311", "{message}");
     assert!(
@@ -164,8 +163,7 @@ fn a_dialogue_nested_close_gate_is_modelled() {
     let c = parse_hw(&quests_doc(""), Some(DIALOGUE_SEALS_THE_DOOR));
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let err = try_build(&c, &prefabs)
-        .err()
-        .expect("a dialogue-nested seal on the forced path must fail the nav proof");
+        .expect_err("a dialogue-nested seal on the forced path must fail the nav proof");
     let (code, message) = failure_code(err);
     assert_eq!(code, "DW0311", "{message}");
     assert!(

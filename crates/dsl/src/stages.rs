@@ -759,6 +759,18 @@ impl DialogueEffect {
             _ => None,
         }
     }
+
+    /// The `on_respawn` bundle of a v0.6 `set-checkpoint` dialogue effect, exposed
+    /// mutably so the localization pass can rewrite the player-visible strings
+    /// nested inside it. Lockstep sibling of [`Self::set_checkpoint`] — the bundle
+    /// is a plain `Vec<QuestEffect>` that emission really lowers, so every scan
+    /// that reaches it read-only needs a way to reach it writable too.
+    pub fn set_checkpoint_on_respawn_mut(&mut self) -> Option<&mut [QuestEffect]> {
+        match self {
+            DialogueEffect::SetCheckpoint { on_respawn, .. } => Some(on_respawn.as_mut_slice()),
+            _ => None,
+        }
+    }
 }
 
 impl DialogueEffect {
