@@ -26,6 +26,10 @@ use delvewright_grammar::ir::Program;
 use delvewright_grammar::library::rafter_hall::FLOOR_CELLS_PER_PERCH;
 use delvewright_grammar::library::{ambush_door, cliff_path, rafter_hall, store_room, watch_bay};
 use delvewright_grammar::{Anchor, Box3, ExpandOptions, Expansion, VoxelModel, expand};
+// W3: the palette/prop family (W + S + M + X).
+use delvewright_grammar::library::boulder_stair::{self, boulder_stair};
+use delvewright_grammar::library::broken_grate::{self, broken_grate};
+use delvewright_grammar::library::threshold_motif::{self, threshold_motif};
 
 /// The cliff path fixture: three block wide (ledge, recess lane, backing),
 /// six tall, thirty long.
@@ -56,6 +60,36 @@ const DOOR_SEED: u64 = 1;
 
 /// The storeroom fixture: a fourteen-barrel row.
 const STORE_REGION: Box3 = Box3::at_origin([7, 5, 14]);
+
+/// The worn-tread lane fixture: nine wide, long enough for four pockets at
+/// the default eight-cell period. `boulder_stair` has no probabilistic rule
+/// — pocket placement follows `pocket_period`, not the seed — so the seed
+/// only has to be stated.
+const STAIR_REGION: Box3 = Box3::at_origin([9, 6, 27]);
+const STAIR_SEED: u64 = 1;
+/// The same width, five deep: short of even one `pocket_period`, so the
+/// pocket band is legally solid and bare.
+const SHORT_STAIR_REGION: Box3 = Box3::at_origin([5, 6, 7]);
+/// A narrower cut of the lane, chosen so the smooth run's *floor-level* share
+/// clears the 10% accent ceiling — the fixture the palette-mirror gate needs
+/// to have real teeth (`docs/reference/grammar.md` §7: the craft diagnostics
+/// are a later phase, so this is a test-local mirror, not `DW0388`-style
+/// reuse of compiler code).
+const STAIR_PALETTE_REGION: Box3 = Box3::at_origin([7, 6, 9]);
+
+/// The threshold fixture, narrow and wide, both long enough to hold the
+/// doorband: `threshold_motif` has no probabilistic rule either.
+const THRESHOLD_REGION: Box3 = Box3::at_origin([9, 6, 13]);
+const WIDE_THRESHOLD_REGION: Box3 = Box3::at_origin([15, 6, 19]);
+const THRESHOLD_SEED: u64 = 1;
+
+/// The broken-grate fixture: a fourteen-cell row, the same shape as
+/// `store_room`'s.
+const GRATE_REGION: Box3 = Box3::at_origin([3, 5, 14]);
+/// Short enough that one broken cell's floor-level share clears the 10%
+/// accent ceiling — the palette-mirror gate's fixture, the same reasoning as
+/// `STAIR_PALETTE_REGION`.
+const GRATE_PALETTE_REGION: Box3 = Box3::at_origin([3, 5, 8]);
 
 // ---------------------------------------------------------------------------
 // Reading the expanded model the way a player meets it
@@ -991,6 +1025,601 @@ fn the_tell_moves_with_the_seed() {
 }
 
 // ---------------------------------------------------------------------------
+// W — the worn-tread tell, and S — the side pockets
+// ---------------------------------------------------------------------------
+
+/// The fixture: a four-pocket lane, byte-identical on a second expansion,
+/// anchors and all.
+#[test]
+fn a_worn_tread_lane_expands_deterministically() {
+    let program = boulder_stair();
+    let a = expand_at(&program, STAIR_REGION, STAIR_SEED);
+    let b = expand_at(&program, STAIR_REGION, STAIR_SEED);
+    assert_eq!(a.model.canonical_bytes(), b.model.canonical_bytes());
+    assert_eq!(a.anchors, b.anchors);
+
+    let pockets = indexed(&a.anchors, "pocket");
+    assert_eq!(pockets.len(), 4, "the pinned fixture is a four-pocket lane");
+    assert!(a.anchors.contains_key("anchor/stair-run"));
+    assert!(a.anchors.contains_key("anchor/volley-slot"));
+}
+
+/// The gate the entry exists for, read off the geometry: the run's own floor
+/// column is the `smooth` block at every depth, and every other floor cell in
+/// the lane (both rough side lanes, the pocket band when it is not a niche,
+/// and the backing) is the `rough` block. This is the claim the palette
+/// mirror below has to stay silent about.
+#[test]
+fn the_run_is_smooth_and_every_other_floor_cell_is_rough() {
+    let out = expand_at(&boulder_stair(), STAIR_REGION, STAIR_SEED);
+    let model = &out.model;
+    let run = out.anchors["anchor/stair-run"].pos;
+    let region = model.region();
+    for x in region.origin[0]..region.maximum()[0] {
+        for z in region.origin[2]..region.maximum()[2] {
+            let block = model.get([x, run[1], z]).expect("a floor cell");
+            let want = if x == run[0] {
+                "minecraft:stone"
+            } else {
+                "minecraft:cobblestone"
+            };
+            assert_eq!(
+                block.name,
+                want,
+                "floor cell {:?} is not the expected worn-tread material",
+                [x, run[1], z]
+            );
+        }
+    }
+}
+
+/// The volley anchor sits in the vault directly over the run: same `X`, same
+/// `Z`, `head` + 1 above the tread.
+#[test]
+fn the_volley_slot_sits_in_the_vault_over_the_run() {
+    let out = expand_at(&boulder_stair(), STAIR_REGION, STAIR_SEED);
+    let run = out.anchors["anchor/stair-run"].pos;
+    let volley = out.anchors["anchor/volley-slot"].pos;
+    assert_eq!(
+        volley[0], run[0],
+        "the rib sits over the run, not beside it"
+    );
+    assert_eq!(volley[2], run[2]);
+    assert_eq!(volley[1] - run[1], 5, "head (4) + 1 above the tread");
+    assert!(
+        solid(&out.model, volley),
+        "the vault rib is ordinary stone until a campaign binds the anchor"
+    );
+}
+
+/// The hazard lane — far side, run, near side — is the only continuous route
+/// down the box. The pocket band is not a bypass: it is solid everywhere
+/// except at pocket slots, which do not run the lane's whole length.
+#[test]
+fn the_hazard_lane_is_the_only_continuous_route() {
+    let out = expand_at(&boulder_stair(), STAIR_REGION, STAIR_SEED);
+    let cells = standable_cells(&out.model);
+    let far = STAIR_REGION.size[2] as i32 - 1;
+    let entry: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == far).collect();
+    let exit: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == 0).collect();
+    assert!(!entry.is_empty() && !exit.is_empty());
+    assert!(
+        connected(&cells, &entry, &exit),
+        "the lane does not go anywhere"
+    );
+
+    let pocket_x = indexed(&out.anchors, "pocket")[0][0];
+    let cut: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[0] == pocket_x).collect();
+    assert!(
+        !connected(&cut, &entry, &exit),
+        "the pocket band alone connects the box end to end — it is a parallel \
+         bypass, not a side dodge off a lane the player has to take"
+    );
+}
+
+/// Every pocket is a one-cell dodge: standable, backed by solid stone so the
+/// notch never opens onto the model's own edge, lintelled so it reads as a
+/// niche and not a doorway — and, unlike `ambush_door`'s alcove, visible from
+/// the lane cell right beside it. A dodge nobody can see coming is not an
+/// escape.
+#[test]
+fn every_pocket_is_a_one_cell_dodge_visible_from_the_lane() {
+    let out = expand_at(&boulder_stair(), STAIR_REGION, STAIR_SEED);
+    let model = &out.model;
+    let pockets = indexed(&out.anchors, "pocket");
+    assert!(!pockets.is_empty());
+    for pos in pockets {
+        let [x, y, z] = pos;
+        assert!(standable(model, pos), "the pocket cell {pos:?}");
+        assert!(
+            solid(model, [x + 1, y, z]),
+            "the pocket is exactly one deep — {:?} must be backing wall",
+            [x + 1, y, z]
+        );
+        assert!(solid(model, [x, y - 1, z]), "the pocket has a floor");
+        assert!(
+            solid(model, [x, y + 2, z]),
+            "the pocket has a lintel at pocket_height (2)"
+        );
+        let lane_cell = [x - 1, y, z];
+        assert!(passable(model, lane_cell), "the near lane beside {pos:?}");
+        if let Err(blocker) = sees(model, lane_cell, pos) {
+            panic!(
+                "{lane_cell:?} cannot see the pocket {pos:?} it opens onto: {blocker:?} is in \
+                 the way — a dodge nobody can see coming is not an escape"
+            );
+        }
+    }
+}
+
+/// `pocket_period` is a real control: widening it thins the pockets out — the
+/// same claim `cliff_path` makes for `spacing_min`.
+#[test]
+fn the_pocket_period_is_a_real_control() {
+    let mut sparse = boulder_stair();
+    sparse.set_param("pocket_period", 20).unwrap();
+    let tight = expand_at(&boulder_stair(), STAIR_REGION, STAIR_SEED);
+    let wide = expand_at(&sparse, STAIR_REGION, STAIR_SEED);
+    assert!(
+        indexed(&wide.anchors, "pocket").len() < indexed(&tight.anchors, "pocket").len(),
+        "raising pocket_period did not thin the pockets out"
+    );
+}
+
+/// A box shorter than one `pocket_period` cannot tile even one pocket
+/// (`make_split` checks the un-repeated pattern before it tiles) — and that
+/// is a variant, not an error: the same shape `rafter_hall` uses for a hall
+/// too short for its truss. Both shapes are asserted, because "optional" is a
+/// claim about two outputs.
+#[test]
+fn a_lane_too_short_for_one_pocket_period_is_a_lane_without_pockets() {
+    let long = expand_at(&boulder_stair(), STAIR_REGION, STAIR_SEED);
+    let short = expand_at(&boulder_stair(), SHORT_STAIR_REGION, STAIR_SEED);
+
+    assert!(!indexed(&long.anchors, "pocket").is_empty());
+    assert!(
+        indexed(&short.anchors, "pocket").is_empty(),
+        "a lane shorter than pocket_period grew pockets: {:#?}",
+        short.anchors
+    );
+    assert!(short.anchors.contains_key("anchor/stair-run"));
+    let cells = standable_cells(&short.model);
+    let far = SHORT_STAIR_REGION.size[2] as i32 - 1;
+    let entry: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == far).collect();
+    let exit: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == 0).collect();
+    assert!(!entry.is_empty());
+    assert!(connected(&cells, &entry, &exit));
+}
+
+// ---------------------------------------------------------------------------
+// The spec-0027 §4 palette-role budget — a test-local mirror
+//
+// The craft diagnostics are a later phase of spec-0027
+// (`docs/reference/grammar.md` §7; `crates/grammar/src/lib.rs`'s own "not
+// built yet" note): there is no `DW`-numbered palette-role-budget check to
+// call. What follows is a small reimplementation of the *described* rule
+// (60/30/10, accent < 10%, grouped by material family) — the same move
+// `watch_bay`'s sightline gate already makes against `DW0388`. It mints no
+// diagnostic code; that stays planner-owned.
+// ---------------------------------------------------------------------------
+
+/// A family is an "accent" once it exceeds this share and is not the
+/// dominant family present — spec-0027 §4's own number.
+const ACCENT_CEILING: f64 = 0.10;
+
+/// Family shares among the filled cells `cells` names — deliberately scoped
+/// by the caller to the band a rule's palette claim is actually about (a
+/// lane's own floor course, a grate row's own cells), so incidental
+/// structural stone elsewhere in the model does not dilute a claim that is
+/// specifically about that band. `families` maps a family label to the block
+/// names that belong to it; any block named by no family is its own
+/// singleton family.
+fn family_shares(
+    model: &VoxelModel,
+    cells: impl Iterator<Item = [i32; 3]>,
+    families: &[(&str, &[&str])],
+) -> BTreeMap<String, f64> {
+    let mut counts: BTreeMap<String, u64> = BTreeMap::new();
+    let mut total: u64 = 0;
+    for pos in cells {
+        let Some(block) = model.get(pos) else {
+            continue;
+        };
+        if block.is_air() {
+            continue;
+        }
+        total += 1;
+        let family = families
+            .iter()
+            .find(|(_, names)| names.contains(&block.name.as_str()))
+            .map(|(label, _)| (*label).to_string())
+            .unwrap_or_else(|| block.name.clone());
+        *counts.entry(family).or_insert(0) += 1;
+    }
+    let total = total.max(1);
+    counts
+        .into_iter()
+        .map(|(family, n)| (family, n as f64 / total as f64))
+        .collect()
+}
+
+/// Families that are neither the dominant one present nor under the accent
+/// ceiling — the spec-0027 §4 violation this mirror is standing in for.
+fn accent_overruns(shares: &BTreeMap<String, f64>) -> Vec<(String, f64)> {
+    let dominant = shares
+        .iter()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+        .map(|(k, _)| k.clone());
+    shares
+        .iter()
+        .filter(|(k, s)| Some((*k).clone()) != dominant && **s > ACCENT_CEILING)
+        .map(|(k, &v)| (k.clone(), v))
+        .collect()
+}
+
+/// Cells of the lane's own floor course at `y` (the run's floor level).
+fn stair_floor_cells(region: Box3, y: i32) -> impl Iterator<Item = [i32; 3]> {
+    (region.origin[0]..region.maximum()[0])
+        .flat_map(move |x| (region.origin[2]..region.maximum()[2]).map(move |z| [x, y, z]))
+}
+
+/// The claim `boulder_stair`'s doc-comment makes: the smooth run is the same
+/// material family as the rough lane, at a different distress level, so it
+/// must not register as an accent. Proved both ways — grouped by family it
+/// is silent, and *because* an ungrouped reading of the same cells would
+/// genuinely trip the accent ceiling, the fold is load-bearing rather than
+/// vacuous.
+#[test]
+fn the_worn_tread_variant_is_not_counted_as_an_accent() {
+    let out = expand_at(&boulder_stair(), STAIR_PALETTE_REGION, STAIR_SEED);
+    let run_y = out.anchors["anchor/stair-run"].pos[1];
+    let cells: Vec<[i32; 3]> = stair_floor_cells(STAIR_PALETTE_REGION, run_y).collect();
+
+    let grouped = family_shares(
+        &out.model,
+        cells.iter().copied(),
+        &[("rock", &["minecraft:cobblestone", "minecraft:stone"])],
+    );
+    assert_eq!(
+        grouped.len(),
+        1,
+        "grouped by family there is exactly one material on the tread: {grouped:?}"
+    );
+    assert!(
+        accent_overruns(&grouped).is_empty(),
+        "the family-grouped tread was flagged as carrying an accent: {grouped:?}"
+    );
+
+    // The fold matters: read the *same* cells without it and the smooth run
+    // is a distinct role whose share clears the accent ceiling on its own.
+    let naive = family_shares(&out.model, cells.iter().copied(), &[]);
+    let smooth_share = naive.get("minecraft:stone").copied().unwrap_or(0.0);
+    assert!(
+        smooth_share > ACCENT_CEILING,
+        "the fixture does not give the naive reading real teeth: smooth is only \
+         {smooth_share:.3} of the tread"
+    );
+    assert!(
+        !accent_overruns(&naive).is_empty(),
+        "an ungrouped reading of the same cells did not trip the accent ceiling — the family \
+         fold above is not proving anything"
+    );
+}
+
+/// ...and the family-grouped reading is not simply blind: restyle the run to
+/// a wholly unrelated material and it correctly reads as a genuine accent
+/// overrun, over the same cells, with the same family map.
+#[test]
+fn the_palette_mirror_still_fires_on_a_genuine_accent_in_the_tread() {
+    let mut restyled = boulder_stair();
+    restyled
+        .set_role(
+            "smooth",
+            delvewright_grammar::ir::Paint::Block(BlockState::simple("gold_block")),
+        )
+        .unwrap();
+    let out = expand_at(&restyled, STAIR_PALETTE_REGION, STAIR_SEED);
+    let run_y = out.anchors["anchor/stair-run"].pos[1];
+    let cells: Vec<[i32; 3]> = stair_floor_cells(STAIR_PALETTE_REGION, run_y).collect();
+
+    let grouped = family_shares(
+        &out.model,
+        cells.iter().copied(),
+        &[("rock", &["minecraft:cobblestone", "minecraft:stone"])],
+    );
+    let overruns = accent_overruns(&grouped);
+    assert!(
+        overruns.iter().any(|(k, _)| k == "minecraft:gold_block"),
+        "a genuinely unrelated material was not caught as an accent overrun: {grouped:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// M — the threshold motif
+// ---------------------------------------------------------------------------
+
+/// The fixture: a curtained doorway, byte-identical on a second expansion.
+#[test]
+fn a_threshold_motif_expands_deterministically() {
+    let program = threshold_motif();
+    let a = expand_at(&program, THRESHOLD_REGION, THRESHOLD_SEED);
+    let b = expand_at(&program, THRESHOLD_REGION, THRESHOLD_SEED);
+    assert_eq!(a.model.canonical_bytes(), b.model.canonical_bytes());
+    assert_eq!(a.anchors, b.anchors);
+    assert!(a.anchors.contains_key("anchor/threshold-narrate"));
+}
+
+/// The narrate anchor re-centres itself at whatever width the box is built —
+/// the same formula holding at three different sizes is what "reusable at
+/// different box sizes" means for a *point* anchor.
+#[test]
+fn the_narrate_anchor_recentres_at_different_widths() {
+    for region in [
+        Box3::at_origin([5, 6, 9]),
+        THRESHOLD_REGION,
+        WIDE_THRESHOLD_REGION,
+    ] {
+        let out = expand_at(&threshold_motif(), region, THRESHOLD_SEED);
+        let narrate = out.anchors["anchor/threshold-narrate"].pos;
+        assert_eq!(
+            narrate[0],
+            (region.size[0] as i32 - 1) / 2,
+            "the anchor is not centred on a {region:?} doorway"
+        );
+        // The anchor marks the floor block itself (`FloorCenter`'s body is
+        // `fill("stone")`), so the standable cell is the one above it.
+        assert!(standable(
+            &out.model,
+            [narrate[0], narrate[1] + 1, narrate[2]]
+        ));
+    }
+}
+
+/// Curtain strands in the doorway: the first `y` above the narrate anchor's
+/// floor that carries any `chain` block is the curtain band, and the count
+/// is how many distinct `x` columns carry one there.
+fn curtain_strand_count(out: &Expansion, region: Box3) -> usize {
+    let narrate = out.anchors["anchor/threshold-narrate"].pos;
+    let y = (narrate[1] + 1..region.maximum()[1])
+        .find(|&y| {
+            (region.origin[0]..region.maximum()[0]).any(|x| {
+                out.model
+                    .get([x, y, narrate[2]])
+                    .is_some_and(|b| b.name == "minecraft:chain")
+            })
+        })
+        .expect("the doorband has a curtain band somewhere above the floor");
+    (region.origin[0]..region.maximum()[0])
+        .filter(|&x| {
+            out.model
+                .get([x, y, narrate[2]])
+                .is_some_and(|b| b.name == "minecraft:chain")
+        })
+        .count()
+}
+
+/// The gate the entry exists for: strand density holds across box sizes —
+/// widening the doorway does not thin the curtain out, because the band is a
+/// `split_repeat` tiling the same period regardless of width.
+#[test]
+fn curtain_density_holds_across_box_sizes() {
+    let narrow = expand_at(&threshold_motif(), THRESHOLD_REGION, THRESHOLD_SEED);
+    let wide = expand_at(&threshold_motif(), WIDE_THRESHOLD_REGION, THRESHOLD_SEED);
+    let narrow_strands = curtain_strand_count(&narrow, THRESHOLD_REGION);
+    let wide_strands = curtain_strand_count(&wide, WIDE_THRESHOLD_REGION);
+    assert!(narrow_strands >= 6, "{narrow_strands}");
+    assert!(
+        wide_strands > narrow_strands,
+        "the wider doorway did not carry proportionally more strands: \
+         {narrow_strands} at {THRESHOLD_REGION:?} vs {wide_strands} at {WIDE_THRESHOLD_REGION:?}"
+    );
+    let narrow_density = narrow_strands as f64 / (THRESHOLD_REGION.size[0] - 2) as f64;
+    let wide_density = wide_strands as f64 / (WIDE_THRESHOLD_REGION.size[0] - 2) as f64;
+    assert!(
+        (narrow_density - wide_density).abs() < 0.01,
+        "the strand density drifted with width: {narrow_density:.3} vs {wide_density:.3} — the \
+         motif degraded rather than scaled"
+    );
+}
+
+/// ...and the gate has teeth: `single_strand` collapses the curtain to one
+/// strand regardless of width, which is exactly what "the motif degrading"
+/// means, and the density check above must have been able to catch it.
+#[test]
+fn single_strand_degrades_the_curtain_at_width() {
+    let mut collapsed = threshold_motif();
+    collapsed.set_param("single_strand", 1).unwrap();
+    let narrow = expand_at(&collapsed, THRESHOLD_REGION, THRESHOLD_SEED);
+    let wide = expand_at(&collapsed, WIDE_THRESHOLD_REGION, THRESHOLD_SEED);
+    let narrow_strands = curtain_strand_count(&narrow, THRESHOLD_REGION);
+    let wide_strands = curtain_strand_count(&wide, WIDE_THRESHOLD_REGION);
+    assert_eq!(narrow_strands, 1);
+    assert_eq!(
+        wide_strands, 1,
+        "a wider doorway grew more strands even under single_strand — the knob proves nothing"
+    );
+}
+
+/// The curtain hangs above the walk clearance and never touches it: the
+/// doorway stays walkable end to end, with or without the degrading knob.
+#[test]
+fn the_doorway_is_walkable_beneath_the_curtain() {
+    for single_strand in [0, 1] {
+        let mut program = threshold_motif();
+        program.set_param("single_strand", single_strand).unwrap();
+        let out = expand_at(&program, THRESHOLD_REGION, THRESHOLD_SEED);
+        let cells = standable_cells(&out.model);
+        let far = THRESHOLD_REGION.size[2] as i32 - 1;
+        let entry: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == far).collect();
+        let exit: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] == 0).collect();
+        assert!(!entry.is_empty() && !exit.is_empty());
+        assert!(
+            connected(&cells, &entry, &exit),
+            "single_strand={single_strand}: the curtain blocked the doorway"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// X — the broken grate
+// ---------------------------------------------------------------------------
+
+const GRATE_BLOCK: &str = "minecraft:iron_bars";
+const BROKEN_BLOCK: &str = "minecraft:mossy_cobblestone";
+
+/// The first gate, the same shape as `store_room`'s: **exactly** one break,
+/// every time, and the anchor is on it. Counted off the blocks' `(x, z)`, not
+/// raw block count — a break is `grate_height` (2) courses tall, so it is
+/// two blocks at one row position, not two breaks — and the rest of the row
+/// is asserted to be plain grates.
+#[test]
+fn the_grate_wall_holds_exactly_one_break() {
+    let program = broken_grate();
+    for seed in 0..12u64 {
+        let out = expand_at(&program, GRATE_REGION, seed);
+        let model = &out.model;
+        let broken: BTreeSet<[i32; 2]> = GRATE_REGION
+            .positions()
+            .filter(|&p| model.get(p).is_some_and(|b| b.name == BROKEN_BLOCK))
+            .map(|p| [p[0], p[2]])
+            .collect();
+        assert_eq!(
+            broken.len(),
+            1,
+            "seed {seed} laid broken cells at {broken:?}"
+        );
+
+        let anchor = out.anchors["anchor/grate-secret"].pos;
+        assert_eq!(
+            [anchor[0], anchor[2]],
+            *broken.iter().next().unwrap(),
+            "seed {seed}: the anchor is off the break"
+        );
+
+        let grates: Vec<[i32; 3]> = GRATE_REGION
+            .positions()
+            .filter(|&p| model.get(p).is_some_and(|b| b.name == GRATE_BLOCK))
+            .collect();
+        // The row is `grate_height` (2) courses tall over `Z` cells of run.
+        assert_eq!(
+            grates.len(),
+            (GRATE_REGION.size[2] as usize - 1) * 2,
+            "seed {seed}: the row is not full of plain grates"
+        );
+    }
+}
+
+/// The second gate: the break is *in* the row, a plain grate beside it on at
+/// least one side — an odd cell off on its own is a prop, not a tell.
+#[test]
+fn the_break_stands_in_the_row_it_is_odd_against() {
+    let program = broken_grate();
+    for seed in 0..12u64 {
+        let out = expand_at(&program, GRATE_REGION, seed);
+        let model = &out.model;
+        let [x, y, z] = out.anchors["anchor/grate-secret"].pos;
+        let neighbours = [[x, y, z - 1], [x, y, z + 1]]
+            .into_iter()
+            .filter(|&p| model.get(p).is_some_and(|b| b.name == GRATE_BLOCK))
+            .count();
+        assert!(
+            neighbours >= 1,
+            "seed {seed}: the break at {:?} has no grate beside it",
+            [x, y, z]
+        );
+    }
+}
+
+/// The break's position is the seed's: twelve seeds must not all put it in
+/// the same place, or the cue is a fixed landmark players learn once.
+#[test]
+fn the_break_moves_with_the_seed() {
+    let program = broken_grate();
+    let places: BTreeSet<[i32; 3]> = (0..12u64)
+        .map(|seed| expand_at(&program, GRATE_REGION, seed).anchors["anchor/grate-secret"].pos)
+        .collect();
+    assert!(
+        places.len() >= 3,
+        "12 seeds put the break in {} places: {places:?}",
+        places.len()
+    );
+}
+
+/// Cells of the grate row's own band: the wall column, `grate_height` (2)
+/// courses, at `z`.
+fn grate_row_cells(
+    region: Box3,
+    wall_x: i32,
+    y0: i32,
+    height: i32,
+) -> impl Iterator<Item = [i32; 3]> {
+    (region.origin[2]..region.maximum()[2])
+        .flat_map(move |z| (y0..y0 + height).map(move |y| [wall_x, y, z]))
+}
+
+/// The X-specific counterpart of `the_worn_tread_variant_is_not_counted_as_an_accent`:
+/// the broken cell is the same material family as the intact grate, at a
+/// different distress level, and must not read as an accent — proved on a
+/// row short enough that an ungrouped reading of the same cells genuinely
+/// would.
+#[test]
+fn the_broken_grate_variant_is_not_counted_as_an_accent() {
+    let out = expand_at(&broken_grate(), GRATE_PALETTE_REGION, 1);
+    let wall_x = GRATE_PALETTE_REGION.size[0] as i32 - 1;
+    let cells: Vec<[i32; 3]> = grate_row_cells(GRATE_PALETTE_REGION, wall_x, 0, 2).collect();
+
+    let grouped = family_shares(
+        &out.model,
+        cells.iter().copied(),
+        &[("bars", &[GRATE_BLOCK, BROKEN_BLOCK])],
+    );
+    assert!(
+        accent_overruns(&grouped).is_empty(),
+        "the family-grouped grate row was flagged as carrying an accent: {grouped:?}"
+    );
+
+    let naive = family_shares(&out.model, cells.iter().copied(), &[]);
+    let broken_share = naive.get(BROKEN_BLOCK).copied().unwrap_or(0.0);
+    assert!(
+        broken_share > ACCENT_CEILING,
+        "the fixture does not give the naive reading real teeth: the break is only \
+         {broken_share:.3} of the row"
+    );
+    assert!(
+        !accent_overruns(&naive).is_empty(),
+        "an ungrouped reading of the same cells did not trip the accent ceiling"
+    );
+}
+
+/// ...and the same mirror still fires on a genuine accent: restyle the break
+/// to a wholly unrelated material and, over the same cells and family map, it
+/// reads as an overrun.
+#[test]
+fn the_palette_mirror_still_fires_on_a_genuine_accent_in_the_grate_row() {
+    let mut restyled = broken_grate();
+    restyled
+        .set_role(
+            "grate_broken",
+            delvewright_grammar::ir::Paint::Block(BlockState::simple("gold_block")),
+        )
+        .unwrap();
+    let out = expand_at(&restyled, GRATE_PALETTE_REGION, 1);
+    let wall_x = GRATE_PALETTE_REGION.size[0] as i32 - 1;
+    let cells: Vec<[i32; 3]> = grate_row_cells(GRATE_PALETTE_REGION, wall_x, 0, 2).collect();
+
+    let grouped = family_shares(
+        &out.model,
+        cells.iter().copied(),
+        &[("bars", &[GRATE_BLOCK])],
+    );
+    let overruns = accent_overruns(&grouped);
+    assert!(
+        overruns.iter().any(|(k, _)| k == "minecraft:gold_block"),
+        "a genuinely unrelated material was not caught as an accent overrun: {grouped:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Shared promises
 // ---------------------------------------------------------------------------
 
@@ -1055,6 +1684,38 @@ fn the_documented_minimum_regions_are_the_real_ones() {
         [5, 5, 5],
         &[[4, 5, 5], [5, 4, 5], [5, 5, 4]],
     );
+    // boulder_stair: MIN_X (5) across — and at least as long as it is wide,
+    // which for this rule means at least MIN_X deep too: the frame always
+    // makes local Z the *larger* of the two horizontal extents, so a
+    // documented depth under the width minimum could never be reached.
+    check(
+        "boulder_stair",
+        &boulder_stair(),
+        [
+            boulder_stair::MIN_X as u32,
+            6,
+            boulder_stair::MIN_DEPTH as u32,
+        ],
+        &[[4, 6, 5], [5, 5, 5], [5, 6, 4]],
+    );
+    // threshold_motif: 3 across (wall, interior, wall), head + 2 (6) tall —
+    // head defaults to curtain_height + 2, the least that leaves two full
+    // cells of walk clearance under the curtain — 3 long.
+    check(
+        "threshold_motif",
+        &threshold_motif(),
+        [3, 6, threshold_motif::MIN_DEPTH as u32],
+        &[[2, 6, 3], [3, 5, 3], [3, 6, 2]],
+    );
+    // broken_grate: 3 across (wall, floor, grate wall), head + 2 tall,
+    // MIN_LINE (3) — three grates is the shortest row the odd one always has
+    // a neighbour in, the same proof store_room makes for its barrels.
+    check(
+        "broken_grate",
+        &broken_grate(),
+        [3, 5, broken_grate::MIN_LINE as u32],
+        &[[2, 5, 3], [3, 4, 3], [3, 5, 2]],
+    );
 }
 
 /// A palette swap restyles every staging program without moving a block — the
@@ -1078,6 +1739,9 @@ fn the_staging_rules_restyle_without_moving_a_block() {
         (rafter_hall(), HALL_REGION),
         (ambush_door(), DOOR_REGION),
         (store_room(), STORE_REGION),
+        (boulder_stair(), STAIR_REGION),
+        (threshold_motif(), THRESHOLD_REGION),
+        (broken_grate(), GRATE_REGION),
     ] {
         let mut restyled = base.clone();
         let roles: Vec<String> = base.palette.keys().cloned().collect();
