@@ -41,6 +41,7 @@
 //! | `set-flag` in an environment trigger's effects | the trigger's own `requires_flags` are satisfied (a `strike`/`use`/`approach` trigger is player-initiated: ambient, no DAG position) |
 //! | `set-flag` in a `traps[].payload` | the trap's `requires_flags` are satisfied (ambient, same reasoning: the party can always walk over and spring it) |
 //! | a trap's `disarm.sets_flag` | the trap's `requires_flags` are satisfied (ambient, same reasoning) |
+//! | a timed gate's `disarm.sets_flag` | always (ambient — the jam lever is an optional player action) |
 //! | `set-flag` in an `on_respawn` / `on_caught` reaction bundle | **never** — reaction bundles fire at statically unknowable times, so they are not producers (the conservative stance [`crate::continuity`] already takes), whether the bundle is rooted in the quests stage or hung off a dialogue option's `set-checkpoint` |
 //!
 //! Which effect **lists** those rows range over is not this module's to decide:
@@ -499,6 +500,16 @@ impl<'a> Flow<'a> {
                 ambient.push(GatedFlag {
                     flag: d.sets_flag.as_str().to_string(),
                     requires: gate_of(&trap.requires_flags),
+                });
+            }
+        }
+        // task #184: a timed gate's disarm produces its flag the same way — an
+        // optional player action nothing orders, so it is ambient, ungated.
+        for g in &c.quests.content.timed_gates {
+            if let Some(d) = &g.disarm {
+                ambient.push(GatedFlag {
+                    flag: d.sets_flag.as_str().to_string(),
+                    requires: Vec::new(),
                 });
             }
         }

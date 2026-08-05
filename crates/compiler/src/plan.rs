@@ -217,6 +217,22 @@ pub struct TimedGatePlan {
     /// Whether the closing edge kills players caught inside the region
     /// (spec-0016 §4 addendum).
     pub crush: bool,
+    /// The resolved disarm affordance (task #184), if declared. A gate whose
+    /// `disarm.via` anchor does not resolve carries `None` — the DSL tier's
+    /// `DW0377` reports that, and no half-built affordance reaches emission.
+    pub disarm: Option<TimedGateDisarmPlan>,
+}
+
+/// A resolved `timed-gate` disarm affordance (task #184) — the same shape a
+/// trap's [`TrapDisarmPlan`] takes.
+#[derive(Clone, Debug)]
+pub struct TimedGateDisarmPlan {
+    /// The anchor name the player interacts with.
+    pub via_anchor: String,
+    /// Its resolved absolute cell.
+    pub via_cell: [i32; 3],
+    /// The flag jamming the gate sets, party-wide.
+    pub sets_flag: String,
 }
 
 /// A resolved stage-5 `ambush` (spec-0016 §3), collected in declared order —
@@ -1309,6 +1325,13 @@ impl<'a> Plan<'a> {
                     closed_ticks: g.closed_ticks,
                     phase: g.phase,
                     crush: g.crush,
+                    disarm: g.disarm.as_ref().and_then(|dis| {
+                        point_any(&anchors, dis.via.as_str()).map(|via_cell| TimedGateDisarmPlan {
+                            via_anchor: dis.via.as_str().to_string(),
+                            via_cell,
+                            sets_flag: dis.sets_flag.as_str().to_string(),
+                        })
+                    }),
                 })
             })
             .collect();

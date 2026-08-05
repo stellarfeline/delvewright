@@ -433,3 +433,24 @@ jobs:
         run: |
           bash validation/packtest-run.sh --project dw-ci-lanes \
             --output ./delve-output-lanes
+
+      # task #184 — the timed-gate `disarm` (the hazard ladder's third rung). The
+      # claim is about what a live server does across cycle boundaries AFTER the
+      # jam: that no scheduled close ever re-seals the span. A static test can only
+      # read the guard; only a server proves it holds. Measured red->green on the
+      # pinned toolserver: with the `#tgdis_<id>` guard stripped from
+      # `tgate_close_<id>` the template fails, with it the suite is green. (The
+      # assertion deliberately lands immediately after each close — an earlier
+      # version asserted after the following open and passed against the unguarded
+      # build, because the open clears the span either way.) Same cost profile as
+      # the passes above: one extra toolserver boot, no new pull, no new compile.
+      - name: build the souls-timed-gate-disarm delve output (task #184)
+        run: |
+          cargo run -p delvewright-compiler --bin delvec -- \
+            build crates/compiler/tests/fixtures/souls-timed-gate-disarm \
+            -o validation/delve-output-tgdisarm --prefabs campaigns/prefabs
+
+      - name: PackTest suite — souls-timed-gate-disarm (jam, then no re-seal)
+        run: |
+          bash validation/packtest-run.sh --project dw-ci-tgdisarm \
+            --output ./delve-output-tgdisarm
