@@ -562,27 +562,51 @@ const PORTCULLIS: TimedGate = {
   openTicks: 100,
   closedTicks: 100,
   phase: 0,
+  crush: false,
 };
 
 /** A GateAssist with a virtual clock, so the bounded wait costs no wall time. */
 function fakeGate(
-  opts: { feet?: () => [number, number, number] | undefined } = {},
-): GateAssist & { waits: number; clock: { t: number } } {
+  opts: {
+    feet?: () => [number, number, number] | undefined;
+    gates?: readonly TimedGate[];
+    /** Whether the closed→open edge is OBSERVED by each wait (default yes). */
+    observed?: () => boolean;
+    /** Event hook so a test can assert wait-vs-goto ordering. */
+    onWait?: () => void;
+    /** Optional raw-dash stub (crush entries use it when present). */
+    dash?: GateAssist["dash"];
+  } = {},
+): GateAssist & {
+  waits: number;
+  clock: { t: number };
+  holds: Array<readonly number[] | undefined>;
+  presses: Array<readonly number[] | undefined>;
+} {
   const clock = { t: 0 };
   const state = { waits: 0 };
+  const holds: Array<readonly number[] | undefined> = [];
+  const presses: Array<readonly number[] | undefined> = [];
   return {
-    gates: [PORTCULLIS],
+    gates: opts.gates ?? [PORTCULLIS],
     // Each wait advances the virtual clock by one full cycle.
-    waitForWindow: async () => {
+    waitForWindow: async (_gates, hold, press) => {
       state.waits++;
       clock.t += 10_000;
+      holds.push(hold);
+      presses.push(press);
+      opts.onWait?.();
+      return opts.observed?.() ?? true;
     },
     feetCell: opts.feet ?? (() => [24, 63, -9]),
+    dash: opts.dash,
     now: () => clock.t,
     get waits() {
       return state.waits;
     },
     clock,
+    holds,
+    presses,
   };
 }
 
@@ -747,6 +771,254 @@ test("a gate crossing the pathfinder cannot hold is finished by walking, inside 
   assert.equal(gate.waits, 1, "and it happened inside the FIRST window, not after the budget");
 });
 
+// --- task #140: `crush: true` gates are staged, never entered blind -----------
+//
+// The tide-mill death: `timed-gate/tide` (36t open / 84t closed, phase 55, crush)
+// killed the bot on the FIRST live crush-gate encounter, at [261, 62, 13] inside
+// the gate corridor. Root cause: the gate machinery above is reactive — it waits
+// for a window only AFTER a hop fails. A non-crush gate's worst case is a path
+// abort (information); a crush gate's closing edge is an instant, gear-independent
+// kill, so the first "failure" is the bot's death and no retry ever runs. A hop
+// whose straight mouth-to-mouth segment crosses a crush gate must therefore be
+// STAGED: hold at the compiler-pinned mouth cell, observe a fresh closed→open
+// edge, check the crossing fits the window with margin, and only then enter.
+
+/** The tide-mill crusher, as the live artifact exported it (short window, phase
+ * offset — the phase is metadata; entry timing is OBSERVED, never computed). */
+const TIDE: TimedGate = {
+  id: "timed-gate/tide",
+  min: [258, 61, 13],
+  max: [262, 63, 14],
+  block: "minecraft:polished_deepslate",
+  openTicks: 36,
+  closedTicks: 84,
+  phase: 55,
+  crush: true,
+};
+
+/** The tide leg: mouth cell before the region, mouth cell after, then the anchor. */
+const TIDE_GOALS = [G(260, 61, 12), G(260, 61, 15), G(260, 61, 24, 3)];
+
+test("a crush-gate crossing is staged: fresh window observed BEFORE any entry", async () => {
+  const events: string[] = [];
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => [260, 61, 12], // staged at the near mouth, fully outside the fill
+    onWait: () => events.push("wait"),
+  });
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    events.push(label);
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  assert.equal(gate.waits, 1, "one fresh window for the one crossing hop");
+  const wait = events.indexOf("wait");
+  const entry = events.findIndex((e) => e.includes("waypoint 2/3"));
+  assert.ok(entry >= 0, `the crossing hop ran: ${events.join(" | ")}`);
+  assert.ok(wait >= 0 && wait < entry, `window precedes entry: ${events.join(" | ")}`);
+  assert.ok(
+    events[entry]!.includes("gate attempt"),
+    `the crossing entry is a staged gate attempt, never a plain hop: ${events.join(" | ")}`,
+  );
+  // The approach and the post-gate hop are ordinary hops — staging is scoped to
+  // the crossing, not smeared over the leg.
+  assert.equal(events[0], "interact anchor/objective waypoint 1/3");
+  assert.ok(!events[0]!.includes("gate attempt"));
+  assert.equal(events[events.length - 1], "interact anchor/objective");
+  // The wait HOLDS the staging stance (the live tide-mill lesson: the corridor
+  // current carried an idle bot 8 blocks off the mouth during one 4 s wait).
+  assert.deepEqual(gate.holds, [[260, 61, 12]], "the wait pins the bot to the mouth cell");
+  // …and PRESSES into the shut plane toward the crossing target, so the open edge
+  // releases a contact-started bot (from a standing start the pour is a wall).
+  assert.deepEqual(gate.presses, [[260, 61, 15]], "the wait leans into the closed gate");
+});
+
+test("a crush entry crosses RAW: the dash runs mouth-to-mouth before any pathfinder hop", async () => {
+  // The live lesson, round 3: even a fresh-edge pathfinder entry lost the 1.8 s
+  // window (start latency + mid-water replans against the flood through the
+  // opened plane) and the closing edge killed the bot mid-crossing. The crossing
+  // span itself is raw physics; the pathfinder only finishes the arrival.
+  const events: string[] = [];
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => [260, 61, 12],
+    dash: async (through, from, to) => {
+      events.push(`dash [${from.join(",")}] -> [${to.join(",")}] through ${through[0]!.id}`);
+      return true;
+    },
+  });
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    events.push(label);
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  const dash = events.findIndex((e) => e.startsWith("dash "));
+  const entry = events.findIndex((e) => e.includes("gate attempt"));
+  assert.ok(dash >= 0, `the raw dash ran: ${events.join(" | ")}`);
+  assert.ok(dash < entry, `dash precedes the pathfinder arrival hop: ${events.join(" | ")}`);
+  assert.equal(
+    events[dash],
+    "dash [260,61,12] -> [260,61,15] through timed-gate/tide",
+    "the dash is the staged mouth-to-mouth crossing",
+  );
+});
+
+test("a dash that cannot clear fails its attempt and takes the NEXT window — never lingers", async () => {
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => [260, 61, 12],
+    dash: undefined, // set below, needs the clock
+  });
+  let dashes = 0;
+  (gate as { dash?: GateAssist["dash"] }).dash = async () => {
+    dashes++;
+    gate.clock.t += 3_000; // the failed dash consumed the whole window
+    return dashes > 1; // second window's dash clears
+  };
+  const labels: string[] = [];
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    labels.push(label);
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  assert.equal(dashes, 2, "one failed dash, one clean one");
+  assert.equal(gate.waits, 2, "the retry waited for its own fresh window");
+  assert.ok(
+    !labels.some((l) => l.includes("recovery")),
+    `no pathfinder escalation into the spent window: ${labels.join(" | ")}`,
+  );
+});
+
+test("a bot the current carried off the mouth is re-staged, never margin-failed from the drift", async () => {
+  // The live tide-mill failure mode after staging landed: the corridor is flowing
+  // water, the idle bot drifted from the mouth [260,61,12] back to the pool at
+  // [260,61,4] during the window wait, and the margin check — honestly — refused
+  // an 8-block dash through a 1.8 s window. A drifted margin read is a stance
+  // problem: walk back to the mouth and take the next window. The hard margin
+  // failure is reserved for a bot verifiably ON the pinned mouth.
+  let feet: [number, number, number] = [260, 61, 12];
+  let drifted = false;
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => feet,
+    onWait: () => {
+      if (!drifted) {
+        drifted = true;
+        feet = [260, 61, 4]; // the tide won the first wait
+      }
+    },
+  });
+  const labels: string[] = [];
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    labels.push(label);
+    if (label.includes("re-stage")) feet = [260, 61, 12]; // walked back to the mouth
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  assert.ok(
+    labels.some((l) => l.includes("gate re-stage")),
+    `the drifted bot was walked back to the mouth: ${labels.join(" | ")}`,
+  );
+  assert.equal(gate.waits, 2, "the re-staged attempt waited for its own fresh window");
+  assert.ok(
+    labels.some((l) => l.includes("gate attempt 2")),
+    `the crossing then ran from the mouth: ${labels.join(" | ")}`,
+  );
+});
+
+test("a crush gate whose window edge cannot be observed is never entered blind", async () => {
+  // The lethal defect inverted: when the harness cannot SEE a fresh window it must
+  // refuse the crossing and fail loudly — "crossing anyway" is only survivable on
+  // gates that merely block.
+  const attempts: string[] = [];
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => [260, 61, 12],
+    observed: () => false,
+  });
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    if (label.includes("waypoint 2/3")) attempts.push(label);
+  };
+  await assert.rejects(
+    () => replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.match(err.message, /timed-gate\/tide/);
+      assert.match(err.message, /refusing blind entry/);
+      return true;
+    },
+  );
+  assert.equal(attempts.length, 0, `no entry was ever attempted: ${attempts.join(" | ")}`);
+  assert.ok(gate.waits >= GATE_MIN_ATTEMPTS, "the refusal still burned the bounded budget");
+});
+
+test("a bot caught inside a crush gate's cells stands off BEFORE waiting — no dwell in the fill", async () => {
+  const events: string[] = [];
+  // The bot reaches the mouth, then drifts INTO the region (range-1 tolerance) —
+  // the one place the closing fill kills. The staged crossing must pull it out
+  // before any waiting or entering happens.
+  let feet: [number, number, number] = [260, 61, 12];
+  const gate = fakeGate({
+    gates: [TIDE],
+    feet: () => feet,
+    onWait: () => events.push("wait"),
+  });
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    events.push(label);
+    if (label.includes("waypoint 1/3")) feet = [260, 61, 13]; // drifted into the fill
+    if (label.includes("standoff")) feet = [260, 61, 12]; // the standoff pulls it out
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  const standoff = events.findIndex((e) => e.includes("standoff"));
+  const wait = events.indexOf("wait");
+  const entry = events.findIndex((e) => e.includes("gate attempt"));
+  assert.ok(standoff >= 0, `stood off out of the fill: ${events.join(" | ")}`);
+  assert.ok(standoff < wait && wait < entry, `standoff → wait → enter: ${events.join(" | ")}`);
+});
+
+test("a fresh window too short for the crossing is refused loudly, not gambled", async () => {
+  // DW0378 proves every shipped window admits its crossing, so this can only fire
+  // when the bot is staged off the proven mouth or the artifact disagrees with the
+  // world — entering would gamble the bot's life on a proof that no longer applies.
+  const sliver: TimedGate = { ...TIDE, id: "timed-gate/sliver", openTicks: 2 };
+  const entries: string[] = [];
+  const gate = fakeGate({ gates: [sliver], feet: () => [260, 61, 12] });
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    if (label.includes("waypoint 2/3")) entries.push(label);
+  };
+  await assert.rejects(
+    () => replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.match(err.message, /timed-gate\/sliver/);
+      assert.match(err.message, /full margin/);
+      return true;
+    },
+  );
+  assert.equal(entries.length, 0, "the too-short window was never entered");
+});
+
+test("a failed crush entry does not escalate into a stale window — it takes the next fresh one", async () => {
+  // The within-window walking escalation (the-drowned-bell lesson) stays available,
+  // but never into a crush gate whose remaining window no longer fits the crossing:
+  // bursting into a closing crusher is exactly the death this staging prevents.
+  const gate = fakeGate({ gates: [TIDE], feet: () => [260, 61, 12] });
+  const labels: string[] = [];
+  let failedOnce = false;
+  const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
+    labels.push(label);
+    if (label.includes("gate attempt 1") && !failedOnce) {
+      failedOnce = true;
+      // The failed attempt consumed more than the 1.8s window.
+      gate.clock.t += 3_000;
+      throw new Error("Path was stopped before it could be completed!");
+    }
+  };
+  await replayLegWithRecovery(TIDE_GOALS, "interact anchor/objective", goto, undefined, gate);
+  assert.equal(gate.waits, 2, "the retry waited for the NEXT fresh window");
+  assert.ok(
+    !labels.some((l) => l.includes("recovery")),
+    `no recovery re-path into the stale window: ${labels.join(" | ")}`,
+  );
+  assert.ok(labels.some((l) => l.includes("gate attempt 2")), labels.join(" | "));
+});
+
 // --- task #134: completion signals outrank position ---------------------------
 //
 // The tide-mill wheelpit defect: `obj/wheelpit` sits right past a timed-gate
@@ -798,8 +1070,9 @@ test("a settle signal landing during the window wait ends the crossing before re
   const gate: GateAssist = {
     gates: inner.gates,
     waitForWindow: async (gates) => {
-      await inner.waitForWindow(gates);
+      const observed = await inner.waitForWindow(gates);
       settledNow = true;
+      return observed;
     },
     feetCell: inner.feetCell,
     now: inner.now,
@@ -2238,4 +2511,256 @@ test("killing a bystander beside the fight does not clear the wave", async () =>
   );
   assert.equal(left.length, 0, "the wave itself is what has to die");
   assert.equal(bot.entities[900], undefined, "the bystander died on the way, which is fine");
+});
+
+// --- talk-to: the walk-then-trigger contract (task #144) ----------------------
+
+import type { TalkToStep } from "../src/critical-path.ts";
+
+/**
+ * A bot that can be driven through a whole `talk-to` step. Unlike
+ * {@link InteractFakeBot} (parked AT its anchor so the walk costs no wall time),
+ * this one starts AWAY from the NPC and its `goto` actually moves it — the walk is
+ * exactly what is under test here.
+ *
+ * `gotoFailures` makes the first N pathfinds reject the way a live transient does,
+ * so a leg that needed recovery can be told from one that walked clean.
+ */
+class TalkToFakeBot extends InteractFakeBot {
+  /** Every pathfind goal the executor asked for, in order. */
+  goals: Array<[number, number, number]> = [];
+  /** How many of the next pathfinds reject before one is allowed to land. */
+  gotoFailures = 0;
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    // Optional-parameter shape so this stays assignable to the base fake's
+    // zero-argument `goto` (the executor always passes a GoalNear).
+    goto: async (goal?: { x: number; y: number; z: number }): Promise<void> => {
+      if (!goal) throw new Error("the executor must pass a goal");
+      this.goals.push([goal.x, goal.y, goal.z]);
+      this.calls.push(`goto(${goal.x},${goal.y},${goal.z})`);
+      if (this.gotoFailures > 0) {
+        this.gotoFailures -= 1;
+        throw new Error("Path was stopped before it could be completed!");
+      }
+      this.entity.position = new FakeVec3(goal.x + 0.5, goal.y, goal.z + 0.5);
+    },
+  };
+}
+
+/** The island's own step 1: hear Eurylochus out at the beach camp. */
+function talkToStep(extra: Partial<TalkToStep> = {}): TalkToStep {
+  return {
+    action: "talk-to",
+    objective: "obj/muster",
+    npc: "npc/eurylochus",
+    pos: [7, 63, 9],
+    command: "/trigger dw.dlg_eurylochus set 4",
+    sneak: false,
+    ...extra,
+  };
+}
+
+test("talk-to walks to the NPC, THEN chats the dialog trigger", async () => {
+  // The whole step in order: a dialog option is the NPC's, so the bot stands with
+  // the NPC before it fires the `/trigger` the button would have run. A talk-to that
+  // chatted from wherever it happened to be would pass every campaign whose dialog
+  // is reach-free and silently mis-drive every campaign whose dialog is not.
+  const bot = new TalkToFakeBot();
+  bot.entity.position = new FakeVec3(24.5, 63.0, 30.5); // well outside the NPC's range
+  const executor = attach(bot);
+  executor.useCampaign("nobodys-cave-island");
+  executor.beginStep(1);
+  setTimeout(
+    () => bot.emit("messagestr", "[dw:complete nobodys-cave-island obj/muster]"),
+    20,
+  );
+
+  await executor.talkTo(talkToStep());
+
+  assert.deepEqual(bot.calls, [
+    "goto(7,63,9)",
+    "chat(/trigger dw.dlg_eurylochus set 4)",
+  ]);
+  // …and the bot really is standing at the NPC when it speaks.
+  assert.ok(
+    Math.hypot(bot.entity.position.x - 7.5, bot.entity.position.z - 9.5) <= 3,
+    `bot spoke from ${bot.entity.position.x}, ${bot.entity.position.z}`,
+  );
+});
+
+test("a talk-to fires its dialog trigger however the walk ended", async () => {
+  // task #134's completion oracle (LegSettled) ends a walk as SUCCEEDED on a failure
+  // path when the step's exported transport has already landed the bot. That must
+  // never cost the step its dialog trigger: the walk is the means, the `/trigger` IS
+  // the step. The island's obj/muster read as "no marker arrived" for a whole batch
+  // round, and "the leg was shortcut, so the trigger was never sent" was the first
+  // theory — this pins that the trigger is unconditional, so that theory can never
+  // become true.
+  const bot = new TalkToFakeBot();
+  // Standing AT the step's exported transport destination, with a hop that fails:
+  // the oracle's transport branch reads settled and ends the leg early.
+  bot.entity.position = new FakeVec3(260.5, 61.0, 4.5);
+  bot.gotoFailures = 99; // every pathfind rejects — the leg can only end via the oracle
+  const executor = attach(bot);
+  executor.useCampaign("nobodys-cave-island");
+  executor.useWaypoints(
+    parseWaypoints({
+      version: "0.6.0",
+      campaign_id: "nobodys-cave-island",
+      legs: [
+        {
+          from: [260, 61, 4],
+          to: [7, 63, 9],
+          waypoints: [
+            [200, 61, 4],
+            [100, 62, 6],
+          ],
+        },
+      ],
+    }),
+  );
+  executor.beginStep(1);
+  // The marker arrives ONLY once the trigger has been chatted — exactly as the live
+  // datapack behaves — so the leg cannot end on the oracle's marker branch. The only
+  // way this walk ends is the transport branch, and the step still has to speak.
+  const chat = bot.chat.bind(bot);
+  bot.chat = (message: string): void => {
+    chat(message);
+    if (message.includes("dlg_")) {
+      setTimeout(() => bot.emit("messagestr", "[dw:complete nobodys-cave-island obj/muster]"), 20);
+    }
+  };
+
+  await executor.talkTo(talkToStep({ transport: [260, 61, 4] }));
+
+  assert.ok(
+    bot.calls.includes("chat(/trigger dw.dlg_eurylochus set 4)"),
+    `the trigger must still be sent; calls were ${bot.calls.join(" | ")}`,
+  );
+});
+
+// --- a swallowed trigger names itself (task #144) -----------------------------
+
+import { answersTrigger, swallowedTriggerVerdict, triggerObjective } from "../src/executor.ts";
+
+test("triggerObjective names the scoreboard objective a trigger command drives", () => {
+  assert.equal(triggerObjective("/trigger dw.dlg_eurylochus set 4"), "dw.dlg_eurylochus");
+  assert.equal(triggerObjective("  /trigger dw.i_brake set 1"), "dw.i_brake");
+  // Anything that is not a trigger command has no objective — and therefore gets no
+  // verdict clause, rather than a guessed one.
+  assert.equal(triggerObjective("/damage @s 1000 minecraft:generic"), undefined);
+  assert.equal(triggerObjective("hello"), undefined);
+});
+
+test("both of vanilla's answers to a trigger are recognised", () => {
+  // Success names the objective; the refusals do not, but every one of them says
+  // "trigger". Missing the refusal shape is the expensive direction: it would report
+  // a REACHED trigger as unreachable.
+  assert.equal(
+    answersTrigger("Triggered [dw.dlg_eurylochus] (set value to 4)", "dw.dlg_eurylochus"),
+    true,
+  );
+  assert.equal(answersTrigger("You can't trigger this objective yet", "dw.dlg_eurylochus"), true);
+  assert.equal(answersTrigger("This objective is not a trigger", "dw.dlg_eurylochus"), true);
+  // Ordinary delve narration is not an answer.
+  assert.equal(answersTrigger("The surf gives up its dead.", "dw.dlg_eurylochus"), false);
+});
+
+test("a talk-to that times out says whether its trigger reached the delve", async () => {
+  // The island's obj/muster symptom, at the executor tier. The trigger IS answered by
+  // the server and the objective still does not complete — the delve's own guard
+  // consumed it (what a re-used world's already-set score does). Before this, both
+  // this and an undelivered command produced the same bare timeout, and telling them
+  // apart cost a round of misattributed red runs (round 13, then this one).
+  const bot = new TalkToFakeBot();
+  bot.entity.position = new FakeVec3(7.5, 63.0, 9.5); // at the NPC: no walk under test
+  const executor = attach(bot);
+  executor.useCampaign("nobodys-cave-island");
+  executor.beginStep(1);
+  const chat = bot.chat.bind(bot);
+  bot.chat = (message: string): void => {
+    chat(message);
+    // The server answers the trigger — and nothing else happens.
+    setTimeout(() => bot.emit("messagestr", "Triggered [dw.dlg_eurylochus] (set value to 4)"), 10);
+  };
+
+  await assert.rejects(
+    () => executor.talkTo(talkToStep()),
+    (err: Error) => {
+      assert.match(err.message, /objective obj\/muster did not complete/);
+      assert.match(err.message, /the server ANSWERED/);
+      assert.match(err.message, /Triggered \[dw\.dlg_eurylochus\]/);
+      assert.match(err.message, /fresh-volumes\.sh --project/);
+      return true;
+    },
+  );
+});
+
+test("the verdict tells a swallowed trigger from an undelivered one", () => {
+  // The fork itself, in isolation: the wiring above proves the answer is captured,
+  // and this proves what the harness concludes from it. Both texts must name the
+  // side to look at — the whole point is that a bare timeout named neither.
+  const answered = swallowedTriggerVerdict({
+    command: "/trigger dw.dlg_eurylochus set 4",
+    objective: "dw.dlg_eurylochus",
+    lines: ["Triggered [dw.dlg_eurylochus] (set value to 4)"],
+  });
+  assert.match(answered, /the server ANSWERED/);
+  assert.match(answered, /its own guard consumed it/);
+  assert.match(answered, /re-used world/);
+  assert.match(answered, /fresh-volumes\.sh --project/);
+
+  const silent = swallowedTriggerVerdict({
+    command: "/trigger dw.dlg_eurylochus set 4",
+    objective: "dw.dlg_eurylochus",
+    lines: [],
+  });
+  assert.match(silent, /the server never answered/);
+  assert.match(silent, /harness\/infrastructure failure/);
+
+  // A step that sent no trigger at all (reach, collect, kill) gets no clause —
+  // never a guessed one.
+  assert.equal(swallowedTriggerVerdict(undefined), "");
+});
+
+test("a trigger echo never leaks into the next step's failure", async () => {
+  // The echo belongs to the step that sent it. A `reach` step that times out two
+  // steps later must not quote the last talk-to's `/trigger` as if it were its own:
+  // a diagnostic pointing at the wrong command is worse than no diagnostic.
+  const bot = new TalkToFakeBot();
+  bot.entity.position = new FakeVec3(7.5, 63.0, 9.5);
+  const executor = attach(bot);
+  executor.useCampaign("nobodys-cave-island");
+  executor.beginStep(1);
+  const chat = bot.chat.bind(bot);
+  bot.chat = (message: string): void => {
+    chat(message);
+    setTimeout(() => bot.emit("messagestr", "Triggered [dw.dlg_eurylochus] (set value to 4)"), 10);
+    setTimeout(
+      () => bot.emit("messagestr", "[dw:complete nobodys-cave-island obj/muster]"),
+      20,
+    );
+  };
+  await executor.talkTo(talkToStep());
+
+  // The next step sends no trigger of its own — so its message carries no verdict.
+  executor.beginStep(2);
+  await assert.rejects(
+    () => executor.requireObjective("obj/surf", "reach anchor/surf"),
+    (err: Error) => {
+      assert.match(err.message, /objective obj\/surf did not complete/);
+      assert.doesNotMatch(err.message, /dlg_eurylochus/);
+      assert.doesNotMatch(err.message, /the server (ANSWERED|never answered)/);
+      return true;
+    },
+  );
 });

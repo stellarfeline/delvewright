@@ -171,6 +171,18 @@ pub mod codes {
     /// is a no-op and the souls loop has no consumable to spend, so this is a
     /// build error rather than a design choice.
     pub const BONFIRE_NO_FLASK: &str = "DW0476";
+    /// (spec-0016 §1, owner directive 2026-08-03) A kit item's potion `contents`
+    /// is not something 1.21.11 can pour: declared on an item that carries no
+    /// `minecraft:potion_contents` component, empty (neither a named potion nor
+    /// an effect), an unknown potion or status-effect id, an amplifier or
+    /// duration outside the field vanilla stores it in, a lasting effect with no
+    /// `duration`, an instantaneous one *with* a duration, or a malformed
+    /// `color`.
+    pub const KIT_POTION_INVALID: &str = "DW0486";
+    /// (spec-0016 §1, owner directive 2026-08-03) A potion-bearing kit item
+    /// declares no `contents` at `dsl_version` 0.8.0 — the Uncraftable Potion, a
+    /// bottle that pours nothing. The placeholder flask, as a build error.
+    pub const KIT_POTION_MISSING: &str = "DW0487";
     /// (v0.3) A wave mob `entity` is not a known vanilla entity id. (Item-id
     /// checks for `collect.item`, `interact.requires_item` and `give-item.item`
     /// reuse [`ITEM_UNKNOWN`] / `DW0143`.)

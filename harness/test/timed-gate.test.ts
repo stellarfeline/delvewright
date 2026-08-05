@@ -4,17 +4,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  GATE_ENTRY_LATENCY_MS,
   GATE_RETRY_MARGIN_MS,
   TICKS_PER_SECOND,
+  WALK_MS_PER_BLOCK,
+  crossingEstimateMs,
   cycleMs,
   cycleTicks,
   describeGates,
   gateRegionCells,
   gateRetryBudgetMs,
   gateWindowWaitMs,
+  gatesCrossedByHop,
+  hopCrossesGate,
   insideGate,
   maxCycleMs,
+  nearCell,
   needsStandoff,
+  openMs,
 } from "../src/timed-gate.ts";
 import type { TimedGate } from "../src/waypoints.ts";
 
@@ -27,6 +34,7 @@ const portcullis: TimedGate = {
   openTicks: 100,
   closedTicks: 100,
   phase: 0,
+  crush: false,
 };
 
 test("a gate's cycle is its two halves, in ticks and milliseconds", () => {
@@ -95,4 +103,72 @@ test("the failure description names the gate and its cycle", () => {
   assert.match(text, /timed-gate\/portcullis/);
   assert.match(text, /100t open \/ 100t closed/);
   assert.match(text, /200t cycle/);
+});
+
+// --- task #140: crossing detection + window-margin arithmetic -----------------
+//
+// The tide-mill `timed-gate/tide` (36t open / 84t closed, phase 55, crush) killed
+// the bot because the harness only engaged its gate machinery AFTER a hop failed —
+// blind first entry, which a crushing close makes lethal. Staging needs two pure
+// facts: does THIS hop's straight mouth-to-mouth segment cross the gate, and does
+// the crossing fit an open window with margin.
+
+/** The tide-mill crusher, as the live run exported it (short window, phase offset). */
+const tide: TimedGate = {
+  id: "timed-gate/tide",
+  min: [258, 61, 13],
+  max: [262, 63, 14],
+  block: "minecraft:polished_deepslate",
+  openTicks: 36,
+  closedTicks: 84,
+  phase: 55,
+  crush: true,
+};
+
+test("a straight mouth-to-mouth hop through the region IS the crossing", () => {
+  // Flanking mouth cells (compiler-pinned): one before the region, one after.
+  assert.ok(hopCrossesGate([260, 61, 12], [260, 61, 15], tide));
+  // The whole approach leg toward the far anchor also pierces the region.
+  assert.ok(hopCrossesGate([261, 61, 4], [260, 61, 24], tide));
+  // A hop that stays on one side never crosses — no staging licence.
+  assert.ok(!hopCrossesGate([260, 61, 4], [260, 61, 12], tide));
+  assert.ok(!hopCrossesGate([260, 61, 15], [260, 61, 24], tide));
+  // Body occupancy counts: walking UNDER a head-height fill is a crossing.
+  const overhead: TimedGate = { ...tide, min: [258, 62, 13], max: [262, 63, 14] };
+  assert.ok(hopCrossesGate([260, 61, 12], [260, 61, 15], overhead));
+  // …but two blocks of clearance above the walker is not.
+  const high: TimedGate = { ...tide, min: [258, 63, 13], max: [262, 64, 14] };
+  assert.ok(!hopCrossesGate([260, 61, 12], [260, 61, 15], high));
+});
+
+test("gatesCrossedByHop filters to the gates the segment pierces, in order", () => {
+  assert.deepEqual(gatesCrossedByHop([260, 61, 12], [260, 61, 15], [portcullis, tide]), [tide]);
+  assert.deepEqual(gatesCrossedByHop([260, 61, 4], [260, 61, 12], [portcullis, tide]), []);
+  // An unknown origin grants no staging licence (the reactive path still covers it).
+  assert.deepEqual(gatesCrossedByHop(undefined, [260, 61, 15], [tide]), []);
+});
+
+test("nearCell is the range-1 arrival tolerance — a drifted bot is off-station", () => {
+  // At the mouth, and the legal range-1 arrivals around it.
+  assert.ok(nearCell([260, 61, 12], [260, 61, 12]));
+  assert.ok(nearCell([261, 61, 11], [260, 61, 12]));
+  assert.ok(nearCell([260, 62, 12], [260, 61, 12]));
+  // The live tide-mill drift: the current carried the idle bot to the pool.
+  assert.ok(!nearCell([260, 61, 4], [260, 61, 12]));
+  // An unknown position is not a station.
+  assert.ok(!nearCell(undefined, [260, 61, 12]));
+});
+
+test("the crossing estimate is entry latency plus distance at a conservative walk", () => {
+  assert.equal(
+    crossingEstimateMs([260, 61, 12], [260, 61, 15]),
+    Math.ceil(GATE_ENTRY_LATENCY_MS + 3 * WALK_MS_PER_BLOCK),
+  );
+  // The tide gate's designed crossing (mouth-to-mouth, ~3 blocks) fits its 1.8s
+  // window with margin — the harness must PASS the margin check the design earns.
+  assert.equal(openMs(tide), 1_800);
+  assert.ok(
+    crossingEstimateMs([260, 61, 12], [260, 61, 15]) < openMs(tide),
+    "the designed 36t window admits the staged crossing",
+  );
 });

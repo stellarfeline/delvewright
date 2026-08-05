@@ -259,12 +259,16 @@ export class RunReport {
         covered: (this.floorLedger?.covered ?? []).map((e) => ({
           kind: e.kind,
           id: e.id,
-          tier: e.tier,
+          tier: e.tier ?? null,
         })),
+        // `tier: null` is an UNTIERED hostile (task #121) — an actor the
+        // campaign unleashes on the party while declaring nothing about the
+        // fight. It is written as an explicit null, never dropped: a key that
+        // vanishes is the same silence this ledger exists to end.
         not_covered: (this.floorLedger?.notCovered ?? []).map((e) => ({
           kind: e.kind,
           id: e.id,
-          tier: e.tier,
+          tier: e.tier ?? null,
           reason: e.reason ?? null,
         })),
       },

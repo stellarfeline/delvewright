@@ -131,14 +131,20 @@ export interface ActorEncounter {
 export interface FloorLedgerEntry {
   readonly kind: string;
   readonly id: string;
-  readonly tier: EncounterTier;
+  /**
+   * The declared tier — `undefined` for an **untiered hostile** (task #121): an
+   * actor the campaign unleashes on the party without billing the fight at all.
+   * It is always a `not_covered` entry, because nothing declared what the gate
+   * was supposed to hold it to.
+   */
+  readonly tier?: EncounterTier;
   /** Present exactly on a not-covered entry. */
   readonly reason?: string;
 }
 
 /**
- * The floor-gate ledger: every encounter billed `elite`/`boss`, split into what
- * the gate covers and what it cannot.
+ * The floor-gate ledger: every encounter billed `elite`/`boss` plus every
+ * untiered hostile actor, split into what the gate covers and what it cannot.
  *
  * `present: false` means the build carried NO ledger (a plan from a delvec older
  * than #222) — deliberately distinct from a present-but-empty ledger, because
@@ -372,10 +378,16 @@ function parseLedgerSide(v: unknown, pointer: string, needReason: boolean): Floo
     if (needReason && reason === undefined) {
       throw new CombatPlanParseError(`${p}/reason`, "a not-covered entry must state why");
     }
+    // `tier: null` (or absent) is the compiler saying the entry declares NO
+    // tier — the untiered hostile of task #121. Anything else present must
+    // still be a real tier, so a typo can never be read as "untiered".
+    const tier = e["tier"];
     return {
       kind: requireString(e, "kind", p),
       id: requireString(e, "id", p),
-      tier: requireTier(e["tier"], `${p}/tier`),
+      ...(tier === null || tier === undefined
+        ? {}
+        : { tier: requireTier(tier, `${p}/tier`) }),
       reason,
     };
   });
