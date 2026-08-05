@@ -31,6 +31,8 @@ import type {
 } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError, likelyDeathCause } from "./death.ts";
+import { hasSettled } from "./entity-settle.ts";
+import type { NamedEntityDeath } from "./teardown.ts";
 import {
   AssistLedger,
   actorExercise,
@@ -1053,6 +1055,20 @@ const REST_OPEN_SETTLE_MS = 500;
 /** Recent chat lines retained for death-cause diagnosis. */
 const CHAT_BUFFER = 16;
 /**
+ * How often (ms) {@link MineflayerExecutor.awaitEntitySettle} polls the non-player
+ * entity count while waiting for the tracker to stop changing shape after spawn.
+ */
+const ENTITY_SETTLE_POLL_MS = 200;
+/**
+ * Hard ceiling (ms) on the post-spawn entity-settle wait (2026-08-06 island
+ * triage). World-persisted entities were observed populating by t+4s; this
+ * leaves comfortable margin without letting a build that never spawns anything
+ * near the bot hang the run — the wait always gives up and proceeds, and the
+ * existing "not tracked" crosshair warning stays honest about whatever state the
+ * tracker is actually in when a step reads it.
+ */
+const ENTITY_SETTLE_TIMEOUT_MS = 8_000;
+/**
  * Self-defense (souls ladder, the-drowned-bell): how long (ms) the bot may spend
  * killing a stalker that interrupted a NAVIGATION leg before it gives up, reports, and
  * resumes walking. A delve mob dies in a handful of swings; this window is many times
@@ -1171,6 +1187,10 @@ export class MineflayerExecutor implements StepExecutor {
   private lastForcedPos: { x: number; y: number; z: number } | undefined;
   /** Grace (ms) added onto a cutscene's declared length before giving up. */
   private readonly cutsceneGraceMs: number;
+  /** Hard ceiling (ms) on the post-spawn entity-settle wait. Overridable
+   * (`DELVEWRIGHT_ENTITY_SETTLE_TIMEOUT_MS`) so a test can shorten the give-up
+   * path without waiting out the production default. */
+  private readonly entitySettleTimeoutMs: number;
   /**
    * task #38: the compiler's proven per-leg critical-path waypoints (keyed by
    * destination anchor). When a walked step's target has a leg here, `walkTo`
@@ -1224,6 +1244,12 @@ export class MineflayerExecutor implements StepExecutor {
   private readonly encounterPhases = new Map<string, EncounterPhase>();
   /** Inverted floor gate findings: billed fights the unassisted bot beat cold. */
   private readonly floorFindings: string[] = [];
+  /** Every NAMED entity death this run observed (`entityDead` on a body carrying a
+   * custom name — an actor). Raw and unclassified; the entrypoint classifies each
+   * against {@link classifyDeathDepth} (see teardown.ts) before it reaches the run
+   * report — the 2026-08-06 island triage found that a scripted `despawn-actor`
+   * vanish broadcasts the same "<name> died" line a real combat loss does. */
+  private readonly namedEntityDeathLog: NamedEntityDeath[] = [];
   /** Actor fights this run attempted (#114) — one entry per engagement, won or lost. */
   private readonly actorTrials: ActorTrial[] = [];
   /** Actors already engaged, so an objective marker re-broadcast cannot re-fight one. */
@@ -1278,6 +1304,10 @@ export class MineflayerExecutor implements StepExecutor {
     const raw = env["DELVEWRIGHT_CUTSCENE_GRACE_MS"];
     const parsed = raw === undefined ? NaN : Number.parseInt(raw, 10);
     this.cutsceneGraceMs = Number.isInteger(parsed) && parsed >= 0 ? parsed : 10_000;
+    const settleRaw = env["DELVEWRIGHT_ENTITY_SETTLE_TIMEOUT_MS"];
+    const settleParsed = settleRaw === undefined ? NaN : Number.parseInt(settleRaw, 10);
+    this.entitySettleTimeoutMs =
+      Number.isInteger(settleParsed) && settleParsed >= 0 ? settleParsed : ENTITY_SETTLE_TIMEOUT_MS;
   }
 
   /**
@@ -1331,6 +1361,13 @@ export class MineflayerExecutor implements StepExecutor {
       bot.once("end", onEnd);
       bot.once("kicked", onKicked);
     });
+    // Entity-tracker settle race (2026-08-06 island triage): `bot.entities` is empty
+    // for a few seconds after spawn while world-persisted entities' packets are still
+    // arriving. Waiting here, once, before the run does anything with `bot.entities`
+    // (the crosshair sweep foremost) is cheaper and more honest than teaching every
+    // caller of `hitboxesNear` to guess whether an empty read means "nothing there"
+    // or "not yet told" — see entity-settle.ts.
+    await this.awaitEntitySettle();
   }
 
   private requireBot(): Bot {
@@ -1362,6 +1399,13 @@ export class MineflayerExecutor implements StepExecutor {
       }
     });
     bot.on("death", () => this.onDeath());
+    // Scripted-teardown death classification (2026-08-06 island triage): `entityDead`
+    // fires on the LivingEntity death status packet, while the entity's last known
+    // position is still readable — unlike `entityGone`, which also fires for an
+    // ordinary despawn (out of render distance, dimension change) and says nothing
+    // about a death. Only named bodies are actors the compiler ever tears down or a
+    // story fight ever names; an unnamed mob's death is not this run report's concern.
+    bot.on("entityDead", (entity: Entity) => this.onNamedEntityDeath(entity));
     // Counted from connect, so a respawn is never missed by a listener armed too
     // late (see recoverFromDeath).
     bot.on("spawn", () => {
@@ -1974,6 +2018,26 @@ export class MineflayerExecutor implements StepExecutor {
       waiter(err);
     }
     this.deathWaiters.clear();
+  }
+
+  /**
+   * Record a named entity's death (raw — not yet classified scripted-teardown vs
+   * combat; see teardown.ts). Every other body dying near the bot every fight is
+   * silent about here on purpose: only a NAMED body is an actor the compiler's
+   * `despawn-actor` can tear down or a tiered fight can lose, and the island's
+   * report-legibility gap was specifically about those.
+   */
+  private onNamedEntityDeath(entity: Entity | undefined): void {
+    if (!entity || entity.id === this.bot?.entity?.id) return; // the bot's own death is onDeath's
+    const label = displayNameOf(entity);
+    if (label === undefined || label === "") return;
+    const p = entity.position;
+    if (!p) return;
+    this.namedEntityDeathLog.push({
+      name: label,
+      entityId: entity.id,
+      position: [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)],
+    });
   }
 
   /**
@@ -2970,6 +3034,12 @@ export class MineflayerExecutor implements StepExecutor {
     return this.floorFindings;
   }
 
+  /** Every named-entity death this run observed, raw and unclassified — the
+   * entrypoint classifies each scripted-teardown-vs-combat for the run report. */
+  namedEntityDeaths(): readonly NamedEntityDeath[] {
+    return this.namedEntityDeathLog;
+  }
+
   /** The plan's entry for `wave`, if the campaign declares one. */
   private encounterFor(wave: string): Encounter | undefined {
     return this.combatPlan?.encounters.find((e) => e.wave === wave);
@@ -3956,9 +4026,24 @@ export class MineflayerExecutor implements StepExecutor {
     return this.preconditionWaves;
   }
 
-  /** Collect items from the chest at the anchor: go there, open it, withdraw all. */
+  /**
+   * Collect items from the chest at the anchor: go there, open it, withdraw all.
+   *
+   * A **drop-gated** collect (v0.9 `dropped_by`) has no chest to open — the
+   * compiler places none, because the item exists only after the fight. The bot
+   * walks the ground the wave died on and lets vanilla pickup do the rest; the
+   * proof is the same one every collect uses, the objective's own marker.
+   */
   async collect(step: CollectStep): Promise<void> {
     const bot = this.requireBot();
+    if (step.droppedBy !== undefined) {
+      await this.walkTo(step.pos, 1, `drop of ${step.item}`, step.sneak, {
+        objective: step.objective,
+        transport: step.transport,
+      });
+      await this.requireObjective(step.objective, `collect ${step.item}`);
+      return;
+    }
     await this.walkTo(step.pos, 2, `chest ${step.item}`, step.sneak, {
       objective: step.objective,
       transport: step.transport,
@@ -4082,6 +4167,45 @@ export class MineflayerExecutor implements StepExecutor {
       if (predicate()) return true;
       if (Date.now() >= deadline) return false;
       await delay(pollMs);
+    }
+  }
+
+  /**
+   * Wait once, at spawn, for `bot.entities` to stop changing shape before anything
+   * reads it (2026-08-06 island triage — see entity-settle.ts). Polls the
+   * non-player entity count until it has held steady for
+   * {@link hasSettled}'s stability window, or gives up after
+   * {@link entitySettleTimeoutMs} and proceeds regardless — a build that
+   * legitimately spawns nothing near the bot must not hang the run behind this
+   * wait, and every caller downstream (`requireCrosshair` foremost) already
+   * reports an empty tracker honestly rather than inventing a verdict from it.
+   */
+  async awaitEntitySettle(): Promise<void> {
+    const bot = this.requireBot();
+    const history: number[] = [];
+    const settled = await this.waitFor(
+      () => {
+        const count = Object.values(bot.entities).filter(
+          (e) => e && e.id !== bot.entity?.id && e.type !== "player",
+        ).length;
+        history.push(count);
+        return hasSettled(history);
+      },
+      this.entitySettleTimeoutMs,
+      ENTITY_SETTLE_POLL_MS,
+    );
+    const last = history[history.length - 1] ?? 0;
+    if (settled) {
+      process.stderr.write(
+        `[entity-settle] tracker settled at ${last} non-player entit${last === 1 ? "y" : "ies"} ` +
+          `after ${history.length} poll(s)\n`,
+      );
+    } else {
+      process.stderr.write(
+        `[entity-settle] gave up after ${this.entitySettleTimeoutMs}ms waiting for the entity ` +
+          `tracker to stop changing shape (last count: ${last}) — proceeding; a step that finds ` +
+          `nothing tracked still reports that honestly rather than failing on it\n`,
+      );
     }
   }
 

@@ -217,6 +217,22 @@ pub struct TimedGatePlan {
     /// Whether the closing edge kills players caught inside the region
     /// (spec-0016 §4 addendum).
     pub crush: bool,
+    /// The resolved disarm affordance (task #184), if declared. A gate whose
+    /// `disarm.via` anchor does not resolve carries `None` — the DSL tier's
+    /// `DW0377` reports that, and no half-built affordance reaches emission.
+    pub disarm: Option<TimedGateDisarmPlan>,
+}
+
+/// A resolved `timed-gate` disarm affordance (task #184) — the same shape a
+/// trap's [`TrapDisarmPlan`] takes.
+#[derive(Clone, Debug)]
+pub struct TimedGateDisarmPlan {
+    /// The anchor name the player interacts with.
+    pub via_anchor: String,
+    /// Its resolved absolute cell.
+    pub via_cell: [i32; 3],
+    /// The flag jamming the gate sets, party-wide.
+    pub sets_flag: String,
 }
 
 /// A resolved stage-5 `ambush` (spec-0016 §3), collected in declared order —
@@ -621,7 +637,8 @@ pub enum Step {
         /// Total mob count.
         count: i32,
     },
-    /// Collect `count` of `item` from a chest at `pos` (v0.3).
+    /// Collect `count` of `item` from a chest at `pos` (v0.3) — or, when
+    /// `dropped` is set, off the ground where that wave died (DSL v0.9).
     Collect {
         /// The `obj/<id>` this step proves complete.
         objective_id: String,
@@ -629,8 +646,14 @@ pub enum Step {
         item: String,
         /// Required count.
         count: i32,
-        /// Absolute chest-anchor position.
+        /// Absolute chest-anchor position — or, for a dropped collect, the wave
+        /// anchor whose floor the item lands on.
         pos: [i32; 3],
+        /// The wave whose declared drop provides the item (DSL v0.9), when the
+        /// objective is drop-gated. There is no container at `pos`: the harness
+        /// walks the fight's ground and waits for the pickup instead of opening
+        /// a block that is not there.
+        dropped: Option<String>,
     },
     /// Interact at `pos`: goto, then chat `command` (the same `/trigger` the
     /// interaction advancement fires). `requires_item` gates completion (v0.3).
@@ -1302,6 +1325,13 @@ impl<'a> Plan<'a> {
                     closed_ticks: g.closed_ticks,
                     phase: g.phase,
                     crush: g.crush,
+                    disarm: g.disarm.as_ref().and_then(|dis| {
+                        point_any(&anchors, dis.via.as_str()).map(|via_cell| TimedGateDisarmPlan {
+                            via_anchor: dis.via.as_str().to_string(),
+                            via_cell,
+                            sets_flag: dis.sets_flag.as_str().to_string(),
+                        })
+                    }),
                 })
             })
             .collect();
@@ -1493,7 +1523,10 @@ impl<'a> Plan<'a> {
     /// vanilla respawn-detection machinery so checkpoint-free / hook-free campaigns
     /// stay byte-identical (DSL v0.6, spec-0012).
     pub fn any_checkpoint_on_respawn(&self) -> bool {
-        self.checkpoints.iter().any(|c| !c.on_respawn.is_empty()) || !self.reseat_waves().is_empty()
+        self.checkpoints.iter().any(|c| !c.on_respawn.is_empty())
+            || !self.reseat_waves().is_empty()
+            || !self.undefeated_reseat_waves().is_empty()
+            || !self.reseat_actors().is_empty()
     }
 
     /// Whether the campaign declares **any** checkpoint at all (spec-0012 /
@@ -1522,6 +1555,53 @@ impl<'a> Plan<'a> {
             .iter()
             .filter(|w| w.respawns_on_rest)
             .collect()
+    }
+
+    /// The waves a bonfire refreshes **only while they are undefeated**
+    /// (spec-0016 §1, owner ruling 2026-08-05): every `elite`/`boss`-tier wave
+    /// that does NOT declare `respawns_on_rest`, in content order.
+    ///
+    /// The distinction from [`Self::reseat_waves`] is the whole ruling. A
+    /// `respawns_on_rest` wave comes back *whether or not* the party beat it —
+    /// the fire is not a progress ratchet. A billed elite/boss does not: beat it
+    /// and it stays beaten (spec-0016 §1, "stage bosses never respawn on rest").
+    /// But while it is still standing, chipping it down one hit per life is never
+    /// a valid path, so a rest wipes what is left of it and re-seats the authored
+    /// wave at full count and full health. The two sets are disjoint by
+    /// construction here, so no wave can be re-seated twice by one rest;
+    /// `DW0499` forbids the `boss` + `respawns_on_rest` combination outright.
+    ///
+    /// Empty without a bonfire, and empty for every campaign that bills no
+    /// encounter → byte-identical emission.
+    pub fn undefeated_reseat_waves(&self) -> Vec<&delvewright_dsl::Wave> {
+        if !self.checkpoints.iter().any(|c| c.rest) {
+            return Vec::new();
+        }
+        self.campaign
+            .quests
+            .content
+            .waves
+            .iter()
+            .filter(|w| !w.respawns_on_rest)
+            .filter(|w| {
+                w.tier
+                    .is_some_and(delvewright_dsl::EncounterTier::has_floor_expectation)
+            })
+            .collect()
+    }
+
+    /// The actors a bonfire refreshes while they are undefeated (spec-0016 §1,
+    /// owner ruling 2026-08-05), in declaration order: every actor the campaign
+    /// `unleash-actor`s — the compiler's one definition of an actor that is a
+    /// *fight* ([`crate::combat::hostile_actors`]).
+    ///
+    /// Empty without a bonfire, and empty for every campaign whose actors are all
+    /// scenery → byte-identical emission.
+    pub fn reseat_actors(&self) -> Vec<&delvewright_dsl::Actor> {
+        if !self.checkpoints.iter().any(|c| c.rest) {
+            return Vec::new();
+        }
+        crate::combat::hostile_actors(self.campaign)
     }
 
     /// The collected checkpoint matching a `set-checkpoint` effect (by anchor +
@@ -2101,6 +2181,7 @@ fn build_critical_path(
                     count,
                     anchor,
                     container,
+                    dropped_by,
                     ..
                 } => {
                     // The step position is the CONTAINER the bot opens: the
@@ -2111,10 +2192,23 @@ fn build_critical_path(
                     // sit in a barrel three blocks away is a guaranteed bot stall.
                     // An unresolvable container anchor falls back to the objective
                     // anchor; the DSL tier reports it (`DW0142`).
-                    let pos = match container
-                        .as_ref()
-                        .and_then(|cont| point_any(anchors, cont.as_str()))
-                    {
+                    // v0.9 (task #179): a drop-gated collect has no container at
+                    // all — the item is on the floor the wave died on, so the
+                    // step points at that wave's own anchor.
+                    let dropped_at = dropped_by.as_ref().and_then(|w| {
+                        campaign
+                            .quests
+                            .content
+                            .waves
+                            .iter()
+                            .find(|wv| wv.id.as_str() == w.as_str())
+                            .and_then(|wv| point_any(anchors, wv.anchor.as_str()))
+                    });
+                    let pos = match dropped_at.or_else(|| {
+                        container
+                            .as_ref()
+                            .and_then(|cont| point_any(anchors, cont.as_str()))
+                    }) {
                         Some(cell) => cell,
                         None => point_of(anchors, area, anchor.as_str())?,
                     };
@@ -2123,6 +2217,7 @@ fn build_critical_path(
                         item: item.clone(),
                         count: *count as i32,
                         pos,
+                        dropped: dropped_by.as_ref().map(|w| w.as_str().to_string()),
                     });
                     obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }

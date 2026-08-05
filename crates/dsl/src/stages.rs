@@ -1537,6 +1537,41 @@ pub struct TimedGate {
     /// existed compiles byte-identically; a delve opts its portcullis in.
     #[serde(default, skip_serializing_if = "is_false")]
     pub crush: bool,
+    /// Optional **disarm** affordance (task #184, souls dossier §5.2): the third
+    /// rung of the hazard ladder — readable, avoidable, and finally *disable-able*.
+    /// The real games' best timed hazards can be removed for good (Smouldering
+    /// Lake's ballista, the Fringefolk chariot); a clock the party can only ever
+    /// dance with is one rung short of the vocabulary.
+    ///
+    /// Interacting with the affordance suppresses the clock **permanently, with
+    /// the gate resting OPEN** — a jammed portcullis stays up. Permanence is
+    /// structural exactly as a `shortcut`'s is: no emitted function ever re-arms
+    /// the clock, and `DW0389` refuses a campaign that spells a re-seal.
+    ///
+    /// **Defaults to absent**, so every campaign authored before this field
+    /// existed compiles byte-identically; a delve opts its portcullis in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disarm: Option<TimedGateDisarm>,
+}
+
+/// A [`TimedGate`]'s disarm affordance (task #184, souls dossier §5.2) — the
+/// exact shape a trap's [`TrapDisarm`] takes, and deliberately so: one affordance
+/// grammar for every mechanism the party can switch off.
+///
+/// The player acts on the `via` anchor (a compiler-emitted interaction entity
+/// plus its visible hardware, `DW0420`) to jam the gate. The clock stops with the
+/// span cleared, `sets_flag` is raised party-wide, and nothing in the delve can
+/// put the gate back.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TimedGateDisarm {
+    /// The anchor the player interacts with to jam the gate. Must be an anchor
+    /// some area's prefab provides, and never the gate anchor itself — the
+    /// mechanism belongs beside the doorway, not inside the span that crushes.
+    pub via: AnchorId,
+    /// The flag set when the gate is disarmed (a new flag this gate produces;
+    /// other objectives/triggers may read it via `requires_flags`).
+    pub sets_flag: FlagId,
 }
 
 /// serde `skip_serializing_if` helper: skip a `0`.
@@ -1808,13 +1843,22 @@ pub struct Wave {
     /// is how the author opts into that scrutiny; the alternative — inferring
     /// "elite" from how tuned a stack looks — is exactly the downstream folklore
     /// CLAUDE.md's no-hack rule forbids.
+    ///
+    /// **It does reach emission in exactly one place** (spec-0016 §1, owner
+    /// ruling 2026-08-05): in a campaign with a `bonfire`, a billed `elite`/
+    /// `boss` wave that does not declare `respawns_on_rest` is refreshed by a
+    /// rest *while it is still standing* — deleted and re-seated at full count
+    /// and full health, so chipping it down one life at a time is never a path.
+    /// Beat it and it stays beaten. `DW0499` forbids billing a wave `boss` and
+    /// `respawns_on_rest` at once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<EncounterTier>,
 }
 
 /// What a wave is billed as (DSL v0.7, spec-0023). Consumed by the validation
-/// ladder (the run's combat plan), never by emission — the shipped datapack is
-/// byte-identical whichever tier a wave declares.
+/// ladder (the run's combat plan) and — since spec-0016 §1's undefeated re-seat
+/// — by one emission site: a bonfire refreshes a billed wave that is still
+/// standing. Nothing about the encounter itself is scaled from it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum EncounterTier {
@@ -1926,6 +1970,12 @@ pub struct WaveMob {
     /// chance 0 so players can never farm wave gear (no-grind constitution).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub equipment: Option<MobEquipment>,
+    /// What this mob leaves behind when it dies (DSL v0.9, task #179; reserved
+    /// `DW0141` earlier). Only an `elite`/`boss` wave may declare it (`DW0491`)
+    /// — an ordinary mob's kit is never farmable. Empty = today's behaviour,
+    /// drop chance 0 on every slot.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drops: Vec<MobDrop>,
 }
 
 /// Worn/held equipment for a wave mob (DSL v0.6). Each field is a vanilla item
@@ -1969,6 +2019,154 @@ impl MobEquipment {
             ("main_hand", self.main_hand.as_ref()),
             ("off_hand", self.off_hand.as_ref()),
         ]
+    }
+
+    /// The piece this equipment declaration puts in `slot`, if any. The single
+    /// question a `drops[]` `slot` entry asks: a mob can only drop a piece it
+    /// actually wears (`DW0490`).
+    pub fn filled(&self, slot: EquipSlot) -> Option<&EquipItem> {
+        match slot {
+            EquipSlot::Head => self.head.as_ref(),
+            EquipSlot::Chest => self.chest.as_ref(),
+            EquipSlot::Legs => self.legs.as_ref(),
+            EquipSlot::Feet => self.feet.as_ref(),
+            EquipSlot::MainHand => self.main_hand.as_ref(),
+            EquipSlot::OffHand => self.off_hand.as_ref(),
+        }
+    }
+}
+
+/// One vanilla equipment slot, named exactly as the [`MobEquipment`] field that
+/// fills it (DSL v0.9, task #179). The DSL name and the summon-NBT key differ
+/// (`main_hand` vs `mainhand`), so both live here and nowhere else.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum EquipSlot {
+    /// Head slot.
+    Head,
+    /// Chest slot.
+    Chest,
+    /// Legs slot.
+    Legs,
+    /// Feet slot.
+    Feet,
+    /// Main-hand slot.
+    MainHand,
+    /// Off-hand slot.
+    OffHand,
+}
+
+impl EquipSlot {
+    /// The DSL field name (`main_hand`), for diagnostics and JSON pointers.
+    pub fn field(self) -> &'static str {
+        match self {
+            EquipSlot::Head => "head",
+            EquipSlot::Chest => "chest",
+            EquipSlot::Legs => "legs",
+            EquipSlot::Feet => "feet",
+            EquipSlot::MainHand => "main_hand",
+            EquipSlot::OffHand => "off_hand",
+        }
+    }
+
+    /// The 1.21.11 `equipment` / `drop_chances` NBT key (`mainhand`).
+    pub fn nbt(self) -> &'static str {
+        match self {
+            EquipSlot::Head => "head",
+            EquipSlot::Chest => "chest",
+            EquipSlot::Legs => "legs",
+            EquipSlot::Feet => "feet",
+            EquipSlot::MainHand => "mainhand",
+            EquipSlot::OffHand => "offhand",
+        }
+    }
+}
+
+/// One declared drop of an elite or boss (DSL v0.9, task #179; owner ruling
+/// 2026-08-04).
+///
+/// A mob may wear many pieces; what it *leaves behind* is a **declared subset**,
+/// usually one piece and never automatically everything. Two forms, told apart
+/// by which field is present:
+///
+/// ```json
+/// { "slot": "main_hand" }                                  // its axe
+/// { "item": "minecraft:tripwire_hook", "name": "Gate Key" } // a quest item
+/// ```
+///
+/// A `slot` entry must name a slot the same entity's `equipment` really fills
+/// (`DW0490`) — the drop is the piece the player has been *looking at* through
+/// the whole fight, so the two declarations cannot disagree. An `item` entry is
+/// a token the fight *yields* rather than wears, and rides the entity's own
+/// death loot table.
+///
+/// Undeclared slots keep drop chance `0.0` — byte-for-byte today's behaviour, and
+/// the no-grind constitution's guarantee that an ordinary kit is never farmable.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum MobDrop {
+    /// A worn/held piece, named by its equipment slot.
+    Slot(SlotDrop),
+    /// A quest token the fight yields (not worn).
+    Item(ItemDrop),
+}
+
+/// The worn-piece form of a [`MobDrop`].
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SlotDrop {
+    /// The equipment slot whose piece drops. Must be filled by the entity's own
+    /// `equipment` declaration (`DW0490`).
+    pub slot: EquipSlot,
+}
+
+/// The quest-token form of a [`MobDrop`].
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ItemDrop {
+    /// Vanilla item id, validated against the pinned 1.21.11 registry
+    /// (`DW0143`, the give-item family).
+    pub item: String,
+    /// Display name the dropped stack carries as a `custom_name` component.
+    /// Player-visible, so it enters the l10n string inventory and translates
+    /// like any other line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+impl MobDrop {
+    /// The equipment slot this entry names, or `None` for a quest-item drop.
+    pub fn slot(&self) -> Option<EquipSlot> {
+        match self {
+            MobDrop::Slot(s) => Some(s.slot),
+            MobDrop::Item(_) => None,
+        }
+    }
+
+    /// The item id this entry names, or `None` for a worn-piece drop.
+    pub fn item(&self) -> Option<&str> {
+        match self {
+            MobDrop::Slot(_) => None,
+            MobDrop::Item(i) => Some(&i.item),
+        }
+    }
+
+    /// The declared display name of a quest-item drop, when set.
+    pub fn name(&self) -> Option<&String> {
+        match self {
+            MobDrop::Slot(_) => None,
+            MobDrop::Item(i) => i.name.as_ref(),
+        }
+    }
+
+    /// Mutable access to the display name — the l10n traversal's hook.
+    pub fn name_mut(&mut self) -> Option<&mut String> {
+        match self {
+            MobDrop::Slot(_) => None,
+            MobDrop::Item(i) => i.name.as_mut(),
+        }
     }
 }
 
@@ -2462,6 +2660,28 @@ pub enum Objective {
         /// *this* block), and no chest is placed at `anchor` when it is set.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         container: Option<AnchorId>,
+        /// **The item comes off a body, not out of a box** (DSL v0.9, task #179;
+        /// reserved `DW0141` earlier): the wave whose declared `drops[]` yield
+        /// this objective's item. No container is placed — not the compiler's own
+        /// chest at `anchor`, not a prefab one — and `container` is therefore
+        /// mutually exclusive with it (`DW0100`-adjacent; `DW0492`).
+        ///
+        /// This is what makes "kill the boss → pick up its key → open the door"
+        /// a *proved* chain rather than an authoring intention. The compiler
+        /// requires (a) that the named wave really declares an `{item}` drop of
+        /// this item (`DW0492`), and (b) that a `kill` objective for that wave
+        /// precedes this collect in the objective graph (`DW0493`). The existing
+        /// flow machinery then carries the ordering the rest of the way: the
+        /// door's `requires_flags` hangs off this collect exactly as it would off
+        /// a chest one.
+        ///
+        /// **Waves only.** An actor's death is not observable by any objective —
+        /// there is no vanilla-side signal the flow machinery could consume — so
+        /// an actor-gated collect would be an unprovable claim, and per the
+        /// no-hack doctrine it is excluded rather than approximated. An actor may
+        /// still declare `drops[]`; those drops just cannot gate a quest.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dropped_by: Option<WaveId>,
         /// Display name for the collected item (DSL v0.8, task #95; reserved
         /// `DW0141` earlier), emitted as the vanilla `custom_name` item component.
         ///
@@ -2659,6 +2879,15 @@ pub struct Actor {
     /// (`DW0477`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<EncounterTier>,
+    /// What this actor leaves behind when a player kills it (DSL v0.9, task
+    /// #179; reserved `DW0141` earlier). Only an `elite`/`boss` actor may
+    /// declare it (`DW0491`). Emitted into BOTH the staged puppet and the
+    /// unleashed twin, exactly as `equipment` is — the drop belongs to the body,
+    /// not to one of its two lifecycles. A `despawn-actor` strips the
+    /// declaration off the body before removing it, so re-caging an elite (a
+    /// souls re-seat) never scatters its axe.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drops: Vec<MobDrop>,
 }
 
 /// A cardinal facing keyword (DSL v0.6). Emitted as the puppet's spawn yaw
@@ -2841,6 +3070,16 @@ impl Objective {
     pub fn collect_container(&self) -> Option<&AnchorId> {
         match self {
             Objective::Collect { container, .. } => container.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// The wave whose declared drops provide this objective's item (DSL v0.9),
+    /// if it is a `collect` that declares one. `None` on every other objective
+    /// and on a `collect` fed by a container.
+    pub fn collect_dropped_by(&self) -> Option<&WaveId> {
+        match self {
+            Objective::Collect { dropped_by, .. } => dropped_by.as_ref(),
             _ => None,
         }
     }

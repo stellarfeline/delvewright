@@ -67,6 +67,28 @@ written — pinned by tests on that identity and by generated PackTests
 squad hauled onto the party and released to native AI. The safe zone is
 `DW0478`, measured against the seated spawn cells and the proven lane polyline.
 
+Owner ruling (2026-08-05, from the bell round-five playtest — the barrow-warden
+stayed where the chase left it, at the health the chase left it, and so did the
+ambushers staged in the sewer and up in the rafters):
+
+- **Undefeated re-seat.** A boss or elite the party has NOT beaten is, on a
+  bonfire rest and on a death-respawn at that fire, **deleted and re-summoned
+  fresh at its origin with full health** — never healed in place, never left
+  where combat ended. This covers both shapes an elite takes: actor-based elites
+  (the strike-unleashed twin) and `elite`/`boss`-tier waves. A **defeated** boss
+  stays dead (above: stage bosses never respawn on rest); ordinary waves keep the
+  stationed `respawns_on_rest` semantics unchanged.
+
+Proofs: "undefeated" is the presence of the body itself — the re-seat dispatch is
+`execute if entity` on the force's own tag, so a defeated one selects nothing and
+no state is kept. An actor is put back **freed**, never re-caged (the
+`unleash-actor` beat fires from a one-shot trigger nothing re-arms, so a re-caged
+elite would be permanently dormant scenery), and a caged puppet is left alone
+(`NoAI`, knockback-immune, `Invulnerable` — combat cannot touch it). A `boss`-tier
+wave that also declares `respawns_on_rest` is a contradiction and is `DW0489`.
+Generated PackTests `souls_reseat_actor` and `souls_reseat_undefeated` drive the
+real rest function over a chipped, branded, dragged-off-its-ground elite.
+
 ### 2. Shortcut doors ("the door does not open from this side")
 The owner's definition of the pattern (2026-08-02), which this section is
 now built around: between two bonfires there are TWO routes — a **short

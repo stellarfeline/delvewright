@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
     Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06,
-    is_v07, is_v08,
+    is_v07, is_v08, is_v09,
 };
 use crate::ids::is_kebab;
 use crate::registry::{
@@ -77,7 +77,7 @@ pub fn validate_campaign_with(
         v06_trap_checks(c, items, entities, anchors, &mut d);
         shortcut_checks(c, anchors, &mut d);
         ambush_checks(c, &mut d);
-        timed_gate_checks(c, &mut d);
+        timed_gate_checks(c, anchors, &mut d);
         loot_checks(c, items, anchors, &mut d);
         lane_checks(c, anchors, &mut d);
         difficulty_checks(c, &mut d);
@@ -968,6 +968,67 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v06(c, d);
     reserved_v07(c, d);
     reserved_v08(c, d);
+    reserved_v09(c, d);
+}
+
+/// DSL v0.9 reserved-feature gating (task #179, owner ruling 2026-08-04): the
+/// declared-drops surface — `drops[]` on a wave mob and on an actor, and the
+/// `collect` `dropped_by` that sources a quest item off a body instead of out of
+/// a box.
+///
+/// The same asymmetry every version ledger uses: *declaring* any of it below
+/// 0.9.0 is `DW0141`. There is no requirement half — a campaign that declares no
+/// drops keeps writing drop chance `0.0` on every slot, which is byte-for-byte
+/// what pre-0.9 emission wrote.
+fn reserved_v09(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    if is_v09(c.quests.dsl_version.as_str()) {
+        return;
+    }
+    for (i, w) in c.quests.content.waves.iter().enumerate() {
+        for (k, m) in w.mobs.iter().enumerate() {
+            if m.drops.is_empty() {
+                continue;
+            }
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "quests",
+                format!("/content/waves/{i}/mobs/{k}/drops"),
+                "a wave mob's `drops` (the declared subset an elite or boss leaves behind) \
+                 requires dsl_version 0.9.0 — raise this stage's `dsl_version` to 0.9.0, or \
+                 remove the field"
+                    .to_string(),
+            ));
+        }
+    }
+    for (i, a) in c.quests.content.actors.iter().enumerate() {
+        if a.drops.is_empty() {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            "quests",
+            format!("/content/actors/{i}/drops"),
+            "an actor's `drops` (the declared subset an elite or boss leaves behind) requires \
+             dsl_version 0.9.0 — raise this stage's `dsl_version` to 0.9.0, or remove the field"
+                .to_string(),
+        ));
+    }
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        for (j, o) in q.objectives.iter().enumerate() {
+            if o.collect_dropped_by().is_none() {
+                continue;
+            }
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "quests",
+                format!("/content/quests/{i}/objectives/{j}/dropped_by"),
+                "a `collect` `dropped_by` (the wave whose declared drop provides this item, in \
+                 place of a container) requires dsl_version 0.9.0 — raise this stage's \
+                 `dsl_version` to 0.9.0, or remove the field"
+                    .to_string(),
+            ));
+        }
+    }
 }
 
 /// DSL v0.7 reserved-feature gating (spec-0020): the per-quest `cast` ledger,
@@ -2112,6 +2173,9 @@ fn v06_checks(
         );
     }
 
+    // task #179: declared drops — the subset an elite/boss leaves behind.
+    check_drops(c, quests, items, d);
+
     // spec-0016 §1: `respawns_on_rest` is re-seating *by a bonfire*. With no
     // `bonfire` anywhere in the campaign nothing can ever fire the re-seat, so
     // the field is a silent no-op — the class of defect this compiler always
@@ -2902,9 +2966,26 @@ fn v03_checks(
                     count,
                     anchor,
                     container,
+                    dropped_by,
                     fill_count,
                     ..
                 } => {
+                    // v0.9 (task #179): the wave a drop-gated collect names must
+                    // exist — the same dangling-reference rule a `kill` follows.
+                    if let Some(wave) = dropped_by
+                        && !declared_waves.contains(wave.as_str())
+                    {
+                        d.push(Diagnostic::error(
+                            codes::WAVE_UNKNOWN,
+                            "quests",
+                            format!("/content/quests/{i}/objectives/{j}/dropped_by"),
+                            format!(
+                                "`collect` `dropped_by` references unknown wave `{wave}` — \
+                                 declare it in the stage-5 `waves` section or correct the \
+                                 reference"
+                            ),
+                        ));
+                    }
                     if !items.contains(item) {
                         d.push(Diagnostic::error(
                             codes::ITEM_UNKNOWN,
@@ -3535,6 +3616,14 @@ fn collect_declared_flags(c: &Campaign) -> BTreeSet<&str> {
     }
     for t in &c.quests.content.traps {
         if let Some(dis) = &t.disarm {
+            flags.insert(dis.sets_flag.as_str());
+        }
+    }
+    // task #184: a timed gate's disarm produces a first-class flag exactly as a
+    // trap's does — the party jammed the portcullis, and the rest of the campaign
+    // may read that fact.
+    for g in &c.quests.content.timed_gates {
+        if let Some(dis) = &g.disarm {
             flags.insert(dis.sets_flag.as_str());
         }
     }
@@ -5588,18 +5677,40 @@ fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 // spec-0016 §4 — timed gates
 // ---------------------------------------------------------------------------
 
-/// Validate the stage-5 `timed_gates` section (spec-0016 §4), `DW0377`.
+/// Validate the stage-5 `timed_gates` section (spec-0016 §4), `DW0377` /
+/// `DW0389`.
 ///
 /// The structural half only: ids, a cycle that actually cycles, a phase inside
-/// the cycle, and one owner per gate region. The *design* half — that the gate is
-/// a timing read and not a coin flip — needs the nav model's crossing time and
-/// lives in `compiler::nav` (`DW0378`). The fill-block requirement is `DW0343`,
-/// the same rule `close-gate` and `shortcut` obey.
-fn timed_gate_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+/// the cycle, one owner per gate region, and — task #184 — a `disarm.via` that
+/// resolves to a real anchor outside the span it jams. The *design* half — that
+/// the gate is a timing read and not a coin flip — needs the nav model's crossing
+/// time and lives in `compiler::nav` (`DW0378`). The fill-block requirement is
+/// `DW0343`, the same rule `close-gate` and `shortcut` obey.
+///
+/// `DW0389` is the permanence rule, and it is the exact mirror of a shortcut's
+/// `DW0372`: a disarmed gate rests OPEN forever, so no `close-gate` anywhere may
+/// name it. Making that structural is cheaper and safer than trusting every
+/// author never to reach for the re-seal verb.
+///
+/// Anchor resolution stays lenient for pool areas the compiler resolves later —
+/// the same policy as the trap and shortcut checks.
+fn timed_gate_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
     let quests = &c.quests.content;
     if quests.timed_gates.is_empty() {
         return;
     }
+    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
+    let mut has_pool_area = false;
+    for a in &c.world.content.areas {
+        if let Some(prefab) = &a.prefab {
+            if let Some(set) = anchors.anchors_for(prefab) {
+                known_anchor.extend(set.iter().map(String::as_str));
+            }
+        } else if a.prefab_pool.is_some() {
+            has_pool_area = true;
+        }
+    }
+    let resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
     let shortcut_gates: BTreeSet<&str> = quests.shortcuts.iter().map(|s| s.gate.as_str()).collect();
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     let mut driven: BTreeSet<&str> = BTreeSet::new();
@@ -5689,6 +5800,84 @@ fn timed_gate_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 d,
             );
         }
+        // task #184 — the disarm affordance, the same two rules a trap's obeys.
+        if let Some(dis) = &g.disarm {
+            if !resolvable(dis.via.as_str()) {
+                err(
+                    format!("/content/timed_gates/{i}/disarm/via"),
+                    format!(
+                        "timed-gate `disarm.via` anchor `{}` is not provided by any area's prefab \
+                         — use an anchor some area's prefab exposes for the jam affordance \
+                         (anchor names come from prefab metadata; do NOT invent one)",
+                        dis.via
+                    ),
+                    d,
+                );
+            }
+            if dis.via == g.gate {
+                err(
+                    format!("/content/timed_gates/{i}/disarm/via"),
+                    format!(
+                        "timed gate `{}` puts its `disarm.via` on its own gate anchor `{}` — the \
+                         jam lever would stand inside the span the portcullis closes on (and, \
+                         with `crush`, kills in). The affordance belongs on ground the player \
+                         can reach and hold WITHOUT gambling on the clock, which is the entire \
+                         point of the third rung.",
+                        g.id, g.gate
+                    ),
+                    d,
+                );
+            }
+        }
+    }
+
+    // `close-gate` may never target a disarmable timed gate: a disarm leaves the
+    // portcullis jammed OPEN forever, so permanence is structural (`DW0389`, the
+    // mirror of a shortcut's `DW0372`).
+    let disarmed: BTreeSet<&str> = quests
+        .timed_gates
+        .iter()
+        .filter(|g| g.disarm.is_some())
+        .map(|g| g.gate.as_str())
+        .collect();
+    if disarmed.is_empty() {
+        return;
+    }
+    let report = |path: String, anchor: &str, d: &mut Vec<Diagnostic>| {
+        d.push(Diagnostic::error(
+            codes::TIMED_GATE_REARMED,
+            "quests",
+            path,
+            format!(
+                "`close-gate` targets `{anchor}`, the gate of a `timed-gate` that declares a \
+                 `disarm` — a disarmed gate rests OPEN permanently (task #184, souls dossier \
+                 §5.2: a hazard the party has switched off stays off), so nothing may re-arm \
+                 its clock. Use a different gate for the beat that must re-seal, or drop the \
+                 `disarm` and keep the clock running."
+            ),
+        ));
+    };
+    for (qi, q) in quests.quests.iter().enumerate() {
+        for_each_effect_deep(q, |path, eff| {
+            if let Some(a) = eff.close_gate_anchor()
+                && disarmed.contains(a.as_str())
+            {
+                report(format!("/content/quests/{qi}/{path}/anchor"), a.as_str(), d);
+            }
+        });
+    }
+    for (ti, t) in quests.triggers.iter().enumerate() {
+        for_each_trigger_effect_deep(t, |path, eff| {
+            if let Some(a) = eff.close_gate_anchor()
+                && disarmed.contains(a.as_str())
+            {
+                report(
+                    format!("/content/triggers/{ti}/{path}/anchor"),
+                    a.as_str(),
+                    d,
+                );
+            }
+        });
     }
 }
 
@@ -6000,6 +6189,317 @@ fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
             ));
         }
     }
+}
+
+/// Declared drops (task #179, owner ruling 2026-08-04): what an elite or boss
+/// leaves behind is a **declared subset**, never automatically everything.
+///
+/// Four rules, all of them about the gap between what a campaign says and what
+/// the world can actually produce:
+///
+/// * `DW0491` — only an `elite`/`boss` encounter may declare drops. Rank-and-file
+///   gear stays unfarmable by construction (no-grind constitution).
+/// * `DW0490` — a `slot` entry must name a **distinct** slot the same entity's
+///   own `equipment` fills. A body cannot leave behind a piece it never wore.
+/// * `DW0492` — a `dropped_by` collect must be backed by the wave it names: the
+///   wave really declares that item, in at least the count the objective asks
+///   for, and the objective does not also adopt a container.
+/// * `DW0493` — that collect must be **ordered after** the fight, so the chain
+///   "kill the boss → take its key → open the door" is a proof rather than an
+///   intention.
+fn check_drops(
+    c: &Campaign,
+    quests: &crate::stages::QuestsContent,
+    items: &dyn ItemRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    use crate::stages::{EncounterTier, MobDrop};
+
+    // --- the declaration side: waves and actors ---------------------------
+    let tiered =
+        |t: Option<EncounterTier>| matches!(t, Some(EncounterTier::Elite | EncounterTier::Boss));
+    for (i, w) in quests.waves.iter().enumerate() {
+        for (k, m) in w.mobs.iter().enumerate() {
+            if m.drops.is_empty() {
+                continue;
+            }
+            if !tiered(w.tier) {
+                d.push(Diagnostic::error(
+                    codes::DROP_NOT_TIERED,
+                    "quests",
+                    format!("/content/waves/{i}/mobs/{k}/drops"),
+                    format!(
+                        "wave `{}` declares drops but is not billed `elite` or `boss` — only a \
+                         named fight leaves anything behind; an ordinary mob's kit is never \
+                         farmable. Declare the wave's `tier`, or remove the `drops`",
+                        w.id
+                    ),
+                ));
+            }
+            check_drop_list(
+                &m.drops,
+                m.equipment.as_ref(),
+                &format!("wave `{}` mob {k}", w.id),
+                &format!("/content/waves/{i}/mobs/{k}/drops"),
+                items,
+                d,
+            );
+        }
+    }
+    for (i, a) in quests.actors.iter().enumerate() {
+        if a.drops.is_empty() {
+            continue;
+        }
+        if !tiered(a.tier) {
+            d.push(Diagnostic::error(
+                codes::DROP_NOT_TIERED,
+                "quests",
+                format!("/content/actors/{i}/drops"),
+                format!(
+                    "actor `{}` declares drops but is not billed `elite` or `boss` — only a named \
+                     fight leaves anything behind; a staged puppet's kit is never farmable. \
+                     Declare the actor's `tier`, or remove the `drops`",
+                    a.id
+                ),
+            ));
+        }
+        check_drop_list(
+            &a.drops,
+            a.equipment.as_ref(),
+            &format!("actor `{}`", a.id),
+            &format!("/content/actors/{i}/drops"),
+            items,
+            d,
+        );
+    }
+
+    // --- the consumption side: `collect.dropped_by` ------------------------
+    // How many copies of each item every wave can yield: one per declaring mob
+    // in the stack, so a pair of elites each dropping a sword yields two.
+    let mut yielded: BTreeMap<&str, BTreeMap<&str, u32>> = BTreeMap::new();
+    for w in &quests.waves {
+        let per = yielded.entry(w.id.as_str()).or_default();
+        for m in &w.mobs {
+            for dr in &m.drops {
+                if let MobDrop::Item(it) = dr {
+                    *per.entry(it.item.as_str()).or_default() += m.count;
+                }
+            }
+        }
+    }
+    let anc = quest_ancestors(c);
+    // Which quests hold a `kill` objective for each wave, and which objective ids.
+    let mut kills: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
+    for q in &quests.quests {
+        for o in &q.objectives {
+            if let Objective::Kill { wave, id, .. } = o {
+                kills
+                    .entry(wave.as_str())
+                    .or_default()
+                    .push((q.id.as_str(), id.as_str()));
+            }
+        }
+    }
+    for (i, q) in quests.quests.iter().enumerate() {
+        let after_anc = objective_ancestors(q);
+        for (j, o) in q.objectives.iter().enumerate() {
+            let Objective::Collect {
+                id,
+                item,
+                count,
+                container,
+                dropped_by: Some(wave),
+                ..
+            } = o
+            else {
+                continue;
+            };
+            let path = format!("/content/quests/{i}/objectives/{j}/dropped_by");
+            if container.is_some() {
+                d.push(Diagnostic::error(
+                    codes::DROP_COLLECT_UNSOURCED,
+                    "quests",
+                    path.clone(),
+                    format!(
+                        "`collect` `{id}` declares both `dropped_by` (wave `{wave}`) and a \
+                         `container` — the item comes off a body or out of a box, not both; drop \
+                         whichever provisioning this beat does not use"
+                    ),
+                ));
+            }
+            let Some(per) = yielded.get(wave.as_str()) else {
+                // Unknown wave: the ordinary dangling-reference diagnostic
+                // (`DW0170`) already names it; nothing to add here.
+                continue;
+            };
+            match per.get(item.as_str()).copied() {
+                None => d.push(Diagnostic::error(
+                    codes::DROP_COLLECT_UNSOURCED,
+                    "quests",
+                    path.clone(),
+                    format!(
+                        "`collect` `{id}` takes `{item}` off wave `{wave}`, but no mob of that \
+                         wave declares a `{{\"item\": \"{item}\"}}` drop — {}. Declare the drop on \
+                         the wave's mob, or point `dropped_by` at the wave that really carries it",
+                        if per.is_empty() {
+                            "the wave declares no item drops at all".to_string()
+                        } else {
+                            format!(
+                                "it declares {}",
+                                per.keys().cloned().collect::<Vec<_>>().join(", ")
+                            )
+                        }
+                    ),
+                )),
+                Some(have) if have < *count => d.push(Diagnostic::error(
+                    codes::DROP_COLLECT_UNSOURCED,
+                    "quests",
+                    path.clone(),
+                    format!(
+                        "`collect` `{id}` asks for {count} × `{item}`, but wave `{wave}` yields \
+                         only {have} — a body drops its declared item once. Lower the `count`, or \
+                         raise the declaring mob's `count`"
+                    ),
+                )),
+                Some(_) => {}
+            }
+            // The ordering proof: some `kill` objective for this wave must
+            // strictly precede this collect — in the same quest through the
+            // `after` graph, or in a quest this one transitively depends on.
+            let ordered = kills.get(wave.as_str()).is_some_and(|ks| {
+                ks.iter().any(|(kq, ko)| {
+                    if *kq == q.id.as_str() {
+                        after_anc
+                            .get(id.as_str())
+                            .is_some_and(|set| set.contains(ko))
+                    } else {
+                        anc.get(q.id.as_str()).is_some_and(|set| set.contains(kq))
+                    }
+                })
+            });
+            if !ordered {
+                d.push(Diagnostic::error(
+                    codes::DROP_COLLECT_UNORDERED,
+                    "quests",
+                    path,
+                    format!(
+                        "`collect` `{id}` takes `{item}` off wave `{wave}`, but no `kill` \
+                         objective for `{wave}` is proven to run first — the item would be \
+                         unreachable while the objective reads as active from the campaign's \
+                         first tick. Add a `kill` objective for `{wave}` and list it in this \
+                         objective's `after`, or put the kill in a quest this one `depends_on`"
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+/// One entity's `drops[]` list: distinct, really-worn slots (`DW0490`) and
+/// registry-valid quest items (`DW0143`). Shared by wave mobs and actors so the
+/// two surfaces cannot drift.
+fn check_drop_list(
+    drops: &[crate::stages::MobDrop],
+    equipment: Option<&crate::stages::MobEquipment>,
+    what: &str,
+    base_path: &str,
+    items: &dyn ItemRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    use crate::stages::MobDrop;
+
+    let mut seen_slots: BTreeSet<&'static str> = BTreeSet::new();
+    for (n, dr) in drops.iter().enumerate() {
+        match dr {
+            MobDrop::Slot(s) => {
+                let field = s.slot.field();
+                let filled: Vec<&str> = equipment
+                    .map(|eq| {
+                        eq.slots()
+                            .into_iter()
+                            .filter(|(_, p)| p.is_some())
+                            .map(|(name, _)| name)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if equipment.is_none_or(|eq| eq.filled(s.slot).is_none()) {
+                    d.push(Diagnostic::error(
+                        codes::DROP_SLOT_UNFILLED,
+                        "quests",
+                        format!("{base_path}/{n}/slot"),
+                        format!(
+                            "{what} declares a `{field}` drop, but its `equipment` puts nothing \
+                             in `{field}` — {}. A body can only leave behind a piece it wears: \
+                             equip the slot, or drop a slot it fills",
+                            if filled.is_empty() {
+                                "it declares no equipment at all".to_string()
+                            } else {
+                                format!("it fills {}", filled.join(", "))
+                            }
+                        ),
+                    ));
+                } else if !seen_slots.insert(field) {
+                    d.push(Diagnostic::error(
+                        codes::DROP_SLOT_UNFILLED,
+                        "quests",
+                        format!("{base_path}/{n}/slot"),
+                        format!(
+                            "{what} declares the `{field}` drop twice — a body leaves each piece \
+                             behind once; remove the duplicate entry"
+                        ),
+                    ));
+                }
+            }
+            MobDrop::Item(it) => {
+                if !items.contains(&it.item) {
+                    d.push(Diagnostic::error(
+                        codes::ITEM_UNKNOWN,
+                        "quests",
+                        format!("{base_path}/{n}/item"),
+                        format!(
+                            "{what} declares a drop of `{}`, which is not in the pinned 1.21.11 \
+                             item registry — use a valid namespaced item id (e.g. \
+                             `minecraft:tripwire_hook`)",
+                            it.item
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+}
+
+/// Per-objective transitive `after` ancestors within one quest: `obj -> {every
+/// objective that must complete before it}`. Acyclicity is guaranteed by
+/// `DW0140`; a cyclic quest simply yields a partial set and the cycle's own
+/// diagnostic fires.
+fn objective_ancestors(q: &crate::stages::Quest) -> BTreeMap<&str, BTreeSet<&str>> {
+    let direct: BTreeMap<&str, Vec<&str>> = q
+        .objectives
+        .iter()
+        .map(|o| {
+            (
+                o.id().as_str(),
+                o.after().iter().map(|a| a.as_str()).collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+    let mut out = BTreeMap::new();
+    for o in &q.objectives {
+        let mut anc: BTreeSet<&str> = BTreeSet::new();
+        let mut stack = vec![o.id().as_str()];
+        while let Some(cur) = stack.pop() {
+            if let Some(ds) = direct.get(cur) {
+                for dep in ds {
+                    if anc.insert(dep) {
+                        stack.push(dep);
+                    }
+                }
+            }
+        }
+        out.insert(o.id().as_str(), anc);
+    }
+    out
 }
 
 /// Validate one [`MobEquipment`] block — item ids against the pinned registry

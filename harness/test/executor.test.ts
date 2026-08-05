@@ -138,6 +138,124 @@ test("a respawn that lands before the wait is armed is still observed", async ()
   assert.equal(executor.deathDiagnostic(), undefined, "the death latch is cleared");
 });
 
+// --- entity-tracker settle race (2026-08-06 island triage) -------------------
+
+interface FakeEntity {
+  id: number;
+  type: string;
+  name: string;
+  position: FakeVec3;
+  customName?: string;
+}
+
+class EntityTrackingFakeBot extends FakeBot {
+  entities: Record<number, FakeEntity> = {};
+}
+
+function fakeEntity(
+  id: number,
+  opts: { type?: string; name?: string; customName?: string; position?: FakeVec3 } = {},
+): FakeEntity {
+  return {
+    id,
+    type: opts.type ?? "mob",
+    name: opts.name ?? "warden",
+    customName: opts.customName,
+    position: opts.position ?? new FakeVec3(0, 64, 0),
+  };
+}
+
+test("awaitEntitySettle resolves once the non-player entity count holds steady", async () => {
+  const bot = new EntityTrackingFakeBot();
+  const executor = attach(bot);
+  bot.entities[100] = fakeEntity(100);
+  bot.entities[101] = fakeEntity(101);
+  const started = Date.now();
+  await executor.awaitEntitySettle();
+  assert.ok(
+    Date.now() - started < 2_000,
+    "settles well inside the default poll budget once the count stops changing",
+  );
+});
+
+test("awaitEntitySettle does not settle on a count that is still growing from late packets", async () => {
+  const bot = new EntityTrackingFakeBot();
+  const executor = attach(bot);
+  // Packets land one at a time, the way the island's world-persisted actors did —
+  // a settle read taken too early would see a non-empty tracker and stop waiting.
+  bot.entities[200] = fakeEntity(200);
+  setTimeout(() => {
+    bot.entities[201] = fakeEntity(201);
+  }, 150);
+  setTimeout(() => {
+    bot.entities[202] = fakeEntity(202);
+  }, 350);
+  const started = Date.now();
+  await executor.awaitEntitySettle();
+  const elapsed = Date.now() - started;
+  assert.equal(Object.keys(bot.entities).length, 3, "waited for every packet, not just the first");
+  assert.ok(elapsed > 350, `resolved at ${elapsed}ms — before the last packet even landed`);
+  assert.ok(elapsed < 3_000, `took ${elapsed}ms to settle after the last packet landed`);
+});
+
+test("awaitEntitySettle gives up after its bounded timeout when nothing ever populates", async () => {
+  const bot = new EntityTrackingFakeBot(); // entities stays empty — a legitimately quiet spawn
+  const executor = attach(bot, { DELVEWRIGHT_ENTITY_SETTLE_TIMEOUT_MS: "250" });
+  const started = Date.now();
+  await executor.awaitEntitySettle(); // must not hang the run
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed >= 250 && elapsed < 1_500, `gave up near the 250ms bound (took ${elapsed}ms)`);
+});
+
+// --- scripted-teardown death classification (2026-08-06 island triage) -------
+
+test("a named entity's death is recorded with its last known position", () => {
+  const bot = new EntityTrackingFakeBot();
+  const executor = attach(bot);
+  bot.emit(
+    "entityDead",
+    fakeEntity(7, { customName: "island-herdsman", position: new FakeVec3(10, -128, 9) }),
+  );
+  assert.deepEqual(executor.namedEntityDeaths(), [
+    { name: "island-herdsman", entityId: 7, position: [10, -128, 9] },
+  ]);
+});
+
+test("an unnamed mob's death is not recorded — this ledger is about actors, not every mob", () => {
+  const bot = new EntityTrackingFakeBot();
+  const executor = attach(bot);
+  bot.emit("entityDead", fakeEntity(8, { position: new FakeVec3(5, 64, 5) })); // no customName
+  assert.deepEqual(executor.namedEntityDeaths(), []);
+});
+
+test("the bot's own death is not recorded here — onDeath owns that diagnostic", () => {
+  const bot = new EntityTrackingFakeBot();
+  (bot.entity as unknown as { id: number }).id = 1;
+  const executor = attach(bot);
+  bot.emit(
+    "entityDead",
+    fakeEntity(1, { type: "player", customName: "delve-bot", position: new FakeVec3(0, 64, 0) }),
+  );
+  assert.deepEqual(executor.namedEntityDeaths(), []);
+});
+
+test("multiple named-entity deaths accumulate in order, undeduplicated", () => {
+  const bot = new EntityTrackingFakeBot();
+  const executor = attach(bot);
+  bot.emit(
+    "entityDead",
+    fakeEntity(1, { customName: "Hollow Gate-Warder", position: new FakeVec3(10, 63, -4) }),
+  );
+  bot.emit(
+    "entityDead",
+    fakeEntity(4, { customName: "island-herdsman", position: new FakeVec3(10, -128, 9) }),
+  );
+  const deaths = executor.namedEntityDeaths();
+  assert.equal(deaths.length, 2);
+  assert.equal(deaths[0]!.name, "Hollow Gate-Warder");
+  assert.equal(deaths[1]!.name, "island-herdsman");
+});
+
 test("awaitCutscene waits out the cutscene and returns once control is restored", async () => {
   const bot = new FakeBot();
   bot.game.gameMode = "spectator";

@@ -617,8 +617,8 @@ fn uncovered_tiered_waves<'a>(plan: &Plan<'a>) -> Vec<(usize, &'a Wave, String)>
         .collect()
 }
 
-/// Every actor the campaign turns loose on the party but never bills (task
-/// #121): `unleash-actor`ed somewhere, `tier` absent.
+/// Every actor the campaign turns loose on the party, in declaration order —
+/// the campaign's own answer to "which actors are *fights*".
 ///
 /// Hostility is read off the campaign's own declarations, by the SAME rule the
 /// die-retry / assist machinery uses to decide an actor is a fight at all
@@ -630,22 +630,34 @@ fn uncovered_tiered_waves<'a>(plan: &Plan<'a>) -> Vec<(usize, &'a Wave, String)>
 /// mob-category data (`DW0469`'s rule), so the compiler cannot and does not ask
 /// whether `minecraft:sheep` is a monster.
 ///
-/// A tier declared `ordinary` is a *statement* — the author saying this fight is
-/// routine — and stays off the ledger like any other ordinary encounter. An
-/// ABSENT tier is not a statement, and that is the whole difference this
-/// function exists to keep.
-fn untiered_hostile_actors(c: &Campaign) -> Vec<&Actor> {
+/// One predicate, two consumers: the floor-gate ledger below, and the bonfire's
+/// undefeated re-seat (spec-0016 §1) — which must refresh exactly the bodies the
+/// party can be fighting when they rest, and nothing that is scenery.
+pub fn hostile_actors(c: &Campaign) -> Vec<&Actor> {
     let beats = actor_beats(c);
     c.quests
         .content
         .actors
         .iter()
-        .filter(|a| a.tier.is_none())
         .filter(|a| {
             beats
                 .get(a.id.as_str())
                 .is_some_and(|(_, unleashes)| !unleashes.is_empty())
         })
+        .collect()
+}
+
+/// Every actor the campaign turns loose on the party but never bills (task
+/// #121): `unleash-actor`ed somewhere, `tier` absent.
+///
+/// A tier declared `ordinary` is a *statement* — the author saying this fight is
+/// routine — and stays off the ledger like any other ordinary encounter. An
+/// ABSENT tier is not a statement, and that is the whole difference this
+/// function exists to keep.
+fn untiered_hostile_actors(c: &Campaign) -> Vec<&Actor> {
+    hostile_actors(c)
+        .into_iter()
+        .filter(|a| a.tier.is_none())
         .collect()
 }
 
@@ -1449,6 +1461,7 @@ mod tests {
                 amplifier: RESISTANCE_IMMUNE_AMPLIFIER,
             }],
             equipment: None,
+            drops: Vec::new(),
         };
         let (multiplier, source) = mob_damage_multiplier(&mob);
         assert_eq!(multiplier, 0.0);
@@ -1467,6 +1480,7 @@ mod tests {
                 amplifier: RESISTANCE_IMMUNE_AMPLIFIER - 1,
             }],
             equipment: None,
+            drops: Vec::new(),
         };
         let (multiplier, _) = mob_damage_multiplier(&mob);
         assert!((multiplier - 0.2).abs() < 1e-9, "{multiplier}");
@@ -1499,6 +1513,7 @@ mod tests {
                 attributes: None,
                 effects,
                 equipment: None,
+                drops: Vec::new(),
             }],
             respawns_on_rest: false,
             lane: None,

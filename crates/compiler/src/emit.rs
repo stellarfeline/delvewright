@@ -433,6 +433,10 @@ pub fn build_with_warnings(
                 // timing is the point; one that punishes every timing is a slot
                 // machine. At least 20% of the cycle must admit a crossing.
                 crate::nav::check_timed_gates(plan, &world)?;
+                // task #184: the third rung. A gate's `disarm` lever must be
+                // reachable while the gate is still SHUT — a jam you can only
+                // pull after surviving the crossing disables nothing (DW0393).
+                crate::nav::check_timed_gate_disarms(plan, &world, campaign_spawn(plan))?;
                 // spec-0016 §4 addendum — hazard observability (DW0388). The
                 // dossier's strongest finding: what makes a periodic hazard fair
                 // is not its ratio but that you can stand somewhere safe and
@@ -791,6 +795,18 @@ pub fn build_with_warnings(
             format!("datapack/data/{ns}/advancement/{name}.json"),
             json_bytes(&value),
             "advancement",
+            &name,
+        )?;
+    }
+
+    // death loot tables — v0.9 declared quest-item drops only; a campaign that
+    // declares none writes no `loot_table` directory (byte-identity).
+    for (name, value) in emit_drop_loot_tables(plan) {
+        insert_unique(
+            &mut out,
+            format!("datapack/data/{ns}/loot_table/{name}.json"),
+            json_bytes(&value),
+            "loot table",
             &name,
         )?;
     }
@@ -1245,17 +1261,124 @@ fn default_equipment(entity: &str) -> Option<String> {
     })
 }
 
+/// The drop chance a **declared** drop puts on its slot (DSL v0.9, task #179).
+///
+/// Not `1.0`. Vanilla's `DropChances` record (pinned 1.21.11 client jar, class
+/// `cgi`) has exactly two named operations here, and they say what the numbers
+/// mean:
+///
+/// * `withGuaranteedDrop(slot)` writes the constant `2.0f` — verified in the
+///   jar's bytecode (`fconst_2`), and the same value the vanilla
+///   `SaddleEquipmentSlotFix` datafixer writes for a saddle a horse always
+///   drops;
+/// * `isPreserved(slot)` is `chance > 1.0f`.
+///
+/// `Mob.dropCustomDeathLoot` (class `chn`) reads both: a slot whose chance is
+/// exactly `0.0f` is skipped outright; a **preserved** slot drops even when the
+/// killing blow was not a player's, and — the reason `1.0f` is wrong — it skips
+/// the durability randomization that a chance of `≤ 1.0` applies to a damageable
+/// item. A boss axe declared as a drop must be *the* axe, not a die-roll of its
+/// remaining durability: `2.0f` is the vanilla primitive for "always, unchanged",
+/// and it is the only value that makes a declared drop deterministic.
+const DECLARED_DROP_CHANCE: &str = "2.0f";
+
+/// The drop chance every UNDECLARED slot keeps — today's behaviour, unchanged,
+/// which is what keeps every pre-0.9 campaign byte-identical.
+const NO_DROP_CHANCE: &str = "0.0f";
+
+/// The vanilla NBT slot keys a `drops[]` list marks as guaranteed, for one
+/// entity. Quest-item entries carry no slot and are absent from the set — they
+/// ride the death loot table instead ([`drop_loot_table`]).
+fn declared_drop_slots(drops: &[delvewright_dsl::MobDrop]) -> BTreeSet<&'static str> {
+    drops
+        .iter()
+        .filter_map(|d| d.slot())
+        .map(|s| s.nbt())
+        .collect()
+}
+
+/// The chance string for `slot`, given the entity's declared drops.
+fn drop_chance_for(slot: &str, declared: &BTreeSet<&'static str>) -> &'static str {
+    if declared.contains(slot) {
+        DECLARED_DROP_CHANCE
+    } else {
+        NO_DROP_CHANCE
+    }
+}
+
+/// The datapack path (namespace-local) of the death loot table a declared
+/// quest-item drop rides on, for one actor / one wave-mob stack.
+///
+/// **Why a loot table and not another equipment slot.** The `equipment` /
+/// `drop_chances` compounds address the six worn slots and nothing else — a
+/// quest token the fight *yields* has no slot, and hanging it in an off-hand the
+/// author never dressed would be the downstream workaround the no-hack rule
+/// forbids. 1.21.11 answers the slot-less half with its own primitive: `Mob`
+/// (jar class `chn`) reads `DeathLootTable` (and `DeathLootTableSeed`) straight
+/// off summon NBT, through the `ResourceKey<LootTable>` codec, and
+/// `LivingEntity.dropAllDeathLoot` rolls it on death. The compiler already
+/// writes `DeathLootTable:"minecraft:empty"` on every actor; a declared drop
+/// simply points the same field at a table the compiler emits, with the item
+/// entry the author declared. One roll, one entry, no RNG (ADR-0006).
+fn drop_loot_path(kind: &str, id: &str) -> String {
+    format!("dw_drop/{kind}_{}", plan::safe_local(id))
+}
+
+/// The `DeathLootTable` NBT value for an entity: the emitted table when it
+/// declares a quest-item drop, else the `minecraft:empty` every actor has always
+/// carried (byte-identity for every pre-0.9 campaign).
+fn death_loot_table(ns: &str, path: Option<String>) -> String {
+    match path {
+        Some(p) => format!("{ns}:{p}"),
+        None => "minecraft:empty".to_string(),
+    }
+}
+
+/// True if this drop list contains a quest-item entry (the half that needs a
+/// death loot table).
+fn has_item_drop(drops: &[delvewright_dsl::MobDrop]) -> bool {
+    drops.iter().any(|d| d.item().is_some())
+}
+
+/// Strip a declared drop off a body the **compiler** is about to remove.
+///
+/// The invariant, stated once: a declared drop is what a *player's kill* yields.
+/// Every removal the compiler performs itself — the `unleash` that swaps a
+/// puppet for its twin, a `despawn-actor` (either style), a souls re-seat's
+/// re-caging — goes through `/kill`, and vanilla `/kill` is an ordinary death:
+/// a preserved slot (chance > 1.0) drops **even when the killer is not a
+/// player**. Without this line an elite would shed its axe every time the story
+/// moved it, and a re-seat would turn the boss into a vending machine.
+///
+/// Two intended vanilla primitives, composed: `execute as … run data merge
+/// entity @s` (single-entity by construction, which is what `data merge`
+/// requires) writing drop chance 0 on every slot and an empty death loot table.
+/// Emitted only for an actor that declares drops, so every earlier campaign's
+/// removal is byte-identical.
+fn strip_drops_line(tag: &str) -> String {
+    format!(
+        "execute as @e[tag={tag}] run data merge entity @s {{drop_chances:{{mainhand:{z},offhand:{z},head:{z},chest:{z},legs:{z},feet:{z}}},DeathLootTable:\"minecraft:empty\"}}",
+        z = NO_DROP_CHANCE
+    )
+}
+
 /// The `equipment`/`drop_chances` SNBT fragment for a wave mob (no leading
 /// comma), or `None` for a bare-handed mob. A mob without the v0.6 `equipment`
 /// field takes the [`default_equipment`] path **unchanged** (byte-identity for
 /// pre-equipment waves). With the field, explicit slots merge over the
 /// armed-mob main-hand default (an explicit `main_hand` overrides it — a
-/// helmeted skeleton keeps its bow). Every emitted slot carries drop chance 0:
-/// players must never farm wave gear (no-grind constitution). Component-era
+/// helmeted skeleton keeps its bow). Every slot the v0.9 `drops[]` list does not
+/// name carries drop chance 0: players must never farm wave gear (no-grind
+/// constitution); a named slot carries [`DECLARED_DROP_CHANCE`]. Component-era
 /// form only — see [`default_equipment`] for why legacy `ArmorItems`/
 /// `HandItems` are silently ignored by 1.21.11 `/summon`. Slot order is fixed
 /// (mainhand, offhand, head, chest, legs, feet) for ADR-0006 determinism.
-fn wave_equipment(entity: &str, eq: Option<&MobEquipment>) -> Option<String> {
+fn wave_equipment(
+    entity: &str,
+    eq: Option<&MobEquipment>,
+    drops: &[delvewright_dsl::MobDrop],
+) -> Option<String> {
+    let declared = declared_drop_slots(drops);
     let mainhand = effective_mainhand(entity, eq);
     let Some(eq) = eq else {
         return default_equipment(entity);
@@ -1297,7 +1420,7 @@ fn wave_equipment(entity: &str, eq: Option<&MobEquipment>) -> Option<String> {
         if let Some(it) = item {
             let comps = piece.map(enchantment_components).unwrap_or_default();
             items.push(format!("{slot}:{{id:\"{it}\",count:1{comps}}}"));
-            chances.push(format!("{slot}:0.0f"));
+            chances.push(format!("{slot}:{}", drop_chance_for(slot, &declared)));
         }
     }
     if items.is_empty() {
@@ -2131,6 +2254,9 @@ fn emit_functions(
     // spec-0016 §2: shortcut unlock detection. Empty without a shortcut →
     // byte-identical.
     tick.extend(shortcut_tick(plan));
+    // task #184: timed-gate disarm detection. Empty without a jammable gate →
+    // byte-identical.
+    tick.extend(timed_gate_tick(plan));
     // v0.6 checkpoints (spec-0012): per-player respawn detection via the vanilla
     // `deathCount` criterion — the respawn re-seat (task #145) and the active
     // checkpoint's `on_respawn`. Emitted for every campaign with a checkpoint.
@@ -2643,7 +2769,7 @@ fn emit_functions(
         // pre-§6 `spawn_<wave>` output is byte-identical.
         let lane = w.lane.as_ref().zip(lane_routes.get(w.id.as_str()));
         let mut idx = 0i32;
-        for mob in &w.mobs {
+        for (k, mob) in w.mobs.iter().enumerate() {
             // CustomName as a plain SNBT text component (M2 fix 1). Waves are
             // v0.3-only, so no v0.2 byte-identity concern.
             let name = match &mob.name {
@@ -2652,10 +2778,27 @@ fn emit_functions(
             };
             // Equipment: v0.6 explicit slots merged over the armed-mob default
             // (M2 fix 5: a summoned wither_skeleton/skeleton otherwise had no
-            // weapon and was trivial). All drop chances 0 — never lootable.
-            let equip = wave_equipment(&mob.entity, mob.equipment.as_ref())
+            // weapon and was trivial). Every slot the v0.9 `drops[]` list does
+            // not name keeps drop chance 0 — rank-and-file gear is never
+            // lootable.
+            let equip = wave_equipment(&mob.entity, mob.equipment.as_ref(), &mob.drops)
                 .map(|e| format!(",{e}"))
                 .unwrap_or_default();
+            // v0.9 (task #179): a declared quest-item drop rides the mob's own
+            // death loot table. Absent on every other mob, so a wave that
+            // declares no item drop keeps vanilla's own table and its exact
+            // pre-0.9 summon string.
+            let loot = if has_item_drop(&mob.drops) {
+                format!(
+                    ",DeathLootTable:\"{}\"",
+                    death_loot_table(
+                        ns,
+                        Some(drop_loot_path("wave", &format!("{}-{k}", w.id.as_str()))),
+                    )
+                )
+            } else {
+                String::new()
+            };
             // v0.4 attribute overrides (spec-0008 §4), emitted as 1.21.11
             // attribute components in the summon NBT. Empty for a plain mob. A
             // lane mob's `follow_range` is FORCED to the lane's `aggro_radius`:
@@ -2702,7 +2845,7 @@ fn emit_functions(
                     _ => String::new(),
                 };
                 body.push(format!(
-                    "summon {} {} {} {} {{Tags:[\"{}\"{lead_tag}{tmp}],PersistenceRequired:1b{name}{equip}{attrs}{patrol}}}",
+                    "summon {} {} {} {} {{Tags:[\"{}\"{lead_tag}{tmp}],PersistenceRequired:1b{name}{equip}{loot}{attrs}{patrol}}}",
                     mob.entity,
                     c[0],
                     c[1],
@@ -2742,9 +2885,11 @@ fn emit_functions(
             fns.push(lane_tick_fn(ns, w, l, wps));
         }
         // spec-0016 §1: the re-seat — clear survivors, then re-run the wave's own
-        // spawn (same authored composition, same proven cells). Emitted only for a
-        // `respawns_on_rest` wave.
-        if w.respawns_on_rest {
+        // spawn (same authored composition, same proven cells). Emitted for a
+        // `respawns_on_rest` wave and for a billed elite/boss wave (whose rest
+        // dispatch is guarded on the wave still standing — the undefeated
+        // refresh), and for nothing else → byte-identical.
+        if w.respawns_on_rest || plan.undefeated_reseat_waves().iter().any(|u| u.id == w.id) {
             let safe = plan::safe_local(w.id.as_str());
             fns.push((
                 format!("wave_reseat_{safe}"),
@@ -3838,7 +3983,14 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             ));
         }
         QuestEffect::DespawnActor { actor, style, .. } => {
-            emit_despawn_actor(actor.as_str(), *style, body);
+            let declares_drops = plan
+                .campaign
+                .quests
+                .content
+                .actors
+                .iter()
+                .any(|a| a.id.as_str() == actor.as_str() && !a.drops.is_empty());
+            emit_despawn_actor(actor.as_str(), *style, declares_drops, body);
         }
         QuestEffect::MoveActor {
             actor, to_anchor, ..
@@ -3885,9 +4037,22 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
 /// style is "out of sight, in place", and an actor that briefly exists at another
 /// area's coordinates is wrong data, not a detail. `execute as … at @s` is the same
 /// idiom [`emit_play_sound`] uses to make `~ ~ ~` resolve per entity.
-fn emit_despawn_actor(actor: &str, style: delvewright_dsl::DespawnStyle, body: &mut Vec<String>) {
+fn emit_despawn_actor(
+    actor: &str,
+    style: delvewright_dsl::DespawnStyle,
+    declares_drops: bool,
+    body: &mut Vec<String>,
+) {
     use delvewright_dsl::DespawnStyle;
     let safe = plan::safe_local(actor);
+    // v0.9 (task #179): a removal is not a death the player earned. Both styles
+    // end in `/kill`, and a preserved drop chance survives a non-player kill, so
+    // an elite the story re-cages (a souls re-seat) would shed its axe on every
+    // rest. Strip the declaration off the body first; emitted only when the
+    // actor declares drops, so every earlier campaign's despawn is byte-identical.
+    if declares_drops {
+        body.push(strip_drops_line(&format!("dw_actor_{safe}")));
+    }
     match style {
         DespawnStyle::Kill => body.push(format!("kill @e[tag=dw_actor_{safe}]")),
         DespawnStyle::Vanish => {
@@ -4185,22 +4350,68 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
 // ---------------------------------------------------------------------------
 
 /// `setup_finish` commands for timed gates (spec-0016 §4): start each gate's
-/// clock. The gate is physically sealed by the prefab at world-load, so the
-/// clock's first act is always an OPEN — a `phase` of 0 opens immediately, a
+/// clock, and — task #184 — summon the disarm affordance of any gate that
+/// declares one. The gate is physically sealed by the prefab at world-load, so
+/// the clock's first act is always an OPEN — a `phase` of 0 opens immediately, a
 /// larger one holds the gate shut that many ticks first. Empty for a campaign
 /// with no timed gate → byte-identical.
+///
+/// The affordance is the same pair a shortcut unlock and a trap disarm emit: an
+/// invisible `minecraft:interaction` hitbox **plus** compiler-owned visible
+/// hardware, because a hitbox alone is a lever the player cannot see — the
+/// drowned-bell soft-lock class `DW0420` exists to make impossible.
 fn timed_gate_setup(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
-    plan.timed_gates
-        .iter()
-        .map(|g| {
-            if g.phase == 0 {
-                format!("function {ns}:tgate_open_{}", g.safe)
-            } else {
-                format!("schedule function {ns}:tgate_open_{} {}t", g.safe, g.phase)
-            }
-        })
-        .collect()
+    let mut out = Vec::new();
+    for g in &plan.timed_gates {
+        if g.phase == 0 {
+            out.push(format!("function {ns}:tgate_open_{}", g.safe));
+        } else {
+            out.push(format!(
+                "schedule function {ns}:tgate_open_{} {}t",
+                g.safe, g.phase
+            ));
+        }
+    }
+    for g in &plan.timed_gates {
+        let Some(dis) = &g.disarm else {
+            continue;
+        };
+        let v = ent_xyz(dis.via_cell);
+        out.push(format!(
+            "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_tgdis_{}\"]}}",
+            v[0], v[1], v[2], g.safe
+        ));
+        out.push(affordance_hardware(
+            v,
+            &format!("dw_tgdis_{}", g.safe),
+            "minecraft:lever",
+        ));
+    }
+    out
+}
+
+/// Per-tick disarm detection for jammable timed gates (task #184), reusing the
+/// v0.4 interaction-entity `use` primitive exactly as a trap disarm and a
+/// shortcut unlock do. The `#tgdis_<id>` sentinel makes the jam fire **once**;
+/// after it, there is nothing left to dispatch. Empty for a campaign with no
+/// disarmable gate → byte-identical.
+fn timed_gate_tick(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for g in &plan.timed_gates {
+        if g.disarm.is_none() {
+            continue;
+        }
+        let id = &g.safe;
+        out.push(format!(
+            "execute unless score #tgdis_{id} dw.sys matches 1 if entity @e[tag=dw_tgdis_{id},nbt={{interaction:{{}}}}] run function {ns}:tgate_disarm_{id}"
+        ));
+        out.push(format!(
+            "execute as @e[tag=dw_tgdis_{id}] run data remove entity @s interaction"
+        ));
+    }
+    out
 }
 
 /// Half-hearts dealt by a `crush: true` timed gate's closing edge (spec-0016 §4
@@ -4247,14 +4458,42 @@ fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
     for g in &plan.timed_gates {
         let id = &g.safe;
         let (from, to) = g.gate_region;
+        // task #184: the jam guard. A disarmable gate's clock lines are prefixed
+        // with `execute unless score #tgdis_<id> dw.sys matches 1` — the same
+        // score-guard shape a gated trap's payload uses. A gate with no `disarm`
+        // emits no guard at all, so its output is byte-identical to before.
+        let guard = if g.disarm.is_some() {
+            Some(format!("execute unless score #tgdis_{id} dw.sys matches 1"))
+        } else {
+            None
+        };
+        // `<guard> run <cmd>` when jammable, else `<cmd>` verbatim.
+        let guarded = |cmd: String| match &guard {
+            Some(g) => format!("{g} run {cmd}"),
+            None => cmd,
+        };
+        // …and the `execute` form, for a line that is already an `execute`: its
+        // subcommands splice straight onto the guard rather than nesting.
+        let guarded_exec = |rest: &str, cmd: &str| match &guard {
+            Some(g) => format!("{g} {rest} run {cmd}"),
+            None => format!("execute {rest} run {cmd}"),
+        };
         out.push((
             format!("tgate_open_{id}"),
             lines(&[
+                // The open itself is NEVER guarded: a jam that lands while the
+                // gate is shut leaves one already-scheduled open in flight, and
+                // that open is exactly what parks the portcullis in its resting
+                // position. Suppressing it would freeze the gate CLOSED, which
+                // is the opposite of a disarm.
                 format!(
                     "fill {} {} {} {} {} {} minecraft:air replace {}",
                     from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
                 ),
-                format!("schedule function {ns}:tgate_close_{id} {}t", g.open_ticks),
+                guarded(format!(
+                    "schedule function {ns}:tgate_close_{id} {}t",
+                    g.open_ticks
+                )),
             ]),
         ));
         let mut close = Vec::new();
@@ -4264,21 +4503,72 @@ fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
         // and vanilla's own suffocation would be the thing killing them, which
         // is slow, gear-dependent and escapable. Costs nothing per tick: this
         // rides the closing tick of the schedule ping-pong that already exists.
+        //
+        // task #184: the judgement sits INSIDE the suppressed clock, so a
+        // disarmed gate can never crush — there is no closing tick left to be
+        // caught by. That is not a second rule, it is the same guard.
         if g.crush {
-            close.push(format!(
-                "execute as @a[{}] run damage @s {CRUSH_DAMAGE} minecraft:generic",
-                region_selector(from, to)
+            close.push(guarded_exec(
+                &format!("as @a[{}]", region_selector(from, to)),
+                &format!("damage @s {CRUSH_DAMAGE} minecraft:generic"),
             ));
         }
-        close.push(format!(
+        close.push(guarded(format!(
             "fill {} {} {} {} {} {} {}",
             from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
-        ));
-        close.push(format!(
+        )));
+        close.push(guarded(format!(
             "schedule function {ns}:tgate_open_{id} {}t",
             g.closed_ticks
-        ));
+        )));
         out.push((format!("tgate_close_{id}"), lines(&close)));
+    }
+    out.extend(emit_timed_gate_disarm_functions(plan));
+    out
+}
+
+/// The `tgate_disarm_<id>` functions (task #184): jam the gate for good.
+///
+/// Four commands, and the ORDER is the semantics:
+/// 1. latch `#tgdis_<id>` — from this instant every guarded clock line is inert,
+///    including the crush;
+/// 2. raise the disarm flag party-wide, so the rest of the campaign can read
+///    "the party switched it off" (`requires_flags`, a dialogue gate, a quest);
+/// 3. clear the span **once** — the jammed portcullis comes to rest OPEN, which
+///    is what a disarm means and what a player who pulls a lever expects to see;
+/// 4. retire the affordance's visible hardware. This is the ONE function allowed
+///    to do that — `DW0421` fails the build if anything else reaches it.
+///
+/// There is deliberately **no** `schedule clear`. A close already in flight fires
+/// into the guard and does nothing — including not scheduling the next open — so
+/// the ping-pong dies of its own accord within one hop, and the gate is left open
+/// by step 3. Clearing a schedule that may not exist would be a command that
+/// fails at runtime for no gain.
+fn emit_timed_gate_disarm_functions(plan: &Plan) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for g in &plan.timed_gates {
+        let Some(dis) = &g.disarm else {
+            continue;
+        };
+        let id = &g.safe;
+        let (from, to) = g.gate_region;
+        let body = vec![
+            format!("scoreboard players set #tgdis_{id} dw.sys 1"),
+            format!(
+                "scoreboard players set {} {} 1",
+                plan::PARTY,
+                plan::flag_score(&dis.sets_flag)
+            ),
+            format!(
+                "fill {} {} {} {} {} {} minecraft:air replace {}",
+                from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
+            ),
+            format!(
+                "kill @e[tag={}]",
+                crate::affordance::hardware_tag(&format!("dw_tgdis_{id}"))
+            ),
+        ];
+        out.push((format!("tgate_disarm_{id}"), lines(&body)));
     }
     out
 }
@@ -4312,6 +4602,17 @@ fn affordances(plan: &Plan) -> Vec<crate::affordance::Affordance> {
                 tag: format!("dw_trapdis_{}", t.safe),
                 // Throwing the lever spends the affordance.
                 retired_by: Some(format!("trap_disarm_{}", t.safe)),
+            });
+        }
+    }
+    for g in &plan.timed_gates {
+        if g.disarm.is_some() {
+            out.push(crate::affordance::Affordance {
+                id: g.id.clone(),
+                kind: "timed-gate disarm",
+                tag: format!("dw_tgdis_{}", g.safe),
+                // Jamming the gate spends the affordance.
+                retired_by: Some(format!("tgate_disarm_{}", g.safe)),
             });
         }
     }
@@ -4657,12 +4958,37 @@ fn wave_seated_holder(wave_id: &str) -> String {
     format!("#wseat_{}", plan::safe_local(wave_id))
 }
 
-/// The wave re-seat lines a bonfire runs on every rest and on every respawn at
-/// it (spec-0016 §1), in content order. Empty unless the campaign declares both
-/// a bonfire and a `respawns_on_rest` wave → byte-identical.
+/// The re-seat lines a bonfire runs on every rest and on every respawn at it
+/// (spec-0016 §1), in a fixed order: the `respawns_on_rest` waves, then the
+/// **undefeated** refresh — billed elite/boss waves, then hostile actors. Empty
+/// for a campaign that declares none of that surface → byte-identical.
+///
+/// Two different questions are being asked here, and they take two different
+/// primitives.
+///
+/// * *Has the party MET this wave?* — a scoreboard sentinel
+///   ([`wave_seated_holder`]), written by the wave's own `spawn_<wave>`. A
+///   `respawns_on_rest` wave comes back whether the party beat it or fled it, so
+///   "met" is the only gate, and a wave the delve has not staged yet must not be
+///   conjured by a rest.
+/// * *Is this thing still STANDING?* — the presence of its own body
+///   (`execute if entity`). That is the undefeated test, and it needs no state at
+///   all: a boss the party killed leaves no body, so it stays dead by
+///   construction (spec-0016 §1), and one they merely chipped is still there, so
+///   it is wiped and re-seated whole. `despawn-actor` leaves none either, so a
+///   scripted vanish is equally final.
+///
+/// An actor's line asks the body question twice, because an actor has two
+/// postures and only one of them can have been damaged or dragged. A caged
+/// puppet (`dw_pup_<id>`) is `NoAI` and knockback-immune — combat cannot move it,
+/// and re-seating it would only undo authored `move-actor` staging — so it is
+/// left exactly where the campaign put it. An **unleashed twin** is the elite the
+/// party is actually fighting: it wears `dw_actor_<id>` and no puppet marker, and
+/// the rest deletes it and stands a fresh one on its origin anchor.
 fn bonfire_reseat_lines(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
-    plan.reseat_waves()
+    let mut out: Vec<String> = plan
+        .reseat_waves()
         .iter()
         .map(|w| {
             format!(
@@ -4671,7 +4997,22 @@ fn bonfire_reseat_lines(plan: &Plan) -> Vec<String> {
                 plan::safe_local(w.id.as_str())
             )
         })
-        .collect()
+        .collect();
+    for w in plan.undefeated_reseat_waves() {
+        out.push(format!(
+            "execute if entity @e[tag={}] run function {ns}:wave_reseat_{}",
+            plan::wave_tag(w.id.as_str()),
+            plan::safe_local(w.id.as_str())
+        ));
+    }
+    for a in plan.reseat_actors() {
+        let safe = plan::safe_local(a.id.as_str());
+        out.push(format!(
+            "execute unless entity @e[tag=dw_pup_{safe}] if entity @e[tag=dw_actor_{safe}] \
+             run function {ns}:actor_restand_{safe}"
+        ));
+    }
+    out
 }
 
 /// Per-tick bonfire **choice** dispatch (spec-0016 §1, owner ruling 2026-08-03).
@@ -5614,8 +5955,16 @@ fn actor_facing_yaw(a: &delvewright_dsl::Actor) -> i32 {
 /// touching a real-AI twin). `Invulnerable` unless `vulnerable`; a vulnerable puppet
 /// stays knockback-immune (`knockback_resistance` 1.0) — the tower-defense creep. A
 /// `skin` re-dresses it as a `minecraft:mannequin`, exactly as a stage-2 NPC.
-fn actor_puppet_summon(a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> String {
+fn actor_puppet_summon(ns: &str, a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> String {
     let safe = plan::safe_local(a.id.as_str());
+    // v0.9 (task #179): a declared quest-item drop points the field the puppet
+    // has always carried at a table the compiler emits. `unleash` and
+    // `despawn-actor` strip it again ([`strip_drops_line`]) — only a player's
+    // kill yields it.
+    let loot = death_loot_table(
+        ns,
+        has_item_drop(&a.drops).then(|| drop_loot_path("actor", a.id.as_str())),
+    );
     let p = ent_xyz(pos);
     let tags = format!("Tags:[\"dw_actor\",\"dw_actor_{safe}\",\"dw_pup_{safe}\"]");
     if let Some(skin) = &a.skin {
@@ -5656,7 +6005,7 @@ fn actor_puppet_summon(a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> S
             .map(|e| format!(",{e}"))
             .unwrap_or_default();
         format!(
-            "summon {} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Invulnerable:{inv}b,DeathLootTable:\"minecraft:empty\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}{equip}}}",
+            "summon {} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Invulnerable:{inv}b,DeathLootTable:\"{loot}\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}{equip}}}",
             a.entity, p[0], p[1], p[2]
         )
     }
@@ -5720,17 +6069,27 @@ fn spawn_finalize_nbt(entity: &str) -> &'static str {
     }
 }
 
-/// The `/summon` command (relative coords, run `execute at` the puppet) for an
-/// actor's real-AI twin (spec-0014 `unleash`): the real `entity` with AI enabled,
-/// same name and body tag (`dw_actor` + `dw_actor_<id>`), but **no** `dw_pup_<id>`
-/// marker — so killing the puppet by its marker leaves the twin fighting.
+/// The `/summon` command for an actor's real-AI twin (spec-0014 `unleash`): the
+/// real `entity` with AI enabled, same name and body tag (`dw_actor` +
+/// `dw_actor_<id>`), but **no** `dw_pup_<id>` marker — so killing the puppet by
+/// its marker leaves the twin fighting.
+///
+/// `at` is the position argument: `~ ~ ~` for the unleash (run `execute at` the
+/// puppet, so the twin stands up exactly where the puppet knelt), or the actor's
+/// absolute origin cell for the bonfire's undefeated re-seat, which has no puppet
+/// left to stand at. One string, so the two paths can never drift into two
+/// different bodies.
 ///
 /// The twin is the compiler's only *free-AI* summon, so it is where
 /// [`spawn_finalize_nbt`] matters: a caged puppet is `NoAI`, and a `NoAI` mob never
 /// runs `customServerAiStep`, which is why the island's herdsman warden could stand
 /// in the meadow indefinitely while the unleashed one burrowed away.
-fn actor_twin_summon(a: &delvewright_dsl::Actor) -> String {
+fn actor_twin_summon(ns: &str, a: &delvewright_dsl::Actor, at: &str) -> String {
     let safe = plan::safe_local(a.id.as_str());
+    let loot = death_loot_table(
+        ns,
+        has_item_drop(&a.drops).then(|| drop_loot_path("actor", a.id.as_str())),
+    );
     let name = a
         .name
         .as_deref()
@@ -5749,7 +6108,7 @@ fn actor_twin_summon(a: &delvewright_dsl::Actor) -> String {
     // caged creep's property, not the freed elite's.
     let attrs = attributes_snbt(a.attributes.as_ref());
     format!(
-        "summon {} ~ ~ ~ {{PersistenceRequired:1b{pose},DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}}}",
+        "summon {} {at} {{PersistenceRequired:1b{pose},DeathLootTable:\"{loot}\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}}}",
         a.entity
     )
 }
@@ -5765,6 +6124,7 @@ fn actor_twin_summon(a: &delvewright_dsl::Actor) -> String {
 /// declared nothing.
 fn actor_equipment(a: &delvewright_dsl::Actor) -> Option<String> {
     let eq = a.equipment.as_ref()?;
+    let declared = declared_drop_slots(&a.drops);
     let mut items: Vec<String> = Vec::new();
     let mut chances: Vec<String> = Vec::new();
     // Fixed emission order, matching the wave path (ADR-0006 determinism).
@@ -5780,7 +6140,7 @@ fn actor_equipment(a: &delvewright_dsl::Actor) -> Option<String> {
         if let Some(p) = piece {
             let comps = enchantment_components(p);
             items.push(format!("{slot}:{{id:\"{}\",count:1{comps}}}", p.item()));
-            chances.push(format!("{slot}:0.0f"));
+            chances.push(format!("{slot}:{}", drop_chance_for(slot, &declared)));
         }
     }
     if items.is_empty() {
@@ -5973,20 +6333,56 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
             format!("spawn_actor_{safe}"),
             lines(&[format!(
                 "execute unless entity @e[tag=dw_actor_{safe}] run {}",
-                actor_puppet_summon(a, pos, yaw)
+                actor_puppet_summon(ns, a, pos, yaw)
             )]),
         ));
-        let mut unleash = vec![
-            format!(
-                "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
-                actor_twin_summon(a)
-            ),
-            format!("kill @e[tag=dw_pup_{safe}]"),
-        ];
+        let mut unleash = vec![format!(
+            "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
+            actor_twin_summon(ns, a, "~ ~ ~")
+        )];
+        // The unleash removes the cage by killing it, and vanilla `/kill` is an
+        // ordinary death: a puppet carrying a declared drop would shed it the
+        // moment the elite stood up. Strip first — the twin standing beside it
+        // is the body that owes the player a prize.
+        if !a.drops.is_empty() {
+            unleash.push(strip_drops_line(&format!("dw_pup_{safe}")));
+        }
+        unleash.push(format!("kill @e[tag=dw_pup_{safe}]"));
         if campaign_captures_striker(plan.campaign) {
             unleash.extend(aggro_lock_lines(&a.entity, &safe));
         }
         out.push((format!("unleash_{safe}"), lines(&unleash)));
+        // spec-0016 §1 (owner ruling 2026-08-05): the UNDEFEATED re-seat. A rest
+        // (and a death-respawn at the same fire) deletes the elite the party is
+        // still fighting and stands a FRESH body on its origin anchor: full
+        // health, no accumulated chip damage, and — the reported regression — back
+        // where it belongs instead of wherever the chase left it.
+        //
+        // Deliberately not `unleash_<id>`: there is no puppet to stand up from,
+        // and re-caging one would be worse than doing nothing, because an
+        // `unleash-actor` beat fires from a one-shot trigger the engine never
+        // re-arms — a re-caged elite would be dormant, `Invulnerable` scenery for
+        // the rest of the delve. It comes back as what it was: a freed body on its
+        // own ground.
+        //
+        // The striker aggro lock is deliberately NOT re-applied. Nobody has
+        // provoked this body yet, and spec-0016 §1's stationed rule is that
+        // nothing a rest puts back may pursue across the map: it stands on its
+        // anchor under vanilla-local AI, inside the `follow_range` `DW0478`
+        // measured the bonfire against.
+        //
+        // Emitted only for an actor the campaign unleashes AND a campaign with a
+        // bonfire ([`Plan::reseat_actors`]) → byte-identical everywhere else.
+        if plan.reseat_actors().iter().any(|r| r.id == a.id) {
+            let p = ent_xyz(pos);
+            out.push((
+                format!("actor_restand_{safe}"),
+                lines(&[
+                    format!("kill @e[tag=dw_actor_{safe}]"),
+                    actor_twin_summon(ns, a, &format!("{} {} {}", p[0], p[1], p[2])),
+                ]),
+            ));
+        }
     }
     // move-actor per-tick drivers.
     for m in actor_moves {
@@ -7773,8 +8169,16 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
             anchor,
             item_name,
             fill_count,
+            dropped_by,
             ..
         } => {
+            // v0.9 (task #179): a drop-gated collect is provisioned by the fight,
+            // not by the world. Place nothing and fill nothing — the item exists
+            // only once the boss dies, which is exactly what makes the chain
+            // provable (`DW0493`) instead of merely intended.
+            if dropped_by.is_some() {
+                return cmds;
+            }
             // v0.8 (task #95): an ADOPTED container is prefab furniture standing
             // in the room already — fill it where it stands, place nothing. Absent
             // `container`, the compiler keeps conjuring its own chest at the
@@ -7921,6 +8325,12 @@ fn declared_flags(c: &delvewright_dsl::Campaign) -> std::collections::BTreeSet<S
     // v0.6 traps (spec-0011): a disarm's `sets_flag` needs its own scoreboard.
     for t in &c.quests.content.traps {
         if let Some(dis) = &t.disarm {
+            out.insert(dis.sets_flag.as_str().to_string());
+        }
+    }
+    // task #184: a timed gate's disarm sets a flag exactly as a trap's does.
+    for g in &c.quests.content.timed_gates {
+        if let Some(dis) = &g.disarm {
             out.insert(dis.sets_flag.as_str().to_string());
         }
     }
@@ -8547,6 +8957,60 @@ fn build_node_dialog(
     }
 }
 
+/// The **death loot tables** a campaign's declared quest-item drops need (DSL
+/// v0.9, task #179), as `(namespace-local path, json)` pairs.
+///
+/// One table per declaring body, one pool, one roll, one entry per declared
+/// item: nothing here rolls a die. The entry is the vanilla `minecraft:item`
+/// form, and a declared display `name` becomes the `minecraft:set_name` function
+/// with `target: "custom_name"` — the same component a `collect`'s `item_name`
+/// writes into a container stack, so the key a boss leaves on the ground and the
+/// key a barrel hands over are the same item.
+///
+/// Emitted only for bodies that declare an `{item}` drop, so a campaign without
+/// one writes no `loot_table` directory at all and stays byte-identical.
+fn emit_drop_loot_tables(plan: &Plan) -> Vec<(String, Value)> {
+    let c = plan.campaign;
+    let mut out: Vec<(String, Value)> = Vec::new();
+    let table = |drops: &[delvewright_dsl::MobDrop]| {
+        let entries: Vec<Value> = drops
+            .iter()
+            .filter_map(|d| {
+                let item = d.item()?;
+                let mut entry = json!({ "type": "minecraft:item", "name": item });
+                if let Some(name) = d.name() {
+                    entry["functions"] = json!([{
+                        "function": "minecraft:set_name",
+                        "target": "custom_name",
+                        "name": { "text": name },
+                    }]);
+                }
+                Some(entry)
+            })
+            .collect();
+        json!({
+            "type": "minecraft:entity",
+            "pools": [{ "rolls": 1, "entries": entries }],
+        })
+    };
+    for a in &c.quests.content.actors {
+        if has_item_drop(&a.drops) {
+            out.push((drop_loot_path("actor", a.id.as_str()), table(&a.drops)));
+        }
+    }
+    for w in &c.quests.content.waves {
+        for (k, m) in w.mobs.iter().enumerate() {
+            if has_item_drop(&m.drops) {
+                out.push((
+                    drop_loot_path("wave", &format!("{}-{k}", w.id.as_str())),
+                    table(&m.drops),
+                ));
+            }
+        }
+    }
+    out
+}
+
 fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -9013,6 +9477,11 @@ fn emit_packtest(
     // of the previous life's feral release. Emits nothing without a bonfire and
     // a `respawns_on_rest` wave.
     emit_reseat_stationed_packtest(plan, out, waves.placements, waves.lanes);
+    // spec-0016 §1 (owner ruling 2026-08-05): the UNDEFEATED re-seat — an elite
+    // the party is still fighting is deleted and stood up fresh on its origin;
+    // one they finished stays finished. Emits nothing without a bonfire and a
+    // hostile actor / billed wave.
+    emit_reseat_undefeated_packtests(plan, out);
     // spec-0016 §1 (owner ruling 2026-08-03): rest and save-only really differ.
     emit_bonfire_option_packtest(plan, out);
     // spec-0016 §2: the shortcut really opens, and opens exactly once.
@@ -10934,6 +11403,192 @@ fn emit_reseat_stationed_packtest(
     );
 }
 
+/// spec-0016 §1 (owner ruling 2026-08-05): **an undefeated elite is put back;
+/// a defeated one stays dead.**
+///
+/// The bell's round-five playtest found the half of the souls loop nothing was
+/// driving. `respawns_on_rest` waves came back correctly — and the barrow-warden,
+/// an actor elite the party had woken, wounded and run away from, stayed exactly
+/// where the chase ended, at exactly the health the chase left it. So did the
+/// ambushers in the sewer and up in the rafters. A rest refreshed the scene
+/// around them and not them.
+///
+/// The two templates here are that scenario, run on the pinned server, in the
+/// order it happens: meet the fight, damage it, drag it off its ground, rest —
+/// then demand
+///
+/// 1. it is standing again, exactly one body / the authored count;
+/// 2. **not the same body**: every mob of the previous life is branded with a tag
+///    no summon can carry, and the brand is gone (identity, not arithmetic — the
+///    anti-chip claim);
+/// 3. it is back on its own ground, not where combat left it;
+/// 4. an actor is put back FREED, never re-caged — a re-caged elite would be
+///    dormant scenery for the rest of the delve, because the `unleash-actor` beat
+///    that woke it fires from a one-shot trigger;
+/// 5. and once actually killed, a rest does NOT bring it back.
+///
+/// Emits nothing without a bonfire, and nothing for a campaign with no hostile
+/// actor and no billed elite/boss wave → byte-identical.
+fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some(bf) = plan.bonfires().next() else {
+        return;
+    };
+    let i = bf.index;
+    // A rest re-seats every MET `respawns_on_rest` wave too, so both templates own
+    // the whole re-seat board: clear each one's entities and its seated sentinel
+    // on entry and on exit (pin_dummy rule 4).
+    let board: Vec<String> = plan
+        .reseat_waves()
+        .iter()
+        .flat_map(|r| {
+            [
+                format!("kill @e[tag={}]", plan::wave_tag(r.id.as_str())),
+                format!(
+                    "scoreboard players set {} dw.sys 0",
+                    wave_seated_holder(r.id.as_str())
+                ),
+            ]
+        })
+        .collect();
+
+    // --- the actor elite (the barrow-warden's defect) ---
+    if let Some(a) = plan
+        .reseat_actors()
+        .into_iter()
+        .find(|a| anchor_point_any(plan, a.anchor.as_str()).is_some())
+    {
+        let safe = plan::safe_local(a.id.as_str());
+        let origin = ent_xyz(anchor_point_any(plan, a.anchor.as_str()).unwrap());
+        let (pin, sel) = pin_dummy("dw_rsua");
+        let mut b = packtest_header(&format!(
+            "{title}: a rest re-seats the undefeated elite `{}` at its origin, and never \
+             resurrects a defeated one (spec-0016 §1)",
+            a.id
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.extend(board.iter().cloned());
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        b.push("kill @e[tag=dw_rsua_brand]".to_string());
+        // Meet the fight: stage the puppet, then turn it loose exactly as the
+        // campaign's own beat does.
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!("function {ns}:unleash_{safe}"));
+        b.push(format!(
+            "execute store result score #n_rsua dw.sys if entity @e[tag=dw_actor_{safe}]"
+        ));
+        b.push("assert score #n_rsua dw.sys matches 1".to_string());
+        b.push(format!(
+            "execute store result score #q_rsua dw.sys if entity @e[tag=dw_pup_{safe}]"
+        ));
+        b.push("assert score #q_rsua dw.sys matches 0".to_string());
+        // The fight the owner had: the elite chases the party off its ground and
+        // is chipped on the way.
+        b.push(format!(
+            "execute at {sel} run tp @e[tag=dw_actor_{safe}] ~ ~ ~"
+        ));
+        b.push(format!(
+            "data modify entity @e[tag=dw_actor_{safe},limit=1] Health set value 1.0f"
+        ));
+        b.push(format!("tag @e[tag=dw_actor_{safe}] add dw_rsua_brand"));
+        // The rest, through the REAL generated rest function.
+        b.push(format!("function {ns}:bonfire_rest_{i}"));
+        b.push(format!(
+            "execute store result score #a_rsua dw.sys if entity @e[tag=dw_actor_{safe}]"
+        ));
+        b.push("assert score #a_rsua dw.sys matches 1".to_string());
+        b.push(
+            "execute store result score #b_rsua dw.sys if entity @e[tag=dw_rsua_brand]".to_string(),
+        );
+        b.push("assert score #b_rsua dw.sys matches 0".to_string());
+        b.push(format!(
+            "execute positioned {} {} {} store result score #d_rsua dw.sys if entity \
+             @e[tag=dw_actor_{safe},distance=..2]",
+            origin[0], origin[1], origin[2]
+        ));
+        b.push("assert score #d_rsua dw.sys matches 1".to_string());
+        // Freed, not re-caged.
+        b.push(format!(
+            "execute store result score #c_rsua dw.sys if entity @e[tag=dw_pup_{safe}]"
+        ));
+        b.push("assert score #c_rsua dw.sys matches 0".to_string());
+        // Defeated stays dead: no body, nothing to put back.
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        b.push(format!("function {ns}:bonfire_rest_{i}"));
+        b.push(format!(
+            "execute store result score #k_rsua dw.sys if entity @e[tag=dw_actor_{safe}]"
+        ));
+        b.push("assert score #k_rsua dw.sys matches 0".to_string());
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        b.extend(board.iter().cloned());
+        b.push(format!("tag {sel} remove dw_rsua"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/souls_reseat_actor.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+
+    // --- the billed elite/boss wave (the anti-chip half) ---
+    let Some(w) = plan
+        .undefeated_reseat_waves()
+        .into_iter()
+        .find(|w| plan::wave_total(w) >= 1)
+    else {
+        return;
+    };
+    let safe = plan::safe_local(w.id.as_str());
+    let tag = plan::wave_tag(w.id.as_str());
+    let brand = plan::wave_brand_tag(w.id.as_str());
+    let total = plan::wave_total(w);
+    let mut b = packtest_header(&format!(
+        "{title}: a rest re-seats the undefeated boss wave `{}` whole, and never resurrects a \
+         beaten one (spec-0016 §1)",
+        w.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.extend(board.iter().cloned());
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(format!("function {ns}:wave_unbrand_{safe}"));
+    // Meet it, and grind it down to a sliver — the path the ruling forbids.
+    b.push(format!("function {ns}:spawn_{safe}"));
+    b.push(format!("function {ns}:wave_brand_{safe}"));
+    if total > 1 {
+        b.push(format!("kill @e[tag={tag},limit={}]", total - 1));
+    }
+    b.push(format!(
+        "data modify entity @e[tag={tag},limit=1] Health set value 1.0f"
+    ));
+    b.push(format!(
+        "execute store result score #s_rsuw dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push("assert score #s_rsuw dw.sys matches 1".to_string());
+    b.push(format!("function {ns}:bonfire_rest_{i}"));
+    b.push(format!(
+        "execute store result score #n_rsuw dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push(format!("assert score #n_rsuw dw.sys matches {total}"));
+    b.push(format!(
+        "execute store result score #b_rsuw dw.sys if entity @e[tag={brand}]"
+    ));
+    b.push("assert score #b_rsuw dw.sys matches 0".to_string());
+    // Beaten stays beaten: the boss the party actually killed is not conjured back.
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(format!("function {ns}:bonfire_rest_{i}"));
+    b.push(format!(
+        "execute store result score #k_rsuw dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push("assert score #k_rsuw dw.sys matches 0".to_string());
+    b.push(format!("function {ns}:wave_unbrand_{safe}"));
+    b.push(format!("kill @e[tag={tag}]"));
+    b.extend(board.iter().cloned());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_reseat_undefeated.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
 /// spec-0016 §1 (owner ruling 2026-08-03): the **two options really differ**.
 ///
 /// The owner's ruling is that right-clicking a bonfire offers exactly *rest and
@@ -11084,6 +11739,88 @@ fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
         lines(&b).into_bytes(),
     );
     emit_timed_gate_crush_packtest(plan, g, out);
+    emit_timed_gate_disarm_packtest(plan, g, out);
+}
+
+/// task #184 PackTest: a **disarmed** gate stays open across several former cycle
+/// boundaries, and its closing edge never fires again.
+///
+/// A fake player cannot wait out a `schedule`, so the template does what the
+/// timed-gate template already does — drives the REAL clock functions directly,
+/// which IS the clock's body. The proof is that after `tgate_disarm_<id>` runs,
+/// calling `tgate_close_<id>` (the exact function the schedule would have
+/// re-entered) leaves the span air, three former boundaries in a row. If the
+/// guard were missing, the very first one would re-seal it.
+///
+/// A `crush: true` gate gets the sharper form for free: the same guarded body
+/// carries the judgement, so a close that cannot fill also cannot damage — which
+/// is why the compiler unit test asserts the damage line is *inside* the guard
+/// rather than beside it.
+///
+/// Emits nothing unless the gate declares a `disarm`, so every other campaign's
+/// PackTest suite is byte-identical.
+fn emit_timed_gate_disarm_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mut BuildOutput) {
+    if g.disarm.is_none() {
+        return;
+    }
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let (from, to) = g.gate_region;
+    let probe = from;
+    let id = &g.safe;
+    let mut b = packtest_header(&format!(
+        "{title}: timed gate `{}` stays open once disarmed (task #184)",
+        g.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    // A sibling template shares this world: re-arm and re-seal so the fixture
+    // starts from a running, shut clock whatever ran before it.
+    b.push(format!("scoreboard players set #tgdis_{id} dw.sys 0"));
+    b.push(format!(
+        "fill {} {} {} {} {} {} {}",
+        from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
+    ));
+    // The clock is still live: a close really does seal.
+    b.push(format!("function {ns}:tgate_open_{id}"));
+    b.push(format!("function {ns}:tgate_close_{id}"));
+    b.push(format!(
+        "execute store success score #tgd_armed dw.sys if block {} {} {} {}",
+        probe[0], probe[1], probe[2], g.gate_block
+    ));
+    b.push("assert score #tgd_armed dw.sys matches 1".to_string());
+    // Pull the lever: the span clears and the sentinel latches.
+    b.push(format!("function {ns}:tgate_disarm_{id}"));
+    b.push(format!(
+        "execute store success score #tgd_jam dw.sys if block {} {} {} minecraft:air",
+        probe[0], probe[1], probe[2]
+    ));
+    b.push("assert score #tgd_jam dw.sys matches 1".to_string());
+    b.push(format!("assert score #tgdis_{id} dw.sys matches 1"));
+    // Three former cycle boundaries. The assertion lands immediately after the
+    // CLOSE — before the open half runs — because that is the only place the
+    // guard is load-bearing: an unguarded close re-seals here, and an assertion
+    // taken after the following open would be satisfied either way and prove
+    // nothing (measured: the template that asserted after the open passed
+    // against a deliberately unguarded build).
+    for n in 1..=3 {
+        b.push(format!("function {ns}:tgate_close_{id}"));
+        b.push(format!(
+            "execute store success score #tgd_c{n} dw.sys if block {} {} {} minecraft:air",
+            probe[0], probe[1], probe[2]
+        ));
+        b.push(format!("assert score #tgd_c{n} dw.sys matches 1"));
+        // …and the open half of the dead ping-pong is a harmless no-op.
+        b.push(format!("function {ns}:tgate_open_{id}"));
+        b.push(format!(
+            "execute store success score #tgd_o{n} dw.sys if block {} {} {} minecraft:air",
+            probe[0], probe[1], probe[2]
+        ));
+        b.push(format!("assert score #tgd_o{n} dw.sys matches 1"));
+    }
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_timed_gate_disarm.mcfunction"),
+        lines(&b).into_bytes(),
+    );
 }
 
 /// spec-0016 §4 addendum PackTest: a `crush: true` gate's closing edge selects
@@ -13868,10 +14605,20 @@ fn critical_path_json(
                     "action": "kill", "objective": objective_id, "wave": wave_id,
                     "pos": pos, "tag": tag, "count": count
                 }),
-                Step::Collect { objective_id, item, count, pos } => json!({
-                    "action": "collect", "objective": objective_id, "item": item,
-                    "count": count, "pos": pos
-                }),
+                Step::Collect { objective_id, item, count, pos, dropped } => {
+                    let mut v = json!({
+                        "action": "collect", "objective": objective_id, "item": item,
+                        "count": count, "pos": pos
+                    });
+                    // v0.9: present only on a drop-gated collect, so every
+                    // pre-0.9 campaign's `critical-path.json` is byte-identical.
+                    if let Some(w) = dropped
+                        && let Some(obj) = v.as_object_mut()
+                    {
+                        obj.insert("dropped_by".to_string(), json!(w));
+                    }
+                    v
+                }
                 Step::Interact { objective_id, anchor_id, pos, command, requires_item } => json!({
                     "action": "interact", "objective": objective_id, "anchor": anchor_id,
                     "pos": pos, "command": command, "requires_item": requires_item
@@ -14092,6 +14839,7 @@ mod tests {
             facing: Some(delvewright_dsl::Facing::West),
             vulnerable,
             equipment: None,
+            drops: Vec::new(),
             attributes: None,
             tier: None,
         }
@@ -14100,7 +14848,7 @@ mod tests {
     #[test]
     fn puppet_summon_is_noai_no_loot_and_tagged() {
         let a = mk_actor("actor/giant", "minecraft:warden", false);
-        let s = actor_puppet_summon(&a, [10, 65, 20], facing_yaw(Some("west")));
+        let s = actor_puppet_summon("dw", &a, [10, 65, 20], facing_yaw(Some("west")));
         assert!(
             s.starts_with("summon minecraft:warden 10.5 65.0 20.5 "),
             "puppet stands at the CENTRE of its cell, not the four-column corner: {s}"
@@ -14119,7 +14867,7 @@ mod tests {
     #[test]
     fn vulnerable_puppet_is_damageable_but_knockback_immune() {
         let a = mk_actor("actor/creep", "minecraft:zombie", true);
-        let s = actor_puppet_summon(&a, [0, 64, 0], 0);
+        let s = actor_puppet_summon("dw", &a, [0, 64, 0], 0);
         assert!(
             s.contains("Invulnerable:0b"),
             "vulnerable puppet takes damage"
@@ -14137,7 +14885,7 @@ mod tests {
             texture_id: "giant-idle".to_string(),
             model: delvewright_dsl::SkinModel::Wide,
         });
-        let s = actor_puppet_summon(&a, [1, 2, 3], 180);
+        let s = actor_puppet_summon("dw", &a, [1, 2, 3], 180);
         assert!(
             s.starts_with("summon minecraft:mannequin 1.5 2.0 3.5 "),
             "mannequin stands at the centre of its cell: {s}"
@@ -14149,11 +14897,35 @@ mod tests {
     #[test]
     fn twin_summon_has_ai_and_no_puppet_marker() {
         let a = mk_actor("actor/giant", "minecraft:warden", false);
-        let s = actor_twin_summon(&a);
+        let s = actor_twin_summon("dw", &a, "~ ~ ~");
         assert!(s.starts_with("summon minecraft:warden ~ ~ ~ "));
         assert!(!s.contains("NoAI"), "the twin has real AI");
         assert!(s.contains("dw_actor_giant") && !s.contains("dw_pup"));
         assert!(s.contains("PersistenceRequired:1b"));
+    }
+
+    /// v0.9 (task #179): a `despawn-actor` on a drop-declaring actor strips the
+    /// declaration off the body before killing it. `/kill` is an ordinary death
+    /// and a preserved slot survives a non-player kill, so without this a souls
+    /// re-seat would shower the party with the elite's own axe every rest.
+    #[test]
+    fn despawn_strips_declared_drops_first() {
+        let mut cmds = Vec::new();
+        emit_despawn_actor(
+            "actor/giant",
+            delvewright_dsl::DespawnStyle::Kill,
+            true,
+            &mut cmds,
+        );
+        assert_eq!(cmds.len(), 2, "strip then kill: {cmds:?}");
+        assert!(
+            cmds[0].starts_with("execute as @e[tag=dw_actor_giant] run data merge entity @s ")
+                && cmds[0].contains("mainhand:0.0f")
+                && cmds[0].contains("feet:0.0f")
+                && cmds[0].contains("DeathLootTable:\"minecraft:empty\""),
+            "{cmds:?}"
+        );
+        assert_eq!(cmds[1], "kill @e[tag=dw_actor_giant]");
     }
 
     #[test]
@@ -14162,6 +14934,7 @@ mod tests {
         emit_despawn_actor(
             "actor/giant",
             delvewright_dsl::DespawnStyle::Kill,
+            false,
             &mut kill,
         );
         assert_eq!(kill, vec!["kill @e[tag=dw_actor_giant]".to_string()]);
@@ -14169,6 +14942,7 @@ mod tests {
         emit_despawn_actor(
             "actor/giant",
             delvewright_dsl::DespawnStyle::Vanish,
+            false,
             &mut vanish,
         );
         // The drop is relative to each ACTOR, not to the command source — see
@@ -14214,7 +14988,7 @@ mod tests {
             delvewright_dsl::DespawnStyle::Vanish,
         ] {
             let mut cmds = Vec::new();
-            emit_despawn_actor("actor/giant", style, &mut cmds);
+            emit_despawn_actor("actor/giant", style, false, &mut cmds);
             assert!(!cmds.is_empty());
             for c in &cmds {
                 assert!(
@@ -14239,7 +15013,7 @@ mod tests {
         let a = mk_actor("actor/giant", "minecraft:warden", false);
         let spawn = format!(
             "execute unless entity @e[tag=dw_actor_giant] run {}",
-            actor_puppet_summon(&a, [0, 64, 0], 0)
+            actor_puppet_summon("dw", &a, [0, 64, 0], 0)
         );
         assert!(
             spawn.starts_with("execute unless entity @e[tag=dw_actor_giant] run summon "),
@@ -14387,6 +15161,7 @@ mod loot_emit_tests {
             equipment: eq,
             attributes: None,
             tier: None,
+            drops: Vec::new(),
         }
     }
 
@@ -14420,9 +15195,9 @@ mod loot_emit_tests {
     fn an_unequipped_actor_is_byte_identical() {
         let a = actor_with(None);
         assert_eq!(actor_equipment(&a), None);
-        let puppet = actor_puppet_summon(&a, [1, 2, 3], 0);
+        let puppet = actor_puppet_summon("dw", &a, [1, 2, 3], 0);
         assert!(!puppet.contains("equipment:"), "{puppet}");
-        assert!(!actor_twin_summon(&a).contains("equipment:"));
+        assert!(!actor_twin_summon("dw", &a, "~ ~ ~").contains("equipment:"));
     }
 
     /// The gear rides on BOTH bodies — the dormant puppet and the twin that
@@ -14430,8 +15205,8 @@ mod loot_emit_tests {
     #[test]
     fn equipment_lands_on_both_the_puppet_and_the_twin() {
         let a = actor_with(Some(full_kit()));
-        let puppet = actor_puppet_summon(&a, [1, 2, 3], 0);
-        let twin = actor_twin_summon(&a);
+        let puppet = actor_puppet_summon("dw", &a, [1, 2, 3], 0);
+        let twin = actor_twin_summon("dw", &a, "~ ~ ~");
         for s in [&puppet, &twin] {
             assert!(
                 s.contains(
