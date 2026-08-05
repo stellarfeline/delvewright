@@ -54,7 +54,11 @@ squad marched its lane and killed the bot beside a fire it had just rested at):
   for every wave/actor hostile, `distance(bonfire, spawn cell or lane path)` must
   exceed that hostile's `follow_range` (the declared value; the default if
   undeclared). **Error tier** — a bonfire inside aggro range is a
-  soft-lock/despair machine, because you respawn into combat.
+  soft-lock/despair machine, because you respawn into combat. Amendment (owner
+  decision 2026-08-04): a lane's distance term is `follow_range` + the measured
+  marching drift (7.9 blocks, td-routing-spike dossier max off-lane deviation) —
+  a marching squad is a corridor around its polyline, not a line; stationary
+  spawn/staging cells keep the plain term.
 
 Proofs: the stationed re-seat holds because the re-seat re-enters through the
 wave's own `spawn_<wave>`, which is where every piece of stationed state is

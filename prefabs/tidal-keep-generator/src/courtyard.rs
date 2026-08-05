@@ -143,18 +143,32 @@ pub fn build(g: &mut Grid, seed: u64) {
     }
 
     // ---- 4. Chapel fixtures: hearth (BF2), cracked bell, altar --------------
-    // hearth in the north wall of the nave
-    g.carve(bx(32, 34, KEEP_WALK, KEEP_WALK + 3, CH_Z0 + 1, CH_Z0 + 2));
+    // Hearth in the SOUTH wall, at the far (east) end of the nave, beside the
+    // undercroft door — the last fire before the drowned way down.
+    //
+    // Where it may stand is a `DW0478` constraint (owner ruling 2026-08-04, task
+    // #132), not composition: the gate-breach siege lane (`aggro_radius` 16) ends
+    // at `anchor/l2-lane-gate-3` (16,_,19) out in the yard, and a marching squad
+    // is a corridor around its polyline — the measured 7.9-block drift — so the
+    // fire must clear the lane by more than 23.9 blocks. The hearth's first home
+    // in the north wall at (33,_,12) put its rest cell 18.0 blocks out, inside
+    // the marching squad's reach. The chapel's east corners are the only cells
+    // that clear it: the rest cell now sits at (41,_,25), 25.7 blocks from the
+    // lane end. That is the most this room can give — no interior cell exceeds
+    // ~27 blocks — so the margin is 1.8 blocks and comes from geometry, not from
+    // taste. It is also the better fire: the party regroups at the head of the
+    // stair they are about to go down, not in the corner the breach opens onto.
+    g.carve(bx(40, 42, KEEP_WALK, KEEP_WALK + 3, CH_Z1 - 2, CH_Z1 - 1));
     g.blk(
-        33,
+        41,
         KEEP_WALK,
-        CH_Z0 + 2,
+        CH_Z1 - 2,
         "minecraft:campfire",
-        Some(vec![("lit", "true"), ("facing", "south")]),
+        Some(vec![("lit", "true"), ("facing", "north")]),
     );
-    for x in [32, 34] {
+    for x in [40, 42] {
         for y in KEEP_WALK..=(KEEP_WALK + 3) {
-            g.blk(x, y, CH_Z0 + 2, "minecraft:mossy_cobblestone", None);
+            g.blk(x, y, CH_Z1 - 2, "minecraft:mossy_cobblestone", None);
         }
     }
     // the cracked bell: a bell hung in a stone-and-timber frame mid-nave
@@ -383,7 +397,8 @@ pub fn anchors() -> Vec<(&'static str, AnchorJson)> {
     vec![
         ("anchor/l2-gate-door", a_pos([23, y, 41], "south")),
         ("anchor/l2-muster", a_pos(MUSTER, "south")),
-        ("anchor/l2-bonfire", a_pos([33, y, 13], "north")),
+        // 25.7 blocks from the gate lane's end — the `DW0478` clearance.
+        ("anchor/l2-bonfire", a_pos([41, y, 25], "north")),
         ("anchor/l2-cracked-bell", a_pos([37, y, 23], "north")),
         ("anchor/l2-altar", a_pos([40, y, 15], "east")),
         ("anchor/l2-chapel-door", a_pos([27, y, 19], "east")),

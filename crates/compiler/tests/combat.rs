@@ -505,6 +505,117 @@ fn a_staged_but_never_unleashed_puppet_is_scenery_not_a_fight() {
 }
 
 #[test]
+fn an_untiered_hostile_actor_lands_in_not_covered() {
+    // Task #121: the ledger's own blind spot. The campaign unleashes a real-AI
+    // body on the party and declares nothing about it, so before this it
+    // appeared on NEITHER side — and an empty ledger reads as "everything is
+    // covered" when it means "nothing was even assessed".
+    let tmp = TempCampaign::new();
+    let mut untiered = barrow_warden();
+    untiered.as_object_mut().unwrap().remove("tier");
+    let (json, diags, _) = build_with_actor(&tmp, untiered, vec![unleash_trigger()]);
+
+    // It is not a TIERED actor, so it stays out of the trial array…
+    assert!(json["actors"].as_array().unwrap().is_empty(), "{json}");
+    // …and it is not covered, with `tier: null` saying why in one field.
+    let not_covered = &json["floor_gate"]["not_covered"][0];
+    assert_eq!(not_covered["kind"], "actor");
+    assert_eq!(not_covered["id"], "actor/barrow-warden");
+    assert!(not_covered["tier"].is_null(), "{json}");
+    assert!(
+        not_covered["reason"].as_str().unwrap().contains("UNTIERED"),
+        "the reason must name the omission: {json}"
+    );
+    assert!(
+        json["floor_gate"]["covered"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|e| e["id"] != "actor/barrow-warden"),
+        "{json}"
+    );
+    // DW0477 is about a BILLING the gate cannot hold; nothing was billed here,
+    // so the ledger line is the whole record and no warning is raised.
+    assert!(!has_code(&diags, "DW0477"), "{diags:#?}");
+}
+
+#[test]
+fn a_staged_untiered_puppet_is_not_a_hostile() {
+    // Hostility is "unleashed", the same rule the die-retry / assist machinery
+    // uses: a staged puppet is `NoAI` and knockback-immune, so it never attacks
+    // and there is nothing for the gate to have assessed. Scenery must not fill
+    // the ledger, or the ledger stops being readable.
+    let tmp = TempCampaign::new();
+    let mut untiered = barrow_warden();
+    untiered.as_object_mut().unwrap().remove("tier");
+    untiered["vulnerable"] = serde_json::json!(true);
+    let spawn_only = serde_json::json!({
+        "id": "trigger/warden-kneels",
+        "on": { "on": "strike-npc", "npc": "npc/keeper" },
+        "once": true,
+        "effects": [{ "type": "spawn-actor", "actor": "actor/barrow-warden" }]
+    });
+    let (json, _, _) = build_with_actor(&tmp, untiered, vec![spawn_only]);
+    assert!(
+        json["floor_gate"]["not_covered"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "{json}"
+    );
+}
+
+#[test]
+fn an_untiered_hostile_is_reason_enough_to_ship_a_ledger() {
+    // hello-world has no `kill` step and no tiered actor, so it emitted NO
+    // combat plan and the run report said `present: false` — "this build cannot
+    // tell you". Unleash one unbilled body in it and that answer becomes a lie
+    // by omission, so the ledger must ship. (The campaign with no fight at all
+    // still emits nothing — `a_combat_free_campaign_emits_no_combat_plan` — and
+    // that is what keeps `present: false` meaningful.)
+    let tmp = TempCampaign::new();
+    common::materialize_from(
+        &common::hello_world_dir(),
+        &serde_json::json!({}),
+        tmp.path(),
+    );
+    let quests_path = tmp.path().join("quests.json");
+    let mut quests: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&quests_path).unwrap()).unwrap();
+    quests["dsl_version"] = serde_json::json!("0.8.0");
+    quests["content"]["actors"] = serde_json::json!([{
+        "id": "actor/barrow-warden",
+        "entity": "minecraft:wither_skeleton",
+        "anchor": "anchor/exit",
+    }]);
+    quests["content"]["triggers"] = serde_json::json!([{
+        "id": "trigger/warden-answers",
+        "on": { "on": "strike-npc", "npc": "npc/keeper" },
+        "once": true,
+        "effects": [
+            { "type": "spawn-actor", "actor": "actor/barrow-warden" },
+            { "type": "unleash-actor", "actor": "actor/barrow-warden" }
+        ]
+    }]);
+    std::fs::write(&quests_path, serde_json::to_string_pretty(&quests).unwrap()).unwrap();
+
+    let (out, _) = build(tmp.path()).expect("an untiered hostile builds");
+    let json: serde_json::Value = serde_json::from_slice(
+        out.get("validation/combat-plan.json")
+            .expect("an untiered hostile is reason enough to ship the ledger"),
+    )
+    .unwrap();
+    assert_eq!(
+        json["floor_gate"]["not_covered"][0]["id"],
+        "actor/barrow-warden"
+    );
+    assert!(
+        json["floor_gate"]["not_covered"][0]["tier"].is_null(),
+        "{json}"
+    );
+}
+
+#[test]
 fn an_optional_tiered_wave_is_uncovered_too() {
     // The same silence, on the shape that already had a `tier`: `wave/ambush`
     // has no `kill` objective, so billing it `elite` claims something no proof

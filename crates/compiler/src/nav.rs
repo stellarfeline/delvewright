@@ -176,6 +176,225 @@ pub const DW_ACTOR_UNROUTABLE: &str = "DW0325";
 /// — this fires only when the sealed world admits no route.
 pub const DW_GATE_TIMELINE: &str = "DW0410";
 
+/// `DW0488`: one content-keyed walk driver is shared by occurrences that do not
+/// stand in the same place when they fire, so the shared driver's first waypoint
+/// is the wrong cell for at least one of them and that occurrence opens with a
+/// teleport.
+///
+/// `move-npc` / `move-actor` drivers are deduped by `(body, to_anchor)` — two
+/// beats that walk the same character to the same mark share one emitted
+/// function, and that function's waypoint polyline starts where the FIRST
+/// occurrence's branch leaves the body. That was a documented limitation for as
+/// long as the dedup existed; it is a diagnostic now because the failure it
+/// produces is invisible in the DSL and unmistakable on a server (the body
+/// vanishes from where it stood and re-appears at the other occurrence's
+/// origin).
+///
+/// Distinct from [`DW_MOVE_UNROUTABLE`]/[`DW_ACTOR_UNROUTABLE`], which fire when
+/// a leg has no route at all: here every leg is perfectly routable and the defect
+/// is that they cannot share one route.
+pub const DW_MOVE_ORIGIN_SHARED: &str = "DW0488";
+
+/// The branch condition a staging effect fires under: the per-effect
+/// `requires_flags` / `forbids_flags` gate (DSL v0.6).
+///
+/// This exists because walk origins **chain** — each leg starts where the body's
+/// previous leg left it — and that chain used to be a single flat sequence per
+/// body, walked in campaign effect order with no regard for which branch each leg
+/// belonged to. Owner playtest, island round 15: choosing to *wait* teleported
+/// Eurylochus out of the cave down to the beach and walked him 35 seconds back
+/// up, because the `flag/flee`-gated leg to the gangplank — a leg that cannot
+/// fire on the branch the player took — had overwritten the origin the
+/// `flag/wait`-gated leg to the alcove inherited. `npc/perimedes` had the same
+/// defect on the same branch, unreported.
+///
+/// The rule this type enforces is the compiler's usual one (see
+/// [`crate::continuity`]): chain only from what is **provably** already true.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BranchGate {
+    /// Flags that must be set for the effect to fire.
+    requires: BTreeSet<String>,
+    /// Flags that must be unset for the effect to fire.
+    forbids: BTreeSet<String>,
+}
+
+impl BranchGate {
+    /// The gate an effect carries.
+    fn of(eff: &QuestEffect) -> Self {
+        Self {
+            requires: eff
+                .requires_flags()
+                .iter()
+                .map(|f| f.as_str().to_string())
+                .collect(),
+            forbids: eff
+                .forbids_flags()
+                .iter()
+                .map(|f| f.as_str().to_string())
+                .collect(),
+        }
+    }
+
+    /// Whether the effect is unconditional (always fires).
+    fn is_unconditional(&self) -> bool {
+        self.requires.is_empty() && self.forbids.is_empty()
+    }
+
+    /// Does this gate provably hold on **every** timeline where `other` fires?
+    ///
+    /// True when `other`'s conditions are a superset of this one's: a leg gated on
+    /// nothing always fired; a leg gated on `flag/flee` has provably fired by the
+    /// time another `flag/flee` leg runs. It is deliberately *not* true for two
+    /// legs gated on different flags — `flag/wait` does not prove `flag/flee`, so
+    /// the flee leg is skipped when chaining into the wait leg, which is exactly
+    /// the fix.
+    ///
+    /// The direction is conservative on purpose. The compiler cannot prove two
+    /// flags are mutually exclusive (nothing in the DSL says `flag/wait` and
+    /// `flag/flee` cannot both be set), so this never *asserts* that a skipped
+    /// leg did not fire — it only declines to assume that it did, and falls back
+    /// to the most recent staging the branch does prove. That can only ever move
+    /// an origin from "certainly wrong on this branch" to "correct on the branch
+    /// the DSL describes"; it cannot invent a route.
+    fn implied_by(&self, other: &BranchGate) -> bool {
+        self.requires.is_subset(&other.requires) && self.forbids.is_subset(&other.forbids)
+    }
+}
+
+/// The **driver-name suffix** a branch gate contributes.
+///
+/// A walk driver is content-keyed by the body and its destination, and that key
+/// used to be the whole story. It is not: two beats can legitimately walk the
+/// same character to the same mark **from different places**, one per branch —
+/// the island's Eurylochus reaches `anchor/gangplank` from the cave if the party
+/// flees at the cheese, and from the upper sheep pen if they stay and escape
+/// under the rams. Both are correct content; one emitted driver cannot carry
+/// both origins, and before this the second beat silently ran the first beat's
+/// polyline, teleporting the body across the map to start.
+///
+/// Including the gate in the key gives each branch its own driver. Unconditional
+/// walks contribute the **empty** suffix, so every campaign that never gated a
+/// walk keeps byte-identical function names.
+pub fn gate_key(eff: &QuestEffect) -> String {
+    BranchGate::of(eff).key()
+}
+
+impl BranchGate {
+    /// A short, deterministic, filename-safe key for this gate ("" when
+    /// unconditional). Derived from the sorted flag names, so it cannot depend on
+    /// declaration order or map iteration.
+    fn key(&self) -> String {
+        if self.is_unconditional() {
+            return String::new();
+        }
+        let mut acc: u64 = 0xcbf2_9ce4_8422_2325;
+        for (tag, set) in [("+", &self.requires), ("-", &self.forbids)] {
+            for f in set {
+                for b in tag.bytes().chain(f.bytes()) {
+                    acc ^= b as u64;
+                    acc = acc.wrapping_mul(0x0000_0100_0000_01b3);
+                }
+            }
+        }
+        format!("_b{acc:08x}")
+    }
+}
+
+/// One staged position for a body, and the branch condition it was staged under.
+#[derive(Clone, Debug)]
+struct Staging {
+    /// The branch this staging happened on.
+    gate: BranchGate,
+    /// Where it left the body (snapped floor cell).
+    pos: [i32; 3],
+    /// The facing it left the body in, when the leg planned one.
+    yaw: Option<i32>,
+}
+
+/// The staging history of every walked body, in campaign effect order.
+type StagingHistory = BTreeMap<String, Vec<Staging>>;
+
+/// The most recent staging of `body` that provably already happened on the branch
+/// a leg gated by `gate` runs on — the origin that leg's walk must start from.
+///
+/// Walks the history backwards and takes the first entry whose own gate is
+/// implied by `gate`. `None` means nothing in the history is provable on this
+/// branch, and the caller falls back to the body's declared home anchor — the
+/// pre-chaining behaviour, which is right precisely when no prior leg is proven.
+fn chained_staging<'a>(
+    history: &'a StagingHistory,
+    body: &str,
+    gate: &BranchGate,
+) -> Option<&'a Staging> {
+    history
+        .get(body)?
+        .iter()
+        .rev()
+        .find(|s| s.gate.implied_by(gate))
+}
+
+/// Record where a leg left a body, on the branch it ran on.
+fn record_staging(
+    history: &mut StagingHistory,
+    body: &str,
+    gate: BranchGate,
+    pos: [i32; 3],
+    yaw: Option<i32>,
+) {
+    history
+        .entry(body.to_string())
+        .or_default()
+        .push(Staging { gate, pos, yaw });
+}
+
+/// `DW0488` for a deduped occurrence whose branch-correct origin is not the one
+/// the shared driver was planned from.
+fn shared_origin_error(
+    verb: &str,
+    body: &str,
+    to_anchor: &str,
+    planned_from: [i32; 3],
+    planned_gate: &BranchGate,
+    actual_from: [i32; 3],
+    this_gate: &BranchGate,
+) -> NavError {
+    let describe = |g: &BranchGate| {
+        if g.is_unconditional() {
+            "unconditionally".to_string()
+        } else {
+            let mut parts = Vec::new();
+            if !g.requires.is_empty() {
+                parts.push(format!(
+                    "requires {}",
+                    g.requires.iter().cloned().collect::<Vec<_>>().join(", ")
+                ));
+            }
+            if !g.forbids.is_empty() {
+                parts.push(format!(
+                    "forbids {}",
+                    g.forbids.iter().cloned().collect::<Vec<_>>().join(", ")
+                ));
+            }
+            format!("when it {}", parts.join(" and "))
+        }
+    };
+    NavError {
+        code: DW_MOVE_ORIGIN_SHARED,
+        message: format!(
+            "{verb}: `{body}` walks to `{to_anchor}` from two different places, but both beats \
+             share ONE emitted walk driver, so one of them opens by teleporting the body across \
+             the map. The driver is planned from {planned_from:?} (the occurrence that fires \
+             {}), while the occurrence that fires {} leaves the body at {actual_from:?}. A walk \
+             driver is content-keyed by `(body, destination)`, so it can carry only one origin. \
+             Prescription: give the two beats distinct destinations (a second anchor a step apart \
+             reads identically in play), or walk the body to a shared staging mark first so both \
+             occurrences start from the same cell",
+            describe(planned_gate),
+            describe(this_gate),
+        ),
+    }
+}
+
 /// Default NPC walking speed in blocks/tick (spec-0008 §5; owner spike). Used when
 /// a `move-npc` effect omits `speed`.
 pub const DEFAULT_SPEED: f64 = 0.15;
@@ -318,6 +537,9 @@ pub struct MovePlan {
     /// (see [`yaws_along`]). Without it a tp'd body keeps a stale yaw and glides
     /// backwards — owner playtest, island round 13.
     pub yaws: Vec<i32>,
+    /// The branch-gate component of this driver's content key ([`gate_key`]);
+    /// empty for an unconditional walk.
+    pub gate_key: String,
 }
 
 impl MovePlan {
@@ -1347,23 +1569,30 @@ fn move_target(plan: &Plan, npc_id: &str, to_anchor: &str) -> Option<[i32; 3]> {
 /// cannot pass a closed gate on its own.
 pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError> {
     let mut out = Vec::new();
-    let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut seen: BTreeSet<(String, String, String)> = BTreeSet::new();
     // Chained origins (round-6): each NPC's next walk starts from its LAST staged
     // location — the previous move's (snapped) target — not its declared anchor.
     // Planning every leg from the declared anchor made a second consecutive
     // `move-npc` on the same NPC degenerate (worst case start == target → a
-    // single-waypoint instant teleport instead of a walk). Keyed by npc id, in
-    // campaign effect order (the same deterministic order the dedup uses).
-    let mut chained_start: BTreeMap<String, [i32; 3]> = BTreeMap::new();
-    // Facing chains with position: the yaw a leg ends on is the yaw the next leg
-    // starts from (the seed `yaws_along` uses before the first horizontal step).
-    let mut chained_yaw: BTreeMap<String, i32> = BTreeMap::new();
+    // single-waypoint instant teleport instead of a walk).
+    //
+    // The chain is **branch-aware** (island round 16): a leg only inherits an
+    // origin a leg on its own branch actually produced, so a `flag/flee`-gated
+    // walk can no longer hand its destination to the `flag/wait`-gated walk that
+    // follows it in declaration order. See [`BranchGate`] for the defect this
+    // fixes and why the rule is stated as implication rather than exclusion.
+    let mut history: StagingHistory = StagingHistory::new();
     // The cell route planned for each `(npc, to_anchor)` driver, so a deduped
     // repeat occurrence can be re-checked against its own timeline's seals.
-    let mut planned: BTreeMap<(String, String), Vec<[i32; 3]>> = BTreeMap::new();
+    let mut planned: BTreeMap<(String, String, String), Vec<[i32; 3]>> = BTreeMap::new();
     // The yaw each planned driver ends on, so a deduped repeat chains the same
     // facing forward as the first occurrence did.
-    let mut planned_end_yaw: BTreeMap<(String, String), i32> = BTreeMap::new();
+    let mut planned_end_yaw: BTreeMap<(String, String, String), i32> = BTreeMap::new();
+    // The origin each driver was planned from, and the branch of the occurrence
+    // that planned it — so a deduped occurrence standing somewhere else is
+    // `DW0488` instead of a silent teleport.
+    let mut planned_origin: BTreeMap<(String, String, String), ([i32; 3], BranchGate)> =
+        BTreeMap::new();
     let mut cache = SealCache::default();
     for (eff, seal) in crate::timeline::walk(plan) {
         let QuestEffect::MoveNpc {
@@ -1375,6 +1604,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
         else {
             continue;
         };
+        let gate = BranchGate::of(eff);
         // The world this walk actually happens in: gates this timeline already
         // shut are solid. Empty seal ⇒ the base world, unchanged.
         let leg_world: &World = match cache.index_of(world, &seal) {
@@ -1404,7 +1634,12 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
                     to_anchor.as_str(),
                 ),
             })?;
-        let key = (npc.as_str().to_string(), to_anchor.as_str().to_string());
+        let gkey = gate.key();
+        let key = (
+            npc.as_str().to_string(),
+            to_anchor.as_str().to_string(),
+            gkey.clone(),
+        );
         if !seen.insert(key.clone()) {
             // Deduped: shares the first occurrence's driver, so it walks the
             // already-planned path — which must still be clear under THIS
@@ -1424,16 +1659,39 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
                     ));
                 }
             }
+            // This occurrence walks the driver the FIRST occurrence planned, so
+            // it starts at that driver's origin — which is only correct if this
+            // occurrence's own branch leaves the body there too (`DW0488`).
+            if let Some((planned_from, planned_gate)) = planned_origin.get(&key) {
+                let here = chained_staging(&history, npc.as_str(), &gate).map(|s| s.pos);
+                if let Some(here) = here
+                    && here != *planned_from
+                {
+                    return Err(shared_origin_error(
+                        "move-npc",
+                        npc.as_str(),
+                        to_anchor.as_str(),
+                        *planned_from,
+                        planned_gate,
+                        here,
+                        &gate,
+                    ));
+                }
+            }
             // The walk still ends here, so the NPC's next leg chains from this
             // target — and from the facing the shared driver leaves the body in.
-            chained_start.insert(npc.as_str().to_string(), target);
-            if let Some(y) = planned_end_yaw.get(&key) {
-                chained_yaw.insert(npc.as_str().to_string(), *y);
-            }
+            record_staging(
+                &mut history,
+                npc.as_str(),
+                gate,
+                target,
+                planned_end_yaw.get(&key).copied(),
+            );
             continue;
         }
-        let start = match chained_start.get(npc.as_str()) {
-            Some(pos) => *pos,
+        let prior = chained_staging(&history, npc.as_str(), &gate);
+        let start = match prior.map(|s| s.pos) {
+            Some(pos) => pos,
             None => {
                 let home = npc_start(plan, npc.as_str()).ok_or_else(|| NavError {
                     code: DW_MOVE_UNROUTABLE,
@@ -1449,6 +1707,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
                 leg_world.snap_standable(home, SNAP_RADIUS).unwrap_or(home)
             }
         };
+        let seed_yaw = prior.and_then(|s| s.yaw);
         let cells = match leg_world.find_path(start, target) {
             Some(cells) => cells,
             // Routable open, unroutable sealed ⇒ this timeline's own `close-gate`
@@ -1479,19 +1738,17 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
                 });
             }
         };
-        chained_start.insert(npc.as_str().to_string(), target);
         planned.insert(key.clone(), cells.clone());
+        planned_origin.insert(key.clone(), (start, gate.clone()));
         let waypoints = resample(&cells, speed.unwrap_or(DEFAULT_SPEED));
-        // Seed: the facing this body already has — the previous leg's exit yaw if
-        // this NPC has walked before, else the yaw its summon gave it (the home
-        // anchor's declared facing, `emit::npc_summon_commands`).
-        let seed = chained_yaw
-            .get(npc.as_str())
-            .copied()
-            .unwrap_or_else(|| npc_spawn_yaw(plan, npc.as_str()));
+        // Seed: the facing this body already has — the exit yaw of the previous
+        // leg **on this branch** if this NPC has walked before, else the yaw its
+        // summon gave it (the home anchor's declared facing,
+        // `emit::npc_summon_commands`).
+        let seed = seed_yaw.unwrap_or_else(|| npc_spawn_yaw(plan, npc.as_str()));
         let yaws = yaws_along(&waypoints, seed);
         let end_yaw = yaws.last().copied().unwrap_or(seed);
-        chained_yaw.insert(npc.as_str().to_string(), end_yaw);
+        record_staging(&mut history, npc.as_str(), gate, target, Some(end_yaw));
         planned_end_yaw.insert(key, end_yaw);
         out.push(MovePlan {
             npc: npc.as_str().to_string(),
@@ -1499,6 +1756,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
             target,
             waypoints,
             yaws,
+            gate_key: gkey,
         });
     }
     Ok(out)
@@ -1544,6 +1802,9 @@ pub struct ActorMovePlan {
     pub waypoints: Vec<[f64; 3]>,
     /// Per-waypoint yaw (degrees), tangent to the path (facing the next step).
     pub yaws: Vec<i32>,
+    /// The branch-gate component of this driver's content key ([`gate_key`]);
+    /// empty for an unconditional walk.
+    pub gate_key: String,
 }
 
 impl ActorMovePlan {
@@ -1736,7 +1997,7 @@ fn gate_timeline_error(
 /// driver will actually walk.
 pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>, NavError> {
     let mut out = Vec::new();
-    let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut seen: BTreeSet<(String, String, String)> = BTreeSet::new();
     // Chained origins (round-6, live-server proven): a SECOND consecutive
     // `move-actor` on the same actor must start from the actor's CURRENT staged
     // location — the previous move's (snapped) target — not its declared spawn
@@ -1745,14 +2006,20 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
     // (start == declared anchor == target), so the giant snapped instead of
     // walking on camera. Keyed by actor id, in campaign effect order (the same
     // deterministic order the dedup uses).
-    let mut chained_start: BTreeMap<String, [i32; 3]> = BTreeMap::new();
-    // Facing chains with position (see `plan_moves`).
-    let mut chained_yaw: BTreeMap<String, i32> = BTreeMap::new();
+    // Branch-aware, exactly as `plan_moves` (island round 16 / task #126): a
+    // puppet leg inherits only an origin its own branch produced. The-wake's bier
+    // walked to the tide line from the GROUND branch's grave for the same reason
+    // the island's Eurylochus walked from the beach.
+    let mut history: StagingHistory = StagingHistory::new();
     // The cell route planned for each `(actor, to_anchor)` driver, so a deduped
     // repeat occurrence can be re-checked against its own timeline's seals.
-    let mut planned: BTreeMap<(String, String), Vec<[i32; 3]>> = BTreeMap::new();
+    let mut planned: BTreeMap<(String, String, String), Vec<[i32; 3]>> = BTreeMap::new();
     // The yaw each planned driver ends on, so a deduped repeat chains it forward.
-    let mut planned_end_yaw: BTreeMap<(String, String), i32> = BTreeMap::new();
+    let mut planned_end_yaw: BTreeMap<(String, String, String), i32> = BTreeMap::new();
+    // The origin each driver was planned from + the branch that planned it, for
+    // `DW0488`.
+    let mut planned_origin: BTreeMap<(String, String, String), ([i32; 3], BranchGate)> =
+        BTreeMap::new();
     let mut cache = SealCache::default();
     for (eff, seal) in crate::timeline::walk(plan) {
         let QuestEffect::MoveActor {
@@ -1764,6 +2031,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         else {
             continue;
         };
+        let gate = BranchGate::of(eff);
         // The world this walk actually happens in: gates this timeline already
         // shut are solid. Empty seal ⇒ the base world, unchanged.
         let leg_world: &World = match cache.index_of(world, &seal) {
@@ -1800,7 +2068,12 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                     actor.as_str()
                 ),
             })?;
-        let key = (actor.as_str().to_string(), to_anchor.as_str().to_string());
+        let gkey = gate.key();
+        let key = (
+            actor.as_str().to_string(),
+            to_anchor.as_str().to_string(),
+            gkey.clone(),
+        );
         if !seen.insert(key.clone()) {
             // Deduped: this occurrence shares the first occurrence's content-keyed
             // driver, so the path it walks is the one already planned. It still has
@@ -1822,16 +2095,38 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                     ));
                 }
             }
+            // Shared driver, so this occurrence starts at the origin the first
+            // one planned — correct only if this branch leaves the puppet there.
+            if let Some((planned_from, planned_gate)) = planned_origin.get(&key) {
+                let here = chained_staging(&history, actor.as_str(), &gate).map(|s| s.pos);
+                if let Some(here) = here
+                    && here != *planned_from
+                {
+                    return Err(shared_origin_error(
+                        "move-actor",
+                        actor.as_str(),
+                        to_anchor.as_str(),
+                        *planned_from,
+                        planned_gate,
+                        here,
+                        &gate,
+                    ));
+                }
+            }
             // The walk still ends here, so the actor's next leg chains from this
             // target — and from the facing the shared driver leaves the puppet in.
-            chained_start.insert(actor.as_str().to_string(), target);
-            if let Some(y) = planned_end_yaw.get(&key) {
-                chained_yaw.insert(actor.as_str().to_string(), *y);
-            }
+            record_staging(
+                &mut history,
+                actor.as_str(),
+                gate,
+                target,
+                planned_end_yaw.get(&key).copied(),
+            );
             continue;
         }
-        let start = match chained_start.get(actor.as_str()) {
-            Some(pos) => *pos,
+        let prior = chained_staging(&history, actor.as_str(), &gate);
+        let start = match prior.map(|s| s.pos) {
+            Some(pos) => pos,
             None => {
                 let start_anchor =
                     actor_anchor_pos(plan, a.anchor.as_str()).ok_or_else(|| NavError {
@@ -1882,18 +2177,18 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                 });
             }
         };
-        chained_start.insert(actor.as_str().to_string(), target);
         planned.insert(key.clone(), cells.clone());
+        planned_origin.insert(key.clone(), (start, gate.clone()));
         let waypoints = resample(&cells, speed.unwrap_or(DEFAULT_SPEED));
-        // Seed: the facing the puppet already has — the previous leg's exit yaw,
-        // else the actor's declared spawn `facing` (`emit::actor_facing_yaw`).
-        let seed = chained_yaw
-            .get(actor.as_str())
-            .copied()
+        // Seed: the facing the puppet already has — the exit yaw of the previous
+        // leg **on this branch**, else the actor's declared spawn `facing`
+        // (`emit::actor_facing_yaw`).
+        let seed = prior
+            .and_then(|s| s.yaw)
             .unwrap_or_else(|| crate::emit::facing_yaw(a.facing.map(|f| f.token())));
         let yaws = yaws_along(&waypoints, seed);
         let end_yaw = yaws.last().copied().unwrap_or(seed);
-        chained_yaw.insert(actor.as_str().to_string(), end_yaw);
+        record_staging(&mut history, actor.as_str(), gate, target, Some(end_yaw));
         planned_end_yaw.insert(key, end_yaw);
         out.push(ActorMovePlan {
             actor: actor.as_str().to_string(),
@@ -1901,6 +2196,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
             target,
             waypoints,
             yaws,
+            gate_key: gkey,
         });
     }
     Ok(out)
@@ -2214,9 +2510,17 @@ struct VisitedPos {
 }
 
 fn critical_positions(plan: &Plan) -> Vec<VisitedPos> {
+    positions_of(&plan.critical_path, &plan.critical_path_transport)
+}
+
+/// [`critical_positions`] over an arbitrary exported step list — the shared core,
+/// split out (task #117) so a spec-0025 **branch path** (a different sequence of
+/// the same step shapes, with its own transport markers) yields its own visited
+/// positions in its own step space. `src_step` indices are indices into `steps`.
+fn positions_of(steps: &[Step], transports: &[Option<[i32; 3]>]) -> Vec<VisitedPos> {
     let mut out = Vec::new();
     let mut transport_pending = false;
-    for (i, step) in plan.critical_path.iter().enumerate() {
+    for (i, step) in steps.iter().enumerate() {
         let pos = match step {
             Step::TalkTo { pos, .. }
             | Step::Reach { pos, .. }
@@ -2237,12 +2541,7 @@ fn critical_positions(plan: &Plan) -> Vec<VisitedPos> {
         // A transport marker on step `i` teleports the player when that step's
         // objective completes — i.e. before the *next* visited position is reached,
         // so the move INTO that next position is a ride, not a walk to validate.
-        if plan
-            .critical_path_transport
-            .get(i)
-            .and_then(|t| *t)
-            .is_some()
-        {
+        if transports.get(i).and_then(|t| *t).is_some() {
             transport_pending = true;
         }
     }
@@ -2883,6 +3182,17 @@ pub fn plan_lanes(plan: &Plan, world: &World) -> Result<LaneRoutes, NavError> {
     Ok(out)
 }
 
+/// The measured off-lane drift of a marching TD squad, in blocks — the constraint
+/// source is the td-routing-spike dossier (`docs/notes/td-routing-spike.md`,
+/// "Lane fidelity": followers deviate mean ≤3.2, **max 7.9** blocks off the lane
+/// polyline, 116 samples). A marching squad is a CORRIDOR around its polyline,
+/// not a line: a placement can clear the centre-line by 2 blocks and still stand
+/// inside the marching mobs' real aggro reach — run nine's live death at 17.7
+/// blocks from a 16-`follow_range` lane. `DW0478`'s lane term is therefore
+/// `follow_range + LANE_MARCH_DRIFT` (owner ruling 2026-08-04); stationary
+/// spawn/staging cells keep the plain `follow_range` term.
+pub const LANE_MARCH_DRIFT: f64 = 7.9;
+
 /// One hostile force as the bonfire safe-zone proof (`DW0478`) sees it: a
 /// perception radius plus every cell the force provably occupies.
 #[derive(Clone, Debug)]
@@ -2895,8 +3205,11 @@ pub struct AggroSource {
     pub radius: f64,
     /// Why this radius is the number it is, for the message.
     pub radius_source: &'static str,
-    /// Every occupied cell, each labelled with what it is.
-    pub cells: Vec<(&'static str, [i32; 3])>,
+    /// Every occupied cell: what it is, where it is, and the extra reach margin
+    /// added on top of `radius` — `0.0` for a stationary cell (seated spawn,
+    /// staging anchor), [`LANE_MARCH_DRIFT`] for a lane path cell, because the
+    /// squad marches a corridor around the polyline, not the polyline itself.
+    pub cells: Vec<(&'static str, [i32; 3], f64)>,
 }
 
 /// `DW0478`: **no bonfire may sit inside any hostile's aggro range** (spec-0016
@@ -2905,7 +3218,10 @@ pub struct AggroSource {
 /// The rule, verbatim: for every wave / actor hostile, the distance from the
 /// bonfire cell to that hostile's spawn cell — or to any cell of its lane path —
 /// must EXCEED that hostile's `follow_range` (the declared attribute; the
-/// documented default when undeclared).
+/// documented default when undeclared). For a **lane path cell** the term is
+/// `follow_range + `[`LANE_MARCH_DRIFT`] (owner ruling 2026-08-04): the squad
+/// marches a measured corridor around the polyline, so the centre-line distance
+/// understates its real aggro reach. Stationary cells keep the plain term.
 ///
 /// What "occupies" means per force:
 /// * a plain wave — its DW0312-proven seated spawn cells (where the datapack
@@ -2914,9 +3230,11 @@ pub struct AggroSource {
 /// * a **lane** wave — those cells PLUS the marched polyline: every cell of every
 ///   A*-proven leg from the form-up point through the waypoints, because a lane
 ///   wave's whole design is that it walks that corridor while the party is
-///   elsewhere. This is the shape that killed the drowned bell's ladder bot: a
-///   re-seated gate squad marched its lane, and the lane ended a couple of blocks
-///   outside a bonfire the party had just rested at;
+///   elsewhere — and each of those cells carries the [`LANE_MARCH_DRIFT`]
+///   margin, because the squad's measured march is a corridor around the
+///   polyline, not the polyline. This is the shape that killed the drowned
+///   bell's ladder bot: a re-seated gate squad marched its lane, and the lane
+///   ended a couple of blocks outside a bonfire the party had just rested at;
 /// * an **actor** the campaign declares as a fighter — `unleash-actor`ed
 ///   somewhere, or staged `vulnerable` — at its staging anchor. Fighter-ness is
 ///   read off the campaign's own declarations and never guessed from the species:
@@ -2955,11 +3273,11 @@ fn aggro_sources(
     let c = plan.campaign;
     let mut out = Vec::new();
     for w in &c.quests.content.waves {
-        let mut cells: Vec<(&'static str, [i32; 3])> = placements
+        let mut cells: Vec<(&'static str, [i32; 3], f64)> = placements
             .get(w.id.as_str())
             .into_iter()
             .flatten()
-            .map(|p| ("seated spawn cell", *p))
+            .map(|p| ("seated spawn cell", *p, 0.0))
             .collect();
         let (radius, radius_source) = match &w.lane {
             Some(l) => (f64::from(l.aggro_radius), "the lane's `aggro_radius`"),
@@ -2980,7 +3298,7 @@ fn aggro_sources(
             cells.extend(
                 lane_march_cells(plan, world, w, wps)
                     .into_iter()
-                    .map(|p| ("lane path cell", p)),
+                    .map(|p| ("lane path cell", p, LANE_MARCH_DRIFT)),
             );
         }
         if cells.is_empty() {
@@ -3011,7 +3329,7 @@ fn aggro_sources(
             id: a.id.as_str().to_string(),
             radius,
             radius_source,
-            cells: vec![("staging anchor", pos)],
+            cells: vec![("staging anchor", pos, 0.0)],
         });
     }
     out
@@ -3083,11 +3401,11 @@ fn verify_bonfire_safe_zone(
 ) -> Result<(), NavError> {
     for (anchor, pos) in bonfires {
         for src in sources {
-            let Some((what, cell, dist)) = src
+            let Some((what, cell, dist, drift)) = src
                 .cells
                 .iter()
-                .map(|(what, cell)| (*what, *cell, cell_distance(*pos, *cell)))
-                .filter(|(_, _, d)| *d <= src.radius)
+                .map(|(what, cell, drift)| (*what, *cell, cell_distance(*pos, *cell), *drift))
+                .filter(|(_, _, d, drift)| *d <= src.radius + drift)
                 // Nearest first, then by cell, so the message is deterministic.
                 .min_by(|a, b| {
                     a.2.partial_cmp(&b.2)
@@ -3097,23 +3415,37 @@ fn verify_bonfire_safe_zone(
             else {
                 continue;
             };
+            let reach = if drift > 0.0 {
+                format!(
+                    "the {reach:.1}-block reach: the {radius:.1}-block perception radius \
+                     ({radius_source}) plus the {drift:.1}-block measured marching drift — a \
+                     lane squad marches a corridor around its polyline, not the line itself \
+                     (td-routing-spike dossier)",
+                    reach = src.radius + drift,
+                    radius = src.radius,
+                    radius_source = src.radius_source,
+                )
+            } else {
+                format!(
+                    "the {radius:.1}-block perception radius ({radius_source})",
+                    radius = src.radius,
+                    radius_source = src.radius_source,
+                )
+            };
             return Err(NavError {
                 code: DW_BONFIRE_IN_AGGRO,
                 message: format!(
                     "bonfire `{anchor}` ({pos:?}) sits INSIDE the aggro range of `{id}`: its \
-                     {what} {cell:?} is {dist:.1} blocks away, within the {radius:.1}-block \
-                     perception radius ({radius_source}). A bonfire is where the party respawns \
-                     and where every `respawns_on_rest` wave is put back on its feet — with a \
-                     hostile already perceiving that cell, resting and dying both deliver the \
-                     party into contact on the tick they arrive, and the retry loop the fire \
-                     exists to make cheap becomes a soft-lock (spec-0016 §1, owner ruling \
-                     2026-08-04). Move the fire out of the danger — into a side room, behind the \
-                     threshold, past the end of the lane — or move the force's anchor / lane. Do \
-                     NOT shrink `follow_range` to buy the clearance: that retunes the fight to \
-                     hide a placement bug.",
+                     {what} {cell:?} is {dist:.1} blocks away, within {reach}. A bonfire is \
+                     where the party respawns and where every `respawns_on_rest` wave is put \
+                     back on its feet — with a hostile already perceiving that cell, resting \
+                     and dying both deliver the party into contact on the tick they arrive, and \
+                     the retry loop the fire exists to make cheap becomes a soft-lock \
+                     (spec-0016 §1, owner ruling 2026-08-04). Move the fire out of the danger \
+                     — into a side room, behind the threshold, past the end of the lane — or \
+                     move the force's anchor / lane. Do NOT shrink `follow_range` to buy the \
+                     clearance: that retunes the fight to hide a placement bug.",
                     id = src.id,
-                    radius = src.radius,
-                    radius_source = src.radius_source,
                 ),
             });
         }
@@ -3910,6 +4242,56 @@ pub struct LegRoute {
 /// has passed).
 pub fn critical_path_routes(plan: &Plan, world: &World) -> Vec<LegRoute> {
     world.walked_legs(plan)
+}
+
+/// Per-branch `DW0311` (spec-0025, task #117): prove every walked leg of ONE
+/// branch's exported path is routable over the assembled geometry, under the
+/// branch's own causal gate seals.
+///
+/// [`check_critical_path`] quantifies over the DEFAULT playthrough only; a
+/// branch-divergent leg — one the fork adds or resequences — was walked by the
+/// harness with no compile-time proof behind it. This is the same
+/// [`route_visited`] core over the branch's own step list, with `gate_events` /
+/// `ancestor` in the **branch path's step space**
+/// ([`Plan::branch_gate_model`]) — never the default path's indices, which
+/// belong to a different sequence.
+pub fn check_branch_path(
+    world: &World,
+    steps: &[Step],
+    transports: &[Option<[i32; 3]>],
+    gate_events: &[GateEvent],
+    ancestor: &dyn Fn(usize, usize) -> bool,
+) -> Result<(), NavError> {
+    route_visited(
+        world,
+        &positions_of(steps, transports),
+        gate_events,
+        ancestor,
+    )
+}
+
+/// The proven A* cell routes of one branch's walked legs — the branch
+/// counterpart of [`critical_path_routes`], for export as that branch's waypoint
+/// artifact (`validation/branch-waypoints-<branch>.json`, task #117). Same leg
+/// selection, endpoint snapping and per-leg gate seals as [`check_branch_path`];
+/// call it only after that check has succeeded (a leg that fails to snap or
+/// route is omitted, which cannot occur once the check has passed).
+pub fn branch_path_routes(
+    world: &World,
+    steps: &[Step],
+    transports: &[Option<[i32; 3]>],
+    gate_events: &[GateEvent],
+    ancestor: &dyn Fn(usize, usize) -> bool,
+) -> Vec<LegRoute> {
+    route_walked_legs(
+        world,
+        &positions_of(steps, transports),
+        gate_events,
+        ancestor,
+    )
+    .into_iter()
+    .map(|(leg, _)| leg)
+    .collect()
 }
 
 /// `DW0314`: an exported critical-path waypoint is not standable in the FINAL
@@ -4981,13 +5363,25 @@ mod tests {
         floored(w, d, y, &walls)
     }
 
-    /// A hostile force for the `DW0478` proof.
+    /// A hostile force for the `DW0478` proof. A "lane path cell" carries the
+    /// [`LANE_MARCH_DRIFT`] margin exactly as [`aggro_sources`] assigns it;
+    /// every stationary cell carries none.
     fn src(id: &str, radius: f64, cells: &[(&'static str, [i32; 3])]) -> AggroSource {
         AggroSource {
             id: id.to_string(),
             radius,
             radius_source: "the wave's declared `follow_range`",
-            cells: cells.to_vec(),
+            cells: cells
+                .iter()
+                .map(|(what, cell)| {
+                    let drift = if *what == "lane path cell" {
+                        LANE_MARCH_DRIFT
+                    } else {
+                        0.0
+                    };
+                    (*what, *cell, drift)
+                })
+                .collect(),
         }
     }
 
@@ -5043,6 +5437,52 @@ mod tests {
             err.message.contains("lane path cell"),
             "the message must say it is the MARCH that reaches the fire, not the seating: {}",
             err.message
+        );
+    }
+
+    /// The DRIFT half of the lane term (owner ruling 2026-08-04): a fire that
+    /// clears the centre-line polyline by less than the measured marching drift
+    /// is still inside the squad's real aggro reach, because the squad marches a
+    /// corridor around the polyline (td-routing-spike dossier: followers max 7.9
+    /// blocks off-lane). This is the drowned bell's chapel fire — 18.0 blocks
+    /// from a 16-`follow_range` lane, and run nine died to it live at 17.7.
+    #[test]
+    fn a_bonfire_clearing_the_centre_line_but_not_the_march_corridor_is_dw0478() {
+        let bonfires = vec![("anchor/chapel".to_string(), [18, 64, 0])];
+        let sources = vec![src(
+            "wave/bell-siege",
+            16.0,
+            &[("lane path cell", [0, 64, 0])],
+        )];
+        let err = verify_bonfire_safe_zone(&bonfires, &sources)
+            .expect_err("18.0 blocks clears follow_range 16 but not 16 + 7.9 drift");
+        assert_eq!(err.code, DW_BONFIRE_IN_AGGRO); // DW0478
+        assert!(
+            err.message.contains("marching drift") && err.message.contains("td-routing-spike"),
+            "the message must name the drift term and its constraint source: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("23.9"),
+            "the message states the full reach (16 + 7.9): {}",
+            err.message
+        );
+    }
+
+    /// The drift margin belongs to the MARCH alone: a stationary seated cell at
+    /// the same 18.0 blocks from the same 16-block radius is legal, because a
+    /// force that never walks has no corridor around a polyline it never marches.
+    #[test]
+    fn a_stationary_cell_at_the_same_distance_carries_no_drift_margin() {
+        let bonfires = vec![("anchor/chapel".to_string(), [18, 64, 0])];
+        let sources = vec![src(
+            "wave/bell-siege",
+            16.0,
+            &[("seated spawn cell", [0, 64, 0])],
+        )];
+        assert!(
+            verify_bonfire_safe_zone(&bonfires, &sources).is_ok(),
+            "the drift term is specifically for lane-marching squads"
         );
     }
 

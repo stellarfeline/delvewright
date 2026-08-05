@@ -19,6 +19,7 @@ edit. Template at the bottom.
 | [0012](0012-product-form-claude-code-skill.md) | Product form: Claude Code skill front-end | Accepted |
 | [0013](0013-prefab-license-allowlist.md) | Expanded prefab license allowlist (+MIT/Apache/GPL) | Accepted |
 | [0014](0014-creator-distribution.md) | Creator distribution: plugin install, content repo as workdir | Accepted (M4) |
+| [0015](0015-schema-promotion-policy.md) | Schema promotion: composition first; native only via second-campaign or machine-proof gate | Accepted |
 
 ## Template
 

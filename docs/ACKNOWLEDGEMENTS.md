@@ -71,12 +71,51 @@ upstream code was ingested. Attribution recorded here and in each prefab's metad
 |---|---|---|
 | [skinview3d](https://github.com/bs-community/skinview3d) | MIT | **Not adopted.** spec-0009 anticipated a "skinview3d-lineage, Node" preview renderer, but skinview3d is browser-only (three.js/WebGL); a headless build needs a fragile native-GL stack whose output varies across GPU drivers — contradicting the "produced deterministically" acceptance criterion. `skinpy-extended`'s pure-Python isometric renderer serves the verify loop deterministically, so no WebGL dependency was added. |
 
+## Writing craft & translation (generation-time prompts)
+
+Prose is authored by an LLM at generation time, so the craft rules live in the
+`/new-delve` skill and in `tools/i18n-translate.py`'s prompts rather than in
+compiled code. Licences below re-verified from the primary source on 2026-08-03.
+
+| Source | License (verified) | What we took |
+|---|---|---|
+| [andrewyng/translation-agent](https://github.com/andrewyng/translation-agent) | MIT — "Copyright (c) 2024 Andrew Ng" (repo `LICENSE`) | The three-step **translate → reflect → improve** shape and the four critique axes (accuracy / fluency / style / terminology) behind `--reflect` in `tools/i18n-translate.py`. Our prompts extend them with domain criteria (NPC persona, key-kind conventions, render width), a re-derived translationese checklist in place of the generic "fluency" criterion, and an explicit anti-churn rule. |
+| Strunk, *The Elements of Style* (1918) — [Gutenberg #37134](https://www.gutenberg.org/ebooks/37134) | Public domain ("Public domain in the USA."; first published 1918) | Rules 12 and 13 and Rule 13's substitution table, quoted in the skill's plain-prose baseline. **Only the 1918 Strunk is quotable** — the rules most people attribute to it ("omit needless words" aside) come from E. B. White's 1959 chapter and are still in copyright; those are ideas-only. |
+| Wikipedia, *[Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing)* | CC BY-SA 4.0 | **Ideas only, by choice — not by licence.** Its taxonomy (negative parallelisms, rule of three, participial stacking) informed the section-A checklist, which is written from scratch. Importing the text verbatim *is* available to us: Creative Commons' 2015 compatibility declaration makes CC BY-SA 4.0 **one-way compatible with GPLv3**, so an adaptation may be relicensed GPLv3. We did not, because that page is written for Wikipedia editors — it spends most of its length on citation defects, markup artifacts and promotional tone, none of which apply to NPC dialogue — so re-deriving for fiction was simply the better text. If a future PR does want a list verbatim, the route is open: relicense the adaptation as GPLv3 and carry a provenance note naming the article, its revision and the compatibility declaration. |
+
+Ideas-only inspiration, **no text ported** — listed because each shaped a
+decision, not because anything was taken. Most are unlicensed or copyrighted, so
+ideas are all that is available; where a licence *would* have permitted more, the
+entry says so, because a ledger that records a business decision as a legal
+prohibition is a wrong record.
+
+- `NemoVonNirgend/NemoEngine`'s anti-slop interview notes — **no LICENSE file**.
+  The framing "pattern warnings, not technique bans" and the fiction-specific
+  tells (observation+verdict dialogue glosses, standalone simile fragments,
+  stock intensity moves, purposeless gesture) were re-derived in our own words
+  for the skill. Nothing is quoted.
+- `EQ-bench/creative-writing-bench` — repository metadata declares
+  `license: null`; its rubric text is therefore unusable and was not used.
+- `immersive-translate/prompts` and the circulating 信达雅 prompt lineage — no
+  license. Two *techniques* were adopted, both uncopyrightable in themselves:
+  materialising the critique before fixing it, and an anti-churn threshold.
+- 余光中《论中文的常态与变态》 and 思果《翻译研究》 — copyrighted. The 翻译腔
+  checklist in the i18n prompts is our own paraphrase of the tradition they
+  established, not a reproduction of either text.
+- `yetone/openai-translator` — AGPL-3.0. **Not adopted as a cost/benefit call,
+  not a legal bar**: AGPLv3 and GPLv3 combine explicitly (each licence's §13
+  provides for it), so we *could* have taken code. Nothing beyond prompt ideas
+  was needed, and taking on the network-interaction copyleft for a few prompt
+  lines is a bad trade. (Separately, the widely repeated claim that it is the
+  origin of the 信达雅 prompt does not survive checking its source.)
+
 ## Research that shaped the design (cited; no code ported)
 
 - GDMC AI Settlement Generation Challenge — [arXiv:1803.09853](https://arxiv.org/abs/1803.09853) and eight years of competition results.
 - LL3M: Large Language 3D Modelers — [arXiv:2508.08228](https://arxiv.org/abs/2508.08228) (agentic code-authoring + visual self-critique loops).
 - SpatialGrammar — [arXiv:2604.27555](https://arxiv.org/abs/2604.27555) (DSL-driven 3D scenes with render-feedback refinement).
 - BLOCK character-to-skin generation — [arXiv:2603.03964](https://arxiv.org/abs/2603.03964) (CC BY 4.0).
+- StoryScope: Investigating idiosyncrasies in AI fiction — [arXiv:2604.03136](https://arxiv.org/abs/2604.03136) (Russell, Rajendhran, Pham, Iyyer, Wieting). Human-vs-AI separation at 93.2% macro-F1 from **narrative structure alone**, robust to style editing, with per-model fingerprints. It is the evidence behind the `/new-delve` skill's convergence section: the tell is a shared narrative posture, not a vocabulary, and Claude's measured signature is the flattest event escalation of the models tested. Cited only — no code or text used.
 
 ## Minecraft
 

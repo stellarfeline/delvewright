@@ -1253,6 +1253,36 @@ impl<'a> Plan<'a> {
         build_critical_path(self.campaign, &self.anchors, &self.npcs, path)
     }
 
+    /// The gate/seal model of ONE branch's exported path (spec-0025, task #117):
+    /// the campaign's `open-gate`/`close-gate` firings with `fire_step` indices in
+    /// the **branch path's own step space**, plus the strict DAG-ancestor relation
+    /// over that space — exactly the model [`Plan::build`] computes for the
+    /// exported path (`gate_events` / `strict_ancestor_steps`), driven by the
+    /// branch's own objective→step map instead of the default playthrough's.
+    ///
+    /// A branch path is a *different sequence* of steps, so the default path's
+    /// step indices cannot be carried across (the same trap `rest_step_index`
+    /// documents for bonfires): a seal attributed through the default indices
+    /// would inherit another branch's ordering. Shortcut gates are sealed from
+    /// world-load (`fire_step: 0`) here for the same reason they are in
+    /// [`Plan::build`] — the branch must be walkable the long way too.
+    ///
+    /// Deterministic: both halves are pure functions of the campaign and the
+    /// branch's own `CriticalPath` (ADR-0006).
+    pub fn branch_gate_model(
+        &self,
+        cp: &CriticalPath,
+    ) -> (Vec<GateEvent>, BTreeMap<usize, BTreeSet<usize>>) {
+        let mut gate_events = collect_gate_events(self.campaign, &self.anchors, &cp.obj_step);
+        gate_events.extend(self.shortcuts.iter().map(|sc| GateEvent {
+            region: sc.gate_region,
+            closes: true,
+            fire_step: 0,
+        }));
+        let ancestors = compute_strict_ancestor_steps(self.campaign, &cp.obj_step);
+        (gate_events, ancestors)
+    }
+
     /// Whether a gate firing at critical-path step `g` is guaranteed to have fired
     /// before a walked leg arriving at step `s` — i.e. `g`'s objective is a strict
     /// DAG ancestor of `s`'s objective (see [`Self::strict_ancestor_steps`]). Step
@@ -1335,6 +1365,16 @@ impl<'a> Plan<'a> {
     /// stay byte-identical (DSL v0.6, spec-0012).
     pub fn any_checkpoint_on_respawn(&self) -> bool {
         self.checkpoints.iter().any(|c| !c.on_respawn.is_empty()) || !self.reseat_waves().is_empty()
+    }
+
+    /// Whether the campaign declares **any** checkpoint at all (spec-0012 /
+    /// spec-0016 §1). Gates the respawn **re-seat** machinery: the delve's own
+    /// promise is "die and resume at the last checkpoint", and vanilla's
+    /// `/spawnpoint` is only a hint — it silently falls back to the world spawn
+    /// whenever the recorded cell is not a legal respawn position (task #145).
+    /// A campaign with no checkpoint keeps the pre-0.6 emission byte-for-byte.
+    pub fn any_checkpoint(&self) -> bool {
+        !self.checkpoints.is_empty()
     }
 
     /// The waves a bonfire rest / bonfire respawn re-seats (spec-0016 §1), in
