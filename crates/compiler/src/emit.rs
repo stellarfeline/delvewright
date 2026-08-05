@@ -510,7 +510,7 @@ pub fn build_with_warnings(
                     for r in &realized {
                         let Some(widx) = r.world else { continue };
                         let cp = plan
-                            .branch_critical_path(&flow.playthrough_in(widx))
+                            .branch_critical_path(&flow, &flow.playthrough_in(widx))
                             .map_err(|e| BuildFailure::Diagnostic {
                                 code: e.code,
                                 message: format!("branch `{}`: {}", r.branch.id, e.message),
@@ -13785,7 +13785,7 @@ fn branch_paths(
     for r in &branches {
         let Some(w) = r.world else { continue };
         let cp = plan
-            .branch_critical_path(&flow.playthrough_in(w))
+            .branch_critical_path(&flow, &flow.playthrough_in(w))
             .map_err(|e| BuildFailure::Diagnostic {
                 code: e.code,
                 message: format!("branch `{}`: {}", r.branch.id, e.message),

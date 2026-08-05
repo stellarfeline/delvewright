@@ -1007,7 +1007,7 @@ fn check_cast_continuity(
             let hits: Vec<usize> = list
                 .iter()
                 .enumerate()
-                .filter(|(_, p)| selects(p, flags))
+                .filter(|(_, p)| crate::cast::selects(p, flags))
                 .map(|(i, _)| i)
                 .collect();
             if hits.len() == 1 {
@@ -1068,11 +1068,6 @@ fn post_fork_quests(order: &[String], opens_at: &[String]) -> Vec<String> {
         return Vec::new();
     }
     order[start..].to_vec()
-}
-
-fn selects(p: &CastPlacement, flags: &BTreeSet<String>) -> bool {
-    p.requires_flags.iter().all(|f| flags.contains(f.as_str()))
-        && !p.forbids_flags.iter().any(|f| flags.contains(f.as_str()))
 }
 
 fn describe(p: &CastPlacement) -> String {
