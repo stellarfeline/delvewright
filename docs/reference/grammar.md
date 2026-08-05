@@ -35,7 +35,7 @@ Program ─ expand(program, region, {seed, limits, orientation}) ─▶ VoxelMod
 | `rules` | name → `[alternative]` | each alternative is `{weight, when, body}` |
 
 **Rule bodies** (`op`): `fill` (a role or an inline paint), `void` (air), `skip`
-(leave as-is), `call`, `split`, `reorient`.
+(leave as-is), `call`, `split`, `reorient`, `mark`.
 
 **`split`** cuts one local axis into pieces: `absolute` pieces take a fixed block
 count, `relative` pieces share what is left. `rounding` (`truncate` — the
@@ -65,11 +65,61 @@ mutually exclusive.
 The IR serialises to JSON (`serde`), which is the authoring form; block states
 are their vanilla string, e.g. `"minecraft:oak_stairs[facing=east,half=top]"`.
 
+## 2b. `mark` — anchor declarations
+
+An anchor is **metadata**, not geometry. No composition of `fill` / `split` can
+express "this cell is where the boss stands", and reading one back out of the
+block pattern afterwards is a guess — which the layering rule forbids. So the
+rule that shapes a space declares it while it still has the box in hand.
+
+`mark` wraps a body (like `reorient`) rather than being a statement, because a
+rule body is one node: that way a mark can sit on any child of any split and
+annotate exactly the piece that child owns. Use `{"op": "skip"}` as the body when
+the declaration is all that is wanted.
+
+```json
+{ "op": "mark", "mark": { "anchor": "courtyard", "at": "floor_center" },
+  "body": { "op": "void" } }
+```
+
+| Field | Meaning |
+|---|---|
+| `anchor` | kebab-case stem. The exported key is `anchor/<stem>`, i.e. the DSL's `anchor/<kebab>` id — a mark cannot name an anchor the DSL could not reference. |
+| `at` | which cell (flattened into the mark object, see below) |
+| `facing` | `north`/`south`/`east`/`west`. Omitted, it is **derived**: a grammar orientation is a permutation without reflection, so the derived facing is the negative direction of the world axis the scope calls local `Z` — `north` when that is world `Z`, `west` when it is world `X`. A scope whose local `Z` is *vertical* has no cardinal facing and says so rather than guessing. |
+| `index` | `unique` (default) → `anchor/<stem>`; `auto` → `anchor/<stem>-<n>`, `n` counting from 1 per stem in expansion order — how a rule that runs once per tower gives every tower an anchor without knowing how many there are. Matches the hand-built `anchor/alcove-1…` convention. |
+
+`at` is one of:
+
+| `at` | Cell |
+|---|---|
+| `corner_min` | the scope's minimum corner |
+| `floor_center` | lowest **world** `Y`, centred on world `X`/`Z`. Gravity is a world fact, so this one position ignores the scope's local axis names |
+| `face_center` (+ `axis`, `side`) | the given **local** axis pinned to `min`/`max`, the other two centred |
+| `offset` (+ `x`, `y`, `z` expressions) | **local** cells from the minimum corner |
+
+Centres round down on an even extent (the lower-middle cell) — it has to be one
+of the two, and the same one every time (ADR-0006).
+
+Marks collect into `Expansion::anchors` (a `BTreeMap`, keyed by exported name),
+**not** into the `VoxelModel`: a mark writes no blocks, and folding metadata into
+the block grid would change what `canonical_bytes` means. The export writes them
+into the prefab metadata's `anchors` map in the hand-built `{pos, facing}` shape,
+`pos` local to the structure; `PrefabRegistry` reads a grammar prefab's anchors
+with the same code path as a hand-built one (`crates/compiler/tests/grammar_prefab.rs`).
+
+Refusals: a non-kebab stem is a `Program::validate` error (before any expansion);
+a mark aimed outside its own scope, an underivable facing, and two marks
+producing the same name are expansion errors — the collision names both rules.
+Two marks on the same **cell** under different names are legal, as in the
+hand-built prefabs.
+
 ## 3. Determinism (ADR-0006)
 
 Same program + same region + same seed → byte-identical `VoxelModel`, asserted by
 a double-expand test over every library program at five seeds, plus a
-seed-sensitivity test over a probabilistic program. All randomness is one
+seed-sensitivity test over a probabilistic program, and over the declared
+anchors (names, cells and per-stem numbering alike). All randomness is one
 splitmix64 stream from the caller's seed; all maps are `BTreeMap`; cells iterate
 `x`, then `y`, then `z`; nothing reads the clock, the environment or a path.
 `VoxelModel::canonical_bytes` is the comparison/hash form.
@@ -85,12 +135,14 @@ double-**export** test over every library program at four seeds compares the
 
 The interpreter has no silent degradation. `Program::validate` runs before any
 expansion (unknown rule/role/param, empty rule or split, child/piece mismatch on
-a non-repeating split, zero weights, and an `orientation` guard that is not a
-permutation — a guard nothing could ever match). During expansion:
-`NoApplicableRule`, `Split{Overflow|ZeroStride}`, `Orient`, `BadSize`, `Eval`,
-`PaletteFull` (more than 65 536 distinct block states in one model), and the
-`DepthLimit` / `ScopeLimit` / `VolumeLimit` budgets. Errors carry the rule name
-and print as prose, never as a `Debug` struct.
+a non-repeating split, zero weights, an `orientation` guard that is not a
+permutation — a guard nothing could ever match — and a `mark` whose anchor stem
+is not kebab-case). During expansion: `NoApplicableRule`,
+`Split{Overflow|ZeroStride}`, `Orient`, `BadSize`, `Eval`, `PaletteFull` (more
+than 65 536 distinct block states in one model), `MarkOutsideScope`,
+`MarkFacingNotCardinal`, `AnchorCollision`, and the `DepthLimit` / `ScopeLimit` /
+`VolumeLimit` budgets. Errors carry the rule name and print as prose, never as a
+`Debug` struct.
 
 The three budgets live on `Limits` and are inputs, never silent clamps:
 `max_depth` and `max_scopes` turn an unguarded recursive rule into a diagnostic
@@ -119,7 +171,7 @@ Ported from `yawgmoth/GDMC25` (BSD-3-Clause; see
 | Program | Controls | Smallest region that expands (measured) |
 |---|---|---|
 | `temple` | `roof` (pitched/flat/capped/open), `column_height`, `column_size`; role `marble` | X ≥ `6 + 2*column_size`, Y ≥ `1 + column_height + roof height` (5 pitched / 3 flat / 1 capped / 0 open), Z ≥ 7 |
-| `castle` | `large_tower`, `small_tower`, `great_hall`, `wall_height`, `wall_width`, `tower_height`; role `stone` | both horizontal extents ≥ `2*large_tower + 2`, Y ≥ `tower_height + 1` |
+| `castle` | `large_tower`, `small_tower`, `great_hall`, `wall_height`, `wall_width`, `tower_height`; role `stone`; declares `anchor/courtyard` | both horizontal extents ≥ `2*large_tower + 2`, Y ≥ `tower_height + 1` |
 | `church` | guards only; roles `wall`, `glass`, four `roof_*` stair facings, two door pairs | height must follow width (the roof steps in 2 per course): Y ≥ 9 and Y ≳ X − 3; 15 × 16 × 30 is comfortable |
 
 Ports are faithful except where a module says otherwise; the three substantive
@@ -157,7 +209,7 @@ The metadata is the hand-built shape, minus what expansion cannot know:
   "structure": { "file": "grammar-temple.nbt", "id": "grammar-temple",
                  "size": [13, 14, 21], "data_version": 4671,
                  "generator": "crates/grammar" },
-  "anchors": {},
+  "anchors": { "anchor/courtyard": { "pos": [20, 0, 12], "facing": "north" } },
   "lighting": { "profile": "unmeasured" },
   "license": { "source": "original", "spdx": "GPL-3.0-or-later",
                "note": "…", "provenance": "…",
@@ -169,11 +221,11 @@ The metadata is the hand-built shape, minus what expansion cannot know:
 - **`generated_by`** is the spec-0027 §2 provenance row. `program_hash` is
   `sha256` over the program's canonical serde JSON bytes — content-addressed, so
   a program built in Rust and the same program parsed from JSON hash alike.
-- **`anchors` is always `{}`.** Declaring a staging anchor needs a rule-body
-  primitive that *says* where it is; inferring one from the block pattern
-  afterwards is precisely the downstream folklore the no-hack rule forbids. An
-  anchorless prefab loads and indexes normally — it simply offers no staging
-  points.
+- **`anchors`** is exactly what the program's `mark` declarations produced (§2b),
+  in the hand-built `{pos, facing}` shape with `pos` local to the structure.
+  Nothing infers one from the block pattern afterwards — that is precisely the
+  downstream folklore the no-hack rule forbids — so a program that marks nothing
+  exports `{}`, and an anchorless prefab loads and indexes normally.
 - **No `connectors` key.** Jigsaw socketing of grammar prefabs waits on the
   tileset conventions; a guessed socket is worse than none.
 - **`"profile": "unmeasured"`.** A lighting profile is a *measurement*, taken by
@@ -196,6 +248,10 @@ for a command block meant to, so shipping a silent hole is refused instead.
 
 ## 7. Not built yet
 
-The §4 craft diagnostics, an anchor-declaring rule-body primitive, jigsaw
-connector emission, the JSON schema stage in front of the IR, and the
-contact-sheet/curation loop. Later phases of spec-0027.
+The §4 craft diagnostics, jigsaw connector emission, the JSON schema stage in
+front of the IR, and the contact-sheet/curation loop. Later phases of spec-0027.
+
+`mark` declares point anchors only. Gate-region anchors (`region` + `block`),
+trap anchors (`dispenser`, `trigger_block`) and the entry names the engine
+treats specially (`spawn`, `entry`) are expressible in prefab metadata but not
+yet by a rule — each needs its own declaration, not a widened `mark`.

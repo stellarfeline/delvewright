@@ -15,11 +15,11 @@
 
 use crate::block::BlockState;
 use crate::geom::Axis;
-use crate::ir::{ArithOp, AxisSpec, CmpOp, DimRef, Program, Reorient};
+use crate::ir::{ArithOp, AxisSpec, CmpOp, DimRef, MarkAt, Program, Reorient};
 
 use super::{
-    abs, absp, alt_else, alt_when, call, cmp, dim, fill, int, modulo_is, par, rel, reoriented,
-    split, split_oriented, split_repeat, void,
+    abs, absp, alt_else, alt_when, call, cmp, dim, fill, int, marked, modulo_is, par, rel,
+    reoriented, split, split_oriented, split_repeat, void,
 };
 
 /// The castle program.
@@ -77,7 +77,12 @@ pub fn castle() -> Program {
                 vec![absp("large_tower"), rel(1), absp("large_tower")],
                 vec![
                     reoriented(Reorient::KEEP.x(AxisSpec::LocalZ), call("carve_wall")),
-                    void(),
+                    // The courtyard: the one enclosed, walkable space the castle
+                    // has, and therefore the one place a campaign can stage
+                    // anything. The mark is a Delvewright addition, not part of
+                    // the port — it writes no blocks, so the building upstream
+                    // describes is unchanged.
+                    marked("courtyard", MarkAt::FloorCenter, void()),
                     reoriented(Reorient::KEEP.x(AxisSpec::LocalZ), call("carve_wallr")),
                 ],
             ),
