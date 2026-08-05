@@ -17,7 +17,7 @@ use crate::registry::{
     VendoredItemRegistry,
 };
 use crate::stages::{
-    EditFrame, MorphOp, Objective, QuestEffect, RegionShape, TriggerOn, WorldEdit,
+    EditFrame, EncounterTier, MorphOp, Objective, QuestEffect, RegionShape, TriggerOn, WorldEdit,
 };
 
 /// Validate a campaign against all spec-0001 rules using the vendored v0
@@ -2143,6 +2143,34 @@ fn v06_checks(
                     ),
                 ));
             }
+        }
+    }
+
+    // spec-0016 §1 + spec-0023, souls ruling 5/7 ("stage bosses never respawn
+    // on rest", task #160, bell r5 semantics audit): `tier` and
+    // `respawns_on_rest` are two fields on the SAME wave declaration — the only
+    // place a "boss" billing and a "re-seat on rest" contract can land on one
+    // another (an actor carries `tier` too, but has no `respawns_on_rest` field
+    // at all, so it cannot express this violation). A rest-respawning boss
+    // re-fight breaks the retry economy the ruling protects. Checked
+    // unconditionally of `has_bonfire`: the combination is forbidden on its own
+    // terms, not merely inert like `DW0370`.
+    for (i, w) in quests.waves.iter().enumerate() {
+        if w.respawns_on_rest && w.tier == Some(EncounterTier::Boss) {
+            d.push(Diagnostic::error(
+                codes::BOSS_RESPAWNS_ON_REST,
+                "quests",
+                format!("/content/waves/{i}/respawns_on_rest"),
+                format!(
+                    "wave `{}` declares `tier: boss` AND `respawns_on_rest: true` — souls \
+                     ruling 5/7 is that stage bosses never respawn on rest, since a \
+                     rest-respawning boss re-fight breaks the retry economy the ruling \
+                     protects. Drop `respawns_on_rest` if this really is the boss, or drop \
+                     `tier: boss` (bill it `elite` instead) if the encounter is meant to \
+                     re-seat.",
+                    w.id.as_str()
+                ),
+            ));
         }
     }
 

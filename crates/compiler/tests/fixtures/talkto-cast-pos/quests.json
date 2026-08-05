@@ -1,0 +1,69 @@
+{
+  "dsl_version": "0.7.0",
+  "campaign_id": "talkto-cast-pos",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/ask",
+        "trigger": {
+          "type": "campaign-start"
+        },
+        "objectives": [
+          {
+            "type": "talk-to",
+            "id": "obj/ask",
+            "npc": "npc/keeper"
+          }
+        ],
+        "on_objective_complete": {
+          "obj/ask": [
+            {
+              "type": "open-gate",
+              "anchor": "anchor/door"
+            },
+            {
+              "type": "move-npc",
+              "npc": "npc/keeper",
+              "to_anchor": "anchor/exit"
+            }
+          ]
+        },
+        "on_complete": [],
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "doing": "barring the inner door with his body",
+            "dialogue": "dlg/greeting"
+          }
+        }
+      },
+      {
+        "id": "quest/farewell",
+        "trigger": {
+          "type": "quest-complete",
+          "quest": "quest/ask"
+        },
+        "objectives": [
+          {
+            "type": "talk-to",
+            "id": "obj/farewell",
+            "npc": "npc/keeper"
+          }
+        ],
+        "on_complete": [
+          {
+            "type": "campaign-complete"
+          }
+        ],
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/exit",
+            "doing": "waiting on the far side of the lifted gate, holding the road open",
+            "dialogue": "dlg/farewell"
+          }
+        }
+      }
+    ]
+  }
+}
