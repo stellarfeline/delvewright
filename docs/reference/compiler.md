@@ -493,7 +493,7 @@ Mechanism level (not full mcfunction). See `crates/compiler/src/emit.rs`.
 | `set-block` | `setblock` at resolved anchor. |
 | `despawn-npc` | Kills body + interaction hitbox. The generated `v04_despawn` PackTest targets the campaign's first `despawn-npc` NPC; when that NPC is **deferred** it runs its `spawn_npc_<id>` entrance right after `setup_finish` (a deferred NPC is deliberately absent from world init, so the presence assertion would otherwise read 0). The assertions themselves — 2 entities present, 0 after the kill — are identical in both cases, and the entrance line is emitted only for a deferred target, so a campaign with no deferred NPC keeps byte-identical PackTest output. |
 | `spawn-npc` | `function <ns>:spawn_npc_<npc>` — the generated entrance function, emitted once per **deferred** NPC. Its two lines are the world-init summons, each independently guarded: body by `unless entity @e[tag=dw_npc,tag=dw_npc_<n>]`, hitbox by `unless entity @e[tag=dw_npc_<n>,tag=!dw_npc]` (both carry the id tag, so a single shared guard would let the body's own summon suppress the hitbox). The `npc_summons` PackTest fires each deferred NPC's entrance after `setup_finish` and asserts exactly one body. |
-| `move-npc` | Per-tick tp along A*-planned walkable waypoints (hitbox in lockstep), at cell **centres** with L-shaped vertical steps — see §4 "Entity placement". Every `tp` carries `<yaw> 0` — the **exact bearing of the segment that tick walks**; see §4 "A walked body faces where it is walking". `on_arrive` (v0.6): the driver's final-waypoint tick additionally runs `mv_arrive_<key>` (the bundle's effects), mirroring `ma_tick`/`ma_arrive_<key>` exactly; a bare move emits no hook (byte-identical). The arrive bundle runs with the **server** command source (the driver reached it through `schedule`), so its effects are split per-player / global — see §4 "A scheduled bundle has no `@s`". |
+| `move-npc` | Per-tick tp along A*-planned walkable waypoints (hitbox in lockstep), at cell **centres** with L-shaped vertical steps — see §4 "Entity placement". Every `tp` carries `<yaw> 0` — the **exact bearing of the segment that tick walks**; see §4 "A walked body faces where it is walking". `on_arrive` (v0.6): the driver's final-waypoint tick additionally runs `mv_arrive_<key>` (the bundle's effects), mirroring `ma_tick`/`ma_arrive_<key>` exactly; a bare move emits no hook (byte-identical). The arrive bundle runs with the **server** command source (the driver reached it through `schedule`), so its effects are split per-player / global — see §4 "A scheduled bundle has no `@s`". A later `move-npc` for the **same body** supersedes any walk still running for it — see §4 "One body, one live walk driver"; a body with only one planned walk carries none of that machinery (byte-identical). |
 | `cutscene` | Per player: save gamemode+pos → spectator → alternate `spectate` between two co-located dolly cameras each tick (skipping any player actively holding sneak — `predicate=!<ns>:sneak_held`, see §4 "The `spectate` bounce is sneak-gated") → restore. **Keyframe dolly (task #64, `compiler::camera`)**: each shot's waypoint polyline is arc-length parameterized (equal distance per time, not equal segments) with baked smoothstep ease-in/ease-out, then emitted as a tick-0 snap + a `tp` every *N* ticks with display-entity `teleport_duration:N` armed via `data merge` — the **client** tweens position and rotation linearly between keyframes (spike-measured: one position-sync packet per keyframe, rotation interpolates, the `spectate` bounce cannot reset an in-flight tween, and a same-tick merge+`tp` applies the OLD duration because position syncs flush before metadata — which is exactly why the snap and its cadence merge may share a tick). Cadence *N* = the widest of {10, 5, 4, 2, 1} whose rendered chords stay within 0.25 blocks (perpendicular) and 2° (aim) of the exact eased path; a single-waypoint or 1-tick shot is a static snap (cadence 0, no merge). Each shot with a successor resets `teleport_duration:0` on its last owned tick so the next snap is a hard cut, not a glide. Every keyframe `tp` carries an explicit `<yaw> <pitch>` — **Minecraft** entity rotation (`yaw = atan2(-dx, dz)`, 0 = +Z south; `pitch = atan2(-dy, hypot(dx,dz))`, + = down), *not* the render-plan/Chunky yaw convention — computed at emission from the camera's own position: at the shot's `look_at` subject if it has one, else along the eased path's direction of travel. Never the summon default (yaw 0 = south). Positions and rotations rounded to 3 decimals, `-0.0` collapsed to `0.0`, so emission is byte-stable. The bracket also arms the `dw_cutscene` state on every player and releases it on restore — see §4 "A cutscene is pure observation". Multi-shot: all shots share one `#t_<bare>` counter — shot *k* owns `[offset_k, offset_k+len_k]` and the next starts at `offset_k+len_k+1` (hard cut); one marker, one `gamemode spectator @a`, one camera pair, one restore. Both single-shot spellings emit identical bytes. `critical-path.json`'s `cutscene_seconds` is the **total** across shots. Function key = `cs_<first anchor>_<seconds>_<waypoints>` (a pathless styled shot keys `cs_<style>_<subject>_…`), plus an 8-hex sha256 digest of the whole normalized shot list whenever the cutscene is not a bare single shot without `look_at`/`shot_style` (the key must be injective — two shots sharing a first waypoint must never collapse onto one function). Styled shots are expanded (`compiler::camera::expand_shot`) before keyframe planning; a moving subject's per-tick track comes from its sibling move's A* plan, aligned by effect-group/sequence timing. Deduplication stays DSL-content-keyed, so two byte-identical styled cutscenes in *different* move contexts plan from the first occurrence (documented limitation; give the shots distinguishing content to split them). |
 | `campaign-complete` | `dw.campaign` = 1 (dummy objective, **never on the sidebar** — a raw internal id must not surface to players); broadcast `[dw:complete <campaign_id> campaign]` (dark-gray bot channel, the harness's completion signal — §4 "The completion-marker channel"); title fanfare. |
 | objective lifecycle | Activation shows `title`+`hint`+`note_block.pling` once (flag `dw.ann_<obj>`); completion sets `dw.o_<obj>` = 1, immediately broadcasts the anchored marker `[dw:complete <campaign_id> obj/<id>]` (§4 "The completion-marker channel"), then plays `experience_orb.pickup`. The marker precedes the objective's effects deliberately: it timestamps *completion*, not the aftermath. **Marker cleanup (task #45):** completion despawns every entity the objective's activation summoned via the objective-scoped tag — `interact` hitbox + wayfinding marker (`dw_i_<obj>`), `reach` marker (`dw_r_<obj>`). Prop/affordance *blocks* (`interact.prop`, `collect` chest) are scenery and persist; `talk-to`/`kill` summon no per-objective marker. Gated on v0.3+ with a resolved activation, so v0.2 stays byte-identical. |
@@ -866,7 +866,7 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
 - **Own scores.** Fake-player scratch holders on `dw.sys` are batch-global, so
   every template suffixes its own (`#n_sidm`, `#bx_bret`, `#dm_dvis`, …); no
   two templates share a holder. Real runtime scores (`#stealth`, `#placed`,
-  `#trig_<id>`, the `#mt_`/`#at_`/`#arun_` move drivers) are deliberately
+  `#trig_<id>`, the `#mt_`/`#at_`/`#arun_`/`#mgen_`/`#mown_` move drivers) are deliberately
   shared — tests drive them and initialize them explicitly.
 - **Own scores, extended to party state (spec-0018).** Progression now lives on
   the batch-global `#party` holder rather than on each test's dummy, so a
@@ -1605,6 +1605,57 @@ does, including across a deduped repeat of a content-keyed driver), else the yaw
 summon gave it: the home anchor's declared `facing` for an NPC, the actor's declared
 `facing` for a puppet. An authored facing is never overwritten with a fabricated
 south.
+
+### One body, one live walk driver (task #25)
+
+A `move-npc` compiles to a self-scheduling per-tick driver `mv_tick_<npc>_<to>` that
+teleports `@e[tag=dw_npc_<id>]` along its precomputed waypoints. The driver's
+re-entry latch `#mrun_<bare>` is keyed per **(npc, to_anchor, gate)**: it stops a walk
+from restarting *itself* and knows nothing about the body's other walks. So firing a
+second `move-npc` at an NPC whose earlier walk was still running left **two** drivers
+alive, both teleporting the same entity every tick; the interleave garbled the path
+and whichever walk had more remaining ticks wrote the final position — the body
+parked at the **first** walk's endpoint, not the last-fired one. Root-caused live on
+the island (2026-08-06): a 408-tick beach→mouth walk overlapped by a 21-tick walk to
+checkpoint-1 left eurylochus at the mouth, 3.0 blocks off his cast-ledger cell —
+exactly on the harness's affordance radius.
+
+The contract is **last fired wins**, carried by a per-NPC *walk generation* score:
+
+| score | meaning |
+|---|---|
+| `#mgen_<npc>` | the body's current walk generation; every start bumps it by 1 |
+| `#mown_<bare>` | the generation this driver was started for |
+
+* **start** (`mv_<npc>_<to>`): `scoreboard players add #mgen_<npc> dw.sys 1`, then
+  `#mown_<bare> = #mgen_<npc>`. Its re-entry refusal is generation-aware —
+  `if score #mrun_<bare> matches 1 unless score #mown_<bare> < #mgen_<npc> run return fail`
+  — so a latch left armed by a leg this body has already superseded does not block
+  that leg being fired again (the re-fire is itself the later walk, and wins).
+* **driver** (`mv_tick_<npc>_<to>`), first two lines: when
+  `#mown_<bare> < #mgen_<npc>` it drops its own latch and `return fail`s — no
+  teleport, no `mv_arrive_`, and crucially no reschedule, which is what ends it. The
+  superseded driver therefore dies on the next tick the scheduler hands it.
+
+The staleness test is written as the positive `if own < gen`, never as
+`unless own = gen`: with both scores unset — a driver invoked directly, as the
+`v04_move` PackTest does — a score comparison is *false*, and the `unless` spelling
+would read that as "stale" and cancel a walk nothing superseded.
+
+The new walk still starts at **its own first waypoint** (waypoints are precomputed
+from the walk's declared start anchor, so "resume from wherever the body stands" is
+not expressible), i.e. an instant snap onto the new route — the same snap single-walk
+content already gets when a walk fires while its NPC stands elsewhere.
+
+A body with only **one** planned walk can never be superseded, so its start and driver
+carry none of this and pre-existing single-walk campaigns stay byte-identical
+(ADR-0006). `move-actor` puppets (`ma_tick_*`) keep the old per-leg latch — the same
+shape, not yet the same contract.
+
+Proved by `crates/compiler/tests/move_supersede.rs`, which **executes** the emitted
+commands: a small interpreter for the driver command subset runs the real start
+functions through the real 1-tick scheduler loop and reads the body's final position
+off the `tp` commands.
 
 ### The seal answers (v0.8, task #142)
 

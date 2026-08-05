@@ -30,16 +30,18 @@ def gate(tmp_path, monkeypatch):
     assert spec.loader is not None
     spec.loader.exec_module(module)
 
-    lib = tmp_path / "crates" / "compiler" / "src" / "lib.rs"
-    lib.parent.mkdir(parents=True)
-    lib.write_text(
-        f'pub const DELVEC_VERSION: &str = "{ENGINE_DELVEC}";\n', encoding="utf-8"
+    cargo_toml = tmp_path / "crates" / "compiler" / "Cargo.toml"
+    cargo_toml.parent.mkdir(parents=True)
+    cargo_toml.write_text(
+        f'[package]\nname = "delvewright-compiler"\nversion = "{ENGINE_DELVEC}"\n'
+        'edition = "2024"\n',
+        encoding="utf-8",
     )
     root = tmp_path / "content" / "campaigns"
     root.mkdir(parents=True)
 
     monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(module, "COMPILER_LIB", lib)
+    monkeypatch.setattr(module, "COMPILER_CARGO_TOML", cargo_toml)
     monkeypatch.setattr(module, "DEFAULT_CAMPAIGNS_ROOT", root)
     monkeypatch.setattr(module, "ALLOWLIST", {})
     module.ROOT = root

@@ -129,7 +129,7 @@ repo = "stellarfeline/delvewright-campaigns"
 # (substrate is `stone`, audit-clean). Deterministic (byte-identical regen);
 # `nobodys-cave` builds green (DW0313/DW0311/DW0312 clear) with the flock on solid
 # floor. Bump on future content merges per the RE-PIN CONVENTION.
-sha = "f5766f7b9f54fc1ea03c5d2a9f278d1e0cf1b7a8"
+sha = "87a8ade1412b6961e1c67081a5c8f9fdbacf6b2e"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders
