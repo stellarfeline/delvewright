@@ -245,12 +245,23 @@ pub fn build_with_warnings(
     // the EDITED model when an edit script exists, since a stage-7 batch can
     // legitimately be what puts the barrel there. Independent of nav, because a
     // campaign may declare loot without ever walking a leg.
-    if !plan.loot.is_empty() {
+    // The same proof serves the v0.8 `collect` container adoption (DW0438, task
+    // #95): an adopted container is prefab furniture on exactly the terms a `loot`
+    // container is, so it is proven off the same assembled (or edited) world, in
+    // the same pass, rather than by a second model that could disagree with this
+    // one about what is in the room.
+    if !plan.loot.is_empty() || !plan.collect_fills.is_empty() {
         let blocks = match &edit_replay {
             Some(er) => er.assembled.blocks.clone(),
             None => crate::assembled::assembled_blocks(plan, structures),
         };
         crate::loot::check_loot_containers(&blocks, &plan.loot).map_err(|e| {
+            BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            }
+        })?;
+        crate::loot::check_collect_containers(&blocks, &plan.collect_fills).map_err(|e| {
             BuildFailure::Diagnostic {
                 code: e.code,
                 message: e.message,
@@ -6352,34 +6363,61 @@ fn loot_setup(loot: &[crate::plan::LootPlan]) -> Vec<String> {
     for l in loot {
         let c = l.cell;
         for (slot, it) in l.items.iter().enumerate() {
-            let mut comps: Vec<String> = Vec::new();
-            if let Some(n) = &it.name {
-                comps.push(format!(
-                    "custom_name={}",
-                    json!({ "text": n, "italic": false })
-                ));
-            }
-            if !it.enchantments.is_empty() {
-                let body = it
-                    .enchantments
-                    .iter()
-                    .map(|(id, lvl)| format!("\"{id}\":{lvl}"))
-                    .collect::<Vec<_>>()
-                    .join(",");
-                comps.push(format!("enchantments={{{body}}}"));
-            }
-            let comp = if comps.is_empty() {
-                String::new()
-            } else {
-                format!("[{}]", comps.join(","))
-            };
             out.push(format!(
-                "item replace block {} {} {} container.{slot} with {}{comp} {}",
-                c[0], c[1], c[2], it.item, it.count
+                "item replace block {} {} {} container.{slot} with {}{} {}",
+                c[0],
+                c[1],
+                c[2],
+                it.item,
+                container_stack_components(it.name.as_deref(), &it.enchantments),
+                it.count
             ));
         }
     }
     out
+}
+
+/// The `[custom_name=…,enchantments=…]` component suffix a container-fill stack
+/// carries in `item replace … with <item><suffix> <count>`, or `""` when it
+/// carries neither — which is what keeps every unnamed, unenchanted fill
+/// byte-identical to the emission that predates both fields.
+///
+/// ONE renderer for every container fill: spec-0021 `loot` and the DSL v0.8
+/// `collect` `item_name` (task #95). A quest item named on one surface and
+/// unnamed on the other would be the same defect the wave-arming table taught —
+/// two places describing one stack, drifting apart the moment either moves.
+/// Enchantment order is the `BTreeMap`'s id order, never hash order (ADR-0006).
+fn container_stack_components(
+    name: Option<&str>,
+    ench: &std::collections::BTreeMap<String, u32>,
+) -> String {
+    let mut comps: Vec<String> = Vec::new();
+    if let Some(n) = name {
+        comps.push(format!(
+            "custom_name={}",
+            json!({ "text": n, "italic": false })
+        ));
+    }
+    if !ench.is_empty() {
+        let body = ench
+            .iter()
+            .map(|(id, lvl)| format!("\"{id}\":{lvl}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        comps.push(format!("enchantments={{{body}}}"));
+    }
+    if comps.is_empty() {
+        return String::new();
+    }
+    format!("[{}]", comps.join(","))
+}
+
+/// The component suffix a v0.8 `collect` stack carries: its `item_name`, or `""`
+/// when the objective declares none. A thin alias over
+/// [`container_stack_components`] — a collect stack is a container fill, and is
+/// rendered by the container fill's renderer.
+fn item_component_tail(name: Option<&str>) -> String {
+    container_stack_components(name, &std::collections::BTreeMap::new())
 }
 
 /// `setup_finish` commands for traps (spec-0011): fill each `dispense` trap's
@@ -7305,19 +7343,47 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
     let mut cmds = Vec::new();
     match o {
         Objective::Collect {
+            id,
             item,
             count,
             anchor,
+            item_name,
+            fill_count,
             ..
         } => {
-            if let Some(pos) = plan.point(area, anchor.as_str()) {
+            // v0.8 (task #95): an ADOPTED container is prefab furniture standing
+            // in the room already — fill it where it stands, place nothing. Absent
+            // `container`, the compiler keeps conjuring its own chest at the
+            // anchor exactly as it always has. The adopted cell comes from
+            // `plan.collect_fills`, the same resolution `DW0438` proved.
+            let adopted = plan
+                .collect_fills
+                .iter()
+                .find(|f| f.objective_id == id.as_str())
+                .map(|f| f.cell);
+            let Some(pos) = adopted.or_else(|| plan.point(area, anchor.as_str())) else {
+                return cmds;
+            };
+            if adopted.is_none() {
                 cmds.push(format!(
                     "setblock {} {} {} minecraft:chest",
                     pos[0], pos[1], pos[2]
                 ));
+            }
+            // The objective's own stack lands in `container.0`; each padding stack
+            // repeats it in the slots after it, so the container READS full
+            // (vanilla fullness is occupied slots, not stack size). Positional and
+            // total — no RNG, nothing to reseed (ADR-0006). A campaign with
+            // neither a name nor padding emits the single pre-0.8 line, byte for
+            // byte.
+            let stack = format!(
+                "{item}{} {count}",
+                item_component_tail(item_name.as_deref())
+            );
+            for slot in 0..=*fill_count {
                 cmds.push(format!(
-                    "item replace block {} {} {} container.0 with {} {}",
-                    pos[0], pos[1], pos[2], item, count
+                    "item replace block {} {} {} container.{slot} with {stack}",
+                    pos[0], pos[1], pos[2]
                 ));
             }
         }
@@ -12194,20 +12260,18 @@ fn pin_dummy(tag: &str) -> (String, String) {
     )
 }
 
-/// Lines that satisfy an objective's activation guard (quest active, all `after`
-/// prerequisites set, all `requires_flags` set, and any required item given to
-/// `sel`). With `with_flags: false` the flags are not merely omitted but actively
-/// cleared: PackTest runs the whole suite as one batch on one shared server, so
-/// "never set" does not mean 0.
+/// The guard half of [`packtest_preamble`]: every progression term an
+/// objective's activation gate READS, pinned to the value that opens (or, with
+/// `with_flags: false`, withholds) it — quest active, `after` prerequisites,
+/// `requires_flags`, and `forbids_flags` actively cleared.
 ///
-/// spec-0018: every progression term is written on the **party holder**, which is
-/// the state the generated guards actually read. The holder is batch-global —
-/// but each template is a single atomic mcfunction, so its baseline, its drive
-/// and its assert all land inside one tick with no sibling in between (the one
-/// place that stops being true is a template that `await`s, which
-/// `tests/packtest_batch.rs` polices separately). Only the ITEM still goes to the
-/// test's own pinned dummy.
-fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool, sel: &str) -> Vec<String> {
+/// Split out because a template that must prove something about **how the item
+/// reaches the player** (the v0.8 named-stack collect) cannot use the preamble's
+/// own `give`: handing the plain item over first completes the objective and
+/// makes the named stack's assertion vacuous. Everything about which flags are
+/// pinned stays in one place, so no template can be written that opens a gate by
+/// hand and forgets one (PR #237's template flag hygiene).
+fn packtest_guards(quest_id: &str, o: &Objective, with_flags: bool) -> Vec<String> {
     let party = plan::PARTY;
     let mut p = vec![format!(
         "scoreboard players set {party} {} 1",
@@ -12235,6 +12299,24 @@ fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool, sel: &str)
             plan::flag_score(f.as_str())
         ));
     }
+    p
+}
+
+/// Lines that satisfy an objective's activation guard (quest active, all `after`
+/// prerequisites set, all `requires_flags` set, and any required item given to
+/// `sel`). With `with_flags: false` the flags are not merely omitted but actively
+/// cleared: PackTest runs the whole suite as one batch on one shared server, so
+/// "never set" does not mean 0.
+///
+/// spec-0018: every progression term is written on the **party holder**, which is
+/// the state the generated guards actually read. The holder is batch-global —
+/// but each template is a single atomic mcfunction, so its baseline, its drive
+/// and its assert all land inside one tick with no sibling in between (the one
+/// place that stops being true is a template that `await`s, which
+/// `tests/packtest_batch.rs` polices separately). Only the ITEM still goes to the
+/// test's own pinned dummy.
+fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool, sel: &str) -> Vec<String> {
+    let mut p = packtest_guards(quest_id, o, with_flags);
     match o {
         Objective::Collect { item, count, .. } => {
             p.push(format!("give {sel} {item} {count}"));
@@ -12279,6 +12361,8 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     // milestone precisely because nothing looked. Falls back to the first kill.
     let mut first_armed_kill = None;
     let mut first_collect = None;
+    // The first `collect` that adopts a prefab container (DSL v0.8, task #95).
+    let mut first_collect_adopted = None;
     let mut first_interact = None;
     // The first `interact` that actually gates on an item — the subject of the
     // held-vs-carried test below. Distinct from `first_interact`, which may be
@@ -12324,6 +12408,12 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
                     }
                 }
                 _ => {}
+            }
+            // v0.8 (task #95): the first `collect` that ADOPTS a prefab container.
+            // Distinct from `first_collect`, which may keep the compiler-placed
+            // chest and would make the adoption assertions vacuous.
+            if first_collect_adopted.is_none() && o.collect_container().is_some() {
+                first_collect_adopted = Some((qid, o));
             }
             if first_flag_gated.is_none()
                 && !o.requires_flags().is_empty()
@@ -12789,6 +12879,92 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             obj_score(id.as_str())
         ));
         write("collect_preheld", b);
+    }
+
+    // v0.8 container adoption (task #95, island playtest rounds 1-2): the
+    // objective fills the barrel the PREFAB placed, pads it so it reads full, and
+    // still completes when what the player carries is the NAMED stack.
+    //
+    // Three things a compile-time test cannot reach, all of them silent failures
+    // on a live server: `item replace block … container.<n>` against the adopted
+    // cell has to actually land (it fails without output on a non-container —
+    // `DW0438` proves one is there, not that the fill took); the padding has to
+    // occupy the slots after it rather than overwrite slot 0; and the custom-name
+    // component must not change what the adjudication sees, because the
+    // completion advancement and the per-tick held check both match on ITEM ID
+    // and a component that quietly excluded the stack would leave the objective
+    // uncompletable with the item sitting in the player's hand.
+    if let Some((qid, o)) = first_collect_adopted
+        && let Objective::Collect {
+            id,
+            item,
+            count,
+            item_name,
+            fill_count,
+            ..
+        } = o
+        && let Some(fill) = plan
+            .collect_fills
+            .iter()
+            .find(|f| f.objective_id == id.as_str())
+    {
+        let (pin, sel) = pin_dummy("dw_t_cadp");
+        let cell = fill.cell;
+        let party = plan::PARTY;
+        let stack = format!(
+            "{item}{} {count}",
+            item_component_tail(item_name.as_deref())
+        );
+        let mut b = packtest_header(&format!(
+            "{}: collect `{id}` fills the adopted container and completes on the named stack",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.push(format!(
+            "scoreboard players set {party} {} 0",
+            obj_score(id.as_str())
+        ));
+        // Open the activation gate by hand and WITHOUT the preamble's `give`: the
+        // point of this template is which stack completes the objective, and the
+        // plain item handed over first would complete it before the named one is
+        // ever presented.
+        b.extend(packtest_guards(qid, o, true));
+        // Empty the adopted container first — `setup` may have run for a sibling
+        // template, and this objective's own activation is guarded once per world
+        // by `#act_<obj>`, so the fill is not re-run on a second call. Clearing
+        // makes the count assertion below a statement about THIS activation.
+        for slot in 0..=*fill_count {
+            b.push(format!(
+                "item replace block {} {} {} container.{slot} with minecraft:air",
+                cell[0], cell[1], cell[2]
+            ));
+        }
+        b.push(format!(
+            "function {ns}:activate_{}",
+            safe_obj_fn(id.as_str())
+        ));
+        // The fill landed, in the right number of slots: `if items block` counts
+        // matching items across the whole container, so the total is the stack
+        // repeated once per filled slot. A dropped fill reads 0; padding that
+        // overwrote slot 0 instead of following it reads one stack short.
+        let total = count * (fill_count + 1);
+        b.push(format!(
+            "execute store result score #cadp dw.sys if items block {} {} {} container.* {item}",
+            cell[0], cell[1], cell[2]
+        ));
+        b.push(format!("assert score #cadp dw.sys matches {total}"));
+        // The player takes the stack the container actually holds — components and
+        // all, the same text the fill emitted — and the objective completes.
+        b.push(format!(
+            "item replace entity {sel} inventory.0 with {stack}"
+        ));
+        b.push(format!("function {ns}:tick"));
+        b.push(format!(
+            "assert score {party} {} matches 1",
+            obj_score(id.as_str())
+        ));
+        write("collect_container", b);
     }
 }
 

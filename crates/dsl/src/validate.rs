@@ -95,6 +95,11 @@ pub fn validate_campaign_with(
     if is_v08(c.quest_plan.dsl_version.as_str()) {
         branch_point_checks(c, &mut d);
     }
+    // DSL v0.8 (task #95): a `collect` may adopt a prefab container, which puts a
+    // second positional filler on the same anchor a `loot` entry can name.
+    if is_v08(c.quests.dsl_version.as_str()) {
+        collect_container_claim_checks(c, &mut d);
+    }
     if is_v08(c.quests.dsl_version.as_str()) || is_v08(c.dialogue.dsl_version.as_str()) {
         happening_subject_checks(c, &mut d);
     }
@@ -2677,6 +2682,8 @@ fn v03_checks(
                     item,
                     count,
                     anchor,
+                    container,
+                    fill_count,
                     ..
                 } => {
                     if !items.contains(item) {
@@ -2703,6 +2710,35 @@ fn v03_checks(
                         d,
                     );
                     anchor_resolves(set, anchor, i, j, "anchor", d);
+                    // v0.8 (task #95): the adopted container's anchor must exist
+                    // too. Whether its CELL really holds a chest/barrel needs the
+                    // assembled world and is the build-tier `DW0438`.
+                    if let Some(cont) = container {
+                        anchor_resolves(set, cont, i, j, "container", d);
+                    }
+                    // v0.8 (task #95): the fill is positional — the required stack
+                    // in `container.0` plus one padding stack per slot after it —
+                    // so it obeys the same 27-slot ceiling a `loot` declaration
+                    // does, and for the same reason: every stack past the last slot
+                    // is dropped without a word.
+                    let slots = 1usize + *fill_count as usize;
+                    if slots > MIN_CONTAINER_SLOTS {
+                        d.push(Diagnostic::error(
+                            codes::LOOT_TOO_MANY_ITEMS,
+                            "quests",
+                            format!("/content/quests/{i}/objectives/{j}/fill_count"),
+                            format!(
+                                "collect objective `{oid}` fills {slots} slots (its own stack \
+                                 plus `fill_count` {fill_count}), more than the \
+                                 {MIN_CONTAINER_SLOTS} slots a vanilla chest or barrel has. \
+                                 Slots are assigned positionally, so every stack past the \
+                                 {MIN_CONTAINER_SLOTS}th would be dropped silently. Lower \
+                                 `fill_count` to at most {max} — a container that reads full \
+                                 does not need to overflow.",
+                                max = MIN_CONTAINER_SLOTS - 1
+                            ),
+                        ));
+                    }
                 }
                 Objective::Interact {
                     anchor,
@@ -5847,6 +5883,62 @@ fn check_enchantments(
 /// Skipped when the registry does not carry stack sizes (the small vendored DSL-side
 /// subset) or the item id is unknown — the latter is already `DW0143`, and stacking
 /// a second diagnostic on one typo is noise.
+/// Exclusive ownership of an adopted container (DSL v0.8, task #95, `DW0435`).
+///
+/// Both container-fill surfaces write **positionally** from `container.0`: a
+/// `loot` entry and a `collect`'s adopted container filling one cell overwrite
+/// each other slot-for-slot, and the loser vanishes without a word — the same
+/// silent-overwrite defect `DW0435` already names for two `loot` entries, reached
+/// through a second door. Two `collect` objectives sharing a container is the
+/// same collision (and worse: whichever activates second replaces the first
+/// objective's items with its own).
+///
+/// Only claims involving at least one `collect` are reported here; `loot`-vs-
+/// `loot` stays in [`loot_checks`], so nothing is diagnosed twice.
+fn collect_container_claim_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    // (anchor -> what claims it), in declaration order. `loot` first: a loot
+    // entry is the surface that exists to fill a container, so it reads as the
+    // incumbent in the message.
+    let mut claimed: BTreeMap<&str, String> = BTreeMap::new();
+    for l in &c.quests.content.loot {
+        claimed
+            .entry(l.anchor.as_str())
+            .or_insert_with(|| format!("loot `{}`", l.id));
+    }
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        for (j, o) in q.objectives.iter().enumerate() {
+            let Some(cont) = o.collect_container() else {
+                continue;
+            };
+            let mine = format!("collect objective `{}`", o.id());
+            if let Some(prev) = claimed.get(cont.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::LOOT_DUPLICATE_ANCHOR,
+                    "quests",
+                    format!("/content/quests/{i}/objectives/{j}/container"),
+                    format!(
+                        "{prev} and {mine} both fill the container at anchor `{cont}`. Slots \
+                         are assigned positionally from `container.0`, so one fill overwrites \
+                         the other slot-for-slot and its items never reach the player. Give the \
+                         collect its own container anchor (prefabs may expose several), or \
+                         fold the other fill's items into it — do NOT rely on declaration \
+                         order to combine them."
+                    ),
+                ));
+            } else {
+                claimed.insert(cont.as_str(), mine);
+            }
+        }
+    }
+}
+
+/// The smallest vanilla container the container-fill surfaces admit. A barrel and
+/// a single chest both hold 27; refusing >27 up front keeps the overflow from
+/// being discovered as a silently dropped stack on a live server. Shared by the
+/// `loot` stack ceiling and the v0.8 `collect` `fill_count` ceiling, which are the
+/// same positional-fill rule (`DW0432`) on two surfaces.
+const MIN_CONTAINER_SLOTS: usize = 27;
+
 fn check_stack_count(
     item: &str,
     count: u32,
@@ -5906,11 +5998,6 @@ fn loot_checks(
         }
     }
     let anchor_resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
-
-    // The smallest vanilla container the surface admits. A barrel and a single
-    // chest both hold 27; refusing >27 up front keeps the overflow from being
-    // discovered as a silently dropped stack on a live server.
-    const MIN_CONTAINER_SLOTS: usize = 27;
 
     let mut seen_id: BTreeSet<&str> = BTreeSet::new();
     let mut seen_anchor: BTreeMap<&str, usize> = BTreeMap::new();
@@ -6019,7 +6106,8 @@ fn loot_checks(
 /// DSL v0.8 reserved-feature gating: spec-0025's stage-4 `branch_points`
 /// declaration, per-node `happening` and `campaign-complete` `ending`, plus
 /// spec-0016 §1's bonfire rest-dialog labels (stage 5), the class-kit `flask`
-/// (stage 3) and spec-0023's actor `tier` (stage 5).
+/// (stage 3), spec-0023's actor `tier` (stage 5) and task #95's `collect`
+/// container adoption (`container` / `item_name` / `fill_count`, stage 5).
 ///
 /// Same asymmetry the v0.7 ledger established: *declaring* any of it below 0.8.0
 /// is `DW0141`, so the version contract stays exact and a 0.6/0.7 campaign's
@@ -6069,6 +6157,51 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
                         "quests",
                         format!("/content/quests/{i}/objectives/{j}/happening"),
                     ));
+                }
+                // task #95 (owner ruling, island playtest rounds 1 and 2): the
+                // `collect` container-adoption trio. Declaring any of it below
+                // 0.8.0 is `DW0141`, so a 0.6/0.7 campaign's chest, its unnamed
+                // item and its single stack cannot move by a byte.
+                if let Objective::Collect {
+                    container,
+                    item_name,
+                    fill_count,
+                    ..
+                } = o
+                {
+                    for (present, field, what) in [
+                        (
+                            container.is_some(),
+                            "container",
+                            "a `collect` `container` (the prefab-placed chest or barrel the \
+                             objective adopts instead of conjuring its own chest)",
+                        ),
+                        (
+                            item_name.is_some(),
+                            "item_name",
+                            "a `collect` `item_name` (the display name the collected item \
+                             carries as a `custom_name` component)",
+                        ),
+                        (
+                            *fill_count != 0,
+                            "fill_count",
+                            "a `collect` `fill_count` (the padding stacks that make the \
+                             container read full)",
+                        ),
+                    ] {
+                        if !present {
+                            continue;
+                        }
+                        d.push(Diagnostic::error(
+                            codes::RESERVED,
+                            "quests",
+                            format!("/content/quests/{i}/objectives/{j}/{field}"),
+                            format!(
+                                "{what} requires dsl_version 0.8.0 — raise this stage's \
+                                 `dsl_version` to 0.8.0, or remove the field"
+                            ),
+                        ));
+                    }
                 }
             }
         }

@@ -307,6 +307,20 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      at that anchor — the compiler fills furniture, it never places it
      (`DW0431`). Elites and set-piece actors take `equipment` in the same shape
      wave mobs use, enchantments included.
+   - **A `collect` takes its item from the room's own furniture, and the item has
+     a name.** (Owner ruling, island playtest rounds 1-2.) Point the objective's
+     `container` at the anchor of a chest/barrel the prefab already placed — the
+     compiler then fills THAT container and places no chest of its own; a floating
+     chest conjured beside the barrel the player has been walking past is the
+     defect this replaced. Give the item an `item_name` ("Cheese", "Tide Ledger"):
+     it is what the player reads on the stack, it translates like every other
+     player-visible string, and an unnamed generic item says nothing about what
+     the quest asked for. Set `fill_count` so the container reads plausibly full
+     (it counts padding SLOTS after the objective's own stack — a barrel with one
+     lonely wheel of cheese in it reads as a bug); `1 + fill_count` must fit the
+     container's 27 slots. The container must really be there in the piece
+     (`DW0438`), must not also be filled by a `loot` entry or another `collect`
+     (`DW0435`), and the fields need `dsl_version` 0.8.0 on the quests stage.
    - Hint wording: give landmark-relative directions from places the player already
      knows (the entrance hall, the gate, a named NPC) — never room-shape jargon
      ("corner room", "L-shaped hall") or solver-internal terms (anchor/piece/socket
