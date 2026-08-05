@@ -207,8 +207,10 @@ fn sequence_fired_wave_census_walks_its_own_tag() {
     )]));
     let census = fn_body(&out, "wave_census_ambush");
     assert!(
-        census.contains("execute as @e[tag=dw_wave_ambush] run function \
-                         hello-world:wave_census_one_ambush"),
+        census.contains(
+            "execute as @e[tag=dw_wave_ambush] run function \
+                         hello-world:wave_census_one_ambush"
+        ),
         "the census must walk the wave's own tag:\n{census}"
     );
 }

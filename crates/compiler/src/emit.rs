@@ -882,6 +882,19 @@ pub fn build_with_warnings(
     // See `crate::affordance` for the drowned-bell soft-lock this encodes.
     crate::affordance::check(&affordances(plan), &out)?;
 
+    // ---- call-graph integrity (DW0497) ----
+    // Every `function <ns>:<name>` the compiler just wrote must point at a
+    // function the compiler wrote. Vanilla resolves an unknown function to
+    // nothing at all — no error, no log line — so an emitter whose call walk and
+    // machinery walk disagree ships a verb that simply never happens. That is
+    // exactly how the island's round-21 build lost two of its three storm waves
+    // (see `crate::integrity`). Feature-blind and last, so it guards every
+    // emitter, including ones not yet written.
+    crate::integrity::check_tree(ns, &out).map_err(|e| BuildFailure::Diagnostic {
+        code: e.code,
+        message: e.message,
+    })?;
+
     // ---- NPC-skin resource pack (spec-0009) ----
     // A campaign with skinned (mannequin) NPCs ships a deterministic resource-pack
     // zip; its SHA-1 is what a client verifies against the itzg RESOURCE_PACK_SHA1
@@ -3614,21 +3627,14 @@ fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
 /// compile-time diagnostic turns that content mistake into a loud build failure
 /// instead of a missing enemy the QA hour has to notice.
 fn check_wave_spawns(plan: &Plan) -> Result<(), BuildFailure> {
-    let c = plan.campaign;
-    let effects = c
-        .quests
-        .content
-        .quests
-        .iter()
-        .flat_map(|q| {
-            q.on_objective_complete
-                .values()
-                .flatten()
-                .chain(&q.on_complete)
-        })
-        .chain(c.quests.content.triggers.iter().flat_map(|t| &t.effects));
+    // `all_campaign_effects` is the emitter's own traversal — the one that decides
+    // where a `function <ns>:spawn_<wave>` call is written. Reading the spawn sites
+    // from it is what makes this check see exactly the calls that ship, including
+    // the ones nested in a `sequence` step, an `on_respawn` bundle or a trap
+    // payload. Scanning only the top-level chains, as this did, is how the island's
+    // round-21 build shipped two `spawn_…` calls with nothing behind them.
     let mut seen: BTreeSet<&str> = BTreeSet::new();
-    for e in effects {
+    for e in all_campaign_effects(plan.campaign) {
         if let Some(wave) = e.spawn_wave() {
             let id = wave.as_str();
             if seen.insert(id) && wave_spawn_pos(plan, id).is_none() {
@@ -5654,22 +5660,62 @@ fn spawn_npc_fn(npc: &str) -> String {
     format!("spawn_npc_{}", plan::safe_local(npc))
 }
 
-/// `spawn_npc_<id>` functions (DSL v0.6): one per **deferred** stage-2 NPC, the
-/// scripted-entrance dual of `despawn-npc`. Emitted only for deferred NPCs, so a
-/// campaign that declares none is byte-identical to pre-0.6.
+/// Every NPC a compiled `spawn-npc` site names — the quest/trigger/trap effect
+/// trees ([`all_campaign_effects`], nesting included) plus every dialogue option's
+/// `spawn-npc`, which the option handler compiles the very same call for.
+///
+/// This is the emitted-call set for [`spawn_npc_fns`], so the two agree by
+/// construction rather than by convention (`DW0497`).
+fn spawn_npc_sites(c: &delvewright_dsl::Campaign) -> BTreeSet<String> {
+    let mut out: BTreeSet<String> = BTreeSet::new();
+    for e in all_campaign_effects(c) {
+        if let Some(npc) = e.spawn_npc() {
+            out.insert(npc.as_str().to_string());
+        }
+    }
+    for tree in &c.dialogue.content.dialogues {
+        for node in &tree.nodes {
+            for opt in &node.options {
+                for eff in &opt.effects {
+                    if let Some(npc) = eff.spawn_npc() {
+                        out.insert(npc.as_str().to_string());
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// `spawn_npc_<id>` functions (DSL v0.6): one per NPC any `spawn-npc` effect
+/// summons, the scripted-entrance dual of `despawn-npc`. A campaign that fires
+/// none and defers none emits nothing here, so it is byte-identical to pre-0.6.
+///
+/// **Not "one per deferred NPC".** `DW0197` guarantees every `deferred` NPC has a
+/// spawn site, so the deferred set is contained in the call set — but the converse
+/// was never true: `spawn-npc` on a NON-deferred NPC is legal content (it is how a
+/// character comes back after a `despawn-npc`), and it compiled a
+/// `function <ns>:spawn_npc_<id>` call against a function nobody emitted. The call
+/// loaded fine and did nothing, so the character stayed gone. That is the island's
+/// wave defect in a second emitter, and it is why the registration walk is now the
+/// call walk ([`spawn_npc_sites`]) rather than a parallel property scan. The
+/// deferred set is unioned in so ordering and output for existing campaigns are
+/// untouched.
 ///
 /// Each of the two summons is **independently** idempotent, so a re-fired
-/// `spawn-npc` never doubles an entity. Body and hitbox share the per-NPC id tag,
-/// so the guards discriminate on the body-only `dw_npc` tag: the body is guarded by
-/// `[tag=dw_npc,tag=<id>]`, the hitbox by its negation `[tag=<id>,tag=!dw_npc]` — a
-/// single `unless entity @e[tag=<id>]` guard on both lines would let the body's own
-/// summon suppress the hitbox.
+/// `spawn-npc` never doubles an entity — and so an entrance fired for an NPC
+/// already standing at its mark is exactly the no-op it reads as. Body and hitbox
+/// share the per-NPC id tag, so the guards discriminate on the body-only `dw_npc`
+/// tag: the body is guarded by `[tag=dw_npc,tag=<id>]`, the hitbox by its negation
+/// `[tag=<id>,tag=!dw_npc]` — a single `unless entity @e[tag=<id>]` guard on both
+/// lines would let the body's own summon suppress the hitbox.
 fn spawn_npc_fns(plan: &Plan) -> Vec<(String, String)> {
     let c = plan.campaign;
     let v03 = campaign_is_v03(plan);
+    let sites = spawn_npc_sites(c);
     let mut out = Vec::new();
     for npc in &plan.npcs {
-        if !npc_is_deferred(c, &npc.npc_id) {
+        if !npc_is_deferred(c, &npc.npc_id) && !sites.contains(npc.npc_id.as_str()) {
             continue;
         }
         let cmds = npc_summon_commands(c, plan, npc, v03);

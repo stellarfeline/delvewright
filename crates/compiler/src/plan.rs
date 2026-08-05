@@ -839,6 +839,26 @@ fn quest_area_of<'a>(campaign: &'a Campaign, quest_id: &str) -> Option<&'a str> 
         .map(|q| q.area.as_str())
 }
 
+/// Does any effect in `effs`, or anywhere in the trees nested under them, fire a
+/// `spawn-wave` for `wave_id`?
+///
+/// Descends through [`QuestEffect::visit_deep`], so `sequence` steps,
+/// `set-checkpoint` `on_respawn`, `bonfire` `on_rest`, `begin-stealth`
+/// `on_caught` and `move-npc`/`move-actor` `on_arrive` are all spawn sites — as
+/// they already are for emission. A verb the emitter compiles from a nesting site
+/// is a verb every consumer scan must see from the same site.
+fn fires_wave<'a>(effs: impl IntoIterator<Item = &'a QuestEffect>, wave_id: &str) -> bool {
+    let mut found = false;
+    for e in effs {
+        e.visit_deep(&mut |x| {
+            if matches!(x.spawn_wave(), Some(w) if w.as_str() == wave_id) {
+                found = true;
+            }
+        });
+    }
+    found
+}
+
 /// The area a wave's mobs spawn in — resolved from the wave's **spawn site**, not
 /// from any `kill` objective. A `spawn-wave` effect (on a quest step, on a quest's
 /// completion, or on an environment trigger) is what makes a wave appear; its
@@ -848,34 +868,58 @@ fn quest_area_of<'a>(campaign: &'a Campaign, quest_id: &str) -> Option<&'a str> 
 /// flock) resolves a spawn position exactly like a wave that is later slain.
 ///
 /// Resolution order: the quest that fires the `spawn-wave` (`on_objective_complete`
-/// or `on_complete`); else, in a single-area campaign, an environment trigger that
-/// fires it (triggers are global — their sole possible area is the one area); else
-/// a quest whose `kill` objective references the wave (defensive fallback for a
-/// wave declared with a kill but no explicit spawn). `None` if nothing spawns it.
+/// or `on_complete`); else, in a single-area campaign, an environment trigger or a
+/// trap payload that fires it (both are global — their sole possible area is the
+/// one area); else a quest whose `kill` objective references the wave (defensive
+/// fallback for a wave declared with a kill but no explicit spawn). `None` if
+/// nothing spawns it.
+///
+/// **Every root is walked DEEP** ([`fires_wave`]), through
+/// [`QuestEffect::nested_effect_lists`] — the DSL's single authority on effect
+/// nesting, and the same authority `emit::all_campaign_effects` walks to decide
+/// what to compile. A wave the emitter writes a `function <ns>:spawn_<wave>` call
+/// for is therefore always a wave this function resolves an area for, and so
+/// always a wave whose support machinery is emitted: the agreement is structural,
+/// not two walks that have to remember each other.
+///
+/// It used to be a shallow scan of the top-level chains only, and the island's
+/// round-21 build is what that cost: `wave/storm-shore` and `wave/storm-fire` were
+/// fired from step 7 of a `sequence`, resolved no area, got no `spawn_…`, no
+/// census, no brand and no kill reward — while `seq_under_ram` still shipped the
+/// call. Two of three storm waves never spawned (`DW0497` is now the standing
+/// proof that this class cannot ship again).
 pub fn wave_area<'a>(campaign: &'a Campaign, wave_id: &str) -> Option<&'a str> {
-    let spawns_wave = |e: &QuestEffect| matches!(e.spawn_wave(), Some(w) if w.as_str() == wave_id);
-    // 1. A quest whose effects fire `spawn-wave` for this wave — the true spawn site.
+    // 1. A quest whose effect TREE fires `spawn-wave` for this wave — the true
+    //    spawn site.
     for q in &campaign.quests.content.quests {
-        if q.on_objective_complete
-            .values()
-            .flatten()
-            .chain(&q.on_complete)
-            .any(&spawns_wave)
-        {
+        if fires_wave(
+            q.on_objective_complete
+                .values()
+                .flatten()
+                .chain(&q.on_complete),
+            wave_id,
+        ) {
             return quest_area_of(campaign, q.id.as_str());
         }
     }
-    // 2. An environment trigger that fires it. Triggers are global; in a
-    //    single-area campaign the sole area is unambiguous. (Multi-area
-    //    trigger-only waves are not resolvable here and surface as a build
-    //    diagnostic rather than a silent dangling spawn.)
+    // 2. An environment trigger or trap payload that fires it. Both are global
+    //    effect roots carrying no area of their own; in a single-area campaign the
+    //    sole area is unambiguous. (Multi-area trigger-only waves are not
+    //    resolvable here and surface as a build diagnostic rather than a silent
+    //    dangling spawn.)
     if campaign.world.content.areas.len() == 1
-        && campaign
+        && (campaign
             .quests
             .content
             .triggers
             .iter()
-            .any(|t| t.effects.iter().any(&spawns_wave))
+            .any(|t| fires_wave(&t.effects, wave_id))
+            || campaign
+                .quests
+                .content
+                .traps
+                .iter()
+                .any(|t| fires_wave(&t.payload, wave_id)))
     {
         return campaign.world.content.areas.first().map(|a| a.id.as_str());
     }
