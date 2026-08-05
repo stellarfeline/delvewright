@@ -5463,36 +5463,24 @@ fn party_flag_gate(flags: &[delvewright_dsl::FlagId]) -> String {
         .collect()
 }
 
-/// Every quest effect in the campaign (objective-complete, quest-complete, and
-/// trigger effects), flattened through `sequence` steps and `move-actor` `on_arrive`
-/// (spec-0014) so nested lifecycle/cutscene/actor targets are collected. Pre-0.6
-/// campaigns have no nesting, so this equals the shallow list (byte-identical).
+/// Every quest effect in the campaign, flattened through `sequence` steps and
+/// `move-actor` `on_arrive` (spec-0014) so nested lifecycle/cutscene/actor targets
+/// are collected. Pre-0.6 campaigns have no nesting, so this equals the shallow
+/// list (byte-identical).
+///
+/// The roots come from [`crate::plan::for_each_effect_root`] — the one enumeration
+/// the gate scans and the staged-walk timeline also walk. What the emitter
+/// generates functions for and what the proofs check are therefore the same set by
+/// construction: a `sequence`/`cutscene`/`move-actor` in **any** root gets its
+/// generated function, and none of the four walks can quietly grow a different
+/// idea of where effects live (tasks #142, #167, #168, #169).
 fn all_campaign_effects(c: &delvewright_dsl::Campaign) -> Vec<&QuestEffect> {
     let mut out = Vec::new();
-    for q in &c.quests.content.quests {
-        for e in q
-            .on_objective_complete
-            .values()
-            .flatten()
-            .chain(&q.on_complete)
-        {
+    crate::plan::for_each_effect_root(c, &mut |_site, effs| {
+        for e in effs {
             push_effect_deep(e, &mut out);
         }
-    }
-    for t in &c.quests.content.triggers {
-        for e in &t.effects {
-            push_effect_deep(e, &mut out);
-        }
-    }
-    // spec-0022: a trap `payload` is an effect root of the same standing as a
-    // quest bundle or a trigger bundle. Without this, a `sequence`/`cutscene`
-    // inside a payload would never get its generated function and the payload's
-    // `function <ns>:…` call would dangle.
-    for t in &c.quests.content.traps {
-        for e in &t.payload {
-            push_effect_deep(e, &mut out);
-        }
-    }
+    });
     out
 }
 
