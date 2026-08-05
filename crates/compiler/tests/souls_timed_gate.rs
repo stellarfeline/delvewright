@@ -53,6 +53,51 @@ fn build_fixture() -> BuildOutput {
     .expect("every emitted command validates (DW0378 holds on the fixture)")
 }
 
+/// The observability proof (spec-0016 §4 addendum, `DW0388`) over the fixture's
+/// REAL prefab geometry: the barred door sits at the end of a room the party walks
+/// the length of, so a player can stand well back and watch a whole cycle before
+/// stepping into the span. The synthetic-world fixtures in `compiler::nav` pin the
+/// blind-corner failure and the watch-bay fix cell by cell; this pins that the rule
+/// does not fire on a plain, legible piece of shipped level geometry — a proof that
+/// reds a normal room would be a proof nobody could author against.
+#[test]
+fn the_fixture_gate_can_be_watched_before_it_is_entered() {
+    let dir = common::compiler_fixtures_dir().join(NS);
+    let loaded = load_campaign_dir(&dir).unwrap();
+    let campaign = parse_campaign(&loaded.raw).expect("souls-timed-gate parses");
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
+            structures.insert(piece.structure_file.clone(), bytes);
+        }
+    }
+    // The campaign declares a timed gate, so the proof has something to judge …
+    assert_eq!(
+        delvewright_compiler::nav::timed_hazards(&plan).len(),
+        1,
+        "the fixture's portcullis is the hazard under proof"
+    );
+    let (_, warnings) = emit::build_with_warnings(
+        &plan,
+        &loaded.inputs,
+        &structures,
+        &CommandTree::v1_21_11(),
+        &prefabs,
+        None,
+        "unpinned",
+        &BTreeMap::new(),
+    )
+    .expect("the build succeeds — DW0388 is not raised at error tier either");
+    // … and it passes, at either tier.
+    assert!(
+        !warnings.iter().any(|d| d.code == "DW0388"),
+        "a gate at the end of an open room is observable: {warnings:#?}"
+    );
+}
+
 fn fn_body<'a>(out: &'a BuildOutput, name: &str) -> &'a str {
     let path = format!("datapack/data/{NS}/function/{name}.mcfunction");
     std::str::from_utf8(
