@@ -147,7 +147,8 @@ scene (manual / CI-future):
 java -cp 'chunky-lib/*' se.llbit.chunky.main.Chunky -download-mc 1.21.11
 # 1. build the delve + boot once so the datapack places structures, copy world out
 delvec build <campaign> -o out
-EULA=TRUE docker compose -f validation/compose.yaml --profile play up --build server
+EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
+  --profile play up --build server
 #    docker cp <container>:/data/world ./world
 # 2. emit scenes, point their world.path at ./world, render
 delve-render scene out -o scenes --world ./world

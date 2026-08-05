@@ -221,13 +221,15 @@ jobs:
       # naming the wrong diagnostic). Deterministic, offline, stdlib-only python3.
       - name: docs tree carries no duplicate rows/headings or conflict markers
         run: python3 tools/check-doc-dupes.py
-      # Worker isolation (validation/README.md): container names and host ports
-      # are Docker-GLOBAL, so `-p dw-worker-<x>` does not isolate them and a
-      # service missing from validation/worker-override.yaml collides between two
-      # concurrent workers. Cost a run twice — `server` (#190), then `bot`.
+      # Isolation by construction (task #185, validation/README.md): container
+      # names and host ports are Docker-GLOBAL — the only two things `docker
+      # compose -p <project>` does not isolate — so validation/compose.yaml
+      # carries neither, and two ladders run side by side with no mutex. Only
+      # owner-play.yaml may bind 25565. Re-introducing a pin cost a run twice
+      # under the old override regime (`server` #190, then `bot`).
       # Deterministic, offline, stdlib-only python3.
-      - name: worker override resets every globally-named compose service
-        run: python3 tools/check-worker-override.py
+      - name: validation compose carries no Docker-global name or port
+        run: python3 tools/check-compose-isolation.py
       # --offline: check only local/internal links. The repo is private, so
       # external-link checks would fail or flake.
       - uses: lycheeverse/lychee-action@v2
@@ -345,13 +347,12 @@ jobs:
           fi
           echo "datapack loaded with zero errors."
 
+      # Every PackTest pass below goes through `packtest-run.sh --project <id>`:
+      # the entry script REQUIRES the project id (task #185), which is the only
+      # name a ladder has now that compose.yaml pins none — and it tears its own
+      # project down and proves it clean, so no pass can leave state for the next.
       - name: PackTest suite (headless, exit code = failed tests)
-        run: |
-          docker compose -f validation/compose.yaml --profile packtest up \
-            --abort-on-container-exit --exit-code-from packtest
-      - name: tear down
-        if: always()
-        run: docker compose -f validation/compose.yaml --profile packtest down -v --remove-orphans || true
+        run: bash validation/packtest-run.sh --project dw-ci-helloworld
 
       # spec-0020 — the cast ledger's templates need a campaign that HAS a ledger.
       # A generated PackTest only exists for a campaign that emits it, and
@@ -370,18 +371,9 @@ jobs:
             -o validation/delve-output-cast --prefabs campaigns/prefabs
 
       - name: PackTest suite — cast ledger (root swap, bark delivery, explicit none)
-        env:
-          DELVE_OUTPUT: ./delve-output-cast
-          PACKTEST_CONTAINER: delvewright-packtest-cast
         run: |
-          docker compose -p dw-cast -f validation/compose.yaml --profile packtest up \
-            --abort-on-container-exit --exit-code-from packtest
-      - name: tear down (cast ledger)
-        if: always()
-        env:
-          DELVE_OUTPUT: ./delve-output-cast
-          PACKTEST_CONTAINER: delvewright-packtest-cast
-        run: docker compose -p dw-cast -f validation/compose.yaml --profile packtest down -v --remove-orphans || true
+          bash validation/packtest-run.sh --project dw-ci-cast \
+            --output ./delve-output-cast
 
       # `requires_item` is HELD, not carried (owner ruling, 2026-08-03) — and the
       # template that proves it, `verb_interact_held`, is emitted only for a campaign
@@ -399,18 +391,9 @@ jobs:
             -o validation/delve-output-keeptrial --prefabs campaigns/prefabs
 
       - name: PackTest suite — keep-trial (`requires_item` is HELD, not carried)
-        env:
-          DELVE_OUTPUT: ./delve-output-keeptrial
-          PACKTEST_CONTAINER: delvewright-packtest-keeptrial
         run: |
-          docker compose -p dw-keeptrial -f validation/compose.yaml --profile packtest up \
-            --abort-on-container-exit --exit-code-from packtest
-      - name: tear down (keep-trial)
-        if: always()
-        env:
-          DELVE_OUTPUT: ./delve-output-keeptrial
-          PACKTEST_CONTAINER: delvewright-packtest-keeptrial
-        run: docker compose -p dw-keeptrial -f validation/compose.yaml --profile packtest down -v --remove-orphans || true
+          bash validation/packtest-run.sh --project dw-ci-keeptrial \
+            --output ./delve-output-keeptrial
 
       # spec-0016 §1 — the whole souls RETRY LOOP was shape-verified in Rust and
       # never actually RUN. hello-world has no bonfire, so `souls_bonfire_rest`,
@@ -427,18 +410,9 @@ jobs:
             -o validation/delve-output-bonfire --prefabs campaigns/prefabs
 
       - name: PackTest suite — souls-bonfire (rest, re-seat, stationed re-seat)
-        env:
-          DELVE_OUTPUT: ./delve-output-bonfire
-          PACKTEST_CONTAINER: delvewright-packtest-bonfire
         run: |
-          docker compose -p dw-bonfire -f validation/compose.yaml --profile packtest up \
-            --abort-on-container-exit --exit-code-from packtest
-      - name: tear down (souls-bonfire)
-        if: always()
-        env:
-          DELVE_OUTPUT: ./delve-output-bonfire
-          PACKTEST_CONTAINER: delvewright-packtest-bonfire
-        run: docker compose -p dw-bonfire -f validation/compose.yaml --profile packtest down -v --remove-orphans || true
+          bash validation/packtest-run.sh --project dw-ci-bonfire \
+            --output ./delve-output-bonfire
 
       # spec-0016 §6 — same gap on the other half of the ruling. The TD-lane
       # templates (`souls_td_patrol_nbt`, `souls_td_lane_march`,
@@ -456,15 +430,6 @@ jobs:
             -o validation/delve-output-lanes --prefabs campaigns/prefabs
 
       - name: PackTest suite — souls-td-lanes (patrol NBT, march, release, re-seat)
-        env:
-          DELVE_OUTPUT: ./delve-output-lanes
-          PACKTEST_CONTAINER: delvewright-packtest-lanes
         run: |
-          docker compose -p dw-lanes -f validation/compose.yaml --profile packtest up \
-            --abort-on-container-exit --exit-code-from packtest
-      - name: tear down (souls-td-lanes)
-        if: always()
-        env:
-          DELVE_OUTPUT: ./delve-output-lanes
-          PACKTEST_CONTAINER: delvewright-packtest-lanes
-        run: docker compose -p dw-lanes -f validation/compose.yaml --profile packtest down -v --remove-orphans || true
+          bash validation/packtest-run.sh --project dw-ci-lanes \
+            --output ./delve-output-lanes
