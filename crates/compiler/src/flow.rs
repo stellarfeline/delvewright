@@ -474,7 +474,7 @@ impl<'a> Flow<'a> {
             }
         }
 
-        let worlds = enumerate_worlds(&groups, &read_flags(c));
+        let worlds = enumerate_worlds(&groups, &gate_flags(c));
         Flow {
             c,
             groups,
@@ -1670,7 +1670,7 @@ fn choice_groups(trees: &[TreeModel]) -> (Vec<ChoiceGroup>, BTreeMap<(String, us
 /// (deep, including reaction bundles), dialogue options, triggers, traps. A
 /// choice group none of whose flags is read cannot change any reachability
 /// verdict, so it never participates in world enumeration.
-fn read_flags(c: &Campaign) -> BTreeSet<String> {
+pub fn gate_flags(c: &Campaign) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     let eat = |fs: &[delvewright_dsl::FlagId], out: &mut BTreeSet<String>| {
         for f in fs {
