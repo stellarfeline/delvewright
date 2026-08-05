@@ -114,6 +114,31 @@ fn boss_tier_wave_with_rest_reseat_is_dw0499() {
     );
     let hit = diags.iter().find(|d| d.code == "DW0499").unwrap();
     assert_eq!(hit.path, "/content/waves/0/respawns_on_rest");
+
+    // The message is load-bearing content, not incidental prose: it must name
+    // the offending wave, cite the ruling by its stable phrase, and carry both
+    // prescriptions (re-bill as elite, or drop the re-seat) — a message
+    // regression should be as machine-visible as a code regression.
+    assert!(
+        hit.message.contains("wave/ambush"),
+        "the message must name the offending wave: {}",
+        hit.message
+    );
+    assert!(
+        hit.message.contains("never respawn on rest"),
+        "the message must cite souls ruling 5/7 by its stable phrase: {}",
+        hit.message
+    );
+    assert!(
+        hit.message.contains("respawns_on_rest"),
+        "the message must carry the drop-the-reseat prescription: {}",
+        hit.message
+    );
+    assert!(
+        hit.message.contains("elite"),
+        "the message must carry the re-bill-as-elite prescription: {}",
+        hit.message
+    );
 }
 
 /// **Control.** An `elite`-tier wave with `respawns_on_rest: true` stays
