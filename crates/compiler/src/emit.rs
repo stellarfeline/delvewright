@@ -11861,6 +11861,21 @@ fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// the machine-checkable half of "a deterministic clock over the gate region";
 /// the *timing* half is the compile-time `DW0378` proof, which needs no server.
 /// Emits nothing for a campaign with no timed gate.
+/// Pin the jam score a disarmable gate's clock is guarded by, so a template never
+/// runs against a jam a sibling left behind.
+///
+/// PackTest shares one server across every generated template and gives no
+/// ordering guarantee, so a persistent score is shared mutable state between
+/// tests. `souls_timed_gate_disarm` deliberately ends DISARMED — that is its
+/// subject — and any sibling that calls `tgate_close_` afterwards finds the call
+/// swallowed by the jam guard. Emitting nothing for a gate with no `disarm` keeps
+/// those campaigns byte-identical.
+fn pin_tgdis(b: &mut Vec<String>, g: &crate::plan::TimedGatePlan) {
+    if g.disarm.is_some() {
+        b.push(format!("scoreboard players set #tgdis_{} dw.sys 0", g.safe));
+    }
+}
+
 fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = &plan.campaign.world.content.title;
@@ -11880,6 +11895,13 @@ fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
         "fill {} {} {} {} {} {} {}",
         from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
     ));
+    // …and un-jam, for the same reason the fill exists. `souls_timed_gate_disarm`
+    // ends with the gate DISARMED and never restores it, `#tgdis_<id>` persists on
+    // the shared server, and PackTest does not order siblings — so whenever disarm
+    // runs first, this template's `tgate_close_` is swallowed by its own jam guard
+    // and the re-seal assertion reads air. A template never inherits the state a
+    // sibling left (the flag-leak class of PR #237); it pins what it depends on.
+    pin_tgdis(&mut b, g);
     b.push(format!(
         "execute store success score #tg_sealed dw.sys if block {} {} {} {}",
         probe[0], probe[1], probe[2], g.gate_block
@@ -12038,6 +12060,10 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
         g.id
     ));
     b.push(format!("function {ns}:setup"));
+    // Un-jam first, for the same reason the base template does: a jam left by
+    // `souls_timed_gate_disarm` swallows the `tgate_close_` this test crushes
+    // with, and the crush that never happens reads as a lethality failure.
+    pin_tgdis(&mut b, g);
     // Open first: a mistimed crossing leaves the player standing in an open
     // gateway, which is the position the judgement must catch.
     b.push(format!("function {ns}:tgate_open_{}", g.safe));

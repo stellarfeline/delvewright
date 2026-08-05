@@ -188,17 +188,18 @@ rots: the temple's colonnade really does follow the box, and a nine-deep box at
 
 ## 5b. Staging vocabulary — original rules with gates
 
-`library::{cliff_path, watch_bay}` are **original Delvewright content** (licence
-`original`; nothing ported, no ledger entry owed). They are the W1 family of the
-drowned-bell remake's grammar vocabulary, and they are a different kind of rule
-from §5: a temple is judged by looking at it, these are judged by a **machine
-gate about how the space plays**. Every gate below is an assertion in
+`library::{cliff_path, watch_bay, rafter_hall, ambush_door, store_room}` are
+**original Delvewright content** (licence `original`; nothing ported, no ledger
+entry owed). They are the drowned-bell remake's grammar vocabulary — W1 (path
+and hazard geometry) and W2 (interior ambush) — and they are a different kind of
+rule from §5: a temple is judged by looking at it, these are judged by a
+**machine gate about how the space plays**. Every gate below is an assertion in
 `crates/grammar/tests/staging.rs` over the expanded model, and each has been
 shown to go red when the geometry is wrong.
 
 ### The W1 local frame
 
-Both rules share one frame, and it is not arbitrary:
+All five rules share one frame, and it is not arbitrary:
 
 > **Local `Y` is up. Local `Z`-max is the approach end; travel runs toward local
 > `Z`-min.** Length is turned onto the box's longer horizontal axis.
@@ -271,11 +272,118 @@ Gates:
    column of the approach and the sightline check must go red, while the passage
    stays walkable (so what was caught is blindness, not impassability).
 
-Both programs are in the generic library suites too: structural validity, JSON
-round trip, palette-swap-moves-no-block, and the double-expand determinism gate
-over model bytes *and* anchors (`tests/library.rs`, `tests/determinism.rs`).
-Their anchors — including generated `-<i>` names nobody hand-listed — round-trip
-through `PrefabRegistry` (`crates/compiler/tests/grammar_prefab.rs`).
+### `rafter_hall` — the rafter perch
+
+A hall whose truss layer is somewhere a body waits. At `h-3` a course of
+**corbels** carries `bracket` cells in from each side wall; at `h-2`, over each
+corbel's inner end, is a standable cell. Slices repeat every `beam_period` along
+the hall and alternate which side is declared a perch.
+
+| | |
+|---|---|
+| Controls | `beam_period` (4), `bracket` (2), `span_beams` (0 — a test knob); roles `stone`, `timber` |
+| Smallest region | the density cap ties width to length, so this is a curve, not a triple: interior `X · Z · period ≥ 24·Z + 24·period`, plus `X ≥ 2·bracket + 3`, `Y ≥ 6`, `Z ≥ period`. 10 × 6 × 12 is the smallest trussed hall at the defaults, pinned from both sides in `tests/staging.rs` |
+| Anchors | `anchor/perch-<i>` — a corbel's inner cell. `anchor/hall-door` — the floor cell at the centre of the approach end, which is where the sightline gate stands |
+| Variants | `Y < 6` is a **hall with no truss**: same shell, same door anchor, no perches, and not an error. Both shapes are asserted |
+
+**The centre span is open on purpose.** The obvious full-span truss fails gate 1
+and cannot be tuned into passing it: an eye on the floor is below the beam plane
+and a perch is above it, so every ray crosses the plane over a run of about
+`0.42 × distance` cells, and past ~9 cells of hall that run always contains a
+nearer beam. A spanning truss hides its own far rafters. Corbels leave the nave
+clear, and a ray to any perch crosses the beam plane while still only 16–58% of
+the way to that perch's wall — inside the open span at every hall length.
+
+Gates:
+
+1. **Every perch is visible from `anchor/hall-door`**, walked with the same
+   Amanatides–Woo traversal as `watch_bay`. Fairness in the souls grammar is
+   carried by silhouette, not by sound (`docs/notes/souls-design-language.md`
+   §4.3). Teeth: `span_beams = 1` rebuilds the full-span truss and 6 of the
+   fixture's 7 perches go blind (0 of 7 at the default), while the nave stays
+   walkable end to end — so what was caught is blindness, not a severed hall.
+2. **At most one perch per 24 floor cells**, the smallest machine-checkable form
+   of the Cathedral's monoculture critique (§4.1). Enforced *by the rule*: the
+   cap is arithmetic in the guard, so a hall too narrow for its own rafters is a
+   `NoApplicableRule` refusal. Teeth: the fixture at 8 wide would carry the same
+   7 rafters over 150 floor cells — a genuine cap breach — and is refused.
+3. **The rafters are geometry.** Every perch is standable on timber with
+   headroom, and so is the next cell of the same beam. Two red sides in the same
+   test: the centre of the nave is *not* standable at rafter height (or the
+   truss would be a floor), and no walk from the ground reaches a perch (or it
+   would be a mezzanine).
+
+### `ambush_door` — the corner-ambush alcove
+
+A wall across the box with one 1-wide opening, and immediately inside it, one
+cell to the `+X` side, a blind pocket.
+
+| | |
+|---|---|
+| Controls | `head` (3), `door_height` (2), `door_offset` (2), `expose` (0 — a test knob); role `stone` |
+| Smallest region | `door_offset + 5 + expose` across, `head + 2` tall, 5 long — and at least as long as it is wide. 7 × 5 × 7 at the defaults |
+| Anchors | `anchor/alcove` — the blind cell, facing the door lane (derived through a `reorient` naming the across-wall axis as local `Z`, which is why the alcove is on the `+X` side). `anchor/threshold` — the standable cell in the opening, facing the way the player walks through |
+
+Gates:
+
+1. **The alcove is blind from the approach** — the vocabulary's first
+   *negative*-visibility gate, asserted cell by cell over every standable
+   approach cell (54 in the fixture, 0 of which see it). Teeth: `expose = 1`
+   widens the opening over the alcove's own lane and 29 of the 54 see it.
+2. **One swing from the doorway's inside cell** — Chebyshev distance exactly 1,
+   swept over `door_offset` so the adjacency is arranged rather than coincident
+   with the default.
+3. **The doorway is the only route** — the standable-cell graph connects
+   approach to inside, and with the doorway's column deleted it does not (the
+   same cut `cliff_path` uses on its ledge lane).
+
+A blind alcove is *not* discoverable from the decision point, which §4.2 of the
+dossier calls the unfair kind. That is deliberate and it is the **test** rung of
+teach/test/twist: the rule declares `anchor/threshold` so a campaign has
+somewhere to hang the telegraph that pays for it, and it does not pretend the
+pocket is its own tell.
+
+### `store_room` — the container tell
+
+A storeroom whose far wall carries a row of barrels with exactly one `unbanded`
+variant among them.
+
+| | |
+|---|---|
+| Controls | none (the row is as long as the box); roles `stone`, `barrel`, `barrel_unbanded` |
+| Smallest region | 5 × 5 × 3 — three barrels is the shortest row in which the odd one always has a neighbour |
+| Anchors | `anchor/store-line` — the barrel at the approach end of the row. `anchor/tell` — the odd barrel's own cell, facing out into the room (hence the row sits at `X`-max) |
+
+**Exactly one, without a counter.** A rule has no memory, so the invariant is in
+the derivation's shape: `line_before_tell` either lays a plain barrel and
+recurses or spends its draw and hands the rest to `line_after_tell`, a plain
+fill that can never produce another; with one cell left neither guarded
+alternative applies and the `otherwise` places the tell outright. The two
+guarded alternatives overlap on purpose — that overlap *is* the position
+distribution (§2), weighted 3:1 toward carrying on.
+
+Gates:
+
+1. **Exactly one tell, and the anchor is on it** — counted off the *blocks* over
+   12 seeds, not off the anchors, with the rest of the row asserted to be plain
+   barrels so "exactly one" is not an artefact of a one-cell row.
+2. **The tell is in the line** — a barrel beside it on at least one side, and the
+   row runs the whole lane.
+3. **The tell moves with the seed** — 12 seeds put it in ≥ 3 distinct cells (9 in
+   practice). A fixed tell is a landmark players learn once.
+
+The default binding keeps both roles one material family and changes only the
+variant: a spruce barrel and a spruce log, the same wood with its iron bands
+missing. `barrel[open=true]` would be the neater mimic-breath pun and is not
+usable — vanilla closes the lid the moment the structure loads, so the tell
+would last exactly as long as nobody looked.
+
+All five programs are in the generic library suites too: structural validity,
+JSON round trip, palette-swap-moves-no-block over **every** role each binds, and
+the double-expand determinism gate over model bytes *and* anchors
+(`tests/library.rs`, `tests/determinism.rs`). Their anchors — including generated
+`-<i>` names nobody hand-listed, and `store_room`'s seeded tell position —
+round-trip through `PrefabRegistry` (`crates/compiler/tests/grammar_prefab.rs`).
 
 ## 6. Export — freezing an expansion as a prefab
 
@@ -361,5 +469,21 @@ spec** on `Mark::facing` (`local_x_min` / `local_x_max` / `local_z_min` /
 `local_z_max`, resolved through the scope's orientation at expansion, exactly as
 `AxisSpec` already resolves an axis name). It is additive, needs no new node
 kind, and would let a rule aim an anchor in any of the four cardinals whichever
-way the piece was turned. Not built: W1 shipped without it, and one worked
-example is a thinner case than two.
+way the piece was turned.
+
+**W2 met the same wall, and paid differently.** `rafter_hall`'s perches
+alternate between the two side walls; both should look *across* at the nave, and
+that is a facing along local `+X` for the left corbel and `-X` for the right.
+Only the second is expressible, so both take the derived down-hall facing
+instead — an occupant watching the ground the player is walking into, which is a
+defensible reading of the move but not the one the geometry asked for. The
+workarounds available inside the current IR are all worse than the shortfall:
+put perches on one wall only (monoculture, the exact thing the entry's density
+cap exists to prevent), or declare a *world* cardinal (which breaks the moment
+the frame's `Largest` turns the piece 90°). `store_room` dodged it by choosing
+which wall the barrel row sits against, which works for one row and does not
+generalise to a rule with two symmetric sides.
+
+That is now two worked examples with the same shape and one rule that only
+avoided it by luck of layout. Still not built here — the red line for W2 was
+compose-existing-verbs-only — but the case is no longer thin.
