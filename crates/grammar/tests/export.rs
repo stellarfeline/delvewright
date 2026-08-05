@@ -9,11 +9,13 @@ use delvewright_grammar::{Box3, ExpandOptions, Program};
 /// The temple region the rest of the test suite uses, small enough for a
 /// vanilla structure template on every axis.
 const TEMPLE_REGION: Box3 = Box3::at_origin([13, 14, 21]);
+/// The castle region — the library's one program that declares an anchor.
+const CASTLE_REGION: Box3 = Box3::at_origin([41, 14, 25]);
 
 fn cases() -> Vec<(Program, Box3, &'static str)> {
     vec![
         (temple(), TEMPLE_REGION, "grammar-temple"),
-        (castle(), Box3::at_origin([41, 14, 25]), "grammar-castle"),
+        (castle(), CASTLE_REGION, "grammar-castle"),
         (church(), Box3::at_origin([15, 16, 30]), "grammar-church"),
     ]
 }
@@ -86,6 +88,33 @@ fn the_provenance_row_identifies_the_bytes_it_sits_beside() {
         one.metadata.license.generated_by.program_hash
     );
     assert_ne!(restyled.nbt, one.nbt);
+}
+
+/// A program that declares anchors exports them, in the hand-built field shape
+/// (`anchors: { "<name>": { pos, facing } }`) — the castle's courtyard staging
+/// point, at the floor centre of the scope the `mark` sits on.
+///
+/// The position is arithmetic, not a snapshot: a 41x14x25 region puts the
+/// castle's plan on world X, the layout leaves the middle X band (9..32) to
+/// `castle_center`, and its Z split leaves the courtyard at z 9..16 — floor
+/// centre `[9 + 11, 0, 9 + 3]`.
+#[test]
+fn a_marked_program_exports_the_anchors_it_declared() {
+    let export = export_prefab(
+        &castle(),
+        CASTLE_REGION,
+        &ExpandOptions::seeded(7),
+        "grammar-castle",
+    )
+    .unwrap();
+    let json: serde_json::Value = serde_json::from_str(&export.metadata_json).unwrap();
+    assert_eq!(
+        json["anchors"],
+        serde_json::json!({
+            "anchor/courtyard": { "pos": [20, 0, 12], "facing": "north" }
+        }),
+        "the castle's `mark` must reach the metadata"
+    );
 }
 
 /// The metadata a grammar prefab exports is exactly the hand-built shape minus
