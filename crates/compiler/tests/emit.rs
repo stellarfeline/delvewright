@@ -307,11 +307,36 @@ fn critical_path_shape_and_commands() {
 
     // Each interactive step's /trigger objective must be enabled every tick, so
     // both the dialog buttons and the bot's chat command work.
+    //
+    // `dw.class` is the ONE-SHOT exception (#122): `class_apply_<c>` ends in a
+    // teleport to the campaign entry, so a trigger left armed after a class is a
+    // live warp back to the start of the delve. Its arming is therefore the same
+    // every-tick guarantee, made conditional on not-yet-classed and per-player —
+    // a strictly narrower enable, checked here at both ends (the tick drives it,
+    // and `class_arm` is what actually enables it).
     let tick = text(&out, "datapack/data/hello-world/function/tick.mcfunction");
     for step in steps {
         if let Some(cmd) = step["command"].as_str() {
             // command form: "/trigger <objective> set <n>"
             let objective = cmd.split_whitespace().nth(1).unwrap();
+            if objective == "dw.class" {
+                assert!(
+                    tick.contains("execute as @a run function hello-world:class_arm"),
+                    "the class trigger's arming path is not driven every tick: {tick}"
+                );
+                let arm = text(
+                    &out,
+                    "datapack/data/hello-world/function/class_arm.mcfunction",
+                );
+                assert!(
+                    arm.contains(
+                        "execute unless score @s dw.classed matches 1 run scoreboard players \
+                         enable @s dw.class"
+                    ),
+                    "an unclassed player's class trigger must still be armed every tick: {arm}"
+                );
+                continue;
+            }
             assert!(
                 tick.contains(&format!("scoreboard players enable @a {objective}")),
                 "trigger objective {objective} is not enabled in tick"
@@ -340,6 +365,96 @@ fn critical_path_shape_and_commands() {
         "campaign completion addresses the party, never one player: {complete}"
     );
     assert!(complete.contains("[dw:complete hello-world campaign]"));
+}
+
+/// #122 — **the class trigger is one-shot per player**, sealed at the compiler.
+///
+/// `class_apply_<c>` ends in `teleport @s <campaign entry point>`, and `tick`
+/// used to `enable @a dw.class` unconditionally forever: anything that could
+/// chat a command could re-class mid-run and warp itself back to the start of
+/// the delve. The seal is the vanilla trigger pattern — re-enable only what is
+/// meant to be usable — and it is per-PLAYER, because classing is per-player: a
+/// second player still on the class screen must keep an armed trigger while the
+/// first is sealed.
+#[test]
+fn the_class_trigger_is_one_shot_and_the_seal_is_per_player() {
+    let out = build_hello_world();
+    let tick = text(&out, "datapack/data/hello-world/function/tick.mcfunction");
+
+    // The unconditional party-wide enable is gone from the tick…
+    assert!(
+        !tick.contains("scoreboard players enable @a dw.class"),
+        "the class trigger must never be re-armed party-wide and unconditionally: {tick}"
+    );
+    // …replaced by the arming path, driven every tick, as each player.
+    assert!(
+        tick.contains("execute as @a run function hello-world:class_arm"),
+        "the arming path must run every tick: {tick}"
+    );
+
+    // The seal itself: enabled only for a player who has not classed, and read
+    // off that player's OWN score (`@s`), never the party holder.
+    let arm = text(
+        &out,
+        "datapack/data/hello-world/function/class_arm.mcfunction",
+    );
+    let armed: Vec<&str> = arm.lines().filter(|l| l.contains("enable")).collect();
+    assert_eq!(armed.len(), 1, "one arming line, not a family: {arm}");
+    assert_eq!(
+        armed[0],
+        "execute unless score @s dw.classed matches 1 run scoreboard players enable @s dw.class"
+    );
+    assert!(
+        !arm.contains("#party"),
+        "the seal is per-player: one player's class must not lock another's screen: {arm}"
+    );
+
+    // The state the seal reads is written by the apply, which also consumes the
+    // trigger (`reset` clears the score AND re-locks it).
+    let apply = text(
+        &out,
+        "datapack/data/hello-world/function/class_apply_wanderer.mcfunction",
+    );
+    assert!(
+        apply.contains("scoreboard players reset @s dw.class"),
+        "{apply}"
+    );
+    assert!(
+        apply.contains("scoreboard players set @s dw.classed 1"),
+        "{apply}"
+    );
+
+    // Second seal: a `dw.class` score arriving by any other route is inert, so
+    // the dispatch cannot warp an already-classed player either.
+    let dispatch = tick
+        .lines()
+        .find(|l| l.contains(":class_apply_"))
+        .expect("the class dispatch is emitted");
+    assert!(
+        dispatch.contains("unless score @s dw.classed matches 1"),
+        "the dispatch must not re-apply a class to a classed player: {dispatch}"
+    );
+
+    // And the claim is proved on a live server, not only in the emitted text.
+    let seal = String::from_utf8(
+        out.get("packtest-datapack/data/hello-world/test/class_trigger_once.mcfunction")
+            .expect("the one-shot PackTest is emitted")
+            .clone(),
+    )
+    .unwrap();
+    assert!(
+        seal.contains("assert score #cls_arm1 dw.sys matches 1"),
+        "an unclassed player's trigger must still work — the seal is not a ban: {seal}"
+    );
+    assert!(
+        seal.contains("assert score #cls_arm2 dw.sys matches 0"),
+        "the second trigger must fail: {seal}"
+    );
+    assert!(
+        seal.contains("assert score #cls_still dw.sys matches 1")
+            && seal.contains("assert score #cls_x2 dw.sys matches"),
+        "class and position must both be asserted stable: {seal}"
+    );
 }
 
 /// The bot-completion oracle (AUDIT-P0). Two halves that must agree:
