@@ -887,3 +887,11 @@ Then:
 - **Anchor ambiguity**: if the jigsaw can place a pool piece twice, its anchors
   are DW0305-ambiguous — don't hang objectives on connector-piece anchors
   unless the pool guarantees uniqueness; use them as hint landmarks instead.
+  You no longer have to guess which those are: the build now says so at the
+  pool declaration. `DW0498` (advisory) names, per pool area, every prefab the
+  draw seated twice and every anchor that repeat makes ambiguous. Read it
+  before placing anything — an anchor it lists resolves silently to the first
+  copy for actors and edits, and is a hard `DW0305` the moment an objective,
+  NPC stand, gate or wave spawn references it. The fix is a wider pool
+  (distinct variant members in the repeated role) or placements moved off
+  those names — never a reseed.
