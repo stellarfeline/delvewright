@@ -2246,7 +2246,7 @@ cover); the author decides.
 
 `DW0210`/`DW0211` are emitted by the assembled-world light model
 (`crate::light`), surfaced through the build path but mapped to exit 2 (analysis
-tier) in `main`; `DW0201`–`DW0204` come from `compiler::analyze` over the
+tier) in `main`; `DW0201`–`DW0205` come from `compiler::analyze` over the
 branch-coherent flow model (`compiler::flow`).
 
 **The emitter table never overestimates (`crate::light::emission`).** Both gates
@@ -2308,6 +2308,7 @@ fails there rather than in a campaign.
 | `DW0203` | Objective can never be completed **in any branch** (deadlock: unsatisfiable `after` chain, an unproducible `requires_flags` gate, or a `talk-to` completing option unreachable through the trigger/`after`/dialogue graph). |
 | `DW0358` | A declared `min_players: n` (n ≥ 2) has **no n-agent division of labour** (v0.6, spec-0018). Completability is proven with `min_players` agents: n = 1 is the unchanged single-agent proof, and n ≥ 2 additionally requires the proven playthrough to contain an AND-join with n arms that are *independently reachable at the join's frontier* — the replay state just before its earliest arm — with no arm waiting on a sibling, a flag a sibling sets, or a quest that is not active yet (`flow::Flow::divide`). Names the widest join and how many arms it actually offers, or says the campaign has no AND-join at all. Reported on `world`/`/content/min_players`, exit 2. Prescription: split one beat into n `after`-arms completable from the same frontier, or lower `min_players`. |
 | `DW0204` | The exported critical path is not a playthrough any player can walk: some step is not activatable/completable at its position, or `campaign-complete` fires before the final step (the signature of two mutually exclusive endings sharing one path). Names the first incoherent step. |
+| `DW0205` | **Optional participation gates the mainline** (task #174): the dialogue button that completes a mainline objective is already on screen at an earlier point of the participation-minimal walk, before that objective's own activation chain has happened — so a player can take it and walk past a load-bearing beat. Names the objective, the beat, the dependency edge (`after`, or the flag the beat is what sets), and what the skip costs the mainline (the wave the beat spawns, the flag it sets, the quest that then never opens). Reported per branch too (`branch::check_branches`), naming the branch, for skips the campaign's own critical path does not already admit. Prescription: put the beat's flag on the option (`requires_flags`), or move the option into a `cast` scene that opens only after the beat. |
 | `DW0210` | **Measured** (spec-0010): a reachable walkable cell of an area is below light 3, under the darkest reachable (time, weather) sky, with no `lighting` declaration and no `mitigation` declaration. Judged over the assembled world (per-seam, sealed-cavity aware — unreachable cavities are never counted). Admission `LightingProfile` is no longer a gating input. **v0.6:** keys on the stage-1 `areas[].mitigation` declaration; the display-name heuristic is deleted, so a renamed water bottle in a class kit no longer passes the gate. |
 | `DW0211` | An area's declared relight `fixture` cannot raise every reachable walkable cell to `min_light` — no valid placement site remains (spec-0010). |
 
@@ -2354,6 +2355,48 @@ sequence, so the static proofs and the exported bot contract agree by
 construction. When no world completes the finale the campaign is already
 `DW0201`; the model then degenerates to the whole closure so the geometry-only
 commands (`chart`, `snapshot`) still run on an unanalyzable campaign.
+
+**Optional participation can never gate the mainline (`DW0205`).** The owner's
+contract is that *the mainline must be completable with zero optional
+participation*. Optionality is not a DSL declaration — it is **derived**: the
+**mainline** is exactly the critical path above, the participation the campaign
+requires to reach `campaign-complete`; every other act a player may take (a side
+objective, a non-path dialogue option, an elective trigger/trap/wave) is
+optional. The contract is proven in two halves on that one path.
+
+*The producer half is `DW0204`.* The replay is already the participation-minimal
+walk: it credits only the mainline's own producers — the taken option's flags,
+on-path completion bundles, and the ambient trigger/trap flags any player can
+fire — so a mainline objective gated on a flag only an off-path quest or an
+unselected option sets fails the replay. Nothing further is needed there.
+
+*The order half is `DW0205`* (`flow::Flow::skips`). Every objective driver the
+compiler emits goes through `pending_guard` — quest active ∧ `after` complete ∧
+`requires_flags` ∧ `forbids_flags` — **except** the dialogue button, whose
+`complete-objective` is gated only on its quest being active and the objective
+not yet complete. So the same walk asks, at each state, which mainline `talk-to`
+buttons the campaign already has on screen: the NPC's live `cast` scene must open
+a tree (barks/silence offer nothing), the option's node must be reachable from
+that scene root through options whose gates hold, and its own gates must hold.
+A button on screen for a step further down the path is a **skip**; a skip whose
+skipped beats carry a dependency edge into that objective (an `after` edge, or a
+flag the beat is what sets) is the error. Because the walk is the same
+`advance`/`fire` state machine as the replay, event-driven activation —
+quest-complete chains, NPC arrivals through `on_arrive`, staged `sequence` steps
+— is walked under the skip rather than assumed. The island's owner-hit softlock
+is the canonical instance: `"Lead on."` (completing `obj/climb-out`, `after
+obj/surf`) sat beside `"We climb."` (completing `obj/muster`, whose bundle spawns
+the drowned) from campaign start, so a player could climb before the surf beat
+existed, `quest/shipwrecked` never completed, and one of three crewmen reached
+the cave.
+
+*The remedy is a path gate, never a button gate.* `DW0191` requires every
+`talk-to` to keep an **ungated** completing option, so that it cannot deadlock
+the moment it activates; `DW0205` requires that option not to be on screen too
+early. The two meet at the way IN: `requires_flags` on the option that navigates
+to the completing node, or a `cast` scene that opens that tree only after the
+beat. The completing option stays ungated and is simply unreachable until its
+turn.
 
 **`forbids_flags` and producibility (v0.6, conservative).** The reachability
 fixpoint models `requires_flags` producibility (a gating flag must be producible

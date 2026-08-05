@@ -452,3 +452,258 @@ fn strip_flag_gates(q: &mut serde_json::Value) {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// optional participation (`DW0205`, task #174)
+// ---------------------------------------------------------------------------
+//
+// The owner's contract: *the mainline must be completable with zero optional
+// participation.* The fixtures below are the island's owner-hit softlock reduced
+// to its structure, in both directions — a beat that is genuinely elective
+// passes, a beat the fiction disguises as elective and the graph is load-bearing
+// on reds.
+
+/// The island `quest/shipwrecked` shape, parameterized on how (or whether) the
+/// way to the "Lead on." button — the one that completes the beat AFTER the
+/// drowned — is gated. Three objectives: a `talk-to` whose completion spawns the
+/// wave, the `kill` on that wave, and a `talk-to` that ends the delve.
+///
+/// `gated` puts the completing option behind a second node the player can only
+/// navigate to once the surf is dead. That is the shape both rules admit: the
+/// completing option itself stays **ungated** (`DW0191` demands that — a
+/// `talk-to` must never be able to deadlock the moment it activates), and the
+/// path to it is what carries the gate.
+fn beach_docs(gated: bool, keepsake: bool) -> serde_json::Value {
+    let lead_on = serde_json::json!({
+        "label": "Lead on.",
+        "effects": [{ "type": "complete-objective", "objective": "obj/climb-out" }]
+    });
+    let mut greeting = vec![serde_json::json!({
+        "label": "We climb.",
+        "effects": [{ "type": "complete-objective", "objective": "obj/muster" }]
+    })];
+    let mut nodes = Vec::new();
+    if gated {
+        greeting.push(serde_json::json!({
+            "label": "The surf is done.",
+            "requires_flags": ["flag/ashore"],
+            "next": "dlg/ledge"
+        }));
+        nodes.push(serde_json::json!({
+            "id": "dlg/ledge",
+            "text": "The last of them slid back under the foam. Up, then.",
+            "options": [lead_on]
+        }));
+    } else {
+        greeting.push(lead_on);
+    }
+    if keepsake {
+        // Genuinely optional participation: a keepsake nothing on the mainline
+        // ever reads, offered from the first tick and never required.
+        greeting.push(serde_json::json!({
+            "label": "Take the wine-skin.",
+            "effects": [{ "type": "set-flag", "flag": "flag/keepsake" }]
+        }));
+    }
+    nodes.insert(
+        0,
+        serde_json::json!({
+            "id": "dlg/greeting",
+            "text": "Twelve of us on this beach, Captain, and I do not like that smoke.",
+            "options": greeting
+        }),
+    );
+    serde_json::json!({
+        "quest-plan": {
+            "dsl_version": "0.6.0",
+            "campaign_id": "hello-world",
+            "stage": "quest-plan",
+            "content": {
+                "quests": [{
+                    "id": "quest/beach",
+                    "goal": "Muster the crew, hold the surf, and climb for the smoke.",
+                    "area": "area/keep",
+                    "npcs": ["npc/keeper"],
+                    "depends_on": [],
+                    "mandatory": true,
+                    "act": 1
+                }],
+                "finale": "quest/beach"
+            }
+        },
+        "quests": {
+            "dsl_version": "0.6.0",
+            "campaign_id": "hello-world",
+            "stage": "quests",
+            "content": {
+                "quests": [{
+                    "id": "quest/beach",
+                    "trigger": { "type": "campaign-start" },
+                    "objectives": [
+                        { "type": "talk-to", "id": "obj/muster", "npc": "npc/keeper" },
+                        {
+                            "type": "kill", "id": "obj/surf", "wave": "wave/surf",
+                            "after": ["obj/muster"]
+                        },
+                        {
+                            "type": "talk-to", "id": "obj/climb-out", "npc": "npc/keeper",
+                            "after": ["obj/surf"]
+                        }
+                    ],
+                    "on_objective_complete": {
+                        "obj/muster": [{ "type": "spawn-wave", "wave": "wave/surf" }],
+                        "obj/surf": [{ "type": "set-flag", "flag": "flag/ashore" }],
+                        "obj/climb-out": [{ "type": "campaign-complete" }]
+                    },
+                    "on_complete": []
+                }],
+                "waves": [{
+                    "id": "wave/surf",
+                    "anchor": "anchor/exit",
+                    "mobs": [{ "entity": "minecraft:drowned", "count": 3 }]
+                }]
+            }
+        },
+        "dialogue": {
+            "dsl_version": "0.6.0",
+            "campaign_id": "hello-world",
+            "stage": "dialogue",
+            "content": {
+                "dialogues": [{
+                    "npc": "npc/keeper",
+                    "root": "dlg/greeting",
+                    "nodes": nodes
+                }]
+            }
+        }
+    })
+}
+
+/// The island r16 softlock, reduced: "Lead on." (completing `obj/climb-out`) sits
+/// beside "We climb." (completing `obj/muster`) from the first tick, ungated. A
+/// player takes it, the drowned never come out of the surf, and the quest cannot
+/// complete — the exact structure the owner hit live. `DW0205` names the
+/// objective, the beat, and the `after` edge.
+#[test]
+fn a_disguised_mainline_beat_reds() {
+    let c = variant_docs("optional-red", beach_docs(false, false));
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let d = analyze_campaign(&c, &prefabs);
+    let hit = d
+        .iter()
+        .find(|x| x.code == "DW0205")
+        .unwrap_or_else(|| panic!("the island's muster/surf structure must red: {d:#?}"));
+    assert!(hit.message.contains("obj/climb-out"), "{}", hit.message);
+    assert!(hit.message.contains("obj/muster"), "{}", hit.message);
+    assert!(
+        hit.message.contains("declares `after` on `obj/muster`"),
+        "the dependency edge must be named: {}",
+        hit.message
+    );
+    assert!(
+        hit.message
+            .contains("`obj/muster` is what spawns `wave/surf`"),
+        "the staging the skip costs must be named: {}",
+        hit.message
+    );
+}
+
+/// The same campaign with the button gated on the flag the skipped beats produce:
+/// "Lead on." cannot appear until the surf is dead. Nothing is skippable, and the
+/// genuinely optional keepsake option — offered from the first tick, read by
+/// nothing — does not make the campaign red.
+#[test]
+fn a_legitimately_optional_beat_passes() {
+    let c = variant_docs("optional-green", beach_docs(true, true));
+    assert!(
+        !codes(&c).contains(&"DW0205".to_string()),
+        "a gated approach and an elective keepsake are legal: {:?}",
+        codes(&c)
+    );
+    // …and the remedy the diagnostic prescribes is one the rest of the validator
+    // admits: the completing option stayed ungated, so `DW0191` is silent too.
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let d = delvewright_dsl::validate_campaign_with(
+        &c,
+        &delvewright_compiler::registry::FullItemRegistry::v1_21_11(),
+        &prefabs,
+        &delvewright_compiler::registry::FullEntityRegistry::v1_21_11(),
+    );
+    assert!(
+        !d.iter().any(|x| x.code == "DW0191"),
+        "the fix must not trade DW0205 for DW0191: {d:#?}"
+    );
+}
+
+/// The other dependency edge: the offered objective declares no `after`, but
+/// requires a flag the skipped beat is what sets (the island's `obj/the-stone` /
+/// `flag/sealed` shape). Same skip, different edge, and the message says so.
+#[test]
+fn a_flag_edge_skip_reds() {
+    let docs = serde_json::json!({
+        "quest-plan": {
+            "dsl_version": "0.6.0", "campaign_id": "hello-world", "stage": "quest-plan",
+            "content": {
+                "quests": [{
+                    "id": "quest/hide", "goal": "Take cover, then answer the stone.",
+                    "area": "area/keep", "npcs": ["npc/keeper"],
+                    "depends_on": [], "mandatory": true, "act": 1
+                }],
+                "finale": "quest/hide"
+            }
+        },
+        "quests": {
+            "dsl_version": "0.6.0", "campaign_id": "hello-world", "stage": "quests",
+            "content": {
+                "quests": [{
+                    "id": "quest/hide",
+                    "trigger": { "type": "campaign-start" },
+                    "objectives": [
+                        {
+                            "type": "reach-anchor", "id": "obj/take-cover",
+                            "anchor": "anchor/exit", "radius": 2
+                        },
+                        {
+                            "type": "talk-to", "id": "obj/the-stone", "npc": "npc/keeper",
+                            "requires_flags": ["flag/sealed"]
+                        }
+                    ],
+                    "on_objective_complete": {
+                        "obj/take-cover": [{ "type": "set-flag", "flag": "flag/sealed" }],
+                        "obj/the-stone": [{ "type": "campaign-complete" }]
+                    },
+                    "on_complete": []
+                }]
+            }
+        },
+        "dialogue": {
+            "dsl_version": "0.6.0", "campaign_id": "hello-world", "stage": "dialogue",
+            "content": {
+                "dialogues": [{
+                    "npc": "npc/keeper", "root": "dlg/greeting",
+                    "nodes": [{
+                        "id": "dlg/greeting",
+                        "text": "The stone is across the mouth and he is coming back.",
+                        "options": [{
+                            "label": "The stone.",
+                            "effects": [{ "type": "complete-objective", "objective": "obj/the-stone" }]
+                        }]
+                    }]
+                }]
+            }
+        }
+    });
+    let c = variant_docs("optional-flag-edge", docs);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let d = analyze_campaign(&c, &prefabs);
+    let hit = d
+        .iter()
+        .find(|x| x.code == "DW0205")
+        .unwrap_or_else(|| panic!("a flag-edge skip must red: {d:#?}"));
+    assert!(
+        hit.message
+            .contains("requires `flag/sealed`, and `obj/take-cover` is what sets it"),
+        "the flag edge must be named: {}",
+        hit.message
+    );
+}
