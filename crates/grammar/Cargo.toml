@@ -14,9 +14,9 @@ publish = false
 # directory and docs/ACKNOWLEDGEMENTS.md), which implements Eger, *Box-Split
 # Grammars* (FDG '22, DOI 10.1145/3555858.3555865).
 #
-# Phase 1 is a library only: expansion + the ported temple/castle/church rule
-# libraries. `.nbt` export, provenance rows and the craft-rule diagnostics of
-# spec-0027 §4 are later phases.
+# Phases 1-2a are a library only: expansion, the ported temple/castle/church
+# rule libraries, and `.nbt` + metadata export with a provenance row. The
+# craft-rule diagnostics of spec-0027 §4 are a later phase.
 
 [lib]
 path = "src/lib.rs"
@@ -26,3 +26,20 @@ path = "src/lib.rs"
 # stage. Both MIT/Apache-2.0.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Structure `.nbt` emission goes through the asset pipeline's existing writer
+# (spec-0007) rather than a second one: one place defines the 1.21.11 template
+# shape and its determinism guarantees (sorted palette, fixed cell order, gzip
+# mtime 0).
+delvewright-schem = { path = "../schem" }
+
+# The provenance row identifies a grammar program by a hash of its canonical
+# JSON bytes (spec-0027 §2). Same crate the compiler already uses for datapack
+# hashing. MIT/Apache-2.0.
+sha2 = "0.10"
+
+[dev-dependencies]
+# The export tests read the emitted `.nbt` back with the same reader the asset
+# pipeline verifies its own output with, so "the structure round-trips" means
+# the same thing on both paths.
+delvewright-schem = { path = "../schem" }

@@ -41,19 +41,29 @@
 //! `BTreeMap`; cell iteration is fixed; nothing reads the clock, the
 //! environment or a path.
 //!
-//! # Not in phase 1
+//! # Export
 //!
-//! `.nbt` export with a provenance row, the craft-rule diagnostics of
-//! spec-0027 §4, and the JSON *schema* stage that will sit in front of
-//! [`ir::Program`] (which already serialises) are later phases of the same
-//! spec. Nothing here is reachable from `delvec`, and nothing here ships in a
-//! delve — it is generation-time tooling (ADR-0003).
+//! [`export::export_prefab`] freezes one expansion as a vanilla structure `.nbt`
+//! plus the sibling metadata JSON the compiler's prefab registry reads, carrying
+//! a provenance row (program hash + seed) that regenerates those exact bytes.
+//! Anchors and jigsaw connectors are deliberately not emitted yet, and the
+//! lighting profile is `unmeasured` rather than a fabricated measurement — see
+//! that module.
+//!
+//! # Not built yet
+//!
+//! The craft-rule diagnostics of spec-0027 §4, an anchor-declaring rule-body
+//! primitive, jigsaw connector emission, and the JSON *schema* stage that will
+//! sit in front of [`ir::Program`] (which already serialises) are later phases
+//! of the same spec. Nothing here is reachable from `delvec`, and nothing here
+//! ships in a delve — it is generation-time tooling (ADR-0003).
 
 #![deny(missing_docs)]
 
 pub mod block;
 pub mod eval;
 pub mod expand;
+pub mod export;
 pub mod geom;
 pub mod ir;
 pub mod library;
@@ -64,6 +74,7 @@ pub mod split;
 
 pub use block::BlockState;
 pub use expand::{ExpandError, ExpandOptions, Expansion, Limits, Stats, expand};
+pub use export::{ExportError, PrefabExport, PrefabMetadata, export_prefab, program_hash};
 pub use geom::{Axis, Box3, Orientation};
 pub use ir::{Program, ProgramError};
 pub use model::VoxelModel;

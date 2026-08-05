@@ -731,13 +731,20 @@ fn push_stamped(shots: &mut Vec<Value>, c: &Campaign, area_id: &str, mut shot: V
     shots.push(shot);
 }
 
-/// Whether a placed prefab's declared lighting profile is `lit` (`Some(true)`),
-/// `dark` (`Some(false)`), or undeclared (`None`).
+/// Whether a placed prefab's **measured** lighting profile is `lit`
+/// (`Some(true)`), `dim`/`dark` (`Some(false)`), or unknown (`None`).
+///
+/// A profile of `unmeasured` — what a generated prefab declares until the live
+/// probe runs — is unknown, not dark: the reviewer instruction that follows from
+/// `Some(false)` is "mitigation expected", and asking a reviewer to look for a
+/// mitigation that was never specified is worse than telling them the truth,
+/// which is the `None` branch's "verify readability".
 fn piece_is_lit(prefabs: &PrefabRegistry, prefab_id: &str) -> Option<bool> {
     prefabs.get(prefab_id).and_then(|m| {
-        m.lighting
-            .as_ref()
-            .map(|l| matches!(l.profile, LightingProfile::Lit))
+        let profile = m.lighting.as_ref()?.profile;
+        profile
+            .is_measurement()
+            .then_some(matches!(profile, LightingProfile::Lit))
     })
 }
 
@@ -787,6 +794,66 @@ fn layout_aabb(plan: &Plan) -> ([i32; 3], [i32; 3]) {
         return ([0, 0, 0], [0, 0, 0]);
     }
     (min, max)
+}
+
+#[cfg(test)]
+mod lighting_tests {
+    use super::*;
+
+    fn registry_with(lighting: &str) -> (std::path::PathBuf, PrefabRegistry) {
+        let dir = std::env::temp_dir().join(format!(
+            "dw-piece-is-lit-{}-{}",
+            std::process::id(),
+            lighting.len()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("p.json"),
+            format!(
+                r#"{{ "prefab_id": "prefab/p",
+                      "structure": {{ "file": "p.nbt", "id": "p", "size": [3,3,3],
+                                      "data_version": 4671 }},
+                      "anchors": {{}}, "lighting": {lighting} }}"#
+            ),
+        )
+        .unwrap();
+        let registry = PrefabRegistry::load_dir(&dir).unwrap();
+        assert!(registry.load_diagnostics().is_empty(), "{lighting}");
+        (dir, registry)
+    }
+
+    /// The interior shot's reviewer instruction is chosen by this verdict, so
+    /// the three states must stay three: lit, measured-not-lit ("mitigation
+    /// expected"), and unknown ("verify readability"). A never-probed piece
+    /// belongs in the third, never the second — it was not *declared* dark, it
+    /// was not declared at all.
+    #[test]
+    fn an_unmeasured_piece_is_unknown_not_dark() {
+        for (lighting, expected) in [
+            (
+                r#"{ "profile": "lit", "measured_min_light": 9, "measured": "2026-07-30" }"#,
+                Some(true),
+            ),
+            (
+                r#"{ "profile": "dark", "measured_min_light": 1, "measured": "2026-07-30" }"#,
+                Some(false),
+            ),
+            (r#"{ "profile": "unmeasured" }"#, None),
+        ] {
+            let (dir, registry) = registry_with(lighting);
+            assert_eq!(piece_is_lit(&registry, "prefab/p"), expected, "{lighting}");
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+    }
+
+    /// An unknown prefab stays unknown — the verdict never invents a piece.
+    #[test]
+    fn an_unknown_prefab_has_no_verdict() {
+        let (dir, registry) = registry_with(r#"{ "profile": "unmeasured" }"#);
+        assert_eq!(piece_is_lit(&registry, "prefab/nope"), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }
 
 #[cfg(test)]

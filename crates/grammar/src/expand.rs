@@ -26,7 +26,7 @@ use crate::block::BlockState;
 use crate::eval::{EvalError, Scope};
 use crate::geom::{Box3, Orientation};
 use crate::ir::{Alternative, Cond, Material, Node, Paint, Program, ProgramError, Size, Split};
-use crate::model::VoxelModel;
+use crate::model::{PaletteFull, VoxelModel};
 use crate::orient::{OrientError, reorient};
 use crate::rng::Rng;
 use crate::split::{ResolvedSize, SplitError, make_split};
@@ -40,6 +40,15 @@ pub struct Limits {
     pub max_depth: u32,
     /// Maximum number of scopes visited.
     pub max_scopes: u64,
+    /// Maximum cells in the region a program may be expanded over.
+    ///
+    /// The model is a dense grid allocated **before** the first rule runs, so
+    /// an absurd region is not a slow expansion — it is an allocation the
+    /// process may not survive, and a killed process reports nothing. The
+    /// budget turns it into an [`ExpandError::VolumeLimit`] naming both
+    /// numbers. It is never silently clamped: a caller that means to build
+    /// something enormous raises the limit and says so.
+    pub max_volume: u64,
 }
 
 impl Default for Limits {
@@ -47,6 +56,10 @@ impl Default for Limits {
         Limits {
             max_depth: 256,
             max_scopes: 2_000_000,
+            // 2^24 cells ≈ 32 MiB of cell indices. Comfortably above anything a
+            // prefab needs (the vanilla structure cap is 48³ = 110 592) and far
+            // below what a 64-bit `Box3` can ask for.
+            max_volume: 16_777_216,
         }
     }
 }
@@ -147,6 +160,20 @@ pub enum ExpandError {
         /// The budget.
         limit: u64,
     },
+    /// The region is larger than the model the budget allows.
+    VolumeLimit {
+        /// Cells the region covers.
+        volume: u64,
+        /// The budget.
+        limit: u64,
+    },
+    /// A fill needed a 65537th distinct block state.
+    PaletteFull {
+        /// The rule being expanded.
+        symbol: String,
+        /// The failure.
+        error: PaletteFull,
+    },
 }
 
 impl fmt::Display for ExpandError {
@@ -157,7 +184,7 @@ impl fmt::Display for ExpandError {
                 f,
                 "no alternative of rule {symbol:?} applies to this scope, and none is `otherwise`"
             ),
-            ExpandError::Eval { symbol, error } => write!(f, "rule {symbol:?}: {error:?}"),
+            ExpandError::Eval { symbol, error } => write!(f, "rule {symbol:?}: {error}"),
             ExpandError::Split { symbol, error } => match error {
                 SplitError::Overflow { absolute, extent } => write!(
                     f,
@@ -169,7 +196,7 @@ impl fmt::Display for ExpandError {
                     "rule {symbol:?}: a repeating split whose pattern consumes nothing"
                 ),
             },
-            ExpandError::Orient { symbol, error } => write!(f, "rule {symbol:?}: {error:?}"),
+            ExpandError::Orient { symbol, error } => write!(f, "rule {symbol:?}: {error}"),
             ExpandError::BadSize { symbol, value } => {
                 write!(f, "rule {symbol:?}: {value} is not a usable split size")
             }
@@ -179,6 +206,12 @@ impl fmt::Display for ExpandError {
             ExpandError::ScopeLimit { limit } => {
                 write!(f, "expansion exceeded the scope limit of {limit}")
             }
+            ExpandError::VolumeLimit { volume, limit } => write!(
+                f,
+                "the region covers {volume} cells but the volume limit is {limit} — raise \
+                 `Limits::max_volume` deliberately if a model that large is really wanted"
+            ),
+            ExpandError::PaletteFull { symbol, error } => write!(f, "rule {symbol:?}: {error}"),
         }
     }
 }
@@ -201,6 +234,14 @@ pub fn expand(
     options: &ExpandOptions,
 ) -> Result<Expansion, ExpandError> {
     program.validate()?;
+    // Before the model is allocated, not after: the grid is dense.
+    let volume = region.volume();
+    if volume > options.limits.max_volume {
+        return Err(ExpandError::VolumeLimit {
+            volume,
+            limit: options.limits.max_volume,
+        });
+    }
     let mut expander = Expander {
         program,
         model: VoxelModel::new(region),
@@ -332,7 +373,12 @@ impl<'a> Expander<'a> {
             Node::Void => {
                 let air = BlockState::air();
                 for pos in state.region.positions() {
-                    self.model.set(pos, &air);
+                    self.model
+                        .set(pos, &air)
+                        .map_err(|error| ExpandError::PaletteFull {
+                            symbol: symbol.to_string(),
+                            error,
+                        })?;
                 }
                 Ok(())
             }
@@ -345,11 +391,15 @@ impl<'a> Expander<'a> {
                         .expect("validate() proved every role is bound"),
                     Material::Inline(paint) => paint,
                 };
+                let full = |error| ExpandError::PaletteFull {
+                    symbol: symbol.to_string(),
+                    error,
+                };
                 match paint {
                     Paint::Block(block) => {
                         let block = block.clone();
                         for pos in state.region.positions() {
-                            self.model.set(pos, &block);
+                            self.model.set(pos, &block).map_err(full)?;
                         }
                     }
                     Paint::Mix(mix) => {
@@ -361,7 +411,7 @@ impl<'a> Expander<'a> {
                                 .rng
                                 .weighted(&weights)
                                 .expect("validate() proved every weight is positive");
-                            self.model.set(pos, &blocks[pick]);
+                            self.model.set(pos, &blocks[pick]).map_err(full)?;
                         }
                     }
                 }

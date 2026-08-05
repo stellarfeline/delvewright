@@ -1002,6 +1002,16 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   the piece's top authored water block). Island-tileset pieces declare `2`;
   pieces that author no sea (keep/cave interiors, `hello-room`) omit it and are
   not checked. Consumed only by `DW0344`.
+- Prefab metadata's `lighting.profile` takes a fourth value, **`unmeasured`**
+  (spec-0027 §2): a *generated* prefab places blocks, not photons, so it declares
+  that a probe is owed rather than fabricating one. It is distinct from an absent
+  `lighting` block (which means metadata predating the field), and the
+  measurement fields stay mandatory where they are claimed: a `lit`/`dim`/`dark`
+  profile without `measured_min_light` + `measured` is refused at parse
+  (surfacing as `DW0346` for a library file), and an `unmeasured` profile
+  carrying either is refused too. Nothing gates on the profile (`DW0210` measures
+  the assembled world); its one consumer is the interior shot's reviewer line,
+  where `unmeasured` reads "verify readability", never "mitigation expected".
 - `boundary` (v0.6, spec-0013) emits, in `setup_finish`: a `dw:region bounds`
   storage mirror (readable region contract), a `dw:cp pos` init to the spawn cell
   (shared with spec-0012 checkpoints — the last-checkpoint mirror the return

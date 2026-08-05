@@ -52,31 +52,54 @@ fn every_library_program_builds_something_inside_its_box() {
     }
 }
 
+/// Count the distinct column runs along the temple's front colonnade.
+fn temple_columns(program: &Program, depth: u32) -> usize {
+    // The peristyle is a gap/column rhythm along Z, so a deeper box gets more
+    // columns. Count the distinct solid runs along the front row.
+    let region = Box3::at_origin([13, 14, depth]);
+    let out = expand(program, region, &ExpandOptions::seeded(1)).unwrap();
+    let mut runs = 0;
+    let mut prev_solid = false;
+    for z in 0..depth as i32 {
+        let solid = !out.model.get([1, 4, z]).unwrap().is_air();
+        if solid && !prev_solid {
+            runs += 1;
+        }
+        prev_solid = solid;
+    }
+    runs
+}
+
 #[test]
 fn the_temple_has_a_colonnade_that_follows_the_box() {
-    // The peristyle is a gap/column rhythm along Z, so a deeper box gets more
-    // columns. Count the distinct column runs along the front row.
     let program = temple();
-    let count_columns = |depth: u32| -> usize {
-        let region = Box3::at_origin([13, 14, depth]);
-        let out = expand(&program, region, &ExpandOptions::seeded(1)).unwrap();
-        let mut runs = 0;
-        let mut prev_solid = false;
-        for z in 0..depth as i32 {
-            let solid = !out.model.get([1, 4, z]).unwrap().is_air();
-            if solid && !prev_solid {
-                runs += 1;
-            }
-            prev_solid = solid;
-        }
-        runs
-    };
-    let shallow = count_columns(15);
-    let deep = count_columns(29);
+    let shallow = temple_columns(&program, 15);
+    let deep = temple_columns(&program, 29);
     assert!(
         deep > shallow && shallow >= 3,
         "colonnade did not follow the box: {shallow} vs {deep}"
     );
+}
+
+/// `library/temple.rs` claims the port diverges from upstream — which fixes the
+/// colonnade at four columns — *without* losing upstream's building: "four
+/// columns across a nine-deep box reproduces upstream exactly". That claim was
+/// prose, so it could rot silently the next time the `columns` rule is touched.
+/// Here it is arithmetic: a nine-deep box, at the default `column_size` of 1,
+/// gives exactly the tetrastyle the paper's own figure shows.
+#[test]
+fn a_nine_deep_box_reproduces_upstreams_four_columns() {
+    let mut program = temple();
+    assert_eq!(program.params["column_size"], 1, "upstream's column width");
+    assert_eq!(
+        temple_columns(&program, 9),
+        4,
+        "the divergence note promises upstream's tetrastyle at depth 9"
+    );
+    // And the rhythm is genuinely `column_size`-driven, not a coincidence of 9:
+    // doubling the thickness halves what fits.
+    program.set_param("column_size", 2).unwrap();
+    assert_eq!(temple_columns(&program, 9), 3);
 }
 
 #[test]

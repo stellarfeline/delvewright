@@ -22,7 +22,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::block::BlockState;
-use crate::geom::Axis;
+use crate::geom::{Axis, Orientation};
 
 // ---------------------------------------------------------------------------
 // Expressions and constraints
@@ -592,6 +592,14 @@ pub enum ProgramError {
         /// The rule.
         symbol: String,
     },
+    /// A [`Cond::Orientation`] guard names an axis mapping that is not a
+    /// permutation, so no scope can ever satisfy it.
+    OrientationCondNotAPermutation {
+        /// The rule.
+        symbol: String,
+        /// The mapping as written, local `X`/`Y`/`Z` to world axis.
+        axes: [Axis; 3],
+    },
 }
 
 impl fmt::Display for ProgramError {
@@ -647,6 +655,12 @@ impl fmt::Display for ProgramError {
             ProgramError::SplitAxisOutsideSplit { symbol } => {
                 write!(f, "rule {symbol:?} uses `split_axis` outside a split")
             }
+            ProgramError::OrientationCondNotAPermutation { symbol, axes } => write!(
+                f,
+                "rule {symbol:?} guards on the orientation {axes:?}, which is not a permutation \
+                 of the three world axes — no scope can ever match it, so the alternative is \
+                 dead code"
+            ),
         }
     }
 }
@@ -851,7 +865,23 @@ impl Program {
 
     fn check_cond(&self, symbol: &str, cond: &Cond) -> Result<(), ProgramError> {
         match cond {
-            Cond::Always | Cond::Otherwise | Cond::Orientation { .. } => Ok(()),
+            Cond::Always | Cond::Otherwise => Ok(()),
+            // An orientation is a permutation by definition (`geom::Orientation`),
+            // but the guard spells one out field by field, so `{x: z, y: z, z: z}`
+            // is expressible. It matches nothing, ever — which at expansion time
+            // surfaces as a baffling `NoApplicableRule` about a *different*
+            // alternative. Refuse it where it was written (PR #266 review).
+            Cond::Orientation { x, y, z } => {
+                let axes = [*x, *y, *z];
+                if Orientation::from_axes(axes).is_permutation() {
+                    Ok(())
+                } else {
+                    Err(ProgramError::OrientationCondNotAPermutation {
+                        symbol: symbol.to_string(),
+                        axes,
+                    })
+                }
+            }
             Cond::Cmp { lhs, rhs, .. } => {
                 self.check_expr(symbol, lhs)?;
                 self.check_expr(symbol, rhs)
