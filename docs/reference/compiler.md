@@ -1664,12 +1664,15 @@ all walk it, so the checks, the proofs and the emission can never disagree about
 which firings exist.
 
 Since task #169 the five roots themselves are enumerated exactly once, in
-`plan::for_each_effect_root` (which yields each top-level effect *list*).
-`for_each_gate_effect` is that enumeration flattened; `timeline::walk_campaign`
-(→ `DW0410`, `nav::all_effects`) and `emit::all_campaign_effects` (→ the
-generated functions) are the other two consumers. A root can no longer be added
-to one walk and forgotten in another, which is the only reason this class of
-finding kept coming back.
+`plan::for_each_effect_root` (which yields each top-level effect *list*, with an
+`EffectRoot` naming which of the five it is and carrying its owner where it has
+one). `for_each_gate_effect` is that enumeration flattened; `timeline::walk_campaign`
+(→ `DW0410`, `nav::all_effects`), `emit::all_campaign_effects` (→ the
+generated functions) and — since task #170 — **both halves of `compiler::flow`**
+(the producer scan and `flow::gate_flags`, → `DW0201`/`DW0202`/`DW0203`/`DW0204`/
+`DW0205` and the exported critical path) are the other consumers. A root can no
+longer be added to one walk and forgotten in another, which is the only reason
+this class of finding kept coming back.
 
 **When a firing happens** comes off the site's `EffectRoot`. A quest
 `on_objective_complete`/`on_complete` fires at its objective's / the quest's
@@ -2411,14 +2414,34 @@ A flag producer is conditional on its gating context:
 | `set-flag` in a quest's `on_complete` | that quest completes, same gate rule |
 | `set-flag` on a dialogue option | the option is reachable from its tree `root` through options whose own gates are satisfied, and is the world's selected alternative of its group |
 | `set-flag` in an environment trigger's `effects` | the trigger's `requires_flags` are satisfied — **ambient** (a `strike`/`use`/`approach` trigger is player-initiated and has no DAG position) |
+| `set-flag` in a `traps[].payload` | the trap's `requires_flags` are satisfied (ambient, same reasoning — the party can always walk over and spring it) |
 | a trap's `disarm.sets_flag` | the trap's `requires_flags` are satisfied (ambient, same reasoning) |
-| `set-flag` in an `on_respawn` / `on_caught` reaction bundle | **never** — reaction bundles fire at statically unknowable times, so nothing inside one is a producer (the conservative stance `compiler::continuity` already takes) |
+| `set-flag` in an `on_respawn` / `on_caught` reaction bundle | **never** — reaction bundles fire at statically unknowable times, so nothing inside one is a producer (the conservative stance `compiler::continuity` already takes) — whether the bundle is rooted in the quests stage or hung off a **dialogue option's** `set-checkpoint` |
 
 Consequences worth stating plainly: a `set-flag` gated on the very flag it sets
 (the "re-affirm the branch" idiom) produces nothing; a flag produced only on the
 `flag/flee` branch cannot satisfy a gate on the `flag/wait` branch; and flags set
-from dialogue, triggers and trap disarms are first-class producers, so those
-legitimate shapes no longer die as spurious `DW0203`.
+from dialogue, triggers, trap payloads and trap disarms are first-class
+producers, so those legitimate shapes no longer die as spurious `DW0203`.
+
+**Which effect lists those rows range over is not `flow`'s to decide** (task
+#170). Both halves of the model — the producer scan in `Flow::new` and the
+gate-flag inventory `flow::gate_flags`, which is what decides whether a choice
+group is enumerated as XOR worlds or left unconstrained — walk
+`plan::for_each_effect_root`, so the proof cannot believe in fewer firings than
+the datapack performs. Each hand-listed three of the five before that: a
+`set-flag` in a `traps[].payload` was a producer **nowhere** in the proof while
+the emitted `trap_fire_<trap>.mcfunction` really set it (an objective gated on it
+died as a spurious `DW0203`), and a `requires_flags` *inside* such a payload was
+not counted as a flag read at all — so a branch choice that only such a gate reads
+never split the worlds, and one world held two mutually exclusive branch flags at
+once. The table above is a **policy per root**; the roots themselves are
+inherited, and the match on them is exhaustive, so a sixth root cannot be added
+without `flow` deciding what it means. The two new roots needed no new ruling:
+the payload takes the ambient stance the environment trigger and the trap
+`disarm` beside it already had, and the dialogue-hosted `on_respawn` bundle is
+reached but never credited, which is the reaction-bundle rule the identical
+quests-stage bundle already obeyed.
 
 **The exported critical path is one branch (`DW0204`).** `compiler::plan` does
 not walk the finale's whole stage-4 `depends_on` closure. It walks the
@@ -2938,6 +2961,38 @@ this doc is current behavior).
 | Determinism invariants | ADR-0006 |
 
 ### Known spec ↔ code drift (current, for maintainers)
+
+- **Effect-root drift is NOT closed (swept 2026-08-05, task #170).** Tasks #142,
+  #167, #168, #169 and #170 each fixed one walker that claimed campaign-wide
+  effect coverage while enumerating three or four of the **five** roots
+  `plan::for_each_effect_root` names. A full workspace sweep after #170 found
+  the class is far larger than "one more": the five fixed walkers
+  (`for_each_gate_effect`, `timeline::walk_campaign`, `emit::all_campaign_effects`,
+  `dsl::l10n`'s inventory, `compiler::flow`) are joined by the following, which
+  are **not** fixed and each need their own proof-carrying round. Listed worst
+  first; roots noted as **R1** `on_objective_complete`, **R2** `on_complete`,
+  **R3** `triggers[].effects`, **R4** `traps[].payload`, **R5** dialogue-option
+  `set-checkpoint.on_respawn`.
+
+  | Walker | Feeds | Has | Consequence of the gap |
+  |---|---|---|---|
+  | `emit::check_effect_anchors` | `DW0360`, build-tier | R1–R3 | Its own doc calls it "the backstop that makes the rule total". A typo'd anchor in R4/R5 still emits **nothing** — the silent-drop class it exists to end, live. |
+  | `emit::declared_flags` | `dw.f_<flag>` scoreboard creation | R1–R3 + `disarm.sets_flag` + flat `DialogueEffect::SetFlag` | Not a missing lint but a **runtime** defect: a `set-flag` in a `traps[].payload` writes to an objective that was never created. |
+  | `emit::check_wave_spawns` | `DW0310` | R1–R3, and **shallow** (no `visit_deep`) | A `spawn-wave` in a `sequence` step / R4 / R5 emits the dangling `function <ns>:spawn_<wave>` the check exists to stop. |
+  | `gates::check_close_gates` | `DW0343` | R1–R3 | Its own file's `check_seal_hints` (`DW0423`, 20 lines below) already carries the corrected reasoning; it was never back-ported. |
+  | `dsl::validate` flag-producer set, ×3: the inline scan in the main pass, `collect_declared_flags`, `produced_flags` | `DW0172`, ending/flag reference checks | R1–R4 / R1–R3 shallow / R1–R4 | Three independent, mutually disagreeing answers to "what flags does this campaign produce". All miss R5 — pinned by `flow_effect_roots::a_dialogue_respawn_bundle_is_still_never_a_producer`, which asserts the resulting `DW0172`. |
+  | `camera::cutscene_units`, `rehearsal::bundles` | cutscene shot planning; the `dw:rehearsal` inventory | R1–R3 | Both assert in prose that they walk "in the order `emit` walks them" — a claim #169 falsified. `rehearsal::bundles` is a literal hand-rolled copy of `for_each_effect_root` minus R4/R5. |
+  | `light::reachable_time_weather` | spec-0010 darkness gate, `DW0496` | R1–R3, **shallow** | Under-reporting reachable darkness passes a delve that goes dark. |
+  | `eclipse::walkers` | `DW0359`/`DW0422` | R1–R3, **R5** | The only walker that grew R5 by hand and never got R4. |
+  | `combat::actor_beats`, `validate::difficulty_checks`, `daylight::fightable_actor`, `nav::actor_fights` | actor coverage, `DW0469`-adjacent proofs | R1–R4 | All four go through `dsl::for_each_campaign_effect`, whose `EffectSite` enum has **no dialogue variant** — R5 is not representable in its callback, so fixing them means widening that type. |
+
+  Two doc comments encode the exact fallacy `plan::for_each_effect_root` was
+  written to refute and should be corrected with the code, or the next session
+  will re-derive the bug from them: `combat::actor_beats` ("Dialogue options are
+  deliberately not walked: `DialogueEffect` has no actor verb at all, so there is
+  nothing there to miss") and `dsl::validate`'s "Dialogue effects are a flat list
+  (no nesting), so a direct scan suffices there". The dialogue **option's**
+  `set_checkpoint().1` is a `Vec<QuestEffect>`, not a `DialogueEffect`.
 
 - **spec-0002 CLI** lists stages `1..5`, `dsl 0.1.0`, and omits `--json`/
   `--prefabs`/`--lang`; code is stages `1..6`, `dsl 0.6.0`, all three flags.
