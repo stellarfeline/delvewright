@@ -29,12 +29,14 @@
 //! | `quest.<quest>.goal` | each stage-4 planned-quest `goal` |
 //! | `obj.<quest>.<obj>.title` / `.hint` | a stage-5 objective's `title`/`hint` (only if set) |
 //! | `obj.<quest>.<obj>.missing_item_hint` | a stage-5 `interact`'s `missing_item_hint` (v0.7, only if set) |
+//! | `obj.<quest>.<obj>.item_name` | a stage-5 `collect`'s `item_name` (v0.8, only if set) |
 //! | `dlg.<npc>.<node>.text` | each stage-6 dialogue node `text` |
 //! | `dlg.<npc>.<node>.opt.<i>.label` | each dialogue option `label` |
 //! | `dlg.<npc>.<node>.opt.<i>.tooltip` | that option's hover `tooltip` (v0.8, only if set) |
 //! | `wave.<wave>.mob.<i>.name` | a wave mob's custom `name` (only if set) |
 //! | `fx.…​.narrate` / `fx.…​.give` | a `narrate` line / named `give-item` in an effect list |
 //! | `fx.…​.rest_prompt` / `.rest_label` / `.save_label` | a `bonfire`'s authored rest-dialog strings (v0.8, only if set) |
+//! | `fx.…​.sealed_hint` | a `close-gate`'s authored answer to a right-click on the seal (v0.8, only if set) |
 //!
 //! ## Nested effects (DSL v0.6)
 //!
@@ -91,6 +93,14 @@ fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, 
                 f(&format!("{keybase}.save_label"), s);
             }
         }
+        // DSL v0.8: what a sealed gate answers when the party right-clicks it. Read
+        // off the actionbar exactly like a `narrate`, so it translates like one. An
+        // unauthored hint is absent from the inventory — the compiler bakes its
+        // canonical English, exactly as `world.boundary.message` does.
+        QuestEffect::CloseGate {
+            sealed_hint: Some(h),
+            ..
+        } => f(&format!("{keybase}.sealed_hint"), h),
         _ => {}
     }
 }
@@ -270,6 +280,17 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             } = o
             {
                 f(&format!("obj.{ql}.{ol}.missing_item_hint"), m);
+            }
+            // Stage 5 — v0.8 `collect.item_name` (task #95): the display name the
+            // collected item carries as a `custom_name` component. A player reads
+            // it off the stack in the barrel and off their own hotbar, so it is as
+            // player-visible as a `title` and translates like one. Absent on every
+            // pre-0.8 objective → inventory unchanged.
+            if let crate::stages::Objective::Collect {
+                item_name: Some(n), ..
+            } = o
+            {
+                f(&format!("obj.{ql}.{ol}.item_name"), n);
             }
         }
         // Stage 5 — v0.4 effect strings: `narrate` text + named `give-item`

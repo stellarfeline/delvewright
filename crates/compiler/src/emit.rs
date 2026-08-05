@@ -245,12 +245,23 @@ pub fn build_with_warnings(
     // the EDITED model when an edit script exists, since a stage-7 batch can
     // legitimately be what puts the barrel there. Independent of nav, because a
     // campaign may declare loot without ever walking a leg.
-    if !plan.loot.is_empty() {
+    // The same proof serves the v0.8 `collect` container adoption (DW0438, task
+    // #95): an adopted container is prefab furniture on exactly the terms a `loot`
+    // container is, so it is proven off the same assembled (or edited) world, in
+    // the same pass, rather than by a second model that could disagree with this
+    // one about what is in the room.
+    if !plan.loot.is_empty() || !plan.collect_fills.is_empty() {
         let blocks = match &edit_replay {
             Some(er) => er.assembled.blocks.clone(),
             None => crate::assembled::assembled_blocks(plan, structures),
         };
         crate::loot::check_loot_containers(&blocks, &plan.loot).map_err(|e| {
+            BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            }
+        })?;
+        crate::loot::check_collect_containers(&blocks, &plan.collect_fills).map_err(|e| {
             BuildFailure::Diagnostic {
                 code: e.code,
                 message: e.message,
@@ -329,6 +340,28 @@ pub fn build_with_warnings(
             message: e.message,
         }
     })?);
+
+    // …and no OTHER affordance may contest the hitboxes a sealed gate arms to
+    // answer a right-click (DW0422, task #142). Same box arithmetic, same tier:
+    // two interaction entities in one cell is a ray-pick tie the client resolves
+    // by iteration order, so one of them silently stops receiving clicks.
+    crate::eclipse::check_seal_collisions(plan).map_err(|e| BuildFailure::Diagnostic {
+        code: e.code,
+        message: e.message,
+    })?;
+
+    // …and no two bodies the party CLICKS may stand close enough that the
+    // crosshair cannot tell them apart (DW0489). `DW0359` above compares a body
+    // against an affordance and skips every walker; this reads the v0.7 cast
+    // ledger, which states beat by beat who is on stage together, and measures
+    // the pairs it names. It is the proof the island's terminal finding needed —
+    // two crew NPCs declared on one cell at the cave mouth.
+    warnings.extend(
+        crate::crosshair::check_crosshair_contests(plan).map_err(|e| BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        })?,
+    );
     let has_waves = !plan.campaign.quests.content.waves.is_empty();
     let (moves, actor_moves, wave_placements, wave_rings, lane_routes, payload_plans): (
         Vec<crate::nav::MovePlan>,
@@ -394,11 +427,19 @@ pub fn build_with_warnings(
                 // timing is the point; one that punishes every timing is a slot
                 // machine. At least 20% of the cycle must admit a crossing.
                 crate::nav::check_timed_gates(plan, &world)?;
+                // spec-0016 §4 addendum — hazard observability (DW0388). The
+                // dossier's strongest finding: what makes a periodic hazard fair
+                // is not its ratio but that you can stand somewhere safe and
+                // WATCH it before committing. Error tier for a souls campaign (it
+                // declares a bonfire), warning tier otherwise.
+                let unobserved =
+                    crate::nav::check_hazard_observability(plan, &world, campaign_spawn(plan))?;
                 // spec-0016 §7 pacing lints (DW0379 retry cost, DW0380 optional-
                 // elite bypass). Warning tier: both are design judgements the
                 // compiler can MEASURE but must not overrule — a long walk back
                 // can be the authored point, and the owner's QA hour decides.
                 pacing = crate::nav::pacing_lints(plan, &world);
+                pacing.extend(unobserved);
                 // Export the DW0311-proven critical-path routes as validation
                 // metadata (task #38): thinned per-leg waypoint polylines the harness
                 // replays as successive nearby goals, so no single giant mineflayer A*
@@ -555,9 +596,15 @@ pub fn build_with_warnings(
             // this file: the set-piece souls fight is an actor, not a wave, and
             // a campaign whose only billed elite is an actor would otherwise
             // emit no plan at all — the exact silence spec-0023's floor gate
-            // must not be allowed to read as a pass.
+            // must not be allowed to read as a pass. An UNTIERED hostile actor
+            // (task #121) is enough for the same reason and one step further
+            // out: it is a fight nothing bills, so without the ledger line
+            // naming it there is no artifact anywhere that says it existed.
             let tiered_actors = crate::combat::actor_encounters(plan);
-            if crate::combat::has_encounters(plan) || !tiered_actors.is_empty() {
+            if crate::combat::has_encounters(plan)
+                || !tiered_actors.is_empty()
+                || crate::combat::has_untiered_hostile_actors(plan)
+            {
                 let mandatory = crate::combat::encounters(plan);
                 warnings.extend(crate::combat::floor_coverage_warnings(
                     plan,
@@ -1469,10 +1516,11 @@ fn emit_functions(
         setup.push(format!("scoreboard objectives add {COLLECT_HOLD} dummy"));
     }
     // v0.6 checkpoints (spec-0012): the active-checkpoint marker + the vanilla
-    // `deathCount` respawn-detection scores. Emitted only when a checkpoint carries
-    // an `on_respawn` hook (the only consumer of the marker), so pre-0.6 campaigns —
-    // and checkpoint campaigns without hooks — stay byte-identical here.
-    if plan.any_checkpoint_on_respawn() {
+    // `deathCount` respawn-detection scores. Emitted for EVERY campaign that
+    // declares a checkpoint — the marker now also drives the respawn **re-seat**
+    // (task #145), not just the `on_respawn` dispatch. Pre-0.6 / checkpoint-free
+    // campaigns stay byte-identical here.
+    if plan.any_checkpoint() {
         setup.push("scoreboard players set #cp dw.sys -1".to_string());
         setup.push("scoreboard objectives add dw.deaths deathCount".to_string());
         setup.push("scoreboard objectives add dw.death_ack dummy".to_string());
@@ -1777,7 +1825,20 @@ fn emit_functions(
     // which a relog also keeps. So the repair is its own tick clause, keyed on the
     // stuck state itself. Empty for a cutscene-less campaign → byte-identical.
     tick.extend(cutscene_repair_tick(plan));
-    tick.push("scoreboard players enable @a dw.class".to_string());
+    // The class trigger is ONE-SHOT per player (owner ruling 2026-08-04, task
+    // #121's sibling #122). `class_apply_<c>` ends in a teleport to the campaign
+    // entry point, so re-firing `/trigger dw.class` mid-run warped whoever ran
+    // it back to the start of the delve — an already-classed player included,
+    // because this line used to `enable @a` unconditionally, every tick,
+    // forever. The vanilla trigger pattern is to re-enable only what is meant to
+    // be usable, so the arming is per-player and conditional now; the guard
+    // lives inside `class_arm` rather than in this line so a PackTest can drive
+    // the real arming path as its own dummy instead of mirroring it.
+    //
+    // Per-PLAYER, not party-wide: classing is per-player (`dw.classed`), so a
+    // second player still on the class screen must keep an armed trigger while
+    // the first is sealed.
+    tick.push(format!("execute as @a run function {ns}:class_arm"));
     for npc in &plan.npcs {
         tick.push(format!(
             "scoreboard players enable @a {}",
@@ -1818,8 +1879,12 @@ fn emit_functions(
         ),
     ));
     for class in &plan.classes {
+        // The second seal (#122). The arming above is what makes the trigger
+        // unusable after a class; this makes any score that arrives by some
+        // OTHER route inert rather than a warp. Costs one condition and closes
+        // the dispatch as well as the door.
         tick.push(format!(
-            "execute as @a[scores={{dw.class={}}}] run function {ns}:class_apply_{}",
+            "execute as @a[scores={{dw.class={}}}] unless score @s dw.classed matches 1 run function {ns}:class_apply_{}",
             class.n, class.safe
         ));
     }
@@ -2047,9 +2112,9 @@ fn emit_functions(
     // byte-identical.
     tick.extend(shortcut_tick(plan));
     // v0.6 checkpoints (spec-0012): per-player respawn detection via the vanilla
-    // `deathCount` criterion, dispatching the active checkpoint's `on_respawn`.
-    // Only when a checkpoint carries an `on_respawn` hook.
-    if plan.any_checkpoint_on_respawn() {
+    // `deathCount` criterion — the respawn re-seat (task #145) and the active
+    // checkpoint's `on_respawn`. Emitted for every campaign with a checkpoint.
+    if plan.any_checkpoint() {
         tick.push(format!("execute as @a run function {ns}:cp_respawn_check"));
     }
     // v0.6 stealth (spec-0014): while a beat is active, run its per-tick judge.
@@ -2104,6 +2169,33 @@ fn emit_functions(
         ]),
     ));
 
+    // --- class_arm: the one-shot seal on the class trigger (#122) ---
+    //
+    // Run by `tick` as every player, every tick. `dw.class` is a `trigger`
+    // objective, and `class_apply_<c>` both consumes it (`reset` clears the
+    // score AND re-locks the trigger) and ends in a teleport to the campaign
+    // entry point. Re-enabling it unconditionally therefore left a live warp
+    // back to the start of the delve behind every already-classed player,
+    // usable by anything that can chat a command; the owner ratified sealing it
+    // here, at the compiler, rather than asking every caller to know not to.
+    //
+    // `unless score @s dw.classed matches 1` is the whole seal, and it is
+    // per-PLAYER by construction: `dw.classed` is per-player state, so a
+    // second player still on the class screen keeps an armed trigger while the
+    // first is sealed. It survives death and relog with the score.
+    //
+    // Its own function, rather than the condition inlined in the tick line, so
+    // the generated PackTest can drive the REAL arming path as its own dummy
+    // (`execute as <dummy> run function <ns>:class_arm`) instead of restating
+    // the guard and proving only its own copy.
+    fns.push((
+        "class_arm".to_string(),
+        lines(&[
+            "execute unless score @s dw.classed matches 1 run scoreboard players enable @s dw.class"
+                .to_string(),
+        ]),
+    ));
+
     // --- class apply ---
     let campaign_start = campaign_start_quests(c);
     for (i, class) in c.classes.content.classes.iter().enumerate() {
@@ -2111,11 +2203,12 @@ fn emit_functions(
         let mut body: Vec<String> = Vec::new();
         body.push("scoreboard players reset @s dw.class".to_string());
         for (k, item) in class.kit.iter().enumerate() {
-            let comp = match &item.name {
-                Some(n) => format!("[custom_name={}]", json!({ "text": n, "italic": false })),
-                None => String::new(),
-            };
-            let give = format!("give @s {}{} {}", item.item, comp, item.count);
+            let give = format!(
+                "give @s {}{} {}",
+                item.item,
+                kit_item_components(item),
+                item.count
+            );
             // A class kit is per-player gear by construction. `carrier: "one"`
             // (v0.6, spec-0018) marks a **party-unique** kit item — exactly one
             // copy enters the party, to the first player who takes this class —
@@ -2801,6 +2894,9 @@ fn emit_functions(
     fns.extend(collapse_fns(plan, payloads));
     fns.extend(boundary_fns(plan));
     fns.extend(night_vision_fns(plan));
+    // v0.8 seal answers (task #142). Empty for a campaign that seals no gate.
+    fns.extend(seal_fns(plan));
+    fns.extend(seal_hint_fns(plan));
 
     fns.sort_by(|a, b| a.0.cmp(&b.0));
     fns
@@ -3525,6 +3621,14 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                         "fill {} {} {} {} {} {} minecraft:air replace {}",
                         from[0], from[1], from[2], to[0], to[1], to[2], block
                     ));
+                    // …and take the seal's answer down with the seal (task #142).
+                    // The hitboxes exist exactly while the region is solid: an
+                    // opened threshold that still says "the way is sealed" is a
+                    // lie, and an invisible box left standing in a doorway
+                    // swallows right-clicks aimed through it.
+                    if let Some(s) = seal_hint_for(plan, anchor.as_str()) {
+                        body.push(format!("kill @e[tag=dw_seal_{}]", s.safe));
+                    }
                     return;
                 }
             }
@@ -3542,6 +3646,17 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                         "fill {} {} {} {} {} {} {}",
                         from[0], from[1], from[2], to[0], to[1], to[2], block
                     ));
+                    // Arm the seal's answer (task #142, owner island finding #34):
+                    // a wall the party walks back to and presses must say
+                    // something. Guarded on absence, so a re-fired `close-gate`
+                    // never stacks a second set of hitboxes.
+                    if let Some(s) = seal_hint_for(plan, anchor.as_str()) {
+                        body.push(format!(
+                            "execute unless entity @e[tag=dw_seal_{}] run function {ns}:{}",
+                            s.safe,
+                            seal_arm_fn(&s.safe)
+                        ));
+                    }
                     return;
                 }
             }
@@ -3607,7 +3722,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         QuestEffect::MoveNpc { npc, to_anchor, .. } => {
             body.push(format!(
                 "function {ns}:{}",
-                movenpc_fn(npc.as_str(), to_anchor.as_str())
+                movenpc_fn(npc.as_str(), to_anchor.as_str(), &crate::nav::gate_key(eff),)
             ));
         }
         QuestEffect::Cutscene { .. } => {
@@ -3710,7 +3825,11 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         } => {
             body.push(format!(
                 "function {ns}:{}",
-                moveactor_fn(actor.as_str(), to_anchor.as_str())
+                moveactor_fn(
+                    actor.as_str(),
+                    to_anchor.as_str(),
+                    &crate::nav::gate_key(eff),
+                )
             ));
         }
         QuestEffect::UnleashActor { actor, .. } => {
@@ -3900,7 +4019,7 @@ fn emit_set_checkpoint(
             "data modify storage dw:cp pos set value [{}, {}, {}]",
             pos[0], pos[1], pos[2]
         ));
-        if plan.any_checkpoint_on_respawn() {
+        if plan.any_checkpoint() {
             let idx = plan
                 .checkpoint_for(anchor, on_respawn)
                 .map(|c| c.index)
@@ -3908,6 +4027,15 @@ fn emit_set_checkpoint(
             body.push(format!("scoreboard players set #cp dw.sys {idx}"));
         }
     }
+}
+
+/// The centre of a block cell on a horizontal axis, as the compiler writes it into
+/// a `tp`. Vanilla's own respawn lands a player at `cell + 0.5` on X/Z, so the
+/// re-seat has to agree with it or a correct respawn would visibly twitch. Written
+/// through `f64` (not string concatenation) because `-16` centres on `-15.5`, not
+/// `-16.5`; the value is exactly representable, so the text is deterministic.
+fn center(cell: i32) -> String {
+    format!("{:.1}", cell as f64 + 0.5)
 }
 
 /// Generate the checkpoint respawn-dispatch functions (DSL v0.6, spec-0012).
@@ -3919,19 +4047,59 @@ fn emit_set_checkpoint(
 fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut fns: Vec<(String, String)> = Vec::new();
-    if !plan.any_checkpoint_on_respawn() {
+    if !plan.any_checkpoint() {
         return fns;
     }
     // cp_respawn_check (as @s): fire on the death-count edge, then acknowledge.
+    //
+    // `deathCount` ticks up the moment the player DIES, while they are still on
+    // the death screen — a corpse, not a respawned player. Both the re-seat and
+    // the authored `on_respawn` bundle belong to the player who has actually come
+    // back, so the whole edge (fire AND acknowledge) is held until the player is
+    // alive again: a dead player reads `Health: 0.0f`, and holding the ack keeps
+    // the edge armed instead of burning it on the corpse (task #145).
+    let alive = "unless data entity @s {Health:0.0f}";
     fns.push((
         "cp_respawn_check".to_string(),
         lines(&[
             format!(
-                "execute if score @s dw.deaths > @s dw.death_ack run function {ns}:cp_respawn_fire"
+                "execute {alive} if score @s dw.deaths > @s dw.death_ack run function \
+                 {ns}:cp_respawn_fire"
             ),
-            "scoreboard players operation @s dw.death_ack = @s dw.deaths".to_string(),
+            format!(
+                "execute {alive} run scoreboard players operation @s dw.death_ack = @s dw.deaths"
+            ),
         ]),
     ));
+    // cp_seat_<i> (as @s): put the respawned player ON the checkpoint cell.
+    //
+    // Why this exists (owner playtest, task #145). `set-checkpoint` records the
+    // party's respawn with vanilla's `spawnpoint @a <cell>`, but `/spawnpoint` is
+    // a *hint*: on death vanilla re-validates the recorded cell and, when the cell
+    // or the cell above it is solid or liquid, silently discards it and respawns
+    // the player at the WORLD spawn — the campaign entrance. Measured live on
+    // 1.21.11: a spawnpoint on a dry cell respawns at `cell + (0.5, 0.1, 0.5)`, the
+    // same spawnpoint on a water cell respawns at `setworldspawn`. Past a one-way
+    // transport that is not a lost checkpoint, it is an unrecoverable softlock.
+    //
+    // So the delve stops delegating its own promise. `#cp dw.sys` already names
+    // the checkpoint the party last armed; the re-seat teleports the respawned
+    // player onto that cell's centre unconditionally. When vanilla honoured the
+    // spawnpoint the player is already standing there and the teleport is a no-op
+    // they cannot see; when vanilla dropped it, this is the only thing that puts
+    // them back. Coordinates are compiled in — no macro, no storage read, so the
+    // re-seat cannot itself fail on a malformed mirror.
+    for c in &plan.checkpoints {
+        fns.push((
+            format!("cp_seat_{}", c.index),
+            lines(&[format!(
+                "tp @s {} {} {}",
+                center(c.pos[0]),
+                c.pos[1],
+                center(c.pos[2])
+            )]),
+        ));
+    }
     // cp_respawn_fire (as @s): dispatch on the active checkpoint.
     let reseat = bonfire_reseat_lines(plan);
     // A bonfire owes the respawning party the same scene reset a rest gives them
@@ -3941,6 +4109,14 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
         !c.on_respawn.is_empty() || (c.rest && !reseat.is_empty())
     };
     let mut fire: Vec<String> = Vec::new();
+    // The re-seat runs FIRST and for every checkpoint: an `on_respawn` beat that
+    // narrates "you wake at the mark" must be read by a player who is on it.
+    for c in &plan.checkpoints {
+        fire.push(format!(
+            "execute if score #cp dw.sys matches {} run function {ns}:cp_seat_{}",
+            c.index, c.index
+        ));
+    }
     for c in &plan.checkpoints {
         if !dispatches(c) {
             continue;
@@ -4181,6 +4357,230 @@ fn affordance_hardware(pos: [String; 3], tag: &str, item: &str) -> String {
     )
 }
 
+// ---------------------------------------------------------------------------
+// The seal answers (DSL v0.8, task #142 — owner island finding #34)
+// ---------------------------------------------------------------------------
+
+/// How far a seal's answer hitbox protrudes past the sealed block, on every side.
+///
+/// **This margin is the whole mechanism.** A `minecraft:interaction` whose box
+/// exactly coincides with the block it stands in loses the client's ray-pick:
+/// vanilla takes the entity only when it is *strictly* nearer the eye than the
+/// block hit, and a coincident box is hit at exactly the same distance. One
+/// centimetre of protrusion makes the entity strictly nearer from every approach
+/// angle, so pressing any face of the seal reaches the entity — while a hundredth
+/// of a block never reaches into a neighbouring cell's own affordances.
+pub const SEAL_MARGIN: f64 = 0.01;
+
+/// The seal-answer entity's box size, as the `width`/`height` NBT floats: one
+/// block plus [`SEAL_MARGIN`] on each side.
+const SEAL_BOX_SIZE: &str = "1.02f";
+
+/// Render a signed count of hundredths as a decimal coordinate: `6899` →
+/// `68.99`, `-4450` → `-44.5`, `700` → `7.0`. Integer-only, so the emitted text
+/// is exactly what it reads as (no binary-float rounding in the datapack).
+fn fmt_centi(v: i64) -> String {
+    let sign = if v < 0 { "-" } else { "" };
+    let a = v.unsigned_abs();
+    let (whole, frac) = (a / 100, a % 100);
+    if frac == 0 {
+        format!("{sign}{whole}.0")
+    } else if frac.is_multiple_of(10) {
+        format!("{sign}{whole}.{}", frac / 10)
+    } else {
+        format!("{sign}{whole}.{frac:02}")
+    }
+}
+
+/// The seal plan for a gate anchor, if the campaign ever seals it.
+fn seal_hint_for<'a>(plan: &'a Plan, anchor: &str) -> Option<&'a plan::SealHintPlan> {
+    plan.seal_hints.iter().find(|s| s.anchor == anchor)
+}
+
+/// The `seal_arm_<safe>` function name: what a `close-gate` calls to give the
+/// stone a voice.
+fn seal_arm_fn(safe: &str) -> String {
+    format!("seal_arm_{safe}")
+}
+
+/// The `dw_trig_<id>` tags every click trigger anchored **on this gate** rides,
+/// in campaign declaration order (deterministic).
+///
+/// The round-6 rule, one layer out: one cell, one hitbox. A `strike`/`use`
+/// trigger whose `at` is the gate anchor is asking the player to hit *the gate* —
+/// and once the gate is sealed the gate's own hitboxes are what a click reaches.
+/// Summoning the trigger a second, co-located entity is the exact ray-pick tie
+/// that made the island's boulder unshippable, so the trigger's tag rides these
+/// entities and [`env_trigger_setup`] summons nothing for it. The consequence is
+/// also its meaning: such a trigger is live exactly while the gate is sealed.
+fn seal_rider_tags(plan: &Plan, anchor: &str) -> Vec<String> {
+    use delvewright_dsl::TriggerOn;
+    plan.campaign
+        .quests
+        .content
+        .triggers
+        .iter()
+        .filter(|t| !matches!(t.on, TriggerOn::Approach { .. }))
+        .filter(|t| t.at_anchor() == Some(anchor))
+        .map(|t| format!("dw_trig_{}", plan::safe_local(t.id.as_str())))
+        .collect()
+}
+
+/// Whether this trigger rides a seal's hitboxes rather than summoning its own.
+fn trigger_rides_seal(plan: &Plan, at: &str) -> bool {
+    plan.seal_hints.iter().any(|s| s.anchor == at)
+}
+
+/// The `seal_arm_<safe>` functions (task #142): one `minecraft:interaction` per
+/// clickable cell of each sealed region, so the wall answers a press wherever the
+/// party presses it.
+///
+/// Only the region's **shell** is armed ([`plan::SealHintPlan::shell_cells`]) —
+/// a cell buried inside the seal has no face a crosshair can reach. Each entity
+/// is one block plus [`SEAL_MARGIN`], positioned so its box brackets its cell on
+/// every axis; see that constant for why the margin is not cosmetic.
+///
+/// Empty for a campaign that never seals a gate → byte-identical output.
+fn seal_fns(plan: &Plan) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for s in &plan.seal_hints {
+        let mut tags = vec![format!("dw_seal_{}", s.safe)];
+        tags.extend(seal_rider_tags(plan, &s.anchor));
+        let tag_list = tags
+            .iter()
+            .map(|t| format!("\"{t}\""))
+            .collect::<Vec<_>>()
+            .join(",");
+        let body: Vec<String> = s
+            .shell_cells()
+            .into_iter()
+            .map(|c| {
+                // Positions are built from integer hundredths, never from f64
+                // arithmetic: the datapack text is part of the byte-identity
+                // contract (ADR-0006) and `y - 0.01` in binary floating point is
+                // not the decimal `.99` a reader (or a diff) expects.
+                //
+                // x/z are the cell CENTRE (the box is width-symmetric about the
+                // position); y is the box's FLOOR, dropped one margin so the box
+                // brackets the cell below as well as above.
+                let x = fmt_centi(c[0] as i64 * 100 + 50);
+                let y = fmt_centi(c[1] as i64 * 100 - 1);
+                let z = fmt_centi(c[2] as i64 * 100 + 50);
+                format!(
+                    "summon minecraft:interaction {x} {y} {z} \
+                     {{width:{SEAL_BOX_SIZE},height:{SEAL_BOX_SIZE},response:1b,Invulnerable:1b,Tags:[{tag_list}]}}"
+                )
+            })
+            .collect();
+        out.push((seal_arm_fn(&s.safe), lines(&body)));
+    }
+    out
+}
+
+/// The `seal_hint_<safe>` reward functions (task #142): the answer itself.
+///
+/// Dispatched by a `player_interacted_with_entity` advancement, which is the one
+/// vanilla primitive that runs a function **as the player who right-clicked** —
+/// the same criterion every `interact` objective, NPC dialogue and bonfire rest
+/// already runs on. The interaction entity's own `interaction` NBT record names
+/// no player a command could target, and reading it would also *consume* the
+/// press that a co-located `use` trigger is entitled to see (round-8: adjudicate
+/// conditionally, consume unconditionally). An advancement observes without
+/// consuming, so the seal's answer can never eat another consumer's click.
+///
+/// The advancement is revoked immediately, so the stone answers every press, not
+/// only the first.
+fn seal_hint_fns(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    plan.seal_hints
+        .iter()
+        .map(|s| {
+            (
+                format!("seal_hint_{}", s.safe),
+                lines(&[
+                    format!("advancement revoke @s only {ns}:seal_{}", s.safe),
+                    format!("title @s actionbar {}", json!({ "text": s.text.clone() })),
+                ]),
+            )
+        })
+        .collect()
+}
+
+/// Generated `v08_seal_answers` PackTest (task #142): on a live pinned server,
+/// a gate that is sealed carries the hitboxes its answer rides, arming is
+/// idempotent, and re-opening it takes them away again.
+///
+/// What this proves and what it deliberately does not: the **presence** contract
+/// is fully machine-checkable here, and it is the half that failed — the island's
+/// sealed boulder had no hitbox at all, so a press reached nothing. The
+/// press-to-actionbar half rides `player_interacted_with_entity`, which no
+/// PackTest can fire (it needs a real client's right-click); that primitive is
+/// the one every NPC dialogue and bonfire rest already runs on, and the harness
+/// bot exercises it there.
+///
+/// Batch model (#140): the fixture stages the seal itself and hands the world
+/// back exactly as it found it — region cleared, hitboxes killed.
+fn emit_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let Some(s) = plan.seal_hints.first() else {
+        return;
+    };
+    let (from, to) = s.region;
+    let n = s.shell_cells().len();
+    let tag = format!("dw_seal_{}", s.safe);
+    let count = |score: &str| {
+        format!(
+            "execute store result score #{score} dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
+        )
+    };
+    let mut b = packtest_header(&format!(
+        "{}: the sealed gate `{}` carries an answer the party can press",
+        plan.campaign.world.content.title, s.anchor
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(
+        "# Batch model (#140): a sibling test may have driven the campaign past its".to_string(),
+    );
+    b.push("# own seal, so stage a known-OPEN gate rather than assuming one.".to_string());
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(format!(
+        "fill {} {} {} {} {} {} minecraft:air replace {}",
+        from[0], from[1], from[2], to[0], to[1], to[2], s.block
+    ));
+    b.push("# An open gate is nothing to press: nothing armed.".to_string());
+    b.push(count("seal_before"));
+    b.push("assert score #seal_before dw.sys matches 0".to_string());
+    b.push(format!(
+        "fill {} {} {} {} {} {} {}",
+        from[0], from[1], from[2], to[0], to[1], to[2], s.block
+    ));
+    b.push(format!(
+        "execute unless entity @e[tag={tag}] run function {ns}:{}",
+        seal_arm_fn(&s.safe)
+    ));
+    b.push(count("seal_armed"));
+    b.push(format!("assert score #seal_armed dw.sys matches {n}"));
+    b.push("# A re-fired seal must not stack a second, co-located set.".to_string());
+    b.push(format!(
+        "execute unless entity @e[tag={tag}] run function {ns}:{}",
+        seal_arm_fn(&s.safe)
+    ));
+    b.push(count("seal_again"));
+    b.push(format!("assert score #seal_again dw.sys matches {n}"));
+    b.push("# Re-opening takes the answer down with the stone (no residue).".to_string());
+    b.push(format!(
+        "fill {} {} {} {} {} {} minecraft:air replace {}",
+        from[0], from[1], from[2], to[0], to[1], to[2], s.block
+    ));
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(count("seal_after"));
+    b.push("assert score #seal_after dw.sys matches 0".to_string());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/v08_seal_answers.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
 /// Per-tick shortcut unlock detection (spec-0016 §2). Fires **once** — the
 /// `#sc_<id>` sentinel is the structural expression of permanence: after the open
 /// there is nothing left to fire, and no verb anywhere can put the gate back
@@ -4317,16 +4717,105 @@ const HARMFUL_EFFECTS: &[&str] = &[
     "minecraft:wither",
 ];
 
+/// The `minecraft:potion_contents` component value of a kit item that declares
+/// potion `contents` (DSL v0.8, spec-0016 §1) — compact SNBT, field order fixed
+/// (`potion`, `custom_effects`, `custom_color`) so emission is deterministic.
+///
+/// Written straight from the DSL's fields with nothing invented: a declared
+/// `duration`/`amplifier` is emitted, an absent one is left out and takes
+/// vanilla's own default. That matters beyond tidiness — the replenish path
+/// matches the flask by these exact components ([`kit_item_predicate`]), so any
+/// value the emitter made up here would have to be re-derived identically there.
+fn potion_contents_snbt(pc: &delvewright_dsl::PotionContents) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(p) = &pc.potion {
+        parts.push(format!("potion:\"{p}\""));
+    }
+    if !pc.effects.is_empty() {
+        let effects: Vec<String> = pc
+            .effects
+            .iter()
+            .map(|e| {
+                let mut f = vec![format!("id:\"{}\"", e.effect)];
+                if let Some(dur) = e.duration {
+                    f.push(format!("duration:{dur}"));
+                }
+                if let Some(amp) = e.amplifier {
+                    f.push(format!("amplifier:{amp}"));
+                }
+                format!("{{{}}}", f.join(","))
+            })
+            .collect();
+        parts.push(format!("custom_effects:[{}]", effects.join(",")));
+    }
+    if let Some(col) = &pc.color {
+        // `#rrggbb` → the packed int vanilla stores. Validation (`DW0486`)
+        // already proved the literal well-formed.
+        if let Ok(v) = u32::from_str_radix(col.trim_start_matches('#'), 16) {
+            parts.push(format!("custom_color:{v}"));
+        }
+    }
+    format!("{{{}}}", parts.join(","))
+}
+
+/// The component suffix a kit item's `give` carries: the display name and, for a
+/// potion-bearing item, its `potion_contents`. `""` for a plain unnamed item, so
+/// every campaign that declares neither is byte-identical.
+///
+/// One function for every place a kit item is handed out — the class kit and the
+/// bonfire replenish — because those two must produce the *same item*. When they
+/// disagree the rest does not refill the flask, it hands the player a second,
+/// subtly different one (the `clear` misses it) and the "per-rest budget"
+/// contract silently becomes a stockpile.
+fn kit_item_components(item: &delvewright_dsl::KitItem) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(n) = &item.name {
+        parts.push(format!(
+            "custom_name={}",
+            json!({ "text": n, "italic": false })
+        ));
+    }
+    if let Some(pc) = &item.contents {
+        parts.push(format!("potion_contents={}", potion_contents_snbt(pc)));
+    }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("[{}]", parts.join(","))
+    }
+}
+
+/// The **item predicate** that identifies this kit item for `clear` — the item id
+/// plus, when it carries potion contents, an exact `potion_contents` match.
+///
+/// Why the components belong in the predicate: a bare `clear @s minecraft:potion`
+/// takes every potion in the bag, so on a campaign whose kit holds a healing
+/// flask *and* any other brew, one rest would delete the other bottle and re-give
+/// only the flask. Matching the contents makes the clear name exactly the stack
+/// the `give` on the next line puts back.
+fn kit_item_predicate(item: &delvewright_dsl::KitItem) -> String {
+    match &item.contents {
+        Some(pc) => format!(
+            "{}[potion_contents={}]",
+            item.item,
+            potion_contents_snbt(pc)
+        ),
+        None => item.item.clone(),
+    }
+}
+
 /// The `bonfire_flask` function: refill every declared flask to its declared
 /// count, for the player it runs as.
 ///
 /// `clear` + `give` rather than `item replace`: a kit item has no fixed inventory
 /// slot (the player carries it wherever they moved it), and `item replace` needs
-/// one. Clearing by item id and re-giving the kit's exact stack is slot-free,
-/// idempotent and byte-stable — and it means "replenish to the declared count"
-/// is literally what the commands say, in both directions (a player hoarding
-/// extra flasks is brought back DOWN to the declared count, which is the souls
-/// contract: the flask is a per-rest budget, not a stockpile).
+/// one. Clearing the flask's own item predicate and re-giving the kit's exact
+/// stack is slot-free, idempotent and byte-stable — and it means "replenish to
+/// the declared count" is literally what the commands say, in both directions (a
+/// player hoarding extra flasks is brought back DOWN to the declared count, which
+/// is the souls contract: the flask is a per-rest budget, not a stockpile).
+/// Cleared and re-given through the SAME pair of helpers the class kit uses, so
+/// the refilled bottle is the poured-identical item, not a lookalike.
 ///
 /// A player's class is read off the `dw_class_<safe>` tag `class_apply_<safe>`
 /// adds — emitted only when the campaign declares a flask at all, so a campaign
@@ -4343,15 +4832,13 @@ fn emit_flask_function(plan: &Plan) -> Option<(String, String)> {
         let tag = class_tag(&plan.classes[ci].safe);
         body.push(format!(
             "execute if entity @s[tag={tag}] run clear @s {}",
-            item.item
+            kit_item_predicate(item)
         ));
-        let comp = match &item.name {
-            Some(n) => format!("[custom_name={}]", json!({ "text": n, "italic": false })),
-            None => String::new(),
-        };
         body.push(format!(
             "execute if entity @s[tag={tag}] run give @s {}{} {}",
-            item.item, comp, item.count
+            item.item,
+            kit_item_components(item),
+            item.count
         ));
     }
     Some(("bonfire_flask".to_string(), lines(&body)))
@@ -4425,7 +4912,7 @@ fn emit_bonfire_functions(plan: &Plan) -> Vec<(String, String)> {
                     pos[0], pos[1], pos[2]
                 ),
             ];
-            if plan.any_checkpoint_on_respawn() {
+            if plan.any_checkpoint() {
                 s.push(format!("scoreboard players set #cp dw.sys {i}"));
             }
             s
@@ -4843,9 +5330,9 @@ fn spawn_npc_fns(plan: &Plan) -> Vec<(String, String)> {
 
 /// The generated function name for a `move-npc` effect (content-derived key, so
 /// the start-caller and the generator agree without threading an index).
-fn movenpc_fn(npc: &str, to_anchor: &str) -> String {
+fn movenpc_fn(npc: &str, to_anchor: &str, gate_key: &str) -> String {
     format!(
-        "mv_{}_{}",
+        "mv_{}_{}{gate_key}",
         plan::safe_local(npc),
         plan::safe_local(to_anchor)
     )
@@ -5011,8 +5498,8 @@ fn push_effect_deep<'a>(e: &'a QuestEffect, out: &mut Vec<&'a QuestEffect>) {
 }
 
 /// The scoreboard-safe suffix shared by a move's driver functions/sentinels.
-fn movenpc_bare(npc: &str, to_anchor: &str) -> String {
-    movenpc_fn(npc, to_anchor)
+fn movenpc_bare(npc: &str, to_anchor: &str, gate_key: &str) -> String {
+    movenpc_fn(npc, to_anchor, gate_key)
         .strip_prefix("mv_")
         .unwrap_or("move")
         .to_string()
@@ -5041,8 +5528,8 @@ fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, Stri
     let ns = &plan.namespace;
     let mut out = Vec::new();
     for m in moves {
-        let start_name = movenpc_fn(&m.npc, &m.to_anchor);
-        let bare = movenpc_bare(&m.npc, &m.to_anchor);
+        let start_name = movenpc_fn(&m.npc, &m.to_anchor, &m.gate_key);
+        let bare = movenpc_bare(&m.npc, &m.to_anchor, &m.gate_key);
         let safe = plan::safe_local(&m.npc);
         let total = m.ticks();
         // The on_arrive bundle for this (npc, to_anchor) — the first-seen effect,
@@ -5403,17 +5890,17 @@ fn aggro_lock_lines(entity: &str, safe: &str) -> Vec<String> {
 }
 
 /// The generated start-function name for a `move-actor` (content key).
-fn moveactor_fn(actor: &str, to_anchor: &str) -> String {
+fn moveactor_fn(actor: &str, to_anchor: &str, gate_key: &str) -> String {
     format!(
-        "ma_{}_{}",
+        "ma_{}_{}{gate_key}",
         plan::safe_local(actor),
         plan::safe_local(to_anchor)
     )
 }
 
 /// The scoreboard-safe suffix shared by a move-actor's driver functions/sentinels.
-fn moveactor_bare(actor: &str, to_anchor: &str) -> String {
-    moveactor_fn(actor, to_anchor)
+fn moveactor_bare(actor: &str, to_anchor: &str, gate_key: &str) -> String {
+    moveactor_fn(actor, to_anchor, gate_key)
         .strip_prefix("ma_")
         .unwrap_or("move")
         .to_string()
@@ -5496,7 +5983,7 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
     // move-actor per-tick drivers.
     for m in actor_moves {
         let safe = plan::safe_local(&m.actor);
-        let bare = moveactor_bare(&m.actor, &m.to_anchor);
+        let bare = moveactor_bare(&m.actor, &m.to_anchor, &m.gate_key);
         let total = m.ticks();
         // The on_arrive bundle for this (actor, to_anchor) — the first-seen effect,
         // matching the planner's dedup order.
@@ -5521,7 +6008,10 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
             format!("scoreboard players set #at_{bare} dw.sys 0"),
             format!("schedule function {ns}:ma_tick_{bare} 1t"),
         ];
-        out.push((moveactor_fn(&m.actor, &m.to_anchor), lines(&start)));
+        out.push((
+            moveactor_fn(&m.actor, &m.to_anchor, &m.gate_key),
+            lines(&start),
+        ));
 
         let mut tick: Vec<String> = Vec::new();
         for (t, (w, y)) in m.waypoints.iter().zip(m.yaws.iter()).enumerate() {
@@ -5954,6 +6444,14 @@ fn env_trigger_setup(plan: &Plan) -> Vec<String> {
         if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
             continue;
         }
+        // Same rule, one layer out (task #142): a click trigger anchored on a gate
+        // the campaign SEALS rides that seal's own hitboxes — `seal_arm_<safe>`
+        // summons them wearing this trigger's tag. A second entity here would be
+        // exactly co-located with them, and the ray-pick tie is what killed the
+        // island's boulder hint (`DESIGN.md` round 13). One cell, one hitbox.
+        if trigger_rides_seal(plan, at) {
+            continue;
+        }
         if let Some(p) = anchor_point_any(plan, at) {
             let q = ent_xyz(p);
             out.push(format!(
@@ -6281,34 +6779,61 @@ fn loot_setup(loot: &[crate::plan::LootPlan]) -> Vec<String> {
     for l in loot {
         let c = l.cell;
         for (slot, it) in l.items.iter().enumerate() {
-            let mut comps: Vec<String> = Vec::new();
-            if let Some(n) = &it.name {
-                comps.push(format!(
-                    "custom_name={}",
-                    json!({ "text": n, "italic": false })
-                ));
-            }
-            if !it.enchantments.is_empty() {
-                let body = it
-                    .enchantments
-                    .iter()
-                    .map(|(id, lvl)| format!("\"{id}\":{lvl}"))
-                    .collect::<Vec<_>>()
-                    .join(",");
-                comps.push(format!("enchantments={{{body}}}"));
-            }
-            let comp = if comps.is_empty() {
-                String::new()
-            } else {
-                format!("[{}]", comps.join(","))
-            };
             out.push(format!(
-                "item replace block {} {} {} container.{slot} with {}{comp} {}",
-                c[0], c[1], c[2], it.item, it.count
+                "item replace block {} {} {} container.{slot} with {}{} {}",
+                c[0],
+                c[1],
+                c[2],
+                it.item,
+                container_stack_components(it.name.as_deref(), &it.enchantments),
+                it.count
             ));
         }
     }
     out
+}
+
+/// The `[custom_name=…,enchantments=…]` component suffix a container-fill stack
+/// carries in `item replace … with <item><suffix> <count>`, or `""` when it
+/// carries neither — which is what keeps every unnamed, unenchanted fill
+/// byte-identical to the emission that predates both fields.
+///
+/// ONE renderer for every container fill: spec-0021 `loot` and the DSL v0.8
+/// `collect` `item_name` (task #95). A quest item named on one surface and
+/// unnamed on the other would be the same defect the wave-arming table taught —
+/// two places describing one stack, drifting apart the moment either moves.
+/// Enchantment order is the `BTreeMap`'s id order, never hash order (ADR-0006).
+fn container_stack_components(
+    name: Option<&str>,
+    ench: &std::collections::BTreeMap<String, u32>,
+) -> String {
+    let mut comps: Vec<String> = Vec::new();
+    if let Some(n) = name {
+        comps.push(format!(
+            "custom_name={}",
+            json!({ "text": n, "italic": false })
+        ));
+    }
+    if !ench.is_empty() {
+        let body = ench
+            .iter()
+            .map(|(id, lvl)| format!("\"{id}\":{lvl}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        comps.push(format!("enchantments={{{body}}}"));
+    }
+    if comps.is_empty() {
+        return String::new();
+    }
+    format!("[{}]", comps.join(","))
+}
+
+/// The component suffix a v0.8 `collect` stack carries: its `item_name`, or `""`
+/// when the objective declares none. A thin alias over
+/// [`container_stack_components`] — a collect stack is a container fill, and is
+/// rendered by the container fill's renderer.
+fn item_component_tail(name: Option<&str>) -> String {
+    container_stack_components(name, &std::collections::BTreeMap::new())
 }
 
 /// `setup_finish` commands for traps (spec-0011): fill each `dispense` trap's
@@ -6945,6 +7470,67 @@ const NIGHT_VISION_PERIOD_TICKS: u32 = 20;
 /// for other reasons.
 const NIGHT_VISION_SECONDS: u32 = 12;
 
+/// Vanilla's night-vision wind-down, in **seconds**. `GameRenderer` ramps the
+/// brightness down once the remaining duration drops below 200 ticks, so an
+/// effect that has less than this left is *already* visibly flickering even
+/// though it has not expired.
+const NIGHT_VISION_FLICKER_SECONDS: u32 = 10;
+
+/// The lease every `effect give` hands out, in seconds.
+///
+/// **The camera-coverage guarantee** (owner ruling, island round 16): a vision
+/// effect the compiler grants must outlast any authored camera it can overlap,
+/// with vanilla's flicker window to spare.
+///
+/// The mitigation is declared per area and re-applied by a 1 s clock to the
+/// players *inside that area's box*. A player who leaves the box keeps whatever
+/// is left of their lease — and the island's ending does exactly that: boarding
+/// transports the party from the mitigated island to `area/open-sea` at x=256
+/// and immediately plays a 15-second cutscene. They arrived holding at most 12 s,
+/// so the ramp began ~1.5 s in and the effect died mid-shot. Owner playtest:
+/// "the night-vision effect expires mid-ending-cutscene and flickers."
+///
+/// **Why the lease, and not a re-grant at the cutscene.** Re-applying the effect
+/// from the cutscene driver would light up *every* player in *every* cutscene,
+/// including ones who were never granted sight and cameras the author framed as
+/// bright — a spectator on a night ocean would be handed cave vision. Vanilla has
+/// no "extend only if present" primitive to do it selectively. Lengthening the
+/// lease changes **who** has the effect not at all; it only makes the lease a
+/// leaving player already holds long enough that no camera can outlive it.
+///
+/// **Why the campaign's longest camera.** The compiler cannot know which cutscene
+/// a player who steps out of a mitigated area will land in, so the only sound
+/// bound is the longest one the campaign authors. Sized to that plus the flicker
+/// window plus one clock period, so the remaining duration is still above the
+/// ramp threshold when the last shot ends.
+///
+/// The cost is stated rather than hidden: sight trails a player out of a
+/// mitigated area for this long. That is the deliberate trade the pre-existing
+/// 12 s already made for the same reason (no vanilla primitive strips an effect
+/// on region exit without also stripping effects the story granted); this only
+/// moves the number, and only for a campaign that authors a longer camera than
+/// the floor.
+fn night_vision_seconds(plan: &Plan) -> u32 {
+    // Measured from the ticks the camera driver really runs for
+    // (`camera::shot_ticks` resolves `shot_style` defaults and applies vanilla's
+    // per-shot clamp), so the bound is the emitted reality, not the authored
+    // intent. Rounded up to whole seconds, which is the unit `effect give` takes.
+    let longest_camera_ticks: i32 = all_campaign_effects(plan.campaign)
+        .into_iter()
+        .filter_map(|e| e.cutscene_shots())
+        .map(|shots| {
+            shots
+                .iter()
+                .map(|s| crate::camera::shot_ticks(s.resolved_seconds()))
+                .sum::<i32>()
+        })
+        .max()
+        .unwrap_or(0);
+    let longest_camera = (longest_camera_ticks.max(0) as u32).div_ceil(20);
+    NIGHT_VISION_SECONDS
+        .max(longest_camera + NIGHT_VISION_FLICKER_SECONDS + NIGHT_VISION_PERIOD_TICKS.div_ceil(20))
+}
+
 /// The v0.6 night-vision mitigation clock: for every area declaring
 /// `mitigation: "night-vision"`, a self-rescheduling 1 s function that gives
 /// `minecraft:night_vision` to the players inside **that area's placed bounds**.
@@ -6959,6 +7545,7 @@ const NIGHT_VISION_SECONDS: u32 = 12;
 /// no mitigation, keeping pre-0.6 output byte-identical.
 fn night_vision_fns(plan: &Plan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
+    let seconds = night_vision_seconds(plan);
     let mut gives: Vec<String> = Vec::new();
     for area in &plan.areas {
         let declared = plan
@@ -6974,7 +7561,7 @@ fn night_vision_fns(plan: &Plan) -> Vec<(String, String)> {
         }
         let (min, max) = area.bounds();
         gives.push(format!(
-            "effect give @a[x={},dx={},y={},dy={},z={},dz={}] minecraft:night_vision {NIGHT_VISION_SECONDS} 0 true",
+            "effect give @a[x={},dx={},y={},dy={},z={},dz={}] minecraft:night_vision {seconds} 0 true",
             min[0],
             max[0] - min[0] + 1,
             min[1],
@@ -7172,19 +7759,47 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
     let mut cmds = Vec::new();
     match o {
         Objective::Collect {
+            id,
             item,
             count,
             anchor,
+            item_name,
+            fill_count,
             ..
         } => {
-            if let Some(pos) = plan.point(area, anchor.as_str()) {
+            // v0.8 (task #95): an ADOPTED container is prefab furniture standing
+            // in the room already — fill it where it stands, place nothing. Absent
+            // `container`, the compiler keeps conjuring its own chest at the
+            // anchor exactly as it always has. The adopted cell comes from
+            // `plan.collect_fills`, the same resolution `DW0438` proved.
+            let adopted = plan
+                .collect_fills
+                .iter()
+                .find(|f| f.objective_id == id.as_str())
+                .map(|f| f.cell);
+            let Some(pos) = adopted.or_else(|| plan.point(area, anchor.as_str())) else {
+                return cmds;
+            };
+            if adopted.is_none() {
                 cmds.push(format!(
                     "setblock {} {} {} minecraft:chest",
                     pos[0], pos[1], pos[2]
                 ));
+            }
+            // The objective's own stack lands in `container.0`; each padding stack
+            // repeats it in the slots after it, so the container READS full
+            // (vanilla fullness is occupied slots, not stack size). Positional and
+            // total — no RNG, nothing to reseed (ADR-0006). A campaign with
+            // neither a name nor padding emits the single pre-0.8 line, byte for
+            // byte.
+            let stack = format!(
+                "{item}{} {count}",
+                item_component_tail(item_name.as_deref())
+            );
+            for slot in 0..=*fill_count {
                 cmds.push(format!(
-                    "item replace block {} {} {} container.0 with {} {}",
-                    pos[0], pos[1], pos[2], item, count
+                    "item replace block {} {} {} container.{slot} with {stack}",
+                    pos[0], pos[1], pos[2]
                 ));
             }
         }
@@ -7956,6 +8571,29 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
         ));
     }
 
+    // Task #142: one advancement per sealed gate, so a right-click on the stone
+    // runs the answer AS the player who pressed it. `seal_hint_<safe>` revokes it,
+    // so the seal answers every press — a wall is not consumed by being asked.
+    for s in &plan.seal_hints {
+        advs.push((
+            format!("seal_{}", s.safe),
+            json!({
+                "criteria": {
+                    "interact": {
+                        "trigger": "minecraft:player_interacted_with_entity",
+                        "conditions": {
+                            "entity": {
+                                "type": "minecraft:interaction",
+                                "nbt": format!("{{Tags:[\"dw_seal_{}\"]}}", s.safe)
+                            }
+                        }
+                    }
+                },
+                "rewards": { "function": format!("{ns}:seal_hint_{}", s.safe) }
+            }),
+        ));
+    }
+
     // one interaction advancement per NPC
     for npc in &plan.npcs {
         advs.push((
@@ -8332,6 +8970,14 @@ fn emit_packtest(
     // round-8: two flag-gated click triggers on one NPC hitbox must both be
     // reachable. Emits nothing without such a pair.
     emit_shared_hitbox_packtest(plan, out);
+
+    // #122: the class trigger is one-shot per player. Emitted for every campaign
+    // that declares a class, i.e. every campaign.
+    emit_class_seal_packtest(plan, out);
+
+    // task #142: a sealed gate carries the hitboxes its right-click answer rides.
+    // Emits nothing for a campaign that seals no gate.
+    emit_seal_packtest(plan, out);
 
     // v0.6: boundary return / never-move-inside (spec-0013). Emits nothing without
     // a boundary.
@@ -8925,7 +9571,7 @@ fn emit_scheduled_executor_packtests(
             })
     });
     let Some((m, flag)) = arrival else { return };
-    let bare = movenpc_bare(&m.npc, &m.to_anchor);
+    let bare = movenpc_bare(&m.npc, &m.to_anchor, &m.gate_key);
     let score = plan::flag_score(&flag);
 
     // The walk is real, so the test must outlive it: the driver reschedules
@@ -8950,7 +9596,7 @@ fn emit_scheduled_executor_packtests(
     // stands still throughout; nothing here supplies it as an executor.
     t.push(format!(
         "function {ns}:{}",
-        movenpc_fn(&m.npc, &m.to_anchor)
+        movenpc_fn(&m.npc, &m.to_anchor, &m.gate_key)
     ));
     t.push(format!("await score {} {score} matches 1", plan::PARTY));
     out.insert(
@@ -9696,6 +10342,145 @@ fn emit_night_vision_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// block-x, captured via `data get … Pos[0]`, discriminates the checkpoint from
 /// the interior cell, and is robust to teleport centering (both sides floor the
 /// same way). Emits nothing when the campaign declares no `boundary`.
+/// #122: **the class trigger is one-shot per player** — the seal, proved on a
+/// live server.
+///
+/// `class_apply_<c>` ends in `teleport @s <campaign entry point>`, so a second
+/// `/trigger dw.class` mid-run used to re-class whoever ran it AND warp them
+/// back to the start of the delve. The compiler now arms the trigger only for a
+/// player who has not classed (`class_arm`), so the seal is a property of the
+/// emitted pack rather than a rule every caller has to know.
+///
+/// The template drives the REAL arming path as its own dummy — it never restates
+/// the guard, which would prove only its own copy — and takes the one
+/// unambiguous read-back vanilla offers for "was this trigger usable": the
+/// success of the `trigger` command itself.
+///
+/// Three claims, in the order that makes them mean something:
+///
+/// 1. an UNCLASSED player's trigger is armed and works (the seal must not have
+///    weakened the first, legitimate class — a template that only proved the
+///    "no" would pass just as well against a pack where classing is broken);
+/// 2. the apply consumes the trigger and records the class;
+/// 3. after it, the arming path runs again and the trigger stays DEAD: the
+///    `trigger` command fails, `dw.class` gets no score, so the dispatch cannot
+///    fire — same class, same place, measured on the dummy's own `Pos`.
+///
+/// The dummy is parked away from the entry point before claim 3 precisely so a
+/// warp back to it would be visible.
+fn emit_class_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = &plan.campaign.world.content.title;
+    let Some(first) = plan.classes.first() else {
+        return;
+    };
+    let Some(entry) = campaign_spawn(plan) else {
+        return;
+    };
+    // A genuinely DIFFERENT class for the second attempt when the campaign has
+    // one, so "the class did not change" is a claim about identity and not only
+    // about position.
+    let second = plan.classes.get(1).unwrap_or(first);
+    // Distinct from the entry cell by construction: this is where a warp would
+    // be visible. Reading block-x back the way `emit_boundary_packtest` does
+    // makes the assertion robust to teleport centering.
+    let probe_x = entry[0] + 32;
+
+    let mut b = packtest_header(&format!(
+        "{title}: the class trigger is one-shot — a second `/trigger dw.class` cannot re-class or \
+         warp (#122)"
+    ));
+    b.push(format!("function {ns}:setup"));
+    // Own init: the batch is one shared server, so "never set" is not 0.
+    b.push("scoreboard players reset @s dw.class".to_string());
+    b.push("scoreboard players reset @s dw.classed".to_string());
+
+    // --- 1. unclassed: the trigger is armed and the class can be taken --------
+    b.push(format!("execute as @s run function {ns}:class_arm"));
+    b.push(format!(
+        "execute store success score #cls_arm1 dw.sys run trigger dw.class set {}",
+        first.n
+    ));
+    b.push("assert score #cls_arm1 dw.sys matches 1".to_string());
+
+    // --- 2. the apply consumes the trigger and records the class -------------
+    b.push(format!("function {ns}:class_apply_{}", first.safe));
+    b.push(
+        "execute store success score #cls_taken dw.sys if score @s dw.classed matches 1"
+            .to_string(),
+    );
+    b.push("assert score #cls_taken dw.sys matches 1".to_string());
+    b.push(
+        "execute store success score #cls_left dw.sys if score @s dw.class matches -2147483648.."
+            .to_string(),
+    );
+    b.push("assert score #cls_left dw.sys matches 0".to_string());
+
+    // --- 3. the seal: arm again, and the trigger stays dead ------------------
+    // Park the dummy away from the entry the apply teleported it to, so the warp
+    // this task exists to kill would move it.
+    b.push(format!("tp @s {probe_x} {} {}", entry[1], entry[2]));
+    b.push("execute store result score #cls_x dw.sys run data get entity @s Pos[0] 1".to_string());
+    // Precondition: the park really landed where it was asked to, so a later
+    // equality is a fact about the seal and not about a teleport that no-op'd.
+    b.push(format!("assert score #cls_x dw.sys matches {probe_x}"));
+    b.push(format!("execute as @s run function {ns}:class_arm"));
+    b.push(format!(
+        "execute store success score #cls_arm2 dw.sys run trigger dw.class set {}",
+        second.n
+    ));
+    b.push("assert score #cls_arm2 dw.sys matches 0".to_string());
+    b.push(
+        "execute store success score #cls_left2 dw.sys if score @s dw.class matches -2147483648.."
+            .to_string(),
+    );
+    b.push("assert score #cls_left2 dw.sys matches 0".to_string());
+    // …so the dispatch cannot fire: same class score, same place.
+    b.push(
+        "execute store success score #cls_still dw.sys if score @s dw.classed matches 1"
+            .to_string(),
+    );
+    b.push("assert score #cls_still dw.sys matches 1".to_string());
+    b.push("execute store result score #cls_x2 dw.sys run data get entity @s Pos[0] 1".to_string());
+    b.push(format!("assert score #cls_x2 dw.sys matches {probe_x}"));
+
+    // The class the player actually wears, when the campaign tags it (the flask
+    // path): still the first class, never the second.
+    if !plan.flasks().is_empty() {
+        let worn = class_tag(&first.safe);
+        b.push(format!(
+            "execute store success score #cls_worn dw.sys if entity @s[tag={worn}]"
+        ));
+        b.push("assert score #cls_worn dw.sys matches 1".to_string());
+        if second.safe != first.safe {
+            let other = class_tag(&second.safe);
+            b.push(format!(
+                "execute store success score #cls_other dw.sys if entity @s[tag={other}]"
+            ));
+            b.push("assert score #cls_other dw.sys matches 0".to_string());
+        }
+    }
+
+    // Leave no residue for the shared batch (pin_dummy rule 3/4): the party-unique
+    // kit latches this template's apply may have taken are batch-global.
+    for (k, item) in plan.campaign.classes.content.classes[0]
+        .kit
+        .iter()
+        .enumerate()
+    {
+        if matches!(item.carrier, Some(delvewright_dsl::Carrier::One)) {
+            b.push(format!(
+                "scoreboard players reset #kit_{}_{k} dw.sys",
+                first.safe
+            ));
+        }
+    }
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/class_trigger_once.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
 fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
     let Some(region) = playable_region(plan) else {
         return;
@@ -10175,6 +10960,15 @@ fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
     let item = &plan.campaign.classes.content.classes[ci].kit[ki];
     let ctag = class_tag(&plan.classes[ci].safe);
     let (pin, sel) = pin_dummy("dw_bfopt");
+    // Counting predicate: the flask's own item predicate, so on a
+    // contents-bearing flask every count below is of bottles whose
+    // `potion_contents` matches EXACTLY. That is what makes this template a
+    // proof of round-trip and not merely of arithmetic — a rest that re-gave a
+    // differently-filled bottle (or the contents-less placeholder) would leave
+    // the exact-match count at 1 while the bare-id count climbed to `count + 1`,
+    // and both halves are asserted below.
+    let pred = kit_item_predicate(item);
+    let comp = kit_item_components(item);
 
     let mut b = packtest_header(&format!(
         "{title}: save-only saves and nothing else; rest refills the flask (spec-0016 §1)"
@@ -10184,9 +10978,10 @@ fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
     // The dummy takes the flask's class, so `bonfire_flask`'s per-class guard
     // selects it — this is the same tag `class_apply_<class>` adds.
     b.push(format!("tag {sel} add {ctag}"));
-    // Baseline: exactly ONE flask in the bag (the party has spent the rest).
+    // Baseline: exactly ONE flask in the bag (the party has spent the rest),
+    // filled exactly as the class kit fills it.
     b.push(format!("clear {sel} {}", item.item));
-    b.push(format!("give {sel} {} 1", item.item));
+    b.push(format!("give {sel} {}{comp} 1", item.item));
 
     // --- save only: the checkpoint moves, the flask does NOT come back ---
     b.push("data modify storage dw:cp pos set value [0, 0, 0]".to_string());
@@ -10194,8 +10989,7 @@ fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
         "execute as {sel} run function {ns}:bonfire_pick_save_{i}"
     ));
     b.push(format!(
-        "execute store result score #bo_save dw.sys run clear {sel} {} 0",
-        item.item
+        "execute store result score #bo_save dw.sys run clear {sel} {pred} 0"
     ));
     b.push("assert score #bo_save dw.sys matches 1".to_string());
     b.push(
@@ -10208,11 +11002,20 @@ fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
         "execute as {sel} run function {ns}:bonfire_pick_rest_{i}"
     ));
     b.push(format!(
-        "execute store result score #bo_rest dw.sys run clear {sel} {} 0",
-        item.item
+        "execute store result score #bo_rest dw.sys run clear {sel} {pred} 0"
     ));
     b.push(format!(
         "assert score #bo_rest dw.sys matches {}",
+        item.count
+    ));
+    // …and nothing ELSE of that item id is in the bag: refilling by handing over
+    // a second, differently-filled bottle is the failure this catches.
+    b.push(format!(
+        "execute store result score #bo_any dw.sys run clear {sel} {} 0",
+        item.item
+    ));
+    b.push(format!(
+        "assert score #bo_any dw.sys matches {}",
         item.count
     ));
 
@@ -10714,6 +11517,84 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
             format!("packtest-datapack/data/{ns}/test/v06_checkpoint_respawn.mcfunction"),
             lines(&t).into_bytes(),
         );
+
+        // --- the environmental-death variant (task #145) ---
+        //
+        // The template above proves the RECORD; this one proves the LANDING, which
+        // is the half the owner's tide-mill playtest found missing. `spawnpoint` is
+        // only a hint: vanilla re-validates the recorded cell on death and silently
+        // respawns at the world spawn when it is solid or liquid. Nothing about
+        // that is specific to how the player died — a crush gate's
+        // `damage @s 1000 minecraft:generic` leaves exactly the same `deathCount`
+        // edge a mob kill does — so the test drives that edge directly, from the
+        // worst starting position (the campaign entrance, where vanilla's fallback
+        // drops them), and asserts the player ends on the checkpoint cell.
+        //
+        // Second half: the re-seat must be EDGE-triggered. A leash that re-seated
+        // every tick would pin the party to the checkpoint and make the delve
+        // unplayable, so the test walks the dummy away again, re-runs the check
+        // with no new death, and asserts it stayed away.
+        if let Some(entry) = campaign_spawn(plan) {
+            let (pin, sel) = pin_dummy("dw_t_cpseat");
+            let mut t = packtest_header(&format!(
+                "{title}: an environmental death re-seats the player ON the checkpoint, once \
+                 (spec-0012, task #145)"
+            ));
+            t.push(format!("function {ns}:setup"));
+            t.push(pin);
+            t.push(format!("scoreboard players set #cp dw.sys {}", cp.index));
+            t.push(format!("scoreboard players set {sel} dw.death_ack 0"));
+            t.push(format!("scoreboard players set {sel} dw.deaths 1"));
+            t.push(format!(
+                "tp {sel} {} {} {}",
+                center(entry[0]),
+                entry[1],
+                center(entry[2])
+            ));
+            t.push(format!(
+                "execute as {sel} run function {ns}:cp_respawn_check"
+            ));
+            for (i, axis) in ["x", "y", "z"].iter().enumerate() {
+                t.push(format!(
+                    "execute store result score #{axis}_cpseat dw.sys run data get entity {sel} \
+                     Pos[{i}] 100"
+                ));
+            }
+            t.push(format!(
+                "assert score #x_cpseat dw.sys matches {}",
+                cp.pos[0] * 100 + 50
+            ));
+            t.push(format!(
+                "assert score #y_cpseat dw.sys matches {}",
+                cp.pos[1] * 100
+            ));
+            t.push(format!(
+                "assert score #z_cpseat dw.sys matches {}",
+                cp.pos[2] * 100 + 50
+            ));
+            t.push(format!("assert score {sel} dw.death_ack matches 1"));
+            // …and no second re-seat without a second death.
+            t.push(format!(
+                "tp {sel} {} {} {}",
+                center(entry[0]),
+                entry[1],
+                center(entry[2])
+            ));
+            t.push(format!(
+                "execute as {sel} run function {ns}:cp_respawn_check"
+            ));
+            t.push(format!(
+                "execute store result score #x2_cpseat dw.sys run data get entity {sel} Pos[0] 100"
+            ));
+            t.push(format!(
+                "assert score #x2_cpseat dw.sys matches {}",
+                entry[0] * 100 + 50
+            ));
+            out.insert(
+                format!("packtest-datapack/data/{ns}/test/v06_checkpoint_reseat.mcfunction"),
+                lines(&t).into_bytes(),
+            );
+        }
     }
 
     if let Some(beat) = plan.stealth_beats.first() {
@@ -11052,7 +11933,7 @@ fn emit_v06_actor_packtests(
     // that same tick) and assert the puppet is at the destination cell.
     if let Some(m) = actor_moves.first() {
         let safe = plan::safe_local(&m.actor);
-        let bare = moveactor_bare(&m.actor, &m.to_anchor);
+        let bare = moveactor_bare(&m.actor, &m.to_anchor, &m.gate_key);
         let total = m.ticks();
         let p = m.target;
         let mut b = packtest_header(&format!(
@@ -11109,7 +11990,7 @@ fn emit_v06_actor_packtests(
             .map(|n| n.tag.clone())
     {
         let safe = plan::safe_local(&m.actor);
-        let bare = moveactor_bare(&m.actor, &m.to_anchor);
+        let bare = moveactor_bare(&m.actor, &m.to_anchor, &m.gate_key);
         let total = m.ticks();
         // Every distinct gate a `close-gate` effect seals, in first-appearance
         // order (deterministic).
@@ -11481,7 +12362,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
     // is the path's real final waypoint.
     if let Some(m) = moves.first() {
         let safe = plan::safe_local(&m.npc);
-        let bare = movenpc_bare(&m.npc, &m.to_anchor);
+        let bare = movenpc_bare(&m.npc, &m.to_anchor, &m.gate_key);
         let total = m.ticks();
         let p = m.target;
         let mut b = packtest_header(&format!(
@@ -11983,20 +12864,18 @@ fn pin_dummy(tag: &str) -> (String, String) {
     )
 }
 
-/// Lines that satisfy an objective's activation guard (quest active, all `after`
-/// prerequisites set, all `requires_flags` set, and any required item given to
-/// `sel`). With `with_flags: false` the flags are not merely omitted but actively
-/// cleared: PackTest runs the whole suite as one batch on one shared server, so
-/// "never set" does not mean 0.
+/// The guard half of [`packtest_preamble`]: every progression term an
+/// objective's activation gate READS, pinned to the value that opens (or, with
+/// `with_flags: false`, withholds) it — quest active, `after` prerequisites,
+/// `requires_flags`, and `forbids_flags` actively cleared.
 ///
-/// spec-0018: every progression term is written on the **party holder**, which is
-/// the state the generated guards actually read. The holder is batch-global —
-/// but each template is a single atomic mcfunction, so its baseline, its drive
-/// and its assert all land inside one tick with no sibling in between (the one
-/// place that stops being true is a template that `await`s, which
-/// `tests/packtest_batch.rs` polices separately). Only the ITEM still goes to the
-/// test's own pinned dummy.
-fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool, sel: &str) -> Vec<String> {
+/// Split out because a template that must prove something about **how the item
+/// reaches the player** (the v0.8 named-stack collect) cannot use the preamble's
+/// own `give`: handing the plain item over first completes the objective and
+/// makes the named stack's assertion vacuous. Everything about which flags are
+/// pinned stays in one place, so no template can be written that opens a gate by
+/// hand and forgets one (PR #237's template flag hygiene).
+fn packtest_guards(quest_id: &str, o: &Objective, with_flags: bool) -> Vec<String> {
     let party = plan::PARTY;
     let mut p = vec![format!(
         "scoreboard players set {party} {} 1",
@@ -12024,6 +12903,24 @@ fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool, sel: &str)
             plan::flag_score(f.as_str())
         ));
     }
+    p
+}
+
+/// Lines that satisfy an objective's activation guard (quest active, all `after`
+/// prerequisites set, all `requires_flags` set, and any required item given to
+/// `sel`). With `with_flags: false` the flags are not merely omitted but actively
+/// cleared: PackTest runs the whole suite as one batch on one shared server, so
+/// "never set" does not mean 0.
+///
+/// spec-0018: every progression term is written on the **party holder**, which is
+/// the state the generated guards actually read. The holder is batch-global —
+/// but each template is a single atomic mcfunction, so its baseline, its drive
+/// and its assert all land inside one tick with no sibling in between (the one
+/// place that stops being true is a template that `await`s, which
+/// `tests/packtest_batch.rs` polices separately). Only the ITEM still goes to the
+/// test's own pinned dummy.
+fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool, sel: &str) -> Vec<String> {
+    let mut p = packtest_guards(quest_id, o, with_flags);
     match o {
         Objective::Collect { item, count, .. } => {
             p.push(format!("give {sel} {item} {count}"));
@@ -12068,6 +12965,8 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     // milestone precisely because nothing looked. Falls back to the first kill.
     let mut first_armed_kill = None;
     let mut first_collect = None;
+    // The first `collect` that adopts a prefab container (DSL v0.8, task #95).
+    let mut first_collect_adopted = None;
     let mut first_interact = None;
     // The first `interact` that actually gates on an item — the subject of the
     // held-vs-carried test below. Distinct from `first_interact`, which may be
@@ -12113,6 +13012,12 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
                     }
                 }
                 _ => {}
+            }
+            // v0.8 (task #95): the first `collect` that ADOPTS a prefab container.
+            // Distinct from `first_collect`, which may keep the compiler-placed
+            // chest and would make the adoption assertions vacuous.
+            if first_collect_adopted.is_none() && o.collect_container().is_some() {
+                first_collect_adopted = Some((qid, o));
             }
             if first_flag_gated.is_none()
                 && !o.requires_flags().is_empty()
@@ -12578,6 +13483,92 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             obj_score(id.as_str())
         ));
         write("collect_preheld", b);
+    }
+
+    // v0.8 container adoption (task #95, island playtest rounds 1-2): the
+    // objective fills the barrel the PREFAB placed, pads it so it reads full, and
+    // still completes when what the player carries is the NAMED stack.
+    //
+    // Three things a compile-time test cannot reach, all of them silent failures
+    // on a live server: `item replace block … container.<n>` against the adopted
+    // cell has to actually land (it fails without output on a non-container —
+    // `DW0438` proves one is there, not that the fill took); the padding has to
+    // occupy the slots after it rather than overwrite slot 0; and the custom-name
+    // component must not change what the adjudication sees, because the
+    // completion advancement and the per-tick held check both match on ITEM ID
+    // and a component that quietly excluded the stack would leave the objective
+    // uncompletable with the item sitting in the player's hand.
+    if let Some((qid, o)) = first_collect_adopted
+        && let Objective::Collect {
+            id,
+            item,
+            count,
+            item_name,
+            fill_count,
+            ..
+        } = o
+        && let Some(fill) = plan
+            .collect_fills
+            .iter()
+            .find(|f| f.objective_id == id.as_str())
+    {
+        let (pin, sel) = pin_dummy("dw_t_cadp");
+        let cell = fill.cell;
+        let party = plan::PARTY;
+        let stack = format!(
+            "{item}{} {count}",
+            item_component_tail(item_name.as_deref())
+        );
+        let mut b = packtest_header(&format!(
+            "{}: collect `{id}` fills the adopted container and completes on the named stack",
+            c.world.content.title
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.push(format!(
+            "scoreboard players set {party} {} 0",
+            obj_score(id.as_str())
+        ));
+        // Open the activation gate by hand and WITHOUT the preamble's `give`: the
+        // point of this template is which stack completes the objective, and the
+        // plain item handed over first would complete it before the named one is
+        // ever presented.
+        b.extend(packtest_guards(qid, o, true));
+        // Empty the adopted container first — `setup` may have run for a sibling
+        // template, and this objective's own activation is guarded once per world
+        // by `#act_<obj>`, so the fill is not re-run on a second call. Clearing
+        // makes the count assertion below a statement about THIS activation.
+        for slot in 0..=*fill_count {
+            b.push(format!(
+                "item replace block {} {} {} container.{slot} with minecraft:air",
+                cell[0], cell[1], cell[2]
+            ));
+        }
+        b.push(format!(
+            "function {ns}:activate_{}",
+            safe_obj_fn(id.as_str())
+        ));
+        // The fill landed, in the right number of slots: `if items block` counts
+        // matching items across the whole container, so the total is the stack
+        // repeated once per filled slot. A dropped fill reads 0; padding that
+        // overwrote slot 0 instead of following it reads one stack short.
+        let total = count * (fill_count + 1);
+        b.push(format!(
+            "execute store result score #cadp dw.sys if items block {} {} {} container.* {item}",
+            cell[0], cell[1], cell[2]
+        ));
+        b.push(format!("assert score #cadp dw.sys matches {total}"));
+        // The player takes the stack the container actually holds — components and
+        // all, the same text the fill emitted — and the objective completes.
+        b.push(format!(
+            "item replace entity {sel} inventory.0 with {stack}"
+        ));
+        b.push(format!("function {ns}:tick"));
+        b.push(format!(
+            "assert score {party} {} matches 1",
+            obj_score(id.as_str())
+        ));
+        write("collect_container", b);
     }
 }
 

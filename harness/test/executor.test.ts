@@ -1822,7 +1822,7 @@ const SELECT_CLASS_STEP: SelectClassStep = {
 
 test("a scripted death re-arms the bot WITHOUT re-selecting the class", async () => {
   // task #120, the-drowned-bell run five. The re-arm used to replay `select-class`.
-  // The `dw.class` trigger is re-enabled for every player on every tick and
+  // The `dw.class` trigger was then re-enabled for every player on every tick and
   // `class_apply_<class>` ENDS IN `teleport @s <campaign entry point>`, so every
   // post-death re-arm silently warped the bot from the checkpoint it had just
   // respawned on back to the start of the delve — 150 blocks and eight levels away
@@ -2158,11 +2158,17 @@ class BonfireFakeBot extends CombatFakeBot {
   }
 
   /** The affordance is an entity like any other, so it lives in `entities`.
-   * Re-published after every re-seat: a bonfire is rested at, never used up. */
+   * Re-published after every re-seat: a bonfire is rested at, never used up.
+   *
+   * The dimensions are the real ones — the compiler summons every affordance as
+   * `minecraft:interaction` with `width:1.0f,height:2.0f` — because the crosshair
+   * acquisition that now guards `rest` is ray-vs-hitbox: a stub with no box is a
+   * body the ray cannot meet, and a fake that cannot be aimed at proves nothing
+   * about a fire that can. */
   armBonfire(id: number, pos: FakeVec3): void {
     if (!this.affordance) return;
     this.bonfires ??= new Map();
-    this.bonfires.set(id, { id, name: "interaction", height: 0, position: pos });
+    this.bonfires.set(id, { id, name: "interaction", width: 1, height: 2, position: pos });
     this.entities[id] = this.bonfires.get(id)!;
   }
   // Declared without an initialiser on purpose: the BASE constructor calls `seat`,

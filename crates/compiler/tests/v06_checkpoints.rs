@@ -154,8 +154,17 @@ fn on_respawn_dispatch_is_emitted() {
     );
     let check = fn_body(&out, "cp_respawn_check");
     assert!(
-        check.contains("execute if score @s dw.deaths > @s dw.death_ack"),
+        check.contains("if score @s dw.deaths > @s dw.death_ack"),
         "respawn fires on the death-count edge"
+    );
+    // task #145: `deathCount` ticks on the DEATH, not on the respawn, so both the
+    // fire and the acknowledgement wait for a living player — otherwise the whole
+    // bundle would land on the corpse and the edge would be spent.
+    assert!(
+        check
+            .lines()
+            .all(|l| l.contains("unless data entity @s {Health:0.0f}")),
+        "the death edge is held until the player is alive again:\n{check}"
     );
     let fire = fn_body(&out, "cp_respawn_fire");
     assert!(
@@ -166,6 +175,88 @@ fn on_respawn_dispatch_is_emitted() {
     assert!(
         hook.contains("You steady yourself at the shrine"),
         "on_respawn narration emitted"
+    );
+}
+
+/// task #145 (owner playtest, tide-mill). `spawnpoint` is a hint, not a promise:
+/// vanilla re-validates the recorded cell on death and silently falls back to the
+/// world spawn — the campaign entrance — whenever the cell or the cell above it is
+/// solid or liquid. Past a one-way transport that is an unrecoverable softlock, so
+/// the delve re-seats the respawned player on the checkpoint itself.
+#[test]
+fn respawn_re_seats_the_player_on_the_checkpoint_cell() {
+    let out = build_fixture();
+    let fire = fn_body(&out, "cp_respawn_fire");
+    assert!(
+        fire.contains(&format!(
+            "execute if score #cp dw.sys matches 0 run function {NS}:cp_seat_0"
+        )),
+        "the death edge dispatches the re-seat for the active checkpoint:\n{fire}"
+    );
+    // …and it runs BEFORE the authored `on_respawn` beats, which narrate to a
+    // player who is supposed to be standing on the mark.
+    let seat = fire.find("cp_seat_0").expect("re-seat dispatched");
+    let hook = fire.find("cp_on_respawn_0").expect("hook dispatched");
+    assert!(seat < hook, "the re-seat precedes the hooks:\n{fire}");
+
+    // The re-seat lands on the CENTRE of the checkpoint cell — vanilla's own
+    // respawn lands at `cell + (0.5, 0.1, 0.5)`, so a correct respawn must not
+    // visibly twitch. Coordinates are compiled in: no macro, no storage read.
+    let body = fn_body(&out, "cp_seat_0");
+    let cell: Vec<i32> = out
+        .iter()
+        .filter(|(k, _)| k.ends_with(".mcfunction"))
+        .filter_map(|(_, v)| String::from_utf8(v.clone()).ok())
+        .flat_map(|s| {
+            s.lines()
+                .filter(|l| l.starts_with("spawnpoint @a "))
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .next()
+        .expect("a checkpoint records a spawnpoint")
+        .trim_start_matches("spawnpoint @a ")
+        .split(' ')
+        .map(|n| n.parse::<i32>().unwrap())
+        .collect();
+    assert_eq!(
+        body.trim(),
+        format!(
+            "tp @s {:.1} {} {:.1}",
+            cell[0] as f64 + 0.5,
+            cell[1],
+            cell[2] as f64 + 0.5
+        ),
+        "the re-seat targets the checkpoint cell's centre"
+    );
+}
+
+/// The environmental-death PackTest (task #145): the runtime half of the proof —
+/// a `deathCount` edge from the campaign entrance must end ON the checkpoint, and
+/// must not fire a second time without a second death.
+#[test]
+fn reseat_packtest_drives_the_death_edge_from_the_entrance() {
+    let out = build_fixture();
+    let t = std::str::from_utf8(
+        &out[&format!("packtest-datapack/data/{NS}/test/v06_checkpoint_reseat.mcfunction")],
+    )
+    .unwrap();
+    assert!(
+        t.contains("scoreboard players set @a[tag=dw_t_cpseat,limit=1] dw.deaths 1"),
+        "the test drives a real death-count edge:\n{t}"
+    );
+    assert!(
+        t.contains("run function v06-checkpoints:cp_respawn_check"),
+        "…through the shipped respawn check:\n{t}"
+    );
+    assert_eq!(
+        t.matches("assert score").count(),
+        5,
+        "landing (x/y/z) + the ack + the no-second-re-seat guard:\n{t}"
+    );
+    assert!(
+        t.contains("tag @p add dw_t_cpseat") && t.matches("@p").count() == 1,
+        "the template pins its own dummy exactly once:\n{t}"
     );
 }
 

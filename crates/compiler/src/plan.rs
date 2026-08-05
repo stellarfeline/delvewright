@@ -136,6 +136,65 @@ pub struct ShortcutPlan {
     pub on_unlock: Vec<QuestEffect>,
 }
 
+/// The compiler's canonical English answer a sealed gate gives a right-click
+/// when the `close-gate` authors no `sealed_hint` (English-first, CLAUDE.md
+/// language policy — baked at emit time exactly as the boundary return message
+/// is, so it is not l10n-inventoried).
+///
+/// The owner's island finding #34: a sealed boulder answered a right-click with
+/// SILENCE. There is no such thing as a seal with nothing to say, so the answer
+/// is the compiler's obligation and the authored line is only the wording.
+pub const SEAL_HINT_DEFAULT: &str = "The way is sealed.";
+
+/// A gate anchor that some `close-gate` seals, and the line the seal answers a
+/// right-click with (DSL v0.8, task #142). One entry per **anchor**: the seal is
+/// a place, not an event, so two `close-gate`s on one anchor share its hitboxes
+/// and must agree on the wording (`DW0423`).
+#[derive(Clone, Debug)]
+pub struct SealHintPlan {
+    /// The gate anchor name (`anchor/boulder`).
+    pub anchor: String,
+    /// The function/tag-safe local id, used for `dw_seal_<safe>`.
+    pub safe: String,
+    /// The gate region's inclusive corners (absolute world coords).
+    pub region: ([i32; 3], [i32; 3]),
+    /// The block the region is filled with while sealed (the generated PackTest
+    /// stages and un-stages the seal with it).
+    pub block: String,
+    /// The line the seal answers with — authored, or [`SEAL_HINT_DEFAULT`].
+    pub text: String,
+}
+
+impl SealHintPlan {
+    /// The **shell** cells of the seal: every region cell with at least one
+    /// axis-neighbour outside the region, in ascending `(x, y, z)` order.
+    ///
+    /// A cell buried inside the region has six sealed neighbours, so no face of
+    /// it can ever be in a player's crosshair — giving it a hitbox would ship an
+    /// entity nothing can reach. The shell is exactly the clickable surface, and
+    /// for the thin slab a gate anchor usually is (a doorway one block deep) it
+    /// is the whole region.
+    pub fn shell_cells(&self) -> Vec<[i32; 3]> {
+        let (a, b) = self.region;
+        let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
+        let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
+        let mut out = Vec::new();
+        for x in lo[0]..=hi[0] {
+            for y in lo[1]..=hi[1] {
+                for z in lo[2]..=hi[2] {
+                    let interior = (lo[0] < x && x < hi[0])
+                        && (lo[1] < y && y < hi[1])
+                        && (lo[2] < z && z < hi[2]);
+                    if !interior {
+                        out.push([x, y, z]);
+                    }
+                }
+            }
+        }
+        out
+    }
+}
+
 /// A resolved stage-5 `timed-gate` (spec-0016 §4), in declared order.
 #[derive(Clone, Debug)]
 pub struct TimedGatePlan {
@@ -343,10 +402,17 @@ pub struct Plan<'a> {
     pub shortcuts: Vec<ShortcutPlan>,
     /// Resolved container fills (spec-0021), declaration-ordered.
     pub loot: Vec<LootPlan>,
+    /// Resolved `collect` container adoptions (DSL v0.8, task #95), campaign-
+    /// ordered. Empty for a campaign whose collects keep the compiler's chest.
+    pub collect_fills: Vec<CollectFillPlan>,
     /// Resolved ambushes (spec-0016 §3), declaration-ordered.
     pub ambushes: Vec<AmbushPlan>,
     /// Resolved timed gates (spec-0016 §4), declaration-ordered.
     pub timed_gates: Vec<TimedGatePlan>,
+    /// One entry per gate anchor some `close-gate` seals (DSL v0.8, task #142),
+    /// in first-firing order — the seal the party can press for an answer. Empty
+    /// for a campaign that never seals a gate.
+    pub seal_hints: Vec<SealHintPlan>,
     /// Resolved gate open/close firings (DSL v0.6), content-ordered — drives the
     /// `close-gate` completability model in `crate::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
@@ -1156,6 +1222,9 @@ impl<'a> Plan<'a> {
         // ---- container fills (spec-0021) ----
         let loot = collect_loot(campaign, &anchors);
 
+        // ---- `collect` container adoption (DSL v0.8, task #95) ----
+        let collect_fills = collect_collect_fills(campaign, &anchors);
+
         // ---- ambushes (spec-0016 §3) ----
         let ambushes = collect_ambushes(campaign, &anchors);
 
@@ -1180,6 +1249,9 @@ impl<'a> Plan<'a> {
                 })
             })
             .collect();
+
+        // ---- v0.8 seal hints (task #142): what a sealed gate answers ----
+        let seal_hints = collect_seal_hints(campaign, &anchors);
 
         // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
         let mut gate_events = collect_gate_events(campaign, &anchors, &objective_steps);
@@ -1217,8 +1289,10 @@ impl<'a> Plan<'a> {
             traps,
             shortcuts,
             loot,
+            collect_fills,
             ambushes,
             timed_gates,
+            seal_hints,
             gate_events,
             strict_ancestor_steps,
             massing_bounds,
@@ -1358,6 +1432,16 @@ impl<'a> Plan<'a> {
     /// stay byte-identical (DSL v0.6, spec-0012).
     pub fn any_checkpoint_on_respawn(&self) -> bool {
         self.checkpoints.iter().any(|c| !c.on_respawn.is_empty()) || !self.reseat_waves().is_empty()
+    }
+
+    /// Whether the campaign declares **any** checkpoint at all (spec-0012 /
+    /// spec-0016 §1). Gates the respawn **re-seat** machinery: the delve's own
+    /// promise is "die and resume at the last checkpoint", and vanilla's
+    /// `/spawnpoint` is only a hint — it silently falls back to the world spawn
+    /// whenever the recorded cell is not a legal respawn position (task #145).
+    /// A campaign with no checkpoint keeps the pre-0.6 emission byte-for-byte.
+    pub fn any_checkpoint(&self) -> bool {
+        !self.checkpoints.is_empty()
     }
 
     /// The waves a bonfire rest / bonfire respawn re-seats (spec-0016 §1), in
@@ -1514,6 +1598,13 @@ fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> Vec<String> 
                 // by the `spawn-wave` effect (the true spawn site) rather than the
                 // `kill` objective — so a kill-less live-threat wave is placed too.
                 Objective::Kill { .. } | Objective::TalkTo { .. } => {}
+            }
+            // v0.8 (task #95): an adopted container is a piece of hardware the
+            // objective cannot do without — a pool draw that omits its carrier
+            // leaves the collect with nothing to fill, so it joins the required
+            // set exactly as a lane waypoint does. Absent field adds nothing.
+            if let Some(cont) = o.collect_container() {
+                set.insert(cont.as_str().to_string());
             }
         }
         for e in q
@@ -1894,9 +1985,24 @@ fn build_critical_path(
                     item,
                     count,
                     anchor,
+                    container,
                     ..
                 } => {
-                    let pos = point_of(anchors, area, anchor.as_str())?;
+                    // The step position is the CONTAINER the bot opens: the
+                    // adopted prefab chest/barrel when the objective declares one
+                    // (DSL v0.8), else the chest the compiler places at `anchor`.
+                    // The harness walks to this cell and opens the block standing
+                    // there, so pointing it at the objective anchor while the items
+                    // sit in a barrel three blocks away is a guaranteed bot stall.
+                    // An unresolvable container anchor falls back to the objective
+                    // anchor; the DSL tier reports it (`DW0142`).
+                    let pos = match container
+                        .as_ref()
+                        .and_then(|cont| point_any(anchors, cont.as_str()))
+                    {
+                        Some(cell) => cell,
+                        None => point_of(anchors, area, anchor.as_str())?,
+                    };
                     steps.push(Step::Collect {
                         objective_id: id.as_str().to_string(),
                         item: item.clone(),
@@ -2179,6 +2285,167 @@ fn collect_ambushes(
     out
 }
 
+/// Collect one [`SealHintPlan`] per gate anchor that any `close-gate` seals (DSL
+/// v0.8, task #142), in first-firing order.
+///
+/// A repeat of an anchor already collected is dropped: the seal is a **place**,
+/// so its hitboxes and its answer belong to the anchor, not to each firing. When
+/// two firings disagree about the wording, `gates::check_seal_hints` (`DW0423`)
+/// has already rejected the campaign — here the first-firing text wins.
+///
+/// A `close-gate` whose anchor is not a resolvable gate region carries no entry
+/// (`DW0343` owns that).
+fn collect_seal_hints(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+) -> Vec<SealHintPlan> {
+    let mut out: Vec<SealHintPlan> = Vec::new();
+    for_each_gate_effect(campaign, &mut |_site, e| {
+        let Some(anchor) = e.close_gate_anchor() else {
+            return;
+        };
+        let name = anchor.as_str();
+        if out.iter().any(|s| s.anchor == name) {
+            return;
+        }
+        let Some((from, to, block)) = gate_region_block_any(anchors, name) else {
+            return;
+        };
+        out.push(SealHintPlan {
+            anchor: name.to_string(),
+            safe: safe_local(name),
+            region: (from, to),
+            block,
+            text: e
+                .close_gate_sealed_hint()
+                .unwrap_or(SEAL_HINT_DEFAULT)
+                .to_string(),
+        });
+    });
+    out
+}
+
+/// Where an effect was declared: which stage document, and the JSON pointer
+/// inside it. Carried so a diagnostic can name the exact firing site.
+pub(crate) struct GateSite {
+    /// The stage document the effect lives in (`quests` or `dialogue`).
+    pub stage: &'static str,
+    /// JSON pointer to the effect within that document.
+    pub path: String,
+}
+
+/// Visit **every effect the compiler can lower to a gate command**, at every
+/// nesting depth, in one fixed deterministic order.
+///
+/// This is deliberately wider than `dsl::for_each_campaign_effect`, and the width
+/// is the point: an effect list is a gate site if `emit::emit_quest_effect` can
+/// reach it, not if the quests stage happens to own it. Four roots do:
+///
+/// 1. quest `on_objective_complete` (a `BTreeMap`, so key-ordered), then
+/// 2. quest `on_complete`,
+/// 3. environment `triggers[].effects`,
+/// 4. `traps[].payload` (spec-0022 — a payload is an effect root),
+/// 5. and a **dialogue option's** `set-checkpoint` `on_respawn` bundle, which is
+///    a plain `Vec<QuestEffect>` hanging off the dialogue stage. `DialogueEffect`
+///    itself carries no gate verb, which is why the older gate scans stop at the
+///    quests stage — but that reasoning misses this bundle, and a `close-gate`
+///    inside it really does emit its `fill` (into `cp_on_respawn_<i>`). A seal the
+///    compiler fills but never arms is exactly the silence task #142 exists to
+///    close, so the seal scan reaches it.
+///
+/// Known adjacent blind spots, reported rather than widened here because they are
+/// pre-existing and belong to other proofs: [`collect_gate_events`] (the `DW0311`
+/// completability model) and `dsl::l10n::each_string` (the translation inventory)
+/// both stop at roots 1–3.
+pub(crate) fn for_each_gate_effect<'a>(
+    campaign: &'a Campaign,
+    f: &mut dyn FnMut(&GateSite, &'a QuestEffect),
+) {
+    fn deep<'a>(
+        eff: &'a QuestEffect,
+        stage: &'static str,
+        path: &str,
+        f: &mut dyn FnMut(&GateSite, &'a QuestEffect),
+    ) {
+        f(
+            &GateSite {
+                stage,
+                path: path.to_string(),
+            },
+            eff,
+        );
+        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            for (j, inner) in list.iter().enumerate() {
+                deep(inner, stage, &format!("{path}/{pseg}/{j}"), f);
+            }
+        }
+    }
+    for (qi, q) in campaign.quests.content.quests.iter().enumerate() {
+        for (oid, effs) in &q.on_objective_complete {
+            for (i, eff) in effs.iter().enumerate() {
+                deep(
+                    eff,
+                    "quests",
+                    &format!(
+                        "/content/quests/{qi}/on_objective_complete/{}/{i}",
+                        oid.as_str()
+                    ),
+                    f,
+                );
+            }
+        }
+        for (i, eff) in q.on_complete.iter().enumerate() {
+            deep(
+                eff,
+                "quests",
+                &format!("/content/quests/{qi}/on_complete/{i}"),
+                f,
+            );
+        }
+    }
+    for (ti, t) in campaign.quests.content.triggers.iter().enumerate() {
+        for (i, eff) in t.effects.iter().enumerate() {
+            deep(
+                eff,
+                "quests",
+                &format!("/content/triggers/{ti}/effects/{i}"),
+                f,
+            );
+        }
+    }
+    for (pi, trap) in campaign.quests.content.traps.iter().enumerate() {
+        for (i, eff) in trap.payload.iter().enumerate() {
+            deep(
+                eff,
+                "quests",
+                &format!("/content/traps/{pi}/payload/{i}"),
+                f,
+            );
+        }
+    }
+    for (di, tree) in campaign.dialogue.content.dialogues.iter().enumerate() {
+        for (ni, node) in tree.nodes.iter().enumerate() {
+            for (oi, opt) in node.options.iter().enumerate() {
+                for (ei, de) in opt.effects.iter().enumerate() {
+                    let Some((_anchor, on_respawn)) = de.set_checkpoint() else {
+                        continue;
+                    };
+                    for (i, eff) in on_respawn.iter().enumerate() {
+                        deep(
+                            eff,
+                            "dialogue",
+                            &format!(
+                                "/content/dialogues/{di}/nodes/{ni}/options/{oi}/effects/{ei}/on_respawn/{i}"
+                            ),
+                            f,
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// The absolute gate region **and fill block** a gate anchor resolves to. `None`
 /// if the anchor is not a gate region.
 fn gate_region_block_any(
@@ -2392,6 +2659,54 @@ pub struct LootItemPlan {
     pub name: Option<String>,
     /// Enchantment id → level.
     pub enchantments: BTreeMap<String, u32>,
+}
+
+/// A `collect` objective that ADOPTS a prefab-placed container (DSL v0.8, task
+/// #95), resolved to the container's world cell.
+///
+/// One resolution, one cell: the build-tier container proof (`DW0438`), the
+/// activation-time fill and the critical-path step the bot opens all read THIS
+/// value, so the cell the compiler proves is provably the cell it fills and the
+/// cell the bot walks to. Resolving the anchor separately at each site is how a
+/// proof and its emission drift apart.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CollectFillPlan {
+    /// The `collect` objective's id.
+    pub objective_id: String,
+    /// The anchor named by `container`.
+    pub anchor: String,
+    /// The world cell of the container to fill.
+    pub cell: [i32; 3],
+    /// How many slots the fill occupies: the objective's own stack plus
+    /// `fill_count` padding stacks.
+    pub slots: usize,
+}
+
+/// Resolve every `collect` objective's adopted `container` (DSL v0.8) to a world
+/// cell, in campaign order. An unresolvable anchor is skipped here and reported
+/// by the DSL tier (`DW0142`) — the same policy [`collect_loot`] follows.
+fn collect_collect_fills(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+) -> Vec<CollectFillPlan> {
+    let mut out = Vec::new();
+    for q in &campaign.quests.content.quests {
+        for o in &q.objectives {
+            let Some(cont) = o.collect_container() else {
+                continue;
+            };
+            let Some(cell) = point_any(anchors, cont.as_str()) else {
+                continue;
+            };
+            out.push(CollectFillPlan {
+                objective_id: o.id().as_str().to_string(),
+                anchor: cont.as_str().to_string(),
+                cell,
+                slots: 1 + o.collect_fill_count() as usize,
+            });
+        }
+    }
+    out
 }
 
 /// Resolve every stage-5 `loot` declaration to a world cell. An unresolvable

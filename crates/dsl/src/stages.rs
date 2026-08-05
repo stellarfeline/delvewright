@@ -851,7 +851,113 @@ pub struct KitItem {
     /// a design choice. Absent on every pre-0.8 kit → emission byte-identical.
     #[serde(default, skip_serializing_if = "is_false")]
     pub flask: bool,
+    /// **What is in the bottle** (DSL v0.8, spec-0016 §1, owner directive
+    /// 2026-08-03): the vanilla `minecraft:potion_contents` component of a
+    /// potion-bearing item ([`POTION_BEARING_ITEMS`]). Without it a
+    /// `minecraft:potion` is the *Uncraftable Potion* — a bottle that heals
+    /// nothing — which is exactly the placeholder flask this field exists to
+    /// abolish, so at `dsl_version` 0.8.0 a potion-bearing kit item that declares
+    /// no `contents` is `DW0487`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contents: Option<PotionContents>,
 }
+
+/// The items whose vanilla item definition carries a `minecraft:potion_contents`
+/// component — the only items a kit `contents` may be declared on (`DW0486`).
+///
+/// Read off the pinned 1.21.11 `item_components` summary (SHA-256
+/// `51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4`, the same
+/// misode/mcmeta ref `crates/compiler/data/PROVENANCE.md` pins): exactly these
+/// four items declare the component, and on any other item the game drops the
+/// data on the floor.
+pub const POTION_BEARING_ITEMS: &[&str] = &[
+    "minecraft:lingering_potion",
+    "minecraft:potion",
+    "minecraft:splash_potion",
+    "minecraft:tipped_arrow",
+];
+
+/// True if `item_id` (optionally un-namespaced) is one of the four
+/// [`POTION_BEARING_ITEMS`].
+pub fn is_potion_bearing_item(item_id: &str) -> bool {
+    let norm = if item_id.contains(':') {
+        item_id.to_string()
+    } else {
+        format!("minecraft:{item_id}")
+    };
+    POTION_BEARING_ITEMS.contains(&norm.as_str())
+}
+
+/// The two **instantaneous** status effects: they are applied once, on the tick
+/// the potion is drunk (`PotionContents.applyToLivingEntity` branches on
+/// `isInstantenous` before any effect instance is ever added), so a `duration` on
+/// one is a statement the game never reads — `DW0486` says so rather than letting
+/// an author believe they wrote a thirty-second heal.
+pub const INSTANT_EFFECTS: &[&str] = &["minecraft:instant_health", "minecraft:instant_damage"];
+
+/// A potion-bearing kit item's `minecraft:potion_contents` component (DSL v0.8),
+/// modelled field for field on vanilla rather than invented: a **named** potion,
+/// a list of **custom effects**, or both, plus the bottle-colour override.
+///
+/// Vanilla resolves a drink as the named potion's effects followed by the custom
+/// ones, and derives the bottle colour from those effects unless `color`
+/// overrides it — so `{"potion": "minecraft:strong_healing"}` is literally the
+/// Potion of Healing II a player would brew, not an approximation of one.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PotionContents {
+    /// A named vanilla potion id (`minecraft:strong_healing`,
+    /// `minecraft:long_night_vision`, …), validated against the pinned 1.21.11
+    /// `potion` registry (`DW0486`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub potion: Option<String>,
+    /// Custom effects applied on top of (or instead of) the named potion — the
+    /// escape hatch for a recovery item vanilla has no brew for.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<PotionEffect>,
+    /// Bottle-colour override, `#rrggbb` (vanilla `custom_color`). Absent → the
+    /// colour vanilla derives from the effects themselves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+/// One entry of a potion's `custom_effects` list.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PotionEffect {
+    /// Vanilla status-effect id (e.g. `minecraft:regeneration`), validated
+    /// against the pinned registry (`DW0486`).
+    pub effect: String,
+    /// How long it lasts, in **ticks** (20 = one second). Required for every
+    /// effect except the two [`INSTANT_EFFECTS`], which must NOT declare one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<u32>,
+    /// Amplifier, 0 = level I (vanilla's unsigned byte, so 0–255). Absent = 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amplifier: Option<u32>,
+}
+
+impl PotionEffect {
+    /// True if this effect is applied once on drinking rather than over time.
+    pub fn is_instant(&self) -> bool {
+        let norm = if self.effect.contains(':') {
+            self.effect.clone()
+        } else {
+            format!("minecraft:{}", self.effect)
+        };
+        INSTANT_EFFECTS.contains(&norm.as_str())
+    }
+}
+
+/// The largest `duration` a potion effect may declare, in ticks: 1 000 000 ticks
+/// ≈ 13.9 hours, past the 10-hour delve ceiling, so nothing a delve can legally
+/// need is refused — while a duration typed in *milliseconds*, or one that would
+/// overflow vanilla's int, is caught (`DW0486`).
+pub const MAX_POTION_DURATION_TICKS: u32 = 1_000_000;
+
+/// The largest `amplifier` a potion effect may declare: vanilla stores it in an
+/// unsigned byte, so 255 is not a policy but the end of the field.
+pub const MAX_POTION_AMPLIFIER: u32 = 255;
 
 /// The canonical English title of the bonfire rest dialog (owner ruling
 /// 2026-08-03). Baked at emit time when the campaign authors no `prompt`, in the
@@ -2305,7 +2411,13 @@ pub enum Objective {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         happening: Option<Happening>,
     },
-    /// Completed when `count` of `item` have been collected from `anchor` (v0.3).
+    /// Completed when `count` of `item` have been collected (v0.3).
+    ///
+    /// The items are provided in a container: the compiler's own chest at
+    /// `anchor` by default, or — since DSL v0.8 — the prefab's existing
+    /// chest/barrel at [`Objective::Collect::container`], optionally carrying an
+    /// [`Objective::Collect::item_name`] and padded to read full with
+    /// [`Objective::Collect::fill_count`].
     Collect {
         /// Objective id.
         id: ObjectiveId,
@@ -2321,6 +2433,52 @@ pub enum Objective {
         count: u32,
         /// The anchor items are provided at (chest / pickup).
         anchor: AnchorId,
+        /// **Adopt the container the prefab already placed** (DSL v0.8, task #95;
+        /// reserved `DW0141` earlier): the anchor whose assembled-world cell holds
+        /// a `chest` / `trapped_chest` / `barrel` this collect fills instead of
+        /// conjuring its own chest at [`Objective::Collect::anchor`].
+        ///
+        /// Same division of labour a `loot` entry and a trap's dispenser already
+        /// keep with the prefab: furniture belongs in the piece. A beach camp's
+        /// barrel is scenery the player has been walking past since minute one —
+        /// having the compiler `setblock` a *second*, floating chest beside it to
+        /// hold the quest item is exactly the downstream workaround the no-hack
+        /// rule forbids. A `container` whose cell holds no container is a build
+        /// error (`DW0438`), never a silent fill into a wall.
+        ///
+        /// The critical-path step's position follows the container (the bot opens
+        /// *this* block), and no chest is placed at `anchor` when it is set.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        container: Option<AnchorId>,
+        /// Display name for the collected item (DSL v0.8, task #95; reserved
+        /// `DW0141` earlier), emitted as the vanilla `custom_name` item component.
+        ///
+        /// A quest item is a *named thing* in the story ("Cheese", "Tide
+        /// Ledger"), and a player who opens the barrel must read that name — an
+        /// unnamed `minecraft:pumpkin_pie` says nothing about what the quest asked
+        /// for. Player-visible, so it enters the l10n string inventory
+        /// (`obj.<quest>.<obj>.item_name`) and translates like any other line.
+        ///
+        /// Naming changes nothing about adjudication: the completion advancement
+        /// and the per-tick held check both match on the ITEM ID, which a named
+        /// stack still carries.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item_name: Option<String>,
+        /// Padding stacks that make the container **read full** (DSL v0.8, task
+        /// #95; reserved `DW0141` earlier). Default `0` = the single required
+        /// stack, exactly as every pre-0.8 campaign emits.
+        ///
+        /// A barrel of cheese that opens on one lonely wheel reads as a bug, and
+        /// vanilla's notion of "full" is *occupied slots*, not stack size — so
+        /// this counts SLOTS: the objective's own stack lands in `container.0` and
+        /// each padding stack repeats it in `container.1`, `container.2`, … Slot
+        /// assignment is positional and total, the same determinism story `loot`
+        /// tells (ADR-0006): no RNG, no loot tables, nothing to reseed.
+        ///
+        /// The padding is the same item, so taking the whole barrel still
+        /// completes the objective and never over- or under-counts it.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        fill_count: u32,
         /// Prerequisite objectives.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         after: Vec<ObjectiveId>,
@@ -2664,6 +2822,26 @@ impl Objective {
         }
     }
 
+    /// The container this objective ADOPTS (DSL v0.8), if it is a `collect` that
+    /// declares one: the anchor whose prefab-placed chest/barrel it fills instead
+    /// of conjuring its own chest. `None` on every other objective and on a
+    /// `collect` that keeps the compiler-placed chest.
+    pub fn collect_container(&self) -> Option<&AnchorId> {
+        match self {
+            Objective::Collect { container, .. } => container.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// The padding-stack count of a `collect` (DSL v0.8); `0` for every other
+    /// objective and for a `collect` that fills the single required stack only.
+    pub fn collect_fill_count(&self) -> u32 {
+        match self {
+            Objective::Collect { fill_count, .. } => *fill_count,
+            _ => 0,
+        }
+    }
+
     /// The `interact` prop block (DSL v0.4), if this is an `interact` with a prop.
     pub fn prop(&self) -> Option<&Prop> {
         match self {
@@ -2754,6 +2932,19 @@ pub enum QuestEffect {
         /// never move because a beat gained a line of prose.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         happening: Option<Happening>,
+        /// What the seal *says* when a player right-clicks it (DSL v0.8; reserved
+        /// `DW0141` earlier). A sealed gate is a wall the party will walk back to
+        /// and press: the compiler answers that press on the actionbar. Absent, the
+        /// compiler's canonical English is baked in (`The way is sealed.`) exactly
+        /// as `world.boundary.message` does; authored, the line is l10n-inventoried
+        /// under `<effect-key>.sealed_hint` and translates like every other
+        /// player-visible string.
+        ///
+        /// Unlike `happening`, this **does** print in the hand-written `Debug`
+        /// below when present — it changes emission, so two otherwise-identical
+        /// sequences that differ only in their seal's answer are different content.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sealed_hint: Option<String>,
     },
     /// Marks the campaign complete (final advancement + credits). Terminal — not
     /// flag-gatable (gating the campaign's own completion is a deadlock footgun),
@@ -3346,14 +3537,23 @@ impl std::fmt::Debug for QuestEffect {
                 anchor,
                 requires_flags,
                 forbids_flags,
+                sealed_hint,
                 ..
-            } => ff(
-                f.debug_struct("CloseGate")
-                    .field("anchor", anchor)
-                    .field("requires_flags", requires_flags),
-                forbids_flags,
-            )
-            .finish(),
+            } => {
+                let mut s = f.debug_struct("CloseGate");
+                let d = ff(
+                    s.field("anchor", anchor)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                );
+                // Prints only when authored (the additive-field rule): a campaign
+                // that takes the compiler's canonical seal line renders exactly as
+                // the pre-0.8 derive did, so no existing `seq_<hash>` moves.
+                match sealed_hint {
+                    Some(h) => d.field("sealed_hint", h).finish(),
+                    None => d.finish(),
+                }
+            }
             QuestEffect::CampaignComplete { .. } => f.write_str("CampaignComplete"),
             QuestEffect::GiveItem {
                 item,
@@ -4102,6 +4302,16 @@ impl QuestEffect {
     pub fn close_gate_anchor(&self) -> Option<&AnchorId> {
         match self {
             QuestEffect::CloseGate { anchor, .. } => Some(anchor),
+            _ => None,
+        }
+    }
+
+    /// The authored `sealed_hint` if this is a `close-gate` that declares one (DSL
+    /// v0.8). `None` for every other effect **and** for a `close-gate` that takes
+    /// the compiler's canonical English seal line.
+    pub fn close_gate_sealed_hint(&self) -> Option<&str> {
+        match self {
+            QuestEffect::CloseGate { sealed_hint, .. } => sealed_hint.as_deref(),
             _ => None,
         }
     }

@@ -15,7 +15,16 @@
           { "item": "minecraft:iron_leggings", "count": 1 },
           { "item": "minecraft:iron_boots", "count": 1 },
           { "item": "minecraft:cooked_beef", "count": 8 },
-          { "item": "minecraft:potion", "count": 3, "name": "Ashen Flask", "flask": true },
+          {
+            "item": "minecraft:potion",
+            "count": 3,
+            "name": "Ashen Flask",
+            "flask": true,
+            "contents": {
+              "effects": [{ "effect": "minecraft:instant_health", "amplifier": 1 }],
+              "color": "#ff9c30"
+            }
+          },
           { "item": "minecraft:torch", "count": 8 }
         ]
       }

@@ -112,6 +112,14 @@ import {
   pickFood,
 } from "./sustain.ts";
 import {
+  INTERACTION_REACH,
+  acquireFromStances,
+  hitboxDims,
+  occlusionFailure,
+  type Hitbox,
+  type Vec3Like,
+} from "./crosshair.ts";
+import {
   WAVE_CLEAR_STREAK,
   WAVE_ENGAGE_NEAR,
   beginWave,
@@ -1018,6 +1026,26 @@ const KIT_SETTLE_MS = 3_000;
 
 /** How far from a rest step's anchor cell its `interaction` affordance may sit. */
 const AFFORDANCE_RADIUS = 3;
+
+/** Vanilla standing-player hitbox, 1.21.11 — the body the stance sweep has to fit
+ * into a cell, and the reason a player can never share a column with an NPC. */
+const PLAYER_HITBOX_WIDTH = 0.6;
+const PLAYER_HITBOX_HEIGHT = 1.8;
+
+/** Vanilla standing eye height, 1.21.11: where the entity-pick ray starts. */
+const PLAYER_EYE_HEIGHT = 1.62;
+
+/** Slack beyond interaction reach when collecting bodies that might occlude a
+ * target: a wide body whose CENTRE is past reach can still put a shoulder in the
+ * ray, so the search is generous and the ray does the deciding. */
+const CROSSHAIR_SEARCH_MARGIN = 5;
+
+/** The walk-goal radius of each interaction step — and therefore the set of
+ * standing cells the crosshair sweep is entitled to try. One constant per step so
+ * the goal the bot walks to and the stances it is judged over can never drift. */
+const TALK_RANGE = 3;
+const INTERACT_RANGE = 3;
+const REST_RANGE = 2;
 
 /** Grace between the bonfire click and the trigger command: the opener runs as an
  * advancement reward, so `dw.rest` is enabled a tick or two after the click. */
@@ -2087,10 +2115,16 @@ export class MineflayerExecutor implements StepExecutor {
     // trigger is sent HOWEVER the walk ended — arriving is the means, the trigger is
     // the step — and `chatTrigger` records the server's answer so a step that then
     // times out can name which side swallowed it (task #144).
-    await this.walkTo(step.pos, 3, `npc ${step.npc}`, step.sneak, {
+    await this.walkTo(step.pos, TALK_RANGE, `npc ${step.npc}`, step.sneak, {
       objective: step.objective,
       transport: step.transport,
     });
+    // The trigger stands in for a dialog button this bot cannot click — so before
+    // it is sent, prove the button was REACHABLE: cast the crosshair ray a player
+    // casts and require this NPC's own hitbox to be what it meets first. Without
+    // this, a second body on the NPC's cell is invisible to the machine and fatal
+    // to the player (owner island QA, terminal finding).
+    this.requireCrosshair(step.pos, `talk-to ${step.npc}`, TALK_RANGE);
     this.chatTrigger(step.command);
     // A dialogue that OPENED proves nothing: the option must actually complete the
     // objective this step stands for. Wait for that objective's own marker.
@@ -3579,13 +3613,18 @@ export class MineflayerExecutor implements StepExecutor {
    *     build — the kit survives the death — and class state lives in scoreboard
    *     values and player tags, which survive it too;
    *   * destructive, because `class_apply_<class>` ends in
-   *     `teleport @s <campaign entry point>` and the `dw.class` trigger is
-   *     re-enabled for every player on every tick. Chatting it again therefore
+   *     `teleport @s <campaign entry point>` and the `dw.class` trigger was, at the
+   *     time, re-enabled for every player on every tick. Chatting it again therefore
    *     teleported the bot off the checkpoint it had just respawned on, back to the
    *     start of the delve — 150 blocks and eight levels away on the bell — and the
    *     "walk back to the encounter" leg then measured a route no dying player ever
    *     walks. Every trial recorded a truthful `respawn_pos` at the bonfire and then
    *     immediately made it a lie.
+   *
+   * The compiler now seals that warp shut (#122): the class trigger is armed only
+   * for a player who has not classed, so a replay would fail rather than teleport.
+   * The rule here is unchanged and does not lean on it — a harness that re-classes
+   * is stating something false about the run whether or not the pack lets it.
    *
    * So: measure the position, then re-equip what the player kept. Nothing here may
    * move the bot — the respawn point IS the thing under test.
@@ -3665,9 +3704,15 @@ export class MineflayerExecutor implements StepExecutor {
    */
   async rest(step: RestStep): Promise<void> {
     const bot = this.requireBot();
-    await this.walkTo(step.pos, 2, `bonfire ${step.anchor}`, step.sneak);
-    const fire = this.affordanceAt(step.pos);
-    if (!fire) {
+    await this.walkTo(step.pos, REST_RANGE, `bonfire ${step.anchor}`, step.sneak);
+    // The one step in the tree with a REAL right-click, so acquisition and
+    // actuation are the same act here: the ray picks the fire, the bot looks
+    // where the ray went, and only then does it click. Selecting the nearest
+    // affordance to a coordinate — what this used to do — cannot tell a fire from
+    // whatever is standing in front of it.
+    const acquired = this.requireCrosshair(step.pos, `bonfire ${step.anchor}`, REST_RANGE);
+    const fire = acquired ? bot.entities[acquired.target.id] : undefined;
+    if (!acquired || !fire) {
       throw new Error(
         `no \`interaction\` affordance within ${AFFORDANCE_RADIUS} blocks of bonfire ` +
           `${step.bonfire} at [${step.pos.join(", ")}] — the bot is standing at the fire ` +
@@ -3679,6 +3724,11 @@ export class MineflayerExecutor implements StepExecutor {
       `[rest] bonfire ${step.bonfire} (${step.anchor}): right-clicking the affordance, ` +
         `then \`${step.command}\`\n`,
     );
+    const here = bot.entity.position;
+    await bot.lookAt(
+      here.offset(acquired.aim.x - here.x, acquired.aim.y - here.y, acquired.aim.z - here.z),
+      true,
+    );
     await bot.activateEntity(fire);
     // The opener runs through an advancement reward, so the trigger is enabled a
     // tick or two after the click lands — chatting inside the same tick would be
@@ -3687,6 +3737,171 @@ export class MineflayerExecutor implements StepExecutor {
     bot.chat(step.command);
     await delay(EFFECT_SETTLE_MS);
     this.restedBonfires.add(step.bonfire);
+  }
+
+  /**
+   * Every ray-pickable body the client currently tracks near `pos`, as crosshair
+   * geometry. Anything with a hitbox counts — a body occludes whether or not it
+   * is itself clickable, which is the whole reason the owner's two crew NPCs
+   * blocked each other.
+   */
+  private hitboxesNear(pos: Vec3Tuple, radius: number): Hitbox[] {
+    const bot = this.requireBot();
+    const out: Hitbox[] = [];
+    for (const e of Object.values(bot.entities)) {
+      if (!e?.position || e.id === bot.entity?.id) continue;
+      const dims = hitboxDims(e.name ?? "", e.width, e.height);
+      if (!dims) continue;
+      const d = Math.sqrt(
+        (e.position.x - (pos[0] + 0.5)) ** 2 +
+          (e.position.y - pos[1]) ** 2 +
+          (e.position.z - (pos[2] + 0.5)) ** 2,
+      );
+      if (d > radius) continue;
+      out.push({
+        id: e.id,
+        name: e.name ?? "unknown",
+        label: displayNameOf(e),
+        position: { x: e.position.x, y: e.position.y, z: e.position.z },
+        width: dims.width,
+        height: dims.height,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * The body a step means to click at `pos`: the `minecraft:interaction` box the
+   * compiler summoned there.
+   *
+   * Every clickable thing in a delve is one of those — an NPC's dialogue hitbox
+   * as much as an objective's affordance — so this is the single acquisition rule
+   * for all three interaction steps. Selection is still by proximity to the
+   * scripted cell (a client cannot read the entity tag the compiler uses), but
+   * proximity now only proposes the target; the RAY decides whether it is
+   * reachable.
+   */
+  private interactionTargetAt(pos: Vec3Tuple, candidates: readonly Hitbox[]): Hitbox | undefined {
+    let best: Hitbox | undefined;
+    let bestDist = AFFORDANCE_RADIUS;
+    for (const c of candidates) {
+      if (c.name !== "interaction") continue;
+      const d = Math.sqrt(
+        (c.position.x - (pos[0] + 0.5)) ** 2 +
+          (c.position.y - pos[1]) ** 2 +
+          (c.position.z - (pos[2] + 0.5)) ** 2,
+      );
+      if (d <= bestDist) {
+        best = c;
+        bestDist = d;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Whether a player could stand with their feet in `cell`: solid support below,
+   * two cells of clear air, and no entity body already occupying the column.
+   *
+   * Block-shape based (`boundingBox`), like {@link gateOpen}, so it stays correct
+   * for whatever the campaign built with. A cell whose chunk is not loaded reads
+   * as NOT standable — the conservative direction here, since inventing a stance
+   * would let a real occlusion pass.
+   */
+  private stanceStandable(cell: Vec3Tuple, bodies: readonly Hitbox[]): boolean {
+    const bot = this.requireBot();
+    const p = bot.entity.position;
+    const at = (dy: number) =>
+      bot.blockAt(p.offset(cell[0] - p.x, cell[1] + dy - p.y, cell[2] - p.z));
+    const support = at(-1);
+    const feet = at(0);
+    const head = at(1);
+    if (!support || !feet || !head) return false;
+    if (support.boundingBox === "empty") return false;
+    if (feet.boundingBox !== "empty" || head.boundingBox !== "empty") return false;
+    // A player is 0.6 wide and cannot share a column with another body.
+    const cx = cell[0] + 0.5;
+    const cz = cell[2] + 0.5;
+    return !bodies.some((b) => {
+      const half = (b.width + PLAYER_HITBOX_WIDTH) / 2;
+      return (
+        Math.abs(b.position.x - cx) < half &&
+        Math.abs(b.position.z - cz) < half &&
+        b.position.y < cell[1] + PLAYER_HITBOX_HEIGHT &&
+        cell[1] < b.position.y + b.height
+      );
+    });
+  }
+
+  /**
+   * Every eye position this step allows, arrival stance first.
+   *
+   * The step's walk goal is `GoalNear(pos, range)`, so any standable cell inside
+   * that disc is a place the player may legally be standing when they click —
+   * which is why a failure here means "unclickable from ANYWHERE the step
+   * permits", not "unclickable from where the bot happened to stop".
+   */
+  private stancesAround(pos: Vec3Tuple, range: number, bodies: readonly Hitbox[]): Vec3Like[] {
+    const bot = this.requireBot();
+    const eye = bot.entity.position;
+    const out: Vec3Like[] = [{ x: eye.x, y: eye.y + PLAYER_EYE_HEIGHT, z: eye.z }];
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -range; dx <= range; dx += 1) {
+        for (let dz = -range; dz <= range; dz += 1) {
+          const cell: Vec3Tuple = [pos[0] + dx, pos[1] + dy, pos[2] + dz];
+          if (!this.stanceStandable(cell, bodies)) continue;
+          out.push({
+            x: cell[0] + 0.5,
+            y: cell[1] + PLAYER_EYE_HEIGHT,
+            z: cell[2] + 0.5,
+          });
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Prove a player could put the crosshair on this step's target before the step
+   * acts on it — the assertion the island's terminal finding needed.
+   *
+   * Throws, naming both bodies, when the target is unpickable from every stance
+   * the step allows. Returns the acquired target (and the aim point) when it is
+   * reachable, so a caller with a real click to make can look at it first.
+   *
+   * When no `interaction` body is tracked at `pos` at all, this reports a finding
+   * and returns `undefined` rather than failing: absence is "the client has not
+   * been told", not "the player cannot click", and inventing a verdict from
+   * missing data is the failure mode this whole change exists to end.
+   */
+  private requireCrosshair(
+    pos: Vec3Tuple,
+    what: string,
+    range: number,
+  ): { target: Hitbox; aim: Vec3Like } | undefined {
+    const bodies = this.hitboxesNear(pos, INTERACTION_REACH + CROSSHAIR_SEARCH_MARGIN);
+    const target = this.interactionTargetAt(pos, bodies);
+    if (!target) {
+      process.stderr.write(
+        `[crosshair] ${what}: no \`interaction\` body tracked within ${AFFORDANCE_RADIUS} ` +
+          `blocks of [${pos.join(", ")}] — acquisition unproven for this step\n`,
+      );
+      return undefined;
+    }
+    const others = bodies.filter((b) => b.id !== target.id);
+    const stances = this.stancesAround(pos, range, bodies);
+    const verdict = acquireFromStances(stances, target, others);
+    if (!verdict.ok) {
+      throw new Error(occlusionFailure(what, target, verdict.blockers, verdict.triedStances));
+    }
+    if (verdict.clearStances < verdict.triedStances) {
+      process.stderr.write(
+        `[crosshair] ${what}: acquired from ${verdict.clearStances} of ` +
+          `${verdict.triedStances} allowed stances — the target is clickable, but not from ` +
+          `every place the party may be standing\n`,
+      );
+    }
+    return { target, aim: verdict.aim };
   }
 
   /** The nearest `minecraft:interaction` affordance to `pos`, if one is tracked. */
@@ -3782,10 +3997,13 @@ export class MineflayerExecutor implements StepExecutor {
    */
   async interact(step: InteractStep): Promise<void> {
     const bot = this.requireBot();
-    await this.walkTo(step.pos, 3, `interact ${step.anchor}`, step.sneak, {
+    await this.walkTo(step.pos, INTERACT_RANGE, `interact ${step.anchor}`, step.sneak, {
       objective: step.objective,
       transport: step.transport,
     });
+    // Same proof as `talkTo`: the affordance the party has to right-click must be
+    // what a crosshair actually reaches, not merely what is nearest the cell.
+    this.requireCrosshair(step.pos, `interact ${step.anchor}`, INTERACT_RANGE);
     this.armTrigger(step.command);
     await presentAndTrigger<Item>(bot, step, step.anchor);
     await this.requireObjective(step.objective, `interact ${step.anchor}`);

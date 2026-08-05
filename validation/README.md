@@ -11,87 +11,112 @@ output tree (`validation/delve-output`):
   **creator overlay** mounted as an extra datapack (`/trigger dw.note` marks a spot
   in the server log). See "Creator playtest loop" below.
 - **`validate`** — server + the mineflayer critical-path bot; the bot's exit code
-  is the profile's (`--exit-code-from bot`).
-- **`packtest`** — the generated PackTest suite on the pinned tool server
-  (`--exit-code-from packtest`). Set `DELVE_OUTPUT` to point it at a **different**
-  build tree (default `./delve-output`) — a campaign only exercises the templates
-  it actually emits, so proving a template class means running the profile over a
-  campaign that has one. CI does exactly that for spec-0020's cast-ledger
-  templates; see "Running a second campaign through `packtest`" below.
+  is the profile's. Entry point: `validation/bot-run.sh --project <id>`.
+- **`packtest`** — the generated PackTest suite on the pinned tool server. Entry
+  point: `validation/packtest-run.sh --project <id> [--output <tree>]`. `--output`
+  boots a **different** build tree (default `./delve-output`) — a campaign only
+  exercises the templates it actually emits, so proving a template class means
+  running the profile over a campaign that has one. CI does exactly that for
+  spec-0020's cast-ledger templates; see "Running a second campaign through
+  `packtest`" below.
 
 The tooling-mod overlay (PackTest + Fabric) and the creator overlay are layered on
 at compose time only and never leak into the shipped delve image; CI asserts their
 absence. Every tool in the repo, including the scripts below, is indexed in
 [`../docs/reference/tools.md`](../docs/reference/tools.md).
 
-## Sharing the Docker host (mutex + isolation)
+## Sharing the Docker host (isolation by construction)
 
-One Docker host, one port 25565, one `delvewright-server` container name — and
-sometimes a human playing on it. Two rules, both enforced by
-[`mutex.sh`](mutex.sh), keep agents from colliding with each other or with the
-owner:
+**Run your ladder in its own compose project. There is nothing to queue for.**
 
-**1. Take the mutex.** `mutex.sh` is the only sanctioned way to claim the stack:
+```bash
+EULA=TRUE validation/packtest-run.sh --project dw-worker-<id>
+EULA=TRUE validation/bot-run.sh      --project dw-worker-<id>
+EULA=TRUE validation/branch-runs.sh  --project dw-worker-<id>
+validation/fresh-volumes.sh          --project dw-worker-<id>   # teardown, proven
+```
+
+`--project` is **required** on every one of them; an invocation without it exits
+non-zero and says why. That is the whole protocol.
+
+### Why there is no lock any more (task #185)
+
+`docker compose -p <project>` isolates containers, volumes and networks. It does
+**not** isolate the two things that are global to the Docker daemon: pinned
+container names and published host ports. `compose.yaml` used to carry both
+(`container_name: delvewright-server`, `127.0.0.1:25565:25565`), so every caller
+aimed at the same container and the same port and had to be serialized behind
+[`mutex.sh`](mutex.sh) — a lock over the entire validation stack.
+
+That lock cost more than it bought: worker ladders queued on each other for no
+reason, and an island worker once waited **30+ minutes** behind a holder whose
+session had **zero containers running**. The lock outlived the work and nothing
+could tell.
+
+So `compose.yaml` now pins no container name and publishes no port, and
+`tools/check-compose-isolation.py` (CI) fails if one comes back. Two ladders on
+one host are independent by construction. `mutex.sh` is left guarding exactly one
+resource — host port **25565**, the owner's client address — and a worker ladder
+does not take it at all. *If you find yourself waiting on that lock to run a
+ladder, the ladder is wrong, not the lock.*
+
+Two files may add a global name back, both by name:
+
+| file | what it adds | who uses it |
+|---|---|---|
+| [`owner-play.yaml`](owner-play.yaml) | `127.0.0.1:25565` + the `delvewright-server` / `delvewright-playtest` names | the owner's `play` / `playtest` session, and nothing else |
+| [`ephemeral-port.yaml`](ephemeral-port.yaml) | an **ephemeral** loopback port Docker picks | the two flows that drive a bot from the host (`playtest-note-flow.sh`, `rehearsal-flow.sh`) |
+
+Reach a worker's server over the compose network, or with
+`docker exec "$(docker compose -p <id> -f validation/compose.yaml ps -q server)" rcon-cli …`
+— never through localhost.
+
+### Teardown
+
+Tear down **only your own project**, and prove it:
+
+```bash
+validation/fresh-volumes.sh --project dw-worker-<id>
+```
+
+Never a bare `docker compose down`, never `docker rm` of a container you did not
+create. `down -v` alone is not self-verifying: it leaves `<project>_server-data`
+behind whenever an exited container of the project still holds the volume, and the
+stale world carries the scoreboard into the next run — objectives already complete,
+so the bot fails and the failure looks like a content bug (three misattributed red
+runs, island round 13). `fresh-volumes.sh` force-removes that project's containers
+and volumes and then asserts they are gone. It has no daemon-wide mode: the old
+`--all` swept every project's world volumes and force-removed the pinned
+`delvewright-*` names, which is an outage, not a teardown. It also refuses outright
+to touch a project whose container publishes 25565 — that is an owner-facing
+session with a human possibly inside it.
+
+### The 25565 mutex, for the two things that bind it
+
+`owner-play.yaml` and [`../tools/playtest-server.sh`](../tools/playtest-server.sh)
+are the only sanctioned bindings of the owner's port. `playtest-server.sh up`
+takes the lock as `owner-play-session` and `down` releases it:
 
 ```bash
 source validation/mutex.sh
-dw_mutex_acquire "my-name" || exit 1   # exits non-zero if someone else holds it
-trap dw_mutex_release EXIT             # idempotent; releases only your own lock
+dw_mutex_acquire "owner-play-session" || exit 1  # non-zero if someone else holds it
+trap dw_mutex_release EXIT                       # idempotent; releases only your own lock
 ```
 
 Acquisition is the return value of `mkdir` — never inferred from the lock
 directory existing, which is true precisely when *someone else* holds it. The
 lock carries a `HOLDER` file naming its owner. **`owner-play-session` is
-sacred**: `dw_mutex_assert_not_owner_session` refuses all Docker work while a
-human is playing, and acquire will not wait on it or steal it, however stale it
-looks. Never install a teardown trap before acquisition succeeds.
+sacred**: acquire will not wait on it or steal it, and `dw_mutex_release_named`
+refuses to free it while any container still publishes 25565. Never install a
+teardown trap before acquisition succeeds.
 
-**2. Isolate your project.** The mutex serialises access; isolation is what makes
-a mistake survivable. Any worker live-server work runs in its **own compose
-project** (`docker compose -p dw-worker-<unique>`, or `docker run` with a unique
-`--name`), publishes **no host binding on 25565** (use the compose network,
-`docker exec … rcon-cli`, or a distinct high port — 25565 belongs to the owner's
-client), and tears down **only its own project** (`docker compose -p
-dw-worker-<unique> down -v`) — never a bare `docker compose down`, never
-`docker rm` on a container it did not create.
-
-That teardown is not self-verifying: `down -v` leaves `<project>_server-data`
-behind whenever an exited container of the project still holds the volume, and the
-stale world carries the scoreboard into the next run — objectives already complete,
-so the bot fails and the failure looks like a content bug (three misattributed red
-runs, island round 13). Finish every worker teardown with
-
-```bash
-validation/fresh-volumes.sh --project dw-worker-<unique>
-```
-
-which force-removes that project's containers and volumes and then proves they are
-gone. `--all` exists for whoever owns the host; a worker never runs it, and the
-script refuses it outright while the mutex reads `owner-play-session`.
-
-Both exist because of a real incident (2026-08-02): a hand-rolled waiter whose
-"did I get the lock?" guard tested directory existence fell through against the
-owner's held lock and ran a teardown that — via the pinned `container_name` —
-destroyed a live play session and its world volume mid-playtest.
-
-**Use [`worker-override.yaml`](worker-override.yaml) — do not hand-roll it.**
-`-p dw-worker-<unique>` alone is NOT isolation: `compose.yaml` pins
-`container_name: delvewright-server`, which is global, so a worker project still
-materialises a container with the owner's name on it and still grabs
-`127.0.0.1:25565`. The override drops both:
-
-```bash
-docker compose -p dw-worker-<unique> \
-  -f validation/compose.yaml -f validation/worker-override.yaml \
-  --profile play up -d --build
-```
-
-Removing a key an override inherits needs Compose's `!reset` tag
-(`container_name: !reset null`, `ports: !reset []`); the intuitive
-`container_name: null` is silently ignored and the container comes up named
-`delvewright-server` anyway (verified 2026-08-03 — a near-miss caught only by
-reading `docker compose ps`). Confirm with `… config` before `up`: if
-`container_name` or a published port appears, the override is not doing its job.
+The rules are written the way they are because of a real incident (2026-08-02): a
+hand-rolled waiter whose "did I get the lock?" guard tested directory existence
+fell through against the owner's held lock and ran a teardown that — via the then
+pinned `container_name` — destroyed a live play session and its world volume
+mid-playtest. Isolation by construction is what makes that mistake unreachable
+today: a worker stack has no container name and no port in common with the
+owner's.
 
 ## World fidelity (all profiles)
 
@@ -112,13 +137,17 @@ EULA acceptance is **your** action and is never hardcoded in this repo. Pass it 
 your environment (this is Mojang's EULA: https://aka.ms/MinecraftEULA):
 
 ```sh
-EULA=TRUE docker compose -f validation/compose.yaml --profile play up
+EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
+  --profile play up
 ```
 
-Then join from a vanilla **1.21.11** client at `localhost:25565`. Stop with
-`Ctrl-C`; `... --profile play down` removes the container (the world persists in the
-`delvewright-play-data` volume). To join with a real Microsoft account instead of
-offline mode, add `ONLINE_MODE=TRUE` (auth mode is still an open spec-0003 decision).
+`owner-play.yaml` is what publishes `localhost:25565` and names the container
+`delvewright-server` — `compose.yaml` alone publishes nothing, so a worker ladder
+can never take your port (see "Sharing the Docker host"). Then join from a vanilla
+**1.21.11** client at `localhost:25565`. Stop with `Ctrl-C`; the same command with
+`down` removes the container (the world persists in its named volume). To join with
+a real Microsoft account instead of offline mode, add `ONLINE_MODE=TRUE` (auth mode
+is still an open spec-0003 decision).
 
 If `EULA` is unset, compose fails fast with a message telling you to set it — by
 design.
@@ -144,26 +173,23 @@ passes. They are two fixtures and not one because `DW0478` forbids a bonfire
 inside a hostile's aggro range, and the lane fixture's corridor tileset has no
 cell more than 16 blocks off its own lane.
 
-`DELVE_OUTPUT` (and `PACKTEST_CONTAINER`, since container names are Docker-global
-while `-p` only isolates volumes and networks) let the same profile boot a second
-tree:
+`--output` boots a second tree; the run tears its own project down and proves it
+clean, so there is no separate teardown command to forget:
 
 ```sh
 delvec build crates/compiler/tests/fixtures/cast-ledger \
   -o validation/delve-output-cast --prefabs campaigns/prefabs
 
-EULA=TRUE DELVE_OUTPUT=./delve-output-cast PACKTEST_CONTAINER=delvewright-packtest-cast \
-  docker compose -p dw-cast -f validation/compose.yaml --profile packtest up \
-    --abort-on-container-exit --exit-code-from packtest
-
-EULA=TRUE DELVE_OUTPUT=./delve-output-cast PACKTEST_CONTAINER=delvewright-packtest-cast \
-  docker compose -p dw-cast -f validation/compose.yaml --profile packtest down -v --remove-orphans
+EULA=TRUE validation/packtest-run.sh --project dw-cast --output ./delve-output-cast
 ```
 
-`validation/delve-output*/` is gitignored, so extra trees need no bookkeeping. The
-same two variables are how CI's tier-2 job runs its extra passes — add a step there
-alongside the existing ones when a new feature's templates need live execution
-rather than shape verification.
+There is no `PACKTEST_CONTAINER` any more (task #185): the runner pins no
+container name, so the compose project is the only name there is, and
+`--project` is required rather than defaulted. `validation/delve-output*/` is
+gitignored, so extra trees need no bookkeeping. This is exactly how CI's tier-2
+job runs its extra passes — add a step there alongside the existing ones, with its
+own `--project`, when a new feature's templates need live execution rather than
+shape verification.
 
 ## Creator playtest loop (spec-0006)
 
@@ -175,10 +201,11 @@ the creator opped:
 delvec build crates/dsl/fixtures/valid/hello-world -o validation/delve-output
 
 EULA=TRUE CREATOR_NAME=<your-mc-name> \
-  docker compose -f validation/compose.yaml --profile playtest up --build
+  docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
+    --profile playtest up --build
 ```
 
-Join at `localhost:25565`. While playing, aim at something wrong and run
+Join at `localhost:25565` (`owner-play.yaml` is what publishes it). While playing, aim at something wrong and run
 `/trigger dw.note` — the overlay stamps one machine-readable line into the server
 log (`[DelveNote] pos=[x,y,z] area=… quests=… nearest_npc=…`) — then type your note
 as a normal chat message. `CREATOR_NAME` ops you so you can `/tp` and inspect; leave
@@ -193,8 +220,8 @@ CI asserts its absence from the image (same exclusion guarantee as PackTest).
 After the session, turn the log into a report with the harvester:
 
 ```sh
-docker compose -f validation/compose.yaml --profile playtest logs --no-color \
-  > playtest.log
+docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
+  --profile playtest logs --no-color > playtest.log
 cargo run -p delvewright-orchestrator --bin delve-harvest -- \
   playtest.log validation/delve-output/creator-datapack/layout.json \
   -o playtest-report.json
@@ -217,6 +244,10 @@ with the correct area + quest state:
 EULA=TRUE validation/playtest-note-flow.sh
 ```
 
+It runs in its own per-invocation compose project (`dw-noteflow-$$`, overridable
+with `DW_COMPOSE_PROJECT`) on an **ephemeral** host port, so it needs no lock and
+cannot collide with another ladder or with a live owner session.
+
 **CI placement (spec-0006 acceptance).** This is a **tier-3 / local** test (wired in
 `release.yml`), not tier 2: it boots a full server *and* a bot (~2–3 min), beyond
 tier 2's ~2-min budget. Every-push coverage of the mechanism already lives in tier 1
@@ -228,18 +259,19 @@ incl. Chinese note text) and the overlay emission + byte-determinism
 
 - Boots vanilla 1.21.11 via the `itzg/minecraft-server` image, which downloads the
   pinned server jar at runtime (never baked into a layer — the ADR-0010 EULA-safe
-  pattern). Port bound to `127.0.0.1` only — never world-reachable.
+  pattern). The only host binding anywhere is the owner's `127.0.0.1:25565` in
+  `owner-play.yaml` — never world-reachable, and never published by a ladder.
 - Every profile serves one compiler build output (`manifest.json`, `datapack/`,
-  `server/`, `packtest-datapack/`, `critical-path.json`), so `--profile validate`
-  and `--profile packtest` reproduce CI's dynamic tiers locally with exit codes
+  `server/`, `packtest-datapack/`, `critical-path.json`), so `bot-run.sh` and
+  `packtest-run.sh` reproduce CI's dynamic tiers locally with exit codes
   propagated (spec-0003 acceptance criteria).
-- **Re-runs**: `validation/fresh-volumes.sh --project <your compose project>` (or
-  `--all` when you own the whole host) tears that stack down and *proves* its world
-  volumes are gone. A persisted volume keeps completed objectives completed, which
-  fails a "fresh" playthrough for reasons unrelated to the delve — run it before
-  every repeat playthrough. It takes no default mode on purpose: `--all` sweeps
-  every project on the daemon and is refused outright while the mutex reads
-  `owner-play-session`.
+- **Re-runs**: `validation/fresh-volumes.sh --project <your compose project>`
+  tears that stack down and *proves* its world volumes are gone. A persisted
+  volume keeps completed objectives completed, which fails a "fresh" playthrough
+  for reasons unrelated to the delve. `bot-run.sh` / `packtest-run.sh` /
+  `branch-runs.sh` run it for you, before and after. The project name is required
+  and there is no daemon-wide mode — a teardown that can reach another project is
+  an outage, not a teardown.
 - **Shot sets**: `validation/render-shots.sh <build-dir> [out-dir]` turns a build
   output into the Chunky scene set plus the shot index (`delve-render scene` +
   `index`) for visual review, including the first-person player-POV shots.

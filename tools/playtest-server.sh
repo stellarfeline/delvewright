@@ -17,9 +17,18 @@
 # output and its path printed instead.
 #
 # The container is a throwaway itzg/minecraft-server pinned to the project MC
-# version. It binds host 25565 — this is the ONE sanctioned 25565 binding
-# (validation workers must never bind it). Never run two `up`s concurrently.
+# version. It binds host 25565 — with `validation/owner-play.yaml`, one of the two
+# sanctioned 25565 bindings; nothing else in the repo may publish that port
+# (`tools/check-compose-isolation.py`, and validation ladders are project-scoped
+# with no host port at all). Because 25565 is the one genuinely shared resource
+# left on this host, `up` TAKES the 25565 mutex as `owner-play-session` and `down`
+# releases it: while it is held, no automation may bind the port, and the release
+# is refused while any container still publishes it (validation/mutex.sh).
 set -euo pipefail
+
+# shellcheck source=validation/mutex.sh
+. "$(cd "$(dirname "$0")/.." && pwd)/validation/mutex.sh"
+set -euo pipefail  # mutex.sh sets its own options when sourced; take ours back
 
 MC_VERSION="1.21.11"
 NAME="dw-playtest"
@@ -55,6 +64,10 @@ fi
 
 if [ "$cmd" = "down" ]; then
   docker rm -f "$NAME" >/dev/null 2>&1 && echo "$NAME removed" || echo "$NAME was not running"
+  # Give 25565 back. Cross-shell by construction (`up` ran in another shell), so
+  # release BY NAME — which refuses if anything still publishes the port, and
+  # refuses outright if the holder is somebody else.
+  dw_mutex_release_named "owner-play-session" || true
   exit 0
 fi
 
@@ -62,7 +75,15 @@ fi
 [ -n "$CAMPAIGN" ] || die "up needs a campaign dir"
 [ -d "$CAMPAIGN" ] || die "no such campaign dir: $CAMPAIGN"
 docker ps --format '{{.Names}}' | grep -qx "$NAME" && die "$NAME already running — 'down' first"
-docker ps --format '{{.Ports}}' | grep -q '25565' && die "host 25565 already bound by another container"
+docker ps --format '{{.Ports}}' | grep -qE ':25565->' && die "host 25565 already bound by another container"
+# Claim the port before building anything: if a human is already playing, this
+# session must not start at all. Nothing is torn down before the lock is ours.
+dw_mutex_acquire "owner-play-session" || die "another 25565 session holds the mutex"
+# Hold it only while a session actually exists: a build or boot failure must give
+# the port back, or the next `up` waits on a lock nothing is behind (the failure
+# mode task #185 removed everywhere else).
+UP_OK=0
+trap '[ "$UP_OK" = 1 ] || dw_mutex_release' EXIT
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [ -n "$DELVEC" ] || DELVEC="$REPO_ROOT/target/release/delvec"
@@ -113,7 +134,8 @@ if [ -f "$OUT_DIR/resourcepack.zip" ]; then
   fi
 fi
 
+UP_OK=1   # the session exists; the 25565 mutex stays held until `down`
 echo
 echo "READY — Multiplayer -> Direct Connect: localhost:25565"
 echo "$PACK_NOTE"
-echo "teardown: tools/playtest-server.sh down --name $NAME"
+echo "teardown: tools/playtest-server.sh down --name $NAME  (also frees the 25565 mutex)"

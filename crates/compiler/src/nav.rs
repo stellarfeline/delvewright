@@ -69,6 +69,19 @@ pub const DW_CHECKPOINT_UNSTANDABLE: &str = "DW0316";
 /// not a skill check, it is a slot machine, and no amount of learning the level
 /// makes it fair.
 pub const DW_TIMED_GATE_COIN_FLIP: &str = "DW0378";
+/// `DW0388`: a **timed hazard** (spec-0016 §4 addendum) the player cannot
+/// observe before committing to it — no standable cell exists that is clear of
+/// the hazard's lethal span, reachable without entering it, and has line of
+/// sight to it.
+///
+/// The souls dossier's strongest and most universal finding (§5.3, §2.2 axis 5):
+/// what the real games guarantee about a periodic hazard is not a duty-cycle
+/// ratio but that you can **stand somewhere safe and watch a full cycle before
+/// committing**. You can stand outside Sen's Fortress and watch a blade swing;
+/// you cannot see inside the Capra room. [`DW_TIMED_GATE_COIN_FLIP`] (`DW0378`)
+/// measures the ratio — the dossier's own verdict is that if only one of the two
+/// proofs can be afforded it should be this one, not the 20%.
+pub const DW_HAZARD_UNOBSERVABLE: &str = "DW0388";
 /// `DW0376`: an `ambush` (spec-0016 §3) with no counterplay — with every
 /// ambusher standing where it will stand, no rest point (a checkpoint, a bonfire,
 /// or the campaign entry) is walkable from the trigger cell any more. The player
@@ -175,6 +188,225 @@ pub const DW_ACTOR_UNROUTABLE: &str = "DW0325";
 /// alternative route around the seal is simply taken and no diagnostic is raised
 /// — this fires only when the sealed world admits no route.
 pub const DW_GATE_TIMELINE: &str = "DW0410";
+
+/// `DW0488`: one content-keyed walk driver is shared by occurrences that do not
+/// stand in the same place when they fire, so the shared driver's first waypoint
+/// is the wrong cell for at least one of them and that occurrence opens with a
+/// teleport.
+///
+/// `move-npc` / `move-actor` drivers are deduped by `(body, to_anchor)` — two
+/// beats that walk the same character to the same mark share one emitted
+/// function, and that function's waypoint polyline starts where the FIRST
+/// occurrence's branch leaves the body. That was a documented limitation for as
+/// long as the dedup existed; it is a diagnostic now because the failure it
+/// produces is invisible in the DSL and unmistakable on a server (the body
+/// vanishes from where it stood and re-appears at the other occurrence's
+/// origin).
+///
+/// Distinct from [`DW_MOVE_UNROUTABLE`]/[`DW_ACTOR_UNROUTABLE`], which fire when
+/// a leg has no route at all: here every leg is perfectly routable and the defect
+/// is that they cannot share one route.
+pub const DW_MOVE_ORIGIN_SHARED: &str = "DW0488";
+
+/// The branch condition a staging effect fires under: the per-effect
+/// `requires_flags` / `forbids_flags` gate (DSL v0.6).
+///
+/// This exists because walk origins **chain** — each leg starts where the body's
+/// previous leg left it — and that chain used to be a single flat sequence per
+/// body, walked in campaign effect order with no regard for which branch each leg
+/// belonged to. Owner playtest, island round 15: choosing to *wait* teleported
+/// Eurylochus out of the cave down to the beach and walked him 35 seconds back
+/// up, because the `flag/flee`-gated leg to the gangplank — a leg that cannot
+/// fire on the branch the player took — had overwritten the origin the
+/// `flag/wait`-gated leg to the alcove inherited. `npc/perimedes` had the same
+/// defect on the same branch, unreported.
+///
+/// The rule this type enforces is the compiler's usual one (see
+/// [`crate::continuity`]): chain only from what is **provably** already true.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BranchGate {
+    /// Flags that must be set for the effect to fire.
+    requires: BTreeSet<String>,
+    /// Flags that must be unset for the effect to fire.
+    forbids: BTreeSet<String>,
+}
+
+impl BranchGate {
+    /// The gate an effect carries.
+    fn of(eff: &QuestEffect) -> Self {
+        Self {
+            requires: eff
+                .requires_flags()
+                .iter()
+                .map(|f| f.as_str().to_string())
+                .collect(),
+            forbids: eff
+                .forbids_flags()
+                .iter()
+                .map(|f| f.as_str().to_string())
+                .collect(),
+        }
+    }
+
+    /// Whether the effect is unconditional (always fires).
+    fn is_unconditional(&self) -> bool {
+        self.requires.is_empty() && self.forbids.is_empty()
+    }
+
+    /// Does this gate provably hold on **every** timeline where `other` fires?
+    ///
+    /// True when `other`'s conditions are a superset of this one's: a leg gated on
+    /// nothing always fired; a leg gated on `flag/flee` has provably fired by the
+    /// time another `flag/flee` leg runs. It is deliberately *not* true for two
+    /// legs gated on different flags — `flag/wait` does not prove `flag/flee`, so
+    /// the flee leg is skipped when chaining into the wait leg, which is exactly
+    /// the fix.
+    ///
+    /// The direction is conservative on purpose. The compiler cannot prove two
+    /// flags are mutually exclusive (nothing in the DSL says `flag/wait` and
+    /// `flag/flee` cannot both be set), so this never *asserts* that a skipped
+    /// leg did not fire — it only declines to assume that it did, and falls back
+    /// to the most recent staging the branch does prove. That can only ever move
+    /// an origin from "certainly wrong on this branch" to "correct on the branch
+    /// the DSL describes"; it cannot invent a route.
+    fn implied_by(&self, other: &BranchGate) -> bool {
+        self.requires.is_subset(&other.requires) && self.forbids.is_subset(&other.forbids)
+    }
+}
+
+/// The **driver-name suffix** a branch gate contributes.
+///
+/// A walk driver is content-keyed by the body and its destination, and that key
+/// used to be the whole story. It is not: two beats can legitimately walk the
+/// same character to the same mark **from different places**, one per branch —
+/// the island's Eurylochus reaches `anchor/gangplank` from the cave if the party
+/// flees at the cheese, and from the upper sheep pen if they stay and escape
+/// under the rams. Both are correct content; one emitted driver cannot carry
+/// both origins, and before this the second beat silently ran the first beat's
+/// polyline, teleporting the body across the map to start.
+///
+/// Including the gate in the key gives each branch its own driver. Unconditional
+/// walks contribute the **empty** suffix, so every campaign that never gated a
+/// walk keeps byte-identical function names.
+pub fn gate_key(eff: &QuestEffect) -> String {
+    BranchGate::of(eff).key()
+}
+
+impl BranchGate {
+    /// A short, deterministic, filename-safe key for this gate ("" when
+    /// unconditional). Derived from the sorted flag names, so it cannot depend on
+    /// declaration order or map iteration.
+    fn key(&self) -> String {
+        if self.is_unconditional() {
+            return String::new();
+        }
+        let mut acc: u64 = 0xcbf2_9ce4_8422_2325;
+        for (tag, set) in [("+", &self.requires), ("-", &self.forbids)] {
+            for f in set {
+                for b in tag.bytes().chain(f.bytes()) {
+                    acc ^= b as u64;
+                    acc = acc.wrapping_mul(0x0000_0100_0000_01b3);
+                }
+            }
+        }
+        format!("_b{acc:08x}")
+    }
+}
+
+/// One staged position for a body, and the branch condition it was staged under.
+#[derive(Clone, Debug)]
+struct Staging {
+    /// The branch this staging happened on.
+    gate: BranchGate,
+    /// Where it left the body (snapped floor cell).
+    pos: [i32; 3],
+    /// The facing it left the body in, when the leg planned one.
+    yaw: Option<i32>,
+}
+
+/// The staging history of every walked body, in campaign effect order.
+type StagingHistory = BTreeMap<String, Vec<Staging>>;
+
+/// The most recent staging of `body` that provably already happened on the branch
+/// a leg gated by `gate` runs on — the origin that leg's walk must start from.
+///
+/// Walks the history backwards and takes the first entry whose own gate is
+/// implied by `gate`. `None` means nothing in the history is provable on this
+/// branch, and the caller falls back to the body's declared home anchor — the
+/// pre-chaining behaviour, which is right precisely when no prior leg is proven.
+fn chained_staging<'a>(
+    history: &'a StagingHistory,
+    body: &str,
+    gate: &BranchGate,
+) -> Option<&'a Staging> {
+    history
+        .get(body)?
+        .iter()
+        .rev()
+        .find(|s| s.gate.implied_by(gate))
+}
+
+/// Record where a leg left a body, on the branch it ran on.
+fn record_staging(
+    history: &mut StagingHistory,
+    body: &str,
+    gate: BranchGate,
+    pos: [i32; 3],
+    yaw: Option<i32>,
+) {
+    history
+        .entry(body.to_string())
+        .or_default()
+        .push(Staging { gate, pos, yaw });
+}
+
+/// `DW0488` for a deduped occurrence whose branch-correct origin is not the one
+/// the shared driver was planned from.
+fn shared_origin_error(
+    verb: &str,
+    body: &str,
+    to_anchor: &str,
+    planned_from: [i32; 3],
+    planned_gate: &BranchGate,
+    actual_from: [i32; 3],
+    this_gate: &BranchGate,
+) -> NavError {
+    let describe = |g: &BranchGate| {
+        if g.is_unconditional() {
+            "unconditionally".to_string()
+        } else {
+            let mut parts = Vec::new();
+            if !g.requires.is_empty() {
+                parts.push(format!(
+                    "requires {}",
+                    g.requires.iter().cloned().collect::<Vec<_>>().join(", ")
+                ));
+            }
+            if !g.forbids.is_empty() {
+                parts.push(format!(
+                    "forbids {}",
+                    g.forbids.iter().cloned().collect::<Vec<_>>().join(", ")
+                ));
+            }
+            format!("when it {}", parts.join(" and "))
+        }
+    };
+    NavError {
+        code: DW_MOVE_ORIGIN_SHARED,
+        message: format!(
+            "{verb}: `{body}` walks to `{to_anchor}` from two different places, but both beats \
+             share ONE emitted walk driver, so one of them opens by teleporting the body across \
+             the map. The driver is planned from {planned_from:?} (the occurrence that fires \
+             {}), while the occurrence that fires {} leaves the body at {actual_from:?}. A walk \
+             driver is content-keyed by `(body, destination)`, so it can carry only one origin. \
+             Prescription: give the two beats distinct destinations (a second anchor a step apart \
+             reads identically in play), or walk the body to a shared staging mark first so both \
+             occurrences start from the same cell",
+            describe(planned_gate),
+            describe(this_gate),
+        ),
+    }
+}
 
 /// Default NPC walking speed in blocks/tick (spec-0008 §5; owner spike). Used when
 /// a `move-npc` effect omits `speed`.
@@ -318,6 +550,9 @@ pub struct MovePlan {
     /// (see [`yaws_along`]). Without it a tp'd body keeps a stale yaw and glides
     /// backwards — owner playtest, island round 13.
     pub yaws: Vec<i32>,
+    /// The branch-gate component of this driver's content key ([`gate_key`]);
+    /// empty for an unconditional walk.
+    pub gate_key: String,
 }
 
 impl MovePlan {
@@ -1347,23 +1582,30 @@ fn move_target(plan: &Plan, npc_id: &str, to_anchor: &str) -> Option<[i32; 3]> {
 /// cannot pass a closed gate on its own.
 pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError> {
     let mut out = Vec::new();
-    let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut seen: BTreeSet<(String, String, String)> = BTreeSet::new();
     // Chained origins (round-6): each NPC's next walk starts from its LAST staged
     // location — the previous move's (snapped) target — not its declared anchor.
     // Planning every leg from the declared anchor made a second consecutive
     // `move-npc` on the same NPC degenerate (worst case start == target → a
-    // single-waypoint instant teleport instead of a walk). Keyed by npc id, in
-    // campaign effect order (the same deterministic order the dedup uses).
-    let mut chained_start: BTreeMap<String, [i32; 3]> = BTreeMap::new();
-    // Facing chains with position: the yaw a leg ends on is the yaw the next leg
-    // starts from (the seed `yaws_along` uses before the first horizontal step).
-    let mut chained_yaw: BTreeMap<String, i32> = BTreeMap::new();
+    // single-waypoint instant teleport instead of a walk).
+    //
+    // The chain is **branch-aware** (island round 16): a leg only inherits an
+    // origin a leg on its own branch actually produced, so a `flag/flee`-gated
+    // walk can no longer hand its destination to the `flag/wait`-gated walk that
+    // follows it in declaration order. See [`BranchGate`] for the defect this
+    // fixes and why the rule is stated as implication rather than exclusion.
+    let mut history: StagingHistory = StagingHistory::new();
     // The cell route planned for each `(npc, to_anchor)` driver, so a deduped
     // repeat occurrence can be re-checked against its own timeline's seals.
-    let mut planned: BTreeMap<(String, String), Vec<[i32; 3]>> = BTreeMap::new();
+    let mut planned: BTreeMap<(String, String, String), Vec<[i32; 3]>> = BTreeMap::new();
     // The yaw each planned driver ends on, so a deduped repeat chains the same
     // facing forward as the first occurrence did.
-    let mut planned_end_yaw: BTreeMap<(String, String), i32> = BTreeMap::new();
+    let mut planned_end_yaw: BTreeMap<(String, String, String), i32> = BTreeMap::new();
+    // The origin each driver was planned from, and the branch of the occurrence
+    // that planned it — so a deduped occurrence standing somewhere else is
+    // `DW0488` instead of a silent teleport.
+    let mut planned_origin: BTreeMap<(String, String, String), ([i32; 3], BranchGate)> =
+        BTreeMap::new();
     let mut cache = SealCache::default();
     for (eff, seal) in crate::timeline::walk(plan) {
         let QuestEffect::MoveNpc {
@@ -1375,6 +1617,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
         else {
             continue;
         };
+        let gate = BranchGate::of(eff);
         // The world this walk actually happens in: gates this timeline already
         // shut are solid. Empty seal ⇒ the base world, unchanged.
         let leg_world: &World = match cache.index_of(world, &seal) {
@@ -1404,7 +1647,12 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
                     to_anchor.as_str(),
                 ),
             })?;
-        let key = (npc.as_str().to_string(), to_anchor.as_str().to_string());
+        let gkey = gate.key();
+        let key = (
+            npc.as_str().to_string(),
+            to_anchor.as_str().to_string(),
+            gkey.clone(),
+        );
         if !seen.insert(key.clone()) {
             // Deduped: shares the first occurrence's driver, so it walks the
             // already-planned path — which must still be clear under THIS
@@ -1424,16 +1672,39 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
                     ));
                 }
             }
+            // This occurrence walks the driver the FIRST occurrence planned, so
+            // it starts at that driver's origin — which is only correct if this
+            // occurrence's own branch leaves the body there too (`DW0488`).
+            if let Some((planned_from, planned_gate)) = planned_origin.get(&key) {
+                let here = chained_staging(&history, npc.as_str(), &gate).map(|s| s.pos);
+                if let Some(here) = here
+                    && here != *planned_from
+                {
+                    return Err(shared_origin_error(
+                        "move-npc",
+                        npc.as_str(),
+                        to_anchor.as_str(),
+                        *planned_from,
+                        planned_gate,
+                        here,
+                        &gate,
+                    ));
+                }
+            }
             // The walk still ends here, so the NPC's next leg chains from this
             // target — and from the facing the shared driver leaves the body in.
-            chained_start.insert(npc.as_str().to_string(), target);
-            if let Some(y) = planned_end_yaw.get(&key) {
-                chained_yaw.insert(npc.as_str().to_string(), *y);
-            }
+            record_staging(
+                &mut history,
+                npc.as_str(),
+                gate,
+                target,
+                planned_end_yaw.get(&key).copied(),
+            );
             continue;
         }
-        let start = match chained_start.get(npc.as_str()) {
-            Some(pos) => *pos,
+        let prior = chained_staging(&history, npc.as_str(), &gate);
+        let start = match prior.map(|s| s.pos) {
+            Some(pos) => pos,
             None => {
                 let home = npc_start(plan, npc.as_str()).ok_or_else(|| NavError {
                     code: DW_MOVE_UNROUTABLE,
@@ -1449,6 +1720,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
                 leg_world.snap_standable(home, SNAP_RADIUS).unwrap_or(home)
             }
         };
+        let seed_yaw = prior.and_then(|s| s.yaw);
         let cells = match leg_world.find_path(start, target) {
             Some(cells) => cells,
             // Routable open, unroutable sealed ⇒ this timeline's own `close-gate`
@@ -1479,19 +1751,17 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
                 });
             }
         };
-        chained_start.insert(npc.as_str().to_string(), target);
         planned.insert(key.clone(), cells.clone());
+        planned_origin.insert(key.clone(), (start, gate.clone()));
         let waypoints = resample(&cells, speed.unwrap_or(DEFAULT_SPEED));
-        // Seed: the facing this body already has — the previous leg's exit yaw if
-        // this NPC has walked before, else the yaw its summon gave it (the home
-        // anchor's declared facing, `emit::npc_summon_commands`).
-        let seed = chained_yaw
-            .get(npc.as_str())
-            .copied()
-            .unwrap_or_else(|| npc_spawn_yaw(plan, npc.as_str()));
+        // Seed: the facing this body already has — the exit yaw of the previous
+        // leg **on this branch** if this NPC has walked before, else the yaw its
+        // summon gave it (the home anchor's declared facing,
+        // `emit::npc_summon_commands`).
+        let seed = seed_yaw.unwrap_or_else(|| npc_spawn_yaw(plan, npc.as_str()));
         let yaws = yaws_along(&waypoints, seed);
         let end_yaw = yaws.last().copied().unwrap_or(seed);
-        chained_yaw.insert(npc.as_str().to_string(), end_yaw);
+        record_staging(&mut history, npc.as_str(), gate, target, Some(end_yaw));
         planned_end_yaw.insert(key, end_yaw);
         out.push(MovePlan {
             npc: npc.as_str().to_string(),
@@ -1499,6 +1769,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
             target,
             waypoints,
             yaws,
+            gate_key: gkey,
         });
     }
     Ok(out)
@@ -1544,6 +1815,9 @@ pub struct ActorMovePlan {
     pub waypoints: Vec<[f64; 3]>,
     /// Per-waypoint yaw (degrees), tangent to the path (facing the next step).
     pub yaws: Vec<i32>,
+    /// The branch-gate component of this driver's content key ([`gate_key`]);
+    /// empty for an unconditional walk.
+    pub gate_key: String,
 }
 
 impl ActorMovePlan {
@@ -1736,7 +2010,7 @@ fn gate_timeline_error(
 /// driver will actually walk.
 pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>, NavError> {
     let mut out = Vec::new();
-    let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut seen: BTreeSet<(String, String, String)> = BTreeSet::new();
     // Chained origins (round-6, live-server proven): a SECOND consecutive
     // `move-actor` on the same actor must start from the actor's CURRENT staged
     // location — the previous move's (snapped) target — not its declared spawn
@@ -1745,14 +2019,20 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
     // (start == declared anchor == target), so the giant snapped instead of
     // walking on camera. Keyed by actor id, in campaign effect order (the same
     // deterministic order the dedup uses).
-    let mut chained_start: BTreeMap<String, [i32; 3]> = BTreeMap::new();
-    // Facing chains with position (see `plan_moves`).
-    let mut chained_yaw: BTreeMap<String, i32> = BTreeMap::new();
+    // Branch-aware, exactly as `plan_moves` (island round 16 / task #126): a
+    // puppet leg inherits only an origin its own branch produced. The-wake's bier
+    // walked to the tide line from the GROUND branch's grave for the same reason
+    // the island's Eurylochus walked from the beach.
+    let mut history: StagingHistory = StagingHistory::new();
     // The cell route planned for each `(actor, to_anchor)` driver, so a deduped
     // repeat occurrence can be re-checked against its own timeline's seals.
-    let mut planned: BTreeMap<(String, String), Vec<[i32; 3]>> = BTreeMap::new();
+    let mut planned: BTreeMap<(String, String, String), Vec<[i32; 3]>> = BTreeMap::new();
     // The yaw each planned driver ends on, so a deduped repeat chains it forward.
-    let mut planned_end_yaw: BTreeMap<(String, String), i32> = BTreeMap::new();
+    let mut planned_end_yaw: BTreeMap<(String, String, String), i32> = BTreeMap::new();
+    // The origin each driver was planned from + the branch that planned it, for
+    // `DW0488`.
+    let mut planned_origin: BTreeMap<(String, String, String), ([i32; 3], BranchGate)> =
+        BTreeMap::new();
     let mut cache = SealCache::default();
     for (eff, seal) in crate::timeline::walk(plan) {
         let QuestEffect::MoveActor {
@@ -1764,6 +2044,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
         else {
             continue;
         };
+        let gate = BranchGate::of(eff);
         // The world this walk actually happens in: gates this timeline already
         // shut are solid. Empty seal ⇒ the base world, unchanged.
         let leg_world: &World = match cache.index_of(world, &seal) {
@@ -1800,7 +2081,12 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                     actor.as_str()
                 ),
             })?;
-        let key = (actor.as_str().to_string(), to_anchor.as_str().to_string());
+        let gkey = gate.key();
+        let key = (
+            actor.as_str().to_string(),
+            to_anchor.as_str().to_string(),
+            gkey.clone(),
+        );
         if !seen.insert(key.clone()) {
             // Deduped: this occurrence shares the first occurrence's content-keyed
             // driver, so the path it walks is the one already planned. It still has
@@ -1822,16 +2108,38 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                     ));
                 }
             }
+            // Shared driver, so this occurrence starts at the origin the first
+            // one planned — correct only if this branch leaves the puppet there.
+            if let Some((planned_from, planned_gate)) = planned_origin.get(&key) {
+                let here = chained_staging(&history, actor.as_str(), &gate).map(|s| s.pos);
+                if let Some(here) = here
+                    && here != *planned_from
+                {
+                    return Err(shared_origin_error(
+                        "move-actor",
+                        actor.as_str(),
+                        to_anchor.as_str(),
+                        *planned_from,
+                        planned_gate,
+                        here,
+                        &gate,
+                    ));
+                }
+            }
             // The walk still ends here, so the actor's next leg chains from this
             // target — and from the facing the shared driver leaves the puppet in.
-            chained_start.insert(actor.as_str().to_string(), target);
-            if let Some(y) = planned_end_yaw.get(&key) {
-                chained_yaw.insert(actor.as_str().to_string(), *y);
-            }
+            record_staging(
+                &mut history,
+                actor.as_str(),
+                gate,
+                target,
+                planned_end_yaw.get(&key).copied(),
+            );
             continue;
         }
-        let start = match chained_start.get(actor.as_str()) {
-            Some(pos) => *pos,
+        let prior = chained_staging(&history, actor.as_str(), &gate);
+        let start = match prior.map(|s| s.pos) {
+            Some(pos) => pos,
             None => {
                 let start_anchor =
                     actor_anchor_pos(plan, a.anchor.as_str()).ok_or_else(|| NavError {
@@ -1882,18 +2190,18 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
                 });
             }
         };
-        chained_start.insert(actor.as_str().to_string(), target);
         planned.insert(key.clone(), cells.clone());
+        planned_origin.insert(key.clone(), (start, gate.clone()));
         let waypoints = resample(&cells, speed.unwrap_or(DEFAULT_SPEED));
-        // Seed: the facing the puppet already has — the previous leg's exit yaw,
-        // else the actor's declared spawn `facing` (`emit::actor_facing_yaw`).
-        let seed = chained_yaw
-            .get(actor.as_str())
-            .copied()
+        // Seed: the facing the puppet already has — the exit yaw of the previous
+        // leg **on this branch**, else the actor's declared spawn `facing`
+        // (`emit::actor_facing_yaw`).
+        let seed = prior
+            .and_then(|s| s.yaw)
             .unwrap_or_else(|| crate::emit::facing_yaw(a.facing.map(|f| f.token())));
         let yaws = yaws_along(&waypoints, seed);
         let end_yaw = yaws.last().copied().unwrap_or(seed);
-        chained_yaw.insert(actor.as_str().to_string(), end_yaw);
+        record_staging(&mut history, actor.as_str(), gate, target, Some(end_yaw));
         planned_end_yaw.insert(key, end_yaw);
         out.push(ActorMovePlan {
             actor: actor.as_str().to_string(),
@@ -1901,6 +2209,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
             target,
             waypoints,
             yaws,
+            gate_key: gkey,
         });
     }
     Ok(out)
@@ -2668,6 +2977,250 @@ fn gate_crossing_footings(
         }
     }
     None
+}
+
+// ---------------------------------------------------------------------------
+// Hazard observability (spec-0016 §4 addendum, souls dossier §5.3 / §2.2 axis 5)
+// ---------------------------------------------------------------------------
+
+/// A player's eye height above the floor of the cell they stand in, in blocks —
+/// the vanilla 1.21.11 standing eye offset, the same figure the player-POV camera
+/// derivation uses (`DW0724`). The observability sightline starts here because
+/// the question the proof asks is literally "can a player standing there see it".
+const EYE_HEIGHT: f64 = 1.62;
+
+/// The minimum distance a watch cell must keep from every cell of a hazard's
+/// lethal span, in blocks (Chebyshev, box distance).
+///
+/// Derived rather than invented: it is **one second of sprinting** at the nav
+/// model's own speed (`20 / SPRINT_TICKS_PER_BLOCK`), so the proof demands a
+/// sightline from ground the player reaches a full second before the hazard could
+/// have them. Sight from the very lip of the span is not observation from safety —
+/// it is already the commitment. (The bell remake's portcullis bay sits six blocks
+/// out, comfortably clear of this floor.)
+const HAZARD_STANDOFF: i32 = (20 / SPRINT_TICKS_PER_BLOCK) as i32;
+
+/// How far from a hazard the proof will look for a watch cell, in blocks
+/// (Chebyshev, box distance). Two chunks: a bay further out than this is not a
+/// bay, and the bound keeps the search over a box-garden world small and its cost
+/// independent of how large the reachable region happens to be.
+const HAZARD_WATCH_RANGE: i32 = 32;
+
+/// One hazard the observability proof judges: a region whose contents become
+/// lethal on a **clock the player is expected to read**.
+///
+/// Exactly two verbs qualify today. A `timed-gate` cycles open/closed forever; a
+/// `volley` rakes its kill zone for `salvos × interval` ticks. Both ask the player
+/// to time an entry, and both are therefore owed a sightline first. `collapse` is
+/// deliberately NOT here: it fires once, its region is a ceiling with no standable
+/// cell, and there is no cycle to watch — its fairness obligation is the
+/// post-collapse completability proof (`DW0445`), not observability.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TimedHazard {
+    /// How the diagnostic names it (`timed-gate/portcullis`, `volley into
+    /// `anchor/stair-run``).
+    pub id: String,
+    /// The lethal span's inclusive corners, in absolute world coordinates.
+    pub region: ([i32; 3], [i32; 3]),
+}
+
+/// Every timed hazard in the campaign, in deterministic content order:
+/// `timed_gates[]` in declared order, then each distinct `volley` kill zone in
+/// effect-traversal order. A volley declared twice with the same gallery slot and
+/// the same zone is one hazard (the emitter dedupes it the same way).
+pub fn timed_hazards(plan: &Plan) -> Vec<TimedHazard> {
+    let mut out: Vec<TimedHazard> = plan
+        .timed_gates
+        .iter()
+        .map(|g| TimedHazard {
+            id: g.id.clone(),
+            region: g.gate_region,
+        })
+        .collect();
+    let mut seen: BTreeSet<([i32; 3], [i32; 3])> = BTreeSet::new();
+    for eff in all_effects(plan) {
+        let Some((_, from_anchor, kill_zone, _, _)) = eff.volley() else {
+            continue;
+        };
+        let Some(region) = plan.zone_box(kill_zone) else {
+            continue; // an unresolvable anchor is the payload planner's error
+        };
+        if !seen.insert(region) {
+            continue;
+        }
+        out.push(TimedHazard {
+            id: format!(
+                "volley from `{from_anchor}` into `{}`",
+                kill_zone.anchor.as_str()
+            ),
+            region,
+        });
+    }
+    out
+}
+
+/// Prove every timed hazard can be **watched before it is committed to** —
+/// [`DW_HAZARD_UNOBSERVABLE`] (`DW0388`).
+///
+/// For each hazard the proof asks for one **watch cell** `w` with all three of:
+///
+/// 1. **Outside the lethal span, by a margin.** `w` is standable and at least
+///    [`HAZARD_STANDOFF`] blocks (box distance) from every cell of the span — one
+///    second of sprint at the nav model's own speed. Sight from the lip of the
+///    span is not observation from safety.
+/// 2. **Line of sight.** The segment from `w`'s eye ([`EYE_HEIGHT`] above its
+///    floor) to the player-centre-mass point of some standable hazard cell
+///    ([`volley_target`], 1.0 above that cell's floor — the exact point a volley
+///    aims at, so "the dangerous point of a hazard cell" has one definition in the
+///    compiler) crosses no sight-blocking geometry. The predicate is the cutscene
+///    clip check's `blocks_camera` walked by the same Amanatides–Woo
+///    [`walk_cells`] traversal, so glass and grates are transparent to an eye
+///    exactly as they are to a camera — a bay behind a grate is a bay.
+/// 3. **Reached without committing.** `w` is walkable from the campaign entry over
+///    the world with the span **sealed**. This is the load-bearing clause: it is
+///    what makes the cell a *watch* cell rather than a cell you can only reach by
+///    first surviving the hazard.
+///
+/// Tiering (spec-0016 §4 addendum): **error** for a campaign that declares a
+/// `bonfire` — a souls campaign, where observe-before-commit is the fairness
+/// contract the whole loop rests on — and **warning** everywhere else, where the
+/// same geometry is a design note rather than a broken promise.
+///
+/// Hazards whose region holds no standable cell, and campaigns with no resolvable
+/// entry, are left to the proofs that own them (`DW0444`, `DW0311`, `DW0345`)
+/// rather than double-reported here.
+pub fn check_hazard_observability(
+    plan: &Plan,
+    world: &World,
+    entry: Option<[i32; 3]>,
+) -> Result<Vec<Diagnostic>, NavError> {
+    let hazards = timed_hazards(plan);
+    let findings = verify_hazard_observability(world, &hazards, entry);
+    // A campaign that places a bonfire IS a souls campaign — the same test the
+    // flask obligation (`DW0476`) uses, so one campaign never sits on two
+    // different answers to "is this spec-0016 content".
+    hazard_tier(plan.bonfires().next().is_some(), findings)
+}
+
+/// Apply the spec-0016 §4-addendum tiering to the observability findings: a souls
+/// campaign fails the build on the first one, anything else carries all of them as
+/// advisory warnings. Split out from [`check_hazard_observability`] so the tier
+/// rule itself is unit-testable without standing up a whole [`Plan`].
+fn hazard_tier(souls: bool, findings: Vec<Diagnostic>) -> Result<Vec<Diagnostic>, NavError> {
+    if !souls {
+        return Ok(findings);
+    }
+    match findings.into_iter().next() {
+        Some(d) => Err(NavError {
+            code: DW_HAZARD_UNOBSERVABLE,
+            message: d.message,
+        }),
+        None => Ok(Vec::new()),
+    }
+}
+
+/// The pure core of [`check_hazard_observability`] (unit-testable against a
+/// synthetic [`World`]). Reports at the advisory tier; [`hazard_tier`] decides how
+/// loud that is for the campaign at hand.
+fn verify_hazard_observability(
+    world: &World,
+    hazards: &[TimedHazard],
+    entry: Option<[i32; 3]>,
+) -> Vec<Diagnostic> {
+    let Some(entry) = entry else {
+        return Vec::new(); // DW0345 owns a campaign with no entry anchor
+    };
+    let mut out = Vec::new();
+    for h in hazards {
+        let span: BTreeSet<[i32; 3]> =
+            crate::assembled::region_cells(h.region.0, h.region.1).collect();
+        // What the player would be standing on inside the hazard — the cells the
+        // clock actually judges, and so the cells a watcher must be able to see.
+        let samples: Vec<[i32; 3]> = span
+            .iter()
+            .copied()
+            .filter(|c| world.standable(*c))
+            .collect();
+        if samples.is_empty() {
+            continue; // an unusable region is DW0444 / DW0311's business
+        }
+        // Pre-commitment ground: everywhere the player can walk from the entry
+        // WITHOUT entering the span.
+        let sealed = world.with_sealed(&span);
+        let pre_commit = sealed.reachable_walkable(&[entry]);
+        // Nearest candidate first — a real watch bay is close, so the passing case
+        // costs a handful of sightlines. Ties break on cell order (ADR-0006).
+        let mut candidates: Vec<(i32, [i32; 3])> = pre_commit
+            .into_iter()
+            .map(|c| (box_distance(c, h.region), c))
+            .filter(|(d, _)| (HAZARD_STANDOFF..=HAZARD_WATCH_RANGE).contains(d))
+            .collect();
+        candidates.sort_unstable();
+        let watch = candidates
+            .into_iter()
+            .find(|(_, c)| samples.iter().any(|s| sees_hazard_cell(world, *c, *s)));
+        if watch.is_some() {
+            continue;
+        }
+        out.push(Diagnostic::warning(
+            DW_HAZARD_UNOBSERVABLE,
+            "quests",
+            format!("/content/quests/hazard/{}", h.id),
+            format!(
+                "hazard `{}` cannot be watched before it is committed to: no standable cell \
+                 within {HAZARD_WATCH_RANGE} blocks of its span [{}, {}, {}]..[{}, {}, {}] is \
+                 both at least {HAZARD_STANDOFF} blocks clear of it (one second of sprint at \
+                 {SPRINT_TICKS_PER_BLOCK} t/block) and walkable from the campaign entry without \
+                 entering it, with line of sight to any cell the hazard judges. The strongest \
+                 rule in the souls vocabulary is observe-from-safety-before-commit (spec-0016 §4 \
+                 addendum): you can stand outside Sen's Fortress and watch a blade cycle, and you \
+                 cannot see inside the Capra room — a timed hazard you meet blind is a coin flip \
+                 no repetition teaches, whatever its duty cycle. Give it a watch bay: open the \
+                 approach so the span is visible from a few blocks back, or move the hazard off \
+                 the blind side of the corner. Do NOT shorten the standoff.",
+                h.id,
+                h.region.0[0],
+                h.region.0[1],
+                h.region.0[2],
+                h.region.1[0],
+                h.region.1[1],
+                h.region.1[2],
+            ),
+        ));
+    }
+    out
+}
+
+/// Chebyshev distance from a cell to a box, in blocks — `0` inside the box.
+/// Integer arithmetic end to end: a proof never rounds (ADR-0006).
+fn box_distance(c: [i32; 3], region: ([i32; 3], [i32; 3])) -> i32 {
+    let (lo, hi) = region;
+    (0..3)
+        .map(|i| {
+            let (a, b) = (lo[i].min(hi[i]), lo[i].max(hi[i]));
+            (a - c[i]).max(c[i] - b).max(0)
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// Whether a player standing on `watch` can see the space a player standing on
+/// `hazard` would occupy: the segment from eye height over one to centre mass over
+/// the other, walked cell by cell through the **sight** predicate. Both endpoint
+/// cells are exempt — they are the observer's own head and the target volume, both
+/// standable and so both passable by construction.
+fn sees_hazard_cell(world: &World, watch: [i32; 3], hazard: [i32; 3]) -> bool {
+    let eye = [
+        watch[0] as f64 + 0.5,
+        watch[1] as f64 + EYE_HEIGHT,
+        watch[2] as f64 + 0.5,
+    ];
+    let target = volley_target(hazard);
+    let eye_cell = [watch[0], watch[1] + 1, watch[2]];
+    walk_cells(eye, target, |c| {
+        c != eye_cell && c != hazard && world.blocks_camera(c)
+    })
+    .is_none()
 }
 
 /// Prove every `ambush` (spec-0016 §3) leaves the player a play —
@@ -6571,6 +7124,165 @@ mod tests {
         let err = verify_timed_gates(&world, &[g])
             .expect_err("a window shorter than the crossing admits no phase at all");
         assert_eq!(err.code, DW_TIMED_GATE_COIN_FLIP); // DW0378
+    }
+
+    // --- hazard observability (spec-0016 §4 addendum, DW0388) ---
+
+    /// The y every observability fixture walks on. Feet at `WY`, head at `WY + 1`.
+    const WY: i32 = 65;
+
+    /// A synthetic world stated in terms of what is **open**: `open` lists the
+    /// `(x, z)` columns a player can stand in at [`WY`]. Everything else inside the
+    /// padded bounding box is solid rock at feet and head height, with a floor
+    /// below and a lid above. Sightlines are the whole subject here, so describing
+    /// the carved space directly is what makes each fixture's geometry readable.
+    fn carved(open: &[[i32; 2]]) -> World {
+        let air: BTreeSet<[i32; 2]> = open.iter().copied().collect();
+        let xs: Vec<i32> = open.iter().map(|c| c[0]).collect();
+        let zs: Vec<i32> = open.iter().map(|c| c[1]).collect();
+        let (x0, x1) = (xs.iter().min().unwrap() - 3, xs.iter().max().unwrap() + 3);
+        let (z0, z1) = (zs.iter().min().unwrap() - 3, zs.iter().max().unwrap() + 3);
+        let mut solid = BTreeSet::new();
+        for x in x0..=x1 {
+            for z in z0..=z1 {
+                solid.insert([x, WY - 1, z]); // floor
+                solid.insert([x, WY + 2, z]); // lid
+                if !air.contains(&[x, z]) {
+                    solid.insert([x, WY, z]);
+                    solid.insert([x, WY + 1, z]);
+                }
+            }
+        }
+        World::from_solid_cells(solid)
+    }
+
+    /// A one-wide run of open columns along z at a fixed x.
+    fn run_z(x: i32, z0: i32, z1: i32) -> Vec<[i32; 2]> {
+        (z0..=z1).map(|z| [x, z]).collect()
+    }
+
+    /// A one-wide run of open columns along x at a fixed z.
+    fn run_x(z: i32, x0: i32, x1: i32) -> Vec<[i32; 2]> {
+        (x0..=x1).map(|x| [x, z]).collect()
+    }
+
+    /// A gate-shaped hazard: the full-height column at `(x, z)`.
+    fn hazard(x: i32, z: i32) -> TimedHazard {
+        TimedHazard {
+            id: "timed-gate/portcullis".to_string(),
+            region: ([x, WY, z], [x, WY + 1, z]),
+        }
+    }
+
+    /// A straight hall with the portcullis at the far end: every cell of the
+    /// approach looks right down the barrel of it, so the player can stand a good
+    /// way back and watch a whole cycle before stepping in. This is the shape the
+    /// dossier calls fair (§5.3 rule 1) and the proof must let it through.
+    #[test]
+    fn hazard_at_the_end_of_a_straight_hall_is_observable() {
+        let world = carved(&run_z(0, 0, 12));
+        let found = verify_hazard_observability(&world, &[hazard(0, 12)], Some([0, WY, 0]));
+        assert!(
+            found.is_empty(),
+            "a hall you can see down is the observable case: {found:#?}"
+        );
+    }
+
+    /// The seeded violation: the same portcullis put four blocks around a blind
+    /// corner. Every cell far enough back to be safety is in the other leg of the
+    /// L and sees rock; every cell that sees the gate is already inside the
+    /// commitment radius. The Capra door — you meet the hazard for the first time
+    /// with no read available. `DW0388`.
+    #[test]
+    fn hazard_around_a_blind_corner_is_dw0388() {
+        let mut open = run_z(0, 0, 8);
+        open.extend(run_x(8, 0, 4));
+        let world = carved(&open);
+        let found = verify_hazard_observability(&world, &[hazard(4, 8)], Some([0, WY, 0]));
+        assert_eq!(found.len(), 1, "the blind corner is reported: {found:#?}");
+        assert_eq!(found[0].code, DW_HAZARD_UNOBSERVABLE); // DW0388
+        assert!(
+            found[0].message.contains("cannot be watched"),
+            "the message must name the failure: {}",
+            found[0].message
+        );
+    }
+
+    /// The same blind corner with a watch bay: the corner leg is continued PAST
+    /// the junction, so the approach opens onto ground that stands off the gate and
+    /// looks straight down the hall at it. This is the bell remake's "roofed bay
+    /// six blocks out" (REMAKE §7.4 entry O), and it is the fix the diagnostic
+    /// prescribes — the geometry changes, never the floor.
+    #[test]
+    fn a_watch_bay_off_the_approach_restores_observability() {
+        let mut open = run_z(0, 0, 8);
+        open.extend(run_x(8, -6, 4));
+        let world = carved(&open);
+        let found = verify_hazard_observability(&world, &[hazard(4, 8)], Some([0, WY, 0]));
+        assert!(
+            found.is_empty(),
+            "a bay with a sightline is exactly what the proof asks for: {found:#?}"
+        );
+    }
+
+    /// The load-bearing clause: the sightline must be reachable WITHOUT entering
+    /// the hazard. One hall, one gate, one long clear view of it — but the view is
+    /// all on the far side, and the near approach is too short to stand off in. A
+    /// bay you can only reach by first surviving the gate is not a watch bay; the
+    /// identical world entered from the far end passes, which is the whole
+    /// difference.
+    #[test]
+    fn a_sightline_only_reachable_through_the_hazard_does_not_count() {
+        let world = carved(&run_z(0, 0, 20));
+        let h = [hazard(0, 4)];
+        let blind = verify_hazard_observability(&world, &h, Some([0, WY, 0]));
+        assert_eq!(blind.len(), 1, "entered from the short side: {blind:#?}");
+        assert_eq!(blind[0].code, DW_HAZARD_UNOBSERVABLE); // DW0388
+        let seen = verify_hazard_observability(&world, &h, Some([0, WY, 20]));
+        assert!(
+            seen.is_empty(),
+            "the same geometry entered from the long side is observable: {seen:#?}"
+        );
+    }
+
+    /// Tiering (spec-0016 §4 addendum): the same finding fails the build for a
+    /// campaign that declares a `bonfire` — souls content, where
+    /// observe-before-commit is the contract the retry loop rests on — and is
+    /// advisory everywhere else.
+    #[test]
+    fn hazard_observability_is_error_tier_only_for_souls_campaigns() {
+        let mut open = run_z(0, 0, 8);
+        open.extend(run_x(8, 0, 4));
+        let world = carved(&open);
+        let found = verify_hazard_observability(&world, &[hazard(4, 8)], Some([0, WY, 0]));
+        let warned = hazard_tier(false, found.clone()).expect("non-souls stays advisory");
+        assert_eq!(warned.len(), 1);
+        assert_eq!(warned[0].code, DW_HAZARD_UNOBSERVABLE); // DW0388
+        assert_eq!(warned[0].severity, delvewright_dsl::Severity::Warning);
+        let err = hazard_tier(true, found).expect_err("a souls campaign fails the build");
+        assert_eq!(err.code, DW_HAZARD_UNOBSERVABLE); // DW0388
+    }
+
+    /// A campaign with no resolvable entry anchor raises nothing here: `DW0345`
+    /// owns that failure, and a proof that piles a second diagnostic on the same
+    /// root cause sends the author chasing the wrong fix.
+    #[test]
+    fn no_campaign_entry_leaves_the_hazard_to_dw0345() {
+        let mut open = run_z(0, 0, 8);
+        open.extend(run_x(8, 0, 4));
+        let world = carved(&open);
+        assert!(verify_hazard_observability(&world, &[hazard(4, 8)], None).is_empty());
+    }
+
+    /// Box distance is a Chebyshev reach to the span, zero inside it, and is what
+    /// both the standoff floor and the search bound are measured in.
+    #[test]
+    fn box_distance_is_chebyshev_to_the_span() {
+        let region = ([0, 65, 0], [2, 67, 2]);
+        assert_eq!(box_distance([1, 66, 1], region), 0);
+        assert_eq!(box_distance([-5, 66, 1], region), 5);
+        assert_eq!(box_distance([7, 66, 4], region), 5);
+        assert_eq!(box_distance([0, 72, 0], region), 5);
     }
 
     fn ambush(at: [i32; 3], actor_cells: Vec<[i32; 3]>) -> crate::plan::AmbushPlan {

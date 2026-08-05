@@ -38,6 +38,7 @@
 //! | `DW0202` | Quest can never be triggered (unreachable / dead quest). |
 //! | `DW0203` | Objective can never be completed (deadlock — e.g. an `after` chain that can't be satisfied). |
 //! | `DW0204` | The exported critical path is not a coherent single-branch playthrough. |
+//! | `DW0205` | Optional participation can skip a load-bearing mainline beat — see [`crate::flow::Flow::skips`]. |
 //! | `DW0210`/`DW0211` | Assembled-light gate — see [`crate::light`]. |
 //! | `DW0358` | A declared `min_players: n` (n ≥ 2) has no n-agent division of labour. |
 //!
@@ -49,6 +50,15 @@
 //! declared mandatory-n design the same playthrough is additionally required to
 //! contain an AND-join the party can actually split n ways
 //! ([`crate::flow::Flow::divide`]).
+//!
+//! ## Optional participation (task #174)
+//!
+//! The owner's contract — *the mainline must be completable with zero optional
+//! participation* — is proven in two halves, both on the same critical path.
+//! `DW0204` is the producer half (a mainline objective gated on a flag only
+//! off-path content sets is not a playthrough); `DW0205` is the order half
+//! ([`crate::flow::Flow::skips`]): a beat the fiction offers as elective that
+//! the graph is load-bearing on.
 
 use delvewright_dsl::{AnchorRegistry, Campaign, Diagnostic, Objective};
 
@@ -64,6 +74,8 @@ pub mod codes {
     pub const OBJECTIVE_DEADLOCK: &str = "DW0203";
     /// The exported critical path is not a walkable playthrough.
     pub const PATH_INCOHERENT: &str = crate::flow::DW_PATH_INCOHERENT;
+    /// Optional participation can skip a load-bearing mainline beat (task #174).
+    pub const OPTIONAL_GATES_MAINLINE: &str = crate::flow::DW_OPTIONAL_GATES_MAINLINE;
     /// A declared `min_players: n` has no n-agent division of labour (spec-0018).
     pub const PARTY_UNDIVIDABLE: &str = "DW0358";
     // DW0210 (dark-area mitigation) moved to `crate::light` (spec-0010): it is now
@@ -161,6 +173,18 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
                 f.message(),
             ));
         } else {
+            // DW0205 (task #174): the mainline must be completable with ZERO
+            // optional participation. The producer half is the replay just
+            // proven; this is the order half — every beat the campaign lets a
+            // player walk past while the graph still needs it.
+            for s in flow.skips(&path) {
+                diags.push(Diagnostic::error(
+                    codes::OPTIONAL_GATES_MAINLINE,
+                    "quests",
+                    objective_path(c, &s.objective),
+                    s.message(),
+                ));
+            }
             // DW0358 (spec-0018): completability is proven with `min_players`
             // agents. n = 1 is the single-agent proof just made; n >= 2 must also
             // admit a real division of labour on that same playthrough.
@@ -187,4 +211,17 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
 
     diags.sort_by(|a, b| (&a.code, &a.path).cmp(&(&b.code, &b.path)));
     diags
+}
+
+/// The stage-5 JSON pointer of an objective, so a diagnostic points at the beat
+/// itself rather than at the document.
+pub fn objective_path(c: &Campaign, objective: &str) -> String {
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oi, o) in q.objectives.iter().enumerate() {
+            if o.id().as_str() == objective {
+                return format!("/content/quests/{qi}/objectives/{oi}");
+            }
+        }
+    }
+    "/content/quests".to_string()
 }
