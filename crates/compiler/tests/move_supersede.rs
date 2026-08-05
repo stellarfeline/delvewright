@@ -308,8 +308,7 @@ impl Sim {
 fn endpoint(fns: &BTreeMap<String, Vec<String>>, driver: &str) -> [f64; 3] {
     let last = fns[driver]
         .iter()
-        .filter(|l| l.contains(" run tp "))
-        .next_back()
+        .rfind(|l| l.contains(" run tp "))
         .unwrap_or_else(|| panic!("`{driver}` has no waypoint tp"));
     let t: Vec<&str> = last.split_whitespace().collect();
     let n = t.iter().position(|w| *w == "tp").unwrap();

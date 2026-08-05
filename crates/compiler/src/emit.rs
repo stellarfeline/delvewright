@@ -5532,14 +5532,53 @@ fn movenpc_bare(npc: &str, to_anchor: &str, gate_key: &str) -> String {
 /// driver's **final-waypoint tick** — exactly the arrival detection `ma_tick`
 /// uses — via a generated `mv_arrive_<key>` function. A bare `move-npc` emits no
 /// arrive hook and stays byte-identical to pre-0.6 output.
+///
+/// # Supersession — one body, one live driver (task #25)
+///
+/// A driver's re-entry latch `#mrun_<bare>` is keyed per **(npc, to_anchor, gate)**:
+/// it stops a walk from restarting *itself* and knows nothing about the body's other
+/// walks. So a second `move-npc` fired at the same NPC while an earlier walk was
+/// still running used to leave **two** drivers alive, both teleporting the same
+/// entity every tick; the interleave garbled the path and whichever walk had more
+/// remaining ticks wrote the final position — the body parked at the FIRST walk's
+/// endpoint, not the last-fired one (root-caused live on the island, 2026-08-06: a
+/// 408-tick beach→mouth walk overlapped by a 21-tick walk to checkpoint-1 left the
+/// NPC 3.0 blocks off its cast-ledger cell, exactly on the harness's affordance
+/// radius).
+///
+/// The contract is now **last fired wins**, carried by a per-NPC *walk generation*
+/// score `#mgen_<npc>`: starting a walk bumps the generation and stamps it onto that
+/// driver's `#mown_<bare>`; every driver tick first checks its own stamp is still the
+/// current generation and, if not, drops its latch and returns without teleporting.
+/// The superseded driver dies on its next scheduled tick, the new walk's tp sequence
+/// runs alone from its own first waypoint (waypoints are precomputed from the walk's
+/// declared start, so the new leg snaps to that first waypoint — the same instant
+/// snap single-walk content already gets when a walk fires while its NPC stands
+/// elsewhere). The staleness test is written as the positive `if own < gen`, never as
+/// `unless own = gen`: with both scores unset — a driver invoked directly, as the
+/// `v04_move` PackTest does — a score comparison is *false*, and the `unless`
+/// spelling would read that as "stale" and cancel a walk nothing superseded.
+///
+/// A body with only one planned walk can never be superseded, so it carries none of
+/// this: campaigns whose NPCs each walk at most once stay byte-identical (ADR-0006).
 fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
+    // How many drivers each body owns, in the planner's deterministic order. Two or
+    // more ⇒ a later walk can catch an earlier one mid-flight ⇒ that body's drivers
+    // carry the generation guard.
+    let mut legs: BTreeMap<&str, usize> = BTreeMap::new();
+    for m in moves {
+        *legs.entry(m.npc.as_str()).or_insert(0) += 1;
+    }
     for m in moves {
         let start_name = movenpc_fn(&m.npc, &m.to_anchor, &m.gate_key);
         let bare = movenpc_bare(&m.npc, &m.to_anchor, &m.gate_key);
         let safe = plan::safe_local(&m.npc);
         let total = m.ticks();
+        let supersedable = legs.get(m.npc.as_str()).copied().unwrap_or(0) > 1;
+        // `#mown_<bare> < #mgen_<npc>` ⇔ a later walk for this body has started.
+        let stale = format!("score #mown_{bare} dw.sys < #mgen_{safe} dw.sys");
         // The on_arrive bundle for this (npc, to_anchor) — the first-seen effect,
         // matching the planner's dedup order (mirrors `actor_fns`).
         let on_arrive: &[QuestEffect] = all_campaign_effects(plan.campaign)
@@ -5557,18 +5596,42 @@ fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, Stri
             })
             .unwrap_or(&[]);
 
-        // start: guard re-entry, reset the tick counter, schedule the driver.
-        let start = vec![
-            format!("execute if score #mrun_{bare} dw.sys matches 1 run return fail"),
-            format!("scoreboard players set #mrun_{bare} dw.sys 1"),
-            format!("scoreboard players set #mt_{bare} dw.sys 0"),
-            format!("schedule function {ns}:mv_tick_{bare} 1t"),
-        ];
+        // start: guard re-entry, take the walk generation, reset the tick counter,
+        // schedule the driver. The re-entry refusal is generation-aware: a latch left
+        // armed by a driver this body has already superseded must not block the
+        // re-fire of that same leg (it is itself a later walk, and wins).
+        let mut start = Vec::new();
+        if supersedable {
+            start.push(format!(
+                "execute if score #mrun_{bare} dw.sys matches 1 unless {stale} run return fail"
+            ));
+            start.push(format!("scoreboard players add #mgen_{safe} dw.sys 1"));
+            start.push(format!(
+                "scoreboard players operation #mown_{bare} dw.sys = #mgen_{safe} dw.sys"
+            ));
+        } else {
+            start.push(format!(
+                "execute if score #mrun_{bare} dw.sys matches 1 run return fail"
+            ));
+        }
+        start.push(format!("scoreboard players set #mrun_{bare} dw.sys 1"));
+        start.push(format!("scoreboard players set #mt_{bare} dw.sys 0"));
+        start.push(format!("schedule function {ns}:mv_tick_{bare} 1t"));
         out.push((start_name, lines(&start)));
 
         // per-tick driver: tp both body + hitbox to waypoint[t], advance, and
         // reschedule until the path is walked; the final waypoint is the target.
         let mut tick: Vec<String> = Vec::new();
+        if supersedable {
+            // Superseded: drop the latch (so this leg can be fired again later) and
+            // stop — no teleport, no arrive hook, no reschedule. The `schedule` this
+            // driver queued before it lost the body is what brought us here; not
+            // rescheduling is what ends it.
+            tick.push(format!(
+                "execute if {stale} run scoreboard players set #mrun_{bare} dw.sys 0"
+            ));
+            tick.push(format!("execute if {stale} run return fail"));
+        }
         for (t, (w, y)) in m.waypoints.iter().zip(m.yaws.iter()).enumerate() {
             tick.push(format!(
                 "execute if score #mt_{bare} dw.sys matches {t} run tp @e[tag=dw_npc_{safe}] {} {} {} {y} 0",
