@@ -284,6 +284,12 @@ fn the_combat_plan_is_validation_only_and_names_the_tier() {
     campaign_with(tmp.path(), |quests, _| {
         quests["dsl_version"] = serde_json::json!("0.7.0");
         quests["content"]["waves"][0]["tier"] = serde_json::json!("boss");
+        // `wave/guards` is `souls-bonfire`'s only `respawns_on_rest` wave, and
+        // souls ruling 5/7 (task #160) forbids a `tier: boss` wave from
+        // re-seating on rest (`DW0499`) — a combination this test, about the
+        // combat plan's tier bookkeeping, is not exercising. Clear it so the
+        // mutation stays isolated to the one field under test.
+        quests["content"]["waves"][0]["respawns_on_rest"] = serde_json::json!(false);
     });
     let (out, _) = build(tmp.path()).expect("a tiered wave builds");
     let plan = out

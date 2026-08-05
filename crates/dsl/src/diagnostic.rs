@@ -394,4 +394,21 @@ pub mod codes {
     /// not something it can verify rather than guess. Advisory (warning,
     /// exit 0) — declaring `world.difficulty` settles it either way.
     pub const DIFFICULTY_UNDECLARED_ACTORS: &str = "DW0469";
+    /// (spec-0016 §1, spec-0023, souls ruling 5/7: "stage bosses never respawn
+    /// on rest") A wave declares BOTH `tier: boss` and `respawns_on_rest: true`.
+    /// `tier` and `respawns_on_rest` are two fields on the same [`Wave`]
+    /// declaration — the only place a "boss" billing and a "re-seat on rest"
+    /// contract can land on one another; an [`Actor`] carries `tier` too but has
+    /// no `respawns_on_rest` field at all (it is killed by hand, never re-seated
+    /// by a bonfire), so this is the sole structurally expressible violation of
+    /// the ruling. A rest-respawning boss re-fight breaks the retry economy the
+    /// ruling exists to protect: a boss is the campaign's named fight, not
+    /// trash pressure the party grinds back down every rest. Validation-tier
+    /// (exit 1), `dsl::validate`. Prescription: drop `tier: boss` if the
+    /// encounter really is meant to re-seat (bill it `elite` instead), or drop
+    /// `respawns_on_rest` if it really is the boss.
+    ///
+    /// [`Wave`]: crate::stages::Wave
+    /// [`Actor`]: crate::stages::Actor
+    pub const BOSS_RESPAWNS_ON_REST: &str = "DW0499";
 }
