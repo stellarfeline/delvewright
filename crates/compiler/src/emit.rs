@@ -414,11 +414,19 @@ pub fn build_with_warnings(
                 // timing is the point; one that punishes every timing is a slot
                 // machine. At least 20% of the cycle must admit a crossing.
                 crate::nav::check_timed_gates(plan, &world)?;
+                // spec-0016 §4 addendum — hazard observability (DW0388). The
+                // dossier's strongest finding: what makes a periodic hazard fair
+                // is not its ratio but that you can stand somewhere safe and
+                // WATCH it before committing. Error tier for a souls campaign (it
+                // declares a bonfire), warning tier otherwise.
+                let unobserved =
+                    crate::nav::check_hazard_observability(plan, &world, campaign_spawn(plan))?;
                 // spec-0016 §7 pacing lints (DW0379 retry cost, DW0380 optional-
                 // elite bypass). Warning tier: both are design judgements the
                 // compiler can MEASURE but must not overrule — a long walk back
                 // can be the authored point, and the owner's QA hour decides.
                 pacing = crate::nav::pacing_lints(plan, &world);
+                pacing.extend(unobserved);
                 // Export the DW0311-proven critical-path routes as validation
                 // metadata (task #38): thinned per-leg waypoint polylines the harness
                 // replays as successive nearby goals, so no single giant mineflayer A*
