@@ -183,6 +183,29 @@ pub mod codes {
     /// declares no `contents` at `dsl_version` 0.8.0 — the Uncraftable Potion, a
     /// bottle that pours nothing. The placeholder flask, as a build error.
     pub const KIT_POTION_MISSING: &str = "DW0487";
+    /// (task #179, owner ruling 2026-08-04) A `drops[]` `slot` entry does not
+    /// name a distinct slot the same entity's `equipment` actually fills — the
+    /// slot is empty, or the same slot is declared twice. A mob can only leave
+    /// behind a piece it wears, and it can only leave it behind once.
+    pub const DROP_SLOT_UNFILLED: &str = "DW0490";
+    /// (task #179, owner ruling 2026-08-04) `drops[]` on an encounter that is
+    /// not billed `elite` or `boss`. Only a named fight leaves anything behind;
+    /// an ordinary mob's kit is never farmable (no-grind constitution), so the
+    /// declaration is refused rather than silently making rank-and-file gear
+    /// lootable.
+    pub const DROP_NOT_TIERED: &str = "DW0491";
+    /// (task #179) A `collect` `dropped_by` is not backed by the wave it names:
+    /// the wave declares no `{item}` drop of this objective's item, the count
+    /// asks for more copies than the wave's mobs can yield, or the objective
+    /// also declares a `container` (the item cannot come out of a box *and* off
+    /// a body).
+    pub const DROP_COLLECT_UNSOURCED: &str = "DW0492";
+    /// (task #179) A `collect` `dropped_by` is not ordered after the fight that
+    /// produces it: no `kill` objective for that wave precedes this collect in
+    /// the objective graph. Without that edge "kill the boss, take its key" is
+    /// an authoring intention the quest graph cannot prove, and the collect
+    /// reads as reachable from the campaign's first tick.
+    pub const DROP_COLLECT_UNORDERED: &str = "DW0493";
     /// (v0.3) A wave mob `entity` is not a known vanilla entity id. (Item-id
     /// checks for `collect.item`, `interact.requires_item` and `give-item.item`
     /// reuse [`ITEM_UNKNOWN`] / `DW0143`.)

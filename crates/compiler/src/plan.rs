@@ -621,7 +621,8 @@ pub enum Step {
         /// Total mob count.
         count: i32,
     },
-    /// Collect `count` of `item` from a chest at `pos` (v0.3).
+    /// Collect `count` of `item` from a chest at `pos` (v0.3) — or, when
+    /// `dropped` is set, off the ground where that wave died (DSL v0.9).
     Collect {
         /// The `obj/<id>` this step proves complete.
         objective_id: String,
@@ -629,8 +630,14 @@ pub enum Step {
         item: String,
         /// Required count.
         count: i32,
-        /// Absolute chest-anchor position.
+        /// Absolute chest-anchor position — or, for a dropped collect, the wave
+        /// anchor whose floor the item lands on.
         pos: [i32; 3],
+        /// The wave whose declared drop provides the item (DSL v0.9), when the
+        /// objective is drop-gated. There is no container at `pos`: the harness
+        /// walks the fight's ground and waits for the pickup instead of opening
+        /// a block that is not there.
+        dropped: Option<String>,
     },
     /// Interact at `pos`: goto, then chat `command` (the same `/trigger` the
     /// interaction advancement fires). `requires_item` gates completion (v0.3).
@@ -2151,6 +2158,7 @@ fn build_critical_path(
                     count,
                     anchor,
                     container,
+                    dropped_by,
                     ..
                 } => {
                     // The step position is the CONTAINER the bot opens: the
@@ -2161,10 +2169,23 @@ fn build_critical_path(
                     // sit in a barrel three blocks away is a guaranteed bot stall.
                     // An unresolvable container anchor falls back to the objective
                     // anchor; the DSL tier reports it (`DW0142`).
-                    let pos = match container
-                        .as_ref()
-                        .and_then(|cont| point_any(anchors, cont.as_str()))
-                    {
+                    // v0.9 (task #179): a drop-gated collect has no container at
+                    // all — the item is on the floor the wave died on, so the
+                    // step points at that wave's own anchor.
+                    let dropped_at = dropped_by.as_ref().and_then(|w| {
+                        campaign
+                            .quests
+                            .content
+                            .waves
+                            .iter()
+                            .find(|wv| wv.id.as_str() == w.as_str())
+                            .and_then(|wv| point_any(anchors, wv.anchor.as_str()))
+                    });
+                    let pos = match dropped_at.or_else(|| {
+                        container
+                            .as_ref()
+                            .and_then(|cont| point_any(anchors, cont.as_str()))
+                    }) {
                         Some(cell) => cell,
                         None => point_of(anchors, area, anchor.as_str())?,
                     };
@@ -2173,6 +2194,7 @@ fn build_critical_path(
                         item: item.clone(),
                         count: *count as i32,
                         pos,
+                        dropped: dropped_by.as_ref().map(|w| w.as_str().to_string()),
                     });
                     obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }

@@ -1461,6 +1461,7 @@ mod tests {
                 amplifier: RESISTANCE_IMMUNE_AMPLIFIER,
             }],
             equipment: None,
+            drops: Vec::new(),
         };
         let (multiplier, source) = mob_damage_multiplier(&mob);
         assert_eq!(multiplier, 0.0);
@@ -1479,6 +1480,7 @@ mod tests {
                 amplifier: RESISTANCE_IMMUNE_AMPLIFIER - 1,
             }],
             equipment: None,
+            drops: Vec::new(),
         };
         let (multiplier, _) = mob_damage_multiplier(&mob);
         assert!((multiplier - 0.2).abs() < 1e-9, "{multiplier}");
@@ -1511,6 +1513,7 @@ mod tests {
                 attributes: None,
                 effects,
                 equipment: None,
+                drops: Vec::new(),
             }],
             respawns_on_rest: false,
             lane: None,

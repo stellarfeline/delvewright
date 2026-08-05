@@ -157,7 +157,10 @@ export interface KillStep extends PresentationMarkers {
   readonly transport?: Transport;
 }
 
-/** Collect `count` of `item` from a chest at `pos` (v0.3). */
+/**
+ * Collect `count` of `item` from a chest at `pos` (v0.3) — or, when
+ * `droppedBy` is set, off the ground the named wave died on (v0.9).
+ */
 export interface CollectStep extends PresentationMarkers {
   readonly action: "collect";
   /** The `obj/<id>` this step must prove complete (format 2). */
@@ -165,6 +168,13 @@ export interface CollectStep extends PresentationMarkers {
   readonly item: string;
   readonly count: number;
   readonly pos: Vec3Tuple;
+  /**
+   * The wave whose declared drop provides the item (v0.9). Present means there
+   * is NO container at `pos`: the compiler places none, because the item only
+   * exists once the fight is over. The bot walks the ground instead of opening
+   * a block that is not there.
+   */
+  readonly droppedBy?: string;
   /** Cross-area teleport destination on completion, if any (gap 8). */
   readonly transport?: Transport;
 }
@@ -504,15 +514,30 @@ function parseStep(value: unknown, pointer: string): Step {
     case "collect": {
       rejectUnknownKeys(
         obj,
-        ["action", "objective", "item", "count", "pos", "transport", "sneak", "cutscene_seconds"],
+        [
+          "action",
+          "objective",
+          "item",
+          "count",
+          "pos",
+          "dropped_by",
+          "transport",
+          "sneak",
+          "cutscene_seconds",
+        ],
         pointer,
       );
+      const droppedBy = obj["dropped_by"];
+      if (droppedBy !== undefined && typeof droppedBy !== "string") {
+        fail(`${pointer}/dropped_by`, `must be a string, got ${describe(droppedBy)}`);
+      }
       return {
         action: "collect",
         objective: requireObjectiveId(obj, pointer),
         item: requireString(obj, "item", pointer),
         count: requireInteger(obj, "count", pointer),
         pos: requirePos(obj, pointer),
+        ...(droppedBy === undefined ? {} : { droppedBy }),
         ...transportFields(obj, pointer),
         ...presentationFields(obj, pointer),
       };
