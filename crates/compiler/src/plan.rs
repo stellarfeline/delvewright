@@ -22,8 +22,8 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_dsl::{
-    Campaign, DialogueEffect, DialogueId, Lethality, Npc, NpcDialogue, Objective, Quest,
-    QuestEffect, TrapReset, TrapTrigger, Trigger,
+    Campaign, Diagnostic, DialogueEffect, DialogueId, Lethality, Npc, NpcDialogue, Objective,
+    Quest, QuestEffect, TrapReset, TrapTrigger, Trigger,
 };
 
 use crate::flow::objectives_in_order;
@@ -359,6 +359,12 @@ pub struct Plan<'a> {
     pub seed: u64,
     /// Area placements, in stage-1 order.
     pub areas: Vec<AreaPlacement>,
+    /// Advisory findings the placement stage raised, in area order. Currently
+    /// `DW0498` ([`crate::pool`]): a pool draw that seats the same anchor-bearing
+    /// prefab twice, so every anchor that prefab declares has more than one
+    /// carrier. Reported by [`crate::emit::build_with_warnings`], which prepends
+    /// them to the build's own advisories; never fatal.
+    pub warnings: Vec<Diagnostic>,
     /// Resolved absolute anchors, keyed by `(area_id, anchor_name)`.
     pub anchors: BTreeMap<(String, String), ResolvedAnchor>,
     /// Class selection plan (n starts at 1).
@@ -870,6 +876,12 @@ pub struct PlanError {
     pub code: &'static str,
     /// Human-readable explanation.
     pub message: String,
+    /// Advisory findings that were raised before this error stopped planning,
+    /// and that explain it. Printed alongside the failure — a `DW0305` ambiguous
+    /// anchor is usually the use-site symptom of a pool `DW0498` already
+    /// describes at the declaration, and dropping the explanation because the
+    /// build failed is exactly the silence task #187 exists to remove.
+    pub warnings: Vec<Diagnostic>,
 }
 
 impl PlanError {
@@ -878,7 +890,14 @@ impl PlanError {
         PlanError {
             code,
             message: message.into(),
+            warnings: Vec::new(),
         }
+    }
+
+    /// The same error, carrying the advisories that explain it.
+    pub fn with_warnings(mut self, warnings: Vec<Diagnostic>) -> Self {
+        self.warnings = warnings;
+        self
     }
 }
 
@@ -998,6 +1017,8 @@ impl<'a> Plan<'a> {
 
         // ---- placements + anchors ----
         let mut areas = Vec::new();
+        // Advisory placement findings, in area order (`DW0498`, `crate::pool`).
+        let mut warnings: Vec<Diagnostic> = Vec::new();
         let mut anchors: BTreeMap<(String, String), ResolvedAnchor> = BTreeMap::new();
         // v0.6 (spec-0011): the absolute dispenser socket cell for each `anchor/trap`
         // marker that declares one, keyed like `anchors`. Empty for a campaign with no
@@ -1081,7 +1102,25 @@ impl<'a> Plan<'a> {
                     origin,
                     &mut stream,
                 )
-                .map_err(|e| PlanError::new(e.code, e.message))?;
+                .map_err(|e| {
+                    // A solver failure raised after growth (`DW0305`) carries the
+                    // draw that produced it: attach the pool-level `DW0498` so the
+                    // author reads the cause at the declaration, not just the
+                    // symptom at the use site (task #187).
+                    let mut w = warnings.clone();
+                    w.extend(crate::pool::check(
+                        prefabs,
+                        &crate::pool::PoolArea {
+                            area_id: &area_id,
+                            area_index: i,
+                            pool_id: &pool_id,
+                            pieces_min: pmin,
+                            pieces_max: pmax,
+                        },
+                        e.placed.iter().map(String::as_str),
+                    ));
+                    PlanError::new(e.code, e.message).with_warnings(w)
+                })?;
                 // Stage-7 L2 massing (spec-0017 PR 3): apply the edit script's
                 // massing batches for this area over the solved layout, so
                 // everything downstream — anchor resolution just below, the
@@ -1096,6 +1135,27 @@ impl<'a> Plan<'a> {
                 if !massing_out.severed.is_empty() {
                     severed.insert(area_id.clone(), massing_out.severed);
                 }
+
+                // `DW0498` (task #187): the draw is settled — read it back and say
+                // so ONCE, here at the declaration, if it seats the same
+                // anchor-bearing prefab more than once. Every anchor that prefab
+                // declares now has more than one carrier; the `or_insert_with`
+                // resolution just below silently keeps the first, and the solver's
+                // `DW0305` will fail the build at whichever campaign-referenced
+                // anchor happens to be the first use site. Advisory: a repeat with
+                // no such use is legal, and shipping campaigns rely on it. Read
+                // AFTER massing so the reported draw is the one the player gets.
+                warnings.extend(crate::pool::check(
+                    prefabs,
+                    &crate::pool::PoolArea {
+                        area_id: &area_id,
+                        area_index: i,
+                        pool_id: &pool_id,
+                        pieces_min: pmin,
+                        pieces_max: pmax,
+                    },
+                    layout.pieces.iter().map(|p| p.prefab_id.as_str()),
+                ));
 
                 let mut pieces = Vec::new();
                 for placed in &layout.pieces {
@@ -1275,6 +1335,7 @@ impl<'a> Plan<'a> {
             namespace,
             seed,
             areas,
+            warnings,
             anchors,
             classes,
             npcs,

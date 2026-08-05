@@ -235,9 +235,15 @@ pub fn build_with_warnings(
         })?;
     // Advisory findings the replay raised (`DW0353` gate-region collisions,
     // `DW0354` broken block support) — reported by the caller, never fatal.
-    let mut warnings: Vec<delvewright_dsl::Diagnostic> = edit_replay
-        .as_ref()
-        .map_or_else(Vec::new, |er| er.warnings.clone());
+    // Advisory findings the PLACEMENT stage raised (`DW0498`: a pool draw that
+    // seats the same anchor-bearing prefab twice) lead, since they describe the
+    // world every later pass reasons over, then the replay's own.
+    let mut warnings: Vec<delvewright_dsl::Diagnostic> = plan.warnings.clone();
+    warnings.extend(
+        edit_replay
+            .as_ref()
+            .map_or_else(Vec::new, |er| er.warnings.clone()),
+    );
     // spec-0016 §7 pacing lints, filled in by the nav stage below.
     let mut pacing: Vec<delvewright_dsl::Diagnostic> = Vec::new();
 
