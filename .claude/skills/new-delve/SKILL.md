@@ -482,19 +482,20 @@ Symptom → tool:
   <build-dir>` — emits the Chunky scene set + shot index from the build's
   `render-plan.json`. First-person POV shots only exist on this path (the
   per-prefab renderer is an orbit renderer and cannot stand inside a room).
-- **Re-running the machine ladder after a fix**: `validation/fresh-volumes.sh
-  --all` first (or `--project <name>` if the stack was launched with `-p`) — a
-  persisted world volume keeps completed objectives completed, so a "fresh"
-  playthrough fails for reasons that have nothing to do with the delve. The
-  script takes no default mode: `--all` sweeps the whole daemon, `--project`
-  only the one compose project.
+- **Re-running the machine ladder after a fix**: the ladder entry scripts
+  (`validation/bot-run.sh` / `packtest-run.sh` / `branch-runs.sh`, all
+  `--project <id>`) fresh-volume their own project before and after every run,
+  so a persisted world volume can no longer keep completed objectives completed
+  and fail a "fresh" playthrough for reasons that have nothing to do with the
+  delve. To clean up by hand: `validation/fresh-volumes.sh --project <id>`.
+  `--project` is required everywhere and there is no daemon-wide mode.
 - **A `talk-to` / `interact` step that times out with "objective … did not
   complete"**: read the rest of that line before touching the campaign. The bot
   now reports the server's own answer to the `/trigger` it sent — *the server
   ANSWERED …* means the trigger reached the delve and a datapack guard consumed
   it (a re-used world whose scoreboard already carries the objective does
-  exactly this: run `fresh-volumes.sh --project` and re-run before believing the
-  content is at fault), while *the server never answered …* means the command
+  exactly this: run `fresh-volumes.sh --project <id>` and re-run before believing
+  the content is at fault), while *the server never answered …* means the command
   never got there and the failure is the harness's, not the delve's.
 - **A prefab library needing owner taste, not machine checks**: mention
   `delve-admit gallery` (browse world) → owner walks it and leaves notes →
@@ -587,23 +588,26 @@ Then:
    (`subagent_type: general-purpose`, `model: sonnet`) instructed to, from repo
    root (docker required):
    - copy/point `validation/delve-output` at the build output
-   - `validation/fresh-volumes.sh --all` — mandatory on every re-run (and
-     harmless on the first): it tears the stack down and proves the world volumes
-     are gone, so a completed objective from an earlier run cannot fake a red.
-     The mode is explicit on purpose: `--all` is the whole-daemon sweep this
-     ladder (default compose project) wants, and it refuses to run while the
-     mutex reads `owner-play-session`. A run isolated in its own project uses
-     `--project <that project>` instead — `down -v` alone leaves
-     `<project>_server-data` behind whenever an exited container still holds it
-   - `EULA=TRUE docker compose -f validation/compose.yaml --profile packtest up --exit-code-from packtest`
-   - `EULA=TRUE docker compose -f validation/compose.yaml --profile validate up --build --abort-on-container-exit --exit-code-from bot`
-     — two labelled stages once the delve has mandatory combat (spec-0023):
+   - **pick a compose project id for this ladder** — `dw-<campaign>-r<round>` or
+     anything unique — and pass it to every command below. It is REQUIRED: the
+     validation stack pins no container name and publishes no host port (task
+     #185), so the compose project is the only name the stack has, and two
+     ladders with distinct ids run side by side on one host with no lock and no
+     queueing. There is no mutex to take. An entry script invoked without
+     `--project` fails loudly rather than landing in a shared default.
+   - `EULA=TRUE validation/packtest-run.sh --project <id>`
+   - `EULA=TRUE validation/bot-run.sh --project <id>`
+     — each fresh-volumes its own project before and after (a stale world carries
+     the scoreboard: completed objectives stay completed and the bot reports a
+     false CONTENT failure), and tears down only that project. The bot ladder has
+     two labelled stages once the delve has mandatory combat (spec-0023):
      `critical-path` and `die-retry`. The die-retry stage adds two scripted
      deaths per encounter, so a combat-heavy delve needs a larger
      `DELVEWRIGHT_RUN_TIMEOUT_MS` than the 20-minute default — set it on the
-     command (`DELVEWRIGHT_RUN_TIMEOUT_MS=2400000 EULA=TRUE docker compose …`);
-     compose forwards it to the bot. Read
-     `validation/run-out/run-report.json` afterwards: it names every combat-assist
+     command (`DELVEWRIGHT_RUN_TIMEOUT_MS=2400000 EULA=TRUE validation/bot-run.sh
+     --project <id>`); compose forwards it to the bot. Read
+     `validation/run-out/<id>/run-report.json` afterwards — project-scoped, so two
+     ladders can never overwrite each other's. It names every combat-assist
      window, every death trial, and any inverted-floor-gate finding. An EMPTY
      `assist_windows` is not evidence of anything on its own — read the
      `encounters` block beside it, which states each encounter's assist policy
@@ -635,10 +639,10 @@ Then:
    - **branch runs (spec-0025 §3) — required whenever the build emitted
      `validation/branch-plan.json`.** One critical-path run proves ONE storyline;
      a campaign that forks must have EVERY branch walked. Run
-     `EULA=TRUE validation/branch-runs.sh` (release tier: every enumerated
-     branch, each in its own fresh world — party progress only moves forward, so
-     a second branch needs a second world). It writes
-     `validation/run-out/branch-runs.json`: per branch, ran/skipped-with-reason
+     `EULA=TRUE validation/branch-runs.sh --project <id>` (release tier: every
+     enumerated branch, each in its own fresh world — party progress only moves
+     forward, so a second branch needs a second world). It writes
+     `validation/run-out/<id>/branch-runs.json`: per branch, ran/skipped-with-reason
      and the result. `DELVEWRIGHT_BRANCHES=<ids>` narrows the tier for local
      iteration; a narrowed run is NOT a validated campaign, and the report says
      which branches it skipped. `from-diff` is not available yet and refuses.
@@ -705,7 +709,9 @@ Then:
    straight into a delve their engine cannot run.
 11. Report to the user: campaign summary, playtime estimate, validation results,
     and the two commands they care about:
-    - play: `EULA=TRUE docker compose -f validation/compose.yaml --profile play up`
+    - play: `EULA=TRUE docker compose -f validation/compose.yaml -f
+      validation/owner-play.yaml --profile play up` — `owner-play.yaml` is what
+      publishes `localhost:25565`; the base compose file publishes nothing
     - playtest with notes: same with `--profile playtest` (+ `CREATOR_NAME=<mc name>`)
 
 ## Hard rules
@@ -801,8 +807,8 @@ Then:
      `kill` objective; if you meant it as set dressing, drop the tier.
   Ordinary fights run the ladder under a bounded, logged combat assist, so bot
   fencing skill never caps how hard the delve is allowed to be — read
-  `validation/run-out/run-report.json` after a `validate` run for the assist
-  windows, the death trials and any floor findings.
+  `validation/run-out/<id>/run-report.json` after a `bot-run.sh` ladder for the
+  assist windows, the death trials and any floor findings.
 - **Bonfires owe the party a flask.** Right-clicking a `bonfire` opens exactly
   two options — *rest and save* (full restore: health, hunger, negative effects
   cleared, flask refilled, checkpoint moved, `respawns_on_rest` waves re-seated,

@@ -39,14 +39,14 @@ jobs:
       # Jar cache removed 2026-07-30 (see the note in ci.yml tier-2): single-file
       # bind mounts break itzg's installer rename, and runners fetch piston-data in
       # under a second. The itzg entrypoint downloads the pinned jar (ADR-0010).
+      # `bot-run.sh --project <id>` is the ladder entry (task #185): the compose
+      # project is the only name the stack has, it is REQUIRED, and the script
+      # tears down exactly that project and proves it clean.
       - name: bot completes the critical path against the shipped delve image
-        run: |
-          docker compose -f validation/compose.yaml \
-            --profile validate up \
-            --build --abort-on-container-exit --exit-code-from bot
-      - name: tear down
+        run: bash validation/bot-run.sh --project dw-ci-playthrough
+      - name: the run report
         if: always()
-        run: docker compose -f validation/compose.yaml --profile validate down -v --remove-orphans || true
+        run: cat validation/run-out/dw-ci-playthrough/run-report.json || true
 
   # ---- creator playtest note flow (spec-0006 M2) -----------------------------
   # A live-server + mineflayer-bot integration test (same class as the playthrough
@@ -120,10 +120,10 @@ jobs:
             build crates/compiler/tests/fixtures/branch-two-endings \
             -o validation/delve-output --prefabs campaigns/prefabs
       - name: every enumerated branch is walked to its own ending
-        run: bash validation/branch-runs.sh
+        run: bash validation/branch-runs.sh --project dw-ci-branches
       - name: the branch report
         if: always()
-        run: cat validation/run-out/branch-runs.json || true
+        run: cat validation/run-out/dw-ci-branches/branch-runs.json || true
 
   # ---- multi-arch delve image → GHCR (only after the playthrough is green) ----
   publish-image:
