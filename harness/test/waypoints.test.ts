@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
+  branchWaypointsFileFor,
+  loadWaypointsForBranchPath,
   parseWaypoints,
   parseWaypointsJson,
   nextLegWaypoints,
@@ -341,4 +346,55 @@ test("a gate region whose min exceeds its max is rejected", () => {
     (err: unknown) =>
       err instanceof WaypointsParseError && err.pointer === "/timed_gates/0/region",
   );
+});
+
+// ---------------------------------------------------------------------------
+// Per-branch waypoints (task #117)
+// ---------------------------------------------------------------------------
+
+test("the per-branch waypoints file is derived from the branch path file", () => {
+  assert.equal(
+    branchWaypointsFileFor("/delve/validation/branch-path-flee.json"),
+    "/delve/validation/branch-waypoints-flee.json",
+  );
+  // A multi-point product slug survives the derivation untouched.
+  assert.equal(
+    branchWaypointsFileFor("/delve/validation/branch-path-wait+boast.json"),
+    "/delve/validation/branch-waypoints-wait+boast.json",
+  );
+});
+
+test("a path file outside the branch-path contract is a hard fault, not a fallback", () => {
+  // A wrong name here means the branch PLAN is broken (the two files are one
+  // contract) — silently deriving nothing would demote that to a quiet
+  // un-waypointed walk, the exact failure mode the loud fallback exists to end.
+  for (const bad of ["/delve/critical-path.json", "/delve/validation/branch-flee.json"]) {
+    assert.throws(
+      () => branchWaypointsFileFor(bad),
+      (err: unknown) => err instanceof WaypointsParseError,
+    );
+  }
+});
+
+test("an absent per-branch artifact loads as undefined; a present one parses", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "dw-branch-wp-"));
+  try {
+    const pathFile = path.join(dir, "branch-path-flee.json");
+    // Absent → undefined (the CALLER owns the loud fallback report).
+    assert.equal(await loadWaypointsForBranchPath(pathFile), undefined);
+    // Present → parsed under the same structural rules as the critical-path
+    // artifact (same parser, same hard failure on malformed data).
+    await writeFile(path.join(dir, "branch-waypoints-flee.json"), JSON.stringify(VALID));
+    const wp = await loadWaypointsForBranchPath(pathFile);
+    assert.equal(wp?.campaignId, "nobodys-cave");
+    assert.equal(wp?.legs.length, VALID.legs.length);
+    // Malformed → throws, never a silent fallback.
+    await writeFile(path.join(dir, "branch-waypoints-flee.json"), "{not json");
+    await assert.rejects(
+      loadWaypointsForBranchPath(pathFile),
+      (err: unknown) => err instanceof WaypointsParseError,
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

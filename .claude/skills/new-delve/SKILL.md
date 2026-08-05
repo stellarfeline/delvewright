@@ -465,6 +465,14 @@ Symptom → tool:
   playthrough fails for reasons that have nothing to do with the delve. The
   script takes no default mode: `--all` sweeps the whole daemon, `--project`
   only the one compose project.
+- **A `talk-to` / `interact` step that times out with "objective … did not
+  complete"**: read the rest of that line before touching the campaign. The bot
+  now reports the server's own answer to the `/trigger` it sent — *the server
+  ANSWERED …* means the trigger reached the delve and a datapack guard consumed
+  it (a re-used world whose scoreboard already carries the objective does
+  exactly this: run `fresh-volumes.sh --project` and re-run before believing the
+  content is at fault), while *the server never answered …* means the command
+  never got there and the failure is the harness's, not the delve's.
 - **A prefab library needing owner taste, not machine checks**: mention
   `delve-admit gallery` (browse world) → owner walks it and leaves notes →
   `delve-admit curate` / `curate-merge` fold them into the catalog cards — one
@@ -649,6 +657,29 @@ Then:
    Localized `README.<code>.md` per declared language. The render-set images are
    the default — the author may later replace them with hand-crafted shots
    (shaders, staged compositions); media ships with the campaign PR.
+
+   **Every edition opens with the engine-version marker**, on its own line
+   directly under the title (task #147). This is the ONE piece of internal
+   machinery a storybook may carry — it is what a server host needs before
+   running the delve — so it stays in this exact host-facing form and nothing
+   else internal joins it:
+
+   ```
+   > **Requires delve engine <max per-stage dsl_version> or newer** — last verified with delvec <version>.
+   ```
+
+   The first number is the MAX `dsl_version` over the campaign's six stage
+   documents; the second is `delvec --version`'s, from the build that just went
+   green. The line is byte-identical in every localized edition — it is a
+   version stamp, not prose; a translated gloss may follow on the next line.
+   Then prove it:
+
+   ```
+   python3 tools/check-storybook-version.py --campaigns campaigns/campaigns
+   ```
+
+   Green before you report. A stale marker waves a host on an old engine
+   straight into a delve their engine cannot run.
 11. Report to the user: campaign summary, playtime estimate, validation results,
     and the two commands they care about:
     - play: `EULA=TRUE docker compose -f validation/compose.yaml --profile play up`
@@ -658,6 +689,12 @@ Then:
 
 - Persist the DSL workspace before validation, not after — a crash must never
   lose the campaign.
+- **Open-air by default** (owner directive 2026-08-04): stage scenes in the
+  open unless a beat NEEDS enclosure (a cave passage, an interior puzzle,
+  a reveal). The horizon — surround terrain, sky, backdrop (spec-0026) — is
+  part of the composition; a campaign of enclosed boxes wastes it. When an
+  enclosed beat is necessary, prefer routing the player back into the open
+  between beats over chaining interiors.
 - Every player-visible string in the **stage docs stays English** — always. Other
   languages are delivered as `l10n/<code>.json` sidecars (the Localization stage
   above), never by writing non-English into the stage docs. Owner prompts in

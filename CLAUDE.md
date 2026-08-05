@@ -131,6 +131,14 @@ validation/          # docker compose: headless server + bot, same image as CI &
   act — never internal machinery such as model tiers, subagent dispatch,
   worker roles, or pipeline plumbing. Applies to both repos, including the
   content repo's play/hosting tutorials.
+- **Version-adoption discipline** (owner, 2026-08-04): whenever a `dsl_version`
+  introduces new obligations, adoption rounds for every ACTIVE campaign are
+  scheduled within the same milestone — never left to accumulate (the island
+  ran four rounds behind the branch-declaration obligations before anyone
+  scheduled it). Dormant campaigns are marked upgrade-on-next-touch. A version
+  upgrade is always its own explicit, proof-carrying round. Old versions keep
+  compiling (per-stage fences); released delves reproduce via their pinned
+  engine (`versions.toml` + OCI), not via eternal byte-stable emission.
 - **Tiered testing**: unit + static analysis on every push; PackTest integration on PR;
   full bot playthrough on release candidates only.
 - **PR-based flow even solo.** GitHub Actions; repo is private for now, public when
