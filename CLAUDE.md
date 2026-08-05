@@ -61,7 +61,8 @@ Founding decisions live in `docs/adr/` and originate from the kickoff handoff
 CLAUDE.md            # this file
 docs/adr/            # architecture decision records (numbered, immutable once Accepted)
 docs/specs/          # owner-approved specs, one per feature
-docs/reference/      # live behavior records: compiler.md, tools.md, i18n.md
+docs/reference/      # live behavior records: compiler.md, tools.md, i18n.md,
+                     #   grammar.md + how a round is run: playtest-methodology.md
 docs/ROADMAP.md      # milestones; M1 = hello-world delve
 crates/              # Rust workspace: dsl / compiler / orchestrator / admit / schem / render
 prefabs/             # .nbt library + metadata (git-lfs)
@@ -139,6 +140,35 @@ validation/          # docker compose: headless server + bot, same image as CI &
   upgrade is always its own explicit, proof-carrying round. Old versions keep
   compiling (per-stage fences); released delves reproduce via their pinned
   engine (`versions.toml` + OCI), not via eternal byte-stable emission.
+- **A green gate that binds to nothing is VACUOUS, not a pass** (island rounds
+  1–20). A check can be green three ways that mean nothing: *unbound* (it
+  matched zero objects — the bot's combat floor gate examined zero enemies for
+  nineteen rounds because no actor declared a tier), *unfenced* (the campaign's
+  `dsl_version` never reached the surface the gate keys off, so the proof was
+  inert), *unemitted* (declared, compiled green, never emitted). Every
+  validation artifact states its binding count; a zero binding is a finding and
+  is named in the round summary. Full derivation and the other playtest-round
+  obligations: `docs/reference/playtest-methodology.md`.
+- **A finding is not closed until its general form is a diagnostic** (island
+  r7→r10 instance fix; the general rule became `DW0489` eleven rounds later and
+  immediately found a second live instance the owner had by then hit herself).
+  Every owner finding yields two deliverables — the instance fix, and the
+  general form as a diagnostic **re-run against the current build** — or an
+  explicit record that only the instance was fixed, which is then a risk item at
+  the next staging review.
+- **A capability-gap finding blocks staging, not just the backlog** (owner
+  rebuke, island round 16). Every island finding that stayed open across more
+  than one round was blocked on a missing first-class primitive, never on a
+  forgotten task. Triage each finding as content / capability gap the day it is
+  reported; a capability gap means the engine work lands before the next
+  playtest, or the round summary tells the owner per item that it is still open
+  and not to test it. Audit the findings ledger from round 1 — never from the
+  last round — before staging any build.
+- **Execute an owner ruling at the scope it was given.** Generalizing it is a
+  design decision: propose it in one line and wait. (Round 16 turned a
+  one-beat ruling into a campaign-wide ceiling and had to be corrected.)
+  Unrequested change is a rejection cause on its own, independent of merit — a
+  worker's entire island round was rejected wholesale for carrying extras.
 - **Tiered testing**: unit + static analysis on every push; PackTest integration on PR;
   full bot playthrough on release candidates only.
 - **PR-based flow even solo.** GitHub Actions; repo is private for now, public when
