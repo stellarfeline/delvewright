@@ -42,7 +42,7 @@ pub use l10n::{
 pub use registry::{
     AnchorRegistry, BlockRegistry, EffectRegistry, EntityRegistry, ItemBackedBlockRegistry,
     ItemRegistry, Lighting, LightingProfile, VendoredAnchorRegistry, VendoredEffectRegistry,
-    VendoredEntityRegistry, VendoredItemRegistry, is_technical_block,
+    VendoredEntityRegistry, VendoredItemRegistry, is_potion_id, is_technical_block,
 };
 pub use schema::stage_schema;
 pub use stages::for_each_campaign_effect;
@@ -53,12 +53,13 @@ pub use stages::{
     CastDialogueKeyword, CastEntry, CastPlace, CastPlacement, Class, ClassesContent, DamageKind,
     DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EffectSite,
     EnchantedItem, EncounterTier, EnvTrigger, EquipItem, Facing, Fixture, Happening, HappeningVerb,
-    Horizon, KitItem, Lethality, Loot, LootItem, MobAttributes, MobEffect, MobEquipment,
-    NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces, PlannedQuest,
-    Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep,
-    Shortcut, ShotStyle, SkinModel, SoundAt, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect,
-    TrapReset, TrapTrigger, Trigger, TriggerOn, Wave, WaveLane, WaveMob, WaveSummon, WorldContent,
-    WorldDifficulty, WorldTime, WorldWeather,
+    Horizon, KitItem, Lethality, Loot, LootItem, MAX_POTION_AMPLIFIER, MAX_POTION_DURATION_TICKS,
+    MobAttributes, MobEffect, MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent,
+    Objective, Persona, Pieces, PlannedQuest, PotionContents, PotionEffect, Prop, Quest,
+    QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep, Shortcut,
+    ShotStyle, SkinModel, SoundAt, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset,
+    TrapTrigger, Trigger, TriggerOn, Wave, WaveLane, WaveMob, WaveSummon, WorldContent,
+    WorldDifficulty, WorldTime, WorldWeather, is_potion_bearing_item,
 };
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,

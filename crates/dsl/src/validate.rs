@@ -103,6 +103,14 @@ pub fn validate_campaign_with(
     if is_v08(c.quests.dsl_version.as_str()) || is_v08(c.dialogue.dsl_version.as_str()) {
         happening_subject_checks(c, &mut d);
     }
+    // DSL v0.8 (spec-0016 §1, owner directive 2026-08-03): what is really in the
+    // flask. The status-effect registry is the same fixed vanilla list v0.4 uses,
+    // and the potion registry is complete in-crate, so no injected registry is
+    // needed.
+    if is_v08(c.classes.dsl_version.as_str()) {
+        let effects_reg = VendoredEffectRegistry::v1_21_11();
+        kit_potion_checks(c, &effects_reg, &mut d);
+    }
 
     d
 }
@@ -2177,6 +2185,189 @@ fn v06_checks(
             ));
         }
     }
+}
+
+/// spec-0016 §1 (owner directive 2026-08-03): **what is actually in the flask.**
+///
+/// The kit `flask` marker landed with no way to say what the bottle pours, so
+/// every flask shipped as `minecraft:potion` with no `minecraft:potion_contents`
+/// component — the Uncraftable Potion, which a player can drink all day for
+/// nothing. `contents` closes that, and these are the two halves of keeping it
+/// honest: `DW0487` refuses the placeholder (a potion-bearing kit item that
+/// declares no contents), `DW0486` refuses contents 1.21.11 cannot pour.
+///
+/// Runs only at `dsl_version` 0.8.0 on the classes stage — the same asymmetry the
+/// version ledger uses everywhere: *declaring* `contents` earlier is `DW0141`,
+/// and the *requirement* fires only at 0.8.0, so no pre-0.8 campaign's datapack
+/// can move by a byte.
+fn kit_potion_checks(c: &Campaign, effects: &dyn EffectRegistry, d: &mut Vec<Diagnostic>) {
+    for (i, cl) in c.classes.content.classes.iter().enumerate() {
+        for (k, item) in cl.kit.iter().enumerate() {
+            let bearing = crate::stages::is_potion_bearing_item(&item.item);
+            let path = format!("/content/classes/{i}/kit/{k}");
+            let Some(contents) = &item.contents else {
+                // The placeholder flask, as a build error.
+                if bearing {
+                    d.push(Diagnostic::error(
+                        codes::KIT_POTION_MISSING,
+                        "classes",
+                        format!("{path}/contents"),
+                        format!(
+                            "kit item `{}` declares no `contents`, so it compiles to the \
+                             *Uncraftable Potion* — a bottle with no `minecraft:potion_contents` \
+                             component, which grants nothing when drunk however it is named. \
+                             Declare what is in it: `\"contents\": {{\"potion\": \
+                             \"minecraft:strong_healing\"}}`, or an `\"effects\"` list of \
+                             `{{\"effect\", \"duration\", \"amplifier\"}}`. Do NOT rename the \
+                             bottle instead — semantics never key on player-facing text \
+                             (spec-0016 §1, owner directive 2026-08-03).",
+                            item.item
+                        ),
+                    ));
+                }
+                continue;
+            };
+            // `contents` on an item with no such component: the data would be
+            // dropped on the floor, silently.
+            if !bearing {
+                d.push(Diagnostic::error(
+                    codes::KIT_POTION_INVALID,
+                    "classes",
+                    format!("{path}/contents"),
+                    format!(
+                        "kit item `{}` cannot carry potion `contents` — in 1.21.11 only \
+                         `minecraft:potion`, `minecraft:splash_potion`, \
+                         `minecraft:lingering_potion` and `minecraft:tipped_arrow` carry a \
+                         `minecraft:potion_contents` component, and on anything else the game \
+                         discards it. Put the contents on a potion item, or drop the field.",
+                        item.item
+                    ),
+                ));
+                continue;
+            }
+            if contents.potion.is_none() && contents.effects.is_empty() {
+                d.push(Diagnostic::error(
+                    codes::KIT_POTION_INVALID,
+                    "classes",
+                    format!("{path}/contents"),
+                    "empty potion `contents` — it names no `potion` and lists no `effects`, so \
+                     the bottle still pours nothing. Name a vanilla potion (e.g. \
+                     `\"potion\": \"minecraft:strong_healing\"`) or list at least one effect."
+                        .to_string(),
+                ));
+            }
+            if let Some(p) = &contents.potion
+                && !crate::registry::is_potion_id(p)
+            {
+                d.push(Diagnostic::error(
+                    codes::KIT_POTION_INVALID,
+                    "classes",
+                    format!("{path}/contents/potion"),
+                    format!(
+                        "`{p}` is not in the pinned 1.21.11 `potion` registry — use a real potion \
+                         id (`minecraft:healing`, `minecraft:strong_healing`, \
+                         `minecraft:long_night_vision`, …). Note the 1.20.5+ spelling: strength \
+                         and duration are part of the id (`strong_`/`long_` prefixes), not \
+                         separate fields."
+                    ),
+                ));
+            }
+            if let Some(col) = &contents.color
+                && !is_hex_color(col)
+            {
+                d.push(Diagnostic::error(
+                    codes::KIT_POTION_INVALID,
+                    "classes",
+                    format!("{path}/contents/color"),
+                    format!(
+                        "potion `color` `{col}` is malformed — write the bottle colour as \
+                         `#rrggbb` (e.g. `#ff9c30`), or omit it and take the colour vanilla \
+                         derives from the effects."
+                    ),
+                ));
+            }
+            for (e, eff) in contents.effects.iter().enumerate() {
+                let epath = format!("{path}/contents/effects/{e}");
+                if !effects.contains(&eff.effect) {
+                    d.push(Diagnostic::error(
+                        codes::KIT_POTION_INVALID,
+                        "classes",
+                        format!("{epath}/effect"),
+                        format!(
+                            "potion effect `{}` is not a known 1.21.11 status-effect id — use a \
+                             valid namespaced effect id (e.g. `minecraft:instant_health`).",
+                            eff.effect
+                        ),
+                    ));
+                }
+                if let Some(amp) = eff.amplifier
+                    && amp > crate::stages::MAX_POTION_AMPLIFIER
+                {
+                    d.push(Diagnostic::error(
+                        codes::KIT_POTION_INVALID,
+                        "classes",
+                        format!("{epath}/amplifier"),
+                        format!(
+                            "potion effect `amplifier` {amp} is out of range — vanilla stores it \
+                             in an unsigned byte, so it must be 0–{max} (0 = level I).",
+                            max = crate::stages::MAX_POTION_AMPLIFIER
+                        ),
+                    ));
+                }
+                match (eff.is_instant(), eff.duration) {
+                    // An instantaneous effect is applied once on drinking; a
+                    // duration on it is a sentence the game never reads.
+                    (true, Some(dur)) => d.push(Diagnostic::error(
+                        codes::KIT_POTION_INVALID,
+                        "classes",
+                        format!("{epath}/duration"),
+                        format!(
+                            "`{}` is instantaneous — it lands once, on the tick the potion is \
+                             drunk, so the `duration` of {dur} tick(s) here is never read. Drop \
+                             the field; for healing that ticks over time use \
+                             `minecraft:regeneration`, which does take a duration.",
+                            eff.effect
+                        ),
+                    )),
+                    (false, None) => d.push(Diagnostic::error(
+                        codes::KIT_POTION_INVALID,
+                        "classes",
+                        format!("{epath}/duration"),
+                        format!(
+                            "potion effect `{}` lasts over time and declares no `duration` — \
+                             vanilla would default it to zero ticks, i.e. nothing. Declare the \
+                             duration in ticks (20 = one second).",
+                            eff.effect
+                        ),
+                    )),
+                    (false, Some(dur))
+                        if dur == 0 || dur > crate::stages::MAX_POTION_DURATION_TICKS =>
+                    {
+                        d.push(Diagnostic::error(
+                            codes::KIT_POTION_INVALID,
+                            "classes",
+                            format!("{epath}/duration"),
+                            format!(
+                                "potion effect `duration` {dur} is out of range — it is in \
+                                 **ticks** (20 = one second) and must be 1–{max} \
+                                 (≈13.9 hours, past the delve ceiling).",
+                                max = crate::stages::MAX_POTION_DURATION_TICKS
+                            ),
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+/// True if `s` is a `#rrggbb` colour literal.
+fn is_hex_color(s: &str) -> bool {
+    let Some(hex) = s.strip_prefix('#') else {
+        return false;
+    };
+    hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 // ---------------------------------------------------------------------------
@@ -6229,18 +6420,30 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
     if !is_v08(c.classes.dsl_version.as_str()) {
         for (i, cl) in c.classes.content.classes.iter().enumerate() {
             for (k, item) in cl.kit.iter().enumerate() {
-                if !item.flask {
-                    continue;
+                if item.flask {
+                    d.push(Diagnostic::error(
+                        codes::RESERVED,
+                        "classes",
+                        format!("/content/classes/{i}/kit/{k}/flask"),
+                        "a class kit `flask` (the recovery item a bonfire rest replenishes) \
+                         requires dsl_version 0.8.0 — raise this stage's `dsl_version` to 0.8.0, \
+                         or remove the field"
+                            .to_string(),
+                    ));
                 }
-                d.push(Diagnostic::error(
-                    codes::RESERVED,
-                    "classes",
-                    format!("/content/classes/{i}/kit/{k}/flask"),
-                    "a class kit `flask` (the recovery item a bonfire rest replenishes) requires \
-                     dsl_version 0.8.0 — raise this stage's `dsl_version` to 0.8.0, or remove the \
-                     field"
-                        .to_string(),
-                ));
+                // Owner directive 2026-08-03: what the bottle actually pours.
+                if item.contents.is_some() {
+                    d.push(Diagnostic::error(
+                        codes::RESERVED,
+                        "classes",
+                        format!("/content/classes/{i}/kit/{k}/contents"),
+                        "kit item potion `contents` (the vanilla `minecraft:potion_contents` \
+                         component — a named potion or a custom-effect list) requires \
+                         dsl_version 0.8.0 — raise this stage's `dsl_version` to 0.8.0, or \
+                         remove the field"
+                            .to_string(),
+                    ));
+                }
             }
         }
     }
