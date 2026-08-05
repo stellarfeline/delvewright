@@ -4,8 +4,10 @@ What `crates/grammar` (package `delvewright-grammar`) does **today**. spec-0027
 is the decision record; this page is the behavior record, and any PR that
 changes the crate's surface updates it in the same PR.
 
-Phase 1 is a **library**, not a tool: no binary, no `delvec` path, nothing in
+It is a **library**, not a tool: no binary, no `delvec` path, nothing in
 [`tools.md`](tools.md). It ships in no delve — generation-time only (ADR-0003).
+The engine depends on it nowhere; `crates/compiler` names it as a *dev*-dependency
+only, to test the export seam of §7 from both sides.
 
 ## 1. Model
 
@@ -19,6 +21,7 @@ be reused turned 90°, and what `reorient` manipulates.
 
 ```text
 Program ─ expand(program, region, {seed, limits, orientation}) ─▶ VoxelModel
+        ─ export_prefab(program, region, options, id) ──────────▶ .nbt + .json
 ```
 
 ## 2. Program surface
@@ -74,14 +77,31 @@ splitmix64 stream from the caller's seed; all maps are `BTreeMap`; cells iterate
 Expansion holds no global state — two programs cannot influence each other, which
 is regression-tested.
 
+The same promise is asserted one layer out, on the bytes that actually ship: a
+double-**export** test over every library program at four seeds compares the
+`.nbt` and the metadata JSON byte for byte (§6).
+
 ## 4. Failure is loud
 
 The interpreter has no silent degradation. `Program::validate` runs before any
 expansion (unknown rule/role/param, empty rule or split, child/piece mismatch on
-a non-repeating split, zero weights). During expansion: `NoApplicableRule`,
-`Split{Overflow|ZeroStride}`, `Orient`, `BadSize`, `Eval`, and the `DepthLimit` /
-`ScopeLimit` budgets that turn an unguarded recursive rule into a diagnostic
-instead of a hang. Errors carry the rule name.
+a non-repeating split, zero weights, and an `orientation` guard that is not a
+permutation — a guard nothing could ever match). During expansion:
+`NoApplicableRule`, `Split{Overflow|ZeroStride}`, `Orient`, `BadSize`, `Eval`,
+`PaletteFull` (more than 65 536 distinct block states in one model), and the
+`DepthLimit` / `ScopeLimit` / `VolumeLimit` budgets. Errors carry the rule name
+and print as prose, never as a `Debug` struct.
+
+The three budgets live on `Limits` and are inputs, never silent clamps:
+`max_depth` and `max_scopes` turn an unguarded recursive rule into a diagnostic
+instead of a hang; `max_volume` (default 2²⁴ cells) is checked *before* the dense
+model is allocated, so an absurd region is an error rather than an OOM kill —
+the one failure mode that reports nothing at all. A caller who means to build
+something enormous raises the limit explicitly.
+
+Writing outside the model's own region is a caller defect, not an input:
+`VoxelModel::set` asserts it in a debug build and drops the write (never wraps
+it) in a release one.
 
 These are Rust error values, **not** `DW` diagnostics: the craft-rule diagnostics
 of spec-0027 §4 are a later phase and will own a DW range then.
@@ -109,8 +129,73 @@ guarded (upstream splits it anyway and writes outside the region), and
 constraint `largest` returns the maximum (upstream returned the minimum — a
 copy/paste bug).
 
-## 6. Not built yet
+Two library claims are pinned by arithmetic rather than prose, because prose
+rots: the temple's colonnade really does follow the box, and a nine-deep box at
+`column_size` 1 really does give upstream's four columns
+(`tests/library.rs`).
 
-`.nbt` export + provenance row, `PrefabRegistry` admission, the §4 craft
-diagnostics, the JSON schema stage in front of the IR, and the
+## 6. Export — freezing an expansion as a prefab
+
+`export::export_prefab(program, region, options, id)` produces the two files a
+prefab library holds: `<id>.nbt` (a vanilla structure template) and `<id>.json`
+beside it. It takes the *program*, not a finished model, and expands it itself —
+which is what makes the provenance row unforgeable, since the hash and seed in
+the metadata cannot describe a different expansion than the one that produced
+the bytes.
+
+The `.nbt` comes from `delvewright-schem`'s `build_region`, the emitter the
+`.schem` asset pipeline already uses: one structure writer, one set of
+determinism guarantees (sorted palette, `x`→`y`→`z` cell order, gzip mtime 0).
+A structure template is local-coordinate, so the region's **origin** does not
+reach the output; its **size** does, and is the declared `structure.size`.
+
+The metadata is the hand-built shape, minus what expansion cannot know:
+
+```json
+{
+  "prefab_id": "prefab/grammar-temple",
+  "structure": { "file": "grammar-temple.nbt", "id": "grammar-temple",
+                 "size": [13, 14, 21], "data_version": 4671,
+                 "generator": "crates/grammar" },
+  "anchors": {},
+  "lighting": { "profile": "unmeasured" },
+  "license": { "source": "original", "spdx": "GPL-3.0-or-later",
+               "note": "…", "provenance": "…",
+               "generated_by": { "generator": "grammar", "program": "temple",
+                                 "program_hash": "sha256:…", "seed": 7 } }
+}
+```
+
+- **`generated_by`** is the spec-0027 §2 provenance row. `program_hash` is
+  `sha256` over the program's canonical serde JSON bytes — content-addressed, so
+  a program built in Rust and the same program parsed from JSON hash alike.
+- **`anchors` is always `{}`.** Declaring a staging anchor needs a rule-body
+  primitive that *says* where it is; inferring one from the block pattern
+  afterwards is precisely the downstream folklore the no-hack rule forbids. An
+  anchorless prefab loads and indexes normally — it simply offers no staging
+  points.
+- **No `connectors` key.** Jigsaw socketing of grammar prefabs waits on the
+  tileset conventions; a guessed socket is worse than none.
+- **`"profile": "unmeasured"`.** A lighting profile is a *measurement*, taken by
+  the live 1.21.11 probe. Expansion places blocks, not photons, so it declares
+  the true thing and admission to a campaign still runs the probe. `unmeasured`
+  is not a synonym for an absent `lighting` block: absence means legacy metadata
+  predating the field, this is a positive statement that a measurement is owed.
+  A `lit`/`dim`/`dark` declaration still cannot omit `measured_min_light` /
+  `measured`, and an `unmeasured` one may not carry them (`delvewright-dsl`
+  refuses both at parse).
+
+Refusals, all loud: an `id` that is not a lowercase-kebab path segment, an empty
+region, a region past the vanilla 48-per-axis structure cap (tiling a prefab
+into parts is a jigsaw design, not an export detail), and a model containing a
+block the structure safety strip would replace with air — a grammar that asked
+for a command block meant to, so shipping a silent hole is refused instead.
+
+`PrefabRegistry` (the engine's reader) loads the result with no diagnostics;
+`crates/compiler/tests/grammar_prefab.rs` tests that seam from both sides.
+
+## 7. Not built yet
+
+The §4 craft diagnostics, an anchor-declaring rule-body primitive, jigsaw
+connector emission, the JSON schema stage in front of the IR, and the
 contact-sheet/curation loop. Later phases of spec-0027.

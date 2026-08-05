@@ -28,6 +28,7 @@ attributions (prefabs, campaign media) live in the content repo
 | [itzg/docker-minecraft-server](https://github.com/itzg/docker-minecraft-server) | Apache-2.0 | Server container base for validation and shipped delves |
 | [beet](https://github.com/mcbeet/beet) / [mecha](https://github.com/mcbeet/mecha) | MIT | Independent CI cross-check of emitted mcfunction (ADR-0011) |
 | [crc32fast](https://github.com/srijs/rust-crc32fast) | MIT/Apache-2.0 | CRC-32 for the deterministic NPC-skin resource-pack zip (spec-0009) |
+| [sha2](https://github.com/RustCrypto/hashes) (RustCrypto) | MIT/Apache-2.0 | SHA-256 for content-addressed provenance: datapack hashing in `delvec`, and the grammar program hash a generated prefab's metadata carries (spec-0027) |
 | [skinpy-extended](https://github.com/Bonenk/skinpy-extended) | MIT | Part/face-addressable 64×64 skin composition **and** the deterministic isometric player-model preview renderer (`tools/skin`, spec-0009). Pinned `==1.0.1`. License declared in the project's `pyproject.toml` (`license = {text = "MIT"}` + the OSI MIT classifier); it is a fork of the MIT [t-mart/skinpy](https://github.com/t-mart/skinpy). Note: no standalone `LICENSE` file ships in the repo/sdist as of 2026-07-31 — the metadata declaration is the evidence of record. |
 
 Plus ordinary Rust/TypeScript dependencies as declared in `Cargo.lock` /

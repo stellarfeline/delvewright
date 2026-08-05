@@ -44,6 +44,9 @@ pub trait EntityRegistry {
 /// A prefab lighting profile (spec-0001 "Lighting contract"). `lit` = floor
 /// light ≥ 7; `dim` = 3–6 (needs a rationale); `dark` = < 3 (valid only where
 /// analysis proves a night-vision mitigation — the compiler's `DW0210` check).
+///
+/// The first three are **measurements**, taken by the live probe loop. The
+/// fourth, [`LightingProfile::Unmeasured`], is the honest absence of one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum LightingProfile {
@@ -53,25 +56,113 @@ pub enum LightingProfile {
     Dim,
     /// Floor light < 3, only usable with a proven mitigation.
     Dark,
+    /// The piece has never been probed, and says so.
+    ///
+    /// A generated prefab (spec-0027's grammar back end) knows where it put
+    /// blocks and nothing about the light they end up in, so it declares this
+    /// rather than fabricating a number. It is *not* a synonym for "no
+    /// `lighting` block at all": absence means legacy metadata that predates the
+    /// field, while this is a positive statement that the measurement is owed.
+    /// An unmeasured piece carries no measurement fields — a claim and its
+    /// absence cannot both be true — and is treated as not-`lit` everywhere a
+    /// profile is consumed.
+    Unmeasured,
+}
+
+impl LightingProfile {
+    /// True for the three profiles that assert a measured light level.
+    pub fn is_measurement(self) -> bool {
+        !matches!(self, LightingProfile::Unmeasured)
+    }
 }
 
 /// A prefab's declared `lighting` metadata block (measured once at library
 /// admission). Field names match `prefabs/<name>.json`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+///
+/// `measured_min_light` / `measured` are `Option` in the type but **not**
+/// optional in the data: a measured profile without them, or an `unmeasured`
+/// profile with them, is refused at deserialisation (see the hand-written
+/// `Deserialize` below). The optionality expresses which profile is being
+/// declared, never a licence to omit a measurement that was claimed.
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Lighting {
     /// The declared profile.
     pub profile: LightingProfile,
-    /// The measured minimum floor light level.
-    pub measured_min_light: i64,
-    /// The date the level was measured (`YYYY-MM-DD`).
-    pub measured: String,
+    /// The measured minimum floor light level. Present iff the profile is a
+    /// measurement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub measured_min_light: Option<i64>,
+    /// The date the level was measured (`YYYY-MM-DD`). Present iff the profile
+    /// is a measurement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub measured: Option<String>,
     /// Why `dim`/`dark` was chosen (required for `dim`/`dark` by review).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rationale: Option<String>,
     /// How the minimum was measured (provenance breadcrumb; optional).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub method: Option<String>,
+}
+
+impl Lighting {
+    /// A never-probed declaration — what a generated prefab exports.
+    pub fn unmeasured() -> Lighting {
+        Lighting {
+            profile: LightingProfile::Unmeasured,
+            measured_min_light: None,
+            measured: None,
+            rationale: None,
+            method: None,
+        }
+    }
+}
+
+/// The wire shape of [`Lighting`], before the profile/measurement agreement is
+/// checked. Split out so the check runs on every deserialisation path there is.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawLighting {
+    profile: LightingProfile,
+    #[serde(default)]
+    measured_min_light: Option<i64>,
+    #[serde(default)]
+    measured: Option<String>,
+    #[serde(default)]
+    rationale: Option<String>,
+    #[serde(default)]
+    method: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for Lighting {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Lighting, D::Error> {
+        use serde::de::Error as _;
+        let raw = RawLighting::deserialize(de)?;
+        let has_measurement = raw.measured_min_light.is_some() && raw.measured.is_some();
+        if raw.profile.is_measurement() {
+            // Exactly the requirement the previously-mandatory fields enforced:
+            // claiming `lit`/`dim`/`dark` means claiming a probe ran.
+            if !has_measurement {
+                return Err(D::Error::custom(
+                    "a `lit`/`dim`/`dark` lighting profile is a measurement and must carry both \
+                     `measured_min_light` and `measured`; declare `\"profile\": \"unmeasured\"` \
+                     if the piece has not been probed yet",
+                ));
+            }
+        } else if raw.measured_min_light.is_some() || raw.measured.is_some() {
+            return Err(D::Error::custom(
+                "an `unmeasured` lighting profile cannot carry `measured_min_light` or \
+                 `measured` — declare the profile the probe actually found instead",
+            ));
+        }
+        Ok(Lighting {
+            profile: raw.profile,
+            measured_min_light: raw.measured_min_light,
+            measured: raw.measured,
+            rationale: raw.rationale,
+            method: raw.method,
+        })
+    }
 }
 
 /// The prefab-metadata surface DSL validation resolves refs against: declared
@@ -485,5 +576,83 @@ impl AnchorRegistry for VendoredAnchorRegistry {
 
     fn has_pool(&self, pool: &PoolId) -> bool {
         self.pools.contains(pool.as_str())
+    }
+}
+
+#[cfg(test)]
+mod lighting_tests {
+    use super::*;
+
+    /// A prefab's lighting profile is a claim about a measurement, so the
+    /// measurement must be there. This was enforced by two mandatory fields
+    /// until `unmeasured` needed them absent; the rule itself did not move.
+    #[test]
+    fn a_measured_profile_still_cannot_omit_its_measurement() {
+        for json in [
+            r#"{ "profile": "lit" }"#,
+            r#"{ "profile": "lit", "measured_min_light": 9 }"#,
+            r#"{ "profile": "lit", "measured": "2026-07-30" }"#,
+            r#"{ "profile": "dim", "measured": "2026-07-30" }"#,
+            r#"{ "profile": "dark", "measured_min_light": 1 }"#,
+        ] {
+            let err = serde_json::from_str::<Lighting>(json).unwrap_err();
+            assert!(
+                err.to_string().contains("must carry both"),
+                "{json} was accepted or misreported: {err}"
+            );
+        }
+    }
+
+    /// ...and the converse, which is the new way to lie: declaring the probe
+    /// never ran while quoting what it found.
+    #[test]
+    fn an_unmeasured_profile_cannot_quote_a_measurement() {
+        for json in [
+            r#"{ "profile": "unmeasured", "measured_min_light": 9 }"#,
+            r#"{ "profile": "unmeasured", "measured": "2026-07-30" }"#,
+            r#"{ "profile": "unmeasured", "measured_min_light": 9, "measured": "2026-07-30" }"#,
+        ] {
+            let err = serde_json::from_str::<Lighting>(json).unwrap_err();
+            assert!(err.to_string().contains("cannot carry"), "{json}: {err}");
+        }
+    }
+
+    /// The two shapes that are true: a hand-probed piece and a generated one.
+    #[test]
+    fn both_honest_declarations_round_trip() {
+        let measured: Lighting = serde_json::from_str(
+            r#"{ "profile": "lit", "measured_min_light": 8, "measured": "2026-07-30",
+                 "method": "live 1.21.11 probe" }"#,
+        )
+        .unwrap();
+        assert_eq!(measured.profile, LightingProfile::Lit);
+        assert_eq!(measured.measured_min_light, Some(8));
+        assert!(measured.profile.is_measurement());
+
+        let unmeasured: Lighting = serde_json::from_str(r#"{ "profile": "unmeasured" }"#).unwrap();
+        assert_eq!(unmeasured, Lighting::unmeasured());
+        assert!(!unmeasured.profile.is_measurement());
+
+        // Serialisation omits what is absent rather than writing `null`, so a
+        // re-serialised file is the file that was read.
+        for l in [measured, unmeasured] {
+            let text = serde_json::to_string(&l).unwrap();
+            assert!(!text.contains("null"), "{text}");
+            assert_eq!(serde_json::from_str::<Lighting>(&text).unwrap(), l);
+        }
+    }
+
+    /// An unknown profile string is still refused outright — `unmeasured` is a
+    /// named state, not an escape hatch for anything the reader does not know.
+    #[test]
+    fn an_unknown_profile_is_still_refused() {
+        assert!(serde_json::from_str::<Lighting>(r#"{ "profile": "unknown" }"#).is_err());
+        assert!(
+            serde_json::from_str::<Lighting>(
+                r#"{ "profile": "lit", "measured_min_light": 8, "measured": "x", "extra": 1 }"#
+            )
+            .is_err(),
+            "deny_unknown_fields must survive the hand-written Deserialize"
+        );
     }
 }
