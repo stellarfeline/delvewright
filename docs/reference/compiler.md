@@ -1391,6 +1391,17 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   cannot reveal a sealed cave — no light, only amplified noise — while real
   emitters render), so the stamp tells `delve-render` exactly which shots need its
   night-vision review emulation (below) and guarantees it touches no others.
+- **`horizon` fact** (`crate::render_plan::horizon_fact`): the world-generator
+  ambient the render layer cannot see. A `horizon: ocean` campaign (spec-0013)
+  ships a world save holding only the chunks its layout occupies — the sea around
+  the island belongs to the level generator — so a renderer loading that save
+  draws void past the shoreline unless it raises its own water plane, at exactly
+  the compiler's sea-level datum (anywhere else leaves a two-tone seam against the
+  authored block water). The plan therefore *states* it,
+  `{"kind": "ocean", "sea_level": 62}`, rather than leaving `delve-render` to
+  infer a generator setting from blocks. `horizon: void` (default/absent) emits
+  **no key** (absent, not null), so every campaign that declares nothing keeps a
+  byte-identical `render-plan.json`.
 
 ### Assembled-world model (shared, gravity-settled)
 

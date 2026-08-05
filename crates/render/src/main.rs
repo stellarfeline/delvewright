@@ -13,6 +13,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
+use delvewright_render::cache;
 use delvewright_render::detect;
 use delvewright_render::diag::{
     DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RENDER, Diagnostic, exit,
@@ -21,6 +22,7 @@ use delvewright_render::fidelity;
 use delvewright_render::index;
 use delvewright_render::meta::PrefabMeta;
 use delvewright_render::nbt;
+use delvewright_render::panorama::{self, Bearing, PanoramaOptions};
 use delvewright_render::render::{self, RenderParams};
 use delvewright_render::scene::{self, SceneOptions};
 use delvewright_render::shots;
@@ -82,6 +84,24 @@ enum Command {
         #[arg(long, default_value = "world")]
         world: String,
     },
+    /// Emit the whole-map 45° oblique panorama scene (the release illustration)
+    /// from a build output's `render-plan.json`.
+    Panorama {
+        /// A `delvec build` output directory (containing `render-plan.json`).
+        build_dir: PathBuf,
+        /// Output directory for the scene JSON.
+        #[arg(short, long)]
+        out: PathBuf,
+        /// Path Chunky should load the delve world from (documented; default `world`).
+        #[arg(long, default_value = "world")]
+        world: String,
+        /// Which corner of the layout the camera stands over.
+        #[arg(long, value_enum, default_value_t = Bearing::Se)]
+        bearing: Bearing,
+        /// Path-tracing sample target: ~64 for a draft, ~300 for release art.
+        #[arg(long, default_value_t = panorama::DEFAULT_SPP)]
+        spp: u32,
+    },
     /// Emit a shot index (image ↔ expect pairs) from a build's `render-plan.json`,
     /// for handing shots to a reviewing agent / vision model.
     Index {
@@ -104,6 +124,13 @@ fn main() -> ExitCode {
             out,
             world,
         } => run_scene(build_dir, out, world, &cli),
+        Command::Panorama {
+            build_dir,
+            out,
+            world,
+            bearing,
+            spp,
+        } => run_panorama(build_dir, out, world, *bearing, *spp, &cli),
         Command::Index { build_dir, out } => run_index(build_dir, out, &cli),
     }
 }
@@ -380,29 +407,87 @@ fn run_scene(build_dir: &Path, out: &Path, world: &str, cli: &Cli) -> ExitCode {
         Ok(s) => s,
         Err(d) => return fail(d, cli.json, exit::INPUT),
     };
-    if let Err((d, code)) = (|| {
-        std::fs::create_dir_all(out).map_err(|e| {
+    let purged = match write_scenes(out, &scenes) {
+        Ok(n) => n,
+        Err((d, code)) => return fail(d, cli.json, code),
+    };
+    eprintln!(
+        "emitted {} Chunky scene(s) -> {} ({purged} stale cache file(s) purged; render with {}; \
+         see README)",
+        scenes.len(),
+        out.display(),
+        scene::CHUNKY_CORE
+    );
+    ExitCode::SUCCESS
+}
+
+/// Write scene JSONs into `out`, deleting each one's now-stale Chunky caches
+/// (see `cache`: Chunky reuses `<scene>.octree2`/`.dump` silently, so a re-emitted
+/// scene would render from the chunks and settings it just replaced). Returns
+/// the number of cache files removed.
+fn write_scenes(out: &Path, scenes: &[(String, Vec<u8>)]) -> Result<usize, (Diagnostic, u8)> {
+    std::fs::create_dir_all(out).map_err(|e| {
+        (
+            Diagnostic::error(DW_OUTPUT, format!("mkdir {}: {e}", out.display())),
+            exit::OUTPUT,
+        )
+    })?;
+    let mut purged = 0usize;
+    for (name, data) in scenes {
+        std::fs::write(out.join(name), data).map_err(|e| {
             (
-                Diagnostic::error(DW_OUTPUT, format!("mkdir {}: {e}", out.display())),
+                Diagnostic::error(DW_OUTPUT, format!("write {name}: {e}")),
                 exit::OUTPUT,
             )
         })?;
-        for (name, data) in &scenes {
-            std::fs::write(out.join(name), data).map_err(|e| {
-                (
-                    Diagnostic::error(DW_OUTPUT, format!("write {name}: {e}")),
-                    exit::OUTPUT,
-                )
-            })?;
-        }
-        Ok(())
-    })() {
-        return fail(d, cli.json, code);
+        purged += cache::purge_scene_caches(out, name)
+            .map_err(|d| (d, exit::OUTPUT))?
+            .len();
     }
+    Ok(purged)
+}
+
+fn run_panorama(
+    build_dir: &Path,
+    out: &Path,
+    world: &str,
+    bearing: Bearing,
+    spp: u32,
+    cli: &Cli,
+) -> ExitCode {
+    let plan_path = build_dir.join("render-plan.json");
+    let bytes = match std::fs::read(&plan_path) {
+        Ok(b) => b,
+        Err(e) => {
+            return fail(
+                Diagnostic::error(DW_INPUT, format!("read {}: {e}", plan_path.display())),
+                cli.json,
+                exit::INPUT,
+            );
+        }
+    };
+    let opts = PanoramaOptions {
+        world_path: world.to_string(),
+        width: cli.size,
+        height: cli.size,
+        spp_target: spp,
+        bearing,
+    };
+    let scene = match panorama::panorama_from_plan(&bytes, &opts) {
+        Ok(s) => s,
+        Err(d) => return fail(d, cli.json, exit::INPUT),
+    };
+    let name = scene.0.clone();
+    let purged = match write_scenes(out, std::slice::from_ref(&scene)) {
+        Ok(n) => n,
+        Err((d, code)) => return fail(d, cli.json, code),
+    };
     eprintln!(
-        "emitted {} Chunky scene(s) -> {} (render with {}; see README)",
-        scenes.len(),
+        "emitted panorama {} -> {} ({purged} stale cache file(s) purged; {} spp, render with {}; \
+         see README)",
+        name,
         out.display(),
+        spp,
         scene::CHUNKY_CORE
     );
     ExitCode::SUCCESS

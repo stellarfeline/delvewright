@@ -70,12 +70,14 @@ fn scene_emission_purges_stale_chunky_caches() {
     let out = build_dir.join("scenes");
     std::fs::create_dir_all(&out).unwrap();
     // A previous render's caches for the scenes this emission replaces.
+    // Chunky keys its caches on the scene's `name`, which is exactly the file
+    // stem `delve-render` emits (campaign-qualified).
     let stale = [
-        "spawn.octree2",
-        "spawn.dump",
-        "spawn.dump.backup",
-        "spawn.emittergrid",
-        "interior_entry_0.octree2",
+        "mini_spawn.octree2",
+        "mini_spawn.dump",
+        "mini_spawn.dump.backup",
+        "mini_spawn.emittergrid",
+        "mini_interior_entry_0.octree2",
     ];
     for f in stale {
         std::fs::write(out.join(f), b"stale").unwrap();
@@ -119,17 +121,22 @@ fn panorama_emits_a_framed_whole_map_scene() {
         .output()
         .unwrap();
     assert_eq!(result.status.code(), Some(0), "{result:?}");
-    let scene = out.join("panorama-se.json");
+    let scene = out.join("mini_panorama_se.json");
     assert!(scene.exists(), "panorama scene not emitted");
-    let v: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&scene).unwrap()).unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&scene).unwrap()).unwrap();
     // Default sample target for a final panorama.
     assert_eq!(v["sppTarget"], serde_json::json!(300));
     // 45° oblique from the south-east: the camera sits +X/+Z of the layout and
     // above it, looking north-west and down.
     let pos = v["camera"]["position"].clone();
-    assert!(pos["x"].as_f64().unwrap() > 17.0, "camera east of the layout");
-    assert!(pos["z"].as_f64().unwrap() > 10.0, "camera south of the layout");
+    assert!(
+        pos["x"].as_f64().unwrap() > 17.0,
+        "camera east of the layout"
+    );
+    assert!(
+        pos["z"].as_f64().unwrap() > 10.0,
+        "camera south of the layout"
+    );
     assert!(pos["y"].as_f64().unwrap() > 69.0, "camera above the layout");
     // Layout-only chunk list (an ocean seam appears the moment pure-ocean
     // chunks are included).
@@ -146,8 +153,8 @@ fn panorama_purges_stale_chunky_caches() {
     std::fs::write(build_dir.join("render-plan.json"), render_plan_mini()).unwrap();
     let out = build_dir.join("scenes");
     std::fs::create_dir_all(&out).unwrap();
-    std::fs::write(out.join("panorama-se.octree2"), b"stale").unwrap();
-    std::fs::write(out.join("panorama-se.dump"), b"stale").unwrap();
+    std::fs::write(out.join("mini_panorama_se.octree2"), b"stale").unwrap();
+    std::fs::write(out.join("mini_panorama_se.dump"), b"stale").unwrap();
 
     let result = Command::new(BIN)
         .args(["panorama"])
@@ -157,8 +164,8 @@ fn panorama_purges_stale_chunky_caches() {
         .output()
         .unwrap();
     assert_eq!(result.status.code(), Some(0), "{result:?}");
-    assert!(!out.join("panorama-se.octree2").exists());
-    assert!(!out.join("panorama-se.dump").exists());
+    assert!(!out.join("mini_panorama_se.octree2").exists());
+    assert!(!out.join("mini_panorama_se.dump").exists());
 }
 
 #[test]

@@ -21,7 +21,7 @@ attributions (prefabs, campaign media) live in the content repo
 | Project | License | Role |
 |---|---|---|
 | [Nucleation](https://github.com/Schem-at/Nucleation) | MIT | Headless per-prefab rendering (`crates/render`; pinned by git rev in `versions.toml`) |
-| [Chunky](https://chunky-dev.github.io/docs/) | GPL-3.0 | Whole-scene path-traced renders (out-of-process, tooling only) |
+| [Chunky](https://github.com/chunky-dev/chunky) | GPL-3.0 | The **official renderer** for whole-scene review frames, storybook scene illustrations and the per-release whole-map panorama (owner decision, 2026-08-06). License verified 2026-08-06 from the upstream repository README ("Permission to modify and redistribute is granted under the terms of the GPLv3 license"). Adopted strictly as an **external process**: no Chunky code is linked, vendored or ported — `delve-render` emits scene-description JSON, and `ChunkyLauncher.jar` is invoked as a separate program (`-render` / `-snapshot`) by the creator or CI. Nothing from Chunky ships inside a delve. **Textures are never redistributed**: Chunky reads them from the creator's own Minecraft client jar (`~/.chunky/resources/minecraft.jar` or `--textures`), which is EULA-gated and is not committed, cached or published by this project. Pinned core in `versions.toml [render]` |
 | [fastnbt](https://github.com/owengage/fastnbt) | MIT | NBT read/write throughout the compiler and generators |
 | [mineflayer](https://github.com/PrismarineJS/mineflayer) (+ mineflayer-pathfinder) | MIT | The bot that plays every delve before humans do (`harness/`) |
 | [PackTest](https://github.com/misode/packtest) | MIT | Datapack mechanism assertions (validation only, never ships) |

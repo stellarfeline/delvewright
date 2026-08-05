@@ -41,6 +41,16 @@
 //! in open air; the DW0724 self-check ([`crate::nav::verify_pov_cameras`]) enforces
 //! it structurally.
 //!
+//! ## `horizon` (the render layer is told, never guesses)
+//!
+//! A campaign with `horizon: ocean` (spec-0013) ships a world save holding only
+//! the chunks its layout occupies — the sea around the island is the level
+//! generator's, and a renderer loading that save sees void past the shoreline.
+//! The plan therefore states the generator fact ([`horizon_fact`]:
+//! `{"kind": "ocean", "sea_level": 62}`) so `delve-render` can raise Chunky's
+//! ambient water plane at exactly the compiler's datum. `horizon: void` (the
+//! default) emits no key, keeping every existing plan byte-identical.
+//!
 //! ## `lighting` stamp (declared-dark areas stay reviewable)
 //!
 //! POV and interior shots carry a `lighting` stamp derived **purely from the
@@ -55,7 +65,7 @@
 //! amplified noise), so `delve-render scene` uses the stamp to apply its
 //! documented night-vision review emulation to exactly those shots and no others.
 
-use delvewright_dsl::{AreaMitigation, Campaign, LightingProfile, Objective};
+use delvewright_dsl::{AreaMitigation, Campaign, Horizon, LightingProfile, Objective};
 use serde_json::{Value, json};
 
 use crate::nav::LegRoute;
@@ -660,13 +670,43 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
     }
 
     let (amin, amax) = layout_aabb(plan);
-    json!({
+    let mut root = json!({
         "version": c.world.dsl_version,
         "campaign_id": plan.namespace,
         "layout_aabb": { "min": amin, "max": amax },
         "camera_convention": "yaw/pitch degrees; yaw=atan2(-dz,dx) (0=+X,90=-Z); pitch=atan2(-dy,horiz) (+down)",
         "shots": shots,
-    })
+    });
+    if let Some(h) = horizon_fact(c) {
+        root.as_object_mut()
+            .expect("render plan root is a JSON object")
+            .insert("horizon".to_string(), h);
+    }
+    root
+}
+
+/// The world-generator horizon (spec-0013) as the render layer needs it, or
+/// `None` for `horizon: void`.
+///
+/// The renderer cannot see the level generator: the shipped world save only
+/// holds the chunks the layout occupies, so an ocean-horizon delve renders as an
+/// island floating in nothing unless Chunky is told to put its own ambient water
+/// plane under the frame — at exactly the compiler's sea-level datum, or the
+/// plane and the authored block water meet in a visible two-tone seam. That is a
+/// *fact of the campaign*, so the compiler states it (`{"kind": "ocean",
+/// "sea_level": 62}`) rather than leaving `delve-render` to infer it from
+/// blocks.
+///
+/// A void horizon emits **no key at all** (not `null`), so every campaign that
+/// declares nothing keeps a byte-identical `render-plan.json`.
+fn horizon_fact(c: &Campaign) -> Option<Value> {
+    match c.world.content.horizon {
+        Some(Horizon::Ocean) => Some(json!({
+            "kind": "ocean",
+            "sea_level": crate::plan::SEA_LEVEL,
+        })),
+        Some(Horizon::Void) | None => None,
+    }
 }
 
 /// The last `/`-segment of an id, sanitized to `[a-z0-9_]`, for stable shot ids.
