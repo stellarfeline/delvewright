@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/dsl",
+    "crates/grammar",
     "crates/compiler",
     "crates/orchestrator",
     "crates/schem",
