@@ -4026,9 +4026,24 @@ export class MineflayerExecutor implements StepExecutor {
     return this.preconditionWaves;
   }
 
-  /** Collect items from the chest at the anchor: go there, open it, withdraw all. */
+  /**
+   * Collect items from the chest at the anchor: go there, open it, withdraw all.
+   *
+   * A **drop-gated** collect (v0.9 `dropped_by`) has no chest to open — the
+   * compiler places none, because the item exists only after the fight. The bot
+   * walks the ground the wave died on and lets vanilla pickup do the rest; the
+   * proof is the same one every collect uses, the objective's own marker.
+   */
   async collect(step: CollectStep): Promise<void> {
     const bot = this.requireBot();
+    if (step.droppedBy !== undefined) {
+      await this.walkTo(step.pos, 1, `drop of ${step.item}`, step.sneak, {
+        objective: step.objective,
+        transport: step.transport,
+      });
+      await this.requireObjective(step.objective, `collect ${step.item}`);
+      return;
+    }
     await this.walkTo(step.pos, 2, `chest ${step.item}`, step.sneak, {
       objective: step.objective,
       transport: step.transport,

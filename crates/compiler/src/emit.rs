@@ -795,6 +795,18 @@ pub fn build_with_warnings(
         )?;
     }
 
+    // death loot tables — v0.9 declared quest-item drops only; a campaign that
+    // declares none writes no `loot_table` directory (byte-identity).
+    for (name, value) in emit_drop_loot_tables(plan) {
+        insert_unique(
+            &mut out,
+            format!("datapack/data/{ns}/loot_table/{name}.json"),
+            json_bytes(&value),
+            "loot table",
+            &name,
+        )?;
+    }
+
     // predicates — currently only the cutscene bounce's sneak-held gate (see
     // SNEAK_HELD_PREDICATE); a cutscene-less campaign emits none.
     if campaign_has_cutscene(plan.campaign) {
@@ -1245,17 +1257,124 @@ fn default_equipment(entity: &str) -> Option<String> {
     })
 }
 
+/// The drop chance a **declared** drop puts on its slot (DSL v0.9, task #179).
+///
+/// Not `1.0`. Vanilla's `DropChances` record (pinned 1.21.11 client jar, class
+/// `cgi`) has exactly two named operations here, and they say what the numbers
+/// mean:
+///
+/// * `withGuaranteedDrop(slot)` writes the constant `2.0f` — verified in the
+///   jar's bytecode (`fconst_2`), and the same value the vanilla
+///   `SaddleEquipmentSlotFix` datafixer writes for a saddle a horse always
+///   drops;
+/// * `isPreserved(slot)` is `chance > 1.0f`.
+///
+/// `Mob.dropCustomDeathLoot` (class `chn`) reads both: a slot whose chance is
+/// exactly `0.0f` is skipped outright; a **preserved** slot drops even when the
+/// killing blow was not a player's, and — the reason `1.0f` is wrong — it skips
+/// the durability randomization that a chance of `≤ 1.0` applies to a damageable
+/// item. A boss axe declared as a drop must be *the* axe, not a die-roll of its
+/// remaining durability: `2.0f` is the vanilla primitive for "always, unchanged",
+/// and it is the only value that makes a declared drop deterministic.
+const DECLARED_DROP_CHANCE: &str = "2.0f";
+
+/// The drop chance every UNDECLARED slot keeps — today's behaviour, unchanged,
+/// which is what keeps every pre-0.9 campaign byte-identical.
+const NO_DROP_CHANCE: &str = "0.0f";
+
+/// The vanilla NBT slot keys a `drops[]` list marks as guaranteed, for one
+/// entity. Quest-item entries carry no slot and are absent from the set — they
+/// ride the death loot table instead ([`drop_loot_table`]).
+fn declared_drop_slots(drops: &[delvewright_dsl::MobDrop]) -> BTreeSet<&'static str> {
+    drops
+        .iter()
+        .filter_map(|d| d.slot())
+        .map(|s| s.nbt())
+        .collect()
+}
+
+/// The chance string for `slot`, given the entity's declared drops.
+fn drop_chance_for(slot: &str, declared: &BTreeSet<&'static str>) -> &'static str {
+    if declared.contains(slot) {
+        DECLARED_DROP_CHANCE
+    } else {
+        NO_DROP_CHANCE
+    }
+}
+
+/// The datapack path (namespace-local) of the death loot table a declared
+/// quest-item drop rides on, for one actor / one wave-mob stack.
+///
+/// **Why a loot table and not another equipment slot.** The `equipment` /
+/// `drop_chances` compounds address the six worn slots and nothing else — a
+/// quest token the fight *yields* has no slot, and hanging it in an off-hand the
+/// author never dressed would be the downstream workaround the no-hack rule
+/// forbids. 1.21.11 answers the slot-less half with its own primitive: `Mob`
+/// (jar class `chn`) reads `DeathLootTable` (and `DeathLootTableSeed`) straight
+/// off summon NBT, through the `ResourceKey<LootTable>` codec, and
+/// `LivingEntity.dropAllDeathLoot` rolls it on death. The compiler already
+/// writes `DeathLootTable:"minecraft:empty"` on every actor; a declared drop
+/// simply points the same field at a table the compiler emits, with the item
+/// entry the author declared. One roll, one entry, no RNG (ADR-0006).
+fn drop_loot_path(kind: &str, id: &str) -> String {
+    format!("dw_drop/{kind}_{}", plan::safe_local(id))
+}
+
+/// The `DeathLootTable` NBT value for an entity: the emitted table when it
+/// declares a quest-item drop, else the `minecraft:empty` every actor has always
+/// carried (byte-identity for every pre-0.9 campaign).
+fn death_loot_table(ns: &str, path: Option<String>) -> String {
+    match path {
+        Some(p) => format!("{ns}:{p}"),
+        None => "minecraft:empty".to_string(),
+    }
+}
+
+/// True if this drop list contains a quest-item entry (the half that needs a
+/// death loot table).
+fn has_item_drop(drops: &[delvewright_dsl::MobDrop]) -> bool {
+    drops.iter().any(|d| d.item().is_some())
+}
+
+/// Strip a declared drop off a body the **compiler** is about to remove.
+///
+/// The invariant, stated once: a declared drop is what a *player's kill* yields.
+/// Every removal the compiler performs itself — the `unleash` that swaps a
+/// puppet for its twin, a `despawn-actor` (either style), a souls re-seat's
+/// re-caging — goes through `/kill`, and vanilla `/kill` is an ordinary death:
+/// a preserved slot (chance > 1.0) drops **even when the killer is not a
+/// player**. Without this line an elite would shed its axe every time the story
+/// moved it, and a re-seat would turn the boss into a vending machine.
+///
+/// Two intended vanilla primitives, composed: `execute as … run data merge
+/// entity @s` (single-entity by construction, which is what `data merge`
+/// requires) writing drop chance 0 on every slot and an empty death loot table.
+/// Emitted only for an actor that declares drops, so every earlier campaign's
+/// removal is byte-identical.
+fn strip_drops_line(tag: &str) -> String {
+    format!(
+        "execute as @e[tag={tag}] run data merge entity @s {{drop_chances:{{mainhand:{z},offhand:{z},head:{z},chest:{z},legs:{z},feet:{z}}},DeathLootTable:\"minecraft:empty\"}}",
+        z = NO_DROP_CHANCE
+    )
+}
+
 /// The `equipment`/`drop_chances` SNBT fragment for a wave mob (no leading
 /// comma), or `None` for a bare-handed mob. A mob without the v0.6 `equipment`
 /// field takes the [`default_equipment`] path **unchanged** (byte-identity for
 /// pre-equipment waves). With the field, explicit slots merge over the
 /// armed-mob main-hand default (an explicit `main_hand` overrides it — a
-/// helmeted skeleton keeps its bow). Every emitted slot carries drop chance 0:
-/// players must never farm wave gear (no-grind constitution). Component-era
+/// helmeted skeleton keeps its bow). Every slot the v0.9 `drops[]` list does not
+/// name carries drop chance 0: players must never farm wave gear (no-grind
+/// constitution); a named slot carries [`DECLARED_DROP_CHANCE`]. Component-era
 /// form only — see [`default_equipment`] for why legacy `ArmorItems`/
 /// `HandItems` are silently ignored by 1.21.11 `/summon`. Slot order is fixed
 /// (mainhand, offhand, head, chest, legs, feet) for ADR-0006 determinism.
-fn wave_equipment(entity: &str, eq: Option<&MobEquipment>) -> Option<String> {
+fn wave_equipment(
+    entity: &str,
+    eq: Option<&MobEquipment>,
+    drops: &[delvewright_dsl::MobDrop],
+) -> Option<String> {
+    let declared = declared_drop_slots(drops);
     let mainhand = effective_mainhand(entity, eq);
     let Some(eq) = eq else {
         return default_equipment(entity);
@@ -1297,7 +1416,7 @@ fn wave_equipment(entity: &str, eq: Option<&MobEquipment>) -> Option<String> {
         if let Some(it) = item {
             let comps = piece.map(enchantment_components).unwrap_or_default();
             items.push(format!("{slot}:{{id:\"{it}\",count:1{comps}}}"));
-            chances.push(format!("{slot}:0.0f"));
+            chances.push(format!("{slot}:{}", drop_chance_for(slot, &declared)));
         }
     }
     if items.is_empty() {
@@ -2643,7 +2762,7 @@ fn emit_functions(
         // pre-§6 `spawn_<wave>` output is byte-identical.
         let lane = w.lane.as_ref().zip(lane_routes.get(w.id.as_str()));
         let mut idx = 0i32;
-        for mob in &w.mobs {
+        for (k, mob) in w.mobs.iter().enumerate() {
             // CustomName as a plain SNBT text component (M2 fix 1). Waves are
             // v0.3-only, so no v0.2 byte-identity concern.
             let name = match &mob.name {
@@ -2652,10 +2771,27 @@ fn emit_functions(
             };
             // Equipment: v0.6 explicit slots merged over the armed-mob default
             // (M2 fix 5: a summoned wither_skeleton/skeleton otherwise had no
-            // weapon and was trivial). All drop chances 0 — never lootable.
-            let equip = wave_equipment(&mob.entity, mob.equipment.as_ref())
+            // weapon and was trivial). Every slot the v0.9 `drops[]` list does
+            // not name keeps drop chance 0 — rank-and-file gear is never
+            // lootable.
+            let equip = wave_equipment(&mob.entity, mob.equipment.as_ref(), &mob.drops)
                 .map(|e| format!(",{e}"))
                 .unwrap_or_default();
+            // v0.9 (task #179): a declared quest-item drop rides the mob's own
+            // death loot table. Absent on every other mob, so a wave that
+            // declares no item drop keeps vanilla's own table and its exact
+            // pre-0.9 summon string.
+            let loot = if has_item_drop(&mob.drops) {
+                format!(
+                    ",DeathLootTable:\"{}\"",
+                    death_loot_table(
+                        ns,
+                        Some(drop_loot_path("wave", &format!("{}-{k}", w.id.as_str()))),
+                    )
+                )
+            } else {
+                String::new()
+            };
             // v0.4 attribute overrides (spec-0008 §4), emitted as 1.21.11
             // attribute components in the summon NBT. Empty for a plain mob. A
             // lane mob's `follow_range` is FORCED to the lane's `aggro_radius`:
@@ -2702,7 +2838,7 @@ fn emit_functions(
                     _ => String::new(),
                 };
                 body.push(format!(
-                    "summon {} {} {} {} {{Tags:[\"{}\"{lead_tag}{tmp}],PersistenceRequired:1b{name}{equip}{attrs}{patrol}}}",
+                    "summon {} {} {} {} {{Tags:[\"{}\"{lead_tag}{tmp}],PersistenceRequired:1b{name}{equip}{loot}{attrs}{patrol}}}",
                     mob.entity,
                     c[0],
                     c[1],
@@ -3840,7 +3976,14 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             ));
         }
         QuestEffect::DespawnActor { actor, style, .. } => {
-            emit_despawn_actor(actor.as_str(), *style, body);
+            let declares_drops = plan
+                .campaign
+                .quests
+                .content
+                .actors
+                .iter()
+                .any(|a| a.id.as_str() == actor.as_str() && !a.drops.is_empty());
+            emit_despawn_actor(actor.as_str(), *style, declares_drops, body);
         }
         QuestEffect::MoveActor {
             actor, to_anchor, ..
@@ -3887,9 +4030,22 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
 /// style is "out of sight, in place", and an actor that briefly exists at another
 /// area's coordinates is wrong data, not a detail. `execute as … at @s` is the same
 /// idiom [`emit_play_sound`] uses to make `~ ~ ~` resolve per entity.
-fn emit_despawn_actor(actor: &str, style: delvewright_dsl::DespawnStyle, body: &mut Vec<String>) {
+fn emit_despawn_actor(
+    actor: &str,
+    style: delvewright_dsl::DespawnStyle,
+    declares_drops: bool,
+    body: &mut Vec<String>,
+) {
     use delvewright_dsl::DespawnStyle;
     let safe = plan::safe_local(actor);
+    // v0.9 (task #179): a removal is not a death the player earned. Both styles
+    // end in `/kill`, and a preserved drop chance survives a non-player kill, so
+    // an elite the story re-cages (a souls re-seat) would shed its axe on every
+    // rest. Strip the declaration off the body first; emitted only when the
+    // actor declares drops, so every earlier campaign's despawn is byte-identical.
+    if declares_drops {
+        body.push(strip_drops_line(&format!("dw_actor_{safe}")));
+    }
     match style {
         DespawnStyle::Kill => body.push(format!("kill @e[tag=dw_actor_{safe}]")),
         DespawnStyle::Vanish => {
@@ -5656,8 +5812,16 @@ fn actor_facing_yaw(a: &delvewright_dsl::Actor) -> i32 {
 /// touching a real-AI twin). `Invulnerable` unless `vulnerable`; a vulnerable puppet
 /// stays knockback-immune (`knockback_resistance` 1.0) — the tower-defense creep. A
 /// `skin` re-dresses it as a `minecraft:mannequin`, exactly as a stage-2 NPC.
-fn actor_puppet_summon(a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> String {
+fn actor_puppet_summon(ns: &str, a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> String {
     let safe = plan::safe_local(a.id.as_str());
+    // v0.9 (task #179): a declared quest-item drop points the field the puppet
+    // has always carried at a table the compiler emits. `unleash` and
+    // `despawn-actor` strip it again ([`strip_drops_line`]) — only a player's
+    // kill yields it.
+    let loot = death_loot_table(
+        ns,
+        has_item_drop(&a.drops).then(|| drop_loot_path("actor", a.id.as_str())),
+    );
     let p = ent_xyz(pos);
     let tags = format!("Tags:[\"dw_actor\",\"dw_actor_{safe}\",\"dw_pup_{safe}\"]");
     if let Some(skin) = &a.skin {
@@ -5698,7 +5862,7 @@ fn actor_puppet_summon(a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> S
             .map(|e| format!(",{e}"))
             .unwrap_or_default();
         format!(
-            "summon {} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Invulnerable:{inv}b,DeathLootTable:\"minecraft:empty\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}{equip}}}",
+            "summon {} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Invulnerable:{inv}b,DeathLootTable:\"{loot}\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}{equip}}}",
             a.entity, p[0], p[1], p[2]
         )
     }
@@ -5777,8 +5941,12 @@ fn spawn_finalize_nbt(entity: &str) -> &'static str {
 /// [`spawn_finalize_nbt`] matters: a caged puppet is `NoAI`, and a `NoAI` mob never
 /// runs `customServerAiStep`, which is why the island's herdsman warden could stand
 /// in the meadow indefinitely while the unleashed one burrowed away.
-fn actor_twin_summon(a: &delvewright_dsl::Actor, at: &str) -> String {
+fn actor_twin_summon(ns: &str, a: &delvewright_dsl::Actor, at: &str) -> String {
     let safe = plan::safe_local(a.id.as_str());
+    let loot = death_loot_table(
+        ns,
+        has_item_drop(&a.drops).then(|| drop_loot_path("actor", a.id.as_str())),
+    );
     let name = a
         .name
         .as_deref()
@@ -5797,7 +5965,7 @@ fn actor_twin_summon(a: &delvewright_dsl::Actor, at: &str) -> String {
     // caged creep's property, not the freed elite's.
     let attrs = attributes_snbt(a.attributes.as_ref());
     format!(
-        "summon {} {at} {{PersistenceRequired:1b{pose},DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}}}",
+        "summon {} {at} {{PersistenceRequired:1b{pose},DeathLootTable:\"{loot}\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}}}",
         a.entity
     )
 }
@@ -5813,6 +5981,7 @@ fn actor_twin_summon(a: &delvewright_dsl::Actor, at: &str) -> String {
 /// declared nothing.
 fn actor_equipment(a: &delvewright_dsl::Actor) -> Option<String> {
     let eq = a.equipment.as_ref()?;
+    let declared = declared_drop_slots(&a.drops);
     let mut items: Vec<String> = Vec::new();
     let mut chances: Vec<String> = Vec::new();
     // Fixed emission order, matching the wave path (ADR-0006 determinism).
@@ -5828,7 +5997,7 @@ fn actor_equipment(a: &delvewright_dsl::Actor) -> Option<String> {
         if let Some(p) = piece {
             let comps = enchantment_components(p);
             items.push(format!("{slot}:{{id:\"{}\",count:1{comps}}}", p.item()));
-            chances.push(format!("{slot}:0.0f"));
+            chances.push(format!("{slot}:{}", drop_chance_for(slot, &declared)));
         }
     }
     if items.is_empty() {
@@ -6021,16 +6190,21 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
             format!("spawn_actor_{safe}"),
             lines(&[format!(
                 "execute unless entity @e[tag=dw_actor_{safe}] run {}",
-                actor_puppet_summon(a, pos, yaw)
+                actor_puppet_summon(ns, a, pos, yaw)
             )]),
         ));
-        let mut unleash = vec![
-            format!(
-                "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
-                actor_twin_summon(a, "~ ~ ~")
-            ),
-            format!("kill @e[tag=dw_pup_{safe}]"),
-        ];
+        let mut unleash = vec![format!(
+            "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
+            actor_twin_summon(ns, a, "~ ~ ~")
+        )];
+        // The unleash removes the cage by killing it, and vanilla `/kill` is an
+        // ordinary death: a puppet carrying a declared drop would shed it the
+        // moment the elite stood up. Strip first — the twin standing beside it
+        // is the body that owes the player a prize.
+        if !a.drops.is_empty() {
+            unleash.push(strip_drops_line(&format!("dw_pup_{safe}")));
+        }
+        unleash.push(format!("kill @e[tag=dw_pup_{safe}]"));
         if campaign_captures_striker(plan.campaign) {
             unleash.extend(aggro_lock_lines(&a.entity, &safe));
         }
@@ -6062,7 +6236,7 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
                 format!("actor_restand_{safe}"),
                 lines(&[
                     format!("kill @e[tag=dw_actor_{safe}]"),
-                    actor_twin_summon(a, &format!("{} {} {}", p[0], p[1], p[2])),
+                    actor_twin_summon(ns, a, &format!("{} {} {}", p[0], p[1], p[2])),
                 ]),
             ));
         }
@@ -7852,8 +8026,16 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
             anchor,
             item_name,
             fill_count,
+            dropped_by,
             ..
         } => {
+            // v0.9 (task #179): a drop-gated collect is provisioned by the fight,
+            // not by the world. Place nothing and fill nothing — the item exists
+            // only once the boss dies, which is exactly what makes the chain
+            // provable (`DW0493`) instead of merely intended.
+            if dropped_by.is_some() {
+                return cmds;
+            }
             // v0.8 (task #95): an ADOPTED container is prefab furniture standing
             // in the room already — fill it where it stands, place nothing. Absent
             // `container`, the compiler keeps conjuring its own chest at the
@@ -8624,6 +8806,60 @@ fn build_node_dialog(
             "actions": actions
         })
     }
+}
+
+/// The **death loot tables** a campaign's declared quest-item drops need (DSL
+/// v0.9, task #179), as `(namespace-local path, json)` pairs.
+///
+/// One table per declaring body, one pool, one roll, one entry per declared
+/// item: nothing here rolls a die. The entry is the vanilla `minecraft:item`
+/// form, and a declared display `name` becomes the `minecraft:set_name` function
+/// with `target: "custom_name"` — the same component a `collect`'s `item_name`
+/// writes into a container stack, so the key a boss leaves on the ground and the
+/// key a barrel hands over are the same item.
+///
+/// Emitted only for bodies that declare an `{item}` drop, so a campaign without
+/// one writes no `loot_table` directory at all and stays byte-identical.
+fn emit_drop_loot_tables(plan: &Plan) -> Vec<(String, Value)> {
+    let c = plan.campaign;
+    let mut out: Vec<(String, Value)> = Vec::new();
+    let table = |drops: &[delvewright_dsl::MobDrop]| {
+        let entries: Vec<Value> = drops
+            .iter()
+            .filter_map(|d| {
+                let item = d.item()?;
+                let mut entry = json!({ "type": "minecraft:item", "name": item });
+                if let Some(name) = d.name() {
+                    entry["functions"] = json!([{
+                        "function": "minecraft:set_name",
+                        "target": "custom_name",
+                        "name": { "text": name },
+                    }]);
+                }
+                Some(entry)
+            })
+            .collect();
+        json!({
+            "type": "minecraft:entity",
+            "pools": [{ "rolls": 1, "entries": entries }],
+        })
+    };
+    for a in &c.quests.content.actors {
+        if has_item_drop(&a.drops) {
+            out.push((drop_loot_path("actor", a.id.as_str()), table(&a.drops)));
+        }
+    }
+    for w in &c.quests.content.waves {
+        for (k, m) in w.mobs.iter().enumerate() {
+            if has_item_drop(&m.drops) {
+                out.push((
+                    drop_loot_path("wave", &format!("{}-{k}", w.id.as_str())),
+                    table(&m.drops),
+                ));
+            }
+        }
+    }
+    out
 }
 
 fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
@@ -14138,10 +14374,20 @@ fn critical_path_json(
                     "action": "kill", "objective": objective_id, "wave": wave_id,
                     "pos": pos, "tag": tag, "count": count
                 }),
-                Step::Collect { objective_id, item, count, pos } => json!({
-                    "action": "collect", "objective": objective_id, "item": item,
-                    "count": count, "pos": pos
-                }),
+                Step::Collect { objective_id, item, count, pos, dropped } => {
+                    let mut v = json!({
+                        "action": "collect", "objective": objective_id, "item": item,
+                        "count": count, "pos": pos
+                    });
+                    // v0.9: present only on a drop-gated collect, so every
+                    // pre-0.9 campaign's `critical-path.json` is byte-identical.
+                    if let Some(w) = dropped
+                        && let Some(obj) = v.as_object_mut()
+                    {
+                        obj.insert("dropped_by".to_string(), json!(w));
+                    }
+                    v
+                }
                 Step::Interact { objective_id, anchor_id, pos, command, requires_item } => json!({
                     "action": "interact", "objective": objective_id, "anchor": anchor_id,
                     "pos": pos, "command": command, "requires_item": requires_item
@@ -14362,6 +14608,7 @@ mod tests {
             facing: Some(delvewright_dsl::Facing::West),
             vulnerable,
             equipment: None,
+            drops: Vec::new(),
             attributes: None,
             tier: None,
         }
@@ -14370,7 +14617,7 @@ mod tests {
     #[test]
     fn puppet_summon_is_noai_no_loot_and_tagged() {
         let a = mk_actor("actor/giant", "minecraft:warden", false);
-        let s = actor_puppet_summon(&a, [10, 65, 20], facing_yaw(Some("west")));
+        let s = actor_puppet_summon("dw", &a, [10, 65, 20], facing_yaw(Some("west")));
         assert!(
             s.starts_with("summon minecraft:warden 10.5 65.0 20.5 "),
             "puppet stands at the CENTRE of its cell, not the four-column corner: {s}"
@@ -14389,7 +14636,7 @@ mod tests {
     #[test]
     fn vulnerable_puppet_is_damageable_but_knockback_immune() {
         let a = mk_actor("actor/creep", "minecraft:zombie", true);
-        let s = actor_puppet_summon(&a, [0, 64, 0], 0);
+        let s = actor_puppet_summon("dw", &a, [0, 64, 0], 0);
         assert!(
             s.contains("Invulnerable:0b"),
             "vulnerable puppet takes damage"
@@ -14407,7 +14654,7 @@ mod tests {
             texture_id: "giant-idle".to_string(),
             model: delvewright_dsl::SkinModel::Wide,
         });
-        let s = actor_puppet_summon(&a, [1, 2, 3], 180);
+        let s = actor_puppet_summon("dw", &a, [1, 2, 3], 180);
         assert!(
             s.starts_with("summon minecraft:mannequin 1.5 2.0 3.5 "),
             "mannequin stands at the centre of its cell: {s}"
@@ -14419,11 +14666,35 @@ mod tests {
     #[test]
     fn twin_summon_has_ai_and_no_puppet_marker() {
         let a = mk_actor("actor/giant", "minecraft:warden", false);
-        let s = actor_twin_summon(&a, "~ ~ ~");
+        let s = actor_twin_summon("dw", &a, "~ ~ ~");
         assert!(s.starts_with("summon minecraft:warden ~ ~ ~ "));
         assert!(!s.contains("NoAI"), "the twin has real AI");
         assert!(s.contains("dw_actor_giant") && !s.contains("dw_pup"));
         assert!(s.contains("PersistenceRequired:1b"));
+    }
+
+    /// v0.9 (task #179): a `despawn-actor` on a drop-declaring actor strips the
+    /// declaration off the body before killing it. `/kill` is an ordinary death
+    /// and a preserved slot survives a non-player kill, so without this a souls
+    /// re-seat would shower the party with the elite's own axe every rest.
+    #[test]
+    fn despawn_strips_declared_drops_first() {
+        let mut cmds = Vec::new();
+        emit_despawn_actor(
+            "actor/giant",
+            delvewright_dsl::DespawnStyle::Kill,
+            true,
+            &mut cmds,
+        );
+        assert_eq!(cmds.len(), 2, "strip then kill: {cmds:?}");
+        assert!(
+            cmds[0].starts_with("execute as @e[tag=dw_actor_giant] run data merge entity @s ")
+                && cmds[0].contains("mainhand:0.0f")
+                && cmds[0].contains("feet:0.0f")
+                && cmds[0].contains("DeathLootTable:\"minecraft:empty\""),
+            "{cmds:?}"
+        );
+        assert_eq!(cmds[1], "kill @e[tag=dw_actor_giant]");
     }
 
     #[test]
@@ -14432,6 +14703,7 @@ mod tests {
         emit_despawn_actor(
             "actor/giant",
             delvewright_dsl::DespawnStyle::Kill,
+            false,
             &mut kill,
         );
         assert_eq!(kill, vec!["kill @e[tag=dw_actor_giant]".to_string()]);
@@ -14439,6 +14711,7 @@ mod tests {
         emit_despawn_actor(
             "actor/giant",
             delvewright_dsl::DespawnStyle::Vanish,
+            false,
             &mut vanish,
         );
         // The drop is relative to each ACTOR, not to the command source — see
@@ -14484,7 +14757,7 @@ mod tests {
             delvewright_dsl::DespawnStyle::Vanish,
         ] {
             let mut cmds = Vec::new();
-            emit_despawn_actor("actor/giant", style, &mut cmds);
+            emit_despawn_actor("actor/giant", style, false, &mut cmds);
             assert!(!cmds.is_empty());
             for c in &cmds {
                 assert!(
@@ -14509,7 +14782,7 @@ mod tests {
         let a = mk_actor("actor/giant", "minecraft:warden", false);
         let spawn = format!(
             "execute unless entity @e[tag=dw_actor_giant] run {}",
-            actor_puppet_summon(&a, [0, 64, 0], 0)
+            actor_puppet_summon("dw", &a, [0, 64, 0], 0)
         );
         assert!(
             spawn.starts_with("execute unless entity @e[tag=dw_actor_giant] run summon "),
@@ -14657,6 +14930,7 @@ mod loot_emit_tests {
             equipment: eq,
             attributes: None,
             tier: None,
+            drops: Vec::new(),
         }
     }
 
@@ -14690,9 +14964,9 @@ mod loot_emit_tests {
     fn an_unequipped_actor_is_byte_identical() {
         let a = actor_with(None);
         assert_eq!(actor_equipment(&a), None);
-        let puppet = actor_puppet_summon(&a, [1, 2, 3], 0);
+        let puppet = actor_puppet_summon("dw", &a, [1, 2, 3], 0);
         assert!(!puppet.contains("equipment:"), "{puppet}");
-        assert!(!actor_twin_summon(&a, "~ ~ ~").contains("equipment:"));
+        assert!(!actor_twin_summon("dw", &a, "~ ~ ~").contains("equipment:"));
     }
 
     /// The gear rides on BOTH bodies — the dormant puppet and the twin that
@@ -14700,8 +14974,8 @@ mod loot_emit_tests {
     #[test]
     fn equipment_lands_on_both_the_puppet_and_the_twin() {
         let a = actor_with(Some(full_kit()));
-        let puppet = actor_puppet_summon(&a, [1, 2, 3], 0);
-        let twin = actor_twin_summon(&a, "~ ~ ~");
+        let puppet = actor_puppet_summon("dw", &a, [1, 2, 3], 0);
+        let twin = actor_twin_summon("dw", &a, "~ ~ ~");
         for s in [&puppet, &twin] {
             assert!(
                 s.contains(

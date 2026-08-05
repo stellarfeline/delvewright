@@ -321,6 +321,18 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      container's 27 slots. The container must really be there in the piece
      (`DW0438`), must not also be filled by a `loot` entry or another `collect`
      (`DW0435`), and the fields need `dsl_version` 0.8.0 on the quests stage.
+   - **An elite or boss leaves ONE thing behind, and you say which.** (Owner
+     ruling, 2026-08-04.) Give the fight's `drops[]` a declared subset — a
+     `{"slot": "main_hand"}` for the axe the player watched swing, or a
+     `{"item": …, "name": …}` for a quest token — never the whole kit. Only an
+     `elite`/`boss` encounter may declare drops (`DW0491`); a slot must be one the
+     same body's `equipment` really fills (`DW0490`). If that token is what opens
+     the next door, take it with a `collect` that names `dropped_by: <wave>`
+     instead of a container: the compiler then places no chest and PROVES the
+     chain — that the wave really yields the item (`DW0492`) and that its `kill`
+     objective runs first (`DW0493`). `dropped_by` names a wave, never an actor
+     (an actor's death is observable by no objective). Needs `dsl_version` 0.9.0
+     on the quests stage.
    - Hint wording: give landmark-relative directions from places the player already
      knows (the entrance hall, the gate, a named NPC) — never room-shape jargon
      ("corner room", "L-shaped hall") or solver-internal terms (anchor/piece/socket
