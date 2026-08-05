@@ -1308,6 +1308,34 @@ fn coverage_json(c: &FloorCoverage) -> Value {
 ///   hostile carries `tier: null` and lands in `not_covered`, because a fight
 ///   nothing bills is a fight nothing assessed. This exists so an empty findings
 ///   list can never be read as a pass over encounters that were never fought.
+///
+/// # Binding counts (playtest-methodology.md rule 1)
+///
+/// A ledger that MATCHED zero objects and a ledger that matched several and
+/// found them all fine are indistinguishable to a reader who is not counting —
+/// the island shipped exactly that silence for nineteen rounds, on
+/// `floor_gate.covered`/`not_covered` **and** `actors[]` all empty at once,
+/// before round 20 declared the campaign's first actor `tier`. This is
+/// reporting, not diagnosis: an empty ledger is often the honest answer (an
+/// all-`ordinary` delve binds nothing, on purpose), so nothing here fails the
+/// build or mints a new DW code. What it does is say the binding count OUT
+/// LOUD, additively, on both surfaces that can go quietly empty:
+///
+/// * `floor_gate.examined` / `.unbound` / `.reason` — `examined` is
+///   `covered.len() + not_covered.len()`; `unbound` is `examined == 0`, with a
+///   `reason` present exactly then. Note this can be `unbound` even when
+///   `actors[]` is not: an actor declared `tier: "ordinary"` populates
+///   `actors[]` (any declared tier does) but never the floor ledger (only
+///   `elite`/`boss` carries a floor expectation), so an all-`ordinary` campaign
+///   is `actors[].examined > 0` and `floor_gate.unbound` at once — two
+///   different questions, two different counts.
+/// * a sibling `actors_gate` (`examined`/`unbound`/`reason`) states the same
+///   for `actors[]` itself: how many actors this build's tier machinery even
+///   tracked. `actors[]` holds every TIER-DECLARING actor, whether the floor
+///   gate covers it or not — an untiered hostile actor never appears here (it
+///   is `floor_gate.not_covered` only, task #121), so `actors_gate.unbound`
+///   does not by itself mean "no hostile actor in this campaign"; the reason
+///   text says so and points at `floor_gate.not_covered`.
 pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEncounter]) -> Value {
     let difficulty = effective_difficulty(plan.campaign);
     let entries: Vec<Value> = encounters
@@ -1347,36 +1375,86 @@ pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEn
     let ledger = floor_ledger(plan, encounters, actors);
     let (covered, not_covered): (Vec<&FloorEntry>, Vec<&FloorEntry>) =
         ledger.iter().partition(|e| e.coverage.is_covered());
+    let floor_examined = covered.len() + not_covered.len();
+    let mut floor_gate = json!({
+        "covered": covered
+            .iter()
+            .map(|e| json!({
+                "kind": e.kind,
+                "id": e.id,
+                "tier": e.tier.map(EncounterTier::token),
+            }))
+            .collect::<Vec<_>>(),
+        // `tier: null` is the untiered hostile (task #121) — an explicit
+        // null rather than an omitted key, because this document's entire
+        // job is to make an absence legible.
+        "not_covered": not_covered
+            .iter()
+            .map(|e| json!({
+                "kind": e.kind,
+                "id": e.id,
+                "tier": e.tier.map(EncounterTier::token),
+                "reason": e.coverage.reason().unwrap_or_default(),
+            }))
+            .collect::<Vec<_>>(),
+        // playtest-methodology.md rule 1: the binding count, stated out loud —
+        // additive, never a substitute for `covered`/`not_covered`. `unbound`
+        // is `examined == 0`; a `reason` accompanies it exactly then, because a
+        // reader must never have to notice an empty pair of arrays to learn
+        // this ledger matched nothing.
+        "examined": floor_examined,
+        "unbound": floor_examined == 0,
+    });
+    if floor_examined == 0 {
+        floor_gate["reason"] = json!(FLOOR_GATE_UNBOUND_REASON);
+    }
+
+    let actors_examined = actors.len();
+    let mut actors_gate = json!({
+        "examined": actors_examined,
+        "unbound": actors_examined == 0,
+    });
+    if actors_examined == 0 {
+        actors_gate["reason"] = json!(ACTORS_GATE_UNBOUND_REASON);
+    }
+
     json!({
         "version": plan.campaign.world.dsl_version,
         "campaign_id": plan.namespace,
         "difficulty": difficulty.token(),
         "encounters": entries,
         "actors": actors.iter().map(actor_json).collect::<Vec<_>>(),
-        "floor_gate": {
-            "covered": covered
-                .iter()
-                .map(|e| json!({
-                    "kind": e.kind,
-                    "id": e.id,
-                    "tier": e.tier.map(EncounterTier::token),
-                }))
-                .collect::<Vec<_>>(),
-            // `tier: null` is the untiered hostile (task #121) — an explicit
-            // null rather than an omitted key, because this document's entire
-            // job is to make an absence legible.
-            "not_covered": not_covered
-                .iter()
-                .map(|e| json!({
-                    "kind": e.kind,
-                    "id": e.id,
-                    "tier": e.tier.map(EncounterTier::token),
-                    "reason": e.coverage.reason().unwrap_or_default(),
-                }))
-                .collect::<Vec<_>>(),
-        },
+        // Sibling of `actors[]`, not a rename of anything: how many actors this
+        // build's tier machinery tracked at all. See the `combat_plan_json` doc
+        // comment for why this and `floor_gate.unbound` are different questions.
+        "actors_gate": actors_gate,
+        "floor_gate": floor_gate,
     })
 }
+
+/// `floor_gate`'s reason when `examined == 0`: the ledger holds every wave and
+/// actor billed `elite`/`boss` plus every untiered hostile actor (task #121),
+/// so an empty ledger means none of those three things exist in the campaign —
+/// a legitimate, common state (an all-`ordinary` delve) stated here so it is
+/// never mistaken for a ledger that ran and found nothing.
+const FLOOR_GATE_UNBOUND_REASON: &str = "no wave or actor in this campaign is billed \
+    `elite`/`boss`, and no hostile actor goes untiered — the floor gate's ledger has \
+    nothing to hold. This can be a legitimate build (e.g. an all-`ordinary` delve, or \
+    one whose combat never crosses this gate's weight); it is stated explicitly so an \
+    empty `covered`/`not_covered` pair is never read as a ledger that ran and passed.";
+
+/// `actors_gate`'s reason when `examined == 0`: `actors[]` holds every actor
+/// that declares ANY tier (`ordinary` included), so an empty array means no
+/// actor in the campaign declares one at all — which is not the same fact as
+/// "no hostile actor exists": an unleashed actor that never got a `tier` is
+/// invisible here BY DESIGN (it lives in `floor_gate.not_covered` instead,
+/// task #121), so this reason points a reader there rather than letting the
+/// empty array read as "no actor combat".
+const ACTORS_GATE_UNBOUND_REASON: &str = "no actor in this campaign declares a `tier` \
+    (not even `ordinary`), so this build's actor-tier machinery tracked none. This is \
+    NOT the same fact as \"no hostile actor exists\": an unleashed actor that declares \
+    no tier at all does not appear here by design — check `floor_gate.not_covered` for \
+    any UNTIERED hostile actor this may be masking.";
 
 #[cfg(test)]
 mod tests {

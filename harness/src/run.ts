@@ -272,6 +272,18 @@ async function main(): Promise<number> {
         `combat plan: NO floor-gate ledger — this build predates it; the run cannot tell you ` +
           `which billed fights the gate covers\n`,
       );
+    } else if (combatPlan.floorGate.binding?.unbound) {
+      // playtest-methodology.md rule 1: a gate that examined zero objects is a
+      // REPORTED state, printed here so a reader never has to notice an empty
+      // `covered`/`not_covered` pair to learn it — never silently a pass.
+      process.stderr.write(
+        `combat plan: floor gate is UNBOUND (examined 0) — ${combatPlan.floorGate.binding.reason}\n`,
+      );
+    }
+    if (combatPlan.actorsGate?.unbound) {
+      process.stderr.write(
+        `combat plan: actor gate is UNBOUND (examined 0) — ${combatPlan.actorsGate.reason}\n`,
+      );
     }
   }
 
@@ -366,6 +378,7 @@ async function main(): Promise<number> {
         };
       });
       report.recordCombatCoverage(combatPlan.floorGate, actorReports);
+      report.recordActorsGate(combatPlan.actorsGate);
     }
     report.recordRests(executor.performedRests());
     // Reclassify, never suppress (2026-08-06 island triage): a `despawn-actor
