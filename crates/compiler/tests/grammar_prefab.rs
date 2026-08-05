@@ -13,10 +13,11 @@ use std::collections::BTreeMap;
 
 use delvewright_compiler::registry::PrefabRegistry;
 use delvewright_dsl::{AnchorRegistry, LightingProfile, PrefabId};
-use delvewright_grammar::library::temple;
+use delvewright_grammar::library::{castle, temple};
 use delvewright_grammar::{Box3, ExpandOptions, export_prefab};
 
 const REGION: Box3 = Box3::at_origin([13, 14, 21]);
+const CASTLE_REGION: Box3 = Box3::at_origin([41, 14, 25]);
 
 fn library_dir(tag: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("dw-grammar-prefab-{}-{tag}", std::process::id()));
@@ -89,6 +90,49 @@ fn a_grammar_temple_lands_in_the_prefab_library_and_loads() {
     assert_eq!(
         cells, expected,
         "the .nbt in the library is not the model that was exported"
+    );
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The other half of the seam: an anchor a rule **declared** with `mark` has to
+/// survive export, land in the metadata's `anchors` map, and come back out of
+/// `PrefabRegistry` as an anchor the DSL can name. An anchor the engine cannot
+/// see is not an anchor — it is a comment.
+#[test]
+fn an_anchor_a_rule_marked_comes_back_out_of_the_registry() {
+    let dir = library_dir("castle");
+    let export = export_prefab(
+        &castle(),
+        CASTLE_REGION,
+        &ExpandOptions::seeded(7),
+        "grammar-castle",
+    )
+    .unwrap();
+    export.write_to_dir(&dir).unwrap();
+
+    let registry = PrefabRegistry::load_dir(&dir).unwrap();
+    assert!(
+        registry.load_diagnostics().is_empty(),
+        "the engine refused the exported metadata: {:#?}",
+        registry.load_diagnostics()
+    );
+
+    let meta = registry.get("prefab/grammar-castle").expect("indexed");
+    let anchor = meta
+        .anchors
+        .get("anchor/courtyard")
+        .expect("the marked anchor is in the metadata the engine parsed");
+    assert_eq!(anchor.pos, Some([20, 0, 12]));
+    assert_eq!(anchor.facing.as_deref(), Some("north"));
+
+    // ...and it is a name the DSL side can resolve, which is what an anchor is for.
+    let names = registry
+        .anchors_for(&PrefabId("prefab/grammar-castle".to_string()))
+        .expect("a marked prefab is a known prefab");
+    assert!(
+        names.contains("anchor/courtyard"),
+        "anchor names the DSL can reference: {names:?}"
     );
 
     std::fs::remove_dir_all(&dir).unwrap();

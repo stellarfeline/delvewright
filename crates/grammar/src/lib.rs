@@ -46,17 +46,24 @@
 //! [`export::export_prefab`] freezes one expansion as a vanilla structure `.nbt`
 //! plus the sibling metadata JSON the compiler's prefab registry reads, carrying
 //! a provenance row (program hash + seed) that regenerates those exact bytes.
-//! Anchors and jigsaw connectors are deliberately not emitted yet, and the
-//! lighting profile is `unmeasured` rather than a fabricated measurement — see
-//! that module.
+//! Jigsaw connectors are deliberately not emitted yet, and the lighting profile
+//! is `unmeasured` rather than a fabricated measurement — see that module.
+//!
+//! # Anchors
+//!
+//! An anchor is metadata, not geometry, so it is **declared**: a rule body wraps
+//! the piece it is talking about in [`ir::Node::Mark`], naming a cell of that
+//! scope, and expansion collects the declarations into
+//! [`Expansion::anchors`](expand::Expansion::anchors) for the export to write
+//! out. Nothing infers an anchor from the blocks afterwards.
 //!
 //! # Not built yet
 //!
-//! The craft-rule diagnostics of spec-0027 §4, an anchor-declaring rule-body
-//! primitive, jigsaw connector emission, and the JSON *schema* stage that will
-//! sit in front of [`ir::Program`] (which already serialises) are later phases
-//! of the same spec. Nothing here is reachable from `delvec`, and nothing here
-//! ships in a delve — it is generation-time tooling (ADR-0003).
+//! The craft-rule diagnostics of spec-0027 §4, jigsaw connector emission, and
+//! the JSON *schema* stage that will sit in front of [`ir::Program`] (which
+//! already serialises) are later phases of the same spec. Nothing here is
+//! reachable from `delvec`, and nothing here ships in a delve — it is
+//! generation-time tooling (ADR-0003).
 
 #![deny(missing_docs)]
 
@@ -73,8 +80,10 @@ pub mod rng;
 pub mod split;
 
 pub use block::BlockState;
-pub use expand::{ExpandError, ExpandOptions, Expansion, Limits, Stats, expand};
-pub use export::{ExportError, PrefabExport, PrefabMetadata, export_prefab, program_hash};
+pub use expand::{Anchor, ExpandError, ExpandOptions, Expansion, Limits, Stats, expand};
+pub use export::{
+    AnchorMetadata, ExportError, PrefabExport, PrefabMetadata, export_prefab, program_hash,
+};
 pub use geom::{Axis, Box3, Orientation};
-pub use ir::{Program, ProgramError};
+pub use ir::{Facing, Mark, MarkAt, MarkIndex, Program, ProgramError, Side};
 pub use model::VoxelModel;

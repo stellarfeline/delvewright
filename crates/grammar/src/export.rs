@@ -14,12 +14,15 @@
 //! hand-built one are byte-shaped identically: sorted palette, `x`→`y`→`z` block
 //! order, gzip with a pinned mtime (ADR-0006).
 //!
+//! Anchors come from the rules themselves: `anchors` holds exactly what the
+//! program's [`Node::Mark`](crate::ir::Node::Mark) declarations produced, in the
+//! hand-built `{ pos, facing }` shape, and is `{}` for a program that marks
+//! nothing. Nothing here reads the block pattern to guess at one (no-hack:
+//! post-hoc inference is exactly the downstream folklore the layering rule
+//! forbids).
+//!
 //! # What this module deliberately does not emit
 //!
-//! * **Anchors.** `anchors` is always `{}`. Staging anchors need a rule-body
-//!   primitive that declares them (no-hack: inferring an anchor from a block
-//!   pattern after the fact is exactly the downstream folklore the layering rule
-//!   forbids). That primitive is its own owner-approved design.
 //! * **Connectors.** Jigsaw socketing of grammar prefabs needs the tileset
 //!   conventions to be settled first; a guessed socket is worse than none.
 //! * **A lighting measurement.** See [`LIGHTING_PROFILE`].
@@ -98,8 +101,9 @@ pub struct PrefabMetadata {
     pub prefab_id: String,
     /// The structure-template reference.
     pub structure: StructureMetadata,
-    /// Named anchors. Always empty — see the module docs.
-    pub anchors: BTreeMap<String, serde_json::Value>,
+    /// Named anchors, exactly the ones the program's `mark` declarations
+    /// produced. Empty for a program that marks nothing.
+    pub anchors: BTreeMap<String, AnchorMetadata>,
     /// The lighting declaration.
     pub lighting: LightingMetadata,
     /// Licence and provenance.
@@ -119,6 +123,17 @@ pub struct StructureMetadata {
     pub data_version: i32,
     /// Provenance breadcrumb: what wrote the `.nbt`.
     pub generator: String,
+}
+
+/// One entry of the `anchors` map: the point-anchor shape the hand-built
+/// prefabs use, field for field (`pos` then `facing`), so the engine's
+/// `PrefabRegistry` reads a grammar prefab's anchors with the same code path.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct AnchorMetadata {
+    /// Local cell `[x, y, z]`, relative to the structure origin.
+    pub pos: [i32; 3],
+    /// Cardinal facing keyword.
+    pub facing: String,
 }
 
 /// The `lighting` block. Carries a profile and, deliberately, no measurement.
@@ -303,6 +318,19 @@ pub fn export_prefab(
         region.size[2] as i32,
     ];
     let hash = program_hash(program);
+    let anchors: BTreeMap<String, AnchorMetadata> = expansion
+        .anchors
+        .iter()
+        .map(|(name, anchor)| {
+            (
+                name.clone(),
+                AnchorMetadata {
+                    pos: anchor.pos,
+                    facing: anchor.facing.to_string(),
+                },
+            )
+        })
+        .collect();
     let metadata = PrefabMetadata {
         prefab_id: format!("prefab/{id}"),
         structure: StructureMetadata {
@@ -312,7 +340,7 @@ pub fn export_prefab(
             data_version: DATA_VERSION,
             generator: GENERATOR.to_string(),
         },
-        anchors: BTreeMap::new(),
+        anchors,
         lighting: LightingMetadata {
             profile: LIGHTING_PROFILE.to_string(),
         },

@@ -9,11 +9,13 @@ use delvewright_grammar::{Box3, ExpandOptions, Program};
 /// The temple region the rest of the test suite uses, small enough for a
 /// vanilla structure template on every axis.
 const TEMPLE_REGION: Box3 = Box3::at_origin([13, 14, 21]);
+/// The castle region — the library's one program that declares an anchor.
+const CASTLE_REGION: Box3 = Box3::at_origin([41, 14, 25]);
 
 fn cases() -> Vec<(Program, Box3, &'static str)> {
     vec![
         (temple(), TEMPLE_REGION, "grammar-temple"),
-        (castle(), Box3::at_origin([41, 14, 25]), "grammar-castle"),
+        (castle(), CASTLE_REGION, "grammar-castle"),
         (church(), Box3::at_origin([15, 16, 30]), "grammar-church"),
     ]
 }
@@ -33,6 +35,13 @@ fn exporting_twice_gives_byte_identical_nbt_and_metadata() {
                 a.metadata_json, b.metadata_json,
                 "{id} metadata drifted at seed {seed}"
             );
+            // The metadata now carries declared anchors, so this is a promise
+            // about them too — and the castle proves it is not a promise about
+            // an empty map.
+            assert_eq!(a.metadata.anchors, b.metadata.anchors);
+            if id == "grammar-castle" {
+                assert!(!a.metadata.anchors.is_empty());
+            }
         }
     }
 }
@@ -88,9 +97,38 @@ fn the_provenance_row_identifies_the_bytes_it_sits_beside() {
     assert_ne!(restyled.nbt, one.nbt);
 }
 
+/// A program that declares anchors exports them, in the hand-built field shape
+/// (`anchors: { "<name>": { pos, facing } }`) — the castle's courtyard staging
+/// point, at the floor centre of the scope the `mark` sits on.
+///
+/// The position is arithmetic, not a snapshot: a 41x14x25 region puts the
+/// castle's plan on world X, the layout leaves the middle X band (9..32) to
+/// `castle_center`, and its Z split leaves the courtyard at z 9..16 — floor
+/// centre `[9 + 11, 0, 9 + 3]`.
+#[test]
+fn a_marked_program_exports_the_anchors_it_declared() {
+    let export = export_prefab(
+        &castle(),
+        CASTLE_REGION,
+        &ExpandOptions::seeded(7),
+        "grammar-castle",
+    )
+    .unwrap();
+    let json: serde_json::Value = serde_json::from_str(&export.metadata_json).unwrap();
+    assert_eq!(
+        json["anchors"],
+        serde_json::json!({
+            "anchor/courtyard": { "pos": [20, 0, 12], "facing": "north" }
+        }),
+        "the castle's `mark` must reach the metadata"
+    );
+}
+
 /// The metadata a grammar prefab exports is exactly the hand-built shape minus
-/// what expansion cannot know. Both omissions are load-bearing, so they are
-/// asserted rather than left to review.
+/// what expansion cannot know. The omissions are load-bearing, so they are
+/// asserted rather than left to review — and the empty `anchors` of the temple,
+/// which declares no marks, is the honest counterpart of the castle's map above
+/// rather than a stub.
 #[test]
 fn the_metadata_declares_no_anchors_no_sockets_and_no_measurement() {
     let export = export_prefab(
@@ -103,7 +141,7 @@ fn the_metadata_declares_no_anchors_no_sockets_and_no_measurement() {
 
     assert!(
         export.metadata.anchors.is_empty(),
-        "anchors need a rule-body primitive that declares them, not inference \
+        "a program that declares no anchor exports no anchor: nothing infers one \
          from the block pattern after the fact"
     );
     let json: serde_json::Value = serde_json::from_str(&export.metadata_json).unwrap();
@@ -204,16 +242,12 @@ fn writing_an_export_uses_the_names_the_metadata_declares() {
 
 /// Not an assertion — a way to read the exact metadata the exporter writes,
 /// for docs and review: `cargo test -p delvewright-grammar --test export -- \
-/// --ignored --nocapture show_the_temple_metadata`.
+/// --ignored --nocapture show_the_metadata`.
 #[test]
 #[ignore = "prints the exported metadata for review; asserts nothing"]
-fn show_the_temple_metadata() {
-    let export = export_prefab(
-        &temple(),
-        TEMPLE_REGION,
-        &ExpandOptions::seeded(7),
-        "grammar-temple",
-    )
-    .unwrap();
-    print!("{}", export.metadata_json);
+fn show_the_metadata() {
+    for (program, region, id) in cases() {
+        let export = export_prefab(&program, region, &ExpandOptions::seeded(7), id).unwrap();
+        print!("{}", export.metadata_json);
+    }
 }
