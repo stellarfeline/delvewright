@@ -627,33 +627,24 @@ pub fn reachable_time_weather(c: &Campaign) -> (Vec<WorldTime>, Vec<WorldWeather
     };
     add_t(c.world.content.time.unwrap_or_default(), &mut times);
     add_w(c.world.content.weather.unwrap_or_default(), &mut weathers);
-    // Quest effects.
-    for q in &c.quests.content.quests {
-        for e in q
-            .on_objective_complete
-            .values()
-            .flatten()
-            .chain(&q.on_complete)
-        {
-            if let Some(t) = e.set_time() {
-                add_t(t, &mut times);
-            }
-            if let Some(w) = e.set_weather() {
-                add_w(w, &mut weathers);
-            }
+    // Quest effects — every root, every depth. This scan hand-listed three of the
+    // five roots AND was shallow, so a `set-time` inside a `sequence` step or an
+    // `on_respawn` bundle was invisible to it. Under-reporting the reachable state
+    // set is the direction that PASSES a delve that goes dark (spec-0010,
+    // `DW0496`), which is why the shallow half mattered as much as the root half.
+    delvewright_dsl::for_each_campaign_effect(c, &mut |_path, _site, e| {
+        if let Some(t) = e.set_time() {
+            add_t(t, &mut times);
         }
-    }
-    for t in &c.quests.content.triggers {
-        for e in &t.effects {
-            if let Some(tt) = e.set_time() {
-                add_t(tt, &mut times);
-            }
-            if let Some(w) = e.set_weather() {
-                add_w(w, &mut weathers);
-            }
+        if let Some(w) = e.set_weather() {
+            add_w(w, &mut weathers);
         }
-    }
-    // Dialogue effects.
+    });
+    // Dialogue effects. NOT a root: a `DialogueEffect::SetTime` / `SetWeather` is a
+    // flat outcome of a conversation, in the dialogue vocabulary rather than the
+    // quest one, so the root walk above does not and should not reach it. (What it
+    // DOES reach in this stage is the `set-checkpoint` `on_respawn` bundle nested
+    // inside one of these effects, which is quest-effect vocabulary.)
     for tree in &c.dialogue.content.dialogues {
         for node in &tree.nodes {
             for opt in &node.options {

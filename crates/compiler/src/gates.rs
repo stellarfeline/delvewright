@@ -8,7 +8,7 @@
 //! carry; it runs in the compiler's validate stage alongside the atmos sound/art
 //! checks, so `validate`/`analyze`/`build` all catch it (validation tier, exit 1).
 
-use delvewright_dsl::{Campaign, Diagnostic, QuestEffect};
+use delvewright_dsl::{Campaign, Diagnostic};
 
 use crate::registry::PrefabRegistry;
 
@@ -55,36 +55,19 @@ pub fn check_close_gates(c: &Campaign, prefabs: &PrefabRegistry) -> Vec<Diagnost
             ),
         ))
     };
-    let scan = |eff: &QuestEffect, base: &str, d: &mut Vec<Diagnostic>| {
-        eff.visit_deep(&mut |e| {
-            if let Some(a) = e.close_gate_anchor()
-                && let Some(diagnostic) = diag(a.as_str(), format!("{base}/anchor"))
-            {
-                d.push(diagnostic);
-            }
-        });
-    };
-    for (qi, q) in c.quests.content.quests.iter().enumerate() {
-        for (oid, effs) in &q.on_objective_complete {
-            for (i, eff) in effs.iter().enumerate() {
-                let base = format!(
-                    "/content/quests/{qi}/on_objective_complete/{}/{i}",
-                    oid.as_str()
-                );
-                scan(eff, &base, &mut d);
-            }
+    // Every root, every depth. Its own file's `check_seal_hints` (`DW0423`, twenty
+    // lines below) already carried the corrected reasoning; this half was never
+    // back-ported and still hand-listed three of the five roots. The walk also
+    // reports the *nested* effect's own pointer now rather than its top-level
+    // ancestor's, because `for_each_campaign_effect` threads the path down —
+    // a `close-gate` inside a `sequence` step used to be blamed on the sequence.
+    delvewright_dsl::for_each_campaign_effect(c, &mut |path, _site, e| {
+        if let Some(a) = e.close_gate_anchor()
+            && let Some(diagnostic) = diag(a.as_str(), format!("{path}/anchor"))
+        {
+            d.push(diagnostic);
         }
-        for (i, eff) in q.on_complete.iter().enumerate() {
-            let base = format!("/content/quests/{qi}/on_complete/{i}");
-            scan(eff, &base, &mut d);
-        }
-    }
-    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
-        for (i, eff) in t.effects.iter().enumerate() {
-            let base = format!("/content/triggers/{ti}/effects/{i}");
-            scan(eff, &base, &mut d);
-        }
-    }
+    });
     // spec-0016 §2: a shortcut's gate is cleared `replace <block>` on unlock and is
     // sealed by that same block at world-load, so it carries the identical
     // fill-block obligation as `close-gate`.
