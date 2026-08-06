@@ -19,6 +19,9 @@
 //! - [`clearance`]: the body-vs-block proof (`DW0450`/`DW0451`) — no NPC or actor
 //!   body may occupy the same space as block geometry, at its spawn anchor or at
 //!   any tick of any walked leg.
+//! - [`traversal`]: the route-vs-capability proof (`DW0452`/`DW0453`) — a walked
+//!   leg may only contain moves the BODY walking it can make, derived from its
+//!   entity (a spider climbs, a ghast flies, nothing opens a fence gate).
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
 //! - [`integrity`]: the emitted call graph is closed (`DW0497`) — a
 //!   `function <ns>:<name>` the compiler writes must point at a function the
@@ -81,6 +84,7 @@ pub mod solver;
 pub mod stairs;
 pub mod textfit;
 pub mod timeline;
+pub mod traversal;
 pub mod waypoints;
 
 /// This compiler's version (reported by `--version`, stamped in `manifest.json`).

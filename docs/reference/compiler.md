@@ -91,7 +91,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 8 | Replay the stage-7 edit script over the assembled model (spec-0017; per-batch invariant re-proofs — trap-hardware integrity, gravity, relight, walkability, boundary safety, block support; plus the advisory gate-region check). Skipped entirely for a campaign without one (byte-identical). | `compiler::edit` | `DW0322`/`DW0323`/`DW0352`/`DW0354` + reused invariant codes, batch-attributed (tier per code); advisory `DW0353`/`DW0354` |
 | 9 | Assembled-light + relight (measure, place fixtures; over the **edited** model when a script exists) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
 | 10 | Nav checks (A* `move-npc`/`move-actor` (footprint-aware, each walk routed over its **own timeline's** gate state), cutscene clip (authored polyline + rendered keyframe chords) + angular budget, critical-path walkability — incl. relight fixtures + water flood, and **per reachable branch** over each branch's own path under its own gate-seal step space (task #117); talk-to endpoint snap; waypoint self-check (critical path + per branch); POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone/onset + trap completability proofs; spec-0016 §6 TD lane polylines; spec-0016 §1 bonfire safe zone) — all over the **edited** model when a script exists | `compiler::nav` + `compiler::timeline` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0325`/`DW0327`/`DW0342`/`DW0347`/`DW0355`/`DW0386`/`DW0410`/`DW0430`/`DW0478`/`DW0488`/`DW0724` (exit 3; `DW0342` → exit 2) |
-| 11 | Referential + placement seals inside emission: every anchor-bearing effect resolves (`DW0360`), no generated name collides (`DW0361`), no body eclipses an interaction affordance (`DW0359`, `compiler::eclipse`), no body occupies block geometry at its anchor or on any walked leg (`DW0450`/`DW0451`, `compiler::clearance`), no two bodies the party clicks contest one crosshair in a scene the cast ledger declares (`DW0489`, `compiler::crosshair`), no daylight-burning body is staged for a fight whose walkable ground reaches open sky under a pinned daytime hour (`DW0496`, `compiler::daylight`, measured off the seated wave cells) | `compiler::emit` | `DW0359`/`DW0360`/`DW0361`/`DW0450`/`DW0489`/`DW0496` (exit 3); advisory `DW0451`/`DW0489` |
+| 11 | Referential + placement seals inside emission: every anchor-bearing effect resolves (`DW0360`), no generated name collides (`DW0361`), no body eclipses an interaction affordance (`DW0359`, `compiler::eclipse`), no body occupies block geometry at its anchor or on any walked leg (`DW0450`/`DW0451`, `compiler::clearance`), no walked leg contains a move its own body cannot make (`DW0452`/`DW0453`, `compiler::traversal`), no two bodies the party clicks contest one crosshair in a scene the cast ledger declares (`DW0489`, `compiler::crosshair`), no daylight-burning body is staged for a fight whose walkable ground reaches open sky under a pinned daytime hour (`DW0496`, `compiler::daylight`, measured off the seated wave cells) | `compiler::emit` | `DW0359`/`DW0360`/`DW0361`/`DW0450`/`DW0452`/`DW0489`/`DW0496` (exit 3); advisory `DW0451`/`DW0453`/`DW0489` |
 | 12 | Emit (datapack incl. the `world_edits` function, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
 | 13 | Emission self-checks over the **finished tree**: every affordance is visible and only its owner retires it (`DW0420`/`DW0421`), and the call graph is closed — no `function <ns>:<name>` points at a function that was never emitted (`DW0497`) | `compiler::affordance` + `compiler::integrity` | `DW0420`/`DW0421`/`DW0497` (exit 3) |
 
@@ -154,7 +154,9 @@ geometry the compiler has no data for; `DW0489`'s barks tier, where two bodies
 really are ambiguous but the campaign has declared that neither right-click
 carries a consequence — or on authorial judgement the compiler
 may measure but must not overrule (`DW0351`, `DW0353`, `DW0354`'s decoration
-tier, `DW0379`, `DW0380`, and `DW0498`, where a pool repeating an anchored piece
+tier, `DW0379`, `DW0380`, `DW0453`, where a one-block course of a wall line may
+be a decorative kerb, a deliberate stile or an enclosure that was meant to hold,
+and `DW0498`, where a pool repeating an anchored piece
 is a legal shape shipping content relies on).
 
 ---
@@ -1256,6 +1258,22 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   no-stranding (`DW0315`/`DW0316`), stealth (`DW0327`/`DW0355`), traps
   (`DW0342`), shortcuts/ambush/timed-gate (`DW0373`–`DW0378`, `DW0388`), stair
   orientation (`DW0430`) — these still run on the default path only.
+- `<out>/validation/traversal-gate.json`: the `DW0452`/`DW0453` proof's **binding
+  ledger** (`compiler::traversal`, playtest-methodology.md rule 1). States what
+  the traversal proof actually examined — `legs`, `route_cells`, and
+  `legs_by_class` per `Locomotion` (`ground`/`climber`/`flier`/`aquatic`) — plus,
+  per rule, the objects it bound to (`gate_use.cells`, `surmount.rises`), and
+  `unbound` with a `reason` when the campaign plans no walked leg at all. The
+  per-class count is the point: a proof written for walking bodies is *unbound*
+  over every flying or climbing actor in the campaign, so a total alone would
+  report green over exactly the bodies it understands least. `rules.jump_reach`
+  is carried **declared-unbound on purpose**: per-entity `JUMP_STRENGTH` is
+  server-code attribute data rather than registry data the compiler reads, so
+  every rise is measured against the *player's* apex (`nav::MAX_JUMP_RISE_16`)
+  for every body, and the ledger says so rather than leaving a reader to infer
+  it from silence. Emitted only when the campaign assembles a world — "assembled
+  nothing" and "examined nothing" are different facts, so the artifact is
+  omitted rather than emitted claiming a zero it never measured.
 - `<out>/validation/combat-plan.json` (spec-0023): the bot ladder's encounter
   table — one entry per **mandatory** encounter (a wave a `kill` step on the
   compiled critical path names), in path order, carrying `wave`, `objective`,
@@ -1529,7 +1547,7 @@ classified:
 | solid | every other non-air block (full-cube, the conservative default) | no | yes |
 | tall barrier | `*_fence` (incl. `nether_brick_fence`), `*_wall` — 1.5-tall | no | **no** |
 | use-gate | closed `*_fence_gate` (1.5-tall, right-click-openable) | player: yes (USE); autonomous mobs: no | **no** |
-| passable | open `*_fence_gate` (block state `open=true`, read from the prefab palette), trap triggers, thin decoration (< 8/16 collision) | yes | no |
+| passable | open `*_fence_gate` (block state `open=true`, read from the prefab palette **or written by a stage-7 edit** — see below), trap triggers, thin decoration (< 8/16 collision) | yes | no |
 | flooded | water reach | no | no |
 | partial | a solid cell's true top-face height in sixteenths, when < 16 | no | yes, **at that height** |
 
@@ -1564,10 +1582,23 @@ impassable (now `DW0311`). A tall/gate cell is never valid floor, which also
 models the barrier's upper half blocking same-level walk-overs for free. Closed
 fence gates are **use-gate** edges: walkable for the player (adventure-legal
 right-click, the same action a human performs), exported first-class per leg (see
-`use_gates` above) — and walkable for scripted `move-npc`/`move-actor` tp
-polylines, whose firing beat's fiction controls the gate (the island ram walks
-out through the pen gate the player just opened — through the threshold, no
-longer teleport-hopping the fence-top). Autonomous placement (`spawn-wave`
+`use_gates` above). They remain routable edges for scripted `move-npc`/`move-actor`
+tp polylines too — but **that is no longer taken on trust** (island round 21):
+routing a puppet over a player-only edge is now a build error, `DW0452`, because
+a tp'd puppet performs no interaction and no runtime verb ever opens a gate, so
+"the firing beat's fiction controls the gate" was an assumption nothing proved.
+The island's pen gate shipped `open=false` with sixteen legs through it. The edge
+stays available so the diagnostic can name the cell and the reason rather than
+degenerating into an unroutable `DW0307`.
+
+**A stage-7 edit can author an open gate** (same round). `Assembled::open_gates`
+— the side set `occupancy_of` reads to tell a closed gate from an open one — was
+populated only by the prefab palette read, and `edit::write_cell` cleared it on
+every write. So an edit could write `minecraft:oak_fence_gate[open=true]`, ship
+exactly that block in the world, and still have every proof downstream model the
+cell as shut: the model contradicting the bytes it emitted, and the one available
+fix for `DW0452` was unauthorable. `write_cell` now re-derives the marking from
+the blockstate it just wrote. Autonomous placement (`spawn-wave`
 seating) uses the no-gate-use view (`World::without_gate_use`): a spawned mob is
 never seated in a gate threshold and the seating flood never spills through a
 closed gate. Cutscene dolly clipping (`DW0308`) treats fence, wall, and gate
@@ -2740,6 +2771,8 @@ does not occupy the same space as an *affordance*.
 |------|---------|
 | `DW0450` | An NPC or actor **body is inside solid block geometry** — at the anchor it is summoned on, or at some tick of a walked leg. Build-tier (exit 3), `compiler::clearance`. The owner's island rounds 8/10/11 defect class, in its clearest instance: `actor/polyphemus-walker`, a `minecraft:warden` (0.9 × 2.9 blocks), is `spawn-actor`ed at `anchor/mouth-side`, which resolves to `[6, 69, -45]` — and `[6, 69, -45]`, `[6, 70, -45]`, `[6, 71, -45]` are all `minecraft:cobblestone`, the cliff face beside the cave mouth. The emitted command is `summon minecraft:warden 6.5 69.0 -44.5`, straight into the rock, and every other proof was green. **The asymmetry this closes**: a *walked* destination was already safe by construction — `move-npc`/`move-actor` snap their endpoints to a standable cell (`SNAP_RADIUS`) and A* only steps through passable cells — but a *placed* body was proven only to have an anchor that RESOLVES (`DW0325`), and `summon` does no snapping, so the anchor is exactly where the body lands. Model: the entity's standing hitbox from `nav::entity_dims` (the one dims table, shared with `DW0359` and actor-footprint routing), centred on the position, rising `height` from the feet; intersected against each cell's true collision volume (`nav::World::solid_top_16` — a bottom slab is `y..y+0.5`, a `dirt_path` `y..y+15/16`), over the same assembled world every other geometry proof reads (settled, sealed, stage-7-edited, relight fixtures in). Water is not geometry and is excluded. Positions checked: every NPC anchor (incl. `deferred`), every actor anchor (incl. spawn-and-unleash), and **every emitted waypoint of every planned leg** — the exact per-tick `tp` coordinates the datapack ships. A leg reports its first offending tick only (a body dragged through twenty blocks of rock is one defect); all error-tier violations are named in one message so a single build gives the whole fix list. Prescription: move the anchor to a cell with real clearance (the message states how many cells of headroom the body needs), or give the leg a corridor the body fits. Do **not** shrink the body: `move-npc` plans on the *player* footprint by construction, so a warden-bodied NPC walked down a 2-high corridor is a route that was never sized for it — fix the route or the body, never the dims table. |
 | `DW0451` | Advisory (exit 0), same module: the hitbox is clear, but the body will still read as clipping. Two cases, both measurements the compiler can state and must not adjudicate. **(1) Model overhang** — a solid block lies within `MODEL_MARGIN` (0.2 blocks) of the hitbox horizontally, for a body **at rest** only. Vanilla mob models render past their collision box (a warden's arms, an iron golem's, a ravager's horns, a sheep's wool), so a flush body *looks* embedded although nothing overlaps; the true per-model extent is client render geometry the compiler has no data for, hence a named margin rather than a verdict. The margin is also what makes the tier discriminating: a body leaves `(1-width)/2` of its cell free per side, so 0.2 fires for a 0.9-wide warden or sheep (0.05 free) and stays silent for a 0.6-wide player-model humanoid (0.2 free) — an NPC standing against a wall, the most ordinary staging there is, produces nothing. It is restricted to bodies at rest deliberately: a body at rest is a composed pose the party looks at, while a walker in a one-block corridor is within a fraction of a block of both walls by construction, so flagging legs would report the map's dimensions once per leg. **(2) 1.5-tall barriers** — a fence, wall or closed fence-gate cell falls inside the body volume. Those fill their cell for pathing but are a narrow post or panel in reality, so whether the body interpenetrates depends on sub-block shape the occupancy model does not carry. Prescription: give the body a cell of clearance, or confirm the framing in playtest. |
+| `DW0452` | A walked leg's route contains a **move the body walking it cannot make**. Build-tier (exit 3), `compiler::traversal`. The owner's island round-21 finding B: `[18, 73, -63]` shipped `minecraft:oak_fence_gate[facing=east,open=false]` in the mountain pen's south fence line, and sixteen `move-npc`/`move-actor` legs walked straight through it — while the owner's own character could not, and had to offset to squeeze past the leaf. **Why nothing stopped it**: `nav::World::is_occupied` deliberately excludes `use_gates`, because a closed fence gate *is* passable — for the PLAYER, who opens it with an adventure-legal right-click (`World::without_gate_use` exists precisely because an autonomous mob cannot), and scripted walks were routed on the player's rules on the stated ground that "the beat's fiction controls the gate". Nothing proved that fiction. A scripted walk is a compiler-emitted `tp` polyline whose puppet performs no interaction at all, and **no runtime verb changes a fence gate's block state**, so a gate that ships `open=false` is shut for the whole delve. Model: capabilities come from the entity (`traversal::Traversal::of_entity`) rather than from a global rule — `opens_gates` is false for every mob, since no vanilla mob opens a fence gate (villagers open *doors*). Routing itself is unchanged: the edge stays available and the build now fails on it, which names the cell and the reason instead of turning it into an unroutable `DW0307`. A `Locomotion::Flier` body is exempt (it is not on the ground route this rule is about); a `Locomotion::Climber` is **not** — climbing is not gate-opening. A leg reports its first offending cell only, and all violations land in one message. Prescription: ship the gate OPEN (a stage-7 `world-edits` fill writing `open=true` on the cell — an open fence gate has no collision at all, so the same route becomes honest for puppet and player alike), or seal the threshold and let the route take the way a body can. |
+| `DW0453` | Advisory (exit 0), same module: a walked leg goes **over a barrier line, across a full-cube course of it**. The route steps up onto a cell whose support is a full cube standing level with, and orthogonally beside, a 1.5-tall fence/wall cell, and comes back down within `traversal::SURMOUNT_WINDOW` (4) route steps — i.e. the body crossed a line the same line refuses to let it walk through. The owner's island round-21 finding A: the beach fold's ring is `minecraft:cobblestone_wall` down the east and west sides and at the north corners but full-cube `minecraft:mossy_cobblestone` along the middle of the north and south edges, so the model sees an enclosure at nine cells and an ordinary one-block ledge at five; the flock's shortest way out ran up the east face at `[7, 63, -9]`, over the north wall's top at `[7, 64, -10]` and down into the meadow, and the pen's real opening at `[6, 63, -6]` was never used. Twelve legs, all naming the same course. With `nav::resample`'s L-shaped step-up — a vertical translation in place, which is what keeps a body out of the step block's corner — this renders as an animal sliding up a stone wall. **Advisory, not an error**: the move itself is legal (a one-block rise is inside the player-class jump every body in the dims table has), and the compiler cannot tell a decorative kerb or a deliberate stile from an enclosure that was meant to hold. A partial floor (slab, `dirt_path`) beside a fence is never a course — that is floor detail, not a wall. A `Locomotion::Climber` is exempt: going over is what a climber does. Prescription: build the line out of ONE material so the model's barrier and the player's eye agree, and let the route use the opening. |
 ### DW0489 — crosshair disambiguation (`compiler::crosshair`; error + advisory)
 
 | Code | Meaning |

@@ -328,6 +328,11 @@ pub fn build_with_warnings(
     // emitted alongside the branch paths. Empty for a campaign with no declared
     // branch points, so nothing moves for anybody who has not opted in.
     let mut branch_waypoints: Vec<(String, Value)> = Vec::new();
+    // The traversal proof's binding ledger (`compiler::traversal`), filled inside
+    // the world block below. `None` for a campaign that assembles no world —
+    // which is not the same fact as "examined nothing", so the artifact is
+    // omitted entirely rather than emitted claiming a zero it never measured.
+    let mut traversal_gate: Option<crate::traversal::TraversalGate> = None;
 
     // Every anchor-bearing effect, at every nesting depth, must resolve to a real
     // world position or the build stops (DW0360). This runs FIRST among the
@@ -588,6 +593,23 @@ pub fn build_with_warnings(
                         message: e.message,
                     })?,
             );
+            // …and the move that got the body there must be one the body can
+            // make (DW0452/DW0453, island round 21). `clearance` proves where a
+            // body IS; this proves what it DID. The two island sightings it
+            // exists for: eight sheep walking through a closed fence gate the
+            // owner could not walk through herself, and a sheep leaving the
+            // beach fold by stepping onto its wall's full-cube course instead of
+            // using the pen's opening. Capabilities come from the entity, so a
+            // spider routed over a wall stays silent and a sheep does not.
+            let (traversal_warnings, gate) =
+                crate::traversal::check_traversal(plan, &world, &moves, &actor_moves).map_err(
+                    |e| BuildFailure::Diagnostic {
+                        code: e.code,
+                        message: e.message,
+                    },
+                )?;
+            warnings.extend(traversal_warnings);
+            traversal_gate = Some(gate);
             // Seat each wave mob on a validated standable cell near its anchor, in
             // room only (DW0312 if the room lacks the footing) — or, for a
             // `summon: aggro-edge` wave, on its perception ring (DW0387).
@@ -971,6 +993,16 @@ pub fn build_with_warnings(
             &format!("validation/branch-waypoints-{slug}.json"),
             wp,
         );
+    }
+    // The traversal proof's binding ledger (`compiler::traversal`,
+    // playtest-methodology.md rule 1): how many legs and route cells it examined,
+    // per locomotion class, and which of its rules bind at all. A green that
+    // matched nothing must be legible as such WITHOUT the reader re-deriving it
+    // from an empty diagnostics list — and the capability axis is its own way to
+    // bind to nothing, since a proof written for walking bodies is unbound over
+    // every flier in the campaign.
+    if let Some(gate) = &traversal_gate {
+        put_json(&mut out, "validation/traversal-gate.json", &gate.to_json());
     }
 
     // ---- manifest (hashes of inputs + all other outputs) ----
