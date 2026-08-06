@@ -54,9 +54,10 @@
 //!   along the mainline instead of across it;
 //! * every mainline piece's frame guard is measured against the **mainline's**
 //!   width, not the zone's, because that is the box it is actually handed. The
-//!   sally lane is full mainline width for the same reason the others are: a
-//!   narrowed slice would wall off the arena's own east flank lane, which is a
-//!   gate this zone owes.
+//!   sally lane is full mainline width for the same reason the others are, and
+//!   that reason is measured: hand the junction a 5-wide box and fill the other
+//!   14 of its slice, and the zone's flank-route count drops from 2 to 1 — the
+//!   solid remainder walls off the arena's own east band, which gate 3 owes.
 //!
 //! Naming: `watch_bay` and `far_side_bar` both declare `anchor/gate`, and they
 //! are two genuinely different gates, so the zone says which is which at the

@@ -796,10 +796,14 @@ with no `otherwise`: `strip_depth > <junction>_run`, and every mainline piece's
 run measured against the **mainline's** width (`dim(X) - strip_depth`) rather
 than the zone's, because that is the box the piece is actually handed.
 
-Z6's junction is full mainline width for a reason worth recording: a narrowed
-slice would wall off the arena's own east flank band, and "a lane each side of
-the fight" is a gate that zone owes. The price is the fixture's size — a 21-deep
-strip beside a 19-wide mainline, so the box is 40 across.
+Z6's junction is full mainline width, and the reason is measured rather than
+argued: hand the junction a 5-wide box and fill the other 14 of its slice, and
+the zone's flank-route count drops from 2 to 1 — the solid remainder walls off
+the arena's own east band, and "a lane each side of the fight" is a gate that
+zone owes. (The same class of one-off measurement `branch_chain`'s margin note
+records; a permanent second copy of the zone would drift out of step with the
+real one and go vacuous.) The price of the full-width junction is the fixture's
+size — a 21-deep strip beside a 19-wide mainline, so the box is 40 across.
 
 **A risk this pattern creates, recorded before it can bind wrong.** The strip's
 inert `margin` is roughly two fifths of Z6's blocks. Nothing today measures a
