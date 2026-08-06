@@ -90,6 +90,84 @@ pub fn connected(
     false
 }
 
+/// [`connected`]'s ±1-step walk, plus a one-way **fall**: stepping off a
+/// standable cell into an adjacent column with nothing underfoot, and landing on
+/// the first solid floor below however far that is.
+///
+/// This is the player's own movement model, and it is deliberately *more*
+/// permissive than [`connected`] — which is why it is used in two opposite
+/// directions and never interchangeably with it:
+///
+/// * **forward**, where a zone contains one-way hardware (Z6 is entered by
+///   stepping off a ledge, so `connected` alone would call the zone severed);
+/// * **as the adversary**, when a zone claims a route is the only route. A fall
+///   edge can carry a player *past* a wall that a walker would have to go
+///   round, so a severing cut is only proved severing if it survives this model.
+///
+/// The negative direction — "there is no way back up" — is asserted under the
+/// plain [`connected`] walk instead, because a fall edge only ever points down
+/// and proving a negative under the model built to be generous would be
+/// circular. `tests/staging.rs` carries the same function and the same
+/// reasoning at piece scale.
+///
+/// **What it does not model: a horizontal jump.** Every "unreachable" it proves
+/// means unreachable *by walking and falling*. For the zones here the
+/// consequence is benign in both directions: a jump cannot lift a player out of
+/// the cistern, and it could only ever add flank routes to an arena.
+///
+/// One deliberate divergence from the piece-scale copy: a landing must be a
+/// member of `cells`, not merely standable in the model. A zone gate proves a
+/// route is the only route by deleting cells from the graph, and a fall that
+/// was allowed to land on a deleted cell would walk straight through the cut.
+pub fn reachable_with_fall(
+    model: &VoxelModel,
+    cells: &BTreeSet<[i32; 3]>,
+    from: &BTreeSet<[i32; 3]>,
+    to: &BTreeSet<[i32; 3]>,
+) -> bool {
+    let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut queue: VecDeque<[i32; 3]> =
+        from.iter().copied().filter(|c| cells.contains(c)).collect();
+    seen.extend(queue.iter().copied());
+    while let Some([x, y, z]) = queue.pop_front() {
+        if to.contains(&[x, y, z]) {
+            return true;
+        }
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            for dy in [0, 1, -1] {
+                let next = [x + dx, y + dy, z + dz];
+                if cells.contains(&next) && seen.insert(next) {
+                    queue.push_back(next);
+                }
+            }
+            // The fall: walk the adjacent column down from foot height until it
+            // hits solid ground, and land there if that landing is standable and
+            // is one of the cells under consideration. However far the drop,
+            // this only ever adds an edge downward.
+            let mut fy = y;
+            loop {
+                fy -= 1;
+                if y - fy > 64 {
+                    break; // not a real shaft, a runaway search
+                }
+                let below = [x + dx, fy, z + dz];
+                match model.get(below) {
+                    None => break, // fell out of the structure entirely
+                    Some(_) if solid(model, below) => {
+                        let landing = [x + dx, fy + 1, z + dz];
+                        if cells.contains(&landing) && seen.insert(landing) {
+                            queue.push_back(landing);
+                        }
+                        break;
+                    }
+                    _ => continue, // still falling
+                }
+            }
+        }
+    }
+    false
+}
+
 /// Whether an observer standing on `watch` can see the space a body standing on
 /// `target` occupies. Both endpoint cells are exempt: the observer's own head,
 /// and the volume being looked at.
