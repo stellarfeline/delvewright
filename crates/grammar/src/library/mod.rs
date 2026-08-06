@@ -62,7 +62,7 @@ pub mod threshold_motif;
 pub mod watch_bay;
 
 pub use ambush_door::ambush_door;
-pub use bell::{barrow_shore, cistern_deep, cliff_road, gate_ward, hall_keep};
+pub use bell::{barrow_shore, chapel_ward, cistern_deep, cliff_road, gate_ward, hall_keep};
 pub use boulder_stair::boulder_stair;
 pub use broken_grate::broken_grate;
 pub use castle::castle;
