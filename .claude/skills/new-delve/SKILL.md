@@ -1,6 +1,10 @@
 ---
 name: new-delve
 description: Generate a complete playable Minecraft delve from a creative prompt — staged DSL authoring with validation-loop self-repair, deterministic compile, machine validation, joinable output. Use when the user asks to create/generate a new delve or campaign. Args = the creative prompt (theme one-liner or detailed brief).
+version: 1.0.0
+requires:
+  delvec: ">=1.0.0 <2.0.0"
+verified_with: 1.0.0
 ---
 
 # /new-delve — the Delvewright generation front-end (ADR-0012)
@@ -408,6 +412,48 @@ For each stage in order — world → npcs → classes → quest-plan → quests
    of patching syntax.
 4. Interactive mode: present a 3–6 line summary of the stage; wait.
 
+### 4b. The design-alignment Artifact — MANDATORY between the plan and the content
+
+**Owner directive, 2026-08-04.** Stages 1–4 settle *what the delve is*; stages 5–6
+are where the expensive authoring happens. Between them, when the design is
+settled and the pieces it needs exist, **you deliver an Artifact and stop.**
+
+The Artifact tells the **complete story** and walks through **every scene's
+design**, and each scene carries images at **both near view and far view**. Not a
+document with pictures in it — a visual walkthrough, in the medium the owner
+actually reviews in. She does not read long documents (CLAUDE.md PR policy); a
+design she cannot see is a design she cannot approve, and every problem it would
+have caught gets paid for twice once stages 5–6 are written against it.
+
+- **Near view** = the scene as a player stands in it. **Far view** = the same
+  scene in its surroundings, so staging and sightlines read.
+- Prefer the **player-POV** shots (below) for near view. An orbit render answers
+  "is the set pretty"; only an eye-height frame on the walk answers "what does a
+  player walking in experience", and the second question is the one the review
+  exists for.
+- **Do not begin stage 5 until she has confirmed it.** A confirmation is her
+  words in chat, not the absence of an objection.
+- In **e2e mode** the Artifact is still produced and still shown — e2e removes
+  the per-stage pauses, not the one gate whose whole purpose is her judgment.
+
+This is the same principle as the branch chronicle in step 7, applied one layer
+earlier: the compiler renders compiled reality back into the reviewer's own
+medium, and the review compares like with like. Whenever you are tempted to add
+a review step, ask first — *what does the compiler emit that shows the reviewer
+the compiled reality in their medium?* If the answer is "they read the DSL", the
+step is designed wrong.
+
+### 4c. A device enters a campaign only behind a green machine gate
+
+**Owner ruling, 2026-08-05.** If a structural device — a shortcut loop, a one-way
+drop, an ambush reversal, a multi-path interlock — has no machine gate proving
+its class, it does not go in the campaign yet. Never "author it now and prove it
+later": the owner's QA hour is the scarce resource this whole pipeline exists to
+protect, and an unproven device spends it on something a test should have caught.
+
+When a design wants a device whose gate does not exist, that is a **capability
+gap**: report it, and either the gate lands first or the design does without it.
+
 ### Supported techniques
 
 Load-bearing patterns proven on real runs — reuse rather than rediscover:
@@ -698,10 +744,27 @@ Then:
      `expect` line (marker visible? room not dark? NPC faces camera and its name
      is text not JSON? seam clean?). Findings are **DSL-level** — fix the campaign
      (lighting profile, anchor, NPC facing, name string) and rebuild; never
-     hand-edit output. Whole-scene and player-POV shots come from
-     `validation/render-shots.sh <build-dir>` (`delve-render scene` + `index`);
-     path-tracing those scenes is Chunky, run as a separate process
-     (`docs/reference/tools.md` §4a) — not wired into CI.
+     hand-edit output.
+
+   **Judge the player's eye first, and the set second** (owner concern, recorded
+   during the nobodys-cave QA rounds). The per-prefab renders are orbit cameras:
+   they answer *"is the set well made"*, which is not the question a playtest
+   asks. The question is *"what does a player walking in experience"*, and only a
+   first-person frame on the actual route answers it. The compiler already emits
+   those shots — a `pov` camera at eye height on every corner-thinned
+   critical-path waypoint, looking along the walk and, at each leg's end, toward
+   the objective it arrives at, each with its own machine `expect` line. Every POV
+   eye sits on a proven-standable waypoint, so the camera is provably in open air.
+
+   So: read the **POV sequence in route order** before you open a single orbit
+   render, and treat it as the primary evidence. A scene that photographs well
+   from outside and reads as a corridor of grey stone from the doorway is a
+   finding, not a pass. Whole-scene and player-POV shots come from
+   `validation/render-shots.sh <build-dir>` (`delve-render scene` + `index`);
+   path-tracing those scenes is Chunky, run as a separate process
+   (`docs/reference/tools.md` §4a) — not wired into CI. The best of these frames
+   are also what the design-alignment Artifact (step 4b) should have been built
+   from.
 10. **Storybook** (spec-0007): write `campaigns/campaigns/<id>/README.md` — the
    reader-facing intro. Background/setting ONLY: premise, lore, public NPC
    introductions (never persona `secret`), classes, playtime, build/play

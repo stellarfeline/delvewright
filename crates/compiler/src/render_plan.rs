@@ -840,11 +840,25 @@ fn layout_aabb(plan: &Plan) -> ([i32; 3], [i32; 3]) {
 mod lighting_tests {
     use super::*;
 
+    /// Every call gets its own directory, and the discriminator is a counter
+    /// rather than anything derived from `lighting`.
+    ///
+    /// It used to be `lighting.len()`, which is not a discriminator at all when
+    /// two callers pass the same string: `an_unmeasured_piece_is_unknown_not_dark`
+    /// and `an_unknown_prefab_has_no_verdict` both pass a byte-identical
+    /// `{ "profile": "unmeasured" }`, so under one process id they named ONE
+    /// directory — and each begins by deleting it. Cargo runs a crate's tests on
+    /// parallel threads, so the two collided by construction: whichever reached
+    /// `remove_dir_all` second deleted the other's fixture out from under it,
+    /// and the loser failed to load a prefab it had just written. That surfaced
+    /// as a rare `--workspace` red (one in ~30) and read as flakiness, which is
+    /// exactly the shape CLAUDE.md forbids re-running instead of root-causing.
     fn registry_with(lighting: &str) -> (std::path::PathBuf, PrefabRegistry) {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let dir = std::env::temp_dir().join(format!(
             "dw-piece-is-lit-{}-{}",
             std::process::id(),
-            lighting.len()
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -885,6 +899,26 @@ mod lighting_tests {
             assert_eq!(piece_is_lit(&registry, "prefab/p"), expected, "{lighting}");
             std::fs::remove_dir_all(&dir).unwrap();
         }
+    }
+
+    /// The fixture helper's own invariant, and the reason the discriminator is a
+    /// counter: two callers passing the SAME lighting string must still get two
+    /// directories. Under the old `lighting.len()` naming this assertion fails
+    /// outright — the two paths are equal — which is the deterministic form of
+    /// the race that made `an_unmeasured_piece_is_unknown_not_dark` and
+    /// `an_unknown_prefab_has_no_verdict` delete each other's fixture.
+    #[test]
+    fn two_registries_never_share_a_directory() {
+        let same = r#"{ "profile": "unmeasured" }"#;
+        let (a, _ra) = registry_with(same);
+        let (b, _rb) = registry_with(same);
+        assert_ne!(
+            a, b,
+            "two fixtures built from an identical lighting string shared one directory"
+        );
+        assert!(a.join("p.json").is_file() && b.join("p.json").is_file());
+        std::fs::remove_dir_all(&a).unwrap();
+        std::fs::remove_dir_all(&b).unwrap();
     }
 
     /// An unknown prefab stays unknown — the verdict never invents a piece.

@@ -61,9 +61,12 @@ EXCLUDED_PREFIXES = ("docs/experiments/",)
 # SIGPIPE lands on `sed`, whose status the pipeline discards. It is listed here so
 # the exemption is visible rather than absent, and it must be closed the next time
 # that entrypoint is touched under the player-facing gate (task #32).
-EXEMPT_LINES = {
-    ("validation/world-settings-entrypoint.sh", 17),
-}
+# Empty on purpose, and it is the point: every early-exit-on-a-pipe in the repo
+# has been removed rather than allowlisted. The last entry here was
+# `validation/world-settings-entrypoint.sh`'s `prop()`, latent because that script
+# sets `set -e` without `pipefail`; it was rewritten to let `sed` stop by itself.
+# Re-adding an entry means accepting a coin flip somewhere — say why, in the entry.
+EXEMPT_LINES: set[tuple[str, int]] = set()
 
 # A pipe, then a consumer that can stop reading early. `head`/`tail` are only a
 # hazard with an explicit line count that is not the whole stream — `tail -n 30`
