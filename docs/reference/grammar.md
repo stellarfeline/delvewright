@@ -385,6 +385,111 @@ the double-expand determinism gate over model bytes *and* anchors
 `-<i>` names nobody hand-listed, and `store_room`'s seeded tell position —
 round-trip through `PrefabRegistry` (`crates/compiler/tests/grammar_prefab.rs`).
 
+### `boulder_stair` — the worn-tread tell (W), and the side pockets (S)
+
+A hazard lane whose centre course takes a `smooth`-variant material down its
+length while the side lanes keep the `rough` variant — a Sen's Fortress
+telegraph built as paint, not shape. Every `pocket_period` cells its near-side
+wall opens into a one-cell dodge.
+
+| | |
+|---|---|
+| Controls | `head` (4), `pocket_height` (2), `pocket_period` (8); roles `rough`, `smooth` |
+| Smallest region | `MIN_X` (5) × (`head` + 2) × `MIN_DEPTH` (= `MIN_X`, since the frame always makes local `Z` the *larger* of the two horizontal extents — a documented depth under the width minimum could never be reached) |
+| Anchors | `anchor/stair-run` — the run's floor centre. `anchor/volley-slot` — the vault rib directly over the run's midpoint, for a dart trap; ordinary stone until a campaign binds it (§7: trap anchors are not yet expressible by a rule). `anchor/pocket-<i>` — each dodge, facing the lane |
+
+**S has no grammar of its own in the vocabulary doc.** "Side `alcove` splits
+every 8 units (entry S safe pockets)" is the only place the pockets are
+described, and it is inside W's own entry — the dispatch line's "W3 = W+S+M+X"
+is the only place S reads as a fourth peer letter. What is built is a properly
+named, fully gated rule (`pocket_niche`) *inside* `boulder_stair`, not a second
+exported program (the IR has no cross-program `call`, so a standalone
+`safe_pocket` program could not literally be what this rule's own split uses).
+This is filed as an open question for the planner, not decided here.
+
+Gates:
+
+1. **The tread is exactly one material family, at two distress levels** — the
+   spec-0027 §4 palette-role budget's own claim, proved against a **test-local
+   mirror** of that not-yet-built diagnostic (§7 below; `crates/grammar/src/lib.rs`'s
+   own "not built yet" note), scoped to the lane's own floor course. Teeth:
+   read the same cells without the family fold and the smooth run's raw share
+   genuinely clears the 10% accent ceiling — so the fold is load-bearing, not
+   vacuous — and restyling the run to an unrelated material is still correctly
+   caught as a genuine accent overrun under the same grouped reading.
+2. **The lane is the only continuous route** — the same cut `cliff_path` and
+   `ambush_door` use, here on the pocket band: it is solid everywhere except at
+   pocket slots, so it cannot substitute for the lane end to end.
+3. **A pocket is a one-cell dodge, visible from the lane** — standable, one
+   deep, backed and lintelled like `cliff_path`'s niche, but (unlike
+   `ambush_door`'s alcove) *not* blind: a dodge nobody can see coming is not an
+   escape.
+4. **`pocket_period` is a real control**, the same claim `cliff_path` makes for
+   `spacing_min`: widening it thins the pockets out.
+
+A box shorter than one `pocket_period` cannot tile even one pocket
+(`make_split` checks the un-repeated pattern before it tiles) — the same shape
+`rafter_hall` uses for a hall too short for its truss, a plain lane and no
+`anchor/pocket-*` is a variant, not an error.
+
+### `threshold_motif` — the boss-door threshold motif (M)
+
+A doorway spanning the box's whole interior width, hung above walking height
+with a bell-rope curtain tiled by `split_repeat` — so a motif taught in one
+zone and rebuilt wider for another keeps the same strand density without being
+retuned per size.
+
+| | |
+|---|---|
+| Controls | `head` (4), `curtain_height` (2), `strand_period` (1), `single_strand` (0 — a test knob); roles `stone`, `curtain` |
+| Smallest region | 3 × (`head` + 2) × 3 — and `head` ≥ `curtain_height` + 2, so there are two full cells of walk clearance under the curtain (one is not enough for `standable`, which also asks for the cell above the player's head) |
+| Anchors | `anchor/threshold-narrate` — the doorband's floor centre (`FloorCenter`, so it re-centres at any width), for the beat taught once and cued again elsewhere |
+
+Gates:
+
+1. **Curtain density holds across box sizes** — the entry's whole reason to
+   exist: a narrow and a wide doorway carry proportionally more strands, not a
+   thinner spread. Teeth: `single_strand` collapses the curtain to one strand
+   regardless of width, which is exactly what "the motif degrading" means, and
+   the density check catches it at both sizes.
+2. **The doorway is walkable beneath the curtain** — the band sits entirely
+   above the walk clearance, so the passage connects end to end with or
+   without the degrading knob.
+
+### `broken_grate` — the broken grate (X)
+
+A wall's own vent row, walked the same state-machine `store_room` uses for its
+barrel line — `line_before_tell` either lays a plain grate and recurses or
+spends its draw and hands the rest to `line_after_tell` — so every derivation
+breaks exactly one grate cell, applied to a wall band instead of a floor row.
+
+| | |
+|---|---|
+| Controls | `head` (3), `grate_height` (2); roles `stone`, `grate`, `grate_broken` |
+| Smallest region | 3 × (`head` + 2) × `MIN_LINE` (3) — the same "three is the shortest row the odd one always has a neighbour in" proof `store_room` makes |
+| Anchors | `anchor/grate-secret` — the broken cell, facing out into the room across the row |
+
+Gates:
+
+1. **Exactly one break, and the anchor is on it** — counted off the blocks'
+   `(x, z)` over 12 seeds (a break is `grate_height` courses tall, so it is
+   several blocks at one row position, not several breaks), with the rest of
+   the row asserted to be plain grates.
+2. **The break is in the row** — a plain grate beside it on at least one side.
+3. **The break moves with the seed** — 12 seeds put it in ≥ 3 distinct places.
+4. **The distress variant is not counted as an accent** — the same
+   §4-diagnostic-mirror claim `boulder_stair` makes, over the row's own cells:
+   an ungrouped reading of the same short row genuinely clears the accent
+   ceiling, the family-grouped reading does not, and restyling the break to an
+   unrelated material is still correctly caught.
+
+`boulder_stair`, `threshold_motif` and `broken_grate` are in the generic
+library suites too, the same promises as the five above: structural validity,
+JSON round trip, palette-swap-moves-no-block over every role, double-expand
+determinism over bytes and anchors, and their anchors — including
+`boulder_stair`'s generated `pocket-<i>` names and `broken_grate`'s seeded
+break position — round-trip through `PrefabRegistry`.
+
 ## 6. Export — freezing an expansion as a prefab
 
 `export::export_prefab(program, region, options, id)` produces the two files a
