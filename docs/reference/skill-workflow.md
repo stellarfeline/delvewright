@@ -163,6 +163,8 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
 4. **The ladder's project id is chosen by hand** (`dw-<campaign>-r<round>`).
    Required everywhere, defaulted nowhere — deliberately, since a shared default
    is what the mutex used to paper over.
-5. **No version contract on the skill itself.** It emits some `dsl_version` and
-   needs some `delvec`, and neither is declared or checked. This is what the
-   component-scoped tag + manifest-field decision (owner, 2026-08-06) is for.
+5. **ADR-0016's third version line is undelivered.** The ADR gives the skill its
+   own version plus the `delvec` range it drives (`delvec >= 1.0 < 2`), declared
+   *in the skill*. The skill's frontmatter today carries `name` and
+   `description` and nothing else — so the product version line exists on paper
+   only, and nothing checks that a declared range is true.
