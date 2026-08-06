@@ -19,6 +19,7 @@ TOOL_DF="$ROOT/validation/Dockerfile.toolserver"
 COMPOSE="$ROOT/validation/compose.yaml"
 HARNESS_PKG="$ROOT/harness/package.json"
 RENDER_CARGO="$ROOT/crates/render/Cargo.toml"
+BOOTSTRAP_SH="$ROOT/validation/server-bootstrap-cache.sh"
 
 [ -f "$MANIFEST" ] || { echo "FATAL: $MANIFEST not found"; exit 2; }
 
@@ -33,6 +34,7 @@ emit("BASE_DIGEST",       d["images"]["base"]["digest"])          # sha256:...
 emit("TOOL_DIGEST",       d["images"]["toolserver"]["digest"])
 emit("TOOL_TAG",          d["images"]["toolserver"]["tag"])
 emit("FABRIC_LOADER",     d["fabric"]["loader_version"])
+emit("FABRIC_LAUNCHER",   d["fabric"]["launcher_version"])
 emit("FABRIC_API_SHA1",   d["fabric"]["api_sha1"])
 emit("PACKTEST_VERSION",  d["packtest"]["version"])
 emit("PACKTEST_SHA1",     d["packtest"]["sha1"])
@@ -87,6 +89,10 @@ want_in "fabric API sha1 -> Dockerfile.toolserver" "$FABRIC_API_SHA1" "$TOOL_DF"
 want_in "packtest sha1 -> Dockerfile.toolserver"   "$PACKTEST_SHA1"   "$TOOL_DF"
 # compose pins the toolserver by its manifest digest (spec-0005).
 want_in "toolserver digest -> compose" "$TOOL_DIGEST" "$COMPOSE"
+# ...and the Fabric LAUNCHER by name (task #41). Left at itzg's `LATEST` default this
+# is a meta.fabricmc.net request on every boot of an already-provisioned image — six
+# per `tier 2` run, each its own chance to red a required check.
+want_in "fabric launcher -> compose" "$FABRIC_LAUNCHER" "$COMPOSE"
 
 echo "== Harness =="
 want_in "mineflayer -> harness/package.json" "$MINEFLAYER" "$HARNESS_PKG"
@@ -133,9 +139,32 @@ else
   fail "render.chunky_core '$CHUNKY_CORE' is not a chunky-core snapshot build"
 fi
 
-# Server-jar checksums live in versions.toml as provenance only (the CI jar cache
-# was removed 2026-07-30 — see ci.yml tier-2 note; the itzg entrypoint downloads and
-# the digest-pinned base image guarantees which installer runs).
+echo "== Server-jar bootstrap (task #41) =="
+# `server_jar_url` / `server_jar_sha256` stopped being provenance-only on 2026-08-05:
+# validation/server-bootstrap-cache.sh performs the ONE live fetch of a `tier 2` run
+# and verifies it against the pin. The way a consumer cannot drift from the manifest
+# is to hold no COPY of the value, so what is asserted here is the absence of one:
+# the script must read both keys out of versions.toml and must hardcode neither the
+# checksum nor the download host. (This is NOT the 2026-07-30 jar cache returning —
+# that was a read-only bind mount of the jar, which itzg's rename-into-place could
+# not target; this is a copy, and its point is the fetch COUNT, not speed.)
+if [ -f "$BOOTSTRAP_SH" ]; then
+  if grep -q 'server_jar_url' "$BOOTSTRAP_SH" && grep -q 'server_jar_sha256' "$BOOTSTRAP_SH"; then
+    pass "bootstrap script reads server_jar_url + server_jar_sha256 from versions.toml"
+  else
+    fail "validation/server-bootstrap-cache.sh must read server_jar_url and server_jar_sha256 from versions.toml"
+  fi
+  # `grep -c` counts the whole file; it never stops reading early (task #173).
+  strayhash="$(grep -cE '[0-9a-f]{64}' "$BOOTSTRAP_SH" || true)"
+  strayurl="$(grep -cF 'piston-data.mojang.com' "$BOOTSTRAP_SH" || true)"
+  if [ "$strayhash" -eq 0 ] && [ "$strayurl" -eq 0 ]; then
+    pass "bootstrap script hardcodes no checksum and no download host"
+  else
+    fail "validation/server-bootstrap-cache.sh hardcodes a checksum ($strayhash line(s)) or the Mojang host ($strayurl line(s)) — read them from versions.toml, or the pin and the fetch can disagree"
+  fi
+else
+  fail "validation/server-bootstrap-cache.sh missing — it is the single-fetch bootstrap tier 2 depends on"
+fi
 
 echo
 if [ "$fails" -ne 0 ]; then
