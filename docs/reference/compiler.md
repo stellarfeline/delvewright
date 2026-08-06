@@ -411,7 +411,8 @@ from l10n (no stage-7 string is player-visible).
 Envelope `{dsl_version,campaign_id,kind:"l10n",lang,content}`; `content` = flat
 **stable key → translated string**. Key inventory derived from stage docs
 (`world.title`, `world.outro`, `area.<a>.name`, `class.<c>.name/.blurb/.kit.<i>.name`,
-`npc.<n>.name`, `quest.<q>.goal`, `obj.<q>.<o>.title/.hint`,
+`npc.<n>.name`, `actor.<a>.name` (a scripted puppet's nameplate, only when set),
+`quest.<q>.goal`, `obj.<q>.<o>.title/.hint`,
 `obj.<q>.<o>.missing_item_hint` (v0.7) and `obj.<q>.<o>.item_name` (a `collect`'s
 collected-item display name, v0.8, only when authored),
 `dlg.<n>.<node>.text/.opt.<i>.label/.opt.<i>.tooltip` (the tooltip v0.8, only when
@@ -439,8 +440,33 @@ under a position-derived child key = parent `fx.…` key + a stable segment
 (`seq.<step>` for a sequence step; `respawn`/`caught`/`arrive` for the bundles) +
 the effect's list index + leaf, e.g. `fx.<q>.oc.<o>.0.seq.1.0.narrate` (nesting is
 arbitrary-depth). Keys are purely position-derived → deterministic + byte-stable.
-Coverage is **exact**: missing/absent/inconsistent → `DW0180`; orphan → `DW0181`.
+**Entity display names are keyed by their TEXT, not by their site.** An NPC
+(`npc.<n>.name`) and a scripted actor (`actor.<a>.name`) are two DSL surfaces for
+one thing a player reads — a nameplate over a body — and one character routinely
+occupies both: a stage-2 NPC that stands and talks, plus one actor puppet per
+cutscene pose. Per-site keys would ask a translator for `Polyphemus` five times and
+let it be answered five ways, so **the first site (NPCs before actors) declaring a
+given name owns the key and every later site carrying the byte-identical name
+emits that same key**. The inventory asks once; two bodies a player reads as one
+character cannot render as two. Deliberately scoped to that class: prose keeps one
+key per site (two coinciding English strings may legitimately need different
+renderings), and `wave.<w>.mob.<i>.name` is **not** merged — same shape, but
+merging it retires keys live campaigns already translate, which is an owner call.
+
+Coverage is **exact**: missing/absent/inconsistent → `DW0180`; orphan → `DW0181`;
+a key in the compiler's reserved `delvewright.` chrome namespace → `DW0186`.
 Excludes authoring context (theme/premise/persona).
+
+**Every string field in the DSL is classified, or CI is red.** `DW0185` proves that
+a string the inventory *knows about* reaches a component; it cannot see one the
+inventory never met, which ships English silently — how `actors[].name` survived
+twenty playtest rounds. `crates/dsl/tests/l10n_surface.rs` closes that half: it
+enumerates every string-valued property of the seven stage schemas (derived from
+the Rust types, so complete by construction — **78** today) and requires each to
+be classified `Inventoried` / `Reference` / `Machine` / `NotPlayerVisible(<why>)`,
+in both directions. A new `String` anywhere in the DSL fails it until somebody
+records whether a player reads it. It is a test, not a `DW` code, because the
+defect is in the compiler: no campaign input can produce it.
 
 **`delvec l10n-inventory <dir> [--lang <code>]`** emits that inventory as one JSON
 document on stdout — the work list a translator (in-agent, human, or an external
@@ -486,7 +512,7 @@ all, and the delve must still be playable in English.
 | Key set | The existing l10n inventory, unchanged. `each_string` stays the single authority over what is translatable — no second key scheme, no second inventory. |
 | Tagging | `dsl::l10n::tag_translatables` rewrites each inventoried string to `<U+E000><key><U+E000><English>` **once**, before `Plan::build`. From there the tag is the compiler's only evidence that a string is player-visible. Emitters lower it through `emit::tr` / `emit::snbt_component`; non-component consumers read it through `dsl::l10n::plain`. |
 | Lang files | Flat `{key: string}` in `BTreeMap` order (ADR-0006). `en_us.json` **is** the live inventory; each other file is its sidecar's `content`. The key sets must be equal — a hole fails the build (`DW0180`/`DW0181` at emit time), because a hole is a player reading a raw key. |
-| Language codes | Explicit table, `dsl::l10n::mc_lang_code` (`zh-cn` → `zh_cn`, `ja-jp` → `ja_jp`, …). Never a mechanical `-`→`_` rewrite: that would happily invent a filename Minecraft never loads, and a lang file under a name no client asks for is a language silently dropped. Unmapped = `DW0184`. |
+| Language codes | `dsl::mclang::mc_lang_code` normalises (lowercase, `-`→`_`) and then **checks membership against the pinned client's own language set** — `CLIENT_LANGS`, 143 stems **derived** from Mojang's 1.21.11 asset index (`tools/derive-client-langs.py`; digests in the module header), never transcribed. The membership check is what makes normalisation safe: a bare rewrite alone would invent `de` from `de`, a filename no client asks for, and a lang file nobody loads is a language silently dropped. A bare language resolves to `<lang>_<lang>` if the client ships one, else to its sole file; ambiguous (`zh`, `sr`, `be`) and unknown codes are `DW0184`. Baked into the source — the compiler never reaches the network during a build (ADR-0006). |
 | `--lang <code>` | **Unchanged**, and still the single-language bake (spec-0029 §4): strings are swapped before emission, nothing carries a translate key, and the build ships **no** lang files — there is nothing for a client to select between. For local dev and one-language artifacts; the release path does not use it. |
 | Art titles | `emit_narrate` no longer `to_ascii_uppercase()`s an `art` string — a case transform is something a `{"translate": …}` component cannot express, since the client resolves the lang file after the compiler is gone. The `delve:art` font now carries a **second bitmap provider** over the same atlas addressed by the lowercase letters, so a lowercase letter renders through its uppercase bitmap: identical pixels, in every language. Cells with no lowercase form are `\u0000` (vanilla's unused-cell marker), so no char is claimed twice. |
 | Width gates | `DW0330`/`DW0331` already checked source **and** every declared translation. Under v2 any declared language may be what a player sees, so those checks are load-bearing rather than belt-and-braces. Unchanged code, raised stakes. |
@@ -495,6 +521,41 @@ all, and the delve must still be playable in English.
 No DSL change and no `dsl_version` bump: this is emission only. Every campaign's
 emitted bytes change (literals become components); released delves reproduce
 through their pinned engine (`versions.toml` + OCI), per the versioning discipline.
+
+#### Compiler chrome — the strings the compiler writes itself
+
+*Owner ruling 2026-08-06.* A delve's on-screen text has two authors. Everything
+above concerns the **campaign's** strings. The compiler writes thirteen of its own
+— `New objective: `, `Delve Complete`, `Choose your class`, the default a bonfire
+shows when the campaign authors no label — and until this they had no key and no
+override, so a player reading a fully translated delve still saw English chrome
+wrapped around it.
+
+They are **compiler-owned end to end** (`dsl::chrome`): the keys, the English, and
+every translation live with the engine, and a campaign authors nothing. Eight of
+them are *product chrome* (`objective.new`, `objective.complete`,
+`campaign.complete`, `campaign.signature`, `campaign.banner`, `lobby.waiting`,
+`class.title`, `class.body`) — no campaign author wants to write those, which is
+why the answer is not to give them an override; that would move the engine's
+maintenance cost onto content. The other five are *diegetic defaults*
+(`boundary.message`, `gate.sealed`, `bonfire.title|rest|save`) whose authored
+overrides already exist, are unchanged, and still win — what lives in `chrome` is
+only what the compiler bakes when nothing is authored.
+
+| Piece | Behaviour |
+|---|---|
+| Key space | `delvewright.ui.<area>.<name>`. Collision-proof both ways by construction: the l10n key scheme derives a fixed set of kinds and can never produce `delvewright.`, and vanilla never defines it either. A sidecar that writes one anyway is `DW0186`. |
+| Delivery | Identical to an authored string: the chrome string enters emission as a translation tag, an emitter lowers it through `emit::tr`/`snbt_component`, and a site that fails to is `DW0185` — chrome inherits the whole invariant rather than getting a parallel path. |
+| Sentences, not fragments | Four chrome strings frame a value and are **one key with `%s`**, carried by the component's `with` (`"%s — complete."`, `"New objective: %s"`, `"Waiting for the party — %s / %s"`). A concatenation freezes English word order into every language; `translate`+`with` is vanilla's own primitive for it. A unit test requires each language's placeholder count to equal the English's. |
+| Lang files | Chrome is written into `en_us.json` and into each **declared** language's file — never into languages the delve does not already ship, or a French client on a Chinese-only campaign would read French chrome around English story. Partial-by-language reads as broken; uniform English does not. |
+| The honest fallback | A language the compiler has no chrome table for gets **no chrome rows at all**: the client resolves through `en_us.json` (or, for a player who declined the pack, the component's own `fallback`) and reads English. Absent, never English written into `fr_fr.json` under a translated name. |
+| Coverage | `dsl::chrome::TABLES` maps a client language stem to a table. Today: **30 tables covering 47 of the client's 143 locales**, plus the 5 English locales that need none. The rest render English. |
+| `--lang` bake | A bake ships no lang files, so the fallback IS what the player reads: `Chrome::for_build` puts the baked language's text there, falling back to English. `%s` still substitutes — vanilla formats the fallback with the same `with` arguments. |
+
+**The translations are unreviewed.** They are machine-produced from the canonical
+English and have not been checked by native speakers; that is recorded in
+`dsl::chrome`'s module header so nobody mistakes them for reviewed work, and a
+correction is a one-line table edit. English stays canonical.
 
 #### Named exclusions — where an authored string stays literal
 
@@ -508,6 +569,7 @@ list that emits an authored string outside a component fails the build with
 |---|---|---|
 | `emit::artifact_title` | `packtest-datapack/**` test `#>` descriptions | A PackTest source is a generated test, read by the validation server and by a maintainer — never rendered to a player. |
 | `emit::emit_packtest` (dialogue-visibility test) | `packtest-datapack/**/v04_dialogue_visibility.mcfunction` | Same: the option label appears in the test's own description line. |
+| `combat::actor_json` (an actor's `name`) | `validation/combat-plan.json` | The validation ladder's own artifact, read by the bot and by a maintainer. It could not carry a tag before `actors[].name` was inventoried; now that it can, it reads the English through `plain`. |
 | `render_plan::npc_name` / `area_name_of` / `first_clause` / the NPC shot `expect` | `render-plan.json` | The reviewer/vision artifact. Its `expect` prose is read by a vision model against a rendered frame, in English, regardless of what the delve ships. |
 
 `delvec l10n-inventory`, `validate`, `analyze`, `snapshot` and `edit` never see a
@@ -2259,7 +2321,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0181` | l10n sidecar has an orphan key (over-coverage). Compiler-level. |
 | `DW0182` | A player-visible string — authored English (the whole l10n inventory) or any sidecar translation — contains the reserved completion-marker sigil `[dw:complete`. That chat sequence is the validation bot's completion oracle (§4 "The completion-marker channel"); content carrying it could forge a passing critical-path step, so the sigil is **reserved**, not merely discouraged. Reword the line. |
 | `DW0183` | (i18n v2, spec-0029) A player-visible string — authored or translated — contains a character from the reserved private-use block `U+E000..U+F8FF`. That block is how the compiler carries an l10n key from the stage docs to the text component the string is emitted into (`dsl::l10n::TR_SIGIL`), so content carrying it could impersonate a translation tag; it also has no glyph in any Minecraft font. Remove the character. |
-| `DW0184` | (i18n v2, spec-0029) A declared `world.languages` code has no entry in the Minecraft language-file mapping table (`dsl::l10n::mc_lang_code`), so its `assets/delvewright/lang/<code>.json` has no filename a client would ever ask for and the language would ship invisible. Use a mapped code, or add the entry with the vanilla code verified against the pinned client's language list. A language is never silently dropped. |
+| `DW0184` | (i18n v2, spec-0029) A declared `world.languages` code does not resolve to a language file the **pinned client actually loads** (`dsl::mclang::CLIENT_LANGS`, derived from Mojang's 1.21.11 asset index), so its `assets/delvewright/lang/<code>.json` would sit under a filename no client ever asks for and the language would ship invisible. Also fires on an ambiguous bare code (`zh`, `sr`, `be` — several regions, no `<lang>_<lang>`), because guessing the region is how a language ships invisible. Use a code the client loads. A language is never silently dropped. |
 | `DW0190` | Mannequin `skin.texture_id` malformed or duplicated. |
 | `DW0191` | A `talk-to` has no **ungated** completing option (all `requires_flags`-gated → deadlock risk). |
 | `DW0192` | Wave-mob `effects[].effect` not a known 1.21.11 status-effect id. |
@@ -3065,6 +3127,7 @@ every earlier campaign's removal is byte-identical.
 | Code | Meaning |
 |------|---------|
 | `DW0185` | **An authored player-visible string reached the built tree outside a text component.** Build-tier (exit 3), `emit::check_untranslated_literals`, run last over the finished output tree — beside `DW0497` and the affordance self-check, on the same principle: judge the bytes that ship, not the intent behind them. **The class.** i18n v2 (spec-0029) makes every authored string a `{"translate": …, "fallback": …}` component so a client can render the player's own language. The risk that change carries is a string that *cannot* land in a component — it would ship as a literal no lang file can reach, silently untranslatable, which is exactly the defect v2 exists to remove. Rather than enumerate the emission sites once and trust the list to stay true, the compiler makes it an invariant: each inventoried string enters emission carrying its l10n key in a reserved private-use tag (`dsl::l10n::tag_translatables`), an emitter either lowers it through `emit::tr`/`emit::snbt_component` or reads it through `dsl::l10n::plain`, and **a tag still present in the finished tree is a site that did neither**. Deliberately feature-blind, so it guards emitters not yet written. **Scope:** every emitted file, plus the compiler-authored resource-pack assets before they are zipped. A file that is neither UTF-8 text nor a **classified** verbatim binary output (`.nbt`, `.png`, `resourcepack.zip` — byte copies of input assets the compiler writes no string into) also fails here, so a new binary artifact cannot quietly opt out of the scan. The message lists every offending artifact with the key and the line. **Prescription:** lower the string through the component helpers; or, if the site is genuinely not a component and never read by a player, read it through `dsl::l10n::plain` **and** add it to the named-exclusion table in §2 "Language delivery". Never silence it by dropping the string. |
+| `DW0186` | (i18n v2 addendum) A campaign l10n sidecar defines a key in the reserved `delvewright.` **chrome** namespace. Those are the engine's own on-screen strings — `New objective: `, `Choose your class`, a bonfire's default labels — owned by the compiler, shipped translated with it, authored by no campaign; a sidecar row under that prefix would be written into the language file and silently replace product chrome for that language. `DW0181` also flags it as an orphan; this names the reason. |
 
 #### The branch artifacts (validation metadata)
 

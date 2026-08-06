@@ -532,6 +532,11 @@ fn validate_loaded(
             // could impersonate the key the compiler threads into a text
             // component — and has no glyph in any Minecraft font anyway.
             diags.extend(delvewright_dsl::validate_tr_sigil(&campaign, &sidecars));
+            // The compiler's own chrome namespace is reserved as well (DW0186):
+            // `delvewright.*` keys are the engine's on-screen strings, shipped
+            // translated with the compiler, and a sidecar row under that prefix
+            // would be written into the language file and replace product chrome.
+            diags.extend(delvewright_dsl::validate_chrome_namespace(&sidecars));
             // i18n v2: every declared language must map to a Minecraft language-file
             // code, or its `assets/delvewright/lang/<code>.json` has no name a client
             // would ask for and the language ships invisible (DW0184).

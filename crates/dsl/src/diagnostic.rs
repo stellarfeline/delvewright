@@ -238,6 +238,14 @@ pub mod codes {
     /// language is never silently dropped: either the code is corrected to a
     /// mapped one, or the table gains the entry.
     pub const LANG_CODE_UNMAPPED: &str = "DW0184";
+    /// (i18n v2) A campaign l10n sidecar defines a key in the reserved
+    /// `delvewright.` **chrome** namespace ([`crate::chrome`]). Those are the
+    /// engine's own on-screen strings — `New objective: `, `Choose your class`,
+    /// the default a bonfire shows — owned by the compiler, translated with it,
+    /// and authored by no campaign; a sidecar row under that prefix would be
+    /// written into the language file and silently replace product chrome for that
+    /// language. The namespace is reserved, not merely conventional.
+    pub const CHROME_RESERVED: &str = "DW0186";
     /// (v0.4) A mannequin NPC `skin.texture_id` is malformed (not a bare kebab
     /// token) or duplicated across NPCs (spec-0009). A missing `model` is a
     /// schema error (`DW0100`); a missing PNG is a build error (`DW0309`).

@@ -136,15 +136,19 @@ pub struct ShortcutPlan {
     pub on_unlock: Vec<QuestEffect>,
 }
 
-/// The compiler's canonical English answer a sealed gate gives a right-click
-/// when the `close-gate` authors no `sealed_hint` (English-first, CLAUDE.md
-/// language policy — baked at emit time exactly as the boundary return message
-/// is, so it is not l10n-inventoried).
+/// The compiler's own answer a sealed gate gives a right-click when the
+/// `close-gate` authors no `sealed_hint`.
 ///
 /// The owner's island finding #34: a sealed boulder answered a right-click with
 /// SILENCE. There is no such thing as a seal with nothing to say, so the answer
 /// is the compiler's obligation and the authored line is only the wording.
-pub const SEAL_HINT_DEFAULT: &str = "The way is sealed.";
+///
+/// It is **chrome** (`dsl::chrome::GATE_SEALED`): compiler-owned, translated with
+/// the compiler, and not l10n-inventoried — a campaign that wants its own wording
+/// authors `sealed_hint`, which is inventoried like any other line. The plan
+/// carries the chrome default in its tagged form; `emit` rebinds it to the build's
+/// language.
+pub const SEAL_HINT_DEFAULT: &str = delvewright_dsl::chrome::GATE_SEALED.en;
 
 /// A gate anchor that some `close-gate` seals, and the line the seal answers a
 /// right-click with (DSL v0.8, task #142). One entry per **anchor**: the seal is
@@ -2596,10 +2600,10 @@ fn collect_seal_hints(
             safe: safe_local(name),
             region: (from, to),
             block,
-            text: e
-                .close_gate_sealed_hint()
-                .unwrap_or(SEAL_HINT_DEFAULT)
-                .to_string(),
+            text: match e.close_gate_sealed_hint() {
+                Some(h) => h.to_string(),
+                None => delvewright_dsl::chrome::GATE_SEALED.tagged(),
+            },
         });
     });
     out
@@ -3137,9 +3141,21 @@ impl V06Collector<'_> {
                 on_respawn: on_respawn.to_vec(),
                 fire_step,
                 rest,
-                prompt: labels.prompt_or_default().to_string(),
-                rest_label: labels.rest_or_default().to_string(),
-                save_label: labels.save_or_default().to_string(),
+                // Authored strings are ordinary inventoried campaign text; an
+                // unauthored one takes the compiler's chrome default in its tagged
+                // form, which `emit` rebinds to the build's language.
+                prompt: labels
+                    .prompt
+                    .map(str::to_string)
+                    .unwrap_or_else(|| delvewright_dsl::chrome::BONFIRE_TITLE.tagged()),
+                rest_label: labels
+                    .rest_label
+                    .map(str::to_string)
+                    .unwrap_or_else(|| delvewright_dsl::chrome::BONFIRE_REST.tagged()),
+                save_label: labels
+                    .save_label
+                    .map(str::to_string)
+                    .unwrap_or_else(|| delvewright_dsl::chrome::BONFIRE_SAVE.tagged()),
             });
         }
     }

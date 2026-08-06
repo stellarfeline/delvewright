@@ -766,8 +766,15 @@ pub fn build_with_warnings(
     // here so `DW0494` fails the build before a single function is emitted.
     let branch_transport = branch_transport_overlay(plan)?;
 
+    // spec-0029 addendum: the compiler's own on-screen strings. The default
+    // multi-language build leaves them tagged with their `delvewright.ui.…` key
+    // (the pack's lang files carry every language); a `--lang` bake, which ships no
+    // lang files, puts the baked language's text on the component instead.
+    let chrome = delvewright_dsl::Chrome::for_build(language);
+
     let functions = emit_functions(
         plan,
+        &chrome,
         &sentinels,
         &moves,
         &actor_moves,
@@ -793,7 +800,7 @@ pub fn build_with_warnings(
     }
 
     // dialogs
-    for (name, value) in emit_dialogs(plan) {
+    for (name, value) in emit_dialogs(plan, &chrome) {
         insert_unique(
             &mut out,
             format!("datapack/data/{ns}/dialog/{name}.json"),
@@ -1042,12 +1049,23 @@ fn lang_assets(
         .into_iter()
         .map(|(k, v)| (k, plain(&v).to_string()))
         .collect();
-    let mut put = |mc: &str, map: &BTreeMap<String, String>| {
-        let mut bytes = serde_json::to_vec_pretty(map).expect("lang map serializes");
+    // Each file is the campaign's keys plus the compiler's own chrome
+    // (`dsl::chrome`, spec-0029 addendum). The two key spaces are disjoint by
+    // construction — chrome lives under the reserved `delvewright.` prefix, which
+    // the l10n key scheme cannot produce and `DW0186` forbids a sidecar from
+    // writing — so the merge can never shadow a campaign string.
+    let mut put = |mc: &str, map: &BTreeMap<String, String>, chrome: BTreeMap<String, String>| {
+        let mut merged = map.clone();
+        merged.extend(chrome);
+        let mut bytes = serde_json::to_vec_pretty(&merged).expect("lang map serializes");
         bytes.push(b'\n');
         out.insert(format!("assets/delvewright/lang/{mc}.json"), bytes);
     };
-    put("en_us", &english);
+    put(
+        "en_us",
+        &english,
+        delvewright_dsl::chrome::english_entries(),
+    );
 
     for (lang, mc) in declared {
         let path = format!("l10n/{lang}.json");
@@ -1089,7 +1107,11 @@ fn lang_assets(
                 ),
             });
         }
-        put(mc, &doc.content);
+        // Chrome for a language the compiler has no table for is ABSENT rather
+        // than English-under-a-translated-name: the client falls through to
+        // `en_us.json` (or to the component's own fallback, for a player who
+        // declined the pack) and reads English. Honest, and never disguised.
+        put(mc, &doc.content, delvewright_dsl::chrome::lang_entries(mc));
     }
     Ok(out)
 }
@@ -1849,6 +1871,7 @@ fn chunk_span(min: [i32; 3], max: [i32; 3]) -> Vec<(i32, i32)> {
 #[allow(clippy::too_many_arguments)]
 fn emit_functions(
     plan: &Plan,
+    chrome: &delvewright_dsl::Chrome,
     sentinels: &Sentinels,
     moves: &[crate::nav::MovePlan],
     actor_moves: &[crate::nav::ActorMovePlan],
@@ -2339,7 +2362,7 @@ fn emit_functions(
         tick.push(format!(
             "execute if score {LOBBY_COUNT} dw.sys matches ..{} as @a unless score @s dw.classed matches 1 run title @s actionbar {}",
             min_players - 1,
-            lobby_actionbar(min_players)
+            lobby_actionbar(min_players, chrome)
         ));
         format!("if score {LOBBY_COUNT} dw.sys matches {min_players}.. ")
     } else {
@@ -2873,10 +2896,25 @@ fn emit_functions(
                 let mut ann: Vec<String> = Vec::new();
                 ann.push(format!(
                     "tellraw @a {}",
-                    json!([
-                        { "text": "New objective: ", "color": "yellow", "bold": true },
-                        tr_with(title, &[("color", json!("gold"))])
-                    ])
+                    // One sentence, one key: the title is a `with` argument rather
+                    // than a second component, so a translation decides where the
+                    // title sits (chrome::OBJECTIVE_NEW). `bold: false` on the
+                    // argument keeps the title unbolded now that it inherits the
+                    // prefix's style instead of standing beside it.
+                    tr_with(
+                        &chrome.get(delvewright_dsl::chrome::OBJECTIVE_NEW),
+                        &[
+                            ("color", json!("yellow")),
+                            ("bold", json!(true)),
+                            (
+                                "with",
+                                json!([tr_with(
+                                    title,
+                                    &[("color", json!("gold")), ("bold", json!(false))]
+                                )])
+                            ),
+                        ],
+                    )
                 ));
                 if let Some(hint) = o.hint() {
                     ann.push(format!(
@@ -2924,10 +2962,16 @@ fn emit_functions(
             if v03 && let Some(title) = o.title() {
                 body.push(format!(
                     "tellraw @a {}",
-                    json!([
-                        { "text": "Objective complete: ", "color": "green" },
-                        tr_with(title, &[("color", json!("white"))])
-                    ])
+                    tr_with(
+                        &chrome.get(delvewright_dsl::chrome::OBJECTIVE_COMPLETE),
+                        &[
+                            ("color", json!("green")),
+                            (
+                                "with",
+                                json!([tr_with(title, &[("color", json!("white"))])])
+                            ),
+                        ],
+                    )
                 ));
                 body.push("playsound minecraft:entity.experience_orb.pickup player @a".to_string());
             }
@@ -3068,10 +3112,18 @@ fn emit_functions(
     cc.push(format!(
         "tellraw @a {}",
         json!([
-            tr_with(title, &[("color", json!("gold"))]),
-            { "text": " — complete.", "color": "gold" },
+            tr_with(
+                &chrome.get(delvewright_dsl::chrome::CAMPAIGN_COMPLETE),
+                &[
+                    ("color", json!("gold")),
+                    ("with", json!([tr(title)])),
+                ],
+            ),
             { "text": "\n" },
-            { "text": "A Delvewright delve.", "color": "gray" }
+            tr_with(
+                &chrome.get(delvewright_dsl::chrome::CAMPAIGN_SIGNATURE),
+                &[("color", json!("gray"))],
+            )
         ])
     ));
     // v0.3 finale fanfare (M2 fix 4): the owner finished the finale and got no
@@ -3080,7 +3132,10 @@ fn emit_functions(
     if v03 {
         cc.push(format!(
             "title @a title {}",
-            json!({ "text": "Delve Complete", "color": "gold", "bold": true })
+            tr_with(
+                &chrome.get(delvewright_dsl::chrome::CAMPAIGN_BANNER),
+                &[("color", json!("gold")), ("bold", json!(true))],
+            )
         ));
         cc.push(format!(
             "title @a subtitle {}",
@@ -3425,11 +3480,11 @@ fn emit_functions(
     // debris. Empty for a campaign using neither verb (byte-identical).
     fns.extend(volley_fns(plan, payloads));
     fns.extend(collapse_fns(plan, payloads));
-    fns.extend(boundary_fns(plan));
+    fns.extend(boundary_fns(plan, chrome));
     fns.extend(night_vision_fns(plan));
     // v0.8 seal answers (task #142). Empty for a campaign that seals no gate.
     fns.extend(seal_fns(plan));
-    fns.extend(seal_hint_fns(plan));
+    fns.extend(seal_hint_fns(plan, chrome));
 
     fns.sort_by(|a, b| a.0.cmp(&b.0));
     fns
@@ -5209,7 +5264,7 @@ fn seal_fns(plan: &Plan) -> Vec<(String, String)> {
 ///
 /// The advancement is revoked immediately, so the stone answers every press, not
 /// only the first.
-fn seal_hint_fns(plan: &Plan) -> Vec<(String, String)> {
+fn seal_hint_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     plan.seal_hints
         .iter()
@@ -5218,7 +5273,7 @@ fn seal_hint_fns(plan: &Plan) -> Vec<(String, String)> {
                 format!("seal_hint_{}", s.safe),
                 lines(&[
                     format!("advancement revoke @s only {ns}:seal_{}", s.safe),
-                    format!("title @s actionbar {}", tr(&s.text)),
+                    format!("title @s actionbar {}", tr(&chrome.rebind(&s.text))),
                 ]),
             )
         })
@@ -8332,7 +8387,7 @@ const REGION_CEIL_Y: i32 = 1024;
 /// The compiler's default boundary return message (English-first, CLAUDE.md
 /// language policy). Overridable via `boundary.message`, which is then l10n
 /// inventoried under `world.boundary.message`.
-const BOUNDARY_DEFAULT_MESSAGE: &str = "The tide turns you back — the delve lies behind you.";
+const _: &str = delvewright_dsl::chrome::BOUNDARY_MESSAGE.en;
 
 /// A soft, non-alarming cue played on a boundary return.
 const BOUNDARY_SOUND: &str = "minecraft:block.amethyst_block.chime";
@@ -8400,15 +8455,21 @@ fn playable_region(plan: &Plan) -> Option<PlayableRegion> {
 }
 
 /// The effective boundary return message (authored or the English default).
-fn boundary_message(plan: &Plan) -> String {
-    plan.campaign
+fn boundary_message(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> String {
+    match plan
+        .campaign
         .world
         .content
         .boundary
         .as_ref()
         .and_then(|b| b.message.as_deref())
-        .unwrap_or(BOUNDARY_DEFAULT_MESSAGE)
-        .to_string()
+    {
+        // Authored: an ordinary inventoried campaign string.
+        Some(m) => m.to_string(),
+        // Unauthored: the compiler's own line, which is chrome and ships
+        // translated with the compiler (spec-0029 addendum).
+        None => chrome.get(delvewright_dsl::chrome::BOUNDARY_MESSAGE),
+    }
 }
 
 /// Whether the emitted setup must initialize the `dw:cp` last-checkpoint storage
@@ -8558,13 +8619,13 @@ fn has_night_vision_areas(plan: &Plan) -> bool {
 /// plus a per-player macro return. Empty for a campaign with no `boundary`. The
 /// return teleports via `dw:cp` (the last checkpoint), so wanderers always land on
 /// the current respawn anchor rather than a fixed point.
-fn boundary_fns(plan: &Plan) -> Vec<(String, String)> {
+fn boundary_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, String)> {
     let Some(region) = playable_region(plan) else {
         return Vec::new();
     };
     let ns = &plan.namespace;
     let sel = region.inside_selector();
-    let msg = tr(&boundary_message(plan));
+    let msg = tr(&boundary_message(plan, chrome));
 
     // boundary_tick: snapshot the live checkpoint into a scratch compound, eject
     // every player outside the region to it, re-arm the clock. `schedule … 20t`
@@ -8688,12 +8749,23 @@ const LOBBY_COUNT: &str = "#lobby";
 /// vanilla `score` component reading [`LOBBY_COUNT`], so it updates itself
 /// without any per-count emission. English-first (CLAUDE.md language policy); a
 /// compiler default, not an authored string, so it is not l10n-inventoried.
-fn lobby_actionbar(min_players: u8) -> String {
-    json!([
-        { "text": "Waiting for the party — ", "color": "yellow" },
-        { "score": { "name": LOBBY_COUNT, "objective": "dw.sys" }, "color": "gold" },
-        { "text": format!(" / {min_players}"), "color": "gold" }
-    ])
+fn lobby_actionbar(min_players: u8, chrome: &delvewright_dsl::Chrome) -> String {
+    // One sentence with two `with` arguments — the live count and the size the
+    // delve requires — so a translation orders them for its own language instead
+    // of inheriting English's `<prefix> <n> / <n>`.
+    tr_with(
+        &chrome.get(delvewright_dsl::chrome::LOBBY_WAITING),
+        &[
+            ("color", json!("yellow")),
+            (
+                "with",
+                json!([
+                    { "score": { "name": LOBBY_COUNT, "objective": "dw.sys" }, "color": "gold" },
+                    { "text": min_players.to_string(), "color": "gold" }
+                ]),
+            ),
+        ],
+    )
     .to_string()
 }
 
@@ -9342,7 +9414,7 @@ fn cast_bark_fns(
     out
 }
 
-fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
+fn emit_dialogs(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, Value)> {
     let c = plan.campaign;
     let v04 = campaign_is_v04(plan);
     let mut dialogs = Vec::new();
@@ -9364,8 +9436,9 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
         "class_select".to_string(),
         json!({
             "type": "minecraft:multi_action",
-            "title": "Choose your class",
-            "body": [{ "type": "minecraft:plain_message", "contents": "Pick the kit you will carry." }],
+            "title": tr(&chrome.get(delvewright_dsl::chrome::CLASS_TITLE)),
+            "body": [{ "type": "minecraft:plain_message",
+                       "contents": tr(&chrome.get(delvewright_dsl::chrome::CLASS_BODY)) }],
             "columns": 1,
             "can_close_with_escape": false,
             "after_action": "close",
@@ -9384,14 +9457,14 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
             format!("bonfire_{i}"),
             json!({
                 "type": "minecraft:multi_action",
-                "title": tr(&bf.prompt),
+                "title": tr(&chrome.rebind(&bf.prompt)),
                 "columns": 1,
                 "can_close_with_escape": true,
                 "after_action": "close",
                 "actions": [
-                    { "label": tr(&bf.rest_label),
+                    { "label": tr(&chrome.rebind(&bf.rest_label)),
                       "action": { "type": "minecraft:run_command", "command": "/trigger dw.rest set 2" } },
-                    { "label": tr(&bf.save_label),
+                    { "label": tr(&chrome.rebind(&bf.save_label)),
                       "action": { "type": "minecraft:run_command", "command": "/trigger dw.rest set 1" } }
                 ]
             }),
