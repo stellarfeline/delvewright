@@ -57,6 +57,14 @@
 //! [`Expansion::anchors`](expand::Expansion::anchors) for the export to write
 //! out. Nothing infers an anchor from the blocks afterwards.
 //!
+//! # Composition
+//!
+//! A `call` reaches only rules of its own program, so a program built out of
+//! other programs needs them copied in: [`compose::include`] does that under a
+//! prefix, rewriting every rule, parameter and role reference and deliberately
+//! leaving anchor names alone. [`library::bell`] is what it exists for — one
+//! grammar program per campaign zone, composed from the staging vocabulary.
+//!
 //! # Not built yet
 //!
 //! The craft-rule diagnostics of spec-0027 §4, jigsaw connector emission, and
@@ -68,6 +76,7 @@
 #![deny(missing_docs)]
 
 pub mod block;
+pub mod compose;
 pub mod eval;
 pub mod expand;
 pub mod export;
@@ -80,6 +89,7 @@ pub mod rng;
 pub mod split;
 
 pub use block::BlockState;
+pub use compose::{ComposeError, entry, include};
 pub use expand::{Anchor, ExpandError, ExpandOptions, Expansion, Limits, Stats, expand};
 pub use export::{
     AnchorMetadata, ExportError, PrefabExport, PrefabMetadata, export_prefab, program_hash,
