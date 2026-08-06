@@ -30,6 +30,12 @@
 //! number *against* travel (a split visits its pieces low to high); see
 //! [`cliff_path`].
 //!
+//! **The zone programs.** [`bell`] is the layer above: the drowned-bell
+//! remake's zones, each one program that composes the vocabulary above with
+//! [`crate::compose::include`] and writes no encounter geometry of its own. A
+//! rule builds a shape; a zone builds a route through several of them, and its
+//! gates are about what the composition did or failed to preserve.
+//!
 //! Every program here is parameterised: integer knobs in
 //! [`Program::params`](crate::ir::Program::params) are the size/kind controls
 //! and role bindings in [`Program::palette`](crate::ir::Program::palette) are
@@ -37,6 +43,7 @@
 //! building.
 
 pub mod ambush_door;
+pub mod bell;
 pub mod castle;
 pub mod church;
 pub mod cliff_path;
@@ -46,6 +53,7 @@ pub mod temple;
 pub mod watch_bay;
 
 pub use ambush_door::ambush_door;
+pub use bell::{cliff_road, gate_ward, hall_keep};
 pub use castle::castle;
 pub use church::church;
 pub use cliff_path::cliff_path;
