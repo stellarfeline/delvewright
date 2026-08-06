@@ -252,6 +252,22 @@ jobs:
       # quietly stops running. Deterministic, offline, stdlib-only python3.
       - name: required status checks and ci.yml job names agree
         run: python3 tools/check-required-contexts.py
+      # ADR-0016's third version line: the `/new-delve` skill (the product,
+      # ADR-0012) declares its own version and the `delvec` range it drives. Both
+      # are hand-typed frontmatter, so without this they are a `requires:` nobody
+      # reads — the unbound declaration this project keeps being bitten by (the
+      # island's combat floor gate was green for nineteen rounds having examined
+      # zero enemies). The gate holds the range against `crates/compiler/
+      # Cargo.toml`'s version (== DELVEC_VERSION) in BOTH directions, and holds
+      # every `delvec` subcommand and flag the skill names against the clap CLI
+      # in `crates/compiler/src/main.rs` — a range is a claim about a command
+      # surface, so the command surface is what it binds to. States its binding
+      # count; extracting zero subcommand references is a red.
+      # A STEP, not a job: every job name here is a required status context and
+      # renaming/adding one is a three-part change (see required-status-checks.txt).
+      # Deterministic, offline, stdlib-only python3.
+      - name: the /new-delve skill's declared delvec range is true
+        run: python3 tools/check-skill-version.py
       # --offline: check only local/internal links. The repo is private, so
       # external-link checks would fail or flake.
       - uses: lycheeverse/lychee-action@v2
