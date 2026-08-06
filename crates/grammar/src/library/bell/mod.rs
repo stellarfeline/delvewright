@@ -40,27 +40,28 @@
 //! | Z0 Barrow Shore | [`barrow_shore`] | `elite_ground` | — (**E** is the whole of Z0's vocabulary) |
 //! | Z1 Cliff Road | [`cliff_road`] | `cliff_path` + the zone's gulf | switchback landing (no catalogue entry — see below) |
 //! | Z2 Gatehouse | [`gate_ward`] (partial) | `watch_bay` + `ambush_door` | boulder stair with worn-tread lane (**W**), hazard-run safe pockets (**S**), boulder jam (**D**), sally-port far-side bar (**F**), spill shaft (**L**), boss-threshold motif (**M**) |
-//! | Z3 Drowned Lower Ward | **not programmed** | — | nothing in the *vocabulary*: **T**, **E** and **F** are all built rules. Three composition blockers, all three asserted in `tests/zones.rs` — see below |
+//! | Z3 Drowned Lower Ward | **not programmed** | — | nothing in the *vocabulary*: **T**, **E** and **F** are all built rules. One composition blocker left (`causeway` has no exit); the other two are closed — see below |
 //! | Z4 Chapel Ward (hub) | **not programmed** | — | the hub's own shape: hearth ward + the landing every later shortcut arrives at (no catalogue entry; the hub is topology, and `L`/`F` are its hardware) |
 //! | Z5 Great Hall + Keep | [`hall_keep`] | `rafter_hall` + `ambush_door` + `store_room` | bait-item gallery (**B**), kitchen dumbwaiter (**L**), boss-threshold motif (**M**) |
-//! | Z6 Cistern Deep | [`cistern_deep`] | `drop_shaft` + `watch_bay` + `broken_grate` + `elite_ground` | the sally-port far-side bar (**F**) — blocked twice over, see below |
+//! | Z6 Cistern Deep | [`cistern_deep`] | `drop_shaft` + `watch_bay` + `broken_grate` + `elite_ground` | the sally-port far-side bar (**F**) — no longer blocked; it waits on a zone-program round, see below |
 //! | Z7 Bell Tower | **not programmed** | — | counterweight lift (**L**), which is not built and cannot be with today's IR (`docs/reference/grammar.md` §5b). Its loft is `rafter_hall` and its boss ring is `elite_ground` |
 //!
-//! ## Three things a zone cannot compose today
+//! ## The seam's limits: two closed, one open
 //!
 //! Each of these is a *seam* limitation, not a missing shape, and each has a
 //! test in `tests/zones.rs` that watches it happen rather than a paragraph
 //! asserting it.
 //!
-//! 1. **Two pieces that declare the same anchor name cannot meet.**
-//!    [`crate::compose::include`] deliberately does not rename anchors, so this
-//!    is an `AnchorCollision` — the same refusal including one piece twice
-//!    produces, and it does not need two copies to fire: `causeway` and
-//!    `elite_ground` both declare `anchor/elite`, and `watch_bay` and
-//!    `far_side_bar` both declare `anchor/gate`. That is Z3's **T** + **E** and
-//!    Z6's **F**, refused. The primitive is an anchor namespace on `mark`
-//!    (`docs/reference/grammar.md` §7); nothing below the seam can work round
-//!    it.
+//! 1. **Two pieces that declare the same anchor name — CLOSED.**
+//!    [`crate::compose::include`] still never renames an anchor on its own,
+//!    because an anchor name is the campaign's contract, so two pieces that
+//!    share a stem still collide loudly (`causeway` and `elite_ground` on
+//!    `anchor/elite`; `watch_bay` and `far_side_bar` on `anchor/gate`). What a
+//!    zone can now do is say which is which:
+//!    [`crate::compose::include_renaming`] takes an explicit per-anchor rename
+//!    at the include site, and only the stems named there move. A ward with a
+//!    causeway keeper and a dormant elite has two genuinely different elites,
+//!    and the zone writes down the two names rather than a prefix deriving them.
 //! 2. **`causeway` has no exit past its guard post.** Its far end is the post's
 //!    own plinth — solid from the ward floor up to `rise + tower_rise`, with the
 //!    post's floor an island the berm cannot reach (deliberately: "not a
@@ -68,12 +69,18 @@
 //!    at that face, whichever end of the zone it is placed at. Z3 waits on an
 //!    exit lane past the post, which is a change to the §5b rule and not
 //!    something a zone may write.
-//! 3. **A shortcut is a branch, and the seam is a chain.** Pieces join only
-//!    along one axis, end to end, because every vocabulary rule walls its own
-//!    two side faces. A `far_side_bar` laid in that chain therefore seals the
-//!    zone's own route rather than sitting beside it, which is the opposite of
-//!    what a shortcut is (spec-0016 §2). Z3's **F** and Z6's **F** both wait on
-//!    a junction: a way for a zone to hand one piece a box *off* the route.
+//! 3. **A shortcut is a branch, and the seam is a chain — CLOSED.** Pieces
+//!    joined only along one axis, end to end, because every vocabulary rule
+//!    walls its own two side faces; a `far_side_bar` laid in that chain
+//!    therefore sealed the zone's own route rather than sitting beside it, which
+//!    is the opposite of what a shortcut is (spec-0016 §2). The answer was
+//!    vocabulary, not a new node kind: [`crate::library::tee_passage`] is a
+//!    chain segment whose one side face carries a doorway — the same
+//!    wall-with-one-opening construction `ambush_door` and `far_side_bar`
+//!    already were, turned 90°. A zone splits off a side strip, walls its
+//!    margins and hands the interior box to `far_side_bar` shaped
+//!    deeper-than-wide, so the bar's own `z(Largest)` aims its travel at the
+//!    chain.
 //!
 //! **Z1 is a single run, not a switchback**, and that is a finding rather than a
 //! shortcut. A switchback alternates which side the drop is on, and a grammar

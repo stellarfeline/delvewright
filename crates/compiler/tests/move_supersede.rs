@@ -1,27 +1,35 @@
-//! `move-npc` supersession: one body, one live walk driver.
+//! Walk supersession: one body, one live walk driver — for `move-npc` bodies
+//! (`mv_tick_*`) and `move-actor` puppets (`ma_tick_*`) alike.
 //!
-//! `move-npc` compiles to a self-scheduling per-tick driver (`mv_tick_<npc>_<to>`)
-//! that teleports `@e[tag=dw_npc_<id>]` along a precomputed waypoint polyline. The
-//! re-entry latch (`#mrun_<bare>`) is keyed per **(npc, to_anchor, gate)** — it stops
-//! a walk from restarting itself, and nothing else. Firing a SECOND `move-npc` for the
-//! SAME body while an earlier walk still runs therefore used to leave two drivers
-//! alive: both tp the same entity every tick, the interleave garbles the path, and the
-//! walk with more remaining ticks writes the last position — so the body parked at the
-//! FIRST walk's endpoint, not the last-fired one (root-caused live on the island,
-//! 2026-08-06: a 408-tick beach→mouth walk overlapped by a 21-tick walk to
-//! checkpoint-1 left the NPC at the mouth, 3.0 blocks off the cast-ledger cell).
+//! A move compiles to a self-scheduling per-tick driver (`mv_tick_<npc>_<to>` /
+//! `ma_tick_<actor>_<to>`) that teleports the body along a precomputed waypoint
+//! polyline. The re-entry latch (`#mrun_<bare>` / `#arun_<bare>`) is keyed per
+//! **(id, to_anchor, gate)** — it stops a walk from restarting itself, and nothing
+//! else. Firing a SECOND move for the SAME body while an earlier leg still runs
+//! therefore used to leave two drivers alive: both tp the same entity every tick, the
+//! interleave garbles the path, and the leg with more remaining ticks writes the last
+//! position — so the body parked at the FIRST leg's endpoint, not the last-fired one
+//! (root-caused live on the island, 2026-08-06: a 408-tick beach→mouth walk overlapped
+//! by a 21-tick walk to checkpoint-1 left the NPC at the mouth, 3.0 blocks off the
+//! cast-ledger cell).
 //!
-//! The contract: **a later `move-npc` for the same body supersedes any walk still
-//! running for that body.** The superseded driver halts on its next tick and the new
-//! walk's tp sequence runs alone from its own first waypoint. (Waypoints are
-//! precomputed from the walk's declared start, so the new leg still snaps to its own
-//! first waypoint — exactly what single-walk content already gets when a walk fires
-//! while its NPC stands somewhere else.)
+//! The contract: **a later move for the same body supersedes any walk still running
+//! for that body.** The superseded driver halts on its next tick and the new leg's tp
+//! sequence runs alone from its own first waypoint. (Waypoints are precomputed from
+//! the leg's planned start, so the new leg still snaps to its own first waypoint —
+//! exactly what single-leg content already gets when a walk fires while its body
+//! stands somewhere else.)
 //!
 //! These tests **execute the emitted commands**: a small interpreter for the mcfunction
 //! subset the drivers use ([`Sim`]) runs the real start functions through the real
 //! scheduler loop and reads the body's final position off the `tp` commands. Nothing
 //! here asserts a spelling; the assertions are about where the body ends up.
+//!
+//! The one exception is the single-leg byte-identity pair
+//! ([`a_single_walk_body_carries_no_supersession_machinery`],
+//! [`a_single_leg_puppet_emits_byte_identical_functions`]): supersession machinery on
+//! a body that cannot be superseded would change pre-existing campaigns' output, which
+//! ADR-0006 forbids, so those two assert the exact bytes.
 
 mod common;
 
@@ -76,6 +84,50 @@ fn quests_two_walks() -> String {
     )
 }
 
+/// One `move-actor` leg for a puppet (the pre-existing single-leg shape).
+const QUESTS_ONE_LEG: &str = r#"{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "actors": [
+      { "id": "actor/walker", "entity": "minecraft:villager", "anchor": "anchor/keeper-stand" }
+    ],
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2,
+            "after": ["obj/talk"] }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [
+            { "type": "open-gate", "anchor": "anchor/door" },
+            { "type": "spawn-actor", "actor": "actor/walker" },
+            { "type": "move-actor", "actor": "actor/walker", "to_anchor": "anchor/exit" }
+          ]
+        },
+        "on_complete": [ { "type": "campaign-complete" } ]
+      }
+    ]
+  }
+}"#;
+
+/// Two `move-actor` legs for the SAME puppet: a long one (keeper-stand → exit) and a
+/// short one (exit → door, planned from the first leg's target — moves chain) — the
+/// island's overlap shape, where the long leg outlives the short one and would win
+/// the tp race. No campaign authors this today, so the defect it exposes is latent.
+fn quests_two_legs() -> String {
+    QUESTS_ONE_LEG.replacen(
+        r#"{ "type": "move-actor", "actor": "actor/walker", "to_anchor": "anchor/exit" }"#,
+        r#"{ "type": "move-actor", "actor": "actor/walker", "to_anchor": "anchor/exit" },
+            { "type": "move-actor", "actor": "actor/walker", "to_anchor": "anchor/door" }"#,
+        1,
+    )
+}
+
 fn build_with(quests: String) -> BuildOutput {
     let raw = RawCampaign {
         world: read_hw("world.json"),
@@ -111,14 +163,15 @@ fn build_with(quests: String) -> BuildOutput {
 
 const FN_DIR: &str = "datapack/data/hello-world/function";
 
-/// Every emitted `mv_*` function, keyed by bare name.
-fn move_fns(out: &BuildOutput) -> BTreeMap<String, Vec<String>> {
+/// Every emitted function whose name starts with `prefix` (`mv_` for walked NPCs,
+/// `ma_` for move-actor puppets), keyed by bare name, blank lines dropped.
+fn driver_fns(out: &BuildOutput, prefix: &str) -> BTreeMap<String, Vec<String>> {
     let mut m = BTreeMap::new();
     for (p, b) in out.iter() {
         if let Some(name) = p
             .strip_prefix(&format!("{FN_DIR}/"))
             .and_then(|n| n.strip_suffix(".mcfunction"))
-            && name.starts_with("mv_")
+            && name.starts_with(prefix)
         {
             let body = String::from_utf8(b.clone()).unwrap();
             m.insert(
@@ -323,7 +376,7 @@ fn endpoint(fns: &BTreeMap<String, Vec<String>>, driver: &str) -> [f64; 3] {
 /// driver stops teleporting, and the body ends at the SECOND walk's endpoint.
 #[test]
 fn later_move_npc_supersedes_the_running_walk() {
-    let fns = move_fns(&build_with(quests_two_walks()));
+    let fns = driver_fns(&build_with(quests_two_walks()), "mv_");
     let (long_start, long_tick) = ("mv_keeper_exit", "mv_tick_keeper_exit");
     let (short_start, short_tick) = ("mv_keeper_door", "mv_tick_keeper_door");
     // Premise: the FIRST walk is the longer one, so under the defect its trailing
@@ -375,7 +428,7 @@ fn later_move_npc_supersedes_the_running_walk() {
 /// refused (the pre-existing `#mrun_` re-entry latch).
 #[test]
 fn an_unsuperseded_walk_still_completes() {
-    let fns = move_fns(&build_with(quests_two_walks()));
+    let fns = driver_fns(&build_with(quests_two_walks()), "mv_");
     let mut sim = Sim::new(fns.clone());
     sim.call("mv_keeper_exit");
     sim.run(4);
@@ -398,7 +451,7 @@ fn an_unsuperseded_walk_still_completes() {
 /// byte-identical (ADR-0006).
 #[test]
 fn a_single_walk_body_carries_no_supersession_machinery() {
-    let fns = move_fns(&build_with(QUESTS_ONE_WALK.to_string()));
+    let fns = driver_fns(&build_with(QUESTS_ONE_WALK.to_string()), "mv_");
     assert_eq!(
         fns.keys().filter(|k| k.starts_with("mv_tick_")).count(),
         1,
@@ -411,4 +464,162 @@ fn a_single_walk_body_carries_no_supersession_machinery() {
             body.join("\n")
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// move-actor puppets — the same defect class, the same contract (task #28).
+// ---------------------------------------------------------------------------
+
+/// A later `move-actor` for the same puppet supersedes the leg still running: the
+/// first driver stops teleporting, and the puppet ends at the SECOND leg's endpoint.
+#[test]
+fn later_move_actor_supersedes_the_running_leg() {
+    let fns = driver_fns(&build_with(quests_two_legs()), "ma_");
+    let (long_start, long_tick) = ("ma_walker_exit", "ma_tick_walker_exit");
+    let (short_start, short_tick) = ("ma_walker_door", "ma_tick_walker_door");
+    // Premise: the FIRST leg is the longer one, so under the defect its trailing
+    // teleports overwrite the second leg's arrival (the island's shape).
+    let long_len = fns[long_tick]
+        .iter()
+        .filter(|l| l.contains(" run tp "))
+        .count();
+    let short_len = fns[short_tick]
+        .iter()
+        .filter(|l| l.contains(" run tp "))
+        .count();
+    assert!(
+        long_len > short_len + 5,
+        "fixture premise: the first leg must outlast the second ({long_len} vs {short_len})"
+    );
+
+    let mut sim = Sim::new(fns.clone());
+    sim.call(long_start);
+    sim.run(6); // the long leg is under way …
+    let cut = sim.tick;
+    sim.call(short_start); // … and a second leg is fired for the same puppet
+    sim.run(long_len as u32 + short_len as u32 + 10);
+
+    let stale: Vec<&Tp> = sim
+        .tps
+        .iter()
+        .filter(|t| t.tick > cut && t.func == long_tick)
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "the superseded leg kept teleporting the puppet after tick {cut}: {} stray tp(s), \
+         first at tick {} → {:?}",
+        stale.len(),
+        stale[0].tick,
+        stale[0].pos
+    );
+    assert_eq!(
+        sim.final_pos(),
+        Some(endpoint(&fns, short_tick)),
+        "the puppet must end at the LAST-FIRED leg's endpoint, not the superseded leg's \
+         ({:?})",
+        endpoint(&fns, long_tick)
+    );
+}
+
+/// Supersession must not cancel a leg that nothing superseded: a single leg run to
+/// completion still reaches its own endpoint, and a re-fire while it runs is still
+/// refused (the pre-existing `#arun_` re-entry latch).
+#[test]
+fn an_unsuperseded_actor_leg_still_completes() {
+    let fns = driver_fns(&build_with(quests_two_legs()), "ma_");
+    let mut sim = Sim::new(fns.clone());
+    sim.call("ma_walker_exit");
+    sim.run(4);
+    sim.call("ma_walker_exit"); // re-fire of the SAME leg: refused, walk continues
+    sim.run(60);
+    assert_eq!(
+        sim.final_pos(),
+        Some(endpoint(&fns, "ma_tick_walker_exit")),
+        "an unsuperseded leg reaches its own endpoint"
+    );
+    let restarts = sim.tps.iter().filter(|t| t.pos == sim.tps[0].pos).count();
+    assert_eq!(
+        restarts, 1,
+        "the re-fire must not restart the leg from waypoint 0"
+    );
+}
+
+/// A puppet with exactly one leg cannot be superseded by anything, so it carries no
+/// supersession machinery at all.
+#[test]
+fn a_single_leg_puppet_carries_no_supersession_machinery() {
+    let fns = driver_fns(&build_with(QUESTS_ONE_LEG.to_string()), "ma_");
+    assert_eq!(
+        fns.keys().filter(|k| k.starts_with("ma_tick_")).count(),
+        1,
+        "fixture premise: exactly one leg"
+    );
+    for (name, body) in &fns {
+        assert!(
+            !body
+                .iter()
+                .any(|l| l.contains("#agen_") || l.contains("#aown_")),
+            "a single-leg puppet needs no walk generation: `{name}`:\n{}",
+            body.join("\n")
+        );
+    }
+}
+
+/// The exact bytes a single-leg puppet's start function and driver emitted BEFORE
+/// task #28 — captured verbatim from the pre-fix build, every line of both functions.
+/// Supersession is gated on a puppet owning two or more legs, so this campaign's
+/// output must not move by a single byte (ADR-0006). A deliberate change to the walk
+/// planner re-blesses this golden; a change to the driver's scaffolding does not.
+const GOLDEN_ONE_LEG: &str = r#"== ma_tick_walker_exit
+execute if score #at_walker_exit dw.sys matches 0 run tp @e[tag=dw_pup_walker] 5.5 65.0 4.5 0 0
+execute if score #at_walker_exit dw.sys matches 1 run tp @e[tag=dw_pup_walker] 5.5 65.0 4.65 0 0
+execute if score #at_walker_exit dw.sys matches 2 run tp @e[tag=dw_pup_walker] 5.5 65.0 4.8 0 0
+execute if score #at_walker_exit dw.sys matches 3 run tp @e[tag=dw_pup_walker] 5.5 65.0 4.94 0 0
+execute if score #at_walker_exit dw.sys matches 4 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.09 0 0
+execute if score #at_walker_exit dw.sys matches 5 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.24 0 0
+execute if score #at_walker_exit dw.sys matches 6 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.39 0 0
+execute if score #at_walker_exit dw.sys matches 7 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.54 0 0
+execute if score #at_walker_exit dw.sys matches 8 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.69 0 0
+execute if score #at_walker_exit dw.sys matches 9 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.83 0 0
+execute if score #at_walker_exit dw.sys matches 10 run tp @e[tag=dw_pup_walker] 5.5 65.0 5.98 0 0
+execute if score #at_walker_exit dw.sys matches 11 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.13 0 0
+execute if score #at_walker_exit dw.sys matches 12 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.28 0 0
+execute if score #at_walker_exit dw.sys matches 13 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.43 0 0
+execute if score #at_walker_exit dw.sys matches 14 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.57 0 0
+execute if score #at_walker_exit dw.sys matches 15 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.72 0 0
+execute if score #at_walker_exit dw.sys matches 16 run tp @e[tag=dw_pup_walker] 5.5 65.0 6.87 0 0
+execute if score #at_walker_exit dw.sys matches 17 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.02 0 0
+execute if score #at_walker_exit dw.sys matches 18 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.17 0 0
+execute if score #at_walker_exit dw.sys matches 19 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.31 0 0
+execute if score #at_walker_exit dw.sys matches 20 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.46 0 0
+execute if score #at_walker_exit dw.sys matches 21 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.61 0 0
+execute if score #at_walker_exit dw.sys matches 22 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.76 0 0
+execute if score #at_walker_exit dw.sys matches 23 run tp @e[tag=dw_pup_walker] 5.5 65.0 7.91 0 0
+execute if score #at_walker_exit dw.sys matches 24 run tp @e[tag=dw_pup_walker] 5.5 65.0 8.06 0 0
+execute if score #at_walker_exit dw.sys matches 25 run tp @e[tag=dw_pup_walker] 5.5 65.0 8.2 0 0
+execute if score #at_walker_exit dw.sys matches 26 run tp @e[tag=dw_pup_walker] 5.5 65.0 8.35 0 0
+execute if score #at_walker_exit dw.sys matches 27 run tp @e[tag=dw_pup_walker] 5.5 65.0 8.5 0 0
+scoreboard players add #at_walker_exit dw.sys 1
+execute if score #at_walker_exit dw.sys matches 28.. run scoreboard players set #arun_walker_exit dw.sys 0
+execute unless score #at_walker_exit dw.sys matches 28.. run schedule function hello-world:ma_tick_walker_exit 1t
+== ma_walker_exit
+execute if score #arun_walker_exit dw.sys matches 1 run return fail
+scoreboard players set #arun_walker_exit dw.sys 1
+scoreboard players set #at_walker_exit dw.sys 0
+schedule function hello-world:ma_tick_walker_exit 1t"#;
+
+/// Byte-identity for the single-leg case: a puppet with one `move-actor` leg emits
+/// exactly what it emitted before supersession existed.
+#[test]
+fn a_single_leg_puppet_emits_byte_identical_functions() {
+    let fns = driver_fns(&build_with(QUESTS_ONE_LEG.to_string()), "ma_");
+    let mut got = String::new();
+    for (name, body) in &fns {
+        got.push_str(&format!("== {name}\n{}\n", body.join("\n")));
+    }
+    assert_eq!(
+        got.trim_end(),
+        GOLDEN_ONE_LEG.trim_end(),
+        "single-leg move-actor emission moved"
+    );
 }

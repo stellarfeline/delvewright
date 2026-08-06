@@ -15,7 +15,7 @@ use delvewright_compiler::registry::PrefabRegistry;
 use delvewright_dsl::{AnchorRegistry, LightingProfile, PrefabId};
 use delvewright_grammar::library::{
     ambush_door, castle, causeway, cliff_path, drop_shaft, dumbwaiter, elite_ground, far_side_bar,
-    rafter_hall, store_room, temple, watch_bay,
+    rafter_hall, store_room, tee_passage, temple, watch_bay,
 };
 use delvewright_grammar::{Box3, ExpandOptions, export_prefab};
 // W3: the palette/prop family (W + S + M + X).
@@ -35,6 +35,7 @@ const GRATE_REGION: Box3 = Box3::at_origin([3, 5, 14]);
 const SHAFT_REGION: Box3 = Box3::at_origin([4, 8, 6]);
 const DUCT_REGION: Box3 = Box3::at_origin([6, 8, 8]);
 const BAR_REGION: Box3 = Box3::at_origin([5, 5, 7]);
+const TEE_REGION: Box3 = Box3::at_origin([5, 5, 12]);
 const CAUSEWAY_REGION: Box3 = Box3::at_origin([7, 10, 9]);
 const ARENA_REGION: Box3 = Box3::at_origin([19, 5, 25]);
 
@@ -230,6 +231,12 @@ fn the_staging_rules_indexed_anchors_all_reach_the_registry() {
             far_side_bar(),
             BAR_REGION,
             vec!["anchor/gate", "anchor/unlock"],
+        ),
+        (
+            "grammar-tee-passage",
+            tee_passage(),
+            TEE_REGION,
+            vec!["anchor/branch-door"],
         ),
         (
             "grammar-causeway",
