@@ -490,6 +490,161 @@ determinism over bytes and anchors, and their anchors — including
 `boulder_stair`'s generated `pocket-<i>` names and `broken_grate`'s seeded
 break position — round-trip through `PrefabRegistry`.
 
+### `drop_shaft` — the one-way spill
+
+A floor that steps down `drop` blocks with no ramp, stair or ladder between the
+two levels: a landing zone (low `Z`, floor at `Y=0`) directly abuts an entry
+zone (high `Z`, floor at `Y=drop`), and the landing's own interior is built
+`drop + head` cells tall — reaching the entry's own ceiling height — so the
+open column above it has clear air the whole way down. Stepping off the entry
+ledge finds nothing underfoot.
+
+| | |
+|---|---|
+| Controls | `drop` (4), `head` (3), `rescue_ladder` (0 — a test knob); role `rock` |
+| Smallest region | 3 × (`drop + head + 1`) × 4, and at least as long as it is wide |
+| Anchors | `anchor/spill` — the entry ledge's brink, facing down-path at the drop. `anchor/landing` — the landing floor cell directly below it, facing further down the exit run |
+
+Gates:
+
+1. **`anchor/spill` reaches `anchor/landing`** under `reachable_with_fall`
+   (`tests/staging.rs`) — the ±1-step walk `cliff_path` uses, plus a one-way
+   **fall** edge: stepping off a standable cell into an adjacent column with
+   nothing underfoot, landing on the first solid floor below however far that
+   is. Deliberately more permissive than `crate::nav`'s NPC pathing
+   (`reachable_walkable`, ±1 only) — a player can walk off a ledge, an escorted
+   NPC never has to.
+2. **`anchor/landing` does *not* reach `anchor/spill`**, under the *plain* ±1
+   step walk (no fall edge helps a climb). Proving the negative under gate 1's
+   own stricter model would be circular; the plain walk is the stronger claim.
+   Teeth: `rescue_ladder` notches every column of the entry floor but the one
+   `anchor/spill` stands on — paired in the test with a `drop` of 2 (short
+   enough that one notch plus one diagonal step actually bridges the gap) —
+   and the same plain-walk check must find a way back.
+
+### `dumbwaiter` — the walled duct
+
+The same shell as `drop_shaft`'s two zones, with a third — `duct_zone` — cut
+into the middle: a narrow, walled shaft (`duct_core`) framed by solid margins,
+built exactly like the landing zone's own column (floor low, open the rest of
+the way up). The margins are what make it a *duct* rather than a second cliff:
+a body can only enter the shaft at the one column where the floor stops, not
+by walking off anywhere along the boundary.
+
+| | |
+|---|---|
+| Controls | `drop` (4), `head` (3), `duct_len` (2), `duct_width` (1), `rescue_ladder` (0 — a test knob); role `rock` |
+| Smallest region | (`duct_width + 4`) × (`drop + head + 1`) × (`duct_len + 4`), and at least as long as it is wide |
+| Anchors | `anchor/hatch` — the entry ledge's brink, where the floor stops. `anchor/landing` — the landing floor cell nearest the duct |
+
+Gates: the same two as `drop_shaft`, against the same `reachable_with_fall` /
+plain-walk pair. The `rescue_ladder` teeth test notches every column but
+`anchor/hatch`'s own — wide enough to be certain of overlapping wherever
+`duct_core`'s own runtime-split margins actually landed, since a single fixed
+column (what `drop_shaft` uses) is not guaranteed to line up with a core whose
+position depends on how the margins split at expansion time.
+
+### `far_side_bar` — the sealed shortcut door
+
+The grammar half of a souls shortcut (spec-0016 §2): `ambush_door`'s own
+wall-across-the-box shape, but the one opening is filled solid with a `bar`
+role material instead of left open — not a narrower door, a **barred** one.
+
+| | |
+|---|---|
+| Controls | `head` (3), `door_height` (2), `unbarred` (0 — a test knob); roles `rock`, `bar` |
+| Smallest region | 3 × (`head + 2`) × 3, and at least as long as it is wide |
+| Anchors | `anchor/gate` — the barred opening's own floor cell. A point, not a region: region anchors (`region` + `block`, the shape a `close-gate` / `shortcut` fill actually needs) are not yet expressible by a rule (§7) — the same limitation `watch_bay`'s `anchor/gate` already accepted. `anchor/unlock` — the far room's floor centre, where a campaign's `shortcut.unlock` binds |
+
+Gates:
+
+1. **The near side cannot reach `anchor/unlock` while the bar stands** — near-
+   and far-room standable cells are simply not connected at all (the one
+   opening is solid), by the same graph-connectivity technique `cliff_path`
+   and `ambush_door` use.
+2. Teeth: `unbarred = 1` swaps the fill for air, and the same check must find
+   the two rooms connected through exactly that doorway — proof both that the
+   wall has no other gap, and that the bar (not some second opening) was what
+   sealed it.
+
+### `causeway` — the flooded ward
+
+A ward whose flood zones are water from the floor almost to the ceiling — not
+a shallow pool with a walkable rim — either side of a solid, 1-wide raised
+berm (`rise` blocks tall). A guard station sits at the far end, deliberately
+**not flush** with the causeway: its own floor sits `tower_rise` blocks higher,
+reached by a two-Z-slice post (`guard_support`, with the pillar and
+`anchor/elite`; `guard_cantilever`, the same floor and headroom one cell
+further out with **no** pillar under it — the same corbel move `rafter_hall`
+uses to keep a perch's own sightline clear of its own truss). A flush post
+cannot be obstructed without also sealing the causeway itself, since eye height
+over a same-height watch cell and target mass over a same-height target cell
+both fall inside the exact two-cell band `standable` requires clear; elevating
+it is what opens a sightline geometry that can be tested at all.
+
+| | |
+|---|---|
+| Controls | `rise` (3), `head` (3), `tower_rise` (4), `guard_len` (2), `obstruct` (0 — a test knob); roles `stone`, `water` |
+| Smallest region | 5 × (`rise + tower_rise + head`) × (`guard_len + 3`), and at least as long as it is wide |
+| Anchors | `anchor/causeway-head` — the causeway's near end. `anchor/elite` — the guard post's floor |
+
+Gates:
+
+1. **The causeway is standable end to end; stepping off it is not** — every
+   flood cell fails `standable` outright (its foot cell is water, not air).
+2. **The guard station commands the causeway** — `anchor/elite` sees every
+   standable causeway cell (the same Amanatides–Woo walk `watch_bay` uses).
+   Teeth: `obstruct = 1` stands one solid cell level with the guard's own
+   floor — well above the causeway's own two-cell clearance band — and the
+   same check must find at least one cell it can no longer see, while the
+   causeway stays walkable end to end.
+
+### `elite_ground` — the open arena
+
+One uniformly-floored room, no internal wall anywhere. The "engagement circle"
+is not a built piece; it is the square of cells within Chebyshev distance
+`radius` of `anchor/elite`, which the margin/approach arithmetic places in the
+middle of an otherwise ordinary floor — the geometric form of "no fog-gate
+motif": there is no threshold for a fog-gate rule to have occupied.
+
+| | |
+|---|---|
+| Controls | `radius` (4, its own enforced floor), `flank_margin` (4), `approach` (4), `head` (3), `seal_flank` (0 — a test knob: 1 west, 2 east, 3 both); role `stone` |
+| Smallest region | both horizontal extents ≥ `2*radius + 1 + 2*flank_margin + 2` (the larger of the rule's own two checks, since flank margins dwarf the approach runs at the defaults — the same "both horizontal extents" shape `castle` states for the identical reason), `head + 2` tall |
+| Anchors | `anchor/elite` — the circle's centre, floor height |
+
+Gates:
+
+1. **The circle is open ground, at least 9×9** — `radius` is guarded at `>= 4`
+   (no `otherwise`), and every cell within Chebyshev distance `radius` of
+   `anchor/elite` is asserted standable: 81 cells at the default.
+2. **Two proven flank lanes** — the west band and the east band (`X` strictly
+   outside the circle radius) each independently connect the approach end to
+   the exit end by `connected`, counted rather than eyeballed. Teeth:
+   `seal_flank` walls off one or both bands across the circle's own length —
+   exactly the shape a fog-gate motif would take — and the counted route total
+   drops from 2 to 1 or 0.
+
+`drop_shaft`, `dumbwaiter`, `far_side_bar`, `causeway` and `elite_ground` carry
+the same generic-suite and registry-round-trip promises as the eight above
+(`tests/library.rs`, `tests/determinism.rs`,
+`crates/compiler/tests/grammar_prefab.rs`).
+
+**`counterweight_lift` is not built.** The vocabulary doc
+(`docs/notes/private/grammar-staging-vocabulary.md`, planner-internal) calls
+for a one-way hub-opener that "needs the lift prefab pair" — two prefab pieces
+(a bottom station and a top station) that mate into a working elevator, the
+way Sen's Fortress's cage lift does. No such pair exists in the prefab library
+today (`prefabs/keep-tileset.md`'s only vertical piece, `keep-stair`, is a
+bidirectional stair connector, not a lift), and a *moving* platform is not
+expressible by this crate's IR at all — `fill`/`split`/`mark` place static
+blocks and metadata, with no notion of runtime state or motion, and the
+`.nbt` export strips command blocks on principle (§6). Building a lift shape
+that only pretends to move would be exactly the downstream folklore the
+no-hack rule forbids. This is a genuine dependency, not a design gap: the
+prefab pair (or a documented redstone/entity mechanism this crate could
+target) has to land first.
+
 ## 6. Export — freezing an expansion as a prefab
 
 `export::export_prefab(program, region, options, id)` produces the two files a

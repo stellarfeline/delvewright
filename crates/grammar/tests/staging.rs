@@ -23,8 +23,12 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_grammar::block::BlockState;
 use delvewright_grammar::ir::Program;
+use delvewright_grammar::library::elite_ground::MIN_RADIUS;
 use delvewright_grammar::library::rafter_hall::FLOOR_CELLS_PER_PERCH;
-use delvewright_grammar::library::{ambush_door, cliff_path, rafter_hall, store_room, watch_bay};
+use delvewright_grammar::library::{
+    ambush_door, causeway, cliff_path, drop_shaft, dumbwaiter, elite_ground, far_side_bar,
+    rafter_hall, store_room, watch_bay,
+};
 use delvewright_grammar::{Anchor, Box3, ExpandOptions, Expansion, VoxelModel, expand};
 // W3: the palette/prop family (W + S + M + X).
 use delvewright_grammar::library::boulder_stair::{self, boulder_stair};
@@ -91,6 +95,37 @@ const GRATE_REGION: Box3 = Box3::at_origin([3, 5, 14]);
 /// `STAIR_PALETTE_REGION`.
 const GRATE_PALETTE_REGION: Box3 = Box3::at_origin([3, 5, 8]);
 
+/// The drop shaft fixture: comfortably over its documented minimum.
+const SHAFT_REGION: Box3 = Box3::at_origin([4, 8, 6]);
+const SHAFT_SEED: u64 = 1;
+/// A short-drop fixture built specifically for the `rescue_ladder` teeth test
+/// — see the module note on `drop_shaft::drop_shaft` for why one notch only
+/// bridges a two-block drop. `Z` must stay strictly longer than `X`: an equal
+/// pair is a tie for "the longer horizontal axis" and the frame's `Largest`
+/// reorientation is free to break it either way.
+const SHAFT_TEETH_REGION: Box3 = Box3::at_origin([4, 5, 6]);
+
+/// The dumbwaiter fixture: comfortably over its documented minimum.
+const DUCT_REGION: Box3 = Box3::at_origin([6, 8, 8]);
+const DUCT_SEED: u64 = 1;
+const DUCT_TEETH_REGION: Box3 = Box3::at_origin([6, 5, 8]);
+
+/// The far-side bar fixture. `Z` strictly longer than `X`, as `SHAFT_TEETH_REGION` notes.
+const BAR_REGION: Box3 = Box3::at_origin([5, 5, 7]);
+const BAR_SEED: u64 = 1;
+
+/// The causeway fixture.
+const CAUSEWAY_REGION: Box3 = Box3::at_origin([7, 10, 9]);
+const CAUSEWAY_SEED: u64 = 1;
+
+/// The elite-ground fixture, at `radius`'s own enforced floor of 4 (a 9×9
+/// circle). Padded past the documented minimum on `Z`: the flank margins make
+/// `X` the wider of the two at the minimum itself, and `Z` has to stay
+/// strictly the longer axis or the frame's `Largest` reorientation is free to
+/// swap which world axis this file's `c[0]`/`c[2]` reads mean.
+const ARENA_REGION: Box3 = Box3::at_origin([19, 5, 25]);
+const ARENA_SEED: u64 = 1;
+
 // ---------------------------------------------------------------------------
 // Reading the expanded model the way a player meets it
 // ---------------------------------------------------------------------------
@@ -151,6 +186,85 @@ fn connected(
                 let next = [x + dx, y + dy, z + dz];
                 if cells.contains(&next) && seen.insert(next) {
                     queue.push_back(next);
+                }
+            }
+        }
+    }
+    false
+}
+
+/// `connected`'s ±1-step walk, plus a one-way **fall**: stepping off a
+/// standable cell into an adjacent column with nothing underfoot, and landing
+/// on the first solid floor below however far that is. This is the L family's
+/// (`drop_shaft`, `dumbwaiter`) forward-reachability model, and it is
+/// deliberately *more* permissive than `crate::nav`'s NPC pathing
+/// (`reachable_walkable`), which never risks more than a one-block drop — an
+/// escorted NPC never has to, but a player can walk off a ledge. It is used
+/// only going forward: proving the L family's "no way back" claim under this
+/// extra freedom, and not just under the stricter NPC model, is the stronger
+/// claim (see each rule's module note).
+///
+/// **What it does NOT model: a horizontal jump.** Both this and [`connected`]
+/// move one cell at a time with a ±1 height step, so a player's running jump
+/// across a gap is invisible to them. Every "unreachable" this file proves
+/// therefore means *unreachable by walking and falling*, not unreachable. The
+/// consequence differs per rule and is stated here rather than left to be
+/// re-derived:
+///
+/// * `drop_shaft` / `dumbwaiter` — unaffected in the direction that matters.
+///   Their claim is that you cannot get back **up**, and a jump does not lift
+///   you; the fall model is already the permissive side.
+/// * `far_side_bar` — **this is where it bites.** The rule's whole point is
+///   that the near side cannot reach `anchor/unlock` while the bar is down. A
+///   gap a player can jump would defeat that and this model would not see it,
+///   so the fixture must not leave one: keep the separation wider than a jump,
+///   or solid.
+/// * `elite_ground` — safe. A jump can only *add* flank routes, so the model
+///   under-counts, and the gate cares about there being enough, not few.
+///
+/// House precedent for documenting a model's limit where the model lives:
+/// `harness/src/teardown.ts`, which states its own under-classification.
+fn reachable_with_fall(
+    model: &VoxelModel,
+    cells: &BTreeSet<[i32; 3]>,
+    from: &BTreeSet<[i32; 3]>,
+    to: &BTreeSet<[i32; 3]>,
+) -> bool {
+    let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut queue: VecDeque<[i32; 3]> =
+        from.iter().copied().filter(|c| cells.contains(c)).collect();
+    seen.extend(queue.iter().copied());
+    while let Some([x, y, z]) = queue.pop_front() {
+        if to.contains(&[x, y, z]) {
+            return true;
+        }
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            for dy in [0, 1, -1] {
+                let next = [x + dx, y + dy, z + dz];
+                if cells.contains(&next) && seen.insert(next) {
+                    queue.push_back(next);
+                }
+            }
+            // A fall: walk the adjacent column down from foot height until it
+            // hits solid ground, and land there if that landing is standable.
+            // However far the drop, this only ever adds an edge downward.
+            let mut fy = y;
+            loop {
+                fy -= 1;
+                if y - fy > 64 {
+                    break; // not a real shaft, a runaway search
+                }
+                let below = [x + dx, fy, z + dz];
+                match model.get(below) {
+                    None => break, // fell out of the structure entirely
+                    Some(_) if solid(model, below) => {
+                        let landing = [x + dx, fy + 1, z + dz];
+                        if standable(model, landing) && seen.insert(landing) {
+                            queue.push_back(landing);
+                        }
+                        break;
+                    }
+                    _ => continue, // still falling
                 }
             }
         }
@@ -1620,6 +1734,490 @@ fn the_palette_mirror_still_fires_on_a_genuine_accent_in_the_grate_row() {
 }
 
 // ---------------------------------------------------------------------------
+// L — the drop shaft
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_drop_shaft_expands_deterministically() {
+    let program = drop_shaft();
+    let a = expand_at(&program, SHAFT_REGION, SHAFT_SEED);
+    let b = expand_at(&program, SHAFT_REGION, SHAFT_SEED);
+    assert_eq!(a.model.canonical_bytes(), b.model.canonical_bytes());
+    assert_eq!(a.anchors, b.anchors);
+    assert!(a.anchors.contains_key("anchor/spill"));
+    assert!(a.anchors.contains_key("anchor/landing"));
+}
+
+/// The gate the entry is named for, half one: granting a player's own
+/// free-fall (`reachable_with_fall`), the brink genuinely reaches the landing
+/// — the structure is not simply broken in two.
+#[test]
+fn the_spill_falls_to_the_landing() {
+    let out = expand_at(&drop_shaft(), SHAFT_REGION, SHAFT_SEED);
+    let model = &out.model;
+    let spill = out.anchors["anchor/spill"].pos;
+    let landing = out.anchors["anchor/landing"].pos;
+    assert!(standable(model, spill), "{spill:?}");
+    assert!(standable(model, landing), "{landing:?}");
+
+    let cells = standable_cells(model);
+    let from: BTreeSet<[i32; 3]> = [spill].into_iter().collect();
+    let to: BTreeSet<[i32; 3]> = [landing].into_iter().collect();
+    assert!(
+        reachable_with_fall(model, &cells, &from, &to),
+        "the brink cannot even fall to its own landing"
+    );
+}
+
+/// Half two, and the one the entry exists for: under the *plain* ±1 step walk
+/// — no fall, since a fall never points up — the landing cannot reach the
+/// brink. Proving the negative under `cliff_path`'s own stricter model is the
+/// honest claim; the fall-capable model is only ever used going forward.
+#[test]
+fn the_landing_has_no_way_back_to_the_spill() {
+    let out = expand_at(&drop_shaft(), SHAFT_REGION, SHAFT_SEED);
+    let model = &out.model;
+    let spill = out.anchors["anchor/spill"].pos;
+    let landing = out.anchors["anchor/landing"].pos;
+    let cells = standable_cells(model);
+    let from: BTreeSet<[i32; 3]> = [landing].into_iter().collect();
+    let to: BTreeSet<[i32; 3]> = [spill].into_iter().collect();
+    assert!(
+        !connected(&cells, &from, &to),
+        "the landing walks straight back up to the brink — the shaft is not one-way"
+    );
+}
+
+/// ...and the gate has teeth. `rescue_ladder` notches the entry floor at one
+/// column — paired with a `drop` of 2, one notch is exactly enough to bridge
+/// the gap (see the module note) — and the same plain-walk check must now find
+/// a way back. Both programs are identical but for the knob, isolating it as
+/// the one variable that flips the gate.
+#[test]
+fn a_rescued_shaft_has_a_way_back() {
+    let mut sealed = drop_shaft();
+    sealed.set_param("drop", 2).unwrap();
+    sealed.set_param("head", 2).unwrap();
+    let mut rescued = sealed.clone();
+    rescued.set_param("rescue_ladder", 1).unwrap();
+
+    let sealed_out = expand_at(&sealed, SHAFT_TEETH_REGION, SHAFT_SEED);
+    let sealed_cells = standable_cells(&sealed_out.model);
+    let s_spill: BTreeSet<[i32; 3]> = [sealed_out.anchors["anchor/spill"].pos]
+        .into_iter()
+        .collect();
+    let s_landing: BTreeSet<[i32; 3]> = [sealed_out.anchors["anchor/landing"].pos]
+        .into_iter()
+        .collect();
+    assert!(
+        !connected(&sealed_cells, &s_landing, &s_spill),
+        "the un-rescued shaft already has a way back — the fixture proves nothing"
+    );
+
+    let rescued_out = expand_at(&rescued, SHAFT_TEETH_REGION, SHAFT_SEED);
+    let rescued_cells = standable_cells(&rescued_out.model);
+    let r_spill: BTreeSet<[i32; 3]> = [rescued_out.anchors["anchor/spill"].pos]
+        .into_iter()
+        .collect();
+    let r_landing: BTreeSet<[i32; 3]> = [rescued_out.anchors["anchor/landing"].pos]
+        .into_iter()
+        .collect();
+    assert!(
+        connected(&rescued_cells, &r_landing, &r_spill),
+        "rescue_ladder notched the entry floor and the plain walk still reports no way back \
+         — the gate proves nothing"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// L — the dumbwaiter
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_dumbwaiter_expands_deterministically() {
+    let program = dumbwaiter();
+    let a = expand_at(&program, DUCT_REGION, DUCT_SEED);
+    let b = expand_at(&program, DUCT_REGION, DUCT_SEED);
+    assert_eq!(a.model.canonical_bytes(), b.model.canonical_bytes());
+    assert_eq!(a.anchors, b.anchors);
+    assert!(a.anchors.contains_key("anchor/hatch"));
+    assert!(a.anchors.contains_key("anchor/landing"));
+}
+
+#[test]
+fn the_hatch_falls_to_the_landing() {
+    let out = expand_at(&dumbwaiter(), DUCT_REGION, DUCT_SEED);
+    let model = &out.model;
+    let hatch = out.anchors["anchor/hatch"].pos;
+    let landing = out.anchors["anchor/landing"].pos;
+    assert!(standable(model, hatch), "{hatch:?}");
+    assert!(standable(model, landing), "{landing:?}");
+
+    let cells = standable_cells(model);
+    let from: BTreeSet<[i32; 3]> = [hatch].into_iter().collect();
+    let to: BTreeSet<[i32; 3]> = [landing].into_iter().collect();
+    assert!(
+        reachable_with_fall(model, &cells, &from, &to),
+        "the hatch cannot even fall to its own landing"
+    );
+}
+
+#[test]
+fn the_landing_has_no_way_back_to_the_hatch() {
+    let out = expand_at(&dumbwaiter(), DUCT_REGION, DUCT_SEED);
+    let model = &out.model;
+    let hatch = out.anchors["anchor/hatch"].pos;
+    let landing = out.anchors["anchor/landing"].pos;
+    let cells = standable_cells(model);
+    let from: BTreeSet<[i32; 3]> = [landing].into_iter().collect();
+    let to: BTreeSet<[i32; 3]> = [hatch].into_iter().collect();
+    assert!(
+        !connected(&cells, &from, &to),
+        "the landing walks straight back up to the hatch — the duct is not one-way"
+    );
+}
+
+/// The same knob, the same short-drop pairing `drop_shaft` uses.
+#[test]
+fn a_rescued_dumbwaiter_has_a_way_back() {
+    let mut sealed = dumbwaiter();
+    sealed.set_param("drop", 2).unwrap();
+    sealed.set_param("head", 2).unwrap();
+    let mut rescued = sealed.clone();
+    rescued.set_param("rescue_ladder", 1).unwrap();
+
+    let sealed_out = expand_at(&sealed, DUCT_TEETH_REGION, DUCT_SEED);
+    let sealed_cells = standable_cells(&sealed_out.model);
+    let s_hatch: BTreeSet<[i32; 3]> = [sealed_out.anchors["anchor/hatch"].pos]
+        .into_iter()
+        .collect();
+    let s_landing: BTreeSet<[i32; 3]> = [sealed_out.anchors["anchor/landing"].pos]
+        .into_iter()
+        .collect();
+    assert!(
+        !connected(&sealed_cells, &s_landing, &s_hatch),
+        "the un-rescued duct already has a way back — the fixture proves nothing"
+    );
+
+    let rescued_out = expand_at(&rescued, DUCT_TEETH_REGION, DUCT_SEED);
+    let rescued_cells = standable_cells(&rescued_out.model);
+    let r_hatch: BTreeSet<[i32; 3]> = [rescued_out.anchors["anchor/hatch"].pos]
+        .into_iter()
+        .collect();
+    let r_landing: BTreeSet<[i32; 3]> = [rescued_out.anchors["anchor/landing"].pos]
+        .into_iter()
+        .collect();
+    assert!(
+        connected(&rescued_cells, &r_landing, &r_hatch),
+        "rescue_ladder notched the entry floor and the plain walk still reports no way back \
+         — the gate proves nothing"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// F — the far-side bar
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_far_side_bar_expands_deterministically() {
+    let program = far_side_bar();
+    let a = expand_at(&program, BAR_REGION, BAR_SEED);
+    let b = expand_at(&program, BAR_REGION, BAR_SEED);
+    assert_eq!(a.model.canonical_bytes(), b.model.canonical_bytes());
+    assert_eq!(a.anchors, b.anchors);
+}
+
+/// The gate this entry exists for: while the bar stands, the near side simply
+/// cannot reach `anchor/unlock` — the two rooms are not connected at all, not
+/// merely "the shortest route is longer".
+#[test]
+fn the_near_side_cannot_reach_the_unlock_while_barred() {
+    let out = expand_at(&far_side_bar(), BAR_REGION, BAR_SEED);
+    let model = &out.model;
+    let unlock = out.anchors["anchor/unlock"].pos;
+    let gate = out.anchors["anchor/gate"].pos;
+    assert!(standable(model, unlock), "{unlock:?}");
+    assert!(
+        gate[2] > unlock[2],
+        "the gate {gate:?} must sit between the near side and the far-side unlock {unlock:?}"
+    );
+
+    let cells = standable_cells(model);
+    let near: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] > gate[2]).collect();
+    let far: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] < gate[2]).collect();
+    assert!(!near.is_empty() && !far.is_empty());
+    assert!(
+        !connected(&cells, &near, &far),
+        "the near side reaches the far side while the bar stands — the shortcut has no far side \
+         to earn"
+    );
+    let unlock_set: BTreeSet<[i32; 3]> = [unlock].into_iter().collect();
+    assert!(
+        connected(&cells, &far, &unlock_set),
+        "the unlock is not even reachable from its own room"
+    );
+}
+
+/// ...and the gate has teeth. `unbarred = 1` swaps the fill for air and
+/// nothing else changes; the same check must now find the two rooms connected
+/// through exactly that doorway — proof both that the wall has no other gap,
+/// and that the bar (not some second opening) was what sealed it.
+#[test]
+fn unbarring_the_door_connects_the_rooms() {
+    let mut open = far_side_bar();
+    open.set_param("unbarred", 1).unwrap();
+    let out = expand_at(&open, BAR_REGION, BAR_SEED);
+    let model = &out.model;
+    let gate = out.anchors["anchor/gate"].pos;
+    let cells = standable_cells(model);
+    let near: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] > gate[2]).collect();
+    let far: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[2] < gate[2]).collect();
+    assert!(
+        connected(&cells, &near, &far),
+        "unbarring the door and the two rooms still do not connect — the gate proves nothing"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// T — the causeway
+// ---------------------------------------------------------------------------
+
+/// The causeway's own standable cells: the raised spline's `X` column and
+/// foot height, over the flooded ward. Filtered on `Y` as well as `X` — the
+/// guard station's own post shares the causeway's `X` by construction (both
+/// are centred), and without the `Y` filter its standable cell would read as
+/// part of the lane.
+fn causeway_cells(model: &VoxelModel, causeway_head: [i32; 3]) -> BTreeSet<[i32; 3]> {
+    standable_cells(model)
+        .into_iter()
+        .filter(|c| c[0] == causeway_head[0] && c[1] == causeway_head[1])
+        .collect()
+}
+
+/// The causeway's far end: its own lowest `Z`, which is the boundary against
+/// the guard station's cantilever — not world `Z = 0`, which is inside the
+/// guard station's own (separately structured) footprint.
+fn causeway_far_end(lane: &BTreeSet<[i32; 3]>) -> BTreeSet<[i32; 3]> {
+    let far_z = lane.iter().map(|c| c[2]).min().expect("a non-empty lane");
+    lane.iter().copied().filter(|c| c[2] == far_z).collect()
+}
+
+#[test]
+fn a_causeway_expands_deterministically() {
+    let program = causeway();
+    let a = expand_at(&program, CAUSEWAY_REGION, CAUSEWAY_SEED);
+    let b = expand_at(&program, CAUSEWAY_REGION, CAUSEWAY_SEED);
+    assert_eq!(a.model.canonical_bytes(), b.model.canonical_bytes());
+    assert_eq!(a.anchors, b.anchors);
+}
+
+/// The first gate: the causeway is standable end to end, and stepping off it
+/// is not — every flood cell fails `standable` outright, because its foot
+/// cell is water, not air.
+#[test]
+fn the_causeway_is_standable_and_the_flood_is_not() {
+    let out = expand_at(&causeway(), CAUSEWAY_REGION, CAUSEWAY_SEED);
+    let model = &out.model;
+    let head = out.anchors["anchor/causeway-head"].pos;
+    let elite = out.anchors["anchor/elite"].pos;
+    assert!(standable(model, head), "{head:?}");
+
+    let lane = causeway_cells(model, head);
+    assert!(
+        lane.len() >= 6,
+        "the causeway fixture is too short to test: {lane:?}"
+    );
+    let far_end: BTreeSet<[i32; 3]> = causeway_far_end(&lane);
+    let near_end: BTreeSet<[i32; 3]> = [head].into_iter().collect();
+    assert!(
+        connected(&lane, &near_end, &far_end),
+        "the causeway does not connect its own two ends"
+    );
+
+    // Every flooded cell (both sides, over the whole ward) is water at foot
+    // level, and water is not air, so it is never standable.
+    let flooded: Vec<[i32; 3]> = CAUSEWAY_REGION
+        .positions()
+        .filter(|&p| model.get(p).is_some_and(|b| b.name == "minecraft:water"))
+        .collect();
+    assert!(!flooded.is_empty(), "the ward built no water at all");
+    for cell in &flooded {
+        let foot = [cell[0], cell[1] + 1, cell[2]];
+        assert!(
+            !standable(model, foot),
+            "{foot:?}, directly over water {cell:?}, is standable — the flood is not doing its job"
+        );
+    }
+    // The post shares the causeway's own `X` (a direct line down it is the
+    // whole point) but stands in the guard station's own `Z` zone, short of
+    // the ward the flood cells above were just swept over.
+    assert_eq!(elite[0], head[0]);
+    assert!(elite[2] < flooded.iter().map(|c| c[2]).min().unwrap());
+}
+
+/// The second gate: the guard station sees every standable causeway cell.
+#[test]
+fn the_guard_station_sees_the_whole_causeway() {
+    let out = expand_at(&causeway(), CAUSEWAY_REGION, CAUSEWAY_SEED);
+    let model = &out.model;
+    let elite = out.anchors["anchor/elite"].pos;
+    let head = out.anchors["anchor/causeway-head"].pos;
+    let lane = causeway_cells(model, head);
+    assert!(!lane.is_empty());
+    for cell in &lane {
+        if let Err(blocker) = sees(model, elite, *cell) {
+            panic!(
+                "the post {elite:?} cannot see the causeway cell {cell:?}: {blocker:?} is in the way"
+            );
+        }
+    }
+}
+
+/// ...and the gate has teeth. `obstruct = 1` stands one solid cell in the
+/// causeway's own line, one course above the two cells `standable` needs
+/// clear — so the check that catches it is catching blindness, not a severed
+/// crossing.
+#[test]
+fn a_pillar_in_the_causeway_blinds_the_post() {
+    let mut blocked = causeway();
+    blocked.set_param("obstruct", 1).unwrap();
+    let out = expand_at(&blocked, CAUSEWAY_REGION, CAUSEWAY_SEED);
+    let model = &out.model;
+    let elite = out.anchors["anchor/elite"].pos;
+    let head = out.anchors["anchor/causeway-head"].pos;
+    let lane = causeway_cells(model, head);
+    assert!(!lane.is_empty());
+
+    let blind: Vec<[i32; 3]> = lane
+        .iter()
+        .copied()
+        .filter(|cell| sees(model, elite, *cell).is_err())
+        .collect();
+    assert!(
+        !blind.is_empty(),
+        "a pillar was stood in the causeway's own line of sight and the post still saw every \
+         cell — the gate proves nothing"
+    );
+    // The causeway is still walkable end to end: what was caught is
+    // blindness, not impassability.
+    let far_end: BTreeSet<[i32; 3]> = causeway_far_end(&lane);
+    let near_end: BTreeSet<[i32; 3]> = [head].into_iter().collect();
+    assert!(connected(&lane, &near_end, &far_end));
+}
+
+// ---------------------------------------------------------------------------
+// E — elite ground
+// ---------------------------------------------------------------------------
+
+/// The two flank bands, each independently walked end to end. Returns how
+/// many of {west, east} genuinely connect the approach to the exit — the
+/// "assert the count" the entry asks for, not an eyeballed layout.
+fn flank_route_count(model: &VoxelModel, elite: [i32; 3], far_z: i32) -> usize {
+    let cells = standable_cells(model);
+    let west: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .copied()
+        .filter(|c| c[0] < elite[0] - MIN_RADIUS as i32)
+        .collect();
+    let east: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .copied()
+        .filter(|c| c[0] > elite[0] + MIN_RADIUS as i32)
+        .collect();
+    [west, east]
+        .into_iter()
+        .filter(|band| {
+            let entry: BTreeSet<[i32; 3]> =
+                band.iter().copied().filter(|c| c[2] == far_z).collect();
+            let exit: BTreeSet<[i32; 3]> = band.iter().copied().filter(|c| c[2] == 0).collect();
+            !entry.is_empty() && !exit.is_empty() && connected(band, &entry, &exit)
+        })
+        .count()
+}
+
+#[test]
+fn elite_ground_expands_deterministically() {
+    let program = elite_ground();
+    let a = expand_at(&program, ARENA_REGION, ARENA_SEED);
+    let b = expand_at(&program, ARENA_REGION, ARENA_SEED);
+    assert_eq!(a.model.canonical_bytes(), b.model.canonical_bytes());
+    assert_eq!(a.anchors, b.anchors);
+}
+
+/// The first gate: the engagement circle — Chebyshev distance `radius` from
+/// `anchor/elite` — is open ground, at least 9×9 at the entry's enforced
+/// minimum. No fog-gate motif: there is no wall anywhere at the circle's own
+/// boundary, which `the_open_floor_has_two_flank_routes` below is the
+/// positive proof of (a fog-gate-shaped wall is exactly what that gate's
+/// teeth test adds, and exactly what it catches).
+#[test]
+fn the_engagement_circle_is_open_ground() {
+    let out = expand_at(&elite_ground(), ARENA_REGION, ARENA_SEED);
+    let model = &out.model;
+    let elite = out.anchors["anchor/elite"].pos;
+    assert!(standable(model, elite), "{elite:?}");
+
+    let diam = 2 * MIN_RADIUS + 1;
+    let mut count = 0;
+    for dx in -MIN_RADIUS..=MIN_RADIUS {
+        for dz in -MIN_RADIUS..=MIN_RADIUS {
+            let cell = [elite[0] + dx as i32, elite[1], elite[2] + dz as i32];
+            assert!(
+                standable(model, cell),
+                "circle cell {cell:?} is not open ground"
+            );
+            count += 1;
+        }
+    }
+    assert_eq!(count, diam * diam, "the circle is not the claimed square");
+}
+
+/// The second gate: two flank lanes, counted, not eyeballed.
+#[test]
+fn the_open_floor_has_two_flank_routes() {
+    let out = expand_at(&elite_ground(), ARENA_REGION, ARENA_SEED);
+    let elite = out.anchors["anchor/elite"].pos;
+    let far_z = ARENA_REGION.size[2] as i32 - 1;
+    assert_eq!(
+        flank_route_count(&out.model, elite, far_z),
+        2,
+        "the open floor does not carry two proven bypass routes"
+    );
+}
+
+/// ...and the gate has teeth. `seal_flank` walls off the west band, the east
+/// band, or both, across the circle's own length — exactly the shape a
+/// fog-gate motif takes — and the counted route total must drop.
+#[test]
+fn sealing_a_flank_drops_its_route() {
+    for (knob, expected) in [(1, 1), (2, 1), (3, 0)] {
+        let mut sealed = elite_ground();
+        sealed.set_param("seal_flank", knob).unwrap();
+        let out = expand_at(&sealed, ARENA_REGION, ARENA_SEED);
+        let elite = out.anchors["anchor/elite"].pos;
+        let far_z = ARENA_REGION.size[2] as i32 - 1;
+        assert_eq!(
+            flank_route_count(&out.model, elite, far_z),
+            expected,
+            "seal_flank={knob} did not drop the route count as claimed — the gate proves nothing"
+        );
+    }
+}
+
+/// `radius` is guarded at the entry's own stated floor: a smaller circle is a
+/// refusal naming the rule, never a quietly smaller arena.
+#[test]
+fn a_radius_under_the_floor_is_refused_not_shrunk() {
+    let mut cramped = elite_ground();
+    cramped.set_param("radius", MIN_RADIUS - 1).unwrap();
+    let err = expand(&cramped, ARENA_REGION, &ExpandOptions::seeded(ARENA_SEED)).unwrap_err();
+    assert!(
+        err.to_string().contains("no alternative of rule"),
+        "expected a refusal, got: {err}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Shared promises
 // ---------------------------------------------------------------------------
 
@@ -1716,6 +2314,46 @@ fn the_documented_minimum_regions_are_the_real_ones() {
         [3, 5, broken_grate::MIN_LINE as u32],
         &[[2, 5, 3], [3, 4, 3], [3, 5, 2]],
     );
+    // drop_shaft: 3 across, drop + head + 1 tall, 4 long (2 cells per zone).
+    check(
+        "drop_shaft",
+        &drop_shaft(),
+        [3, 8, 4],
+        &[[2, 8, 4], [3, 7, 4], [3, 8, 3]],
+    );
+    // dumbwaiter: duct_width + 4 across, drop + head + 1 tall, duct_len + 4 long.
+    check(
+        "dumbwaiter",
+        &dumbwaiter(),
+        [5, 8, 6],
+        &[[4, 8, 6], [5, 7, 6], [5, 8, 5]],
+    );
+    // far_side_bar: 3 across, head + 2 tall, 3 long (a cell of floor on each
+    // side of the wall).
+    check(
+        "far_side_bar",
+        &far_side_bar(),
+        [3, 5, 3],
+        &[[2, 5, 3], [3, 4, 3], [3, 5, 2]],
+    );
+    // causeway: 5 across (wall, flood, causeway, flood, wall), rise +
+    // tower_rise + head tall, guard_len + 3 long (guard_len's own default is 2).
+    check(
+        "causeway",
+        &causeway(),
+        [5, 10, 5],
+        &[[4, 10, 5], [5, 9, 5], [5, 10, 4]],
+    );
+    // elite_ground: both horizontal extents >= diameter + 2*flank_margin + 2
+    // (the wider of the rule's two checks — see the module note), head + 2
+    // tall — at `radius`'s enforced floor of 4 (a 9×9 circle) and the default
+    // margin/approach/head.
+    check(
+        "elite_ground",
+        &elite_ground(),
+        [19, 5, 19],
+        &[[18, 5, 19], [19, 4, 19], [19, 5, 18]],
+    );
 }
 
 /// A palette swap restyles every staging program without moving a block — the
@@ -1742,6 +2380,11 @@ fn the_staging_rules_restyle_without_moving_a_block() {
         (boulder_stair(), STAIR_REGION),
         (threshold_motif(), THRESHOLD_REGION),
         (broken_grate(), GRATE_REGION),
+        (drop_shaft(), SHAFT_REGION),
+        (dumbwaiter(), DUCT_REGION),
+        (far_side_bar(), BAR_REGION),
+        (causeway(), CAUSEWAY_REGION),
+        (elite_ground(), ARENA_REGION),
     ] {
         let mut restyled = base.clone();
         let roles: Vec<String> = base.palette.keys().cloned().collect();

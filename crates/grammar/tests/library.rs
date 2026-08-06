@@ -3,7 +3,8 @@
 use delvewright_grammar::block::BlockState;
 use delvewright_grammar::ir::{Paint, Program, WeightedBlock};
 use delvewright_grammar::library::{
-    ambush_door, castle, church, cliff_path, rafter_hall, store_room, temple, watch_bay,
+    ambush_door, castle, causeway, church, cliff_path, drop_shaft, dumbwaiter, elite_ground,
+    far_side_bar, rafter_hall, store_room, temple, watch_bay,
 };
 use delvewright_grammar::{Box3, ExpandOptions, expand};
 // W3: the palette/prop family (W + S + M + X).
@@ -14,8 +15,9 @@ use delvewright_grammar::library::{boulder_stair, broken_grate, threshold_motif}
 const TEMPLE_REGION: Box3 = Box3::at_origin([13, 14, 21]);
 const CASTLE_REGION: Box3 = Box3::at_origin([41, 14, 25]);
 const CHURCH_REGION: Box3 = Box3::at_origin([15, 16, 30]);
-/// The original staging rules (spec-0027 W1 and W2) travel with the ports: they
-/// owe the same structural validity, JSON round trip and determinism.
+/// The original staging rules (spec-0027 W1, W2 and W4) travel with the
+/// ports: they owe the same structural validity, JSON round trip and
+/// determinism.
 const CLIFF_REGION: Box3 = Box3::at_origin([3, 6, 30]);
 const PASSAGE_REGION: Box3 = Box3::at_origin([7, 7, 24]);
 const HALL_REGION: Box3 = Box3::at_origin([13, 6, 25]);
@@ -25,6 +27,12 @@ const STORE_REGION: Box3 = Box3::at_origin([7, 5, 14]);
 const STAIR_REGION: Box3 = Box3::at_origin([9, 6, 27]);
 const THRESHOLD_REGION: Box3 = Box3::at_origin([9, 6, 13]);
 const GRATE_REGION: Box3 = Box3::at_origin([3, 5, 14]);
+/// The topology family (task #182): vertical links, one-way bars, elite ground.
+const SHAFT_REGION: Box3 = Box3::at_origin([4, 8, 6]);
+const DUCT_REGION: Box3 = Box3::at_origin([6, 8, 8]);
+const BAR_REGION: Box3 = Box3::at_origin([5, 5, 7]);
+const CAUSEWAY_REGION: Box3 = Box3::at_origin([7, 10, 9]);
+const ARENA_REGION: Box3 = Box3::at_origin([19, 5, 25]);
 
 fn programs() -> Vec<(Program, Box3)> {
     vec![
@@ -39,6 +47,11 @@ fn programs() -> Vec<(Program, Box3)> {
         (boulder_stair::boulder_stair(), STAIR_REGION),
         (threshold_motif::threshold_motif(), THRESHOLD_REGION),
         (broken_grate::broken_grate(), GRATE_REGION),
+        (drop_shaft(), SHAFT_REGION),
+        (dumbwaiter(), DUCT_REGION),
+        (far_side_bar(), BAR_REGION),
+        (causeway(), CAUSEWAY_REGION),
+        (elite_ground(), ARENA_REGION),
     ]
 }
 
