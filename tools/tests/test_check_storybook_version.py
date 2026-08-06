@@ -33,7 +33,7 @@ def gate(tmp_path, monkeypatch):
     cargo_toml = tmp_path / "crates" / "compiler" / "Cargo.toml"
     cargo_toml.parent.mkdir(parents=True)
     cargo_toml.write_text(
-        f'[package]\nname = "delvewright-compiler"\nversion = "{ENGINE_DELVEC}"\n'
+        f'[package]\nname = "delvec"\nversion = "{ENGINE_DELVEC}"\n'
         'edition = "2024"\n',
         encoding="utf-8",
     )

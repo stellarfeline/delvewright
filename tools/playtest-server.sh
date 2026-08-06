@@ -95,7 +95,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [ -n "$DELVEC" ] || DELVEC="$REPO_ROOT/target/release/delvec"
 if [ ! -x "$DELVEC" ]; then
   echo "building delvec (release)…"
-  (cd "$REPO_ROOT" && cargo build --release -p delvewright-compiler --bin delvec >/dev/null)
+  (cd "$REPO_ROOT" && cargo build --release -p delvec --bin delvec >/dev/null)
 fi
 [ -n "$OUT_DIR" ] || OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dw-playtest-out.XXXXXX")"
 

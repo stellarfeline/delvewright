@@ -50,7 +50,7 @@ cleanup() { validation/fresh-volumes.sh --project "$PROJECT" >/dev/null 2>&1 || 
 trap cleanup EXIT
 
 echo "==> building the delve output (datapack + creator overlay)"
-cargo run -q -p delvewright-compiler --bin delvec -- \
+cargo run -q -p delvec --bin delvec -- \
   build "$CAMPAIGN" -o "$OUT" --prefabs campaigns/prefabs
 
 echo "==> the compiled proposal defaults the overlay will seed"
@@ -145,7 +145,7 @@ print("report matches the adjusted values")
 PY
 
 echo "==> converting the harvest back into a DSL patch"
-cargo run -q -p delvewright-compiler --bin delvec -- \
+cargo run -q -p delvec --bin delvec -- \
   calibrate "$REPORT" --layout "$OUT/creator-datapack/layout.json" -o "$PATCH"
 
 echo "----- shot-patch.json -----"

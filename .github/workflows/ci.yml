@@ -4,7 +4,10 @@ name: CI (tiers 1 + 2)
 # datapack-load check + PackTest suite) on PRs. Tier 3 (bot playthrough +
 # multi-arch image push) lives in release.yml, on rc-* tags.
 # push is limited to main so PR branches don't run every job twice
-# (push + pull_request); Actions minutes are metered while the repo is private.
+# (push + pull_request) — a duplicate run is a second set of statuses reporting
+# on one tree, and the pair race the `concurrency` cancel. This used to cite
+# metered Actions minutes; the repo is PUBLIC, where standard runners are free,
+# so that premise was false and the reason above is the one that holds.
 on:
   push:
     branches: [main]
@@ -55,6 +58,43 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: cargo test (incl. determinism double-build gate)
         run: cargo test --workspace
+      # ADR-0017: `cargo install delvec` has to keep working, and `cargo publish`
+      # is a ONE-WAY DOOR — a version can never be reused and a name never freed
+      # — so the packaging contract is proven on every push from a tree nobody
+      # has published from. This packages both publishable crates, asserts the
+      # manifest crates.io will actually serve carries no `path` dependency, and
+      # rebuilds the packaged tarball OUTSIDE the workspace with the DSL crate
+      # supplied from its own packaged tarball. That last part is what stops the
+      # gate being vacuous: a dry run that quietly satisfied the dependency from
+      # `crates/dsl` on disk would prove nothing about a stranger's download.
+      # A STEP, not a job: every job name here is a required status context.
+      - name: the published crates would build standing alone
+        run: bash tools/check-publishable.sh
+
+  # ADR-0017: the release shelf must stay buildable as the repo grows, and the
+  # way it silently stops is a new dependency that does not compile for musl,
+  # msvc or darwin. Without this, that breaks at RELEASE time — after the tag is
+  # pushed — which is the worst possible moment to find out. `cargo check`
+  # (rather than a full link) so ONE runner covers all five targets: rustup ships
+  # std for every one regardless of host, and build scripts still run, so a
+  # dependency that drags in a C toolchain fails here too. The real per-target
+  # link happens in engine-release.yml on its own runners.
+  #
+  # The target list is NOT duplicated here — `tools/build-release-binaries.sh`
+  # reads it out of `versions.toml [engine].targets`, the same list the release
+  # matrix is checked against, and it states its binding count on every run.
+  engine-shelf:
+    # Name must stay exactly "engine binaries (cross-build shelf)" — it is a
+    # required status context in branch protection; renaming it deadlocks every
+    # PR (see .github/required-status-checks.txt).
+    name: engine binaries (cross-build shelf)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with: { key: cross-build-shelf }
+      - name: every shelf target compiles
+        run: bash tools/build-release-binaries.sh --check-only
 
   # The prefab generators are separate workspaces OUTSIDE `crates/` (so they never
   # enter the shipped `delvec`), which until now meant `cargo …--workspace` never
@@ -185,7 +225,7 @@ jobs:
         run: pip install "mecha==0.104.1" beet
       - name: build the hello-world delve
         run: |
-          cargo run -p delvewright-compiler --bin delvec -- \
+          cargo run -p delvec --bin delvec -- \
             build crates/dsl/fixtures/valid/hello-world \
             -o out --prefabs campaigns/prefabs
       - name: mecha validates every emitted mcfunction
@@ -275,8 +315,13 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: the /new-delve skill's declared delvec range is true
         run: python3 tools/check-skill-version.py
-      # --offline: check only local/internal links. The repo is private, so
-      # external-link checks would fail or flake.
+      # --offline: check only local/internal links — the ones this repo can
+      # actually keep true. This used to be justified by the repo being private;
+      # it is PUBLIC, so that premise was false, but the flag is still right for
+      # the reason that always held: an external link check makes a required
+      # status depend on third-party uptime, i.e. it manufactures intermittent
+      # reds — and an intermittent red is never re-run here, it is root-caused
+      # (CLAUDE.md), which is not a budget any external host earns.
       - uses: lycheeverse/lychee-action@v2
         with:
           args: "--offline --no-progress './**/*.md'"
@@ -351,7 +396,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: build the hello-world delve output
         run: |
-          cargo run -p delvewright-compiler --bin delvec -- \
+          cargo run -p delvec --bin delvec -- \
             build crates/dsl/fixtures/valid/hello-world \
             -o validation/delve-output --prefabs campaigns/prefabs
 
@@ -460,7 +505,7 @@ jobs:
       # the compiler is already built, so there is no new pull and no new compile.
       - name: build the cast-ledger delve output (spec-0020)
         run: |
-          cargo run -p delvewright-compiler --bin delvec -- \
+          cargo run -p delvec --bin delvec -- \
             build crates/compiler/tests/fixtures/cast-ledger \
             -o validation/delve-output-cast --prefabs campaigns/prefabs
 
@@ -480,7 +525,7 @@ jobs:
       # pull, no new compile.
       - name: build the keep-trial delve output (held-item interact)
         run: |
-          cargo run -p delvewright-compiler --bin delvec -- \
+          cargo run -p delvec --bin delvec -- \
             build crates/dsl/fixtures/valid/keep-trial \
             -o validation/delve-output-keeptrial --prefabs campaigns/prefabs
 
@@ -499,7 +544,7 @@ jobs:
       # no new compile.
       - name: build the souls-bonfire delve output (spec-0016 §1)
         run: |
-          cargo run -p delvewright-compiler --bin delvec -- \
+          cargo run -p delvec --bin delvec -- \
             build crates/compiler/tests/fixtures/souls-bonfire \
             -o validation/delve-output-bonfire --prefabs campaigns/prefabs
 
@@ -519,7 +564,7 @@ jobs:
       # here, on the re-summon itself, rather than through a rest.
       - name: build the souls-td-lanes delve output (spec-0016 §6)
         run: |
-          cargo run -p delvewright-compiler --bin delvec -- \
+          cargo run -p delvec --bin delvec -- \
             build crates/compiler/tests/fixtures/souls-td-lanes \
             -o validation/delve-output-lanes --prefabs campaigns/prefabs
 
@@ -540,7 +585,7 @@ jobs:
       # the passes above: one extra toolserver boot, no new pull, no new compile.
       - name: build the souls-timed-gate-disarm delve output (task #184)
         run: |
-          cargo run -p delvewright-compiler --bin delvec -- \
+          cargo run -p delvec --bin delvec -- \
             build crates/compiler/tests/fixtures/souls-timed-gate-disarm \
             -o validation/delve-output-tgdisarm --prefabs campaigns/prefabs
 

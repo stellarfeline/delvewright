@@ -608,7 +608,7 @@ def delvec_command(explicit: str | None) -> list[str]:
     cmd = explicit or os.environ.get("DELVEC")
     if cmd:
         return shlex.split(cmd)
-    return ["cargo", "run", "-q", "-p", "delvewright-compiler", "--bin", "delvec", "--"]
+    return ["cargo", "run", "-q", "-p", "delvec", "--bin", "delvec", "--"]
 
 
 def run_delvec(args: Sequence[str], delvec: Sequence[str]) -> subprocess.CompletedProcess[str]:
