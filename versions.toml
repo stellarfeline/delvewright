@@ -15,11 +15,15 @@
 # .github/workflows/*.yml.
 version = "1.21.11"
 # Mojang server jar, from piston-meta 1.21.11 (downloads.server). The jar is NEVER
-# baked into any image (ADR-0010 EULA); the itzg entrypoint fetches it at first boot
-# by version+checksum, and CI caches it (actions/cache keyed on version + sha256).
-# Provenance record only (no CI cache since 2026-07-30, see ci.yml note).
-# sha1 is the checksum piston-meta publishes; sha256 is computed from the jar bytes
-# and used as the CI cache key + our own integrity check.
+# baked into any image (ADR-0010 EULA).
+# sha1 is the checksum piston-meta publishes; sha256 is computed from the jar bytes.
+#
+# Consumed by: validation/server-bootstrap-cache.sh (task #41), which fetches this
+# URL ONCE per job and refuses anything whose sha256 is not the pin below, then
+# hands the bytes to every server boot as a /data overlay. Before it, each of the
+# seven servers a `tier 2` run boots bootstrapped the jar live and any one blip
+# reddened a required check (PR #312). These three values are live inputs now, not
+# the provenance record they were between 2026-07-30 and 2026-08-05.
 server_jar_url = "https://piston-data.mojang.com/v1/objects/64bb6d763bed0a9f1d632ec347938594144943ed/server.jar"
 server_jar_sha1 = "64bb6d763bed0a9f1d632ec347938594144943ed"
 server_jar_sha256 = "f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726"
@@ -77,6 +81,18 @@ digest = "sha256:31ed5d5a5c50158470bfee8c7197a75e6f586a25c950bf25b69b533f88e0ba0
 # Fabric loader (pre-baked into the toolserver at build time; ADR-0003 tooling only).
 # Consumed by: validation/Dockerfile.toolserver (ARG FABRIC_LOADER_VERSION).
 loader_version = "0.19.3"
+# Fabric LAUNCHER (installer) version — the one baked into the pinned toolserver
+# image above, recorded in its /data/.fabric-manifest.json as `origin.installer`.
+# Consumed by: validation/compose.yaml (FABRIC_LAUNCHER_VERSION on the packtest
+# service). itzg defaults that variable to `LATEST`, and resolving "latest" is a
+# request to meta.fabricmc.net on EVERY boot of an already-provisioned image — one
+# more live host per PackTest suite, six per `tier 2` run (task #41). Naming the
+# baked version makes the check a local manifest match instead. The toolserver
+# Dockerfile does not pass it (the build resolved LATEST to this), so
+# validation/server-bootstrap-cache.sh asserts this value against the pinned
+# image's own manifest: a republished toolserver that moves the launcher fails
+# there rather than silently restoring the per-boot fetch.
+launcher_version = "1.1.2"
 # Fabric API mod jar (Modrinth project P7dR8mSH), required by PackTest.
 # Consumed by: validation/Dockerfile.toolserver (ARG FABRIC_API_URL / _SHA1).
 api_version = "0.141.6+1.21.11"
@@ -118,17 +134,23 @@ mineflayer = "4.37.1"
 # content `main` tip in a normal follow-up PR.
 repo = "stellarfeline/delvewright-campaigns"
 # The spec-0026 **walk_y backfill** (content branch
-# `worker/spec-0026-walk-y-backfill`, one commit over content main 4992b4f):
-# every prefab metadata file declares its tileset walk-plane convention
-# (`walk_y` — keep 1, cave 2, island 3; each verified empirically from the
-# .nbt geometry), which the compiler's per-area placement datum consumes
-# (base = walk_ref_y − walk_y, spec-0026 §2, DW0367). The engine and content
-# changes land as a pair: this delvec cannot place a non-void horizon against
-# a library without walk_y. (Also advances the pin over the island set-piece
-# and terrain merges, content #11/#12, which the old pin predated.)
-# RE-PIN to the content `main` tip once the paired content PR merges (RE-PIN
-# CONVENTION above).
-sha = "a63d1a08eb9fc29945fe8405f80b582a0b25d6f9"
+# `worker/spec-0026-walk-y-backfill`, content PR #21), which is content `main`
+# 885fd5d plus one additive line per prefab: every prefab metadata file declares
+# its tileset walk-plane convention (`walk_y` — keep 1, cave 2, island 3; each
+# verified empirically from the .nbt geometry, and the island set re-derived
+# over main's REGENERATED island prefabs as `waterline_y + 1`). The compiler's
+# per-area placement datum consumes it (base = walk_ref_y - walk_y, spec-0026
+# §2, DW0367). The engine and content changes land as a pair: this delvec
+# cannot place a non-void horizon against a library without walk_y, and content
+# main carries walk_y on zero of its 36 prefabs.
+#
+# This is a BRANCH sha, not a content `main` tip, and it is the only kind of pin
+# that satisfies both constraints at once — it is a strict descendant of content
+# main (nothing this branch's own re-pins landed, up to and including the island
+# storybook marker and the v1.0.0 engine re-pin, is rolled back), and it carries
+# the metadata this engine requires. RE-PIN to the content `main` tip the moment
+# content #21 merges (RE-PIN CONVENTION above).
+sha = "5a23d902419e18ff6f0836eb32dd2af3fc987670"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders
@@ -143,12 +165,17 @@ nucleation_repo = "https://github.com/Schem-at/Nucleation"
 nucleation_rev = "dbc8fe02ce4ddac90a58423dd5d441d067e87baf"
 nucleation_license = "MIT"
 
-# Chunky (whole-scene path tracer, GPLv3, out-of-process — NOT bundled; run
-# headless under xvfb). 1.21.x needs a snapshot core (stable stops at 1.20.4);
-# this is the snapshot the spike verified. Fetch from chunkyupdate.lemaik.de.
-# Consumed by: crates/render (scene emission targets this scene format) + README.
+# Chunky (whole-scene path tracer, GPL-3.0, out-of-process — NOT bundled). The
+# OFFICIAL renderer for review frames, storybook art and the release panorama
+# (owner decision 2026-08-06); invoked as a separate program, never linked.
+# 1.21.x needs a snapshot core (stable stops at 1.20.4); this is the snapshot the
+# spike verified. `java -jar ChunkyLauncher.jar --update snapshot` self-installs
+# it into ~/.chunky/lib.
+# Consumed by: crates/render (scene emission targets this scene format) + README
+# + docs/reference/tools.md §4a.
 chunky_core = "chunky-core-2.5.0-SNAPSHOT.474.g156e2bb"
 chunky_update_url = "https://chunkyupdate.lemaik.de"
+chunky_launcher_url = "https://chunkyupdate.lemaik.de/ChunkyLauncher.jar"
 chunky_license = "GPL-3.0"
 
 # Textures come from the pinned 1.21.11 client jar (the same MC version as

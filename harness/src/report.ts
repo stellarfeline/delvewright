@@ -17,12 +17,14 @@ import { writeFile } from "node:fs/promises";
 import type {
   ActorTrial,
   AssistWindow,
+  BindingCount,
   DeathTrial,
   EncounterPhase,
   EncounterTier,
   FloorLedger,
   PerformedRest,
 } from "./combat.ts";
+import type { ClassifiedDeath } from "./teardown.ts";
 
 /**
  * One tiered actor, and what this run did about it (#114).
@@ -112,11 +114,13 @@ export class RunReport {
   private readonly floor: string[] = [];
   private readonly encounters: EncounterReport[] = [];
   private readonly rests: PerformedRest[] = [];
+  private readonly namedEntityDeaths: ClassifiedDeath[] = [];
   private branches: BranchOutcome[] | undefined;
   private branchTier: string | undefined;
   private drivenBranch: string | undefined;
   private readonly actors: ActorReport[] = [];
   private floorLedger: FloorLedger | undefined;
+  private actorsGate: BindingCount | undefined;
 
   constructor(campaignId: string, difficulty: string) {
     this.campaignId = campaignId;
@@ -148,6 +152,17 @@ export class RunReport {
   }
 
   /**
+   * Record every named-entity death this run observed, already classified
+   * scripted-teardown vs combat (teardown.ts). The island run's report surfaced
+   * five such deaths with no way to tell which two were the compiler's
+   * `despawn-actor` vanishes and which three were real losses — this array is
+   * the fix: reclassified, never suppressed, so both kinds stay visible.
+   */
+  recordNamedEntityDeaths(entries: readonly ClassifiedDeath[]): void {
+    this.namedEntityDeaths.push(...entries);
+  }
+
+  /**
    * Record the branch tier and every enumerated branch's outcome (spec-0025 §3).
    *
    * Called only for a build that HAS a branch plan, so a campaign with no declared
@@ -167,6 +182,16 @@ export class RunReport {
   recordCombatCoverage(ledger: FloorLedger, actors: readonly ActorReport[]): void {
     this.floorLedger = ledger;
     this.actors.push(...actors);
+  }
+
+  /**
+   * Record `actors[]`'s own binding count (playtest-methodology.md rule 1):
+   * how many actors this build's tier machinery tracked at all, distinct from
+   * `floorGate`'s count — an all-`ordinary` actor binds this one and not that
+   * one. `undefined` for a plan from a delvec that predates the field.
+   */
+  recordActorsGate(gate: BindingCount | undefined): void {
+    this.actorsGate = gate;
   }
 
   recordBranches(tier: string, driven: string | undefined, outcomes: readonly BranchOutcome[]): void {
@@ -233,6 +258,17 @@ export class RunReport {
         pos: [...r.pos],
         step: r.step,
       })),
+      // Every NAMED entity death this run observed, classified `scripted_teardown`
+      // (a `despawn-actor style: vanish` reads as an ordinary death on purpose — see
+      // teardown.ts) or `combat` (everything else). Reclassified, never dropped: a
+      // reader must be able to tell the two apart at a glance without re-deriving it
+      // from raw Y coordinates themselves.
+      named_entity_deaths: this.namedEntityDeaths.map((d) => ({
+        name: d.name,
+        entity_id: d.entityId,
+        position: [...d.position],
+        kind: d.kind,
+      })),
       // Every encounter the compiler put in the plan, with the assist policy it
       // is approached under and the phase the run actually reached. Without this
       // an empty `assist_windows` says nothing: it is the expected reading for a
@@ -259,15 +295,38 @@ export class RunReport {
         covered: (this.floorLedger?.covered ?? []).map((e) => ({
           kind: e.kind,
           id: e.id,
-          tier: e.tier,
+          tier: e.tier ?? null,
         })),
+        // `tier: null` is an UNTIERED hostile (task #121) — an actor the
+        // campaign unleashes on the party while declaring nothing about the
+        // fight. It is written as an explicit null, never dropped: a key that
+        // vanishes is the same silence this ledger exists to end.
         not_covered: (this.floorLedger?.notCovered ?? []).map((e) => ({
           kind: e.kind,
           id: e.id,
-          tier: e.tier,
+          tier: e.tier ?? null,
           reason: e.reason ?? null,
         })),
+        // playtest-methodology.md rule 1: the ledger's own binding count,
+        // carried through verbatim. `null` when the plan predates the field
+        // (same reason `present` can be `false`) — never a substitute for
+        // reading `covered`/`not_covered`, only a REPORTED statement of what
+        // they add up to, so an unbound gate cannot be mistaken for a pass.
+        examined: this.floorLedger?.binding?.examined ?? null,
+        unbound: this.floorLedger?.binding?.unbound ?? null,
+        reason: this.floorLedger?.binding?.reason ?? null,
       },
+      // `actors[]`'s own binding count (rule 1): distinct question from
+      // `floor_gate`'s — an all-`ordinary` actor binds this one and not that
+      // one. `null` when the plan predates the field.
+      actors_gate:
+        this.actorsGate === undefined
+          ? null
+          : {
+              examined: this.actorsGate.examined,
+              unbound: this.actorsGate.unbound,
+              reason: this.actorsGate.reason ?? null,
+            },
       // Every tiered actor the plan declares, fought or not — and when not, why.
       actors: this.actors.map((a) => ({
         actor: a.actor,

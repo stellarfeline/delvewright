@@ -21,7 +21,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::diag::{DW_INPUT, Diagnostic};
-use crate::scene::{LightingStamp, REVIEW_POLICY, needs_emulation, scene_name};
+use crate::scene::{LightingStamp, REVIEW_POLICY, needs_emulation, scene_file_stem};
 
 #[derive(Debug, Deserialize)]
 struct RenderPlan {
@@ -57,8 +57,9 @@ struct IndexEntry {
     leg: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     objective: Option<String>,
-    /// The image filename a renderer produces for this shot (matches the Chunky
-    /// scene name; `delve-render scene` writes `<image>` beside the scene JSON).
+    /// The image filename a renderer produces for this shot: the scene's own
+    /// name (`crate::scene::scene_file_stem`) with a `.png` extension, so the
+    /// scene JSON, its Chunky caches and this image all share one stem.
     image: String,
     expect: Vec<String>,
     /// The shot's `lighting` stamp, passed through verbatim from the plan
@@ -102,7 +103,7 @@ pub fn index_from_plan(plan_json: &[u8]) -> Result<Vec<u8>, Diagnostic> {
                 kind: s.kind.clone(),
                 leg: s.leg,
                 objective: s.objective.clone(),
-                image: format!("{}.png", scene_name(&s.id)),
+                image: format!("{}.png", scene_file_stem(&plan.campaign_id, &s.id)),
                 expect: s.expect.clone(),
                 lighting: s.lighting.clone(),
                 review_policy: emulated.then_some(REVIEW_POLICY),
@@ -168,7 +169,8 @@ mod tests {
             .expect("a pov shot");
         assert!(pov["leg"].is_number(), "POV entry keeps its leg index");
         assert_eq!(pov["objective"], "obj/exit");
-        assert_eq!(pov["image"], "pov_leg0_wp0.png");
+        // image stem == the Chunky scene name (campaign-qualified).
+        assert_eq!(pov["image"], "hello-world_pov_leg0_wp0.png");
         assert!(
             pov["expect"][0]
                 .as_str()

@@ -1,5 +1,7 @@
 //! Body-eclipse proof: an NPC/actor body may not stand in front of an
-//! interaction affordance (`DW0359`, build tier).
+//! interaction affordance (`DW0359`, build tier) — and no affordance may share a
+//! cell with a sealed gate's answer hitboxes (`DW0422`, v0.8; see
+//! [`check_seal_collisions`], same box arithmetic, same tier).
 //!
 //! ## The defect this exists for (owner playtest, island round 7)
 //!
@@ -35,8 +37,8 @@
 //!   `minecraft:interaction` with `width:1.0f,height:2.0f` at a cell centre, so
 //!   its box is *exactly* the anchor cell's column, two blocks tall. Five
 //!   sources, one shape: `interact` objectives, `use`/`strike` env triggers,
-//!   `bonfire` rest affordances, `shortcut` unlock affordances, and trap
-//!   `disarm` affordances.
+//!   `bonfire` rest affordances, `shortcut` unlock affordances, and trap /
+//!   `timed-gate` `disarm` affordances.
 //! * **Eclipse — error.** The two boxes overlap in all three axes. The
 //!   affordance is inside the body; nothing the player can do with a crosshair
 //!   reaches it.
@@ -87,6 +89,20 @@ use crate::plan::Plan;
 /// (warning) an interaction affordance, so the player's crosshair reaches the
 /// body instead of the affordance.
 pub const DW_BODY_ECLIPSE: &str = "DW0359";
+
+/// `DW0422`: a **seal's answer hitbox** shares space with another compiler-owned
+/// interaction affordance (DSL v0.8, task #142).
+///
+/// A `close-gate` arms one `minecraft:interaction` per clickable cell of the
+/// sealed region so the wall can answer a right-click. Any other affordance whose
+/// own 1.0 × 2.0 box overlaps one of those cells is in an exact ray-pick contest
+/// with it, and the client resolves such a contest by iteration order — so one of
+/// the two silently stops receiving clicks, which is precisely the defect
+/// (`DESIGN.md`, island round 13) that made a second hitbox on the boulder
+/// unshippable. Triggers anchored **on the gate itself** are not a collision: they
+/// ride the seal's hitboxes and summon nothing (`emit::env_trigger_setup`), the
+/// same merge `strike`-on-an-NPC's-anchor has used since round 6.
+pub const DW_SEAL_HITBOX_COLLISION: &str = "DW0422";
 
 /// A build failure raised by the eclipse proof (mapped to exit 3, like the
 /// `nav`/`edit` build errors it sits beside).
@@ -361,6 +377,11 @@ fn affordances(plan: &Plan) -> Vec<Affordance> {
         if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
             continue;
         }
+        // …and the v0.8 form of the same merge: a click trigger anchored on a gate
+        // the campaign seals rides that seal's hitboxes and summons nothing.
+        if plan.seal_hints.iter().any(|s| s.anchor == at) {
+            continue;
+        }
         let Some(pos) = plan.point_any(at) else {
             continue;
         };
@@ -392,6 +413,16 @@ fn affordances(plan: &Plan) -> Vec<Affordance> {
             out.push(Affordance {
                 kind: "trap disarm",
                 id: tr.id.clone(),
+                anchor: d.via_anchor.clone(),
+                pos: d.via_cell,
+            });
+        }
+    }
+    for g in &plan.timed_gates {
+        if let Some(d) = &g.disarm {
+            out.push(Affordance {
+                kind: "timed-gate disarm",
+                id: g.id.clone(),
                 anchor: d.via_anchor.clone(),
                 pos: d.via_cell,
             });
@@ -435,6 +466,91 @@ pub fn check_body_eclipse(plan: &Plan) -> Result<Vec<Diagnostic>, EclipseError> 
         }
     }
     Ok(warnings)
+}
+
+/// The box one seal-answer hitbox occupies: its cell, grown by
+/// [`crate::emit::SEAL_MARGIN`] on every side so the entity is strictly nearer
+/// the player than the sealed block it stands in (an exactly-coincident box loses
+/// the client's ray-pick to the block, and the seal answers with silence).
+fn seal_box(cell: [i32; 3]) -> [Span; 3] {
+    let m = crate::emit::SEAL_MARGIN;
+    [
+        Span {
+            lo: cell[0] as f64 - m,
+            hi: cell[0] as f64 + 1.0 + m,
+        },
+        Span {
+            lo: cell[1] as f64 - m,
+            hi: cell[1] as f64 + 1.0 + m,
+        },
+        Span {
+            lo: cell[2] as f64 - m,
+            hi: cell[2] as f64 + 1.0 + m,
+        },
+    ]
+}
+
+/// Prove no other affordance contests a seal's answer hitboxes (`DW0422`).
+///
+/// Build tier (exit 3), pure box arithmetic over resolved cells — it runs beside
+/// [`check_body_eclipse`], before any occupancy model. Empty (and byte-identical)
+/// for a campaign that seals no gate, and for every campaign whose other
+/// affordances simply are not inside a sealed region.
+pub fn check_seal_collisions(plan: &Plan) -> Result<(), EclipseError> {
+    let mut affordances = affordances(plan);
+    // An NPC's dialogue hitbox is an affordance too — the one whose loss the
+    // round-6 island proved (Polyphemus untalkable after the boulder seal, because
+    // a second entity in his cell took every right-click). It is not in
+    // `affordances()` because `DW0359` models the NPC as a *body* there; here the
+    // contest is hitbox-vs-hitbox, so the hitbox is what counts. Walkers are
+    // skipped for the same reason `DW0359` skips them: a declared anchor is only a
+    // starting mark, and the compiler will not guess a timeline (`bodies` applies
+    // the parked-body rule).
+    affordances.extend(
+        bodies(plan)
+            .into_iter()
+            .filter(|b| b.kind == "npc")
+            .map(|b| Affordance {
+                kind: "npc dialogue hitbox",
+                id: b.id,
+                anchor: b.anchor,
+                pos: b.pos,
+            }),
+    );
+    for s in &plan.seal_hints {
+        for cell in s.shell_cells() {
+            let sbox = seal_box(cell);
+            for a in &affordances {
+                let abox = affordance_box(a.pos);
+                if (0..3).all(|i| sbox[i].overlaps(abox[i])) {
+                    return Err(seal_collision_error(s, cell, a));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The `DW0422` error: another affordance stands inside a sealed region.
+fn seal_collision_error(
+    s: &crate::plan::SealHintPlan,
+    cell: [i32; 3],
+    a: &Affordance,
+) -> EclipseError {
+    EclipseError {
+        code: DW_SEAL_HITBOX_COLLISION,
+        message: format!(
+            "the {} `{}` at `{}` {:?} shares space with the seal of gate anchor `{}`, which arms \
+             an answer hitbox at {:?}. Both are `minecraft:interaction` boxes in the same cell, so \
+             the client's entity ray-pick is an exact tie and resolves by iteration order — one of \
+             the two silently stops receiving clicks, and which one is not decidable from the \
+             campaign. Prescription: move the affordance out of the sealed region, or — when the \
+             thing being clicked really IS the sealed gate — anchor the trigger on the gate anchor \
+             `{}` itself, which makes it ride the seal's own hitboxes instead of summoning a \
+             second one.",
+            a.kind, a.id, a.anchor, a.pos, s.anchor, cell, s.anchor,
+        ),
+    }
 }
 
 /// How a body is described in a message: ``npc `npc/polyphemus`

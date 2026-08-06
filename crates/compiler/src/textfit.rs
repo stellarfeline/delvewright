@@ -306,7 +306,7 @@ pub fn check_text_fits(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Ve
     let mut d = Vec::new();
     let narrates = on_screen_narrates(c);
     for n in &narrates {
-        if let Some(diag) = over_budget("quests", n.path.clone(), n.style, &n.text) {
+        if let Some(diag) = over_budget(n.stage, n.path.clone(), n.style, &n.text) {
             d.push(diag);
         }
     }
@@ -381,13 +381,12 @@ pub fn check_option_labels(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -
     // drawn on exactly the same 150-GUI-px `multi_action` button, so they carry
     // exactly the same budget. The check follows the widget, not the stage the
     // string happened to be authored in.
-    let labels: Vec<(&str, OptionLabel)> = dialogue_option_labels(c)
+    let labels: Vec<OptionLabel> = dialogue_option_labels(c)
         .into_iter()
-        .map(|l| ("dialogue", l))
-        .chain(bonfire_option_labels(c).into_iter().map(|l| ("quests", l)))
+        .chain(bonfire_option_labels(c))
         .collect();
-    for (stage, l) in &labels {
-        if let Some(diag) = label_over_budget(stage, l.path.clone(), &l.text) {
+    for l in &labels {
+        if let Some(diag) = label_over_budget(l.stage, l.path.clone(), &l.text) {
             d.push(diag);
         }
     }
@@ -396,7 +395,7 @@ pub fn check_option_labels(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -
         let Some(doc) = sidecars.get(lang) else {
             continue; // absence is DW0180's job, not ours.
         };
-        for (_, l) in &labels {
+        for l in &labels {
             if let Some(translated) = doc.content.get(&l.key)
                 && let Some(diag) = label_over_budget(
                     "l10n",

@@ -344,6 +344,15 @@ pub struct SolveError {
     pub code: &'static str,
     /// Human-readable explanation.
     pub message: String,
+    /// The prefab ids the draw had already seated when the failure was raised,
+    /// in placement order — empty for failures raised before growth.
+    ///
+    /// Carried so the caller can still explain the layout that produced the
+    /// error: a `DW0305` ambiguous anchor is very often the downstream symptom
+    /// of a pool that seated one anchor-bearing prefab twice, and the
+    /// pool-level `DW0498` ([`crate::pool`]) is only useful if it is printed
+    /// *with* the hard failure rather than instead of it.
+    pub placed: Vec<String>,
 }
 
 impl SolveError {
@@ -351,7 +360,14 @@ impl SolveError {
         SolveError {
             code,
             message: message.into(),
+            placed: Vec::new(),
         }
+    }
+
+    /// The same error, carrying the draw that was on the table when it fired.
+    fn with_placed(mut self, pieces: &[PlacedPiece]) -> Self {
+        self.placed = pieces.iter().map(|p| p.prefab_id.clone()).collect();
+        self
     }
 }
 
@@ -648,7 +664,10 @@ pub fn solve_area(
                     carriers.len(),
                     carriers.join(", ")
                 ),
-            ));
+            )
+            // The draw travels with the error so the caller can add the
+            // pool-level `DW0498` explanation (task #187).
+            .with_placed(&pieces));
         }
     }
 

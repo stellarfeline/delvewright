@@ -20,14 +20,21 @@ cd "$(dirname "$0")/.."
 # The owner sets CREATOR_NAME to their real (resolvable) MC name for hands-on playtests.
 unset CREATOR_NAME
 
-COMPOSE="docker compose -f validation/compose.yaml --profile playtest"
+# Isolation by construction (task #185): its own compose project, unique per
+# invocation, and an EPHEMERAL host port instead of 25565 — so this flow can run
+# beside another ladder, or beside the owner's play session, without a lock and
+# without a name either of them could collide with. Override the project with
+# DW_COMPOSE_PROJECT when you want a stable one to inspect afterwards.
+PROJECT="${DW_COMPOSE_PROJECT:-dw-noteflow-$$}"
+COMPOSE="docker compose -p $PROJECT -f validation/compose.yaml -f validation/ephemeral-port.yaml --profile playtest"
 CAMPAIGN="crates/dsl/fixtures/valid/hello-world"
 OUT="validation/delve-output"
 LOG="validation/playtest.log"
 REPORT="validation/playtest-report.json"
 NOTE_TEXT="这个房间太暗了"   # multilingual (Chinese) fixture note
 
-cleanup() { $COMPOSE down -v --remove-orphans >/dev/null 2>&1 || true; }
+# Tear down ONLY this project, and prove it (never a bare `docker compose down`).
+cleanup() { validation/fresh-volumes.sh --project "$PROJECT" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 echo "==> building the delve output (datapack + creator overlay)"
@@ -40,15 +47,21 @@ $COMPOSE up -d --build
 echo "==> waiting for the server to finish starting"
 # The itzg base fetches + unpacks the pinned server jar on a cold volume before the
 # world loads, which can take a couple of minutes; budget generously (~7.5 min) and
-# bail early if the container exits. Read the fixed container name directly (robust
-# vs. compose-service log quirks), mirroring the ci.yml tier-2 boot check.
-CID=delvewright-playtest
+# bail early if the container exits. The container has no pinned NAME any more, so
+# ask compose for its id (robust vs. compose-service log quirks, same as before).
+CID="$($COMPOSE ps -q playtest)"
+[ -n "$CID" ] || { echo "::error:: the playtest container did not start"; exit 1; }
+STARTED=0
 for _ in $(seq 1 90); do
-  if docker logs "$CID" 2>&1 | grep -qE 'Done \([0-9]'; then break; fi
+  # Capture, then test. `docker logs | grep -q` exits at the first match and
+  # SIGPIPEs `docker logs`; under pipefail that reads as NO MATCH, so a server
+  # that started is reported as never started (tools/check-shell-pipe-shortcircuit.py).
+  BOOT_LOG="$(docker logs "$CID" 2>&1 || true)"
+  if [[ $BOOT_LOG == *"Done ("[0-9]* ]]; then STARTED=1; break; fi
   if [ "$(docker inspect -f '{{.State.Status}}' "$CID" 2>/dev/null)" = "exited" ]; then break; fi
   sleep 5
 done
-if ! docker logs "$CID" 2>&1 | grep -qE 'Done \([0-9]'; then
+if [ "$STARTED" != 1 ]; then
   echo "::error:: server never finished starting"; docker logs "$CID" 2>&1 | tail -n 30; exit 1
 fi
 
@@ -56,8 +69,12 @@ echo "==> installing harness deps (if needed)"
 [ -d harness/node_modules ] || npm --prefix harness ci
 
 echo "==> driving one note capture with the note-bot"
+# Ask compose which host port it got — never assume a number (ephemeral-port.yaml).
+MC_PORT="$($COMPOSE port playtest 25565 | sed 's/.*://')"
+[ -n "$MC_PORT" ] || { echo "::error:: no host port published for the playtest server"; exit 1; }
+echo "    (server reachable at 127.0.0.1:$MC_PORT)"
 DELVEWRIGHT_MC_HOST=127.0.0.1 \
-DELVEWRIGHT_MC_PORT=25565 \
+DELVEWRIGHT_MC_PORT="$MC_PORT" \
 DELVEWRIGHT_BOT_USERNAME=delve-creator \
 DELVEWRIGHT_NOTE_TEXT="$NOTE_TEXT" \
   node harness/src/note-bot.ts

@@ -34,6 +34,7 @@ not third-party reconstructions.
 | `item_components/data.min.json` | `51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4` |
 | `data/damage_type/data.min.json` | `0ce7edc377446ecddfd1c3b74b32e2dc3b248edc4035275134fb821e98a6c7ad` |
 | `data/tag/damage_type/data.min.json` | `794ce6343293660b5f32d6a78f7a374623bb785d18dfc5ce3cbdeb3093b0161d` |
+| `data/tag/entity_type/data.min.json` | `5523f45b7ddb178cd9f8bbe998458cc070910a74bc6c551a37b9279f5d73f844` |
 | `version.json`              | `be02c05f3cce0e39a4ae855c01b3dda2f572078d575f4b6b2fd824cc8a137d62` |
 
 ## Vendored files (derived, committed here)
@@ -98,6 +99,23 @@ not third-party reconstructions.
   difficulty formula alone would have been wrong by 2× in the lenient direction.
   **Reproduce it**: `python3 tools/extract-damage-types.py <damage_type/data.min.json>
   <tag/damage_type/data.min.json> crates/compiler/data/damage-types-1.21.11.json`.
+
+- **`entity-tags-1.21.11.json`** — vanilla's built-in `entity_type` tags, from
+  `data/tag/entity_type/data.min.json` in the same summary: tag id (namespaced,
+  so a lookup reads like the `#minecraft:<tag>` a datapack would write) → its
+  sorted values. 46 tags. These are **Mojang's own answers to "which entity types
+  do X"**, which is the only acceptable source for such a question here — the
+  alternative is a hand-written species table, i.e. exactly the invented vanilla
+  data this file's next section refuses.
+  Feeds `DW0496` (daylight-burning staging) via `#minecraft:burn_in_daylight`,
+  the tag the 1.21 engine itself tests before running a mob's sun-burn tick. The
+  tag is about which types run that tick, **not** about which types the fire then
+  hurts: `minecraft:wither_skeleton` is in it and is fire-immune, and fire
+  immunity is a hardcoded entity-type property that appears in no vanilla data
+  branch — so `daylight.rs` carries that one exclusion explicitly, cited, rather
+  than pretending the tag alone is the whole rule.
+  **Reproduce it**: `python3 tools/extract-entity-tags.py
+  <data/tag/entity_type/data.min.json> crates/compiler/data/entity-tags-1.21.11.json`.
 
 ### What vanilla data does NOT provide (and what the compiler does about it)
 

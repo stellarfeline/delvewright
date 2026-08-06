@@ -44,6 +44,9 @@ pub trait EntityRegistry {
 /// A prefab lighting profile (spec-0001 "Lighting contract"). `lit` = floor
 /// light ≥ 7; `dim` = 3–6 (needs a rationale); `dark` = < 3 (valid only where
 /// analysis proves a night-vision mitigation — the compiler's `DW0210` check).
+///
+/// The first three are **measurements**, taken by the live probe loop. The
+/// fourth, [`LightingProfile::Unmeasured`], is the honest absence of one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum LightingProfile {
@@ -53,25 +56,113 @@ pub enum LightingProfile {
     Dim,
     /// Floor light < 3, only usable with a proven mitigation.
     Dark,
+    /// The piece has never been probed, and says so.
+    ///
+    /// A generated prefab (spec-0027's grammar back end) knows where it put
+    /// blocks and nothing about the light they end up in, so it declares this
+    /// rather than fabricating a number. It is *not* a synonym for "no
+    /// `lighting` block at all": absence means legacy metadata that predates the
+    /// field, while this is a positive statement that the measurement is owed.
+    /// An unmeasured piece carries no measurement fields — a claim and its
+    /// absence cannot both be true — and is treated as not-`lit` everywhere a
+    /// profile is consumed.
+    Unmeasured,
+}
+
+impl LightingProfile {
+    /// True for the three profiles that assert a measured light level.
+    pub fn is_measurement(self) -> bool {
+        !matches!(self, LightingProfile::Unmeasured)
+    }
 }
 
 /// A prefab's declared `lighting` metadata block (measured once at library
 /// admission). Field names match `prefabs/<name>.json`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+///
+/// `measured_min_light` / `measured` are `Option` in the type but **not**
+/// optional in the data: a measured profile without them, or an `unmeasured`
+/// profile with them, is refused at deserialisation (see the hand-written
+/// `Deserialize` below). The optionality expresses which profile is being
+/// declared, never a licence to omit a measurement that was claimed.
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Lighting {
     /// The declared profile.
     pub profile: LightingProfile,
-    /// The measured minimum floor light level.
-    pub measured_min_light: i64,
-    /// The date the level was measured (`YYYY-MM-DD`).
-    pub measured: String,
+    /// The measured minimum floor light level. Present iff the profile is a
+    /// measurement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub measured_min_light: Option<i64>,
+    /// The date the level was measured (`YYYY-MM-DD`). Present iff the profile
+    /// is a measurement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub measured: Option<String>,
     /// Why `dim`/`dark` was chosen (required for `dim`/`dark` by review).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rationale: Option<String>,
     /// How the minimum was measured (provenance breadcrumb; optional).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub method: Option<String>,
+}
+
+impl Lighting {
+    /// A never-probed declaration — what a generated prefab exports.
+    pub fn unmeasured() -> Lighting {
+        Lighting {
+            profile: LightingProfile::Unmeasured,
+            measured_min_light: None,
+            measured: None,
+            rationale: None,
+            method: None,
+        }
+    }
+}
+
+/// The wire shape of [`Lighting`], before the profile/measurement agreement is
+/// checked. Split out so the check runs on every deserialisation path there is.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawLighting {
+    profile: LightingProfile,
+    #[serde(default)]
+    measured_min_light: Option<i64>,
+    #[serde(default)]
+    measured: Option<String>,
+    #[serde(default)]
+    rationale: Option<String>,
+    #[serde(default)]
+    method: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for Lighting {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Lighting, D::Error> {
+        use serde::de::Error as _;
+        let raw = RawLighting::deserialize(de)?;
+        let has_measurement = raw.measured_min_light.is_some() && raw.measured.is_some();
+        if raw.profile.is_measurement() {
+            // Exactly the requirement the previously-mandatory fields enforced:
+            // claiming `lit`/`dim`/`dark` means claiming a probe ran.
+            if !has_measurement {
+                return Err(D::Error::custom(
+                    "a `lit`/`dim`/`dark` lighting profile is a measurement and must carry both \
+                     `measured_min_light` and `measured`; declare `\"profile\": \"unmeasured\"` \
+                     if the piece has not been probed yet",
+                ));
+            }
+        } else if raw.measured_min_light.is_some() || raw.measured.is_some() {
+            return Err(D::Error::custom(
+                "an `unmeasured` lighting profile cannot carry `measured_min_light` or \
+                 `measured` — declare the profile the probe actually found instead",
+            ));
+        }
+        Ok(Lighting {
+            profile: raw.profile,
+            measured_min_light: raw.measured_min_light,
+            measured: raw.measured,
+            rationale: raw.rationale,
+            method: raw.method,
+        })
+    }
 }
 
 /// The prefab-metadata surface DSL validation resolves refs against: declared
@@ -100,7 +191,11 @@ pub struct VendoredItemRegistry {
 }
 
 impl VendoredItemRegistry {
-    /// The v0 subset of the 1.21.11 item registry used by the M1 fixtures.
+    /// The v0 subset of the 1.21.11 item registry used by the M1 fixtures, plus
+    /// the four [`crate::stages::POTION_BEARING_ITEMS`] — a kit item's potion
+    /// `contents` is DSL surface with its own rules (`DW0486`/`DW0487`), so the
+    /// crate's own tests must be able to name the items those rules are about
+    /// without the compiler's full injected registry.
     pub fn v1_21_11() -> Self {
         let raw = include_str!("../data/items-1.21.11.json");
         let ids: Vec<String> =
@@ -246,8 +341,80 @@ impl EnchantmentRegistry for VendoredEnchantmentRegistry {
     }
 }
 
+/// The complete 1.21.11 **potion** id list — the `potion` registry a
+/// `minecraft:potion_contents` component's `potion` field names
+/// (`minecraft:strong_healing`, …). 46 ids, extracted from the same
+/// misode/mcmeta 1.21.11 registries summary the item/entity/enchantment lists
+/// come from (SHA-256
+/// `7efb184902cfef62b431bc9826ebcbcde2c23746e5624326ffcf922e15cf28f9`, pinned in
+/// `crates/compiler/data/PROVENANCE.md`) — Mojang's own generated data.
+///
+/// Complete and stable for the pinned version, so unlike the item/entity
+/// registries there is **nothing for the compiler to inject**: this const IS the
+/// registry, and [`is_potion_id`] is the whole membership test (same treatment as
+/// [`TECHNICAL_BLOCK_IDS`]).
+pub const POTION_IDS_1_21_11: &[&str] = &[
+    "minecraft:awkward",
+    "minecraft:fire_resistance",
+    "minecraft:harming",
+    "minecraft:healing",
+    "minecraft:infested",
+    "minecraft:invisibility",
+    "minecraft:leaping",
+    "minecraft:long_fire_resistance",
+    "minecraft:long_invisibility",
+    "minecraft:long_leaping",
+    "minecraft:long_night_vision",
+    "minecraft:long_poison",
+    "minecraft:long_regeneration",
+    "minecraft:long_slow_falling",
+    "minecraft:long_slowness",
+    "minecraft:long_strength",
+    "minecraft:long_swiftness",
+    "minecraft:long_turtle_master",
+    "minecraft:long_water_breathing",
+    "minecraft:long_weakness",
+    "minecraft:luck",
+    "minecraft:mundane",
+    "minecraft:night_vision",
+    "minecraft:oozing",
+    "minecraft:poison",
+    "minecraft:regeneration",
+    "minecraft:slow_falling",
+    "minecraft:slowness",
+    "minecraft:strength",
+    "minecraft:strong_harming",
+    "minecraft:strong_healing",
+    "minecraft:strong_leaping",
+    "minecraft:strong_poison",
+    "minecraft:strong_regeneration",
+    "minecraft:strong_slowness",
+    "minecraft:strong_strength",
+    "minecraft:strong_swiftness",
+    "minecraft:strong_turtle_master",
+    "minecraft:swiftness",
+    "minecraft:thick",
+    "minecraft:turtle_master",
+    "minecraft:water",
+    "minecraft:water_breathing",
+    "minecraft:weakness",
+    "minecraft:weaving",
+    "minecraft:wind_charged",
+];
+
+/// True if `id` (optionally un-namespaced) is a 1.21.11 potion id.
+pub fn is_potion_id(id: &str) -> bool {
+    let norm = if id.contains(':') {
+        id.to_string()
+    } else {
+        format!("minecraft:{id}")
+    };
+    POTION_IDS_1_21_11.contains(&norm.as_str())
+}
+
 /// Membership test for vanilla status-effect ids (`minecraft:slowness`, …),
-/// used to validate DSL v0.4 wave-mob `effects` (`DW0192`).
+/// used to validate DSL v0.4 wave-mob `effects` (`DW0192`) and a kit item's
+/// potion `contents` effects (`DW0486`).
 pub trait EffectRegistry {
     /// True if `effect_id` is a known status effect in the pinned MC version.
     fn contains(&self, effect_id: &str) -> bool;
@@ -296,6 +463,12 @@ pub const EFFECT_IDS_1_21_11: &[&str] = &[
     "minecraft:weaving",
     "minecraft:oozing",
     "minecraft:infested",
+    // Registry-fidelity fix (2026-08-03): the pinned 1.21.11 `mob_effect`
+    // registry has 40 entries and this list had 39 — the one 1.21.11 addition
+    // was missing, so a campaign naming it was rejected as unknown by a check
+    // that was simply out of date. Re-derived from the same pinned summary
+    // (SHA-256 `7efb1849…`) the potion list above comes from.
+    "minecraft:breath_of_the_nautilus",
 ];
 
 /// Technical / fluid blocks that are NOT items but are valid `set-block` targets
@@ -403,5 +576,83 @@ impl AnchorRegistry for VendoredAnchorRegistry {
 
     fn has_pool(&self, pool: &PoolId) -> bool {
         self.pools.contains(pool.as_str())
+    }
+}
+
+#[cfg(test)]
+mod lighting_tests {
+    use super::*;
+
+    /// A prefab's lighting profile is a claim about a measurement, so the
+    /// measurement must be there. This was enforced by two mandatory fields
+    /// until `unmeasured` needed them absent; the rule itself did not move.
+    #[test]
+    fn a_measured_profile_still_cannot_omit_its_measurement() {
+        for json in [
+            r#"{ "profile": "lit" }"#,
+            r#"{ "profile": "lit", "measured_min_light": 9 }"#,
+            r#"{ "profile": "lit", "measured": "2026-07-30" }"#,
+            r#"{ "profile": "dim", "measured": "2026-07-30" }"#,
+            r#"{ "profile": "dark", "measured_min_light": 1 }"#,
+        ] {
+            let err = serde_json::from_str::<Lighting>(json).unwrap_err();
+            assert!(
+                err.to_string().contains("must carry both"),
+                "{json} was accepted or misreported: {err}"
+            );
+        }
+    }
+
+    /// ...and the converse, which is the new way to lie: declaring the probe
+    /// never ran while quoting what it found.
+    #[test]
+    fn an_unmeasured_profile_cannot_quote_a_measurement() {
+        for json in [
+            r#"{ "profile": "unmeasured", "measured_min_light": 9 }"#,
+            r#"{ "profile": "unmeasured", "measured": "2026-07-30" }"#,
+            r#"{ "profile": "unmeasured", "measured_min_light": 9, "measured": "2026-07-30" }"#,
+        ] {
+            let err = serde_json::from_str::<Lighting>(json).unwrap_err();
+            assert!(err.to_string().contains("cannot carry"), "{json}: {err}");
+        }
+    }
+
+    /// The two shapes that are true: a hand-probed piece and a generated one.
+    #[test]
+    fn both_honest_declarations_round_trip() {
+        let measured: Lighting = serde_json::from_str(
+            r#"{ "profile": "lit", "measured_min_light": 8, "measured": "2026-07-30",
+                 "method": "live 1.21.11 probe" }"#,
+        )
+        .unwrap();
+        assert_eq!(measured.profile, LightingProfile::Lit);
+        assert_eq!(measured.measured_min_light, Some(8));
+        assert!(measured.profile.is_measurement());
+
+        let unmeasured: Lighting = serde_json::from_str(r#"{ "profile": "unmeasured" }"#).unwrap();
+        assert_eq!(unmeasured, Lighting::unmeasured());
+        assert!(!unmeasured.profile.is_measurement());
+
+        // Serialisation omits what is absent rather than writing `null`, so a
+        // re-serialised file is the file that was read.
+        for l in [measured, unmeasured] {
+            let text = serde_json::to_string(&l).unwrap();
+            assert!(!text.contains("null"), "{text}");
+            assert_eq!(serde_json::from_str::<Lighting>(&text).unwrap(), l);
+        }
+    }
+
+    /// An unknown profile string is still refused outright — `unmeasured` is a
+    /// named state, not an escape hatch for anything the reader does not know.
+    #[test]
+    fn an_unknown_profile_is_still_refused() {
+        assert!(serde_json::from_str::<Lighting>(r#"{ "profile": "unknown" }"#).is_err());
+        assert!(
+            serde_json::from_str::<Lighting>(
+                r#"{ "profile": "lit", "measured_min_light": 8, "measured": "x", "extra": 1 }"#
+            )
+            .is_err(),
+            "deny_unknown_fields must survive the hand-written Deserialize"
+        );
     }
 }

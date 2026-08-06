@@ -41,6 +41,16 @@
 //! in open air; the DW0724 self-check ([`crate::nav::verify_pov_cameras`]) enforces
 //! it structurally.
 //!
+//! ## `horizon` (the render layer is told, never guesses)
+//!
+//! A campaign with `horizon: ocean` (spec-0013) ships a world save holding only
+//! the chunks its layout occupies — the sea around the island is the level
+//! generator's, and a renderer loading that save sees void past the shoreline.
+//! The plan therefore states the generator fact ([`horizon_fact`]:
+//! `{"kind": "ocean", "sea_level": 62}`) so `delve-render` can raise Chunky's
+//! ambient water plane at exactly the compiler's datum. `horizon: void` (the
+//! default) emits no key, keeping every existing plan byte-identical.
+//!
 //! ## `lighting` stamp (declared-dark areas stay reviewable)
 //!
 //! POV and interior shots carry a `lighting` stamp derived **purely from the
@@ -55,7 +65,7 @@
 //! amplified noise), so `delve-render scene` uses the stamp to apply its
 //! documented night-vision review emulation to exactly those shots and no others.
 
-use delvewright_dsl::{AreaMitigation, Campaign, LightingProfile, Objective};
+use delvewright_dsl::{AreaMitigation, Campaign, HorizonBase, LightingProfile, Objective};
 use serde_json::{Value, json};
 
 use crate::nav::LegRoute;
@@ -660,13 +670,65 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
     }
 
     let (amin, amax) = layout_aabb(plan);
-    json!({
+    let mut root = json!({
         "version": c.world.dsl_version,
         "campaign_id": plan.namespace,
         "layout_aabb": { "min": amin, "max": amax },
         "camera_convention": "yaw/pitch degrees; yaw=atan2(-dz,dx) (0=+X,90=-Z); pitch=atan2(-dy,horiz) (+down)",
         "shots": shots,
-    })
+    });
+    if let Some(h) = horizon_fact(c) {
+        root.as_object_mut()
+            .expect("render plan root is a JSON object")
+            .insert("horizon".to_string(), h);
+    }
+    root
+}
+
+/// The world-generator horizon (spec-0013) as the render layer needs it, or
+/// `None` for `horizon: void`.
+///
+/// The renderer cannot see the level generator: the shipped world save only
+/// holds the chunks the layout occupies, so an ocean-horizon delve renders as an
+/// island floating in nothing unless Chunky is told to put its own ambient water
+/// plane under the frame — at exactly the compiler's sea-level datum, or the
+/// plane and the authored block water meet in a visible two-tone seam. That is a
+/// *fact of the campaign*, so the compiler states it (`{"kind": "ocean",
+/// "sea_level": 62}`) rather than leaving `delve-render` to infer it from
+/// blocks.
+///
+/// A void horizon emits **no key at all** (not `null`), so every campaign that
+/// declares nothing keeps a byte-identical `render-plan.json`.
+///
+/// `flatland` (spec-0026) deliberately emits no key **yet**. Its ambient does
+/// change what a renderer must draw (a grass plane, not nothing), but
+/// `render-plan.json`'s `horizon` is an externally-tagged enum on the consumer
+/// side (`delvewright_render::scene::Horizon`, which knows only `ocean`), so a
+/// `{"kind": "flatland", …}` this PR made up would be an unparseable plan on
+/// the render side rather than a better picture. The wire shape belongs to
+/// spec-0026 §6's render work (the per-horizon establishing vista shot), which
+/// lands with the surround slices; inventing it here is exactly the downstream
+/// folklore the no-hack doctrine forbids. Until then a flatland delve renders
+/// as it did before the horizon library existed.
+///
+/// The match is exhaustive on [`HorizonBase`] on purpose: a base added later
+/// must decide this question explicitly instead of falling through to "no
+/// ambient".
+fn horizon_fact(c: &Campaign) -> Option<Value> {
+    match crate::horizon::base_of(c) {
+        HorizonBase::Ocean => Some(json!({
+            "kind": "ocean",
+            "sea_level": crate::plan::SEA_LEVEL,
+        })),
+        // No render-side wire shape defined (see above). `valley`/`summit`/
+        // `sky` are additionally refused at validation in this slice, so those
+        // arms are unreachable from a build that gets this far.
+        HorizonBase::Void
+        | HorizonBase::Flatland
+        | HorizonBase::Valley
+        | HorizonBase::Summit
+        | HorizonBase::Sky => None,
+    }
 }
 
 /// The last `/`-segment of an id, sanitized to `[a-z0-9_]`, for stable shot ids.
@@ -731,13 +793,20 @@ fn push_stamped(shots: &mut Vec<Value>, c: &Campaign, area_id: &str, mut shot: V
     shots.push(shot);
 }
 
-/// Whether a placed prefab's declared lighting profile is `lit` (`Some(true)`),
-/// `dark` (`Some(false)`), or undeclared (`None`).
+/// Whether a placed prefab's **measured** lighting profile is `lit`
+/// (`Some(true)`), `dim`/`dark` (`Some(false)`), or unknown (`None`).
+///
+/// A profile of `unmeasured` — what a generated prefab declares until the live
+/// probe runs — is unknown, not dark: the reviewer instruction that follows from
+/// `Some(false)` is "mitigation expected", and asking a reviewer to look for a
+/// mitigation that was never specified is worse than telling them the truth,
+/// which is the `None` branch's "verify readability".
 fn piece_is_lit(prefabs: &PrefabRegistry, prefab_id: &str) -> Option<bool> {
     prefabs.get(prefab_id).and_then(|m| {
-        m.lighting
-            .as_ref()
-            .map(|l| matches!(l.profile, LightingProfile::Lit))
+        let profile = m.lighting.as_ref()?.profile;
+        profile
+            .is_measurement()
+            .then_some(matches!(profile, LightingProfile::Lit))
     })
 }
 
@@ -787,6 +856,100 @@ fn layout_aabb(plan: &Plan) -> ([i32; 3], [i32; 3]) {
         return ([0, 0, 0], [0, 0, 0]);
     }
     (min, max)
+}
+
+#[cfg(test)]
+mod lighting_tests {
+    use super::*;
+
+    /// Every call gets its own directory, and the discriminator is a counter
+    /// rather than anything derived from `lighting`.
+    ///
+    /// It used to be `lighting.len()`, which is not a discriminator at all when
+    /// two callers pass the same string: `an_unmeasured_piece_is_unknown_not_dark`
+    /// and `an_unknown_prefab_has_no_verdict` both pass a byte-identical
+    /// `{ "profile": "unmeasured" }`, so under one process id they named ONE
+    /// directory — and each begins by deleting it. Cargo runs a crate's tests on
+    /// parallel threads, so the two collided by construction: whichever reached
+    /// `remove_dir_all` second deleted the other's fixture out from under it,
+    /// and the loser failed to load a prefab it had just written. That surfaced
+    /// as a rare `--workspace` red (one in ~30) and read as flakiness, which is
+    /// exactly the shape CLAUDE.md forbids re-running instead of root-causing.
+    fn registry_with(lighting: &str) -> (std::path::PathBuf, PrefabRegistry) {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "dw-piece-is-lit-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("p.json"),
+            format!(
+                r#"{{ "prefab_id": "prefab/p",
+                      "structure": {{ "file": "p.nbt", "id": "p", "size": [3,3,3],
+                                      "data_version": 4671 }},
+                      "anchors": {{}}, "lighting": {lighting} }}"#
+            ),
+        )
+        .unwrap();
+        let registry = PrefabRegistry::load_dir(&dir).unwrap();
+        assert!(registry.load_diagnostics().is_empty(), "{lighting}");
+        (dir, registry)
+    }
+
+    /// The interior shot's reviewer instruction is chosen by this verdict, so
+    /// the three states must stay three: lit, measured-not-lit ("mitigation
+    /// expected"), and unknown ("verify readability"). A never-probed piece
+    /// belongs in the third, never the second — it was not *declared* dark, it
+    /// was not declared at all.
+    #[test]
+    fn an_unmeasured_piece_is_unknown_not_dark() {
+        for (lighting, expected) in [
+            (
+                r#"{ "profile": "lit", "measured_min_light": 9, "measured": "2026-07-30" }"#,
+                Some(true),
+            ),
+            (
+                r#"{ "profile": "dark", "measured_min_light": 1, "measured": "2026-07-30" }"#,
+                Some(false),
+            ),
+            (r#"{ "profile": "unmeasured" }"#, None),
+        ] {
+            let (dir, registry) = registry_with(lighting);
+            assert_eq!(piece_is_lit(&registry, "prefab/p"), expected, "{lighting}");
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+    }
+
+    /// The fixture helper's own invariant, and the reason the discriminator is a
+    /// counter: two callers passing the SAME lighting string must still get two
+    /// directories. Under the old `lighting.len()` naming this assertion fails
+    /// outright — the two paths are equal — which is the deterministic form of
+    /// the race that made `an_unmeasured_piece_is_unknown_not_dark` and
+    /// `an_unknown_prefab_has_no_verdict` delete each other's fixture.
+    #[test]
+    fn two_registries_never_share_a_directory() {
+        let same = r#"{ "profile": "unmeasured" }"#;
+        let (a, _ra) = registry_with(same);
+        let (b, _rb) = registry_with(same);
+        assert_ne!(
+            a, b,
+            "two fixtures built from an identical lighting string shared one directory"
+        );
+        assert!(a.join("p.json").is_file() && b.join("p.json").is_file());
+        std::fs::remove_dir_all(&a).unwrap();
+        std::fs::remove_dir_all(&b).unwrap();
+    }
+
+    /// An unknown prefab stays unknown — the verdict never invents a piece.
+    #[test]
+    fn an_unknown_prefab_has_no_verdict() {
+        let (dir, registry) = registry_with(r#"{ "profile": "unmeasured" }"#);
+        assert_eq!(piece_is_lit(&registry, "prefab/nope"), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }
 
 #[cfg(test)]

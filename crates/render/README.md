@@ -12,9 +12,12 @@ Two renderers, one 1.21.11 **fidelity gate**:
 - **Nucleation** (Rust, MIT, headless wgpu) — per-prefab multi-angle sets + the
   fidelity-gate fixture. Fast (<1s / frame). Pinned by git rev in
   `versions.toml [render]`.
-- **Chunky** (GPLv3, out-of-process, path tracer) — whole-scene beauty shots.
-  **Not bundled**; `delve-render scene` emits Chunky scene JSON, running Chunky
-  stays manual / CI-future (see "Chunky scenes").
+- **Chunky** (GPL-3.0, out-of-process, path tracer) — the **official renderer**
+  for whole-scene review frames, storybook scene illustrations and the per-release
+  whole-map panorama (owner decision, 2026-08-06). **Not bundled**;
+  `delve-render scene` / `panorama` emit Chunky scene JSON and `ChunkyLauncher.jar`
+  renders them as a separate program (see "Chunky scenes" and
+  [`docs/reference/tools.md` §4a](../../docs/reference/tools.md)).
 
 ## Commands
 
@@ -25,6 +28,8 @@ piece <prefab.nbt> -o <dir>     deterministic multi-angle set for one prefab
 batch <dir> -o <dir>            piece set for every .nbt in a library dir
 fidelity-gate [-o <dir>]        render the newest-block fixture; FAIL on placeholder
 scene <build-dir> -o <dir>      Chunky scene JSON per shot from render-plan.json
+panorama <build-dir> -o <dir>   the whole-map 45° oblique release panorama
+                                [--bearing se|sw|ne|nw] [--spp 300]
 index <build-dir> -o <file>     shot index (image ↔ expect pairs) for vision review
 ```
 
@@ -35,7 +40,9 @@ line under `--json`.
 
 **Textures** (the 1.21.11 client jar — never committed, EULA) resolve from
 `--textures <path>`, then `$DELVEWRIGHT_CLIENT_JAR`, then
-`~/.chunky/resources/minecraft.jar`. The `scene` command needs no textures.
+`~/.chunky/resources/minecraft.jar`. The `scene` / `panorama` commands need no
+textures (they emit JSON); Chunky itself reads the same jar when it renders them,
+and it is never redistributed.
 
 | Code | Meaning |
 | --- | --- |
@@ -136,23 +143,86 @@ that). See `src/scene.rs` module docs and the compiler reference.
   see below); the shot set + index is the artifact, the vision verdict stays
   agent-driven (spec-0003).
 
-Chunky itself is **not bundled** (GPLv3, out-of-process). Pinned snapshot core
-(1.21.x needs a snapshot; stable stops at 1.20.4), from
-[chunkyupdate.lemaik.de](https://chunkyupdate.lemaik.de):
+**Ocean horizons get Chunky's water plane.** A campaign that declares
+`horizon: ocean` ships a world save holding only its own chunks — the sea is the
+level generator's, so a scene loading that save renders void past the shoreline.
+The compiler therefore states the fact in `render-plan.json`
+(`"horizon": {"kind": "ocean", "sea_level": 62}`) and emission raises Chunky's
+ambient plane at the block-water surface, with `waterWorldHeightOffsetEnabled`
+written explicitly (Chunky's default would drop it 0.125). `chunkList` stays the
+layout's own chunks for the same reason: the plane is clipped out of loaded
+chunks, so every extra chunk is more of the save's own block water beside it, and
+the two read at visibly different tones. Trimming to the layout shrinks that seam
+to the layout's chunk footprint. Void horizons emit no water keys at all and stay
+byte-identical.
+
+Verified live against the pinned core (2026-08-06): an ocean-horizon build
+rendered from both the `se` and `nw` bearings — whole layout framed with even
+margins, sea filling the frame to the horizon, camera-facing slopes lit.
+
+Chunky itself is **not bundled** (GPL-3.0, out-of-process). Pinned snapshot core
+(1.21.x needs a snapshot; stable stops at 1.20.4), self-installed by the launcher
+from [chunkyupdate.lemaik.de](https://chunkyupdate.lemaik.de):
 `chunky-core-2.5.0-SNAPSHOT.474.g156e2bb` (`versions.toml [render]`). To render a
-scene (manual / CI-future):
+scene:
 
 ```sh
-# 0. get the snapshot core once, download 1.21.11 assets
-java -cp 'chunky-lib/*' se.llbit.chunky.main.Chunky -download-mc 1.21.11
+# 0. once per machine: launcher + pinned core, and 1.21.11 assets
+curl -LO https://chunkyupdate.lemaik.de/ChunkyLauncher.jar
+java -jar ChunkyLauncher.jar --update snapshot
+java -jar ChunkyLauncher.jar -download-mc 1.21.11
 # 1. build the delve + boot once so the datapack places structures, copy world out
 delvec build <campaign> -o out
-EULA=TRUE docker compose -f validation/compose.yaml --profile play up --build server
+EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
+  --profile play up --build server
 #    docker cp <container>:/data/world ./world
-# 2. emit scenes, point their world.path at ./world, render
+# 2. emit scenes, point their world.path at ./world, render, extract the PNG
 delve-render scene out -o scenes --world ./world
-java -cp 'chunky-lib/*' se.llbit.chunky.main.Chunky -scene-dir scenes -render <name> -f -target 500
+java -jar ChunkyLauncher.jar -scene-dir scenes -render <name> -f -target 500
+java -jar ChunkyLauncher.jar -scene-dir scenes -snapshot <name> <name>.png
 ```
+
+`<name>` is the scene file stem without `.json`. The core is CPU-only (the OpenCL
+plugin is WIP and effectively unavailable on Apple Silicon): parallelise by
+running one render **process per scene** with `-threads`, and tier `-target` —
+~64 draft, ~300 final, 500 review set. The progress line `(N of 900)` counts
+**scanlines**, not samples.
+
+## `panorama` — the whole-map release illustration
+
+`delve-render panorama <build-dir> -o <dir>` emits one scene framing the entire
+delve: a 45° oblique camera on a corner bearing (`--bearing se|sw|ne|nw`, default
+`se`), aimed at the centre of `layout_aabb` and pushed back until all eight
+corners of the box are inside a 40° frame with a 12% margin — solved exactly, not
+tuned. The sun sits at 50° altitude, 40° off the camera's own bearing, so the
+slopes facing the viewer are lit but the relief still casts shadows.
+`--spp` (default 300) sets the sample target; the file is
+`<campaign>_panorama_<bearing>.json`, so several bearings coexist in one scene
+directory.
+
+Every content release ships one of these (owner decision, 2026-08-06). It is a
+separate command rather than an extra shot in `scene` because `scene` keeps a
+one-scene-per-plan-shot correspondence that `index` pairs with `expect` lines —
+the panorama is a release artifact with no review pair, its own light and sample
+budget, and a bearing chosen at render time.
+
+## One stem per scene, and stale caches deleted for you
+
+Chunky treats a scene's `name` field as its identity: loading `foo.json` whose
+`name` is `bar` makes it save `bar.json` and key `bar.octree2` / `bar.dump` on
+that name. Every file `delve-render` emits is therefore named after the scene's
+own name (`<campaign>_<shot>`, `<campaign>_panorama_<bearing>`), so the scene
+JSON, its caches and the rendered `.png` all share one stem — and a re-emission
+lands on the same file Chunky would.
+
+Chunky keeps a scene's loaded chunks in `<scene>.octree2` / `.emittergrid` and its
+accumulated samples in `<scene>.dump` / `.dump.backup`. Re-rendering after a
+change to `chunkList`, camera, sun or water settings **silently reuses them** —
+the frame comes back without the edits and nothing warns you (2026-08-06). Both
+`scene` and `panorama` therefore delete exactly those siblings for every scene
+they write (`src/cache.rs`), and only those: another scene's in-progress render in
+the same directory is untouched. Chunky's own `-reload-chunks` is not a
+substitute — it re-reads the world but keeps averaging in the old `.dump`.
 
 **Camera convention.** `render-plan.json` gives `yaw`/`pitch` in **degrees**,
 `yaw = atan2(-dz, dx)` (0→+X east, 90→−Z north), `pitch = atan2(-dy, horiz)`
@@ -174,14 +244,15 @@ the full derivation.
 
 `delve-render index <build-dir> -o shot-index.json` reads `render-plan.json` and
 writes one entry per shot: `id`, `kind`, `leg`/`objective` (POV shots), the `image`
-filename a renderer produces (`<scene_name>.png`, matching `scene`), and the shot's
+filename a renderer produces (the scene's own stem + `.png`, matching `scene`), and the shot's
 `expect` list. This is the visual tier's deliverable — a reviewing agent / vision
 model is handed each shot's rendered image beside its expected content. **No
 vision-model call is wired into CI**; the review stays agent-driven (spec-0003).
 Order and bytes mirror `render-plan.json` (deterministic).
 
-The ladder step `validation/render-shots.sh <build-dir>` runs `scene` + `index`
-together, producing the Chunky scene set and the index in one shot.
+The ladder step `validation/render-shots.sh <build-dir>` runs `scene` +
+`panorama` + `index` together, producing the Chunky scene set (review shots plus
+`<campaign>_panorama_se`) and the index in one shot.
 
 ## Stability (double-render)
 

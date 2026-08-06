@@ -125,7 +125,8 @@ Carved above the workshop door (the long versions live in [`docs/adr/`](docs/adr
 With Docker and an accepted Minecraft EULA:
 
 ```sh
-EULA=TRUE docker compose -f validation/compose.yaml --profile play up
+EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
+  --profile play up
 ```
 
 …then join `localhost` from a vanilla 1.21.11 client. What you'll find is whatever

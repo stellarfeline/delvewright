@@ -61,7 +61,9 @@ Founding decisions live in `docs/adr/` and originate from the kickoff handoff
 CLAUDE.md            # this file
 docs/adr/            # architecture decision records (numbered, immutable once Accepted)
 docs/specs/          # owner-approved specs, one per feature
-docs/reference/      # live behavior records: compiler.md, tools.md, i18n.md
+docs/reference/      # live behavior records: compiler.md, tools.md, i18n.md,
+                     #   grammar.md + how a round is run: playtest-methodology.md
+                     #   + how a delve is generated: skill-workflow.md
 docs/ROADMAP.md      # milestones; M1 = hello-world delve
 crates/              # Rust workspace: dsl / compiler / orchestrator / admit / schem / render
 prefabs/             # .nbt library + metadata (git-lfs)
@@ -87,9 +89,24 @@ validation/          # docker compose: headless server + bot, same image as CI &
   success, not failure. Preserve every debugging lesson in the strongest
   available form, strongest first: compiler diagnostic > tooling default
   (automate the pitfall out of existence) > generator invariant > docs.
+  **An intermittent red is never re-run** (owner, 2026-08-05): it is a finding,
+  and re-running discards it. An intermittent failure is an under-specified
+  test — root-cause it. Evidence: a `grep -q` readiness probe under `pipefail`
+  failed 28 times in 30 on a server that was up, because `grep` exiting at the
+  match SIGPIPEs its producer; it read as flakiness for months, cost two owner
+  playtest stagings, and the same idiom sat under both 25565 safety guards
+  (task #173, PR #300).
 - **CI is the sole arbiter** (ADR-0008). Nothing merges red. The owner reviews PR
   descriptions and architecture-level diffs, not lines. Write PR descriptions
   accordingly: what changed at the design level, what CI now proves.
+  **Every CI job is a required status check** (owner, 2026-08-05). It used to be
+  three of ten, so `tier 2` — datapack load plus the whole generated PackTest
+  suite — never blocked a merge, and neither did the storybook engine-version
+  marker or the prefab determinism gate. Because branch protection matches a
+  context by its NAME STRING, a renamed job blocks every PR forever, including
+  the one that would fix it: `.github/required-status-checks.txt` and
+  `tools/check-required-contexts.py` hold the names in lockstep, in both
+  directions, so a rename or a new advisory job is an ordinary red instead.
 - **PR merge policy** (owner, 2026-07-30, refined same day): two classes of PR.
   *Owner-review PRs* — docs, specs, ADRs, README, product/design definitions —
   require owner approval of the **content, given in conversation**: the planning
@@ -139,6 +156,35 @@ validation/          # docker compose: headless server + bot, same image as CI &
   upgrade is always its own explicit, proof-carrying round. Old versions keep
   compiling (per-stage fences); released delves reproduce via their pinned
   engine (`versions.toml` + OCI), not via eternal byte-stable emission.
+- **A green gate that binds to nothing is VACUOUS, not a pass** (island rounds
+  1–20). A check can be green three ways that mean nothing: *unbound* (it
+  matched zero objects — the bot's combat floor gate examined zero enemies for
+  nineteen rounds because no actor declared a tier), *unfenced* (the campaign's
+  `dsl_version` never reached the surface the gate keys off, so the proof was
+  inert), *unemitted* (declared, compiled green, never emitted). Every
+  validation artifact states its binding count; a zero binding is a finding and
+  is named in the round summary. Full derivation and the other playtest-round
+  obligations: `docs/reference/playtest-methodology.md`.
+- **A finding is not closed until its general form is a diagnostic** (island
+  r7→r10 instance fix; the general rule became `DW0489` eleven rounds later and
+  immediately found a second live instance the owner had by then hit herself).
+  Every owner finding yields two deliverables — the instance fix, and the
+  general form as a diagnostic **re-run against the current build** — or an
+  explicit record that only the instance was fixed, which is then a risk item at
+  the next staging review.
+- **A capability-gap finding blocks staging, not just the backlog** (owner
+  rebuke, island round 16). Every island finding that stayed open across more
+  than one round was blocked on a missing first-class primitive, never on a
+  forgotten task. Triage each finding as content / capability gap the day it is
+  reported; a capability gap means the engine work lands before the next
+  playtest, or the round summary tells the owner per item that it is still open
+  and not to test it. Audit the findings ledger from round 1 — never from the
+  last round — before staging any build.
+- **Execute an owner ruling at the scope it was given.** Generalizing it is a
+  design decision: propose it in one line and wait. (Round 16 turned a
+  one-beat ruling into a campaign-wide ceiling and had to be corrected.)
+  Unrequested change is a rejection cause on its own, independent of merit — a
+  worker's entire island round was rejected wholesale for carrying extras.
 - **Tiered testing**: unit + static analysis on every push; PackTest integration on PR;
   full bot playthrough on release candidates only.
 - **PR-based flow even solo.** GitHub Actions; repo is private for now, public when
@@ -159,6 +205,18 @@ validation/          # docker compose: headless server + bot, same image as CI &
   tool absent from docs and skills does not exist for future sessions. The
   inventory of the whole tool surface — every binary, script and flag, with its
   class — is `docs/reference/tools.md`.
+- **Every dispatched worker runs in its own git worktree** (owner, 2026-08-05),
+  named in the dispatch prompt, never the main checkout — plus the content
+  symlink, or two `analyze` tests fail on a fresh tree. Workers **add** a commit;
+  they never `--amend`, rebase or force-push a branch that has been pushed unless
+  asked by name. Three workers dispatched without the worktree line put two of
+  them in the main checkout editing one file at once, on a third party's branch;
+  nothing was lost, but one `git add -A` would have swept three authors into one
+  commit. Recovering from such a collision is **hunk-granular for every file** —
+  the file that leaked was the one a worker had been told it owned — and the
+  review asks for a full re-audit, never a targeted deletion: the planner named
+  two leaked hunks and there were three. Code leaks fail CI; doc leaks merge
+  green.
 - Repeated workflows become skills/slash commands (`/new-campaign`, `/validate`,
   `/release`) — see ROADMAP; design them when the workflow has been done manually twice.
 

@@ -1,0 +1,20 @@
+{
+  "dsl_version": "0.7.0",
+  "campaign_id": "talkto-cast-pos",
+  "stage": "world",
+  "content": {
+    "title": "The Keeper Steps Aside",
+    "theme": "A lonely keep at the edge of the moor.",
+    "premise": "The Keeper bars the inner door. Ask him well and he lifts the gate — then walks through it himself, and the last word is said on the far side.",
+    "seed": 20260805,
+    "target_minutes": 5,
+    "difficulty": "normal",
+    "areas": [
+      {
+        "id": "area/keep",
+        "name": "The Keep",
+        "prefab": "prefab/hello-room"
+      }
+    ]
+  }
+}

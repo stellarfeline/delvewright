@@ -28,7 +28,13 @@ cd "$(dirname "$0")/.."
 # offline bot name. Same reasoning as playtest-note-flow.sh.
 unset CREATOR_NAME
 
-COMPOSE="docker compose -f validation/compose.yaml --profile playtest"
+# Isolation by construction (task #185): its own compose project, unique per
+# invocation, and an EPHEMERAL host port instead of 25565 — so this flow can run
+# beside another ladder, or beside the owner's play session, without a lock and
+# without a name either of them could collide with. Override the project with
+# DW_COMPOSE_PROJECT when you want a stable one to inspect afterwards.
+PROJECT="${DW_COMPOSE_PROJECT:-dw-rehearsal-$$}"
+COMPOSE="docker compose -p $PROJECT -f validation/compose.yaml -f validation/ephemeral-port.yaml --profile playtest"
 # The cutscene fixture: hello-world's world/cast with a two-shot cutscene on its
 # exit beat, so the overlay has a real proposal to calibrate. hello-world itself
 # stays the minimal v0.2 baseline every other tier uses.
@@ -39,7 +45,8 @@ REPORT="validation/rehearsal-report.json"
 PATCH="validation/shot-patch.json"
 BOT_OUT="validation/rehearsal-bot.out"
 
-cleanup() { $COMPOSE down -v --remove-orphans >/dev/null 2>&1 || true; }
+# Tear down ONLY this project, and prove it (never a bare `docker compose down`).
+cleanup() { validation/fresh-volumes.sh --project "$PROJECT" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 echo "==> building the delve output (datapack + creator overlay)"
@@ -54,13 +61,20 @@ echo "==> starting the playtest server (delve image + mounted creator overlay)"
 $COMPOSE up -d --build
 
 echo "==> waiting for the server to finish starting"
-CID=delvewright-playtest
+# No pinned container name (task #185) — ask compose for this project's id.
+CID="$($COMPOSE ps -q playtest)"
+[ -n "$CID" ] || { echo "::error:: the playtest container did not start"; exit 1; }
+STARTED=0
 for _ in $(seq 1 90); do
-  if docker logs "$CID" 2>&1 | grep -qE 'Done \([0-9]'; then break; fi
+  # Capture, then test. `docker logs | grep -q` exits at the first match and
+  # SIGPIPEs `docker logs`; under pipefail that reads as NO MATCH, so a server
+  # that started is reported as never started (tools/check-shell-pipe-shortcircuit.py).
+  BOOT_LOG="$(docker logs "$CID" 2>&1 || true)"
+  if [[ $BOOT_LOG == *"Done ("[0-9]* ]]; then STARTED=1; break; fi
   if [ "$(docker inspect -f '{{.State.Status}}' "$CID" 2>/dev/null)" = "exited" ]; then break; fi
   sleep 5
 done
-if ! docker logs "$CID" 2>&1 | grep -qE 'Done \([0-9]'; then
+if [ "$STARTED" != 1 ]; then
   echo "::error:: server never finished starting"; docker logs "$CID" 2>&1 | tail -n 30; exit 1
 fi
 
@@ -68,12 +82,20 @@ echo "==> installing harness deps (if needed)"
 [ -d harness/node_modules ] || npm --prefix harness ci
 
 echo "==> driving one calibration pass with the rehearsal-bot"
+# Ask compose which host port it got — never assume a number (ephemeral-port.yaml).
+MC_PORT="$($COMPOSE port playtest 25565 | sed 's/.*://')"
+[ -n "$MC_PORT" ] || { echo "::error:: no host port published for the playtest server"; exit 1; }
+echo "    (server reachable at 127.0.0.1:$MC_PORT)"
 DELVEWRIGHT_MC_HOST=127.0.0.1 \
-DELVEWRIGHT_MC_PORT=25565 \
+DELVEWRIGHT_MC_PORT="$MC_PORT" \
 DELVEWRIGHT_BOT_USERNAME=delve-creator \
   node harness/src/rehearsal-bot.ts | tee "$BOT_OUT"
 
-MARKED="$(grep -oE 'MARKED_CELL=[-0-9,]+' "$BOT_OUT" | head -1 | cut -d= -f2)"
+# Capture every match, then take the first with a parameter expansion. `| head -1`
+# would SIGPIPE grep the moment the bot reported a second cell, and pipefail turns
+# that into a non-zero `$(...)` — `set -e` then kills the run for succeeding.
+MARKED_ALL="$(grep -oE 'MARKED_CELL=[-0-9,]+' "$BOT_OUT" || true)"
+MARKED="${MARKED_ALL%%$'\n'*}"; MARKED="${MARKED#*=}"
 [ -n "$MARKED" ] || { echo "::error:: the bot did not report the cell it marked"; exit 1; }
 echo "==> the bot marked cell $MARKED"
 

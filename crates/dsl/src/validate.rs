@@ -17,7 +17,7 @@ use crate::registry::{
     VendoredItemRegistry,
 };
 use crate::stages::{
-    EditFrame, MorphOp, Objective, QuestEffect, RegionShape, TriggerOn, WorldEdit,
+    EditFrame, EncounterTier, MorphOp, Objective, QuestEffect, RegionShape, TriggerOn, WorldEdit,
 };
 
 /// Validate a campaign against all spec-0001 rules using the vendored v0
@@ -77,7 +77,7 @@ pub fn validate_campaign_with(
         v06_trap_checks(c, items, entities, anchors, &mut d);
         shortcut_checks(c, anchors, &mut d);
         ambush_checks(c, &mut d);
-        timed_gate_checks(c, &mut d);
+        timed_gate_checks(c, anchors, &mut d);
         loot_checks(c, items, anchors, &mut d);
         lane_checks(c, anchors, &mut d);
         difficulty_checks(c, &mut d);
@@ -95,8 +95,21 @@ pub fn validate_campaign_with(
     if is_v08(c.quest_plan.dsl_version.as_str()) {
         branch_point_checks(c, &mut d);
     }
+    // DSL v0.8 (task #95): a `collect` may adopt a prefab container, which puts a
+    // second positional filler on the same anchor a `loot` entry can name.
+    if is_v08(c.quests.dsl_version.as_str()) {
+        collect_container_claim_checks(c, &mut d);
+    }
     if is_v08(c.quests.dsl_version.as_str()) || is_v08(c.dialogue.dsl_version.as_str()) {
         happening_subject_checks(c, &mut d);
+    }
+    // DSL v0.8 (spec-0016 §1, owner directive 2026-08-03): what is really in the
+    // flask. The status-effect registry is the same fixed vanilla list v0.4 uses,
+    // and the potion registry is complete in-crate, so no injected registry is
+    // needed.
+    if is_v08(c.classes.dsl_version.as_str()) {
+        let effects_reg = VendoredEffectRegistry::v1_21_11();
+        kit_potion_checks(c, &effects_reg, &mut d);
     }
 
     d
@@ -955,6 +968,67 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v06(c, d);
     reserved_v07(c, d);
     reserved_v08(c, d);
+    reserved_v09(c, d);
+}
+
+/// DSL v0.9 reserved-feature gating (task #179, owner ruling 2026-08-04): the
+/// declared-drops surface — `drops[]` on a wave mob and on an actor, and the
+/// `collect` `dropped_by` that sources a quest item off a body instead of out of
+/// a box.
+///
+/// The same asymmetry every version ledger uses: *declaring* any of it below
+/// 0.9.0 is `DW0141`. There is no requirement half — a campaign that declares no
+/// drops keeps writing drop chance `0.0` on every slot, which is byte-for-byte
+/// what pre-0.9 emission wrote.
+fn reserved_v09(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    if is_v09(c.quests.dsl_version.as_str()) {
+        return;
+    }
+    for (i, w) in c.quests.content.waves.iter().enumerate() {
+        for (k, m) in w.mobs.iter().enumerate() {
+            if m.drops.is_empty() {
+                continue;
+            }
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "quests",
+                format!("/content/waves/{i}/mobs/{k}/drops"),
+                "a wave mob's `drops` (the declared subset an elite or boss leaves behind) \
+                 requires dsl_version 0.9.0 — raise this stage's `dsl_version` to 0.9.0, or \
+                 remove the field"
+                    .to_string(),
+            ));
+        }
+    }
+    for (i, a) in c.quests.content.actors.iter().enumerate() {
+        if a.drops.is_empty() {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            "quests",
+            format!("/content/actors/{i}/drops"),
+            "an actor's `drops` (the declared subset an elite or boss leaves behind) requires \
+             dsl_version 0.9.0 — raise this stage's `dsl_version` to 0.9.0, or remove the field"
+                .to_string(),
+        ));
+    }
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        for (j, o) in q.objectives.iter().enumerate() {
+            if o.collect_dropped_by().is_none() {
+                continue;
+            }
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "quests",
+                format!("/content/quests/{i}/objectives/{j}/dropped_by"),
+                "a `collect` `dropped_by` (the wave whose declared drop provides this item, in \
+                 place of a container) requires dsl_version 0.9.0 — raise this stage's \
+                 `dsl_version` to 0.9.0, or remove the field"
+                    .to_string(),
+            ));
+        }
+    }
 }
 
 /// DSL v0.7 reserved-feature gating (spec-0020): the per-quest `cast` ledger,
@@ -1288,6 +1362,24 @@ fn horizon_rules(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     ),
                 );
             }
+            // spec-0026 amendment 2026-08-04: measured outward from the scene
+            // bounding-box edge, floor 192 = the shipped summit view-distance
+            // (12) × 16, so the fog line always lands inside generated terrain.
+            // Before the amendment the spec's own default (176) sat below this
+            // floor, which is why the foundation slice left it unenforced.
+            if r.vista_radius < 192 {
+                range(
+                    "vista_radius",
+                    format!(
+                        "`vista_radius` = {} is below the spec-0026 floor of 192 — the vista is \
+                         measured outward from the scene bounding box, and 192 is the shipped \
+                         summit `view-distance` (12) × 16, so anything less puts the fog line \
+                         outside generated terrain (default {})",
+                        r.vista_radius,
+                        horizon_defaults::VISTA_RADIUS
+                    ),
+                );
+            }
             if r.plateau_y > 319 || r.plateau_y - r.min_drop < -64 {
                 range(
                     "plateau_y",
@@ -1315,7 +1407,24 @@ fn horizon_rules(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 );
             }
         }
-        HorizonBase::Void | HorizonBase::Ocean | HorizonBase::Flatland => {}
+        HorizonBase::Flatland => {
+            // spec-0026 amendment 2026-08-04: 0 would be a hard edge, which the
+            // flatland interpenetration ruling forbids; 16 bounds the dither
+            // band.
+            if !(1..=16).contains(&r.blend_width) {
+                range(
+                    "blend_width",
+                    format!(
+                        "`blend_width` = {} is out of range — the flatland seam dither band is \
+                         `1..=16` (default {}); 0 would be a hard material edge, which the \
+                         spec-0026 §3 interpenetration ruling forbids",
+                        r.blend_width,
+                        horizon_defaults::BLEND_WIDTH
+                    ),
+                );
+            }
+        }
+        HorizonBase::Void | HorizonBase::Ocean => {}
     }
 
     // DW0320 generalized (spec-0026 §5): any horizon whose ambient is
@@ -2289,6 +2398,9 @@ fn v06_checks(
         );
     }
 
+    // task #179: declared drops — the subset an elite/boss leaves behind.
+    check_drops(c, quests, items, d);
+
     // spec-0016 §1: `respawns_on_rest` is re-seating *by a bonfire*. With no
     // `bonfire` anywhere in the campaign nothing can ever fire the re-seat, so
     // the field is a silent no-op — the class of defect this compiler always
@@ -2320,6 +2432,34 @@ fn v06_checks(
                     ),
                 ));
             }
+        }
+    }
+
+    // spec-0016 §1 + spec-0023, souls ruling 5/7 ("stage bosses never respawn
+    // on rest", task #160, bell r5 semantics audit): `tier` and
+    // `respawns_on_rest` are two fields on the SAME wave declaration — the only
+    // place a "boss" billing and a "re-seat on rest" contract can land on one
+    // another (an actor carries `tier` too, but has no `respawns_on_rest` field
+    // at all, so it cannot express this violation). A rest-respawning boss
+    // re-fight breaks the retry economy the ruling protects. Checked
+    // unconditionally of `has_bonfire`: the combination is forbidden on its own
+    // terms, not merely inert like `DW0370`.
+    for (i, w) in quests.waves.iter().enumerate() {
+        if w.respawns_on_rest && w.tier == Some(EncounterTier::Boss) {
+            d.push(Diagnostic::error(
+                codes::BOSS_RESPAWNS_ON_REST,
+                "quests",
+                format!("/content/waves/{i}/respawns_on_rest"),
+                format!(
+                    "wave `{}` declares `tier: boss` AND `respawns_on_rest: true` — souls \
+                     ruling 5/7 is that stage bosses never respawn on rest, since a \
+                     rest-respawning boss re-fight breaks the retry economy the ruling \
+                     protects. Drop `respawns_on_rest` if this really is the boss, or drop \
+                     `tier: boss` (bill it `elite` instead) if the encounter is meant to \
+                     re-seat.",
+                    w.id.as_str()
+                ),
+            ));
         }
     }
 
@@ -2362,6 +2502,189 @@ fn v06_checks(
             ));
         }
     }
+}
+
+/// spec-0016 §1 (owner directive 2026-08-03): **what is actually in the flask.**
+///
+/// The kit `flask` marker landed with no way to say what the bottle pours, so
+/// every flask shipped as `minecraft:potion` with no `minecraft:potion_contents`
+/// component — the Uncraftable Potion, which a player can drink all day for
+/// nothing. `contents` closes that, and these are the two halves of keeping it
+/// honest: `DW0487` refuses the placeholder (a potion-bearing kit item that
+/// declares no contents), `DW0486` refuses contents 1.21.11 cannot pour.
+///
+/// Runs only at `dsl_version` 0.8.0 on the classes stage — the same asymmetry the
+/// version ledger uses everywhere: *declaring* `contents` earlier is `DW0141`,
+/// and the *requirement* fires only at 0.8.0, so no pre-0.8 campaign's datapack
+/// can move by a byte.
+fn kit_potion_checks(c: &Campaign, effects: &dyn EffectRegistry, d: &mut Vec<Diagnostic>) {
+    for (i, cl) in c.classes.content.classes.iter().enumerate() {
+        for (k, item) in cl.kit.iter().enumerate() {
+            let bearing = crate::stages::is_potion_bearing_item(&item.item);
+            let path = format!("/content/classes/{i}/kit/{k}");
+            let Some(contents) = &item.contents else {
+                // The placeholder flask, as a build error.
+                if bearing {
+                    d.push(Diagnostic::error(
+                        codes::KIT_POTION_MISSING,
+                        "classes",
+                        format!("{path}/contents"),
+                        format!(
+                            "kit item `{}` declares no `contents`, so it compiles to the \
+                             *Uncraftable Potion* — a bottle with no `minecraft:potion_contents` \
+                             component, which grants nothing when drunk however it is named. \
+                             Declare what is in it: `\"contents\": {{\"potion\": \
+                             \"minecraft:strong_healing\"}}`, or an `\"effects\"` list of \
+                             `{{\"effect\", \"duration\", \"amplifier\"}}`. Do NOT rename the \
+                             bottle instead — semantics never key on player-facing text \
+                             (spec-0016 §1, owner directive 2026-08-03).",
+                            item.item
+                        ),
+                    ));
+                }
+                continue;
+            };
+            // `contents` on an item with no such component: the data would be
+            // dropped on the floor, silently.
+            if !bearing {
+                d.push(Diagnostic::error(
+                    codes::KIT_POTION_INVALID,
+                    "classes",
+                    format!("{path}/contents"),
+                    format!(
+                        "kit item `{}` cannot carry potion `contents` — in 1.21.11 only \
+                         `minecraft:potion`, `minecraft:splash_potion`, \
+                         `minecraft:lingering_potion` and `minecraft:tipped_arrow` carry a \
+                         `minecraft:potion_contents` component, and on anything else the game \
+                         discards it. Put the contents on a potion item, or drop the field.",
+                        item.item
+                    ),
+                ));
+                continue;
+            }
+            if contents.potion.is_none() && contents.effects.is_empty() {
+                d.push(Diagnostic::error(
+                    codes::KIT_POTION_INVALID,
+                    "classes",
+                    format!("{path}/contents"),
+                    "empty potion `contents` — it names no `potion` and lists no `effects`, so \
+                     the bottle still pours nothing. Name a vanilla potion (e.g. \
+                     `\"potion\": \"minecraft:strong_healing\"`) or list at least one effect."
+                        .to_string(),
+                ));
+            }
+            if let Some(p) = &contents.potion
+                && !crate::registry::is_potion_id(p)
+            {
+                d.push(Diagnostic::error(
+                    codes::KIT_POTION_INVALID,
+                    "classes",
+                    format!("{path}/contents/potion"),
+                    format!(
+                        "`{p}` is not in the pinned 1.21.11 `potion` registry — use a real potion \
+                         id (`minecraft:healing`, `minecraft:strong_healing`, \
+                         `minecraft:long_night_vision`, …). Note the 1.20.5+ spelling: strength \
+                         and duration are part of the id (`strong_`/`long_` prefixes), not \
+                         separate fields."
+                    ),
+                ));
+            }
+            if let Some(col) = &contents.color
+                && !is_hex_color(col)
+            {
+                d.push(Diagnostic::error(
+                    codes::KIT_POTION_INVALID,
+                    "classes",
+                    format!("{path}/contents/color"),
+                    format!(
+                        "potion `color` `{col}` is malformed — write the bottle colour as \
+                         `#rrggbb` (e.g. `#ff9c30`), or omit it and take the colour vanilla \
+                         derives from the effects."
+                    ),
+                ));
+            }
+            for (e, eff) in contents.effects.iter().enumerate() {
+                let epath = format!("{path}/contents/effects/{e}");
+                if !effects.contains(&eff.effect) {
+                    d.push(Diagnostic::error(
+                        codes::KIT_POTION_INVALID,
+                        "classes",
+                        format!("{epath}/effect"),
+                        format!(
+                            "potion effect `{}` is not a known 1.21.11 status-effect id — use a \
+                             valid namespaced effect id (e.g. `minecraft:instant_health`).",
+                            eff.effect
+                        ),
+                    ));
+                }
+                if let Some(amp) = eff.amplifier
+                    && amp > crate::stages::MAX_POTION_AMPLIFIER
+                {
+                    d.push(Diagnostic::error(
+                        codes::KIT_POTION_INVALID,
+                        "classes",
+                        format!("{epath}/amplifier"),
+                        format!(
+                            "potion effect `amplifier` {amp} is out of range — vanilla stores it \
+                             in an unsigned byte, so it must be 0–{max} (0 = level I).",
+                            max = crate::stages::MAX_POTION_AMPLIFIER
+                        ),
+                    ));
+                }
+                match (eff.is_instant(), eff.duration) {
+                    // An instantaneous effect is applied once on drinking; a
+                    // duration on it is a sentence the game never reads.
+                    (true, Some(dur)) => d.push(Diagnostic::error(
+                        codes::KIT_POTION_INVALID,
+                        "classes",
+                        format!("{epath}/duration"),
+                        format!(
+                            "`{}` is instantaneous — it lands once, on the tick the potion is \
+                             drunk, so the `duration` of {dur} tick(s) here is never read. Drop \
+                             the field; for healing that ticks over time use \
+                             `minecraft:regeneration`, which does take a duration.",
+                            eff.effect
+                        ),
+                    )),
+                    (false, None) => d.push(Diagnostic::error(
+                        codes::KIT_POTION_INVALID,
+                        "classes",
+                        format!("{epath}/duration"),
+                        format!(
+                            "potion effect `{}` lasts over time and declares no `duration` — \
+                             vanilla would default it to zero ticks, i.e. nothing. Declare the \
+                             duration in ticks (20 = one second).",
+                            eff.effect
+                        ),
+                    )),
+                    (false, Some(dur))
+                        if dur == 0 || dur > crate::stages::MAX_POTION_DURATION_TICKS =>
+                    {
+                        d.push(Diagnostic::error(
+                            codes::KIT_POTION_INVALID,
+                            "classes",
+                            format!("{epath}/duration"),
+                            format!(
+                                "potion effect `duration` {dur} is out of range — it is in \
+                                 **ticks** (20 = one second) and must be 1–{max} \
+                                 (≈13.9 hours, past the delve ceiling).",
+                                max = crate::stages::MAX_POTION_DURATION_TICKS
+                            ),
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+/// True if `s` is a `#rrggbb` colour literal.
+fn is_hex_color(s: &str) -> bool {
+    let Some(hex) = s.strip_prefix('#') else {
+        return false;
+    };
+    hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 // ---------------------------------------------------------------------------
@@ -2771,8 +3094,18 @@ fn v03_checks(
     }
     // v0.4: flags/waves may also come from dialogue `set-flag` effects and
     // environment-trigger effects. Empty for v0.2/v0.3 campaigns (no such
-    // constructs), so their flag resolution is unchanged. Dialogue effects are a
-    // flat list (no nesting), so a direct scan suffices there.
+    // constructs), so their flag resolution is unchanged.
+    //
+    // The `DialogueEffect` list itself has no nesting, so the direct scan below is
+    // right for it — but the dialogue STAGE is not exhausted by that list, and the
+    // comment here used to claim otherwise (corrected, task #24). A dialogue
+    // option's `set-checkpoint` carries an `on_respawn` bundle that is a
+    // `Vec<QuestEffect>`, and a `set-flag` inside one really is emitted (into
+    // `cp_on_respawn_<i>`) while this inventory does not see it — the fifth root
+    // `compiler::plan::for_each_effect_root` enumerates. It is pinned by
+    // `flow_effect_roots::a_dialogue_respawn_bundle_is_still_never_a_producer`,
+    // which asserts the resulting `DW0172`. See "Known spec ↔ code drift" in
+    // `docs/reference/compiler.md`.
     for tree in &c.dialogue.content.dialogues {
         for node in &tree.nodes {
             for opt in &node.options {
@@ -2867,8 +3200,27 @@ fn v03_checks(
                     item,
                     count,
                     anchor,
+                    container,
+                    dropped_by,
+                    fill_count,
                     ..
                 } => {
+                    // v0.9 (task #179): the wave a drop-gated collect names must
+                    // exist — the same dangling-reference rule a `kill` follows.
+                    if let Some(wave) = dropped_by
+                        && !declared_waves.contains(wave.as_str())
+                    {
+                        d.push(Diagnostic::error(
+                            codes::WAVE_UNKNOWN,
+                            "quests",
+                            format!("/content/quests/{i}/objectives/{j}/dropped_by"),
+                            format!(
+                                "`collect` `dropped_by` references unknown wave `{wave}` — \
+                                 declare it in the stage-5 `waves` section or correct the \
+                                 reference"
+                            ),
+                        ));
+                    }
                     if !items.contains(item) {
                         d.push(Diagnostic::error(
                             codes::ITEM_UNKNOWN,
@@ -2893,6 +3245,35 @@ fn v03_checks(
                         d,
                     );
                     anchor_resolves(set, anchor, i, j, "anchor", d);
+                    // v0.8 (task #95): the adopted container's anchor must exist
+                    // too. Whether its CELL really holds a chest/barrel needs the
+                    // assembled world and is the build-tier `DW0438`.
+                    if let Some(cont) = container {
+                        anchor_resolves(set, cont, i, j, "container", d);
+                    }
+                    // v0.8 (task #95): the fill is positional — the required stack
+                    // in `container.0` plus one padding stack per slot after it —
+                    // so it obeys the same 27-slot ceiling a `loot` declaration
+                    // does, and for the same reason: every stack past the last slot
+                    // is dropped without a word.
+                    let slots = 1usize + *fill_count as usize;
+                    if slots > MIN_CONTAINER_SLOTS {
+                        d.push(Diagnostic::error(
+                            codes::LOOT_TOO_MANY_ITEMS,
+                            "quests",
+                            format!("/content/quests/{i}/objectives/{j}/fill_count"),
+                            format!(
+                                "collect objective `{oid}` fills {slots} slots (its own stack \
+                                 plus `fill_count` {fill_count}), more than the \
+                                 {MIN_CONTAINER_SLOTS} slots a vanilla chest or barrel has. \
+                                 Slots are assigned positionally, so every stack past the \
+                                 {MIN_CONTAINER_SLOTS}th would be dropped silently. Lower \
+                                 `fill_count` to at most {max} — a container that reads full \
+                                 does not need to overflow.",
+                                max = MIN_CONTAINER_SLOTS - 1
+                            ),
+                        ));
+                    }
                 }
                 Objective::Interact {
                     anchor,
@@ -3470,6 +3851,14 @@ fn collect_declared_flags(c: &Campaign) -> BTreeSet<&str> {
     }
     for t in &c.quests.content.traps {
         if let Some(dis) = &t.disarm {
+            flags.insert(dis.sets_flag.as_str());
+        }
+    }
+    // task #184: a timed gate's disarm produces a first-class flag exactly as a
+    // trap's does — the party jammed the portcullis, and the rest of the campaign
+    // may read that fact.
+    for g in &c.quests.content.timed_gates {
+        if let Some(dis) = &g.disarm {
             flags.insert(dis.sets_flag.as_str());
         }
     }
@@ -5523,18 +5912,40 @@ fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 // spec-0016 §4 — timed gates
 // ---------------------------------------------------------------------------
 
-/// Validate the stage-5 `timed_gates` section (spec-0016 §4), `DW0377`.
+/// Validate the stage-5 `timed_gates` section (spec-0016 §4), `DW0377` /
+/// `DW0389`.
 ///
 /// The structural half only: ids, a cycle that actually cycles, a phase inside
-/// the cycle, and one owner per gate region. The *design* half — that the gate is
-/// a timing read and not a coin flip — needs the nav model's crossing time and
-/// lives in `compiler::nav` (`DW0378`). The fill-block requirement is `DW0343`,
-/// the same rule `close-gate` and `shortcut` obey.
-fn timed_gate_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+/// the cycle, one owner per gate region, and — task #184 — a `disarm.via` that
+/// resolves to a real anchor outside the span it jams. The *design* half — that
+/// the gate is a timing read and not a coin flip — needs the nav model's crossing
+/// time and lives in `compiler::nav` (`DW0378`). The fill-block requirement is
+/// `DW0343`, the same rule `close-gate` and `shortcut` obey.
+///
+/// `DW0389` is the permanence rule, and it is the exact mirror of a shortcut's
+/// `DW0372`: a disarmed gate rests OPEN forever, so no `close-gate` anywhere may
+/// name it. Making that structural is cheaper and safer than trusting every
+/// author never to reach for the re-seal verb.
+///
+/// Anchor resolution stays lenient for pool areas the compiler resolves later —
+/// the same policy as the trap and shortcut checks.
+fn timed_gate_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
     let quests = &c.quests.content;
     if quests.timed_gates.is_empty() {
         return;
     }
+    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
+    let mut has_pool_area = false;
+    for a in &c.world.content.areas {
+        if let Some(prefab) = &a.prefab {
+            if let Some(set) = anchors.anchors_for(prefab) {
+                known_anchor.extend(set.iter().map(String::as_str));
+            }
+        } else if a.prefab_pool.is_some() {
+            has_pool_area = true;
+        }
+    }
+    let resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
     let shortcut_gates: BTreeSet<&str> = quests.shortcuts.iter().map(|s| s.gate.as_str()).collect();
     let mut seen: BTreeSet<&str> = BTreeSet::new();
     let mut driven: BTreeSet<&str> = BTreeSet::new();
@@ -5624,6 +6035,84 @@ fn timed_gate_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 d,
             );
         }
+        // task #184 — the disarm affordance, the same two rules a trap's obeys.
+        if let Some(dis) = &g.disarm {
+            if !resolvable(dis.via.as_str()) {
+                err(
+                    format!("/content/timed_gates/{i}/disarm/via"),
+                    format!(
+                        "timed-gate `disarm.via` anchor `{}` is not provided by any area's prefab \
+                         — use an anchor some area's prefab exposes for the jam affordance \
+                         (anchor names come from prefab metadata; do NOT invent one)",
+                        dis.via
+                    ),
+                    d,
+                );
+            }
+            if dis.via == g.gate {
+                err(
+                    format!("/content/timed_gates/{i}/disarm/via"),
+                    format!(
+                        "timed gate `{}` puts its `disarm.via` on its own gate anchor `{}` — the \
+                         jam lever would stand inside the span the portcullis closes on (and, \
+                         with `crush`, kills in). The affordance belongs on ground the player \
+                         can reach and hold WITHOUT gambling on the clock, which is the entire \
+                         point of the third rung.",
+                        g.id, g.gate
+                    ),
+                    d,
+                );
+            }
+        }
+    }
+
+    // `close-gate` may never target a disarmable timed gate: a disarm leaves the
+    // portcullis jammed OPEN forever, so permanence is structural (`DW0389`, the
+    // mirror of a shortcut's `DW0372`).
+    let disarmed: BTreeSet<&str> = quests
+        .timed_gates
+        .iter()
+        .filter(|g| g.disarm.is_some())
+        .map(|g| g.gate.as_str())
+        .collect();
+    if disarmed.is_empty() {
+        return;
+    }
+    let report = |path: String, anchor: &str, d: &mut Vec<Diagnostic>| {
+        d.push(Diagnostic::error(
+            codes::TIMED_GATE_REARMED,
+            "quests",
+            path,
+            format!(
+                "`close-gate` targets `{anchor}`, the gate of a `timed-gate` that declares a \
+                 `disarm` — a disarmed gate rests OPEN permanently (task #184, souls dossier \
+                 §5.2: a hazard the party has switched off stays off), so nothing may re-arm \
+                 its clock. Use a different gate for the beat that must re-seal, or drop the \
+                 `disarm` and keep the clock running."
+            ),
+        ));
+    };
+    for (qi, q) in quests.quests.iter().enumerate() {
+        for_each_effect_deep(q, |path, eff| {
+            if let Some(a) = eff.close_gate_anchor()
+                && disarmed.contains(a.as_str())
+            {
+                report(format!("/content/quests/{qi}/{path}/anchor"), a.as_str(), d);
+            }
+        });
+    }
+    for (ti, t) in quests.triggers.iter().enumerate() {
+        for_each_trigger_effect_deep(t, |path, eff| {
+            if let Some(a) = eff.close_gate_anchor()
+                && disarmed.contains(a.as_str())
+            {
+                report(
+                    format!("/content/triggers/{ti}/{path}/anchor"),
+                    a.as_str(),
+                    d,
+                );
+            }
+        });
     }
 }
 
@@ -5937,6 +6426,317 @@ fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
     }
 }
 
+/// Declared drops (task #179, owner ruling 2026-08-04): what an elite or boss
+/// leaves behind is a **declared subset**, never automatically everything.
+///
+/// Four rules, all of them about the gap between what a campaign says and what
+/// the world can actually produce:
+///
+/// * `DW0491` — only an `elite`/`boss` encounter may declare drops. Rank-and-file
+///   gear stays unfarmable by construction (no-grind constitution).
+/// * `DW0490` — a `slot` entry must name a **distinct** slot the same entity's
+///   own `equipment` fills. A body cannot leave behind a piece it never wore.
+/// * `DW0492` — a `dropped_by` collect must be backed by the wave it names: the
+///   wave really declares that item, in at least the count the objective asks
+///   for, and the objective does not also adopt a container.
+/// * `DW0493` — that collect must be **ordered after** the fight, so the chain
+///   "kill the boss → take its key → open the door" is a proof rather than an
+///   intention.
+fn check_drops(
+    c: &Campaign,
+    quests: &crate::stages::QuestsContent,
+    items: &dyn ItemRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    use crate::stages::{EncounterTier, MobDrop};
+
+    // --- the declaration side: waves and actors ---------------------------
+    let tiered =
+        |t: Option<EncounterTier>| matches!(t, Some(EncounterTier::Elite | EncounterTier::Boss));
+    for (i, w) in quests.waves.iter().enumerate() {
+        for (k, m) in w.mobs.iter().enumerate() {
+            if m.drops.is_empty() {
+                continue;
+            }
+            if !tiered(w.tier) {
+                d.push(Diagnostic::error(
+                    codes::DROP_NOT_TIERED,
+                    "quests",
+                    format!("/content/waves/{i}/mobs/{k}/drops"),
+                    format!(
+                        "wave `{}` declares drops but is not billed `elite` or `boss` — only a \
+                         named fight leaves anything behind; an ordinary mob's kit is never \
+                         farmable. Declare the wave's `tier`, or remove the `drops`",
+                        w.id
+                    ),
+                ));
+            }
+            check_drop_list(
+                &m.drops,
+                m.equipment.as_ref(),
+                &format!("wave `{}` mob {k}", w.id),
+                &format!("/content/waves/{i}/mobs/{k}/drops"),
+                items,
+                d,
+            );
+        }
+    }
+    for (i, a) in quests.actors.iter().enumerate() {
+        if a.drops.is_empty() {
+            continue;
+        }
+        if !tiered(a.tier) {
+            d.push(Diagnostic::error(
+                codes::DROP_NOT_TIERED,
+                "quests",
+                format!("/content/actors/{i}/drops"),
+                format!(
+                    "actor `{}` declares drops but is not billed `elite` or `boss` — only a named \
+                     fight leaves anything behind; a staged puppet's kit is never farmable. \
+                     Declare the actor's `tier`, or remove the `drops`",
+                    a.id
+                ),
+            ));
+        }
+        check_drop_list(
+            &a.drops,
+            a.equipment.as_ref(),
+            &format!("actor `{}`", a.id),
+            &format!("/content/actors/{i}/drops"),
+            items,
+            d,
+        );
+    }
+
+    // --- the consumption side: `collect.dropped_by` ------------------------
+    // How many copies of each item every wave can yield: one per declaring mob
+    // in the stack, so a pair of elites each dropping a sword yields two.
+    let mut yielded: BTreeMap<&str, BTreeMap<&str, u32>> = BTreeMap::new();
+    for w in &quests.waves {
+        let per = yielded.entry(w.id.as_str()).or_default();
+        for m in &w.mobs {
+            for dr in &m.drops {
+                if let MobDrop::Item(it) = dr {
+                    *per.entry(it.item.as_str()).or_default() += m.count;
+                }
+            }
+        }
+    }
+    let anc = quest_ancestors(c);
+    // Which quests hold a `kill` objective for each wave, and which objective ids.
+    let mut kills: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
+    for q in &quests.quests {
+        for o in &q.objectives {
+            if let Objective::Kill { wave, id, .. } = o {
+                kills
+                    .entry(wave.as_str())
+                    .or_default()
+                    .push((q.id.as_str(), id.as_str()));
+            }
+        }
+    }
+    for (i, q) in quests.quests.iter().enumerate() {
+        let after_anc = objective_ancestors(q);
+        for (j, o) in q.objectives.iter().enumerate() {
+            let Objective::Collect {
+                id,
+                item,
+                count,
+                container,
+                dropped_by: Some(wave),
+                ..
+            } = o
+            else {
+                continue;
+            };
+            let path = format!("/content/quests/{i}/objectives/{j}/dropped_by");
+            if container.is_some() {
+                d.push(Diagnostic::error(
+                    codes::DROP_COLLECT_UNSOURCED,
+                    "quests",
+                    path.clone(),
+                    format!(
+                        "`collect` `{id}` declares both `dropped_by` (wave `{wave}`) and a \
+                         `container` — the item comes off a body or out of a box, not both; drop \
+                         whichever provisioning this beat does not use"
+                    ),
+                ));
+            }
+            let Some(per) = yielded.get(wave.as_str()) else {
+                // Unknown wave: the ordinary dangling-reference diagnostic
+                // (`DW0170`) already names it; nothing to add here.
+                continue;
+            };
+            match per.get(item.as_str()).copied() {
+                None => d.push(Diagnostic::error(
+                    codes::DROP_COLLECT_UNSOURCED,
+                    "quests",
+                    path.clone(),
+                    format!(
+                        "`collect` `{id}` takes `{item}` off wave `{wave}`, but no mob of that \
+                         wave declares a `{{\"item\": \"{item}\"}}` drop — {}. Declare the drop on \
+                         the wave's mob, or point `dropped_by` at the wave that really carries it",
+                        if per.is_empty() {
+                            "the wave declares no item drops at all".to_string()
+                        } else {
+                            format!(
+                                "it declares {}",
+                                per.keys().cloned().collect::<Vec<_>>().join(", ")
+                            )
+                        }
+                    ),
+                )),
+                Some(have) if have < *count => d.push(Diagnostic::error(
+                    codes::DROP_COLLECT_UNSOURCED,
+                    "quests",
+                    path.clone(),
+                    format!(
+                        "`collect` `{id}` asks for {count} × `{item}`, but wave `{wave}` yields \
+                         only {have} — a body drops its declared item once. Lower the `count`, or \
+                         raise the declaring mob's `count`"
+                    ),
+                )),
+                Some(_) => {}
+            }
+            // The ordering proof: some `kill` objective for this wave must
+            // strictly precede this collect — in the same quest through the
+            // `after` graph, or in a quest this one transitively depends on.
+            let ordered = kills.get(wave.as_str()).is_some_and(|ks| {
+                ks.iter().any(|(kq, ko)| {
+                    if *kq == q.id.as_str() {
+                        after_anc
+                            .get(id.as_str())
+                            .is_some_and(|set| set.contains(ko))
+                    } else {
+                        anc.get(q.id.as_str()).is_some_and(|set| set.contains(kq))
+                    }
+                })
+            });
+            if !ordered {
+                d.push(Diagnostic::error(
+                    codes::DROP_COLLECT_UNORDERED,
+                    "quests",
+                    path,
+                    format!(
+                        "`collect` `{id}` takes `{item}` off wave `{wave}`, but no `kill` \
+                         objective for `{wave}` is proven to run first — the item would be \
+                         unreachable while the objective reads as active from the campaign's \
+                         first tick. Add a `kill` objective for `{wave}` and list it in this \
+                         objective's `after`, or put the kill in a quest this one `depends_on`"
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+/// One entity's `drops[]` list: distinct, really-worn slots (`DW0490`) and
+/// registry-valid quest items (`DW0143`). Shared by wave mobs and actors so the
+/// two surfaces cannot drift.
+fn check_drop_list(
+    drops: &[crate::stages::MobDrop],
+    equipment: Option<&crate::stages::MobEquipment>,
+    what: &str,
+    base_path: &str,
+    items: &dyn ItemRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    use crate::stages::MobDrop;
+
+    let mut seen_slots: BTreeSet<&'static str> = BTreeSet::new();
+    for (n, dr) in drops.iter().enumerate() {
+        match dr {
+            MobDrop::Slot(s) => {
+                let field = s.slot.field();
+                let filled: Vec<&str> = equipment
+                    .map(|eq| {
+                        eq.slots()
+                            .into_iter()
+                            .filter(|(_, p)| p.is_some())
+                            .map(|(name, _)| name)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if equipment.is_none_or(|eq| eq.filled(s.slot).is_none()) {
+                    d.push(Diagnostic::error(
+                        codes::DROP_SLOT_UNFILLED,
+                        "quests",
+                        format!("{base_path}/{n}/slot"),
+                        format!(
+                            "{what} declares a `{field}` drop, but its `equipment` puts nothing \
+                             in `{field}` — {}. A body can only leave behind a piece it wears: \
+                             equip the slot, or drop a slot it fills",
+                            if filled.is_empty() {
+                                "it declares no equipment at all".to_string()
+                            } else {
+                                format!("it fills {}", filled.join(", "))
+                            }
+                        ),
+                    ));
+                } else if !seen_slots.insert(field) {
+                    d.push(Diagnostic::error(
+                        codes::DROP_SLOT_UNFILLED,
+                        "quests",
+                        format!("{base_path}/{n}/slot"),
+                        format!(
+                            "{what} declares the `{field}` drop twice — a body leaves each piece \
+                             behind once; remove the duplicate entry"
+                        ),
+                    ));
+                }
+            }
+            MobDrop::Item(it) => {
+                if !items.contains(&it.item) {
+                    d.push(Diagnostic::error(
+                        codes::ITEM_UNKNOWN,
+                        "quests",
+                        format!("{base_path}/{n}/item"),
+                        format!(
+                            "{what} declares a drop of `{}`, which is not in the pinned 1.21.11 \
+                             item registry — use a valid namespaced item id (e.g. \
+                             `minecraft:tripwire_hook`)",
+                            it.item
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+}
+
+/// Per-objective transitive `after` ancestors within one quest: `obj -> {every
+/// objective that must complete before it}`. Acyclicity is guaranteed by
+/// `DW0140`; a cyclic quest simply yields a partial set and the cycle's own
+/// diagnostic fires.
+fn objective_ancestors(q: &crate::stages::Quest) -> BTreeMap<&str, BTreeSet<&str>> {
+    let direct: BTreeMap<&str, Vec<&str>> = q
+        .objectives
+        .iter()
+        .map(|o| {
+            (
+                o.id().as_str(),
+                o.after().iter().map(|a| a.as_str()).collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+    let mut out = BTreeMap::new();
+    for o in &q.objectives {
+        let mut anc: BTreeSet<&str> = BTreeSet::new();
+        let mut stack = vec![o.id().as_str()];
+        while let Some(cur) = stack.pop() {
+            if let Some(ds) = direct.get(cur) {
+                for dep in ds {
+                    if anc.insert(dep) {
+                        stack.push(dep);
+                    }
+                }
+            }
+        }
+        out.insert(o.id().as_str(), anc);
+    }
+    out
+}
+
 /// Validate one [`MobEquipment`] block — item ids against the pinned registry
 /// (`DW0143`) and every piece's enchantments against the pinned enchantment
 /// registry (`DW0433`) and level range (`DW0434`).
@@ -6037,6 +6837,62 @@ fn check_enchantments(
 /// Skipped when the registry does not carry stack sizes (the small vendored DSL-side
 /// subset) or the item id is unknown — the latter is already `DW0143`, and stacking
 /// a second diagnostic on one typo is noise.
+/// Exclusive ownership of an adopted container (DSL v0.8, task #95, `DW0435`).
+///
+/// Both container-fill surfaces write **positionally** from `container.0`: a
+/// `loot` entry and a `collect`'s adopted container filling one cell overwrite
+/// each other slot-for-slot, and the loser vanishes without a word — the same
+/// silent-overwrite defect `DW0435` already names for two `loot` entries, reached
+/// through a second door. Two `collect` objectives sharing a container is the
+/// same collision (and worse: whichever activates second replaces the first
+/// objective's items with its own).
+///
+/// Only claims involving at least one `collect` are reported here; `loot`-vs-
+/// `loot` stays in [`loot_checks`], so nothing is diagnosed twice.
+fn collect_container_claim_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    // (anchor -> what claims it), in declaration order. `loot` first: a loot
+    // entry is the surface that exists to fill a container, so it reads as the
+    // incumbent in the message.
+    let mut claimed: BTreeMap<&str, String> = BTreeMap::new();
+    for l in &c.quests.content.loot {
+        claimed
+            .entry(l.anchor.as_str())
+            .or_insert_with(|| format!("loot `{}`", l.id));
+    }
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        for (j, o) in q.objectives.iter().enumerate() {
+            let Some(cont) = o.collect_container() else {
+                continue;
+            };
+            let mine = format!("collect objective `{}`", o.id());
+            if let Some(prev) = claimed.get(cont.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::LOOT_DUPLICATE_ANCHOR,
+                    "quests",
+                    format!("/content/quests/{i}/objectives/{j}/container"),
+                    format!(
+                        "{prev} and {mine} both fill the container at anchor `{cont}`. Slots \
+                         are assigned positionally from `container.0`, so one fill overwrites \
+                         the other slot-for-slot and its items never reach the player. Give the \
+                         collect its own container anchor (prefabs may expose several), or \
+                         fold the other fill's items into it — do NOT rely on declaration \
+                         order to combine them."
+                    ),
+                ));
+            } else {
+                claimed.insert(cont.as_str(), mine);
+            }
+        }
+    }
+}
+
+/// The smallest vanilla container the container-fill surfaces admit. A barrel and
+/// a single chest both hold 27; refusing >27 up front keeps the overflow from
+/// being discovered as a silently dropped stack on a live server. Shared by the
+/// `loot` stack ceiling and the v0.8 `collect` `fill_count` ceiling, which are the
+/// same positional-fill rule (`DW0432`) on two surfaces.
+const MIN_CONTAINER_SLOTS: usize = 27;
+
 fn check_stack_count(
     item: &str,
     count: u32,
@@ -6096,11 +6952,6 @@ fn loot_checks(
         }
     }
     let anchor_resolvable = |name: &str| has_pool_area || known_anchor.contains(name);
-
-    // The smallest vanilla container the surface admits. A barrel and a single
-    // chest both hold 27; refusing >27 up front keeps the overflow from being
-    // discovered as a silently dropped stack on a live server.
-    const MIN_CONTAINER_SLOTS: usize = 27;
 
     let mut seen_id: BTreeSet<&str> = BTreeSet::new();
     let mut seen_anchor: BTreeMap<&str, usize> = BTreeMap::new();
@@ -6209,7 +7060,8 @@ fn loot_checks(
 /// DSL v0.8 reserved-feature gating: spec-0025's stage-4 `branch_points`
 /// declaration, per-node `happening` and `campaign-complete` `ending`, plus
 /// spec-0016 §1's bonfire rest-dialog labels (stage 5), the class-kit `flask`
-/// (stage 3) and spec-0023's actor `tier` (stage 5).
+/// (stage 3), spec-0023's actor `tier` (stage 5) and task #95's `collect`
+/// container adoption (`container` / `item_name` / `fill_count`, stage 5).
 ///
 /// Same asymmetry the v0.7 ledger established: *declaring* any of it below 0.8.0
 /// is `DW0141`, so the version contract stays exact and a 0.6/0.7 campaign's
@@ -6260,6 +7112,51 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
                         format!("/content/quests/{i}/objectives/{j}/happening"),
                     ));
                 }
+                // task #95 (owner ruling, island playtest rounds 1 and 2): the
+                // `collect` container-adoption trio. Declaring any of it below
+                // 0.8.0 is `DW0141`, so a 0.6/0.7 campaign's chest, its unnamed
+                // item and its single stack cannot move by a byte.
+                if let Objective::Collect {
+                    container,
+                    item_name,
+                    fill_count,
+                    ..
+                } = o
+                {
+                    for (present, field, what) in [
+                        (
+                            container.is_some(),
+                            "container",
+                            "a `collect` `container` (the prefab-placed chest or barrel the \
+                             objective adopts instead of conjuring its own chest)",
+                        ),
+                        (
+                            item_name.is_some(),
+                            "item_name",
+                            "a `collect` `item_name` (the display name the collected item \
+                             carries as a `custom_name` component)",
+                        ),
+                        (
+                            *fill_count != 0,
+                            "fill_count",
+                            "a `collect` `fill_count` (the padding stacks that make the \
+                             container read full)",
+                        ),
+                    ] {
+                        if !present {
+                            continue;
+                        }
+                        d.push(Diagnostic::error(
+                            codes::RESERVED,
+                            "quests",
+                            format!("/content/quests/{i}/objectives/{j}/{field}"),
+                            format!(
+                                "{what} requires dsl_version 0.8.0 — raise this stage's \
+                                 `dsl_version` to 0.8.0, or remove the field"
+                            ),
+                        ));
+                    }
+                }
             }
         }
         crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
@@ -6286,22 +7183,50 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
     if !is_v08(c.classes.dsl_version.as_str()) {
         for (i, cl) in c.classes.content.classes.iter().enumerate() {
             for (k, item) in cl.kit.iter().enumerate() {
-                if !item.flask {
-                    continue;
+                if item.flask {
+                    d.push(Diagnostic::error(
+                        codes::RESERVED,
+                        "classes",
+                        format!("/content/classes/{i}/kit/{k}/flask"),
+                        "a class kit `flask` (the recovery item a bonfire rest replenishes) \
+                         requires dsl_version 0.8.0 — raise this stage's `dsl_version` to 0.8.0, \
+                         or remove the field"
+                            .to_string(),
+                    ));
                 }
-                d.push(Diagnostic::error(
-                    codes::RESERVED,
-                    "classes",
-                    format!("/content/classes/{i}/kit/{k}/flask"),
-                    "a class kit `flask` (the recovery item a bonfire rest replenishes) requires \
-                     dsl_version 0.8.0 — raise this stage's `dsl_version` to 0.8.0, or remove the \
-                     field"
-                        .to_string(),
-                ));
+                // Owner directive 2026-08-03: what the bottle actually pours.
+                if item.contents.is_some() {
+                    d.push(Diagnostic::error(
+                        codes::RESERVED,
+                        "classes",
+                        format!("/content/classes/{i}/kit/{k}/contents"),
+                        "kit item potion `contents` (the vanilla `minecraft:potion_contents` \
+                         component — a named potion or a custom-effect list) requires \
+                         dsl_version 0.8.0 — raise this stage's `dsl_version` to 0.8.0, or \
+                         remove the field"
+                            .to_string(),
+                    ));
+                }
             }
         }
     }
     if !is_v08(c.quests.dsl_version.as_str()) {
+        // Task #142 (owner island finding #34): the line a sealed gate answers a
+        // right-click with. A pre-0.8 campaign still gets the answer — the
+        // compiler's canonical English — it just cannot author the wording.
+        crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+            if eff.close_gate_sealed_hint().is_some() {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("{path}/sealed_hint"),
+                    "a `close-gate` `sealed_hint` (the line the sealed gate answers a right-click \
+                     with) requires dsl_version 0.8.0 — raise this stage's `dsl_version` to 0.8.0, \
+                     or remove the field and take the compiler's canonical English"
+                        .to_string(),
+                ));
+            }
+        });
         crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
             let Some(l) = eff.bonfire_labels() else {
                 return;

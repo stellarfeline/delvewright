@@ -12,7 +12,13 @@ import { parseCriticalPathJson } from "./critical-path.ts";
 import { runSequence, StepExecutionError } from "./sequencer.ts";
 import { botConfigFromEnv, MineflayerExecutor } from "./executor.ts";
 import { BotDeathError } from "./death.ts";
-import { loadWaypointsForCriticalPath } from "./waypoints.ts";
+import { classifyNamedEntityDeaths } from "./teardown.ts";
+import {
+  branchWaypointsFileFor,
+  loadWaypointsForBranchPath,
+  loadWaypointsForCriticalPath,
+  type Waypoints,
+} from "./waypoints.ts";
 import {
   actorExercise,
   assistPolicy,
@@ -133,6 +139,7 @@ async function main(): Promise<number> {
   const selection = branchPlan ? selectBranches(branchPlan, tier) : undefined;
   const drivenId = drivenBranchFromEnv();
   let driven: PlannedBranch | undefined;
+  let branchPathFile: string | undefined;
   let text = exported;
   if (drivenId !== undefined) {
     if (branchPlan === undefined || selection === undefined) {
@@ -142,7 +149,7 @@ async function main(): Promise<number> {
       );
     }
     driven = resolveDrivenBranch(branchPlan, selection, drivenId);
-    const branchPathFile = nodePath.join(branchPlan.dir, driven.pathFile!);
+    branchPathFile = nodePath.join(branchPlan.dir, driven.pathFile!);
     text = await readFile(branchPathFile, "utf8");
     process.stderr.write(
       `branch run: ${driven.id} (flags set ${driven.flagsSet.join(",") || "none"}; ` +
@@ -162,28 +169,40 @@ async function main(): Promise<number> {
     process.stderr.write(`scripted branch choice(s): ${entryCommands.join(" ; ")}\n`);
   }
 
-  // task #38: if the compiler's proven waypoint artifact accompanies the critical
-  // path, the executor navigates each walked leg through it (successive nearby
-  // goals) so no single distant A* solve strands the bot on a large open cave.
-  // Absent → single-goal navigation (fallback); malformed → hard failure.
+  // task #38 / #117: if the compiler's proven waypoint artifact accompanies the
+  // path being walked, the executor navigates each walked leg through it
+  // (successive nearby goals) so no single distant A* solve strands the bot on a
+  // large open cave. Malformed → hard failure.
   //
-  // The artifact's legs are consumed in LOCKSTEP with the walked positions of the
-  // EXPORTED path, so they may only be replayed when that is the path being
-  // walked. A branch whose path differs walks without them (single-goal
-  // fallback) — per-branch waypoints are a compiler-side follow-up, and using the
-  // wrong legs would strand the bot while looking like a content fault.
-  const walksExportedPath = text === exported;
-  const exportedWaypoints = await loadWaypointsForCriticalPath(pathArg);
-  const waypoints = walksExportedPath ? exportedWaypoints : undefined;
-  // A branch that lost the artifact says so in the report: navigating a proven
-  // route and navigating without one are different runs, and a reader comparing a
-  // branch's stranding against the exported path's clean walk needs to know which.
-  const waypointFinding =
-    !walksExportedPath && exportedWaypoints !== undefined
-      ? `branch ${driven?.id ?? "?"} walked without the compiler's waypoint artifact: it is ` +
-        `exported for the critical path only, and its legs are position-ordered ` +
-        `(per-branch waypoints are a compiler follow-up)`
-      : undefined;
+  // The artifact's legs are consumed in LOCKSTEP with the walked positions of
+  // the path being walked, so each path gets ITS OWN artifact: the exported path
+  // its `critical-path-waypoints.json`, a driven branch its
+  // `branch-waypoints-<slug>.json` (task #117), whose legs follow that branch's
+  // own step sequence. The critical-path artifact is never replayed on a branch
+  // — its legs are position-ordered for a different sequence, and the wrong legs
+  // would strand the bot while looking like a content fault.
+  let waypoints: Waypoints | undefined;
+  let waypointFinding: string | undefined;
+  if (driven !== undefined && branchPathFile !== undefined) {
+    waypoints = await loadWaypointsForBranchPath(branchPathFile);
+    if (waypoints === undefined) {
+      // The LOUD fallback (never silent): an un-waypointed branch walk is
+      // terrain-flaky where the waypointed one is deterministic — 3 of 4 island
+      // branch runs failed on exactly this — so a run that had to walk without
+      // the artifact says so on stderr AND in the run report.
+      waypointFinding =
+        `branch ${driven.id} is walking WITHOUT a per-branch waypoint artifact ` +
+        `(${branchWaypointsFileFor(branchPathFile)} is absent): single-goal navigation ` +
+        `fallback, which is terrain-flaky on open ground where waypointed navigation is ` +
+        `deterministic (task #117). Rebuild the delve with a delvec that exports ` +
+        `per-branch waypoints; do not trust a strand on this run as a content verdict`;
+      process.stderr.write(`[finding] ${waypointFinding}\n`);
+    }
+  } else {
+    // Absent → single-goal navigation, the pre-task-#38 behavior (a campaign
+    // with no walked leg emits no artifact at all, so absence here is normal).
+    waypoints = await loadWaypointsForCriticalPath(pathArg);
+  }
 
   // compiler #220: the path's rest steps, with their EXPORTED indices. The bot
   // performs them as ordinary steps; the die-retry precondition needs to know they
@@ -252,6 +271,18 @@ async function main(): Promise<number> {
       process.stderr.write(
         `combat plan: NO floor-gate ledger — this build predates it; the run cannot tell you ` +
           `which billed fights the gate covers\n`,
+      );
+    } else if (combatPlan.floorGate.binding?.unbound) {
+      // playtest-methodology.md rule 1: a gate that examined zero objects is a
+      // REPORTED state, printed here so a reader never has to notice an empty
+      // `covered`/`not_covered` pair to learn it — never silently a pass.
+      process.stderr.write(
+        `combat plan: floor gate is UNBOUND (examined 0) — ${combatPlan.floorGate.binding.reason}\n`,
+      );
+    }
+    if (combatPlan.actorsGate?.unbound) {
+      process.stderr.write(
+        `combat plan: actor gate is UNBOUND (examined 0) — ${combatPlan.actorsGate.reason}\n`,
       );
     }
   }
@@ -347,8 +378,14 @@ async function main(): Promise<number> {
         };
       });
       report.recordCombatCoverage(combatPlan.floorGate, actorReports);
+      report.recordActorsGate(combatPlan.actorsGate);
     }
     report.recordRests(executor.performedRests());
+    // Reclassify, never suppress (2026-08-06 island triage): a `despawn-actor
+    // style: vanish` broadcasts the same "<name> died" line a real combat loss
+    // does, and this run has no wired `min_y` to derive an exact depth cutoff
+    // from — see teardown.ts for the fallback heuristic.
+    report.recordNamedEntityDeaths(classifyNamedEntityDeaths(executor.namedEntityDeaths()));
     for (const f of executor.floorGateFindings()) report.recordFloorFinding(f);
     // spec-0025 §3: every enumerated branch appears here — the one this session
     // walked with its result, and each of the others with the reason it did not.

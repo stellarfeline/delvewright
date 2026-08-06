@@ -31,7 +31,15 @@
  * VALIDATION surface — `branch-plan.json`, the chronicles, the per-branch paths —
  * and change no step the bot walks, so a v0.8 path is walked exactly as a v0.6
  * one is. Without them here, the first campaign to declare a branch could not be
- * run at all, branch tier or not.
+ * run at all, branch tier or not. v0.9 (spec-0026) adds the stage-1
+ * horizon-library surface (`horizon` object form, new base/shorthand names) —
+ * world-generation input the compiler consumes to build the map, not a change
+ * to the step contract, so a v0.9 path is walked exactly as a v0.8 one is.
+ *
+ * This allowlist must never trail the compiler's own `SUPPORTED_DSL_VERSION`
+ * ceiling (`crates/dsl/src/envelope.rs`) — `tools/check-harness-dsl-version.py`
+ * enforces that in CI (task #157: a v0.9.0 campaign was refused at this gate,
+ * server booted and bot connected, because this list still ended at 0.8.0).
  */
 export const SUPPORTED_DSL_VERSIONS = [
   "0.2.0",
@@ -41,6 +49,7 @@ export const SUPPORTED_DSL_VERSIONS = [
   "0.6.0",
   "0.7.0",
   "0.8.0",
+  "0.9.0",
 ] as const;
 
 /**
@@ -148,7 +157,10 @@ export interface KillStep extends PresentationMarkers {
   readonly transport?: Transport;
 }
 
-/** Collect `count` of `item` from a chest at `pos` (v0.3). */
+/**
+ * Collect `count` of `item` from a chest at `pos` (v0.3) — or, when
+ * `droppedBy` is set, off the ground the named wave died on (v0.9).
+ */
 export interface CollectStep extends PresentationMarkers {
   readonly action: "collect";
   /** The `obj/<id>` this step must prove complete (format 2). */
@@ -156,6 +168,13 @@ export interface CollectStep extends PresentationMarkers {
   readonly item: string;
   readonly count: number;
   readonly pos: Vec3Tuple;
+  /**
+   * The wave whose declared drop provides the item (v0.9). Present means there
+   * is NO container at `pos`: the compiler places none, because the item only
+   * exists once the fight is over. The bot walks the ground instead of opening
+   * a block that is not there.
+   */
+  readonly droppedBy?: string;
   /** Cross-area teleport destination on completion, if any (gap 8). */
   readonly transport?: Transport;
 }
@@ -495,15 +514,30 @@ function parseStep(value: unknown, pointer: string): Step {
     case "collect": {
       rejectUnknownKeys(
         obj,
-        ["action", "objective", "item", "count", "pos", "transport", "sneak", "cutscene_seconds"],
+        [
+          "action",
+          "objective",
+          "item",
+          "count",
+          "pos",
+          "dropped_by",
+          "transport",
+          "sneak",
+          "cutscene_seconds",
+        ],
         pointer,
       );
+      const droppedBy = obj["dropped_by"];
+      if (droppedBy !== undefined && typeof droppedBy !== "string") {
+        fail(`${pointer}/dropped_by`, `must be a string, got ${describe(droppedBy)}`);
+      }
       return {
         action: "collect",
         objective: requireObjectiveId(obj, pointer),
         item: requireString(obj, "item", pointer),
         count: requireInteger(obj, "count", pointer),
         pos: requirePos(obj, pointer),
+        ...(droppedBy === undefined ? {} : { droppedBy }),
         ...transportFields(obj, pointer),
         ...presentationFields(obj, pointer),
       };

@@ -284,6 +284,12 @@ fn the_combat_plan_is_validation_only_and_names_the_tier() {
     campaign_with(tmp.path(), |quests, _| {
         quests["dsl_version"] = serde_json::json!("0.7.0");
         quests["content"]["waves"][0]["tier"] = serde_json::json!("boss");
+        // `wave/guards` is `souls-bonfire`'s only `respawns_on_rest` wave, and
+        // souls ruling 5/7 (task #160) forbids a `tier: boss` wave from
+        // re-seating on rest (`DW0499`) — a combination this test, about the
+        // combat plan's tier bookkeeping, is not exercising. Clear it so the
+        // mutation stays isolated to the one field under test.
+        quests["content"]["waves"][0]["respawns_on_rest"] = serde_json::json!(false);
     });
     let (out, _) = build(tmp.path()).expect("a tiered wave builds");
     let plan = out
@@ -505,6 +511,117 @@ fn a_staged_but_never_unleashed_puppet_is_scenery_not_a_fight() {
 }
 
 #[test]
+fn an_untiered_hostile_actor_lands_in_not_covered() {
+    // Task #121: the ledger's own blind spot. The campaign unleashes a real-AI
+    // body on the party and declares nothing about it, so before this it
+    // appeared on NEITHER side — and an empty ledger reads as "everything is
+    // covered" when it means "nothing was even assessed".
+    let tmp = TempCampaign::new();
+    let mut untiered = barrow_warden();
+    untiered.as_object_mut().unwrap().remove("tier");
+    let (json, diags, _) = build_with_actor(&tmp, untiered, vec![unleash_trigger()]);
+
+    // It is not a TIERED actor, so it stays out of the trial array…
+    assert!(json["actors"].as_array().unwrap().is_empty(), "{json}");
+    // …and it is not covered, with `tier: null` saying why in one field.
+    let not_covered = &json["floor_gate"]["not_covered"][0];
+    assert_eq!(not_covered["kind"], "actor");
+    assert_eq!(not_covered["id"], "actor/barrow-warden");
+    assert!(not_covered["tier"].is_null(), "{json}");
+    assert!(
+        not_covered["reason"].as_str().unwrap().contains("UNTIERED"),
+        "the reason must name the omission: {json}"
+    );
+    assert!(
+        json["floor_gate"]["covered"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|e| e["id"] != "actor/barrow-warden"),
+        "{json}"
+    );
+    // DW0477 is about a BILLING the gate cannot hold; nothing was billed here,
+    // so the ledger line is the whole record and no warning is raised.
+    assert!(!has_code(&diags, "DW0477"), "{diags:#?}");
+}
+
+#[test]
+fn a_staged_untiered_puppet_is_not_a_hostile() {
+    // Hostility is "unleashed", the same rule the die-retry / assist machinery
+    // uses: a staged puppet is `NoAI` and knockback-immune, so it never attacks
+    // and there is nothing for the gate to have assessed. Scenery must not fill
+    // the ledger, or the ledger stops being readable.
+    let tmp = TempCampaign::new();
+    let mut untiered = barrow_warden();
+    untiered.as_object_mut().unwrap().remove("tier");
+    untiered["vulnerable"] = serde_json::json!(true);
+    let spawn_only = serde_json::json!({
+        "id": "trigger/warden-kneels",
+        "on": { "on": "strike-npc", "npc": "npc/keeper" },
+        "once": true,
+        "effects": [{ "type": "spawn-actor", "actor": "actor/barrow-warden" }]
+    });
+    let (json, _, _) = build_with_actor(&tmp, untiered, vec![spawn_only]);
+    assert!(
+        json["floor_gate"]["not_covered"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "{json}"
+    );
+}
+
+#[test]
+fn an_untiered_hostile_is_reason_enough_to_ship_a_ledger() {
+    // hello-world has no `kill` step and no tiered actor, so it emitted NO
+    // combat plan and the run report said `present: false` — "this build cannot
+    // tell you". Unleash one unbilled body in it and that answer becomes a lie
+    // by omission, so the ledger must ship. (The campaign with no fight at all
+    // still emits nothing — `a_combat_free_campaign_emits_no_combat_plan` — and
+    // that is what keeps `present: false` meaningful.)
+    let tmp = TempCampaign::new();
+    common::materialize_from(
+        &common::hello_world_dir(),
+        &serde_json::json!({}),
+        tmp.path(),
+    );
+    let quests_path = tmp.path().join("quests.json");
+    let mut quests: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&quests_path).unwrap()).unwrap();
+    quests["dsl_version"] = serde_json::json!("0.8.0");
+    quests["content"]["actors"] = serde_json::json!([{
+        "id": "actor/barrow-warden",
+        "entity": "minecraft:wither_skeleton",
+        "anchor": "anchor/exit",
+    }]);
+    quests["content"]["triggers"] = serde_json::json!([{
+        "id": "trigger/warden-answers",
+        "on": { "on": "strike-npc", "npc": "npc/keeper" },
+        "once": true,
+        "effects": [
+            { "type": "spawn-actor", "actor": "actor/barrow-warden" },
+            { "type": "unleash-actor", "actor": "actor/barrow-warden" }
+        ]
+    }]);
+    std::fs::write(&quests_path, serde_json::to_string_pretty(&quests).unwrap()).unwrap();
+
+    let (out, _) = build(tmp.path()).expect("an untiered hostile builds");
+    let json: serde_json::Value = serde_json::from_slice(
+        out.get("validation/combat-plan.json")
+            .expect("an untiered hostile is reason enough to ship the ledger"),
+    )
+    .unwrap();
+    assert_eq!(
+        json["floor_gate"]["not_covered"][0]["id"],
+        "actor/barrow-warden"
+    );
+    assert!(
+        json["floor_gate"]["not_covered"][0]["tier"].is_null(),
+        "{json}"
+    );
+}
+
+#[test]
 fn an_optional_tiered_wave_is_uncovered_too() {
     // The same silence, on the shape that already had a `tier`: `wave/ambush`
     // has no `kill` objective, so billing it `elite` claims something no proof
@@ -566,6 +683,106 @@ fn declaring_an_actor_tier_moves_no_shipped_byte() {
         plan_plain["actors"].as_array().unwrap().is_empty(),
         "{plan_plain}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Binding counts (playtest-methodology.md rule 1): a ledger that examined zero
+// objects must say so, additively, never by leaving `covered`/`not_covered`
+// (or `actors[]`) merely empty.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn an_empty_floor_gate_and_actor_gate_state_their_own_zero() {
+    // The exact defect class rule 1 names: `souls-bonfire`, UNMODIFIED, has a
+    // real mandatory encounter (`wave/guards`, a `kill` step on the critical
+    // path) that nothing bills `elite`/`boss`, and no actor at all — the same
+    // shape `nobodys-cave-island` shipped green for nineteen rounds. Before
+    // this task, `floor_gate` was `{covered: [], not_covered: []}` with no way
+    // to tell "examined and found nothing wrong" from "examined nothing".
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    let (out, _) = build(tmp.path()).expect("the untouched fixture builds");
+    let json: serde_json::Value =
+        serde_json::from_slice(out.get("validation/combat-plan.json").unwrap()).unwrap();
+
+    assert_eq!(json["floor_gate"]["examined"], 0, "{json}");
+    assert_eq!(json["floor_gate"]["unbound"], true, "{json}");
+    assert!(
+        json["floor_gate"]["covered"].as_array().unwrap().is_empty(),
+        "{json}"
+    );
+    assert!(
+        json["floor_gate"]["not_covered"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "{json}"
+    );
+    let floor_reason = json["floor_gate"]["reason"].as_str().expect("{json}");
+    assert!(
+        floor_reason.contains("nothing to hold"),
+        "the reason must say what zero means: {floor_reason}"
+    );
+
+    assert_eq!(json["actors_gate"]["examined"], 0, "{json}");
+    assert_eq!(json["actors_gate"]["unbound"], true, "{json}");
+    let actors_reason = json["actors_gate"]["reason"].as_str().expect("{json}");
+    assert!(
+        actors_reason.contains("floor_gate.not_covered"),
+        "the reason must point a reader at the OTHER ledger untiered hostiles \
+         actually land in: {actors_reason}"
+    );
+}
+
+#[test]
+fn a_covered_floor_gate_states_its_nonzero_binding_and_carries_no_reason() {
+    // The green case, for contrast: an actual `elite` fight the gate covers
+    // reports `examined: 1`, `unbound: false`, and NO `reason` key at all — the
+    // key exists exactly to explain a zero, and its presence on a bound gate
+    // would be the same noise the ledger exists to avoid.
+    let tmp = TempCampaign::new();
+    let (json, _, _) = build_with_actor(&tmp, barrow_warden(), vec![unleash_trigger()]);
+
+    assert_eq!(json["floor_gate"]["examined"], 1, "{json}");
+    assert_eq!(json["floor_gate"]["unbound"], false, "{json}");
+    assert!(json["floor_gate"].get("reason").is_none(), "{json}");
+
+    assert_eq!(json["actors_gate"]["examined"], 1, "{json}");
+    assert_eq!(json["actors_gate"]["unbound"], false, "{json}");
+    assert!(json["actors_gate"].get("reason").is_none(), "{json}");
+}
+
+#[test]
+fn an_all_ordinary_actor_binds_the_actor_gate_but_not_the_floor_gate() {
+    // The two counts are DIFFERENT QUESTIONS, not two spellings of one fact.
+    // `actors[]` holds every actor that declares ANY tier, `ordinary` included;
+    // the floor gate only ever holds `elite`/`boss`. A tier declared
+    // `ordinary` is a statement (spec-0023) — it binds the actor ledger while
+    // leaving the floor gate with nothing to hold.
+    let tmp = TempCampaign::new();
+    let mut ordinary = barrow_warden();
+    ordinary["tier"] = serde_json::json!("ordinary");
+    let (json, diags, _) = build_with_actor(&tmp, ordinary, vec![unleash_trigger()]);
+
+    assert_eq!(json["actors_gate"]["examined"], 1, "{json}");
+    assert_eq!(json["actors_gate"]["unbound"], false, "{json}");
+
+    assert_eq!(json["floor_gate"]["examined"], 0, "{json}");
+    assert_eq!(json["floor_gate"]["unbound"], true, "{json}");
+    assert!(
+        json["floor_gate"]["covered"].as_array().unwrap().is_empty(),
+        "{json}"
+    );
+    assert!(
+        json["floor_gate"]["not_covered"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "{json}"
+    );
+    // An `ordinary`-billed actor is not a `DW0477` finding either — nothing was
+    // billed hard, so there is nothing the floor gate failed to hold.
+    assert!(!has_code(&diags, "DW0477"), "{diags:#?}");
 }
 
 // ---------------------------------------------------------------------------

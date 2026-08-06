@@ -31,6 +31,8 @@ import type {
 } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError, likelyDeathCause } from "./death.ts";
+import { hasSettled } from "./entity-settle.ts";
+import type { NamedEntityDeath } from "./teardown.ts";
 import {
   AssistLedger,
   actorExercise,
@@ -111,6 +113,14 @@ import {
   isSafeFood,
   pickFood,
 } from "./sustain.ts";
+import {
+  INTERACTION_REACH,
+  acquireFromStances,
+  hitboxDims,
+  occlusionFailure,
+  type Hitbox,
+  type Vec3Like,
+} from "./crosshair.ts";
 import {
   WAVE_CLEAR_STREAK,
   WAVE_ENGAGE_NEAR,
@@ -1019,11 +1029,45 @@ const KIT_SETTLE_MS = 3_000;
 /** How far from a rest step's anchor cell its `interaction` affordance may sit. */
 const AFFORDANCE_RADIUS = 3;
 
+/** Vanilla standing-player hitbox, 1.21.11 — the body the stance sweep has to fit
+ * into a cell, and the reason a player can never share a column with an NPC. */
+const PLAYER_HITBOX_WIDTH = 0.6;
+const PLAYER_HITBOX_HEIGHT = 1.8;
+
+/** Vanilla standing eye height, 1.21.11: where the entity-pick ray starts. */
+const PLAYER_EYE_HEIGHT = 1.62;
+
+/** Slack beyond interaction reach when collecting bodies that might occlude a
+ * target: a wide body whose CENTRE is past reach can still put a shoulder in the
+ * ray, so the search is generous and the ray does the deciding. */
+const CROSSHAIR_SEARCH_MARGIN = 5;
+
+/** The walk-goal radius of each interaction step — and therefore the set of
+ * standing cells the crosshair sweep is entitled to try. One constant per step so
+ * the goal the bot walks to and the stances it is judged over can never drift. */
+const TALK_RANGE = 3;
+const INTERACT_RANGE = 3;
+const REST_RANGE = 2;
+
 /** Grace between the bonfire click and the trigger command: the opener runs as an
  * advancement reward, so `dw.rest` is enabled a tick or two after the click. */
 const REST_OPEN_SETTLE_MS = 500;
 /** Recent chat lines retained for death-cause diagnosis. */
 const CHAT_BUFFER = 16;
+/**
+ * How often (ms) {@link MineflayerExecutor.awaitEntitySettle} polls the non-player
+ * entity count while waiting for the tracker to stop changing shape after spawn.
+ */
+const ENTITY_SETTLE_POLL_MS = 200;
+/**
+ * Hard ceiling (ms) on the post-spawn entity-settle wait (2026-08-06 island
+ * triage). World-persisted entities were observed populating by t+4s; this
+ * leaves comfortable margin without letting a build that never spawns anything
+ * near the bot hang the run — the wait always gives up and proceeds, and the
+ * existing "not tracked" crosshair warning stays honest about whatever state the
+ * tracker is actually in when a step reads it.
+ */
+const ENTITY_SETTLE_TIMEOUT_MS = 8_000;
 /**
  * Self-defense (souls ladder, the-drowned-bell): how long (ms) the bot may spend
  * killing a stalker that interrupted a NAVIGATION leg before it gives up, reports, and
@@ -1143,6 +1187,10 @@ export class MineflayerExecutor implements StepExecutor {
   private lastForcedPos: { x: number; y: number; z: number } | undefined;
   /** Grace (ms) added onto a cutscene's declared length before giving up. */
   private readonly cutsceneGraceMs: number;
+  /** Hard ceiling (ms) on the post-spawn entity-settle wait. Overridable
+   * (`DELVEWRIGHT_ENTITY_SETTLE_TIMEOUT_MS`) so a test can shorten the give-up
+   * path without waiting out the production default. */
+  private readonly entitySettleTimeoutMs: number;
   /**
    * task #38: the compiler's proven per-leg critical-path waypoints (keyed by
    * destination anchor). When a walked step's target has a leg here, `walkTo`
@@ -1196,6 +1244,12 @@ export class MineflayerExecutor implements StepExecutor {
   private readonly encounterPhases = new Map<string, EncounterPhase>();
   /** Inverted floor gate findings: billed fights the unassisted bot beat cold. */
   private readonly floorFindings: string[] = [];
+  /** Every NAMED entity death this run observed (`entityDead` on a body carrying a
+   * custom name — an actor). Raw and unclassified; the entrypoint classifies each
+   * against {@link classifyDeathDepth} (see teardown.ts) before it reaches the run
+   * report — the 2026-08-06 island triage found that a scripted `despawn-actor`
+   * vanish broadcasts the same "<name> died" line a real combat loss does. */
+  private readonly namedEntityDeathLog: NamedEntityDeath[] = [];
   /** Actor fights this run attempted (#114) — one entry per engagement, won or lost. */
   private readonly actorTrials: ActorTrial[] = [];
   /** Actors already engaged, so an objective marker re-broadcast cannot re-fight one. */
@@ -1250,6 +1304,10 @@ export class MineflayerExecutor implements StepExecutor {
     const raw = env["DELVEWRIGHT_CUTSCENE_GRACE_MS"];
     const parsed = raw === undefined ? NaN : Number.parseInt(raw, 10);
     this.cutsceneGraceMs = Number.isInteger(parsed) && parsed >= 0 ? parsed : 10_000;
+    const settleRaw = env["DELVEWRIGHT_ENTITY_SETTLE_TIMEOUT_MS"];
+    const settleParsed = settleRaw === undefined ? NaN : Number.parseInt(settleRaw, 10);
+    this.entitySettleTimeoutMs =
+      Number.isInteger(settleParsed) && settleParsed >= 0 ? settleParsed : ENTITY_SETTLE_TIMEOUT_MS;
   }
 
   /**
@@ -1303,6 +1361,13 @@ export class MineflayerExecutor implements StepExecutor {
       bot.once("end", onEnd);
       bot.once("kicked", onKicked);
     });
+    // Entity-tracker settle race (2026-08-06 island triage): `bot.entities` is empty
+    // for a few seconds after spawn while world-persisted entities' packets are still
+    // arriving. Waiting here, once, before the run does anything with `bot.entities`
+    // (the crosshair sweep foremost) is cheaper and more honest than teaching every
+    // caller of `hitboxesNear` to guess whether an empty read means "nothing there"
+    // or "not yet told" — see entity-settle.ts.
+    await this.awaitEntitySettle();
   }
 
   private requireBot(): Bot {
@@ -1334,6 +1399,13 @@ export class MineflayerExecutor implements StepExecutor {
       }
     });
     bot.on("death", () => this.onDeath());
+    // Scripted-teardown death classification (2026-08-06 island triage): `entityDead`
+    // fires on the LivingEntity death status packet, while the entity's last known
+    // position is still readable — unlike `entityGone`, which also fires for an
+    // ordinary despawn (out of render distance, dimension change) and says nothing
+    // about a death. Only named bodies are actors the compiler ever tears down or a
+    // story fight ever names; an unnamed mob's death is not this run report's concern.
+    bot.on("entityDead", (entity: Entity) => this.onNamedEntityDeath(entity));
     // Counted from connect, so a respawn is never missed by a listener armed too
     // late (see recoverFromDeath).
     bot.on("spawn", () => {
@@ -1949,6 +2021,26 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
+   * Record a named entity's death (raw — not yet classified scripted-teardown vs
+   * combat; see teardown.ts). Every other body dying near the bot every fight is
+   * silent about here on purpose: only a NAMED body is an actor the compiler's
+   * `despawn-actor` can tear down or a tiered fight can lose, and the island's
+   * report-legibility gap was specifically about those.
+   */
+  private onNamedEntityDeath(entity: Entity | undefined): void {
+    if (!entity || entity.id === this.bot?.entity?.id) return; // the bot's own death is onDeath's
+    const label = displayNameOf(entity);
+    if (label === undefined || label === "") return;
+    const p = entity.position;
+    if (!p) return;
+    this.namedEntityDeathLog.push({
+      name: label,
+      entityId: entity.id,
+      position: [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)],
+    });
+  }
+
+  /**
    * Race `op` against the bot dying: resolves/rejects with `op`, but rejects with the
    * {@link BotDeathError} the instant a death is observed (the underlying op keeps
    * running but the pathfinder is already stopped in {@link onDeath}). Used to abort
@@ -2087,10 +2179,16 @@ export class MineflayerExecutor implements StepExecutor {
     // trigger is sent HOWEVER the walk ended — arriving is the means, the trigger is
     // the step — and `chatTrigger` records the server's answer so a step that then
     // times out can name which side swallowed it (task #144).
-    await this.walkTo(step.pos, 3, `npc ${step.npc}`, step.sneak, {
+    await this.walkTo(step.pos, TALK_RANGE, `npc ${step.npc}`, step.sneak, {
       objective: step.objective,
       transport: step.transport,
     });
+    // The trigger stands in for a dialog button this bot cannot click — so before
+    // it is sent, prove the button was REACHABLE: cast the crosshair ray a player
+    // casts and require this NPC's own hitbox to be what it meets first. Without
+    // this, a second body on the NPC's cell is invisible to the machine and fatal
+    // to the player (owner island QA, terminal finding).
+    this.requireCrosshair(step.pos, `talk-to ${step.npc}`, TALK_RANGE);
     this.chatTrigger(step.command);
     // A dialogue that OPENED proves nothing: the option must actually complete the
     // objective this step stands for. Wait for that objective's own marker.
@@ -2936,6 +3034,12 @@ export class MineflayerExecutor implements StepExecutor {
     return this.floorFindings;
   }
 
+  /** Every named-entity death this run observed, raw and unclassified — the
+   * entrypoint classifies each scripted-teardown-vs-combat for the run report. */
+  namedEntityDeaths(): readonly NamedEntityDeath[] {
+    return this.namedEntityDeathLog;
+  }
+
   /** The plan's entry for `wave`, if the campaign declares one. */
   private encounterFor(wave: string): Encounter | undefined {
     return this.combatPlan?.encounters.find((e) => e.wave === wave);
@@ -3579,13 +3683,18 @@ export class MineflayerExecutor implements StepExecutor {
    *     build — the kit survives the death — and class state lives in scoreboard
    *     values and player tags, which survive it too;
    *   * destructive, because `class_apply_<class>` ends in
-   *     `teleport @s <campaign entry point>` and the `dw.class` trigger is
-   *     re-enabled for every player on every tick. Chatting it again therefore
+   *     `teleport @s <campaign entry point>` and the `dw.class` trigger was, at the
+   *     time, re-enabled for every player on every tick. Chatting it again therefore
    *     teleported the bot off the checkpoint it had just respawned on, back to the
    *     start of the delve — 150 blocks and eight levels away on the bell — and the
    *     "walk back to the encounter" leg then measured a route no dying player ever
    *     walks. Every trial recorded a truthful `respawn_pos` at the bonfire and then
    *     immediately made it a lie.
+   *
+   * The compiler now seals that warp shut (#122): the class trigger is armed only
+   * for a player who has not classed, so a replay would fail rather than teleport.
+   * The rule here is unchanged and does not lean on it — a harness that re-classes
+   * is stating something false about the run whether or not the pack lets it.
    *
    * So: measure the position, then re-equip what the player kept. Nothing here may
    * move the bot — the respawn point IS the thing under test.
@@ -3665,9 +3774,15 @@ export class MineflayerExecutor implements StepExecutor {
    */
   async rest(step: RestStep): Promise<void> {
     const bot = this.requireBot();
-    await this.walkTo(step.pos, 2, `bonfire ${step.anchor}`, step.sneak);
-    const fire = this.affordanceAt(step.pos);
-    if (!fire) {
+    await this.walkTo(step.pos, REST_RANGE, `bonfire ${step.anchor}`, step.sneak);
+    // The one step in the tree with a REAL right-click, so acquisition and
+    // actuation are the same act here: the ray picks the fire, the bot looks
+    // where the ray went, and only then does it click. Selecting the nearest
+    // affordance to a coordinate — what this used to do — cannot tell a fire from
+    // whatever is standing in front of it.
+    const acquired = this.requireCrosshair(step.pos, `bonfire ${step.anchor}`, REST_RANGE);
+    const fire = acquired ? bot.entities[acquired.target.id] : undefined;
+    if (!acquired || !fire) {
       throw new Error(
         `no \`interaction\` affordance within ${AFFORDANCE_RADIUS} blocks of bonfire ` +
           `${step.bonfire} at [${step.pos.join(", ")}] — the bot is standing at the fire ` +
@@ -3679,6 +3794,11 @@ export class MineflayerExecutor implements StepExecutor {
       `[rest] bonfire ${step.bonfire} (${step.anchor}): right-clicking the affordance, ` +
         `then \`${step.command}\`\n`,
     );
+    const here = bot.entity.position;
+    await bot.lookAt(
+      here.offset(acquired.aim.x - here.x, acquired.aim.y - here.y, acquired.aim.z - here.z),
+      true,
+    );
     await bot.activateEntity(fire);
     // The opener runs through an advancement reward, so the trigger is enabled a
     // tick or two after the click lands — chatting inside the same tick would be
@@ -3687,6 +3807,171 @@ export class MineflayerExecutor implements StepExecutor {
     bot.chat(step.command);
     await delay(EFFECT_SETTLE_MS);
     this.restedBonfires.add(step.bonfire);
+  }
+
+  /**
+   * Every ray-pickable body the client currently tracks near `pos`, as crosshair
+   * geometry. Anything with a hitbox counts — a body occludes whether or not it
+   * is itself clickable, which is the whole reason the owner's two crew NPCs
+   * blocked each other.
+   */
+  private hitboxesNear(pos: Vec3Tuple, radius: number): Hitbox[] {
+    const bot = this.requireBot();
+    const out: Hitbox[] = [];
+    for (const e of Object.values(bot.entities)) {
+      if (!e?.position || e.id === bot.entity?.id) continue;
+      const dims = hitboxDims(e.name ?? "", e.width, e.height);
+      if (!dims) continue;
+      const d = Math.sqrt(
+        (e.position.x - (pos[0] + 0.5)) ** 2 +
+          (e.position.y - pos[1]) ** 2 +
+          (e.position.z - (pos[2] + 0.5)) ** 2,
+      );
+      if (d > radius) continue;
+      out.push({
+        id: e.id,
+        name: e.name ?? "unknown",
+        label: displayNameOf(e),
+        position: { x: e.position.x, y: e.position.y, z: e.position.z },
+        width: dims.width,
+        height: dims.height,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * The body a step means to click at `pos`: the `minecraft:interaction` box the
+   * compiler summoned there.
+   *
+   * Every clickable thing in a delve is one of those — an NPC's dialogue hitbox
+   * as much as an objective's affordance — so this is the single acquisition rule
+   * for all three interaction steps. Selection is still by proximity to the
+   * scripted cell (a client cannot read the entity tag the compiler uses), but
+   * proximity now only proposes the target; the RAY decides whether it is
+   * reachable.
+   */
+  private interactionTargetAt(pos: Vec3Tuple, candidates: readonly Hitbox[]): Hitbox | undefined {
+    let best: Hitbox | undefined;
+    let bestDist = AFFORDANCE_RADIUS;
+    for (const c of candidates) {
+      if (c.name !== "interaction") continue;
+      const d = Math.sqrt(
+        (c.position.x - (pos[0] + 0.5)) ** 2 +
+          (c.position.y - pos[1]) ** 2 +
+          (c.position.z - (pos[2] + 0.5)) ** 2,
+      );
+      if (d <= bestDist) {
+        best = c;
+        bestDist = d;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Whether a player could stand with their feet in `cell`: solid support below,
+   * two cells of clear air, and no entity body already occupying the column.
+   *
+   * Block-shape based (`boundingBox`), like {@link gateOpen}, so it stays correct
+   * for whatever the campaign built with. A cell whose chunk is not loaded reads
+   * as NOT standable — the conservative direction here, since inventing a stance
+   * would let a real occlusion pass.
+   */
+  private stanceStandable(cell: Vec3Tuple, bodies: readonly Hitbox[]): boolean {
+    const bot = this.requireBot();
+    const p = bot.entity.position;
+    const at = (dy: number) =>
+      bot.blockAt(p.offset(cell[0] - p.x, cell[1] + dy - p.y, cell[2] - p.z));
+    const support = at(-1);
+    const feet = at(0);
+    const head = at(1);
+    if (!support || !feet || !head) return false;
+    if (support.boundingBox === "empty") return false;
+    if (feet.boundingBox !== "empty" || head.boundingBox !== "empty") return false;
+    // A player is 0.6 wide and cannot share a column with another body.
+    const cx = cell[0] + 0.5;
+    const cz = cell[2] + 0.5;
+    return !bodies.some((b) => {
+      const half = (b.width + PLAYER_HITBOX_WIDTH) / 2;
+      return (
+        Math.abs(b.position.x - cx) < half &&
+        Math.abs(b.position.z - cz) < half &&
+        b.position.y < cell[1] + PLAYER_HITBOX_HEIGHT &&
+        cell[1] < b.position.y + b.height
+      );
+    });
+  }
+
+  /**
+   * Every eye position this step allows, arrival stance first.
+   *
+   * The step's walk goal is `GoalNear(pos, range)`, so any standable cell inside
+   * that disc is a place the player may legally be standing when they click —
+   * which is why a failure here means "unclickable from ANYWHERE the step
+   * permits", not "unclickable from where the bot happened to stop".
+   */
+  private stancesAround(pos: Vec3Tuple, range: number, bodies: readonly Hitbox[]): Vec3Like[] {
+    const bot = this.requireBot();
+    const eye = bot.entity.position;
+    const out: Vec3Like[] = [{ x: eye.x, y: eye.y + PLAYER_EYE_HEIGHT, z: eye.z }];
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -range; dx <= range; dx += 1) {
+        for (let dz = -range; dz <= range; dz += 1) {
+          const cell: Vec3Tuple = [pos[0] + dx, pos[1] + dy, pos[2] + dz];
+          if (!this.stanceStandable(cell, bodies)) continue;
+          out.push({
+            x: cell[0] + 0.5,
+            y: cell[1] + PLAYER_EYE_HEIGHT,
+            z: cell[2] + 0.5,
+          });
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Prove a player could put the crosshair on this step's target before the step
+   * acts on it — the assertion the island's terminal finding needed.
+   *
+   * Throws, naming both bodies, when the target is unpickable from every stance
+   * the step allows. Returns the acquired target (and the aim point) when it is
+   * reachable, so a caller with a real click to make can look at it first.
+   *
+   * When no `interaction` body is tracked at `pos` at all, this reports a finding
+   * and returns `undefined` rather than failing: absence is "the client has not
+   * been told", not "the player cannot click", and inventing a verdict from
+   * missing data is the failure mode this whole change exists to end.
+   */
+  private requireCrosshair(
+    pos: Vec3Tuple,
+    what: string,
+    range: number,
+  ): { target: Hitbox; aim: Vec3Like } | undefined {
+    const bodies = this.hitboxesNear(pos, INTERACTION_REACH + CROSSHAIR_SEARCH_MARGIN);
+    const target = this.interactionTargetAt(pos, bodies);
+    if (!target) {
+      process.stderr.write(
+        `[crosshair] ${what}: no \`interaction\` body tracked within ${AFFORDANCE_RADIUS} ` +
+          `blocks of [${pos.join(", ")}] — acquisition unproven for this step\n`,
+      );
+      return undefined;
+    }
+    const others = bodies.filter((b) => b.id !== target.id);
+    const stances = this.stancesAround(pos, range, bodies);
+    const verdict = acquireFromStances(stances, target, others);
+    if (!verdict.ok) {
+      throw new Error(occlusionFailure(what, target, verdict.blockers, verdict.triedStances));
+    }
+    if (verdict.clearStances < verdict.triedStances) {
+      process.stderr.write(
+        `[crosshair] ${what}: acquired from ${verdict.clearStances} of ` +
+          `${verdict.triedStances} allowed stances — the target is clickable, but not from ` +
+          `every place the party may be standing\n`,
+      );
+    }
+    return { target, aim: verdict.aim };
   }
 
   /** The nearest `minecraft:interaction` affordance to `pos`, if one is tracked. */
@@ -3741,9 +4026,24 @@ export class MineflayerExecutor implements StepExecutor {
     return this.preconditionWaves;
   }
 
-  /** Collect items from the chest at the anchor: go there, open it, withdraw all. */
+  /**
+   * Collect items from the chest at the anchor: go there, open it, withdraw all.
+   *
+   * A **drop-gated** collect (v0.9 `dropped_by`) has no chest to open — the
+   * compiler places none, because the item exists only after the fight. The bot
+   * walks the ground the wave died on and lets vanilla pickup do the rest; the
+   * proof is the same one every collect uses, the objective's own marker.
+   */
   async collect(step: CollectStep): Promise<void> {
     const bot = this.requireBot();
+    if (step.droppedBy !== undefined) {
+      await this.walkTo(step.pos, 1, `drop of ${step.item}`, step.sneak, {
+        objective: step.objective,
+        transport: step.transport,
+      });
+      await this.requireObjective(step.objective, `collect ${step.item}`);
+      return;
+    }
     await this.walkTo(step.pos, 2, `chest ${step.item}`, step.sneak, {
       objective: step.objective,
       transport: step.transport,
@@ -3782,10 +4082,13 @@ export class MineflayerExecutor implements StepExecutor {
    */
   async interact(step: InteractStep): Promise<void> {
     const bot = this.requireBot();
-    await this.walkTo(step.pos, 3, `interact ${step.anchor}`, step.sneak, {
+    await this.walkTo(step.pos, INTERACT_RANGE, `interact ${step.anchor}`, step.sneak, {
       objective: step.objective,
       transport: step.transport,
     });
+    // Same proof as `talkTo`: the affordance the party has to right-click must be
+    // what a crosshair actually reaches, not merely what is nearest the cell.
+    this.requireCrosshair(step.pos, `interact ${step.anchor}`, INTERACT_RANGE);
     this.armTrigger(step.command);
     await presentAndTrigger<Item>(bot, step, step.anchor);
     await this.requireObjective(step.objective, `interact ${step.anchor}`);
@@ -3864,6 +4167,45 @@ export class MineflayerExecutor implements StepExecutor {
       if (predicate()) return true;
       if (Date.now() >= deadline) return false;
       await delay(pollMs);
+    }
+  }
+
+  /**
+   * Wait once, at spawn, for `bot.entities` to stop changing shape before anything
+   * reads it (2026-08-06 island triage — see entity-settle.ts). Polls the
+   * non-player entity count until it has held steady for
+   * {@link hasSettled}'s stability window, or gives up after
+   * {@link entitySettleTimeoutMs} and proceeds regardless — a build that
+   * legitimately spawns nothing near the bot must not hang the run behind this
+   * wait, and every caller downstream (`requireCrosshair` foremost) already
+   * reports an empty tracker honestly rather than inventing a verdict from it.
+   */
+  async awaitEntitySettle(): Promise<void> {
+    const bot = this.requireBot();
+    const history: number[] = [];
+    const settled = await this.waitFor(
+      () => {
+        const count = Object.values(bot.entities).filter(
+          (e) => e && e.id !== bot.entity?.id && e.type !== "player",
+        ).length;
+        history.push(count);
+        return hasSettled(history);
+      },
+      this.entitySettleTimeoutMs,
+      ENTITY_SETTLE_POLL_MS,
+    );
+    const last = history[history.length - 1] ?? 0;
+    if (settled) {
+      process.stderr.write(
+        `[entity-settle] tracker settled at ${last} non-player entit${last === 1 ? "y" : "ies"} ` +
+          `after ${history.length} poll(s)\n`,
+      );
+    } else {
+      process.stderr.write(
+        `[entity-settle] gave up after ${this.entitySettleTimeoutMs}ms waiting for the entity ` +
+          `tracker to stop changing shape (last count: ${last}) — proceeding; a step that finds ` +
+          `nothing tracked still reports that honestly rather than failing on it\n`,
+      );
     }
   }
 

@@ -206,8 +206,11 @@ pub fn build(g: &mut Grid, seed: u64) {
             }
         }
     }
-    // driftwood spars above the tide line (two fixed, deterministic)
-    for (dx, dz) in [(11, 30), (34, 30)] {
+    // driftwood spars above the tide line (two fixed, deterministic). The west
+    // spar sits between the landing and the fire; it was moved off x=11 when BF1
+    // moved west (below), because a spar log on the rest cell is a spar log the
+    // anchor cannot stand on.
+    for (dx, dz) in [(15, 30), (34, 30)] {
         for k in 0..3 {
             g.blk(
                 dx + k,
@@ -219,24 +222,39 @@ pub fn build(g: &mut Grid, seed: u64) {
         }
     }
 
-    // 4. BF1 "Barrow Fire": a lit campfire in a stone ring, its rest cell east of
-    //    the flame so the anchor stays standable (`DW0316`).
-    for (fx, fz) in [(17, 28), (17, 29), (17, 30), (18, 28), (18, 30), (19, 28)] {
+    // 4. BF1 "Barrow Fire": a lit campfire in a stone ring, its rest cell SOUTH
+    //    of the flame so the anchor stays standable (`DW0316`) and the party
+    //    rests with the field — and the kneeling elite — in front of them.
+    //
+    //    Placement is a `DW0478` constraint, not taste (owner ruling 2026-08-04,
+    //    task #132): a bonfire may not stand inside any hostile's aggro range,
+    //    and the Barrow Warden kneels at `anchor/l0-elite-dormant` (23,_,16) with
+    //    the default 16-block `follow_range`. The fire's first home at (19,_,29)
+    //    was 13.6 blocks out — inside its sight. It now sits far down the western
+    //    strand at (10,_,31) with its rest cell at (10,_,30+1), 19.8 blocks from
+    //    the kneel: still on the landing beach, still visible from spawn across
+    //    open sand, still the first thing the shore offers — and out of the
+    //    warden's reach with margin. It cannot go straight south instead: the
+    //    tide bounds the piece at z=33, so the whole shore is at most 17 blocks
+    //    from the kneel on the centre line, and clearing 16 needs the lateral
+    //    run. Every cell here is off all three proved routes (the centre desire
+    //    line at x=24, both flank lanes at x=7/x=40 and the z=32 traverse).
+    for (fx, fz) in [(11, 29), (10, 29), (9, 29), (11, 30), (9, 30), (11, 31)] {
         g.blk(fx, SHORE_WALK, fz, "minecraft:cobblestone", None);
     }
     g.blk(
-        18,
+        10,
         SHORE_WALK,
-        29,
+        30,
         "minecraft:campfire",
-        Some(vec![("lit", "true"), ("facing", "north")]),
+        Some(vec![("lit", "true"), ("facing", "south")]),
     );
     g.blk(
-        16,
+        10,
         SHORE_WALK,
-        29,
+        28,
         "minecraft:oak_log",
-        Some(vec![("axis", "z")]),
+        Some(vec![("axis", "x")]),
     );
 
     // 5. The elite's dressing: a leaning banner pole beside the barrow it sleeps
@@ -289,7 +307,8 @@ pub fn anchors() -> Vec<(&'static str, AnchorJson)> {
     let y = SHORE_WALK;
     vec![
         ("spawn", a_pos([LINE_X, y, 31], "north")),
-        ("anchor/l0-bonfire", a_pos([19, y, 29], "west")),
+        // 19.8 blocks from `anchor/l0-elite-dormant` — the `DW0478` clearance.
+        ("anchor/l0-bonfire", a_pos([10, y, 31], "north")),
         ("anchor/l0-tide-line", a_pos([LINE_X, y, 33], "south")),
         ("anchor/l0-elite-stand", a_pos([LINE_X, y, 18], "south")),
         ("anchor/l0-elite-dormant", a_pos([23, y, 16], "south")),

@@ -29,12 +29,16 @@
 //! | `quest.<quest>.goal` | each stage-4 planned-quest `goal` |
 //! | `obj.<quest>.<obj>.title` / `.hint` | a stage-5 objective's `title`/`hint` (only if set) |
 //! | `obj.<quest>.<obj>.missing_item_hint` | a stage-5 `interact`'s `missing_item_hint` (v0.7, only if set) |
+//! | `obj.<quest>.<obj>.item_name` | a stage-5 `collect`'s `item_name` (v0.8, only if set) |
 //! | `dlg.<npc>.<node>.text` | each stage-6 dialogue node `text` |
 //! | `dlg.<npc>.<node>.opt.<i>.label` | each dialogue option `label` |
 //! | `dlg.<npc>.<node>.opt.<i>.tooltip` | that option's hover `tooltip` (v0.8, only if set) |
 //! | `wave.<wave>.mob.<i>.name` | a wave mob's custom `name` (only if set) |
+//! | `wave.<wave>.mob.<i>.drop.<n>.name` | a declared quest-item drop's display `name` (v0.9, only if set) |
+//! | `actor.<actor>.drop.<n>.name` | an actor's declared quest-item drop `name` (v0.9, only if set) |
 //! | `fx.…​.narrate` / `fx.…​.give` | a `narrate` line / named `give-item` in an effect list |
 //! | `fx.…​.rest_prompt` / `.rest_label` / `.save_label` | a `bonfire`'s authored rest-dialog strings (v0.8, only if set) |
+//! | `fx.…​.sealed_hint` | a `close-gate`'s authored answer to a right-click on the seal (v0.8, only if set) |
 //!
 //! ## Nested effects (DSL v0.6)
 //!
@@ -91,6 +95,14 @@ fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, 
                 f(&format!("{keybase}.save_label"), s);
             }
         }
+        // DSL v0.8: what a sealed gate answers when the party right-clicks it. Read
+        // off the actionbar exactly like a `narrate`, so it translates like one. An
+        // unauthored hint is absent from the inventory — the compiler bakes its
+        // canonical English, exactly as `world.boundary.message` does.
+        QuestEffect::CloseGate {
+            sealed_hint: Some(h),
+            ..
+        } => f(&format!("{keybase}.sealed_hint"), h),
         _ => {}
     }
 }
@@ -271,18 +283,17 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             {
                 f(&format!("obj.{ql}.{ol}.missing_item_hint"), m);
             }
-        }
-        // Stage 5 — v0.4 effect strings: `narrate` text + named `give-item`
-        // (deterministic: `on_objective_complete` is a BTreeMap). Empty for
-        // v0.2/v0.3 campaigns → inventory unchanged.
-        for (oid, effs) in &mut q.on_objective_complete {
-            let ol = local(oid.as_str()).to_string();
-            for (i, eff) in effs.iter_mut().enumerate() {
-                effect_strings_deep(eff, &format!("fx.{ql}.oc.{ol}.{i}"), f);
+            // Stage 5 — v0.8 `collect.item_name` (task #95): the display name the
+            // collected item carries as a `custom_name` component. A player reads
+            // it off the stack in the barrel and off their own hotbar, so it is as
+            // player-visible as a `title` and translates like one. Absent on every
+            // pre-0.8 objective → inventory unchanged.
+            if let crate::stages::Objective::Collect {
+                item_name: Some(n), ..
+            } = o
+            {
+                f(&format!("obj.{ql}.{ol}.item_name"), n);
             }
-        }
-        for (i, eff) in q.on_complete.iter_mut().enumerate() {
-            effect_strings_deep(eff, &format!("fx.{ql}.done.{i}"), f);
         }
         // Stage 5 — v0.7 cast-ledger bark lines (spec-0020). Barks are spoken
         // in-game exactly like narrate text, so they translate like it too.
@@ -299,13 +310,6 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
                     f(&format!("cast.{ql}.{np}.{b}.bark.{i}"), line);
                 }
             }
-        }
-    }
-    // Stage 5 — v0.4 environment-trigger effect strings.
-    for t in &mut c.quests.content.triggers {
-        let tl = local(t.id.as_str()).to_string();
-        for (i, eff) in t.effects.iter_mut().enumerate() {
-            effect_strings_deep(eff, &format!("fx.trig.{tl}.{i}"), f);
         }
     }
     // Stage 6 — dialogue node text + option labels.
@@ -333,6 +337,25 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             if let Some(name) = mob.name.as_mut() {
                 f(&format!("wave.{wl}.mob.{i}.name"), name);
             }
+            // Stage 5 — v0.9 declared quest-item drops (task #179). The name
+            // rides the dropped stack's `custom_name`, so the player reads it off
+            // the ground and off their own hotbar: as player-visible as a wave
+            // mob's own name, and translated like one.
+            for (n, dr) in mob.drops.iter_mut().enumerate() {
+                if let Some(name) = dr.name_mut() {
+                    f(&format!("wave.{wl}.mob.{i}.drop.{n}.name"), name);
+                }
+            }
+        }
+    }
+    // Stage 5 — v0.9 actor drops (task #179), keyed off the actor id exactly as
+    // a wave mob's drop is keyed off its wave.
+    for a in &mut c.quests.content.actors {
+        let al = local(a.id.as_str()).to_string();
+        for (n, dr) in a.drops.iter_mut().enumerate() {
+            if let Some(name) = dr.name_mut() {
+                f(&format!("actor.{al}.drop.{n}.name"), name);
+            }
         }
     }
     // Stage 5 — loot item custom names (spec-0021), keyed like a class kit
@@ -344,6 +367,14 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
                 f(&format!("loot.{ll}.item.{i}.name"), name);
             }
         }
+    }
+    // v0.4 effect strings — `narrate` text, a named `give-item`, a bonfire's rest
+    // dialog, a seal's answer — over **every** root emission can lower an effect
+    // from, not just the quests stage's three ([`effect_roots_mut`], task #168).
+    // Nesting inside each root is descended by `effect_strings_deep`, so a narrate
+    // in a `sequence` step of a trap payload is inventoried like any other.
+    for (_stage, _path, keybase, eff) in effect_roots_mut(c) {
+        effect_strings_deep(eff, &keybase, f);
     }
 }
 
@@ -384,7 +415,9 @@ pub fn key_speaker(key: &str) -> Option<&str> {
 /// diagnostics), its l10n inventory key, and the canonical English text.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArtNarrate {
-    /// JSON-pointer-ish path within the `quests` stage doc.
+    /// The stage document the string was authored in (`quests` / `dialogue`).
+    pub stage: &'static str,
+    /// JSON-pointer-ish path within that stage doc.
     pub path: String,
     /// The l10n inventory key (`fx.…​.narrate`) — always present, since every
     /// `narrate` lives in an inventoried effect position.
@@ -402,9 +435,10 @@ pub struct ArtNarrate {
 /// a fully-covered sidecar.
 pub fn art_narrates(c: &Campaign) -> Vec<ArtNarrate> {
     let mut out = Vec::new();
-    each_effect_ref(c, &mut |path, keybase, eff| {
+    each_effect_ref(c, &mut |stage, path, keybase, eff| {
         if let Some(text) = eff.narrate_art_text() {
             out.push(ArtNarrate {
+                stage,
                 path: format!("{path}/text"),
                 key: format!("{keybase}.narrate"),
                 text: text.to_string(),
@@ -418,7 +452,9 @@ pub fn art_narrates(c: &Campaign) -> Vec<ArtNarrate> {
 /// path, its l10n inventory key, its style, and the canonical English text.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScreenNarrate {
-    /// JSON-pointer-ish path within the `quests` stage doc.
+    /// The stage document the string was authored in (`quests` / `dialogue`).
+    pub stage: &'static str,
+    /// JSON-pointer-ish path within that stage doc.
     pub path: String,
     /// The l10n inventory key (`fx.…​.narrate`).
     pub key: String,
@@ -436,9 +472,10 @@ pub struct ScreenNarrate {
 /// excluded: chat wraps and scrolls, so it has no width budget.
 pub fn on_screen_narrates(c: &Campaign) -> Vec<ScreenNarrate> {
     let mut out = Vec::new();
-    each_effect_ref(c, &mut |path, keybase, eff| {
+    each_effect_ref(c, &mut |stage, path, keybase, eff| {
         if let Some((style, text)) = eff.narrate_on_screen() {
             out.push(ScreenNarrate {
+                stage,
                 path: format!("{path}/text"),
                 key: format!("{keybase}.narrate"),
                 style,
@@ -454,7 +491,10 @@ pub fn on_screen_narrates(c: &Campaign) -> Vec<ScreenNarrate> {
 /// English text.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OptionLabel {
-    /// JSON-pointer-ish path within the `dialogue` stage doc.
+    /// The stage document the string was authored in (`dialogue` for a real
+    /// dialogue option; a bonfire's labels carry the stage they were authored in).
+    pub stage: &'static str,
+    /// JSON-pointer-ish path within that stage doc.
     pub path: String,
     /// The l10n inventory key (`dlg.<npc>.<node>.opt.<i>.label`).
     pub key: String,
@@ -480,6 +520,7 @@ pub fn dialogue_option_labels(c: &Campaign) -> Vec<OptionLabel> {
             let nd = local(node.id.as_str());
             for (oi, opt) in node.options.iter().enumerate() {
                 out.push(OptionLabel {
+                    stage: "dialogue",
                     path: format!("/content/dialogues/{ti}/nodes/{ni}/options/{oi}/label"),
                     key: format!("dlg.{np}.{nd}.opt.{oi}.label"),
                     text: opt.label.clone(),
@@ -501,7 +542,7 @@ pub fn dialogue_option_labels(c: &Campaign) -> Vec<OptionLabel> {
 /// test rather than re-measured per campaign, since it cannot vary.
 pub fn bonfire_option_labels(c: &Campaign) -> Vec<OptionLabel> {
     let mut out = Vec::new();
-    each_effect_ref(c, &mut |path, keybase, eff| {
+    each_effect_ref(c, &mut |stage, path, keybase, eff| {
         let Some(l) = eff.bonfire_labels() else {
             return;
         };
@@ -511,6 +552,7 @@ pub fn bonfire_option_labels(c: &Campaign) -> Vec<OptionLabel> {
         ] {
             if let Some(text) = text {
                 out.push(OptionLabel {
+                    stage,
                     path: format!("{path}/{field}"),
                     key: format!("{keybase}.{key}"),
                     text: text.to_string(),
@@ -521,54 +563,227 @@ pub fn bonfire_option_labels(c: &Campaign) -> Vec<OptionLabel> {
     out
 }
 
-/// Visit every quest/trigger effect — **top-level and every transitively-nested**
-/// one (a `sequence` step, an `on_respawn`/`on_caught`/`on_arrive` bundle) — in the
-/// fixed inventory order, invoking `f(path, keybase, effect)`. `path` is the
-/// effect's JSON-pointer within the `quests` stage doc (for diagnostics); `keybase`
-/// is its l10n key prefix, derived by the **same** position-keying as
-/// [`each_string`]/[`effect_strings_deep`] (so an art narrate's key matches its
-/// inventory key, and a nested `play-sound`/`give-item` ref is reported at a precise
-/// path). Shared by [`art_narrates`], [`sound_refs`] and [`play_sound_actor_refs`]
-/// so the consumer checks (`DW0326`/`DW0328`/`DW0335`) descend nested effects
-/// exactly as emission and the l10n inventory already do (task: nested-effect
-/// consumer recursion). Top-level positions keep their prior path/key, so a
-/// nesting-free campaign is unaffected; nested refs are additive.
-fn each_effect_ref<'a>(c: &'a Campaign, f: &mut dyn FnMut(&str, &str, &'a QuestEffect)) {
+/// The **five effect roots** the compiler can lower a quest effect from, as
+/// `(stage, json_path, l10n keybase)` for each root's `i`-th top-level effect.
+///
+/// This is the authority behind [`each_effect_ref`] — the immutable consumer scan
+/// — and its mutable mirror [`effect_roots_mut`], which [`each_string`] walks. An
+/// effect list is a root if `emit::emit_quest_effect` can reach it, not if the
+/// quests stage happens to own it (the same rule
+/// `compiler::plan::for_each_gate_effect` states for gate commands):
+///
+/// 1. quest `on_objective_complete` (a `BTreeMap`, so key-ordered),
+/// 2. quest `on_complete`,
+/// 3. environment `triggers[].effects`,
+/// 4. `traps[].payload` (spec-0022 — a payload is an effect root; a trap that
+///    narrates is ordinary now that a trap's consequence is commands),
+/// 5. a **dialogue option's** `set-checkpoint` `on_respawn` bundle — a plain
+///    `Vec<QuestEffect>` hanging off the dialogue stage, lowered into
+///    `cp_on_respawn_<i>`. `DialogueEffect` carries no narrate verb of its own,
+///    which is why the older string walk stopped at the quests stage; the bundle
+///    inside it is quest-effect vocabulary all the same (task #168).
+///
+/// Roots 1–3 keep their prior paths and keys exactly, so an existing campaign's
+/// inventory is unchanged; 4 and 5 are additive.
+fn effect_roots(c: &Campaign) -> Vec<EffectRoot<'_>> {
+    let mut out = Vec::new();
+    let mut push = |stage, path: String, key: String, eff| {
+        out.push(EffectRoot {
+            stage,
+            path,
+            key,
+            eff,
+        })
+    };
     for (qi, q) in c.quests.content.quests.iter().enumerate() {
         let ql = local(q.id.as_str());
         for (oid, effs) in &q.on_objective_complete {
             let ol = local(oid.as_str());
             for (i, eff) in effs.iter().enumerate() {
-                effect_deep(
-                    eff,
-                    &format!(
+                push(
+                    "quests",
+                    format!(
                         "/content/quests/{qi}/on_objective_complete/{}/{i}",
                         oid.as_str()
                     ),
-                    &format!("fx.{ql}.oc.{ol}.{i}"),
-                    f,
+                    format!("fx.{ql}.oc.{ol}.{i}"),
+                    eff,
                 );
             }
         }
         for (i, eff) in q.on_complete.iter().enumerate() {
-            effect_deep(
+            push(
+                "quests",
+                format!("/content/quests/{qi}/on_complete/{i}"),
+                format!("fx.{ql}.done.{i}"),
                 eff,
-                &format!("/content/quests/{qi}/on_complete/{i}"),
-                &format!("fx.{ql}.done.{i}"),
-                f,
             );
         }
     }
     for (ti, t) in c.quests.content.triggers.iter().enumerate() {
         let tl = local(t.id.as_str());
         for (i, eff) in t.effects.iter().enumerate() {
-            effect_deep(
+            push(
+                "quests",
+                format!("/content/triggers/{ti}/effects/{i}"),
+                format!("fx.trig.{tl}.{i}"),
                 eff,
-                &format!("/content/triggers/{ti}/effects/{i}"),
-                &format!("fx.trig.{tl}.{i}"),
-                f,
             );
         }
+    }
+    for (pi, trap) in c.quests.content.traps.iter().enumerate() {
+        let pl = local(trap.id.as_str());
+        for (i, eff) in trap.payload.iter().enumerate() {
+            push(
+                "quests",
+                format!("/content/traps/{pi}/payload/{i}"),
+                format!("fx.trap.{pl}.{i}"),
+                eff,
+            );
+        }
+    }
+    for (di, tree) in c.dialogue.content.dialogues.iter().enumerate() {
+        let np = local(tree.npc.as_str());
+        for (ni, node) in tree.nodes.iter().enumerate() {
+            let nd = local(node.id.as_str());
+            for (oi, opt) in node.options.iter().enumerate() {
+                for (ei, de) in opt.effects.iter().enumerate() {
+                    let Some((_anchor, on_respawn)) = de.set_checkpoint() else {
+                        continue;
+                    };
+                    for (i, eff) in on_respawn.iter().enumerate() {
+                        push(
+                            "dialogue",
+                            format!(
+                                "/content/dialogues/{di}/nodes/{ni}/options/{oi}/effects/{ei}/on_respawn/{i}"
+                            ),
+                            format!("fx.dlg.{np}.{nd}.{oi}.{ei}.respawn.{i}"),
+                            eff,
+                        );
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// One top-level effect root: where it lives, what its l10n keys hang off, and the
+/// effect itself.
+struct EffectRoot<'a> {
+    /// The stage document (`quests` / `dialogue`) this effect was authored in.
+    stage: &'static str,
+    /// JSON pointer to the effect within that document.
+    path: String,
+    /// The effect's l10n key prefix.
+    key: String,
+    /// The effect.
+    eff: &'a QuestEffect,
+}
+
+/// The **mutable mirror** of [`effect_roots`]: the identical roots, in the
+/// identical order, with the same `(stage, path, key)` descriptors, exposed
+/// mutably so [`each_string`] (and through it [`localize`]) can rewrite the
+/// player-visible strings in place. `&mut Campaign` cannot be enumerated and
+/// borrowed at once, which is why this is written out rather than derived — the
+/// two are lockstep siblings in the sense
+/// [`QuestEffect::nested_effect_lists_labeled`] and
+/// `nested_effect_lists_keyed_mut` already are, and a unit test asserts their
+/// descriptor sequences are equal on a campaign exercising all five roots.
+fn effect_roots_mut(c: &mut Campaign) -> Vec<(&'static str, String, String, &mut QuestEffect)> {
+    let mut out: Vec<(&'static str, String, String, &mut QuestEffect)> = Vec::new();
+    for (qi, q) in c.quests.content.quests.iter_mut().enumerate() {
+        let ql = local(q.id.as_str()).to_string();
+        for (oid, effs) in &mut q.on_objective_complete {
+            let ol = local(oid.as_str()).to_string();
+            for (i, eff) in effs.iter_mut().enumerate() {
+                out.push((
+                    "quests",
+                    format!(
+                        "/content/quests/{qi}/on_objective_complete/{}/{i}",
+                        oid.as_str()
+                    ),
+                    format!("fx.{ql}.oc.{ol}.{i}"),
+                    eff,
+                ));
+            }
+        }
+        for (i, eff) in q.on_complete.iter_mut().enumerate() {
+            out.push((
+                "quests",
+                format!("/content/quests/{qi}/on_complete/{i}"),
+                format!("fx.{ql}.done.{i}"),
+                eff,
+            ));
+        }
+    }
+    for (ti, t) in c.quests.content.triggers.iter_mut().enumerate() {
+        let tl = local(t.id.as_str()).to_string();
+        for (i, eff) in t.effects.iter_mut().enumerate() {
+            out.push((
+                "quests",
+                format!("/content/triggers/{ti}/effects/{i}"),
+                format!("fx.trig.{tl}.{i}"),
+                eff,
+            ));
+        }
+    }
+    for (pi, trap) in c.quests.content.traps.iter_mut().enumerate() {
+        let pl = local(trap.id.as_str()).to_string();
+        for (i, eff) in trap.payload.iter_mut().enumerate() {
+            out.push((
+                "quests",
+                format!("/content/traps/{pi}/payload/{i}"),
+                format!("fx.trap.{pl}.{i}"),
+                eff,
+            ));
+        }
+    }
+    for (di, tree) in c.dialogue.content.dialogues.iter_mut().enumerate() {
+        let np = local(tree.npc.as_str()).to_string();
+        for (ni, node) in tree.nodes.iter_mut().enumerate() {
+            let nd = local(node.id.as_str()).to_string();
+            for (oi, opt) in node.options.iter_mut().enumerate() {
+                for (ei, de) in opt.effects.iter_mut().enumerate() {
+                    let Some(on_respawn) = de.set_checkpoint_on_respawn_mut() else {
+                        continue;
+                    };
+                    for (i, eff) in on_respawn.iter_mut().enumerate() {
+                        out.push((
+                            "dialogue",
+                            format!(
+                                "/content/dialogues/{di}/nodes/{ni}/options/{oi}/effects/{ei}/on_respawn/{i}"
+                            ),
+                            format!("fx.dlg.{np}.{nd}.{oi}.{ei}.respawn.{i}"),
+                            eff,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Visit every effect emission can lower — **top-level and every
+/// transitively-nested** one (a `sequence` step, an
+/// `on_respawn`/`on_caught`/`on_arrive` bundle) — over all five
+/// [`effect_roots`], in the fixed inventory order, invoking
+/// `f(stage, path, keybase, effect)`. `stage` names the document the effect lives
+/// in (`quests` or `dialogue`) and `path` is its JSON pointer within it, so a
+/// diagnostic can point at the real site; `keybase` is its l10n key prefix, derived
+/// by the **same** position-keying as [`each_string`]/[`effect_strings_deep`] (so an
+/// art narrate's key matches its inventory key). Shared by [`art_narrates`],
+/// [`on_screen_narrates`], [`bonfire_option_labels`], [`sound_refs`] and
+/// [`play_sound_actor_refs`], so the consumer checks
+/// (`DW0326`/`DW0328`/`DW0330`/`DW0331`/`DW0335`) see exactly the strings the
+/// inventory demands a translation for.
+fn each_effect_ref<'a>(
+    c: &'a Campaign,
+    f: &mut dyn FnMut(&'static str, &str, &str, &'a QuestEffect),
+) {
+    for r in effect_roots(c) {
+        effect_deep(r.eff, r.stage, &r.path, &r.key, f);
     }
 }
 
@@ -578,15 +793,17 @@ fn each_effect_ref<'a>(c: &'a Campaign, f: &mut dyn FnMut(&str, &str, &'a QuestE
 /// per-effect index). The key segments match [`effect_strings_deep`] exactly.
 fn effect_deep<'a>(
     eff: &'a QuestEffect,
+    stage: &'static str,
     path: &str,
     keybase: &str,
-    f: &mut dyn FnMut(&str, &str, &'a QuestEffect),
+    f: &mut dyn FnMut(&'static str, &str, &str, &'a QuestEffect),
 ) {
-    f(path, keybase, eff);
+    f(stage, path, keybase, eff);
     for (pseg, kseg, list) in eff.nested_effect_lists_labeled() {
         for (j, inner) in list.iter().enumerate() {
             effect_deep(
                 inner,
+                stage,
                 &format!("{path}/{pseg}/{j}"),
                 &format!("{keybase}.{kseg}.{j}"),
                 f,
@@ -599,7 +816,9 @@ fn effect_deep<'a>(
 /// referenced id, for registry validation (`DW0326`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SoundRef {
-    /// JSON-pointer-ish path within the `quests` stage doc.
+    /// The stage document the reference was authored in (`quests` / `dialogue`).
+    pub stage: &'static str,
+    /// JSON-pointer-ish path within that stage doc.
     pub path: String,
     /// The referenced sound-event id (`minecraft:` prefix optional).
     pub sound: String,
@@ -610,9 +829,10 @@ pub struct SoundRef {
 /// fixed deterministic order, for `DW0326` validation.
 pub fn sound_refs(c: &Campaign) -> Vec<SoundRef> {
     let mut out = Vec::new();
-    each_effect_ref(c, &mut |path, _key, eff| {
+    each_effect_ref(c, &mut |stage, path, _key, eff| {
         for (sub, sound) in eff.sound_refs() {
             out.push(SoundRef {
+                stage,
                 path: format!("{path}/{sub}"),
                 sound: sound.to_string(),
             });
@@ -627,9 +847,10 @@ pub fn sound_refs(c: &Campaign) -> Vec<SoundRef> {
 /// lands; the compiler applies that check. `SoundRef::sound` carries the actor id.
 pub fn play_sound_actor_refs(c: &Campaign) -> Vec<SoundRef> {
     let mut out = Vec::new();
-    each_effect_ref(c, &mut |path, _key, eff| {
+    each_effect_ref(c, &mut |stage, path, _key, eff| {
         if let Some(actor) = eff.play_sound_actor() {
             out.push(SoundRef {
+                stage,
                 path: format!("{path}/at/actor"),
                 sound: actor.to_string(),
             });

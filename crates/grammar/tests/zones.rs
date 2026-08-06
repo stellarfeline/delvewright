@@ -1,0 +1,1653 @@
+//! The bell remake's zone programs and what composition must not break.
+//!
+//! A vocabulary rule is judged on the shape it builds; a **zone** is judged on
+//! what survives when several of those shapes are laid end to end. Three things
+//! can go wrong that no piece-level gate could ever see, and each has a gate
+//! here:
+//!
+//! * the pieces do not actually join, or they join and leave a way *round* the
+//!   thing the zone exists for;
+//! * a property a piece proved in a bare box stops holding in a bigger one — a
+//!   sightline the zone put something into, or a hiding place that a much larger
+//!   approach can now see into;
+//! * a piece is silently **turned**, because every vocabulary rule chooses its
+//!   own travel axis from the box it is handed (`z(Largest)`), and a piece run
+//!   shorter than the zone is wide turns its wall across the route.
+//!
+//! Every gate below states its **binding count** — how many objects it actually
+//! examined — and every one has been watched going red, either through a test
+//! knob or through the refusal it is written as. A gate that matched nothing is
+//! a finding, not a pass (`docs/reference/playtest-methodology.md` rule 1), so
+//! the fixture tests pin those counts rather than leaving them to prose.
+
+mod support;
+
+use std::collections::BTreeSet;
+
+use delvewright_grammar::block::BlockState;
+use delvewright_grammar::compose::{AnchorRenames, entry, include_renaming};
+use delvewright_grammar::geom::Axis;
+use delvewright_grammar::ir::{Alternative, Node, Paint, Program, Size, Split};
+use delvewright_grammar::library::bell::cliff_road::{MIN_DROP, MIN_GULF};
+use delvewright_grammar::library::elite_ground::MIN_RADIUS;
+use delvewright_grammar::library::{
+    barrow_shore, broken_grate, causeway, cistern_deep, cliff_road, elite_ground, far_side_bar,
+    gate_ward, hall_keep, watch_bay,
+};
+use delvewright_grammar::{Box3, ExpandOptions, Expansion, VoxelModel, expand};
+
+use support::{
+    connected, ends, expand_at, indexed, passable, reachable_with_fall, sees, solid, standable,
+    standable_cells,
+};
+
+/// **Z0.** Barrow Shore: one open arena, in a box the campaign's size rather
+/// than the piece fixture's.
+const SHORE_REGION: Box3 = Box3::at_origin([19, 6, 24]);
+/// The arena draws nothing from the seed; it is stated, not chosen.
+const SHORE_SEED: u64 = 1;
+
+/// **Z1.** The crag: three cells of gulf, the road, and the rock it is cut into,
+/// over eight courses of drop.
+const CLIFF_REGION: Box3 = Box3::at_origin([12, 12, 36]);
+/// The seed the four-niche road is pinned to.
+const CLIFF_SEED: u64 = 4;
+
+/// **Z2.** Gatehouse: twelve cells of threshold room, sixteen of gated passage.
+const WARD_REGION: Box3 = Box3::at_origin([11, 7, 28]);
+/// Neither piece of the gatehouse draws from the seed; it is stated, not chosen.
+const WARD_SEED: u64 = 1;
+
+/// **Z5.** Keep: twelve cells of stores, twelve of threshold, sixteen of hall.
+const KEEP_REGION: Box3 = Box3::at_origin([11, 9, 40]);
+/// The storeroom's tell is a seeded draw; this is the pinned fixture's seed.
+const KEEP_SEED: u64 = 1;
+
+/// **Z6.** Cistern Deep: twenty cells each of arena, grate wall and dart
+/// gallery, and the remaining twenty of spill shaft. Nineteen wide because the
+/// arena's flank margins ask for it, and ten tall because the shaft's ledge sits
+/// four blocks over a room that still needs its own headroom.
+const DEEP_REGION: Box3 = Box3::at_origin([19, 10, 80]);
+/// The grate row's break is a seeded draw; this is the pinned fixture's seed.
+const DEEP_SEED: u64 = 1;
+
+/// The odd barrel's block (`store_room`'s `barrel_unbanded` default).
+const TELL_BLOCK: &str = "minecraft:spruce_log";
+
+/// A zone, the box it is pinned in, and how a player crosses it.
+///
+/// `falls` is not a dial on how hard the gate tries: it says which movement
+/// model is the *truthful* one for this zone. Four of the five are flat, and a
+/// walker crosses them with [`connected`]'s ±1 step. Z6 is entered by stepping
+/// off a ledge, so `connected` alone would call it severed and would be
+/// measuring the wrong thing; it is crossed under
+/// [`support::reachable_with_fall`] instead — and it is the only zone that
+/// additionally owes the negative claim, that the model's extra freedom still
+/// does not carry a player back up.
+struct ZoneFixture {
+    program: Program,
+    region: Box3,
+    seed: u64,
+    falls: bool,
+}
+
+fn zone(program: Program, region: Box3, seed: u64) -> ZoneFixture {
+    ZoneFixture {
+        program,
+        region,
+        seed,
+        falls: false,
+    }
+}
+
+fn zones() -> Vec<ZoneFixture> {
+    vec![
+        zone(barrow_shore(), SHORE_REGION, SHORE_SEED),
+        zone(cliff_road(), CLIFF_REGION, CLIFF_SEED),
+        zone(gate_ward(), WARD_REGION, WARD_SEED),
+        zone(hall_keep(), KEEP_REGION, KEEP_SEED),
+        ZoneFixture {
+            falls: true,
+            ..zone(cistern_deep(), DEEP_REGION, DEEP_SEED)
+        },
+    ]
+}
+
+// ---------------------------------------------------------------------------
+// Promises every zone program owes, the same ones the rule library owes
+// ---------------------------------------------------------------------------
+
+/// A composed program is a program: every reference it makes resolves, which is
+/// also the first thing that would break if [`delvewright_grammar::compose`]
+/// missed a rewrite (a `call` or a `param` left pointing at the unprefixed name
+/// is an `UnknownRule` / `UnknownParam` here, never a quietly different model).
+#[test]
+fn every_zone_program_is_structurally_valid() {
+    for ZoneFixture { program, .. } in zones() {
+        program
+            .validate()
+            .unwrap_or_else(|e| panic!("{}: {e}", program.name));
+    }
+}
+
+/// ADR-0006 at zone scale: same program, region and seed, byte-identical model
+/// *and* anchors.
+#[test]
+fn every_zone_expands_byte_identically_twice() {
+    for ZoneFixture {
+        program,
+        region,
+        seed,
+        ..
+    } in zones()
+    {
+        let a = expand_at(&program, region, seed);
+        let b = expand_at(&program, region, seed);
+        assert_eq!(
+            a.model.canonical_bytes(),
+            b.model.canonical_bytes(),
+            "{}",
+            program.name
+        );
+        assert_eq!(a.anchors, b.anchors, "{}", program.name);
+    }
+}
+
+/// The composed program is still the authoring form: it serialises and parses
+/// back to itself, prefixed names and all.
+#[test]
+fn every_zone_round_trips_through_json() {
+    for ZoneFixture { program, .. } in zones() {
+        let json = serde_json::to_string_pretty(&program).unwrap();
+        let back: Program = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, program, "{}", program.name);
+    }
+}
+
+/// A palette swap restyles a whole zone without moving a block — including the
+/// roles that arrived with the included pieces, which is the claim that the
+/// prefixed palette really is the one the rules read.
+#[test]
+fn every_zone_restyles_without_moving_a_block() {
+    const SWATCH: &[&str] = &[
+        "deepslate_bricks",
+        "polished_blackstone",
+        "cracked_nether_bricks",
+        "warped_planks",
+    ];
+    for ZoneFixture {
+        program: base,
+        region,
+        seed,
+        ..
+    } in zones()
+    {
+        let mut restyled = base.clone();
+        // How many roles each zone binds is pinned in
+        // `the_zone_fixtures_are_pinned`, where the rest of the binding counts
+        // live; here it only has to be non-empty for the swap to mean anything,
+        // and the byte-difference assertion at the bottom is what proves it did.
+        let roles: Vec<String> = base.palette.keys().cloned().collect();
+        assert!(!roles.is_empty(), "{} binds no roles", base.name);
+        for (i, role) in roles.iter().enumerate() {
+            restyled
+                .set_role(
+                    role,
+                    Paint::Block(BlockState::simple(SWATCH[i % SWATCH.len()])),
+                )
+                .unwrap();
+        }
+        let plain = expand_at(&base, region, seed);
+        let dark = expand_at(&restyled, region, seed);
+        assert_eq!(
+            plain.model.filled_cells(),
+            dark.model.filled_cells(),
+            "{} moved a block when it was restyled",
+            base.name
+        );
+        assert_eq!(plain.anchors, dark.anchors, "{}", base.name);
+        assert_ne!(
+            plain.model.canonical_bytes(),
+            dark.model.canonical_bytes(),
+            "{}'s restyle changed nothing — the prefixed roles do not reach the blocks",
+            base.name
+        );
+    }
+}
+
+/// **The first thing a zone owes: it is a route.** Pieces meet at an open seam
+/// or they do not, and three sealed rooms in a row would satisfy every gate the
+/// vocabulary has.
+///
+/// Binding: the standable cells of each zone — 438 (Z0), 40 (Z1), 239 (Z2), 368
+/// (Z5), 1377 (Z6).
+#[test]
+fn every_zone_is_walkable_end_to_end() {
+    for ZoneFixture {
+        program,
+        region,
+        seed,
+        falls,
+    } in zones()
+    {
+        let out = expand_at(&program, region, seed);
+        let cells = standable_cells(&out.model);
+        let (entry, exit) = ends(&out.model);
+        assert!(
+            !entry.is_empty() && !exit.is_empty(),
+            "{}: nowhere to stand at the ends ({} standable cells)",
+            program.name,
+            cells.len()
+        );
+        let crossed = if falls {
+            reachable_with_fall(&out.model, &cells, &entry, &exit)
+        } else {
+            connected(&cells, &entry, &exit)
+        };
+        assert!(
+            crossed,
+            "{}: the zone's pieces do not join into a route ({} standable cells, \
+             {} at the entry end, {} at the exit end)",
+            program.name,
+            cells.len(),
+            entry.len(),
+            exit.len()
+        );
+    }
+}
+
+/// The pinned counts every gate below binds against, in one place, so that a
+/// gate quietly binding to fewer objects than it used to is a red rather than a
+/// silently weaker proof.
+#[test]
+fn the_zone_fixtures_are_pinned() {
+    // Every role each zone inherited from the pieces it includes. A role that
+    // silently stopped arriving would restyle nothing and break no other gate,
+    // so the count is pinned rather than bounded.
+    for (want, ZoneFixture { program, .. }) in [1, 3, 2, 6, 6].into_iter().zip(zones()) {
+        assert_eq!(
+            program.palette.len(),
+            want,
+            "{} binds {} palette roles",
+            program.name,
+            program.palette.len()
+        );
+    }
+
+    let shore = expand_at(&barrow_shore(), SHORE_REGION, SHORE_SEED);
+    assert_eq!(shore.anchors.len(), 1);
+    assert_eq!(standable_cells(&shore.model).len(), 438);
+
+    let cliff = expand_at(&cliff_road(), CLIFF_REGION, CLIFF_SEED);
+    assert_eq!(indexed(&cliff.anchors, "niche").len(), 4);
+    assert_eq!(indexed(&cliff.anchors, "niche-watch").len(), 4);
+    assert_eq!(standable_cells(&cliff.model).len(), 40);
+
+    let ward = expand_at(&gate_ward(), WARD_REGION, WARD_SEED);
+    assert_eq!(span_cells(&ward).len(), 27);
+    assert_eq!(approach_cells(&ward).len(), 184);
+    assert_eq!(standable_cells(&ward.model).len(), 239);
+
+    let keep = expand_at(&hall_keep(), KEEP_REGION, KEEP_SEED);
+    assert_eq!(indexed(&keep.anchors, "perch").len(), 4);
+    assert_eq!(approach_cells(&keep).len(), 205);
+    assert_eq!(standable_cells(&keep.model).len(), 368);
+
+    // Z6 carries one anchor from each of its four pieces, which is also the
+    // cheapest possible check that all four were actually expanded.
+    let deep = expand_at(&cistern_deep(), DEEP_REGION, DEEP_SEED);
+    let names: Vec<&str> = deep.anchors.keys().map(String::as_str).collect();
+    assert_eq!(
+        names,
+        [
+            "anchor/elite",
+            "anchor/gate",
+            "anchor/grate-secret",
+            "anchor/landing",
+            "anchor/spill",
+            "anchor/watch",
+        ]
+    );
+    assert_eq!(span_cells(&deep).len(), 51);
+    assert_eq!(standable_cells(&deep.model).len(), 1377);
+}
+
+// ---------------------------------------------------------------------------
+// Z0 — the Barrow Shore
+// ---------------------------------------------------------------------------
+
+/// How many of the two flank bands — the cells strictly west and strictly east
+/// of the engagement circle — carry a route from the **zone's** entry face to
+/// its exit face.
+///
+/// `elite_ground`'s own gate counts this inside the piece's box. At zone scale
+/// the question is a different one: a bypass that stops at the arena's own seam
+/// is not a bypass, so the walk runs the whole length of the zone, through
+/// whatever else the zone put in the way. `falls` picks the movement model the
+/// zone is truthful under (see [`ZoneFixture`]).
+fn flank_routes(model: &VoxelModel, elite: [i32; 3], falls: bool) -> usize {
+    let cells = standable_cells(model);
+    let far = model.region().size[2] as i32 - 1;
+    let west: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .copied()
+        .filter(|c| c[0] < elite[0] - MIN_RADIUS as i32)
+        .collect();
+    let east: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .copied()
+        .filter(|c| c[0] > elite[0] + MIN_RADIUS as i32)
+        .collect();
+    [west, east]
+        .into_iter()
+        .filter(|band| {
+            let entry: BTreeSet<[i32; 3]> = band.iter().copied().filter(|c| c[2] == far).collect();
+            let exit: BTreeSet<[i32; 3]> = band.iter().copied().filter(|c| c[2] == 0).collect();
+            if entry.is_empty() || exit.is_empty() {
+                return false;
+            }
+            if falls {
+                reachable_with_fall(model, band, &entry, &exit)
+            } else {
+                connected(band, &entry, &exit)
+            }
+        })
+        .count()
+}
+
+/// Z0's gate: the fight on the shore is on the route, and there is a way past it
+/// on both sides — measured across the campaign's box, not the piece fixture's.
+///
+/// Z0 composes one piece, so this is `elite_ground`'s own claim re-bound to a
+/// larger box rather than a new one; the module note on
+/// [`delvewright_grammar::library::bell::barrow_shore`] says so plainly rather
+/// than dressing it up.
+///
+/// Binding: 2 routes, over bands of 111 standable cells each.
+#[test]
+fn the_shore_keeps_a_lane_on_each_side_of_the_fight() {
+    let out = expand_at(&barrow_shore(), SHORE_REGION, SHORE_SEED);
+    let elite = out.anchors["anchor/elite"].pos;
+    assert!(standable(&out.model, elite), "the elite cell {elite:?}");
+    assert_eq!(
+        flank_routes(&out.model, elite, false),
+        2,
+        "the shore does not carry a lane on each side of the circle — the opening \
+         fight is compulsory"
+    );
+}
+
+/// ...and it has teeth. `arena/seal_flank` walls off the west band, the east
+/// band, or both, across the circle's own length — the shape a fog gate would
+/// take — and the counted total has to drop.
+///
+/// The control is the second assertion: the zone stays walkable end to end
+/// through the middle at every setting, so what went red is the bypass and not
+/// the room.
+#[test]
+fn sealing_a_flank_of_the_shore_drops_its_route() {
+    for (knob, want) in [(1, 1), (2, 1), (3, 0)] {
+        let mut sealed = barrow_shore();
+        sealed.set_param("arena/seal_flank", knob).unwrap();
+        let out = expand_at(&sealed, SHORE_REGION, SHORE_SEED);
+        let elite = out.anchors["anchor/elite"].pos;
+        assert_eq!(
+            flank_routes(&out.model, elite, false),
+            want,
+            "arena/seal_flank={knob} did not drop the zone-scale route count — the \
+             gate proves nothing"
+        );
+        let cells = standable_cells(&out.model);
+        let (entry, exit) = ends(&out.model);
+        assert!(
+            connected(&cells, &entry, &exit),
+            "arena/seal_flank={knob} sealed the shore itself, so the route count is \
+             measuring impassability rather than a missing bypass"
+        );
+    }
+}
+
+/// The frame guard, for the one zone where it collapses to a single comparison.
+///
+/// A zone whose only piece *is* the zone can only ask that the zone is longer
+/// than it is wide, and its own `z(Largest)` has already normalised the box by
+/// the time the guard runs — so a **square** box is the only shape left to
+/// refuse. That is a narrow claim and the point of asserting it is that it stays
+/// narrow: the module note explains why nothing wider can be caught here.
+#[test]
+fn a_square_shore_is_refused() {
+    let square = Box3::at_origin([SHORE_REGION.size[0], SHORE_REGION.size[1], 19]);
+    assert_eq!(square.size[0], square.size[2]);
+    let err = expand(&barrow_shore(), square, &ExpandOptions::seeded(SHORE_SEED)).unwrap_err();
+    assert!(
+        err.to_string().contains("no alternative of rule"),
+        "expected a refusal, got: {err}"
+    );
+
+    // The control: one cell longer and the same box builds, so what was refused
+    // is the tie and not the size.
+    let oblong = Box3::at_origin([square.size[0], square.size[1], 20]);
+    expand_at(&barrow_shore(), oblong, SHORE_SEED);
+}
+
+// ---------------------------------------------------------------------------
+// Z1 — the Cliff Road
+// ---------------------------------------------------------------------------
+
+/// The ledge lane, read off the anchors rather than off the `sea` parameter: a
+/// recess is one cell in from the lane it opens onto, so the niches say where
+/// the road is.
+fn ledge_lane(out: &Expansion) -> i32 {
+    let niches = indexed(&out.anchors, "niche");
+    assert!(!niches.is_empty(), "the road declares no niches");
+    let lanes: BTreeSet<i32> = niches.iter().map(|n| n[0] - 1).collect();
+    assert_eq!(lanes.len(), 1, "the recesses are not all off one lane");
+    *lanes.iter().next().unwrap()
+}
+
+/// Gate 1, at zone scale: the ledge is the only way along the road. The piece
+/// proves this inside its own box; the zone could still have left a second lane
+/// in the crag beside it, and this is where that would show.
+///
+/// Binding: 36 ledge cells of 40 standable, cut and re-walked.
+#[test]
+fn the_ledge_is_the_only_route_through_the_zone() {
+    let out = expand_at(&cliff_road(), CLIFF_REGION, CLIFF_SEED);
+    let cells = standable_cells(&out.model);
+    let lane = ledge_lane(&out);
+    let (entry, exit) = ends(&out.model);
+    assert!(connected(&cells, &entry, &exit));
+
+    let on_lane = cells.iter().filter(|c| c[0] == lane).count();
+    assert_eq!(on_lane, 36, "the ledge should run the length of the zone");
+
+    let cut: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[0] != lane).collect();
+    assert!(
+        !connected(&cut, &entry, &exit),
+        "with the ledge deleted the zone still connects end to end — the crag left \
+         a bypass, so the niches are decoration beside a safe road"
+    );
+}
+
+/// Gate 2, and the reason this zone exists rather than a bare `cliff_path`: the
+/// gulf. From every ledge cell, one step seaward is air, and under that air
+/// there is nothing to land on for at least `fall` blocks.
+///
+/// Binding: 36 ledge cells × 3 seeds = 108 columns measured.
+#[test]
+fn every_ledge_cell_has_the_gulf_beside_it() {
+    let fall = cliff_road().params["fall"];
+    assert!(fall >= MIN_DROP);
+    let mut measured = 0usize;
+    for seed in [CLIFF_SEED, 11, 23] {
+        let out = expand_at(&cliff_road(), CLIFF_REGION, seed);
+        let lane = ledge_lane(&out);
+        assert!(lane >= MIN_GULF as i32, "the gulf is {lane} wide");
+        for cell in standable_cells(&out.model).iter().filter(|c| c[0] == lane) {
+            let depth = clear_drop(&out, [cell[0] - 1, cell[1], cell[2]]);
+            assert!(
+                depth >= fall,
+                "seed {seed}: from the ledge cell {cell:?} the drop is only {depth} \
+                 blocks — a shove off this road is survivable, which is not the \
+                 encounter the niche is for"
+            );
+            measured += 1;
+        }
+    }
+    assert_eq!(measured, 108, "the gate examined {measured} columns");
+}
+
+/// ...and the gate has teeth. `ledge_shelf` lays a shelf across the gulf one
+/// course under the road — the one mistake that turns a cliff into a step — and
+/// the same measurement must go red while the road stays exactly as walkable.
+#[test]
+fn a_shelf_under_the_ledge_reds_the_drop_gate() {
+    let mut caught = cliff_road();
+    caught.set_param("ledge_shelf", 1).unwrap();
+    let out = expand_at(&caught, CLIFF_REGION, CLIFF_SEED);
+    let fall = caught.params["fall"];
+    let lane = ledge_lane(&out);
+    let cells = standable_cells(&out.model);
+
+    let shallow: Vec<[i32; 3]> = cells
+        .iter()
+        .copied()
+        .filter(|c| c[0] == lane && clear_drop(&out, [c[0] - 1, c[1], c[2]]) < fall)
+        .collect();
+    assert_eq!(
+        shallow.len(),
+        36,
+        "a shelf was laid under the whole road and the drop gate still called it a \
+         cliff — the gate proves nothing"
+    );
+
+    // The control: what went red is the drop and nothing else. The road is the
+    // same road — same ledge cells, still walkable end to end.
+    let plain = expand_at(&cliff_road(), CLIFF_REGION, CLIFF_SEED);
+    assert_eq!(
+        cells.iter().filter(|c| c[0] == lane).count(),
+        standable_cells(&plain.model)
+            .iter()
+            .filter(|c| c[0] == lane)
+            .count()
+    );
+    let (entry, exit) = ends(&out.model);
+    assert!(connected(&cells, &entry, &exit));
+}
+
+/// Gate 3: every recess opens onto *that* lane. A niche whose mouth is a cell
+/// back from the edge is an ambush next to a road, not on a ledge — the shove it
+/// exists for has to have somewhere to send the player.
+///
+/// Binding: 4 niches (and their 4 watch cells).
+#[test]
+fn every_niche_opens_onto_the_ledge_over_the_gulf() {
+    let out = expand_at(&cliff_road(), CLIFF_REGION, CLIFF_SEED);
+    let model = &out.model;
+    let lane = ledge_lane(&out);
+    let niches = indexed(&out.anchors, "niche");
+    let watches = indexed(&out.anchors, "niche-watch");
+    assert_eq!(niches.len(), 4);
+    assert_eq!(
+        watches.len(),
+        niches.len(),
+        "every recess owes a watch cell"
+    );
+
+    for niche in &niches {
+        let mouth = [lane, niche[1], niche[2]];
+        assert!(standable(model, mouth), "the recess mouth {mouth:?}");
+        assert!(
+            solid(model, [niche[0] + 1, niche[1], niche[2]]),
+            "the recess at {niche:?} is deeper than one cell"
+        );
+        assert!(
+            passable(model, [lane - 1, niche[1], niche[2]]),
+            "the cell the mouth {mouth:?} looks out over is not open air"
+        );
+    }
+    for watch in &watches {
+        assert_eq!(watch[0], lane, "a watch cell stands on the ledge");
+        assert!(standable(model, *watch));
+    }
+}
+
+/// How far a body shoved into `start` falls before something stops it.
+fn clear_drop(out: &Expansion, start: [i32; 3]) -> i64 {
+    let mut depth = 0;
+    let mut y = start[1];
+    while passable(&out.model, [start[0], y, start[2]]) {
+        depth += 1;
+        y -= 1;
+    }
+    depth
+}
+
+// ---------------------------------------------------------------------------
+// Z2 — the Gatehouse
+// ---------------------------------------------------------------------------
+
+/// The standable cells of the hazard span, read off `anchor/gate` — `span` is a
+/// parameter, so the geometry is measured rather than recomputed.
+fn span_cells(out: &Expansion) -> Vec<[i32; 3]> {
+    let gate = out.anchors["anchor/gate"].pos;
+    standable_cells(&out.model)
+        .into_iter()
+        .filter(|c| (c[2] - gate[2]).abs() <= 1 && c[1] == gate[1])
+        .collect()
+}
+
+/// Every standable cell on the approach side of the threshold wall — in a zone,
+/// that is every cell the player crosses before the door, which is most of the
+/// zone.
+fn approach_cells(out: &Expansion) -> Vec<[i32; 3]> {
+    let wall = out.anchors["anchor/threshold"].pos[2];
+    standable_cells(&out.model)
+        .into_iter()
+        .filter(|c| c[2] > wall)
+        .collect()
+}
+
+/// Gate 1: the portcullis is not optional. The zone connects end to end, and
+/// with the span's cells deleted it does not — so the timed hazard is on the
+/// route rather than beside it.
+///
+/// Binding: 27 span cells, 239 standable cells re-walked without them.
+#[test]
+fn the_hazard_span_cannot_be_walked_round() {
+    let out = expand_at(&gate_ward(), WARD_REGION, WARD_SEED);
+    let cells = standable_cells(&out.model);
+    let gate = out.anchors["anchor/gate"].pos;
+    let (entry, exit) = ends(&out.model);
+    assert!(connected(&cells, &entry, &exit));
+
+    let span = span_cells(&out);
+    assert_eq!(span.len(), 27, "the span has cells to close");
+    let cut: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .copied()
+        .filter(|c| (c[2] - gate[2]).abs() > 1)
+        .collect();
+    assert!(
+        !connected(&cut, &entry, &exit),
+        "with the portcullis span closed the gatehouse still connects end to end — \
+         there is a way round the hazard, so nothing about its timing matters"
+    );
+}
+
+/// Gate 2: the bay still sees the whole span once the zone is built around it.
+/// `watch_bay` proves this in a bare box; the composition is a new box, and a
+/// property re-proved on the assembled model is the only one a campaign can
+/// rely on.
+///
+/// Binding: 27 span cells, each walked from the bay.
+#[test]
+fn the_bay_sees_the_whole_span_after_composition() {
+    let out = expand_at(&gate_ward(), WARD_REGION, WARD_SEED);
+    let watch = out.anchors["anchor/watch"].pos;
+    assert!(standable(&out.model, watch), "the watch cell {watch:?}");
+    let span = span_cells(&out);
+    assert_eq!(span.len(), 27);
+    for cell in &span {
+        let standoff = (0..3).map(|i| (watch[i] - cell[i]).abs()).max().unwrap();
+        assert!(
+            standoff >= 6,
+            "the bay stands only {standoff} from the span cell {cell:?}"
+        );
+        if let Err(blocker) = sees(&out.model, watch, *cell) {
+            panic!("the bay cannot see the span cell {cell:?}: {blocker:?} is in the way");
+        }
+    }
+}
+
+/// ...and it has teeth, reached through the composed program's own parameter
+/// namespace: `gate/obstruct` is the piece's knob, and that it is still
+/// settable — and still reaches the same geometry — is half of what this test
+/// proves.
+#[test]
+fn a_pillar_in_the_composed_line_reds_the_span_gate() {
+    let mut blinded = gate_ward();
+    blinded.set_param("gate/obstruct", 1).unwrap();
+    let out = expand_at(&blinded, WARD_REGION, WARD_SEED);
+    let watch = out.anchors["anchor/watch"].pos;
+    let blind: Vec<[i32; 3]> = span_cells(&out)
+        .into_iter()
+        .filter(|c| sees(&out.model, watch, *c).is_err())
+        .collect();
+    assert_eq!(
+        blind.len(),
+        6,
+        "a pillar was stood in the bay's line and every span cell still read as \
+         visible — the gate proves nothing"
+    );
+
+    // The control: a pillar, not a plug. The gatehouse is still walkable, so
+    // what the gate caught is blindness.
+    let cells = standable_cells(&out.model);
+    let (entry, exit) = ends(&out.model);
+    assert!(connected(&cells, &entry, &exit));
+}
+
+/// Gate 3, and the one composition can most easily break: the alcove is blind
+/// from **the whole zone**, not merely from the threshold piece's own approach.
+/// The gatehouse gives the player 184 places to stand before the wall, against
+/// the 54 the piece's own gate examined.
+///
+/// Binding: 184 approach cells.
+#[test]
+fn the_alcove_is_blind_from_the_whole_gatehouse() {
+    let out = expand_at(&gate_ward(), WARD_REGION, WARD_SEED);
+    let alcove = out.anchors["anchor/alcove"].pos;
+    assert!(standable(&out.model, alcove), "the alcove cell {alcove:?}");
+    let approach = approach_cells(&out);
+    assert_eq!(approach.len(), 184, "the zone-scale approach set");
+    for cell in &approach {
+        if sees(&out.model, *cell, alcove).is_ok() {
+            panic!(
+                "the alcove {alcove:?} is visible from {cell:?}, {} cells up the \
+                 gatehouse — a corner ambush the player reads on the approach will \
+                 not happen",
+                cell[2] - alcove[2]
+            );
+        }
+    }
+}
+
+/// ...and it has teeth: `door/expose` widens the opening over the alcove's own
+/// lane, and the zone-scale check must go red.
+#[test]
+fn a_widened_doorway_exposes_the_alcove_to_the_gatehouse() {
+    let mut exposed = gate_ward();
+    exposed.set_param("door/expose", 1).unwrap();
+    let out = expand_at(&exposed, WARD_REGION, WARD_SEED);
+    let alcove = out.anchors["anchor/alcove"].pos;
+    let seen = approach_cells(&out)
+        .into_iter()
+        .filter(|c| sees(&out.model, *c, alcove).is_ok())
+        .count();
+    assert_eq!(
+        seen, 147,
+        "the doorway was widened straight over the alcove and the zone-scale \
+         blindness check still reported it hidden — the gate proves nothing"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Z5 — the Great Hall and Keep
+// ---------------------------------------------------------------------------
+
+/// Gate 1: the doorway is the only way from the hall into the stores. Cut its
+/// column and the keep is two rooms.
+///
+/// Binding: 205 approach cells, 162 cells behind the wall, 368 standable.
+#[test]
+fn the_doorway_is_the_only_route_from_hall_to_stores() {
+    let out = expand_at(&hall_keep(), KEEP_REGION, KEEP_SEED);
+    let cells = standable_cells(&out.model);
+    let threshold = out.anchors["anchor/threshold"].pos;
+    let approach: BTreeSet<[i32; 3]> = approach_cells(&out).into_iter().collect();
+    let inside: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .copied()
+        .filter(|c| c[2] < threshold[2])
+        .collect();
+    assert_eq!(approach.len(), 205);
+    assert_eq!(inside.len(), 162);
+    assert!(
+        connected(&cells, &approach, &inside),
+        "the hall and the stores do not join"
+    );
+
+    let cut: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .copied()
+        .filter(|c| c[0] != threshold[0] || c[2] != threshold[2])
+        .collect();
+    assert!(
+        !connected(&cut, &approach, &inside),
+        "with the doorway plugged the keep still lets a walker through — there is a \
+         second way into the stores, so passing the alcove is optional"
+    );
+}
+
+/// Gate 2: the rafters are still legible from the door of the assembled hall.
+/// The hall in a zone is a different box from the hall in a fixture — shorter,
+/// taller, with a wall at the far end — and the corbel form has to carry the
+/// sightline in that box too.
+///
+/// Binding: 4 perches.
+#[test]
+fn every_perch_is_visible_from_the_hall_door_after_composition() {
+    let out = expand_at(&hall_keep(), KEEP_REGION, KEEP_SEED);
+    let door = out.anchors["anchor/hall-door"].pos;
+    assert!(standable(&out.model, door), "the door cell {door:?}");
+    let perches = indexed(&out.anchors, "perch");
+    assert_eq!(perches.len(), 4, "the composed hall carries its rafters");
+    for perch in &perches {
+        assert!(standable(&out.model, *perch), "the perch cell {perch:?}");
+        if let Err(blocker) = sees(&out.model, door, *perch) {
+            panic!(
+                "the doorway {door:?} cannot see the perch {perch:?}: {blocker:?} is in \
+                 the way — a rafter with no silhouette is an ambush with no telegraph"
+            );
+        }
+    }
+}
+
+/// ...and it has teeth: `hall/span_beams` closes the truss across the nave, and
+/// the composed hall goes blind exactly as the bare one does.
+#[test]
+fn a_full_span_truss_blinds_the_composed_hall() {
+    let mut blinded = hall_keep();
+    blinded.set_param("hall/span_beams", 1).unwrap();
+    let out = expand_at(&blinded, KEEP_REGION, KEEP_SEED);
+    let door = out.anchors["anchor/hall-door"].pos;
+    let blind: Vec<[i32; 3]> = indexed(&out.anchors, "perch")
+        .into_iter()
+        .filter(|p| sees(&out.model, door, *p).is_err())
+        .collect();
+    assert_eq!(
+        blind.len(),
+        2,
+        "the truss was closed across the nave and the door still saw every perch — \
+         the gate proves nothing"
+    );
+
+    // The control: the timbers are a ceiling, not a wall — the keep still walks
+    // end to end, so what the gate caught is blindness.
+    let cells = standable_cells(&out.model);
+    let (entry, exit) = ends(&out.model);
+    assert!(connected(&cells, &entry, &exit));
+}
+
+/// Gate 3: the alcove is blind from the whole hall — including from the
+/// rafters, six blocks up, which no piece-level fixture had.
+///
+/// Binding: 205 approach cells, 4 of them perches.
+#[test]
+fn the_alcove_is_blind_from_the_whole_hall() {
+    let out = expand_at(&hall_keep(), KEEP_REGION, KEEP_SEED);
+    let alcove = out.anchors["anchor/alcove"].pos;
+    let approach = approach_cells(&out);
+    assert_eq!(approach.len(), 205);
+    let perches: BTreeSet<[i32; 3]> = indexed(&out.anchors, "perch").into_iter().collect();
+    assert_eq!(
+        approach.iter().filter(|c| perches.contains(*c)).count(),
+        4,
+        "the approach set does not include the rafters, so the high sightlines are \
+         not being checked at all"
+    );
+    for cell in &approach {
+        if sees(&out.model, *cell, alcove).is_ok() {
+            panic!("the alcove {alcove:?} is visible from {cell:?}");
+        }
+    }
+}
+
+/// ...with the same teeth as the gatehouse's, on a different approach set.
+#[test]
+fn a_widened_doorway_exposes_the_alcove_to_the_hall() {
+    let mut exposed = hall_keep();
+    exposed.set_param("door/expose", 1).unwrap();
+    let out = expand_at(&exposed, KEEP_REGION, KEEP_SEED);
+    let alcove = out.anchors["anchor/alcove"].pos;
+    let seen = approach_cells(&out)
+        .into_iter()
+        .filter(|c| sees(&out.model, *c, alcove).is_ok())
+        .count();
+    assert_eq!(
+        seen, 152,
+        "the doorway was widened over the alcove and the hall-scale blindness check \
+         still reported it hidden — the gate proves nothing"
+    );
+}
+
+/// Gate 4: the stores hold exactly one tell in the composed zone.
+///
+/// `store_room` places it with a recursion — a rule that calls *itself* — so
+/// this is also the gate that would catch an include that rewrote a rule's name
+/// without rewriting its self-call, or that let two copies of the line run.
+///
+/// Binding: 8 seeds × the whole zone's cells searched for the tell block; 5
+/// distinct positions among them.
+#[test]
+fn the_stores_hold_exactly_one_tell_in_the_composed_zone() {
+    let program = hall_keep();
+    let mut places = BTreeSet::new();
+    for seed in 0..8u64 {
+        let out = expand_at(&program, KEEP_REGION, seed);
+        let tells: Vec<[i32; 3]> = KEEP_REGION
+            .positions()
+            .filter(|&p| {
+                out.model
+                    .get(p)
+                    .is_some_and(|b| b.name.starts_with(TELL_BLOCK))
+            })
+            .collect();
+        assert_eq!(tells.len(), 1, "seed {seed} laid {tells:?}");
+        assert_eq!(out.anchors["anchor/tell"].pos, tells[0], "seed {seed}");
+        places.insert(tells[0]);
+    }
+    assert!(
+        places.len() >= 3,
+        "8 seeds put the tell in {} places — a fixed tell is a landmark, not a tell",
+        places.len()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Z6 — the Cistern Deep
+// ---------------------------------------------------------------------------
+
+/// Gate 1: the cistern is a route **downward**, and it is not a route back up.
+///
+/// `drop_shaft` proves this between its own two anchors in a bare box. The zone
+/// claim is far larger and is the one a campaign actually needs: the whole
+/// gallery above the drop — the ledge, the landing, the bay, the span, the lane
+/// — cannot be re-entered from anywhere in the deep. Two seams and three other
+/// pieces sit between those two sets, and any of them could have left a step.
+///
+/// The two directions use different models on purpose (see
+/// [`support::reachable_with_fall`]): down under walk-and-fall, up under the
+/// plain step, because a fall edge only ever points down and proving the
+/// negative under the generous model would be circular.
+///
+/// Binding: 17 cells at the entry ledge, 19 at the exit, 1377 standable.
+#[test]
+fn the_cistern_is_a_route_down_and_not_back_up() {
+    let out = expand_at(&cistern_deep(), DEEP_REGION, DEEP_SEED);
+    let cells = standable_cells(&out.model);
+    let (ledge, floor) = ends(&out.model);
+    assert_eq!(ledge.len(), 17, "the entry ledge");
+    assert_eq!(floor.len(), 19, "the cistern floor at the exit");
+    assert_eq!(cells.len(), 1377);
+
+    assert!(
+        reachable_with_fall(&out.model, &cells, &ledge, &floor),
+        "the spill does not reach the bottom of the cistern — the pieces below the \
+         shaft do not join"
+    );
+    assert!(
+        !connected(&cells, &floor, &ledge),
+        "the deep walks back up to the gallery — the drop is a step, and everything \
+         past it can be skipped by going round"
+    );
+}
+
+/// ...and it has teeth, through the shaft's own knob reached in the composed
+/// program's parameter namespace. `shaft/rescue_ladder` notches every column of
+/// the entry floor but the brink's own, and — paired with a short `shaft/drop`,
+/// exactly as the piece's teeth test pairs them — the climb back has to be
+/// found.
+///
+/// Two controls, because this knob changes two things. The zone must still be a
+/// route downward (so what went red is the return, not the structure), and the
+/// short drop **on its own** must still be one-way (so what went red is the
+/// ladder, not the shortened fall).
+#[test]
+fn a_ladder_up_the_shaft_reds_the_one_way_gate() {
+    let mut rescued = cistern_deep();
+    rescued.set_param("shaft/rescue_ladder", 1).unwrap();
+    rescued.set_param("shaft/drop", 2).unwrap();
+    let out = expand_at(&rescued, DEEP_REGION, DEEP_SEED);
+    let cells = standable_cells(&out.model);
+    let (ledge, floor) = ends(&out.model);
+    assert!(
+        connected(&cells, &floor, &ledge),
+        "a ladder was notched up the whole shaft and the zone still read as one-way \
+         — the gate proves nothing"
+    );
+    assert!(
+        reachable_with_fall(&out.model, &cells, &ledge, &floor),
+        "the notched shaft stopped being a route down at all, so the red above is \
+         measuring a broken zone rather than a rescued one"
+    );
+
+    let mut short = cistern_deep();
+    short.set_param("shaft/drop", 2).unwrap();
+    let plain = expand_at(&short, DEEP_REGION, DEEP_SEED);
+    let plain_cells = standable_cells(&plain.model);
+    let (plain_ledge, plain_floor) = ends(&plain.model);
+    assert!(
+        !connected(&plain_cells, &plain_floor, &plain_ledge),
+        "the shortened drop alone already let the deep climb back, so the teeth test \
+         above proves nothing about the ladder"
+    );
+}
+
+/// Gate 2: the volley span cannot be walked round — **or fallen past**.
+///
+/// This is the new risk a drop brings to a zone, and the reason it is not Z2's
+/// gate wearing a different name. `watch_bay` and `gate_ward` both prove the
+/// span is unavoidable under a walker's ±1 step; here the player arrives by
+/// falling, and a fall edge only ever *adds* routes. A hazard that a walker
+/// cannot bypass may still be one a faller drops straight past, so the cut is
+/// re-walked under the permissive model.
+///
+/// Binding: 51 span cells deleted, 1377 standable re-walked without them.
+/// Control: the same walk with the span present connects.
+#[test]
+fn the_volley_span_cannot_be_walked_round_or_fallen_past() {
+    let out = expand_at(&cistern_deep(), DEEP_REGION, DEEP_SEED);
+    let cells = standable_cells(&out.model);
+    let gate = out.anchors["anchor/gate"].pos;
+    let (ledge, floor) = ends(&out.model);
+    assert!(reachable_with_fall(&out.model, &cells, &ledge, &floor));
+
+    let span = span_cells(&out);
+    assert_eq!(span.len(), 51, "the span has cells to close");
+    let cut: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .copied()
+        .filter(|c| (c[2] - gate[2]).abs() > 1)
+        .collect();
+    assert!(
+        !reachable_with_fall(&out.model, &cut, &ledge, &floor),
+        "with the volley span closed the cistern still reaches its own floor — the \
+         hazard is beside the route rather than on it, or the drop lands past it"
+    );
+}
+
+/// Gate 3: the fight at the bottom of the cistern is still optional, across the
+/// whole zone — a route from the ledge the player falls off to the way out that
+/// never enters the engagement circle, on each side.
+///
+/// Binding: 2 routes, over bands of 326 and 331 standable cells.
+#[test]
+fn the_deep_keeps_a_lane_on_each_side_of_the_fight() {
+    let out = expand_at(&cistern_deep(), DEEP_REGION, DEEP_SEED);
+    let elite = out.anchors["anchor/elite"].pos;
+    assert_eq!(
+        flank_routes(&out.model, elite, true),
+        2,
+        "the cistern does not carry a lane past the elite's ground — a fight at the \
+         bottom of a one-way zone with no way round it is a wall"
+    );
+}
+
+/// ...and the same teeth as the shore's, on a zone the walk has to fall through
+/// to reach the bands at all.
+#[test]
+fn sealing_a_flank_of_the_deep_drops_its_route() {
+    for (knob, want) in [(1, 1), (2, 1), (3, 0)] {
+        let mut sealed = cistern_deep();
+        sealed.set_param("arena/seal_flank", knob).unwrap();
+        let out = expand_at(&sealed, DEEP_REGION, DEEP_SEED);
+        let elite = out.anchors["anchor/elite"].pos;
+        assert_eq!(
+            flank_routes(&out.model, elite, true),
+            want,
+            "arena/seal_flank={knob} did not drop the zone-scale route count — the \
+             gate proves nothing"
+        );
+        let cells = standable_cells(&out.model);
+        let (ledge, floor) = ends(&out.model);
+        assert!(
+            reachable_with_fall(&out.model, &cells, &ledge, &floor),
+            "arena/seal_flank={knob} sealed the cistern itself, so the route count is \
+             measuring impassability rather than a missing bypass"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// What composition itself has to get right
+// ---------------------------------------------------------------------------
+
+/// The pieces stand in travel order along the zone's own axis, and every anchor
+/// they declare faces down it. This is the cheap, total check that no piece was
+/// turned: a rotated piece declares its anchors facing `west`, and its wall
+/// across the route.
+///
+/// Binding: 28 anchors — 1 (Z0), 8 (Z1: 4 niches, 4 watch cells), 4 (Z2), 9
+/// (Z5), 6 (Z6).
+#[test]
+fn the_pieces_stand_in_travel_order() {
+    let ward = expand_at(&gate_ward(), WARD_REGION, WARD_SEED);
+    let z = |out: &Expansion, name: &str| out.anchors[name].pos[2];
+    assert!(
+        z(&ward, "anchor/alcove") < z(&ward, "anchor/gate")
+            && z(&ward, "anchor/gate") < z(&ward, "anchor/watch"),
+        "the gatehouse's pieces are out of travel order: {:#?}",
+        ward.anchors
+    );
+
+    let keep = expand_at(&hall_keep(), KEEP_REGION, KEEP_SEED);
+    assert!(
+        z(&keep, "anchor/store-line") < z(&keep, "anchor/threshold")
+            && z(&keep, "anchor/threshold") < z(&keep, "anchor/hall-door"),
+        "the keep's pieces are out of travel order: {:#?}",
+        keep.anchors
+    );
+
+    // Z6 is the long one: four pieces, and the order is also the beat sequence —
+    // spill in, read the volley, cross it, find the grate, meet the elite.
+    let deep = expand_at(&cistern_deep(), DEEP_REGION, DEEP_SEED);
+    let order = [
+        "anchor/elite",
+        "anchor/grate-secret",
+        "anchor/gate",
+        "anchor/watch",
+        "anchor/landing",
+        "anchor/spill",
+    ];
+    for pair in order.windows(2) {
+        assert!(
+            z(&deep, pair[0]) < z(&deep, pair[1]),
+            "the cistern's pieces are out of travel order at {pair:?}: {:#?}",
+            deep.anchors
+        );
+    }
+
+    // Every anchor faces the way its rule meant it to. Down travel (`north`)
+    // for all of them except the four the vocabulary deliberately aims *across*
+    // the route through a reorient — the recess, the alcove, the tell and the
+    // broken grate — which face `west` precisely because the route runs north.
+    let shore = expand_at(&barrow_shore(), SHORE_REGION, SHORE_SEED);
+    let road = expand_at(&cliff_road(), CLIFF_REGION, CLIFF_SEED);
+    let mut checked = 0;
+    for out in [&shore, &road, &ward, &keep, &deep] {
+        for (name, anchor) in &out.anchors {
+            let across = name == "anchor/alcove"
+                || name == "anchor/tell"
+                || name == "anchor/grate-secret"
+                || (name.starts_with("anchor/niche-") && !name.starts_with("anchor/niche-watch-"));
+            let want = if across { "west" } else { "north" };
+            assert_eq!(
+                anchor.facing.as_str(),
+                want,
+                "{name} faces the wrong way — the piece that declared it was turned"
+            );
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 28, "the gate checked {checked} anchors");
+}
+
+/// The frame constraint, enforced as a refusal: a piece run shorter than the
+/// zone is wide has no applicable alternative.
+///
+/// Teeth are the other half of this test. A refusal only means something if the
+/// thing refused would really have gone wrong — so the same short box is handed
+/// to the piece on its own, and it builds a threshold turned 90°: an anchor
+/// facing `west` instead of `north`, i.e. a wall across the route rather than
+/// along it. That is the defect the zone guard exists to make impossible.
+#[test]
+fn a_piece_run_shorter_than_the_zone_is_refused_not_turned() {
+    let mut squat = hall_keep();
+    squat.set_param("door_run", 7).unwrap();
+    let err = expand(&squat, KEEP_REGION, &ExpandOptions::seeded(KEEP_SEED)).unwrap_err();
+    assert!(
+        err.to_string().contains("no alternative of rule"),
+        "expected a refusal, got: {err}"
+    );
+
+    // The control: the refused shape is a real defect, not a cautious guard.
+    let wide = Box3::at_origin([KEEP_REGION.size[0], KEEP_REGION.size[1], 7]);
+    let turned = expand_at(
+        &delvewright_grammar::library::ambush_door(),
+        wide,
+        KEEP_SEED,
+    );
+    assert_eq!(
+        turned.anchors["anchor/threshold"].facing.as_str(),
+        "west",
+        "a box wider than it is long did not turn the threshold, so the guard is \
+         guarding against nothing"
+    );
+
+    // The same guard, on a zone four times as wide — where the run a piece needs
+    // is correspondingly longer, and the defect it prevents is the same one.
+    let mut stubby = cistern_deep();
+    stubby.set_param("gallery_run", 7).unwrap();
+    let err = expand(&stubby, DEEP_REGION, &ExpandOptions::seeded(DEEP_SEED)).unwrap_err();
+    assert!(
+        err.to_string().contains("no alternative of rule"),
+        "expected a refusal, got: {err}"
+    );
+    let stub_box = Box3::at_origin([DEEP_REGION.size[0], DEEP_REGION.size[1], 7]);
+    let turned_bay = expand_at(&watch_bay(), stub_box, DEEP_SEED);
+    assert_eq!(
+        turned_bay.anchors["anchor/watch"].facing.as_str(),
+        "west",
+        "a box wider than it is long did not turn the watch bay, so the guard is \
+         guarding against nothing"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The seam's limits — what composition can now do, and what it still cannot
+// ---------------------------------------------------------------------------
+
+/// Two pieces laid end to end in one throwaway program: the smallest thing that
+/// is a composition at all, and the fixture the claims below are read off.
+fn chained(parts: [(&str, &Program); 2]) -> Program {
+    let none = AnchorRenames::new();
+    chained_renaming([
+        (parts[0].0, parts[0].1, &none),
+        (parts[1].0, parts[1].1, &none),
+    ])
+}
+
+/// The same chain, with each piece given the anchor renames it is included
+/// under.
+fn chained_renaming(parts: [(&str, &Program, &AnchorRenames<'_>); 2]) -> Program {
+    let plan = Program::new("chain", "plan").rule_alts(
+        "plan",
+        vec![Alternative::new(Node::Split(Split {
+            axis: Axis::Z,
+            sizes: vec![Size::rel(1), Size::rel(1)],
+            rounding: Default::default(),
+            repeat: false,
+            orient: Default::default(),
+            children: parts
+                .iter()
+                .map(|(prefix, source, _)| Node::call(&entry(prefix, source)))
+                .collect(),
+        }))],
+    );
+    parts.iter().fold(plan, |acc, (prefix, source, renames)| {
+        include_renaming(acc, source, prefix, renames).unwrap_or_else(|e| panic!("{prefix}: {e}"))
+    })
+}
+
+/// The default, stated as a test rather than as a comment: an include does not
+/// rename anchors *on its own*, because an anchor name is the campaign's
+/// contract. So a zone that includes the same piece twice and says nothing gets
+/// two declarations of one name, and expansion refuses loudly instead of letting
+/// the second quietly win.
+///
+/// The refusal now carries its own remedy, which is the difference between a
+/// wall and a signpost: the message names `include_renaming`, so the next reader
+/// meets the fix rather than the limit.
+#[test]
+fn including_one_piece_twice_without_saying_so_is_a_loud_anchor_collision() {
+    let bay = watch_bay();
+    let twice = chained([("first", &bay), ("second", &bay)]);
+    twice.validate().expect("both copies resolve");
+
+    let err = expand(
+        &twice,
+        Box3::at_origin([11, 7, 40]),
+        &ExpandOptions::seeded(1),
+    )
+    .unwrap_err();
+    let text = err.to_string();
+    assert!(
+        text.contains("declared twice") && text.contains("first/") && text.contains("second/"),
+        "expected an anchor collision naming both copies' rules, got: {text}"
+    );
+    assert!(
+        text.contains("include_renaming"),
+        "the collision does not name its remedy, so it reads as a dead end: {text}"
+    );
+}
+
+/// **Seam limit 1, closed.** It never took two copies of one piece to hit that
+/// collision: two *different* pieces that happen to declare the same anchor name
+/// collided identically, and two pairs in today's vocabulary do — `causeway` and
+/// `elite_ground` both declare `anchor/elite`, `watch_bay` and `far_side_bar`
+/// both declare `anchor/gate`. That refused Z3's **T** + **E** and Z6's **F**,
+/// not for want of a shape but for want of a name.
+///
+/// A rename at the include site is the name. It is deliberately *explicit* and
+/// per-anchor rather than a blanket prefix: a ward with a causeway keeper and a
+/// dormant elite has two genuinely different elites and the campaign has to be
+/// able to tell them apart, so the zone writes down which is which. A prefix
+/// would have silently moved every anchor a `timed-gate` already binds.
+///
+/// Binding: 2 pairs, 4 anchors, each expanded and each read back by name and by
+/// declaring rule. Control: the same two pairs with no rename still collide
+/// (the test above, and
+/// `two_pieces_that_share_a_stem_still_collide_when_nobody_renames`).
+#[test]
+fn a_rename_at_the_include_site_lets_two_pieces_declare_one_stem() {
+    const WARD: Box3 = Box3::at_origin([21, 12, 60]);
+    let cases = [
+        (
+            "elite",
+            "keeper-elite",
+            causeway(),
+            elite_ground(),
+            "near/post_column",
+            "far/elite_column",
+        ),
+        (
+            "gate",
+            "shortcut-gate",
+            far_side_bar(),
+            watch_bay(),
+            "near/door_column",
+            "far/span_column",
+        ),
+    ];
+    let mut checked = 0;
+    for (stem, renamed, near, far, near_rule, far_rule) in &cases {
+        let renames = AnchorRenames::from([(*stem, *renamed)]);
+        let none = AnchorRenames::new();
+        let program = chained_renaming([("near", near, &renames), ("far", far, &none)]);
+        program.validate().expect("both pieces resolve");
+        let out = expand(&program, WARD, &ExpandOptions::seeded(1))
+            .unwrap_or_else(|e| panic!("{} + {}: {e}", near.name, far.name));
+
+        let moved = out
+            .anchors
+            .get(&format!("anchor/{renamed}"))
+            .unwrap_or_else(|| panic!("the renamed anchor is missing: {:#?}", out.anchors));
+        let kept = out
+            .anchors
+            .get(&format!("anchor/{stem}"))
+            .unwrap_or_else(|| panic!("the unrenamed anchor is missing: {:#?}", out.anchors));
+        assert_eq!(
+            (moved.declared_by.as_str(), kept.declared_by.as_str()),
+            (*near_rule, *far_rule),
+            "the two anchors came from the wrong pieces"
+        );
+        assert_ne!(moved.pos, kept.pos, "two names, one place");
+        checked += 2;
+    }
+    assert_eq!(checked, 4, "the gate read back {checked} anchors");
+}
+
+/// ...and the rename is opt-in, which is the whole safety property: the same two
+/// pairs with nothing said still collide, so no existing anchor contract moved
+/// when this landed.
+///
+/// Binding: 2 pairs, each refused by name.
+#[test]
+fn two_pieces_that_share_a_stem_still_collide_when_nobody_renames() {
+    let pairs = [
+        ("anchor/elite", causeway(), elite_ground()),
+        ("anchor/gate", watch_bay(), far_side_bar()),
+    ];
+    for (anchor, near, far) in &pairs {
+        let program = chained([("near", near), ("far", far)]);
+        program.validate().expect("both pieces resolve");
+        let err = expand(
+            &program,
+            Box3::at_origin([21, 12, 60]),
+            &ExpandOptions::seeded(1),
+        )
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(
+            text.contains(anchor) && text.contains("declared twice"),
+            "{} + {} should have collided on {anchor}, got: {text}",
+            near.name,
+            far.name
+        );
+    }
+}
+
+/// **Finding: `causeway` has no exit past its guard post**, so nothing can be
+/// chained after it and Z3 has no spine to hang **E** and **F** on even once the
+/// anchor collision above is solved.
+///
+/// The post is deliberately unreachable from the berm — the rule's own module
+/// note calls it "not a landing", the same move that keeps `rafter_hall`'s
+/// perches off the nave — and the mass that holds it up is solid from the ward
+/// floor to `rise + tower_rise`. That is fine for a piece whose gate is a
+/// sightline. It means the piece is a **terminus**: its far face carries no
+/// standable cell at berm height at all, so a zone that put anything past it
+/// would be handing the player a wall, and a zone that put it last would end at
+/// one.
+///
+/// Fixing it is a change to the §5b rule — an exit lane past the post — which is
+/// a finding to report and not something a zone program may write.
+///
+/// Binding: the 2 `Z`-slices of the guard station, and the 22-cell berm.
+/// Control: the berm itself is still a route across the ward, so what is severed
+/// is the exit and not the crossing.
+#[test]
+fn the_causeway_has_no_exit_past_its_guard_post() {
+    const WARD: Box3 = Box3::at_origin([9, 10, 24]);
+    let out = expand_at(&causeway(), WARD, 1);
+    let cells = standable_cells(&out.model);
+    let berm_top = out.anchors["anchor/causeway-head"].pos[1];
+    let post = out.anchors["anchor/elite"].pos;
+    assert!(post[1] > berm_top, "the post is the elevated one");
+
+    // The zone-facing face of the piece: at the far end there is nowhere to
+    // stand at berm height, and the cantilever slice has no floor at all.
+    let at_z = |z: i32| -> Vec<[i32; 3]> { cells.iter().copied().filter(|c| c[2] == z).collect() };
+    assert!(
+        at_z(1).is_empty(),
+        "the cantilever slice has a floor: {:?}",
+        at_z(1)
+    );
+    assert!(
+        at_z(0).iter().all(|c| c[1] == post[1]),
+        "something stands at the far face below the post: {:?}",
+        at_z(0)
+    );
+
+    // ...and the post is not reachable from the berm, so the piece cannot even
+    // be crossed, let alone continued past.
+    let berm: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[1] == berm_top).collect();
+    assert_eq!(berm.len(), 22, "the berm");
+    let (entry, exit) = ends(&out.model);
+    assert!(
+        !reachable_with_fall(&out.model, &cells, &entry, &exit),
+        "the causeway reaches its own far face — this finding is stale and Z3 can be \
+         chained after all"
+    );
+
+    // The control: the crossing itself works. What is missing is only the exit.
+    let head: BTreeSet<[i32; 3]> = berm.iter().copied().filter(|c| c[2] == 23).collect();
+    let toe: BTreeSet<[i32; 3]> = berm.iter().copied().filter(|c| c[2] == 2).collect();
+    assert!(
+        connected(&berm, &head, &toe),
+        "the berm does not even cross the ward, so the red above is a broken fixture"
+    );
+}
+
+/// The branch fixture's box: a mainline three wide with a seven-deep strip
+/// alongside it, long enough for a real chain either side of the junction.
+const BRANCH_REGION: Box3 = Box3::at_origin([10, 6, 24]);
+/// How deep the branch strip runs off the mainline.
+///
+/// **Strictly greater than [`TEE_RUN`]**, and that is the frame constraint §5c
+/// already documents rather than a magic number: every §5b rule opens with
+/// `z(Largest)`, so `far_side_bar` turns its travel onto the longer horizontal
+/// axis of whatever box it is handed. A branch box deeper than it is wide puts
+/// that axis *across* the mainline, which aims the bar's near room at the tee's
+/// doorway. A wider-than-deep box would build the bar along the chain instead
+/// — the piece turned, which `the_pieces_stand_in_travel_order` is the general
+/// form of.
+const BRANCH_DEPTH: i64 = 7;
+/// The tee's own run along the chain, and the branch box's width — the same
+/// number on purpose, so the doorway the tee cuts at the middle of its run lands
+/// inside the branch's near room rather than in one of its end walls.
+const TEE_RUN: i64 = 5;
+/// Neither piece of the branch draws from the seed; the grate's break does, and
+/// the gates below do not read it.
+const BRANCH_SEED: u64 = 1;
+
+/// A chain with a branch: `tee_passage` + `broken_grate` down the mainline, and
+/// a `far_side_bar` in a side strip beside the tee's doorway.
+///
+/// The zone writes no encounter geometry — only the two splits that carve the
+/// strip out of the box and the plain fill that walls the strip's margins, which
+/// is the same "mass no piece can know about" `cliff_road`'s gulf is. Everything
+/// else is `include` and `call`.
+fn branch_chain() -> Program {
+    fn cut(axis: Axis, sizes: Vec<Size>, children: Vec<Node>) -> Node {
+        Node::Split(Split {
+            axis,
+            sizes,
+            // `Rounding::Start`, not the default truncation: a truncated
+            // relative piece leaves the far end of the box unwritten, and an
+            // unwritten cell is air — a hole in the strip's own margin wall.
+            rounding: delvewright_grammar::ir::Rounding::Start,
+            repeat: false,
+            orient: Default::default(),
+            children,
+        })
+    }
+    let tee = delvewright_grammar::library::tee_passage();
+    let bar = far_side_bar();
+    let vent = broken_grate();
+    let plan = Program::new("branch_chain", "plan")
+        .role("margin", BlockState::simple("deepslate"))
+        .rule(
+            "plan",
+            cut(
+                Axis::X,
+                vec![Size::abs(BRANCH_DEPTH), Size::rel(1)],
+                vec![Node::call("strip"), Node::call("mainline")],
+            ),
+        )
+        // The strip: the branch's own box at the tee's own run, solid rock for
+        // the rest of its length. The fill is inert mass, not a gate — what
+        // makes the tee's doorway the only way into the branch is that
+        // `far_side_bar` walls its own two side faces, which is the same §5b
+        // property this seam limit came from. (Measured: replacing the fill with
+        // air reds nothing, because a floorless strip has no standable cell in
+        // it either way.)
+        .rule(
+            "strip",
+            cut(
+                Axis::Z,
+                vec![Size::abs(TEE_RUN), Size::rel(1)],
+                vec![Node::call(&entry("bar", &bar)), Node::fill("margin")],
+            ),
+        )
+        .rule(
+            "mainline",
+            cut(
+                Axis::Z,
+                vec![Size::abs(TEE_RUN), Size::rel(1)],
+                vec![
+                    Node::call(&entry("tee", &tee)),
+                    Node::call(&entry("vent", &vent)),
+                ],
+            ),
+        );
+    let none = AnchorRenames::new();
+    [("tee", &tee), ("bar", &bar), ("vent", &vent)]
+        .into_iter()
+        .fold(plan, |acc, (prefix, source)| {
+            include_renaming(acc, source, prefix, &none).unwrap_or_else(|e| panic!("{prefix}: {e}"))
+        })
+}
+
+/// The branch's near room: the strip's standable cells on the mainline side of
+/// the bar, read off `anchor/gate` rather than recomputed from the fixture's
+/// own arithmetic.
+fn branch_near_room(cells: &BTreeSet<[i32; 3]>, gate: [i32; 3]) -> BTreeSet<[i32; 3]> {
+    cells
+        .iter()
+        .copied()
+        .filter(|c| c[0] > gate[0] && (c[0] as i64) < BRANCH_DEPTH)
+        .collect()
+}
+
+/// **Seam limit 3, closed — but the first half of this test is still true, and
+/// that is the point.** A `far_side_bar` laid *in* the chain seals the zone's
+/// own route rather than sitting beside it, which is the opposite of what a
+/// shortcut is (spec-0016 §2: a short way back between two rest points, earned
+/// from the far side). Every §5b rule walls its own two side faces, so a
+/// composition is a chain along one axis and a zone had no way to hand a piece a
+/// box *off* the route.
+///
+/// [`tee_passage`] is that way, and it is vocabulary rather than a new
+/// primitive: the IR already expressed "a chain segment whose one side face
+/// carries a doorway" — `ambush_door` and `far_side_bar` are exactly that
+/// construction, merely turned 90° from where a branch needs it. So the second
+/// half of this test lays the *same bar* beside the route instead of on it, and
+/// asserts the three things that make it a shortcut rather than a wall.
+///
+/// Binding, first half: the chain's standable cells, walked twice; `bar/unbarred`
+/// opens the same doorway and the same walk connects, so what sealed the chain
+/// was the bar and not a seam that never joined.
+///
+/// Binding, second half: 43 standable cells (25 on the mainline, 18 in the
+/// branch), 9 of them the branch's near room, 1 the doorway column that is cut
+/// and re-walked.
+#[test]
+fn a_barred_door_on_the_route_seals_the_chain() {
+    const CHAIN: Box3 = Box3::at_origin([5, 6, 24]);
+    let vent = broken_grate();
+    let bar = far_side_bar();
+    let program = chained([("bar", &bar), ("vent", &vent)]);
+
+    let out = expand_at(&program, CHAIN, 1);
+    let cells = standable_cells(&out.model);
+    let (entry, exit) = ends(&out.model);
+    assert!(!entry.is_empty() && !exit.is_empty(), "the chain has ends");
+    assert!(
+        !reachable_with_fall(&out.model, &cells, &entry, &exit),
+        "a barred door on the route did not seal the chain — either this finding is \
+         stale or the fixture never put the bar on the route"
+    );
+
+    let mut open = program;
+    open.set_param("bar/unbarred", 1).unwrap();
+    let opened = expand_at(&open, CHAIN, 1);
+    let open_cells = standable_cells(&opened.model);
+    let (open_entry, open_exit) = ends(&opened.model);
+    assert!(
+        connected(&open_cells, &open_entry, &open_exit),
+        "drawing the bar did not open the chain, so the seal above proves nothing \
+         about the bar"
+    );
+
+    // ------------------------------------------------------------------
+    // ...and the same bar, laid *beside* the route through a `tee_passage`.
+    // ------------------------------------------------------------------
+    let branch = branch_chain();
+    let out = expand_at(&branch, BRANCH_REGION, BRANCH_SEED);
+    let cells = standable_cells(&out.model);
+    assert_eq!(cells.len(), 43, "the composed chain's standable cells");
+    let unlock: BTreeSet<[i32; 3]> = [out.anchors["anchor/unlock"].pos].into_iter().collect();
+    let door = out.anchors["anchor/branch-door"].pos;
+    let gate = out.anchors["anchor/gate"].pos;
+
+    // 1. The CONTROL, and it is what separates "the shortcut is sealed" from
+    //    "the zone is impassable": the mainline walks end to end **with the bar
+    //    standing**. This is the assertion the first half of this test fails.
+    let (entry, exit) = ends(&out.model);
+    assert_eq!(
+        (entry.len(), exit.len()),
+        (1, 1),
+        "the mainline's ends: {entry:?} / {exit:?}"
+    );
+    assert!(
+        connected(&cells, &entry, &exit),
+        "the branch sealed the mainline — a tee that severs the chain it is a \
+         segment of is a `far_side_bar` wearing a different name"
+    );
+
+    // 2. The near side reaches the branch's near room, and stops there.
+    let near_room = branch_near_room(&cells, gate);
+    assert_eq!(near_room.len(), 9, "the branch's near room: {near_room:?}");
+    assert!(
+        connected(&cells, &entry, &near_room),
+        "the mainline cannot reach the branch at all — the tee's doorway opens onto \
+         nothing, so the shortcut is not even a room"
+    );
+    assert!(
+        !connected(&cells, &entry, &unlock),
+        "the mainline reaches {unlock:?} while the bar stands — the shortcut has no \
+         far side to earn"
+    );
+
+    // 3. Drawing the bar connects the two, and through exactly the tee's doorway:
+    //    cut that one column and the branch is unreachable again.
+    let mut open = branch_chain();
+    open.set_param("bar/unbarred", 1).unwrap();
+    let opened = expand_at(&open, BRANCH_REGION, BRANCH_SEED);
+    let open_cells = standable_cells(&opened.model);
+    let (open_entry, _) = ends(&opened.model);
+    assert!(
+        connected(&open_cells, &open_entry, &unlock),
+        "drawing the bar did not open the branch, so the seal above proves nothing"
+    );
+    let cut: BTreeSet<[i32; 3]> = open_cells
+        .iter()
+        .copied()
+        .filter(|c| c[0] != door[0] || c[2] != door[2])
+        .collect();
+    assert_eq!(
+        cut.len(),
+        open_cells.len() - 1,
+        "exactly the doorway was cut"
+    );
+    assert!(
+        !connected(&cut, &open_entry, &unlock),
+        "with the tee's doorway plugged the unbarred branch is still reachable — the \
+         way in is a seam that never closed, not the doorway this rule declares"
+    );
+}
+
+/// ...and the branch has teeth. `tee/sealed` fills the tee's doorway and nothing
+/// else: the branch must go unreachable **while the mainline still walks**, which
+/// is what proves the doorway — and not a seam accident anywhere along the strip
+/// — is the way in.
+///
+/// Binding: 42 standable cells (one fewer than the open fixture: the doorway),
+/// 9 of them the branch's near room.
+#[test]
+fn sealing_the_tee_makes_the_branch_unreachable() {
+    let mut sealed = branch_chain();
+    sealed.set_param("tee/sealed", 1).unwrap();
+    let out = expand_at(&sealed, BRANCH_REGION, BRANCH_SEED);
+    let cells = standable_cells(&out.model);
+    assert_eq!(cells.len(), 42, "the doorway cell, and only it, is gone");
+    let (entry, exit) = ends(&out.model);
+
+    let near_room = branch_near_room(&cells, out.anchors["anchor/gate"].pos);
+    assert_eq!(near_room.len(), 9, "the branch is still a room");
+    assert!(
+        !connected(&cells, &entry, &near_room),
+        "the tee's doorway was filled and the branch is still reachable — the way in \
+         was never the doorway, so the gate above proves nothing"
+    );
+
+    // The control: a filled doorway, not a filled zone.
+    assert!(
+        connected(&cells, &entry, &exit),
+        "sealing the branch door sealed the mainline, so the red above is measuring \
+         an impassable chain rather than an unreachable branch"
+    );
+}

@@ -55,7 +55,7 @@ pub fn check_sounds(c: &Campaign) -> Vec<Diagnostic> {
         if !reg.contains(&r.sound) {
             d.push(Diagnostic::error(
                 DW_SOUND_UNKNOWN,
-                "quests",
+                r.stage,
                 r.path,
                 format!(
                     "sound `{}` is not a known 1.21.11 sound event — use a vanilla \
@@ -69,7 +69,7 @@ pub fn check_sounds(c: &Campaign) -> Vec<Diagnostic> {
     for r in play_sound_actor_refs(c) {
         d.push(Diagnostic::error(
             DW_PLAYSOUND_ACTOR_DEFERRED,
-            "quests",
+            r.stage,
             r.path,
             format!(
                 "`play-sound` `at: {{actor: {}}}` is not yet supported — the actors \
@@ -113,7 +113,7 @@ pub fn check_art(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<Diag
     for a in &arts {
         // Source (canonical English).
         if let Some(bad) = first_uncovered(&a.text) {
-            d.push(art_diag("quests", a.path.clone(), &a.text, bad));
+            d.push(art_diag(a.stage, a.path.clone(), &a.text, bad));
         }
     }
     // Translations: only the declared languages, in a fixed order.

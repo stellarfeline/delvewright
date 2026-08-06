@@ -10,15 +10,19 @@
 //! - [`meta`] — prefab metadata (sockets/anchors) for interior shots.
 //! - [`scene`] — Chunky scene emission from the compiler's `render-plan.json`
 //!   (free-camera path — the renderer for the first-person player-POV shots).
+//! - [`panorama`] — the whole-map 45° oblique release panorama.
+//! - [`cache`] — Chunky's derived per-scene caches, and their invalidation.
 //! - [`index`] — shot index: (image ↔ expect) pairs for the vision reviewer.
 //! - [`diag`] — diagnostics + exit codes (`DW072x`).
 
+pub mod cache;
 pub mod detect;
 pub mod diag;
 pub mod fidelity;
 pub mod index;
 pub mod meta;
 pub mod nbt;
+pub mod panorama;
 pub mod render;
 pub mod scene;
 pub mod shots;

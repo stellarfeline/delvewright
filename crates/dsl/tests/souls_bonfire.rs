@@ -264,3 +264,34 @@ fn authored_bonfire_labels_are_v08_and_translatable() {
         "all three authored strings are translatable: {inv:#?}"
     );
 }
+
+/// spec-0016 §1 (owner ruling 2026-08-05): a **`boss`-tier wave may not declare
+/// `respawns_on_rest`**. Beating a stage boss is progress the fire may not undo,
+/// so the two declarations contradict each other — `DW0499`, and nothing silent.
+///
+/// The `elite` tier is deliberately still allowed to re-seat: an elite is a
+/// set-piece the party may legitimately re-run, and spec-0016 §1 only exempts
+/// stage bosses.
+#[test]
+fn a_boss_wave_may_not_declare_respawns_on_rest_dw0489() {
+    let boss = QUESTS_V06.replacen("\"0.6.0\"", "\"0.8.0\"", 1).replace(
+        "\"respawns_on_rest\": true,",
+        "\"respawns_on_rest\": true, \"tier\": \"boss\",",
+    );
+    assert_ne!(boss, QUESTS_V06, "the substitution must apply");
+    let diags = check_campaign(&campaign_with_quests(&boss));
+    assert!(
+        diags
+            .iter()
+            .any(|d| d.code == "DW0499" && d.path.ends_with("/respawns_on_rest")),
+        "a boss wave that respawns on rest must be DW0499: {diags:#?}"
+    );
+
+    // The same wave billed `elite` is legal: only the stage boss is exempt.
+    let elite = boss.replace("\"tier\": \"boss\"", "\"tier\": \"elite\"");
+    let diags = check_campaign(&campaign_with_quests(&elite));
+    assert!(
+        diags.is_empty(),
+        "an elite wave may still respawn on rest: {diags:#?}"
+    );
+}

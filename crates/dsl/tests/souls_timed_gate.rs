@@ -141,3 +141,146 @@ fn malformed_timed_gate_id_is_dw0377() {
         "a malformed timed-gate id must be DW0377: {diags:#?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// task #184 — the `disarm` third rung
+// ---------------------------------------------------------------------------
+
+/// The v0.6 gate with a jam lever on a real anchor. `anchor/keeper-stand` is a
+/// second anchor `prefab/hello-room` exposes, so it resolves.
+const QUESTS_DISARM: &str = r#"{
+  "dsl_version": "0.6.0",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"] }
+        ],
+        "on_objective_complete": { "obj/talk": [] },
+        "on_complete": [ { "type": "campaign-complete" } ]
+      }
+    ],
+    "timed_gates": [
+      { "id": "timed-gate/inner-door", "gate": "anchor/door", "open_ticks": 60, "closed_ticks": 40,
+        "disarm": { "via": "anchor/exit", "sets_flag": "flag/portcullis-jammed" } }
+    ]
+  }
+}"#;
+
+/// A well-formed disarm validates clean.
+#[test]
+fn timed_gate_disarm_validates_clean() {
+    let diags = check_campaign(&campaign_with_quests(QUESTS_DISARM));
+    assert!(
+        diags.is_empty(),
+        "expected zero diagnostics for a jammable timed gate, got: {diags:#?}"
+    );
+}
+
+/// The disarm's `sets_flag` is a first-class declared flag — other beats may gate
+/// on it without `DW0172`, exactly as they may on a trap disarm's.
+#[test]
+fn a_disarm_flag_is_a_declared_producer() {
+    let gated = QUESTS_DISARM.replace(
+        "    \"timed_gates\": [",
+        "    \"triggers\": [ { \"id\": \"trigger/aftermath\", \"at\": \"anchor/exit\", \
+         \"on\": { \"on\": \"approach\", \"range\": 3 }, \
+         \"requires_flags\": [\"flag/portcullis-jammed\"], \
+         \"effects\": [ { \"type\": \"narrate\", \"text\": \"The bars hang jammed.\" } ] } ],\n\
+         \x20   \"timed_gates\": [",
+    );
+    assert_ne!(gated, QUESTS_DISARM);
+    let diags = check_campaign(&campaign_with_quests(&gated));
+    assert!(
+        diags.is_empty(),
+        "a trigger gated on the jam flag resolves against it: {diags:#?}"
+    );
+}
+
+/// A `disarm.via` no area's prefab provides is `DW0377`.
+#[test]
+fn unresolvable_disarm_anchor_is_dw0377() {
+    let bad = QUESTS_DISARM.replace("\"via\": \"anchor/exit\"", "\"via\": \"anchor/invented\"");
+    assert_ne!(bad, QUESTS_DISARM);
+    let diags = check_campaign(&campaign_with_quests(&bad));
+    assert!(
+        diags
+            .iter()
+            .any(|d| d.code == "DW0377" && d.path.ends_with("/disarm/via")),
+        "an invented disarm anchor must be DW0377: {diags:#?}"
+    );
+}
+
+/// The jam lever inside the span the portcullis closes on — where a `crush` gate
+/// would kill the player mid-pull. `DW0377`.
+#[test]
+fn a_disarm_on_its_own_gate_anchor_is_dw0377() {
+    let bad = QUESTS_DISARM.replace("\"via\": \"anchor/exit\"", "\"via\": \"anchor/door\"");
+    assert_ne!(bad, QUESTS_DISARM);
+    let diags = check_campaign(&campaign_with_quests(&bad));
+    assert!(
+        diags
+            .iter()
+            .any(|d| d.code == "DW0377" && d.path.ends_with("/disarm/via")),
+        "a lever inside its own gate span must be DW0377: {diags:#?}"
+    );
+}
+
+/// **The permanence rule.** A disarmed gate rests open forever, so a `close-gate`
+/// naming it is a re-arm the engine refuses to spell — `DW0389`, the mirror of a
+/// shortcut's `DW0372`.
+#[test]
+fn close_gate_on_a_disarmable_gate_is_dw0389() {
+    let bad = QUESTS_DISARM.replace(
+        "\"on_complete\": [ { \"type\": \"campaign-complete\" } ]",
+        "\"on_complete\": [ { \"type\": \"close-gate\", \"anchor\": \"anchor/door\" }, \
+         { \"type\": \"campaign-complete\" } ]",
+    );
+    assert_ne!(bad, QUESTS_DISARM);
+    let diags = check_campaign(&campaign_with_quests(&bad));
+    assert!(
+        diags.iter().any(|d| d.code == "DW0389"),
+        "re-sealing a jammable gate must be DW0389: {diags:#?}"
+    );
+}
+
+/// The same re-seal buried inside a `sequence` step of a trigger: the scan
+/// descends nested effect lists, so depth is no escape (the `DW0372` shape).
+#[test]
+fn a_nested_close_gate_on_a_disarmable_gate_is_dw0389() {
+    let bad = QUESTS_DISARM.replace(
+        "    \"timed_gates\": [",
+        "    \"triggers\": [ { \"id\": \"trigger/spring\", \"at\": \"anchor/exit\", \
+         \"on\": { \"on\": \"approach\", \"range\": 3 }, \"effects\": [ { \"type\": \"sequence\", \
+         \"steps\": [ { \"at_ticks\": 0, \"effects\": [ { \"type\": \"close-gate\", \"anchor\": \
+         \"anchor/door\" } ] } ] } ] } ],\n    \"timed_gates\": [",
+    );
+    assert_ne!(bad, QUESTS_DISARM);
+    let diags = check_campaign(&campaign_with_quests(&bad));
+    assert!(
+        diags.iter().any(|d| d.code == "DW0389"),
+        "a nested re-seal must still be DW0389: {diags:#?}"
+    );
+}
+
+/// …and a `close-gate` on a gate whose clock has NO disarm is untouched: the
+/// point-of-no-return beat keeps working exactly as before.
+#[test]
+fn close_gate_on_a_plain_timed_gate_is_not_dw0389() {
+    let ok = QUESTS_V06.replace(
+        "\"on_complete\": [ { \"type\": \"campaign-complete\" } ]",
+        "\"on_complete\": [ { \"type\": \"close-gate\", \"anchor\": \"anchor/door\" }, \
+         { \"type\": \"campaign-complete\" } ]",
+    );
+    assert_ne!(ok, QUESTS_V06);
+    let diags = check_campaign(&campaign_with_quests(&ok));
+    assert!(
+        !diags.iter().any(|d| d.code == "DW0389"),
+        "a clock with no disarm may still be sealed by a beat: {diags:#?}"
+    );
+}

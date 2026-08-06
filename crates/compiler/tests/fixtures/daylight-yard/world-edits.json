@@ -1,0 +1,42 @@
+{
+  "dsl_version": "0.6.0",
+  "campaign_id": "daylight-yard",
+  "stage": "world-edits",
+  "content": {
+    "batches": [
+      {
+        "id": "batch/open-the-yard",
+        "area": "area/keep",
+        "note": "The gate yard's roof came down: carve the ceiling and the lantern course above the interior, leaving the wall ring standing. This is the hollow-vigil incident's geometry in miniature — an open-air beat under a pinned noon, with the garrison staged in it.",
+        "edits": [
+          {
+            "verb": "select",
+            "name": "region/yard-roof",
+            "shape": {
+              "kind": "box",
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/hello-room"
+              },
+              "min": [
+                1,
+                4,
+                1
+              ],
+              "max": [
+                9,
+                5,
+                9
+              ]
+            }
+          },
+          {
+            "verb": "carve",
+            "region": "region/yard-roof"
+          }
+        ]
+      }
+    ]
+  }
+}

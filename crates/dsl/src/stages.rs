@@ -456,8 +456,11 @@ pub mod horizon_defaults {
     pub const RIM_HEIGHT: i32 = 48;
     /// `summit.plateau_y`.
     pub const PLATEAU_Y: i32 = 208;
-    /// `summit.vista_radius`.
-    pub const VISTA_RADIUS: i32 = 176;
+    /// `summit.vista_radius` (spec-0026 amendment 2026-08-04): 13 chunks, one
+    /// chunk of slack over the 192 floor (= the shipped summit `view-distance`
+    /// 12 × 16), so the fog line always lands inside generated terrain. The
+    /// pre-amendment 176 sat *below* its own floor.
+    pub const VISTA_RADIUS: i32 = 208;
     /// `summit.min_drop`.
     pub const MIN_DROP: i32 = 120;
 }
@@ -1046,6 +1049,18 @@ impl DialogueEffect {
             _ => None,
         }
     }
+
+    /// The `on_respawn` bundle of a v0.6 `set-checkpoint` dialogue effect, exposed
+    /// mutably so the localization pass can rewrite the player-visible strings
+    /// nested inside it. Lockstep sibling of [`Self::set_checkpoint`] — the bundle
+    /// is a plain `Vec<QuestEffect>` that emission really lowers, so every scan
+    /// that reaches it read-only needs a way to reach it writable too.
+    pub fn set_checkpoint_on_respawn_mut(&mut self) -> Option<&mut [QuestEffect]> {
+        match self {
+            DialogueEffect::SetCheckpoint { on_respawn, .. } => Some(on_respawn.as_mut_slice()),
+            _ => None,
+        }
+    }
 }
 
 impl DialogueEffect {
@@ -1138,7 +1153,113 @@ pub struct KitItem {
     /// a design choice. Absent on every pre-0.8 kit → emission byte-identical.
     #[serde(default, skip_serializing_if = "is_false")]
     pub flask: bool,
+    /// **What is in the bottle** (DSL v0.8, spec-0016 §1, owner directive
+    /// 2026-08-03): the vanilla `minecraft:potion_contents` component of a
+    /// potion-bearing item ([`POTION_BEARING_ITEMS`]). Without it a
+    /// `minecraft:potion` is the *Uncraftable Potion* — a bottle that heals
+    /// nothing — which is exactly the placeholder flask this field exists to
+    /// abolish, so at `dsl_version` 0.8.0 a potion-bearing kit item that declares
+    /// no `contents` is `DW0487`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contents: Option<PotionContents>,
 }
+
+/// The items whose vanilla item definition carries a `minecraft:potion_contents`
+/// component — the only items a kit `contents` may be declared on (`DW0486`).
+///
+/// Read off the pinned 1.21.11 `item_components` summary (SHA-256
+/// `51b191e13f86813ca02f1498942e5bc235947edb71eb8105a78401670b3665c4`, the same
+/// misode/mcmeta ref `crates/compiler/data/PROVENANCE.md` pins): exactly these
+/// four items declare the component, and on any other item the game drops the
+/// data on the floor.
+pub const POTION_BEARING_ITEMS: &[&str] = &[
+    "minecraft:lingering_potion",
+    "minecraft:potion",
+    "minecraft:splash_potion",
+    "minecraft:tipped_arrow",
+];
+
+/// True if `item_id` (optionally un-namespaced) is one of the four
+/// [`POTION_BEARING_ITEMS`].
+pub fn is_potion_bearing_item(item_id: &str) -> bool {
+    let norm = if item_id.contains(':') {
+        item_id.to_string()
+    } else {
+        format!("minecraft:{item_id}")
+    };
+    POTION_BEARING_ITEMS.contains(&norm.as_str())
+}
+
+/// The two **instantaneous** status effects: they are applied once, on the tick
+/// the potion is drunk (`PotionContents.applyToLivingEntity` branches on
+/// `isInstantenous` before any effect instance is ever added), so a `duration` on
+/// one is a statement the game never reads — `DW0486` says so rather than letting
+/// an author believe they wrote a thirty-second heal.
+pub const INSTANT_EFFECTS: &[&str] = &["minecraft:instant_health", "minecraft:instant_damage"];
+
+/// A potion-bearing kit item's `minecraft:potion_contents` component (DSL v0.8),
+/// modelled field for field on vanilla rather than invented: a **named** potion,
+/// a list of **custom effects**, or both, plus the bottle-colour override.
+///
+/// Vanilla resolves a drink as the named potion's effects followed by the custom
+/// ones, and derives the bottle colour from those effects unless `color`
+/// overrides it — so `{"potion": "minecraft:strong_healing"}` is literally the
+/// Potion of Healing II a player would brew, not an approximation of one.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PotionContents {
+    /// A named vanilla potion id (`minecraft:strong_healing`,
+    /// `minecraft:long_night_vision`, …), validated against the pinned 1.21.11
+    /// `potion` registry (`DW0486`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub potion: Option<String>,
+    /// Custom effects applied on top of (or instead of) the named potion — the
+    /// escape hatch for a recovery item vanilla has no brew for.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<PotionEffect>,
+    /// Bottle-colour override, `#rrggbb` (vanilla `custom_color`). Absent → the
+    /// colour vanilla derives from the effects themselves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+/// One entry of a potion's `custom_effects` list.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PotionEffect {
+    /// Vanilla status-effect id (e.g. `minecraft:regeneration`), validated
+    /// against the pinned registry (`DW0486`).
+    pub effect: String,
+    /// How long it lasts, in **ticks** (20 = one second). Required for every
+    /// effect except the two [`INSTANT_EFFECTS`], which must NOT declare one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<u32>,
+    /// Amplifier, 0 = level I (vanilla's unsigned byte, so 0–255). Absent = 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amplifier: Option<u32>,
+}
+
+impl PotionEffect {
+    /// True if this effect is applied once on drinking rather than over time.
+    pub fn is_instant(&self) -> bool {
+        let norm = if self.effect.contains(':') {
+            self.effect.clone()
+        } else {
+            format!("minecraft:{}", self.effect)
+        };
+        INSTANT_EFFECTS.contains(&norm.as_str())
+    }
+}
+
+/// The largest `duration` a potion effect may declare, in ticks: 1 000 000 ticks
+/// ≈ 13.9 hours, past the 10-hour delve ceiling, so nothing a delve can legally
+/// need is refused — while a duration typed in *milliseconds*, or one that would
+/// overflow vanilla's int, is caught (`DW0486`).
+pub const MAX_POTION_DURATION_TICKS: u32 = 1_000_000;
+
+/// The largest `amplifier` a potion effect may declare: vanilla stores it in an
+/// unsigned byte, so 255 is not a policy but the end of the field.
+pub const MAX_POTION_AMPLIFIER: u32 = 255;
 
 /// The canonical English title of the bonfire rest dialog (owner ruling
 /// 2026-08-03). Baked at emit time when the campaign authors no `prompt`, in the
@@ -1706,6 +1827,41 @@ pub struct TimedGate {
     /// existed compiles byte-identically; a delve opts its portcullis in.
     #[serde(default, skip_serializing_if = "is_false")]
     pub crush: bool,
+    /// Optional **disarm** affordance (task #184, souls dossier §5.2): the third
+    /// rung of the hazard ladder — readable, avoidable, and finally *disable-able*.
+    /// The real games' best timed hazards can be removed for good (Smouldering
+    /// Lake's ballista, the Fringefolk chariot); a clock the party can only ever
+    /// dance with is one rung short of the vocabulary.
+    ///
+    /// Interacting with the affordance suppresses the clock **permanently, with
+    /// the gate resting OPEN** — a jammed portcullis stays up. Permanence is
+    /// structural exactly as a `shortcut`'s is: no emitted function ever re-arms
+    /// the clock, and `DW0389` refuses a campaign that spells a re-seal.
+    ///
+    /// **Defaults to absent**, so every campaign authored before this field
+    /// existed compiles byte-identically; a delve opts its portcullis in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disarm: Option<TimedGateDisarm>,
+}
+
+/// A [`TimedGate`]'s disarm affordance (task #184, souls dossier §5.2) — the
+/// exact shape a trap's [`TrapDisarm`] takes, and deliberately so: one affordance
+/// grammar for every mechanism the party can switch off.
+///
+/// The player acts on the `via` anchor (a compiler-emitted interaction entity
+/// plus its visible hardware, `DW0420`) to jam the gate. The clock stops with the
+/// span cleared, `sets_flag` is raised party-wide, and nothing in the delve can
+/// put the gate back.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TimedGateDisarm {
+    /// The anchor the player interacts with to jam the gate. Must be an anchor
+    /// some area's prefab provides, and never the gate anchor itself — the
+    /// mechanism belongs beside the doorway, not inside the span that crushes.
+    pub via: AnchorId,
+    /// The flag set when the gate is disarmed (a new flag this gate produces;
+    /// other objectives/triggers may read it via `requires_flags`).
+    pub sets_flag: FlagId,
 }
 
 /// serde `skip_serializing_if` helper: skip a `0`.
@@ -1977,13 +2133,22 @@ pub struct Wave {
     /// is how the author opts into that scrutiny; the alternative — inferring
     /// "elite" from how tuned a stack looks — is exactly the downstream folklore
     /// CLAUDE.md's no-hack rule forbids.
+    ///
+    /// **It does reach emission in exactly one place** (spec-0016 §1, owner
+    /// ruling 2026-08-05): in a campaign with a `bonfire`, a billed `elite`/
+    /// `boss` wave that does not declare `respawns_on_rest` is refreshed by a
+    /// rest *while it is still standing* — deleted and re-seated at full count
+    /// and full health, so chipping it down one life at a time is never a path.
+    /// Beat it and it stays beaten. `DW0499` forbids billing a wave `boss` and
+    /// `respawns_on_rest` at once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<EncounterTier>,
 }
 
 /// What a wave is billed as (DSL v0.7, spec-0023). Consumed by the validation
-/// ladder (the run's combat plan), never by emission — the shipped datapack is
-/// byte-identical whichever tier a wave declares.
+/// ladder (the run's combat plan) and — since spec-0016 §1's undefeated re-seat
+/// — by one emission site: a bonfire refreshes a billed wave that is still
+/// standing. Nothing about the encounter itself is scaled from it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum EncounterTier {
@@ -2095,6 +2260,12 @@ pub struct WaveMob {
     /// chance 0 so players can never farm wave gear (no-grind constitution).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub equipment: Option<MobEquipment>,
+    /// What this mob leaves behind when it dies (DSL v0.9, task #179; reserved
+    /// `DW0141` earlier). Only an `elite`/`boss` wave may declare it (`DW0491`)
+    /// — an ordinary mob's kit is never farmable. Empty = today's behaviour,
+    /// drop chance 0 on every slot.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drops: Vec<MobDrop>,
 }
 
 /// Worn/held equipment for a wave mob (DSL v0.6). Each field is a vanilla item
@@ -2138,6 +2309,154 @@ impl MobEquipment {
             ("main_hand", self.main_hand.as_ref()),
             ("off_hand", self.off_hand.as_ref()),
         ]
+    }
+
+    /// The piece this equipment declaration puts in `slot`, if any. The single
+    /// question a `drops[]` `slot` entry asks: a mob can only drop a piece it
+    /// actually wears (`DW0490`).
+    pub fn filled(&self, slot: EquipSlot) -> Option<&EquipItem> {
+        match slot {
+            EquipSlot::Head => self.head.as_ref(),
+            EquipSlot::Chest => self.chest.as_ref(),
+            EquipSlot::Legs => self.legs.as_ref(),
+            EquipSlot::Feet => self.feet.as_ref(),
+            EquipSlot::MainHand => self.main_hand.as_ref(),
+            EquipSlot::OffHand => self.off_hand.as_ref(),
+        }
+    }
+}
+
+/// One vanilla equipment slot, named exactly as the [`MobEquipment`] field that
+/// fills it (DSL v0.9, task #179). The DSL name and the summon-NBT key differ
+/// (`main_hand` vs `mainhand`), so both live here and nowhere else.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum EquipSlot {
+    /// Head slot.
+    Head,
+    /// Chest slot.
+    Chest,
+    /// Legs slot.
+    Legs,
+    /// Feet slot.
+    Feet,
+    /// Main-hand slot.
+    MainHand,
+    /// Off-hand slot.
+    OffHand,
+}
+
+impl EquipSlot {
+    /// The DSL field name (`main_hand`), for diagnostics and JSON pointers.
+    pub fn field(self) -> &'static str {
+        match self {
+            EquipSlot::Head => "head",
+            EquipSlot::Chest => "chest",
+            EquipSlot::Legs => "legs",
+            EquipSlot::Feet => "feet",
+            EquipSlot::MainHand => "main_hand",
+            EquipSlot::OffHand => "off_hand",
+        }
+    }
+
+    /// The 1.21.11 `equipment` / `drop_chances` NBT key (`mainhand`).
+    pub fn nbt(self) -> &'static str {
+        match self {
+            EquipSlot::Head => "head",
+            EquipSlot::Chest => "chest",
+            EquipSlot::Legs => "legs",
+            EquipSlot::Feet => "feet",
+            EquipSlot::MainHand => "mainhand",
+            EquipSlot::OffHand => "offhand",
+        }
+    }
+}
+
+/// One declared drop of an elite or boss (DSL v0.9, task #179; owner ruling
+/// 2026-08-04).
+///
+/// A mob may wear many pieces; what it *leaves behind* is a **declared subset**,
+/// usually one piece and never automatically everything. Two forms, told apart
+/// by which field is present:
+///
+/// ```json
+/// { "slot": "main_hand" }                                  // its axe
+/// { "item": "minecraft:tripwire_hook", "name": "Gate Key" } // a quest item
+/// ```
+///
+/// A `slot` entry must name a slot the same entity's `equipment` really fills
+/// (`DW0490`) — the drop is the piece the player has been *looking at* through
+/// the whole fight, so the two declarations cannot disagree. An `item` entry is
+/// a token the fight *yields* rather than wears, and rides the entity's own
+/// death loot table.
+///
+/// Undeclared slots keep drop chance `0.0` — byte-for-byte today's behaviour, and
+/// the no-grind constitution's guarantee that an ordinary kit is never farmable.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum MobDrop {
+    /// A worn/held piece, named by its equipment slot.
+    Slot(SlotDrop),
+    /// A quest token the fight yields (not worn).
+    Item(ItemDrop),
+}
+
+/// The worn-piece form of a [`MobDrop`].
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SlotDrop {
+    /// The equipment slot whose piece drops. Must be filled by the entity's own
+    /// `equipment` declaration (`DW0490`).
+    pub slot: EquipSlot,
+}
+
+/// The quest-token form of a [`MobDrop`].
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ItemDrop {
+    /// Vanilla item id, validated against the pinned 1.21.11 registry
+    /// (`DW0143`, the give-item family).
+    pub item: String,
+    /// Display name the dropped stack carries as a `custom_name` component.
+    /// Player-visible, so it enters the l10n string inventory and translates
+    /// like any other line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+impl MobDrop {
+    /// The equipment slot this entry names, or `None` for a quest-item drop.
+    pub fn slot(&self) -> Option<EquipSlot> {
+        match self {
+            MobDrop::Slot(s) => Some(s.slot),
+            MobDrop::Item(_) => None,
+        }
+    }
+
+    /// The item id this entry names, or `None` for a worn-piece drop.
+    pub fn item(&self) -> Option<&str> {
+        match self {
+            MobDrop::Slot(_) => None,
+            MobDrop::Item(i) => Some(&i.item),
+        }
+    }
+
+    /// The declared display name of a quest-item drop, when set.
+    pub fn name(&self) -> Option<&String> {
+        match self {
+            MobDrop::Slot(_) => None,
+            MobDrop::Item(i) => i.name.as_ref(),
+        }
+    }
+
+    /// Mutable access to the display name — the l10n traversal's hook.
+    pub fn name_mut(&mut self) -> Option<&mut String> {
+        match self {
+            MobDrop::Slot(_) => None,
+            MobDrop::Item(i) => i.name.as_mut(),
+        }
     }
 }
 
@@ -2592,7 +2911,13 @@ pub enum Objective {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         happening: Option<Happening>,
     },
-    /// Completed when `count` of `item` have been collected from `anchor` (v0.3).
+    /// Completed when `count` of `item` have been collected (v0.3).
+    ///
+    /// The items are provided in a container: the compiler's own chest at
+    /// `anchor` by default, or — since DSL v0.8 — the prefab's existing
+    /// chest/barrel at [`Objective::Collect::container`], optionally carrying an
+    /// [`Objective::Collect::item_name`] and padded to read full with
+    /// [`Objective::Collect::fill_count`].
     Collect {
         /// Objective id.
         id: ObjectiveId,
@@ -2608,6 +2933,74 @@ pub enum Objective {
         count: u32,
         /// The anchor items are provided at (chest / pickup).
         anchor: AnchorId,
+        /// **Adopt the container the prefab already placed** (DSL v0.8, task #95;
+        /// reserved `DW0141` earlier): the anchor whose assembled-world cell holds
+        /// a `chest` / `trapped_chest` / `barrel` this collect fills instead of
+        /// conjuring its own chest at [`Objective::Collect::anchor`].
+        ///
+        /// Same division of labour a `loot` entry and a trap's dispenser already
+        /// keep with the prefab: furniture belongs in the piece. A beach camp's
+        /// barrel is scenery the player has been walking past since minute one —
+        /// having the compiler `setblock` a *second*, floating chest beside it to
+        /// hold the quest item is exactly the downstream workaround the no-hack
+        /// rule forbids. A `container` whose cell holds no container is a build
+        /// error (`DW0438`), never a silent fill into a wall.
+        ///
+        /// The critical-path step's position follows the container (the bot opens
+        /// *this* block), and no chest is placed at `anchor` when it is set.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        container: Option<AnchorId>,
+        /// **The item comes off a body, not out of a box** (DSL v0.9, task #179;
+        /// reserved `DW0141` earlier): the wave whose declared `drops[]` yield
+        /// this objective's item. No container is placed — not the compiler's own
+        /// chest at `anchor`, not a prefab one — and `container` is therefore
+        /// mutually exclusive with it (`DW0100`-adjacent; `DW0492`).
+        ///
+        /// This is what makes "kill the boss → pick up its key → open the door"
+        /// a *proved* chain rather than an authoring intention. The compiler
+        /// requires (a) that the named wave really declares an `{item}` drop of
+        /// this item (`DW0492`), and (b) that a `kill` objective for that wave
+        /// precedes this collect in the objective graph (`DW0493`). The existing
+        /// flow machinery then carries the ordering the rest of the way: the
+        /// door's `requires_flags` hangs off this collect exactly as it would off
+        /// a chest one.
+        ///
+        /// **Waves only.** An actor's death is not observable by any objective —
+        /// there is no vanilla-side signal the flow machinery could consume — so
+        /// an actor-gated collect would be an unprovable claim, and per the
+        /// no-hack doctrine it is excluded rather than approximated. An actor may
+        /// still declare `drops[]`; those drops just cannot gate a quest.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dropped_by: Option<WaveId>,
+        /// Display name for the collected item (DSL v0.8, task #95; reserved
+        /// `DW0141` earlier), emitted as the vanilla `custom_name` item component.
+        ///
+        /// A quest item is a *named thing* in the story ("Cheese", "Tide
+        /// Ledger"), and a player who opens the barrel must read that name — an
+        /// unnamed `minecraft:pumpkin_pie` says nothing about what the quest asked
+        /// for. Player-visible, so it enters the l10n string inventory
+        /// (`obj.<quest>.<obj>.item_name`) and translates like any other line.
+        ///
+        /// Naming changes nothing about adjudication: the completion advancement
+        /// and the per-tick held check both match on the ITEM ID, which a named
+        /// stack still carries.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item_name: Option<String>,
+        /// Padding stacks that make the container **read full** (DSL v0.8, task
+        /// #95; reserved `DW0141` earlier). Default `0` = the single required
+        /// stack, exactly as every pre-0.8 campaign emits.
+        ///
+        /// A barrel of cheese that opens on one lonely wheel reads as a bug, and
+        /// vanilla's notion of "full" is *occupied slots*, not stack size — so
+        /// this counts SLOTS: the objective's own stack lands in `container.0` and
+        /// each padding stack repeats it in `container.1`, `container.2`, … Slot
+        /// assignment is positional and total, the same determinism story `loot`
+        /// tells (ADR-0006): no RNG, no loot tables, nothing to reseed.
+        ///
+        /// The padding is the same item, so taking the whole barrel still
+        /// completes the objective and never over- or under-counts it.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        fill_count: u32,
         /// Prerequisite objectives.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         after: Vec<ObjectiveId>,
@@ -2776,6 +3169,15 @@ pub struct Actor {
     /// (`DW0477`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<EncounterTier>,
+    /// What this actor leaves behind when a player kills it (DSL v0.9, task
+    /// #179; reserved `DW0141` earlier). Only an `elite`/`boss` actor may
+    /// declare it (`DW0491`). Emitted into BOTH the staged puppet and the
+    /// unleashed twin, exactly as `equipment` is — the drop belongs to the body,
+    /// not to one of its two lifecycles. A `despawn-actor` strips the
+    /// declaration off the body before removing it, so re-caging an elite (a
+    /// souls re-seat) never scatters its axe.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drops: Vec<MobDrop>,
 }
 
 /// A cardinal facing keyword (DSL v0.6). Emitted as the puppet's spawn yaw
@@ -2951,6 +3353,36 @@ impl Objective {
         }
     }
 
+    /// The container this objective ADOPTS (DSL v0.8), if it is a `collect` that
+    /// declares one: the anchor whose prefab-placed chest/barrel it fills instead
+    /// of conjuring its own chest. `None` on every other objective and on a
+    /// `collect` that keeps the compiler-placed chest.
+    pub fn collect_container(&self) -> Option<&AnchorId> {
+        match self {
+            Objective::Collect { container, .. } => container.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// The wave whose declared drops provide this objective's item (DSL v0.9),
+    /// if it is a `collect` that declares one. `None` on every other objective
+    /// and on a `collect` fed by a container.
+    pub fn collect_dropped_by(&self) -> Option<&WaveId> {
+        match self {
+            Objective::Collect { dropped_by, .. } => dropped_by.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// The padding-stack count of a `collect` (DSL v0.8); `0` for every other
+    /// objective and for a `collect` that fills the single required stack only.
+    pub fn collect_fill_count(&self) -> u32 {
+        match self {
+            Objective::Collect { fill_count, .. } => *fill_count,
+            _ => 0,
+        }
+    }
+
     /// The `interact` prop block (DSL v0.4), if this is an `interact` with a prop.
     pub fn prop(&self) -> Option<&Prop> {
         match self {
@@ -3041,6 +3473,19 @@ pub enum QuestEffect {
         /// never move because a beat gained a line of prose.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         happening: Option<Happening>,
+        /// What the seal *says* when a player right-clicks it (DSL v0.8; reserved
+        /// `DW0141` earlier). A sealed gate is a wall the party will walk back to
+        /// and press: the compiler answers that press on the actionbar. Absent, the
+        /// compiler's canonical English is baked in (`The way is sealed.`) exactly
+        /// as `world.boundary.message` does; authored, the line is l10n-inventoried
+        /// under `<effect-key>.sealed_hint` and translates like every other
+        /// player-visible string.
+        ///
+        /// Unlike `happening`, this **does** print in the hand-written `Debug`
+        /// below when present — it changes emission, so two otherwise-identical
+        /// sequences that differ only in their seal's answer are different content.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sealed_hint: Option<String>,
     },
     /// Marks the campaign complete (final advancement + credits). Terminal — not
     /// flag-gatable (gating the campaign's own completion is a deadlock footgun),
@@ -3633,14 +4078,23 @@ impl std::fmt::Debug for QuestEffect {
                 anchor,
                 requires_flags,
                 forbids_flags,
+                sealed_hint,
                 ..
-            } => ff(
-                f.debug_struct("CloseGate")
-                    .field("anchor", anchor)
-                    .field("requires_flags", requires_flags),
-                forbids_flags,
-            )
-            .finish(),
+            } => {
+                let mut s = f.debug_struct("CloseGate");
+                let d = ff(
+                    s.field("anchor", anchor)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                );
+                // Prints only when authored (the additive-field rule): a campaign
+                // that takes the compiler's canonical seal line renders exactly as
+                // the pre-0.8 derive did, so no existing `seq_<hash>` moves.
+                match sealed_hint {
+                    Some(h) => d.field("sealed_hint", h).finish(),
+                    None => d.finish(),
+                }
+            }
             QuestEffect::CampaignComplete { .. } => f.write_str("CampaignComplete"),
             QuestEffect::GiveItem {
                 item,
@@ -4389,6 +4843,16 @@ impl QuestEffect {
     pub fn close_gate_anchor(&self) -> Option<&AnchorId> {
         match self {
             QuestEffect::CloseGate { anchor, .. } => Some(anchor),
+            _ => None,
+        }
+    }
+
+    /// The authored `sealed_hint` if this is a `close-gate` that declares one (DSL
+    /// v0.8). `None` for every other effect **and** for a `close-gate` that takes
+    /// the compiler's canonical English seal line.
+    pub fn close_gate_sealed_hint(&self) -> Option<&str> {
+        match self {
+            QuestEffect::CloseGate { sealed_hint, .. } => sealed_hint.as_deref(),
             _ => None,
         }
     }

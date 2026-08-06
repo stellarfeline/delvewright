@@ -555,6 +555,9 @@ fn validate_loaded(
             diags.extend(delvewright_compiler::gates::check_close_gates(
                 &campaign, &prefabs,
             ));
+            // v0.8 seal answers (DW0423): one gate anchor, one `sealed_hint`
+            // wording. No-op for a campaign that authors none.
+            diags.extend(delvewright_compiler::gates::check_seal_hints(&campaign));
             // NPC location-continuity lint (DW0351). Advisory tier — a warning
             // names a staging discontinuity (an NPC materializing or vanishing
             // away from where it was last staged) but never fails the run:
@@ -786,10 +789,19 @@ fn run_snapshot(
     let plan = match Plan::build(&campaign, &prefabs) {
         Ok(p) => p,
         Err(e) => {
+            // Advisories raised before the failure and explaining it (`DW0498`:
+            // the pool draw behind an ambiguous-anchor `DW0305`) print first —
+            // the cause above the symptom.
+            print_diags(&e.warnings, json);
             print_build_error(e.code, &e.message, json);
             return ExitCode::from(3);
         }
     };
+    // The placement stage's own advisories (`DW0498`). `build`/`edit` get these
+    // through `emit::build_with_warnings`; the view commands never emit, so they
+    // report them here — a draw that repeats an anchored piece is exactly what a
+    // reviewer is looking at in a snapshot.
+    print_diags(&plan.warnings, json);
     let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
@@ -1255,10 +1267,19 @@ fn run_blocking_chart(
     let plan = match Plan::build(&campaign, &prefabs) {
         Ok(p) => p,
         Err(e) => {
+            // Advisories raised before the failure and explaining it (`DW0498`:
+            // the pool draw behind an ambiguous-anchor `DW0305`) print first —
+            // the cause above the symptom.
+            print_diags(&e.warnings, json);
             print_build_error(e.code, &e.message, json);
             return ExitCode::from(3);
         }
     };
+    // The placement stage's own advisories (`DW0498`). `build`/`edit` get these
+    // through `emit::build_with_warnings`; the view commands never emit, so they
+    // report them here — a draw that repeats an anchored piece is exactly what a
+    // reviewer is looking at in a snapshot.
+    print_diags(&plan.warnings, json);
     let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
@@ -1402,6 +1423,10 @@ fn run_build(
     let plan = match Plan::build(&campaign, &prefabs) {
         Ok(p) => p,
         Err(e) => {
+            // Advisories raised before the failure and explaining it (`DW0498`:
+            // the pool draw behind an ambiguous-anchor `DW0305`) print first —
+            // the cause above the symptom.
+            print_diags(&e.warnings, json);
             print_build_error(e.code, &e.message, json);
             return ExitCode::from(3);
         }
@@ -1645,6 +1670,10 @@ fn run_edit(
     let plan = match Plan::build(&v.campaign, &v.prefabs) {
         Ok(p) => p,
         Err(e) => {
+            // Advisories raised before the failure and explaining it (`DW0498`:
+            // the pool draw behind an ambiguous-anchor `DW0305`) print first —
+            // the cause above the symptom.
+            print_diags(&e.warnings, json);
             print_build_error(e.code, &e.message, json);
             return ExitCode::from(3);
         }

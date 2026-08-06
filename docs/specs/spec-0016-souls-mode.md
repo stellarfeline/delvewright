@@ -67,6 +67,28 @@ written — pinned by tests on that identity and by generated PackTests
 squad hauled onto the party and released to native AI. The safe zone is
 `DW0478`, measured against the seated spawn cells and the proven lane polyline.
 
+Owner ruling (2026-08-05, from the bell round-five playtest — the barrow-warden
+stayed where the chase left it, at the health the chase left it, and so did the
+ambushers staged in the sewer and up in the rafters):
+
+- **Undefeated re-seat.** A boss or elite the party has NOT beaten is, on a
+  bonfire rest and on a death-respawn at that fire, **deleted and re-summoned
+  fresh at its origin with full health** — never healed in place, never left
+  where combat ended. This covers both shapes an elite takes: actor-based elites
+  (the strike-unleashed twin) and `elite`/`boss`-tier waves. A **defeated** boss
+  stays dead (above: stage bosses never respawn on rest); ordinary waves keep the
+  stationed `respawns_on_rest` semantics unchanged.
+
+Proofs: "undefeated" is the presence of the body itself — the re-seat dispatch is
+`execute if entity` on the force's own tag, so a defeated one selects nothing and
+no state is kept. An actor is put back **freed**, never re-caged (the
+`unleash-actor` beat fires from a one-shot trigger nothing re-arms, so a re-caged
+elite would be permanently dormant scenery), and a caged puppet is left alone
+(`NoAI`, knockback-immune, `Invulnerable` — combat cannot touch it). A `boss`-tier
+wave that also declares `respawns_on_rest` is a contradiction and is `DW0489`.
+Generated PackTests `souls_reseat_actor` and `souls_reseat_undefeated` drive the
+real rest function over a chipped, branded, dragged-off-its-ground elite.
+
 ### 2. Shortcut doors ("the door does not open from this side")
 The owner's definition of the pattern (2026-08-02), which this section is
 now built around: between two bonfires there are TWO routes — a **short
@@ -122,6 +144,38 @@ gear-dependent and escapable, which makes a portcullis a suggestion. The
 so the penalty for misreading it may be absolute. Zero per-tick cost is
 unchanged: the judgement rides the closing tick of the existing schedule
 ping-pong.
+
+**Addendum — every timed hazard is observable before it is committed to**
+(souls dossier §5.3 / §2.2 axis 5, gap G1; bell remake REMAKE §7.4 entry O).
+The 20% floor is *our* invention, not a measured property of the genre; no
+source reports a duty cycle for any FromSoft periodic hazard. What the real
+games do guarantee, universally, is that you can **stand somewhere safe and
+watch a full cycle before committing** — you can watch a Sen's Fortress blade
+from outside, and you cannot see inside the Capra room. The dossier's verdict:
+if only one of the two proofs can be afforded it is this one, not the ratio.
+So it is now an obligation, `DW0388`, over both region hazards the DSL has —
+`timed-gate` spans and `volley` kill zones. (`collapse` is out of scope: it
+fires once, its region is a ceiling with no standable cell, and there is no
+cycle to watch; its fairness proof is `DW0445`.)
+
+The obligation, for each hazard: **there exists a standable cell that is
+(a) at least 5 blocks — one second of sprint at the nav model's own
+`4 t/block` — clear of every cell of the lethal span, (b) walkable from the
+campaign entry over the world with that span sealed, so it is ground the
+player reaches WITHOUT committing, and (c) has an unobstructed sightline
+(eye 1.62 → player centre mass 1.0) to some cell the hazard judges.** The
+sightline uses the cutscene clip check's own occupancy traversal and sight
+predicate, so glass and a grate are transparent to an eye exactly as they are
+to a camera — a bay behind a grate is a bay. Note what is deliberately NOT
+required: sight to the *whole* span. A stair volley seen from its foot is
+observable even though the treads occlude each other, and demanding total
+visibility would red legitimate geometry while proving nothing extra.
+
+**Tier**: error for a campaign that declares a `bonfire` — that is what marks
+a campaign as spec-0016 content, the same test the flask obligation
+(`DW0476`) uses — and warning everywhere else. Prescription is always
+geometry: open the approach, or move the hazard off the blind side of the
+corner. Never shorten the standoff.
 
 **Addendum — affordance hardware** (drowned-bell playtest, 2026-08-02).
 An `unlock` is not just a hitbox. The engine emitted shortcut unlocks,

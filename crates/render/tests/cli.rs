@@ -58,6 +58,116 @@ fn scene_output_blocked_is_dw0722_exit3() {
     assert!(stderr.contains("DW0722"), "expected DW0722: {stderr}");
 }
 
+/// Chunky caches a scene's loaded chunks in `<scene>.octree2` / `<scene>.dump`
+/// siblings. Re-emitting the scene (new chunkList, camera, sun or water
+/// settings) and re-rendering silently reuses the STALE cache — a whole
+/// debugging session was paid for this. Emission must delete the caches it is
+/// invalidating, so the pitfall cannot recur.
+#[test]
+fn scene_emission_purges_stale_chunky_caches() {
+    let build_dir = tmp("scene-purge");
+    std::fs::write(build_dir.join("render-plan.json"), render_plan_mini()).unwrap();
+    let out = build_dir.join("scenes");
+    std::fs::create_dir_all(&out).unwrap();
+    // A previous render's caches for the scenes this emission replaces.
+    // Chunky keys its caches on the scene's `name`, which is exactly the file
+    // stem `delve-render` emits (campaign-qualified).
+    let stale = [
+        "mini_spawn.octree2",
+        "mini_spawn.dump",
+        "mini_spawn.dump.backup",
+        "mini_spawn.emittergrid",
+        "mini_interior_entry_0.octree2",
+    ];
+    for f in stale {
+        std::fs::write(out.join(f), b"stale").unwrap();
+    }
+    // An unrelated scene's cache must survive.
+    std::fs::write(out.join("someone-elses.octree2"), b"keep").unwrap();
+
+    let result = Command::new(BIN)
+        .args(["scene"])
+        .arg(&build_dir)
+        .args(["-o"])
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(0), "{result:?}");
+    for f in stale {
+        assert!(
+            !out.join(f).exists(),
+            "stale cache {f} survived scene emission"
+        );
+    }
+    assert!(
+        out.join("someone-elses.octree2").exists(),
+        "an unrelated scene's cache must not be touched"
+    );
+}
+
+/// The whole-map release panorama: a 45° oblique camera framing the entire
+/// layout, emitted first-class instead of hand-edited into a scene JSON.
+#[test]
+fn panorama_emits_a_framed_whole_map_scene() {
+    let build_dir = tmp("panorama-ok");
+    std::fs::write(build_dir.join("render-plan.json"), render_plan_mini()).unwrap();
+    let out = build_dir.join("scenes");
+
+    let result = Command::new(BIN)
+        .args(["panorama"])
+        .arg(&build_dir)
+        .args(["-o"])
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(0), "{result:?}");
+    let scene = out.join("mini_panorama_se.json");
+    assert!(scene.exists(), "panorama scene not emitted");
+    let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&scene).unwrap()).unwrap();
+    // Default sample target for a final panorama.
+    assert_eq!(v["sppTarget"], serde_json::json!(300));
+    // 45° oblique from the south-east: the camera sits +X/+Z of the layout and
+    // above it, looking north-west and down.
+    let pos = v["camera"]["position"].clone();
+    assert!(
+        pos["x"].as_f64().unwrap() > 17.0,
+        "camera east of the layout"
+    );
+    assert!(
+        pos["z"].as_f64().unwrap() > 10.0,
+        "camera south of the layout"
+    );
+    assert!(pos["y"].as_f64().unwrap() > 69.0, "camera above the layout");
+    // Layout-only chunk list (an ocean seam appears the moment pure-ocean
+    // chunks are included).
+    let chunks = v["chunkList"].as_array().unwrap();
+    assert_eq!(chunks.len(), 2, "mini layout spans 2 chunks: {chunks:?}");
+    // A sun is placed explicitly, not left to the Chunky default.
+    assert!(v["sun"]["altitude"].is_number(), "no sun in {v}");
+}
+
+/// The panorama gets the same stale-cache purge as `scene`.
+#[test]
+fn panorama_purges_stale_chunky_caches() {
+    let build_dir = tmp("panorama-purge");
+    std::fs::write(build_dir.join("render-plan.json"), render_plan_mini()).unwrap();
+    let out = build_dir.join("scenes");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::write(out.join("mini_panorama_se.octree2"), b"stale").unwrap();
+    std::fs::write(out.join("mini_panorama_se.dump"), b"stale").unwrap();
+
+    let result = Command::new(BIN)
+        .args(["panorama"])
+        .arg(&build_dir)
+        .args(["-o"])
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(0), "{result:?}");
+    assert!(!out.join("mini_panorama_se.octree2").exists());
+    assert!(!out.join("mini_panorama_se.dump").exists());
+}
+
 #[test]
 fn piece_without_textures_is_dw0723_exit5() {
     // No --textures, and an empty HOME so `~/.chunky/resources/minecraft.jar`

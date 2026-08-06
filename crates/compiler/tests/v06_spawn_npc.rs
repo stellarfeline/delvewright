@@ -182,10 +182,19 @@ fn deferred_npc_leaves_world_init_and_spawns_on_effect() {
     );
 }
 
-/// The refactor is behaviour-preserving: a NON-deferred NPC is summoned in
-/// `setup_finish` exactly as before, and no `spawn_npc_<id>` function is emitted.
+/// A NON-deferred NPC is summoned in `setup_finish` exactly as before — and, when
+/// a `spawn-npc` effect names it anyway, its entrance function is emitted so the
+/// compiled `function <ns>:spawn_npc_<id>` call has a callee.
+///
+/// The assertion used to be the opposite (`spawn_npc_keeper` must NOT exist),
+/// which is what `DW0497` caught: this very campaign fires `spawn-npc` on the
+/// keeper from `trigger/entrance`, so the pack shipped a call pointing at nothing.
+/// `spawn-npc` on a non-deferred NPC is legal content — it is how a character
+/// comes back after a `despawn-npc` — and silently dropping the machinery is the
+/// island's wave defect in a second emitter. The entrance is idempotent, so for an
+/// NPC already standing at its mark it is the no-op it reads as.
 #[test]
-fn non_deferred_npc_is_unchanged() {
+fn non_deferred_npc_summoned_at_init_still_gets_a_called_entrance() {
     let c = parse_hw(false);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let out = build(&c, &prefabs);
@@ -196,9 +205,30 @@ fn non_deferred_npc_is_unchanged() {
             && setup.contains("Tags:[\"dw_npc\",\"dw_npc_keeper\"]"),
         "a normal NPC is still summoned at world init:\n{setup}"
     );
+    let spawn = file(&out, SPAWN_NPC)
+        .expect("the campaign's `spawn-npc` effect must have a function to call");
+    assert!(
+        spawn.contains("execute unless entity @e[tag=dw_npc,tag=dw_npc_keeper] run summon"),
+        "the entrance must stay idempotent, so re-entering an NPC already on \
+         stage changes nothing:\n{spawn}"
+    );
+}
+
+/// The byte-identity guard the assertion above used to stand in for: a campaign
+/// that fires **no** `spawn-npc` at all and defers nobody emits no entrance
+/// function, so pre-0.6 output is untouched.
+#[test]
+fn a_campaign_with_no_spawn_npc_emits_no_entrance() {
+    let quests = quests_doc().replace(
+        r#"[ { "type": "spawn-npc", "npc": "npc/keeper" } ]"#,
+        r#"[ { "type": "narrate", "text": "The door groans." } ]"#,
+    );
+    let c = parse_hw_with(false, quests);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let out = build(&c, &prefabs);
     assert!(
         file(&out, SPAWN_NPC).is_none(),
-        "no spawn_npc_<id> function is emitted when no NPC is deferred"
+        "no `spawn-npc` site anywhere means no `spawn_npc_<id>` function"
     );
 }
 
