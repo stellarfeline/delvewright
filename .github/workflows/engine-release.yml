@@ -1,0 +1,270 @@
+name: engine release (delvec)
+
+# ADR-0016 line 2 (the ENGINE version line) made real, per ADR-0017.
+#
+# Two shelves are filled here, from one tagged tree:
+#   1. GitHub Release assets — a checksum-verified `delvec` archive for every
+#      target in `versions.toml [engine].targets`. Release `v1.0.0` existed with
+#      ZERO assets, so the engine pin ADR-0016 requires and the skill's
+#      `requires.delvec` window were promises against an empty shelf.
+#   2. crates.io — `delvewright-dsl` then `delvec`, so `cargo install delvec`
+#      installs this compiler.
+#
+# NOTHING HERE MAY BE DONE BY HAND. A human `cargo publish` or a hand-uploaded
+# asset is the failure mode being closed, not a fallback.
+#
+# WHY AN ACCIDENTAL crates.io PUBLISH IS IMPOSSIBLE BY CONSTRUCTION
+#
+# `cargo publish` is a one-way door: a version can never be reused, a name never
+# freed. Four independent mechanisms stand in front of it, none of them a
+# convention:
+#
+#   1. The credential is a GitHub ENVIRONMENT secret on `crates-io`, an
+#      environment with REQUIRED REVIEWERS. `publish-crates` is the only job that
+#      declares `environment:`, so it is the only job in this repository that can
+#      ever see `CARGO_REGISTRY_TOKEN` — and the run physically pauses for a human
+#      approval before that job starts. No workflow edit, no fork PR and no
+#      mis-pushed tag reaches the registry without that click.
+#   2. `identity` refuses to let anything run unless the tag NAME equals
+#      `v<[engine].version>` from the tagged tree, so a tag pushed by mistake
+#      cannot publish "whatever the tree happens to say".
+#   3. `identity` also refuses a tag that is not an ancestor of `main`. The
+#      approval prompt shows a ref, not a diff; this is what makes the thing being
+#      published something that went through review and CI (ADR-0008).
+#   4. `publish-crates` runs only after `binaries` has produced every shelf
+#      artifact and after `crates-preflight` has proven the tarballs publishable.
+#      A tree that cannot build its own shelf never burns a crates.io version.
+#
+# The one thing the environment gate does NOT cover is CORRECTNESS — it gates
+# access to a token, not the contents of an upload. That is what 2, 3, 4 and
+# `tools/crates-io-publish.sh`'s checksum comparison are for.
+
+on:
+  push:
+    # `v<semver>` only. `rc-*` belongs to release.yml (tier 3), and a tag shaped
+    # any other way does not start this workflow at all.
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing v<semver> tag to build from (re-fills the shelf; re-runs are safe)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never cancel a release in flight: half of it is irreversible.
+  group: engine-release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  identity:
+    name: release identity (tag == engine version)
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.id.outputs.tag }}
+      version: ${{ steps.id.outputs.version }}
+      targets: ${{ steps.id.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+          # `merge-base --is-ancestor` below needs real history, and needs
+          # `origin/main` to exist locally.
+          fetch-depth: 0
+      # versions.toml is the single source of truth (spec-0005). Everything the
+      # rest of this workflow reads comes from it, and this is the gate that says
+      # the tagged tree agrees with itself before a single artifact is built.
+      - name: consumers agree with versions.toml
+        run: bash validation/check-versions.sh
+      - name: the tag names the engine version in the tagged tree
+        id: id
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="$(python3 -c 'import tomllib;print(tomllib.load(open("versions.toml","rb"))["engine"]["version"])')"
+          echo "tag=$TAG"          >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION"  >> "$GITHUB_OUTPUT"
+          # A compact JSON array of the shelf, so the build matrix cannot carry a
+          # second copy of the target list.
+          TARGETS="$(python3 -c 'import json,tomllib;print(json.dumps(tomllib.load(open("versions.toml","rb"))["engine"]["targets"]))')"
+          echo "targets=$TARGETS"  >> "$GITHUB_OUTPUT"
+          echo "shelf: $TARGETS"
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::tag '$TAG' does not name engine version '$VERSION' (versions.toml [engine].version)."
+            echo "::error::ADR-0016 requires the binary's version, the git tag, the crates.io version and the"
+            echo "::error::skill's window to be one number. Re-tag, or bump [engine].version and re-run CI."
+            exit 1
+          fi
+          echo "ok: $TAG == v$VERSION"
+      - name: the tagged commit is on main
+        run: |
+          set -euo pipefail
+          if git merge-base --is-ancestor HEAD origin/main; then
+            echo "ok: $(git rev-parse --short HEAD) is an ancestor of origin/main"
+          else
+            echo "::error::the tagged commit is not an ancestor of origin/main."
+            echo "::error::Releases publish reviewed, CI-green history only (ADR-0008)."
+            exit 1
+          fi
+
+  # ---- the shelf: one archive per target ------------------------------------
+  binaries:
+    name: shelf (${{ matrix.target }})
+    needs: identity
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # Never fail-fast: a partial shelf is a finding, and the log should name
+      # every target that failed, not the first.
+      fail-fast: false
+      matrix:
+        include:
+          # Linux is musl-STATIC (see versions.toml [engine].targets). BOTH musl
+          # targets build on the x86_64 runner because
+          # `tools/build-release-binaries.sh` links them with rustup's own
+          # `rust-lld` — no `musl-tools`, no cross-gcc, and the same command works
+          # on the owner's macOS workstation.
+          - { target: x86_64-unknown-linux-musl,  runner: ubuntu-latest }
+          - { target: aarch64-unknown-linux-musl, runner: ubuntu-latest }
+          # The macOS runner is arm64 and carries both Apple slices' std.
+          - { target: x86_64-apple-darwin,        runner: macos-latest }
+          - { target: aarch64-apple-darwin,       runner: macos-latest }
+          # msvc is the one target that genuinely needs its own host: linking
+          # against the Windows SDK import libraries cannot be done elsewhere.
+          - { target: x86_64-pc-windows-msvc,     runner: windows-latest }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.identity.outputs.tag }}" }
+      - uses: Swatinem/rust-cache@v2
+        with: { key: "shelf-${{ matrix.target }}" }
+      # git-bash on the Windows runner, so one script serves all three OSes.
+      - name: build + archive + checksum
+        shell: bash
+        run: bash tools/build-release-binaries.sh --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shelf-${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---- publish the shelf to the GitHub Release ------------------------------
+  # Deliberately NOT gated on the crates.io approval: assets are reversible, and
+  # the owner should be able to see the shelf filled while deciding whether to
+  # approve the one-way half.
+  publish-assets:
+    name: publish shelf assets
+    needs: [identity, binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.identity.outputs.tag }}" }
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: shelf-*
+          merge-multiple: true
+          path: dist
+      - name: re-verify every checksum, then state the binding count
+        run: |
+          set -euo pipefail
+          cd dist
+          # One SHA256SUMS for the whole shelf, from the per-target lines the
+          # build script emitted. `sort` so the file is stable regardless of the
+          # order artifacts came back in.
+          cat ./*.tar.gz.sha256 | sort -k2 > SHA256SUMS
+          rm -f ./*.tar.gz.sha256
+          # Re-verify AFTER the round trip through artifact upload/download: the
+          # checksum a user is told to trust must describe the bytes this job is
+          # about to upload, not the bytes some other runner once had.
+          sha256sum -c SHA256SUMS
+          n_expected=$(python3 -c 'import tomllib;print(len(tomllib.load(open("../versions.toml","rb"))["engine"]["targets"]))')
+          n_got=$(ls -1 ./*.tar.gz | wc -l | tr -d ' ')
+          echo "shelf: $n_got archive(s), expected $n_expected"
+          if [ "$n_got" -ne "$n_expected" ]; then
+            echo "::error::the shelf is $n_got/$n_expected — a partial shelf is a finding, not a release."
+            exit 1
+          fi
+          if [ "$n_expected" -eq 0 ]; then
+            echo "::error::versions.toml [engine].targets is empty; this job would have uploaded nothing."
+            exit 1
+          fi
+      - name: upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.identity.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # `gh release view` exits non-zero when the release does not exist; that
+          # is an answer, not an error, hence the explicit `if`.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG exists; filling its shelf"
+          else
+            gh release create "$TAG" --title "delvec $TAG" --generate-notes
+          fi
+          gh release upload "$TAG" dist/*.tar.gz dist/SHA256SUMS --clobber
+      - name: the release now holds the whole shelf
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.identity.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # The binding count, read back from the API rather than assumed from a
+          # successful upload command.
+          gh release view "$TAG" --json assets --jq '.assets[].name' | sort > /tmp/have.txt
+          cat /tmp/have.txt
+          n_archives=$(grep -c '\.tar\.gz$' /tmp/have.txt || true)
+          n_expected=$(python3 -c 'import tomllib;print(len(tomllib.load(open("versions.toml","rb"))["engine"]["targets"]))')
+          n_sums=$(grep -c '^SHA256SUMS$' /tmp/have.txt || true)
+          echo "release $TAG: $n_archives archive(s) + $n_sums SHA256SUMS (expected $n_expected + 1)"
+          if [ "$n_archives" -ne "$n_expected" ] || [ "$n_sums" -ne 1 ]; then
+            echo "::error::release $TAG does not hold the whole shelf."
+            exit 1
+          fi
+
+  # ---- what WOULD be published, with no access to the token -----------------
+  crates-preflight:
+    name: crates.io preflight (no credential)
+    needs: identity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.identity.outputs.tag }}" }
+      - uses: Swatinem/rust-cache@v2
+      # The same gate CI runs on every push, re-run here against the exact tagged
+      # tree the upload will come from.
+      - name: the packaged tarballs are publishable
+        run: bash tools/check-publishable.sh
+      # Prints, for the human about to approve `publish-crates`, exactly which
+      # crate versions would be uploaded and which are already on the registry.
+      - name: the publish plan
+        run: bash tools/crates-io-publish.sh --plan
+
+  # ---- the one-way door -----------------------------------------------------
+  publish-crates:
+    name: publish to crates.io (owner approval)
+    needs: [identity, binaries, crates-preflight]
+    runs-on: ubuntu-latest
+    # THE gate. `crates-io` is an environment with required reviewers, and it is
+    # the sole holder of CARGO_REGISTRY_TOKEN — no other job in this repository
+    # declares an environment, so no other job can obtain it. The run pauses here
+    # until a reviewer approves.
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.identity.outputs.tag }}" }
+      - uses: Swatinem/rust-cache@v2
+      # Re-package inside this job: `crates-io-publish.sh` hashes
+      # `target/package/*.crate`, and it must hash tarballs built here from the
+      # tagged tree, not artifacts handed over from another job.
+      - name: package (and re-prove publishability) from the tagged tree
+        run: bash tools/check-publishable.sh
+      - name: publish
+        env:
+          # Read by cargo directly out of the environment. No `cargo login`, no
+          # credential written to disk.
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: bash tools/crates-io-publish.sh --publish

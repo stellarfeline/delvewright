@@ -1,0 +1,116 @@
+# ADR-0017: Toolchain distribution — `cargo install delvec`, a checksum-verified release shelf, and CI as the only publisher
+
+- **Status**: Accepted
+- **Date**: 2026-08-06
+- **Source**: owner decision in conversation, 2026-08-06
+- **Refines**: ADR-0014 (creator distribution), ADR-0016 (three-layer versioning)
+
+## Context
+
+ADR-0016 made `delvec` a versioned engine (`v<semver>`, tags + GitHub Releases,
+from v1.0.0) and ADR-0014 said a future plugin bootstrap fetches "pinned,
+checksum-verified multi-platform binaries from GitHub Releases". Neither shelf
+existed: release `v1.0.0` carried **zero assets**, the compiler package was
+`delvewright-compiler` with `publish = false`, and nothing had ever been
+published to crates.io. So the engine pin a campaign release records, and the
+`requires.delvec` window the `/new-delve` skill declares, both bound to nothing
+a creator could obtain.
+
+`cargo publish` is a one-way door: a version can never be reused and a name can
+never be freed (`cargo yank` only stops new dependents selecting it; the bytes
+stay downloadable forever). That asymmetry — tags and release assets are cheap
+and mutable, the registry is permanent — drives every choice below.
+
+## Decision
+
+### 1. crates.io identity is `delvec`
+
+`cargo install` resolves by CRATE name, never by binary name, so the package is
+renamed `delvewright-compiler` → **`delvec`**. The LIBRARY target keeps the name
+`delvewright_compiler`, so the 366 in-tree `use delvewright_compiler::` paths do
+not churn for zero gain; an external dependent writes `delvec = "1"` and
+`use delvewright_compiler::…`.
+
+### 2. `delvewright-dsl` is published, on its own version line
+
+`delvec` depends on it, so it must exist on crates.io first. It is **not** on the
+engine version line and starts at `0.1.0`, with `delvec` declaring an exact
+`=0.1.0` requirement so one `delvec` version resolves one dsl build.
+
+Lockstep was rejected for a concrete reason: publication can half-succeed (dsl
+lands, `delvec` fails), which burns that dsl version permanently, and under
+lockstep the retry would have to move `delvec` too — putting the engine out of
+step with the git tag ADR-0016 pins it to. With an independent line a burned dsl
+version costs a dsl bump and nothing else. `0.x` is also the honest semver: it is
+the format the engine speaks, not a library anyone should depend on directly.
+
+Every other workspace member keeps `publish = false`, asserted in both
+directions so a new crate cannot drift onto the registry.
+
+### 3. The release shelf is `delvec` on five targets — `delve-render` is not on it
+
+`x86_64`/`aarch64-unknown-linux-musl`, `x86_64`/`aarch64-apple-darwin`,
+`x86_64-pc-windows-msvc`; one `.tar.gz` per target (binary + LICENSE) plus a
+`SHA256SUMS` file, on the `v<semver>` release. Linux is **musl-static** so a
+download has no glibc floor; the list lives in `versions.toml [engine].targets`
+and nothing else carries a copy of it.
+
+ADR-0014 named `delvec`/`delve-render`. This **narrows that to `delvec`**:
+`delve-render` needs a GPU/driver stack and the EULA-gated Minecraft client jar
+for textures, neither of which a downloaded binary can carry, so it would be a
+shelf item that fails for most downloaders. Its own dependency (`nucleation`,
+pinned by git rev) also makes it unpublishable to crates.io by construction.
+Renders are validation artifacts that never ship in a delve, and the skill's
+visual-review step already tolerates its absence.
+**Revisit trigger**: ADR-0014's M4 bootstrap, which can arrange a host's
+textures and driver, is the point at which shipping `delve-render` becomes
+honest.
+
+### 4. CI is the only publisher — including the first publish
+
+No human runs `cargo publish` or uploads an asset, ever, and there is no
+hand-published v1: a *failed* publish costs nothing and is retryable, only a
+*successful wrong* publish is irreversible, and that risk is lower from a clean
+tagged checkout than from a working tree. A publish path whose first real
+exercise is some later release with nobody watching is not a proven path.
+
+`.github/workflows/engine-release.yml` fires on a `v<semver>` tag. An accidental
+publish is prevented **by construction**, not by convention:
+
+- `CARGO_REGISTRY_TOKEN` is a **GitHub Environment secret** on an environment
+  (`crates-io`) with **required reviewers**. Exactly one job declares that
+  environment, so it is the only job in the repository that can obtain the
+  token, and the run physically pauses for approval before it starts.
+- The tag name must equal `[engine].version` in the tagged tree, and the tagged
+  commit must be an ancestor of `main` — the approval prompt shows a ref, not a
+  diff, so this is what makes the published thing reviewed, CI-green history.
+- The registry step runs only after the whole shelf has built.
+- The upload is **idempotent by checksum**: a version already on the index with
+  byte-identical contents is skipped, and one with *different* contents is a hard
+  failure by name. That is what makes a half-succeeded publish safely retryable.
+
+### 5. Agreement is a red, not an intention
+
+`versions.toml [engine]` is the single source for the engine version, the crate
+names, the dsl requirement, the toolchain, and the shelf.
+`validation/check-versions.sh` binds all of them to the manifests, the workspace
+and the release matrix; `tools/check-skill-version.py` already binds the skill's
+window; the release workflow binds the git tag. Every gate states its binding
+count.
+
+## Consequences
+
+- `cargo install delvec` becomes the creator-facing install, and `cargo build`
+  in a pipeline checkout becomes one of several true paths — the skill and
+  `docs/reference/tools.md` say so.
+- Adding a workspace crate now requires `publish = false` (or an `[engine]`
+  entry), and adding a dependency that does not cross-compile fails on the PR
+  that adds it, not at release time.
+- ADR-0014's M4 bootstrap has the shelf it was written against, in the shape it
+  described.
+
+## Revisit triggers
+
+- `delve-render` gains a self-contained runtime story (see §3).
+- crates.io publishes a scoped-token model that would let the release token be
+  narrowed further than `publish-update` on two crates.

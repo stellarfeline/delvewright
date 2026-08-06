@@ -33,7 +33,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: build the hello-world delve output
         run: |
-          cargo run -p delvewright-compiler --bin delvec -- \
+          cargo run -p delvec --bin delvec -- \
             build crates/dsl/fixtures/valid/hello-world \
             -o validation/delve-output --prefabs campaigns/prefabs
       # Jar cache removed 2026-07-30 (see the note in ci.yml tier-2): single-file
@@ -116,7 +116,7 @@ jobs:
           cache-dependency-path: harness/package-lock.json
       - name: build the two-branch fixture
         run: |
-          cargo run -p delvewright-compiler --bin delvec -- \
+          cargo run -p delvec --bin delvec -- \
             build crates/compiler/tests/fixtures/branch-two-endings \
             -o validation/delve-output --prefabs campaigns/prefabs
       - name: every enumerated branch is walked to its own ending
@@ -139,7 +139,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: build the hello-world delve output
         run: |
-          cargo run -p delvewright-compiler --bin delvec -- \
+          cargo run -p delvec --bin delvec -- \
             build crates/dsl/fixtures/valid/hello-world \
             -o validation/delve-output --prefabs campaigns/prefabs
 
