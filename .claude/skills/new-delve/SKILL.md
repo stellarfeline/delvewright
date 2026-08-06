@@ -1,6 +1,10 @@
 ---
 name: new-delve
 description: Generate a complete playable Minecraft delve from a creative prompt — staged DSL authoring with validation-loop self-repair, deterministic compile, machine validation, joinable output. Use when the user asks to create/generate a new delve or campaign. Args = the creative prompt (theme one-liner or detailed brief).
+version: 1.0.0
+requires:
+  delvec: ">=1.0.0 <2.0.0"
+verified_with: 1.0.0
 ---
 
 # /new-delve — the Delvewright generation front-end (ADR-0012)
