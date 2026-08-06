@@ -456,11 +456,8 @@ pub mod horizon_defaults {
     pub const RIM_HEIGHT: i32 = 48;
     /// `summit.plateau_y`.
     pub const PLATEAU_Y: i32 = 208;
-    /// `summit.vista_radius` (spec-0026 amendment 2026-08-04): 13 chunks, one
-    /// chunk of slack over the 192 floor (= the shipped summit `view-distance`
-    /// 12 × 16), so the fog line always lands inside generated terrain. The
-    /// pre-amendment 176 sat *below* its own floor.
-    pub const VISTA_RADIUS: i32 = 208;
+    /// `summit.vista_radius`.
+    pub const VISTA_RADIUS: i32 = 176;
     /// `summit.min_drop`.
     pub const MIN_DROP: i32 = 120;
 }

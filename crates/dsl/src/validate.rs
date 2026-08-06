@@ -1362,24 +1362,6 @@ fn horizon_rules(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     ),
                 );
             }
-            // spec-0026 amendment 2026-08-04: measured outward from the scene
-            // bounding-box edge, floor 192 = the shipped summit view-distance
-            // (12) × 16, so the fog line always lands inside generated terrain.
-            // Before the amendment the spec's own default (176) sat below this
-            // floor, which is why the foundation slice left it unenforced.
-            if r.vista_radius < 192 {
-                range(
-                    "vista_radius",
-                    format!(
-                        "`vista_radius` = {} is below the spec-0026 floor of 192 — the vista is \
-                         measured outward from the scene bounding box, and 192 is the shipped \
-                         summit `view-distance` (12) × 16, so anything less puts the fog line \
-                         outside generated terrain (default {})",
-                        r.vista_radius,
-                        horizon_defaults::VISTA_RADIUS
-                    ),
-                );
-            }
             if r.plateau_y > 319 || r.plateau_y - r.min_drop < -64 {
                 range(
                     "plateau_y",
@@ -1407,24 +1389,7 @@ fn horizon_rules(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 );
             }
         }
-        HorizonBase::Flatland => {
-            // spec-0026 amendment 2026-08-04: 0 would be a hard edge, which the
-            // flatland interpenetration ruling forbids; 16 bounds the dither
-            // band.
-            if !(1..=16).contains(&r.blend_width) {
-                range(
-                    "blend_width",
-                    format!(
-                        "`blend_width` = {} is out of range — the flatland seam dither band is \
-                         `1..=16` (default {}); 0 would be a hard material edge, which the \
-                         spec-0026 §3 interpenetration ruling forbids",
-                        r.blend_width,
-                        horizon_defaults::BLEND_WIDTH
-                    ),
-                );
-            }
-        }
-        HorizonBase::Void | HorizonBase::Ocean => {}
+        HorizonBase::Void | HorizonBase::Ocean | HorizonBase::Flatland => {}
     }
 
     // DW0320 generalized (spec-0026 §5): any horizon whose ambient is

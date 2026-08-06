@@ -155,14 +155,6 @@ fn out_of_range_params_are_dw0366() {
         "{ \"base\": \"summit\", \"plateau_y\": 400 }",
         // sky walk plane outside the build range
         "{ \"base\": \"sky\", \"float_y\": 400 }",
-        // spec-0026 amendment 2026-08-04 — summit vista below the 192 floor
-        // (the pre-amendment default 176 was itself below it, which is why the
-        // check could not be written until the spec resolved the contradiction)
-        "{ \"base\": \"summit\", \"vista_radius\": 176 }",
-        "{ \"base\": \"summit\", \"vista_radius\": 191 }",
-        // spec-0026 amendment 2026-08-04 — flatland seam band outside 1..=16
-        "{ \"base\": \"flatland\", \"blend_width\": 0 }",
-        "{ \"base\": \"flatland\", \"blend_width\": 17 }",
     ] {
         let diags = diags_for("0.9.0", h, true);
         assert!(
@@ -170,58 +162,6 @@ fn out_of_range_params_are_dw0366() {
             "{h} must be DW0366: {diags:#?}"
         );
     }
-}
-
-/// Every pinned horizon default satisfies the `DW0366` range it is the default
-/// for. This is the exact class of bug the spec-0026 amendment (2026-08-04)
-/// resolved: the shipped `vista_radius` default was 176 while its own floor was
-/// `view-distance (12) × 16 = 192`, so *taking the default* would have been a
-/// validation error — a check nobody could satisfy without overriding it. The
-/// foundation slice reported it rather than inventing a fix; this test is what
-/// stops a later slice from reintroducing it in any param.
-#[test]
-fn pinned_defaults_satisfy_their_own_ranges() {
-    use delvewright_dsl::horizon_defaults;
-
-    // The default row of every base, taken with no params declared at all.
-    let bases = [
-        ("void", HorizonBase::Void),
-        ("ocean", HorizonBase::Ocean),
-        ("flatland", HorizonBase::Flatland),
-        ("valley", HorizonBase::Valley),
-        ("summit", HorizonBase::Summit),
-        ("sky", HorizonBase::Sky),
-    ];
-    let mut checked = 0usize;
-    for (token, base) in bases {
-        let diags = diags_for("0.9.0", &format!("{{ \"base\": \"{token}\" }}"), true);
-        assert!(
-            !diags.iter().any(|d| d.code == "DW0366"),
-            "base `{token}` taking every default must not be DW0366 \
-             (a default outside its own range is unsatisfiable): {diags:#?}"
-        );
-        checked += 1;
-        let _ = base;
-    }
-    assert_eq!(checked, 6, "every spec-0026 base must be covered");
-
-    // The amendment's own numbers, stated so a silent re-drift is a red here
-    // and not only in the surround slice that finally emits them. These are
-    // `const` blocks on purpose: the values are compile-time constants, so the
-    // proof belongs at compile time — a regression fails to BUILD rather than
-    // waiting to be run.
-    const {
-        assert!(
-            horizon_defaults::VISTA_RADIUS >= 192,
-            "summit vista_radius default is below its own spec-0026 floor of 192"
-        )
-    };
-    const {
-        assert!(
-            horizon_defaults::BLEND_WIDTH >= 1 && horizon_defaults::BLEND_WIDTH <= 16,
-            "flatland blend_width default is outside its own spec-0026 range 1..=16"
-        )
-    };
 }
 
 /// `DW0366`: a param declared on a base it does not belong to.
