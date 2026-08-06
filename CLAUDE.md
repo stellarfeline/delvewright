@@ -187,8 +187,13 @@ validation/          # docker compose: headless server + bot, same image as CI &
   worker's entire island round was rejected wholesale for carrying extras.
 - **Tiered testing**: unit + static analysis on every push; PackTest integration on PR;
   full bot playthrough on release candidates only.
-- **PR-based flow even solo.** GitHub Actions; repo is private for now, public when
-  the owner decides it's ready.
+- **PR-based flow even solo.** GitHub Actions. **Both repos are PUBLIC** —
+  `stellarfeline/delvewright` and `stellarfeline/delvewright-campaigns`. This line
+  said "private for now" long after that stopped being true, and a planning
+  session reasoned from it for hours on 2026-08-06: it ruled out GitHub Releases
+  as a way to distribute `delvec` binaries, when that was exactly the right
+  answer (ADR-0017). A false premise in the file every session reads first is
+  worth more than a stale comment — it is a wrong conclusion, repeated.
 - **Docs are the only persistent memory.** End every session by writing lessons back:
   new constraints → this file; new decisions → an ADR; process learnings → the relevant
   spec. If you fought the codebase and won, record how.
