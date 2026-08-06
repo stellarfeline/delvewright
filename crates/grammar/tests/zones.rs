@@ -25,7 +25,7 @@ mod support;
 use std::collections::BTreeSet;
 
 use delvewright_grammar::block::BlockState;
-use delvewright_grammar::compose::{entry, include};
+use delvewright_grammar::compose::{AnchorRenames, entry, include_renaming};
 use delvewright_grammar::geom::Axis;
 use delvewright_grammar::ir::{Alternative, Node, Paint, Program, Size, Split};
 use delvewright_grammar::library::bell::cliff_road::{MIN_DROP, MIN_GULF};
@@ -1176,12 +1176,22 @@ fn a_piece_run_shorter_than_the_zone_is_refused_not_turned() {
 }
 
 // ---------------------------------------------------------------------------
-// The seam's limits — the three zones that are gaps, and why
+// The seam's limits — what composition can now do, and what it still cannot
 // ---------------------------------------------------------------------------
 
 /// Two pieces laid end to end in one throwaway program: the smallest thing that
-/// is a composition at all, and the fixture the findings below are read off.
+/// is a composition at all, and the fixture the claims below are read off.
 fn chained(parts: [(&str, &Program); 2]) -> Program {
+    let none = AnchorRenames::new();
+    chained_renaming([
+        (parts[0].0, parts[0].1, &none),
+        (parts[1].0, parts[1].1, &none),
+    ])
+}
+
+/// The same chain, with each piece given the anchor renames it is included
+/// under.
+fn chained_renaming(parts: [(&str, &Program, &AnchorRenames<'_>); 2]) -> Program {
     let plan = Program::new("chain", "plan").rule_alts(
         "plan",
         vec![Alternative::new(Node::Split(Split {
@@ -1192,25 +1202,26 @@ fn chained(parts: [(&str, &Program); 2]) -> Program {
             orient: Default::default(),
             children: parts
                 .iter()
-                .map(|(prefix, source)| Node::call(&entry(prefix, source)))
+                .map(|(prefix, source, _)| Node::call(&entry(prefix, source)))
                 .collect(),
         }))],
     );
-    parts.iter().fold(plan, |acc, (prefix, source)| {
-        include(acc, source, prefix).unwrap_or_else(|e| panic!("{prefix}: {e}"))
+    parts.iter().fold(plan, |acc, (prefix, source, renames)| {
+        include_renaming(acc, source, prefix, renames).unwrap_or_else(|e| panic!("{prefix}: {e}"))
     })
 }
 
-/// The limit of the seam, stated as a test rather than as a comment: an include
-/// does **not** rename anchors, because an anchor name is the campaign's
-/// contract. So a zone that includes the same piece twice gets two declarations
-/// of one name, and expansion refuses loudly instead of letting the second
-/// quietly win.
+/// The default, stated as a test rather than as a comment: an include does not
+/// rename anchors *on its own*, because an anchor name is the campaign's
+/// contract. So a zone that includes the same piece twice and says nothing gets
+/// two declarations of one name, and expansion refuses loudly instead of letting
+/// the second quietly win.
 ///
-/// A zone that genuinely needs two watch bays therefore needs an anchor-
-/// namespace primitive on `mark`; this is what its absence looks like.
+/// The refusal now carries its own remedy, which is the difference between a
+/// wall and a signpost: the message names `include_renaming`, so the next reader
+/// meets the fix rather than the limit.
 #[test]
-fn including_one_piece_twice_is_a_loud_anchor_collision() {
+fn including_one_piece_twice_without_saying_so_is_a_loud_anchor_collision() {
     let bay = watch_bay();
     let twice = chained([("first", &bay), ("second", &bay)]);
     twice.validate().expect("both copies resolve");
@@ -1226,23 +1237,85 @@ fn including_one_piece_twice_is_a_loud_anchor_collision() {
         text.contains("declared twice") && text.contains("first/") && text.contains("second/"),
         "expected an anchor collision naming both copies' rules, got: {text}"
     );
+    assert!(
+        text.contains("include_renaming"),
+        "the collision does not name its remedy, so it reads as a dead end: {text}"
+    );
 }
 
-/// **Finding, and it is what blocks Z3 and half of Z6.** It does not take two
-/// copies of one piece to hit that collision. Two *different* pieces that happen
-/// to declare the same anchor name collide identically, and two pairs in today's
-/// vocabulary do: `causeway` and `elite_ground` both declare `anchor/elite`,
-/// and `watch_bay` and `far_side_bar` both declare `anchor/gate`.
+/// **Seam limit 1, closed.** It never took two copies of one piece to hit that
+/// collision: two *different* pieces that happen to declare the same anchor name
+/// collided identically, and two pairs in today's vocabulary do — `causeway` and
+/// `elite_ground` both declare `anchor/elite`, `watch_bay` and `far_side_bar`
+/// both declare `anchor/gate`. That refused Z3's **T** + **E** and Z6's **F**,
+/// not for want of a shape but for want of a name.
 ///
-/// That is Z3's **T** + **E** and Z6's **F**, refused — not for want of a shape
-/// but for want of a name. The primitive is the same anchor namespace on `mark`
-/// that the test above waits on, and no zone program can work round it: the
-/// alternative would be a zone quietly dropping one of the two anchors, which is
-/// the campaign's contract silently deleted.
+/// A rename at the include site is the name. It is deliberately *explicit* and
+/// per-anchor rather than a blanket prefix: a ward with a causeway keeper and a
+/// dormant elite has two genuinely different elites and the campaign has to be
+/// able to tell them apart, so the zone writes down which is which. A prefix
+/// would have silently moved every anchor a `timed-gate` already binds.
 ///
-/// Binding: 2 pairs, each expanded and each refused by name.
+/// Binding: 2 pairs, 4 anchors, each expanded and each read back by name and by
+/// declaring rule. Control: the same two pairs with no rename still collide
+/// (the test above, and
+/// `two_pieces_that_share_a_stem_still_collide_when_nobody_renames`).
 #[test]
-fn two_different_pieces_that_declare_one_anchor_collide_the_same_way() {
+fn a_rename_at_the_include_site_lets_two_pieces_declare_one_stem() {
+    const WARD: Box3 = Box3::at_origin([21, 12, 60]);
+    let cases = [
+        (
+            "elite",
+            "keeper-elite",
+            causeway(),
+            elite_ground(),
+            "near/post_column",
+            "far/elite_column",
+        ),
+        (
+            "gate",
+            "shortcut-gate",
+            far_side_bar(),
+            watch_bay(),
+            "near/door_column",
+            "far/span_column",
+        ),
+    ];
+    let mut checked = 0;
+    for (stem, renamed, near, far, near_rule, far_rule) in &cases {
+        let renames = AnchorRenames::from([(*stem, *renamed)]);
+        let none = AnchorRenames::new();
+        let program = chained_renaming([("near", near, &renames), ("far", far, &none)]);
+        program.validate().expect("both pieces resolve");
+        let out = expand(&program, WARD, &ExpandOptions::seeded(1))
+            .unwrap_or_else(|e| panic!("{} + {}: {e}", near.name, far.name));
+
+        let moved = out
+            .anchors
+            .get(&format!("anchor/{renamed}"))
+            .unwrap_or_else(|| panic!("the renamed anchor is missing: {:#?}", out.anchors));
+        let kept = out
+            .anchors
+            .get(&format!("anchor/{stem}"))
+            .unwrap_or_else(|| panic!("the unrenamed anchor is missing: {:#?}", out.anchors));
+        assert_eq!(
+            (moved.declared_by.as_str(), kept.declared_by.as_str()),
+            (*near_rule, *far_rule),
+            "the two anchors came from the wrong pieces"
+        );
+        assert_ne!(moved.pos, kept.pos, "two names, one place");
+        checked += 2;
+    }
+    assert_eq!(checked, 4, "the gate read back {checked} anchors");
+}
+
+/// ...and the rename is opt-in, which is the whole safety property: the same two
+/// pairs with nothing said still collide, so no existing anchor contract moved
+/// when this landed.
+///
+/// Binding: 2 pairs, each refused by name.
+#[test]
+fn two_pieces_that_share_a_stem_still_collide_when_nobody_renames() {
     let pairs = [
         ("anchor/elite", causeway(), elite_ground()),
         ("anchor/gate", watch_bay(), far_side_bar()),
@@ -1328,21 +1401,129 @@ fn the_causeway_has_no_exit_past_its_guard_post() {
     );
 }
 
-/// **Finding: a shortcut is a branch, and the seam is a chain.** Every
-/// vocabulary rule walls its own two side faces, so pieces join end to end along
-/// one axis and nowhere else — there is no way for a zone to hand a piece a box
-/// *off* the route. A `far_side_bar` in that chain therefore seals the zone's
+/// The branch fixture's box: a mainline three wide with a seven-deep strip
+/// alongside it, long enough for a real chain either side of the junction.
+const BRANCH_REGION: Box3 = Box3::at_origin([10, 6, 24]);
+/// How deep the branch strip runs off the mainline.
+///
+/// **Strictly greater than [`TEE_RUN`]**, and that is the frame constraint §5c
+/// already documents rather than a magic number: every §5b rule opens with
+/// `z(Largest)`, so `far_side_bar` turns its travel onto the longer horizontal
+/// axis of whatever box it is handed. A branch box deeper than it is wide puts
+/// that axis *across* the mainline, which aims the bar's near room at the tee's
+/// doorway. A wider-than-deep box would build the bar along the chain instead
+/// — the piece turned, which `the_pieces_stand_in_travel_order` is the general
+/// form of.
+const BRANCH_DEPTH: i64 = 7;
+/// The tee's own run along the chain, and the branch box's width — the same
+/// number on purpose, so the doorway the tee cuts at the middle of its run lands
+/// inside the branch's near room rather than in one of its end walls.
+const TEE_RUN: i64 = 5;
+/// Neither piece of the branch draws from the seed; the grate's break does, and
+/// the gates below do not read it.
+const BRANCH_SEED: u64 = 1;
+
+/// A chain with a branch: `tee_passage` + `broken_grate` down the mainline, and
+/// a `far_side_bar` in a side strip beside the tee's doorway.
+///
+/// The zone writes no encounter geometry — only the two splits that carve the
+/// strip out of the box and the plain fill that walls the strip's margins, which
+/// is the same "mass no piece can know about" `cliff_road`'s gulf is. Everything
+/// else is `include` and `call`.
+fn branch_chain() -> Program {
+    fn cut(axis: Axis, sizes: Vec<Size>, children: Vec<Node>) -> Node {
+        Node::Split(Split {
+            axis,
+            sizes,
+            // `Rounding::Start`, not the default truncation: a truncated
+            // relative piece leaves the far end of the box unwritten, and an
+            // unwritten cell is air — a hole in the strip's own margin wall.
+            rounding: delvewright_grammar::ir::Rounding::Start,
+            repeat: false,
+            orient: Default::default(),
+            children,
+        })
+    }
+    let tee = delvewright_grammar::library::tee_passage();
+    let bar = far_side_bar();
+    let vent = broken_grate();
+    let plan = Program::new("branch_chain", "plan")
+        .role("margin", BlockState::simple("deepslate"))
+        .rule(
+            "plan",
+            cut(
+                Axis::X,
+                vec![Size::abs(BRANCH_DEPTH), Size::rel(1)],
+                vec![Node::call("strip"), Node::call("mainline")],
+            ),
+        )
+        // The strip: the branch's own box at the tee's own run, solid rock for
+        // the rest of its length. The fill is inert mass, not a gate — what
+        // makes the tee's doorway the only way into the branch is that
+        // `far_side_bar` walls its own two side faces, which is the same §5b
+        // property this seam limit came from. (Measured: replacing the fill with
+        // air reds nothing, because a floorless strip has no standable cell in
+        // it either way.)
+        .rule(
+            "strip",
+            cut(
+                Axis::Z,
+                vec![Size::abs(TEE_RUN), Size::rel(1)],
+                vec![Node::call(&entry("bar", &bar)), Node::fill("margin")],
+            ),
+        )
+        .rule(
+            "mainline",
+            cut(
+                Axis::Z,
+                vec![Size::abs(TEE_RUN), Size::rel(1)],
+                vec![
+                    Node::call(&entry("tee", &tee)),
+                    Node::call(&entry("vent", &vent)),
+                ],
+            ),
+        );
+    let none = AnchorRenames::new();
+    [("tee", &tee), ("bar", &bar), ("vent", &vent)]
+        .into_iter()
+        .fold(plan, |acc, (prefix, source)| {
+            include_renaming(acc, source, prefix, &none).unwrap_or_else(|e| panic!("{prefix}: {e}"))
+        })
+}
+
+/// The branch's near room: the strip's standable cells on the mainline side of
+/// the bar, read off `anchor/gate` rather than recomputed from the fixture's
+/// own arithmetic.
+fn branch_near_room(cells: &BTreeSet<[i32; 3]>, gate: [i32; 3]) -> BTreeSet<[i32; 3]> {
+    cells
+        .iter()
+        .copied()
+        .filter(|c| c[0] > gate[0] && (c[0] as i64) < BRANCH_DEPTH)
+        .collect()
+}
+
+/// **Seam limit 3, closed — but the first half of this test is still true, and
+/// that is the point.** A `far_side_bar` laid *in* the chain seals the zone's
 /// own route rather than sitting beside it, which is the opposite of what a
 /// shortcut is (spec-0016 §2: a short way back between two rest points, earned
-/// from the far side).
+/// from the far side). Every §5b rule walls its own two side faces, so a
+/// composition is a chain along one axis and a zone had no way to hand a piece a
+/// box *off* the route.
 ///
-/// This is the second, independent reason Z3's **F** and Z6's **F** are gaps: it
-/// would still hold if the anchor collision above were fixed tomorrow. What it
-/// waits on is a junction primitive.
+/// [`tee_passage`] is that way, and it is vocabulary rather than a new
+/// primitive: the IR already expressed "a chain segment whose one side face
+/// carries a doorway" — `ambush_door` and `far_side_bar` are exactly that
+/// construction, merely turned 90° from where a branch needs it. So the second
+/// half of this test lays the *same bar* beside the route instead of on it, and
+/// asserts the three things that make it a shortcut rather than a wall.
 ///
-/// Binding: the chain's standable cells, walked twice. The teeth are the second
-/// half: `bar/unbarred` opens the same doorway and the same walk connects, so
-/// what sealed the chain was the bar and not a seam that never joined.
+/// Binding, first half: the chain's standable cells, walked twice; `bar/unbarred`
+/// opens the same doorway and the same walk connects, so what sealed the chain
+/// was the bar and not a seam that never joined.
+///
+/// Binding, second half: 43 standable cells (25 on the mainline, 18 in the
+/// branch), 9 of them the branch's near room, 1 the doorway column that is cut
+/// and re-walked.
 #[test]
 fn a_barred_door_on_the_route_seals_the_chain() {
     const CHAIN: Box3 = Box3::at_origin([5, 6, 24]);
@@ -1369,5 +1550,104 @@ fn a_barred_door_on_the_route_seals_the_chain() {
         connected(&open_cells, &open_entry, &open_exit),
         "drawing the bar did not open the chain, so the seal above proves nothing \
          about the bar"
+    );
+
+    // ------------------------------------------------------------------
+    // ...and the same bar, laid *beside* the route through a `tee_passage`.
+    // ------------------------------------------------------------------
+    let branch = branch_chain();
+    let out = expand_at(&branch, BRANCH_REGION, BRANCH_SEED);
+    let cells = standable_cells(&out.model);
+    assert_eq!(cells.len(), 43, "the composed chain's standable cells");
+    let unlock: BTreeSet<[i32; 3]> = [out.anchors["anchor/unlock"].pos].into_iter().collect();
+    let door = out.anchors["anchor/branch-door"].pos;
+    let gate = out.anchors["anchor/gate"].pos;
+
+    // 1. The CONTROL, and it is what separates "the shortcut is sealed" from
+    //    "the zone is impassable": the mainline walks end to end **with the bar
+    //    standing**. This is the assertion the first half of this test fails.
+    let (entry, exit) = ends(&out.model);
+    assert_eq!(
+        (entry.len(), exit.len()),
+        (1, 1),
+        "the mainline's ends: {entry:?} / {exit:?}"
+    );
+    assert!(
+        connected(&cells, &entry, &exit),
+        "the branch sealed the mainline — a tee that severs the chain it is a \
+         segment of is a `far_side_bar` wearing a different name"
+    );
+
+    // 2. The near side reaches the branch's near room, and stops there.
+    let near_room = branch_near_room(&cells, gate);
+    assert_eq!(near_room.len(), 9, "the branch's near room: {near_room:?}");
+    assert!(
+        connected(&cells, &entry, &near_room),
+        "the mainline cannot reach the branch at all — the tee's doorway opens onto \
+         nothing, so the shortcut is not even a room"
+    );
+    assert!(
+        !connected(&cells, &entry, &unlock),
+        "the mainline reaches {unlock:?} while the bar stands — the shortcut has no \
+         far side to earn"
+    );
+
+    // 3. Drawing the bar connects the two, and through exactly the tee's doorway:
+    //    cut that one column and the branch is unreachable again.
+    let mut open = branch_chain();
+    open.set_param("bar/unbarred", 1).unwrap();
+    let opened = expand_at(&open, BRANCH_REGION, BRANCH_SEED);
+    let open_cells = standable_cells(&opened.model);
+    let (open_entry, _) = ends(&opened.model);
+    assert!(
+        connected(&open_cells, &open_entry, &unlock),
+        "drawing the bar did not open the branch, so the seal above proves nothing"
+    );
+    let cut: BTreeSet<[i32; 3]> = open_cells
+        .iter()
+        .copied()
+        .filter(|c| c[0] != door[0] || c[2] != door[2])
+        .collect();
+    assert_eq!(
+        cut.len(),
+        open_cells.len() - 1,
+        "exactly the doorway was cut"
+    );
+    assert!(
+        !connected(&cut, &open_entry, &unlock),
+        "with the tee's doorway plugged the unbarred branch is still reachable — the \
+         way in is a seam that never closed, not the doorway this rule declares"
+    );
+}
+
+/// ...and the branch has teeth. `tee/sealed` fills the tee's doorway and nothing
+/// else: the branch must go unreachable **while the mainline still walks**, which
+/// is what proves the doorway — and not a seam accident anywhere along the strip
+/// — is the way in.
+///
+/// Binding: 42 standable cells (one fewer than the open fixture: the doorway),
+/// 9 of them the branch's near room.
+#[test]
+fn sealing_the_tee_makes_the_branch_unreachable() {
+    let mut sealed = branch_chain();
+    sealed.set_param("tee/sealed", 1).unwrap();
+    let out = expand_at(&sealed, BRANCH_REGION, BRANCH_SEED);
+    let cells = standable_cells(&out.model);
+    assert_eq!(cells.len(), 42, "the doorway cell, and only it, is gone");
+    let (entry, exit) = ends(&out.model);
+
+    let near_room = branch_near_room(&cells, out.anchors["anchor/gate"].pos);
+    assert_eq!(near_room.len(), 9, "the branch is still a room");
+    assert!(
+        !connected(&cells, &entry, &near_room),
+        "the tee's doorway was filled and the branch is still reachable — the way in \
+         was never the doorway, so the gate above proves nothing"
+    );
+
+    // The control: a filled doorway, not a filled zone.
+    assert!(
+        connected(&cells, &entry, &exit),
+        "sealing the branch door sealed the mainline, so the red above is measuring \
+         an impassable chain rather than an unreachable branch"
     );
 }

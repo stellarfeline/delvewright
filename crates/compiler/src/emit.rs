@@ -6551,6 +6551,28 @@ fn collapse_fn(eff: &QuestEffect) -> String {
 /// `unleash_<id>` (puppet → real-AI twin) per declared actor, plus a per-tick
 /// teleport driver (with tangent yaw and an `on_arrive` bundle) per planned
 /// `move-actor`. Empty for a campaign with no actors (pre-0.6 byte-identical).
+///
+/// # Supersession — one puppet, one live leg driver (task #28)
+///
+/// A `move-actor` driver carries the identical defect `move-npc` had (task #25): its
+/// re-entry latch `#arun_<bare>` is keyed per **(actor, to_anchor, gate)**, so it only
+/// ever stopped a leg from restarting *itself*. Two overlapping legs on ONE puppet left
+/// two live drivers both `tp`-ing the same body every tick; they fought, and the longer
+/// leg — outliving the shorter — wrote the final position, parking the puppet at the
+/// FIRST leg's endpoint permanently.
+///
+/// The contract is the same one `movenpc_fns` documents at length: **last fired wins**,
+/// carried by a per-puppet leg generation `#agen_<actor>` stamped onto each driver's
+/// `#aown_<bare>`. A driver whose stamp is behind the generation drops its latch and
+/// returns without teleporting, arriving, or rescheduling — so it dies on its next
+/// scheduled tick. The staleness test is the positive `if own < gen` for the same
+/// reason: with both scores unset (a driver invoked directly, as the `v06_move_actor`
+/// and `v06_arrive_handoff` PackTests do) a score comparison is *false*, so the
+/// unfired-generation case reads as "not stale" and the leg runs.
+///
+/// A puppet with only one planned leg can never be superseded and carries none of this,
+/// so pre-existing single-leg campaigns stay byte-identical (ADR-0006) — pinned
+/// verbatim by `move_supersede.rs`'s `GOLDEN_ONE_LEG`.
 fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
@@ -6616,10 +6638,21 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
         }
     }
     // move-actor per-tick drivers.
+    //
+    // How many legs each puppet owns, in the planner's deterministic order. Two or
+    // more ⇒ a later leg can catch an earlier one mid-flight ⇒ that puppet's drivers
+    // carry the generation guard (see the supersession section of `movenpc_fns`).
+    let mut legs: BTreeMap<&str, usize> = BTreeMap::new();
+    for m in actor_moves {
+        *legs.entry(m.actor.as_str()).or_insert(0) += 1;
+    }
     for m in actor_moves {
         let safe = plan::safe_local(&m.actor);
         let bare = moveactor_bare(&m.actor, &m.to_anchor, &m.gate_key);
         let total = m.ticks();
+        let supersedable = legs.get(m.actor.as_str()).copied().unwrap_or(0) > 1;
+        // `#aown_<bare> < #agen_<actor>` ⇔ a later leg for this puppet has started.
+        let stale = format!("score #aown_{bare} dw.sys < #agen_{safe} dw.sys");
         // The on_arrive bundle for this (actor, to_anchor) — the first-seen effect,
         // matching the planner's dedup order.
         let on_arrive: &[QuestEffect] = all_campaign_effects(plan.campaign)
@@ -6637,18 +6670,43 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
             })
             .unwrap_or(&[]);
 
-        let start = vec![
-            format!("execute if score #arun_{bare} dw.sys matches 1 run return fail"),
-            format!("scoreboard players set #arun_{bare} dw.sys 1"),
-            format!("scoreboard players set #at_{bare} dw.sys 0"),
-            format!("schedule function {ns}:ma_tick_{bare} 1t"),
-        ];
+        // start: guard re-entry, take the walk generation, reset the tick counter,
+        // schedule the driver. The re-entry refusal is generation-aware: a latch left
+        // armed by a driver this puppet has already superseded must not block the
+        // re-fire of that same leg (it is itself a later leg, and wins).
+        let mut start = Vec::new();
+        if supersedable {
+            start.push(format!(
+                "execute if score #arun_{bare} dw.sys matches 1 unless {stale} run return fail"
+            ));
+            start.push(format!("scoreboard players add #agen_{safe} dw.sys 1"));
+            start.push(format!(
+                "scoreboard players operation #aown_{bare} dw.sys = #agen_{safe} dw.sys"
+            ));
+        } else {
+            start.push(format!(
+                "execute if score #arun_{bare} dw.sys matches 1 run return fail"
+            ));
+        }
+        start.push(format!("scoreboard players set #arun_{bare} dw.sys 1"));
+        start.push(format!("scoreboard players set #at_{bare} dw.sys 0"));
+        start.push(format!("schedule function {ns}:ma_tick_{bare} 1t"));
         out.push((
             moveactor_fn(&m.actor, &m.to_anchor, &m.gate_key),
             lines(&start),
         ));
 
         let mut tick: Vec<String> = Vec::new();
+        if supersedable {
+            // Superseded: drop the latch (so this leg can be fired again later) and
+            // stop — no teleport, no arrive hook, no reschedule. The `schedule` this
+            // driver queued before it lost the puppet is what brought us here; not
+            // rescheduling is what ends it.
+            tick.push(format!(
+                "execute if {stale} run scoreboard players set #arun_{bare} dw.sys 0"
+            ));
+            tick.push(format!("execute if {stale} run return fail"));
+        }
         for (t, (w, y)) in m.waypoints.iter().zip(m.yaws.iter()).enumerate() {
             tick.push(format!(
                 "execute if score #at_{bare} dw.sys matches {t} run tp @e[tag=dw_pup_{safe}] {} {} {} {y} 0",
