@@ -19,6 +19,15 @@ Rust binaries run from repo root as
 `cargo run -q -p <package> --bin <bin> -- <args>` (packages below), or from a
 `cargo build` target directory.
 
+**Profile.** Either form is fine: the workspace sets `[profile.dev] opt-level = 1`
+so an ordinary `cargo build` / `cargo run` produces a `delvec` fast enough for a
+real campaign (`nobodys-cave-island`: 46s). It is not optional decoration — at the
+cargo default of `opt-level = 0` that same build takes 12m51s and reads as a hang.
+Add `--release` only for a long unattended run (25s on the same campaign); it
+costs ~20s per incremental rebuild, so it is the wrong choice while iterating.
+All profiles emit byte-identical output (ADR-0006 is profile-independent, and
+measured to be — `docs/notes/build-profile-measurements.md`).
+
 ---
 
 ## 1. `delvec` — the compiler (`crates/compiler`, package `delvewright-compiler`) · agent
