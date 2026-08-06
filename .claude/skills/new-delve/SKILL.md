@@ -237,6 +237,13 @@ Concision is not the same as flatness. Cut the padding, keep the beat.
 
 ## The loop
 
+`delvec` below means a binary from `cargo build -p delvewright-compiler --bin
+delvec` (or `cargo run -q -p delvewright-compiler --bin delvec -- …`). Plain
+`cargo build` is the right call — the workspace's dev profile is optimized enough
+for a real campaign. Do **not** reach for `--release` mid-loop: it is ~20s slower
+to rebuild after every edit and the output is byte-identical either way
+(`docs/reference/tools.md`).
+
 For each stage in order — world → npcs → classes → quest-plan → quests → dialogue:
 
 1. `cargo run -q -p delvewright-compiler --bin delvec -- schema --stage <n>` —
