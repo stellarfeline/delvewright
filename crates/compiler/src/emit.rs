@@ -999,8 +999,9 @@ pub fn build_with_warnings(
     // per locomotion class, and which of its rules bind at all. A green that
     // matched nothing must be legible as such WITHOUT the reader re-deriving it
     // from an empty diagnostics list — and the capability axis is its own way to
-    // bind to nothing, since a proof written for walking bodies is unbound over
-    // every flier in the campaign.
+    // bind to nothing, since every class that carries an exemption is a class
+    // some rule does not examine. `gate_use.cells` counts every non-gate-opening
+    // body regardless of class, so the count itself shows that rule is total.
     if let Some(gate) = &traversal_gate {
         put_json(&mut out, "validation/traversal-gate.json", &gate.to_json());
     }

@@ -53,23 +53,98 @@
 //! ## The traversal model
 //!
 //! The traversal a route needs is compared against what the body walking it can
-//! do — [`Traversal`], derived from the entity id, because vanilla already draws
-//! these lines and they are facts to encode rather than thresholds to invent:
+//! do — [`Traversal`], derived from the entity id.
 //!
-//! * **Ground** (the default, and every body the delves ship today): walks,
-//!   steps and jumps. Opens nothing.
-//! * **Climber** (`spider`, `cave_spider`): climbs sheer vertical surfaces.
-//!   A spider routed over a wall is *correct* and must not be flagged — which is
-//!   the whole reason this is a per-body model and not a global rule.
-//! * **Flier** (`bat`, `phantom`, `ghast`, `bee`, `allay`, `vex`, …): not bound
-//!   to a ground route at all.
-//! * **Aquatic** (`squid`, `dolphin`, `guardian`, …): bound to water.
-//! * **Gate use** is `false` for every entity in the table. No vanilla mob opens
-//!   a fence gate — villagers open *doors* — and a compiler-driven puppet
-//!   performs no interaction whatever. It is a field rather than a constant so
-//!   the rule reads as the capability claim it is, and so the player's own
-//!   routing ([`crate::nav::check_critical_path`]) stays visibly the one caller
-//!   that has it.
+//! ## Two rules, two different questions — and therefore two exemption axes
+//!
+//! This is the structural point, and getting it wrong is what an earlier draft
+//! did (owner correction, island round 21). The two rules are not two strengths
+//! of one rule; they ask different questions, so different things may excuse a
+//! body from them.
+//!
+//! * **`DW0452` is a COLLISION-AND-INTERACTION question.** A closed fence gate's
+//!   leaf spans the full cell across one axis, the planned route runs down the
+//!   cell's centre line, and the body performs no right-click. **None of those
+//!   three facts changes because a body has wings, climbs, or swims.** A
+//!   `tp`-driven puppet is moved along the planned cell route whatever its body
+//!   is; if that route enters a closed gate cell, the body passes through
+//!   geometry it cannot pass through. So the rule binds to **every body**, and
+//!   the only thing that could excuse it is [`Traversal::opens_gates`] — which is
+//!   exactly why that is a per-body field and not a constant. **[`Locomotion`]
+//!   does not touch this rule at all** ([`exempt_from_gate_rule`]).
+//! * **`DW0453` is a LOCOMOTION question.** "Did this body go *over* a line it
+//!   may not go *through*?" is only a defect for a body whose way past a wall is
+//!   round it. Going over is precisely what a climber does, and a flier is not
+//!   making a ground step-up in the first place. So this rule — and only this
+//!   rule — is the one locomotion governs ([`exempt_from_surmount_rule`]).
+//!
+//! An earlier draft expressed the exemption as one early `continue` over the
+//! whole body, before both rules. That conflated the two questions and let a
+//! flying — or misclassified — body walk through a closed gate in silence. The
+//! exemption is therefore expressed **per rule**, never per body, and the
+//! ledger's `gate_use.cells` counts route cells for every non-gate-opening body
+//! regardless of class, so the binding count itself shows the rule is total.
+//!
+//! ## The membership rule for this table, and the asymmetry behind it
+//!
+//! **The two errors are not symmetric.** Classifying a body too strictly costs a
+//! false positive the owner dismisses in a minute of her QA hour. Classifying it
+//! too loosely costs a body that is **never examined and reports green** — the
+//! silent failure this whole module exists to end. So the table is built to fail
+//! in the first direction:
+//!
+//! 1. **[`Locomotion::Ground`] is the default and the CHECKED class.** Every id
+//!    vanilla data does not positively answer lands there, including ids the
+//!    table has never heard of. Ambiguity — a mob that moves both ways, or only
+//!    leaves the ground in some state — resolves to Ground.
+//! 2. **A class may only carry an exemption when its membership is either
+//!    vanilla's own answer or a closed, cited list whose exemption is
+//!    advisory-tier.** Nothing gets a blanket exemption from the error tier.
+//! 3. **Membership is decided by how the body MOVES, never by its name.**
+//!
+//! The classes, each with the test that decides it:
+//!
+//! * **Ground** — the default. Walks, steps and jumps. Includes, deliberately:
+//!   `minecraft:breeze`, which reads like a flier and is not — it "moves around
+//!   by hovering on the surface and by leaping", cannot rise into the air, and
+//!   is fall-damage-immune purely because it lands hard
+//!   ([Minecraft Wiki, *Breeze*](https://minecraft.wiki/w/Breeze)). It walks, so
+//!   it is checked.
+//! * **Climber** — vanilla's `Spider` class and its subclasses: `spider` and
+//!   `cave_spider`, the only mobs whose `onClimbable()` is true whenever they
+//!   are horizontally collided, which is the mechanic that lets them go up a
+//!   sheer face. Exempt from **`DW0453` only** — going over is what a climber
+//!   does — and never from `DW0452`, so a wrong entry here costs a missed
+//!   advisory rather than a missed error. No vanilla tag answers this, so the
+//!   list is closed, short and cited, per rule 2.
+//! * **Flier** — leaves the ground under its own power and is not bound to a
+//!   ground route: `allay`, `bat`, `bee`, `blaze`, `ender_dragon`, `ghast`,
+//!   `happy_ghast`, `parrot`, `phantom`, `vex`, `wither`. Exempt from **`DW0453`
+//!   only**, for the same reason and at the same tier as a climber. Notably
+//!   **not** members: `breeze` (hops — see Ground), `chicken` and `parrot`'s
+//!   slow-fall cousins in `#minecraft:fall_damage_immune`, which is a
+//!   landing-damage tag and not a flight signal (it holds `breeze`, `chicken`,
+//!   `cat`, `ocelot`, `iron_golem`, `magma_cube`, `shulker`); `shulker`, which
+//!   is stationary and teleports. No vanilla tag answers "does this fly", so
+//!   like `Climber` the list is closed, short and cited — permitted only because
+//!   its exemption is advisory-tier (rule 2). A `Flier` is still fully bound by
+//!   `DW0452`: wings do not open gates.
+//! * **Aquatic** — membership is vanilla's own `#minecraft:aquatic` tag, read
+//!   from the vendored registry ([`crate::registry::entity_in_tag`]), never a
+//!   list here. Carries **no exemption at all**: it is a ledger classification,
+//!   so a membership question can never cost a proof. (The hand list this
+//!   replaced had eleven entries and vanilla's tag has fourteen — it was missing
+//!   `turtle`, `nautilus` and `zombie_nautilus`. That is what a hand table does.)
+//!
+//! Every hand-listed id is additionally required to exist in the vendored
+//! entity registry, so a typo or a species renamed at the next MC pin is a red
+//! rather than a class that silently stopped matching.
+//!
+//! **Gate use** is `false` for every entity. No vanilla mob opens a fence gate —
+//! villagers open *doors* — and a compiler-driven puppet performs no interaction
+//! whatever. It is a field rather than a constant so the rule reads as the
+//! capability claim it is, and so the player's own routing
+//! ([`crate::nav::check_critical_path`]) stays visibly the one caller that has it.
 //!
 //! **What is deliberately NOT modelled**: per-entity jump reach. The router
 //! measures every rise against the *player's* apex
@@ -88,9 +163,8 @@
 //!   the full cell across one axis and the route runs down the cell's centre
 //!   line — and no shipped delve can open it later, because no runtime verb
 //!   changes a fence gate's state. Build tier, like every other
-//!   assembled-geometry defect. A climber or a flier is exempt for a different
-//!   reason each: a flier is not on the ground route the rule is about; a
-//!   climber still cannot open a gate, so it is **not** exempt from this rule.
+//!   assembled-geometry defect. **No locomotion class is exempt from this rule**:
+//!   a climber climbs and cannot open a gate either.
 //! * **`DW0453` — warning, a barrier line surmounted over a full-cube course.**
 //!   The route steps up onto a cell whose support is a full cube standing level
 //!   with, and orthogonally beside, a 1.5-tall fence/wall cell, and comes back
@@ -135,17 +209,26 @@ pub const DW_BARRIER_SURMOUNTED: &str = "DW0453";
 /// route genuinely uses (climb up, walk, stay up) out of the tier.
 pub const SURMOUNT_WINDOW: usize = 4;
 
-/// How a body gets around, derived from its entity id. Vanilla's own lines, not
-/// the compiler's — see the module docs for what is deliberately absent.
+/// How a body gets around, derived from its entity id. See the module docs for
+/// the membership rule, the asymmetry it is built around, and why there is no
+/// flier class.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Locomotion {
-    /// Walks, steps and jumps. Every body the delves ship today.
+    /// Walks, steps and jumps — **the default and the checked class**. Every
+    /// entity vanilla data does not positively answer lands here, including
+    /// unrecognised ids and every flying body (this compiler routes them on the
+    /// ground regardless).
     Ground,
-    /// Climbs sheer vertical surfaces (`spider`, `cave_spider`).
+    /// Climbs sheer vertical surfaces: vanilla's `Spider` class and its
+    /// subclasses. Exempt from [`DW_BARRIER_SURMOUNTED`] only.
     Climber,
-    /// Not bound to a ground route.
+    /// Leaves the ground under its own power. Exempt from
+    /// [`DW_BARRIER_SURMOUNTED`] only — a flier makes no ground step-up, but
+    /// wings do not open a fence gate, so [`DW_TRAVERSAL_IMPOSSIBLE`] binds it
+    /// exactly like a sheep.
     Flier,
-    /// Bound to water.
+    /// A member of vanilla's `#minecraft:aquatic` tag. A ledger classification
+    /// that exempts **nothing** — see the module docs.
     Aquatic,
 }
 
@@ -159,7 +242,87 @@ impl Locomotion {
             Locomotion::Aquatic => "aquatic",
         }
     }
+
+    /// Every class, in ledger order — so [`TraversalGate::to_json`] can never
+    /// silently drop a row when a class is added.
+    pub const ALL: [Locomotion; 4] = [
+        Locomotion::Ground,
+        Locomotion::Climber,
+        Locomotion::Flier,
+        Locomotion::Aquatic,
+    ];
 }
+
+/// Which locomotion classes [`DW_TRAVERSAL_IMPOSSIBLE`] declines to examine.
+///
+/// **None — locomotion does not touch this rule** (owner correction, island
+/// round 21). `DW0452` is a collision-and-interaction question, not a locomotion
+/// one: the gate leaf spans the full cell across one axis, the planned route
+/// runs down the cell's centre line, and the body performs no right-click, and
+/// not one of those three facts changes because the body has wings or claws. A
+/// `tp`-driven puppet is moved along the planned cell route whatever its body
+/// is. The only thing that can excuse this rule is [`Traversal::opens_gates`],
+/// which is why that is a per-body field rather than a constant.
+///
+/// Written as a function taking the class it ignores — rather than as an absent
+/// `if` — so "no class is exempt here" is a claim a test can hold, and so a
+/// future edit that wires locomotion back into the error tier has to delete an
+/// assertion to do it.
+fn exempt_from_gate_rule(_class: Locomotion) -> bool {
+    false
+}
+
+/// Which locomotion classes [`DW_BARRIER_SURMOUNTED`] declines to examine:
+/// climbers and fliers.
+///
+/// This is the rule locomotion legitimately governs. "Did this body go *over* a
+/// line it may not go *through*?" is only a defect for a body whose way past a
+/// wall is round it: going over is precisely what a climber does, and a flier is
+/// not making a ground step-up in the first place. Advisory tier — which is the
+/// only tier a hand-listed class is permitted to gate (module docs, rule 2), so
+/// a wrong entry costs a missed advisory and never a missed error.
+fn exempt_from_surmount_rule(class: Locomotion) -> bool {
+    matches!(class, Locomotion::Climber | Locomotion::Flier)
+}
+
+/// Vanilla's own aquatic tag, vendored (`crate::registry::entity_tags`).
+const AQUATIC_TAG: &str = "minecraft:aquatic";
+
+/// The mobs that leave the ground under their own power and are not bound to a
+/// ground route.
+///
+/// No vanilla `entity_type` tag answers "does this fly".
+/// `#minecraft:fall_damage_immune` is the one that looks like it and is not — it
+/// is a landing-damage tag, and it holds `breeze`, `chicken`, `cat`, `ocelot`,
+/// `iron_golem`, `magma_cube` and `shulker`. So this is a closed, cited list,
+/// permitted only because it gates the **advisory** tier
+/// ([`exempt_from_surmount_rule`]) and never the error tier (module docs,
+/// rule 2). Deliberately excluded: `breeze` (hops — <https://minecraft.wiki/w/Breeze>),
+/// `chicken` (flaps to slow a fall, cannot ascend), `shulker` (stationary,
+/// teleports). Ambiguity resolves to [`Locomotion::Ground`], the checked class.
+const FLIERS: [&str; 11] = [
+    "minecraft:allay",
+    "minecraft:bat",
+    "minecraft:bee",
+    "minecraft:blaze",
+    "minecraft:ender_dragon",
+    "minecraft:ghast",
+    "minecraft:happy_ghast",
+    "minecraft:parrot",
+    "minecraft:phantom",
+    "minecraft:vex",
+    "minecraft:wither",
+];
+
+/// The mobs that climb sheer surfaces: vanilla's `Spider` and its subclasses,
+/// the only ones whose `onClimbable()` is true whenever they are horizontally
+/// collided. No vanilla `entity_type` tag answers this — `#minecraft:arthropod`
+/// is a damage-bonus tag holding `bee`, `silverfish` and `endermite` too — so
+/// this is a closed, cited list rather than derived data, and it is allowed to
+/// be one only because it grants an **advisory-tier** exemption and never an
+/// error-tier one (module docs, rule 2).
+/// <https://minecraft.wiki/w/Spider>
+const CLIMBERS: [&str; 2] = ["minecraft:spider", "minecraft:cave_spider"];
 
 /// What a body can do when it moves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -175,20 +338,20 @@ pub struct Traversal {
 impl Traversal {
     /// The traversal capabilities of `entity`, by vanilla behaviour.
     ///
-    /// Unknown ids fall to [`Locomotion::Ground`] — the conservative direction:
-    /// a ground body is the one this proof has rules for, so an unrecognised
-    /// entity is *checked*, never silently exempted.
+    /// Every id this cannot positively answer falls to [`Locomotion::Ground`] —
+    /// the **checked** class. That is the load-bearing safety property of the
+    /// whole module (see the module docs' asymmetry), so it is pinned by test
+    /// rather than left to this comment.
     pub fn of_entity(entity: &str) -> Traversal {
-        let id = entity.strip_prefix("minecraft:").unwrap_or(entity);
-        let locomotion = match id {
-            "spider" | "cave_spider" => Locomotion::Climber,
-            "bat" | "phantom" | "ghast" | "happy_ghast" | "bee" | "allay" | "vex" | "blaze"
-            | "wither" | "ender_dragon" | "breeze" => Locomotion::Flier,
-            "squid" | "glow_squid" | "dolphin" | "guardian" | "elder_guardian" | "cod"
-            | "salmon" | "tropical_fish" | "pufferfish" | "tadpole" | "axolotl" => {
-                Locomotion::Aquatic
-            }
-            _ => Locomotion::Ground,
+        let id = crate::registry::namespaced_entity(entity);
+        let locomotion = if CLIMBERS.contains(&id.as_str()) {
+            Locomotion::Climber
+        } else if FLIERS.contains(&id.as_str()) {
+            Locomotion::Flier
+        } else if crate::registry::entity_in_tag(&id, AQUATIC_TAG) {
+            Locomotion::Aquatic
+        } else {
+            Locomotion::Ground
         };
         Traversal {
             locomotion,
@@ -201,10 +364,11 @@ impl Traversal {
 /// this proof actually looked at, said out loud, so a green can never be read as
 /// a pass over bodies it never examined.
 ///
-/// The capability axis is its own way to bind to nothing: a proof written for
-/// walking bodies is *unbound* over every flying or climbing actor in the
-/// campaign, and would report green over exactly the bodies it understands
-/// least. Hence a count per [`Locomotion`] class, not just a total.
+/// The capability axis is its own way to bind to nothing: a class that carries
+/// an exemption is a class this proof does not examine, so a total alone would
+/// report green over exactly the bodies it understands least. Hence a count per
+/// [`Locomotion`] class, not just a total — and a per-rule count beneath it, so
+/// "no findings" and "nothing tested" stay distinguishable rule by rule.
 #[derive(Clone, Debug, Default)]
 pub struct TraversalGate {
     /// Walked legs examined (`move-npc` + `move-actor`, every planned driver).
@@ -229,12 +393,7 @@ impl TraversalGate {
     /// The ledger as the `validation/traversal-gate.json` artifact.
     pub fn to_json(&self) -> serde_json::Value {
         let mut by_class = serde_json::Map::new();
-        for class in [
-            Locomotion::Ground,
-            Locomotion::Climber,
-            Locomotion::Flier,
-            Locomotion::Aquatic,
-        ] {
+        for class in Locomotion::ALL {
             by_class.insert(
                 class.token().to_string(),
                 serde_json::json!(self.legs_by_class.get(class.token()).copied().unwrap_or(0)),
@@ -396,22 +555,15 @@ pub fn check_traversal(
             .legs_by_class
             .entry(cap.locomotion.token())
             .or_insert(0) += 1;
-        // A flier is not walking the route this proof reasons about; both rules
-        // are about ground contact, so neither binds. Recorded in the ledger's
-        // class counts rather than silently skipped.
-        if cap.locomotion == Locomotion::Flier {
-            continue;
-        }
         // --- DW0452: a traversal this body cannot perform. -------------------
-        if !cap.opens_gates {
+        if !cap.opens_gates && !exempt_from_gate_rule(cap.locomotion) {
             gate.gate_rule_cells += leg.cells.len();
             if let Some(&cell) = leg.cells.iter().find(|&&c| world.is_use_gate(c)) {
                 errors.push(gate_violation(&leg, cell));
             }
         }
         // --- DW0453: a barrier line surmounted over a full-cube course. ------
-        // A climber goes over things; that is the capability, not the defect.
-        if cap.locomotion == Locomotion::Climber {
+        if exempt_from_surmount_rule(cap.locomotion) {
             continue;
         }
         let mut reported = false;
@@ -559,17 +711,14 @@ mod tests {
         assert_eq!(DW_BARRIER_SURMOUNTED, "DW0453");
     }
 
-    /// Vanilla's own lines, encoded: a spider climbs, a ghast flies, a squid
-    /// swims, a sheep walks — and **nothing** opens a fence gate.
+    /// Membership is decided by how a body MOVES, per class, from its stated
+    /// source — a spider climbs, a squid is in vanilla's aquatic tag, a sheep
+    /// walks — and **nothing** opens a fence gate.
     #[test]
     fn capabilities_come_from_the_entity() {
         assert_eq!(
             Traversal::of_entity("minecraft:spider").locomotion,
             Locomotion::Climber
-        );
-        assert_eq!(
-            Traversal::of_entity("minecraft:ghast").locomotion,
-            Locomotion::Flier
         );
         assert_eq!(
             Traversal::of_entity("minecraft:dolphin").locomotion,
@@ -579,15 +728,11 @@ mod tests {
             Traversal::of_entity("minecraft:sheep").locomotion,
             Locomotion::Ground
         );
-        // An id the table does not know is CHECKED, never exempted.
-        assert_eq!(
-            Traversal::of_entity("minecraft:mannequin").locomotion,
-            Locomotion::Ground
-        );
         for e in [
             "minecraft:sheep",
             "minecraft:spider",
             "minecraft:villager",
+            "minecraft:dolphin",
             "minecraft:ghast",
         ] {
             assert!(
@@ -595,6 +740,127 @@ mod tests {
                 "no vanilla body opens a fence gate: {e}"
             );
         }
+    }
+
+    /// **The module's load-bearing safety property**: anything this table cannot
+    /// positively answer is `Ground`, which is the CHECKED class. A comment is
+    /// not a contract — the repo has paid for that shape before — so the
+    /// fallback is pinned in every form it can arrive in.
+    #[test]
+    fn every_unanswered_id_falls_to_the_checked_class() {
+        for id in [
+            "minecraft:mannequin",  // a real body the delves ship
+            "minecraft:not_a_mob",  // never existed
+            "delvewright:invented", // another namespace entirely
+            "sheep",                // un-namespaced, must still resolve
+            "",                     // degenerate
+            "minecraft:chicken",    // flaps, cannot ascend -> the checked class
+            "minecraft:shulker",    // stationary, teleports -> the checked class
+        ] {
+            assert_eq!(
+                Traversal::of_entity(id).locomotion,
+                Locomotion::Ground,
+                "`{id}` must land in the checked class, not be exempted"
+            );
+        }
+    }
+
+    /// The breeze specifically, because it is the one that got this wrong: it
+    /// reads like a flier and hops like a ground mob. Vanilla: it "moves around
+    /// by hovering on the surface and by leaping" and cannot rise into the air —
+    /// <https://minecraft.wiki/w/Breeze>. It is a ground body, so it owes the
+    /// surmount advisory like any other.
+    #[test]
+    fn a_breeze_walks_and_is_therefore_checked() {
+        assert_eq!(
+            Traversal::of_entity("minecraft:breeze").locomotion,
+            Locomotion::Ground
+        );
+        assert!(!exempt_from_surmount_rule(
+            Traversal::of_entity("minecraft:breeze").locomotion
+        ));
+    }
+
+    /// A flier is a flier where that means something and nowhere else.
+    #[test]
+    fn a_flier_skips_the_surmount_rule_and_nothing_else() {
+        for id in ["minecraft:ghast", "minecraft:bat", "minecraft:phantom"] {
+            let cap = Traversal::of_entity(id);
+            assert_eq!(cap.locomotion, Locomotion::Flier, "{id}");
+            assert!(exempt_from_surmount_rule(cap.locomotion), "{id}");
+            assert!(
+                !exempt_from_gate_rule(cap.locomotion) && !cap.opens_gates,
+                "`{id}` has wings, not hands: the gate rule still binds it"
+            );
+        }
+    }
+
+    /// The **exemption matrix**, pinned per rule — the structural property the
+    /// owner's round-21 correction is about, and the one a future edit is most
+    /// likely to undo by accident.
+    ///
+    /// `DW0452` is a collision-and-interaction question, so **no** locomotion
+    /// class is exempt: a gate leaf is a gate leaf whatever the body's wings do.
+    /// `DW0453` is a locomotion question, so climbers and fliers are.
+    #[test]
+    fn the_error_tier_exempts_no_class_and_the_advisory_tier_exempts_by_locomotion() {
+        for class in Locomotion::ALL {
+            assert!(
+                !exempt_from_gate_rule(class),
+                "`{}` must never be exempt from the error tier: passing a closed gate is a \
+                 collision-and-interaction fact, not a locomotion one",
+                class.token()
+            );
+        }
+        assert!(exempt_from_surmount_rule(Locomotion::Climber));
+        assert!(exempt_from_surmount_rule(Locomotion::Flier));
+        assert!(!exempt_from_surmount_rule(Locomotion::Ground));
+        assert!(
+            !exempt_from_surmount_rule(Locomotion::Aquatic),
+            "the aquatic class is a ledger label and must exempt nothing"
+        );
+    }
+
+    /// Every hand-listed id must be a real 1.21.11 entity, so a typo or a
+    /// species renamed at the next MC pin is a red rather than a class that
+    /// silently stopped matching anything.
+    #[test]
+    fn every_hand_listed_species_exists_in_the_pinned_registry() {
+        let ids: std::collections::BTreeSet<String> =
+            serde_json::from_str(include_str!("../data/entities-1.21.11.json"))
+                .map(|v: Vec<String>| v.into_iter().collect())
+                .expect("vendored entity registry is valid JSON");
+        for id in CLIMBERS.iter().chain(FLIERS.iter()) {
+            assert!(ids.contains(*id), "`{id}` is not a 1.21.11 entity type");
+        }
+    }
+
+    /// Aquatic membership is vanilla's `#minecraft:aquatic`, read from the
+    /// vendored tags — not a list in this file. The three the hand table it
+    /// replaced had missed are the assertion that this is really the tag.
+    #[test]
+    fn aquatic_membership_is_vanillas_own_tag() {
+        for id in ["minecraft:turtle", "minecraft:nautilus", "minecraft:squid"] {
+            assert_eq!(
+                Traversal::of_entity(id).locomotion,
+                Locomotion::Aquatic,
+                "`{id}` is in #minecraft:aquatic"
+            );
+        }
+    }
+
+    /// The ledger prints one row per class, always — a class added without a row
+    /// would make a count silently vanish.
+    #[test]
+    fn the_ledger_names_every_class() {
+        let json = TraversalGate::default().to_json();
+        let by_class = json["legs_by_class"].as_object().expect("object");
+        assert_eq!(by_class.len(), Locomotion::ALL.len());
+        for class in Locomotion::ALL {
+            assert!(by_class.contains_key(class.token()), "{class:?}");
+        }
+        assert_eq!(json["unbound"], serde_json::json!(true));
+        assert!(json["reason"].is_string(), "an unbound ledger states why");
     }
 
     /// The island's north wall, in miniature: a `cobblestone_wall` cell with a

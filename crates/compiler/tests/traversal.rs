@@ -65,6 +65,39 @@ const QUESTS_WALK: &str = r#"{
   }
 }"#;
 
+/// `QUESTS_WALK` with a stage-5 actor of `entity` walking the same line, so a
+/// fixture can put a chosen BODY on the route rather than only the keeper.
+fn quests_with_actor(entity: &str) -> String {
+    serde_json::json!({
+        "dsl_version": "0.6.0",
+        "campaign_id": "hello-world",
+        "stage": "quests",
+        "content": {
+            "actors": [
+                { "id": "actor/subject", "entity": entity, "name": "Subject",
+                  "anchor": "anchor/keeper-stand" }
+            ],
+            "quests": [ {
+                "id": "quest/open-the-door",
+                "trigger": { "type": "campaign-start" },
+                "objectives": [
+                    { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+                    { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+                      "radius": 2, "after": ["obj/talk"] }
+                ],
+                "on_objective_complete": { "obj/talk": [
+                    { "type": "open-gate", "anchor": "anchor/door" },
+                    { "type": "spawn-actor", "actor": "actor/subject" },
+                    { "type": "move-actor", "actor": "actor/subject",
+                      "to_anchor": "anchor/exit" }
+                ] },
+                "on_complete": [ { "type": "campaign-complete" } ]
+            } ]
+        }
+    })
+    .to_string()
+}
+
 /// hello-world's dialogue, re-fenced to v0.6 so it parses beside `QUESTS_WALK`.
 fn dialogue_v06() -> String {
     read_hw("dialogue.json").replacen("\"0.2.0\"", "\"0.6.0\"", 1)
@@ -101,14 +134,47 @@ fn barrier_line(line: &str, middle: &str, middle_dy: i32) -> String {
     .to_string()
 }
 
-/// Build the fixture campaign; `Ok` carries the advisory diagnostics.
+/// Build the fixture campaign with the keeper as the only walker; `Ok` carries
+/// the advisory diagnostics.
 fn build(edits: String) -> Result<Vec<Diagnostic>, BuildFailure> {
+    build_with(QUESTS_WALK.to_string(), edits)
+}
+
+/// The `(code, message)` of a coded build failure — every failure these fixtures
+/// can provoke is one, and unwrapping it at each call site buried the assertion.
+fn coded(err: BuildFailure) -> (&'static str, String) {
+    match err {
+        BuildFailure::Diagnostic { code, message } => (code, message),
+        other => panic!("expected a coded build diagnostic, got {other:?}"),
+    }
+}
+
+/// The emitted `validation/traversal-gate.json` for a fixture that builds.
+fn build_gate(edits: String) -> serde_json::Value {
+    let (out, _) = build_out(QUESTS_WALK.to_string(), edits).expect("fixture builds");
+    let raw = out
+        .get("validation/traversal-gate.json")
+        .expect("the traversal proof emits its binding ledger");
+    serde_json::from_slice(raw).expect("the ledger is valid JSON")
+}
+
+/// Build with a chosen quests document, so a fixture can put a chosen BODY on
+/// the route ([`quests_with_actor`]).
+fn build_with(quests: String, edits: String) -> Result<Vec<Diagnostic>, BuildFailure> {
+    build_out(quests, edits).map(|(_, warnings)| warnings)
+}
+
+/// Build with a chosen quests document, keeping the emitted output tree.
+fn build_out(
+    quests: String,
+    edits: String,
+) -> Result<(emit::BuildOutput, Vec<Diagnostic>), BuildFailure> {
     let raw = RawCampaign {
         world: read_hw("world.json"),
         npcs: read_hw("npcs.json"),
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
-        quests: QUESTS_WALK.to_string(),
+        quests,
         dialogue: dialogue_v06(),
         world_edits: Some(edits),
     };
@@ -133,7 +199,6 @@ fn build(edits: String) -> Result<Vec<Diagnostic>, BuildFailure> {
         "unpinned",
         &BTreeMap::new(),
     )
-    .map(|(_, warnings)| warnings)
 }
 
 /// The island's finding B: the only way across the line is a **closed** fence
@@ -146,9 +211,7 @@ fn a_walk_through_a_closed_fence_gate_is_dw0452() {
         0,
     ))
     .expect_err("a puppet cannot open a fence gate");
-    let BuildFailure::Diagnostic { code, message } = err else {
-        panic!("expected a coded build diagnostic");
-    };
+    let (code, message) = coded(err);
     assert_eq!(code, DW_TRAVERSAL_IMPOSSIBLE, "{message}");
     assert!(
         message.contains("npc/keeper") && message.contains("CLOSED FENCE GATE"),
@@ -251,5 +314,151 @@ fn capabilities_are_per_entity_not_global() {
     assert!(
         !Traversal::of_entity("minecraft:spider").opens_gates,
         "climbing is not gate-opening: a spider is still held by DW0452"
+    );
+}
+
+/// **The owner's round-21 correction, as a red that turns green.** A flying body
+/// may skip the *climbing/surmounting* checks; the *collision* check it must
+/// still owe. A closed fence gate's leaf spans the full cell across one axis,
+/// the planned route runs down the cell's centre line, and the puppet performs
+/// no right-click — and none of those three facts changes because the body has
+/// wings. An earlier draft exempted fliers from both rules with one early
+/// `continue`, so exactly this fixture compiled green.
+#[test]
+fn a_flier_walked_through_a_closed_gate_is_still_dw0452() {
+    for entity in ["minecraft:ghast", "minecraft:bat", "minecraft:phantom"] {
+        // The classification is real — this is not passing because the body was
+        // read as Ground.
+        assert_eq!(
+            Traversal::of_entity(entity).locomotion,
+            Locomotion::Flier,
+            "{entity} must be classified a flier for this fixture to mean anything"
+        );
+        let err = build_with(
+            quests_with_actor(entity),
+            barrier_line(
+                "minecraft:oak_fence",
+                "minecraft:oak_fence_gate[facing=north,open=false]",
+                0,
+            ),
+        )
+        .expect_err("wings are not hands: a flier owes the gate rule");
+        let (code, message) = coded(err);
+        assert_eq!(code, DW_TRAVERSAL_IMPOSSIBLE, "{entity}: {message}");
+        assert!(message.contains(entity), "{entity}: {message}");
+    }
+}
+
+/// …and the same flier IS excused the surmount advisory, so the exemption is
+/// per rule rather than per body — pinned against the same fixture that flags a
+/// sheep, so the silence is evidence rather than an absent code path.
+#[test]
+fn the_same_flier_is_excused_the_surmount_advisory() {
+    let surmount = barrier_line("minecraft:cobblestone_wall", "minecraft:stone", 0);
+    let ground = build_with(quests_with_actor("minecraft:sheep"), surmount.clone())
+        .expect("surmounting is advisory");
+    assert!(
+        ground
+            .iter()
+            .any(|d| d.code == DW_BARRIER_SURMOUNTED && d.message.contains("actor/subject")),
+        "the fixture must flag a WALKING body, or a flier's silence proves nothing: {ground:#?}"
+    );
+    let flying = build_with(quests_with_actor("minecraft:ghast"), surmount)
+        .expect("surmounting is advisory");
+    assert!(
+        !flying
+            .iter()
+            .any(|d| d.code == DW_BARRIER_SURMOUNTED && d.message.contains("actor/subject")),
+        "a flier makes no ground step-up: {flying:#?}"
+    );
+}
+
+/// **The safety property, end to end.** `Traversal::of_entity`'s unknown-id
+/// fallback is the claim the whole module rests on, and a unit test on the table
+/// only proves the classification — not that the classification is *acted on*.
+/// So: put a body the table has never heard of on a route through a closed gate
+/// and require the build to stop. If a future edit ever exempts an unrecognised
+/// entity, this reds.
+///
+/// `minecraft:mannequin` is not a hypothetical: it is the body every skinned NPC
+/// in the shipped delves wears.
+#[test]
+fn an_entity_the_table_never_heard_of_is_still_checked() {
+    for entity in ["minecraft:mannequin", "minecraft:breeze"] {
+        let err = build_with(
+            quests_with_actor(entity),
+            barrier_line(
+                "minecraft:oak_fence",
+                "minecraft:oak_fence_gate[facing=north,open=false]",
+                0,
+            ),
+        )
+        .expect_err("an unrecognised body must be checked, not exempted");
+        let (code, message) = coded(err);
+        assert_eq!(code, DW_TRAVERSAL_IMPOSSIBLE, "{entity}: {message}");
+        assert!(message.contains(entity), "{entity}: {message}");
+    }
+}
+
+/// …and a **climber** is exempt from the advisory tier and from nothing else.
+/// A spider crossing a wall line over a low course is correct — that is the
+/// capability the per-entity model exists for — but a spider still cannot open a
+/// fence gate, so the error tier holds it exactly like a sheep.
+///
+/// The silence is only evidence if the fixture can speak, so this first proves
+/// the SAME fixture with a sheep in it does raise `DW0453` naming
+/// `actor/subject`. Without that half, a spider "exempt" because the actor was
+/// never routed at all would read exactly like a spider exempt by capability —
+/// the vacuous green CLAUDE.md names.
+#[test]
+fn a_climber_is_exempt_from_the_advisory_tier_only() {
+    let surmount = barrier_line("minecraft:cobblestone_wall", "minecraft:stone", 0);
+    let ground = build_with(quests_with_actor("minecraft:sheep"), surmount.clone())
+        .expect("surmounting is advisory");
+    assert!(
+        ground
+            .iter()
+            .any(|d| d.code == DW_BARRIER_SURMOUNTED && d.message.contains("actor/subject")),
+        "the fixture must flag a WALKING body, or the spider's silence proves \
+         nothing: {ground:#?}"
+    );
+    let warnings = build_with(quests_with_actor("minecraft:spider"), surmount)
+        .expect("surmounting is advisory");
+    assert!(
+        !warnings
+            .iter()
+            .any(|d| { d.code == DW_BARRIER_SURMOUNTED && d.message.contains("actor/subject") }),
+        "a spider going over a wall is correct: {warnings:#?}"
+    );
+    let err = build_with(
+        quests_with_actor("minecraft:spider"),
+        barrier_line(
+            "minecraft:oak_fence",
+            "minecraft:oak_fence_gate[facing=north,open=false]",
+            0,
+        ),
+    )
+    .expect_err("climbing is not gate-opening");
+    let (code, message) = coded(err);
+    assert_eq!(code, DW_TRAVERSAL_IMPOSSIBLE, "{message}");
+}
+
+/// The build's binding ledger is emitted and states a non-zero count for a
+/// campaign that walks — the artifact CLAUDE.md's rule 1 asks for, checked here
+/// rather than trusted.
+#[test]
+fn the_ledger_states_what_it_examined() {
+    let gate = build_gate(barrier_line(
+        "minecraft:cobblestone_wall",
+        "minecraft:air",
+        0,
+    ));
+    assert_eq!(gate["unbound"], serde_json::json!(false));
+    assert!(gate["legs"].as_u64().unwrap() >= 1, "{gate}");
+    assert!(gate["route_cells"].as_u64().unwrap() > 0, "{gate}");
+    assert_eq!(gate["legs_by_class"]["ground"], gate["legs"]);
+    assert_eq!(
+        gate["rules"]["jump_reach"]["bound"],
+        serde_json::json!(false)
     );
 }
