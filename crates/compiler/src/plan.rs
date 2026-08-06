@@ -2687,14 +2687,20 @@ pub(crate) struct EffectRootSite<'a> {
 /// Consumers: [`for_each_gate_effect`] (→ the seal planner, `gates::check_seal_hints`
 /// and the completability model), [`crate::timeline::walk_campaign`] (→ the
 /// `DW0410` staged-walk model and, defined as it, `nav::all_effects`),
-/// `emit::all_campaign_effects` (→ the generated functions themselves) and both
-/// halves of [`crate::flow`] — the producer scan in `Flow::new` and the gate-flag
-/// inventory [`crate::flow::gate_flags`] (→ `DW0201`/`DW0202`/`DW0203`/`DW0204`/
-/// `DW0205` and the exported critical path). The three-of-five drift this class
-/// kept re-growing (tasks #142, #167, #168, #169, #170) was exactly these walks
-/// enumerating roots by hand, one copy each. It is **not** finished: ten further
-/// campaign-wide walks still enumerate three or four roots — see "Known spec ↔
-/// code drift" in `docs/reference/compiler.md` for the list and what each feeds.
+/// `emit::all_campaign_effects` (→ the generated functions themselves),
+/// `emit::check_effect_anchors` (→ `DW0360`, the resolved-anchor seal over what
+/// those functions emit), `emit::declared_flags` (→ the `dw.f_<flag>` scoreboard
+/// objectives `setup` creates for the writes those functions perform) and both
+/// halves of [`crate::flow`] — the producer scan in `Flow::new` and the
+/// gate-flag inventory [`crate::flow::gate_flags`] (→
+/// `DW0201`/`DW0202`/`DW0203`/`DW0204`/`DW0205` and the exported critical path).
+/// The three-of-five drift this class kept re-growing (tasks #142, #167, #168,
+/// #169, #170, #24) was exactly these walks enumerating roots by hand, one copy
+/// each. It is **not** finished: seven further campaign-wide walk sites (thirteen
+/// distinct walkers) still enumerate three or four roots — though both of the
+/// LATENT emission/runtime defects among them are now closed, so what remains is
+/// imprecise proofs rather than shipped defects. See "Known spec ↔ code drift" in
+/// `docs/reference/compiler.md` for the list and what each feeds.
 pub(crate) fn for_each_effect_root<'a>(
     campaign: &'a Campaign,
     f: &mut dyn FnMut(&EffectRootSite<'a>, &'a [QuestEffect]),

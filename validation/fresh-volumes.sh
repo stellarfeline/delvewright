@@ -97,12 +97,16 @@ project_volumes() {
 # reason about how it got that label. This can only ever fire on a mis-typed
 # project name — a worker stack publishes no port at all (validation/compose.yaml).
 owner_port_containers() {
-  local ids id
+  local ids id ports
   ids="$(project_containers)"
   [ -n "$ids" ] || return 0
   for id in $ids; do
-    if docker inspect -f '{{range $p, $c := .NetworkSettings.Ports}}{{$p}}{{range $c}} {{.HostPort}}{{end}} {{end}}' \
-         "$id" 2>/dev/null | tr ' ' '\n' | grep -qx '25565'; then
+    # Capture, then test. `| grep -qx` would exit at the first match and SIGPIPE
+    # its producer; under pipefail that reads as NO MATCH, and this guard's whole
+    # job is to refuse a teardown when a human may be inside the container.
+    ports="$(docker inspect -f '{{range $p, $c := .NetworkSettings.Ports}}{{$p}}{{range $c}} {{.HostPort}}{{end}} {{end}}' \
+      "$id" 2>/dev/null || true)"
+    if [[ " $ports " == *" 25565 "* ]]; then
       echo "$id"
     fi
   done

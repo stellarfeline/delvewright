@@ -459,8 +459,16 @@ pub struct ActorEncounter {
 /// private one, so nesting — `sequence` steps, `on_arrive` reactions, flag-gated
 /// bundles — is descended exactly as emission descends it, and an ambush (which
 /// desugars to a real trigger at parse time) is seen as the trigger it becomes.
-/// Dialogue options are deliberately not walked: `DialogueEffect` has no
-/// actor verb at all, so there is nothing there to miss.
+/// The dialogue **stage** is nonetheless a blind spot, and it is a real one
+/// (task #24 — the doc here used to argue it away). `DialogueEffect` indeed has
+/// no actor verb, but a dialogue option's `set-checkpoint` carries an
+/// `on_respawn` bundle that is a `Vec<QuestEffect>`, so a `spawn-actor` there is
+/// a beat emission lowers and this index does not see. It is the fifth root
+/// [`crate::plan::for_each_effect_root`] enumerates, and
+/// [`for_each_campaign_effect`] cannot express it: its `EffectSite` has no
+/// dialogue variant, so reaching root 5 means widening that type. Until then this
+/// index covers four of the five roots — see "Known spec ↔ code drift" in
+/// `docs/reference/compiler.md`.
 fn actor_beats(c: &Campaign) -> BTreeMap<String, (Vec<ActorBeat>, Vec<ActorBeat>)> {
     let triggers: BTreeMap<&str, &delvewright_dsl::EnvTrigger> = c
         .quests

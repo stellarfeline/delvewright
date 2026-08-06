@@ -1762,9 +1762,13 @@ Since task #169 the five roots themselves are enumerated exactly once, in
 `EffectRoot` naming which of the five it is and carrying its owner where it has
 one). `for_each_gate_effect` is that enumeration flattened; `timeline::walk_campaign`
 (→ `DW0410`, `nav::all_effects`), `emit::all_campaign_effects` (→ the
-generated functions) and — since task #170 — **both halves of `compiler::flow`**
+generated functions), — since task #170 — **both halves of `compiler::flow`**
 (the producer scan and `flow::gate_flags`, → `DW0201`/`DW0202`/`DW0203`/`DW0204`/
-`DW0205` and the exported critical path) are the other consumers. A root can no
+`DW0205` and the exported critical path) and — since task #24 —
+`emit::check_effect_anchors` (→ `DW0360`, the resolved-anchor seal over exactly
+what those generated functions emit) and `emit::declared_flags` (→ the
+`dw.f_<flag>` scoreboard objectives `setup` creates for the writes those
+functions perform) are the other consumers. A root can no
 longer be added to one walk and forgotten in another, which is the only reason
 this class of finding kept coming back.
 
@@ -2662,7 +2666,7 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0346` | A prefab metadata `*.json` (or `pools.json`) in the prefabs dir failed to read or parse (task #62). The canonical trigger is an **older delvec meeting newer metadata**: `deny_unknown_fields` rejects a field this delvec predates. Previously a silent skip — the prefab vanished from the registry and the run failed much later as a baffling `DW0300` "prefab not found" (or a `DW0160` binding error) with no hint of why. Now `PrefabRegistry::load_dir` records a per-file diagnostic naming the file and the serde error, folded into every `validate`/`analyze`/`build` at **validation tier (exit 1)**; loading continues for the other files (report-all, not fail-fast). Prescription: upgrade delvec, or fix the named field. |
 | `DW0347` | A `cutscene` shot's aim sweeps faster than the angular budget: over 6°/tick (120°/s) peak on the exact eased path — at 20 Hz that reads as a spin, not a shot (the camera dossier's comfortable band is ≤ 2°/tick; thresholds are the dossier's proposal — the spike rig has no rendering client to calibrate against footage). Typical cause: a `look_at` subject too close to a fast dolly, or a sharp travel-aim corner. Build-tier (exit 3), `compiler::nav` (task #64). An **error**, not a warning: the shot is provably nauseating before it ships, and the fix is always available — more camera distance, a longer `seconds`, or splitting the move into two shots (the hard cut between shots is the idiomatic fast reframe). |
 
-| `DW0360` | An anchor-bearing quest/trigger effect — at **any** nesting depth — names an anchor that resolves to no position in the assembled world. The single resolved-anchor-or-diagnostic seal over the whole effect surface, driven by `QuestEffect::anchor_refs` (the referential sibling of `nested_effect_lists`). It exists because every anchor consumer in emission fails **open**: `open-gate`/`close-gate` scan `plan.anchors` for a name match and fall out of the loop, `set-block`/`set-checkpoint`/`play-sound`/`damage-players` bail out of an `if let Some(pos)`, and a cutscene waypoint silently degrades to `[0, BASE_Y, 0]`. One typo'd anchor therefore emitted **nothing** — a door that never opens, a checkpoint bound to nothing — in a delve that compiled clean. `DW0142` catches what the DSL can see (an area's declared anchor set); this re-asks the question of the *assembled* world, so pool areas and cross-area camera anchors are covered too. Build-tier (exit 3), `compiler::emit`, run **first** among the referential proofs: an unresolved waypoint degraded to the origin otherwise surfaces as a bogus `DW0308` camera clip, sending the author to move a shot that was never the problem. |
+| `DW0360` | An anchor-bearing campaign effect — at **every effect root**, at **any** nesting depth — names an anchor that resolves to no position in the assembled world. The single resolved-anchor-or-diagnostic seal over the whole effect surface, driven by `QuestEffect::anchor_refs` (the referential sibling of `nested_effect_lists`) over the roots `plan::for_each_effect_root` enumerates. **The roots are inherited, not re-listed** (task #24): this walk hand-listed three of the five, so a typo'd anchor in a `traps[].payload` or a dialogue option's `set-checkpoint` `on_respawn` bundle was never asked the question — the build stayed green and `trap_fire_<trap>.mcfunction` shipped with the `open-gate` simply absent, which is the silent-drop class this seal exists to end, live inside the seal itself. **Scope: the verbs that fail open, plus the corner where nothing else looks.** The spec-0022 payload verbs (`volley`, `collapse`) fail *closed* — `plan_payload_verbs` resolves their volumes with `?` and reports `DW0447`, which names the verb and the volume — so **where `DW0447` runs**, they keep their own diagnostic rather than being preempted by this generic one (see "Known spec ↔ code drift" for why that overlap exists at all). `plan_payload_verbs` lives inside the world block, so it runs only when the campaign assembles a world (`emit::assembles_world`, the one predicate the world block itself reads), and a payload verb does **not** imply that: nothing confines `volley`/`collapse` to `traps[].payload`. The deferral is therefore conditional on the proof running; in a campaign with no traps, no waves, no bodies and no walkable critical leg, this seal keeps the payload verbs itself. It exists because every anchor consumer in emission fails **open**: `open-gate`/`close-gate` scan `plan.anchors` for a name match and fall out of the loop, `set-block`/`set-checkpoint`/`play-sound`/`damage-players` bail out of an `if let Some(pos)`, and a cutscene waypoint silently degrades to `[0, BASE_Y, 0]`. One typo'd anchor therefore emitted **nothing** — a door that never opens, a checkpoint bound to nothing — in a delve that compiled clean. `DW0142` catches what the DSL can see (an area's declared anchor set); this re-asks the question of the *assembled* world, so pool areas and cross-area camera anchors are covered too. Build-tier (exit 3), `compiler::emit`, run **first** among the referential proofs: an unresolved waypoint degraded to the origin otherwise surfaces as a bogus `DW0308` camera clip, sending the author to move a shot that was never the problem. |
 | `DW0361` | Two different generated artifacts (function / dialog / advancement) sanitize to the same name, so one would silently overwrite the other in the emitted pack. `plan::safe_local` is doubly lossy — it drops an id's `<kind>/` prefix and folds `-`, `/` and `.` all into `_` — so wave `wave/npc-x` and npc `npc/x` both name `spawn_npc_x`, and `move-npc npc/guard-a → anchor/post` collides with `npc/guard → anchor/a-post` (which also aliases their tick counters and re-entry sentinels: two live movement drivers sharing one score). The output map is a `BTreeMap`, so the loser used to vanish without a word — the wave simply never spawned. Re-emitting the **same bytes** under one name stays legal (the emitters dedup by content key); only a genuine divergence fails. Build-tier (exit 3), `compiler::emit`. Prescription: rename one of the colliding ids so their sanitized local parts differ. |
 | `DW0362` | A dialogue node declares more than `MAX_GATED_DIALOGUE_OPTIONS` (10) conditionally-visible options (`requires_flags` / `forbids_flags` / a `complete-objective` effect). Vanilla cannot hide a `dialog` option, so the compiler encodes visibility by precomputing **every combination**: `n` gated options emit `2^n` dialog JSONs plus a `2^n`-clause dispatcher keyed on a `dw.dmask` bitmask. Ten is 1024 variants for one node — already an order of magnitude past anything authorable (the largest node in any shipped campaign gates four), and the point past which pack size rather than the author decides what the delve is. Behind the soft cap is a hard wall: the mask is built with `1u32 << i` (a debug-build **panic** at 32 — the original symptom) and compared against a Minecraft scoreboard, i.e. an `i32`. Build-tier (exit 3), `compiler::emit`; the message names the node and npc. Prescription: split the node into a short chain, or move some gating onto the objective that reaches it. |
 | `DW0363` | A trap declares a flag gate (`requires_flags` / `forbids_flags`) whose trigger hardware the compiler cannot remove and restore. Trap flag-gating is a **physical** gate: the trigger block leaves the world while the gate is shut and is put back verbatim (blockstate and all) when it opens, so it is only sound for a trigger whose entire state is the block — a pressure plate or a tripwire. A `trapped-chest` trigger carries a block entity with an inventory that removal would destroy, and a gated trap whose `anchor/trap` metadata declares no `trigger_block` names nothing the compiler could put back. Rejecting the gating surface for those cases is deliberate: the alternative is shipping the documented behaviour as folklore, which is exactly what happened before (the flag lists were planned and `DW0172`-checked but read by **no** emission site, so "inactive while the flag is set" did not exist). Build-tier (exit 3), `compiler::emit`. Prescription: declare the plate/tripwire as `trigger_block` on the anchor's prefab metadata (with its blockstate, as a gate anchor declares its fill `block`), switch the trap to a `pressure-plate`/`tripwire` trigger, or gate the story beat that arms the trap instead. |
@@ -3149,22 +3153,24 @@ this doc is current behavior).
 
 ### Known spec ↔ code drift (current, for maintainers)
 
-- **Effect-root drift is NOT closed (swept 2026-08-05, task #170).** Tasks #142,
-  #167, #168, #169 and #170 each fixed one walker that claimed campaign-wide
-  effect coverage while enumerating three or four of the **five** roots
-  `plan::for_each_effect_root` names. A full workspace sweep after #170 found
-  the class is far larger than "one more": the five fixed walkers
+- **Effect-root drift is NOT closed (swept 2026-08-05, task #170; last updated
+  task #24).** Tasks #142, #167, #168, #169, #170 and #24 each fixed one walker
+  that claimed campaign-wide effect coverage while enumerating three or four of
+  the **five** roots `plan::for_each_effect_root` names. A full workspace sweep
+  after #170 found the class is far larger than "one more": the seven fixed walkers
   (`for_each_gate_effect`, `timeline::walk_campaign`, `emit::all_campaign_effects`,
-  `dsl::l10n`'s inventory, `compiler::flow`) are joined by the following, which
-  are **not** fixed and each need their own proof-carrying round. Listed worst
+  `dsl::l10n`'s inventory, `compiler::flow`, `emit::check_effect_anchors`,
+  `emit::declared_flags`) are joined by the following, which are **not** fixed and
+  each need their own proof-carrying round. **Seven rows, thirteen distinct
+  walkers** — the count is by row, and several rows name a family. Both **latent
+  emission/runtime defects** on the list are now closed (task #24); everything
+  below is an imprecise diagnostic or proof, not a shipped defect. Listed worst
   first; roots noted as **R1** `on_objective_complete`, **R2** `on_complete`,
   **R3** `triggers[].effects`, **R4** `traps[].payload`, **R5** dialogue-option
   `set-checkpoint.on_respawn`.
 
   | Walker | Feeds | Has | Consequence of the gap |
   |---|---|---|---|
-  | `emit::check_effect_anchors` | `DW0360`, build-tier | R1–R3 | Its own doc calls it "the backstop that makes the rule total". A typo'd anchor in R4/R5 still emits **nothing** — the silent-drop class it exists to end, live. |
-  | `emit::declared_flags` | `dw.f_<flag>` scoreboard creation | R1–R3 + `disarm.sets_flag` + flat `DialogueEffect::SetFlag` | Not a missing lint but a **runtime** defect: a `set-flag` in a `traps[].payload` writes to an objective that was never created. |
   | `emit::check_wave_spawns` | `DW0310` | R1–R3, and **shallow** (no `visit_deep`) | A `spawn-wave` in a `sequence` step / R4 / R5 emits the dangling `function <ns>:spawn_<wave>` the check exists to stop. |
   | `gates::check_close_gates` | `DW0343` | R1–R3 | Its own file's `check_seal_hints` (`DW0423`, 20 lines below) already carries the corrected reasoning; it was never back-ported. |
   | `dsl::validate` flag-producer set, ×3: the inline scan in the main pass, `collect_declared_flags`, `produced_flags` | `DW0172`, ending/flag reference checks | R1–R4 / R1–R3 shallow / R1–R4 | Three independent, mutually disagreeing answers to "what flags does this campaign produce". All miss R5 — pinned by `flow_effect_roots::a_dialogue_respawn_bundle_is_still_never_a_producer`, which asserts the resulting `DW0172`. |
@@ -3173,13 +3179,86 @@ this doc is current behavior).
   | `eclipse::walkers` | `DW0359`/`DW0422` | R1–R3, **R5** | The only walker that grew R5 by hand and never got R4. |
   | `combat::actor_beats`, `validate::difficulty_checks`, `daylight::fightable_actor`, `nav::actor_fights` | actor coverage, `DW0469`-adjacent proofs | R1–R4 | All four go through `dsl::for_each_campaign_effect`, whose `EffectSite` enum has **no dialogue variant** — R5 is not representable in its callback, so fixing them means widening that type. |
 
-  Two doc comments encode the exact fallacy `plan::for_each_effect_root` was
-  written to refute and should be corrected with the code, or the next session
-  will re-derive the bug from them: `combat::actor_beats` ("Dialogue options are
+  The two doc comments that encoded the exact fallacy `plan::for_each_effect_root`
+  was written to refute — `combat::actor_beats` ("Dialogue options are
   deliberately not walked: `DialogueEffect` has no actor verb at all, so there is
   nothing there to miss") and `dsl::validate`'s "Dialogue effects are a flat list
-  (no nesting), so a direct scan suffices there". The dialogue **option's**
-  `set_checkpoint().1` is a `Vec<QuestEffect>`, not a `DialogueEffect`.
+  (no nesting), so a direct scan suffices there" — were **corrected in task #24**,
+  ahead of their walks. Both now name the blind spot they used to argue away: the
+  dialogue **option's** `set_checkpoint().1` is a `Vec<QuestEffect>`, not a
+  `DialogueEffect`. Behaviour there is unchanged; the reasoning is what was
+  reproducing the bug.
+
+  `emit::declared_flags` was the second, closed by the same task. It decides which
+  `dw.f_<flag>` objectives `setup` creates, which makes it emission rather than a
+  lint: a `set-flag` whose objective was never declared writes to nothing —
+  vanilla answers an undeclared objective with a command error and carries on, so
+  there is no crash, nothing a bot observes, and every gate on that flag simply
+  never opens. That is the `DW0497` shape (a call with no callee) one layer down,
+  at the scoreboard. A `set-flag` in a `traps[].payload` or a dialogue
+  `on_respawn` bundle emitted its write against an objective nothing created. The
+  roots now come from `plan::for_each_effect_root`; the non-root sources beside it
+  (trap and timed-gate `disarm.sets_flag`, the flat `DialogueEffect::SetFlag`
+  list, the cast ledger's flag reads) are unchanged, because none of them is an
+  effect root. Pinned by `flag_objective_roots`, whose every assertion locates the
+  **write** in the shipped pack before demanding the declaration — the declaration
+  alone would stay green if the root stopped being lowered at all.
+
+  `emit::check_effect_anchors` (`DW0360`) was the first of the two **latent
+  emission defects** on that list, closed by task #24. Its own doc called it "the
+  backstop that makes the rule total" while it walked R1–R3, so a typo'd anchor in
+  a trap payload or a dialogue `on_respawn` bundle emitted nothing and said
+  nothing: the fixture build shipped `trap_fire_alarm_chest.mcfunction` containing
+  only its sentinel line, with the `open-gate` gone. It now inherits its roots
+  from `plan::for_each_effect_root` and descends each — pinned by
+  `anchor_seal::typod_anchor_in_a_trap_payload_is_dw0360`,
+  `…_nested_in_a_trap_payload_…` and
+  `…_in_a_dialogue_respawn_bundle_…`, each paired with a control proving the root
+  really is lowered (so no assertion there is vacuous).
+
+  **Open for the planner: `DW0360` vs `DW0447` overlap.** Widening the seal to R4
+  put the spec-0022 payload-verb anchors (`volley.from_anchor`,
+  `volley.kill_zone.anchor`, `collapse.region_anchor.anchor`) in its reach for the
+  first time — and `DW0447` already owns exactly that predicate
+  (`plan::point_any` failing), fails the build just as hard, and says more (verb,
+  volume, anchor). Task #24 therefore scopes the seal to the verbs that fail
+  **open**, which is what its charter has always described, and lets the
+  fail-**closed** payload verbs keep `DW0447` — but **only where `DW0447` runs**.
+
+  That qualifier is the finding, and it is recorded because the first version of
+  this carve-out was unconditional and rested on a false premise ("a payload verb
+  implies a trap, which is a `nav::needs_world` condition"). **There is no rule
+  confining `volley`/`collapse` to `traps[].payload`.** `dsl::validate` reaches
+  them through `for_each_trap_payload_deep` *inside* the traps loop, which
+  validates them where they are rather than forbidding them elsewhere, and both
+  are ordinary variants of the shared `QuestEffect` enum — a `volley` on a quest's
+  `on_complete` parses, validates and reaches emission. `plan_payload_verbs`,
+  however, lives inside the world block, so `DW0447` is unreachable for a campaign
+  with no traps, no waves, no bodies and no walkable critical leg. Measured, the
+  unconditional deferral did not merely lose the better message there: the typo'd
+  anchor surfaced as **`DW0497`**, whose message tells the author the *compiler*
+  is defective and names a generated function — and which fires identically when
+  the anchor is correct, so it carries no signal about the typo at all.
+
+  The deferral is therefore conditional on `emit::assembles_world(plan)`, which is
+  the **same** predicate the world block itself reads (extracted so a check that
+  defers to another check cannot drift from whether that other check runs). Pinned
+  by `anchor_seal::the_worldless_fixture_really_does_skip_the_payload_proof`
+  (the premise, held as a fact rather than prose) and
+  `anchor_seal::typod_volley_anchor_without_a_world_is_dw0360` (the corner).
+
+  This is the only carve-out in the seal, and it is the sort of
+  two-codes-one-predicate redundancy the registry owner may prefer to collapse;
+  that decision is not a worker's to make.
+
+  **Adjacent, unfixed, found while closing the above:** a `volley` on a quest's
+  `on_complete` in a world-less campaign fails the build with `DW0497` **even when
+  its anchor is valid** — the call site emits `function <ns>:volley_<key>` while
+  `plan_payload_verbs` never runs to emit the machinery. That is a genuine
+  call-walk/machinery-walk disagreement of exactly the class `DW0497` exists to
+  catch, and it is untouched here: the fix is either to confine the payload verbs
+  to `traps[].payload` at the DSL layer or to make their machinery independent of
+  the world block, and both are their own round.
 
 - **spec-0002 CLI** lists stages `1..5`, `dsl 0.1.0`, and omits `--json`/
   `--prefabs`/`--lang`; code is stages `1..6`, `dsl 0.6.0`, all three flags.
