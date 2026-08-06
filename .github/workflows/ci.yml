@@ -4,7 +4,10 @@ name: CI (tiers 1 + 2)
 # datapack-load check + PackTest suite) on PRs. Tier 3 (bot playthrough +
 # multi-arch image push) lives in release.yml, on rc-* tags.
 # push is limited to main so PR branches don't run every job twice
-# (push + pull_request); Actions minutes are metered while the repo is private.
+# (push + pull_request) — a duplicate run is a second set of statuses reporting
+# on one tree, and the pair race the `concurrency` cancel. This used to cite
+# metered Actions minutes; the repo is PUBLIC, where standard runners are free,
+# so that premise was false and the reason above is the one that holds.
 on:
   push:
     branches: [main]
@@ -312,8 +315,13 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: the /new-delve skill's declared delvec range is true
         run: python3 tools/check-skill-version.py
-      # --offline: check only local/internal links. The repo is private, so
-      # external-link checks would fail or flake.
+      # --offline: check only local/internal links — the ones this repo can
+      # actually keep true. This used to be justified by the repo being private;
+      # it is PUBLIC, so that premise was false, but the flag is still right for
+      # the reason that always held: an external link check makes a required
+      # status depend on third-party uptime, i.e. it manufactures intermittent
+      # reds — and an intermittent red is never re-run here, it is root-caused
+      # (CLAUDE.md), which is not a budget any external host earns.
       - uses: lycheeverse/lychee-action@v2
         with:
           args: "--offline --no-progress './**/*.md'"

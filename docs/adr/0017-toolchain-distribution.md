@@ -89,7 +89,52 @@ publish is prevented **by construction**, not by convention:
   byte-identical contents is skipped, and one with *different* contents is a hard
   failure by name. That is what makes a half-succeeded publish safely retryable.
 
-### 5. Agreement is a red, not an intention
+### 5. `v1.0.0` is re-tagged onto the commit that carries this machinery
+
+**Owner ruling, 2026-08-06.** The `v1.0.0` tag and its GitHub Release already
+existed, with zero assets, on a commit that predates any of the above — so the
+shelf could not be filled at that tag without inventing an engine version the
+engine had not changed to justify. The tag is therefore **force-moved** onto the
+commit that merges this ADR (`git tag -f v1.0.0 && git push -f origin v1.0.0`).
+Bumping to `1.0.1` instead was considered and **declined**: it would leave
+`v1.0.0` — the version ADR-0016 names as the engine's starting point, and the
+version campaign pins and the skill's `verified_with` already refer to — an
+empty shelf forever.
+
+Moving a published tag in a public repository is a deliberate act and is only
+safe because the engine at `v1.0.0` is unchanged. That is not a claim, it is
+these four observations, recorded so a future reader can re-check them rather
+than take the ruling on trust:
+
+1. **No compiler source moved.** `git diff origin/main...<merge> -- 'crates/*/src/'`
+   is empty. The whole `crates/` diff is two `Cargo.toml` files, one README, and
+   one doc-comment line in `crates/compiler/examples/gen_hello_room.rs` — an
+   example, which `[package] exclude` keeps out of the published crate anyway.
+2. **The version the binary reports is untouched.** `DELVEC_VERSION` is
+   `env!("CARGO_PKG_VERSION")` and `[package] version` stayed `1.0.0`, so
+   `manifest.json`'s `delvec_version` and every storybook marker still resolve to
+   the same string.
+3. **Byte-identity is asserted, not assumed.** The ADR-0006 double-build gates in
+   `crates/compiler/tests/cli.rs` — `build_is_byte_identical_across_runs`,
+   `keep_crawl_builds_and_double_build_is_byte_identical`,
+   `v04_showcase_double_build_is_byte_identical` — are green, alongside the full
+   `cargo test --workspace` (153 test binaries).
+4. **All eleven required checks were green on the merging PR** (#318, Actions run
+   `31082398909`), including `tier 2` (datapack load + the generated PackTest
+   suite), which boots the emitted delve.
+
+Only the release identity moves; a delve built at the old `v1.0.0` and one built
+at the new one are byte-identical, which is the property that makes the move a
+bookkeeping change rather than a silent re-release.
+
+**This is a one-time act, not a precedent.** It is available only because
+`v1.0.0` had no assets and therefore no downloader could hold bytes that
+disagree with the tag. Once the shelf is filled, a released tag is as immutable
+in practice as a crates.io version: re-tagging would leave published archives
+and checksums describing a commit the tag no longer names. Future engine
+releases move forward by version.
+
+### 6. Agreement is a red, not an intention
 
 `versions.toml [engine]` is the single source for the engine version, the crate
 names, the dsl requirement, the toolchain, and the shelf.
