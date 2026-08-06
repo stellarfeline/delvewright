@@ -28,7 +28,9 @@ flowchart TD
         S1[world] --> S2[npcs] --> S3[classes] --> S4[quest-plan] --> S5[quests] --> S6[dialogue]
     end
 
-    L --> A["delvec analyze<br/>reachability / deadlock / dark mitigation"]
+    L --> AG{{"4b · DESIGN-ALIGNMENT ARTIFACT<br/>story + every scene, near AND far<br/>the owner confirms — in her words"}}
+    AG -.not confirmed.-> L
+    AG --> A["delvec analyze<br/>reachability / deadlock / dark mitigation"]
     A --> B["delvec build -o out<br/>must exit 0"]
     B --> G7{{"7 · BRANCH CHRONICLE REVIEW<br/>authoring agent's OWN — never delegated"}}
     G7 --> G8{{"8 · MACHINE LADDER<br/>sonnet subagent"}}
@@ -62,6 +64,9 @@ Main on `sonnet` clamps every subagent to `sonnet`.
 Two steps are explicitly non-delegable, for the same reason in both cases —
 delegating them would hand the design's intent to somebody who never held it:
 
+- **Step 4b, the design-alignment Artifact.** It exists to put the design in front
+  of the owner in the medium she reviews in; a subagent that never held the
+  design cannot compose that walkthrough.
 - **Step 7, the branch chronicle review.** Narrative judgment against `DESIGN.md`.
 - **Step 9, visual review.** Judging a frame is the whole task.
 
@@ -77,6 +82,7 @@ flowchart LR
     V -->|clean| SUM[3–6 line summary to the user]
     F -.->|3 failures on the SAME code| TH[[stop patching syntax —<br/>the DESIGN is wrong]]
     SUM --> NEXT([next stage])
+    NEXT -.after stage 4.-> GATE([the Artifact gate — step 4b])
 ```
 
 `schema --stage <n>` first, every time, is what keeps a stage from being written
@@ -90,17 +96,35 @@ something it does not check is how a green run ships a broken delve.
 
 | # | Gate | Proves | Does **not** prove |
 |---|---|---|---|
+| 4b | design-alignment Artifact | that the owner has seen the design **in the medium she reviews in** — the whole story, every scene, near view and far — and said yes | nothing, if it was built from orbit renders. "Is the set pretty" is a different question from "what does a player walking in experience" |
 | 5 | `delvec analyze` | the quest graph is reachable, no deadlock, darkness is mitigated | that any of it is *good* |
 | 6 | `delvec build` | the DSL compiles to a datapack | nothing about play |
 | 7 | branch chronicle | every branch's storyline is coherent **in sequence**, and every branch-divergent dialogue line is licensed by a chronicle line, cited by number in `GENERATION.md` | anything on a branch with no rows — an empty table is a **fail**, not a pass |
 | 8 | machine ladder | PackTest green; the bot completes the critical path; it survives `die-retry`; every declared branch was walked | that any fight was measured — read `floor_gate`. `covered`/`not_covered`/`actors[]` **all empty** means no body declares a tier and the gate examined nothing. The island sat in exactly that state, green, for nineteen rounds |
-| 9 | visual review | the frame matches the shot's `expect` | `DW0308` proves a camera path is air, not that the shot points at the subject — round 6 shipped an inside-out cinematic that was fully DW-green |
+| 9 | visual review | the frame matches the shot's `expect` — **read the POV sequence in route order first**, orbit renders second | `DW0308` proves a camera path is air, not that the shot points at the subject — round 6 shipped an inside-out cinematic that was fully DW-green |
 | 10 | storybook marker | the host is told which engine they need | verified by `tools/check-storybook-version.py`, which is the thing that stops a stale marker |
 
 Step 7 exists because of the **decompilation principle** (spec-0025): the
 compiler renders the compiled DSL *back into natural language*
 (`out/validation/branch-chronicle-<branch>.md`), and the review compares like
 with like — NL against NL. Nobody mentally compiles DSL.
+
+### The rule the three judgment gates share
+
+Each renders **compiled reality back into the reviewer's own medium**, and the
+review compares like with like: prose against prose for the chronicle, frames
+against the walk for the visual tier, a scene walkthrough against the design for
+the Artifact. The test to apply before adding any review step — *what does the
+compiler emit that shows the reviewer the compiled reality in their medium?* If
+the answer is "they read the DSL", the step is designed wrong, because nobody —
+model or human — reliably compiles DSL in their head.
+
+The same rule has a second edge, from the 2026-08-05 maturity ruling: **a
+structural device enters a campaign only behind a green machine gate.** Never
+author it now and prove it later. The owner's QA hour is the scarce resource
+this pipeline exists to protect, and an unproven device spends it on something a
+test should have caught. A design wanting a device whose gate does not exist is
+a capability gap, reported as one.
 
 ## 5. Artifacts of record
 
@@ -153,10 +177,11 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
 
 1. **Steps 7 and 9 are judgment, and the skill can only tell an agent to look.**
    Everything else has a machine behind it. These two have a checklist.
-2. **The Artifact gate is not in the skill yet.** The bell remake runs
-   design + prefabs → Artifact (story + per-scene near/far renders) → owner
-   confirms → *only then* DSL. Today that sequence lives in the planner's head
-   and in the remake's own design doc.
+2. ~~**The Artifact gate is not in the skill yet.**~~ **Closed 2026-08-06** — it
+   is step 4b, mandatory, and it does not relax in e2e mode. What remains
+   hand-carried is the *building* of the Artifact: assembling the story and the
+   near/far frames is still the authoring agent's own composition, with no
+   template and nothing checking that every scene actually got a pair of images.
 3. **Chunky is a separate process, not wired into CI** — storybook art is a
    two-pass manual flow (`delvec snapshot` to judge layout, Chunky for the
    shipped frame).
