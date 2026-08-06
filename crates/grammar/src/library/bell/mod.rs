@@ -3,13 +3,13 @@
 //! step 3).
 //!
 //! A zone is one grammar program (REMAKE §2). These programs contain no
-//! encounter geometry of their own: they lay out boxes and `call` the vocabulary
-//! of [`super::cliff_path`], [`super::watch_bay`], [`super::rafter_hall`],
-//! [`super::ambush_door`] and [`super::store_room`], brought in by
-//! [`crate::compose::include`]. The only blocks a zone program writes itself are
-//! the **mass** a zone is carved out of and the **absence** beside it — the
-//! crag under the cliff road, and the gulf the road is cut into — because those
-//! are facts about the zone's box that no piece of vocabulary can know.
+//! encounter geometry of their own: they lay out boxes and `call` the staging
+//! vocabulary of [`super`], brought in by [`crate::compose::include`]. The only
+//! blocks a zone program writes itself are the **mass** a zone is carved out of
+//! and the **absence** beside it — the crag under the cliff road, and the gulf
+//! the road is cut into — because those are facts about the zone's box that no
+//! piece of vocabulary can know. Four of the five zones here write nothing at
+//! all.
 //!
 //! # The frame constrains composition, and it is worth saying out loud
 //!
@@ -31,21 +31,49 @@
 //!
 //! # Which zones exist, and what the rest are waiting for
 //!
-//! REMAKE §3 names eight zones. Three are programmed here; the other five need
-//! vocabulary that does not exist yet, and a zone program that faked it would be
-//! worse than one that does not exist. Each gap names the §4 catalogue entry it
-//! comes from.
+//! REMAKE §3 names eight zones. Five are programmed here; the other three need
+//! something that does not exist yet, and a zone program that faked it would be
+//! worse than one that does not exist. Each gap names what it waits on.
 //!
-//! | Zone | State | Composed from | Missing rule (§4 entry) |
+//! | Zone | State | Composed from | Missing |
 //! |---|---|---|---|
-//! | Z0 Barrow Shore | **not programmed** | — | open elite ground with two proven flank lanes (**E**) |
+//! | Z0 Barrow Shore | [`barrow_shore`] | `elite_ground` | — (**E** is the whole of Z0's vocabulary) |
 //! | Z1 Cliff Road | [`cliff_road`] | `cliff_path` + the zone's gulf | switchback landing (no catalogue entry — see below) |
 //! | Z2 Gatehouse | [`gate_ward`] (partial) | `watch_bay` + `ambush_door` | boulder stair with worn-tread lane (**W**), hazard-run safe pockets (**S**), boulder jam (**D**), sally-port far-side bar (**F**), spill shaft (**L**), boss-threshold motif (**M**) |
-//! | Z3 Drowned Lower Ward | **not programmed** | — | flooded floor + raised causeway (**T**), elite ground (**E**), sluice far-side bar (**F**) |
+//! | Z3 Drowned Lower Ward | **not programmed** | — | nothing in the *vocabulary*: **T**, **E** and **F** are all built rules. Three composition blockers, all three asserted in `tests/zones.rs` — see below |
 //! | Z4 Chapel Ward (hub) | **not programmed** | — | the hub's own shape: hearth ward + the landing every later shortcut arrives at (no catalogue entry; the hub is topology, and `L`/`F` are its hardware) |
 //! | Z5 Great Hall + Keep | [`hall_keep`] | `rafter_hall` + `ambush_door` + `store_room` | bait-item gallery (**B**), kitchen dumbwaiter (**L**), boss-threshold motif (**M**) |
-//! | Z6 Cistern Deep | **not programmed** | — | broken-grate secret (**X**), stair bar (**F**/**L**), elite ground (**E**). Its dart gallery is `watch_bay`, so the composable half is [`gate_ward`]'s shape exactly; a second zone program asserting the same three gates over the same two rules would be a copy, not a proof |
-//! | Z7 Bell Tower | **not programmed** | — | counterweight lift (**L**), boss ring / elite ground (**E**), threshold motif (**M**). Its loft is `rafter_hall`, on the same argument as Z6 |
+//! | Z6 Cistern Deep | [`cistern_deep`] | `drop_shaft` + `watch_bay` + `broken_grate` + `elite_ground` | the sally-port far-side bar (**F**) — blocked twice over, see below |
+//! | Z7 Bell Tower | **not programmed** | — | counterweight lift (**L**), which is not built and cannot be with today's IR (`docs/reference/grammar.md` §5b). Its loft is `rafter_hall` and its boss ring is `elite_ground` |
+//!
+//! ## Three things a zone cannot compose today
+//!
+//! Each of these is a *seam* limitation, not a missing shape, and each has a
+//! test in `tests/zones.rs` that watches it happen rather than a paragraph
+//! asserting it.
+//!
+//! 1. **Two pieces that declare the same anchor name cannot meet.**
+//!    [`crate::compose::include`] deliberately does not rename anchors, so this
+//!    is an `AnchorCollision` — the same refusal including one piece twice
+//!    produces, and it does not need two copies to fire: `causeway` and
+//!    `elite_ground` both declare `anchor/elite`, and `watch_bay` and
+//!    `far_side_bar` both declare `anchor/gate`. That is Z3's **T** + **E** and
+//!    Z6's **F**, refused. The primitive is an anchor namespace on `mark`
+//!    (`docs/reference/grammar.md` §7); nothing below the seam can work round
+//!    it.
+//! 2. **`causeway` has no exit past its guard post.** Its far end is the post's
+//!    own plinth — solid from the ward floor up to `rise + tower_rise`, with the
+//!    post's floor an island the berm cannot reach (deliberately: "not a
+//!    landing"). The piece is a *terminus*, so any chain through it is severed
+//!    at that face, whichever end of the zone it is placed at. Z3 waits on an
+//!    exit lane past the post, which is a change to the §5b rule and not
+//!    something a zone may write.
+//! 3. **A shortcut is a branch, and the seam is a chain.** Pieces join only
+//!    along one axis, end to end, because every vocabulary rule walls its own
+//!    two side faces. A `far_side_bar` laid in that chain therefore seals the
+//!    zone's own route rather than sitting beside it, which is the opposite of
+//!    what a shortcut is (spec-0016 §2). Z3's **F** and Z6's **F** both wait on
+//!    a junction: a way for a zone to hand one piece a box *off* the route.
 //!
 //! **Z1 is a single run, not a switchback**, and that is a finding rather than a
 //! shortcut. A switchback alternates which side the drop is on, and a grammar
@@ -57,10 +85,14 @@
 //! write. What is programmed is the owner-mandated set piece itself: the
 //! one-wide ledge, the niches, and the drop beside them.
 
+pub mod barrow_shore;
+pub mod cistern_deep;
 pub mod cliff_road;
 pub mod gate_ward;
 pub mod hall_keep;
 
+pub use barrow_shore::barrow_shore;
+pub use cistern_deep::cistern_deep;
 pub use cliff_road::cliff_road;
 pub use gate_ward::gate_ward;
 pub use hall_keep::hall_keep;
