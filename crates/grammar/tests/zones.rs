@@ -31,8 +31,8 @@ use delvewright_grammar::ir::{Alternative, Node, Paint, Program, Size, Split};
 use delvewright_grammar::library::bell::cliff_road::{MIN_DROP, MIN_GULF};
 use delvewright_grammar::library::elite_ground::MIN_RADIUS;
 use delvewright_grammar::library::{
-    barrow_shore, broken_grate, causeway, cistern_deep, cliff_road, elite_ground, far_side_bar,
-    gate_ward, hall_keep, watch_bay,
+    barrow_shore, broken_grate, causeway, chapel_ward, cistern_deep, cliff_road, elite_ground,
+    far_side_bar, gate_ward, hall_keep, watch_bay,
 };
 use delvewright_grammar::{Box3, ExpandOptions, Expansion, VoxelModel, expand};
 
@@ -58,18 +58,37 @@ const WARD_REGION: Box3 = Box3::at_origin([11, 7, 28]);
 /// Neither piece of the gatehouse draws from the seed; it is stated, not chosen.
 const WARD_SEED: u64 = 1;
 
+/// **Z4.** Chapel Ward: six cells of junction with the shortcut's strip beside
+/// it, and the remaining fourteen of kitchen chute. Seven of the twelve columns
+/// are the branch strip — deeper than the junction is long, or the bar turns
+/// along the mainline instead of across it — and nine tall so the chute's ledge
+/// sits four blocks over a landing that still needs its own headroom.
+const CHAPEL_REGION: Box3 = Box3::at_origin([12, 9, 20]);
+/// Nothing in the hub draws from the seed; it is stated, not chosen.
+const CHAPEL_SEED: u64 = 1;
+
 /// **Z5.** Keep: twelve cells of stores, twelve of threshold, sixteen of hall.
 const KEEP_REGION: Box3 = Box3::at_origin([11, 9, 40]);
 /// The storeroom's tell is a seeded draw; this is the pinned fixture's seed.
 const KEEP_SEED: u64 = 1;
 
-/// **Z6.** Cistern Deep: twenty cells each of arena, grate wall and dart
-/// gallery, and the remaining twenty of spill shaft. Nineteen wide because the
-/// arena's flank margins ask for it, and ten tall because the shaft's ledge sits
-/// four blocks over a room that still needs its own headroom.
-const DEEP_REGION: Box3 = Box3::at_origin([19, 10, 80]);
+/// **Z6.** Cistern Deep: twenty cells each of arena, sally port, grate wall and
+/// dart gallery, and the remaining twenty of spill shaft. The mainline is
+/// nineteen wide because the arena's flank margins ask for it, and the branch
+/// strip twenty-one because it has to be deeper than the sally run is long — so
+/// the box is forty across. Ten tall because the shaft's ledge sits four blocks
+/// over a room that still needs its own headroom.
+const DEEP_REGION: Box3 = Box3::at_origin([40, 10, 100]);
 /// The grate row's break is a seeded draw; this is the pinned fixture's seed.
 const DEEP_SEED: u64 = 1;
+
+/// How far the branch strip runs off Z6's mainline — the `strip_depth` default,
+/// restated here because the gates read cells off it rather than off the anchor
+/// arithmetic.
+const DEEP_STRIP: i32 = 21;
+
+/// The same, for Z4.
+const CHAPEL_STRIP: i32 = 7;
 
 /// The odd barrel's block (`store_room`'s `barrel_unbanded` default).
 const TELL_BLOCK: &str = "minecraft:spruce_log";
@@ -77,12 +96,12 @@ const TELL_BLOCK: &str = "minecraft:spruce_log";
 /// A zone, the box it is pinned in, and how a player crosses it.
 ///
 /// `falls` is not a dial on how hard the gate tries: it says which movement
-/// model is the *truthful* one for this zone. Four of the five are flat, and a
-/// walker crosses them with [`connected`]'s ±1 step. Z6 is entered by stepping
-/// off a ledge, so `connected` alone would call it severed and would be
-/// measuring the wrong thing; it is crossed under
-/// [`support::reachable_with_fall`] instead — and it is the only zone that
-/// additionally owes the negative claim, that the model's extra freedom still
+/// model is the *truthful* one for this zone. Four of the six are flat, and a
+/// walker crosses them with [`connected`]'s ±1 step. Z4 and Z6 are both entered
+/// by stepping off a ledge, so `connected` alone would call them severed and
+/// would be measuring the wrong thing; they are crossed under
+/// [`support::reachable_with_fall`] instead — and they are the two zones that
+/// additionally owe the negative claim, that the model's extra freedom still
 /// does not carry a player back up.
 struct ZoneFixture {
     program: Program,
@@ -105,6 +124,10 @@ fn zones() -> Vec<ZoneFixture> {
         zone(barrow_shore(), SHORE_REGION, SHORE_SEED),
         zone(cliff_road(), CLIFF_REGION, CLIFF_SEED),
         zone(gate_ward(), WARD_REGION, WARD_SEED),
+        ZoneFixture {
+            falls: true,
+            ..zone(chapel_ward(), CHAPEL_REGION, CHAPEL_SEED)
+        },
         zone(hall_keep(), KEEP_REGION, KEEP_SEED),
         ZoneFixture {
             falls: true,
@@ -219,8 +242,8 @@ fn every_zone_restyles_without_moving_a_block() {
 /// or they do not, and three sealed rooms in a row would satisfy every gate the
 /// vocabulary has.
 ///
-/// Binding: the standable cells of each zone — 438 (Z0), 40 (Z1), 239 (Z2), 368
-/// (Z5), 1377 (Z6).
+/// Binding: the standable cells of each zone — 438 (Z0), 40 (Z1), 239 (Z2), 81
+/// (Z4), 368 (Z5), 2078 (Z6).
 #[test]
 fn every_zone_is_walkable_end_to_end() {
     for ZoneFixture {
@@ -264,7 +287,7 @@ fn the_zone_fixtures_are_pinned() {
     // Every role each zone inherited from the pieces it includes. A role that
     // silently stopped arriving would restyle nothing and break no other gate,
     // so the count is pinned rather than bounded.
-    for (want, ZoneFixture { program, .. }) in [1, 3, 2, 6, 6].into_iter().zip(zones()) {
+    for (want, ZoneFixture { program, .. }) in [1, 3, 2, 5, 6, 10].into_iter().zip(zones()) {
         assert_eq!(
             program.palette.len(),
             want,
@@ -288,28 +311,79 @@ fn the_zone_fixtures_are_pinned() {
     assert_eq!(approach_cells(&ward).len(), 184);
     assert_eq!(standable_cells(&ward.model).len(), 239);
 
+    // Z4 carries one anchor from each of its three pieces — and, because the
+    // hub's whole point is the branch, two of them come from the piece that is
+    // *off* the mainline.
+    let chapel = expand_at(&chapel_ward(), CHAPEL_REGION, CHAPEL_SEED);
+    let names: Vec<&str> = chapel.anchors.keys().map(String::as_str).collect();
+    assert_eq!(
+        names,
+        [
+            "anchor/branch-door",
+            "anchor/gate",
+            "anchor/hatch",
+            "anchor/landing",
+            "anchor/unlock",
+        ]
+    );
+    assert_eq!(standable_cells(&chapel.model).len(), 81);
+    assert_eq!(branch_near_room(&chapel, CHAPEL_STRIP).len(), 12);
+
     let keep = expand_at(&hall_keep(), KEEP_REGION, KEEP_SEED);
     assert_eq!(indexed(&keep.anchors, "perch").len(), 4);
     assert_eq!(approach_cells(&keep).len(), 205);
     assert_eq!(standable_cells(&keep.model).len(), 368);
 
-    // Z6 carries one anchor from each of its four pieces, which is also the
-    // cheapest possible check that all four were actually expanded.
+    // Z6 carries one anchor from each of its six pieces, which is also the
+    // cheapest possible check that all six were actually expanded — and it is
+    // where the rename is read back: the bar's gate answers to `sally-gate`, the
+    // dart gallery's still to `gate`.
     let deep = expand_at(&cistern_deep(), DEEP_REGION, DEEP_SEED);
     let names: Vec<&str> = deep.anchors.keys().map(String::as_str).collect();
     assert_eq!(
         names,
         [
+            "anchor/branch-door",
             "anchor/elite",
             "anchor/gate",
             "anchor/grate-secret",
             "anchor/landing",
+            "anchor/sally-gate",
             "anchor/spill",
+            "anchor/unlock",
             "anchor/watch",
         ]
     );
+    assert_eq!(
+        deep.anchors["anchor/gate"].declared_by,
+        "gallery/span_column"
+    );
+    assert_eq!(
+        deep.anchors["anchor/sally-gate"].declared_by,
+        "sally/door_column"
+    );
     assert_eq!(span_cells(&deep).len(), 51);
-    assert_eq!(standable_cells(&deep.model).len(), 1377);
+    assert_eq!(standable_cells(&deep.model).len(), 2078);
+    assert_eq!(branch_near_room(&deep, DEEP_STRIP).len(), 180);
+}
+
+/// The branch's near room: the strip's standable cells on the mainline side of
+/// the bar, read off the bar's own gate anchor rather than recomputed from the
+/// zone's arithmetic.
+///
+/// The upper bound is the strip's depth, because the strip is exactly the box
+/// the zone cut off its own side and the mainline starts where it ends.
+fn branch_near_room(out: &Expansion, strip: i32) -> BTreeSet<[i32; 3]> {
+    let gate = out.anchors[if out.anchors.contains_key("anchor/sally-gate") {
+        "anchor/sally-gate"
+    } else {
+        "anchor/gate"
+    }]
+    .pos;
+    standable_cells(&out.model)
+        .into_iter()
+        .filter(|c| c[0] > gate[0] && c[0] < strip)
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -912,7 +986,7 @@ fn the_stores_hold_exactly_one_tell_in_the_composed_zone() {
 /// plain step, because a fall edge only ever points down and proving the
 /// negative under the generous model would be circular.
 ///
-/// Binding: 17 cells at the entry ledge, 19 at the exit, 1377 standable.
+/// Binding: 17 cells at the entry ledge, 19 at the exit, 2078 standable.
 #[test]
 fn the_cistern_is_a_route_down_and_not_back_up() {
     let out = expand_at(&cistern_deep(), DEEP_REGION, DEEP_SEED);
@@ -920,7 +994,7 @@ fn the_cistern_is_a_route_down_and_not_back_up() {
     let (ledge, floor) = ends(&out.model);
     assert_eq!(ledge.len(), 17, "the entry ledge");
     assert_eq!(floor.len(), 19, "the cistern floor at the exit");
-    assert_eq!(cells.len(), 1377);
+    assert_eq!(cells.len(), 2078);
 
     assert!(
         reachable_with_fall(&out.model, &cells, &ledge, &floor),
@@ -984,7 +1058,7 @@ fn a_ladder_up_the_shaft_reds_the_one_way_gate() {
 /// cannot bypass may still be one a faller drops straight past, so the cut is
 /// re-walked under the permissive model.
 ///
-/// Binding: 51 span cells deleted, 1377 standable re-walked without them.
+/// Binding: 51 span cells deleted, 2078 standable re-walked without them.
 /// Control: the same walk with the span present connects.
 #[test]
 fn the_volley_span_cannot_be_walked_round_or_fallen_past() {
@@ -1012,7 +1086,10 @@ fn the_volley_span_cannot_be_walked_round_or_fallen_past() {
 /// whole zone — a route from the ledge the player falls off to the way out that
 /// never enters the engagement circle, on each side.
 ///
-/// Binding: 2 routes, over bands of 326 and 331 standable cells.
+/// Binding: 2 routes, over bands of 767 and 411 standable cells. The west band
+/// is the larger only because the branch strip's own rooms fall inside it; they
+/// span the sally run alone and so carry no route, which the counts under
+/// `arena/seal_flank` below make good on.
 #[test]
 fn the_deep_keeps_a_lane_on_each_side_of_the_fight() {
     let out = expand_at(&cistern_deep(), DEEP_REGION, DEEP_SEED);
@@ -1050,17 +1127,302 @@ fn sealing_a_flank_of_the_deep_drops_its_route() {
     }
 }
 
+/// Z6 gate 4: the sally port is sealed, it is reachable, and the way in is the
+/// junction's own doorway.
+///
+/// Three claims, and the first is the one that separates a shortcut from a wall:
+/// **the cistern still crosses with the bar standing.** That is exactly the
+/// assertion a `far_side_bar` laid *in* the piece run fails, and it is why the
+/// branch exists at all.
+///
+/// Binding: 2078 standable cells, 180 of them the branch's near room, 1 the
+/// doorway column that is cut and re-walked. Teeth: `sally/unbarred` opens the
+/// bar (2096 standable) and the same walk reaches `anchor/unlock`; plugging the
+/// doorway column in *that* model makes it unreachable again.
+#[test]
+fn the_cistern_sally_port_is_sealed_and_opens_only_from_its_far_side() {
+    let out = expand_at(&cistern_deep(), DEEP_REGION, DEEP_SEED);
+    let cells = standable_cells(&out.model);
+    let (ledge, floor) = ends(&out.model);
+    let door = out.anchors["anchor/branch-door"].pos;
+    let unlock: BTreeSet<[i32; 3]> = [out.anchors["anchor/unlock"].pos].into_iter().collect();
+
+    // 1. The control: the mainline is still a route with the bar standing.
+    assert!(
+        reachable_with_fall(&out.model, &cells, &ledge, &floor),
+        "the sally port sealed the cistern itself — a branch that severs the chain \
+         it hangs off is a `far_side_bar` in the run wearing a different name"
+    );
+
+    // 2. The near side reaches the branch, and stops at the bar.
+    let near = branch_near_room(&out, DEEP_STRIP);
+    assert_eq!(near.len(), 180, "the branch's near room");
+    assert!(
+        reachable_with_fall(&out.model, &cells, &floor, &near),
+        "the cistern cannot reach the sally port at all — the junction's doorway \
+         opens onto nothing"
+    );
+    assert!(
+        !reachable_with_fall(&out.model, &cells, &floor, &unlock),
+        "the cistern reaches {unlock:?} while the bar stands — the shortcut has no \
+         far side to earn"
+    );
+
+    // 3. Drawing the bar connects them, through exactly the junction's doorway.
+    let mut open = cistern_deep();
+    open.set_param("sally/unbarred", 1).unwrap();
+    let opened = expand_at(&open, DEEP_REGION, DEEP_SEED);
+    let open_cells = standable_cells(&opened.model);
+    let (_, open_floor) = ends(&opened.model);
+    let open_unlock: BTreeSet<[i32; 3]> =
+        [opened.anchors["anchor/unlock"].pos].into_iter().collect();
+    assert_eq!(open_cells.len(), 2096, "the unbarred cistern");
+    assert!(
+        reachable_with_fall(&opened.model, &open_cells, &open_floor, &open_unlock),
+        "drawing the bar did not open the branch, so the seal above proves nothing"
+    );
+    let cut: BTreeSet<[i32; 3]> = open_cells
+        .iter()
+        .copied()
+        .filter(|c| c[0] != door[0] || c[2] != door[2])
+        .collect();
+    assert_eq!(
+        cut.len(),
+        open_cells.len() - 1,
+        "exactly the doorway column was cut"
+    );
+    assert!(
+        !reachable_with_fall(&opened.model, &cut, &open_floor, &open_unlock),
+        "with the junction's doorway plugged the unbarred branch is still reachable \
+         — the way in is a seam that never closed, not the doorway the tee declares"
+    );
+}
+
+/// ...and the branch has teeth of its own: `tee/sealed` fills the doorway and
+/// nothing else.
+///
+/// Binding: 2077 standable cells (one fewer than the open fixture: the doorway),
+/// 180 of them the branch's near room, still a room and now unreachable.
+#[test]
+fn sealing_the_cisterns_junction_makes_its_sally_port_unreachable() {
+    let mut sealed = cistern_deep();
+    sealed.set_param("tee/sealed", 1).unwrap();
+    let out = expand_at(&sealed, DEEP_REGION, DEEP_SEED);
+    let cells = standable_cells(&out.model);
+    assert_eq!(cells.len(), 2077, "the doorway cell, and only it, is gone");
+    let (ledge, floor) = ends(&out.model);
+
+    let near = branch_near_room(&out, DEEP_STRIP);
+    assert_eq!(near.len(), 180, "the sally port is still a room");
+    assert!(
+        !reachable_with_fall(&out.model, &cells, &floor, &near),
+        "the junction's doorway was filled and the sally port is still reachable — \
+         the way in was never the doorway, so the gate above proves nothing"
+    );
+    assert!(
+        reachable_with_fall(&out.model, &cells, &ledge, &floor),
+        "sealing the branch door sealed the cistern, so the red above is measuring \
+         an impassable zone rather than an unreachable branch"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Z4 — the Chapel Ward
+// ---------------------------------------------------------------------------
+
+/// Z4 gate 1: the hub is a route, and only downward — the same pair of claims Z6
+/// owes, for the same reason and against the same two movement models. The
+/// player arrives off the keep's kitchen duct and cannot climb back up it.
+///
+/// Binding: 3 cells at the entry ledge, 3 at the exit, 81 standable.
+#[test]
+fn the_hub_is_a_route_down_and_not_back_up() {
+    let out = expand_at(&chapel_ward(), CHAPEL_REGION, CHAPEL_SEED);
+    let cells = standable_cells(&out.model);
+    let (ledge, exit) = ends(&out.model);
+    assert_eq!(ledge.len(), 3, "the duct's entry ledge");
+    assert_eq!(exit.len(), 3, "the junction's lane at the way out");
+    assert_eq!(cells.len(), 81);
+
+    assert!(
+        reachable_with_fall(&out.model, &cells, &ledge, &exit),
+        "the chute does not reach the hub floor — the pieces below it do not join"
+    );
+    assert!(
+        !connected(&cells, &exit, &ledge),
+        "the hub walks back up the kitchen duct — the drop is a step, and the keep \
+         above it can be re-entered from the rest ward"
+    );
+}
+
+/// ...with the chute's own teeth, reached through the composed program's
+/// parameter namespace, and the same two controls Z6's copy carries: the zone
+/// must still be a route downward, and the shortened drop on its own must still
+/// be one-way.
+#[test]
+fn a_ladder_up_the_chute_reds_the_hubs_one_way_gate() {
+    let mut rescued = chapel_ward();
+    rescued.set_param("chute/rescue_ladder", 1).unwrap();
+    rescued.set_param("chute/drop", 2).unwrap();
+    let out = expand_at(&rescued, CHAPEL_REGION, CHAPEL_SEED);
+    let cells = standable_cells(&out.model);
+    let (ledge, exit) = ends(&out.model);
+    assert!(
+        connected(&cells, &exit, &ledge),
+        "a ladder was notched up the whole duct and the hub still read as one-way — \
+         the gate proves nothing"
+    );
+    assert!(
+        reachable_with_fall(&out.model, &cells, &ledge, &exit),
+        "the notched duct stopped being a route down at all, so the red above is \
+         measuring a broken zone rather than a rescued one"
+    );
+
+    let mut short = chapel_ward();
+    short.set_param("chute/drop", 2).unwrap();
+    let plain = expand_at(&short, CHAPEL_REGION, CHAPEL_SEED);
+    let plain_cells = standable_cells(&plain.model);
+    let (plain_ledge, plain_exit) = ends(&plain.model);
+    assert!(
+        !connected(&plain_cells, &plain_exit, &plain_ledge),
+        "the shortened drop alone already let the hub climb back, so the teeth test \
+         above proves nothing about the ladder"
+    );
+}
+
+/// Z4 gates 2 and 3: the hub's shortcut is sealed, and the branch is entered
+/// through the junction's doorway and nowhere else.
+///
+/// This is the gate the hub exists for. A hub is a junction with something
+/// hanging off it, and before `tee_passage` the seam could only chain — so this
+/// is also the smallest complete statement of what the closed seam limit bought.
+///
+/// Binding: 81 standable cells, 12 of them the branch's near room, 1 the doorway
+/// column that is cut and re-walked. Teeth: `shortcut/unbarred` (85 standable)
+/// and `junction/sealed` (80).
+#[test]
+fn the_hubs_shortcut_is_sealed_and_reached_through_one_doorway() {
+    let out = expand_at(&chapel_ward(), CHAPEL_REGION, CHAPEL_SEED);
+    let cells = standable_cells(&out.model);
+    let (ledge, exit) = ends(&out.model);
+    let door = out.anchors["anchor/branch-door"].pos;
+    let unlock: BTreeSet<[i32; 3]> = [out.anchors["anchor/unlock"].pos].into_iter().collect();
+
+    assert!(
+        reachable_with_fall(&out.model, &cells, &ledge, &exit),
+        "the shortcut sealed the hub itself"
+    );
+    let near = branch_near_room(&out, CHAPEL_STRIP);
+    assert_eq!(near.len(), 12, "the branch's near room");
+    assert!(
+        reachable_with_fall(&out.model, &cells, &ledge, &near),
+        "the hub cannot reach its own shortcut room — the junction's doorway opens \
+         onto nothing"
+    );
+    assert!(
+        !reachable_with_fall(&out.model, &cells, &ledge, &unlock),
+        "the hub reaches {unlock:?} while the bar stands — the shortcut has no far \
+         side to earn"
+    );
+
+    let mut open = chapel_ward();
+    open.set_param("shortcut/unbarred", 1).unwrap();
+    let opened = expand_at(&open, CHAPEL_REGION, CHAPEL_SEED);
+    let open_cells = standable_cells(&opened.model);
+    let (open_ledge, _) = ends(&opened.model);
+    let open_unlock: BTreeSet<[i32; 3]> =
+        [opened.anchors["anchor/unlock"].pos].into_iter().collect();
+    assert_eq!(open_cells.len(), 85, "the unbarred hub");
+    assert!(
+        reachable_with_fall(&opened.model, &open_cells, &open_ledge, &open_unlock),
+        "drawing the bar did not open the branch, so the seal above proves nothing"
+    );
+    let cut: BTreeSet<[i32; 3]> = open_cells
+        .iter()
+        .copied()
+        .filter(|c| c[0] != door[0] || c[2] != door[2])
+        .collect();
+    assert_eq!(
+        cut.len(),
+        open_cells.len() - 1,
+        "exactly the doorway was cut"
+    );
+    assert!(
+        !reachable_with_fall(&opened.model, &cut, &open_ledge, &open_unlock),
+        "with the junction's doorway plugged the unbarred branch is still reachable"
+    );
+
+    let mut sealed = chapel_ward();
+    sealed.set_param("junction/sealed", 1).unwrap();
+    let shut = expand_at(&sealed, CHAPEL_REGION, CHAPEL_SEED);
+    let shut_cells = standable_cells(&shut.model);
+    assert_eq!(
+        shut_cells.len(),
+        80,
+        "the doorway cell, and only it, is gone"
+    );
+    let (shut_ledge, shut_exit) = ends(&shut.model);
+    let shut_near = branch_near_room(&shut, CHAPEL_STRIP);
+    assert_eq!(shut_near.len(), 12, "the shortcut is still a room");
+    assert!(
+        !reachable_with_fall(&shut.model, &shut_cells, &shut_ledge, &shut_near),
+        "the junction's doorway was filled and the branch is still reachable — the \
+         way in was never the doorway"
+    );
+    assert!(
+        reachable_with_fall(&shut.model, &shut_cells, &shut_ledge, &shut_exit),
+        "sealing the branch door sealed the hub, so the red above is measuring an \
+         impassable zone rather than an unreachable branch"
+    );
+}
+
+/// The branch box has to be **deeper than the junction is long**, or
+/// `far_side_bar`'s own `z(Largest)` lays its wall along the mainline instead of
+/// across it — a shortcut that seals the hub. The zone refuses both ways round
+/// rather than building the turned shape.
+///
+/// Binding: 2 refusals. Control: the same box builds at the defaults, so what is
+/// refused is the ratio and not the region.
+#[test]
+fn a_branch_no_deeper_than_its_junction_is_refused() {
+    for (knob, value) in [("strip_depth", 6), ("junction_run", 5)] {
+        let mut bad = chapel_ward();
+        bad.set_param(knob, value).unwrap();
+        let err = expand(&bad, CHAPEL_REGION, &ExpandOptions::seeded(CHAPEL_SEED)).unwrap_err();
+        assert!(
+            err.to_string().contains("no alternative of rule"),
+            "{knob}={value}: expected a refusal, got: {err}"
+        );
+    }
+    expand_at(&chapel_ward(), CHAPEL_REGION, CHAPEL_SEED);
+}
+
 // ---------------------------------------------------------------------------
 // What composition itself has to get right
 // ---------------------------------------------------------------------------
 
-/// The pieces stand in travel order along the zone's own axis, and every anchor
-/// they declare faces down it. This is the cheap, total check that no piece was
-/// turned: a rotated piece declares its anchors facing `west`, and its wall
-/// across the route.
+/// The mainline pieces stand in travel order along the zone's own axis, and
+/// every anchor they declare faces down it. This is the cheap, total check that
+/// no piece was turned: a rotated piece declares its anchors facing `west`, and
+/// its wall across the route.
 ///
-/// Binding: 28 anchors — 1 (Z0), 8 (Z1: 4 niches, 4 watch cells), 4 (Z2), 9
-/// (Z5), 6 (Z6).
+/// **Two zones now turn a piece on purpose**, and the distinction is the whole
+/// value of this gate, so it is stated per zone rather than allowed for by name.
+/// A `west` facing is correct for exactly three kinds of anchor:
+///
+/// * one the vocabulary aims across the route through a `reorient` — the cliff
+///   recess, the ambush alcove, the storeroom tell, the broken grate, and the
+///   tee's own branch doorway;
+/// * one declared by a piece the *zone* laid across the mainline, which is what
+///   a branch is: `far_side_bar`'s `gate`/`unlock` in Z4 and Z6.
+///
+/// Everything else faces `north`, down travel. A piece that turned by accident
+/// still reds this gate, because its zone's set does not name it.
+///
+/// Binding: 36 anchors — 1 (Z0), 8 (Z1: 4 niches, 4 watch cells), 4 (Z2), 5
+/// (Z4), 9 (Z5), 9 (Z6). Of those, exactly 14 face across, and that count is
+/// pinned too: 4 cliff recesses, the two ambush alcoves, the storeroom tell, the
+/// broken grate, and the 6 branch anchors of Z4 and Z6.
 #[test]
 fn the_pieces_stand_in_travel_order() {
     let ward = expand_at(&gate_ward(), WARD_REGION, WARD_SEED);
@@ -1080,11 +1442,25 @@ fn the_pieces_stand_in_travel_order() {
         keep.anchors
     );
 
-    // Z6 is the long one: four pieces, and the order is also the beat sequence —
-    // spill in, read the volley, cross it, find the grate, meet the elite.
+    // Z4: the chute's landing and hatch, and the junction's doorway between them
+    // and the way out. The two shortcut anchors are deliberately *not* in this
+    // chain — they are off the mainline, and the assertion under it is that they
+    // sit inside the junction's own run rather than anywhere along the route.
+    let chapel = expand_at(&chapel_ward(), CHAPEL_REGION, CHAPEL_SEED);
+    assert!(
+        z(&chapel, "anchor/branch-door") < z(&chapel, "anchor/landing")
+            && z(&chapel, "anchor/landing") < z(&chapel, "anchor/hatch"),
+        "the hub's pieces are out of travel order: {:#?}",
+        chapel.anchors
+    );
+
+    // Z6 is the long one: five pieces, and the order is also the beat sequence —
+    // spill in, read the volley, cross it, find the grate, pass the sally port,
+    // meet the elite.
     let deep = expand_at(&cistern_deep(), DEEP_REGION, DEEP_SEED);
     let order = [
         "anchor/elite",
+        "anchor/branch-door",
         "anchor/grate-secret",
         "anchor/gate",
         "anchor/watch",
@@ -1099,19 +1475,44 @@ fn the_pieces_stand_in_travel_order() {
         );
     }
 
-    // Every anchor faces the way its rule meant it to. Down travel (`north`)
-    // for all of them except the four the vocabulary deliberately aims *across*
-    // the route through a reorient — the recess, the alcove, the tell and the
-    // broken grate — which face `west` precisely because the route runs north.
+    // The branch's own anchors are off the mainline, so travel order does not
+    // apply to them — what does is that they lie *beside* the junction that opens
+    // onto them and not beside some other piece.
+    for (out, doorway, gate) in [
+        (&chapel, "anchor/branch-door", "anchor/gate"),
+        (&deep, "anchor/branch-door", "anchor/sally-gate"),
+    ] {
+        for name in [gate, "anchor/unlock"] {
+            assert!(
+                (z(out, name) - z(out, doorway)).abs() <= 2,
+                "{name} is not beside the doorway that opens onto it: {:#?}",
+                out.anchors
+            );
+        }
+    }
+
+    // Every anchor faces the way its rule — or its zone — meant it to. See this
+    // test's own note for the two ways an anchor earns a `west`.
     let shore = expand_at(&barrow_shore(), SHORE_REGION, SHORE_SEED);
     let road = expand_at(&cliff_road(), CLIFF_REGION, CLIFF_SEED);
+    let branch: &[&str] = &["anchor/branch-door", "anchor/gate", "anchor/unlock"];
+    let sally: &[&str] = &["anchor/branch-door", "anchor/sally-gate", "anchor/unlock"];
     let mut checked = 0;
-    for out in [&shore, &road, &ward, &keep, &deep] {
+    let mut across_seen = 0;
+    for (out, turned) in [
+        (&shore, &[][..]),
+        (&road, &[][..]),
+        (&ward, &[][..]),
+        (&chapel, branch),
+        (&keep, &[][..]),
+        (&deep, sally),
+    ] {
         for (name, anchor) in &out.anchors {
             let across = name == "anchor/alcove"
                 || name == "anchor/tell"
                 || name == "anchor/grate-secret"
-                || (name.starts_with("anchor/niche-") && !name.starts_with("anchor/niche-watch-"));
+                || (name.starts_with("anchor/niche-") && !name.starts_with("anchor/niche-watch-"))
+                || turned.contains(&name.as_str());
             let want = if across { "west" } else { "north" };
             assert_eq!(
                 anchor.facing.as_str(),
@@ -1119,9 +1520,11 @@ fn the_pieces_stand_in_travel_order() {
                 "{name} faces the wrong way — the piece that declared it was turned"
             );
             checked += 1;
+            across_seen += usize::from(across);
         }
     }
-    assert_eq!(checked, 28, "the gate checked {checked} anchors");
+    assert_eq!(checked, 36, "the gate checked {checked} anchors");
+    assert_eq!(across_seen, 14, "the gate allowed {across_seen} across");
 }
 
 /// The frame constraint, enforced as a refusal: a piece run shorter than the
@@ -1491,17 +1894,6 @@ fn branch_chain() -> Program {
         })
 }
 
-/// The branch's near room: the strip's standable cells on the mainline side of
-/// the bar, read off `anchor/gate` rather than recomputed from the fixture's
-/// own arithmetic.
-fn branch_near_room(cells: &BTreeSet<[i32; 3]>, gate: [i32; 3]) -> BTreeSet<[i32; 3]> {
-    cells
-        .iter()
-        .copied()
-        .filter(|c| c[0] > gate[0] && (c[0] as i64) < BRANCH_DEPTH)
-        .collect()
-}
-
 /// **Seam limit 3, closed — but the first half of this test is still true, and
 /// that is the point.** A `far_side_bar` laid *in* the chain seals the zone's
 /// own route rather than sitting beside it, which is the opposite of what a
@@ -1561,7 +1953,6 @@ fn a_barred_door_on_the_route_seals_the_chain() {
     assert_eq!(cells.len(), 43, "the composed chain's standable cells");
     let unlock: BTreeSet<[i32; 3]> = [out.anchors["anchor/unlock"].pos].into_iter().collect();
     let door = out.anchors["anchor/branch-door"].pos;
-    let gate = out.anchors["anchor/gate"].pos;
 
     // 1. The CONTROL, and it is what separates "the shortcut is sealed" from
     //    "the zone is impassable": the mainline walks end to end **with the bar
@@ -1579,7 +1970,7 @@ fn a_barred_door_on_the_route_seals_the_chain() {
     );
 
     // 2. The near side reaches the branch's near room, and stops there.
-    let near_room = branch_near_room(&cells, gate);
+    let near_room = branch_near_room(&out, BRANCH_DEPTH as i32);
     assert_eq!(near_room.len(), 9, "the branch's near room: {near_room:?}");
     assert!(
         connected(&cells, &entry, &near_room),
@@ -1636,7 +2027,7 @@ fn sealing_the_tee_makes_the_branch_unreachable() {
     assert_eq!(cells.len(), 42, "the doorway cell, and only it, is gone");
     let (entry, exit) = ends(&out.model);
 
-    let near_room = branch_near_room(&cells, out.anchors["anchor/gate"].pos);
+    let near_room = branch_near_room(&out, BRANCH_DEPTH as i32);
     assert_eq!(near_room.len(), 9, "the branch is still a room");
     assert!(
         !connected(&cells, &entry, &near_room),
