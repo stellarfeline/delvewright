@@ -212,6 +212,17 @@ fn node(prefix: &str, node: &Node) -> Node {
     }
 }
 
+/// Every variant is spelled out, and there is no catch-all arm anywhere in this
+/// walk on purpose.
+///
+/// This function's whole job is "rewrite every reference the source makes", and
+/// a `_ =>` arm is the one way a future variant that carries an [`Expr`] — a
+/// param-driven mark position is the obvious one — would compile green and skip
+/// the rewrite. That failure would not be loud the way an unrewritten `call` is
+/// (`UnknownRule`, before any expansion): the composed program would read the
+/// *destination's* parameter of the unqualified name if it happened to have one,
+/// and build a silently different model. So the compiler is left as the thing
+/// that notices.
 fn at(prefix: &str, at: &MarkAt) -> MarkAt {
     match at {
         MarkAt::Offset { x, y, z } => MarkAt::Offset {
@@ -219,7 +230,12 @@ fn at(prefix: &str, at: &MarkAt) -> MarkAt {
             y: expr(prefix, y),
             z: expr(prefix, z),
         },
-        other => other.clone(),
+        MarkAt::FloorCenter => MarkAt::FloorCenter,
+        MarkAt::CornerMin => MarkAt::CornerMin,
+        MarkAt::FaceCenter { axis, side } => MarkAt::FaceCenter {
+            axis: *axis,
+            side: *side,
+        },
     }
 }
 
