@@ -8,9 +8,9 @@
 
 use std::collections::BTreeSet;
 
-use delvewright_grammar::compose::{ComposeError, entry, include};
+use delvewright_grammar::compose::{AnchorRenames, ComposeError, entry, include, include_renaming};
 use delvewright_grammar::ir::{Node, Program};
-use delvewright_grammar::library::{cliff_path, store_room, watch_bay};
+use delvewright_grammar::library::{cliff_path, far_side_bar, store_room, watch_bay};
 use delvewright_grammar::{Box3, ExpandOptions, expand};
 
 /// The claim in its strongest form: a program included under a prefix and
@@ -103,8 +103,9 @@ fn every_name_is_qualified_and_no_reference_is_left_behind() {
 }
 
 /// An anchor is the campaign's name for a place, not the program's name for a
-/// rule, so it is the one thing an include leaves alone. (What that costs is in
-/// `tests/zones.rs`: two copies of one piece collide, loudly.)
+/// rule, so the **prefix** never touches it. Moving one is an explicit decision
+/// the caller writes down (`include_renaming`, below); an include that was not
+/// asked leaves every contract exactly where it was.
 #[test]
 fn an_include_does_not_rename_anchors() {
     let composed = include(Program::new("host", "in/gate_passage"), &watch_bay(), "in").unwrap();
@@ -171,5 +172,153 @@ fn an_unusable_prefix_is_refused() {
             Err(ComposeError::BadPrefix { prefix: got }) => assert_eq!(got, prefix),
             other => panic!("prefix {prefix:?}: {other:?}"),
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The rename at the include site
+// ---------------------------------------------------------------------------
+
+/// The old three-argument [`include`] is the new call with an empty map, and
+/// this is the assertion that keeps it that way: same bytes, same anchor names,
+/// same positions. Every zone program written before renaming existed is
+/// therefore untouched by it.
+///
+/// Binding: three vocabulary programs × four seeds, compared byte for byte.
+#[test]
+fn an_empty_rename_map_is_the_old_include_exactly() {
+    for (source, region) in [
+        (watch_bay(), Box3::at_origin([7, 7, 24])),
+        (store_room(), Box3::at_origin([7, 5, 14])),
+        (cliff_path(), Box3::at_origin([3, 6, 30])),
+    ] {
+        let host = Program::new("host", "host").rule("host", Node::call(&entry("in", &source)));
+        let plain = include(host.clone(), &source, "in").unwrap();
+        let empty = include_renaming(host, &source, "in", &AnchorRenames::new()).unwrap();
+        assert_eq!(plain, empty, "{}", source.name);
+        for seed in 0..4u64 {
+            let a = expand(&plain, region, &ExpandOptions::seeded(seed)).unwrap();
+            let b = expand(&empty, region, &ExpandOptions::seeded(seed)).unwrap();
+            assert_eq!(a.model.canonical_bytes(), b.model.canonical_bytes());
+            assert_eq!(a.anchors, b.anchors);
+        }
+    }
+}
+
+/// A rename moves the named stem and nothing else — and it moves the *stem*, so
+/// an indexed mark keeps its numbering under the new name. `cliff_path` is the
+/// fixture because it declares two stems, one of them indexed: renaming
+/// `niche-watch` must leave `niche-<i>` alone, which a substring-minded
+/// implementation would get wrong.
+///
+/// Binding: 6 anchors (3 recesses, 3 watch cells), of which 3 move.
+#[test]
+fn a_rename_moves_one_stem_and_leaves_the_rest_alone() {
+    let source = cliff_path();
+    let region = Box3::at_origin([3, 6, 30]);
+    let host = Program::new("host", "host").rule("host", Node::call(&entry("in", &source)));
+    let renames = AnchorRenames::from([("niche-watch", "road-watch")]);
+    let composed = include_renaming(host, &source, "in", &renames).unwrap();
+    composed.validate().expect("every reference resolves");
+
+    let alone = expand(&source, region, &ExpandOptions::seeded(4)).unwrap();
+    let out = expand(&composed, region, &ExpandOptions::seeded(4)).unwrap();
+    assert_eq!(alone.anchors.len(), 6, "the fixture's anchors");
+    assert_eq!(out.anchors.len(), alone.anchors.len(), "no anchor was lost");
+    assert_eq!(
+        alone.model.canonical_bytes(),
+        out.model.canonical_bytes(),
+        "a rename moved a block"
+    );
+
+    let names: BTreeSet<&str> = out.anchors.keys().map(String::as_str).collect();
+    for i in 1..=3 {
+        let moved = format!("anchor/road-watch-{i}");
+        let stayed = format!("anchor/niche-{i}");
+        assert!(names.contains(moved.as_str()), "{moved} missing: {names:?}");
+        assert!(
+            names.contains(stayed.as_str()),
+            "{stayed} missing: {names:?}"
+        );
+        assert!(
+            !names.contains(format!("anchor/niche-watch-{i}").as_str()),
+            "the old name survived: {names:?}"
+        );
+        // The renamed anchor is the *same place*, numbered the same way.
+        assert_eq!(
+            out.anchors[&moved].pos,
+            alone.anchors[&format!("anchor/niche-watch-{i}")].pos
+        );
+    }
+}
+
+/// A rename that matches nothing is refused, because the one thing worse than
+/// no rename is a rename that looks like one. Without this, a misspelled stem
+/// leaves the collision it was written to fix exactly where it was, and the
+/// composition fails several steps later naming a rule the caller never wrote.
+///
+/// Binding: 4 refusals — a stem the source does not declare, a target that is
+/// not a kebab stem, a target the destination already carries, and a target
+/// another anchor of the same source is keeping.
+#[test]
+fn a_rename_that_would_do_nothing_or_collide_is_refused() {
+    let bay = watch_bay();
+
+    // A stem `watch_bay` does not declare.
+    let host = Program::new("host", "host");
+    match include_renaming(host, &bay, "in", &AnchorRenames::from([("wath", "look")])) {
+        Err(ComposeError::UnknownAnchor {
+            anchor,
+            program,
+            declares,
+        }) => {
+            assert_eq!(anchor, "wath");
+            assert_eq!(program, "watch_bay");
+            assert_eq!(
+                declares,
+                ["gate", "watch"],
+                "the message lists the real ones"
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+
+    // A target the DSL could never name.
+    let host = Program::new("host", "host");
+    match include_renaming(
+        host,
+        &bay,
+        "in",
+        &AnchorRenames::from([("watch", "Look_Out")]),
+    ) {
+        Err(ComposeError::BadAnchorName { anchor, target }) => {
+            assert_eq!((anchor.as_str(), target.as_str()), ("watch", "Look_Out"));
+        }
+        other => panic!("{other:?}"),
+    }
+
+    // A target the destination already carries, from a piece included earlier.
+    let once = include(Program::new("host", "host"), &bay, "first").unwrap();
+    match include_renaming(
+        once,
+        &far_side_bar(),
+        "second",
+        &AnchorRenames::from([("unlock", "watch")]),
+    ) {
+        Err(ComposeError::AnchorTaken { target, holder, .. }) => {
+            assert_eq!(target, "watch");
+            assert!(holder.contains("host"), "{holder}");
+        }
+        other => panic!("{other:?}"),
+    }
+
+    // A target this same source is keeping for another of its own anchors.
+    let host = Program::new("host", "host");
+    match include_renaming(host, &bay, "in", &AnchorRenames::from([("watch", "gate")])) {
+        Err(ComposeError::AnchorTaken { target, holder, .. }) => {
+            assert_eq!(target, "gate");
+            assert!(holder.contains("watch_bay"), "{holder}");
+        }
+        other => panic!("{other:?}"),
     }
 }

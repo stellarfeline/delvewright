@@ -8,7 +8,7 @@ use delvewright_grammar::ir::Program;
 use delvewright_grammar::library::temple::roof;
 use delvewright_grammar::library::{
     ambush_door, castle, causeway, church, cliff_path, drop_shaft, dumbwaiter, elite_ground,
-    far_side_bar, rafter_hall, store_room, temple, watch_bay,
+    far_side_bar, rafter_hall, store_room, tee_passage, temple, watch_bay,
 };
 use delvewright_grammar::{Box3, ExpandOptions, expand};
 // W3: the palette/prop family (W + S + M + X).
@@ -37,6 +37,7 @@ const GRATE_REGION: Box3 = Box3::at_origin([3, 5, 14]);
 const SHAFT_REGION: Box3 = Box3::at_origin([4, 8, 6]);
 const DUCT_REGION: Box3 = Box3::at_origin([6, 8, 8]);
 const BAR_REGION: Box3 = Box3::at_origin([5, 5, 7]);
+const TEE_REGION: Box3 = Box3::at_origin([5, 5, 12]);
 const CAUSEWAY_REGION: Box3 = Box3::at_origin([7, 10, 9]);
 const ARENA_REGION: Box3 = Box3::at_origin([19, 5, 25]);
 
@@ -56,6 +57,7 @@ fn cases() -> Vec<(Program, Box3)> {
         (drop_shaft(), SHAFT_REGION),
         (dumbwaiter(), DUCT_REGION),
         (far_side_bar(), BAR_REGION),
+        (tee_passage(), TEE_REGION),
         (causeway(), CAUSEWAY_REGION),
         (elite_ground(), ARENA_REGION),
     ]

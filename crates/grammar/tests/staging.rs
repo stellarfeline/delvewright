@@ -25,6 +25,7 @@ use delvewright_grammar::block::BlockState;
 use delvewright_grammar::ir::Program;
 use delvewright_grammar::library::elite_ground::MIN_RADIUS;
 use delvewright_grammar::library::rafter_hall::FLOOR_CELLS_PER_PERCH;
+use delvewright_grammar::library::tee_passage::{self, tee_passage};
 use delvewright_grammar::library::{
     ambush_door, causeway, cliff_path, drop_shaft, dumbwaiter, elite_ground, far_side_bar,
     rafter_hall, store_room, watch_bay,
@@ -113,6 +114,12 @@ const DUCT_TEETH_REGION: Box3 = Box3::at_origin([6, 5, 8]);
 /// The far-side bar fixture. `Z` strictly longer than `X`, as `SHAFT_TEETH_REGION` notes.
 const BAR_REGION: Box3 = Box3::at_origin([5, 5, 7]);
 const BAR_SEED: u64 = 1;
+
+/// The tee-passage fixture: a lane long enough that the doorway has real wall on
+/// both sides of it, and `Z` strictly longer than `X` as `SHAFT_TEETH_REGION`
+/// notes. `tee_passage` has no probabilistic rule; the seed is stated.
+const TEE_REGION: Box3 = Box3::at_origin([5, 5, 12]);
+const TEE_SEED: u64 = 1;
 
 /// The causeway fixture.
 const CAUSEWAY_REGION: Box3 = Box3::at_origin([7, 10, 9]);
@@ -1979,6 +1986,190 @@ fn unbarring_the_door_connects_the_rooms() {
 }
 
 // ---------------------------------------------------------------------------
+// J — the tee passage
+// ---------------------------------------------------------------------------
+
+/// Every open cell of the passage's two side-face planes: local `X`-min (which
+/// carries the doorway) and local `X`-max (which must not carry anything).
+///
+/// Read off the *model*, not off `door_height` — the claim is about how many
+/// holes the rule actually cut, and recomputing it from the parameter would
+/// prove only that the arithmetic in the test matches the arithmetic in the
+/// rule.
+fn side_face_openings(out: &Expansion) -> (Vec<[i32; 3]>, Vec<[i32; 3]>) {
+    let region = out.model.region();
+    let min_x = region.origin[0];
+    let max_x = min_x + region.size[0] as i32 - 1;
+    let open = |x: i32| -> Vec<[i32; 3]> {
+        region
+            .positions()
+            .filter(|p| p[0] == x && !solid(&out.model, *p))
+            .collect()
+    };
+    (open(min_x), open(max_x))
+}
+
+/// The standable cells at the two ends of the lane's travel axis: local `Z`-max,
+/// where the player walks in, and `Z`-min, where they leave.
+fn lane_ends(model: &VoxelModel) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
+    let region = model.region();
+    let far = region.origin[2] + region.size[2] as i32 - 1;
+    let cells = standable_cells(model);
+    (
+        cells.iter().copied().filter(|c| c[2] == far).collect(),
+        cells
+            .iter()
+            .copied()
+            .filter(|c| c[2] == region.origin[2])
+            .collect(),
+    )
+}
+
+#[test]
+fn a_tee_passage_expands_deterministically() {
+    let program = tee_passage();
+    let a = expand_at(&program, TEE_REGION, TEE_SEED);
+    let b = expand_at(&program, TEE_REGION, TEE_SEED);
+    assert_eq!(a.model.canonical_bytes(), b.model.canonical_bytes());
+    assert_eq!(a.anchors, b.anchors);
+}
+
+/// Gate 1 and gate 2 together, because they are the two halves of one claim: the
+/// piece is still a **chain segment** (standable end to end, so a zone can lay
+/// it in a piece run) and it has exactly **one** side opening (so the branch a
+/// zone parks beside it is the only thing off the route).
+///
+/// Binding: 120 side-wall cells examined (2 faces × 5 tall × 12 long), of which
+/// exactly 2 are open — the `door_height` cells of the doorway, all in the
+/// `X`-min face, all at one `Z`.
+#[test]
+fn the_tee_passage_is_a_lane_with_one_side_opening() {
+    let out = expand_at(&tee_passage(), TEE_REGION, TEE_SEED);
+    let cells = standable_cells(&out.model);
+    let door = out.anchors["anchor/branch-door"].pos;
+    assert!(standable(&out.model, door), "the doorway cell {door:?}");
+    assert_eq!(
+        out.anchors["anchor/branch-door"].facing.as_str(),
+        "west",
+        "the branch door must look across travel, at the box the branch occupies"
+    );
+
+    let (entry, exit) = lane_ends(&out.model);
+    assert!(!entry.is_empty() && !exit.is_empty(), "the lane has ends");
+    assert!(
+        connected(&cells, &entry, &exit),
+        "the tee does not run end to end, so it cannot be a segment of a chain"
+    );
+
+    let (near_face, far_face) = side_face_openings(&out);
+    assert!(
+        far_face.is_empty(),
+        "the far side face is open at {far_face:?} — a zone would have a branch it \
+         never declared, on the side it never proved"
+    );
+    assert_eq!(
+        near_face.len(),
+        tee_passage().params["door_height"] as usize,
+        "the doorway is {} cells, not `door_height`: {near_face:?}",
+        near_face.len()
+    );
+    let door_zs: BTreeSet<i32> = near_face.iter().map(|c| c[2]).collect();
+    assert_eq!(
+        door_zs,
+        [door[2]].into_iter().collect::<BTreeSet<i32>>(),
+        "the openings in the near face are not one doorway at the anchor's own Z"
+    );
+}
+
+/// Gate 3, and the whole difference between this rule and `far_side_bar`: the
+/// doorway is **beside** the route. Delete its column and the lane still walks
+/// end to end.
+///
+/// The teeth are permanent rather than a knob, because the defect this gate
+/// exists to catch is not a mis-set parameter — it is *building the other rule*.
+/// So the same cut is run against an unbarred `far_side_bar` in the same box:
+/// one construction, one cut, opposite answers. A cut that could not sever
+/// anything would pass this gate vacuously.
+///
+/// Binding: 37 standable cells re-walked without the doorway's column, against
+/// the bar's own cells re-walked without its opening.
+#[test]
+fn the_tee_passages_doorway_is_beside_the_route_not_on_it() {
+    let out = expand_at(&tee_passage(), TEE_REGION, TEE_SEED);
+    let cells = standable_cells(&out.model);
+    assert_eq!(cells.len(), 37, "the lane's standable cells");
+    let door = out.anchors["anchor/branch-door"].pos;
+    let (entry, exit) = lane_ends(&out.model);
+
+    let cut: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .copied()
+        .filter(|c| c[0] != door[0] || c[2] != door[2])
+        .collect();
+    assert_eq!(
+        cut.len(),
+        cells.len() - 1,
+        "exactly the doorway was removed"
+    );
+    assert!(
+        connected(&cut, &entry, &exit),
+        "plugging the branch doorway severed the lane — the tee put its opening on \
+         the route, which is a `far_side_bar` and not a junction"
+    );
+
+    // The red side of the same cut: the rule this one is a rotation of. Its
+    // opening *is* the route, so plugging it severs the box end to end.
+    let mut open = far_side_bar();
+    open.set_param("unbarred", 1).unwrap();
+    let bar = expand_at(&open, TEE_REGION, TEE_SEED);
+    let bar_cells = standable_cells(&bar.model);
+    let gate = bar.anchors["anchor/gate"].pos;
+    let (bar_entry, bar_exit) = lane_ends(&bar.model);
+    assert!(
+        connected(&bar_cells, &bar_entry, &bar_exit),
+        "the unbarred fixture is not even a route, so the cut below proves nothing"
+    );
+    let bar_cut: BTreeSet<[i32; 3]> = bar_cells
+        .iter()
+        .copied()
+        .filter(|c| c[2] != gate[2])
+        .collect();
+    assert!(
+        !connected(&bar_cut, &bar_entry, &bar_exit),
+        "plugging the bar's own opening left the box connected — this cut cannot \
+         sever anything, so the tee passing it means nothing"
+    );
+}
+
+/// ...and the teeth. `sealed = 1` fills the doorway with the shell material and
+/// changes nothing else: the one-opening count must drop to zero while the lane
+/// walks exactly as it did, so what the gates above measured is the doorway and
+/// not the shape of the box.
+#[test]
+fn sealing_the_tee_passage_closes_its_only_opening() {
+    let mut sealed = tee_passage();
+    sealed.set_param("sealed", 1).unwrap();
+    let out = expand_at(&sealed, TEE_REGION, TEE_SEED);
+    let (near_face, far_face) = side_face_openings(&out);
+    assert!(
+        near_face.is_empty() && far_face.is_empty(),
+        "the doorway was filled and the side faces still read as open: {near_face:?} \
+         / {far_face:?} — the gate proves nothing"
+    );
+
+    // The control: a filled doorway, not a filled passage. The lane is still the
+    // same lane, minus the one cell that was the doorway.
+    let cells = standable_cells(&out.model);
+    let (entry, exit) = lane_ends(&out.model);
+    assert!(connected(&cells, &entry, &exit));
+    assert_eq!(
+        cells.len(),
+        standable_cells(&expand_at(&tee_passage(), TEE_REGION, TEE_SEED).model).len() - 1,
+        "sealing the doorway moved more than the doorway"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // T — the causeway
 // ---------------------------------------------------------------------------
 
@@ -2336,6 +2527,19 @@ fn the_documented_minimum_regions_are_the_real_ones() {
         [3, 5, 3],
         &[[2, 5, 3], [3, 4, 3], [3, 5, 2]],
     );
+    // tee_passage: MIN_WIDTH (3) across (door wall, lane, side wall), head + 2
+    // tall, MIN_LENGTH (3) long — a cell of wall on each side of the doorway,
+    // so the opening is a doorway and not the whole face.
+    check(
+        "tee_passage",
+        &tee_passage(),
+        [
+            tee_passage::MIN_WIDTH as u32,
+            5,
+            tee_passage::MIN_LENGTH as u32,
+        ],
+        &[[2, 5, 3], [3, 4, 3], [3, 5, 2]],
+    );
     // causeway: 5 across (wall, flood, causeway, flood, wall), rise +
     // tower_rise + head tall, guard_len + 3 long (guard_len's own default is 2).
     check(
@@ -2383,6 +2587,7 @@ fn the_staging_rules_restyle_without_moving_a_block() {
         (drop_shaft(), SHAFT_REGION),
         (dumbwaiter(), DUCT_REGION),
         (far_side_bar(), BAR_REGION),
+        (tee_passage(), TEE_REGION),
         (causeway(), CAUSEWAY_REGION),
         (elite_ground(), ARENA_REGION),
     ] {
