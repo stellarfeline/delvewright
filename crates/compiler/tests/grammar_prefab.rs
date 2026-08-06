@@ -212,6 +212,8 @@ fn the_staging_rules_indexed_anchors_all_reach_the_registry() {
             broken_grate::broken_grate(),
             GRATE_REGION,
             vec!["anchor/grate-secret"],
+        ),
+        (
             "grammar-drop-shaft",
             drop_shaft(),
             SHAFT_REGION,
