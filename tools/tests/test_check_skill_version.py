@@ -5,6 +5,13 @@ version and the `delvec` range it drives. Both are hand-typed, and a hand-typed
 range nobody reads is the project's recurring failure class — the unbound
 declaration that is green because it examined nothing.
 
+Two declarations, two different bindings, and the tests keep them apart:
+`requires.delvec` is a COMPATIBILITY window checked by MEMBERSHIP (the engine
+must fall inside it), `verified_with` is EVIDENCE checked by EQUALITY (it must
+be the engine in this tree). Collapsing them would make the frontmatter assert,
+after every engine release, that older engines are unsupported — untested, and
+probably false.
+
 These tests drive the gate over a synthetic repo (a skill file, a compiler
 `Cargo.toml`, a compiler `main.rs`) rather than the live tree, so they keep
 failing for the right reason as the real skill and the real CLI grow.
@@ -131,7 +138,8 @@ GOOD_FRONTMATTER = f"""name: new-delve
 description: Generate a delve.
 version: 1.0.0
 requires:
-  delvec: ">={ENGINE} <2.0.0\""""
+  delvec: ">=1.0.0 <2.0.0"
+verified_with: {ENGINE}"""
 
 
 def test_true_declaration_passes(gate, capsys):
@@ -144,40 +152,78 @@ def test_true_declaration_passes(gate, capsys):
     assert "5 long-flag reference(s)" in out
 
 
-def test_floor_above_the_engine_is_red(gate, capsys):
-    """A floor newer than this repo's compiler names a build that does not exist."""
-    write_skill(gate, GOOD_FRONTMATTER.replace(f">={ENGINE}", ">=1.1.0"))
-    assert gate.main() == 1
-    err = capsys.readouterr().err
-    assert "ABOVE this repo's engine" in err
+def test_a_patch_engine_bump_inside_the_window_stays_green(gate):
+    """The whole point of the split: 1.0.0 -> 1.4.0 does not move `requires`.
 
-
-def test_floor_below_the_engine_is_red(gate, capsys):
-    """A floor older than this repo's compiler is a claim nothing here can bind."""
-    write_skill(
-        gate, GOOD_FRONTMATTER.replace(f">={ENGINE} <2.0.0", ">=0.9.0 <1.0.0")
+    Only `verified_with` restamps. A window whose floor tracked the engine would
+    red here and force the frontmatter to claim 1.0.0-1.3.x are unsupported.
+    """
+    gate.CARGO_PATH.write_text(
+        '[package]\nname = "delvewright-compiler"\nversion = "1.4.0"\n',
+        encoding="utf-8",
     )
+    write_skill(gate, GOOD_FRONTMATTER.replace(f"verified_with: {ENGINE}", "verified_with: 1.4.0"))
+    assert gate.main() == 0
+
+
+def test_window_above_the_engine_is_red(gate, capsys):
+    """Membership: an engine below the floor is outside the window."""
+    write_skill(gate, GOOD_FRONTMATTER.replace(">=1.0.0 <2.0.0", ">=1.1.0 <2.0.0"))
     assert gate.main() == 1
-    err = capsys.readouterr().err
-    assert "BELOW this repo's engine" in err
+    assert "is OUTSIDE the declared window" in capsys.readouterr().err
 
 
-def test_major_engine_bump_leaves_the_range_behind(gate, capsys):
-    """The bump the range exists to survive: delvec 2.0.0 under `<2.0.0`."""
+def test_window_below_the_engine_is_red(gate, capsys):
+    """Membership, the other side: `>=0.9.0 <1.0.0` excludes a 1.0.0 engine."""
+    write_skill(gate, GOOD_FRONTMATTER.replace(">=1.0.0 <2.0.0", ">=0.9.0 <1.0.0"))
+    assert gate.main() == 1
+    assert "is OUTSIDE the declared window" in capsys.readouterr().err
+
+
+def test_major_engine_bump_leaves_the_window_behind(gate, capsys):
+    """The bump the window exists to survive: delvec 2.0.0 under `<2.0.0`."""
     gate.CARGO_PATH.write_text(
         '[package]\nname = "delvewright-compiler"\nversion = "2.0.0"\n',
         encoding="utf-8",
     )
-    write_skill(gate, GOOD_FRONTMATTER)
+    write_skill(gate, GOOD_FRONTMATTER.replace(f"verified_with: {ENGINE}", "verified_with: 2.0.0"))
     assert gate.main() == 1
     err = capsys.readouterr().err
-    assert "1.0.0" in err and "2.0.0" in err
+    assert "delvec 2.0.0 is OUTSIDE the declared window >=1.0.0 <2.0.0" in err
 
 
 def test_ceiling_must_be_the_floors_next_major(gate, capsys):
     write_skill(gate, GOOD_FRONTMATTER.replace("<2.0.0", "<1.5.0"))
     assert gate.main() == 1
     assert "next major" in capsys.readouterr().err
+
+
+def test_verified_with_above_the_engine_is_red(gate, capsys):
+    """Evidence from a compiler that does not exist."""
+    write_skill(gate, GOOD_FRONTMATTER.replace(f"verified_with: {ENGINE}", "verified_with: 1.1.0"))
+    assert gate.main() == 1
+    assert "ABOVE this repo's engine" in capsys.readouterr().err
+
+
+def test_verified_with_below_the_engine_is_stale(gate, capsys):
+    """The engine moved and nobody re-ran the skill against it."""
+    gate.CARGO_PATH.write_text(
+        '[package]\nname = "delvewright-compiler"\nversion = "1.4.0"\n',
+        encoding="utf-8",
+    )
+    write_skill(gate, GOOD_FRONTMATTER)
+    assert gate.main() == 1
+    err = capsys.readouterr().err
+    assert "is STALE" in err
+    assert "verified_with: 1.4.0" in err
+    # …and it must NOT ask for the compatibility window to move.
+    assert "Leave `requires.delvec` alone" in err
+
+
+def test_missing_verified_with_is_red(gate, capsys):
+    write_skill(gate, GOOD_FRONTMATTER.replace(f"\nverified_with: {ENGINE}", ""))
+    assert gate.main() == 1
+    assert "`verified_with:` is missing" in capsys.readouterr().err
 
 
 def test_missing_version_field_is_red(gate, capsys):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The `/new-delve` skill declares a version + a `delvec` range, and both are TRUE.
+"""The `/new-delve` skill's version declarations, held to what they each claim.
 
 WHY THIS EXISTS (ADR-0016, third version line)
 
@@ -17,44 +17,74 @@ rule 1). The island's combat floor gate was green for nineteen rounds because it
 examined zero enemies. A hand-typed engine range would be green forever for the
 same reason: nothing would ever read it.
 
+TWO FIELDS, BECAUSE THEY ARE TWO DIFFERENT CLAIMS (planner review, PR #309)
+
+    requires:
+      delvec: ">=1.0.0 <2.0.0"   # COMPATIBILITY — the major window it drives
+    verified_with: 1.0.0          # EVIDENCE — the engine this tree proves it on
+
+`requires.delvec` is what a creator reads as "older engines will not work". It is
+ADR-0016's own shape (`e.g. delvec >= 1.0 < 2`): a **major window**, stable
+across the whole 1.x line, because format compatibility is guaranteed by the
+per-stage fences and an engine may release many times inside one window.
+
+`verified_with` is the narrower, provable claim: the engine this repo actually
+exercises the skill against. Collapsing the two — pinning the window's floor to
+the current engine — would make the frontmatter assert, after every engine
+release, that older engines are unsupported, which nobody tested and which is
+probably false. It would also make ADR-0016's own example un-writable the moment
+the engine reached 1.1.0.
+
 WHAT IS CHECKED
 
-1. **Shape.** The frontmatter carries `version:` (semver) and `requires: delvec:`
-   (a `>=X.Y.Z <A.B.C` range), alongside the loader's own `name`/`description`.
+1. **Shape.** The frontmatter carries `version:` (semver), `requires: delvec:`
+   (a `>=X.Y.Z <A.B.C` range) and `verified_with:` (semver), alongside the
+   loader's own `name`/`description`.
 
-2. **The floor IS this repo's engine.** `requires.delvec`'s floor must equal
-   `crates/compiler/Cargo.toml`'s `[package] version` — the single source
-   `DELVEC_VERSION` derives from (`env!("CARGO_PKG_VERSION")`), so this script
-   never carries a second hand-typed copy. BOTH directions are red:
+2. **`requires.delvec` binds by MEMBERSHIP.** The window is a well-formed semver
+   major window — ceiling == floor's next major — and this repo's engine is
+   INSIDE it: `floor <= engine < ceiling`. That is what catches a major bump:
+   `delvec 2.0.0` shipping beside a skill that still says `<2.0.0` is a skill
+   declaring it does not drive the engine it lives next to.
 
-   - a floor ABOVE it names a compiler that does not exist (the same
-     falsification `check-storybook-version.py` applies to `last verified with
-     delvec <Y>`);
-   - a floor BELOW it is a claim NO run in this repo can bind. The only engine
-     any CI job here can drive the skill against is the one in this tree. A
-     floor of `1.0.0` under an engine at `1.4.0` asserts the workflow still runs
-     on three releases that are not here to be exercised — an unverified claim,
-     and a range wider than the truth is worse than no range.
+3. **`verified_with` binds by EQUALITY** to `crates/compiler/Cargo.toml`'s
+   `[package] version` — the single source `DELVEC_VERSION` derives from
+   (`env!("CARGO_PKG_VERSION")`), so this script never carries a second
+   hand-typed copy. BOTH directions are red:
 
-   The floor is therefore a **verified** floor: the oldest engine the skill is
-   known to drive is the newest engine anyone has driven it with. Moving it is
-   one frontmatter line in the engine's own release commit, and it is NOT a
-   product-version bump — ADR-0016 keeps `version:` and the range independent
-   precisely so engine fixes never touch the former.
+   - ABOVE it names a compiler that does not exist, so no run anywhere produced
+     that evidence (the same falsification `check-storybook-version.py` applies
+     to `last verified with delvec <Y>`);
+   - BELOW it is stale: the engine moved and nobody re-ran the skill against it,
+     so the field records evidence from a build that is no longer here.
 
-3. **The range is a well-formed semver major window** — ceiling == floor's next
-   major, and floor <= engine < ceiling. That is the direction that catches a
-   major bump: `delvec 2.0.0` under `<2.0.0` is a skill driving an engine it
-   declared it does not support.
+   Restamping it is one line in the engine's own release commit, and it is NOT a
+   product-version bump — ADR-0016 keeps `version:` independent precisely so
+   engine fixes never touch it.
 
 4. **Every `delvec` subcommand the skill names EXISTS**, and every long flag it
    names alongside one exists on that subcommand or is a global. This is what
-   makes "the range it drives" bind to something: the range is a claim about a
-   CLI surface, so the gate reads that surface out of `crates/compiler/src/main.rs`
-   (the clap `Command`/`EditAction` subcommand enums and the global `Cli` args)
-   and holds the skill's own command spans against it. `delvec calibrate` losing
-   its `--layout`, or a subcommand renamed out from under step 9, is exactly the
-   drift a version range is supposed to make impossible.
+   makes the window a claim about something real rather than a shrug: the range
+   is a claim about a CLI surface, so the gate reads that surface out of
+   `crates/compiler/src/main.rs` (the clap `Command`/`EditAction` subcommand
+   enums and the global `Cli` args) and holds the skill's own command spans
+   against it. `delvec calibrate` losing its `--layout`, or a subcommand renamed
+   out from under step 9, is exactly the drift a version range is supposed to
+   make impossible.
+
+WHAT THIS GATE DOES *NOT* PROVE
+
+A floor that has become **too low**. If the skill starts driving a subcommand
+that only appeared in `delvec` 1.1.0 while the window still says `>=1.0.0`, check
+4 passes — it tests the skill against the CURRENT CLI, which of course has that
+subcommand — and nothing here notices that an engine at the declared floor would
+choke. Catching it honestly needs older engines in the tree to test against, and
+this repo has one engine.
+
+That gap is the reason `verified_with` earns its place: the window states intent
+and is checked for internal consistency, while the field a reader can actually
+rely on states which single engine anybody has run. Do not read a green here as
+"the whole 1.x line was tested" — nothing tested it.
 
 BINDING COUNT
 
@@ -68,7 +98,7 @@ Deterministic, offline, no dependencies (Python 3 stdlib). Run from anywhere:
 
     python3 tools/check-skill-version.py
 
-Exit 0 = the declaration is true, 1 = a finding (see stderr), 2 = IO error.
+Exit 0 = the declarations are true, 1 = a finding (see stderr), 2 = IO error.
 """
 
 from __future__ import annotations
@@ -358,6 +388,16 @@ def version_key(version: str) -> tuple[int, int, int]:
     return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
 
 
+def engine_major_floor(version: str) -> str:
+    """The start of `version`'s major window — what a suggested `requires:` opens at.
+
+    The window floor is a COMPATIBILITY claim, so a suggestion never proposes the
+    current engine as the floor: that would assert every earlier release in the
+    same major is unsupported, which nothing tested.
+    """
+    return f"{version_key(version)[0]}.0.0"
+
+
 def engine_version() -> str:
     text = COMPILER_CARGO_TOML.read_text(encoding="utf-8")
     match = CARGO_VERSION_RE.search(text)
@@ -403,34 +443,27 @@ def main() -> int:
         findings.append(
             f"frontmatter `requires: delvec:` is missing or malformed (got "
             f"{declared!r}). ADR-0016 line 3 pairs the skill's version with the "
-            f"delvec range it DRIVES. Expected exactly:\n"
-            f'    requires:\n      delvec: ">={engine} <{version_key(engine)[0] + 1}.0.0"'
+            f"delvec window it DRIVES — a MAJOR window, stable across the whole "
+            f"line. Expected exactly:\n"
+            f'    requires:\n      delvec: ">={engine_major_floor(engine)} '
+            f'<{version_key(engine)[0] + 1}.0.0"'
         )
 
-    # -- 2/3. the range is true of THIS engine -------------------------------
+    verified = front.get("verified_with")
+    if not isinstance(verified, str) or not SEMVER_RE.match(verified):
+        findings.append(
+            f"frontmatter `verified_with:` is missing or not semver (got "
+            f"{verified!r}). `requires.delvec` states COMPATIBILITY (what a creator "
+            f"reads as 'older engines will not work'); `verified_with` states "
+            f"EVIDENCE — the one engine this tree actually proves the skill on. "
+            f"Expected `verified_with: {engine}`"
+        )
+
+    # -- 2. the window is well formed, and this engine is INSIDE it ----------
     if range_match is not None:
         floor = range_match.group("floor")
         ceiling = range_match.group("ceiling")
         expected_ceiling = f"{version_key(floor)[0] + 1}.0.0"
-
-        if floor != engine:
-            direction = (
-                "ABOVE this repo's engine — it names a compiler that does not exist, "
-                "so no run anywhere can satisfy it"
-                if version_key(floor) > version_key(engine)
-                else "BELOW this repo's engine — it claims the workflow still runs on "
-                "releases that are not in this tree to be exercised, and the only "
-                "engine any job here can drive the skill against is this one. An "
-                "unverifiable floor is an unbound declaration (CLAUDE.md)"
-            )
-            findings.append(
-                f"declared floor {floor} is {direction}.\n"
-                f"    crates/compiler/Cargo.toml [package] version = {engine} "
-                f"(== DELVEC_VERSION). Restamp the range:\n"
-                f'      delvec: ">={engine} <{version_key(engine)[0] + 1}.0.0"\n'
-                f"    That is the RANGE moving, not the product version: leave "
-                f"`version: {skill_version}` alone unless the skill's own workflow changed."
-            )
 
         if ceiling != expected_ceiling:
             findings.append(
@@ -438,13 +471,38 @@ def main() -> int:
                 f"({expected_ceiling}). A major release may remove any subcommand the "
                 f"skill drives, so the window closes at the next major and nowhere else"
             )
-        elif not (
-            version_key(floor) <= version_key(engine) < version_key(ceiling)
-        ):
+        elif not version_key(floor) <= version_key(engine) < version_key(ceiling):
             findings.append(
-                f"this repo's delvec {engine} is OUTSIDE the declared range "
-                f"{declared} — the skill ships beside an engine it says it does not drive"
+                f"this repo's delvec {engine} is OUTSIDE the declared window "
+                f"{declared} — the skill ships beside an engine it says it does not "
+                f"drive.\n"
+                f"    crates/compiler/Cargo.toml [package] version = {engine} "
+                f"(== DELVEC_VERSION). Widen or move the window:\n"
+                f'      delvec: ">={engine_major_floor(engine)} '
+                f'<{version_key(engine)[0] + 1}.0.0"\n'
+                f"    That is the WINDOW moving, not the product version: leave "
+                f"`version: {skill_version}` alone unless the skill's own workflow changed."
             )
+
+    # -- 3. `verified_with` IS this repo's engine, both directions -----------
+    if isinstance(verified, str) and SEMVER_RE.match(verified) and verified != engine:
+        direction = (
+            "ABOVE this repo's engine — it names a compiler that does not exist, so "
+            "no run anywhere produced that evidence"
+            if version_key(verified) > version_key(engine)
+            else "STALE — the engine moved and nobody re-ran the skill against it, so "
+            "the field records evidence from a build that is no longer in this tree. "
+            "An unverifiable claim is an unbound declaration (CLAUDE.md)"
+        )
+        findings.append(
+            f"`verified_with: {verified}` is {direction}.\n"
+            f"    crates/compiler/Cargo.toml [package] version = {engine} "
+            f"(== DELVEC_VERSION). Restamp it:\n"
+            f"      verified_with: {engine}\n"
+            f"    Leave `requires.delvec` alone unless the skill genuinely stopped "
+            f"driving the older engines in its window — that is a compatibility "
+            f"claim, and this one is only evidence."
+        )
 
     # -- 4. every command the skill names exists -----------------------------
     subcommands, globals_ = parse_cli(COMPILER_MAIN_RS.read_text(encoding="utf-8"))
@@ -522,8 +580,9 @@ def main() -> int:
         return 1
 
     print(
-        f"check-skill-version: OK — new-delve {skill_version} declares "
-        f"{declared}, engine is {engine}. Bound to {binding}."
+        f"check-skill-version: OK — new-delve {skill_version} drives {declared}, "
+        f"verified_with {verified}, engine is {engine}. Bound to {binding}. "
+        f"(Membership only: nothing here tested an engine other than {engine}.)"
     )
     return 0
 
