@@ -63,6 +63,7 @@ docs/adr/            # architecture decision records (numbered, immutable once A
 docs/specs/          # owner-approved specs, one per feature
 docs/reference/      # live behavior records: compiler.md, tools.md, i18n.md,
                      #   grammar.md + how a round is run: playtest-methodology.md
+                     #   + how a delve is generated: skill-workflow.md
 docs/ROADMAP.md      # milestones; M1 = hello-world delve
 crates/              # Rust workspace: dsl / compiler / orchestrator / admit / schem / render
 prefabs/             # .nbt library + metadata (git-lfs)
