@@ -253,6 +253,16 @@ jobs:
       # offline, stdlib-only python3.
       - name: harness dsl_version allowlist covers the compiler ceiling
         run: python3 tools/check-harness-dsl-version.py
+      # Nothing in the type system stops a walk over the campaign's effects from
+      # enumerating the five effect roots by hand, and thirteen of them did — each
+      # naming a different three or four, none of them ever red, because a walk
+      # that misses a root looks correct over any campaign that does not use it.
+      # `delvewright_dsl::effects` is now the one enumeration and every walk
+      # inherits it; this is what stops a fourteenth being written. It found two
+      # live instances the manual sweep had missed on the run that introduced it.
+      # Deterministic, offline, stdlib-only python3.
+      - name: no walk enumerates the campaign's effect roots by hand
+        run: python3 tools/check-effect-roots.py
       # Merge artifacts in the docs tree: a table row duplicated under one key, a
       # doubled heading, a stray conflict marker. Two branches appending rows at
       # the same table anchor merge cleanly and silently, so this class is

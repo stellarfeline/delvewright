@@ -166,28 +166,14 @@ pub fn inventory(plan: &Plan, moves: &[MovePlan], actor_moves: &[ActorMovePlan])
 /// Every effect bundle of the campaign as `(json pointer to the list, effects)`,
 /// in the order `emit` walks them.
 fn bundles(campaign: &Campaign) -> Vec<(String, &[QuestEffect])> {
+    // The roots are inherited, not re-listed. This function used to be a literal
+    // hand-rolled copy of the root enumeration minus `traps[].payload` and the
+    // dialogue `on_respawn` bundle, while its own doc claimed it walked "in the
+    // order `emit` walks them" — a claim that had already been falsified once.
     let mut out: Vec<(String, &[QuestEffect])> = Vec::new();
-    for (qi, q) in campaign.quests.content.quests.iter().enumerate() {
-        for (oid, effs) in &q.on_objective_complete {
-            out.push((
-                format!(
-                    "/content/quests/{qi}/on_objective_complete/{}",
-                    oid.as_str()
-                ),
-                effs.as_slice(),
-            ));
-        }
-        out.push((
-            format!("/content/quests/{qi}/on_complete"),
-            q.on_complete.as_slice(),
-        ));
-    }
-    for (ti, t) in campaign.quests.content.triggers.iter().enumerate() {
-        out.push((
-            format!("/content/triggers/{ti}/effects"),
-            t.effects.as_slice(),
-        ));
-    }
+    crate::plan::for_each_effect_root(campaign, &mut |site, list| {
+        out.push((site.path.clone(), list));
+    });
     out
 }
 

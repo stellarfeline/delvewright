@@ -2846,41 +2846,27 @@ fn v03_checks(
     let mut declared_flags: BTreeSet<&str> = BTreeSet::new();
     let mut spawned_waves: BTreeSet<&str> = BTreeSet::new();
     // A `set-flag`/`spawn-wave` produces its flag/wave from anywhere it can fire —
-    // including nested in a `sequence` step or an `on_respawn`/`on_caught`/
-    // `on_arrive` bundle — so the producer scan descends the whole effect tree
-    // (`visit_deep`). A shallow scan spuriously reported a nested `set-flag`'s flag
-    // as never-produced (`DW0172`).
-    for q in &quests.quests {
-        let effs = q
-            .on_objective_complete
-            .values()
-            .flatten()
-            .chain(&q.on_complete);
-        for eff in effs {
-            eff.visit_deep(&mut |e| {
-                if let Some(f) = e.set_flag() {
-                    declared_flags.insert(f.as_str());
-                }
-                if let Some(w) = e.spawn_wave() {
-                    spawned_waves.insert(w.as_str());
-                }
-            });
+    // every root, at every nesting depth — so the producer scan is
+    // `for_each_campaign_effect`, which inherits both axes rather than listing
+    // either. It used to name four of the five roots: a `set-flag` in a dialogue
+    // option's `set-checkpoint` `on_respawn` bundle really is emitted (into
+    // `cp_on_respawn_<i>`) and this inventory could not see it, so the flag it
+    // produced looked never-produced everywhere else (`DW0172`).
+    crate::stages::for_each_campaign_effect(c, &mut |_path, _site, e| {
+        if let Some(f) = e.set_flag() {
+            declared_flags.insert(f.as_str());
         }
-    }
-    // v0.4: flags/waves may also come from dialogue `set-flag` effects and
-    // environment-trigger effects. Empty for v0.2/v0.3 campaigns (no such
-    // constructs), so their flag resolution is unchanged.
-    //
-    // The `DialogueEffect` list itself has no nesting, so the direct scan below is
-    // right for it — but the dialogue STAGE is not exhausted by that list, and the
-    // comment here used to claim otherwise (corrected, task #24). A dialogue
-    // option's `set-checkpoint` carries an `on_respawn` bundle that is a
-    // `Vec<QuestEffect>`, and a `set-flag` inside one really is emitted (into
-    // `cp_on_respawn_<i>`) while this inventory does not see it — the fifth root
-    // `compiler::plan::for_each_effect_root` enumerates. It is pinned by
-    // `flow_effect_roots::a_dialogue_respawn_bundle_is_still_never_a_producer`,
-    // which asserts the resulting `DW0172`. See "Known spec ↔ code drift" in
-    // `docs/reference/compiler.md`.
+        if let Some(w) = e.spawn_wave() {
+            spawned_waves.insert(w.as_str());
+        }
+    });
+    // v0.4: flags may also come from dialogue `set-flag` effects. NOT a root — a
+    // `DialogueEffect::SetFlag` is a flat outcome of a conversation, in the
+    // dialogue vocabulary, and the root walk above neither reaches it nor should.
+    // What the root walk DOES reach in this stage is the `set-checkpoint`
+    // `on_respawn` bundle nested inside a dialogue effect, which is quest-effect
+    // vocabulary. Empty for v0.2/v0.3 campaigns, so their flag resolution is
+    // unchanged.
     for tree in &c.dialogue.content.dialogues {
         for node in &tree.nodes {
             for opt in &node.options {
@@ -2890,33 +2876,6 @@ fn v03_checks(
                     }
                 }
             }
-        }
-    }
-    for t in &quests.triggers {
-        for eff in &t.effects {
-            eff.visit_deep(&mut |e| {
-                if let Some(f) = e.set_flag() {
-                    declared_flags.insert(f.as_str());
-                }
-                if let Some(w) = e.spawn_wave() {
-                    spawned_waves.insert(w.as_str());
-                }
-            });
-        }
-    }
-    // spec-0022: a trap payload is an effect root, so a `set-flag` /
-    // `spawn-wave` inside one is a genuine producer. Missing this would make a
-    // flag a trap produces look undeclared everywhere else (a false `DW0172`).
-    for t in &quests.traps {
-        for eff in &t.payload {
-            eff.visit_deep(&mut |e| {
-                if let Some(f) = e.set_flag() {
-                    declared_flags.insert(f.as_str());
-                }
-                if let Some(w) = e.spawn_wave() {
-                    spawned_waves.insert(w.as_str());
-                }
-            });
         }
     }
 
@@ -3604,26 +3563,16 @@ fn check_block_field(
 /// (spec-0011). The authoritative declared-flag set every `requires_flags`
 /// resolves against.
 fn collect_declared_flags(c: &Campaign) -> BTreeSet<&str> {
+    // Every root, every depth — inherited, not listed. This was the shallowest and
+    // narrowest of the three answers this file used to give to "what flags does
+    // this campaign produce": three roots and no descent at all, so a `set-flag`
+    // in a `sequence` step was invisible to it while the main pass saw it.
     let mut flags: BTreeSet<&str> = BTreeSet::new();
-    for q in &c.quests.content.quests {
-        for e in q
-            .on_objective_complete
-            .values()
-            .flatten()
-            .chain(&q.on_complete)
-        {
-            if let Some(f) = e.set_flag() {
-                flags.insert(f.as_str());
-            }
+    crate::stages::for_each_campaign_effect(c, &mut |_path, _site, e| {
+        if let Some(f) = e.set_flag() {
+            flags.insert(f.as_str());
         }
-    }
-    for t in &c.quests.content.triggers {
-        for e in &t.effects {
-            if let Some(f) = e.set_flag() {
-                flags.insert(f.as_str());
-            }
-        }
-    }
+    });
     for t in &c.quests.content.traps {
         if let Some(dis) = &t.disarm {
             flags.insert(dis.sets_flag.as_str());

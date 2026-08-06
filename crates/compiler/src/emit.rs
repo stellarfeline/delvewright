@@ -12820,21 +12820,15 @@ fn first_damage_players(
             });
         }
     };
-    for q in &c.quests.content.quests {
-        for effs in q.on_objective_complete.values() {
-            for eff in effs {
-                scan(eff);
-            }
-        }
-        for eff in &q.on_complete {
+    // Every root, inherited. Strictly additive: the roots keep their order, so the
+    // "first" effect is unchanged for any campaign that has one in R1-R3 — this only
+    // ever finds a `damage-players` where the generator previously found none and
+    // emitted no damage PackTest at all.
+    crate::plan::for_each_effect_root(c, &mut |_site, effs| {
+        for eff in effs {
             scan(eff);
         }
-    }
-    for t in &c.quests.content.triggers {
-        for eff in &t.effects {
-            scan(eff);
-        }
-    }
+    });
     found
 }
 
@@ -13185,20 +13179,26 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
     }
 
     // despawn-npc removes body + interaction hitbox (both carry the id tag).
-    if let Some(npc) = c
-        .quests
-        .content
-        .quests
-        .iter()
-        .flat_map(|q| {
-            q.on_objective_complete
-                .values()
-                .flatten()
-                .chain(&q.on_complete)
-        })
-        .chain(c.quests.content.triggers.iter().flat_map(|t| &t.effects))
-        .find_map(|e| e.despawn_npc())
-    {
+    //
+    // Every root, every depth. This picked the first `despawn-npc` out of a
+    // hand-rolled three-of-five chain that was also shallow, so a campaign whose
+    // only `despawn-npc` sits in a `sequence` step, a trap payload or a dialogue
+    // `on_respawn` bundle generated no despawn PackTest at all — the verb shipped
+    // with nothing asserting it.
+    let first_despawn_npc = {
+        let mut found: Option<&delvewright_dsl::NpcId> = None;
+        crate::plan::for_each_effect_root(c, &mut |_site, effs| {
+            for e in effs {
+                e.visit_deep(&mut |x| {
+                    if found.is_none() {
+                        found = x.despawn_npc();
+                    }
+                });
+            }
+        });
+        found
+    };
+    if let Some(npc) = first_despawn_npc {
         let safe = plan::safe_local(npc.as_str());
         let mut b = packtest_header(&format!(
             "{}: despawn-npc removes body + hitbox",

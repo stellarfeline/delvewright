@@ -283,7 +283,7 @@ fn a_set_flag_nested_in_a_trap_payload_gets_its_objective() {
 /// case, because nothing runs until somebody dies.
 ///
 /// Note this root is a **non-producer** for the completability model
-/// (`flow_effect_roots::a_dialogue_respawn_bundle_is_still_never_a_producer`) and
+/// (`flow_effect_roots::a_dialogue_respawn_bundle_is_seen_but_still_never_a_producer`) and
 /// that is unrelated: whether the model may *credit* a firing is a question about
 /// proofs, while whether the objective it writes to exists is a question about the
 /// runtime. The scoreboard must be well-formed either way.
