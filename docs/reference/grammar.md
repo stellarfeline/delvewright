@@ -801,6 +801,15 @@ slice would wall off the arena's own east flank band, and "a lane each side of
 the fight" is a gate that zone owes. The price is the fixture's size — a 21-deep
 strip beside a 19-wide mainline, so the box is 40 across.
 
+**A risk this pattern creates, recorded before it can bind wrong.** The strip's
+inert `margin` is roughly two fifths of Z6's blocks. Nothing today measures a
+zone's block census, but the §4 craft diagnostics (§7) are a palette *budget* —
+60/30/10 by family — and run against a whole zone they would be dominated by
+mass a player never sees. When those land, a zone's palette claim has to be
+scoped to what the player can reach, the way `boulder_stair`'s mirror is already
+scoped to the lane's own floor course, or it will be green for the wrong
+reason.
+
 **Z1 is one run, not a switchback**, and that is a finding: a switchback
 alternates which side the drop is on, and a grammar orientation is a permutation
 *without reflection*, so no `reorient` can mirror a cliff run. It needs a
