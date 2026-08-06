@@ -939,7 +939,7 @@ pub fn build_with_warnings(
         out.insert("resourcepack.zip".to_string(), zip);
         out.insert(
             "SKINS.md".to_string(),
-            pack_note(&sha1, skins, art).into_bytes(),
+            pack_note(&sha1, skins, art, &plan.campaign.world.content.languages).into_bytes(),
         );
         Some(sha1)
     };
@@ -1181,7 +1181,12 @@ fn is_verbatim_binary_output(path: &str) -> bool {
 /// resource pack into the delve image (itzg env), plus the pack SHA-1. The pack
 /// carries the mannequin NPC skins (spec-0009) and/or the `delve:art` title font
 /// (spec-0014), depending on what the campaign uses.
-fn pack_note(sha1: &str, skins: &BTreeMap<String, Vec<u8>>, art: bool) -> String {
+fn pack_note(
+    sha1: &str,
+    skins: &BTreeMap<String, Vec<u8>>,
+    art: bool,
+    languages: &[String],
+) -> String {
     let mut s = String::new();
     s.push_str("# Delve resource pack\n\n");
     s.push_str(
@@ -1206,7 +1211,21 @@ fn pack_note(sha1: &str, skins: &BTreeMap<String, Vec<u8>>, art: bool) -> String
         s.push_str(
             "Art-title font (spec-0014): `delve:art` — an original 5x7 pixel bitmap\n\
              font at `assets/delve/font/art.json` (+ `assets/delve/textures/font/art.png`),\n\
-             used by `narrate` `style: art`.\n",
+             used by `narrate` `style: art`.\n\n",
+        );
+    }
+    // The pack is the LANGUAGE CARRIER now (spec-0029), not optional dressing, and
+    // the person wiring it up is the one who needs to know what declining it costs.
+    // Host-facing prose only — no key scheme, no pipeline (CLAUDE.md audience
+    // separation).
+    if !languages.is_empty() {
+        s.push_str("Languages: this delve's in-game text ships in English plus ");
+        s.push_str(&languages.join(", "));
+        s.push_str(
+            ".\nA player's own client language is used automatically; anything else\n\
+             reads English. A player who DECLINES the resource-pack prompt reads\n\
+             English too, and the delve is fully playable that way — the pack adds\n\
+             the other languages, it is never required to finish the delve.\n",
         );
     }
     s
