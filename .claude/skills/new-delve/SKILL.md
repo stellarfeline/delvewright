@@ -1,7 +1,7 @@
 ---
 name: new-delve
 description: Generate a complete playable Minecraft delve from a creative prompt — staged DSL authoring with validation-loop self-repair, deterministic compile, machine validation, joinable output. Use when the user asks to create/generate a new delve or campaign. Args = the creative prompt (theme one-liner or detailed brief).
-version: 1.0.0
+version: 1.1.0
 requires:
   delvec: ">=1.0.0 <2.0.0"
 verified_with: 1.0.0
@@ -237,16 +237,25 @@ Concision is not the same as flatness. Cut the padding, keep the beat.
 
 ## The loop
 
-`delvec` below means a binary from `cargo build -p delvewright-compiler --bin
-delvec` (or `cargo run -q -p delvewright-compiler --bin delvec -- …`). Plain
-`cargo build` is the right call — the workspace's dev profile is optimized enough
-for a real campaign. Do **not** reach for `--release` mid-loop: it is ~20s slower
-to rebuild after every edit and the output is byte-identical either way
+`delvec` below means the compiler binary. **In a pipeline-repo checkout — which
+is where this skill runs today — build it from source**: `cargo build -p delvec
+--bin delvec` (or `cargo run -q -p delvec --bin delvec -- …`). Plain `cargo
+build` is the right call — the workspace's dev profile is optimized enough for a
+real campaign. Do **not** reach for `--release` mid-loop: it is ~20s slower to
+rebuild after every edit and the output is byte-identical either way
 (`docs/reference/tools.md`).
+
+Two other paths now exist and are equally real, so do not assume a `delvec` on
+`PATH` was built from this tree (ADR-0017): `cargo install delvec`, and the
+per-target archives on the `v<version>` GitHub Release. If you are handed a
+`delvec` rather than building one, run `delvec --version` and check it against
+`versions.toml [engine].version` before trusting any output — a campaign is
+reproducible only against a named engine (ADR-0006/0016). Full comparison:
+`docs/reference/tools.md`.
 
 For each stage in order — world → npcs → classes → quest-plan → quests → dialogue:
 
-1. `cargo run -q -p delvewright-compiler --bin delvec -- schema --stage <n>` —
+1. `cargo run -q -p delvec --bin delvec -- schema --stage <n>` —
    generate AGAINST the live schema, never from memory.
 2. **Delegate the mechanical write + validate repair loop (steps 2–3) to a dev
    subagent** (see *Execution architecture*): hand it this stage's creative brief +

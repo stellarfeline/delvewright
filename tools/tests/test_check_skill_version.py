@@ -111,7 +111,7 @@ def gate(tmp_path, monkeypatch):
     cargo = tmp_path / "crates" / "compiler" / "Cargo.toml"
     cargo.parent.mkdir(parents=True)
     cargo.write_text(
-        f'[package]\nname = "delvewright-compiler"\nversion = "{ENGINE}"\n',
+        f'[package]\nname = "delvec"\nversion = "{ENGINE}"\n',
         encoding="utf-8",
     )
     main_rs = tmp_path / "crates" / "compiler" / "src" / "main.rs"
@@ -159,7 +159,7 @@ def test_a_patch_engine_bump_inside_the_window_stays_green(gate):
     red here and force the frontmatter to claim 1.0.0-1.3.x are unsupported.
     """
     gate.CARGO_PATH.write_text(
-        '[package]\nname = "delvewright-compiler"\nversion = "1.4.0"\n',
+        '[package]\nname = "delvec"\nversion = "1.4.0"\n',
         encoding="utf-8",
     )
     write_skill(gate, GOOD_FRONTMATTER.replace(f"verified_with: {ENGINE}", "verified_with: 1.4.0"))
@@ -183,7 +183,7 @@ def test_window_below_the_engine_is_red(gate, capsys):
 def test_major_engine_bump_leaves_the_window_behind(gate, capsys):
     """The bump the window exists to survive: delvec 2.0.0 under `<2.0.0`."""
     gate.CARGO_PATH.write_text(
-        '[package]\nname = "delvewright-compiler"\nversion = "2.0.0"\n',
+        '[package]\nname = "delvec"\nversion = "2.0.0"\n',
         encoding="utf-8",
     )
     write_skill(gate, GOOD_FRONTMATTER.replace(f"verified_with: {ENGINE}", "verified_with: 2.0.0"))
@@ -208,7 +208,7 @@ def test_verified_with_above_the_engine_is_red(gate, capsys):
 def test_verified_with_below_the_engine_is_stale(gate, capsys):
     """The engine moved and nobody re-ran the skill against it."""
     gate.CARGO_PATH.write_text(
-        '[package]\nname = "delvewright-compiler"\nversion = "1.4.0"\n',
+        '[package]\nname = "delvec"\nversion = "1.4.0"\n',
         encoding="utf-8",
     )
     write_skill(gate, GOOD_FRONTMATTER)
@@ -284,6 +284,24 @@ def test_marker_template_contributes_no_subcommand(gate):
     spans = gate.code_spans(SKILL_BODY)
     subs = [sub for sub, _ in gate.invocations(spans) if sub is not None]
     assert "<version>" not in subs
+
+
+def test_cargo_selector_occurrences_are_not_invocations(gate):
+    """`-p delvec` / `--bin delvec` name the CARGO PACKAGE, not the command.
+
+    ADR-0017 renamed the package to `delvec`, so the word now appears in the
+    skill as an argument to cargo as well as as a command. Reading the cargo
+    form as an invocation made the gate report that `delvec` had been given a
+    `--bin` flag it does not have — a red on a correct skill, which is the
+    fastest way to teach a future session to stop believing the gate.
+    """
+    # `cargo build -p delvec --bin delvec` is a CARGO command end to end: both
+    # occurrences are selector arguments, so it contributes no invocation at all.
+    assert gate.invocations(["cargo build -p delvec --bin delvec"]) == []
+
+    # And the real `cargo run` form still yields its subcommand.
+    span = "cargo run -q -p delvec --bin delvec -- schema --stage 3"
+    assert [sub for sub, _ in gate.invocations([span])] == ["schema"]
 
 
 def test_cli_parse_finds_subcommands_and_globals(gate):

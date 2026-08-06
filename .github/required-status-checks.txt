@@ -1,5 +1,6 @@
 # The exact `name:` of every CI job that is a REQUIRED status check on `main`
-# (owner decision, 2026-08-05: all ten, previously three).
+# (owner decision, 2026-08-05: all ten, previously three; eleven since
+# ADR-0017 added the cross-build shelf).
 #
 # THIS FILE IS A DEADLOCK TRIPWIRE. Branch protection matches a required context
 # by its NAME STRING. Rename a job in ci.yml and its required context stops
@@ -20,6 +21,7 @@
 # obey, which is how `tier 2` — datapack load plus the whole PackTest suite — sat
 # unenforced while it was believed to be blocking.
 rust (fmt, clippy, test)
+engine binaries (cross-build shelf)
 harness (typecheck, test)
 docs (local link check)
 manifest consistency (versions.toml)

@@ -50,3 +50,6 @@ delvewright.local.toml
 # Owner-private working notes — never committed (stays local even when the
 # repo goes public).
 docs/notes/private/
+
+# Release-shelf build output (tools/build-release-binaries.sh).
+dist/
