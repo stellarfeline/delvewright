@@ -44,22 +44,38 @@
 
 pub mod ambush_door;
 pub mod bell;
+pub mod boulder_stair;
+pub mod broken_grate;
 pub mod castle;
+pub mod causeway;
 pub mod church;
 pub mod cliff_path;
+pub mod drop_shaft;
+pub mod dumbwaiter;
+pub mod elite_ground;
+pub mod far_side_bar;
 pub mod rafter_hall;
 pub mod store_room;
 pub mod temple;
+pub mod threshold_motif;
 pub mod watch_bay;
 
 pub use ambush_door::ambush_door;
 pub use bell::{cliff_road, gate_ward, hall_keep};
+pub use boulder_stair::boulder_stair;
+pub use broken_grate::broken_grate;
 pub use castle::castle;
+pub use causeway::causeway;
 pub use church::church;
 pub use cliff_path::cliff_path;
+pub use drop_shaft::drop_shaft;
+pub use dumbwaiter::dumbwaiter;
+pub use elite_ground::elite_ground;
+pub use far_side_bar::far_side_bar;
 pub use rafter_hall::rafter_hall;
 pub use store_room::store_room;
 pub use temple::temple;
+pub use threshold_motif::threshold_motif;
 pub use watch_bay::watch_bay;
 
 use crate::geom::Axis;

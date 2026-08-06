@@ -14,9 +14,12 @@ use std::collections::BTreeMap;
 use delvewright_compiler::registry::PrefabRegistry;
 use delvewright_dsl::{AnchorRegistry, LightingProfile, PrefabId};
 use delvewright_grammar::library::{
-    ambush_door, castle, cliff_path, rafter_hall, store_room, temple, watch_bay,
+    ambush_door, castle, causeway, cliff_path, drop_shaft, dumbwaiter, elite_ground, far_side_bar,
+    rafter_hall, store_room, temple, watch_bay,
 };
 use delvewright_grammar::{Box3, ExpandOptions, export_prefab};
+// W3: the palette/prop family (W + S + M + X).
+use delvewright_grammar::library::{boulder_stair, broken_grate, threshold_motif};
 
 const REGION: Box3 = Box3::at_origin([13, 14, 21]);
 const CASTLE_REGION: Box3 = Box3::at_origin([41, 14, 25]);
@@ -25,6 +28,15 @@ const PASSAGE_REGION: Box3 = Box3::at_origin([7, 7, 24]);
 const HALL_REGION: Box3 = Box3::at_origin([13, 6, 25]);
 const DOOR_REGION: Box3 = Box3::at_origin([11, 5, 13]);
 const STORE_REGION: Box3 = Box3::at_origin([7, 5, 14]);
+const STAIR_REGION: Box3 = Box3::at_origin([9, 6, 27]);
+const THRESHOLD_REGION: Box3 = Box3::at_origin([9, 6, 13]);
+const GRATE_REGION: Box3 = Box3::at_origin([3, 5, 14]);
+/// The topology family (task #182): vertical links, one-way bars, elite ground.
+const SHAFT_REGION: Box3 = Box3::at_origin([4, 8, 6]);
+const DUCT_REGION: Box3 = Box3::at_origin([6, 8, 8]);
+const BAR_REGION: Box3 = Box3::at_origin([5, 5, 7]);
+const CAUSEWAY_REGION: Box3 = Box3::at_origin([7, 10, 9]);
+const ARENA_REGION: Box3 = Box3::at_origin([19, 5, 25]);
 
 fn library_dir(tag: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("dw-grammar-prefab-{}-{tag}", std::process::id()));
@@ -182,6 +194,54 @@ fn the_staging_rules_indexed_anchors_all_reach_the_registry() {
             store_room(),
             STORE_REGION,
             vec!["anchor/store-line", "anchor/tell"],
+        ),
+        (
+            "grammar-boulder-stair",
+            boulder_stair::boulder_stair(),
+            STAIR_REGION,
+            vec!["anchor/stair-run", "anchor/volley-slot", "anchor/pocket-1"],
+        ),
+        (
+            "grammar-threshold-motif",
+            threshold_motif::threshold_motif(),
+            THRESHOLD_REGION,
+            vec!["anchor/threshold-narrate"],
+        ),
+        (
+            "grammar-broken-grate",
+            broken_grate::broken_grate(),
+            GRATE_REGION,
+            vec!["anchor/grate-secret"],
+        ),
+        (
+            "grammar-drop-shaft",
+            drop_shaft(),
+            SHAFT_REGION,
+            vec!["anchor/spill", "anchor/landing"],
+        ),
+        (
+            "grammar-dumbwaiter",
+            dumbwaiter(),
+            DUCT_REGION,
+            vec!["anchor/hatch", "anchor/landing"],
+        ),
+        (
+            "grammar-far-side-bar",
+            far_side_bar(),
+            BAR_REGION,
+            vec!["anchor/gate", "anchor/unlock"],
+        ),
+        (
+            "grammar-causeway",
+            causeway(),
+            CAUSEWAY_REGION,
+            vec!["anchor/causeway-head", "anchor/elite"],
+        ),
+        (
+            "grammar-elite-ground",
+            elite_ground(),
+            ARENA_REGION,
+            vec!["anchor/elite"],
         ),
     ] {
         let dir = library_dir(name);

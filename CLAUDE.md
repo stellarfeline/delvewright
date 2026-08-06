@@ -88,9 +88,24 @@ validation/          # docker compose: headless server + bot, same image as CI &
   success, not failure. Preserve every debugging lesson in the strongest
   available form, strongest first: compiler diagnostic > tooling default
   (automate the pitfall out of existence) > generator invariant > docs.
+  **An intermittent red is never re-run** (owner, 2026-08-05): it is a finding,
+  and re-running discards it. An intermittent failure is an under-specified
+  test — root-cause it. Evidence: a `grep -q` readiness probe under `pipefail`
+  failed 28 times in 30 on a server that was up, because `grep` exiting at the
+  match SIGPIPEs its producer; it read as flakiness for months, cost two owner
+  playtest stagings, and the same idiom sat under both 25565 safety guards
+  (task #173, PR #300).
 - **CI is the sole arbiter** (ADR-0008). Nothing merges red. The owner reviews PR
   descriptions and architecture-level diffs, not lines. Write PR descriptions
   accordingly: what changed at the design level, what CI now proves.
+  **Every CI job is a required status check** (owner, 2026-08-05). It used to be
+  three of ten, so `tier 2` — datapack load plus the whole generated PackTest
+  suite — never blocked a merge, and neither did the storybook engine-version
+  marker or the prefab determinism gate. Because branch protection matches a
+  context by its NAME STRING, a renamed job blocks every PR forever, including
+  the one that would fix it: `.github/required-status-checks.txt` and
+  `tools/check-required-contexts.py` hold the names in lockstep, in both
+  directions, so a rename or a new advisory job is an ordinary red instead.
 - **PR merge policy** (owner, 2026-07-30, refined same day): two classes of PR.
   *Owner-review PRs* — docs, specs, ADRs, README, product/design definitions —
   require owner approval of the **content, given in conversation**: the planning
@@ -189,6 +204,18 @@ validation/          # docker compose: headless server + bot, same image as CI &
   tool absent from docs and skills does not exist for future sessions. The
   inventory of the whole tool surface — every binary, script and flag, with its
   class — is `docs/reference/tools.md`.
+- **Every dispatched worker runs in its own git worktree** (owner, 2026-08-05),
+  named in the dispatch prompt, never the main checkout — plus the content
+  symlink, or two `analyze` tests fail on a fresh tree. Workers **add** a commit;
+  they never `--amend`, rebase or force-push a branch that has been pushed unless
+  asked by name. Three workers dispatched without the worktree line put two of
+  them in the main checkout editing one file at once, on a third party's branch;
+  nothing was lost, but one `git add -A` would have swept three authors into one
+  commit. Recovering from such a collision is **hunk-granular for every file** —
+  the file that leaked was the one a worker had been told it owned — and the
+  review asks for a full re-audit, never a targeted deletion: the planner named
+  two leaked hunks and there were three. Code leaks fail CI; doc leaks merge
+  green.
 - Repeated workflows become skills/slash commands (`/new-campaign`, `/validate`,
   `/release`) — see ROADMAP; design them when the workflow has been done manually twice.
 
