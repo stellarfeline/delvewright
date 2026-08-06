@@ -5669,6 +5669,31 @@ pub enum WorldEdit {
         /// The region (an earlier `select` in this batch) to clear.
         region: RegionId,
     },
+    /// Admit the horizon's **ambient water** into a region (spec-0029): the
+    /// stretch of ground the campaign means to sit at the waterline.
+    ///
+    /// This is not "fill with water". The author supplies an **envelope** and
+    /// the compiler computes what the ambient sea actually reaches inside it —
+    /// every air cell of the region at or below the horizon's flood level that
+    /// the sea can flow to (cardinal at the same level, or downward) from the
+    /// ambient water outside the placed pieces — and materializes exactly
+    /// those cells as water, in the model AND in the emitted world. What the
+    /// sea cannot reach stays dry, and stays subject to `DW0364` unchanged: a
+    /// `flood` can never make a standable cell under the waterline legal, only
+    /// make it *stop being ground*.
+    ///
+    /// Two obligations the compiler proves, both of which fail a false
+    /// declaration loudly rather than silently: the sea must actually arrive
+    /// (`DW0394` — an envelope the water never enters binds nothing), and it
+    /// must stop inside the envelope (`DW0395` — water that would flow on into
+    /// an undeclared cell of a placed piece means the shoreline is not where
+    /// the author said it is).
+    Flood {
+        /// The region (an earlier `select` in this batch) the ambient water is
+        /// admitted into: an **envelope**, not a cell list. Cells above the
+        /// flood level, and cells the sea cannot reach, are simply not wetted.
+        region: RegionId,
+    },
     /// Reshape terrain surface within a region (raise / lower / smooth).
     Morph {
         /// The region (an earlier `select` in this batch) whose columns to
