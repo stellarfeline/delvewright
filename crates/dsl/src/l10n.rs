@@ -209,8 +209,9 @@ pub enum L10nKind {
 }
 
 /// An l10n sidecar document: `{ dsl_version, campaign_id, kind: "l10n", lang,
-/// content }`, mirroring the stage-doc envelope style. `content` is a flat map of
-/// [inventory](crate::l10n::inventory) key → translated string.
+/// content, source }`, mirroring the stage-doc envelope style. `content` is a flat
+/// map of [inventory](crate::l10n::inventory) key → translated string; `source`
+/// records the canonical English each of those translations was made **from**.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct L10nDoc {
@@ -225,6 +226,26 @@ pub struct L10nDoc {
     pub lang: String,
     /// Flat map of inventory key → translated string.
     pub content: BTreeMap<String, String>,
+    /// **Translation provenance**: inventory key → the canonical English that key
+    /// held when its [`Self::content`] row was written.
+    ///
+    /// Coverage validation proves the sidecar has a row for every key
+    /// (`DW0180`/`DW0181`), which is a statement about key SETS and says nothing
+    /// about whether a row still corresponds to the English it renders. Edit an
+    /// authored line and its translation is stale, present, applied, and wrong —
+    /// and nothing in the key sets moved. `source` is what makes that
+    /// **detectable** ([`validate_l10n_provenance`], `DW0187`) instead of audited.
+    ///
+    /// This is load-bearing for entity display names in particular, because their
+    /// key is owned by the first site declaring a given text (see the module
+    /// header): renaming ONE body can migrate a key's ownership to ANOTHER body,
+    /// so the row that goes wrong is not the row the author touched.
+    ///
+    /// Optional in the format — an older sidecar parses unchanged and simply
+    /// carries no provenance, which `DW0188` reports as an unguarded row count on
+    /// every run rather than letting it pass in silence.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub source: BTreeMap<String, String>,
 }
 
 /// The local part of a type-prefixed id: the segment after the first `/` (kebab
@@ -933,6 +954,98 @@ pub fn declared_mc_codes(c: &Campaign) -> Result<Vec<(String, &'static str)>, Di
         }
     }
     Ok(out)
+}
+
+/// **Translation provenance** (`DW0187` / `DW0188`): is each sidecar row still a
+/// translation of the English it renders?
+///
+/// [`validate_l10n`] proves the sidecar's key SET equals the inventory's. That is
+/// silent about whether a row still *corresponds* to its key: rewrite an authored
+/// line and its translation is present, applied and wrong, with no key moved. The
+/// sidecar's [`L10nDoc::source`] map closes it by recording the English each row
+/// was translated from, so the compiler can compare instead of a human auditing.
+///
+/// Two findings:
+///
+/// * `DW0187` — a recorded source differs from the key's canonical English (the
+///   row is stale), or names a key the sidecar does not translate at all (the
+///   provenance itself is stale).
+/// * `DW0188` — rows with no recorded provenance, **counted**. Those rows are
+///   unguarded, and saying so on every run is what keeps an unadopted sidecar
+///   from reading like a checked one. Warning tier: `source` is additive, and
+///   this is the one-version deprecation window before it is required.
+///
+/// The entity display-name rule makes this more than hygiene. A name key belongs
+/// to the first site declaring a given text, so renaming ONE body can migrate a
+/// key to ANOTHER — the row that goes stale is not the row the author edited, and
+/// the missing-key half of the move (`DW0180`) points somewhere else entirely.
+pub fn validate_l10n_provenance(
+    c: &Campaign,
+    sidecars: &BTreeMap<String, L10nDoc>,
+) -> Vec<Diagnostic> {
+    let mut d = Vec::new();
+    if c.world.content.languages.is_empty() {
+        return d;
+    }
+    let inv = inventory(c);
+    for lang in &c.world.content.languages {
+        let Some(doc) = sidecars.get(lang) else {
+            continue; // absent sidecar is DW0180's finding, not this one's.
+        };
+        for (key, was) in &doc.source {
+            match inv.get(key) {
+                Some(now) if now == was => {}
+                Some(now) => d.push(Diagnostic::error(
+                    codes::L10N_STALE,
+                    "l10n",
+                    format!("l10n/{lang}.json#/source/{key}"),
+                    format!(
+                        "`{key}` was translated from {was:?} but now reads {now:?} — the \
+                         translation in `content` still renders the old line and would ship \
+                         attached to the new one. Re-translate `{key}` and update its `source` \
+                         (`tools/i18n-translate.py <campaign> --lang {lang}` does both). If a \
+                         RENAME surprised you here: an entity display name's key belongs to the \
+                         first body declaring that text, so renaming one body can hand its key \
+                         to another"
+                    ),
+                )),
+                None => d.push(Diagnostic::error(
+                    codes::L10N_STALE,
+                    "l10n",
+                    format!("l10n/{lang}.json#/source/{key}"),
+                    format!(
+                        "`source` records `{key}`, which is not in the string inventory — the \
+                         provenance is stale even if the translation is gone. Remove `{key}` \
+                         from `source` in `l10n/{lang}.json`"
+                    ),
+                )),
+            }
+        }
+        // Every row `source` does not cover is a row DW0187 cannot see. Report the
+        // count: an unadopted sidecar must never look like a checked one.
+        let unguarded = doc
+            .content
+            .keys()
+            .filter(|k| !doc.source.contains_key(*k))
+            .count();
+        if unguarded > 0 {
+            let total = doc.content.len();
+            d.push(Diagnostic::warning(
+                codes::L10N_PROVENANCE_MISSING,
+                "l10n",
+                format!("l10n/{lang}.json"),
+                format!(
+                    "{unguarded} of {total} translated rows record no `source`, so nothing can \
+                     tell whether they still translate the English they render — an edited line \
+                     leaves its translation present, applied and wrong, and no key moves. Run \
+                     `tools/i18n-translate.py <campaign> --lang {lang}` to record provenance for \
+                     the rows it already has. This warning is the one-version deprecation \
+                     window; `source` becomes required after it"
+                ),
+            ));
+        }
+    }
+    d
 }
 
 /// Coverage + envelope validation for every declared language's l10n sidecar

@@ -246,6 +246,21 @@ pub mod codes {
     /// written into the language file and silently replace product chrome for that
     /// language. The namespace is reserved, not merely conventional.
     pub const CHROME_RESERVED: &str = "DW0186";
+    /// (i18n v2) An l10n sidecar row was translated from English the campaign no
+    /// longer holds: its `source` entry differs from the key's canonical English.
+    /// The translation is present, applied and **wrong**, and no key-set check can
+    /// see it — `DW0180`/`DW0181` compare key SETS, and a rewritten line moves no
+    /// key. Load-bearing for entity display names, whose key belongs to the first
+    /// site declaring a given text, so renaming one body can migrate a key to
+    /// another body and the row that goes stale is not the one the author edited.
+    pub const L10N_STALE: &str = "DW0187";
+    /// (i18n v2) An l10n sidecar records provenance for only some of its rows (or
+    /// none), so `DW0187` cannot see the rest. A warning, not an error: the
+    /// `source` map is additive, and this is the one-version deprecation window
+    /// before it is required. It states the unguarded row count, so an
+    /// unadopted sidecar is a reported number on every run rather than silence
+    /// that reads like a pass.
+    pub const L10N_PROVENANCE_MISSING: &str = "DW0188";
     /// (v0.4) A mannequin NPC `skin.texture_id` is malformed (not a bare kebab
     /// token) or duplicated across NPCs (spec-0009). A missing `model` is a
     /// schema error (`DW0100`); a missing PNG is a build error (`DW0309`).

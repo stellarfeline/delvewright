@@ -775,3 +775,178 @@ fn an_untouched_sidecar_raises_no_dw0186() {
     let s = String::from_utf8_lossy(&r.stdout).to_string() + &String::from_utf8_lossy(&r.stderr);
     assert!(!s.contains("DW0186"), "control campaign must be clean: {s}");
 }
+
+// ---------------------------------------------------------------------------
+// Translation provenance — DW0187 / DW0188
+// ---------------------------------------------------------------------------
+
+/// Read a campaign's sidecar, hand it to `f`, write it back.
+fn edit_sidecar(dir: &Path, f: impl FnOnce(&mut Value)) {
+    let p = dir.join("l10n/zh-cn.json");
+    let mut doc: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+    f(&mut doc);
+    std::fs::write(&p, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+}
+
+fn validate(dir: &Path) -> String {
+    let pf = common::prefabs_dir();
+    let r = Command::new(BIN)
+        .args([
+            "validate",
+            dir.to_str().unwrap(),
+            "--prefabs",
+            pf.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run delvec");
+    String::from_utf8_lossy(&r.stdout).to_string() + &String::from_utf8_lossy(&r.stderr)
+}
+
+/// **The general case.** Coverage proves the sidecar's key SET matches the
+/// inventory; it is silent about whether a row still translates the English it
+/// renders. Rewrite an authored line and the translation is present, applied and
+/// wrong, with no key moved — `DW0187` is what sees it.
+#[test]
+fn an_edited_line_makes_its_translation_stale_dw0187() {
+    let dir = tmp("i18n-stale-general");
+    common::copy_dir_all(&common::keep_trial_dir(), &dir);
+    let world = dir.join("world.json");
+    let mut doc: Value = serde_json::from_str(&std::fs::read_to_string(&world).unwrap()).unwrap();
+    doc["content"]["title"] = serde_json::json!("Trial of the Stone Keep");
+    std::fs::write(&world, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+
+    let s = validate(&dir);
+    assert!(s.contains("DW0187"), "an edited line must be caught: {s}");
+    assert!(
+        s.contains("world.title"),
+        "the diagnostic names the key: {s}"
+    );
+    assert!(
+        s.contains("Trial of the Stone Keep"),
+        "the diagnostic names what the line now reads: {s}"
+    );
+}
+
+/// **The ownership-migration case**, which the text-owned key scheme introduces:
+/// rename ONE body and the key migrates to ANOTHER body, so the row that goes
+/// stale is not the row the author touched. `DW0180` points at the newly-required
+/// key — somewhere else entirely — while `DW0187` points at the row that is
+/// actually wrong.
+#[test]
+fn renaming_one_body_makes_another_bodys_row_stale_dw0187() {
+    let dir = tmp("i18n-stale-migration");
+    common::copy_dir_all(&common::keep_trial_dir(), &dir);
+
+    // Two puppets with one name: the first owns the key, the second follows it.
+    let quests = dir.join("quests.json");
+    let mut q: Value = serde_json::from_str(&std::fs::read_to_string(&quests).unwrap()).unwrap();
+    q["dsl_version"] = serde_json::json!("0.9.0");
+    q["content"]["actors"] = serde_json::json!([
+        { "id": "actor/ram-a", "entity": "minecraft:sheep",
+          "name": "Ram of the Cave", "anchor": "anchor/hall" },
+        { "id": "actor/ram-b", "entity": "minecraft:sheep",
+          "name": "Ram of the Cave", "anchor": "anchor/hall" },
+    ]);
+    std::fs::write(&quests, serde_json::to_string_pretty(&q).unwrap()).unwrap();
+    edit_sidecar(&dir, |doc| {
+        doc["content"]["actor.ram-a.name"] = serde_json::json!("洞中公羊");
+        doc["source"]["actor.ram-a.name"] = serde_json::json!("Ram of the Cave");
+    });
+    assert!(
+        !validate(&dir).contains("DW0187"),
+        "control: the shared key is sound before the rename"
+    );
+
+    // Rename ONLY the first. Its key now holds the NEW text; the translation of
+    // the old text is still sitting on it, and `ram-b` needs a key of its own.
+    let mut q: Value = serde_json::from_str(&std::fs::read_to_string(&quests).unwrap()).unwrap();
+    q["content"]["actors"][0]["name"] = serde_json::json!("Bellwether of the Cave");
+    std::fs::write(&quests, serde_json::to_string_pretty(&q).unwrap()).unwrap();
+
+    let s = validate(&dir);
+    assert!(s.contains("DW0187"), "the migrated key must be caught: {s}");
+    assert!(
+        s.contains("actor.ram-a.name") && s.contains("Bellwether of the Cave"),
+        "the diagnostic names the row that is wrong, not the one that is missing: {s}"
+    );
+    assert!(
+        s.contains("DW0180") && s.contains("actor.ram-b.name"),
+        "and the newly-required key is still reported: {s}"
+    );
+}
+
+/// Provenance that names a key the campaign no longer has is itself stale.
+#[test]
+fn provenance_for_a_vanished_key_is_dw0187() {
+    let dir = tmp("i18n-stale-orphan-source");
+    common::copy_dir_all(&common::keep_trial_dir(), &dir);
+    edit_sidecar(&dir, |doc| {
+        doc["source"]["obj.trial.gone.title"] = serde_json::json!("Something Removed");
+    });
+    let s = validate(&dir);
+    assert!(s.contains("DW0187"), "{s}");
+    assert!(s.contains("obj.trial.gone.title"), "{s}");
+}
+
+/// **`DW0188` states the unguarded count.** A sidecar with no `source` is not
+/// checked by `DW0187`, and the point of the warning is that this can never be
+/// mistaken for a pass: it is a number, on every run, naming how many rows are
+/// unguarded out of how many exist.
+#[test]
+fn a_sidecar_without_provenance_reports_its_unguarded_count_dw0188() {
+    let dir = tmp("i18n-unguarded");
+    common::copy_dir_all(&common::keep_trial_dir(), &dir);
+    let rows = {
+        let p = dir.join("l10n/zh-cn.json");
+        let mut doc: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        let n = doc["content"].as_object().unwrap().len();
+        doc.as_object_mut().unwrap().remove("source");
+        std::fs::write(&p, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+        n
+    };
+    assert!(rows > 0, "binding: the fixture sidecar translates nothing");
+
+    let s = validate(&dir);
+    assert!(
+        s.contains("DW0188"),
+        "an unguarded sidecar must say so: {s}"
+    );
+    assert!(
+        s.contains(&format!("{rows} of {rows} translated rows")),
+        "the warning states the count ({rows} rows): {s}"
+    );
+    println!("DW0188 binding: {rows} unguarded rows reported");
+}
+
+/// The control, and the binding count for `DW0187`: the shipped fixture records
+/// provenance for every row, so the guard really compares them and finds nothing.
+/// A sidecar that compared **zero** rows would be a green that binds to nothing.
+#[test]
+fn the_fixture_sidecar_is_fully_guarded_and_clean() {
+    let p = common::keep_trial_dir().join("l10n/zh-cn.json");
+    let doc: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+    let content = doc["content"].as_object().expect("content");
+    let source = doc["source"]
+        .as_object()
+        .expect("the fixture records provenance");
+    assert!(
+        !content.is_empty(),
+        "binding: the fixture translates nothing"
+    );
+    assert_eq!(
+        source.len(),
+        content.len(),
+        "DW0187 binding: every translated row must record what it came from"
+    );
+    println!(
+        "DW0187 binding: {} rows compared against the inventory",
+        source.len()
+    );
+
+    let s = validate(&common::keep_trial_dir());
+    assert!(!s.contains("DW0187"), "control campaign must be clean: {s}");
+    assert!(
+        !s.contains("DW0188"),
+        "control campaign must be fully guarded: {s}"
+    );
+}

@@ -46,8 +46,8 @@ pub use l10n::{
     SoundRef, TR_SIGIL, art_narrates, bonfire_option_labels, declared_mc_codes,
     dialogue_option_labels, each_string, has_tr_sigil, inventory as l10n_inventory, key_speaker,
     local_id, localize, on_screen_narrates, plain as l10n_plain, play_sound_actor_refs, sound_refs,
-    tag_translatables, untag as l10n_untag, validate_l10n, validate_marker_channel,
-    validate_tr_sigil,
+    tag_translatables, untag as l10n_untag, validate_l10n, validate_l10n_provenance,
+    validate_marker_channel, validate_tr_sigil,
 };
 pub use mclang::mc_lang_code;
 pub use registry::{

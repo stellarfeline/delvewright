@@ -1039,6 +1039,7 @@ mod tests {
             kind: crate::l10n::L10nKind::L10n,
             lang: "ja-jp".to_string(),
             content,
+            source: BTreeMap::new(),
         };
         let d = validate_chrome_namespace(&BTreeMap::from([("ja-jp".to_string(), doc)]));
         assert_eq!(d.len(), 1, "exactly the chrome row is flagged");

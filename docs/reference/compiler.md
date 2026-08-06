@@ -408,8 +408,9 @@ from l10n (no stage-7 string is player-visible).
 
 ### l10n sidecars (`l10n/<code>.json`)
 
-Envelope `{dsl_version,campaign_id,kind:"l10n",lang,content}`; `content` = flat
-**stable key → translated string**. Key inventory derived from stage docs
+Envelope `{dsl_version,campaign_id,kind:"l10n",lang,content,source?}`; `content` =
+flat **stable key → translated string**, `source` = the same keys → the canonical
+English each row was translated **from**. Key inventory derived from stage docs
 (`world.title`, `world.outro`, `area.<a>.name`, `class.<c>.name/.blurb/.kit.<i>.name`,
 `npc.<n>.name`, `actor.<a>.name` (a scripted puppet's nameplate, only when set),
 `quest.<q>.goal`, `obj.<q>.<o>.title/.hint`,
@@ -456,6 +457,19 @@ merging it retires keys live campaigns already translate, which is an owner call
 Coverage is **exact**: missing/absent/inconsistent → `DW0180`; orphan → `DW0181`;
 a key in the compiler's reserved `delvewright.` chrome namespace → `DW0186`.
 Excludes authoring context (theme/premise/persona).
+
+**Coverage is about key SETS, and that is not the same as being up to date.**
+Rewrite an authored line and its translation is present, applied and **wrong**,
+with no key moved and every coverage check green. `source` closes that: it records
+the English each row was translated from, so the compiler compares
+(`DW0187`) instead of a human auditing. It is load-bearing for entity display
+names in particular — their key belongs to the first site declaring a given text,
+so renaming ONE body migrates the key to ANOTHER, and the row that goes stale is
+not the row the author edited (`DW0180` points at the newly-required key, which is
+somewhere else entirely). `source` is additive: an older sidecar parses unchanged
+and its unguarded rows are **counted** by `DW0188` on every run, so an unadopted
+sidecar never reads like a checked one. `tools/i18n-translate.py` writes it, so
+adoption is a re-run with no retranslation.
 
 **Every string field in the DSL is classified, or CI is red.** `DW0185` proves that
 a string the inventory *knows about* reaches a component; it cannot see one the
@@ -3128,6 +3142,8 @@ every earlier campaign's removal is byte-identical.
 |------|---------|
 | `DW0185` | **An authored player-visible string reached the built tree outside a text component.** Build-tier (exit 3), `emit::check_untranslated_literals`, run last over the finished output tree — beside `DW0497` and the affordance self-check, on the same principle: judge the bytes that ship, not the intent behind them. **The class.** i18n v2 (spec-0029) makes every authored string a `{"translate": …, "fallback": …}` component so a client can render the player's own language. The risk that change carries is a string that *cannot* land in a component — it would ship as a literal no lang file can reach, silently untranslatable, which is exactly the defect v2 exists to remove. Rather than enumerate the emission sites once and trust the list to stay true, the compiler makes it an invariant: each inventoried string enters emission carrying its l10n key in a reserved private-use tag (`dsl::l10n::tag_translatables`), an emitter either lowers it through `emit::tr`/`emit::snbt_component` or reads it through `dsl::l10n::plain`, and **a tag still present in the finished tree is a site that did neither**. Deliberately feature-blind, so it guards emitters not yet written. **Scope:** every emitted file, plus the compiler-authored resource-pack assets before they are zipped. A file that is neither UTF-8 text nor a **classified** verbatim binary output (`.nbt`, `.png`, `resourcepack.zip` — byte copies of input assets the compiler writes no string into) also fails here, so a new binary artifact cannot quietly opt out of the scan. The message lists every offending artifact with the key and the line. **Prescription:** lower the string through the component helpers; or, if the site is genuinely not a component and never read by a player, read it through `dsl::l10n::plain` **and** add it to the named-exclusion table in §2 "Language delivery". Never silence it by dropping the string. |
 | `DW0186` | (i18n v2 addendum) A campaign l10n sidecar defines a key in the reserved `delvewright.` **chrome** namespace. Those are the engine's own on-screen strings — `New objective: `, `Choose your class`, a bonfire's default labels — owned by the compiler, shipped translated with it, authored by no campaign; a sidecar row under that prefix would be written into the language file and silently replace product chrome for that language. `DW0181` also flags it as an orphan; this names the reason. |
+| `DW0187` | (i18n v2) An l10n sidecar row was translated from English the campaign no longer holds: its `source` entry differs from the key's canonical English (or names a key the sidecar does not translate). The translation is present, applied and wrong, and no key-set check can see it — `DW0180`/`DW0181` compare key SETS and a rewritten line moves no key. Load-bearing for entity display names, whose key belongs to the first site declaring a given text: renaming one body hands its key to another, so the stale row is not the one the author edited. Fix by re-translating the key and updating its `source` — `tools/i18n-translate.py` does both. |
+| `DW0188` | (i18n v2) An l10n sidecar records `source` provenance for only some of its rows, or none, so `DW0187` cannot see the rest. **Warning tier**, stating the unguarded row count: `source` is additive and this is the one-version deprecation window before it is required. The count exists so an unadopted sidecar is a reported number on every run rather than a silence that reads like a pass. Adopt by re-running `tools/i18n-translate.py` — it records provenance for rows it already has, and retranslates nothing. |
 
 #### The branch artifacts (validation metadata)
 
