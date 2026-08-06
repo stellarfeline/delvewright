@@ -943,10 +943,16 @@ deliberate divergence from `tests/staging.rs`'s piece-scale copy — a landing m
 be a member of the cell set under consideration, or a fall would walk straight
 through a gate's own cut.
 
-Zone programs are **not** in the export suite: a zone box is past the vanilla
-48-per-axis structure cap, and tiling one into prefabs is a jigsaw design, not an
-export detail (§6). Their structural validity, JSON round trip, determinism and
-palette-swap promises are asserted in `tests/zones.rs` instead.
+Zone programs are **not** in the export suite. The reason given was the vanilla
+48-per-axis structure cap, and tiling a zone into prefabs is a jigsaw design
+rather than an export detail (§6) — but `chapel_ward`'s fixture is 12 × 9 × 20,
+so that reason no longer covers every zone, and the honest statement is now the
+narrower one: **no zone has been put in the export suite, and the first one that
+fits is a decision nobody has taken.** Taking it would mean a zone's anchors
+round-tripping through `PrefabRegistry` and carrying a spec-0027 §2 provenance
+row like a rule's, which is a capability question and not a size one. Meanwhile
+their structural validity, JSON round trip, determinism and palette-swap
+promises are asserted in `tests/zones.rs`.
 
 ## 6. Export — freezing an expansion as a prefab
 
