@@ -202,6 +202,27 @@ fn connected(
 /// only going forward: proving the L family's "no way back" claim under this
 /// extra freedom, and not just under the stricter NPC model, is the stronger
 /// claim (see each rule's module note).
+///
+/// **What it does NOT model: a horizontal jump.** Both this and [`connected`]
+/// move one cell at a time with a ±1 height step, so a player's running jump
+/// across a gap is invisible to them. Every "unreachable" either proves
+/// therefore means *unreachable by walking and falling*, not unreachable. The
+/// consequence differs per rule and is stated here rather than left to be
+/// re-derived:
+///
+/// * `drop_shaft` / `dumbwaiter` — unaffected in the direction that matters.
+///   Their claim is that you cannot get back **up**, and a jump does not lift
+///   you; the fall model is already the permissive side.
+/// * `far_side_bar` — **this is where it bites.** The rule's whole point is
+///   that the near side cannot reach `anchor/unlock` while the bar is down. A
+///   gap a player can jump would defeat that and this model would not see it,
+///   so the fixture must not leave one: keep the separation wider than a jump,
+///   or solid.
+/// * `elite_ground` — safe. A jump can only *add* flank routes, so the model
+///   under-counts, and the gate cares about there being enough, not few.
+///
+/// House precedent for documenting a model's limit where the model lives:
+/// `harness/src/teardown.ts`, which states its own under-classification.
 fn reachable_with_fall(
     model: &VoxelModel,
     cells: &BTreeSet<[i32; 3]>,
