@@ -533,6 +533,9 @@ non-English language **and asks for localized in-game text** (中文文本 etc.)
 
 1. Declare the codes in `world.json`: `"languages": ["zh-cn", …]` (BCP-47-style;
    `en` is implicit/canonical and is **never** listed). Stage docs stay English.
+   Each code must be one the compiler can map to a Minecraft lang-file name
+   (`zh-cn` → `zh_cn`); an unmapped code is `DW0184` at validate time, never a
+   language quietly missing from the shipped pack.
 2. **Who translates** — if the repo's `delvewright.toml`/`delvewright.local.toml`
    has an `[i18n]` section AND the env var it names (`api_key_env`) is set, run
    `python3 tools/i18n-translate.py <campaign-dir> --lang <code> --reflect`
@@ -553,9 +556,15 @@ non-English language **and asks for localized in-game text** (中文文本 etc.)
    revise — leaving lines that were already right byte-identical. Write
    `l10n/<code>.json`:
    `{ dsl_version, campaign_id, kind: "l10n", lang: "<code>", content: { <key>: … } }`.
-4. Re-`validate` until zero `DW0180`/`DW0181`. The default build stays English;
-   `delvec build --lang <code>` emits the localized delve (same layout, strings
-   swapped; `critical-path.json` is language-neutral so the ladder is unchanged).
+4. Re-`validate` until zero `DW0180`/`DW0181`. **The default build ships every
+   declared language and the client picks its own** (i18n v2): `delvec build`
+   emits each authored string as `{"translate": key, "fallback": English}` and
+   writes `assets/delvewright/lang/<mc_code>.json` per language into the delve's
+   resource pack. A player whose locale you do not ship — or who declines the
+   resource-pack prompt — reads the English fallback. Nothing extra to run.
+   `delvec build --lang <code>` still produces the single-language bake for local
+   dev; the release path does not use it. `critical-path.json` is language-neutral
+   either way, so the ladder is unchanged.
 
 Then:
 

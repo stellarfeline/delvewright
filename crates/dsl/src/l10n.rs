@@ -871,6 +871,193 @@ pub fn localize(c: &mut Campaign, translations: &BTreeMap<String, String>) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// i18n v2 — translation tags and the Minecraft language-code table (spec-0029)
+// ---------------------------------------------------------------------------
+
+/// The reserved Unicode **private-use** character that delimits a *translation
+/// tag* — the in-band form that carries an inventory key alongside its canonical
+/// English from the stage docs to the text component the compiler emits it into.
+///
+/// A tagged string is `<SIGIL><key><SIGIL><english>` ([`tag`]). It exists only
+/// between [`tag_translatables`] and emission: every emitter that lowers an
+/// authored string into a **text component** splits it back apart and emits
+/// `{"translate": key, "fallback": english}` (spec-0029 §1), and every consumer
+/// that wants the human string calls [`plain`].
+///
+/// The point of an in-band tag is that a site which *fails* to do either leaks the
+/// sigil into the built tree, where the compiler's own output scan sees it and
+/// fails the build (`DW0185`). That turns "prove every authored string lands in a
+/// component" from an audit that rots into an invariant the compiler re-proves on
+/// every build, including for emitters not yet written.
+///
+/// U+E000 is the first code point of the Basic Multilingual Plane's Private Use
+/// Area: it has no character assignment, so no authored or translated content can
+/// legitimately contain it. [`validate_tr_sigil`] (`DW0183`) reserves the whole
+/// block anyway, so the tag can never be forged or shadowed by content.
+pub const TR_SIGIL: char = '\u{E000}';
+
+/// The reserved private-use range [`TR_SIGIL`] is drawn from (`U+E000..=U+F8FF`).
+/// Reserved wholesale so a near-miss cannot be authored either.
+const PUA: std::ops::RangeInclusive<char> = '\u{E000}'..='\u{F8FF}';
+
+/// Build the translation tag for `key` over its canonical English `english`.
+pub fn tag(key: &str, english: &str) -> String {
+    format!("{TR_SIGIL}{key}{TR_SIGIL}{english}")
+}
+
+/// Split a translation tag into `(key, english)`. `None` for an untagged string —
+/// a compiler-baked literal such as the default boundary message, which has no
+/// inventory key and is translated by neither v1 nor v2.
+pub fn untag(s: &str) -> Option<(&str, &str)> {
+    let rest = s.strip_prefix(TR_SIGIL)?;
+    let (key, english) = rest.split_once(TR_SIGIL)?;
+    Some((key, english))
+}
+
+/// The human string behind `s`: its English source if `s` is a translation tag,
+/// otherwise `s` unchanged. The accessor every **non-component** consumer of an
+/// authored string uses — the build manifest, the reviewer chronicles, the bot's
+/// `critical-path.json`, the generated PackTest sources. Each such site is a named
+/// exclusion in `docs/reference/compiler.md`: it is not a text component, so it
+/// cannot carry a translate key, and it is not read by a player.
+pub fn plain(s: &str) -> &str {
+    untag(s).map(|(_, e)| e).unwrap_or(s)
+}
+
+/// Whether `s` contains any reserved private-use character — i.e. whether it is,
+/// or embeds, a translation tag. The predicate the compiler's build-output scan
+/// (`DW0185`) runs over every emitted byte.
+pub fn has_tr_sigil(s: &str) -> bool {
+    s.chars().any(|c| PUA.contains(&c))
+}
+
+/// Rewrite every inventoried player-visible string in `c` into its translation tag
+/// ([`tag`]), returning the canonical-English inventory it was derived from.
+///
+/// Runs on the exact same traversal as [`inventory`] and [`localize`]
+/// ([`each_string`]), so the tagged set and the translated set are the same set by
+/// construction — the property task #168 bought and spec-0029 keeps.
+///
+/// The campaign handed to the compiler is tagged **once**, before the plan is
+/// built; from there the tag is the compiler's only evidence that a string it is
+/// about to emit is player-visible and translatable.
+pub fn tag_translatables(c: &mut Campaign) -> BTreeMap<String, String> {
+    let mut inv = BTreeMap::new();
+    each_string(c, &mut |key, value| {
+        inv.insert(key.to_string(), value.clone());
+        *value = tag(key, value);
+    });
+    inv
+}
+
+/// Reserve the private-use block the translation tag is built from (`DW0183`): no
+/// player-visible string — authored English (the whole [`inventory`]) or any
+/// declared language's sidecar rendition — may contain a `U+E000..=U+F8FF`
+/// character. Language-independent; runs beside [`validate_marker_channel`] on
+/// every `validate` / `analyze` / `build`.
+pub fn validate_tr_sigil(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<Diagnostic> {
+    let mut d = Vec::new();
+    let mut flag = |where_: String, key: &str, text: &str| {
+        let Some(bad) = text.chars().find(|ch| PUA.contains(ch)) else {
+            return;
+        };
+        d.push(Diagnostic::error(
+            codes::TR_SIGIL_RESERVED,
+            "l10n",
+            where_,
+            format!(
+                "player-visible string `{key}` contains the reserved private-use character \
+                 U+{:04X} — that block is how the compiler carries an l10n key into the text \
+                 component this string is emitted as, and it has no rendering in any \
+                 Minecraft font. Remove U+{:04X} from the line",
+                bad as u32, bad as u32
+            ),
+        ));
+    };
+    for (key, text) in inventory(c) {
+        flag(format!("#/{key}"), &key, &text);
+    }
+    for (lang, doc) in sidecars {
+        for (key, text) in &doc.content {
+            flag(format!("l10n/{lang}.json#/content/{key}"), key, text);
+        }
+    }
+    d
+}
+
+/// The Minecraft language-file code for a declared language code — the
+/// `assets/delvewright/lang/<code>.json` filename stem the client loads for its own
+/// locale (spec-0029 §5).
+///
+/// Our codes are BCP-47-ish (`zh-cn`); Minecraft's are lowercase
+/// `<language>_<region>` (`zh_cn`). The mapping is an **explicit table**, never a
+/// mechanical `-`→`_` rewrite: a rewrite would happily invent `de_de` from `de-de`
+/// and equally happily invent a filename Minecraft never loads (`de` → `de`), and a
+/// lang file under a name no client asks for is a language silently dropped. An
+/// unmapped code is `DW0184`, a compile error naming this table.
+///
+/// Entries are the codes a delve has shipped or has been asked for, plus the major
+/// vanilla locales; extend the table (with the vanilla code verified against the
+/// client's own language list) rather than working around it.
+pub fn mc_lang_code(code: &str) -> Option<&'static str> {
+    Some(match code {
+        "en" | "en-us" => "en_us",
+        "en-gb" => "en_gb",
+        "zh-cn" => "zh_cn",
+        "zh-tw" => "zh_tw",
+        "zh-hk" => "zh_hk",
+        "ja" | "ja-jp" => "ja_jp",
+        "ko" | "ko-kr" => "ko_kr",
+        "de" | "de-de" => "de_de",
+        "fr" | "fr-fr" => "fr_fr",
+        "es" | "es-es" => "es_es",
+        "es-mx" => "es_mx",
+        "pt-br" => "pt_br",
+        "pt" | "pt-pt" => "pt_pt",
+        "ru" | "ru-ru" => "ru_ru",
+        "it" | "it-it" => "it_it",
+        "pl" | "pl-pl" => "pl_pl",
+        "nl" | "nl-nl" => "nl_nl",
+        "tr" | "tr-tr" => "tr_tr",
+        "uk" | "uk-ua" => "uk_ua",
+        "cs" | "cs-cz" => "cs_cz",
+        "sv" | "sv-se" => "sv_se",
+        "th" | "th-th" => "th_th",
+        "vi" | "vi-vn" => "vi_vn",
+        "id" | "id-id" => "id_id",
+        _ => return None,
+    })
+}
+
+/// Every declared-language code this build knows how to write a lang file for, in
+/// declaration order, as `(declared code, minecraft code)`. `Err` names the first
+/// unmapped code (`DW0184`) — a language is never silently dropped.
+pub fn declared_mc_codes(c: &Campaign) -> Result<Vec<(String, &'static str)>, Diagnostic> {
+    let mut out = Vec::new();
+    for lang in &c.world.content.languages {
+        match mc_lang_code(lang) {
+            Some(mc) => out.push((lang.clone(), mc)),
+            None => {
+                return Err(Diagnostic::error(
+                    codes::LANG_CODE_UNMAPPED,
+                    "world",
+                    format!("/content/languages/{lang}"),
+                    format!(
+                        "declared language `{lang}` has no Minecraft language-file code — the \
+                         resource pack has nowhere to write its \
+                         `assets/delvewright/lang/<code>.json`, and the language would ship \
+                         invisible. Use a code in `dsl::l10n::mc_lang_code`'s table (e.g. \
+                         `zh-cn`, `ja-jp`, `de-de`), or add `{lang}` to that table with the \
+                         vanilla code verified against the 1.21.11 client's language list"
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// Coverage + envelope validation for every declared language's l10n sidecar
 /// (`DW0180` / `DW0181`). Language-independent: it runs on every `validate` /
 /// `analyze` / `build`, regardless of `--lang`. Returns no diagnostics for a

@@ -230,6 +230,32 @@ fn font_json() -> Vec<u8> {
         .chunks(COLS)
         .map(|row| row.iter().map(|(c, _)| *c).collect::<String>())
         .collect();
+    // i18n v2 (spec-0029): the same atlas, addressed a second time by the
+    // LOWERCASE letters. `emit_narrate` used to `to_ascii_uppercase()` an art
+    // string on its way into the title command — a transform a `{"translate": …}`
+    // component cannot express, because the client resolves the lang file after
+    // the compiler is gone. Covering lowercase in the font instead moves the
+    // fold from emission to rendering, where translation can reach it: a
+    // lowercase letter renders through its uppercase bitmap, so the banner looks
+    // exactly as it always did, in every language.
+    //
+    // A cell with no lowercase form (digits, punctuation) is `\u0000`, vanilla's
+    // "this cell is unused" marker, so the two providers never claim one char
+    // twice.
+    let lower: Vec<String> = chars
+        .iter()
+        .map(|row| {
+            row.chars()
+                .map(|c| {
+                    if c.is_ascii_uppercase() {
+                        c.to_ascii_lowercase()
+                    } else {
+                        '\u{0}'
+                    }
+                })
+                .collect()
+        })
+        .collect();
     let v = serde_json::json!({
         "providers": [
             { "type": "space", "advances": { " ": ART_SPACE_ADVANCE } },
@@ -239,6 +265,13 @@ fn font_json() -> Vec<u8> {
                 "ascent": ART_ASCENT,
                 "height": ART_HEIGHT,
                 "chars": chars
+            },
+            {
+                "type": "bitmap",
+                "file": "delve:font/art.png",
+                "ascent": ART_ASCENT,
+                "height": ART_HEIGHT,
+                "chars": lower
             }
         ]
     });

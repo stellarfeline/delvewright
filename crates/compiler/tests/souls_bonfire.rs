@@ -200,16 +200,21 @@ fn the_rest_dialog_offers_exactly_two_options() {
     )
     .unwrap();
     assert_eq!(dialog["type"], "minecraft:multi_action");
-    assert_eq!(dialog["title"], "Bonfire");
+    // i18n v2 (spec-0029): every player-visible string is emitted as a text
+    // COMPONENT. These three are the compiler's own canonical English (the fixture
+    // authors no `prompt`/`rest_label`/`save_label`), so they carry no l10n key and
+    // stay literal `{"text": …}` — an authored one would be
+    // `{"translate": …, "fallback": …}` instead.
+    assert_eq!(dialog["title"]["text"], "Bonfire");
     let actions = dialog["actions"].as_array().expect("actions is a list");
     assert_eq!(actions.len(), 2, "exactly two options: {dialog:#?}");
-    assert_eq!(actions[0]["label"], "Rest and save");
+    assert_eq!(actions[0]["label"]["text"], "Rest and save");
     assert_eq!(actions[0]["action"]["command"], "/trigger dw.rest set 2");
-    assert_eq!(actions[1]["label"], "Save only");
+    assert_eq!(actions[1]["label"]["text"], "Save only");
     assert_eq!(actions[1]["action"]["command"], "/trigger dw.rest set 1");
     // Both labels are captions, not sentences (#215's fixed-width button rule).
     for a in actions {
-        let label = a["label"].as_str().unwrap();
+        let label = a["label"]["text"].as_str().unwrap();
         assert!(label.chars().count() <= 20, "label too wide: `{label}`");
     }
 }

@@ -919,11 +919,18 @@ pub fn build_with_warnings(
     // campaign uses the `narrate` `art` style — baked only when needed, so a
     // non-art campaign's pack is byte-identical.
     let art = crate::atmos::uses_art(plan.campaign);
-    let extra_assets = if art {
+    let mut extra_assets = if art {
         crate::atmos::art_font_assets()
     } else {
         BTreeMap::new()
     };
+    // i18n v2 (spec-0029 §2): the pack is also the language carrier. One
+    // `assets/delvewright/lang/<mc_code>.json` per declared language plus
+    // `en_us.json`, so a client that speaks one of them auto-selects it; every
+    // other client — and every player who declines the pack — reads the
+    // `fallback` English riding on each component.
+    let lang_files = lang_assets(plan, input_bytes, language)?;
+    extra_assets.extend(lang_files);
     let resource_pack_sha1 = if skins.is_empty() && extra_assets.is_empty() {
         None
     } else {
@@ -984,8 +991,190 @@ pub fn build_with_warnings(
     );
     put_json(&mut out, "manifest.json", &manifest);
 
+    // ---- untranslated-literal scan (DW0185, spec-0029) ----
+    // Feature-blind and last, exactly like the call-graph integrity check above:
+    // every authored player-visible string entered this build carrying its l10n
+    // key (`dsl::tag_translatables`), and an emitter either lowered it into a text
+    // component (`tr` / `snbt_component`) or read it as a named exclusion
+    // (`plain`). A tag still present in the finished tree is a site that did
+    // neither — a string that would ship as an untranslatable literal. This is the
+    // whole reason spec-0029's risk is an invariant rather than an audit.
+    check_untranslated_literals(&out, &extra_assets)?;
+
     warnings.extend(pacing);
     Ok((out, warnings))
+}
+
+/// The `assets/delvewright/lang/<mc_code>.json` assets this delve ships
+/// (spec-0029 §2): `en_us.json` from the campaign's own canonical-English
+/// inventory, and one file per declared language from its `l10n/<code>.json`
+/// sidecar. Empty — no lang files, no behaviour change — for a campaign that
+/// declares no languages, whose components' `fallback` already is the whole story.
+///
+/// Every file is a flat `{key: string}` map in [`BTreeMap`] order (ADR-0006), and
+/// the key sets are **equal** across languages by construction: each is checked
+/// against the same inventory, and a mismatch fails the build rather than shipping
+/// a language with a hole in it.
+/// A single-language `--lang` bake (spec-0029 §4) ships no lang files at all: its
+/// strings were swapped before emission, so there is nothing for a client to
+/// select between.
+fn lang_assets(
+    plan: &Plan,
+    input_bytes: &BTreeMap<String, Vec<u8>>,
+    language: Option<&str>,
+) -> Result<BTreeMap<String, Vec<u8>>, BuildFailure> {
+    if language.is_some_and(|l| l != delvewright_dsl::CANONICAL_LANG) {
+        return Ok(BTreeMap::new());
+    }
+    let c = plan.campaign;
+    let declared = delvewright_dsl::declared_mc_codes(c).map_err(|d| BuildFailure::Diagnostic {
+        code: delvewright_dsl::codes::LANG_CODE_UNMAPPED,
+        message: format!("{}: {}", d.path, d.message),
+    })?;
+    let mut out = BTreeMap::new();
+    if declared.is_empty() {
+        return Ok(out);
+    }
+    // The campaign reaching emission is tagged, so its inventory values are
+    // translation tags; `plain` recovers the canonical English each tag carries.
+    // Derived from the live inventory, never from a fixture (spec-0029 AC2).
+    let english: BTreeMap<String, String> = delvewright_dsl::l10n_inventory(c)
+        .into_iter()
+        .map(|(k, v)| (k, plain(&v).to_string()))
+        .collect();
+    let mut put = |mc: &str, map: &BTreeMap<String, String>| {
+        let mut bytes = serde_json::to_vec_pretty(map).expect("lang map serializes");
+        bytes.push(b'\n');
+        out.insert(format!("assets/delvewright/lang/{mc}.json"), bytes);
+    };
+    put("en_us", &english);
+
+    for (lang, mc) in declared {
+        let path = format!("l10n/{lang}.json");
+        let Some(raw) = input_bytes.get(&path) else {
+            return Err(BuildFailure::Diagnostic {
+                code: delvewright_dsl::codes::L10N_MISSING,
+                message: format!(
+                    "declared language `{lang}` has no `{path}` among the build inputs, so the \
+                     resource pack cannot carry its `assets/delvewright/lang/{mc}.json` — add \
+                     the sidecar, or remove `{lang}` from `world.languages`"
+                ),
+            });
+        };
+        let doc: delvewright_dsl::L10nDoc =
+            serde_json::from_slice(raw).map_err(|e| BuildFailure::Diagnostic {
+                code: delvewright_dsl::codes::L10N_MISSING,
+                message: format!("`{path}` is not a readable l10n sidecar: {e}"),
+            })?;
+        // The key sets must be EQUAL. Validation already proved it (DW0180/DW0181),
+        // but the pack is where a hole becomes a player reading a raw key, so the
+        // emitter proves it again over the bytes it is about to write.
+        if let Some(missing) = english.keys().find(|k| !doc.content.contains_key(*k)) {
+            return Err(BuildFailure::Diagnostic {
+                code: delvewright_dsl::codes::L10N_MISSING,
+                message: format!(
+                    "`{path}` has no translation for `{missing}`, so \
+                     `assets/delvewright/lang/{mc}.json` would ship a hole a `{lang}` client \
+                     renders as a raw key — add `{missing}` to the sidecar"
+                ),
+            });
+        }
+        if let Some(orphan) = doc.content.keys().find(|k| !english.contains_key(*k)) {
+            return Err(BuildFailure::Diagnostic {
+                code: delvewright_dsl::codes::L10N_ORPHAN,
+                message: format!(
+                    "`{path}` carries `{orphan}`, which is not in the string inventory — remove \
+                     it, so `assets/delvewright/lang/{mc}.json` and `en_us.json` carry exactly \
+                     the same keys"
+                ),
+            });
+        }
+        put(mc, &doc.content);
+    }
+    Ok(out)
+}
+
+/// `DW0185`: no emitted byte may still carry a translation tag. See
+/// [`DW_UNTRANSLATED_LITERAL`] for what a hit means and how to fix it.
+///
+/// Public so the spec-0029 test suite can drive it against a synthetic tree: the
+/// only way to produce a leak from a real campaign is a defective emitter, and a
+/// red that needs a defective emitter to exist is a red nobody can re-run.
+pub fn check_untranslated_literals(
+    out: &BuildOutput,
+    pack_assets: &BTreeMap<String, Vec<u8>>,
+) -> Result<(), BuildFailure> {
+    // EVERY offending file, not the first: a leak is usually one emitter used from
+    // several places, and a one-at-a-time diagnostic turns one fix into ten builds.
+    let mut hits: Vec<String> = Vec::new();
+    // The resource pack is scanned as its own assets rather than through the zip:
+    // the zip embeds PNG bytes, and a byte scan of compressed/binary payloads is a
+    // scan whose result depends on what a prefab happens to contain.
+    for (path, bytes) in out.iter().chain(pack_assets.iter()) {
+        // Classified, not guessed. A build output is either compiler-authored TEXT
+        // — which this check owns — or a verbatim copy of a binary input asset,
+        // which carries no authored string because the compiler never writes one
+        // into it. Anything else is an output nobody has classified: it fails
+        // here, so a new binary artifact cannot quietly opt out of the check.
+        if is_verbatim_binary_output(path) {
+            continue;
+        }
+        let Ok(text) = std::str::from_utf8(bytes) else {
+            return Err(BuildFailure::Diagnostic {
+                code: DW_UNTRANSLATED_LITERAL,
+                message: format!(
+                    "`{path}` is not UTF-8 text and is not a known verbatim binary output, so \
+                     the untranslated-literal scan cannot read it. Classify it in \
+                     `emit::is_verbatim_binary_output` (and say why in \
+                     `docs/reference/compiler.md`) if it is a byte copy of an input asset"
+                ),
+            });
+        };
+        if !delvewright_dsl::has_tr_sigil(text) {
+            continue;
+        }
+        // Name the offending key and the line, so the fix is mechanical.
+        let (key, line) = text
+            .lines()
+            .find_map(|l| {
+                let i = l.find(delvewright_dsl::TR_SIGIL)?;
+                let rest = &l[i + delvewright_dsl::TR_SIGIL.len_utf8()..];
+                let k = rest.split(delvewright_dsl::TR_SIGIL).next()?;
+                let shown: String = l.chars().take(160).collect();
+                Some((k.to_string(), shown.replace(delvewright_dsl::TR_SIGIL, "⟦")))
+            })
+            .unwrap_or_else(|| ("<unknown>".to_string(), String::new()));
+        hits.push(format!("  {path}: `{key}` in: {line}"));
+    }
+    if hits.is_empty() {
+        return Ok(());
+    }
+    let n = hits.len();
+    let shown = hits.iter().take(25).cloned().collect::<Vec<_>>().join("\n");
+    Err(BuildFailure::Diagnostic {
+        code: DW_UNTRANSLATED_LITERAL,
+        message: format!(
+            "{n} emitted file(s) carry an authored player-visible string outside a text \
+             component, so it would ship as a literal no client can translate. Lower each \
+             through `emit::tr` / `emit::snbt_component` (which emit \
+             `{{\"translate\":\"<key>\",\"fallback\":\"<English>\"}}`); if the site is genuinely \
+             not a component and not read by a player — a manifest field, a reviewer \
+             chronicle, `critical-path.json`, a generated PackTest source — read the string \
+             through `dsl::l10n::plain` and add the site to the named-exclusion table in \
+             `docs/reference/compiler.md`.\n{shown}"
+        ),
+    })
+}
+
+/// Whether a build output is a **verbatim copy of a binary input asset** rather
+/// than compiler-authored text: a prefab structure `.nbt`, an NPC-skin PNG, the
+/// art-font atlas, and the resource-pack zip that packages them (whose own
+/// compiler-authored members — the lang files, the font provider — are scanned
+/// separately, before zipping). The compiler writes no authored string into any of
+/// these, so they are outside the `DW0185` scan; everything else must be readable
+/// text, and a new output that is neither fails the scan rather than skipping it.
+fn is_verbatim_binary_output(path: &str) -> bool {
+    path.ends_with(".nbt") || path.ends_with(".png") || path == "resourcepack.zip"
 }
 
 /// The `SKINS.md` build-output note: how the packaging task wires the emitted
@@ -1190,7 +1379,7 @@ fn snbt_string(s: &str) -> String {
 /// addendum). Titled markers are unchanged (byte-identical).
 fn marker_name_fields(title: Option<&str>) -> String {
     match title {
-        Some(t) => format!("CustomName:{},CustomNameVisible:1b,", snbt_string(t)),
+        Some(t) => format!("CustomName:{},CustomNameVisible:1b,", snbt_component(t)),
         None => String::new(),
     }
 }
@@ -1201,7 +1390,100 @@ fn marker_name_fields(title: Option<&str>) -> String {
 /// `'{"text":…}'`, which 1.21.11 renders as literal raw JSON above an entity's
 /// head (owner-verified). The generated summons carry no `'{"text"` substring.
 fn snbt_text_component(s: &str) -> String {
-    format!("{{text:{}}}", snbt_string(s))
+    match delvewright_dsl::l10n_untag(s) {
+        Some((key, english)) => snbt_translate(key, english),
+        None => format!("{{text:{}}}", snbt_string(s)),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// i18n v2 — authored strings become translatable components (spec-0029)
+// ---------------------------------------------------------------------------
+
+/// `DW0185`: an authored player-visible string reached the built tree **outside**
+/// a text component — its translation tag ([`delvewright_dsl::TR_SIGIL`]) is still
+/// in the emitted bytes. Either the emitter must lower it through [`tr`] /
+/// [`snbt_component`] (so a client renders the player's own language), or, if the
+/// site is genuinely not player-facing and not a component (a manifest field, a
+/// reviewer chronicle, the bot's `critical-path.json`, a generated PackTest
+/// source), it must read the string through `dsl::l10n::plain` and be listed in
+/// `docs/reference/compiler.md`'s named-exclusion table.
+///
+/// Build-tier and feature-blind: it reads the finished tree, so it guards every
+/// emitter, including ones not yet written. This is the invariant that replaces
+/// "we enumerated every emission site once" with "the compiler re-proves it on
+/// every build" (spec-0029 Risks).
+pub const DW_UNTRANSLATED_LITERAL: &str = "DW0185";
+
+/// Lower an authored player-visible string into a JSON **text component**
+/// (spec-0029 §1): a translation-tagged string becomes
+/// `{"translate": "<l10n key>", "fallback": "<English source>"}`, anything else
+/// (a compiler-baked literal such as the default boundary message) stays
+/// `{"text": …}`.
+///
+/// The `fallback` rides on the component rather than on the pack's own
+/// `en_us.json` deliberately: a player who **declines** the resource-pack prompt
+/// has no lang files at all, and the delve must still be playable in English
+/// (spec-0029 §3).
+fn tr(s: &str) -> Value {
+    match delvewright_dsl::l10n_untag(s) {
+        Some((key, english)) => json!({ "translate": key, "fallback": english }),
+        None => json!({ "text": s }),
+    }
+}
+
+/// [`tr`] with extra component fields (`color`, `bold`, `italic`, `font`, …)
+/// merged in. Styling is orthogonal to whether the body is a literal or a
+/// translate key, so every styled site keeps its styling verbatim.
+fn tr_with(s: &str, fields: &[(&str, Value)]) -> Value {
+    let mut v = tr(s);
+    let obj = v.as_object_mut().expect("tr() builds an object");
+    for (k, val) in fields {
+        obj.insert((*k).to_string(), val.clone());
+    }
+    v
+}
+
+/// The **SNBT** form of [`tr`], for a text component living in an NBT field
+/// (`CustomName`, a mannequin `description`, an item `custom_name`). Emitted as an
+/// SNBT compound, never the stringified-JSON form, for the same reason
+/// [`snbt_text_component`] always was: 1.21.11 renders `'{"text":…}'` above an
+/// entity's head verbatim.
+fn snbt_component(s: &str) -> String {
+    match delvewright_dsl::l10n_untag(s) {
+        Some((key, english)) => snbt_translate(key, english),
+        // An untagged string keeps the bare quoted-string component form 1.21.11
+        // already read it as, so a compiler-baked name stays byte-for-byte what it
+        // was before spec-0029.
+        None => snbt_string(s),
+    }
+}
+
+/// The SNBT `{fallback:…,translate:…}` compound both SNBT component forms share.
+/// Field order is alphabetical, matching the JSON components' `BTreeMap` order so
+/// the two forms read the same in a diff.
+fn snbt_translate(key: &str, english: &str) -> String {
+    format!(
+        "{{fallback:{},translate:{}}}",
+        snbt_string(english),
+        snbt_string(key)
+    )
+}
+
+/// The human string behind an authored value, for the **named exclusions**: sites
+/// that are not text components and are not read by a player. Re-exported here so
+/// every exclusion in `emit` is greppable as `plain(`.
+fn plain(s: &str) -> &str {
+    delvewright_dsl::l10n_plain(s)
+}
+
+/// The delve title for a **compiler artifact**, not for a player: the generated
+/// PackTest sources' `#>` descriptions and the reviewer render plan. These are
+/// not text components and no client ever renders them, so they carry the English
+/// source string rather than a translate key — a named exclusion, listed as such
+/// in `docs/reference/compiler.md`.
+fn artifact_title(c: &delvewright_dsl::Campaign) -> &str {
+    plain(&c.world.content.title)
 }
 
 /// The `,components:{…}` SNBT tail carrying an equipped piece's enchantments,
@@ -2235,7 +2517,7 @@ fn emit_functions(
                         tick.push(format!(
                             "execute as @a[scores={{{trigger}=1..}}]{} unless items entity @s weapon.mainhand {it} run tellraw @s {}",
                             pending_guard(o, &qa),
-                            json!({ "text": hint })
+                            tr(hint)
                         ));
                     }
                     // Reset the trigger every tick so a gated attempt can be retried
@@ -2574,13 +2856,13 @@ fn emit_functions(
                     "tellraw @a {}",
                     json!([
                         { "text": "New objective: ", "color": "yellow", "bold": true },
-                        { "text": title, "color": "gold" }
+                        tr_with(title, &[("color", json!("gold"))])
                     ])
                 ));
                 if let Some(hint) = o.hint() {
                     ann.push(format!(
                         "tellraw @a {}",
-                        json!({ "text": hint, "color": "gray", "italic": true })
+                        tr_with(hint, &[("color", json!("gray")), ("italic", json!(true))])
                     ));
                 }
                 ann.push("playsound minecraft:block.note_block.pling player @a".to_string());
@@ -2625,7 +2907,7 @@ fn emit_functions(
                     "tellraw @a {}",
                     json!([
                         { "text": "Objective complete: ", "color": "green" },
-                        { "text": title, "color": "white" }
+                        tr_with(title, &[("color", json!("white"))])
                     ])
                 ));
                 body.push("playsound minecraft:entity.experience_orb.pickup player @a".to_string());
@@ -2767,7 +3049,8 @@ fn emit_functions(
     cc.push(format!(
         "tellraw @a {}",
         json!([
-            { "text": format!("{title} — complete."), "color": "gold" },
+            tr_with(title, &[("color", json!("gold"))]),
+            { "text": " — complete.", "color": "gold" },
             { "text": "\n" },
             { "text": "A Delvewright delve.", "color": "gray" }
         ])
@@ -2782,7 +3065,7 @@ fn emit_functions(
         ));
         cc.push(format!(
             "title @a subtitle {}",
-            json!({ "text": title, "color": "yellow" })
+            tr_with(title, &[("color", json!("yellow"))])
         ));
         cc.push("playsound minecraft:ui.toast.challenge_complete player @a".to_string());
     }
@@ -2839,7 +3122,7 @@ fn emit_functions(
             // CustomName as a plain SNBT text component (M2 fix 1). Waves are
             // v0.3-only, so no v0.2 byte-identity concern.
             let name = match &mob.name {
-                Some(n) => format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)),
+                Some(n) => format!(",CustomName:{},CustomNameVisible:1b", snbt_component(n)),
                 None => String::new(),
             };
             // Equipment: v0.6 explicit slots merged over the armed-mob default
@@ -3929,7 +4212,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             item, count, name, ..
         } => {
             let comp = match name {
-                Some(n) => format!("[custom_name={}]", json!({ "text": n, "italic": false })),
+                Some(n) => format!("[custom_name={}]", tr_with(n, &[("italic", json!(false))])),
                 None => String::new(),
             };
             // spec-0018: a quest beat arms the whole party (`@a`) unless the item
@@ -4916,7 +5199,7 @@ fn seal_hint_fns(plan: &Plan) -> Vec<(String, String)> {
                 format!("seal_hint_{}", s.safe),
                 lines(&[
                     format!("advancement revoke @s only {ns}:seal_{}", s.safe),
-                    format!("title @s actionbar {}", json!({ "text": s.text.clone() })),
+                    format!("title @s actionbar {}", tr(&s.text)),
                 ]),
             )
         })
@@ -4952,7 +5235,8 @@ fn emit_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
     };
     let mut b = packtest_header(&format!(
         "{}: the sealed gate `{}` carries an answer the party can press",
-        plan.campaign.world.content.title, s.anchor
+        artifact_title(plan.campaign),
+        s.anchor
     ));
     b.push(format!("function {ns}:setup"));
     b.push(
@@ -5229,7 +5513,7 @@ fn kit_item_components(item: &delvewright_dsl::KitItem) -> String {
     if let Some(n) = &item.name {
         parts.push(format!(
             "custom_name={}",
-            json!({ "text": n, "italic": false })
+            tr_with(n, &[("italic", json!(false))])
         ));
     }
     if let Some(pc) = &item.contents {
@@ -5520,7 +5804,7 @@ fn emit_narrate(
     body: &mut Vec<String>,
 ) {
     use delvewright_dsl::NarrateStyle;
-    let comp = json!({ "text": text });
+    let comp = tr(text);
     match style.unwrap_or(NarrateStyle::Chat) {
         NarrateStyle::Chat => body.push(format!("tellraw {who} {comp}")),
         NarrateStyle::Title => body.push(format!("title {who} title {comp}")),
@@ -5532,7 +5816,7 @@ fn emit_narrate(
         // (`delve:art`, DSL v0.6). The font is uppercase-only (glyph coverage is
         // checked at compile time, DW0328), so render uppercase.
         NarrateStyle::Art => {
-            let art = json!({ "text": text.to_ascii_uppercase(), "font": "delve:art" });
+            let art = tr_with(text, &[("font", json!("delve:art"))]);
             body.push(format!("title {who} title {art}"));
         }
     }
@@ -5616,9 +5900,9 @@ fn npc_summon_commands(
         // keeps the legacy `'{"text":…}'` form so hello-world / keep-crawl stay
         // byte-identical.
         let cname_field = if v03 {
-            snbt_string(name)
+            snbt_component(name)
         } else {
-            let cname = json!({ "text": name }).to_string().replace('\'', "\\'");
+            let cname = tr(name).to_string().replace('\'', "\\'");
             format!("'{cname}'")
         };
         let pose = mannequin_pose_nbt(base);
@@ -6185,7 +6469,7 @@ fn actor_puppet_summon(ns: &str, a: &delvewright_dsl::Actor, pos: [i32; 3], yaw:
         let name = a
             .name
             .as_deref()
-            .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)))
+            .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_component(n)))
             .unwrap_or_default();
         // Compiler-owned knockback-immunity first (a `vulnerable` puppet is a
         // damageable creep, never a shovable one), then whatever the author
@@ -6292,7 +6576,7 @@ fn actor_twin_summon(ns: &str, a: &delvewright_dsl::Actor, at: &str) -> String {
     let name = a
         .name
         .as_deref()
-        .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)))
+        .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_component(n)))
         .unwrap_or_default();
     let pose = mannequin_pose_nbt(&a.entity);
     let finalize = spawn_finalize_nbt(&a.entity);
@@ -7414,7 +7698,7 @@ fn container_stack_components(
     if let Some(n) = name {
         comps.push(format!(
             "custom_name={}",
-            json!({ "text": n, "italic": false })
+            tr_with(n, &[("italic", json!(false))])
         ));
     }
     if !ench.is_empty() {
@@ -8203,7 +8487,7 @@ fn boundary_fns(plan: &Plan) -> Vec<(String, String)> {
     };
     let ns = &plan.namespace;
     let sel = region.inside_selector();
-    let msg = json!({ "text": boundary_message(plan) });
+    let msg = tr(&boundary_message(plan));
 
     // boundary_tick: snapshot the live checkpoint into a scratch compound, eject
     // every player outside the region to it, re-arm the clock. `schedule … 20t`
@@ -8967,9 +9251,9 @@ fn cast_bark_fns(
         ];
         for (i, line) in pool.iter().enumerate() {
             let comp = json!([
-                { "text": name, "color": "yellow" },
+                tr_with(&name, &[("color", json!("yellow"))]),
                 { "text": ": " },
-                { "text": line, "italic": true }
+                tr_with(line, &[("italic", json!(true))])
             ]);
             body.push(format!(
                 "execute if score {holder} dw.sys matches {} run tellraw @s {comp}",
@@ -8993,8 +9277,8 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
         .zip(&c.classes.content.classes)
         .map(|(cp, class)| {
             json!({
-                "label": class.name,
-                "tooltip": class.blurb,
+                "label": tr(&class.name),
+                "tooltip": tr(&class.blurb),
                 "action": { "type": "minecraft:run_command", "command": format!("/trigger dw.class set {}", cp.n) }
             })
         })
@@ -9023,14 +9307,14 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
             format!("bonfire_{i}"),
             json!({
                 "type": "minecraft:multi_action",
-                "title": bf.prompt,
+                "title": tr(&bf.prompt),
                 "columns": 1,
                 "can_close_with_escape": true,
                 "after_action": "close",
                 "actions": [
-                    { "label": bf.rest_label,
+                    { "label": tr(&bf.rest_label),
                       "action": { "type": "minecraft:run_command", "command": "/trigger dw.rest set 2" } },
-                    { "label": bf.save_label,
+                    { "label": tr(&bf.save_label),
                       "action": { "type": "minecraft:run_command", "command": "/trigger dw.rest set 1" } }
                 ]
             }),
@@ -9132,8 +9416,8 @@ fn build_node_dialog(
     if opts.is_empty() {
         json!({
             "type": "minecraft:notice",
-            "title": npc_name,
-            "body": [{ "type": "minecraft:plain_message", "contents": text }],
+            "title": tr(npc_name),
+            "body": [{ "type": "minecraft:plain_message", "contents": tr(text) }],
             "can_close_with_escape": true
         })
     } else {
@@ -9141,19 +9425,19 @@ fn build_node_dialog(
             .iter()
             .map(|o| {
                 let mut action = json!({
-                    "label": o.label,
+                    "label": tr(&o.label),
                     "action": { "type": "minecraft:run_command", "command": format!("/trigger {trigger_objective} set {}", o.n) }
                 });
                 if let Some(tip) = &o.tooltip {
-                    action["tooltip"] = json!(tip);
+                    action["tooltip"] = tr(tip);
                 }
                 action
             })
             .collect();
         json!({
             "type": "minecraft:multi_action",
-            "title": npc_name,
-            "body": [{ "type": "minecraft:plain_message", "contents": text }],
+            "title": tr(npc_name),
+            "body": [{ "type": "minecraft:plain_message", "contents": tr(text) }],
             "columns": 1,
             "can_close_with_escape": true,
             "after_action": "close",
@@ -9377,8 +9661,8 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
             "criteria": { "granted": { "trigger": "minecraft:impossible" } },
             "display": {
                 "icon": { "id": "minecraft:iron_door" },
-                "title": c.world.content.title,
-                "description": outro,
+                "title": tr(&c.world.content.title),
+                "description": tr(&outro),
                 "frame": "goal",
                 "show_toast": true,
                 "announce_to_chat": false,
@@ -9498,7 +9782,7 @@ fn emit_packtest(
         let mut body: Vec<String> = Vec::new();
         body.push(format!(
             "#> {}: objective completions set {comp_obj} (Delvewright mechanism test)",
-            c.world.content.title
+            artifact_title(c)
         ));
         body.push("# @dummy".to_string());
         if tail == 0 {
@@ -9567,7 +9851,7 @@ fn emit_packtest(
     let mut sealed: Vec<String> = Vec::new();
     sealed.push(format!(
         "#> {}: environment sealed on boot (spec-0002)",
-        c.world.content.title
+        artifact_title(c)
     ));
     sealed.push("# @dummy".to_string());
     sealed.push("# @timeout 100".to_string());
@@ -9606,7 +9890,7 @@ fn emit_packtest(
         let mut df: Vec<String> = Vec::new();
         df.push(format!(
             "#> {}: the world runs at the declared difficulty `{}`",
-            c.world.content.title,
+            artifact_title(c),
             diff.token()
         ));
         df.push("# @dummy".to_string());
@@ -9835,7 +10119,7 @@ fn emit_branch_campaign_packtest(
     let mut body: Vec<String> = Vec::new();
     body.push(format!(
         "#> {}: each branch's coherent path sets {comp_obj} (Delvewright mechanism test)",
-        c.world.content.title
+        artifact_title(c)
     ));
     body.push("# @dummy".to_string());
     body.push(format!("# @timeout {timeout}"));
@@ -10032,7 +10316,7 @@ fn emit_party_join_packtests(plan: &Plan, out: &mut BuildOutput) {
 
         let mut b = packtest_header(&format!(
             "{}: AND-join `{jid}` divides across {n} players (spec-0018)",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         for m in 1..n {
@@ -10185,7 +10469,7 @@ fn emit_scheduled_executor_packtests(
     moves: &[crate::nav::MovePlan],
 ) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let probe_score = plan::flag_score(SCHEDULED_PROBE_FLAG);
 
     // --- 1. the unconditional probe -------------------------------------
@@ -10302,7 +10586,7 @@ fn emit_scheduled_executor_packtests(
 /// no terminal option (nothing to drive).
 fn emit_dialogue_trigger_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some((npc, opt)) = plan.npcs.iter().find_map(|npc| {
         npc.options
             .iter()
@@ -10409,7 +10693,7 @@ fn pin_cast_clause_flags(
 fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
     use crate::cast::SceneAction;
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let casts = crate::cast::npc_casts(plan.campaign);
 
     // --- root swap: one NPC whose ledger names two different roots ----------
@@ -10587,7 +10871,7 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
 
 fn emit_loot_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(l) = plan.loot.iter().find(|l| !l.items.is_empty()) else {
         return;
     };
@@ -10625,7 +10909,7 @@ fn emit_loot_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// compile-time check. Emitted only for a campaign with an equipped actor.
 fn emit_actor_equipment_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(a) = plan
         .campaign
         .quests
@@ -10691,7 +10975,7 @@ fn emit_actor_equipment_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// entity-tick-limited.
 fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
 
     // Pick the first trap that has both a dispenser payload and a disarm — it
     // exercises both the fill and the empty in one test. Else the first payload trap.
@@ -10783,7 +11067,7 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
 /// the tier-3 bot playthrough.
 fn emit_payload_packtests(plan: &Plan, out: &mut BuildOutput, payloads: &PayloadPlans) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
 
     if let Some(v) = payloads.volleys.first() {
         let base = format!("volley_{}", v.key);
@@ -10919,7 +11203,7 @@ fn emit_payload_packtests(plan: &Plan, out: &mut BuildOutput, payloads: &Payload
 /// documented "inactive while the flag is set" behaviour simply did not exist.
 fn emit_trap_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     // The first trap gated by a single forbidding flag, which is the shape that can
     // be driven from a test: set the flag → shut, clear it → open.
     let Some(t) = plan
@@ -10983,7 +11267,7 @@ fn emit_night_vision_packtest(plan: &Plan, out: &mut BuildOutput) {
         return;
     };
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let (min, max) = area.bounds();
     let mid = [
         (min[0] + max[0]) / 2,
@@ -11052,7 +11336,7 @@ fn emit_night_vision_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// warp back to it would be visible.
 fn emit_class_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(first) = plan.classes.first() else {
         return;
     };
@@ -11171,7 +11455,7 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
         return;
     };
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     // setup_finish (which writes `dw:cp`) is placement-gated and cannot run in a
     // bare PackTest, so seed the same spawn-cell value the real init would write.
     let seed_cp = format!(
@@ -11255,7 +11539,7 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// Emits nothing for a campaign with no wave → byte-identical.
 fn emit_wave_census_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(w) = plan.campaign.quests.content.waves.first() else {
         return;
     };
@@ -11325,7 +11609,7 @@ fn emit_wave_census_packtest(plan: &Plan, out: &mut BuildOutput) {
 
 fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(bf) = plan.bonfires().next() else {
         return;
     };
@@ -11455,7 +11739,7 @@ fn emit_reseat_stationed_packtest(
     lane_routes: &crate::nav::LaneRoutes,
 ) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(bf) = plan.bonfires().next() else {
         return;
     };
@@ -11636,7 +11920,7 @@ fn emit_reseat_stationed_packtest(
 /// actor and no billed elite/boss wave → byte-identical.
 fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(bf) = plan.bonfires().next() else {
         return;
     };
@@ -11817,7 +12101,7 @@ fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutput) {
 /// `DW0476` makes the same thing as "no bonfire" → byte-identical.
 fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(bf) = plan.bonfires().next() else {
         return;
     };
@@ -11920,7 +12204,7 @@ fn pin_tgdis(b: &mut Vec<String>, g: &crate::plan::TimedGatePlan) {
 
 fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(g) = plan.timed_gates.first() else {
         return;
     };
@@ -11991,7 +12275,7 @@ fn emit_timed_gate_disarm_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &m
         return;
     }
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let (from, to) = g.gate_region;
     let probe = from;
     let id = &g.safe;
@@ -12088,7 +12372,7 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
         return;
     }
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let (from, to) = g.gate_region;
     let selector = region_selector(from, to);
     // Feet-centred on one cell of the region: provably inside the selector box.
@@ -12142,7 +12426,7 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
 /// on a live server). Emits nothing for a campaign with no shortcut.
 fn emit_shortcut_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(sc) = plan.shortcuts.first() else {
         return;
     };
@@ -12216,7 +12500,7 @@ fn emit_td_lane_packtests(
     wave_rings: &WaveRings,
 ) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let waves = &plan.campaign.quests.content.waves;
     let mut write = |name: &str, body: Vec<String>| {
         out.insert(
@@ -12454,7 +12738,7 @@ fn emit_td_lane_packtests(
 ///   driven by teleporting the dummy in and out of the declared zone box.
 fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
 
     if let Some(cp) = plan.checkpoints.first() {
         let [x, y, z] = cp.pos;
@@ -12825,7 +13109,7 @@ fn emit_v06_actor_packtests(
         let safe = plan::safe_local(a.id.as_str());
         let mut b = packtest_header(&format!(
             "{}: spawn-actor appears; despawn kill & vanish both remove it",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
@@ -12858,7 +13142,7 @@ fn emit_v06_actor_packtests(
         let safe = plan::safe_local(a.id.as_str());
         let mut b = packtest_header(&format!(
             "{}: spawn-actor is idempotent (one puppet, not two)",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
@@ -12878,7 +13162,7 @@ fn emit_v06_actor_packtests(
         let safe = plan::safe_local(a.id.as_str());
         let mut b = packtest_header(&format!(
             "{}: unleash-actor swaps the puppet for a real-AI twin",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
@@ -12914,7 +13198,7 @@ fn emit_v06_actor_packtests(
         let p = m.target;
         let mut b = packtest_header(&format!(
             "{}: move-actor walks its puppet to the destination cell",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
@@ -12988,7 +13272,7 @@ fn emit_v06_actor_packtests(
         }
         let mut b = packtest_header(&format!(
             "{}: move-actor arrival hands off to NPC `{npc_id}` with every gate sealed",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
@@ -13057,7 +13341,8 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
             {
                 let mut b = packtest_header(&format!(
                     "{}: prop `{}` appears only when its objective activates",
-                    c.world.content.title, prop.block
+                    artifact_title(c),
+                    prop.block
                 ));
                 b.push(format!("function {ns}:setup"));
                 b.push(format!(
@@ -13097,7 +13382,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                 let (pin, sel) = pin_dummy("dw_t_iclr");
                 let mut b = packtest_header(&format!(
                     "{}: completing interact `{id}` removes its interaction hitbox",
-                    c.world.content.title
+                    artifact_title(c)
                 ));
                 b.push(format!("function {ns}:setup"));
                 // Pin this test's own dummy (see `pin_dummy`): the completion runs
@@ -13144,7 +13429,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         let safe = plan::safe_local(npc.as_str());
         let mut b = packtest_header(&format!(
             "{}: despawn-npc removes body + hitbox",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push("scoreboard players set #placed dw.sys 1".to_string());
@@ -13195,7 +13480,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         let hitbox = format!("@e[type=minecraft:interaction,tag={npc_tag},limit=1]");
         let mut b = packtest_header(&format!(
             "{}: striking NPC `{npc_id}` fires trigger `{}` exactly once",
-            c.world.content.title,
+            artifact_title(c),
             trigger.id.as_str()
         ));
         b.push(format!("function {ns}:setup"));
@@ -13284,7 +13569,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         // click (left or right) can only ever reach the dialogue-bearing entity.
         let mut b = packtest_header(&format!(
             "{}: attack-then-talk — NPC `{npc_id}`'s hitbox is the only click target at its anchor",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push("scoreboard players set #placed dw.sys 1".to_string());
@@ -13343,7 +13628,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         let p = m.target;
         let mut b = packtest_header(&format!(
             "{}: move-npc walks to its target anchor",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push("scoreboard players set #placed dw.sys 1".to_string());
@@ -13404,7 +13689,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                     let ws = plan::safe_local(wave.as_str());
                     let mut b = packtest_header(&format!(
                         "{}: kill-less spawn-wave `{wave}` spawns its mobs",
-                        c.world.content.title
+                        artifact_title(c)
                     ));
                     b.push(format!("function {ns}:setup"));
                     // Clear the wave tag first — a sibling test (`campaign` drives
@@ -13482,7 +13767,8 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
             let (pin, sel) = pin_dummy("dw_t_dvis");
             let mut bt = packtest_header(&format!(
                 "{}: dialogue option `{}` is displayed only while its objective `{obj}` is active",
-                c.world.content.title, under_test.label
+                artifact_title(c),
+                plain(&under_test.label)
             ));
             bt.push(format!("function {ns}:setup"));
             // Pin this test's own dummy (see `pin_dummy`): with one dummy PER
@@ -13702,7 +13988,7 @@ fn emit_shared_hitbox_packtest(plan: &Plan, out: &mut BuildOutput) {
 
     let mut t = packtest_header(&format!(
         "{}: `{}` and `{}` share NPC `{npc_id}`'s hitbox — each fires on its own flags",
-        c.world.content.title,
+        artifact_title(c),
         early.id.as_str(),
         late.id.as_str()
     ));
@@ -14022,7 +14308,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let (pin, sel) = pin_dummy("dw_t_vkil");
         let mut b = packtest_header(&format!(
             "{}: kill wave `{wave}` -> countdown -> complete",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         // Pin this test's own dummy (see `pin_dummy`) and drive the whole chain
@@ -14087,7 +14373,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let (pin, sel) = pin_dummy("dw_t_vcol");
         let mut b = packtest_header(&format!(
             "{}: collect -> reward completes objective",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         // Pin this test's own dummy (see `pin_dummy`) and drive/assert on it
@@ -14118,7 +14404,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let (pin, sel) = pin_dummy("dw_t_vint");
         let mut b = packtest_header(&format!(
             "{}: interact trigger + item -> complete",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         // Pin this test's own dummy (see `pin_dummy`) and drive/assert on it
@@ -14160,7 +14446,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let party = plan::PARTY;
         let mut b = packtest_header(&format!(
             "{}: a click before the quest is armed is spent, not banked (task #124)",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin);
@@ -14224,7 +14510,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let carried = "#carried_vheld";
         let mut b = packtest_header(&format!(
             "{}: `requires_item` is HELD — carried is not enough",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin);
@@ -14290,7 +14576,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         };
         let mut b = packtest_header(&format!(
             "{}: requires_flags gates objective `{id}`",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin.clone());
@@ -14336,7 +14622,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         };
         let mut b = packtest_header(&format!(
             "{}: forbids_flags suppresses objective `{id}`",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin.clone());
@@ -14379,7 +14665,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     if campaign_is_v03(plan) && !plan.npcs.is_empty() {
         let mut b = packtest_header(&format!(
             "{}: every NPC summon resolves to exactly one entity",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push("scoreboard players set #placed dw.sys 1".to_string());
@@ -14421,7 +14707,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let (pin, sel) = pin_dummy("dw_t_cpre");
         let mut b = packtest_header(&format!(
             "{}: collect completes for an item held before activation",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         // Pin this test's own dummy (see `pin_dummy`) and drive/assert on it alone.
@@ -14497,7 +14783,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         );
         let mut b = packtest_header(&format!(
             "{}: collect `{id}` fills the adopted container and completes on the named stack",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin);
