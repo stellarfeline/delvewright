@@ -240,6 +240,18 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: no early-exit consumer on the right of a pipe (SIGPIPE + pipefail)
         run: python3 tools/check-shell-pipe-shortcircuit.py
+      # All ten jobs are required status checks (owner decision 2026-08-05; it was
+      # three, so `tier 2` — datapack load plus the whole PackTest suite — never
+      # blocked a merge). Branch protection matches a required context by its NAME
+      # STRING: rename a job and its context stops reporting forever, blocking
+      # every PR including the one that would fix it. This keeps ci.yml's job names
+      # and `.github/required-status-checks.txt` in lockstep, in BOTH directions —
+      # a job with no line there is a gate nobody must obey, which is exactly how
+      # the seven drifted into advisory. Reads only the repo: CI's token cannot see
+      # branch protection, and a gate needing a privileged token is a gate that
+      # quietly stops running. Deterministic, offline, stdlib-only python3.
+      - name: required status checks and ci.yml job names agree
+        run: python3 tools/check-required-contexts.py
       # --offline: check only local/internal links. The repo is private, so
       # external-link checks would fail or flake.
       - uses: lycheeverse/lychee-action@v2
