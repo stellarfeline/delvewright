@@ -1,0 +1,39 @@
+# Campaigns in the pinned content repo that `tools/build-every-campaign.py`
+# does NOT require to build, each with the reason it may not.
+#
+# WHY THIS FILE IS NOT A SKIP LIST
+#
+# A silently skipped campaign is a vacuous green (CLAUDE.md: a green gate that
+# binds to nothing is VACUOUS, not a pass) and is worse than no gate at all. So
+# an entry here does not switch a campaign off — it INVERTS the assertion and
+# pins it to a named failure:
+#
+#   * the campaign is still built, on every run;
+#   * it must still fail, and fail with EXACTLY the codes in `expect_codes` —
+#     any other error code is a NEW break that would otherwise have hidden
+#     behind the exclusion, and reds the job;
+#   * if it starts BUILDING, that reds the job too. The exclusion has expired
+#     and must be deleted in the PR that fixed the campaign, or the next
+#     regression it suffers would be excused by a stale line in this file.
+#
+# So the honest states are two, both visible in the job's own output: "built"
+# and "known-red for this reason, still exactly this reason".
+#
+# Fields
+#   id            campaign directory name under <content>/campaigns/
+#   task          the tracking item that will retire this entry
+#   reason        why it cannot build today, in one sentence
+#   expect_codes  the complete set of DW error codes the build must emit
+
+[[exclusion]]
+id = "hollow-vigil"
+task = "#34"
+reason = """
+Two dialogue option labels are authored over the 146 px a vanilla dialog button \
+fits (DW0331); vanilla scrolls an over-wide caption back and forth rather than \
+wrapping it, so the fix is a content rewrite of the labels, not an engine change. \
+Out of scope for the PR that introduced this gate — the gate exists to stop \
+ENGINE changes from breaking campaigns, and hollow-vigil was already red before \
+it.\
+"""
+expect_codes = ["DW0331"]
