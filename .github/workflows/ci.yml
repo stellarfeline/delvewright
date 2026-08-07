@@ -269,6 +269,14 @@ jobs:
       # invisible to every other gate (owner finding 2026-08-03 — `shortcuts[]`
       # and `waves[].respawns_on_rest` each twice in the stage-5 table, one copy
       # naming the wrong diagnostic). Deterministic, offline, stdlib-only python3.
+      # A capability must belong to the object class it acts on, not to the verb
+      # that first needed it. Five ledgers — interaction bodies, baked
+      # player-facing English, structural twins, cross-cutting modifiers with
+      # holes, and effect bundles no enumeration reaches. Most entries are OPEN
+      # FINDINGS (docs/notes/capability-ownership-audit.md); the gate's job is
+      # that none can be added or removed in silence.
+      - name: no capability is bound to the verb that first needed it
+        run: python3 tools/check-capability-ownership.py
       - name: docs tree carries no duplicate rows/headings or conflict markers
         run: python3 tools/check-doc-dupes.py
       # Isolation by construction (task #185, validation/README.md): container
