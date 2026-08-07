@@ -152,7 +152,72 @@ describes an authoring surface nobody can author against, and it is the reason
 `bell/` had to be Rust (composition needs a `&Program`, obtainable only from a
 Rust constructor).
 
-### 6. What this ADR does NOT decide
+### 6. The data is normative; a checked-in generator is provenance, not source
+
+§1 lets a creator keep the generator that produced a `Program` — so the content
+repo can hold both a generator and its output, and something must say which one
+is the truth. **The `Program` (and the prefab) is normative. A checked-in
+generator has no special standing: it is an ordinary authoring script.**
+
+The alternative — requiring checked-in generators to be themselves reproducible,
+so a CI re-run-and-diff could gate them — is rejected, because it re-imports onto
+creator code exactly the determinism requirement §1 declined to impose. A hatch
+whose occupants must be deterministic is not the hatch that was argued for.
+
+**This ADR's own anti-mirror argument (§2) applies here and is named rather than
+smoothed**: a generator and its artifact *are* a mirror pair, and mirrors drift.
+The difference from the rejected Java API is not that this pair cannot drift — it
+is that **one side is declared non-normative**, which is the only thing that stops
+a mirror from being a defect. Two halves both claiming authority is the defect;
+one authoritative half and one convenience copy is a tool.
+
+So, precisely, and the asymmetry matters:
+
+- **prefab ↔ `Program` IS bound**: prefab metadata already records
+  `license.generated_by { generator, program, program_hash, seed }`.
+- **generator ↔ `Program` CANNOT be bound**, and this ADR accepts that
+  undetectable drift rather than pretending otherwise. A creator who wants the
+  link may run a re-generate-and-diff; it **reports, it never gates**.
+
+ADR-0012 set this precedent already: the generated DSL documents are the artifact
+of record, not the LLM run that produced them. The LLM case simply had no
+checked-in generator to drift, which is why the question only surfaces now.
+
+### 7. The `Program` JSON is a versioned compatibility surface, from the first one
+
+§4 publishes the type and §5 makes its JSON the authoring form, so a checked-in
+`Program` becomes a long-lived on-disk format. **The crate's semver covers the
+Rust API; nothing today covers the document.** Those are two compatibility
+surfaces and only one has an answer.
+
+Today the IR has **no version field and no `deny_unknown_fields`**, so an older
+`delvec` meeting a newer `Program` **silently ignores what it does not
+understand** and emits a world that is quietly wrong. This repo has already paid
+for that exact failure once, in prefab metadata, and fixed it with
+`deny_unknown_fields` + `DW0346`. The IR has neither.
+
+Two constructs make it sharper: `Expr`, `Cond`, `Size` and `Mark::at` are
+internally tagged, and two types are `#[serde(untagged)]` — where adding a variant
+can silently change which variant an existing document parses as.
+
+Therefore, **before the first `Program` is checked in anywhere**:
+
+1. `Program` carries a **required** `version` — the document's own, not the
+   crate's.
+2. The loader **refuses** a version it does not know. Best-effort parsing of an
+   unknown future document is the silent-wrongness failure again.
+3. `deny_unknown_fields` across the IR types, so old-engine-meets-new-program is a
+   named error rather than a skip.
+4. New constructs are **fenced by version**, as stage surfaces already are, and
+   `CLAUDE.md`'s version-adoption discipline extends to checked-in `Program`s in
+   active campaigns.
+
+The cost argument is the one this project already accepted for capability
+ownership: a required version field **before** the first document exists costs
+nothing, and **after** it is a migration of every checked-in artifact. Generality
+and compatibility are both decided at the first site.
+
+### 8. What this ADR does NOT decide
 
 Everything above is scoped to **geometry and composition**, which is all `bell/`
 is. The **campaign-semantics** half — a novel mechanic, a new trigger kind, a new
@@ -189,7 +254,7 @@ and the general/specific line appear to disagree.
 
 ## Revisit triggers
 
-- **The campaign-semantics half** (§6): the first campaign blocked on a mechanic
+- **The campaign-semantics half** (§8): the first campaign blocked on a mechanic
   that is neither geometry nor a composition of existing DSL primitives — a
   genuine ADR-0015 gate-(a) event on the semantics side. Decide it against that
   instance, not in the abstract; the detectors above are what will surface it.
