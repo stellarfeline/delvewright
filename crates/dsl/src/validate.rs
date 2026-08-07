@@ -5416,7 +5416,7 @@ fn world_edits_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mut Vec<Diag
                 }
                 WorldEdit::Flood { region } => {
                     check_region_ref(d, stage, &regions, format!("{epath}/region"), region);
-                    // v0.9 surface (spec-0029). Declaring it below 0.9.0 is
+                    // v0.9 surface (spec-0030). Declaring it below 0.9.0 is
                     // `DW0141`, the same asymmetry every version ledger uses:
                     // a script that never floods emits byte-for-byte what
                     // pre-0.9 emission wrote.
@@ -5426,7 +5426,7 @@ fn world_edits_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mut Vec<Diag
                             stage,
                             epath.clone(),
                             "the `flood` verb (admit the horizon's ambient water into a declared \
-                             envelope — spec-0029) requires dsl_version 0.9.0 — raise this \
+                             envelope — spec-0030) requires dsl_version 0.9.0 — raise this \
                              stage's `dsl_version` to 0.9.0, or remove the verb"
                                 .to_string(),
                         ));

@@ -5669,7 +5669,7 @@ pub enum WorldEdit {
         /// The region (an earlier `select` in this batch) to clear.
         region: RegionId,
     },
-    /// Admit the horizon's **ambient water** into a region (spec-0029): the
+    /// Admit the horizon's **ambient water** into a region (spec-0030): the
     /// stretch of ground the campaign means to sit at the waterline.
     ///
     /// This is not "fill with water". The author supplies an **envelope** and

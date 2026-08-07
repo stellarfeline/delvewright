@@ -1,4 +1,4 @@
-# spec-0029 — Deliberate shorelines (`flood`)
+# spec-0030 — Deliberate shorelines (`flood`)
 
 Status: Proposed · Owner ruling: 2026-08-06 · DSL: world-edits stage v0.9.0
 
@@ -126,7 +126,7 @@ verb below world-edits `dsl_version` 0.9.0.
    — leaving the `flood` envelope covering that cell — is `DW0364` on exactly
    **1** cell. Removing only the `flood` verb is `DW0364` on **25**.
 4. The spec-0026 #149 fixture with a `flood` declared over the whole drowned
-   piece is **`DW0394`, never green** (`crates/compiler/tests/spec0029_flood.rs`).
+   piece is **`DW0394`, never green** (`crates/compiler/tests/spec0030_flood.rs`).
 5. A shoreline notch cut to the ocean line is `DW0364` without a declaration and
    **exit 0 with exactly one emitted water cell** with one — red→green over
    identical geometry.
@@ -138,7 +138,7 @@ verb below world-edits `dsl_version` 0.9.0.
 9. **Determinism (ADR-0006)**: a flooded campaign builds byte-identically twice,
    and the island does too.
 10. A campaign that declares no `flood` builds **byte-identically** to its
-    pre-spec-0029 output.
+    pre-spec-0030 output.
 
 ## Non-goals
 

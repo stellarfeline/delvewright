@@ -92,7 +92,7 @@ pub const DW_EDIT_GATE_REGION: &str = "DW0353";
 /// placed (a declared minimum-light guarantee, not decoration).
 pub const DW_EDIT_SUPPORT: &str = "DW0354";
 
-/// A `flood` envelope the ambient water never enters (spec-0029): the horizon
+/// A `flood` envelope the ambient water never enters (spec-0030): the horizon
 /// has no ambient water at all, or the declared region holds no cell the sea
 /// can reach — every cell of it sits above the flood level, is already solid,
 /// or is walled off from the sea. The declaration binds nothing, so it proves
@@ -101,7 +101,7 @@ pub const DW_EDIT_SUPPORT: &str = "DW0354";
 pub const DW_FLOOD_INERT: &str = "DW0394";
 
 /// The water a `flood` admitted does not stop inside the declared envelope
-/// (spec-0029): from a wetted cell it flows on — sideways at the same level, or
+/// (spec-0030): from a wetted cell it flows on — sideways at the same level, or
 /// down — into an air cell of a **placed piece** that no `flood` region covers,
 /// at or below the flood level. The shoreline is then not where the author said
 /// it is, and the model would ship dry ground the sea takes. Build-tier
@@ -201,7 +201,7 @@ fn replay_with(
     // cells a `relight` verb placed (those are declared lighting, error tier).
     let mut support_watch: BTreeMap<[i32; 3], String> = BTreeMap::new();
     let mut fixture_cells: BTreeSet<[i32; 3]> = BTreeSet::new();
-    // spec-0029 tideline bookkeeping, cumulative across batches: every `flood`
+    // spec-0030 tideline bookkeeping, cumulative across batches: every `flood`
     // declaration (batch, region, envelope cells) and the union of their
     // envelopes. The tideline invariant re-proves over ALL of them after every
     // batch, so a later batch that re-cuts the bank — opening a new channel or
@@ -480,7 +480,7 @@ fn replay_with(
     }))
 }
 
-/// **The tideline invariant** (spec-0029), re-proved after every batch over
+/// **The tideline invariant** (spec-0030), re-proved after every batch over
 /// every `flood` declaration made so far.
 ///
 /// A `flood` is a claim about the delivered world — *the sea comes in exactly
@@ -496,7 +496,7 @@ fn replay_with(
 ///    piece and outside every declared envelope ([`DW_FLOOD_ESCAPES`]).
 ///
 /// Runs only for a script that declares at least one `flood`: an ocean campaign
-/// that declares none keeps `DW0364`'s absolute rule and its exact pre-spec-0029
+/// that declares none keeps `DW0364`'s absolute rule and its exact pre-spec-0030
 /// output. This is deliberate — the strict default is that no standable cell may
 /// sit under the waterline at all, and `flood` is the only way to trade a piece
 /// of that ground for water, at the price of these two proofs.
@@ -916,7 +916,7 @@ pub fn anchor_starts(plan: &Plan) -> Vec<[i32; 3]> {
 /// removes the cell (absent = air) and always clears any open-gate marking; a
 /// non-air write over an authored open gate likewise closes it (the runtime
 /// `setblock` replaces the whole block, state included).
-/// The ambient-water geometry a `flood` verb reasons against (spec-0029): the
+/// The ambient-water geometry a `flood` verb reasons against (spec-0030): the
 /// horizon's flood level, the lowest ambient water layer, and the placed-piece
 /// AABBs `/place template` overwrites (inside a box the piece decides what is
 /// there — outside it, and below it, the generator's water does).
@@ -998,7 +998,7 @@ impl Tide {
     }
 }
 
-/// Which cells of `envelope` the ambient sea reaches (spec-0029) — the
+/// Which cells of `envelope` the ambient sea reaches (spec-0030) — the
 /// **computed** half of a `flood` declaration: the author names an envelope, the
 /// compiler answers what the water does inside it.
 ///

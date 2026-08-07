@@ -1,4 +1,4 @@
-//! spec-0029: the `flood` verb — declaring that a stretch of ground is
+//! spec-0030: the `flood` verb — declaring that a stretch of ground is
 //! deliberately at the waterline, and the two proofs that keep the declaration
 //! from being an exemption with a nicer name.
 //!

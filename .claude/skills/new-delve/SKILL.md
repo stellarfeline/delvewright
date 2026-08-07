@@ -516,7 +516,7 @@ Symptom → tool:
   hand-patch `.nbt` or invent block edits outside it.
 - **Ground the campaign means to sit at the waterline** (an ocean `horizon`
   shoreline that wades, a bank rolled down past sea level): the stage-7 `flood`
-  verb (spec-0029, world-edits `dsl_version` 0.9.0) — declare the envelope the
+  verb (spec-0030, world-edits `dsl_version` 0.9.0) — declare the envelope the
   ambient sea is admitted into and the compiler computes and builds the reach.
   It is a claim, not a switch: `DW0364` still refuses every cell the sea does
   not reach, an envelope the water never enters is `DW0394`, and water that
