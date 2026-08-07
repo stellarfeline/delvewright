@@ -183,6 +183,42 @@ ADR-0012 set this precedent already: the generated DSL documents are the artifac
 of record, not the LLM run that produced them. The LLM case simply had no
 checked-in generator to drift, which is why the question only surfaces now.
 
+**Non-normative is not "not worth keeping" — keep the generator, and here is the
+reason**: a diff of generated IR is not human-readable, and a diff of the source
+that produced it is. Content review happens against the source half. So a
+generator is checked in as a matter of course; what it is *not* is the thing the
+compiler reads.
+
+**Pinning the library does not make the generator deterministic**, and the ADR
+should not let a reader assume it does. `Cargo.lock` and an exact
+`delvewright-dsl` requirement pin the *library*; the creator's own code is
+arbitrary Rust, where `HashMap` iteration order, `SystemTime::now`, `env::var`,
+`read_dir` order and `rand` are all safe code — §1's argument, unchanged. A
+particular generator may well be deterministic; that is an **empirical, per-
+generator** property, established by observation and never implied by a version
+pin. Note also that "normative source" would be a fiction here even if it were
+deterministic: a build must either re-run the creator's code — putting it in the
+build path, which §1 refuses and which breaks reproduce-from-a-pin — or read the
+checked-in `Program`, in which case the `Program` is normative whatever a document
+calls it. A source no consumer reads is not an authority.
+
+Three consequences, all of which strengthen the record without gating anything:
+
+1. **Provenance records the pinned library version.** `generated_by` gains the
+   declared `delvewright-dsl` requirement alongside `{generator, program,
+   program_hash, seed}`. It cannot bind generator to artifact, but it turns
+   undetectable drift into **investigable** drift: a reader learns which library
+   the artifact was produced against.
+2. **A re-generate-and-diff exists and is advisory.** Re-run the generator in a
+   deliberately varied environment (cwd, `$HOME`, `TZ`, hostname) and report any
+   difference in the emitted `Program`. It **reports; it never gates** — gating it
+   would impose on creator code exactly the determinism requirement §1 declined,
+   and it could in any case only ever fail to find nondeterminism, not prove its
+   absence.
+3. **A creator may claim determinism, per generator, opt-in.** The claim is
+   established by (2) and recorded in provenance. The engine promises nothing
+   about creator code; a creator may demonstrate something about their own.
+
 ### 7. The `Program` JSON is a versioned compatibility surface, from the first one
 
 §4 publishes the type and §5 makes its JSON the authoring form, so a checked-in
