@@ -7502,6 +7502,7 @@ mod tests {
             unlock_anchor: "anchor/lift-lever".to_string(),
             unlock,
             on_unlock: Vec::new(),
+            sealed_side: crate::wrongside::derive(([gx, y, zw], [gx, y + 1, zw]), unlock),
         }
     }
 
