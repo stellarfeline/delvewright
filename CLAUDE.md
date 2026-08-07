@@ -91,7 +91,23 @@ validation/          # docker compose: headless server + bot, same image as CI &
   shortcut door, which has no interaction body at all) with no surface to use,
   and the proposed fix was a second bespoke field on `shortcuts[]`. **A second
   bespoke field is the defect, not the fix**; "X, mirroring Y" in a field's own
-  doc comment is the tell. Before adding an authorable field to a verb, ask
+  doc comment is the tell. The general form the owner named: *an author may give
+  **any** scene block or item a custom left-click AND right-click response, and a
+  response is any effect — a line of prose like the island's boulder, a sound, a
+  sprung trap, a command.* Note what that means here: `EnvTrigger` (`at` + `on:
+  strike|use` + `effects[]`) **already is** that capability, so `sealed_hint` is
+  not a missing feature — it is a private re-implementation of a general one
+  inside a verb. That is the worst form of this defect and the hardest to see,
+  because the special case works. **The third shape is the one that fools you:
+  the general mechanism exists, but its binding is too narrow to reach the
+  objects it should** — a trigger's interaction body is a *point at a cell*
+  rather than the clickable *shape of the object* at that anchor, so authoring
+  the island boulder's own pattern on a shortcut door compiles clean and ships a
+  box pressable only from the side the door opens from. That reads as a missing
+  feature, and the "fix" adds a fourth mechanism. Ask **"what does the existing
+  general mechanism fail to reach, and why"** before ever asking "what surface is
+  missing" — the planner proposed a new stage-5 hint section here, strictly
+  weaker than the triggers it duplicated, in the very PR that names the defect. Before adding an authorable field to a verb, ask
   whether an author could want it on an object that has nothing to do with that
   verb — if yes, it keys to the object class and the verb becomes one consumer
   among others. Generality is decided at the FIRST site: retrofitting at the
