@@ -45,9 +45,18 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$ROOT/versions.toml"
 [ -f "$MANIFEST" ] || { echo "FATAL: $MANIFEST not found" >&2; exit 2; }
 
+# Every value this script pins comes back through here, so the `\n` it prints has
+# to BE a `\n`. On Windows a text-mode `print` writes `\r\n`, and the trailing
+# `\r` survives command substitution — which is how the very first release run
+# rejected `x86_64-pc-windows-msvc` as "not in versions.toml [engine].targets" on
+# the msvc runner alone while the other four targets went green (v1.0.0,
+# 2026-08-06). `reconfigure(newline="\n")` makes the interpreter's platform
+# irrelevant; `tools/check-python-shell-newlines.py` requires it of every python
+# in this repo whose stdout a shell reads.
 read_manifest() { # <python expression over `e` == the [engine] table>
   python3 - "$MANIFEST" "$1" <<'PY'
 import sys, tomllib
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 e = tomllib.load(open(sys.argv[1], "rb"))["engine"]
 print(eval(sys.argv[2]))
 PY
@@ -123,6 +132,7 @@ target_rustflags() { # <triple>
 assert_no_dynamic_interpreter() { # <binary>
   python3 - "$1" <<'PY'
 import sys, struct
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 path = sys.argv[1]
 with open(path, "rb") as fh:
     data = fh.read()

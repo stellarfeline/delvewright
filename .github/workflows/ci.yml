@@ -290,6 +290,33 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: no early-exit consumer on the right of a pipe (SIGPIPE + pipefail)
         run: python3 tools/check-shell-pipe-shortcircuit.py
+      # The v1.0.0 release run (2026-08-06) found both of the next two, in the
+      # release machinery itself, on the first path CI had never exercised.
+      #
+      # Python's text-mode stdout writes `\r\n` on Windows, so every value a
+      # `python3` heredoc handed to bash arrived with a trailing `\r` — and
+      # `x86_64-pc-windows-msvc` compared unequal to itself on the msvc runner and
+      # ONLY there, while the four unix targets went green. The rule is "every
+      # inline python that prints pins its newline", not "every captured one",
+      # because the site that actually broke was a heredoc inside a shell function
+      # whose capture happens at three separate call sites — an invocation-site
+      # checker would have passed the one bug it exists to catch. Covers workflow
+      # `run:` blocks too: `.github/actions/checkout-content` writes straight into
+      # `$GITHUB_OUTPUT`. Deterministic, offline, stdlib-only python3.
+      - name: inline python pins its stdout newline (CRLF on Windows runners)
+        run: python3 tools/check-python-shell-newlines.py
+      # `cmd >"$LOG"` is opened by the SHELL before `cmd` runs. The preflight job's
+      # runner restored no cache, so `target/` did not exist, the redirect failed,
+      # `cargo package` NEVER RAN — and the else-branch then `sed`ed the log that
+      # the failure had prevented from existing, reporting "cargo package failed"
+      # about a command that had not been executed. An error path must not depend
+      # on an artifact the error may have prevented from existing; this removes the
+      # root cause by requiring the directory to be guaranteed first. The other
+      # half — an honest message when the log is missing or empty — is exercised in
+      # tools/tests/test_check_shell_redirect_dirs.py, since syntax cannot check a
+      # message. Deterministic, offline, stdlib-only python3.
+      - name: every redirect writes into a directory the script guarantees exists
+        run: python3 tools/check-shell-redirect-dirs.py
       # EVERY job here is a required status check (owner decision 2026-08-05; it was
       # three, so `tier 2` — datapack load plus the whole PackTest suite — never
       # blocked a merge). Branch protection matches a required context by its NAME
