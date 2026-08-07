@@ -83,6 +83,22 @@ validation/          # docker compose: headless server + bot, same image as CI &
   implementation of a feature is a lower-layer hack (e.g. raycast polling where
   vanilla has no primitive), the feature is excluded until vanilla provides one.
   Applies at every layer boundary: NBT→compiler, compiler→DSL, DSL→skill.
+- **A capability belongs to the object class it acts on, not to the verb that
+  first needed it** (owner, 2026-08-06). `close-gate` owns `sealed_hint`, which
+  encodes *answering a player who presses this thing* — a property of anything a
+  player can right-click, and nothing whatever to do with closing a gate. Built
+  as a property of the verb, it left the second object that needed it (the sealed
+  shortcut door, which has no interaction body at all) with no surface to use,
+  and the proposed fix was a second bespoke field on `shortcuts[]`. **A second
+  bespoke field is the defect, not the fix**; "X, mirroring Y" in a field's own
+  doc comment is the tell. Before adding an authorable field to a verb, ask
+  whether an author could want it on an object that has nothing to do with that
+  verb — if yes, it keys to the object class and the verb becomes one consumer
+  among others. Generality is decided at the FIRST site: retrofitting at the
+  second costs a version bump, per-stage fences, and an adoption round on every
+  active campaign. This is the DSL-surface form of the same shape as a
+  hand-rolled walk enumerating 3 of 5 effect roots (#301/#302/#321) — a defect of
+  expressibility, not of care.
 - **Debug doctrine** (owner, 2026-07-31): a red check is information, never an
   obstacle. Never weaken a check, test, or threshold — and never reroll a seed —
   to get green; fix the root cause or escalate. Escalating a toolchain bug is
