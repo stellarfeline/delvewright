@@ -53,3 +53,7 @@ docs/notes/private/
 
 # Release-shelf build output (tools/build-release-binaries.sh).
 dist/
+
+# Reference images are generation-time working material: never shipped,
+# never in the content repo (see [refimg] in delvewright.toml).
+.refimg/
