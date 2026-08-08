@@ -64,6 +64,10 @@ The only path from DSL to datapack (ADR-0001). Full behavior:
 
 Global flags on every subcommand: `--json`, `--prefabs <dir>` (default
 `campaigns/prefabs`), `--lang <code>` (default `en`), `--version`.
+`build` with no `--lang` is the **release** build: it ships every declared
+language inside the delve's resource pack and lets the client pick (i18n v2,
+spec-0029). `--lang <code>` is the single-language bake for local dev — it swaps
+the strings before emission and ships no lang files.
 Exit codes and the `--json` diagnostic shape: [`compiler.md` §1](compiler.md).
 
 ## 2. `delve-schem` — schematic import (`crates/schem`, package `delvewright-schem`) · agent
