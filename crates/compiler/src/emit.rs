@@ -1116,6 +1116,20 @@ fn sealing_commands(
         // Box-garden death policy: dying must never cost quest items (a dropped
         // trial key despawns in 5 minutes = softlock for a human player).
         "gamerule keep_inventory true".to_string(),
+        // The delve's own machinery must not narrate itself. Dialogue options are
+        // `trigger`-type objectives (`dw.dlg_<npc>`, `dw.class`), so every option a
+        // player picks runs `/trigger` and vanilla answers it in chat — "Triggered
+        // [dw.dlg_antiphos]" beside the line the character just said (owner
+        // playtest, 2026-08-07). Command feedback is engine implementation reaching
+        // the player, which is what every other rule in this list exists to stop;
+        // it was simply missing from the seal. NOT version-gated: a campaign at any
+        // `dsl_version` wants its dialogue to stop announcing its scoreboard.
+        // rcon replies to the caller regardless of this rule, so the harness and
+        // `validation/` are unaffected, and the creator overlay's log stamp is
+        // `log_admin_commands`, a different rule. (The legacy camelCase spelling is
+        // rejected outright by 1.21.11 — the compiler's own command validator caught
+        // `sendCommandFeedback` here before it could reach a world.)
+        "gamerule send_command_feedback false".to_string(),
         format!("time set {}", time.token()),
     ];
     // Traps (DSL v0.6, spec-0011) exclude TNT as a payload — no gamerule separates
