@@ -1,6 +1,0 @@
-[refimg]
-provider="gemini-native"
-model="gemini-3.1-flash-image"
-api_key_env="DELVEWRIGHT_REFIMG_API_KEY"
-image_size="2K"
-aspect_ratio="16:9"
