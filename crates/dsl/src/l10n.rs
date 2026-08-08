@@ -460,6 +460,38 @@ fn entity_name_key(claimed: &mut BTreeMap<String, String>, text: &str, own: Stri
 
 /// The authoritative key → canonical-English inventory derived from the stage
 /// docs. Deterministic (keys are unique and the traversal order is fixed).
+///
+/// # Widening this is an ERROR-tier obligation on every existing campaign
+///
+/// This walk consults the campaign document and **never its `dsl_version`**.
+/// For the surface itself that is right — a campaign at 0.6.0 cannot use a 0.9
+/// surface, so those keys simply never appear — but it has a consequence worth
+/// stating, and one already paid for twice (tasks #167 and #168, which widened
+/// [`each_string`] onto `traps[].payload` and `on_respawn` bundles):
+///
+/// **when a widening reaches strings that OLDER surfaces already emitted**, the
+/// inventory grows for campaigns of every declared version at once, and
+/// [`L10N_MISSING`](crate::codes::L10N_MISSING) (`DW0180`) is
+/// `Diagnostic::error`. A campaign that was complete and green stops building
+/// on the next engine, with no deprecation window and nothing in its own
+/// document changed.
+///
+/// Measured 2026-08-08 on `nobodys-cave-island` (sidecar `dsl_version` 0.6.0):
+/// removing one key — the shape a widening creates — exits 1 immediately with
+/// `DW0180 [error]`.
+///
+/// **The asymmetry is the finding, and it is with this module's own siblings.**
+/// Two comparable obligations on existing content take a warn-first window and
+/// say so in their own text: `DW0188` (translation provenance, in
+/// [`validate_l10n_provenance`] right here) and `DW0465` (the cast ledger, in
+/// `compiler::cast`). Coverage does not. Whether it should is an owner call —
+/// changing a check's tier is never a mechanical change (CLAUDE.md) — so this
+/// records the measurement rather than acting on it.
+///
+/// Whichever way it is decided, the widening PR is where it has to be decided:
+/// adoption rounds for every active campaign belong in the same milestone as
+/// the `dsl_version` that creates the obligation, and a widening that skips the
+/// version bump creates the obligation with no milestone at all.
 pub fn inventory(c: &Campaign) -> BTreeMap<String, String> {
     let mut c2 = c.clone();
     let mut out = BTreeMap::new();
