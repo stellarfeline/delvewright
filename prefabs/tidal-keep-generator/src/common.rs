@@ -591,6 +591,12 @@ pub struct LicenseJson {
 pub struct MetaJson {
     pub prefab_id: String,
     pub structure: StructureJson,
+    /// The piece's authored walk-plane datum (spec-0026 §2): the feet-cell
+    /// local y of its **lowest** socket floor — shore pieces 3
+    /// (`SHORE_FLOOR_Y + 1`), plinth pieces 11 (`KEEP_FLOOR_Y + 1`). Consumed
+    /// by the compiler's per-area placement datum (`walk_ref_y − walk_y`;
+    /// missing in a non-void horizon is `DW0367`).
+    pub walk_y: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub waterline_y: Option<i32>,
     pub anchors: BTreeMap<String, AnchorJson>,

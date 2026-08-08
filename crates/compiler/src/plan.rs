@@ -4,11 +4,17 @@
 //! ## Coordinate scheme (deterministic)
 //!
 //! Each stage-1 area is placed at origin `[index * AREA_SPACING, base_y, 0]`
-//! (M1 has one area → `[0, 64, 0]`). The origin Y is fixed per **horizon**
-//! (spec-0013): `void` → [`BASE_Y`] (64), `ocean` → [`OCEAN_BASE_Y`] (60), which is
-//! `sea_level - island waterline` so authored island water meets the world ocean.
-//! A prefab's local anchor position resolves to `origin + local`. All coordinates
-//! are integers; no randomness is used in v0.
+//! (M1 has one area → `[0, 64, 0]`). The origin Y is a **per-area datum**
+//! (spec-0026 §2, superseding spec-0013's single global ocean datum):
+//! `void` keeps [`BASE_Y`] (64); every other horizon computes
+//! `walk_ref_y − walk_y`, where `walk_ref_y` is the horizon's declared walk
+//! reference ([`crate::horizon::walk_ref_y`]; ocean 63, flatland 64) and
+//! `walk_y` is the area's tileset walk-plane convention declared in prefab
+//! metadata (island 3 → base 60, byte-identical to the old global datum; a
+//! keep interior 1 → base 62, dry with no author action). A placed piece
+//! without `walk_y` in a non-void horizon is [`DW_WALK_Y_MISSING`] (`DW0367`).
+//! A prefab's local anchor position resolves to `origin + local`. All
+//! coordinates are integers; no randomness is used in v0.
 //!
 //! ## Naming scheme (scoreboard/function-safe)
 //!
@@ -35,46 +41,98 @@ pub const AREA_SPACING: i32 = 256;
 /// The Y of every area origin under `horizon: void` (structures carry their own
 /// floor at local y=0). Also the fallback Y for an unresolvable position.
 pub const BASE_Y: i32 = 64;
-/// Sea level of the `ocean` horizon superflat (spec-0013): the pinned
-/// bedrock/stone/water layer stack (1 + 118 + 8 from the -64 build floor) tops the
-/// water at y=62. Emission pins the same stack in `generator-settings`.
-pub const SEA_LEVEL: i32 = 62;
-/// Height of the `ocean` horizon superflat's water layer (spec-0013) — the `8`
-/// in the pinned `generator-settings` stack emission writes
-/// (`emit::emit_server`). Ambient water occupies `SEA_LEVEL - 7 ..= SEA_LEVEL`.
-pub const OCEAN_WATER_LAYERS: i32 = 8;
-/// Y of the topmost ambient **solid** block of the `ocean` horizon superflat: the
-/// sea floor (stone) directly under the water layers, at 54. The ambient model
-/// boundary safety reasons about (`nav::Sea`) starts here — below it the world is
-/// stone all the way to bedrock, which is why an ocean world has no void column
-/// anywhere.
-pub const SEA_FLOOR_TOP_Y: i32 = SEA_LEVEL - OCEAN_WATER_LAYERS;
-/// The island tileset's authored waterline (`prefabs/island-tileset.md`): every
-/// island piece puts its top water block at **local y=2**, with the walkable land
-/// plane one block above it at local y=3.
-///
-/// Assumption (documented in `docs/reference/compiler.md`): the tileset convention
-/// is a *library* constant, not a per-piece one — prefab metadata may *declare* its
-/// waterline (`waterline_y`), which [`check_ocean_waterline`] then verifies against
-/// sea level, but placement itself uses this single convention height so that every
-/// area of an ocean world sits on one deterministic datum.
-pub const ISLAND_WATERLINE_Y: i32 = 2;
-/// The Y of every area origin under `horizon: ocean`: the piece base sits at
-/// `SEA_LEVEL - ISLAND_WATERLINE_Y` (= 60) so the authored waterline (local y=2)
-/// meets the world ocean (y=62) and the walk plane (local y=3) is the vanilla-normal
-/// one block above the sea. Placing ocean areas at [`BASE_Y`] instead floats the
-/// island ~4 blocks above the sea: a player who falls into open water cannot climb
-/// ashore.
-pub const OCEAN_BASE_Y: i32 = SEA_LEVEL - ISLAND_WATERLINE_Y;
+// The ambient sea facts live with the rest of the horizon model
+// (spec-0026); re-exported here because the sea is also a *placement* fact
+// (`DW0344`/`DW0364`) and half the codebase reads them via `plan::`.
+pub use crate::horizon::{OCEAN_WATER_LAYERS, SEA_FLOOR_TOP_Y, SEA_LEVEL};
 
-/// The area-origin Y for a campaign's horizon (spec-0013). `void` (default/absent)
-/// keeps [`BASE_Y`], so every pre-0.6 / void campaign stays byte-identical; `ocean`
-/// uses [`OCEAN_BASE_Y`] so the island waterline convention holds.
-pub fn base_y(campaign: &Campaign) -> i32 {
-    match campaign.world.content.horizon {
-        Some(delvewright_dsl::Horizon::Ocean) => OCEAN_BASE_Y,
-        _ => BASE_Y,
+/// `DW0367`: a non-void horizon must place every piece on the per-area datum
+/// `walk_ref_y − walk_y` (spec-0026 §2), and this piece's prefab metadata
+/// declares no `walk_y` — the compiler has no tileset walk-plane convention to
+/// place the area with, and guessing one is how the #149 flooded-interior
+/// class happened. Build error (exit 3).
+pub const DW_WALK_Y_MISSING: &str = "DW0367";
+
+/// The per-area origin Y (spec-0026 §2, superseding the spec-0013 global ocean
+/// datum): `void` → [`BASE_Y`] unconditionally (byte-identical to every
+/// pre-0.9 campaign); any other horizon → `walk_ref_y − walk_y`, where
+/// `walk_y` is the **datum piece's** declared tileset walk plane — the bound
+/// `prefab` of a single-prefab area, or the `entry`-role member(s) of a pool
+/// area (the piece the solver seats at the origin; every other piece chains
+/// from it by socket mating). Pools whose entry members disagree about the
+/// convention have no single datum: also [`DW_WALK_Y_MISSING`].
+fn area_base_y(
+    campaign: &Campaign,
+    area: &delvewright_dsl::Area,
+    prefabs: &PrefabRegistry,
+) -> Result<i32, PlanError> {
+    let h = crate::horizon::of_campaign(campaign);
+    let Some(walk_ref) = crate::horizon::walk_ref_y(&h) else {
+        return Ok(BASE_Y);
+    };
+    let area_id = area.id.as_str();
+    let datum_walk_y = |prefab_id: &str| -> Result<i32, PlanError> {
+        let Some(meta) = prefabs.get(prefab_id) else {
+            // Missing metadata is reported as DW0300 by the placement pass;
+            // fall back so THAT (more fundamental) error is the one that fires.
+            return Ok(walk_ref - BASE_Y);
+        };
+        meta.walk_y.ok_or_else(|| {
+            PlanError::new(
+                DW_WALK_Y_MISSING,
+                format!(
+                    "area `{area_id}` is placed in a `{}` horizon, whose per-area datum is \
+                     `walk_ref_y ({walk_ref}) − walk_y`, but prefab `{prefab_id}` declares no \
+                     `walk_y` in its metadata. Declare the tileset's walk-plane convention (the \
+                     local y a player's feet occupy on the piece's reference floor — island \
+                     tileset 3, keep 1) as `walk_y` in `{}.json`; never guess a datum for it \
+                     (spec-0026 §2 — the #149 flooded-interior class)",
+                    h.base.token(),
+                    meta.structure.id,
+                ),
+            )
+        })
+    };
+    if let Some(prefab) = &area.prefab {
+        return Ok(walk_ref - datum_walk_y(prefab.as_str())?);
     }
+    if let Some(pool) = &area.prefab_pool {
+        let pool_id = pool.as_str();
+        let entries: Vec<&str> = prefabs
+            .pool(pool_id)
+            .unwrap_or(&[])
+            .iter()
+            .filter(|m| m.role == "entry")
+            .map(|m| m.prefab.as_str())
+            .collect();
+        // No entry member is the solver's DW0301; let it report.
+        let mut walk_y: Option<(i32, &str)> = None;
+        for prefab_id in entries {
+            let w = datum_walk_y(prefab_id)?;
+            match walk_y {
+                None => walk_y = Some((w, prefab_id)),
+                Some((prev, prev_id)) if prev != w => {
+                    return Err(PlanError::new(
+                        DW_WALK_Y_MISSING,
+                        format!(
+                            "area `{area_id}` binds pool `{pool_id}`, whose entry-role members \
+                             disagree about the tileset walk-plane convention: `{prev_id}` \
+                             declares walk_y={prev} but `{prefab_id}` declares walk_y={w}. A \
+                             pool area sits on ONE per-area datum (`walk_ref_y − walk_y`, \
+                             spec-0026 §2) — align the entry pieces' authored walk planes, or \
+                             split the pool"
+                        ),
+                    ));
+                }
+                Some(_) => {}
+            }
+        }
+        if let Some((w, _)) = walk_y {
+            return Ok(walk_ref - w);
+        }
+    }
+    // Neither binding: DW0160 upstream; keep the void fallback.
+    Ok(BASE_Y)
 }
 
 /// A resolved `set-checkpoint` effect (DSL v0.6, spec-0012), collected in
@@ -1051,16 +1109,15 @@ pub const ENTRY_ANCHOR_NAMES: [&str; 2] = ["spawn", "entry"];
 /// every one of them derives from the very placement that is wrong.
 ///
 /// Pieces that declare no `waterline_y` (interior keep/cave pieces, `hello-room`)
-/// are not island pieces and are not checked.
+/// author no sea and are not checked **here** — their walk cells are still
+/// proved dry empirically by `DW0364` (`nav::check_flood_level`), which has no
+/// exemption (spec-0026 §2, closing the #149 gap this clause used to be).
 fn check_ocean_waterline(
     campaign: &Campaign,
     areas: &[AreaPlacement],
     prefabs: &PrefabRegistry,
 ) -> Result<(), PlanError> {
-    if !matches!(
-        campaign.world.content.horizon,
-        Some(delvewright_dsl::Horizon::Ocean)
-    ) {
+    if crate::horizon::base_of(campaign) != delvewright_dsl::HorizonBase::Ocean {
         return Ok(());
     }
     for area in areas {
@@ -1082,22 +1139,70 @@ fn check_ocean_waterline(
                 } else {
                     ("below", "is drowned — the walk plane sits under the sea")
                 };
+                let walk_y = meta
+                    .walk_y
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "undeclared".to_string());
                 return Err(PlanError::new(
                     DW_OCEAN_WATERLINE,
                     format!(
                         "area `{}` places prefab `{}` at y={} with a declared waterline of local \
                          y={w}, putting its waterline at world y={placed} — {} blocks {dir} the \
                          ocean sea level (y={SEA_LEVEL}). The piece {verb}. Prefab metadata and \
-                         placement disagree about the island datum: either declare the waterline \
-                         the piece really authors (`waterline_y` in `{}.json`, the local y of its \
-                         top water block — the island tileset convention is {ISLAND_WATERLINE_Y}), \
-                         or rebuild the piece against that convention. Ocean areas are placed at \
-                         y={OCEAN_BASE_Y} (= sea level - {ISLAND_WATERLINE_Y}); a piece with a \
-                         different waterline cannot share that datum",
+                         placement disagree about the datum equation (spec-0026 §2: area base = \
+                         walk_ref_y {} − walk_y {walk_y} = {}; the disagreeing term is this \
+                         piece's `waterline_y`): a shore piece authored to its tileset convention \
+                         has `waterline_y = walk_y − 1`. Declare the waterline the piece really \
+                         authors (`waterline_y` in `{}.json`, the local y of its top water \
+                         block), or rebuild the piece against its tileset's declared walk plane",
                         area.area_id,
                         piece.prefab_id,
                         piece.pos[1],
                         delta.abs(),
+                        crate::horizon::OCEAN_WALK_REF_Y,
+                        piece.pos[1],
+                        meta.structure.id,
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Per-area datum honesty (`DW0367`, spec-0026 §2): in a non-void horizon,
+/// every **placed** piece must declare its tileset walk plane (`walk_y`) in
+/// prefab metadata. The area origin only consumes the datum piece's value
+/// ([`area_base_y`] already failed if that one is missing), but requiring the
+/// declaration on every placed piece keeps the tileset migration honest and
+/// gives the empirical proofs (`DW0344`/`DW0364`) the datum term their
+/// messages name.
+fn check_walk_y_declared(
+    campaign: &Campaign,
+    areas: &[AreaPlacement],
+    prefabs: &PrefabRegistry,
+) -> Result<(), PlanError> {
+    let h = crate::horizon::of_campaign(campaign);
+    if crate::horizon::walk_ref_y(&h).is_none() {
+        return Ok(()); // void: areas sit on BASE_Y, no datum to declare.
+    }
+    for area in areas {
+        for piece in &area.pieces {
+            let Some(meta) = prefabs.get(&piece.prefab_id) else {
+                continue; // missing metadata is already DW0300 upstream
+            };
+            if meta.walk_y.is_none() {
+                return Err(PlanError::new(
+                    DW_WALK_Y_MISSING,
+                    format!(
+                        "area `{}` places prefab `{}` in a `{}` horizon, but its metadata \
+                         declares no `walk_y` — the tileset walk-plane convention every piece \
+                         of a non-void horizon must state (spec-0026 §2: area base = \
+                         walk_ref_y − walk_y). Declare the local y a player's feet occupy on \
+                         the piece's reference floor as `walk_y` in `{}.json`",
+                        area.area_id,
+                        piece.prefab_id,
+                        h.base.token(),
                         meta.structure.id,
                     ),
                 ));
@@ -1132,12 +1237,18 @@ impl<'a> Plan<'a> {
         // Socket doorways severed by `rewire-socket sealed`, per area — the
         // DW0306 connectivity graph must not count those edges.
         let mut severed: BTreeMap<String, BTreeSet<[i32; 3]>> = BTreeMap::new();
-        // Origin Y is a per-horizon datum (spec-0013): void keeps 64, ocean drops to
-        // sea_level-2 so the island waterline convention holds.
-        let base_y = base_y(campaign);
         for (i, area) in campaign.world.content.areas.iter().enumerate() {
             let area_id = area.id.as_str().to_string();
-            let origin = [i as i32 * AREA_SPACING, base_y, 0];
+            // Origin Y is a per-area datum (spec-0026 §2): void keeps BASE_Y;
+            // any other horizon computes walk_ref_y − the datum piece's
+            // declared tileset walk plane, so every tileset lands its walk
+            // plane on the horizon's reference — not on an island-tileset
+            // constant (the #149 class).
+            let origin = [
+                i as i32 * AREA_SPACING,
+                area_base_y(campaign, area, prefabs)?,
+                0,
+            ];
 
             let placement = if let Some(prefab) = &area.prefab {
                 // Single-prefab area (the M1 degenerate assembly): one piece at
@@ -1327,6 +1438,14 @@ impl<'a> Plan<'a> {
                 severed.get(&area.area_id),
             )?;
         }
+
+        // ---- per-area datum honesty (DW0367, spec-0026 §2) ----
+        // Every placed piece of a non-void horizon must declare its tileset
+        // walk plane. The datum itself only reads the entry piece's, but a
+        // chained piece without one has an unauditable relationship to the
+        // datum — and the empirical flood proof (DW0364) needs the declared
+        // term to name what disagreed.
+        check_walk_y_declared(campaign, &areas, prefabs)?;
 
         // ---- ocean waterline invariant (DW0344) ----
         check_ocean_waterline(campaign, &areas, prefabs)?;

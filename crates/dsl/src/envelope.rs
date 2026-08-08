@@ -28,7 +28,12 @@ pub const SUPPORTED_DSL_VERSION: &str = "0.9.0";
 /// (spec-0025) adds declared stage-4 `branch_points`, the per-node `happening`
 /// declaration and the named `campaign-complete` `ending`, and (spec-0016 §1
 /// owner rulings) the bonfire rest interaction — the `bonfire` effect's
-/// authorable option strings and the class-kit `flask`.
+/// authorable option strings and the class-kit `flask`; v0.9 carries two
+/// independent surfaces on two different stages — (task #179, stage 5)
+/// declared **drops** on an elite/boss, and (spec-0026, stage 1) the
+/// horizon-library surface: the `horizon` object form `{base, …params}` and
+/// the new base/shorthand names (`sky`, `flatland`, `valley`, `summit`,
+/// `cherry-valley`).
 /// Older campaigns remain valid and compile byte-identically. A construct
 /// introduced in a later version is rejected with `DW0141` in an earlier one.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
@@ -122,14 +127,27 @@ pub fn is_v08(version: &str) -> bool {
     ordinal(version) >= 8
 }
 
-/// True if `version` enables the DSL v0.9 surface (task #179, owner ruling
-/// 2026-08-04): declared **drops** on an elite/boss — the `drops[]` list on a
-/// wave mob and on an actor, and the `collect` `dropped_by` that turns a boss's
-/// quest token into a proved link in the quest graph. Additive over v0.8: a
-/// campaign that declares none of it compiles byte-identically (every
-/// undeclared slot keeps drop chance `0.0`, which is exactly what pre-0.9
-/// emission wrote), and any use of the surface in an earlier campaign is
-/// rejected with `DW0141`.
+/// True if `version` enables the DSL v0.9 surface. v0.9 carries **two
+/// independent surfaces**, landed by two different slices and fenced on two
+/// different stages — this one predicate answers for both, because a
+/// `dsl_version` is one number per stage document, not one per feature:
+///
+/// - **Stage 5, declared drops** (task #179, owner ruling 2026-08-04): the
+///   `drops[]` list on a wave mob and on an actor, and the `collect`
+///   `dropped_by` that turns a boss's quest token into a proved link in the
+///   quest graph. Additive over v0.8: every undeclared slot keeps drop chance
+///   `0.0`, which is exactly what pre-0.9 emission wrote.
+/// - **Stage 1, the horizon library** (spec-0026): the `horizon` **object
+///   form** `{base, …params}` and the new base/shorthand names (`sky`,
+///   `flatland`, `valley`, `summit`, `cherry-valley`). The two v0.6 string
+///   shorthands (`"void"`, `"ocean"`) stay valid at 0.6.0+ and byte-identical.
+///
+/// Because the fences are per stage, raising one stage document to 0.9.0 opens
+/// only that stage's half: a campaign whose `quests` stage is 0.9.0 and whose
+/// `world` stage is 0.8.0 gets drops and is still `DW0141` on the horizon
+/// object form, and vice versa. Additive over v0.8 either way — a campaign
+/// declaring none of the new surface compiles byte-identically, and any use of
+/// it in an earlier campaign is rejected with `DW0141`.
 pub fn is_v09(version: &str) -> bool {
     ordinal(version) >= 9
 }

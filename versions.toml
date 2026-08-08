@@ -206,19 +206,39 @@ targets = [
 # RE-PIN CONVENTION: after a content-repo PR merges, update `sha` to the new
 # content `main` tip in a normal follow-up PR.
 repo = "stellarfeline/delvewright-campaigns"
-# Content `main` tip after the cave **gravity-floor substrate** regen (content #10)
-# — the tileset half of task #42, pairing with the compiler's gravity-settled model
-# (#75) and the DW0313 despawn gate (#77). Every enclosed cave piece now lays a
-# hidden non-falling `stone` substrate under each sand/gravel floor cell, so the
-# sand/gravel surface (a first-class content need) survives the `the_void` world
-# instead of despawning. The substrate lifts each piece +1 (size, socket, anchor
-# Ys shift together; the solver's mating absorbs the offset). `cave-den`'s
-# `anchor/wave` is removed (its interior is all corridor) and `cave-cavern` gains
-# one in a valid east alcove; every enclosed `.nbt` body changes, palette unchanged
-# (substrate is `stone`, audit-clean). Deterministic (byte-identical regen);
-# `nobodys-cave` builds green (DW0313/DW0311/DW0312 clear) with the flock on solid
-# floor. Bump on future content merges per the RE-PIN CONVENTION.
-sha = "e4c58c0f78f2e0e949c625697c3f5b04df125aff"
+# The spec-0026 **walk_y backfill** PLUS the island's declared shoreline
+# (content branch `content/island-tideline`, which contains content PR #21's
+# branch), i.e. content `main` e4c58c0f plus one additive line per prefab: every prefab metadata file declares
+# its tileset walk-plane convention (`walk_y` — keep 1, cave 2, island 3; each
+# verified empirically from the .nbt geometry, and the island set re-derived
+# over main's REGENERATED island prefabs as `waterline_y + 1`). The compiler's
+# per-area placement datum consumes it (base = walk_ref_y - walk_y, spec-0026
+# §2, DW0367). The branch's second half is the island's `batch/tideline`
+# declaration, which spec-0030's `flood` verb consumes: without it this delvec
+# reds DW0364 on 26 standable cells at world y=62 — the ocean line — in ALREADY
+# RELEASED content, because the per-area walk_y datum is what finally lets
+# DW0364 see the banks the owner ruled intended (2026-08-06).
+#
+# This is a BRANCH sha, not a content `main` tip, and the branch pin is not a
+# shortcut — it is the ONLY pin that can exist here, because the change is
+# **atomic across two repositories and therefore has no valid merge order**.
+# Content-first is impossible: prefab metadata is `deny_unknown_fields`
+# (crates/compiler/src/registry.rs), so a `walk_y` line on content main would be
+# rejected by every delvec that predates this PR — including the released
+# v1.1.0 — and drop the prefab. Engine-first is impossible: this delvec cannot
+# place a non-void horizon against a library without `walk_y`, and content main
+# carries it on zero of its 36 prefabs. Same shape as the l10n inventory
+# widening (#317/#333); there it was one repo and folded into one PR, here it
+# spans repos and the pin is what makes the pair land together.
+#
+# The pinned sha is a strict descendant of content main e4c58c0f — the branch
+# was re-synced 2026-08-08, so the cave gravity-floor substrate regen (#10) and
+# the `campaigns/campaigns` symlink untracking (#33) are carried forward, not
+# rolled back. Verified before re-pinning: `git diff 885fd5d..main -- prefabs/`
+# is EMPTY, so no prefab geometry moved under the walk_y derivation.
+# RE-PIN to the content `main` tip the moment content #21 merges
+# (RE-PIN CONVENTION above).
+sha = "986562787c1468cea93b924856c0867b4c51994f"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders

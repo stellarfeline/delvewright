@@ -306,9 +306,21 @@ pub struct PrefabMeta {
     /// ocean-horizon placement invariant (`DW0344`, `plan::check_ocean_waterline`):
     /// in a `horizon: ocean` world the declared waterline must land at world sea
     /// level. Absent for pieces that author no sea (interiors, keep/cave tilesets),
-    /// which are then not checked.
+    /// which are then not checked by `DW0344` — their walk cells are still proved
+    /// dry empirically (`DW0364`, spec-0026 §2, no exemption).
     #[serde(default)]
     pub waterline_y: Option<i32>,
+    /// The tileset **walk-plane convention** this piece is authored against
+    /// (spec-0026 §2): the local y a player's feet occupy on the piece's
+    /// reference floor — the floor its lowest socket opens onto, or for a
+    /// socketless piece its authored ground plane (island tileset 3, keep 1,
+    /// cave 2). The per-area placement datum is `walk_ref_y − walk_y` (the
+    /// datum piece is the area's bound prefab / the pool's entry member), and
+    /// every piece placed in a non-void horizon must declare it (`DW0367`,
+    /// `plan::check_walk_y_declared`). Optional so void-only metadata still
+    /// loads; a shore piece's `waterline_y` is `walk_y − 1` by construction.
+    #[serde(default)]
+    pub walk_y: Option<i32>,
     /// keep-socket-v1 connectors (jigsaw sockets). Empty for single-piece prefabs
     /// (e.g. `hello-room`); the layout solver (`crate::solver`) mates these when
     /// assembling a `prefab_pool` area (M2 task #9). Optional so single-piece

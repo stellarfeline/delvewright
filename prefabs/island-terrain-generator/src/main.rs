@@ -484,6 +484,11 @@ struct LicenseJson {
 struct MetaJson {
     prefab_id: String,
     structure: StructureJson,
+    /// The island tileset walk-plane convention (spec-0026 §2): feet at local
+    /// y=3, one above the waterline — the `island:socket` datum. Consumed by
+    /// the compiler's per-area placement datum (`walk_ref_y − walk_y`; missing
+    /// in a non-void horizon is `DW0367`).
+    walk_y: i32,
     /// Local y of the island waterline datum (see [`WATERLINE_Y`]); the compiler
     /// pins it to world sea level when placing an ocean-horizon area (`DW0344`).
     waterline_y: i32,
@@ -1909,6 +1914,7 @@ fn write_piece(out: &Path, spec: &Spec) {
             data_version: DATA_VERSION,
             generator: GENERATOR.into(),
         },
+        walk_y: WATERLINE_Y + 1,
         waterline_y: WATERLINE_Y,
         anchors,
         connectors,

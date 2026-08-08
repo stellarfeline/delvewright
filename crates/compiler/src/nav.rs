@@ -601,6 +601,12 @@ pub enum Ambient {
     Void,
     /// `horizon: ocean` — the pinned bedrock/stone/water superflat ([`Sea`]).
     Ocean(Sea),
+    /// `horizon: flatland` (spec-0026) — the pinned bedrock/dirt/grass
+    /// superflat: solid ground under **every** column up to
+    /// `crate::horizon::FLATLAND_SURFACE_Y` (63). Nothing can fall out of a
+    /// flatland world and there is no water to be stranded in; the boundary
+    /// clock (required, `DW0320`) owns wanderers.
+    Flatland,
 }
 
 /// The ocean horizon's ambient sea: a global water plane topping out at
@@ -640,11 +646,13 @@ impl Sea {
 }
 
 impl Ambient {
-    /// The ambient a campaign's `horizon` declares (spec-0013), with the placed
-    /// pieces of `plan` as the covered region.
+    /// The ambient a campaign's `horizon` declares (spec-0013, generalized by
+    /// spec-0026 — one branch per horizon base), with the placed pieces of
+    /// `plan` as the covered region.
     pub fn of_plan(plan: &Plan) -> Ambient {
-        match plan.campaign.world.content.horizon {
-            Some(delvewright_dsl::Horizon::Ocean) => Ambient::Ocean(Sea {
+        use delvewright_dsl::HorizonBase;
+        match crate::horizon::base_of(plan.campaign) {
+            HorizonBase::Ocean => Ambient::Ocean(Sea {
                 level: crate::plan::SEA_LEVEL,
                 floor_top: crate::plan::SEA_FLOOR_TOP_Y,
                 covered: plan
@@ -653,6 +661,10 @@ impl Ambient {
                     .flat_map(|a| a.pieces.iter().map(|p| p.bbox()))
                     .collect(),
             }),
+            HorizonBase::Flatland => Ambient::Flatland,
+            // Void; and the not-yet-landed bases (sky/valley/summit), which
+            // validation refuses long before an ambient is consulted
+            // (`crate::horizon::base_implemented`).
             _ => Ambient::Void,
         }
     }
@@ -4730,7 +4742,7 @@ pub fn verify_pov_cameras(world: &World, cameras: &[(String, [i32; 3])]) -> Resu
 /// * `horizon: ocean` — a reachable walkable cell borders **water the player
 ///   cannot get out of**: the pinned superflat puts bedrock under every column,
 ///   so nothing can fall out of an ocean world and the void premise is vacuous;
-///   the real hazard the ocean horizon introduced (`plan::OCEAN_BASE_Y`) is
+///   the real hazard the ocean horizon introduced (its sea-level datum) is
 ///   *stranding* — a player who ends up in the sea with no shoreline to climb
 ///   back onto is out of the delve just as permanently as one who fell out of a
 ///   void world. See [`verify_boundary_safety`] for the exact model.
@@ -4750,6 +4762,110 @@ const BOUNDARY_LIST_LIMIT: usize = 6;
 /// margin ≥ 1 works: the ring beyond the window is untouched ambient water in
 /// every direction, so every body that reaches it is one and the same sea.
 const OPEN_SEA_MARGIN: i32 = 2;
+
+/// `DW0364` (spec-0026 §2): a placed piece's **empirical** walk cell sits at or
+/// below the horizon's flood level — the delivered world drowns it on boot, and
+/// every proof derived from the placement (walkability, lighting, checkpoints,
+/// POV, PackTest) is derived from a model that says dry. Build-tier (exit 3).
+///
+/// This closes the `DW0344` gap that made the #149 class invisible: `DW0344`
+/// reads a piece's *declared* `waterline_y` and exempts pieces that declare
+/// none, so an interior piece whose walk plane landed under sea level was
+/// never looked at. This check reads the **assembled geometry** — standable
+/// cells over real blocks — and exempts nothing. `DW0344` is retained for
+/// waterline-declaring shore pieces (sea mating at sea level is a different
+/// fact than walk-cell dryness).
+pub const DW_WALK_FLOODED: &str = "DW0364";
+
+/// Empirical walk-cell flood proof ([`DW_WALK_FLOODED`], spec-0026 §2).
+///
+/// For a horizon with a declared `flood_level` (`ocean`: 62), every standable
+/// cell inside every placed piece's AABB must have its feet **above** the
+/// flood level. A standable cell at or below it is authored dry air the
+/// ambient water owns: at best the player wades at the sea surface, at worst
+/// (the #149 tide-mill class) an interior room floods on first boot. Cells the
+/// piece authors as water are already impassable in the model (`flooded`) and
+/// are not standable, so a shore piece's underwater seabed does not fire this
+/// — only genuinely-standable-but-drowned cells do.
+///
+/// **Declarations position; proofs read reality**: the check never reads
+/// `walk_y`/`waterline_y` to decide, only to *explain* — the message names the
+/// area, prefab, placed y and the datum-equation term that disagrees.
+/// Aggregated like `DW0322` ([`BOUNDARY_LIST_LIMIT`]).
+pub fn check_flood_level(plan: &Plan, world: &World) -> Result<(), NavError> {
+    let h = crate::horizon::of_campaign(plan.campaign);
+    let Some(flood) = crate::horizon::flood_level(&h) else {
+        return Ok(());
+    };
+    let walk_ref = crate::horizon::walk_ref_y(&h).unwrap_or(crate::plan::BASE_Y);
+    // (area, piece index, wet standable cells) in deterministic plan order.
+    let mut hits: Vec<(&str, &crate::plan::PiecePlacement, Vec<[i32; 3]>)> = Vec::new();
+    let mut total = 0usize;
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            let (lo, hi) = piece.bbox();
+            let mut wet: Vec<[i32; 3]> = Vec::new();
+            for x in lo[0]..=hi[0] {
+                for z in lo[2]..=hi[2] {
+                    // Only cells at or below the flood level can violate; the
+                    // piece box above it is irrelevant, so don't scan it.
+                    for y in lo[1]..=hi[1].min(flood) {
+                        let c = [x, y, z];
+                        if world.is_standable(c) {
+                            wet.push(c);
+                        }
+                    }
+                }
+            }
+            if !wet.is_empty() {
+                total += wet.len();
+                hits.push((area.area_id.as_str(), piece, wet));
+            }
+        }
+    }
+    if hits.is_empty() {
+        return Ok(());
+    }
+    let mut listing = String::new();
+    let mut listed = 0usize;
+    'outer: for (area_id, piece, wet) in &hits {
+        for c in wet {
+            if listed == BOUNDARY_LIST_LIMIT {
+                break 'outer;
+            }
+            listing.push_str(&format!(
+                "\n  - {c:?} (area `{area_id}`, prefab `{}` placed at y={})",
+                piece.prefab_id, piece.pos[1]
+            ));
+            listed += 1;
+        }
+    }
+    if total > listed {
+        listing.push_str(&format!("\n  - … and {} more", total - listed));
+    }
+    let (area_id, piece, wet) = &hits[0];
+    let feet = wet[0][1];
+    let meta_note = format!(
+        "the datum equation (spec-0026 §2) places this piece's tileset walk plane at world \
+         y={walk_ref}; these cells stand at y={feet}, {} block(s) under the flood line, so the \
+         term that disagrees is the piece's own geometry vs its declared `walk_y` — either the \
+         declaration is wrong for what the piece really authors, or the piece authors walkable \
+         floor below its own convention",
+        flood - feet + 1,
+    );
+    Err(NavError {
+        code: DW_WALK_FLOODED,
+        message: format!(
+            "flood-level proof (spec-0026): {total} standable cell(s) in placed pieces sit at or \
+             below the ambient flood level (y={flood}) — the delivered world floods them on \
+             first boot while every compile-time proof derives from a model that says dry \
+             (the #149 class). First: area `{area_id}`, prefab `{}` placed at y={}:{listing}\n\
+             {meta_note}. Fix the piece's `walk_y`/geometry so every standable cell lands above \
+             y={flood}; never re-datum by hand to sidestep the proof",
+            piece.prefab_id, piece.pos[1],
+        ),
+    })
+}
 
 /// Assert the reachable walk region's boundary is safe (spec-0017 boundary
 /// safety; [`DW_EDIT_BORDERS_VOID`]). `starts` are the reachability roots (the
@@ -4820,6 +4936,12 @@ pub fn verify_boundary_safety(world: &World, starts: &[[i32; 3]]) -> Result<(), 
     match &world.ambient {
         Ambient::Void => boundary_void(world, &reachable),
         Ambient::Ocean(sea) => boundary_ocean(world, &reachable, sea),
+        // Flatland (spec-0026): solid ground under every column at the grass
+        // surface, no water, and the scene walk plane is flush with the
+        // ambient by the §2 datum equation — one step off the proven ground is
+        // a step onto walkable grass. Nothing to fall out of, nothing to be
+        // stranded in; the required boundary clock (`DW0320`) owns wanderers.
+        Ambient::Flatland => Ok(()),
     }
 }
 
