@@ -38,7 +38,7 @@ cleanup() { validation/fresh-volumes.sh --project "$PROJECT" >/dev/null 2>&1 || 
 trap cleanup EXIT
 
 echo "==> building the delve output (datapack + creator overlay)"
-cargo run -q -p delvewright-compiler --bin delvec -- \
+cargo run -q -p delvec --bin delvec -- \
   build "$CAMPAIGN" -o "$OUT" --prefabs campaigns/prefabs
 
 echo "==> starting the playtest server (delve image + mounted creator overlay)"

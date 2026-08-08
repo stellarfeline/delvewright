@@ -235,53 +235,20 @@ fn verdict(body: [Span; 3], aff: [Span; 3]) -> Verdict {
 /// Every npc/actor id the campaign ever **moves**, at any nesting depth — the
 /// bodies whose declared anchor is only a starting mark (see the module docs).
 fn walkers(c: &Campaign) -> BTreeSet<&str> {
-    fn walk<'a>(e: &'a QuestEffect, out: &mut BTreeSet<&'a str>) {
-        match e {
-            QuestEffect::MoveNpc { npc, .. } => {
-                out.insert(npc.as_str());
-            }
-            QuestEffect::MoveActor { actor, .. } => {
-                out.insert(actor.as_str());
-            }
-            _ => {}
-        }
-        for list in e.nested_effect_lists() {
-            for inner in list {
-                walk(inner, out);
-            }
-        }
-    }
+    // Every root, inherited from the single enumeration. This walk had grown the
+    // dialogue `on_respawn` root by hand and never got `traps[].payload` — the one
+    // walker on the sweep that was blind to R4 alone, which is exactly what
+    // enumerating roots by hand produces: each copy misses a different one.
     let mut out = BTreeSet::new();
-    for q in &c.quests.content.quests {
-        for e in q
-            .on_objective_complete
-            .values()
-            .flatten()
-            .chain(&q.on_complete)
-        {
-            walk(e, &mut out);
+    delvewright_dsl::for_each_campaign_effect(c, &mut |_path, _site, e| match e {
+        QuestEffect::MoveNpc { npc, .. } => {
+            out.insert(npc.as_str());
         }
-    }
-    for t in &c.quests.content.triggers {
-        for e in &t.effects {
-            walk(e, &mut out);
+        QuestEffect::MoveActor { actor, .. } => {
+            out.insert(actor.as_str());
         }
-    }
-    // A dialogue outcome carries no move verb of its own, but a `set-checkpoint`
-    // from a conversation nests a full `on_respawn` quest-effect bundle.
-    for d in &c.dialogue.content.dialogues {
-        for node in &d.nodes {
-            for opt in &node.options {
-                for e in &opt.effects {
-                    if let delvewright_dsl::DialogueEffect::SetCheckpoint { on_respawn, .. } = e {
-                        for inner in on_respawn {
-                            walk(inner, &mut out);
-                        }
-                    }
-                }
-            }
-        }
-    }
+        _ => {}
+    });
     out
 }
 

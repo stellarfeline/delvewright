@@ -566,105 +566,25 @@ pub fn bonfire_option_labels(c: &Campaign) -> Vec<OptionLabel> {
 /// The **five effect roots** the compiler can lower a quest effect from, as
 /// `(stage, json_path, l10n keybase)` for each root's `i`-th top-level effect.
 ///
-/// This is the authority behind [`each_effect_ref`] — the immutable consumer scan
-/// — and its mutable mirror [`effect_roots_mut`], which [`each_string`] walks. An
-/// effect list is a root if `emit::emit_quest_effect` can reach it, not if the
-/// quests stage happens to own it (the same rule
-/// `compiler::plan::for_each_gate_effect` states for gate commands):
-///
-/// 1. quest `on_objective_complete` (a `BTreeMap`, so key-ordered),
-/// 2. quest `on_complete`,
-/// 3. environment `triggers[].effects`,
-/// 4. `traps[].payload` (spec-0022 — a payload is an effect root; a trap that
-///    narrates is ordinary now that a trap's consequence is commands),
-/// 5. a **dialogue option's** `set-checkpoint` `on_respawn` bundle — a plain
-///    `Vec<QuestEffect>` hanging off the dialogue stage, lowered into
-///    `cp_on_respawn_<i>`. `DialogueEffect` carries no narrate verb of its own,
-///    which is why the older string walk stopped at the quests stage; the bundle
-///    inside it is quest-effect vocabulary all the same (task #168).
-///
-/// Roots 1–3 keep their prior paths and keys exactly, so an existing campaign's
-/// inventory is unchanged; 4 and 5 are additive.
+/// The roots themselves are **not enumerated here**. They come from
+/// [`crate::effects::for_each_effect_root`], the one enumeration in the workspace,
+/// which this walk simply indexes into per top-level effect (`path` + `/{i}`,
+/// `key` + `.{i}`). Before that module existed this function held its own copy of
+/// the root list and [`effect_roots_mut`] held a second one, which is the
+/// arrangement that let a walk go blind to a root — twice, independently, in this
+/// file alone. The paths and keys are unchanged in both directions.
 fn effect_roots(c: &Campaign) -> Vec<EffectRoot<'_>> {
     let mut out = Vec::new();
-    let mut push = |stage, path: String, key: String, eff| {
-        out.push(EffectRoot {
-            stage,
-            path,
-            key,
-            eff,
-        })
-    };
-    for (qi, q) in c.quests.content.quests.iter().enumerate() {
-        let ql = local(q.id.as_str());
-        for (oid, effs) in &q.on_objective_complete {
-            let ol = local(oid.as_str());
-            for (i, eff) in effs.iter().enumerate() {
-                push(
-                    "quests",
-                    format!(
-                        "/content/quests/{qi}/on_objective_complete/{}/{i}",
-                        oid.as_str()
-                    ),
-                    format!("fx.{ql}.oc.{ol}.{i}"),
-                    eff,
-                );
-            }
-        }
-        for (i, eff) in q.on_complete.iter().enumerate() {
-            push(
-                "quests",
-                format!("/content/quests/{qi}/on_complete/{i}"),
-                format!("fx.{ql}.done.{i}"),
+    crate::effects::for_each_effect_root(c, &mut |site, list| {
+        for (i, eff) in list.iter().enumerate() {
+            out.push(EffectRoot {
+                stage: site.stage,
+                path: format!("{}/{i}", site.path),
+                key: format!("{}.{i}", site.key),
                 eff,
-            );
+            });
         }
-    }
-    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
-        let tl = local(t.id.as_str());
-        for (i, eff) in t.effects.iter().enumerate() {
-            push(
-                "quests",
-                format!("/content/triggers/{ti}/effects/{i}"),
-                format!("fx.trig.{tl}.{i}"),
-                eff,
-            );
-        }
-    }
-    for (pi, trap) in c.quests.content.traps.iter().enumerate() {
-        let pl = local(trap.id.as_str());
-        for (i, eff) in trap.payload.iter().enumerate() {
-            push(
-                "quests",
-                format!("/content/traps/{pi}/payload/{i}"),
-                format!("fx.trap.{pl}.{i}"),
-                eff,
-            );
-        }
-    }
-    for (di, tree) in c.dialogue.content.dialogues.iter().enumerate() {
-        let np = local(tree.npc.as_str());
-        for (ni, node) in tree.nodes.iter().enumerate() {
-            let nd = local(node.id.as_str());
-            for (oi, opt) in node.options.iter().enumerate() {
-                for (ei, de) in opt.effects.iter().enumerate() {
-                    let Some((_anchor, on_respawn)) = de.set_checkpoint() else {
-                        continue;
-                    };
-                    for (i, eff) in on_respawn.iter().enumerate() {
-                        push(
-                            "dialogue",
-                            format!(
-                                "/content/dialogues/{di}/nodes/{ni}/options/{oi}/effects/{ei}/on_respawn/{i}"
-                            ),
-                            format!("fx.dlg.{np}.{nd}.{oi}.{ei}.respawn.{i}"),
-                            eff,
-                        );
-                    }
-                }
-            }
-        }
-    }
+    });
     out
 }
 
@@ -684,84 +604,26 @@ struct EffectRoot<'a> {
 /// The **mutable mirror** of [`effect_roots`]: the identical roots, in the
 /// identical order, with the same `(stage, path, key)` descriptors, exposed
 /// mutably so [`each_string`] (and through it [`localize`]) can rewrite the
-/// player-visible strings in place. `&mut Campaign` cannot be enumerated and
-/// borrowed at once, which is why this is written out rather than derived — the
-/// two are lockstep siblings in the sense
-/// [`QuestEffect::nested_effect_lists_labeled`] and
-/// `nested_effect_lists_keyed_mut` already are, and a unit test asserts their
-/// descriptor sequences are equal on a campaign exercising all five roots.
+/// player-visible strings in place.
+///
+/// Like [`effect_roots`] it enumerates nothing itself — it indexes
+/// [`crate::effects::for_each_effect_root_mut`], which is generated from the
+/// **same macro body** as the immutable walk. The two mirrors are therefore
+/// lockstep by construction rather than by a test that has to be remembered; the
+/// descriptor-equality test below now pins that property instead of establishing
+/// it.
 fn effect_roots_mut(c: &mut Campaign) -> Vec<(&'static str, String, String, &mut QuestEffect)> {
     let mut out: Vec<(&'static str, String, String, &mut QuestEffect)> = Vec::new();
-    for (qi, q) in c.quests.content.quests.iter_mut().enumerate() {
-        let ql = local(q.id.as_str()).to_string();
-        for (oid, effs) in &mut q.on_objective_complete {
-            let ol = local(oid.as_str()).to_string();
-            for (i, eff) in effs.iter_mut().enumerate() {
-                out.push((
-                    "quests",
-                    format!(
-                        "/content/quests/{qi}/on_objective_complete/{}/{i}",
-                        oid.as_str()
-                    ),
-                    format!("fx.{ql}.oc.{ol}.{i}"),
-                    eff,
-                ));
-            }
-        }
-        for (i, eff) in q.on_complete.iter_mut().enumerate() {
+    crate::effects::for_each_effect_root_mut(c, &mut |kind, path, key, list| {
+        for (i, eff) in list.iter_mut().enumerate() {
             out.push((
-                "quests",
-                format!("/content/quests/{qi}/on_complete/{i}"),
-                format!("fx.{ql}.done.{i}"),
+                kind.stage(),
+                format!("{path}/{i}"),
+                format!("{key}.{i}"),
                 eff,
             ));
         }
-    }
-    for (ti, t) in c.quests.content.triggers.iter_mut().enumerate() {
-        let tl = local(t.id.as_str()).to_string();
-        for (i, eff) in t.effects.iter_mut().enumerate() {
-            out.push((
-                "quests",
-                format!("/content/triggers/{ti}/effects/{i}"),
-                format!("fx.trig.{tl}.{i}"),
-                eff,
-            ));
-        }
-    }
-    for (pi, trap) in c.quests.content.traps.iter_mut().enumerate() {
-        let pl = local(trap.id.as_str()).to_string();
-        for (i, eff) in trap.payload.iter_mut().enumerate() {
-            out.push((
-                "quests",
-                format!("/content/traps/{pi}/payload/{i}"),
-                format!("fx.trap.{pl}.{i}"),
-                eff,
-            ));
-        }
-    }
-    for (di, tree) in c.dialogue.content.dialogues.iter_mut().enumerate() {
-        let np = local(tree.npc.as_str()).to_string();
-        for (ni, node) in tree.nodes.iter_mut().enumerate() {
-            let nd = local(node.id.as_str()).to_string();
-            for (oi, opt) in node.options.iter_mut().enumerate() {
-                for (ei, de) in opt.effects.iter_mut().enumerate() {
-                    let Some(on_respawn) = de.set_checkpoint_on_respawn_mut() else {
-                        continue;
-                    };
-                    for (i, eff) in on_respawn.iter_mut().enumerate() {
-                        out.push((
-                            "dialogue",
-                            format!(
-                                "/content/dialogues/{di}/nodes/{ni}/options/{oi}/effects/{ei}/on_respawn/{i}"
-                            ),
-                            format!("fx.dlg.{np}.{nd}.{oi}.{ei}.respawn.{i}"),
-                            eff,
-                        ));
-                    }
-                }
-            }
-        }
-    }
+    });
     out
 }
 

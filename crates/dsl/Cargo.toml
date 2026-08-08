@@ -1,8 +1,30 @@
 [package]
 name = "delvewright-dsl"
-version = "0.0.0"
+# DELIBERATELY NOT the engine version (ADR-0017 §2). This crate has to exist on
+# crates.io because `delvec` depends on it, but it is not on ADR-0016's engine
+# line. Locking the two together would set a trap: crates.io versions can never
+# be reused, so a publish that half-succeeds (dsl lands, delvec fails) burns this
+# version permanently — and under lockstep the retry would have to move `delvec`
+# too, putting the engine out of step with the git tag ADR-0016 pins it to. With
+# an independent line a burned version costs a dsl bump and nothing else.
+#
+# `0.x` is also the honest semver: this is the format the engine speaks, not a
+# library anyone should depend on directly. Bound to `[engine] dsl_crate_version`
+# in versions.toml by validation/check-versions.sh, together with the `=`
+# requirement `delvec` declares on it.
+version = "0.1.0"
 edition = "2024"
-publish = false
+# The toolchain this repo actually builds and tests on (rust-toolchain.toml).
+# Asserted equal to that pin by check-versions.sh: a `rust-version` looser than
+# what anybody has run is an untested claim, and `cargo install` is where a
+# stranger discovers it.
+rust-version = "1.97.1"
+description = "Staged JSON DSL types and schemas for Delvewright adventure-map campaigns — the format the delvec compiler reads."
+license = "GPL-3.0-only"
+repository = "https://github.com/stellarfeline/delvewright"
+readme = "README.md"
+keywords = ["minecraft", "datapack", "dsl", "adventure"]
+categories = ["game-development"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

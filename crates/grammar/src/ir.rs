@@ -590,7 +590,13 @@ impl Mark {
 
 /// True for a kebab-case anchor stem: the `<kebab>` of the DSL's
 /// `anchor/<kebab>` ids.
-fn is_kebab(s: &str) -> bool {
+///
+/// `pub(crate)` because [`crate::compose`] applies the same test to a rename's
+/// *target* at the include site. `Program::validate` would catch a bad stem
+/// either way, but it would name the rule that carries the mark — a rule inside
+/// an included piece, which the caller never wrote — instead of the rename entry
+/// the caller did write.
+pub(crate) fn is_kebab(s: &str) -> bool {
     !s.is_empty()
         && s.chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')

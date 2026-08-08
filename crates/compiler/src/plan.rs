@@ -2659,109 +2659,50 @@ pub(crate) struct EffectRootSite<'a> {
 }
 
 /// Visit **every top-level effect list the compiler can lower**, in one fixed
-/// deterministic order. This is the single enumeration of effect roots; every
-/// walk that claims to see "what emission sees" is defined in terms of it, so no
-/// two of them can disagree about which roots exist.
+/// deterministic order.
 ///
-/// It is deliberately wider than `dsl::for_each_campaign_effect`, and the width is
-/// the point: a list is a root if `emit::emit_quest_effect` can reach it, not if
-/// the quests stage happens to own it. Five roots do:
+/// A thin adapter over [`delvewright_dsl::for_each_effect_root`], which is the
+/// single enumeration of effect roots in the workspace. It exists to re-present
+/// the DSL's [`delvewright_dsl::EffectRootOwner`] as this crate's [`EffectRoot`],
+/// which carries the same owners plus the completability model's reading of them
+/// (see [`collect_gate_events`]); it enumerates nothing itself.
 ///
-/// 1. quest `on_objective_complete` (a `BTreeMap`, so key-ordered), then
-/// 2. quest `on_complete`,
-/// 3. environment `triggers[].effects`,
-/// 4. `traps[].payload` (spec-0022 — a payload is an effect root),
-/// 5. and a **dialogue option's** `set-checkpoint` `on_respawn` bundle, which is
-///    a plain `Vec<QuestEffect>` hanging off the dialogue stage. `DialogueEffect`
-///    itself carries no gate or movement verb, which is why the older scans stop
-///    at the quests stage — but that reasoning misses this bundle, and what is
-///    inside it really is lowered (into `cp_on_respawn_<i>`).
-///
-/// Each visit carries an [`EffectRoot`] naming which of the five it is, so a
-/// consumer that needs *when* a firing happens (the completability model) reads it
-/// off the site instead of re-deriving it from a second, drift-prone walk.
-///
-/// Roots 1–3 keep their prior order, so every consumer's output on a campaign that
-/// uses only them is unchanged; 4 and 5 are additive.
+/// A list is a root if `emit::emit_quest_effect` can reach it, not if the quests
+/// stage happens to own it. Five lists are. Their order, and the reasoning, live
+/// with the enumeration in `delvewright_dsl::effects`.
 ///
 /// Consumers: [`for_each_gate_effect`] (→ the seal planner, `gates::check_seal_hints`
 /// and the completability model), [`crate::timeline::walk_campaign`] (→ the
 /// `DW0410` staged-walk model and, defined as it, `nav::all_effects`),
 /// `emit::all_campaign_effects` (→ the generated functions themselves),
-/// `emit::check_effect_anchors` (→ `DW0360`, the resolved-anchor seal over what
-/// those functions emit), `emit::declared_flags` (→ the `dw.f_<flag>` scoreboard
-/// objectives `setup` creates for the writes those functions perform) and both
-/// halves of [`crate::flow`] — the producer scan in `Flow::new` and the
-/// gate-flag inventory [`crate::flow::gate_flags`] (→
-/// `DW0201`/`DW0202`/`DW0203`/`DW0204`/`DW0205` and the exported critical path).
-/// The three-of-five drift this class kept re-growing (tasks #142, #167, #168,
-/// #169, #170, #24) was exactly these walks enumerating roots by hand, one copy
-/// each. It is **not** finished: seven further campaign-wide walk sites (thirteen
-/// distinct walkers) still enumerate three or four roots — though both of the
-/// LATENT emission/runtime defects among them are now closed, so what remains is
-/// imprecise proofs rather than shipped defects. See "Known spec ↔ code drift" in
-/// `docs/reference/compiler.md` for the list and what each feeds.
+/// `emit::check_effect_anchors` (→ `DW0360`), `emit::declared_flags` (→ the
+/// `dw.f_<flag>` scoreboard objectives), `rehearsal::bundles` (→ the
+/// `dw:rehearsal` inventory) and both halves of [`crate::flow`].
 pub(crate) fn for_each_effect_root<'a>(
     campaign: &'a Campaign,
     f: &mut dyn FnMut(&EffectRootSite<'a>, &'a [QuestEffect]),
-) {
-    let mut visit = |stage, path: String, root, effs: &'a [QuestEffect]| {
-        f(&EffectRootSite { stage, path, root }, effs);
-    };
-    for (qi, q) in campaign.quests.content.quests.iter().enumerate() {
-        for (oid, effs) in &q.on_objective_complete {
-            visit(
-                "quests",
-                format!(
-                    "/content/quests/{qi}/on_objective_complete/{}",
-                    oid.as_str()
-                ),
-                EffectRoot::ObjectiveComplete(oid.as_str()),
-                effs,
-            );
-        }
-        visit(
-            "quests",
-            format!("/content/quests/{qi}/on_complete"),
-            EffectRoot::QuestComplete(q),
-            &q.on_complete,
-        );
-    }
-    for (ti, t) in campaign.quests.content.triggers.iter().enumerate() {
-        visit(
-            "quests",
-            format!("/content/triggers/{ti}/effects"),
-            EffectRoot::Trigger(t),
-            &t.effects,
-        );
-    }
-    for (pi, trap) in campaign.quests.content.traps.iter().enumerate() {
-        visit(
-            "quests",
-            format!("/content/traps/{pi}/payload"),
-            EffectRoot::TrapPayload(trap),
-            &trap.payload,
-        );
-    }
-    for (di, tree) in campaign.dialogue.content.dialogues.iter().enumerate() {
-        for (ni, node) in tree.nodes.iter().enumerate() {
-            for (oi, opt) in node.options.iter().enumerate() {
-                for (ei, de) in opt.effects.iter().enumerate() {
-                    let Some((_anchor, on_respawn)) = de.set_checkpoint() else {
-                        continue;
-                    };
-                    visit(
-                        "dialogue",
-                        format!(
-                            "/content/dialogues/{di}/nodes/{ni}/options/{oi}/effects/{ei}/on_respawn"
-                        ),
-                        EffectRoot::DialogueRespawn,
-                        on_respawn,
-                    );
-                }
+) -> delvewright_dsl::RootBinding {
+    delvewright_dsl::for_each_effect_root(campaign, &mut |site, list| {
+        let root = match site.owner {
+            delvewright_dsl::EffectRootOwner::ObjectiveComplete { objective, .. } => {
+                EffectRoot::ObjectiveComplete(objective)
             }
-        }
-    }
+            delvewright_dsl::EffectRootOwner::QuestComplete { quest } => {
+                EffectRoot::QuestComplete(quest)
+            }
+            delvewright_dsl::EffectRootOwner::Trigger(t) => EffectRoot::Trigger(t),
+            delvewright_dsl::EffectRootOwner::TrapPayload(t) => EffectRoot::TrapPayload(t),
+            delvewright_dsl::EffectRootOwner::DialogueRespawn => EffectRoot::DialogueRespawn,
+        };
+        f(
+            &EffectRootSite {
+                stage: site.stage,
+                path: site.path.clone(),
+                root,
+            },
+            list,
+        );
+    })
 }
 
 /// Visit **every effect the compiler can lower to a gate command**, at every

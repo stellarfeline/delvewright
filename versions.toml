@@ -15,11 +15,15 @@
 # .github/workflows/*.yml.
 version = "1.21.11"
 # Mojang server jar, from piston-meta 1.21.11 (downloads.server). The jar is NEVER
-# baked into any image (ADR-0010 EULA); the itzg entrypoint fetches it at first boot
-# by version+checksum, and CI caches it (actions/cache keyed on version + sha256).
-# Provenance record only (no CI cache since 2026-07-30, see ci.yml note).
-# sha1 is the checksum piston-meta publishes; sha256 is computed from the jar bytes
-# and used as the CI cache key + our own integrity check.
+# baked into any image (ADR-0010 EULA).
+# sha1 is the checksum piston-meta publishes; sha256 is computed from the jar bytes.
+#
+# Consumed by: validation/server-bootstrap-cache.sh (task #41), which fetches this
+# URL ONCE per job and refuses anything whose sha256 is not the pin below, then
+# hands the bytes to every server boot as a /data overlay. Before it, each of the
+# seven servers a `tier 2` run boots bootstrapped the jar live and any one blip
+# reddened a required check (PR #312). These three values are live inputs now, not
+# the provenance record they were between 2026-07-30 and 2026-08-05.
 server_jar_url = "https://piston-data.mojang.com/v1/objects/64bb6d763bed0a9f1d632ec347938594144943ed/server.jar"
 server_jar_sha1 = "64bb6d763bed0a9f1d632ec347938594144943ed"
 server_jar_sha256 = "f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726"
@@ -77,6 +81,18 @@ digest = "sha256:31ed5d5a5c50158470bfee8c7197a75e6f586a25c950bf25b69b533f88e0ba0
 # Fabric loader (pre-baked into the toolserver at build time; ADR-0003 tooling only).
 # Consumed by: validation/Dockerfile.toolserver (ARG FABRIC_LOADER_VERSION).
 loader_version = "0.19.3"
+# Fabric LAUNCHER (installer) version — the one baked into the pinned toolserver
+# image above, recorded in its /data/.fabric-manifest.json as `origin.installer`.
+# Consumed by: validation/compose.yaml (FABRIC_LAUNCHER_VERSION on the packtest
+# service). itzg defaults that variable to `LATEST`, and resolving "latest" is a
+# request to meta.fabricmc.net on EVERY boot of an already-provisioned image — one
+# more live host per PackTest suite, six per `tier 2` run (task #41). Naming the
+# baked version makes the check a local manifest match instead. The toolserver
+# Dockerfile does not pass it (the build resolved LATEST to this), so
+# validation/server-bootstrap-cache.sh asserts this value against the pinned
+# image's own manifest: a republished toolserver that moves the launcher fails
+# there rather than silently restoring the per-boot fetch.
+launcher_version = "1.1.2"
 # Fabric API mod jar (Modrinth project P7dR8mSH), required by PackTest.
 # Consumed by: validation/Dockerfile.toolserver (ARG FABRIC_API_URL / _SHA1).
 api_version = "0.141.6+1.21.11"
@@ -94,6 +110,79 @@ sha1 = "7c9f83f1673209abb1d5262dd69583e61c85cbd2"
 [harness]
 # mineflayer bot pin (spec-0003). Consumed by: harness/package.json.
 mineflayer = "4.37.1"
+
+[engine]
+# The `delvec` ENGINE release line — ADR-0016 line 2, distributed per ADR-0017.
+# One release identity has to hold four things together or it means nothing: the
+# version compiled into the binary, the git tag, the crates.io version, and the
+# skill's `requires.delvec` window. Before this section they agreed only by
+# intention; `validation/check-versions.sh` now makes disagreement a red, and
+# `.github/workflows/engine-release.yml` refuses a `v*` tag whose name does not
+# match `version` below before it builds or publishes anything.
+#
+# Consumed by: validation/check-versions.sh (every assertion below),
+# .github/workflows/engine-release.yml (tag gate + build matrix),
+# .github/workflows/ci.yml (the cross-build shelf job),
+# tools/build-release-binaries.sh + tools/check-publishable.sh (which hold NO
+# copy of any value here — they read this file, the way
+# validation/server-bootstrap-cache.sh does).
+version = "1.0.0"
+
+# crates.io identity. `cargo install` resolves by CRATE name, never by binary
+# name, so the package had to BE `delvec` — `cargo install delvewright-compiler`
+# is the only spelling that could ever have worked and nobody would guess it.
+# The lib TARGET keeps the old name (`delvewright_compiler`) so 366 in-tree use
+# paths do not churn.
+crate = "delvec"
+
+# `delvewright-dsl` is a real dependency of `delvec`, so it must exist on
+# crates.io first — but it is DELIBERATELY NOT on the engine version line.
+# Locking them together looks tidy and sets a trap: a publish that half-succeeds
+# burns the dsl version permanently (crates.io versions cannot be reused), and
+# under lockstep the retry would have to move `delvec` too — which would put the
+# engine version out of step with the git tag `v1.0.0` that ADR-0016 pins. With
+# an independent line, a burned dsl version costs a dsl bump and nothing else.
+# `0.x` is also the honest semver for it: it is the DSL types the engine speaks,
+# not a library anyone should depend on directly.
+dsl_crate = "delvewright-dsl"
+dsl_crate_version = "0.1.0"
+
+# The engine's `[dependencies] delvewright-dsl` requirement is `=` and exactly
+# this version, so `delvec 1.0.0` on crates.io can resolve to exactly one
+# `delvewright-dsl` build and no other.
+dsl_crate_req = "=0.1.0"
+
+# `rust-version` in both published manifests, and the channel in
+# rust-toolchain.toml. They must be the same string: a `rust-version` looser than
+# the toolchain anybody has actually built on is an untested claim, and
+# `cargo install` is where a stranger would discover it.
+rust_toolchain = "1.97.1"
+
+# THE RELEASE SHELF (ADR-0017). Every platform a creator might plausibly drive
+# Claude Code from. Before this, release `v1.0.0` existed with ZERO assets: the
+# engine pin ADR-0016 requires and the skill's `requires.delvec` window were
+# promises against an empty shelf.
+#
+# Linux is musl-STATIC on purpose. `delvec`'s whole dependency set is pure Rust
+# (flate2 uses the miniz_oxide backend, not zlib-sys), so a static binary has no
+# glibc floor, runs on Alpine and on distros older than the runner, and cannot
+# fail at the one moment a downloaded binary is expected to just work.
+#
+# Windows ships `.tar.gz` like everything else rather than `.zip`: one archive
+# format is one extraction path for ADR-0014's future bootstrap, and a format
+# branch is somewhere for the shelf to end up half-built. Windows 10 1803+ ships
+# bsdtar and Windows 11 Explorer opens `.tar.gz` natively.
+#
+# `delve-render` is deliberately NOT on this shelf — see ADR-0017 §3; it needs a
+# GPU/driver stack and the EULA-gated client jar, neither of which a downloaded
+# binary can carry, so it would be a shelf item that fails for most downloaders.
+targets = [
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
 
 [content]
 # The pinned content repo (spec-0007 Step 0): the prefab library + campaign

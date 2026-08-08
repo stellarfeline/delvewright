@@ -133,6 +133,30 @@ EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yam
 delve is currently on the validation rig — see [the roadmap](docs/ROADMAP.md) for
 where the project stands.
 
+## Getting the compiler
+
+`delvec` is the compiler that turns campaign documents into a playable delve. It
+is a single self-contained binary with no runtime dependencies.
+
+```sh
+cargo install delvec           # from crates.io
+```
+
+Or download a prebuilt archive for your platform from the
+[latest release](https://github.com/stellarfeline/delvewright/releases/latest) —
+Linux (x86-64 / arm64, statically linked), macOS (Apple Silicon / Intel) and
+Windows (x86-64). Every archive's SHA-256 is published beside it in
+`SHA256SUMS`; check it before you run the binary:
+
+```sh
+tar -xzf delvec-v<version>-<your-platform>.tar.gz
+sha256sum --check --ignore-missing SHA256SUMS     # `shasum -a 256 -c` on macOS
+./delvec --version
+```
+
+Building from a checkout of this repo (`cargo build -p delvec --bin delvec`)
+gives you the same compiler, and is the path to take if you are changing it.
+
 ## Map of the repo
 
 | Path | What lives there |

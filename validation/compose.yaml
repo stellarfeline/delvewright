@@ -248,6 +248,18 @@ services:
       # of the world matches too — notably spawn-monsters=false, which matters now
       # that a wave campaign's derived difficulty is `easy`, not `peaceful`.
       DELVE_SERVER_PROPERTIES: "/packs/server/server.properties"
+      # Pin the Fabric LAUNCHER (installer) version, not just the loader (task #41).
+      # itzg defaults FABRIC_LAUNCHER_VERSION to `LATEST`, and resolving "latest"
+      # means asking meta.fabricmc.net — on EVERY boot, even though the toolserver
+      # image already bakes that exact launcher. Naming the baked version turns the
+      # resolution into a local manifest match ("Fabric launcher for minecraft
+      # 1.21.11 loader 0.19.3 is already available") and removes one live host from
+      # each of the six PackTest boots. The value is versions.toml's
+      # [fabric].launcher_version; check-versions.sh binds the two, and
+      # server-bootstrap-cache.sh asserts it against the pinned image's own
+      # .fabric-manifest.json, so a republished toolserver cannot silently
+      # re-introduce the fetch.
+      FABRIC_LAUNCHER_VERSION: "1.1.2"
       MODE: "adventure"
       FORCE_GAMEMODE: "true"
       GENERATE_STRUCTURES: "false"
@@ -270,6 +282,16 @@ services:
       # The compiler's world declaration + the shared derivation script (read-only).
       - ${DELVE_OUTPUT:-./delve-output}/server:/packs/server:ro
       - ./world-settings-entrypoint.sh:/packs/world-settings-entrypoint.sh:ro
+      # The server-bootstrap overlay (task #41): the pinned Mojang jar plus the
+      # Fabric launch jar and its Class-Path, fetched and sha256-verified ONCE per
+      # job by validation/server-bootstrap-cache.sh. `packtest-run.sh` COPIES this
+      # into the world volume before the server starts — a copy, never a mount of
+      # the jar itself, because itzg and Fabric both replace the jar by RENAME and a
+      # rename cannot target a bind-mounted file (the "Device or resource busy" that
+      # killed the 2026-07-30 jar cache; see the note in ci.yml). Read-only and
+      # never baked into a layer, so ADR-0010's EULA boundary is untouched. Empty
+      # (a local checkout that never ran the script) = the ordinary live bootstrap.
+      - ${DW_SERVER_CACHE:-./server-cache}:/seed:ro
 
 # Named world volumes for the itzg `/data` mounts above. Declared so
 # `docker compose -f validation/compose.yaml down -v` removes them — otherwise the
