@@ -1565,6 +1565,28 @@ impl<'a> Plan<'a> {
         }
     }
 
+    /// The AABB of the assembled piece carrying `cell` in `area_id` — "the room
+    /// this cell was authored inside". Falls back to the whole area's bounds when
+    /// the cell sits in no single piece box (defensive; a single-prefab area has
+    /// exactly one piece == the area), and to the degenerate `(cell, cell)` when
+    /// the area is not placed at all.
+    ///
+    /// The confinement boundary for anything that must not silently leave the
+    /// piece it was declared in: wave seating ([`crate::nav::World::confined_standable_cells`],
+    /// task #41) and anchor seating ([`crate::nav::AnchorRoot`]).
+    pub fn piece_bounds(&self, area_id: &str, cell: [i32; 3]) -> ([i32; 3], [i32; 3]) {
+        let Some(area) = self.areas.iter().find(|a| a.area_id == area_id) else {
+            return (cell, cell);
+        };
+        for piece in &area.pieces {
+            let (lo, hi) = piece.bbox();
+            if (0..3).all(|i| lo[i] <= cell[i] && cell[i] <= hi[i]) {
+                return (lo, hi);
+            }
+        }
+        area.bounds()
+    }
+
     /// Resolve an anchor **by name alone**, across areas — the area-agnostic
     /// lookup `open-gate` / `move-npc` destinations / actor spawns already use.
     /// `Point` yields its cell, `Gate` its `from` corner; `None` when no placed

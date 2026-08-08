@@ -407,12 +407,70 @@ pub fn build_with_warnings(
                         &er.assembled.open_gates,
                     );
                     occ.solid.extend(relight.extra_solid.iter().copied());
+                    // The ambient is the world-generator PREMISE (spec-0013), not
+                    // geometry, and `from_occupancy` defaults it to `Void`. The
+                    // sibling arm gets it for free through `from_plan`; this arm
+                    // has to say it, or an `ocean` campaign's proofs would run
+                    // against a void world that does not exist. Harmless while
+                    // nothing here read it — `verify_boundary_safety` below now
+                    // does.
                     crate::nav::World::from_occupancy(occ)
+                        .with_ambient(crate::nav::Ambient::of_plan(plan))
                 }
                 None => {
                     crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid)
                 }
             };
+
+            // DW0322 over the FINISHED world, for every campaign that assembles
+            // one (task #170).
+            //
+            // This proof had exactly one call site: inside the stage-7 edit
+            // replay, once per batch. Stage 8 is skipped entirely for a campaign
+            // with no edits — so a campaign that only places pieces never had its
+            // boundary proven at all, and could ship a reachable walkable cell
+            // one step from a void drop. The guarantee is a property of the
+            // ASSEMBLED WORLD, not of having edited it; keying it to the edit
+            // script bound it to the wrong thing.
+            //
+            // The per-batch call stays: it names WHICH batch broke the boundary,
+            // which this one cannot. This is the floor under both — run last,
+            // over the world that actually ships.
+            //
+            // ERROR TIER, unwindowed (owner ruling, 2026-08-08, superseding the
+            // one-`dsl_version` warning window this branch first proposed). A
+            // reachable walkable cell one step from a bottomless column is a
+            // player who leaves the world; that is not a style note the author
+            // may carry for a version, so there is no deprecation window and the
+            // message offers none. The per-batch call inside the edit replay is
+            // an error for the same reason and stays one — it additionally names
+            // WHICH batch broke the boundary, which this floor cannot.
+            //
+            // The fix is always GEOMETRY or the world-generator premise, never a
+            // declaration: `Ambient` (spec-0013 `horizon`) states what an
+            // unmodelled column contains, and `boundary`'s return clock is a
+            // runtime rescue that this proof deliberately does not read — being
+            // teleported back after falling out is not the guarantee.
+            //
+            // The walk region this proof examines is rooted at every resolved
+            // anchor, SEATED INSIDE THE PIECE THAT DECLARES IT
+            // (`crate::nav::AnchorRoot`). That confinement is load-bearing here
+            // and was the finding this call site was born with: an unconfined
+            // nearest-standable snap ignores solid geometry, so an anchor a
+            // `collapse` payload must declare in the ceiling snapped UP through
+            // it onto the room's ROOF — and this proof then demanded a safe edge
+            // on a bare platform in a void world, which no free-standing prefab
+            // can satisfy. Five `v06_trap_payloads` fixtures were red for exactly
+            // that, while their twelve siblings — identical geometry, anchors one
+            // block lower — were green, which is what proved the interior walk
+            // region boundary-safe and the roof a disconnected component.
+            crate::nav::verify_boundary_safety(&world, &crate::edit::anchor_starts(plan)).map_err(
+                |e| BuildFailure::Diagnostic {
+                    code: e.code,
+                    message: e.message,
+                },
+            )?;
+
             let (moves, actor_moves) = if crate::nav::needs_world(plan) {
                 let m = crate::nav::plan_moves(plan, &world)?;
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
@@ -3726,7 +3784,9 @@ fn plan_wave_spawns(
             rings.insert(w.id.as_str().to_string(), centre);
             continue;
         }
-        let bounds = wave_piece_bounds(plan, area, anchor);
+        // The room the wave's mobs must stay inside, so the placement flood-fill
+        // never crosses a socket seam (task #41).
+        let bounds = plan.piece_bounds(area, anchor);
         let cells = world.confined_standable_cells(anchor, bounds);
         if cells.len() < need {
             return Err(BuildFailure::Diagnostic {
@@ -3838,23 +3898,6 @@ fn plan_aggro_edge_spawns(
         cells.extend(picked);
     }
     Ok((cells, centre))
-}
-
-/// The AABB of the assembled piece carrying a wave's spawn anchor — the room the
-/// wave's mobs must stay inside, so the placement flood-fill never crosses a socket
-/// seam. Falls back to the whole area's bounds if the anchor sits in no single
-/// piece box (defensive; a single-prefab area has exactly one piece == the area).
-fn wave_piece_bounds(plan: &Plan, area_id: &str, anchor: [i32; 3]) -> ([i32; 3], [i32; 3]) {
-    let Some(area) = plan.areas.iter().find(|a| a.area_id == area_id) else {
-        return (anchor, anchor);
-    };
-    for piece in &area.pieces {
-        let (lo, hi) = piece.bbox();
-        if (0..3).all(|i| lo[i] <= anchor[i] && anchor[i] <= hi[i]) {
-            return (lo, hi);
-        }
-    }
-    area.bounds()
 }
 
 /// The absolute spawn position of a wave: the world coords of its `anchor`,
