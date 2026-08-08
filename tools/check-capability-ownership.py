@@ -109,6 +109,20 @@ INTERACTION_SITES = {
         "(`trigger_rides_seal`, `DW0422`) instead of the seal being an ordinary "
         "trigger. Shapes 2 and 3 together. Lift in progress — see the audit."
     ),
+    "ws_arm_fns": (
+        "The shortcut gate's approach-side bodies, and the SHAPE-3 LIFT this PR "
+        "exists for. A trigger's `at` binds a POINT AT A CELL, not the clickable "
+        "shape of the object standing at that anchor — so authoring the island "
+        "boulder's own pattern on a shortcut door compiled clean and shipped a box "
+        "pressable only from the side the door opens from. The fix is not a fourth "
+        "mechanism: the body is arrayed over the gate's approach cells, and a click "
+        "trigger the author anchors there RIDES these hitboxes (`seal_rider_tags`) "
+        "instead of summoning a co-located one, exactly as `strike-npc` rides "
+        "`npc_summon_commands`'s body. The compiler supplies the SHAPE; the campaign "
+        "supplies the ANSWER, in the general effect vocabulary, so the reply is "
+        "l10n-inventoried and flag-gated by construction. Empty for a campaign with "
+        "no shortcut — byte-identical output. Shape 3, closed rather than catalogued."
+    ),
     "shortcut_setup": (
         "OPEN FINDING. `shortcuts[].unlock` summons its own body at the far-side "
         "anchor. `on_unlock` already uses the general effect vocabulary, so only "
