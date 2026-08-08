@@ -119,8 +119,58 @@ pub fn copy_l10n_dir(base: &Path, dst: &Path) {
 /// exists. To reproduce CI exactly, point the symlink at a clone checked out at
 /// the pinned SHA. Bumping the pin to make a fixture build is a content-repo
 /// decision, never a fix for a test.
+///
+/// # This asserts the library PARSES, and that is not decoration
+///
+/// The note above documented the hazard and the hazard kept happening — three
+/// separate rounds lost to it on 2026-08-08 alone — because the failure does
+/// not look like what it is. `PrefabRegistry::load_dir` reports a metadata file
+/// this `delvec` cannot parse as `DW0346` in `load_diagnostics()`, and **the
+/// CLI drains that list** (`main::validate_loaded`) so `delvec` users get the
+/// real message. Integration tests build a `Plan` directly and never drain it,
+/// so the prefab is simply absent from the registry and the first thing anyone
+/// sees is `DW0300` "no matching prefab metadata" — a message that then states,
+/// confidently and wrongly, "this is a prefab-library/naming issue".
+///
+/// The live case is an engine/content pair mid-flight: `PrefabMeta` is
+/// `deny_unknown_fields`, so an engine that predates a metadata field drops
+/// **every** prefab carrying it. Thirty-seven files, silently, reported as a
+/// naming problem.
+///
+/// So this checks it once and says what actually happened. Docs are the weakest
+/// form a lesson can take (CLAUDE.md debug doctrine); a tooling default that
+/// makes the pitfall impossible is stronger, and this is the one place all 72
+/// call sites already go through.
 pub fn prefabs_dir() -> PathBuf {
-    repo_root().join("campaigns/prefabs")
+    static CHECKED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    let dir = repo_root().join("campaigns/prefabs");
+    CHECKED.get_or_init(|| {
+        let Ok(reg) = delvewright_compiler::registry::PrefabRegistry::load_dir(&dir) else {
+            // An unreadable directory is the caller's own problem and every call
+            // site already fails clearly on it; only the PARSE case impersonates
+            // something else.
+            return;
+        };
+        let diags = reg.load_diagnostics();
+        assert!(
+            diags.is_empty(),
+            "the prefab library at {} has {} file(s) this delvec cannot parse, so those \
+             prefabs are ABSENT from the registry and every fixture binding one will fail \
+             as DW0300 \"no matching prefab metadata\" — which is not what went wrong.\n\n\
+             Almost always: the `campaigns/` symlink points at a content checkout NEWER \
+             than this engine (PrefabMeta is deny_unknown_fields, so one unknown field \
+             drops the whole file). Point it at the SHA `versions.toml` [content].sha \
+             pins, which is what CI builds against.\n\n{}",
+            dir.display(),
+            diags.len(),
+            diags
+                .iter()
+                .map(|d| format!("  {} {}", d.code, d.message))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    });
+    dir
 }
 
 /// The DSL invalid-fixture directory (patch files).
